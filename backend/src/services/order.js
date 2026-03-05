@@ -106,7 +106,18 @@ const buildCartFromCatalogOrder = async (productItems, branchId) => {
   }
 
   const subtotalRs = cart.reduce((s, i) => s + i.lineTotalRs, 0);
-  const deliveryFeeRs = parseFloat(process.env.DEFAULT_DELIVERY_FEE) || 40;
+
+  // Delivery fee comes from the branch's configured rate.
+  // This will be replaced by a live 3PL quote (Dunzo/Borzo/Shadowfax)
+  // once the 3PL integration is active. For now: branch-level config or env fallback.
+  const { rows: branchRows } = await db.query(
+    'SELECT delivery_fee_rs FROM branches WHERE id = $1',
+    [branchId]
+  );
+  const deliveryFeeRs = parseFloat(branchRows[0]?.delivery_fee_rs)
+                     || parseFloat(process.env.DEFAULT_DELIVERY_FEE)
+                     || 40;
+
   const totalRs = subtotalRs + deliveryFeeRs;
 
   return { cart, subtotalRs, deliveryFeeRs, totalRs, unavailable };
@@ -125,7 +136,8 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     const seq = String(parseInt(cnt[0].count) + 1).padStart(4, '0');
     const orderNumber = `ZM-${date}-${seq}`;
 
-    const platformFeeRs = (subtotalRs * (parseFloat(process.env.PLATFORM_FEE_PERCENT) || 10)) / 100;
+    // No platform commission — GullyBite earns only via delivery fee pass-through
+    const platformFeeRs = 0;
 
     // Create the order
     const { rows: orders } = await client.query(

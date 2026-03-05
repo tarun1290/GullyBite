@@ -117,6 +117,11 @@ CREATE TABLE IF NOT EXISTS branches (
   accepts_orders     BOOLEAN DEFAULT TRUE,
   manager_phone      VARCHAR(30),
 
+  -- Delivery fee charged to customers for orders from this branch.
+  -- Set by the restaurant owner. Will be overridden by live 3PL quote
+  -- once 3PL integration (Dunzo/Borzo/Shadowfax) is active.
+  delivery_fee_rs    DECIMAL(8,2) DEFAULT 40,
+
   -- Meta Commerce Catalog for this branch (auto-created on branch add)
   catalog_id         VARCHAR(255),
   catalog_synced_at  TIMESTAMPTZ,
@@ -390,30 +395,37 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 
 -- ────────────────────────────────────────────────────────────────
--- DELIVERIES  (3PL - commented features, table structure ready)
--- Will be used when 3PL integration is enabled
+-- DELIVERIES
+-- Created for each order when payment is confirmed.
+-- 3PL provider (Dunzo/Borzo/Shadowfax) fills in tracking fields
+-- via POST /api/restaurant/orders/:orderId/delivery
 -- ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS deliveries (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_id        UUID NOT NULL REFERENCES orders(id),
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  order_id          UUID NOT NULL REFERENCES orders(id),
 
-  -- 3PL provider details (commented until integrated)
-  -- provider            VARCHAR(50),   -- 'dunzo' / 'borzo' / 'shadowfax'
-  -- provider_order_id   VARCHAR(255),
-  -- tracking_url        TEXT,
-  -- driver_name         VARCHAR(255),
-  -- driver_phone        VARCHAR(30),
-  -- driver_lat          DECIMAL(10,8),
-  -- driver_lng          DECIMAL(11,8),
+  -- Which 3PL is handling this delivery
+  provider          VARCHAR(50),            -- 'dunzo' | 'borzo' | 'shadowfax' | 'manual'
+  provider_order_id VARCHAR(255),           -- 3PL's own order/task ID
 
-  status          VARCHAR(30) DEFAULT 'pending',
-  estimated_mins  INT,
-  picked_up_at    TIMESTAMPTZ,
-  delivered_at    TIMESTAMPTZ,
-  cost_rs         DECIMAL(10,2) DEFAULT 0,
+  -- Tracking info sent by 3PL after dispatch
+  tracking_url      TEXT,                   -- live tracking link for customer
+  driver_name       VARCHAR(255),
+  driver_phone      VARCHAR(30),
+  driver_lat        DECIMAL(10,8),          -- real-time driver location (optional)
+  driver_lng        DECIMAL(11,8),
 
-  created_at      TIMESTAMPTZ DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ DEFAULT NOW()
+  -- Lifecycle
+  -- pending → assigned → picked_up → delivered | failed | cancelled
+  status            VARCHAR(30) DEFAULT 'pending',
+  estimated_mins    INT,                    -- ETA from 3PL at dispatch time
+  cost_rs           DECIMAL(10,2) DEFAULT 0, -- actual delivery cost from 3PL
+
+  picked_up_at      TIMESTAMPTZ,
+  delivered_at      TIMESTAMPTZ,
+
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ────────────────────────────────────────────────────────────────

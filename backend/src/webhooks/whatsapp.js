@@ -397,6 +397,14 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
 
       const fullOrder = await orderSvc.getOrderDetails(order.id);
 
+      // Create a delivery record immediately — 3PL details filled in after dispatch
+      await db.query(
+        `INSERT INTO deliveries (order_id, status, cost_rs)
+         VALUES ($1, 'pending', $2)
+         ON CONFLICT DO NOTHING`,
+        [order.id, session.deliveryFeeRs || 0]
+      );
+
       // PRIMARY: Native WhatsApp Pay via Razorpay
       // Creates a Razorpay order and sends an interactive order_details message.
       // Customer taps "Review and Pay" → UPI payment inside WhatsApp.
@@ -516,9 +524,11 @@ const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) 
 // ─── TRACKING INFO ────────────────────────────────────────────
 const sendTrackingInfo = async (customer, conv, waAccount) => {
   const { rows } = await db.query(
-    `SELECT o.*, b.name AS branch_name
+    `SELECT o.*, b.name AS branch_name,
+            d.tracking_url, d.driver_name, d.driver_phone, d.estimated_mins
      FROM orders o
      JOIN branches b ON o.branch_id = b.id
+     LEFT JOIN deliveries d ON d.order_id = o.id
      WHERE o.customer_id = $1
        AND o.status NOT IN ('DELIVERED','CANCELLED','REFUNDED')
      ORDER BY o.created_at DESC LIMIT 1`,
@@ -544,13 +554,22 @@ const sendTrackingInfo = async (customer, conv, waAccount) => {
     DISPATCHED: '🚴 Out for delivery',
   };
 
+  let trackingLine = '';
+  if (order.status === 'DISPATCHED') {
+    if (order.tracking_url) trackingLine += `\n🔗 Track: ${order.tracking_url}`;
+    if (order.driver_name)   trackingLine += `\n🚴 Driver: ${order.driver_name}`;
+    if (order.driver_phone)  trackingLine += ` · ${order.driver_phone}`;
+    if (order.estimated_mins) trackingLine += `\n⏱ ETA: ~${order.estimated_mins} mins`;
+  }
+
   await wa.sendText(pid, token, to,
     `*Order Tracker*\n\n` +
     `Order: #${order.order_number}\n` +
     `Status: ${statusEmoji[order.status] || order.status}\n` +
     `Amount: ₹${order.total_rs}\n` +
-    `From: ${order.branch_name}\n\n` +
-    `_We'll notify you at each step!_ 📱`
+    `From: ${order.branch_name}` +
+    trackingLine +
+    `\n\n_We'll notify you at each step!_ 📱`
   );
 };
 
