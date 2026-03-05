@@ -16,8 +16,8 @@ const jwt = require('jsonwebtoken');
 const router = express.Router();
 const db = require('../config/database');
 
-const META_GRAPH_URL = 'https://graph.facebook.com/v20.0';
-const META_AUTH_URL = 'https://www.facebook.com/v20.0/dialog/oauth';
+const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
+const META_AUTH_URL = 'https://www.facebook.com/v25.0/dialog/oauth';
 
 // ─── STEP 1: INITIATE OAUTH ───────────────────────────────────
 // Frontend calls this → we redirect to Facebook login
