@@ -168,22 +168,39 @@ router.get('/callback', async (req, res) => {
 // Called when user logs in via the Facebook JS SDK button
 // Receives the short-lived client token → exchanges for long-lived → issues JWT
 router.post('/facebook', express.json(), async (req, res) => {
-  const { accessToken } = req.body;
-  if (!accessToken) return res.status(400).json({ error: 'No access token provided' });
+  const { accessToken, code } = req.body;
+if (!accessToken && !code) return res.status(400).json({ error: 'No token provided' });
 
-  try {
-    // Exchange short-lived client token for long-lived server token (~60 days)
+try {
+  let longToken, expiresAt;
+
+  if (code) {
+    // Embedded signup sends a code — exchange for token
+    const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
+      params: {
+        client_id    : process.env.META_APP_ID,
+        client_secret: process.env.META_APP_SECRET,
+        redirect_uri : process.env.META_OAUTH_REDIRECT_URI,
+        code,
+      },
+    });
+    longToken  = tokenRes.data.access_token;
+    const expiresIn = tokenRes.data.expires_in || 5183944;
+    expiresAt  = new Date(Date.now() + expiresIn * 1000);
+  } else {
+    // Direct access token from FB.login — exchange for long-lived
     const longTokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
       params: {
-        grant_type      : 'fb_exchange_token',
-        client_id       : process.env.META_APP_ID,
-        client_secret   : process.env.META_APP_SECRET,
+        grant_type       : 'fb_exchange_token',
+        client_id        : process.env.META_APP_ID,
+        client_secret    : process.env.META_APP_SECRET,
         fb_exchange_token: accessToken,
       },
     });
-    const longToken  = longTokenRes.data.access_token;
-    const expiresIn  = longTokenRes.data.expires_in || 5183944;
-    const expiresAt  = new Date(Date.now() + expiresIn * 1000);
+    longToken  = longTokenRes.data.access_token;
+    const expiresIn = longTokenRes.data.expires_in || 5183944;
+    expiresAt  = new Date(Date.now() + expiresIn * 1000);
+  }
 
     // Get Meta user profile
     const userRes = await axios.get(`${META_GRAPH_URL}/me`, {

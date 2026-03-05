@@ -981,15 +981,18 @@ function openTab(name, trigger) {
 function startLogin() {
   FB.login(function(response) {
     if (response.authResponse) {
-      // User approved — send their access token to our backend
       const accessToken = response.authResponse.accessToken;
-      showToast('Connecting your account...', 'success');
-      
-      // Exchange FB token for our JWT via backend
+
+      // Embedded signup gives us WABA + phone number directly in the response
+      const wabaId       = response.authResponse.grantedScopes || null;
+      const code         = response.authResponse.code || null;
+
+      showToast('Connecting your WhatsApp account...', 'success');
+
       fetch('/auth/facebook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken })
+        body: JSON.stringify({ accessToken, code })
       })
       .then(res => res.json())
       .then(data => {
@@ -1004,14 +1007,19 @@ function startLogin() {
       .catch(() => showToast('Connection failed. Try again.', 'error'));
 
     } else {
-      // User cancelled the login
-      showToast('Login cancelled', 'error');
+      showToast('Login cancelled or denied', 'error');
     }
   }, {
-    scope: 'whatsapp_business_management,whatsapp_business_messaging'
+    config_id: '1370747735090783',  // ← from Meta Embedded Signup config
+    response_type: 'code',
+    override_default_response_type: true,
+    extras: {
+      setup: {},
+      featureType: '',
+      sessionInfoVersion: '3',
+    }
   });
 }
-
 function showDashboardDemo() {
   token = 'demo';
   loadDashboard(true);
@@ -1549,8 +1557,27 @@ function demoData(path) {
     { period_start:'2024-09-02', period_end:'2024-09-08', orders_count:64, gross_revenue_rs:25600, platform_fee_rs:2048, net_payout_rs:20352, payout_status:'completed' },
   ];
   if (path.includes('/categories')) return [{ id:'c1', name:'Starters' }, { id:'c2', name:'Mains' }, { id:'c3', name:'Desserts' }];
-  return null;
-}
+      return null;
+    }
+
+// ─── WHATSAPP EMBEDDED SIGNUP LISTENER ───────────────────────
+window.addEventListener('message', function(event) {
+  if (event.origin !== 'https://www.facebook.com') return;
+  try {
+    const data = JSON.parse(event.data);
+    if (data.type === 'WA_EMBEDDED_SIGNUP') {
+      if (data.event === 'FINISH') {
+        console.log('[Embedded Signup] Connected:', data.data);
+        window._embeddedSignupData = data.data;
+      } else if (data.event === 'CANCEL') {
+        showToast('Setup cancelled. You can try again anytime.', 'error');
+      } else if (data.event === 'ERROR') {
+        showToast('Setup error: ' + data.data.error_message, 'error');
+      }
+    }
+  } catch(e) {}
+});
+
 </script>
 </body>
 </html>
