@@ -264,6 +264,85 @@ router.delete('/menu/:itemId', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/restaurant/branches/:branchId/menu/csv
+// Bulk upsert menu items from a parsed CSV (array of row objects sent as JSON)
+router.post('/branches/:branchId/menu/csv', async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || !items.length) {
+      return res.status(400).json({ error: 'items array is required' });
+    }
+
+    const branchId = req.params.branchId;
+    const results = { added: 0, skipped: 0, errors: [] };
+    const categoryCache = {};
+
+    for (const [i, row] of items.entries()) {
+      const rowNum = i + 2;
+      const name = (row.name || '').trim();
+      const priceRaw = (row.price || row.price_rs || '').toString().replace(/[₹,\s]/g, '');
+      const price = parseFloat(priceRaw);
+
+      if (!name) { results.errors.push(`Row ${rowNum}: missing name`); results.skipped++; continue; }
+      if (isNaN(price) || price <= 0) { results.errors.push(`Row ${rowNum} "${name}": invalid price "${row.price}"`); results.skipped++; continue; }
+
+      try {
+        const categoryName = (row.category || row.cat || '').trim();
+        let categoryId = null;
+        if (categoryName) {
+          if (!categoryCache[categoryName]) {
+            const { rows: ex } = await db.query(
+              'SELECT id FROM menu_categories WHERE branch_id=$1 AND name=$2', [branchId, categoryName]
+            );
+            if (ex.length) {
+              categoryCache[categoryName] = ex[0].id;
+            } else {
+              const { rows: cr } = await db.query(
+                'INSERT INTO menu_categories (branch_id, name) VALUES ($1,$2) RETURNING id', [branchId, categoryName]
+              );
+              categoryCache[categoryName] = cr[0].id;
+            }
+          }
+          categoryId = categoryCache[categoryName];
+        }
+
+        const validTypes = ['veg', 'non_veg', 'vegan', 'egg'];
+        const rawType = (row.food_type || row.type || 'veg').toLowerCase().trim();
+        const foodType = validTypes.includes(rawType) ? rawType : 'veg';
+        const isBestseller = ['true', 'yes', '1'].includes((row.is_bestseller || '').toLowerCase());
+        const imageUrl = (row.image_url || row.image || '').trim() || null;
+        const pricePaise = Math.round(price * 100);
+        // Deterministic retailer_id — re-uploading same item updates instead of duplicating
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+        const retailerId = `ZM-${branchId.slice(0, 6)}-${slug}`;
+
+        await db.query(
+          `INSERT INTO menu_items
+             (branch_id, category_id, name, description, price_paise, retailer_id, image_url, food_type, is_bestseller)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (retailer_id) DO UPDATE SET
+             name=EXCLUDED.name, category_id=EXCLUDED.category_id,
+             description=EXCLUDED.description, price_paise=EXCLUDED.price_paise,
+             image_url=EXCLUDED.image_url, food_type=EXCLUDED.food_type,
+             is_bestseller=EXCLUDED.is_bestseller, updated_at=NOW()`,
+          [branchId, categoryId, name, (row.description || row.desc || '').trim(),
+           pricePaise, retailerId, imageUrl, foodType, isBestseller]
+        );
+        results.added++;
+      } catch (e) {
+        results.errors.push(`Row ${rowNum} "${name}": ${e.message}`);
+        results.skipped++;
+      }
+    }
+
+    await db.query(
+      'UPDATE restaurants SET onboarding_step=GREATEST(onboarding_step,4) WHERE id=$1',
+      [req.restaurantId]
+    );
+    res.json({ success: true, ...results, total: items.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/restaurant/branches/:branchId/sync-catalog
 // Pushes all menu items to WhatsApp Catalog
 router.post('/branches/:branchId/sync-catalog', async (req, res) => {

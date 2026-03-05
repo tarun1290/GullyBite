@@ -244,6 +244,13 @@ tr:hover td{background:rgba(255,255,255,.012)}
 #toast.err{border-color:rgba(224,80,80,.3);color:var(--red)}
 #toast.nfo{border-color:rgba(74,144,217,.3);color:var(--blue)}
 
+/* ── CSV UPLOAD ── */
+.csv-drop{border:2px dashed var(--rim2);border-radius:10px;padding:1.4rem 1.5rem;display:flex;align-items:center;gap:1.1rem;cursor:pointer;transition:border-color .2s,background .2s;user-select:none}
+.csv-drop:hover,.csv-drop.drag{border-color:var(--wa);background:rgba(37,211,102,.04)}
+.csv-ico{font-size:2.1rem;flex-shrink:0}
+.csv-result-ok{background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.2);border-radius:8px;padding:.6rem 1rem;font-size:.82rem;display:inline-block;margin-right:.5rem}
+.csv-result-warn{background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.2);border-radius:8px;padding:.6rem 1rem;font-size:.82rem;display:inline-block}
+
 @media(max-width:768px){
   .sb{display:none}.main{margin-left:0}
   .body,.topbar{padding:1.1rem 1.1rem}
@@ -460,6 +467,49 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
             <button class="btn-p" style="margin-top:.95rem" onclick="doAddItem()">+ Add Item</button>
           </div>
         </div>
+        <!-- CSV Bulk Upload -->
+        <div class="card" style="margin-bottom:1.1rem">
+          <div class="ch">
+            <h3>📤 Bulk Upload via CSV</h3>
+            <button class="btn-g btn-sm" onclick="doDownloadSample()">⬇ Sample CSV</button>
+          </div>
+          <div class="cb">
+            <p style="font-size:.81rem;color:var(--dim);margin-bottom:.9rem">
+              Upload a CSV to add or update menu items for the selected branch in bulk.<br>
+              <strong>Required:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">name</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">price</code> &nbsp;·&nbsp;
+              <strong>Optional:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">category</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">description</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">food_type</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">image_url</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">is_bestseller</code>
+            </p>
+            <div class="csv-drop" id="csv-drop"
+                 onclick="document.getElementById('csv-file').click()"
+                 ondragover="event.preventDefault();this.classList.add('drag')"
+                 ondragleave="this.classList.remove('drag')"
+                 ondrop="event.preventDefault();this.classList.remove('drag');handleCsvDrop(event)">
+              <div class="csv-ico">📄</div>
+              <div>
+                <strong>Click to choose file or drag &amp; drop here</strong>
+                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv files only · up to 500 items per upload</p>
+              </div>
+              <input type="file" id="csv-file" accept=".csv,text/csv" style="display:none" onchange="handleCsvFile(this)">
+            </div>
+            <div id="csv-preview" style="display:none">
+              <div class="sh" style="margin-top:1rem">
+                <span id="csv-count" style="font-size:.84rem;color:var(--wa);font-weight:600"></span>
+                <div style="display:flex;gap:.5rem">
+                  <button class="btn-g btn-sm" onclick="resetCsv()">✕ Clear</button>
+                  <button class="btn-p btn-sm" id="csv-upload-btn" onclick="doUploadCsv()">⬆ Upload to Branch</button>
+                </div>
+              </div>
+              <div class="tbl" style="margin-top:.65rem;max-height:230px;overflow-y:auto">
+                <table>
+                  <thead><tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>Type</th><th>⭐</th></tr></thead>
+                  <tbody id="csv-preview-body"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="csv-result" style="display:none;margin-top:.9rem"></div>
+          </div>
+        </div>
+
         <div id="menu-list">
           <div class="empty"><div class="ei">🍽️</div><h3>Select a branch above</h3></div>
         </div>
@@ -1052,6 +1102,114 @@ async function doDeleteItem(id,name){
   if(!confirm(`Delete "${name}"?`))return;
   try{await api(`/api/restaurant/menu/${id}`,{method:'DELETE'});toast(`"${name}" deleted`,'ok');loadMenu();}
   catch(e){toast(e.message,'err');}
+}
+
+/* ─────────────────────────── CSV UPLOAD ────────────────── */
+let csvParsed = [];
+
+function handleCsvFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => processCsvText(e.target.result, file.name);
+  reader.readAsText(file);
+}
+function handleCsvDrop(e) {
+  const file = e.dataTransfer.files[0];
+  if (!file || !file.name.toLowerCase().endsWith('.csv')) return toast('Please drop a .csv file','err');
+  const reader = new FileReader();
+  reader.onload = ev => processCsvText(ev.target.result, file.name);
+  reader.readAsText(file);
+}
+function processCsvText(text, filename) {
+  const branchId = document.getElementById('m-branch').value;
+  if (!branchId) return toast('Select a branch first, then upload CSV','err');
+  try {
+    csvParsed = parseCSV(text);
+    if (!csvParsed.length) return toast('CSV is empty or has no valid rows','err');
+    const missing = csvParsed.filter(r => !r.name || !r.price);
+    document.getElementById('csv-count').textContent =
+      `${csvParsed.length} items from "${filename}"` +
+      (missing.length ? ` · ⚠️ ${missing.length} rows missing name/price will be skipped` : '');
+    document.getElementById('csv-preview-body').innerHTML =
+      csvParsed.slice(0, 8).map((r, i) => `<tr>
+        <td style="color:var(--dim)">${i + 1}</td>
+        <td>${r.name || '<span style="color:var(--red)">missing</span>'}</td>
+        <td>${r.category || '—'}</td>
+        <td>${r.price ? '₹' + r.price : '<span style="color:var(--red)">missing</span>'}</td>
+        <td>${r.food_type || 'veg'}</td>
+        <td>${['true','yes','1'].includes((r.is_bestseller||'').toLowerCase()) ? '⭐' : ''}</td>
+      </tr>`).join('') +
+      (csvParsed.length > 8 ? `<tr><td colspan="6" style="text-align:center;color:var(--dim);font-size:.75rem">+ ${csvParsed.length - 8} more rows…</td></tr>` : '');
+    document.getElementById('csv-preview').style.display = 'block';
+    document.getElementById('csv-result').style.display = 'none';
+  } catch(e) { toast('Could not parse CSV: ' + e.message, 'err'); }
+}
+function parseCSV(text) {
+  const lines = text.trim().replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  if (lines.length < 2) throw new Error('Need a header row and at least one data row');
+  const headers = splitCSVLine(lines[0]).map(h => h.toLowerCase().trim().replace(/[^a-z0-9_]/g,'_'));
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const vals = splitCSVLine(line);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (vals[i] || '').trim(); });
+    return obj;
+  });
+}
+function splitCSVLine(line) {
+  const result = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') { inQ = !inQ; }
+    else if (line[i] === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += line[i]; }
+  }
+  result.push(cur);
+  return result;
+}
+function resetCsv() {
+  csvParsed = [];
+  document.getElementById('csv-file').value = '';
+  document.getElementById('csv-preview').style.display = 'none';
+  document.getElementById('csv-result').style.display = 'none';
+}
+async function doUploadCsv() {
+  const branchId = document.getElementById('m-branch').value;
+  if (!branchId) return toast('Select a branch first', 'err');
+  if (!csvParsed.length) return toast('No CSV data to upload', 'err');
+  const btn = document.getElementById('csv-upload-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Uploading…';
+  try {
+    const r = await api(`/api/restaurant/branches/${branchId}/menu/csv`, {
+      method: 'POST', body: { items: csvParsed },
+    });
+    const el = document.getElementById('csv-result');
+    el.style.display = 'block';
+    el.innerHTML =
+      `<div style="display:flex;gap:.6rem;flex-wrap:wrap">
+        <span class="csv-result-ok">✅ <strong>${r.added}</strong> items added/updated</span>
+        ${r.skipped ? `<span class="csv-result-warn">⚠️ <strong>${r.skipped}</strong> rows skipped</span>` : ''}
+      </div>` +
+      (r.errors?.length ? `<div style="margin-top:.5rem;font-size:.75rem;color:var(--red)">${r.errors.slice(0,5).join('<br>')}</div>` : '');
+    toast(`✅ ${r.added} items uploaded!`, 'ok');
+    resetCsv();
+    loadMenu();
+  } catch(e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = '⬆ Upload to Branch'; }
+}
+function doDownloadSample() {
+  const sample = [
+    'category,name,description,price,food_type,image_url,is_bestseller',
+    'Starters,Paneer Tikka,"Grilled cottage cheese, marinated in spices",280,veg,,false',
+    'Starters,Chicken Tikka,"Juicy chicken pieces, smoky and tender",320,non_veg,,true',
+    'Mains,Butter Chicken,Rich creamy tomato-based curry,450,non_veg,,true',
+    'Mains,Dal Makhani,Slow-cooked black lentils in butter,320,veg,,false',
+    'Breads,Butter Naan,Soft leavened flatbread with butter,60,veg,,false',
+    'Beverages,Mango Lassi,Chilled yogurt mango drink,120,veg,,false',
+  ].join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([sample], { type: 'text/csv' }));
+  a.download = 'gullybite-menu-sample.csv';
+  a.click();
 }
 
 /* ─────────────────────────── WHATSAPP ──────────────────── */
