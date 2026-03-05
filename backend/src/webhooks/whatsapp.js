@@ -233,15 +233,9 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     `Opening our menu for you...`
   );
 
-  // Get the branch's own catalog_id from branches table
-  const { rows: branchRows } = await db.query(
-    'SELECT catalog_id, catalog_synced_at FROM branches WHERE id = $1',
-    [branch.id]
-  );
-  const branchCatalogId = branchRows[0]?.catalog_id;
-
-  if (branchCatalogId) {
-    await wa.sendCatalog(pid, token, to, branchCatalogId,
+  // branch.catalogId comes directly from branches.catalog_id via findNearestBranch
+  if (branch.catalogId) {
+    await wa.sendCatalog(pid, token, to, branch.catalogId,
       `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
     );
   } else {

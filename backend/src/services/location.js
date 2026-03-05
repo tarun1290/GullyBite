@@ -50,13 +50,14 @@ const findNearestBranch = async (customerLat, customerLng, restaurantId = null) 
       b.opening_time,
       b.closing_time,
       b.manager_phone,
+      b.catalog_id        AS branch_catalog_id,
+      b.catalog_synced_at,
       r.id AS restaurant_id,
       r.business_name,
       r.logo_url,
       wa.id AS wa_account_id,
       wa.phone_number_id,
       wa.access_token,
-      wa.catalog_id,
       wa.display_name AS wa_display_name
     FROM branches b
     JOIN restaurants r ON b.restaurant_id = r.id
@@ -64,9 +65,9 @@ const findNearestBranch = async (customerLat, customerLng, restaurantId = null) 
     WHERE b.is_open = TRUE
       AND b.accepts_orders = TRUE
       AND r.status = 'active'
-      ${restaurantId ? 'AND r.id = $3' : ''}
+      ${restaurantId ? 'AND r.id = $1' : ''}
     ORDER BY b.created_at
-  `, restaurantId ? [customerLat, customerLng, restaurantId] : []);
+  `, restaurantId ? [restaurantId] : []);
 
   if (rows.length === 0) {
     return {
@@ -120,7 +121,8 @@ const findNearestBranch = async (customerLat, customerLng, restaurantId = null) 
       waAccountId: best.wa_account_id,
       phoneNumberId: best.phone_number_id,
       accessToken: best.access_token,
-      catalogId: best.catalog_id,
+      catalogId: best.branch_catalog_id,   // from branches.catalog_id (per-branch)
+      catalogSyncedAt: best.catalog_synced_at,
     },
   };
 };

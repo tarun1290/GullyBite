@@ -165,6 +165,7 @@ const syncBranchCatalog = async (branchId) => {
   }
 
   // Get all menu items for this branch with their category
+  // Order variant groups together so Meta sees them as a set
   const { rows: items } = await db.query(`
     SELECT
       mi.*,
@@ -173,7 +174,11 @@ const syncBranchCatalog = async (branchId) => {
     FROM menu_items mi
     LEFT JOIN menu_categories mc ON mi.category_id = mc.id
     WHERE mi.branch_id = $1
-    ORDER BY mc.sort_order NULLS LAST, mi.sort_order, mi.name
+    ORDER BY
+      COALESCE(mi.item_group_id, mi.id::TEXT),
+      mc.sort_order NULLS LAST,
+      mi.sort_order,
+      mi.name
   `, [branchId]);
 
   if (!items.length) {
@@ -186,7 +191,9 @@ const syncBranchCatalog = async (branchId) => {
   //   DELETE — removes unavailable items from catalog
   //   price  — must be in smallest currency unit (paise for INR)
   //   image_url — must be public HTTPS, min 500x500px
-  const requests = items.map(item => {
+  const requests = items
+    .filter(item => item.retailer_id)   // skip items missing retailer_id
+    .map(item => {
     if (!item.is_available) {
       // Remove unavailable items from the catalog entirely
       return {
@@ -195,12 +202,32 @@ const syncBranchCatalog = async (branchId) => {
       };
     }
 
+    // Build the name: append variant value so each variant is distinct
+    // e.g. "Butter Chicken" + "Small" → "Butter Chicken - Small"
+    const displayName = item.variant_value
+      ? `${item.name} - ${item.variant_value}`
+      : item.name;
+
+    // Map our variant_type to the Meta Catalog field name.
+    // Meta supports: size, color, gender, material, age_group, pattern.
+    // For food we only use 'size'. Other types fall back to custom_label_4.
+    const variantFields = {};
+    if (item.item_group_id) {
+      variantFields.item_group_id = item.item_group_id;
+      if (item.variant_type === 'size' || item.variant_type === 'portion') {
+        variantFields.size = item.variant_value;
+      } else if (item.variant_value) {
+        // Non-standard variant type — store in custom label
+        variantFields.custom_label_4 = `${item.variant_type}:${item.variant_value}`;
+      }
+    }
+
     return {
       method      : 'UPDATE',
       retailer_id : item.retailer_id,
       data: {
         // Required fields
-        name        : item.name.substring(0, 100),
+        name        : displayName.substring(0, 100),
         description : (item.description || item.name).substring(0, 1000),
         price       : item.price_paise,   // paise (Rs 280 = 28000)
         currency    : 'INR',
@@ -220,6 +247,9 @@ const syncBranchCatalog = async (branchId) => {
         custom_label_1: branch.branch_name.substring(0, 100),
         custom_label_2: item.category_name || 'Menu',
         custom_label_3: item.is_bestseller ? 'bestseller' : 'regular',
+
+        // Variant fields (only present when item is part of a group)
+        ...variantFields,
       },
     };
   });

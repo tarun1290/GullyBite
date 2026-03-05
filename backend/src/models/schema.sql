@@ -117,6 +117,10 @@ CREATE TABLE IF NOT EXISTS branches (
   accepts_orders     BOOLEAN DEFAULT TRUE,
   manager_phone      VARCHAR(30),
 
+  -- Meta Commerce Catalog for this branch (auto-created on branch add)
+  catalog_id         VARCHAR(255),
+  catalog_synced_at  TIMESTAMPTZ,
+
   created_at         TIMESTAMPTZ DEFAULT NOW(),
   updated_at         TIMESTAMPTZ DEFAULT NOW()
 );
@@ -163,8 +167,23 @@ CREATE TABLE IF NOT EXISTS menu_items (
   is_bestseller  BOOLEAN DEFAULT FALSE,
   sort_order     INT DEFAULT 0,
 
-  -- Optional: customizations like size, add-ons
-  -- Format: [{"name":"Size","options":["Half","Full"],"prices":[0,50]}]
+  -- ── PRODUCT VARIANTS ────────────────────────────────────────
+  -- All variants of the same dish share one item_group_id.
+  -- e.g. Butter Chicken Small + Medium + Large all share the same group.
+  -- Meta Catalog Batch API uses item_group_id to show them as one product
+  -- with a variant selector inside WhatsApp.
+  --
+  -- item_group_id: same value across all variants of a dish
+  --               e.g. 'ZM-<branchId>-butter-chicken'
+  --               NULL means this item has no variants (standalone)
+  -- variant_type:  what dimension varies — 'size', 'portion', 'pack'
+  -- variant_value: the specific option  — 'Small', 'Full', '500ml'
+  item_group_id  VARCHAR(255),
+  variant_type   VARCHAR(50),   -- 'size' | 'portion' | 'pack' | NULL
+  variant_value  VARCHAR(100),  -- 'Small' | 'Full' | '250ml' | NULL
+
+  -- Optional: customizations like add-ons (separate from variants)
+  -- Format: [{"name":"Extra Cheese","price_paise":5000}]
   customizations JSONB DEFAULT '[]',
 
   created_at     TIMESTAMPTZ DEFAULT NOW(),
@@ -439,6 +458,9 @@ CREATE INDEX IF NOT EXISTS idx_orders_customer
 
 CREATE INDEX IF NOT EXISTS idx_menu_items_branch
   ON menu_items(branch_id, is_available, sort_order);
+
+CREATE INDEX IF NOT EXISTS idx_menu_items_group
+  ON menu_items(item_group_id) WHERE item_group_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_webhook_logs_source
   ON webhook_logs(source, received_at DESC);

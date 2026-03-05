@@ -235,20 +235,28 @@ router.get('/branches/:branchId/menu', async (req, res) => {
 
 router.post('/branches/:branchId/menu', async (req, res) => {
   try {
-    const { name, description, priceRs, categoryId, foodType, imageUrl, isBestseller, sortOrder } = req.body;
+    const {
+      name, description, priceRs, categoryId, foodType, imageUrl,
+      isBestseller, sortOrder,
+      itemGroupId, variantType, variantValue,
+    } = req.body;
     if (!name || !priceRs) return res.status(400).json({ error: 'name and priceRs required' });
 
     // Generate unique retailer_id for WhatsApp Catalog
-    const retailerId = `ZM-${req.params.branchId.slice(0, 6)}-${Date.now()}`;
+    // Include variant value in the ID so variants are distinguishable
+    const variantSuffix = variantValue ? `-${variantValue.toLowerCase().replace(/\s+/g, '-')}` : '';
+    const retailerId = `ZM-${req.params.branchId.slice(0, 6)}-${Date.now()}${variantSuffix}`;
     const pricePaise = Math.round(parseFloat(priceRs) * 100);
 
     const { rows } = await db.query(
       `INSERT INTO menu_items
          (branch_id, category_id, name, description, price_paise, retailer_id,
-          image_url, food_type, is_bestseller, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          image_url, food_type, is_bestseller, sort_order,
+          item_group_id, variant_type, variant_value)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [req.params.branchId, categoryId, name, description, pricePaise, retailerId,
-       imageUrl, foodType || 'veg', isBestseller || false, sortOrder || 0]
+       imageUrl, foodType || 'veg', isBestseller || false, sortOrder || 0,
+       itemGroupId || null, variantType || null, variantValue || null]
     );
 
     await db.query(
@@ -262,15 +270,19 @@ router.post('/branches/:branchId/menu', async (req, res) => {
 
 router.put('/menu/:itemId', async (req, res) => {
   try {
-    const { name, description, priceRs, imageUrl, isAvailable, isBestseller } = req.body;
+    const { name, description, priceRs, imageUrl, isAvailable, isBestseller,
+            itemGroupId, variantType, variantValue } = req.body;
     const updates = [];
     const vals = [];
-    if (name !== undefined) { vals.push(name); updates.push(`name=$${vals.length}`); }
+    if (name !== undefined)        { vals.push(name); updates.push(`name=$${vals.length}`); }
     if (description !== undefined) { vals.push(description); updates.push(`description=$${vals.length}`); }
-    if (priceRs !== undefined) { vals.push(Math.round(parseFloat(priceRs) * 100)); updates.push(`price_paise=$${vals.length}`); }
-    if (imageUrl !== undefined) { vals.push(imageUrl); updates.push(`image_url=$${vals.length}`); }
+    if (priceRs !== undefined)     { vals.push(Math.round(parseFloat(priceRs) * 100)); updates.push(`price_paise=$${vals.length}`); }
+    if (imageUrl !== undefined)    { vals.push(imageUrl); updates.push(`image_url=$${vals.length}`); }
     if (isAvailable !== undefined) { vals.push(isAvailable); updates.push(`is_available=$${vals.length}`); }
-    if (isBestseller !== undefined) { vals.push(isBestseller); updates.push(`is_bestseller=$${vals.length}`); }
+    if (isBestseller !== undefined){ vals.push(isBestseller); updates.push(`is_bestseller=$${vals.length}`); }
+    if (itemGroupId !== undefined) { vals.push(itemGroupId || null); updates.push(`item_group_id=$${vals.length}`); }
+    if (variantType !== undefined) { vals.push(variantType || null); updates.push(`variant_type=$${vals.length}`); }
+    if (variantValue !== undefined){ vals.push(variantValue || null); updates.push(`variant_value=$${vals.length}`); }
     if (!updates.length) return res.json({ success: true });
     vals.push(req.params.itemId);
     await db.query(`UPDATE menu_items SET ${updates.join(',')} WHERE id=$${vals.length}`, vals);
