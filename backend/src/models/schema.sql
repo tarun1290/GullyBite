@@ -219,6 +219,33 @@ CREATE TABLE IF NOT EXISTS customers (
 );
 
 -- ────────────────────────────────────────────────────────────────
+-- CUSTOMER ADDRESSES
+-- Saved delivery addresses per customer (keyed by wa_phone).
+-- Allows repeat customers to pick a saved address instead of
+-- re-sharing GPS on every order.
+-- ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS customer_addresses (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  wa_phone     VARCHAR(30) NOT NULL,
+  label        VARCHAR(50) DEFAULT 'Home',
+  full_address TEXT,
+  landmark     TEXT,
+  flat_no      VARCHAR(100),
+  latitude     DECIMAL(10,8),
+  longitude    DECIMAL(11,8),
+  is_default   BOOLEAN DEFAULT FALSE,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cust_addr_phone
+  ON customer_addresses(wa_phone);
+
+-- Ensures only one address per phone can be the default
+CREATE UNIQUE INDEX IF NOT EXISTS one_default_per_phone
+  ON customer_addresses(wa_phone) WHERE is_default = TRUE;
+
+-- ────────────────────────────────────────────────────────────────
 -- CONVERSATIONS
 -- The BRAIN of the WhatsApp bot.
 -- Tracks current state per customer per WhatsApp number.
@@ -485,7 +512,7 @@ DECLARE t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY[
     'restaurants','whatsapp_accounts','branches','menu_items',
-    'customers','conversations','orders','payments','deliveries'
+    'customers','customer_addresses','conversations','orders','payments','deliveries'
   ] LOOP
     EXECUTE format('
       DROP TRIGGER IF EXISTS trg_%I_updated_at ON %I;

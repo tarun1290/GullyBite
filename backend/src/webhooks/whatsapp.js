@@ -14,6 +14,7 @@ const wa = require('../services/whatsapp');
 const location = require('../services/location');
 const orderSvc = require('../services/order');
 const paymentSvc = require('../services/payment');
+const addressSvc = require('../services/address');
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
 // Meta calls this ONCE when you first configure the webhook.
@@ -178,8 +179,19 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
 
   // State-based responses
   if (conv.state === 'AWAITING_LOCATION') {
-    // They sent text instead of location — prompt again
     await wa.sendLocationRequest(pid, token, to);
+    return;
+  }
+
+  if (conv.state === 'SELECTING_ADDRESS') {
+    // Re-show address list if they typed instead of tapping
+    const addresses = await addressSvc.getAddresses(customer.wa_phone);
+    if (addresses.length > 0) {
+      await wa.sendAddressList(pid, token, to, addresses);
+    } else {
+      await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
+      await wa.sendLocationRequest(pid, token, to);
+    }
     return;
   }
 
@@ -215,7 +227,11 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
 
   const branch = result.branch;
 
-  // Save branch selection and delivery location to conversation
+  // Check if this location is already saved (avoid duplicate save prompts)
+  const alreadySaved = await addressSvc.isNearSavedAddress(to, latitude, longitude);
+
+  // Save branch + delivery location to session
+  // Also stash pending save data if this is a new location
   await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
     branchId: branch.id,
     branchName: branch.name,
@@ -223,6 +239,11 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     deliveryLat: latitude,
     deliveryLng: longitude,
     deliveryAddress: address || locName || 'Your location',
+    ...(alreadySaved ? {} : {
+      pendingSaveLat    : latitude,
+      pendingSaveLng    : longitude,
+      pendingSaveAddress: address || locName || null,
+    }),
   });
 
   // Tell customer which branch they'll get
@@ -234,14 +255,25 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     `Opening our menu for you...`
   );
 
-  // branch.catalogId comes directly from branches.catalog_id via findNearestBranch
+  // Send catalog
   if (branch.catalogId) {
     await wa.sendCatalog(pid, token, to, branch.catalogId,
       `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
     );
   } else {
-    // Fallback if catalog not set up yet
     await sendTextMenu(pid, token, to, branch.id);
+  }
+
+  // If this is a new location, ask if customer wants to save it
+  if (!alreadySaved) {
+    await wa.sendButtons(pid, token, to, {
+      body: '💾 *Save this delivery address for next time?*',
+      buttons: [
+        { id: 'SAVE_ADDR_HOME', title: '🏠 Home' },
+        { id: 'SAVE_ADDR_WORK', title: '🏢 Work' },
+        { id: 'SAVE_ADDR_SKIP', title: 'Skip' },
+      ],
+    });
   }
 };
 
@@ -312,8 +344,28 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
 
   const replyId = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id;
 
+  // ── Saved address selected from list ──────────────────────────
+  if (replyId?.startsWith('ADDR_')) {
+    const addressId = replyId.slice(5); // strip 'ADDR_'
+    await handleSavedAddressSelected(addressId, customer, conv, waAccount);
+    return;
+  }
+
   switch (replyId) {
-    case 'START_ORDER':
+    case 'START_ORDER': {
+      // Check for saved addresses first; fall back to GPS request
+      const addresses = await addressSvc.getAddresses(customer.wa_phone);
+      if (addresses.length > 0) {
+        await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
+        await wa.sendAddressList(pid, token, to, addresses);
+      } else {
+        await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
+        await wa.sendLocationRequest(pid, token, to);
+      }
+      break;
+    }
+
+    case 'USE_NEW_LOCATION':
       await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
       await wa.sendLocationRequest(pid, token, to);
       break;
@@ -373,8 +425,91 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       await wa.sendText(pid, token, to, '❌ Order cancelled. Type *MENU* whenever you\'re ready! 😊');
       break;
 
+    case 'SAVE_ADDR_HOME':
+    case 'SAVE_ADDR_WORK':
+    case 'SAVE_ADDR_SKIP': {
+      const session = conv.session_data || {};
+      if (replyId !== 'SAVE_ADDR_SKIP' && session.pendingSaveLat) {
+        const label = replyId === 'SAVE_ADDR_HOME' ? 'Home' : 'Work';
+        const existingAddrs = await addressSvc.getAddresses(customer.wa_phone);
+        await addressSvc.saveAddress(customer.wa_phone, {
+          label,
+          fullAddress : session.pendingSaveAddress,
+          latitude    : session.pendingSaveLat,
+          longitude   : session.pendingSaveLng,
+          makeDefault : existingAddrs.length === 0,
+        });
+        await wa.sendText(pid, token, to, `✅ Saved as *${label}*! We'll use it next time.`);
+      }
+      // Clear pending save fields from session
+      const cleaned = { ...session };
+      delete cleaned.pendingSaveLat;
+      delete cleaned.pendingSaveLng;
+      delete cleaned.pendingSaveAddress;
+      await orderSvc.setState(conv.id, 'SHOWING_CATALOG', cleaned);
+      break;
+    }
+
     default:
       await wa.sendText(pid, token, to, 'Type *MENU* to start ordering or *TRACK* to check your order.');
+  }
+};
+
+// ─── SAVED ADDRESS SELECTED ───────────────────────────────────
+// Customer picked one of their saved addresses from the list.
+// We use its lat/lng to find the nearest branch and send catalog.
+const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) => {
+  const pid   = waAccount.phone_number_id;
+  const token = waAccount.access_token;
+  const to    = customer.wa_phone;
+
+  const { rows } = await db.query(
+    `SELECT * FROM customer_addresses WHERE id = $1 AND wa_phone = $2`,
+    [addressId, customer.wa_phone]
+  );
+
+  if (!rows.length || !rows[0].latitude) {
+    // Address not found or has no coordinates — fall back to GPS
+    await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
+    await wa.sendLocationRequest(pid, token, to);
+    return;
+  }
+
+  const addr = rows[0];
+  await wa.sendText(pid, token, to,
+    `📍 Using *${addr.label}*${addr.full_address ? `: ${addr.full_address}` : ''}\n\n🔍 Finding nearest restaurant...`
+  );
+
+  const result = await location.findNearestBranch(addr.latitude, addr.longitude);
+  if (!result.found) {
+    await wa.sendText(pid, token, to, result.message);
+    return;
+  }
+
+  const branch = result.branch;
+  await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
+    branchId       : branch.id,
+    branchName     : branch.name,
+    catalogId      : branch.catalogId,
+    deliveryLat    : addr.latitude,
+    deliveryLng    : addr.longitude,
+    deliveryAddress: addr.full_address || addr.label,
+  });
+
+  await wa.sendText(pid, token, to,
+    `✅ Delivering from:\n\n` +
+    `🏪 *${branch.businessName} — ${branch.name}*\n` +
+    `📍 ${branch.address || ''}\n` +
+    `🚴 ${branch.distanceKm} km from you\n\n` +
+    `Opening our menu...`
+  );
+
+  if (branch.catalogId) {
+    await wa.sendCatalog(pid, token, to, branch.catalogId,
+      `🍽️ Here's our menu from *${branch.name}*!`
+    );
+  } else {
+    await sendTextMenu(pid, token, to, branch.id);
   }
 };
 

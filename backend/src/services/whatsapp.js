@@ -199,6 +199,36 @@ const sendStatusUpdate = (pid, token, to, status, { orderNumber, eta, trackingUr
   return sendText(pid, token, to, msgs[status] || `Order #${orderNumber}: ${status}`);
 };
 
+// ─── SAVED ADDRESS LIST ───────────────────────────────────────
+// Shows a WhatsApp list message with the customer's saved addresses.
+// Each row id = `ADDR_<uuid>` so we know which was tapped.
+// A final row lets the customer share a fresh GPS pin instead.
+const sendAddressList = (pid, token, to, addresses) => {
+  const rows = addresses.map((a) => ({
+    id         : `ADDR_${a.id}`,
+    title      : a.label.substring(0, 24),
+    description: (a.full_address || '').substring(0, 72),
+  }));
+  rows.push({
+    id         : 'USE_NEW_LOCATION',
+    title      : 'Use current location',
+    description: 'Share your GPS pin',
+  });
+
+  return sendMsg(pid, token, to, {
+    type: 'interactive',
+    interactive: {
+      type  : 'list',
+      body  : { text: '📍 *Select delivery address*\n\nChoose a saved address or share your current location.' },
+      footer: { text: 'Tap to select' },
+      action: {
+        button  : 'Choose Address',
+        sections: [{ title: 'Your Addresses', rows }],
+      },
+    },
+  });
+};
+
 // ─── MARK AS READ ─────────────────────────────────────────────
 // Shows blue double-tick on the customer's screen
 // Always call this when you receive a message — it's good UX
@@ -207,4 +237,4 @@ const markRead = (pid, token, messageId) =>
     headers: { Authorization: `Bearer ${token}` },
   }).catch(() => {}); // Ignore errors silently
 
-module.exports = { sendText, sendButtons, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, markRead };
+module.exports = { sendText, sendButtons, sendAddressList, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, markRead };

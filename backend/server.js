@@ -42,6 +42,7 @@ app.use('/api/admin', express.json(), require('./src/routes/admin'));
 // Webhooks need raw body for HMAC signature verification
 app.use('/webhooks/whatsapp', require('./src/webhooks/whatsapp'));
 app.use('/webhooks/razorpay', require('./src/webhooks/razorpay'));
+app.use('/webhooks/catalog',  require('./src/webhooks/catalog'));
 
 // Payment redirect page
 app.get('/payment-success', (req, res) => {
