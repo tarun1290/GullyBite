@@ -164,6 +164,111 @@ router.get('/callback', async (req, res) => {
   }
 });
 
+// ─── FACEBOOK JS SDK LOGIN ─────────────────────────────────────
+// Called when user logs in via the Facebook JS SDK button
+// Receives the short-lived client token → exchanges for long-lived → issues JWT
+router.post('/facebook', express.json(), async (req, res) => {
+  const { accessToken } = req.body;
+  if (!accessToken) return res.status(400).json({ error: 'No access token provided' });
+
+  try {
+    // Exchange short-lived client token for long-lived server token (~60 days)
+    const longTokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
+      params: {
+        grant_type      : 'fb_exchange_token',
+        client_id       : process.env.META_APP_ID,
+        client_secret   : process.env.META_APP_SECRET,
+        fb_exchange_token: accessToken,
+      },
+    });
+    const longToken  = longTokenRes.data.access_token;
+    const expiresIn  = longTokenRes.data.expires_in || 5183944;
+    const expiresAt  = new Date(Date.now() + expiresIn * 1000);
+
+    // Get Meta user profile
+    const userRes = await axios.get(`${META_GRAPH_URL}/me`, {
+      params: { fields: 'id,name,email', access_token: longToken },
+    });
+    const metaUser = userRes.data;
+
+    // Get their WhatsApp Business Accounts
+    let wabaData = [];
+    try {
+      const wabaRes = await axios.get(`${META_GRAPH_URL}/${metaUser.id}/businesses`, {
+        params: {
+          fields      : 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}',
+          access_token: longToken,
+        },
+      });
+      wabaData = wabaRes.data?.data || [];
+    } catch (e) {
+      console.warn('[Auth] Could not fetch WABAs:', e.message);
+    }
+
+    // Upsert restaurant record
+    const { rows: existing } = await db.query(
+      'SELECT id FROM restaurants WHERE meta_user_id = $1',
+      [metaUser.id]
+    );
+
+    let restaurantId;
+    if (existing.length) {
+      await db.query(
+        `UPDATE restaurants SET
+           meta_access_token     = $1,
+           meta_token_expires_at = $2,
+           owner_name = COALESCE(owner_name, $3),
+           email      = COALESCE(email, $4),
+           updated_at = NOW()
+         WHERE meta_user_id = $5`,
+        [longToken, expiresAt, metaUser.name, metaUser.email, metaUser.id]
+      );
+      restaurantId = existing[0].id;
+    } else {
+      const { rows: created } = await db.query(
+        `INSERT INTO restaurants
+           (meta_user_id, meta_access_token, meta_token_expires_at, owner_name, email)
+         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [metaUser.id, longToken, expiresAt, metaUser.name, metaUser.email]
+      );
+      restaurantId = created[0].id;
+    }
+
+    // Save WhatsApp accounts
+    for (const biz of wabaData) {
+      for (const waba of biz.whatsapp_business_accounts?.data || []) {
+        for (const phone of waba.phone_numbers?.data || []) {
+          await db.query(
+            `INSERT INTO whatsapp_accounts
+               (restaurant_id, waba_id, phone_number_id, phone_display, display_name, quality_rating, access_token)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             ON CONFLICT (phone_number_id) DO UPDATE SET
+               display_name   = EXCLUDED.display_name,
+               quality_rating = EXCLUDED.quality_rating,
+               access_token   = EXCLUDED.access_token,
+               updated_at     = NOW()`,
+            [restaurantId, waba.id, phone.id, phone.display_phone_number,
+             phone.verified_name, phone.quality_rating?.display_value || 'GREEN', longToken]
+          );
+        }
+      }
+    }
+
+    // Issue our JWT
+    const jwtToken = jwt.sign(
+      { restaurantId, metaUserId: metaUser.id },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({ token: jwtToken });
+
+  } catch (err) {
+    console.error('[Auth] Facebook login error:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Authentication failed' });
+  }
+});
+
 // ─── GET CURRENT USER ─────────────────────────────────────────
 // GET /auth/me — Returns logged-in restaurant info
 router.get('/me', requireAuth, async (req, res) => {

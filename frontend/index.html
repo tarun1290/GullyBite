@@ -488,6 +488,32 @@ tr:hover td { background: rgba(255,255,255,.015); }
 </style>
 </head>
 <body>
+
+<!-- Facebook SDK — loads Meta Login functionality -->
+<div id="fb-root"></div>
+<script>
+  window.fbAsyncInit = function() {
+    FB.init({
+      appId   : '831623239943250',  // ← paste your Meta App ID
+      cookie  : true,
+      xfbml   : true,
+      version : 'v25.0'
+    });
+
+    FB.AppEvents.logPageView();
+
+  };
+
+  // Load the SDK asynchronously (doesn't slow down your page)
+  (function(d, s, id) {
+    var js, fjs = d.getElementsByTagName(s)[0];
+    if (d.getElementById(id)) return;
+    js = d.createElement(s); js.id = id;
+    js.src = "https://connect.facebook.net/en_US/sdk.js";
+    fjs.parentNode.insertBefore(js, fjs);
+  }(document, 'script', 'facebook-jssdk'));
+</script>
+
 <div id="toast"></div>
 
 <!-- ═══════════════════════════════════════════════════════════
@@ -953,7 +979,37 @@ function openTab(name, trigger) {
 
 // ─── AUTH ─────────────────────────────────────────────────
 function startLogin() {
-  window.location.href = '/auth/login';
+  FB.login(function(response) {
+    if (response.authResponse) {
+      // User approved — send their access token to our backend
+      const accessToken = response.authResponse.accessToken;
+      showToast('Connecting your account...', 'success');
+      
+      // Exchange FB token for our JWT via backend
+      fetch('/auth/facebook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.token) {
+          localStorage.setItem('zm_token', data.token);
+          token = data.token;
+          loadDashboard();
+        } else {
+          showToast(data.error || 'Login failed', 'error');
+        }
+      })
+      .catch(() => showToast('Connection failed. Try again.', 'error'));
+
+    } else {
+      // User cancelled the login
+      showToast('Login cancelled', 'error');
+    }
+  }, {
+    scope: 'whatsapp_business_management,whatsapp_business_messaging,business_management'
+  });
 }
 
 function showDashboardDemo() {
