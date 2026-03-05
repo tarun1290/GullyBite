@@ -3,1581 +3,1141 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GullyBite — WhatsApp Restaurant Platform</title>
+<title>ZapMenu — WhatsApp Restaurant Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-/* ═══════════════════════════════════════════════════════════
-   DESIGN TOKENS — Stark dark editorial with WhatsApp green
-═══════════════════════════════════════════════════════════ */
-:root {
-  --bg:       #080b0f;
-  --surface:  #0e1318;
-  --card:     #131920;
-  --border:   #1c2530;
-  --border2:  #253040;
-  --wa:       #25D366;
-  --wa-dim:   #1aad52;
-  --amber:    #f59e0b;
-  --red:      #ef4444;
-  --blue:     #3b82f6;
-  --text:     #dde6f0;
-  --muted:    #4a5a6e;
-  --dim:      #7a8fa6;
-  --accent:   #25D366;
+:root{
+  --ink:#0a0d10;--ink2:#111619;--ink3:#181e24;--ink4:#1e262f;
+  --rim:#253040;--rim2:#2e3d4e;
+  --wa:#25D366;--wa2:#1aad52;--wa-glow:rgba(37,211,102,.14);
+  --gold:#e8a020;--gold2:#f5b840;--gold-glow:rgba(232,160,32,.13);
+  --red:#e05050;--blue:#4a90d9;
+  --tx:#ccd8e2;--dim:#6e8698;--mute:#2e3d4e;
+  --r:10px;
+  --font-head:'Playfair Display',Georgia,serif;
+  --font-body:'Plus Jakarta Sans',system-ui,sans-serif;
 }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font-body);background:var(--ink);color:var(--tx);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:var(--font-head)}
+button{cursor:pointer;font-family:var(--font-body)}
+a{color:inherit;text-decoration:none}
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
-body {
-  font-family: 'DM Sans', sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  min-height: 100vh;
-  line-height: 1.5;
-}
-h1,h2,h3,h4,h5 { font-family: 'Syne', sans-serif; letter-spacing: -0.025em; }
+/* ── PAGE SYSTEM ─────────────────────────────── */
+.pg{display:none}.pg.on{display:block}
+#pg-dash{display:none;min-height:100vh}
+#pg-dash.on{display:flex}
 
-/* ═══════════════════════════════════════════════════════════
-   PAGES — show/hide between landing and dashboard
-═══════════════════════════════════════════════════════════ */
-.page { display: none; }
-.page.active { display: block; }
+/* ── LANDING ─────────────────────────────────── */
+#pg-land{min-height:100vh;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(37,211,102,.06),transparent 55%),var(--ink)}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:1.3rem 2.5rem;border-bottom:1px solid var(--rim);position:sticky;top:0;z-index:99;background:rgba(10,13,16,.85);backdrop-filter:blur(18px)}
+.logo{display:flex;align-items:center;gap:.55rem;font-family:var(--font-head);font-weight:700;font-size:1.3rem;letter-spacing:-.01em}
+.logo-ring{width:10px;height:10px;border-radius:50%;background:var(--wa);box-shadow:0 0 0 0 rgba(37,211,102,.6);animation:ring 2.4s ease infinite}
+@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(37,211,102,.6)}60%{box-shadow:0 0 0 9px rgba(37,211,102,0)}}
+.hero{max-width:780px;margin:0 auto;padding:7rem 2rem 5rem;text-align:center;animation:riseIn .6s cubic-bezier(.22,1,.36,1) both}
+@keyframes riseIn{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}
+.hero-pill{display:inline-flex;align-items:center;gap:.4rem;background:rgba(232,160,32,.1);border:1px solid rgba(232,160,32,.22);color:var(--gold2);padding:.28rem .9rem;border-radius:100px;font-size:.7rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-bottom:1.75rem}
+.hero h1{font-size:clamp(2.9rem,6.5vw,5.2rem);line-height:1.03;margin-bottom:1.4rem;color:#e8eef3}
+.hero h1 em{font-style:italic;color:var(--wa)}
+.hero p{font-size:1.05rem;color:var(--dim);max-width:480px;margin:0 auto 2.5rem;line-height:1.78}
+.btn-hero{display:inline-flex;align-items:center;gap:.5rem;background:var(--wa);color:#000;font-weight:700;font-size:.95rem;padding:.82rem 1.9rem;border-radius:100px;border:none;transition:all .22s;letter-spacing:-.01em}
+.btn-hero:hover{background:var(--wa2);transform:translateY(-3px);box-shadow:0 10px 28px rgba(37,211,102,.28)}
+.grid-feats{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:1px;background:var(--rim);border:1px solid var(--rim);border-radius:14px;overflow:hidden;max-width:940px;margin:3.5rem auto}
+.feat{background:var(--ink2);padding:1.6rem 1.65rem;transition:background .12s}
+.feat:hover{background:var(--ink3)}
+.feat .fic{font-size:1.6rem;margin-bottom:.6rem}
+.feat h3{font-family:var(--font-body);font-size:.88rem;font-weight:600;margin-bottom:.28rem}
+.feat p{font-size:.8rem;color:var(--dim);line-height:1.65}
 
-/* ═══════════════════════════════════════════════════════════
-   LANDING PAGE
-═══════════════════════════════════════════════════════════ */
-#page-landing {
-  min-height: 100vh;
-  background:
-    radial-gradient(ellipse 70% 50% at 50% 0%, rgba(37,211,102,0.07) 0%, transparent 60%),
-    var(--bg);
-}
+/* ── SIDEBAR ─────────────────────────────────── */
+.sb{width:208px;flex-shrink:0;background:var(--ink2);border-right:1px solid var(--rim);display:flex;flex-direction:column;position:fixed;height:100vh;overflow-y:auto;z-index:50}
+.sb-logo{display:flex;align-items:center;gap:.5rem;padding:1.15rem 1.1rem;border-bottom:1px solid var(--rim);font-family:var(--font-head);font-weight:700;font-size:1.1rem}
+.sb-sec{padding:.8rem .55rem}
+.sb-cap{font-size:.63rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding:0 .55rem;margin-bottom:.28rem}
+.sb-btn{display:flex;align-items:center;gap:.55rem;padding:.48rem .6rem;border-radius:8px;color:var(--dim);font-size:.83rem;font-weight:500;border:none;background:none;width:100%;text-align:left;transition:all .11s;margin-bottom:1px}
+.sb-btn:hover{background:var(--ink3);color:var(--tx)}
+.sb-btn.act{background:rgba(37,211,102,.1);color:var(--wa)}
+.sb-btn .ic{font-size:.88rem;width:16px;text-align:center}
+.sb-foot{margin-top:auto;padding:.8rem;border-top:1px solid var(--rim)}
+.sb-user{display:flex;align-items:center;gap:.55rem}
+.sb-av{width:32px;height:32px;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,var(--wa),#0ea5e9);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#000}
+.sb-nm{font-size:.82rem;font-weight:600}
+.sb-rl{font-size:.68rem;color:var(--mute)}
 
-.topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 1.5rem 3rem;
-  border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; z-index: 100;
-  background: rgba(8,11,15,0.85);
-  backdrop-filter: blur(16px);
-}
+/* ── MAIN ────────────────────────────────────── */
+.main{flex:1;margin-left:208px;min-height:100vh}
+.topbar{padding:1.4rem 2rem 1rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:40;background:rgba(10,13,16,.88);backdrop-filter:blur(14px)}
+.topbar h1{font-size:1.3rem;color:#e8eef3;letter-spacing:-.02em}
+.topbar p{font-size:.8rem;color:var(--dim);margin-top:.1rem}
+.topbar-r{display:flex;align-items:center;gap:.65rem}
+.live-dot{display:none;align-items:center;gap:.38rem;font-size:.77rem;color:var(--wa)}
+.live-dot span{width:6px;height:6px;background:var(--wa);border-radius:50%;animation:ring 2s infinite}
+.body{padding:1.6rem 2rem}
+.tab{display:none}
+.tab.on{display:block;animation:riseIn .26s ease both}
 
-.brand {
-  display: flex; align-items: center; gap: .6rem;
-  font-family: 'Syne', sans-serif;
-  font-weight: 800; font-size: 1.3rem; color: var(--text);
-  text-decoration: none;
-}
-.brand-dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--wa);
-  animation: pulse 2s ease infinite;
-}
-@keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(37,211,102,.6)} 50%{box-shadow:0 0 0 8px rgba(37,211,102,0)} }
+/* ── UI TOKENS ───────────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:.8rem;margin-bottom:1.6rem}
+.stat{background:var(--ink3);border:1px solid var(--rim);border-radius:var(--r);padding:1.1rem 1.3rem;transition:border-color .12s}
+.stat:hover{border-color:var(--rim2)}
+.stat-l{font-size:.72rem;color:var(--dim);font-weight:500;margin-bottom:.3rem}
+.stat-v{font-family:var(--font-head);font-size:1.85rem;line-height:1;color:#e8eef3}
+.stat-s{font-size:.72rem;color:var(--wa);margin-top:.28rem}
 
-.connect-btn {
-  display: inline-flex; align-items: center; gap: .5rem;
-  background: var(--wa); color: #000;
-  font-family: 'DM Sans', sans-serif;
-  font-weight: 600; font-size: .9rem;
-  padding: .7rem 1.5rem; border-radius: 100px;
-  text-decoration: none; border: none; cursor: pointer;
-  transition: all .2s;
-}
-.connect-btn:hover { background: var(--wa-dim); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37,211,102,.3); }
+.card{background:var(--ink3);border:1px solid var(--rim);border-radius:var(--r);overflow:hidden;margin-bottom:1.1rem}
+.ch{padding:.82rem 1.3rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.ch h3{font-family:var(--font-body);font-size:.87rem;font-weight:600}
+.cb{padding:1.3rem}
 
-.hero {
-  display: flex; flex-direction: column;
-  align-items: center; text-align: center;
-  padding: 6rem 2rem 4rem;
-  animation: fadeUp .6s ease both;
-}
+/* buttons */
+.btn-p{display:inline-flex;align-items:center;gap:.38rem;background:var(--wa);color:#000;font-weight:700;font-size:.8rem;padding:.56rem 1.2rem;border-radius:8px;border:none;white-space:nowrap;transition:all .18s}
+.btn-p:hover{background:var(--wa2);transform:translateY(-1px)}
+.btn-p:disabled{opacity:.42;cursor:not-allowed;transform:none}
+.btn-g{display:inline-flex;align-items:center;gap:.38rem;background:transparent;border:1px solid var(--rim2);color:var(--tx);font-weight:500;font-size:.8rem;padding:.5rem 1rem;border-radius:8px;white-space:nowrap;transition:all .13s}
+.btn-g:hover{background:var(--ink2);border-color:var(--dim)}
+.btn-g:disabled{opacity:.4;cursor:not-allowed}
+.btn-del{background:transparent;border:1px solid rgba(224,80,80,.25);color:var(--red);font-size:.77rem;font-weight:500;padding:.4rem .78rem;border-radius:7px;transition:all .13s}
+.btn-del:hover{background:rgba(224,80,80,.08);border-color:var(--red)}
+.btn-sm{font-size:.75rem;padding:.36rem .75rem}
+.btn-gold{background:var(--gold);color:#000}
+.btn-gold:hover{background:var(--gold2)}
 
-.hero-badge {
-  display: inline-flex; align-items: center; gap: .4rem;
-  background: rgba(37,211,102,.08); border: 1px solid rgba(37,211,102,.2);
-  color: var(--wa); padding: .3rem .8rem;
-  border-radius: 100px; font-size: .78rem; font-weight: 600;
-  letter-spacing: .06em; text-transform: uppercase; margin-bottom: 2rem;
-}
+/* forms */
+.fg{display:flex;flex-direction:column;gap:.26rem}
+.fg.span2{grid-column:1/-1}
+.fg label{font-size:.72rem;font-weight:600;color:var(--dim);letter-spacing:.025em}
+.fg label small{font-weight:400;color:var(--mute)}
+input,select,textarea{background:var(--ink2);border:1px solid var(--rim);color:var(--tx);padding:.56rem .8rem;border-radius:8px;font-family:var(--font-body);font-size:.83rem;outline:none;width:100%;transition:border-color .14s}
+input:focus,select:focus,textarea:focus{border-color:var(--wa)}
+input::placeholder,textarea::placeholder{color:var(--mute)}
+textarea{resize:vertical;min-height:66px}
+select option{background:var(--ink2)}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.88rem}
 
-.hero h1 {
-  font-size: clamp(2.5rem, 6vw, 5rem);
-  line-height: 1.05; max-width: 750px; margin-bottom: 1.5rem;
-}
-.hero h1 em { font-style: normal; color: var(--wa); }
+/* toggle */
+.tog{display:flex;align-items:center;gap:.5rem;font-size:.83rem}
+.tsl{position:relative;width:37px;height:20px;flex-shrink:0}
+.tsl input{opacity:0;width:0;height:0}
+.tsl-track{position:absolute;inset:0;background:var(--ink2);border:1px solid var(--rim);border-radius:100px;cursor:pointer;transition:.2s}
+.tsl-track::before{content:'';position:absolute;width:12px;height:12px;top:3px;left:3px;background:var(--mute);border-radius:50%;transition:.2s}
+.tsl input:checked+.tsl-track{background:rgba(37,211,102,.12);border-color:var(--wa)}
+.tsl input:checked+.tsl-track::before{transform:translateX(17px);background:var(--wa)}
 
-.hero p {
-  font-size: 1.1rem; color: var(--dim);
-  max-width: 520px; margin-bottom: 2.5rem; line-height: 1.7;
-}
+/* badges */
+.badge{display:inline-flex;align-items:center;gap:.2rem;padding:.16rem .5rem;border-radius:100px;font-size:.68rem;font-weight:600}
+.bg{background:rgba(37,211,102,.1);color:var(--wa)}
+.ba{background:rgba(232,160,32,.1);color:var(--gold2)}
+.br{background:rgba(224,80,80,.1);color:var(--red)}
+.bb{background:rgba(74,144,217,.1);color:var(--blue)}
+.bd{background:var(--ink4);color:var(--dim)}
 
-.hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+/* table */
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{padding:.65rem .95rem;text-align:left;font-size:.66rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);border-bottom:1px solid var(--rim);background:var(--ink2)}
+td{padding:.8rem .95rem;font-size:.83rem;border-bottom:1px solid var(--rim);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.012)}
+.mono{font-family:'SF Mono',monospace;font-size:.74rem;color:var(--dim)}
 
-.ghost-btn {
-  display: inline-flex; align-items: center; gap: .5rem;
-  background: transparent; border: 1px solid var(--border2);
-  color: var(--text); font-family: 'DM Sans', sans-serif;
-  font-weight: 500; font-size: .9rem;
-  padding: .7rem 1.5rem; border-radius: 100px;
-  cursor: pointer; transition: all .2s;
-}
-.ghost-btn:hover { border-color: var(--dim); background: var(--surface); }
+/* chips */
+.chips{display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:1rem}
+.chip{padding:.25rem .7rem;border-radius:100px;border:1px solid var(--rim);background:transparent;color:var(--dim);font-size:.76rem;font-weight:500;transition:all .11s}
+.chip.on{border-color:var(--wa);color:var(--wa);background:rgba(37,211,102,.07)}
+.chip:hover:not(.on){border-color:var(--rim2);color:var(--tx)}
 
-/* Flow steps */
-.flow {
-  max-width: 900px; margin: 4rem auto;
-  padding: 0 2rem;
-}
-.flow-title {
-  text-align: center;
-  font-size: clamp(1.4rem, 2.5vw, 2rem);
-  margin-bottom: 3rem; color: var(--dim);
-}
-.flow-title span { color: var(--text); }
+/* empty */
+.empty{text-align:center;padding:2.6rem 2rem}
+.empty .ei{font-size:2rem;margin-bottom:.55rem}
+.empty h3{color:var(--dim);font-size:.9rem;margin-bottom:.25rem}
+.empty p{font-size:.8rem;color:var(--mute)}
 
-.steps {
-  display: grid; gap: 0;
-  border: 1px solid var(--border);
-  border-radius: 16px; overflow: hidden;
-}
-.step {
-  display: flex; align-items: flex-start; gap: 1.5rem;
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-  transition: background .15s;
-}
-.step:last-child { border-bottom: none; }
-.step:hover { background: var(--card); }
+/* progress */
+.prog-wrap{background:var(--ink2);border-radius:100px;height:4px;overflow:hidden;margin-top:.32rem}
+.prog-bar{height:100%;background:var(--wa);border-radius:100px;transition:width .3s ease}
 
-.step-num {
-  flex-shrink: 0;
-  width: 36px; height: 36px; border-radius: 10px;
-  background: rgba(37,211,102,.1); border: 1px solid rgba(37,211,102,.25);
-  display: flex; align-items: center; justify-content: center;
-  font-family: 'Syne', sans-serif; font-weight: 700;
-  font-size: .85rem; color: var(--wa);
-}
-.step-body h3 { font-size: 1rem; margin-bottom: .3rem; }
-.step-body p  { font-size: .88rem; color: var(--muted); line-height: 1.6; }
+/* spinner */
+.spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.07);border-top-color:var(--wa);border-radius:50%;animation:rot .65s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes rot{to{transform:rotate(360deg)}}
 
-/* Features grid */
-.features {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 16px; overflow: hidden;
-  max-width: 1000px; margin: 4rem auto;
-}
-.feat {
-  background: var(--surface); padding: 1.75rem 2rem;
-  transition: background .15s;
-}
-.feat:hover { background: var(--card); }
-.feat-icon { font-size: 1.8rem; margin-bottom: .75rem; }
-.feat h3 { font-size: .95rem; margin-bottom: .4rem; }
-.feat p  { font-size: .85rem; color: var(--muted); line-height: 1.6; }
+/* divider */
+.dv{border:none;border-top:1px solid var(--rim);margin:1.25rem 0}
 
-/* ═══════════════════════════════════════════════════════════
-   DASHBOARD LAYOUT
-═══════════════════════════════════════════════════════════ */
-#page-dashboard {
-  display: flex; min-height: 100vh;
-}
+/* sec header */
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem;gap:1rem;flex-wrap:wrap}
+.sh h2{font-family:var(--font-body);font-size:.97rem;font-weight:600}
 
-.sidebar {
-  width: 220px; flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  display: flex; flex-direction: column;
-  position: fixed; height: 100vh;
-  overflow-y: auto;
-}
+/* info pairs */
+.ipair-row{display:flex;gap:1.6rem;flex-wrap:wrap}
+.ipair label{font-size:.64rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);display:block;margin-bottom:.2rem}
+.ipair code{font-size:.8rem}
 
-.sb-logo {
-  display: flex; align-items: center; gap: .6rem;
-  padding: 1.25rem 1.25rem;
-  border-bottom: 1px solid var(--border);
-  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.1rem;
-}
+/* notice */
+.notice{display:flex;gap:.65rem;align-items:flex-start;border-radius:9px;padding:.82rem .95rem;margin-top:.85rem}
+.notice.wa{background:rgba(37,211,102,.05);border:1px solid rgba(37,211,102,.15)}
+.notice.am{background:rgba(232,160,32,.05);border:1px solid rgba(232,160,32,.15)}
+.notice-ico{font-size:1rem;flex-shrink:0;margin-top:.05rem}
+.notice-body h4{font-size:.8rem;font-weight:600;margin-bottom:.18rem}
+.notice-body p{font-size:.77rem;color:var(--dim);line-height:1.58}
 
-.sb-section { padding: 1rem .75rem; }
-.sb-label {
-  font-size: .68rem; font-weight: 700; letter-spacing: .1em;
-  text-transform: uppercase; color: var(--muted);
-  padding: 0 .5rem; margin-bottom: .4rem;
-}
+/* ── BRANCH CARD (hero component) ─────────────── */
+.bcard{background:var(--ink3);border:1px solid var(--rim);border-radius:14px;overflow:hidden;margin-bottom:.9rem;transition:border-color .14s}
+.bcard:hover{border-color:var(--rim2)}
+.bcard-hd{padding:1.05rem 1.3rem;display:flex;align-items:flex-start;gap:.85rem;flex-wrap:wrap}
+.bcard-name{font-family:var(--font-head);font-size:.96rem;font-weight:600}
+.bcard-addr{font-size:.77rem;color:var(--dim);margin-top:.12rem}
+.bcard-badges{display:flex;gap:.3rem;flex-wrap:wrap;margin-left:auto}
+.bcard-body{border-top:1px solid var(--rim);padding:1.05rem 1.3rem}
+.bcard-togs{display:flex;gap:1.4rem;flex-wrap:wrap;margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--rim)}
 
-.sb-item {
-  display: flex; align-items: center; gap: .65rem;
-  padding: .55rem .75rem; border-radius: 8px;
-  color: var(--muted); cursor: pointer; font-size: .875rem;
-  transition: all .12s; margin-bottom: 2px;
-}
-.sb-item:hover { background: var(--card); color: var(--text); }
-.sb-item.active { background: rgba(37,211,102,.1); color: var(--wa); }
-.sb-item .ico { font-size: 1rem; width: 18px; text-align: center; }
+/* catalog strip */
+.cat-strip{border-top:1px solid var(--rim);background:var(--ink2)}
+.cat-inner{display:flex;align-items:center;gap:.85rem;padding:.95rem 1.3rem;flex-wrap:wrap}
+.cat-ico{font-size:1.35rem;flex-shrink:0}
+.cat-inf{flex:1;min-width:145px}
+.cat-inf h4{font-size:.83rem;margin-bottom:.18rem}
+.cat-inf p{font-size:.76rem;color:var(--dim);line-height:1.55}
+.cat-id{display:inline-block;margin-top:.32rem;background:var(--ink3);border:1px solid var(--rim);border-radius:5px;padding:.1rem .42rem;font-family:'SF Mono',monospace;font-size:.7rem;color:var(--dim)}
+.cat-acts{display:flex;gap:.4rem;flex-wrap:wrap;flex-shrink:0}
 
-.sb-footer {
-  margin-top: auto; padding: 1rem;
-  border-top: 1px solid var(--border);
-}
-.sb-user {
-  display: flex; align-items: center; gap: .6rem;
-}
-.sb-avatar {
-  width: 34px; height: 34px; border-radius: 8px;
-  background: linear-gradient(135deg, var(--wa), #0ea5e9);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: .85rem; color: #000; flex-shrink: 0;
-}
-.sb-name  { font-size: .85rem; font-weight: 600; }
-.sb-role  { font-size: .73rem; color: var(--muted); }
+/* catalog creating animation */
+.cat-making{display:flex;align-items:center;gap:.65rem;padding:.85rem 1.3rem;border-top:1px solid rgba(37,211,102,.14);background:rgba(37,211,102,.04)}
+.cat-making .mspin{width:17px;height:17px;border:2px solid rgba(37,211,102,.18);border-top-color:var(--wa);border-radius:50%;animation:rot .65s linear infinite;flex-shrink:0}
+.cat-making p{font-size:.8rem;color:var(--wa)}
 
-.main {
-  flex: 1; margin-left: 220px;
-  background: var(--bg); min-height: 100vh;
-}
+/* sync progress strip */
+.sp-strip{padding:.7rem 1.3rem;border-top:1px solid var(--rim);background:var(--ink2);display:none}
+.sp-strip.on{display:block}
+.sp-row{display:flex;justify-content:space-between;font-size:.74rem;color:var(--dim);margin-bottom:.3rem}
 
-.main-header {
-  padding: 1.75rem 2.5rem 1.25rem;
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-}
-.main-header h1 { font-size: 1.5rem; }
-.main-header p  { font-size: .875rem; color: var(--muted); margin-top: .15rem; }
+/* menu item row */
+.mi{display:flex;align-items:center;gap:.85rem;padding:.68rem .95rem;border-bottom:1px solid var(--rim);transition:background .1s}
+.mi:last-child{border-bottom:none}
+.mi:hover{background:rgba(255,255,255,.01)}
+.mi-th{width:36px;height:36px;border-radius:7px;object-fit:cover;flex-shrink:0}
+.mi-ph{width:36px;height:36px;border-radius:7px;background:var(--ink4);display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0}
+.mi-name{font-size:.84rem;font-weight:600}
+.mi-desc{font-size:.74rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px}
+.mi-price{font-family:var(--font-head);font-weight:600;font-size:.9rem;white-space:nowrap;flex-shrink:0}
+.mi-acts{display:flex;align-items:center;gap:.5rem;flex-shrink:0}
 
-.content { padding: 2rem 2.5rem; }
+/* onboarding */
+.ob{border:1px solid rgba(37,211,102,.15);border-radius:14px;background:linear-gradient(135deg,rgba(37,211,102,.05),rgba(14,165,233,.03));padding:1.4rem;margin-bottom:1.4rem;position:relative;overflow:hidden}
+.ob::after{content:'';position:absolute;top:-40px;right:-40px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(37,211,102,.07),transparent 70%);pointer-events:none}
+.ob h3{font-family:var(--font-body);font-size:.97rem;font-weight:600;margin-bottom:1rem}
+.wz{display:flex;align-items:flex-start;gap:.82rem;padding:.72rem 0;border-bottom:1px solid var(--rim)}
+.wz:last-child{border-bottom:none}
+.wz-n{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.76rem;font-weight:700;margin-top:.08rem}
+.wz-done{background:rgba(37,211,102,.12);color:var(--wa)}
+.wz-cur{background:rgba(37,211,102,.18);color:var(--wa);border:1px solid rgba(37,211,102,.35)}
+.wz-todo{background:var(--ink2);border:1px solid var(--rim);color:var(--mute)}
+.wz b{font-size:.84rem;display:block;margin-bottom:.16rem}
+.wz p{font-size:.77rem;color:var(--dim);line-height:1.55}
 
-/* Tabs */
-.tab-panel { display: none; }
-.tab-panel.active { display: block; }
+/* toast */
+#toast{position:fixed;bottom:1.3rem;right:1.3rem;background:var(--ink3);border:1px solid var(--rim2);border-radius:9px;padding:.68rem 1rem;font-size:.83rem;box-shadow:0 8px 28px rgba(0,0,0,.55);z-index:9999;transform:translateY(130%);transition:transform .24s cubic-bezier(.34,1.56,.64,1);max-width:310px;display:flex;align-items:center;gap:.42rem}
+#toast.on{transform:translateY(0)}
+#toast.ok{border-color:rgba(37,211,102,.3);color:var(--wa)}
+#toast.err{border-color:rgba(224,80,80,.3);color:var(--red)}
+#toast.nfo{border-color:rgba(74,144,217,.3);color:var(--blue)}
 
-/* ═══════════════════════════════════════════════════════════
-   COMPONENTS
-═══════════════════════════════════════════════════════════ */
-
-/* Stat cards */
-.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-.stat {
-  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
-  padding: 1.25rem 1.5rem; cursor: default;
-  transition: border-color .15s;
-}
-.stat:hover { border-color: var(--border2); }
-.stat-label { font-size: .78rem; color: var(--muted); font-weight: 500; margin-bottom: .4rem; }
-.stat-val { font-family: 'Syne', sans-serif; font-size: 2rem; font-weight: 700; }
-.stat-sub { font-size: .78rem; color: var(--wa); margin-top: .25rem; }
-
-/* Card */
-.card {
-  background: var(--card); border: 1px solid var(--border);
-  border-radius: 14px; overflow: hidden; margin-bottom: 1.5rem;
-}
-.card-head {
-  padding: 1rem 1.5rem; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-}
-.card-head h3 { font-size: .95rem; }
-.card-body { padding: 1.5rem; }
-
-/* Forms */
-.form-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1.1rem;
-}
-.fg { display: flex; flex-direction: column; gap: .35rem; }
-.fg.full { grid-column: 1 / -1; }
-label { font-size: .8rem; font-weight: 600; color: var(--dim); letter-spacing: .02em; }
-
-input, select, textarea {
-  background: var(--surface); border: 1px solid var(--border);
-  color: var(--text); padding: .6rem .875rem;
-  border-radius: 8px; font-family: 'DM Sans', sans-serif;
-  font-size: .875rem; outline: none; width: 100%;
-  transition: border-color .15s;
-}
-input:focus, select:focus, textarea:focus { border-color: var(--wa); }
-input::placeholder, textarea::placeholder { color: var(--muted); }
-textarea { resize: vertical; min-height: 75px; }
-select option { background: var(--surface); }
-
-/* Buttons */
-.btn-primary {
-  display: inline-flex; align-items: center; gap: .45rem;
-  background: var(--wa); color: #000;
-  font-family: 'DM Sans', sans-serif; font-weight: 600; font-size: .875rem;
-  padding: .65rem 1.4rem; border-radius: 8px; border: none; cursor: pointer;
-  transition: all .18s;
-}
-.btn-primary:hover { background: var(--wa-dim); transform: translateY(-1px); }
-
-.btn-ghost {
-  display: inline-flex; align-items: center; gap: .45rem;
-  background: transparent; border: 1px solid var(--border2);
-  color: var(--text); font-family: 'DM Sans', sans-serif;
-  font-weight: 500; font-size: .85rem;
-  padding: .55rem 1.1rem; border-radius: 8px; cursor: pointer;
-  transition: all .15s;
-}
-.btn-ghost:hover { background: var(--surface); border-color: var(--dim); }
-
-.btn-danger {
-  background: transparent; border: 1px solid rgba(239,68,68,.4);
-  color: var(--red); font-family: 'DM Sans', sans-serif;
-  font-weight: 500; font-size: .85rem;
-  padding: .55rem 1.1rem; border-radius: 8px; cursor: pointer;
-  transition: all .15s;
-}
-.btn-danger:hover { background: rgba(239,68,68,.1); }
-
-/* Toggle */
-.toggle-wrap { display: flex; align-items: center; gap: .65rem; font-size: .875rem; }
-.toggle { position: relative; width: 42px; height: 22px; flex-shrink: 0; }
-.toggle input { opacity: 0; width: 0; height: 0; }
-.slider {
-  position: absolute; inset: 0;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: 100px; cursor: pointer; transition: .2s;
-}
-.slider::before {
-  content: ''; position: absolute;
-  width: 14px; height: 14px; top: 3px; left: 3px;
-  background: var(--muted); border-radius: 50%; transition: .2s;
-}
-.toggle input:checked + .slider { background: rgba(37,211,102,.15); border-color: var(--wa); }
-.toggle input:checked + .slider::before { transform: translateX(20px); background: var(--wa); }
-
-/* Status badges */
-.badge {
-  display: inline-flex; align-items: center; gap: .3rem;
-  padding: .2rem .6rem; border-radius: 100px;
-  font-size: .75rem; font-weight: 600;
-}
-.badge-pending  { background: rgba(245,158,11,.12); color: var(--amber); }
-.badge-paid     { background: rgba(37,211,102,.12); color: var(--wa); }
-.badge-confirmed{ background: rgba(37,211,102,.12); color: var(--wa); }
-.badge-preparing{ background: rgba(59,130,246,.12); color: var(--blue); }
-.badge-packed   { background: rgba(59,130,246,.12); color: var(--blue); }
-.badge-dispatched{background: rgba(37,211,102,.15); color: #50fa7b; }
-.badge-delivered{ background: rgba(37,211,102,.15); color: #50fa7b; }
-.badge-cancelled{ background: rgba(239,68,68,.12); color: var(--red); }
-.badge-active   { background: rgba(37,211,102,.12); color: var(--wa); }
-.badge-inactive { background: rgba(239,68,68,.1); color: var(--red); }
-
-/* Table */
-.tbl-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; }
-th {
-  padding: .8rem 1rem; text-align: left;
-  font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-  color: var(--muted); border-bottom: 1px solid var(--border); background: var(--surface);
-}
-td {
-  padding: .9rem 1rem; font-size: .875rem;
-  border-bottom: 1px solid var(--border); vertical-align: middle;
-}
-tr:last-child td { border-bottom: none; }
-tr:hover td { background: rgba(255,255,255,.015); }
-.mono { font-family: 'SF Mono', monospace; font-size: .8rem; color: var(--muted); }
-
-/* Filter chips */
-.filters { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
-.chip {
-  padding: .3rem .8rem; border-radius: 100px;
-  border: 1px solid var(--border); background: transparent;
-  color: var(--dim); font-size: .8rem; font-weight: 500; cursor: pointer; transition: all .12s;
-}
-.chip.on { border-color: var(--wa); color: var(--wa); background: rgba(37,211,102,.07); }
-.chip:hover:not(.on) { border-color: var(--muted); color: var(--text); }
-
-/* Onboarding steps */
-.steps-list { list-style: none; }
-.step-item {
-  display: flex; align-items: center; gap: 1rem;
-  padding: .9rem 0; border-bottom: 1px solid var(--border);
-}
-.step-item:last-child { border-bottom: none; }
-.step-circle {
-  width: 28px; height: 28px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: .8rem; font-weight: 700; flex-shrink: 0;
-}
-.step-done { background: rgba(37,211,102,.12); color: var(--wa); }
-.step-todo { background: var(--surface); border: 1px solid var(--border); color: var(--muted); }
-.step-text strong { font-size: .9rem; }
-.step-text small  { display: block; font-size: .8rem; color: var(--muted); }
-
-/* WA connect banner */
-.wa-banner {
-  display: flex; align-items: center; gap: 1.5rem;
-  background: linear-gradient(135deg, rgba(37,211,102,.07), rgba(14,165,233,.04));
-  border: 1px solid rgba(37,211,102,.18);
-  border-radius: 14px; padding: 1.5rem 2rem; margin-bottom: 1.5rem;
-}
-.wa-icon { font-size: 2.5rem; }
-.wa-banner h3 { font-size: 1.05rem; margin-bottom: .3rem; }
-.wa-banner p  { font-size: .875rem; color: var(--muted); }
-
-/* Integration cards (future) */
-.int-card {
-  display: flex; align-items: center; gap: 1rem;
-  border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem;
-  background: var(--surface); margin-bottom: .75rem; opacity: .5; position: relative;
-}
-.int-card::after {
-  content: 'Coming Soon';
-  position: absolute; top: .6rem; right: .75rem;
-  font-size: .7rem; font-weight: 700; letter-spacing: .05em;
-  color: var(--amber); background: rgba(245,158,11,.1);
-  padding: .15rem .5rem; border-radius: 4px;
-}
-.int-logo { width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
-.int-info h4 { font-size: .9rem; }
-.int-info p  { font-size: .8rem; color: var(--muted); }
-
-/* Empty state */
-.empty { text-align: center; padding: 3.5rem 2rem; color: var(--muted); }
-.empty .ei { font-size: 2.5rem; margin-bottom: .75rem; }
-.empty h3 { color: var(--dim); margin-bottom: .4rem; font-size: 1rem; }
-.empty p { font-size: .875rem; }
-
-/* Toast */
-#toast {
-  position: fixed; bottom: 1.5rem; right: 1.5rem;
-  background: var(--card); border: 1px solid var(--border2);
-  border-radius: 10px; padding: .8rem 1.2rem;
-  font-size: .875rem; box-shadow: 0 8px 30px rgba(0,0,0,.4);
-  z-index: 9999; transform: translateY(120%); transition: transform .25s cubic-bezier(.34,1.56,.64,1);
-  max-width: 300px;
-}
-#toast.show { transform: translateY(0); }
-#toast.success { border-color: rgba(37,211,102,.35); color: var(--wa); }
-#toast.error   { border-color: rgba(239,68,68,.35); color: var(--red); }
-
-/* Spinner */
-.spin {
-  width: 18px; height: 18px;
-  border: 2px solid rgba(255,255,255,.1);
-  border-top-color: var(--wa); border-radius: 50%;
-  animation: rotate .7s linear infinite;
-  display: inline-block;
-}
-@keyframes rotate { to { transform: rotate(360deg); } }
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ═══════════════════════════════════════════════════════════
-   RESPONSIVE
-═══════════════════════════════════════════════════════════ */
-@media (max-width: 768px) {
-  .topbar { padding: 1rem 1.5rem; }
-  .sidebar { display: none; }
-  .main { margin-left: 0; }
-  .main-header, .content { padding: 1.25rem 1.5rem; }
-  .features { margin: 2rem 1.5rem; }
-  .flow { padding: 0 1.5rem; }
+@media(max-width:768px){
+  .sb{display:none}.main{margin-left:0}
+  .body,.topbar{padding:1.1rem 1.1rem}
+  .grid-feats{margin:2rem 1rem}
+  .nav{padding:.9rem 1.1rem}
 }
 </style>
 </head>
 <body>
 
-<!-- Facebook SDK — loads Meta Login functionality -->
+<div id="toast"></div>
 <div id="fb-root"></div>
 <script>
-  window.fbAsyncInit = function() {
-    FB.init({
-      appId   : '831623239943250',  // ← paste your Meta App ID
-      cookie  : true,
-      xfbml   : true,
-      version : 'v25.0'
-    });
-
-    FB.AppEvents.logPageView();
-
-  };
-
-  // Load the SDK asynchronously (doesn't slow down your page)
-  (function(d, s, id) {
-    var js, fjs = d.getElementsByTagName(s)[0];
-    if (d.getElementById(id)) return;
-    js = d.createElement(s); js.id = id;
-    js.src = "https://connect.facebook.net/en_US/sdk.js";
-    fjs.parentNode.insertBefore(js, fjs);
-  }(document, 'script', 'facebook-jssdk'));
+window.fbAsyncInit=function(){FB.init({appId:'YOUR_META_APP_ID_HERE',cookie:true,xfbml:true,version:'v25.0'})};
+(function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(d.getElementById(id))return;js=d.createElement(s);js.id=id;js.src="https://connect.facebook.net/en_US/sdk.js";fjs.parentNode.insertBefore(js,fjs)}(document,'script','facebook-jssdk'));
 </script>
 
-<div id="toast"></div>
-
-<!-- ═══════════════════════════════════════════════════════════
-     LANDING PAGE
-═══════════════════════════════════════════════════════════ -->
-<div id="page-landing" class="page active">
-  <nav class="topbar">
-    <a href="/" class="brand">
-      <div class="brand-dot"></div> GullyBite
-    </a>
-    <button class="connect-btn" onclick="startLogin()">
-      🟢 Connect with Meta
-    </button>
+<!-- ══════════════════════ LANDING ══════════════════════════ -->
+<div id="pg-land" class="pg on">
+  <nav class="nav">
+    <div class="logo"><div class="logo-ring"></div>ZapMenu</div>
+    <button class="btn-hero" style="font-size:.84rem;padding:.65rem 1.4rem" onclick="startLogin()">🟢 Connect with Meta</button>
   </nav>
-
   <section class="hero">
-    <div class="hero-badge">🚀 WhatsApp-native ordering</div>
-    <h1>Let your customers order<br>on <em>WhatsApp.</em> Automatically.</h1>
-    <p>Connect your WhatsApp Business number. Customers share their location, browse your live menu, pay via Razorpay — all without leaving WhatsApp.</p>
-    <div class="hero-actions">
-      <button class="connect-btn" onclick="startLogin()">🟢 Get Started Free</button>
-      <!-- <button class="ghost-btn" onclick="showDashboardDemo()">👁 Preview Dashboard</button> -->
-    </div>
+    <div class="hero-pill">✦ WhatsApp-native ordering</div>
+    <h1>Your menu.<br>Their WhatsApp.<br><em>Fully automated.</em></h1>
+    <p>Add a branch — we instantly create a WhatsApp Catalog for it. Customers browse, cart and pay without leaving WhatsApp.</p>
+    <button class="btn-hero" onclick="startLogin()">🟢 Get Started Free</button>
   </section>
-
-  <div style="max-width:1000px;margin:0 auto;padding:0 2rem">
-    <div class="features">
-      <div class="feat"><div class="feat-icon">📍</div><h3>Location-Based Menu</h3><p>Customer shares GPS → we find nearest branch → show that branch's live menu as WhatsApp Catalog.</p></div>
-      <div class="feat"><div class="feat-icon">🛒</div><h3>Cart Inside WhatsApp</h3><p>Native WhatsApp shopping experience. Customer browses, adds to cart, checks out — zero app downloads.</p></div>
-      <div class="feat"><div class="feat-icon">💳</div><h3>Razorpay Payments</h3><p>Secure payment links via WhatsApp. UPI, cards, netbanking. Auto-refunds on cancellation.</p></div>
-      <div class="feat"><div class="feat-icon">🚴</div><h3>3PL Delivery</h3><p>Auto-dispatch to delivery partners when order is packed. Live tracking updates on WhatsApp.</p></div>
-      <div class="feat"><div class="feat-icon">📊</div><h3>Full Webhook Data</h3><p>Every event logged for analytics. Customer behavior, order patterns, delivery performance.</p></div>
-      <div class="feat"><div class="feat-icon">💰</div><h3>Weekly Settlements</h3><p>Automatic Monday payouts. Detailed breakdown: gross revenue, our fee, net payout.</p></div>
+  <div style="max-width:940px;margin:0 auto;padding:0 1.5rem">
+    <div class="grid-feats">
+      <div class="feat"><div class="fic">📍</div><h3>Location-Based Menu</h3><p>Customer shares GPS → nearest branch found → only that branch's menu shown in WhatsApp.</p></div>
+      <div class="feat"><div class="fic">⚡</div><h3>Auto Catalog Creation</h3><p>Add a branch → Meta Catalog API creates a dedicated catalog instantly. Zero manual steps.</p></div>
+      <div class="feat"><div class="fic">🛒</div><h3>Native WhatsApp Cart</h3><p>Browse, add to cart, checkout — no app downloads, no redirects, just WhatsApp.</p></div>
+      <div class="feat"><div class="fic">💳</div><h3>Razorpay Payments</h3><p>UPI, cards, netbanking — payment links sent via WhatsApp. Auto-refund on cancel.</p></div>
+      <div class="feat"><div class="fic">🔄</div><h3>Instant Sync</h3><p>Toggle unavailable → gone from catalog in seconds. Price change → synced immediately.</p></div>
+      <div class="feat"><div class="fic">💰</div><h3>Weekly Settlements</h3><p>Auto Monday payouts with full breakdown: gross, platform fee, net transfer to bank.</p></div>
     </div>
   </div>
-
-  <div class="flow">
-    <h2 class="flow-title"><span>Complete order flow</span> — from message to delivery</h2>
-    <div class="steps">
-      <div class="step"><div class="step-num">1</div><div class="step-body"><h3>Customer messages "Hi"</h3><p>Opens the 24-hour customer service window. Bot welcomes them and asks for their delivery location.</p></div></div>
-      <div class="step"><div class="step-num">2</div><div class="step-body"><h3>Location shared → nearest branch found</h3><p>Haversine formula calculates distance to all branches. Nearest one within delivery radius is selected.</p></div></div>
-      <div class="step"><div class="step-num">3</div><div class="step-body"><h3>WhatsApp Catalog sent</h3><p>That branch's live menu appears as an in-app shop. Customer browses, adds to cart inside WhatsApp.</p></div></div>
-      <div class="step"><div class="step-num">4</div><div class="step-body"><h3>Order placed → payment link sent</h3><p>Customer confirms cart. Razorpay link generated and sent via WhatsApp. Expires in 15 minutes.</p></div></div>
-      <div class="step"><div class="step-num">5</div><div class="step-body"><h3>Payment confirmed → restaurant notified</h3><p>Razorpay webhook fires. Order marked PAID. Restaurant dashboard shows new order. Customer gets confirmation.</p></div></div>
-      <div class="step"><div class="step-num">6</div><div class="step-body"><h3>Packed → dispatched → settled</h3><p>Restaurant marks packed → 3PL dispatches → customer gets tracking updates → Monday settlement.</p></div></div>
-    </div>
-  </div>
-  <div style="height:4rem"></div>
+  <div style="height:3rem"></div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════════
-     DASHBOARD
-═══════════════════════════════════════════════════════════ -->
-<div id="page-dashboard" class="page">
-  <aside class="sidebar">
-    <div class="sb-logo">
-      <div class="brand-dot"></div> GullyBite
-    </div>
+<!-- ══════════════════════ DASHBOARD ══════════════════════════ -->
+<div id="pg-dash" class="pg">
 
-    <div class="sb-section">
-      <div class="sb-label">Overview</div>
-      <div class="sb-item active" onclick="openTab('overview',this)"><span class="ico">📊</span>Dashboard</div>
-      <div class="sb-item" onclick="openTab('orders',this)"><span class="ico">🛒</span>Orders</div>
-      <div class="sb-item" onclick="openTab('analytics',this)"><span class="ico">📈</span>Analytics</div>
+  <!-- sidebar -->
+  <aside class="sb">
+    <div class="sb-logo"><div class="logo-ring"></div>ZapMenu</div>
+    <div class="sb-sec">
+      <div class="sb-cap">Overview</div>
+      <button class="sb-btn act" onclick="goTab('overview',this)"><span class="ic">📊</span>Dashboard</button>
+      <button class="sb-btn"     onclick="goTab('orders',this)"><span class="ic">🛒</span>Orders</button>
+      <button class="sb-btn"     onclick="goTab('analytics',this)"><span class="ic">📈</span>Analytics</button>
     </div>
-
-    <div class="sb-section">
-      <div class="sb-label">Setup</div>
-      <div class="sb-item" onclick="openTab('whatsapp',this)"><span class="ico">🟢</span>WhatsApp</div>
-      <div class="sb-item" onclick="openTab('branches',this)"><span class="ico">📍</span>Branches</div>
-      <div class="sb-item" onclick="openTab('menu',this)"><span class="ico">🍽️</span>Menu</div>
-      <div class="sb-item" onclick="openTab('integrations',this)"><span class="ico">🔌</span>Integrations</div>
+    <div class="sb-sec">
+      <div class="sb-cap">Restaurant</div>
+      <button class="sb-btn" onclick="goTab('branches',this)"><span class="ic">📍</span>Branches &amp; Catalog</button>
+      <button class="sb-btn" onclick="goTab('menu',this)"><span class="ic">🍽️</span>Menu Items</button>
+      <button class="sb-btn" onclick="goTab('whatsapp',this)"><span class="ic">💬</span>WhatsApp</button>
     </div>
-
-    <div class="sb-section">
-      <div class="sb-label">Finance</div>
-      <div class="sb-item" onclick="openTab('settlements',this)"><span class="ico">💰</span>Settlements</div>
-      <div class="sb-item" onclick="openTab('profile',this)"><span class="ico">⚙️</span>Settings</div>
+    <div class="sb-sec">
+      <div class="sb-cap">Finance</div>
+      <button class="sb-btn" onclick="goTab('settlements',this)"><span class="ic">💰</span>Settlements</button>
+      <button class="sb-btn" onclick="goTab('settings',this)"><span class="ic">⚙️</span>Settings</button>
     </div>
-
-    <div class="sb-footer">
+    <div class="sb-foot">
       <div class="sb-user">
-        <div class="sb-avatar" id="sb-avatar">R</div>
-        <div>
-          <div class="sb-name" id="sb-name">Restaurant</div>
-          <div class="sb-role">Owner</div>
-        </div>
+        <div class="sb-av" id="sb-av">R</div>
+        <div><div class="sb-nm" id="sb-nm">Restaurant</div><div class="sb-rl">Owner</div></div>
       </div>
     </div>
   </aside>
 
+  <!-- main -->
   <main class="main">
-    <div class="main-header">
+    <div class="topbar">
       <div>
-        <h1 id="page-title">Dashboard</h1>
-        <p id="page-sub">Your restaurant at a glance</p>
+        <h1 id="pg-title">Dashboard</h1>
+        <p id="pg-sub">Welcome back</p>
       </div>
-      <div style="display:flex;gap:.75rem;align-items:center">
-        <span id="wa-status" style="display:none;font-size:.82rem;color:var(--wa);align-items:center;gap:.4rem">
-          <span style="width:7px;height:7px;background:var(--wa);border-radius:50%;display:inline-block;animation:pulse 2s infinite"></span>
-          WhatsApp Live
-        </span>
-        <button class="btn-ghost" onclick="doLogout()" style="font-size:.82rem;padding:.45rem .9rem">Sign Out</button>
+      <div class="topbar-r">
+        <div class="live-dot" id="live-dot"><span></span>WhatsApp Live</div>
+        <button class="btn-g btn-sm" onclick="logout()">Sign Out</button>
       </div>
     </div>
 
-    <div class="content">
+    <div class="body">
 
-      <!-- ── OVERVIEW ──────────────────────────────────────── -->
-      <div class="tab-panel active" id="tab-overview">
-
-        <!-- Onboarding checklist (hidden when complete) -->
-        <div class="card" id="onboarding-card" style="display:none;margin-bottom:1.5rem">
-          <div class="card-head"><h3>🚀 Complete your setup</h3></div>
-          <div class="card-body" style="padding:1rem 1.5rem">
-            <ul class="steps-list">
-              <li class="step-item">
-                <div class="step-circle step-done" id="s1">✓</div>
-                <div class="step-text"><strong>Connect with Meta</strong><small>Facebook OAuth — done!</small></div>
-              </li>
-              <li class="step-item">
-                <div class="step-circle step-todo" id="s2">2</div>
-                <div class="step-text"><strong>Complete your profile</strong><small>Business name, logo, bank account</small></div>
-                <button class="btn-ghost" style="margin-left:auto;font-size:.8rem" onclick="openTab('profile', null)">Go →</button>
-              </li>
-              <li class="step-item">
-                <div class="step-circle step-todo" id="s3">3</div>
-                <div class="step-text"><strong>Add your first branch</strong><small>GPS coordinates needed for delivery matching</small></div>
-                <button class="btn-ghost" style="margin-left:auto;font-size:.8rem" onclick="openTab('branches', null)">Go →</button>
-              </li>
-              <li class="step-item">
-                <div class="step-circle step-todo" id="s4">4</div>
-                <div class="step-text"><strong>Add menu items</strong><small>Will be synced to WhatsApp Catalog</small></div>
-                <button class="btn-ghost" style="margin-left:auto;font-size:.8rem" onclick="openTab('menu', null)">Go →</button>
-              </li>
-              <li class="step-item">
-                <div class="step-circle step-todo" id="s5">5</div>
-                <div class="step-text"><strong>Configure webhook in Meta console</strong><small>Required to receive customer messages</small></div>
-              </li>
-            </ul>
-          </div>
+      <!-- ── OVERVIEW ─────────────────────────────── -->
+      <div class="tab on" id="tab-overview">
+        <div class="ob" id="ob" style="display:none">
+          <h3>🚀 Complete your setup to go live</h3>
+          <div id="ob-steps"></div>
         </div>
-
         <div class="stats">
-          <div class="stat"><div class="stat-label">Today's Orders</div><div class="stat-val" id="stat-today">—</div><div class="stat-sub">All statuses</div></div>
-          <div class="stat"><div class="stat-label">Today's Revenue</div><div class="stat-val" id="stat-rev">—</div><div class="stat-sub">Delivered only</div></div>
-          <div class="stat"><div class="stat-label">Active Orders</div><div class="stat-val" id="stat-active">—</div><div class="stat-sub">In progress</div></div>
-          <div class="stat"><div class="stat-label">This Week</div><div class="stat-val" id="stat-week">—</div><div class="stat-sub">Total orders</div></div>
+          <div class="stat"><div class="stat-l">Today's Orders</div><div class="stat-v" id="st-tod">—</div><div class="stat-s">All statuses</div></div>
+          <div class="stat"><div class="stat-l">Today's Revenue</div><div class="stat-v" id="st-rev">—</div><div class="stat-s">Delivered only</div></div>
+          <div class="stat"><div class="stat-l">This Week</div><div class="stat-v" id="st-wk">—</div><div class="stat-s">Total orders</div></div>
+          <div class="stat"><div class="stat-l">In Progress</div><div class="stat-v" id="st-act">—</div><div class="stat-s">Active orders</div></div>
         </div>
-
         <div class="card">
-          <div class="card-head">
-            <h3>Recent Orders</h3>
-            <button class="btn-ghost" onclick="openTab('orders', null)" style="font-size:.8rem;padding:.4rem .8rem">View All →</button>
-          </div>
-          <div id="recent-orders">
-            <div class="empty"><div class="ei">📋</div><h3>No orders yet</h3><p>Complete setup to start receiving orders</p></div>
-          </div>
+          <div class="ch"><h3>Recent Orders</h3><button class="btn-g btn-sm" onclick="goTab('orders',null)">View All →</button></div>
+          <div id="recent-body"><div class="empty"><div class="ei">📋</div><h3>No orders yet</h3><p>Complete your setup to start receiving orders</p></div></div>
         </div>
       </div>
 
-      <!-- ── ORDERS ────────────────────────────────────────── -->
-      <div class="tab-panel" id="tab-orders">
-        <div class="filters" id="order-filters">
-          <button class="chip on" onclick="filterOrders('ALL',this)">All</button>
-          <button class="chip" onclick="filterOrders('PENDING_PAYMENT',this)">⏳ Awaiting Payment</button>
-          <button class="chip" onclick="filterOrders('PAID',this)">✅ Paid</button>
-          <button class="chip" onclick="filterOrders('PREPARING',this)">👨‍🍳 Preparing</button>
-          <button class="chip" onclick="filterOrders('PACKED',this)">📦 Packed</button>
-          <button class="chip" onclick="filterOrders('DISPATCHED',this)">🚴 Dispatched</button>
-          <button class="chip" onclick="filterOrders('DELIVERED',this)">🎉 Delivered</button>
+      <!-- ── ORDERS ──────────────────────────────── -->
+      <div class="tab" id="tab-orders">
+        <div class="chips" id="ochips">
+          <button class="chip on"  onclick="doFilterOrders('ALL',this)">All</button>
+          <button class="chip" onclick="doFilterOrders('PENDING_PAYMENT',this)">⏳ Awaiting Payment</button>
+          <button class="chip" onclick="doFilterOrders('PAID',this)">✅ Paid</button>
+          <button class="chip" onclick="doFilterOrders('PREPARING',this)">👨‍🍳 Preparing</button>
+          <button class="chip" onclick="doFilterOrders('PACKED',this)">📦 Packed</button>
+          <button class="chip" onclick="doFilterOrders('DELIVERED',this)">🎉 Delivered</button>
         </div>
         <div class="card">
-          <div class="tbl-wrap">
+          <div class="tbl">
             <table>
-              <thead>
-                <tr>
-                  <th>Order #</th><th>Customer</th><th>Branch</th><th>Items</th><th>Total</th><th>Status</th><th>Time</th><th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="orders-body">
-                <tr><td colspan="8"><div class="empty"><div class="ei">📋</div><h3>No orders</h3></div></td></tr>
-              </tbody>
+              <thead><tr><th>Order</th><th>Customer</th><th>Branch</th><th>Total</th><th>Status</th><th>Time</th><th>Action</th></tr></thead>
+              <tbody id="orders-body"><tr><td colspan="7"><div class="empty"><div class="ei">📋</div><h3>No orders</h3></div></td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- ── ANALYTICS ─────────────────────────────────────── -->
-      <div class="tab-panel" id="tab-analytics">
-        <div style="display:flex;gap:.5rem;margin-bottom:1.5rem">
-          <button class="chip on" onclick="loadAnalytics(7,this)">7 days</button>
-          <button class="chip" onclick="loadAnalytics(30,this)">30 days</button>
-          <button class="chip" onclick="loadAnalytics(90,this)">90 days</button>
+      <!-- ── ANALYTICS ───────────────────────────── -->
+      <div class="tab" id="tab-analytics">
+        <div class="chips">
+          <button class="chip on" onclick="doAnalytics(7,this)">7 days</button>
+          <button class="chip" onclick="doAnalytics(30,this)">30 days</button>
+          <button class="chip" onclick="doAnalytics(90,this)">90 days</button>
         </div>
-        <div class="stats" id="analytics-stats">
-          <div class="stat"><div class="stat-label">Total Orders</div><div class="stat-val" id="an-orders">—</div></div>
-          <div class="stat"><div class="stat-label">Revenue</div><div class="stat-val" id="an-rev">—</div></div>
-          <div class="stat"><div class="stat-label">Avg Order Value</div><div class="stat-val" id="an-avg">—</div></div>
-          <div class="stat"><div class="stat-label">Delivery Rate</div><div class="stat-val" id="an-rate">—</div></div>
+        <div class="stats">
+          <div class="stat"><div class="stat-l">Total Orders</div><div class="stat-v" id="an-o">—</div></div>
+          <div class="stat"><div class="stat-l">Revenue</div><div class="stat-v" id="an-r">—</div></div>
+          <div class="stat"><div class="stat-l">Avg Order</div><div class="stat-v" id="an-a">—</div></div>
+          <div class="stat"><div class="stat-l">Delivery Rate</div><div class="stat-v" id="an-d">—</div></div>
         </div>
         <div class="card">
-          <div class="card-head"><h3>Daily Revenue</h3></div>
-          <div class="card-body">
-            <div id="chart-wrap" style="padding:1rem 0">
-              <div class="empty"><div class="ei">📊</div><h3>No data yet</h3></div>
-            </div>
-          </div>
+          <div class="ch"><h3>Daily Revenue</h3></div>
+          <div class="cb" id="chart"><div class="empty"><div class="ei">📊</div><h3>No data yet</h3></div></div>
         </div>
       </div>
 
-      <!-- ── WHATSAPP ──────────────────────────────────────── -->
-      <div class="tab-panel" id="tab-whatsapp">
-        <div class="wa-banner">
-          <div class="wa-icon">📱</div>
-          <div>
-            <h3>WhatsApp Business Connected</h3>
-            <p>Your phone numbers are listed below. Set your catalog_id to enable in-app menu browsing.</p>
-          </div>
-        </div>
+      <!-- ── BRANCHES & CATALOG ──────────────────── -->
+      <div class="tab" id="tab-branches">
 
-        <div id="wa-accounts-list">
-          <div class="empty"><div class="spin"></div></div>
-        </div>
-
-        <div class="card" style="margin-top:1.5rem">
-          <div class="card-head"><h3>📡 Webhook Configuration</h3></div>
-          <div class="card-body">
-            <p style="font-size:.875rem;color:var(--muted);margin-bottom:1rem">Add this URL in Meta Developer Console → WhatsApp → Configuration → Webhook:</p>
-            <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
-              <code id="webhook-url" style="flex:1;background:var(--surface);padding:.7rem 1rem;border-radius:8px;font-size:.83rem;border:1px solid var(--border);word-break:break-all;min-width:200px">Loading...</code>
-              <button class="btn-ghost" onclick="copyWebhook()">📋 Copy</button>
-            </div>
-            <p style="margin-top:.75rem;font-size:.8rem;color:var(--muted)">
-              Verify Token: <code style="background:var(--surface);padding:.1rem .4rem;border-radius:4px">value of WEBHOOK_VERIFY_TOKEN in your .env file</code>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── BRANCHES ──────────────────────────────────────── -->
-      <div class="tab-panel" id="tab-branches">
         <div class="card">
-          <div class="card-head"><h3>Add New Branch</h3></div>
-          <div class="card-body">
-            <div class="form-grid">
-              <div class="fg"><label>Branch Name</label><input id="b-name" placeholder="e.g. Koramangala Outlet"></div>
+          <div class="ch"><h3>➕ Add New Branch</h3></div>
+          <div class="cb">
+            <div class="fgrid">
+              <div class="fg"><label>Branch Name ★</label><input id="b-name" placeholder="Koramangala Outlet"></div>
               <div class="fg"><label>City</label><input id="b-city" placeholder="Bangalore"></div>
-              <div class="fg full"><label>Full Address</label><input id="b-addr" placeholder="Shop 5, Forum Mall, Koramangala, Bangalore 560095"></div>
+              <div class="fg span2"><label>Full Address</label><input id="b-addr" placeholder="Shop 5, Forum Mall, Koramangala, Bangalore 560095"></div>
               <div class="fg">
-                <label>Latitude ★ <span style="color:var(--muted);font-weight:400">(from Google Maps)</span></label>
+                <label>Latitude ★ <small>(right-click Google Maps → copy)</small></label>
                 <input id="b-lat" type="number" step="any" placeholder="12.93456">
               </div>
-              <div class="fg">
-                <label>Longitude ★</label>
-                <input id="b-lng" type="number" step="any" placeholder="77.61234">
-              </div>
-              <div class="fg"><label>Delivery Radius (km)</label><input id="b-radius" type="number" value="5" placeholder="5"></div>
+              <div class="fg"><label>Longitude ★</label><input id="b-lng" type="number" step="any" placeholder="77.61234"></div>
+              <div class="fg"><label>Delivery Radius (km)</label><input id="b-rad" type="number" value="5"></div>
               <div class="fg"><label>Opening Time</label><input id="b-open" type="time" value="10:00"></div>
               <div class="fg"><label>Closing Time</label><input id="b-close" type="time" value="22:00"></div>
               <div class="fg"><label>Manager Phone</label><input id="b-mgr" placeholder="+91 98765 43210"></div>
             </div>
-            <p style="font-size:.8rem;color:var(--muted);margin-top:.75rem">
-              💡 <strong>Get lat/lng:</strong> Open Google Maps → right-click your location → the first two numbers are lat, lng
-            </p>
-            <button class="btn-primary" style="margin-top:1.25rem" onclick="addBranch()">+ Add Branch</button>
+            <div class="notice wa">
+              <div class="notice-ico">⚡</div>
+              <div class="notice-body">
+                <h4>WhatsApp Catalog is auto-created for every branch</h4>
+                <p>The moment you save this branch, our backend calls Meta's Catalog API and creates a dedicated catalog — <em>"Your Restaurant — Branch Name"</em>. No manual setup in Commerce Manager needed.</p>
+              </div>
+            </div>
+            <button class="btn-p" id="add-b-btn" style="margin-top:.95rem" onclick="doAddBranch()">+ Add Branch</button>
           </div>
         </div>
 
-        <div id="branches-list">
+        <div class="sh">
+          <h2>Your Branches</h2>
+          <button class="btn-g btn-sm" onclick="loadBranches()">🔄 Refresh</button>
+        </div>
+        <div id="branch-list">
           <div class="empty"><div class="ei">📍</div><h3>No branches yet</h3><p>Add your first branch above</p></div>
         </div>
       </div>
 
-      <!-- ── MENU ──────────────────────────────────────────── -->
-      <div class="tab-panel" id="tab-menu">
-        <div style="display:flex;gap:1rem;align-items:center;margin-bottom:1.5rem;flex-wrap:wrap">
-          <select id="menu-branch" onchange="loadMenu()" style="min-width:200px;width:auto">
-            <option value="">Select a branch...</option>
+      <!-- ── MENU ────────────────────────────────── -->
+      <div class="tab" id="tab-menu">
+        <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1.3rem;flex-wrap:wrap">
+          <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto">
+            <option value="">Select branch to manage menu...</option>
           </select>
-          <button class="btn-primary" onclick="syncCatalog()">🔄 Sync to WhatsApp Catalog</button>
+          <div id="m-cat-badge" style="display:none"></div>
+          <button class="btn-p" id="m-sync-btn" style="display:none" onclick="doQuickSync()">🔄 Sync to WhatsApp</button>
         </div>
-
         <div class="card">
-          <div class="card-head"><h3>Add Menu Item</h3></div>
-          <div class="card-body">
-            <div class="form-grid">
+          <div class="ch"><h3>➕ Add Menu Item</h3></div>
+          <div class="cb">
+            <div class="fgrid">
               <div class="fg"><label>Item Name ★</label><input id="m-name" placeholder="Butter Chicken"></div>
               <div class="fg"><label>Price (₹) ★</label><input id="m-price" type="number" placeholder="280"></div>
-              <div class="fg full"><label>Description</label><input id="m-desc" placeholder="Tender chicken in rich tomato-cream gravy"></div>
-              <div class="fg"><label>Food Type</label><select id="m-type"><option value="veg">🟢 Veg</option><option value="non_veg">🔴 Non-Veg</option><option value="vegan">🌱 Vegan</option><option value="egg">🟡 Egg</option></select></div>
+              <div class="fg span2"><label>Description</label><input id="m-desc" placeholder="Tender chicken in rich tomato-cream gravy"></div>
+              <div class="fg">
+                <label>Food Type</label>
+                <select id="m-type">
+                  <option value="veg">🟢 Veg</option>
+                  <option value="non_veg">🔴 Non-Veg</option>
+                  <option value="vegan">🌱 Vegan</option>
+                  <option value="egg">🟡 Egg</option>
+                </select>
+              </div>
               <div class="fg"><label>Category</label><select id="m-cat"><option value="">No category</option></select></div>
-              <div class="fg"><label>Image URL</label><input id="m-img" placeholder="https://example.com/image.jpg"></div>
+              <div class="fg"><label>Image URL <small>(public https link)</small></label><input id="m-img" placeholder="https://cdn.example.com/dish.jpg"></div>
             </div>
-            <button class="btn-primary" style="margin-top:1.25rem" onclick="addMenuItem()">+ Add Item</button>
+            <button class="btn-p" style="margin-top:.95rem" onclick="doAddItem()">+ Add Item</button>
           </div>
         </div>
-
         <div id="menu-list">
-          <div class="empty"><div class="ei">🍽️</div><h3>Select a branch to view its menu</h3></div>
+          <div class="empty"><div class="ei">🍽️</div><h3>Select a branch above</h3></div>
         </div>
       </div>
 
-      <!-- ── INTEGRATIONS ──────────────────────────────────── -->
-      <div class="tab-panel" id="tab-integrations">
-        <p style="color:var(--muted);font-size:.9rem;margin-bottom:1.5rem">
-          Connect third-party platforms. Zomato and PetPooja integrations are in development.
-        </p>
-
-        <!-- Zomato (commented) -->
-        <div class="int-card">
-          <div class="int-logo" style="background:rgba(239,68,68,.1);color:#ef4444">Z</div>
-          <div class="int-info">
-            <h4>Zomato</h4>
-            <p>Sync orders and menu from Zomato platform</p>
+      <!-- ── WHATSAPP ────────────────────────────── -->
+      <div class="tab" id="tab-whatsapp">
+        <div style="display:flex;gap:1rem;align-items:flex-start;background:linear-gradient(135deg,rgba(37,211,102,.06),rgba(14,165,233,.03));border:1px solid rgba(37,211,102,.15);border-radius:13px;padding:1.3rem 1.5rem;margin-bottom:1.3rem">
+          <span style="font-size:1.8rem">📱</span>
+          <div>
+            <h3 style="font-family:var(--font-body);font-size:.96rem;font-weight:600;margin-bottom:.28rem">WhatsApp Business Connected</h3>
+            <p style="font-size:.82rem;color:var(--dim)">Catalogs are managed per branch now. Go to <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--wa);cursor:pointer;font-size:.82rem;text-decoration:underline">Branches &amp; Catalog</button> to sync menus.</p>
           </div>
         </div>
-
-        <!-- PetPooja (commented) -->
-        <div class="int-card">
-          <div class="int-logo" style="background:rgba(59,130,246,.1);color:#3b82f6">P</div>
-          <div class="int-info">
-            <h4>PetPooja POS</h4>
-            <p>Connect your POS for real-time menu and order sync</p>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:1.5rem">
-          <div class="card-head"><h3>Integration Notes</h3></div>
-          <div class="card-body">
-            <p style="font-size:.875rem;color:var(--muted);line-height:1.8">
-              The database schema already has <code style="background:var(--surface);padding:.1rem .3rem;border-radius:4px">zomato_restaurant_id</code> and <code style="background:var(--surface);padding:.1rem .3rem;border-radius:4px">petpooja_outlet_id</code> columns in the <code style="background:var(--surface);padding:.1rem .3rem;border-radius:4px">restaurants</code> table, ready to be enabled when the integrations are built. The code scaffolding is in place — just uncomment the relevant sections.
-            </p>
+        <div id="wa-list"><div style="text-align:center;padding:2rem"><div class="spin"></div></div></div>
+        <div class="card" style="margin-top:1.1rem">
+          <div class="ch"><h3>📡 Webhook URL</h3></div>
+          <div class="cb">
+            <p style="font-size:.8rem;color:var(--dim);margin-bottom:.7rem">Paste this in Meta Developer Console → WhatsApp → Configuration → Callback URL:</p>
+            <div style="display:flex;gap:.48rem;align-items:center;flex-wrap:wrap">
+              <code id="wh-url" style="flex:1;background:var(--ink2);padding:.6rem .95rem;border-radius:8px;font-size:.78rem;border:1px solid var(--rim);word-break:break-all">Loading...</code>
+              <button class="btn-g btn-sm" onclick="copyWH()">📋 Copy</button>
+            </div>
+            <p style="margin-top:.55rem;font-size:.74rem;color:var(--dim)">Verify Token: value of <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">WEBHOOK_VERIFY_TOKEN</code> in your .env</p>
           </div>
         </div>
       </div>
 
-      <!-- ── SETTLEMENTS ───────────────────────────────────── -->
-      <div class="tab-panel" id="tab-settlements">
+      <!-- ── SETTLEMENTS ─────────────────────────── -->
+      <div class="tab" id="tab-settlements">
         <div class="card">
-          <div class="tbl-wrap">
+          <div class="tbl">
             <table>
-              <thead>
-                <tr><th>Period</th><th>Orders</th><th>Gross Revenue</th><th>Platform Fee</th><th>Net Payout</th><th>Status</th></tr>
-              </thead>
-              <tbody id="settlements-body">
-                <tr><td colspan="6"><div class="empty"><div class="ei">💰</div><h3>No settlements yet</h3><p>Settlements run every Monday</p></div></td></tr>
-              </tbody>
+              <thead><tr><th>Period</th><th>Orders</th><th>Gross</th><th>Platform Fee</th><th>Net Payout</th><th>Status</th></tr></thead>
+              <tbody id="settle-body"><tr><td colspan="6"><div class="empty"><div class="ei">💰</div><h3>No settlements yet</h3><p>Settlements run every Monday at 9 AM IST</p></div></td></tr></tbody>
             </table>
           </div>
         </div>
       </div>
 
-      <!-- ── PROFILE / SETTINGS ────────────────────────────── -->
-      <div class="tab-panel" id="tab-profile">
+      <!-- ── SETTINGS ────────────────────────────── -->
+      <div class="tab" id="tab-settings">
         <div class="card">
-          <div class="card-head"><h3>Business Information</h3></div>
-          <div class="card-body">
-            <div class="form-grid">
+          <div class="ch"><h3>Business Information</h3></div>
+          <div class="cb">
+            <div class="fgrid">
               <div class="fg"><label>Business Name</label><input id="p-bname" placeholder="Burger Palace"></div>
               <div class="fg"><label>Owner Name</label><input id="p-owner" placeholder="Rajesh Kumar"></div>
               <div class="fg"><label>Phone</label><input id="p-phone" placeholder="+91 98765 43210"></div>
-              <div class="fg"><label>Email</label><input id="p-email" placeholder="owner@burgerpalace.com"></div>
-              <div class="fg full"><label>Logo URL</label><input id="p-logo" placeholder="https://example.com/logo.png"></div>
+              <div class="fg"><label>Email</label><input id="p-email"></div>
+              <div class="fg span2"><label>Logo URL</label><input id="p-logo" placeholder="https://example.com/logo.png"></div>
             </div>
-            <h4 style="margin:1.5rem 0 1rem;font-size:.95rem;color:var(--dim)">Bank Account (for weekly settlements)</h4>
-            <div class="form-grid">
+            <hr class="dv">
+            <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Bank Account <span style="font-weight:400;font-size:.78rem">(for weekly settlements)</span></p>
+            <div class="fgrid">
               <div class="fg"><label>Bank Name</label><input id="p-bank" placeholder="HDFC Bank"></div>
               <div class="fg"><label>Account Number</label><input id="p-accno" placeholder="12345678901234"></div>
               <div class="fg"><label>IFSC Code</label><input id="p-ifsc" placeholder="HDFC0001234"></div>
             </div>
-            <button class="btn-primary" style="margin-top:1.5rem" onclick="saveProfile()">💾 Save Changes</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-head"><h3>⚙️ Setup Checklist</h3></div>
-          <div class="card-body" style="padding:1rem 1.5rem">
-            <p style="font-size:.875rem;color:var(--muted);line-height:1.8">
-              After setting up all your info, make sure you've also:<br>
-              ✅ Configured webhook URL in Meta Developer Console<br>
-              ✅ Set <code style="background:var(--surface);padding:.1rem .4rem;border-radius:4px">catalog_id</code> in WhatsApp → your phone number settings<br>
-              ✅ Added Razorpay webhook URL: <code id="rp-webhook-url" style="background:var(--surface);padding:.1rem .4rem;border-radius:4px">loading...</code><br>
-              ✅ Added your branch with correct GPS coordinates<br>
-              ✅ Added menu items and clicked "Sync to WhatsApp Catalog"
-            </p>
+            <button class="btn-p" style="margin-top:1.1rem" onclick="doSaveProfile()">💾 Save Changes</button>
           </div>
         </div>
       </div>
 
-    </div><!-- /content -->
+    </div>
   </main>
-</div><!-- /page-dashboard -->
+</div><!-- /dash -->
 
 <script>
-// ═══════════════════════════════════════════════════════════
-// APP STATE
-// ═══════════════════════════════════════════════════════════
-const API = ''; // Same origin — backend serves frontend
-let token = localStorage.getItem('zm_token');
-let restaurant = null;
-let currentBranches = [];
+/* ─────────────────────────── STATE ─────────────────────── */
+let token    = localStorage.getItem('zm_token');
+let rest     = null;
+let branches = [];
+let oFilter  = 'ALL';
 
-// ─── INITIALIZATION ──────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  // Check for OAuth callback token in URL
-  const params = new URLSearchParams(location.search);
-  const urlToken = params.get('token');
-  if (urlToken) {
-    localStorage.setItem('zm_token', urlToken);
-    token = urlToken;
-    window.history.replaceState({}, '', '/dashboard.html');
-  }
-
-  // Handle error from OAuth
-  const err = params.get('error');
-  if (err) showToast('Authentication failed. Please try again.', 'error');
-
-  if (token) {
-    loadDashboard();
-  } else {
-    showPage('landing');
-  }
-
-  // Set webhook URL display
-  const base = window.location.origin;
-  const el = document.getElementById('webhook-url');
-  if (el) el.textContent = `${base}/webhooks/whatsapp`;
-  const rpEl = document.getElementById('rp-webhook-url');
-  if (rpEl) rpEl.textContent = `${base}/webhooks/razorpay`;
+/* ─────────────────────────── BOOT ──────────────────────── */
+document.addEventListener('DOMContentLoaded',()=>{
+  const el = document.getElementById('wh-url');
+  if(el) el.textContent = location.origin+'/webhooks/whatsapp';
+  const p = new URLSearchParams(location.search);
+  const t = p.get('token');
+  if(t){localStorage.setItem('zm_token',t);token=t;history.replaceState({},'','/');}
+  if(p.get('error')) toast('Authentication failed — please try again','err');
+  token ? initDash() : showPg('land');
+});
+window.addEventListener('message',e=>{
+  if(e.origin!=='https://www.facebook.com')return;
+  try{
+    const d=JSON.parse(e.data);
+    if(d.type!=='WA_EMBEDDED_SIGNUP')return;
+    if(d.event==='FINISH'){window._emb=d.data;const s=localStorage.getItem('zm_token');if(s){token=s;setTimeout(initDash,800);}}
+    else if(d.event==='CANCEL') toast('Setup cancelled','err');
+    else if(d.event==='ERROR')  toast('Error: '+d.data.error_message,'err');
+  }catch(_){}
 });
 
-// ─── ROUTING ─────────────────────────────────────────────
-function showPage(name) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  const el = document.getElementById(`page-${name}`);
-  if (el) el.classList.add('active');
+/* ─────────────────────────── AUTH ──────────────────────── */
+function startLogin(){
+  FB.login(r=>{
+    if(!r.authResponse)return toast('Login cancelled','err');
+    toast('Connecting account...','nfo');
+    fetch('/auth/facebook',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({accessToken:r.authResponse.accessToken,code:r.authResponse.code||null})})
+    .then(x=>x.json())
+    .then(d=>{
+      if(d.token){localStorage.setItem('zm_token',d.token);token=d.token;toast('Connected! Loading...','ok');setTimeout(initDash,900);}
+      else toast(d.error||'Login failed','err');
+    }).catch(()=>toast('Connection failed — try again','err'));
+  },{config_id:'YOUR_CONFIG_ID_HERE',response_type:'code',override_default_response_type:true,
+    extras:{setup:{},featureType:'',sessionInfoVersion:'3'}});
 }
+function logout(){localStorage.removeItem('zm_token');token=null;rest=null;showPg('land');}
 
-function openTab(name, trigger) {
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  const panel = document.getElementById(`tab-${name}`);
-  if (panel) panel.classList.add('active');
-
-  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
-  if (trigger) trigger.classList.add('active');
-
-  const titles = {
-    overview:'Dashboard', orders:'Orders', analytics:'Analytics',
-    whatsapp:'WhatsApp', branches:'Branches', menu:'Menu',
-    integrations:'Integrations', settlements:'Settlements', profile:'Settings'
-  };
-  document.getElementById('page-title').textContent = titles[name] || name;
-
-  if (name === 'orders') loadOrders('ALL');
-  if (name === 'analytics') loadAnalytics(7, null);
-  if (name === 'whatsapp') loadWAAccounts();
-  if (name === 'branches') loadBranches();
-  if (name === 'settlements') loadSettlements();
-  if (name === 'profile') loadProfile();
-  if (name === 'menu') loadBranchSelect();
+/* ─────────────────────────── ROUTING ───────────────────── */
+function showPg(n){
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  document.getElementById('pg-'+n).classList.add('on');
 }
-
-// ─── AUTH ─────────────────────────────────────────────────
-function startLogin() {
-  FB.login(function(response) {
-    if (response.authResponse) {
-      const accessToken = response.authResponse.accessToken;
-
-      // Embedded signup gives us WABA + phone number directly in the response
-      const wabaId       = response.authResponse.grantedScopes || null;
-      const code         = response.authResponse.code || null;
-
-      showToast('Connecting your WhatsApp account...', 'success');
-
-      fetch('/auth/facebook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ accessToken, code })
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.token) {
-          localStorage.setItem('zm_token', data.token);
-          token = data.token;
-          loadDashboard();
-        } else {
-          showToast(data.error || 'Login failed', 'error');
-        }
-      })
-      .catch(() => showToast('Connection failed. Try again.', 'error'));
-
-    } else {
-      showToast('Login cancelled or denied', 'error');
-    }
-  }, {
-    config_id: '1370747735090783',  // ← from Meta Embedded Signup config
-    response_type: 'code',
-    override_default_response_type: true,
-    extras: {
-      setup: {},
-      featureType: '',
-      sessionInfoVersion: '3',
-    }
-  });
-}
-function showDashboardDemo() {
-  token = 'demo';
-  loadDashboard(true);
-}
-
-function doLogout() {
-  localStorage.removeItem('zm_token');
-  token = null;
-  restaurant = null;
-  showPage('landing');
-}
-
-// ─── API HELPER ───────────────────────────────────────────
-async function api(path, opts = {}) {
-  if (token === 'demo') return demoData(path, opts);
-  const res = await fetch(API + path, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...opts.headers
-    },
-    body: opts.body ? JSON.stringify(opts.body) : undefined
-  });
-  if (res.status === 401) { doLogout(); return null; }
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(e.error || 'Request failed');
+const TMETA={
+  overview:  {title:'Dashboard',        sub:'Your restaurant at a glance',      fn:loadOverview},
+  orders:    {title:'Orders',           sub:'Manage incoming orders',            fn:()=>loadOrders('ALL')},
+  analytics: {title:'Analytics',        sub:'Sales and performance',             fn:()=>doAnalytics(7,null)},
+  branches:  {title:'Branches & Catalog',sub:'Locations and WhatsApp catalogs', fn:loadBranches},
+  menu:      {title:'Menu Items',       sub:'Add and manage dishes',             fn:loadBranchSel},
+  whatsapp:  {title:'WhatsApp',         sub:'Numbers and webhook config',        fn:loadWA},
+  settlements:{title:'Settlements',     sub:'Weekly payout history',             fn:loadSettlements},
+  settings:  {title:'Settings',         sub:'Business profile and bank account', fn:loadProfile},
+};
+function goTab(n,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.getElementById('tab-'+n).classList.add('on');
+  document.querySelectorAll('.sb-btn').forEach(b=>b.classList.remove('act'));
+  if(el)el.classList.add('act');
+  const m=TMETA[n];
+  if(m){
+    document.getElementById('pg-title').textContent=m.title;
+    document.getElementById('pg-sub').textContent=m.sub;
+    if(m.fn)m.fn();
   }
+}
+
+/* ─────────────────────────── API ────────────────────────── */
+async function api(path,opts={}){
+  const res=await fetch(path,{...opts,
+    headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,...opts.headers},
+    body:opts.body?JSON.stringify(opts.body):undefined});
+  if(res.status===401){logout();return null;}
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||res.statusText);}
   return res.json();
 }
 
-// ─── LOAD DASHBOARD ───────────────────────────────────────
-async function loadDashboard(demo = false) {
-  showPage('dashboard');
-  try {
-    restaurant = await api('/auth/me');
-    if (!restaurant && !demo) return doLogout();
+/* ─────────────────────────── INIT ──────────────────────── */
+async function initDash(){
+  showPg('dash');
+  try{
+    rest=await api('/auth/me');
+    if(!rest)return logout();
+    const nm=rest.business_name||rest.owner_name||'Restaurant';
+    document.getElementById('sb-nm').textContent=nm;
+    document.getElementById('sb-av').textContent=nm[0].toUpperCase();
+    loadOverview(); loadWA();
+  }catch(e){console.error(e);}
+}
 
-    if (restaurant) {
-      const name = restaurant.business_name || restaurant.owner_name || 'Restaurant';
-      document.getElementById('sb-name').textContent = name;
-      document.getElementById('sb-avatar').textContent = name[0].toUpperCase();
-
-      // Show onboarding if not complete
-      if ((restaurant.onboarding_step || 1) < 5) {
-        document.getElementById('onboarding-card').style.display = 'block';
-        updateSteps(restaurant.onboarding_step);
-      }
-    }
-
-    // Load overview stats
-    await loadStats();
-    await loadRecentOrders();
-    loadWAAccounts();
-  } catch (e) {
-    console.error('Dashboard load error:', e);
+/* ─────────────────────────── OVERVIEW ──────────────────── */
+async function loadOverview(){
+  if((rest?.onboarding_step||1)<5){
+    document.getElementById('ob').style.display='block';
+    renderWizard(rest?.onboarding_step||1);
   }
+  try{
+    const[d1,d7]=await Promise.all([api('/api/restaurant/analytics?days=1'),api('/api/restaurant/analytics?days=7')]);
+    document.getElementById('st-tod').textContent=d1?.summary?.total_orders??0;
+    document.getElementById('st-rev').textContent='₹'+Math.round(d1?.summary?.total_revenue??0);
+    document.getElementById('st-wk').textContent=d7?.summary?.total_orders??0;
+    document.getElementById('st-act').textContent='—';
+    loadRecent();
+  }catch(_){}
+}
+function renderWizard(step){
+  const steps=[
+    {l:'Connect with Meta',d:'Facebook OAuth — done!'},
+    {l:'Complete your profile',d:'Business name, logo, bank account',fn:()=>goTab('settings',null)},
+    {l:'Add your first branch',d:'GPS coordinates enable location-based ordering',fn:()=>goTab('branches',null)},
+    {l:'Add menu items',d:'Items sync to WhatsApp Catalog automatically',fn:()=>goTab('menu',null)},
+    {l:'Sync catalog & go live',d:'Click "Sync" on your branch after adding items',fn:()=>goTab('branches',null)},
+  ];
+  document.getElementById('ob-steps').innerHTML=steps.map((s,i)=>{
+    const n=i+1,done=n<=step,cur=n===step+1;
+    const cls=done?'wz-done':cur?'wz-cur':'wz-todo';
+    return`<div class="wz">
+      <div class="wz-n ${cls}">${done?'✓':n}</div>
+      <div style="flex:1"><b>${s.l}</b><p>${s.d}</p></div>
+      ${s.fn&&!done?`<button class="btn-g btn-sm" style="flex-shrink:0" onclick="(${s.fn.toString()})()">Go →</button>`:''}
+    </div>`;
+  }).join('');
+}
+async function loadRecent(){
+  const w=document.getElementById('recent-body');
+  try{
+    const o=await api('/api/restaurant/orders?limit=5');
+    if(!o?.length)return;
+    w.innerHTML=`<div class="tbl"><table>
+      <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>${o.map(r=>`<tr>
+        <td><span class="mono">${r.order_number}</span></td>
+        <td>${r.customer_name||r.wa_phone}</td>
+        <td>₹${r.total_rs}</td>
+        <td>${sbadge(r.status)}</td>
+        <td>${oaction(r)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>`;
+  }catch(_){}
 }
 
-function updateSteps(step) {
-  for (let i = 2; i <= 5; i++) {
-    const el = document.getElementById(`s${i}`);
-    if (el) {
-      if (i <= step) { el.className = 'step-circle step-done'; el.textContent = '✓'; }
-      else { el.className = 'step-circle step-todo'; el.textContent = i; }
-    }
-  }
+/* ─────────────────────────── ORDERS ────────────────────── */
+async function loadOrders(s){
+  oFilter=s;
+  const tb=document.getElementById('orders-body');
+  tb.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:2rem"><div class="spin"></div></td></tr>`;
+  try{
+    const q=s==='ALL'?'':`&status=${s}`;
+    const o=await api(`/api/restaurant/orders?limit=60${q}`);
+    if(!o?.length){tb.innerHTML=`<tr><td colspan="7"><div class="empty"><div class="ei">📋</div><h3>No orders found</h3></div></td></tr>`;return;}
+    tb.innerHTML=o.map(r=>`<tr>
+      <td><span class="mono">${r.order_number}</span></td>
+      <td><div>${r.customer_name||'—'}</div><div style="font-size:.72rem;color:var(--dim)">${r.wa_phone}</div></td>
+      <td>${r.branch_name}</td>
+      <td>₹${r.total_rs}</td>
+      <td>${sbadge(r.status)}</td>
+      <td style="font-size:.73rem;color:var(--dim)">${timeAgo(r.created_at)}</td>
+      <td>${oaction(r)}</td>
+    </tr>`).join('');
+  }catch(e){toast('Failed to load orders','err');}
+}
+function doFilterOrders(s,el){
+  document.querySelectorAll('#ochips .chip').forEach(c=>c.classList.remove('on'));
+  if(el)el.classList.add('on');
+  loadOrders(s);
+}
+function sbadge(s){
+  const m={PENDING_PAYMENT:['⏳','ba'],PAID:['✅','bg'],CONFIRMED:['✅','bg'],
+    PREPARING:['👨‍🍳','bb'],PACKED:['📦','bb'],DISPATCHED:['🚴','bg'],
+    DELIVERED:['🎉','bg'],CANCELLED:['❌','br']};
+  const[ic,c]=m[s]||['•','bd'];
+  return`<span class="badge ${c}">${ic} ${s.replace(/_/g,' ')}</span>`;
+}
+function oaction(o){
+  const nxt={PAID:['CONFIRMED','✅ Confirm'],CONFIRMED:['PREPARING','👨‍🍳 Prep'],PREPARING:['PACKED','📦 Packed']};
+  const a=nxt[o.status];
+  if(!a)return`<span style="color:var(--mute);font-size:.73rem">—</span>`;
+  return`<button class="btn-g btn-sm" onclick="doUpdateOrder('${o.id}','${a[0]}')">${a[1]}</button>`;
+}
+async function doUpdateOrder(id,s){
+  try{await api(`/api/restaurant/orders/${id}/status`,{method:'PATCH',body:{status:s}});toast('Order updated ✓','ok');loadOrders(oFilter);}
+  catch(e){toast(e.message,'err');}
 }
 
-// ─── STATS ────────────────────────────────────────────────
-async function loadStats() {
-  try {
-    const data = await api('/api/restaurant/analytics?days=1');
-    document.getElementById('stat-today').textContent = data?.summary?.total_orders ?? 0;
-    document.getElementById('stat-rev').textContent = `₹${Math.round(data?.summary?.total_revenue ?? 0)}`;
-    document.getElementById('stat-active').textContent = '—'; // Would need separate query
-    const week = await api('/api/restaurant/analytics?days=7');
-    document.getElementById('stat-week').textContent = week?.summary?.total_orders ?? 0;
-  } catch(e) {
-    ['stat-today','stat-rev','stat-active','stat-week'].forEach(id => {
-      document.getElementById(id).textContent = '0';
-    });
-  }
+/* ─────────────────────────── ANALYTICS ─────────────────── */
+async function doAnalytics(days,el){
+  if(el){document.querySelectorAll('#tab-analytics .chip').forEach(c=>c.classList.remove('on'));el.classList.add('on');}
+  try{
+    const d=await api(`/api/restaurant/analytics?days=${days}`);
+    const s=d?.summary;
+    document.getElementById('an-o').textContent=s?.total_orders??0;
+    document.getElementById('an-r').textContent='₹'+Math.round(s?.total_revenue??0);
+    document.getElementById('an-a').textContent='₹'+Math.round(s?.avg_order_value??0);
+    const rt=s?.total_orders>0?Math.round((s.delivered/s.total_orders)*100):0;
+    document.getElementById('an-d').textContent=rt+'%';
+    if(d?.daily?.length)drawChart(d.daily);
+  }catch(_){}
 }
-
-// ─── RECENT ORDERS ────────────────────────────────────────
-async function loadRecentOrders() {
-  const container = document.getElementById('recent-orders');
-  try {
-    const orders = await api('/api/restaurant/orders?limit=5');
-    if (!orders?.length) return;
-
-    container.innerHTML = `
-      <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
-        <tbody>
-        ${orders.map(o => `
-          <tr>
-            <td><span class="mono">${o.order_number}</span></td>
-            <td>${o.customer_name || o.wa_phone}</td>
-            <td>₹${o.total_rs}</td>
-            <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
-            <td>${getStatusActions(o)}</td>
-          </tr>
-        `).join('')}
-        </tbody>
-      </table></div>`;
-  } catch(e) {}
-}
-
-// ─── ORDERS ───────────────────────────────────────────────
-let currentStatusFilter = 'ALL';
-
-async function loadOrders(status) {
-  currentStatusFilter = status;
-  const tbody = document.getElementById('orders-body');
-  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:2rem"><div class="spin"></div></td></tr>';
-  try {
-    const q = status === 'ALL' ? '' : `&status=${status}`;
-    const orders = await api(`/api/restaurant/orders?limit=50${q}`);
-    if (!orders?.length) {
-      tbody.innerHTML = '<tr><td colspan="8"><div class="empty"><div class="ei">📋</div><h3>No orders found</h3></div></td></tr>';
-      return;
-    }
-    tbody.innerHTML = orders.map(o => `
-      <tr>
-        <td><span class="mono">${o.order_number}</span></td>
-        <td><div>${o.customer_name || '—'}</div><div style="font-size:.78rem;color:var(--muted)">${o.wa_phone}</div></td>
-        <td>${o.branch_name}</td>
-        <td>${o.items ? o.items.length + ' item(s)' : '—'}</td>
-        <td>₹${o.total_rs}</td>
-        <td><span class="badge badge-${o.status.toLowerCase()}">${o.status.replace(/_/g,' ')}</span></td>
-        <td style="font-size:.8rem;color:var(--muted)">${timeAgo(o.created_at)}</td>
-        <td>${getStatusActions(o)}</td>
-      </tr>
-    `).join('');
-  } catch(e) {
-    showToast('Failed to load orders', 'error');
-  }
-}
-
-function filterOrders(status, el) {
-  document.querySelectorAll('#order-filters .chip').forEach(c => c.classList.remove('on'));
-  if (el) el.classList.add('on');
-  loadOrders(status);
-}
-
-function getStatusActions(order) {
-  const next = {
-    'PAID': ['CONFIRMED', '✅ Confirm'],
-    'CONFIRMED': ['PREPARING', '👨‍🍳 Start Prep'],
-    'PREPARING': ['PACKED', '📦 Mark Packed'],
-  };
-  const action = next[order.status];
-  if (!action) return '<span style="color:var(--muted);font-size:.8rem">—</span>';
-  return `<button class="btn-ghost" style="font-size:.78rem;padding:.35rem .7rem" onclick="updateOrderStatus('${order.id}','${action[0]}')">${action[1]}</button>`;
-}
-
-async function updateOrderStatus(orderId, status) {
-  try {
-    await api(`/api/restaurant/orders/${orderId}/status`, { method: 'PATCH', body: { status } });
-    showToast(`Order updated to ${status}`, 'success');
-    loadOrders(currentStatusFilter);
-    loadStats();
-  } catch(e) { showToast(e.message, 'error'); }
-}
-
-// ─── ANALYTICS ────────────────────────────────────────────
-async function loadAnalytics(days, el) {
-  if (el) {
-    document.querySelectorAll('#tab-analytics .chip').forEach(c => c.classList.remove('on'));
-    el.classList.add('on');
-  }
-  try {
-    const data = await api(`/api/restaurant/analytics?days=${days}`);
-    const s = data?.summary;
-    document.getElementById('an-orders').textContent = s?.total_orders ?? 0;
-    document.getElementById('an-rev').textContent = `₹${Math.round(s?.total_revenue ?? 0)}`;
-    document.getElementById('an-avg').textContent = `₹${Math.round(s?.avg_order_value ?? 0)}`;
-    const rate = s?.total_orders > 0 ? Math.round((s.delivered / s.total_orders) * 100) : 0;
-    document.getElementById('an-rate').textContent = `${rate}%`;
-
-    // Simple bar chart
-    if (data?.daily?.length > 0) {
-      renderBarChart(data.daily);
-    }
-  } catch(e) {}
-}
-
-function renderBarChart(daily) {
-  const max = Math.max(...daily.map(d => parseFloat(d.revenue) || 0), 1);
-  const html = `
-    <div style="display:flex;align-items:flex-end;gap:4px;height:120px;overflow-x:auto;padding:.5rem 0">
-      ${daily.map(d => {
-        const h = Math.max((parseFloat(d.revenue) / max) * 100, 2);
-        const date = new Date(d.date).toLocaleDateString('en-IN', {month:'short',day:'numeric'});
-        return `<div style="flex:1;min-width:28px;display:flex;flex-direction:column;align-items:center;gap:4px">
-          <span style="font-size:.65rem;color:var(--muted)">₹${Math.round(d.revenue)}</span>
-          <div style="width:100%;background:var(--wa);border-radius:4px 4px 0 0;height:${h}%;min-height:4px;opacity:.85;transition:opacity .2s" title="${date}: ₹${d.revenue}"></div>
-          <span style="font-size:.65rem;color:var(--muted);white-space:nowrap">${date}</span>
+function drawChart(daily){
+  const max=Math.max(...daily.map(d=>parseFloat(d.revenue)||0),1);
+  document.getElementById('chart').innerHTML=`
+    <div style="display:flex;align-items:flex-end;gap:3px;height:126px;overflow-x:auto;padding:.5rem 0">
+      ${daily.map(d=>{
+        const h=Math.max((parseFloat(d.revenue)/max)*100,2);
+        const dt=new Date(d.date).toLocaleDateString('en-IN',{month:'short',day:'numeric'});
+        return`<div style="flex:1;min-width:22px;display:flex;flex-direction:column;align-items:center;gap:3px">
+          <span style="font-size:.58rem;color:var(--dim)">₹${Math.round(d.revenue)}</span>
+          <div style="width:100%;background:var(--wa);border-radius:3px 3px 0 0;height:${h}%;min-height:3px;opacity:.8"></div>
+          <span style="font-size:.58rem;color:var(--dim);white-space:nowrap">${dt}</span>
         </div>`;
       }).join('')}
     </div>`;
-  document.getElementById('chart-wrap').innerHTML = html;
 }
 
-// ─── WHATSAPP ACCOUNTS ────────────────────────────────────
-async function loadWAAccounts() {
-  const container = document.getElementById('wa-accounts-list');
-  try {
-    const accounts = await api('/api/restaurant/whatsapp');
-    if (!accounts?.length) {
-      container.innerHTML = '<div class="empty"><div class="ei">📱</div><h3>No WhatsApp numbers found</h3><p>Numbers are imported during Meta OAuth. Try reconnecting.</p></div>';
-      return;
-    }
-    document.getElementById('wa-status').style.display = 'flex';
-    container.innerHTML = accounts.map(a => `
-      <div class="card" style="margin-bottom:1rem">
-        <div class="card-head">
-          <div>
-            <strong>${a.display_name || 'WhatsApp Number'}</strong>
-            <span class="badge ${a.is_active ? 'badge-active' : 'badge-inactive'}" style="margin-left:.5rem">${a.is_active ? 'Active' : 'Inactive'}</span>
-          </div>
-          <span style="font-size:.8rem;color:var(--muted)">Quality: <strong style="color:${a.quality_rating==='GREEN'?'var(--wa)':a.quality_rating==='RED'?'var(--red)':'var(--amber)'}">${a.quality_rating}</strong></span>
-        </div>
-        <div class="card-body">
-          <div class="form-grid">
-            <div><label>Phone Number ID</label><code style="display:block;background:var(--surface);padding:.5rem .75rem;border-radius:6px;font-size:.82rem;margin-top:.25rem">${a.phone_number_id}</code></div>
-            <div><label>Display Number</label><code style="display:block;background:var(--surface);padding:.5rem .75rem;border-radius:6px;font-size:.82rem;margin-top:.25rem">${a.phone_display || '—'}</code></div>
-            <div>
-              <label>Catalog ID <span style="color:var(--muted);font-weight:400">(from Meta Commerce Manager)</span></label>
-              <div style="display:flex;gap:.5rem;margin-top:.25rem">
-                <input id="cat-${a.id}" value="${a.catalog_id || ''}" placeholder="Enter your Meta catalog ID">
-                <button class="btn-primary" style="white-space:nowrap" onclick="saveCatalogId('${a.id}')">Save</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>`).join('');
-  } catch(e) {
-    container.innerHTML = '<div class="empty"><div class="ei">❌</div><h3>Failed to load</h3></div>';
-  }
-}
-
-async function saveCatalogId(waId) {
-  const catalogId = document.getElementById(`cat-${waId}`).value;
-  try {
-    await api(`/api/restaurant/whatsapp/${waId}`, { method: 'PUT', body: { catalogId } });
-    showToast('Catalog ID saved!', 'success');
-  } catch(e) { showToast(e.message, 'error'); }
-}
-
-function copyWebhook() {
-  const url = document.getElementById('webhook-url').textContent;
-  navigator.clipboard.writeText(url).then(() => showToast('Webhook URL copied!', 'success'));
-}
-
-// ─── BRANCHES ─────────────────────────────────────────────
-async function loadBranches() {
-  const container = document.getElementById('branches-list');
-  try {
-    const branches = await api('/api/restaurant/branches');
-    currentBranches = branches || [];
-    if (!branches?.length) {
-      container.innerHTML = '<div class="empty"><div class="ei">📍</div><h3>No branches yet</h3><p>Add your first branch above</p></div>';
-      return;
-    }
-    container.innerHTML = branches.map(b => `
-      <div class="card" style="margin-bottom:1rem">
-        <div class="card-head">
-          <div>
-            <strong>${b.name}</strong>
-            <span class="badge ${b.is_open ? 'badge-active' : 'badge-inactive'}" style="margin-left:.5rem">${b.is_open ? 'Open' : 'Closed'}</span>
-          </div>
-          <div style="display:flex;gap:.75rem;align-items:center">
-            <div class="toggle-wrap">
-              <label class="toggle">
-                <input type="checkbox" ${b.accepts_orders ? 'checked' : ''} onchange="toggleBranch('${b.id}',this.checked)">
-                <div class="slider"></div>
-              </label>
-              <span style="font-size:.82rem;color:var(--muted)">Accepting Orders</span>
-            </div>
-          </div>
-        </div>
-        <div class="card-body" style="display:flex;gap:2rem;flex-wrap:wrap">
-          <div style="flex:1;min-width:200px">
-            <p style="font-size:.875rem;color:var(--muted);margin-bottom:.5rem">${b.address || '—'}</p>
-            <p style="font-size:.82rem;color:var(--muted)">🕐 ${b.opening_time?.slice(0,5)} – ${b.closing_time?.slice(0,5)} &nbsp;|&nbsp; 📍 ${b.delivery_radius_km}km radius</p>
-          </div>
-          <div style="display:flex;gap:2rem">
-            <div><div style="font-size:.72rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Latitude</div><code style="font-size:.85rem">${b.latitude}</code></div>
-            <div><div style="font-size:.72rem;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em">Longitude</div><code style="font-size:.85rem">${b.longitude}</code></div>
-          </div>
-        </div>
-      </div>`).join('');
-  } catch(e) {}
-}
-
-async function addBranch() {
-  const payload = {
-    name: document.getElementById('b-name').value,
-    city: document.getElementById('b-city').value,
-    address: document.getElementById('b-addr').value,
-    latitude: parseFloat(document.getElementById('b-lat').value),
-    longitude: parseFloat(document.getElementById('b-lng').value),
-    deliveryRadiusKm: parseFloat(document.getElementById('b-radius').value) || 5,
-    openingTime: document.getElementById('b-open').value,
-    closingTime: document.getElementById('b-close').value,
-    managerPhone: document.getElementById('b-mgr').value,
-  };
-  if (!payload.name || !payload.latitude || !payload.longitude) {
-    return showToast('Branch name, latitude and longitude are required', 'error');
-  }
-  try {
-    await api('/api/restaurant/branches', { method: 'POST', body: payload });
-    showToast('Branch added!', 'success');
-    ['b-name','b-city','b-addr','b-lat','b-lng'].forEach(id => { document.getElementById(id).value = ''; });
+/* ─────────────── BRANCHES & CATALOG (hero feature) ─────── */
+async function doAddBranch(){
+  const btn=document.getElementById('add-b-btn');
+  const name=document.getElementById('b-name').value.trim();
+  const lat=parseFloat(document.getElementById('b-lat').value);
+  const lng=parseFloat(document.getElementById('b-lng').value);
+  if(!name||isNaN(lat)||isNaN(lng))return toast('Branch name, latitude and longitude are required','err');
+  btn.disabled=true;btn.innerHTML='<div class="spin"></div> Creating...';
+  try{
+    await api('/api/restaurant/branches',{method:'POST',body:{
+      name,city:document.getElementById('b-city').value,
+      address:document.getElementById('b-addr').value,
+      latitude:lat,longitude:lng,
+      deliveryRadiusKm:parseFloat(document.getElementById('b-rad').value)||5,
+      openingTime:document.getElementById('b-open').value,
+      closingTime:document.getElementById('b-close').value,
+      managerPhone:document.getElementById('b-mgr').value,
+    }});
+    ['b-name','b-city','b-addr','b-lat','b-lng','b-mgr'].forEach(id=>document.getElementById(id).value='');
+    toast(`✅ "${name}" added! Creating WhatsApp catalog...`,'ok');
     loadBranches();
-  } catch(e) { showToast(e.message, 'error'); }
+    // Background catalog creation takes ~3s — poll to refresh
+    setTimeout(loadBranches,3500);
+    setTimeout(loadBranches,7000);
+  }catch(e){toast(e.message,'err');}
+  finally{btn.disabled=false;btn.innerHTML='+ Add Branch';}
 }
 
-async function toggleBranch(branchId, value) {
-  await api(`/api/restaurant/branches/${branchId}`, { method: 'PATCH', body: { acceptsOrders: value } });
-}
-
-// ─── MENU ─────────────────────────────────────────────────
-async function loadBranchSelect() {
-  const sel = document.getElementById('menu-branch');
-  try {
-    const branches = await api('/api/restaurant/branches');
-    currentBranches = branches || [];
-    sel.innerHTML = '<option value="">Select a branch...</option>' +
-      branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
-  } catch(e) {}
-}
-
-async function loadMenu() {
-  const branchId = document.getElementById('menu-branch').value;
-  if (!branchId) return;
-
-  // Load categories for the Add form
-  const catSel = document.getElementById('m-cat');
-  const cats = await api(`/api/restaurant/branches/${branchId}/categories`).catch(() => []);
-  catSel.innerHTML = '<option value="">No category</option>' +
-    (cats || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-
-  const container = document.getElementById('menu-list');
-  try {
-    const grouped = await api(`/api/restaurant/branches/${branchId}/menu`);
-    if (!grouped?.length || grouped.every(g => !g.items?.length)) {
-      container.innerHTML = '<div class="empty"><div class="ei">🍽️</div><h3>No menu items yet</h3><p>Add your first item above</p></div>';
+async function loadBranches(){
+  const list=document.getElementById('branch-list');
+  try{
+    const data=await api('/api/restaurant/branches');
+    branches=data||[];
+    if(!branches.length){
+      list.innerHTML=`<div class="empty"><div class="ei">📍</div><h3>No branches yet</h3><p>Add your first branch above</p></div>`;
       return;
     }
-    container.innerHTML = grouped.map(group => `
-      <div class="card" style="margin-bottom:1rem">
-        <div class="card-head"><h3>${group.name}</h3><span style="font-size:.82rem;color:var(--muted)">${group.items.length} items</span></div>
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr><th>Item</th><th>Type</th><th>Price</th><th>Available</th><th></th></tr></thead>
-            <tbody>
-            ${group.items.map(item => `
-              <tr>
-                <td>
-                  <strong style="font-size:.9rem">${item.name}</strong>
-                  ${item.description ? `<div style="font-size:.78rem;color:var(--muted)">${item.description}</div>` : ''}
-                  ${item.is_bestseller ? '<span class="badge badge-active" style="margin-top:.25rem">⭐ Bestseller</span>' : ''}
-                </td>
-                <td><span style="font-size:.82rem">${{veg:'🟢 Veg',non_veg:'🔴 Non-Veg',vegan:'🌱 Vegan',egg:'🟡 Egg'}[item.food_type]||item.food_type}</span></td>
-                <td><strong>₹${item.price_paise/100}</strong></td>
-                <td>
-                  <label class="toggle">
-                    <input type="checkbox" ${item.is_available?'checked':''} onchange="toggleItem('${item.id}',this.checked)">
-                    <div class="slider"></div>
-                  </label>
-                </td>
-                <td><button class="btn-danger" onclick="deleteItem('${item.id}')">🗑</button></td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
+    list.innerHTML=branches.map(b=>renderBranchCard(b)).join('');
+  }catch(e){toast('Failed to load branches','err');}
+}
+
+function renderBranchCard(b){
+  /* ── three catalog states ── */
+  let catHtml='';
+
+  if(!b.catalog_id){
+    // STATE 1 — No catalog yet
+    catHtml=`
+      <div class="cat-strip">
+        <div class="cat-inner">
+          <div class="cat-ico">⏳</div>
+          <div class="cat-inf">
+            <h4 style="color:var(--gold2)">Catalog not created yet</h4>
+            <p>Usually auto-creates within a few seconds. If it's been over 30 seconds, click to retry.</p>
+          </div>
+          <div class="cat-acts">
+            <button class="btn-p btn-sm" onclick="doCreateCatalog('${b.id}','${b.name.replace(/'/g,"\\'")}',this)">⚡ Create Catalog</button>
+            <button class="btn-g btn-sm" onclick="loadBranches()">🔄 Refresh</button>
+          </div>
+        </div>
+      </div>`;
+
+  }else if(!b.catalog_synced_at){
+    // STATE 2 — Created, never synced
+    catHtml=`
+      <div class="cat-strip">
+        <div class="cat-inner">
+          <div class="cat-ico">✅</div>
+          <div class="cat-inf">
+            <h4 style="color:var(--wa)">Catalog Created — Needs First Sync</h4>
+            <p>Your WhatsApp catalog exists. Add menu items then click <strong>Sync Menu</strong> to push them to WhatsApp customers.</p>
+            <div class="cat-id">${b.catalog_id}</div>
+          </div>
+          <div class="cat-acts">
+            <button class="btn-p btn-sm" id="sbtn-${b.id}" onclick="doSync('${b.id}','${b.name.replace(/'/g,"\\'")}')">🔄 Sync Menu</button>
+            <button class="btn-g btn-sm" onclick="goTab('menu',null);doSelectBranch('${b.id}')">🍽️ Add Items</button>
+          </div>
+        </div>
+        <div class="sp-strip" id="sp-${b.id}">
+          <div class="sp-row"><span id="sp-lbl-${b.id}">Syncing to WhatsApp...</span><span id="sp-pct-${b.id}">0%</span></div>
+          <div class="prog-wrap"><div class="prog-bar" id="sp-bar-${b.id}" style="width:0%"></div></div>
+        </div>
+      </div>`;
+
+  }else{
+    // STATE 3 — Live and synced
+    const when=new Date(b.catalog_synced_at).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+    catHtml=`
+      <div class="cat-strip">
+        <div class="cat-inner">
+          <div class="cat-ico">🟢</div>
+          <div class="cat-inf">
+            <h4 style="color:var(--wa)">Live on WhatsApp ✓</h4>
+            <p>Customers near this branch see this catalog. Last synced <strong>${when}</strong>.</p>
+            <div class="cat-id">${b.catalog_id}</div>
+          </div>
+          <div class="cat-acts">
+            <button class="btn-p btn-sm" id="sbtn-${b.id}" onclick="doSync('${b.id}','${b.name.replace(/'/g,"\\'")}')">🔄 Sync Menu</button>
+            <button class="btn-g btn-sm" onclick="goTab('menu',null);doSelectBranch('${b.id}')">🍽️ Edit Menu</button>
+          </div>
+        </div>
+        <div class="sp-strip" id="sp-${b.id}">
+          <div class="sp-row"><span id="sp-lbl-${b.id}">Syncing to WhatsApp...</span><span id="sp-pct-${b.id}">0%</span></div>
+          <div class="prog-wrap"><div class="prog-bar" id="sp-bar-${b.id}" style="width:0%"></div></div>
+        </div>
+      </div>`;
+  }
+
+  return`<div class="bcard" id="bc-${b.id}">
+    <div class="bcard-hd">
+      <div style="flex:1;min-width:0">
+        <div class="bcard-name">${b.name}</div>
+        <div class="bcard-addr">${b.address||b.city||'—'}</div>
+      </div>
+      <div class="bcard-badges">
+        <span class="badge ${b.is_open?'bg':'br'}">${b.is_open?'🟢 Open':'🔴 Closed'}</span>
+        <span class="badge ${b.accepts_orders?'bg':'ba'}">${b.accepts_orders?'Taking Orders':'Paused'}</span>
+      </div>
+    </div>
+    <div class="bcard-body">
+      <div class="ipair-row">
+        <div class="ipair"><label>Latitude</label><code>${b.latitude}</code></div>
+        <div class="ipair"><label>Longitude</label><code>${b.longitude}</code></div>
+        <div class="ipair"><label>Radius</label><code>${b.delivery_radius_km} km</code></div>
+        <div class="ipair"><label>Hours</label><code>${b.opening_time?.slice(0,5)} – ${b.closing_time?.slice(0,5)}</code></div>
+      </div>
+      <div class="bcard-togs">
+        <div class="tog">
+          <label class="tsl"><input type="checkbox" ${b.accepts_orders?'checked':''} onchange="doToggle('${b.id}','acceptsOrders',this.checked)"><div class="tsl-track"></div></label>
+          <span>Accepting orders</span>
+        </div>
+        <div class="tog">
+          <label class="tsl"><input type="checkbox" ${b.is_open?'checked':''} onchange="doToggle('${b.id}','isOpen',this.checked)"><div class="tsl-track"></div></label>
+          <span>Branch open</span>
+        </div>
+      </div>
+    </div>
+    ${catHtml}
+  </div>`;
+}
+
+/* create catalog (retry) */
+async function doCreateCatalog(branchId,branchName,btn){
+  const card=document.getElementById('bc-'+branchId);
+  const strip=card?.querySelector('.cat-strip');
+  if(strip){
+    strip.innerHTML=`<div class="cat-making">
+      <div class="mspin"></div>
+      <p>Creating catalog for <strong>${branchName}</strong>… usually takes a few seconds</p>
+    </div>`;
+  }
+  try{
+    const r=await api(`/api/restaurant/branches/${branchId}/create-catalog`,{method:'POST'});
+    if(r.success||r.alreadyExists) toast(`✅ Catalog ready for ${branchName}!`,'ok');
+    else toast(r.error||'Catalog creation failed','err');
+    loadBranches();
+  }catch(e){toast(e.message,'err');loadBranches();}
+}
+
+/* sync with animated progress bar */
+async function doSync(branchId,branchName){
+  const btn=document.getElementById('sbtn-'+branchId);
+  const sp =document.getElementById('sp-'+branchId);
+  const bar=document.getElementById('sp-bar-'+branchId);
+  const lbl=document.getElementById('sp-lbl-'+branchId);
+  const pct=document.getElementById('sp-pct-'+branchId);
+  if(btn){btn.disabled=true;btn.innerHTML='<div class="spin"></div> Syncing...';}
+  if(sp)sp.classList.add('on');
+  animBar(bar,pct,0,42,700);
+  try{
+    animBar(bar,pct,42,78,1100);
+    if(lbl)lbl.textContent='Pushing items to WhatsApp Catalog...';
+    const r=await api(`/api/restaurant/branches/${branchId}/sync-catalog`,{method:'POST'});
+    animBar(bar,pct,78,100,350);
+    if(lbl)lbl.textContent='Done!';
+    setTimeout(()=>{if(sp)sp.classList.remove('on');},1500);
+    if(r.success) toast(`✅ ${branchName}: ${r.updated} items live, ${r.deleted} removed`,'ok');
+    else toast(r.errors?.[0]||r.message||'Sync failed','err');
+    loadBranches();
+  }catch(e){
+    toast(e.message,'err');
+    if(sp)sp.classList.remove('on');
+  }finally{
+    if(btn){btn.disabled=false;btn.innerHTML='🔄 Sync Menu';}
+  }
+}
+function animBar(bar,pct,from,to,dur){
+  if(!bar)return;
+  const t0=performance.now();
+  (function s(now){
+    const p=Math.min((now-t0)/dur,1);
+    const v=from+(to-from)*p;
+    bar.style.width=v+'%';
+    if(pct)pct.textContent=Math.round(v)+'%';
+    if(p<1)requestAnimationFrame(s);
+  })(performance.now());
+}
+async function doToggle(id,field,val){
+  const body=field==='acceptsOrders'?{acceptsOrders:val}:{isOpen:val};
+  await api(`/api/restaurant/branches/${id}`,{method:'PATCH',body}).catch(()=>{});
+}
+
+/* ─────────────────────────── MENU ──────────────────────── */
+async function loadBranchSel(){
+  const sel=document.getElementById('m-branch');
+  try{
+    const data=await api('/api/restaurant/branches');
+    branches=data||[];
+    sel.innerHTML='<option value="">Select branch to manage menu...</option>'+
+      branches.map(b=>`<option value="${b.id}">${b.name} ${b.catalog_id?'✅':'⚠️ No catalog'}</option>`).join('');
+  }catch(_){}
+}
+function doSelectBranch(id){
+  const sel=document.getElementById('m-branch');
+  if(sel){sel.value=id;loadMenu();}
+}
+async function loadMenu(){
+  const branchId=document.getElementById('m-branch').value;
+  if(!branchId)return;
+  const cats=await api(`/api/restaurant/branches/${branchId}/categories`).catch(()=>[]);
+  const catSel=document.getElementById('m-cat');
+  catSel.innerHTML='<option value="">No category</option>'+(cats||[]).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const branch=branches.find(b=>b.id===branchId);
+  const badge=document.getElementById('m-cat-badge');
+  const syncBtn=document.getElementById('m-sync-btn');
+  badge.style.display='flex';
+  syncBtn.style.display=branch?.catalog_id?'inline-flex':'none';
+  badge.innerHTML=branch?.catalog_id
+    ?`<span class="badge bg">✅ Catalog Live</span>`
+    :`<span class="badge ba">⚠️ No catalog — <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--gold2);cursor:pointer;font-size:.72rem;text-decoration:underline">create in Branches</button></span>`;
+  const list=document.getElementById('menu-list');
+  list.innerHTML=`<div style="text-align:center;padding:2rem"><div class="spin"></div></div>`;
+  try{
+    const grouped=await api(`/api/restaurant/branches/${branchId}/menu`);
+    if(!grouped?.length||grouped.every(g=>!g.items?.length)){
+      list.innerHTML=`<div class="empty"><div class="ei">🍽️</div><h3>No menu items yet</h3><p>Add above, then sync to WhatsApp</p></div>`;
+      return;
+    }
+    list.innerHTML=grouped.map(g=>`
+      <div class="card" style="margin-bottom:.9rem">
+        <div class="ch"><h3>${g.name}</h3><span class="badge bd">${g.items.length} items</span></div>
+        <div>${g.items.map(miRow).join('')}</div>
+      </div>`).join('');
+  }catch(e){toast('Failed to load menu','err');}
+}
+function miRow(item){
+  const ti={veg:'🟢',non_veg:'🔴',vegan:'🌱',egg:'🟡'};
+  const thumb=item.image_url
+    ?`<img class="mi-th" src="${item.image_url}" onerror="this.style.display='none'">`
+    :`<div class="mi-ph">${ti[item.food_type]||'🍽️'}</div>`;
+  return`<div class="mi">
+    ${thumb}
+    <div style="flex:1;min-width:0">
+      <div class="mi-name">${item.name}${item.is_bestseller?'<span class="badge ba" style="margin-left:.3rem;font-size:.6rem">⭐</span>':''}</div>
+      ${item.description?`<div class="mi-desc">${item.description}</div>`:''}
+    </div>
+    <div class="mi-price">₹${item.price_paise/100}</div>
+    <div class="mi-acts">
+      <label class="tsl"><input type="checkbox" ${item.is_available?'checked':''} onchange="doToggleItem('${item.id}',this.checked,'${item.name.replace(/'/g,"\\'")}')"><div class="tsl-track"></div></label>
+      <button class="btn-del" onclick="doDeleteItem('${item.id}','${item.name.replace(/'/g,"\\'")}')">🗑</button>
+    </div>
+  </div>`;
+}
+async function doAddItem(){
+  const branchId=document.getElementById('m-branch').value;
+  if(!branchId)return toast('Select a branch first','err');
+  const name=document.getElementById('m-name').value.trim();
+  const price=document.getElementById('m-price').value;
+  if(!name||!price)return toast('Name and price are required','err');
+  try{
+    await api(`/api/restaurant/branches/${branchId}/menu`,{method:'POST',body:{
+      name,priceRs:parseFloat(price),
+      description:document.getElementById('m-desc').value,
+      foodType:document.getElementById('m-type').value,
+      categoryId:document.getElementById('m-cat').value||null,
+      imageUrl:document.getElementById('m-img').value,
+    }});
+    toast(`"${name}" added! Click Sync to push to WhatsApp.`,'ok');
+    ['m-name','m-price','m-desc','m-img'].forEach(id=>document.getElementById(id).value='');
+    loadMenu();
+  }catch(e){toast(e.message,'err');}
+}
+async function doQuickSync(){
+  const branchId=document.getElementById('m-branch').value;
+  if(!branchId)return;
+  const branch=branches.find(b=>b.id===branchId);
+  if(!branch?.catalog_id)return toast('No catalog yet — create it in Branches tab first','err');
+  const btn=document.getElementById('m-sync-btn');
+  btn.disabled=true;btn.innerHTML='<div class="spin"></div> Syncing...';
+  try{
+    const r=await api(`/api/restaurant/branches/${branchId}/sync-catalog`,{method:'POST'});
+    if(r.success)toast(`✅ ${r.updated} items now live on WhatsApp!`,'ok');
+    else toast(r.errors?.[0]||'Sync failed','err');
+  }catch(e){toast(e.message,'err');}
+  finally{btn.disabled=false;btn.innerHTML='🔄 Sync to WhatsApp';}
+}
+async function doToggleItem(id,av,name){
+  try{await api(`/api/restaurant/menu/${id}`,{method:'PUT',body:{isAvailable:av}});toast(`"${name}" ${av?'back on menu':'marked unavailable'} ✓`,'ok');}
+  catch(e){toast(e.message,'err');}
+}
+async function doDeleteItem(id,name){
+  if(!confirm(`Delete "${name}"?`))return;
+  try{await api(`/api/restaurant/menu/${id}`,{method:'DELETE'});toast(`"${name}" deleted`,'ok');loadMenu();}
+  catch(e){toast(e.message,'err');}
+}
+
+/* ─────────────────────────── WHATSAPP ──────────────────── */
+async function loadWA(){
+  const list=document.getElementById('wa-list');
+  try{
+    const accounts=await api('/api/restaurant/whatsapp');
+    if(!accounts?.length){list.innerHTML=`<div class="empty"><div class="ei">📱</div><h3>No numbers found</h3><p>Try reconnecting your Meta account</p></div>`;return;}
+    document.getElementById('live-dot').style.display='flex';
+    list.innerHTML=accounts.map(a=>`
+      <div class="card" style="margin-bottom:.85rem">
+        <div class="ch">
+          <div><strong>${a.display_name||'WhatsApp Number'}</strong><span class="badge ${a.is_active?'bg':'br'}" style="margin-left:.5rem">${a.is_active?'Active':'Inactive'}</span></div>
+          <span style="font-size:.75rem;color:var(--dim)">Quality: <strong style="color:${a.quality_rating==='GREEN'?'var(--wa)':a.quality_rating==='RED'?'var(--red)':'var(--gold2)'}">${a.quality_rating||'—'}</strong></span>
+        </div>
+        <div class="cb">
+          <div class="ipair-row">
+            <div class="ipair"><label>Phone Number ID</label><code>${a.phone_number_id}</code></div>
+            <div class="ipair"><label>Display Number</label><code>${a.phone_display||'—'}</code></div>
+            <div class="ipair"><label>WABA ID</label><code>${a.waba_id||'—'}</code></div>
+          </div>
         </div>
       </div>`).join('');
-  } catch(e) { showToast('Failed to load menu', 'error'); }
+  }catch(_){}
+}
+function copyWH(){navigator.clipboard.writeText(document.getElementById('wh-url').textContent).then(()=>toast('Webhook URL copied!','ok'));}
+
+/* ─────────────────────────── SETTLEMENTS ───────────────── */
+async function loadSettlements(){
+  const tb=document.getElementById('settle-body');
+  try{
+    const d=await api('/api/restaurant/settlements');
+    if(!d?.length)return;
+    tb.innerHTML=d.map(s=>`<tr>
+      <td style="font-size:.8rem">${s.period_start} → ${s.period_end}</td>
+      <td>${s.orders_count}</td>
+      <td>₹${parseFloat(s.gross_revenue_rs).toFixed(0)}</td>
+      <td>₹${parseFloat(s.platform_fee_rs).toFixed(0)}</td>
+      <td><strong>₹${parseFloat(s.net_payout_rs).toFixed(0)}</strong></td>
+      <td>${sbadge(s.payout_status.toUpperCase())}</td>
+    </tr>`).join('');
+  }catch(_){}
 }
 
-async function addMenuItem() {
-  const branchId = document.getElementById('menu-branch').value;
-  if (!branchId) return showToast('Please select a branch first', 'error');
-
-  const payload = {
-    name: document.getElementById('m-name').value,
-    priceRs: document.getElementById('m-price').value,
-    description: document.getElementById('m-desc').value,
-    foodType: document.getElementById('m-type').value,
-    categoryId: document.getElementById('m-cat').value || null,
-    imageUrl: document.getElementById('m-img').value,
-  };
-  if (!payload.name || !payload.priceRs) return showToast('Name and price required', 'error');
-
-  try {
-    await api(`/api/restaurant/branches/${branchId}/menu`, { method: 'POST', body: payload });
-    showToast('Menu item added!', 'success');
-    ['m-name','m-price','m-desc','m-img'].forEach(id => { document.getElementById(id).value = ''; });
-    loadMenu();
-  } catch(e) { showToast(e.message, 'error'); }
+/* ─────────────────────────── PROFILE ───────────────────── */
+async function loadProfile(){
+  try{
+    const r=await api('/auth/me');if(!r)return;
+    const map={'p-bname':'business_name','p-owner':'owner_name','p-phone':'phone','p-email':'email','p-logo':'logo_url','p-bank':'bank_name','p-accno':'bank_account_number','p-ifsc':'bank_ifsc'};
+    Object.entries(map).forEach(([id,k])=>{const e=document.getElementById(id);if(e)e.value=r[k]||'';});
+  }catch(_){}
+}
+async function doSaveProfile(){
+  try{
+    await api('/api/restaurant',{method:'PUT',body:{
+      businessName:document.getElementById('p-bname').value,
+      ownerName:document.getElementById('p-owner').value,
+      phone:document.getElementById('p-phone').value,
+      logoUrl:document.getElementById('p-logo').value,
+      bankName:document.getElementById('p-bank').value,
+      bankAccountNumber:document.getElementById('p-accno').value,
+      bankIfsc:document.getElementById('p-ifsc').value,
+    }});
+    toast('Profile saved ✓','ok');
+    const nm=document.getElementById('p-bname').value;
+    if(nm)document.getElementById('sb-nm').textContent=nm;
+  }catch(e){toast(e.message,'err');}
 }
 
-async function toggleItem(itemId, available) {
-  await api(`/api/restaurant/menu/${itemId}`, { method: 'PUT', body: { isAvailable: available } });
+/* ─────────────────────────── TOAST ─────────────────────── */
+let _tt;
+function toast(msg,type='ok'){
+  const el=document.getElementById('toast');
+  el.innerHTML=`<span>${{ok:'✓',err:'✗',nfo:'ℹ'}[type]||'•'}</span><span>${msg}</span>`;
+  el.className='on '+type;
+  clearTimeout(_tt);
+  _tt=setTimeout(()=>el.classList.remove('on'),3800);
 }
 
-async function deleteItem(itemId) {
-  if (!confirm('Delete this menu item?')) return;
-  try {
-    await api(`/api/restaurant/menu/${itemId}`, { method: 'DELETE' });
-    showToast('Item deleted', 'success');
-    loadMenu();
-  } catch(e) { showToast(e.message, 'error'); }
+/* ─────────────────────────── UTILS ─────────────────────── */
+function timeAgo(ts){
+  const m=Math.round((Date.now()-new Date(ts))/60000);
+  if(m<1)return'just now';if(m<60)return m+'m ago';
+  if(m<1440)return Math.round(m/60)+'h ago';
+  return Math.round(m/1440)+'d ago';
 }
-
-async function syncCatalog() {
-  const branchId = document.getElementById('menu-branch').value;
-  if (!branchId) return showToast('Select a branch first', 'error');
-  showToast('Syncing catalog...', 'success');
-  try {
-    const res = await api(`/api/restaurant/branches/${branchId}/sync-catalog`, { method: 'POST' });
-    showToast(`Synced! ${res?.updated || 0} items updated`, 'success');
-  } catch(e) { showToast(e.message, 'error'); }
-}
-
-// ─── SETTLEMENTS ──────────────────────────────────────────
-async function loadSettlements() {
-  const tbody = document.getElementById('settlements-body');
-  try {
-    const settlements = await api('/api/restaurant/settlements');
-    if (!settlements?.length) return;
-    tbody.innerHTML = settlements.map(s => `
-      <tr>
-        <td>${s.period_start} → ${s.period_end}</td>
-        <td>${s.orders_count}</td>
-        <td>₹${parseFloat(s.gross_revenue_rs).toFixed(0)}</td>
-        <td>₹${parseFloat(s.platform_fee_rs).toFixed(0)}</td>
-        <td><strong>₹${parseFloat(s.net_payout_rs).toFixed(0)}</strong></td>
-        <td><span class="badge badge-${s.payout_status === 'completed' ? 'delivered' : s.payout_status === 'failed' ? 'cancelled' : 'pending'}">${s.payout_status}</span></td>
-      </tr>`).join('');
-  } catch(e) {}
-}
-
-// ─── PROFILE ──────────────────────────────────────────────
-async function loadProfile() {
-  try {
-    const r = await api('/auth/me');
-    if (!r) return;
-    document.getElementById('p-bname').value = r.business_name || '';
-    document.getElementById('p-owner').value = r.owner_name || '';
-    document.getElementById('p-phone').value = r.phone || '';
-    document.getElementById('p-email').value = r.email || '';
-    document.getElementById('p-logo').value = r.logo_url || '';
-    document.getElementById('p-bank').value = r.bank_name || '';
-    document.getElementById('p-accno').value = r.bank_account_number || '';
-    document.getElementById('p-ifsc').value = r.bank_ifsc || '';
-  } catch(e) {}
-}
-
-async function saveProfile() {
-  try {
-    await api('/api/restaurant', {
-      method: 'PUT',
-      body: {
-        businessName: document.getElementById('p-bname').value,
-        ownerName: document.getElementById('p-owner').value,
-        phone: document.getElementById('p-phone').value,
-        logoUrl: document.getElementById('p-logo').value,
-        bankName: document.getElementById('p-bank').value,
-        bankAccountNumber: document.getElementById('p-accno').value,
-        bankIfsc: document.getElementById('p-ifsc').value,
-      }
-    });
-    showToast('Profile saved!', 'success');
-    const name = document.getElementById('p-bname').value;
-    if (name) document.getElementById('sb-name').textContent = name;
-  } catch(e) { showToast(e.message, 'error'); }
-}
-
-// ─── TOAST ────────────────────────────────────────────────
-let toastTimer;
-function showToast(msg, type = 'success') {
-  const el = document.getElementById('toast');
-  el.textContent = (type === 'success' ? '✓ ' : '✗ ') + msg;
-  el.className = `show ${type}`;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
-}
-
-// ─── UTILITIES ────────────────────────────────────────────
-function timeAgo(ts) {
-  const mins = Math.round((Date.now() - new Date(ts)) / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  if (mins < 1440) return `${Math.round(mins/60)}h ago`;
-  return `${Math.round(mins/1440)}d ago`;
-}
-
-// ─── DEMO DATA ────────────────────────────────────────────
-function demoData(path) {
-  if (path === '/auth/me') return { business_name: 'Burger Palace', owner_name: 'Demo User', onboarding_step: 2 };
-  if (path.includes('analytics?days=1')) return { summary: { total_orders: 12, total_revenue: 4840, avg_order_value: 403, delivered: 10 }, daily: [] };
-  if (path.includes('analytics?days=7')) return { summary: { total_orders: 78, total_revenue: 31200, avg_order_value: 400, delivered: 70 }, daily: [
-    {date:'2024-09-09',orders:8,revenue:3200},{date:'2024-09-10',orders:12,revenue:4800},{date:'2024-09-11',orders:15,revenue:6000},
-    {date:'2024-09-12',orders:10,revenue:4000},{date:'2024-09-13',orders:14,revenue:5600},{date:'2024-09-14',orders:11,revenue:4400},{date:'2024-09-15',orders:8,revenue:3200}
-  ]};
-  if (path.includes('/orders')) return [
-    { id:'1', order_number:'ZM-20240915-0001', customer_name:'Ravi Kumar', wa_phone:'919876543210', branch_name:'Koramangala', total_rs:640, status:'PREPARING', created_at: new Date(Date.now()-30*60000), items:[{},{},{}] },
-    { id:'2', order_number:'ZM-20240915-0002', customer_name:'Priya Shah', wa_phone:'919876543211', branch_name:'Indiranagar', total_rs:285, status:'PAID', created_at: new Date(Date.now()-15*60000), items:[{}] },
-    { id:'3', order_number:'ZM-20240915-0003', customer_name:'Arjun Nair', wa_phone:'919876543212', branch_name:'Koramangala', total_rs:990, status:'DISPATCHED', created_at: new Date(Date.now()-60*60000), items:[{},{},{}] },
-  ];
-  if (path.includes('/whatsapp')) return [{ id:'wa1', display_name:'Burger Palace', phone_number_id:'123456789', phone_display:'+91 98765 43210', quality_rating:'GREEN', is_active:true, catalog_id:'' }];
-  if (path.includes('/branches')) return [
-    { id:'br1', name:'Koramangala Outlet', address:'Shop 5, Forum Mall, Koramangala', city:'Bangalore', latitude:'12.93456', longitude:'77.61234', delivery_radius_km:'5.00', is_open:true, accepts_orders:true, opening_time:'10:00:00', closing_time:'22:00:00' },
-    { id:'br2', name:'Indiranagar Outlet', address:'12th Main, Indiranagar', city:'Bangalore', latitude:'12.97820', longitude:'77.63990', delivery_radius_km:'4.00', is_open:true, accepts_orders:true, opening_time:'11:00:00', closing_time:'23:00:00' },
-  ];
-  if (path.includes('/menu')) return [
-    { id:null, name:'Starters', items:[
-      { id:'i1', name:'Paneer Tikka', price_paise:22000, description:'Marinated cottage cheese', food_type:'veg', is_available:true, is_bestseller:true },
-      { id:'i2', name:'Chicken Wings', price_paise:28000, description:'Crispy fried wings', food_type:'non_veg', is_available:true, is_bestseller:false }
-    ]},
-    { id:null, name:'Mains', items:[
-      { id:'i3', name:'Butter Chicken', price_paise:32000, description:'Rich tomato-cream gravy', food_type:'non_veg', is_available:true, is_bestseller:true },
-      { id:'i4', name:'Dal Makhani', price_paise:24000, description:'Slow cooked black lentils', food_type:'veg', is_available:false, is_bestseller:false },
-    ]}
-  ];
-  if (path.includes('/settlements')) return [
-    { period_start:'2024-09-09', period_end:'2024-09-15', orders_count:78, gross_revenue_rs:31200, platform_fee_rs:2496, net_payout_rs:24504, payout_status:'completed' },
-    { period_start:'2024-09-02', period_end:'2024-09-08', orders_count:64, gross_revenue_rs:25600, platform_fee_rs:2048, net_payout_rs:20352, payout_status:'completed' },
-  ];
-  if (path.includes('/categories')) return [{ id:'c1', name:'Starters' }, { id:'c2', name:'Mains' }, { id:'c3', name:'Desserts' }];
-      return null;
-    }
-
-// ─── WHATSAPP EMBEDDED SIGNUP LISTENER ───────────────────────
-window.addEventListener('message', function(event) {
-  if (event.origin !== 'https://www.facebook.com') return;
-  try {
-    const data = JSON.parse(event.data);
-    if (data.type === 'WA_EMBEDDED_SIGNUP') {
-      if (data.event === 'FINISH') {
-        console.log('[Embedded Signup] Connected:', data.data);
-        window._embeddedSignupData = data.data;
-      } else if (data.event === 'CANCEL') {
-        showToast('Setup cancelled. You can try again anytime.', 'error');
-      } else if (data.event === 'ERROR') {
-        showToast('Setup error: ' + data.data.error_message, 'error');
-      }
-    }
-  } catch(e) {}
-});
-
 </script>
 </body>
 </html>

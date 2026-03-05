@@ -1,130 +1,322 @@
 // src/services/catalog.js
-// WhatsApp Catalog Batch API — syncs your restaurant menu to Meta
-//
-// HOW WHATSAPP CATALOG WORKS:
-// 1. You create a catalog in Meta Business Manager (Commerce Manager)
-// 2. You upload your menu items to the catalog via this Batch API
-// 3. When a customer orders, you send a "catalog_message" to them
-// 4. They see a mini-shop inside WhatsApp: browse menu, add to cart, checkout
-// 5. When they checkout, Meta sends us an "order" webhook with items + quantities
-//
-// The Batch API lets you update 100 items per request efficiently
+// Syncs branch-specific menu to Meta WhatsApp Catalog Batch API
+// Each branch has its OWN catalog — menus stay separated by location
 
 const axios = require('axios');
-const db = require('../config/database');
+const db    = require('../config/database');
 
-const GRAPH_BASE = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
 
-// ─── SYNC BRANCH MENU TO WHATSAPP CATALOG ────────────────────
-// Pushes all available menu items for a branch to its WhatsApp Catalog
-// Call this when: menu items are added/updated, prices change, items go unavailable
-const syncBranchCatalog = async (branchId) => {
-  // Get branch + WhatsApp account info
-  const { rows: branches } = await db.query(`
+// ─── AUTO-CREATE CATALOG FOR A BRANCH ────────────────────────
+// Called automatically when a new branch is added
+// Creates a Meta Commerce Catalog via API and saves catalog_id to DB
+const createBranchCatalog = async (branchId) => {
+
+  // Get branch + restaurant + WA account details
+  const { rows } = await db.query(`
     SELECT
-      b.*,
+      b.id              AS branch_id,
+      b.name            AS branch_name,
+      b.catalog_id,
+      r.id              AS restaurant_id,
       r.business_name,
-      wa.catalog_id,
-      wa.access_token,
-      wa.id AS wa_account_id
+      r.meta_access_token,
+      wa.access_token   AS wa_access_token,
+      wa.waba_id
     FROM branches b
     JOIN restaurants r ON b.restaurant_id = r.id
-    JOIN whatsapp_accounts wa ON wa.restaurant_id = r.id AND wa.is_active = TRUE
+    LEFT JOIN whatsapp_accounts wa
+      ON wa.restaurant_id = r.id AND wa.is_active = TRUE
     WHERE b.id = $1
   `, [branchId]);
 
-  if (!branches.length) throw new Error('Branch not found or no active WhatsApp account');
+  if (!rows.length) throw new Error('Branch not found');
 
-  const branch = branches[0];
+  const branch = rows[0];
+
+  // If catalog already exists skip creation
+  if (branch.catalog_id) {
+    console.log(`[Catalog] Branch "${branch.branch_name}" already has catalog: ${branch.catalog_id}`);
+    return { alreadyExists: true, catalogId: branch.catalog_id };
+  }
+
+  // Use restaurant's Meta access token
+  const accessToken = branch.meta_access_token || branch.wa_access_token;
+  if (!accessToken) throw new Error('No Meta access token found. Please reconnect your Meta account.');
+
+  // ── STEP A: GET BUSINESS ID ──────────────────────────────────
+  // We need the Meta Business ID to create a catalog under it
+  let businessId;
+  try {
+    const meRes = await axios.get(`${GRAPH}/me/businesses`, {
+      params: {
+        access_token: accessToken,
+        fields: 'id,name',
+      },
+    });
+    const businesses = meRes.data?.data || [];
+    if (!businesses.length) throw new Error('No Meta Business account found');
+    businessId = businesses[0].id; // Use first business account
+  } catch (err) {
+    throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
+  }
+
+  // ── STEP B: CREATE THE CATALOG ───────────────────────────────
+  // Catalog name format: "Restaurant Name - Branch Name"
+  // Makes it easy to identify in Commerce Manager
+  const catalogName = `${branch.business_name} - ${branch.branch_name}`;
+
+  let catalogId;
+  try {
+    const createRes = await axios.post(
+      `${GRAPH}/${businessId}/owned_product_catalogs`,
+      {
+        name        : catalogName,
+        vertical    : 'commerce', // closest to food/restaurant
+      },
+      {
+        headers: {
+          Authorization : `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+      }
+    );
+    catalogId = createRes.data.id;
+    console.log(`[Catalog] Created catalog "${catalogName}" with ID: ${catalogId}`);
+  } catch (err) {
+    throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+  }
+
+  // ── STEP C: SAVE CATALOG ID TO DB ───────────────────────────
+  await db.query(
+    'UPDATE branches SET catalog_id = $1 WHERE id = $2',
+    [catalogId, branchId]
+  );
+
+  // ── STEP D: ASSOCIATE CATALOG WITH WHATSAPP ACCOUNT ─────────
+  // This links the catalog to the restaurant's WhatsApp Business Account
+  // Required so customers can browse it inside WhatsApp
+  if (branch.waba_id && branch.wa_access_token) {
+    try {
+      await axios.post(
+        `${GRAPH}/${branch.waba_id}/product_catalogs`,
+        { catalog_id: catalogId },
+        {
+          headers: {
+            Authorization : `Bearer ${branch.wa_access_token}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 10000,
+        }
+      );
+      console.log(`[Catalog] Linked catalog ${catalogId} to WABA ${branch.waba_id}`);
+    } catch (err) {
+      // Non-fatal — catalog created, just needs manual linking
+      console.warn(`[Catalog] Could not auto-link to WABA: ${err.response?.data?.error?.message || err.message}`);
+    }
+  }
+
+  return {
+    success   : true,
+    catalogId,
+    catalogName,
+    branchId,
+  };
+};
+
+// ─── SYNC ONE BRANCH CATALOG ──────────────────────────────────
+// Call this whenever:
+//   - Menu items are added / edited / deleted
+//   - Prices change
+//   - Item availability is toggled
+//   - Restaurant owner clicks "Sync" in dashboard
+const syncBranchCatalog = async (branchId) => {
+
+  // Get branch + its catalog_id + restaurant WA access token
+  const { rows } = await db.query(`
+    SELECT
+      b.id              AS branch_id,
+      b.name            AS branch_name,
+      b.catalog_id,                        -- per-branch catalog
+      r.business_name,
+      wa.access_token,
+      wa.id             AS wa_account_id
+    FROM branches b
+    JOIN restaurants r  ON b.restaurant_id = r.id
+    JOIN whatsapp_accounts wa
+      ON wa.restaurant_id = r.id AND wa.is_active = TRUE
+    WHERE b.id = $1
+  `, [branchId]);
+
+  if (!rows.length) throw new Error('Branch not found');
+
+  const branch = rows[0];
 
   if (!branch.catalog_id) {
     throw new Error(
-      'No catalog_id set for this branch\'s WhatsApp account. ' +
-      'Create a catalog in Meta Business Manager → Commerce Manager, ' +
-      'then update the catalog_id in whatsapp_accounts table.'
+      `No catalog_id set for branch "${branch.branch_name}". ` +
+      `Create a catalog in Meta Commerce Manager and paste the ID in your dashboard.`
     );
   }
 
-  // Get all menu items for this branch
+  if (!branch.access_token) {
+    throw new Error('No WhatsApp access token found. Please reconnect your Meta account.');
+  }
+
+  // Get all menu items for this branch with their category
   const { rows: items } = await db.query(`
-    SELECT mi.*, mc.name AS category_name
+    SELECT
+      mi.*,
+      mc.name AS category_name,
+      mc.sort_order AS category_sort
     FROM menu_items mi
     LEFT JOIN menu_categories mc ON mi.category_id = mc.id
     WHERE mi.branch_id = $1
-    ORDER BY mc.sort_order, mi.sort_order, mi.name
+    ORDER BY mc.sort_order NULLS LAST, mi.sort_order, mi.name
   `, [branchId]);
 
-  if (!items.length) return { success: false, message: 'No menu items to sync' };
+  if (!items.length) {
+    return { success: false, message: 'No menu items found for this branch' };
+  }
 
-  // ── FORMAT ITEMS FOR META CATALOG BATCH API ───────────────
-  // Meta requires specific fields. Image URL must be public HTTPS.
-  // Price must be in smallest currency unit (paise for INR).
-  const requests = items.map((item) => ({
-    method: item.is_available ? 'UPDATE' : 'DELETE', // DELETE removes from catalog
-    retailer_id: item.retailer_id, // Your unique SKU
-    data: item.is_available ? {
-      name: item.name.substring(0, 100),
-      description: (item.description || '').substring(0, 1000) || item.name,
-      price: item.price_paise,  // Price in paise (e.g. Rs 280 = 28000)
-      currency: 'INR',
-      availability: 'in stock',
-      // This URL must be accessible publicly (Meta crawls it)
-      url: `${process.env.BASE_URL}/menu/${item.id}`,
-      // Image must be HTTPS, at least 500x500px
-      image_url: item.image_url || `${process.env.BASE_URL}/placeholder.jpg`,
-      // Category (Google product category ID for restaurants: 1567)
-      google_product_category: '1567',
-      // Custom labels for filtering
-      custom_label_0: item.food_type,
-      custom_label_1: item.is_bestseller ? 'bestseller' : '',
-      custom_label_2: item.category_name || '',
-    } : undefined, // For DELETE, no data needed
-  }));
+  // ── FORMAT FOR META CATALOG BATCH API ─────────────────────
+  // Rules:
+  //   UPDATE — adds or updates item in catalog
+  //   DELETE — removes unavailable items from catalog
+  //   price  — must be in smallest currency unit (paise for INR)
+  //   image_url — must be public HTTPS, min 500x500px
+  const requests = items.map(item => {
+    if (!item.is_available) {
+      // Remove unavailable items from the catalog entirely
+      return {
+        method      : 'DELETE',
+        retailer_id : item.retailer_id,
+      };
+    }
 
-  // ── SEND IN BATCHES OF 100 ────────────────────────────────
-  // Meta's batch API allows max 100 items per request
-  const batchSize = 100;
-  const results = { updated: 0, failed: 0, errors: [] };
+    return {
+      method      : 'UPDATE',
+      retailer_id : item.retailer_id,
+      data: {
+        // Required fields
+        name        : item.name.substring(0, 100),
+        description : (item.description || item.name).substring(0, 1000),
+        price       : item.price_paise,   // paise (Rs 280 = 28000)
+        currency    : 'INR',
+        availability: 'in stock',
+        url         : `${process.env.BASE_URL}/menu/${item.id}`,
+        image_url   : item.image_url || `${process.env.BASE_URL}/placeholder.jpg`,
 
-  for (let i = 0; i < requests.length; i += batchSize) {
-    const batch = requests.slice(i, i + batchSize);
+        // Category (Google product category 1567 = Food & Beverages)
+        google_product_category: '1567',
+
+        // Custom labels for filtering inside WhatsApp
+        // label_0 = food type (veg/non_veg/vegan)
+        // label_1 = branch name (so items stay branch-specific)
+        // label_2 = category name (Starters, Mains etc.)
+        // label_3 = bestseller flag
+        custom_label_0: item.food_type,
+        custom_label_1: branch.branch_name.substring(0, 100),
+        custom_label_2: item.category_name || 'Menu',
+        custom_label_3: item.is_bestseller ? 'bestseller' : 'regular',
+      },
+    };
+  });
+
+  // ── SEND IN BATCHES OF 100 ─────────────────────────────────
+  // Meta allows max 100 items per batch request
+  const BATCH_SIZE = 100;
+  const results = { updated: 0, deleted: 0, failed: 0, errors: [] };
+
+  for (let i = 0; i < requests.length; i += BATCH_SIZE) {
+    const batch     = requests.slice(i, i + BATCH_SIZE);
+    const batchNum  = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(requests.length / BATCH_SIZE);
+
+    console.log(`[Catalog] Branch "${branch.branch_name}" — batch ${batchNum}/${totalBatches} (${batch.length} items)`);
+
     try {
       await axios.post(
-        `${GRAPH_BASE}/${branch.catalog_id}/batch`,
+        `${GRAPH}/${branch.catalog_id}/batch`,
         { requests: batch },
         {
           headers: {
-            Authorization: `Bearer ${branch.access_token}`,
+            Authorization : `Bearer ${branch.access_token}`,
             'Content-Type': 'application/json',
           },
           timeout: 30000,
         }
       );
-      results.updated += batch.length;
+
+      // Count updates vs deletes
+      results.updated += batch.filter(r => r.method === 'UPDATE').length;
+      results.deleted += batch.filter(r => r.method === 'DELETE').length;
+
     } catch (err) {
       const errMsg = err.response?.data?.error?.message || err.message;
-      console.error(`[Catalog] Batch ${Math.ceil(i / batchSize) + 1} failed:`, errMsg);
+      console.error(`[Catalog] Batch ${batchNum} failed:`, errMsg);
       results.failed += batch.length;
-      results.errors.push(errMsg);
+      results.errors.push(`Batch ${batchNum}: ${errMsg}`);
+    }
+
+    // Small delay between batches to avoid rate limiting
+    if (i + BATCH_SIZE < requests.length) {
+      await new Promise(r => setTimeout(r, 500));
     }
   }
 
-  // Update sync timestamp
+  // Update sync timestamp on the branch
   await db.query(
-    'UPDATE whatsapp_accounts SET catalog_synced_at = NOW() WHERE id = $1',
-    [branch.wa_account_id]
+    'UPDATE branches SET catalog_synced_at = NOW() WHERE id = $1',
+    [branchId]
   );
 
-  console.log(`[Catalog] Sync done for branch ${branch.name}: ${results.updated} updated, ${results.failed} failed`);
-  return { success: results.failed === 0, total: items.length, ...results };
+  const success = results.failed === 0;
+  console.log(`[Catalog] Sync complete for "${branch.branch_name}":`, results);
+
+  return {
+    success,
+    branchName : branch.branch_name,
+    catalogId  : branch.catalog_id,
+    total      : items.length,
+    updated    : results.updated,
+    deleted    : results.deleted,
+    failed     : results.failed,
+    errors     : results.errors,
+  };
+};
+
+// ─── SYNC ALL BRANCHES OF A RESTAURANT ───────────────────────
+// Useful when restaurant changes something global (price policy etc.)
+const syncAllBranches = async (restaurantId) => {
+  const { rows: branches } = await db.query(
+    'SELECT id, name FROM branches WHERE restaurant_id = $1 AND accepts_orders = TRUE',
+    [restaurantId]
+  );
+
+  const results = [];
+  for (const branch of branches) {
+    try {
+      const r = await syncBranchCatalog(branch.id);
+      results.push(r);
+    } catch (err) {
+      results.push({ branchName: branch.name, success: false, error: err.message });
+    }
+  }
+  return results;
 };
 
 // ─── TOGGLE SINGLE ITEM AVAILABILITY ─────────────────────────
-// Quick way to mark one item as available/unavailable
-// Sends a single-item batch update without resyncing everything
+// Quick update without resyncing everything
+// Called when restaurant toggles an item on/off in dashboard
 const setItemAvailability = async (menuItemId, isAvailable) => {
+  // Get item + its branch catalog details
   const { rows } = await db.query(`
-    SELECT mi.*, wa.catalog_id, wa.access_token
+    SELECT
+      mi.*,
+      b.catalog_id,
+      wa.access_token
     FROM menu_items mi
     JOIN branches b ON mi.branch_id = b.id
     JOIN restaurants r ON b.restaurant_id = r.id
@@ -133,33 +325,43 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
   `, [menuItemId]);
 
   if (!rows.length) return;
-
   const item = rows[0];
 
-  if (item.catalog_id && item.access_token) {
-    const req = isAvailable
+  // Update our DB first
+  await db.query(
+    'UPDATE menu_items SET is_available = $1 WHERE id = $2',
+    [isAvailable, menuItemId]
+  );
+
+  // Push single-item update to Meta catalog
+  if (item.catalog_id && item.access_token && item.retailer_id) {
+    const request = isAvailable
       ? {
-          method: 'UPDATE',
-          retailer_id: item.retailer_id,
+          method      : 'UPDATE',
+          retailer_id : item.retailer_id,
           data: {
-            name: item.name,
-            price: item.price_paise,
-            currency: 'INR',
+            name        : item.name,
+            price       : item.price_paise,
+            currency    : 'INR',
             availability: 'in stock',
-            url: `${process.env.BASE_URL}/menu/${item.id}`,
-            image_url: item.image_url || `${process.env.BASE_URL}/placeholder.jpg`,
+            url         : `${process.env.BASE_URL}/menu/${item.id}`,
+            image_url   : item.image_url || `${process.env.BASE_URL}/placeholder.jpg`,
+            google_product_category: '1567',
           },
         }
-      : { method: 'DELETE', retailer_id: item.retailer_id };
+      : {
+          method      : 'DELETE',
+          retailer_id : item.retailer_id,
+        };
 
     await axios.post(
-      `${GRAPH_BASE}/${item.catalog_id}/batch`,
-      { requests: [req] },
-      { headers: { Authorization: `Bearer ${item.access_token}` } }
-    ).catch((e) => console.error('[Catalog] Toggle failed:', e.message));
+      `${GRAPH}/${item.catalog_id}/batch`,
+      { requests: [request] },
+      { headers: { Authorization: `Bearer ${item.access_token}` }, timeout: 10000 }
+    ).catch(err => {
+      console.error('[Catalog] Single item toggle failed:', err.response?.data?.error?.message || err.message);
+    });
   }
-
-  await db.query('UPDATE menu_items SET is_available=$1 WHERE id=$2', [isAvailable, menuItemId]);
 };
 
-module.exports = { syncBranchCatalog, setItemAvailability };
+module.exports = { createBranchCatalog, syncBranchCatalog, syncAllBranches, setItemAvailability };

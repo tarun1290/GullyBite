@@ -233,11 +233,19 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     `Opening our menu for you...`
   );
 
-  // Send the WhatsApp Catalog (in-app shopping experience)
-  if (branch.catalogId) {
-    await wa.sendCatalog(pid, token, to, branch.catalogId);
+  // Get the branch's own catalog_id from branches table
+  const { rows: branchRows } = await db.query(
+    'SELECT catalog_id, catalog_synced_at FROM branches WHERE id = $1',
+    [branch.id]
+  );
+  const branchCatalogId = branchRows[0]?.catalog_id;
+
+  if (branchCatalogId) {
+    await wa.sendCatalog(pid, token, to, branchCatalogId,
+      `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
+    );
   } else {
-    // Fallback: send text-based menu if catalog not set up yet
+    // Fallback if catalog not set up yet
     await sendTextMenu(pid, token, to, branch.id);
   }
 };

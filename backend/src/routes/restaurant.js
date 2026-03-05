@@ -118,24 +118,74 @@ router.post('/branches', async (req, res) => {
       [req.restaurantId]
     );
 
-    res.status(201).json(rows[0]);
+    const newBranch = rows[0];
+
+    // ── AUTO-CREATE WHATSAPP CATALOG FOR THIS BRANCH ──────────
+    // Runs in background — don't await so the branch saves instantly
+    // Restaurant owner sees branch immediately, catalog creates in ~2 seconds
+    catalog.createBranchCatalog(newBranch.id)
+      .then(result => {
+        if (result.success) {
+          console.log(`[Branch] Auto-created catalog for "${newBranch.name}": ${result.catalogId}`);
+        }
+      })
+      .catch(err => {
+        // Non-fatal — branch still saved, catalog can be retried
+        console.error(`[Branch] Auto catalog creation failed for "${newBranch.name}":`, err.message);
+      });
+
+    res.status(201).json(newBranch);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.patch('/branches/:id', async (req, res) => {
   try {
-    const { isOpen, acceptsOrders, deliveryRadiusKm } = req.body;
+    const { isOpen, acceptsOrders, deliveryRadiusKm, catalogId } = req.body;
     await db.query(
       `UPDATE branches SET
-         is_open = COALESCE($1, is_open),
-         accepts_orders = COALESCE($2, accepts_orders),
-         delivery_radius_km = COALESCE($3, delivery_radius_km)
-       WHERE id = $4 AND restaurant_id = $5`,
-      [isOpen, acceptsOrders, deliveryRadiusKm, req.params.id, req.restaurantId]
+         is_open            = COALESCE($1, is_open),
+         accepts_orders     = COALESCE($2, accepts_orders),
+         delivery_radius_km = COALESCE($3, delivery_radius_km),
+         catalog_id         = COALESCE($4, catalog_id)
+       WHERE id = $5 AND restaurant_id = $6`,
+      [isOpen, acceptsOrders, deliveryRadiusKm, catalogId, req.params.id, req.restaurantId]
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+```
+
+---
+
+## The complete flow end to end
+```
+// Restaurant owner adds branch
+ //       │
+   //     ▼
+//Creates catalog in Meta Commerce Manager
+  //      │
+    //    ▼
+//Pastes catalog_id in dashboard → clicks Save Catalog
+  //      │
+    //    ▼
+//Adds menu items → clicks Sync Menu
+  //      │
+    //    ▼
+//catalog.service.js sends batch API → items appear in WhatsApp Catalog
+  //      │
+//Customer messages WhatsApp number
+  //      │
+    //    ▼
+//Shares location → Haversine finds nearest branch
+  //      │
+    //    ▼
+//webhook reads that branch's catalog_id from DB
+  //      │
+    //    ▼
+//Sends catalog_message with that branch's catalog_id
+  //      │
+    //    ▼
+//Customer sees ONLY that branch's menu inside WhatsApp 
 
 // ═══════════════════════════════════════════════════════════════
 // MENU CATEGORIES
@@ -243,6 +293,56 @@ router.post('/branches/:branchId/sync-catalog', async (req, res) => {
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// POST /api/restaurant/branches/:branchId/create-catalog
+// Manually trigger catalog creation (retry if auto-create failed)
+router.post('/branches/:branchId/create-catalog', async (req, res) => {
+  try {
+    const result = await catalog.createBranchCatalog(req.params.branchId);
+
+    if (result.alreadyExists) {
+      return res.json({
+        success  : true,
+        message  : 'Catalog already exists',
+        catalogId: result.catalogId,
+      });
+    }
+
+    // Auto-sync menu after catalog is created
+    if (result.success) {
+      catalog.syncBranchCatalog(req.params.branchId)
+        .catch(err => console.error('[Branch] Auto-sync after catalog create failed:', err.message));
+    }
+
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+//Owner clicks "Add Branch" → fills name, address, GPS
+  //      │
+    //    ▼
+//Branch saved to Supabase instantly
+  //      │
+    //    ▼ (background, ~2 seconds)
+//createBranchCatalog() calls Meta API
+  //      │
+    //    ├── Fetches business ID
+      //  ├── Creates catalog: "Burger Palace - Koramangala"
+        //├── Saves catalog_id to branches table
+        //└── Links catalog to WhatsApp Business Account
+        //│
+        //▼
+//Owner adds menu items → clicks Sync Menu
+  //      │
+    //    ▼
+//All items pushed to that branch's catalog via Batch API
+  //      │
+    //    ▼
+//Customer messages → shares location → gets
+//ONLY that branch's catalog inside WhatsApp
 
 // ═══════════════════════════════════════════════════════════════
 // ORDERS — Restaurant views and manages orders
