@@ -16,11 +16,11 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
 });
 
-// Test connection on startup (non-fatal on Vercel serverless)
+// Test connection on startup
 pool.connect((err, client, release) => {
   if (err) {
     console.error('❌ Database connection FAILED:', err.message);
-    return;
+    return; // don't crash — Vercel serverless can't process.exit
   }
   console.log('✅ Database connected');
   release();

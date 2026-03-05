@@ -1,10 +1,10 @@
 {
   "functions": {
-    "backend/server.js": {
+    "api/index.js": {
       "includeFiles": "frontend/**"
     }
   },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/backend/server.js" }
+    { "source": "/(.*)", "destination": "/api/index" }
   ]
 }
