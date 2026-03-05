@@ -83,8 +83,8 @@ const sendCatalog = (pid, token, to, catalogId, introText) =>
       body: { text: introText || '🍽️ Here is our menu! Browse and add items to your cart.' },
       footer: { text: 'Tap any item to view details and add to cart' },
       action: {
-        name: 'catalog_message',
-        parameters: { thumbnail_product_retailer_id: '' },
+        name      : 'catalog_message',
+        parameters: { catalog_id: catalogId, thumbnail_product_retailer_id: '' },
       },
     },
   });
@@ -100,8 +100,8 @@ const sendOrderSummary = (pid, token, to, { orderNumber, items, subtotal, delive
           `Subtotal: ₹${subtotal}\n` +
           `Delivery: ₹${deliveryFee}\n` +
           `*Total: ₹${total}*\n\n` +
-          `Ready to pay? Tap Confirm to get your payment link.`,
-    footer: 'UPI • Cards • Netbanking • Wallets',
+          `Ready to pay? Tap Confirm to pay securely inside WhatsApp.`,
+    footer: 'UPI • WhatsApp Pay • Cards',
     buttons: [
       { id: 'CONFIRM_ORDER', title: '✅ Confirm & Pay' },
       { id: 'CANCEL_ORDER', title: '❌ Cancel' },
@@ -109,8 +109,73 @@ const sendOrderSummary = (pid, token, to, { orderNumber, items, subtotal, delive
   });
 };
 
-// ─── PAYMENT LINK ─────────────────────────────────────────────
-// Sends the Razorpay link to the customer
+// ─── WHATSAPP PAY — NATIVE PAYMENT REQUEST ────────────────────
+// Sends an interactive order_details message — Meta's native payment UI.
+// Customer sees full order breakdown + "Review and Pay" button.
+// Tapping opens WhatsApp's built-in UPI payment flow (Razorpay backend).
+//
+// Prerequisites:
+//   - WhatsApp Pay enabled on the WABA (India, registered with Meta/NPCI)
+//   - RAZORPAY_WA_CONFIG_NAME set in .env
+//     (Meta Business Manager → WhatsApp → Payment Settings → config name)
+//
+// order:  full order row from DB (id, order_number, total_rs, subtotal_rs,
+//         delivery_fee_rs, discount_rs, branch_name)
+// items:  order_items rows (item_name, unit_price_rs, quantity, line_total_rs)
+const sendPaymentRequest = (pid, token, to, { order, items }) => {
+  const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 15;
+  const expiryTs   = String(Math.floor(Date.now() / 1000) + expiryMins * 60);
+
+  const orderItems = items.map((i) => ({
+    retailer_id : i.retailer_id || i.menu_item_id || i.item_name,
+    name        : i.item_name,
+    amount      : { value: Math.round(i.unit_price_rs * 100), offset: 100 },
+    quantity    : i.quantity,
+    sale_amount : { value: Math.round(i.line_total_rs * 100), offset: 100 },
+  }));
+
+  return sendMsg(pid, token, to, {
+    type: 'interactive',
+    interactive: {
+      type  : 'order_details',
+      body  : { text: `Your order from *${order.branch_name}* is ready!\nReview and pay securely inside WhatsApp.` },
+      footer: { text: 'GullyBite × Razorpay — 100% secure' },
+      action: {
+        name      : 'review_and_pay',
+        parameters: {
+          reference_id    : order.order_number,
+          type            : 'digital-goods',
+          payment_settings: [{
+            type           : 'payment_gateway',
+            payment_gateway: {
+              type              : 'razorpay',
+              configuration_name: process.env.RAZORPAY_WA_CONFIG_NAME,
+              razorpay          : {
+                receipt: order.order_number,
+                notes  : { order_id: order.id, order_number: order.order_number },
+              },
+            },
+          }],
+          currency    : 'INR',
+          total_amount: { value: Math.round(order.total_rs * 100), offset: 100 },
+          order: {
+            status    : 'pending',
+            expiration: { timestamp: expiryTs, description: 'Order expires if unpaid' },
+            items     : orderItems,
+            subtotal  : { value: Math.round(order.subtotal_rs * 100),       offset: 100 },
+            shipping  : { value: Math.round(order.delivery_fee_rs * 100),    offset: 100 },
+            discount  : { value: Math.round((order.discount_rs || 0) * 100), offset: 100 },
+            tax       : { value: 0, offset: 100 },
+          },
+        },
+      },
+    },
+  });
+};
+
+// ─── PAYMENT LINK (fallback) ───────────────────────────────────
+// Used when WhatsApp Pay is not available / not yet enabled.
+// Sends a plain Razorpay short URL the customer opens in a browser.
 const sendPaymentLink = (pid, token, to, { orderNumber, total, url, expiryMins }) =>
   sendText(pid, token, to,
     `💳 *Payment Link — Order #${orderNumber}*\n\n` +
@@ -142,4 +207,4 @@ const markRead = (pid, token, messageId) =>
     headers: { Authorization: `Bearer ${token}` },
   }).catch(() => {}); // Ignore errors silently
 
-module.exports = { sendText, sendButtons, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentLink, sendStatusUpdate, markRead };
+module.exports = { sendText, sendButtons, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, markRead };

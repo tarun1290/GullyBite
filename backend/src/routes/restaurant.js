@@ -153,39 +153,6 @@ router.patch('/branches/:id', async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-```
-
----
-
-## The complete flow end to end
-```
-// Restaurant owner adds branch
- //       │
-   //     ▼
-//Creates catalog in Meta Commerce Manager
-  //      │
-    //    ▼
-//Pastes catalog_id in dashboard → clicks Save Catalog
-  //      │
-    //    ▼
-//Adds menu items → clicks Sync Menu
-  //      │
-    //    ▼
-//catalog.service.js sends batch API → items appear in WhatsApp Catalog
-  //      │
-//Customer messages WhatsApp number
-  //      │
-    //    ▼
-//Shares location → Haversine finds nearest branch
-  //      │
-    //    ▼
-//webhook reads that branch's catalog_id from DB
-  //      │
-    //    ▼
-//Sends catalog_message with that branch's catalog_id
-  //      │
-    //    ▼
-//Customer sees ONLY that branch's menu inside WhatsApp 
 
 // ═══════════════════════════════════════════════════════════════
 // MENU CATEGORIES
@@ -332,30 +299,6 @@ router.post('/branches/:branchId/create-catalog', async (req, res) => {
   }
 });
 
-
-//Owner clicks "Add Branch" → fills name, address, GPS
-  //      │
-    //    ▼
-//Branch saved to Supabase instantly
-  //      │
-    //    ▼ (background, ~2 seconds)
-//createBranchCatalog() calls Meta API
-  //      │
-    //    ├── Fetches business ID
-      //  ├── Creates catalog: "Burger Palace - Koramangala"
-        //├── Saves catalog_id to branches table
-        //└── Links catalog to WhatsApp Business Account
-        //│
-        //▼
-//Owner adds menu items → clicks Sync Menu
-  //      │
-    //    ▼
-//All items pushed to that branch's catalog via Batch API
-  //      │
-    //    ▼
-//Customer messages → shares location → gets
-//ONLY that branch's catalog inside WhatsApp
-
 // ═══════════════════════════════════════════════════════════════
 // ORDERS — Restaurant views and manages orders
 // ═══════════════════════════════════════════════════════════════
@@ -468,6 +411,27 @@ router.get('/settlements', async (req, res) => {
       [req.restaurantId]
     );
     res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PAYOUT ACCOUNT
+// ═══════════════════════════════════════════════════════════════
+
+// POST /api/restaurant/payout-account
+// Registers the restaurant's bank account with Razorpay X so weekly
+// settlements can be transferred automatically.
+// Call this once after the restaurant fills in their bank details.
+// Requires: bank_account_number + bank_ifsc to be set on the restaurant.
+const paymentSvc = require('../services/payment');
+
+router.post('/payout-account', async (req, res) => {
+  try {
+    const result = await paymentSvc.registerPayoutAccount(req.restaurantId);
+    if (result.alreadyRegistered) {
+      return res.json({ success: true, message: 'Already registered', fundAccountId: result.fundAccountId });
+    }
+    res.json({ success: true, fundAccountId: result.fundAccountId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

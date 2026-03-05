@@ -4,7 +4,7 @@
 
 const cron = require('node-cron');
 const db = require('../config/database');
-// const razorpay = require('../services/payment'); // Uncomment when ready for live payouts
+const paymentSvc = require('../services/payment');
 
 // ─── SCHEDULE THE JOB ─────────────────────────────────────────
 // Cron syntax: second minute hour day-of-month month day-of-week
@@ -113,22 +113,18 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
       [settlement.id, orders.map((o) => o.id)]
     );
 
-    // ── INITIATE PAYOUT ──────────────────────────────────────
+    // ── INITIATE PAYOUT via Razorpay X ───────────────────────
+    // Transfers the net settlement to the restaurant's registered bank account.
+    // Requires: RAZORPAY_ACCOUNT_NUMBER in .env + restaurant.razorpay_fund_acct_id set.
+    // Register the fund account via POST /api/restaurant/payout-account.
     if (netPayout > 0 && restaurant.razorpay_fund_acct_id) {
       try {
-        // TODO: Uncomment when Razorpay payouts are configured
-        // const payout = await razorpay.createPayout(restaurant, netPayout, settlement.id)
-        // await client.query(
-        //   "UPDATE settlements SET rp_payout_id=$1, payout_status='processing', payout_at=NOW() WHERE id=$2",
-        //   [payout.id, settlement.id]
-        // )
-
-        // For now, mark as pending manual payout
-        console.log(`  → ₹${netPayout.toFixed(0)} payout to ${restaurant.business_name} (manual transfer needed)`);
+        const payout = await paymentSvc.createPayout(restaurant, netPayout, settlement.id);
         await client.query(
-          "UPDATE settlements SET payout_status='pending' WHERE id=$1",
-          [settlement.id]
+          "UPDATE settlements SET rp_payout_id=$1, payout_status='processing', payout_at=NOW() WHERE id=$2",
+          [payout.id, settlement.id]
         );
+        console.log(`  → ₹${netPayout.toFixed(0)} payout initiated for ${restaurant.business_name}: ${payout.id}`);
       } catch (payoutErr) {
         console.error(`  ❌ Payout failed for ${restaurant.business_name}:`, payoutErr.message);
         await client.query(
@@ -137,9 +133,9 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
         );
       }
     } else if (netPayout <= 0) {
-      console.log(`  ⚠️  ${restaurant.business_name}: Net payout is ₹0, skipping`);
+      console.log(`  ⚠️  ${restaurant.business_name}: Net payout ₹0 — skipping`);
     } else {
-      console.log(`  ⚠️  ${restaurant.business_name}: No bank account on file — please add IFSC/account number`);
+      console.log(`  ⚠️  ${restaurant.business_name}: No payout account — call POST /api/restaurant/payout-account first`);
     }
 
     return settlement;

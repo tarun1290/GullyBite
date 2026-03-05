@@ -40,36 +40,52 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   }
 });
 
+// ─── SHARED: CONFIRM PAID ORDER ───────────────────────────────
+// Called by both WhatsApp Pay and payment link success paths.
+// Updates status, notifies customer, logs the payment.
+const confirmPaidOrder = async (orderId) => {
+  await orderSvc.updateStatus(orderId, 'PAID');
+
+  const order = await orderSvc.getOrderDetails(orderId);
+  if (!order) return;
+
+  // WhatsApp Pay shows its own in-app confirmation, but we send one too
+  // so the customer has a clear record in their chat.
+  await wa.sendStatusUpdate(
+    order.phone_number_id, order.access_token, order.wa_phone,
+    'CONFIRMED',
+    { orderNumber: order.order_number }
+  );
+
+  console.log(`✅ Order ${order.order_number} PAID — ₹${order.total_rs}`);
+};
+
 // ─── EVENT ROUTER ─────────────────────────────────────────────
 const handleEvent = async (event) => {
   switch (event.event) {
 
-    // ── PAYMENT SUCCESS ──────────────────────────────────────
-    // Customer paid! Most important event.
+    // ── WHATSAPP PAY SUCCESS (primary flow) ──────────────────
+    // Fires when the customer pays through native WhatsApp Pay (UPI).
+    // Both events carry the Razorpay order ID used to match our record.
+    case 'order.paid':
+    case 'payment.captured': {
+      const orderId = await paymentSvc.handleOrderPaid(event);
+      if (!orderId) break;
+      await confirmPaidOrder(orderId);
+      break;
+    }
+
+    // ── PAYMENT LINK SUCCESS (fallback flow) ─────────────────
+    // Fires when the customer pays via the Razorpay link sent as text.
     case 'payment_link.paid': {
       const orderId = await paymentSvc.handlePaymentSuccess(event);
       if (!orderId) break;
-
-      // Update order status
-      await orderSvc.updateStatus(orderId, 'PAID');
-
-      // Get full order details to notify customer
-      const order = await orderSvc.getOrderDetails(orderId);
-      if (!order) break;
-
-      // Notify customer on WhatsApp ✅
-      await wa.sendStatusUpdate(
-        order.phone_number_id, order.access_token, order.wa_phone,
-        'CONFIRMED',
-        { orderNumber: order.order_number }
-      );
-
-      // TODO: Notify restaurant owner (via WhatsApp or dashboard push)
-      console.log(`✅ Order ${order.order_number} PAID — amount: ₹${order.total_rs}`);
+      await confirmPaidOrder(orderId);
       break;
     }
 
     // ── PAYMENT FAILED ───────────────────────────────────────
+    // Covers both WhatsApp Pay and payment link failures.
     case 'payment.failed': {
       const orderId = await paymentSvc.handlePaymentFailed(event);
       if (!orderId) break;
@@ -77,21 +93,20 @@ const handleEvent = async (event) => {
       const order = await orderSvc.getOrderDetails(orderId);
       if (!order) break;
 
-      // Tell customer their payment failed
       await wa.sendButtons(
         order.phone_number_id, order.access_token, order.wa_phone,
         {
-          body: `❌ Payment failed for order #${order.order_number}.\n\nWould you like to try again?`,
+          body   : `❌ Payment failed for order #${order.order_number}.\n\nWould you like to try again?`,
           buttons: [
             { id: 'CONFIRM_ORDER', title: '🔄 Retry Payment' },
-            { id: 'CANCEL_ORDER', title: '❌ Cancel Order' },
+            { id: 'CANCEL_ORDER',  title: '❌ Cancel Order'  },
           ],
         }
       );
       break;
     }
 
-    // ── PAYMENT LINK EXPIRED ─────────────────────────────────
+    // ── PAYMENT LINK EXPIRED (fallback flow) ─────────────────
     case 'payment_link.expired': {
       const orderId = await paymentSvc.handleLinkExpired(event);
       if (!orderId) break;
@@ -103,7 +118,7 @@ const handleEvent = async (event) => {
 
       await wa.sendText(
         order.phone_number_id, order.access_token, order.wa_phone,
-        `⏱️ Payment link for order #${order.order_number} expired.\n\nType *MENU* to start a new order anytime! 😊`
+        `⏱️ Payment for order #${order.order_number} expired.\n\nType *MENU* to start a new order anytime!`
       );
       break;
     }
@@ -113,12 +128,32 @@ const handleEvent = async (event) => {
       const refund = event.payload?.refund?.entity;
       if (!refund) break;
       console.log(`✅ Refund ${refund.id} processed: ₹${refund.amount / 100}`);
-      // Could notify customer here if needed
+      break;
+    }
+
+    // ── PAYOUT EVENTS (weekly settlement) ────────────────────
+    case 'payout.processed': {
+      const payout = event.payload?.payout?.entity;
+      if (!payout) break;
+      await db.query(
+        "UPDATE settlements SET payout_status='completed', payout_at=NOW() WHERE rp_payout_id=$1",
+        [payout.id]
+      );
+      console.log(`✅ Payout ${payout.id} processed: ₹${payout.amount / 100}`);
+      break;
+    }
+    case 'payout.failed': {
+      const payout = event.payload?.payout?.entity;
+      if (!payout) break;
+      await db.query(
+        "UPDATE settlements SET payout_status='failed' WHERE rp_payout_id=$1",
+        [payout.id]
+      );
+      console.error(`❌ Payout ${payout.id} failed:`, payout.failure_reason);
       break;
     }
 
     default:
-      // Log unhandled events
       console.log('[Razorpay] Unhandled event:', event.event);
   }
 };

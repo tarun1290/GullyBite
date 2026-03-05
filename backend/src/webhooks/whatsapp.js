@@ -219,6 +219,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
     branchId: branch.id,
     branchName: branch.name,
+    catalogId: branch.catalogId,
     deliveryLat: latitude,
     deliveryLng: longitude,
     deliveryAddress: address || locName || 'Your location',
@@ -270,7 +271,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
 
   if (!cart.cart.length) {
     await wa.sendText(pid, token, to, '⚠️ Some items are no longer available. Please browse the menu again.');
-    await wa.sendCatalog(pid, token, to, waAccount.catalog_id);
+    if (session.catalogId) await wa.sendCatalog(pid, token, to, session.catalogId);
     return;
   }
 
@@ -330,31 +331,40 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
 
       // Create the actual order in DB
       const order = await orderSvc.createOrder({
-        convId: conv.id,
-        customerId: customer.id,
-        branchId: session.branchId,
-        cart: session.cart,
-        subtotalRs: session.subtotalRs,
+        convId       : conv.id,
+        customerId   : customer.id,
+        branchId     : session.branchId,
+        cart         : session.cart,
+        subtotalRs   : session.subtotalRs,
         deliveryFeeRs: session.deliveryFeeRs,
-        totalRs: session.totalRs,
+        totalRs      : session.totalRs,
         deliveryAddress: session.deliveryAddress,
-        deliveryLat: session.deliveryLat,
-        deliveryLng: session.deliveryLng,
+        deliveryLat  : session.deliveryLat,
+        deliveryLng  : session.deliveryLng,
       });
 
-      // Get full order for payment link creation
       const fullOrder = await orderSvc.getOrderDetails(order.id);
 
-      // Create Razorpay payment link
-      const link = await paymentSvc.createPaymentLink(fullOrder, customer);
-
-      // Send payment link via WhatsApp
-      await wa.sendPaymentLink(pid, token, to, {
-        orderNumber: order.order_number,
-        total: order.total_rs.toFixed(0),
-        url: link.url,
-        expiryMins: link.expiryMins,
-      });
+      // PRIMARY: Native WhatsApp Pay via Razorpay
+      // Creates a Razorpay order and sends an interactive order_details message.
+      // Customer taps "Review and Pay" → UPI payment inside WhatsApp.
+      // Falls back to a payment link if WhatsApp Pay is not enabled on this WABA.
+      try {
+        await paymentSvc.createRazorpayOrder(fullOrder, customer);
+        await wa.sendPaymentRequest(pid, token, to, {
+          order: fullOrder,
+          items: fullOrder.items,
+        });
+      } catch (waPayErr) {
+        console.warn('[WA] WhatsApp Pay failed, falling back to payment link:', waPayErr.message);
+        const link = await paymentSvc.createPaymentLink(fullOrder, customer);
+        await wa.sendPaymentLink(pid, token, to, {
+          orderNumber: order.order_number,
+          total      : order.total_rs.toFixed(0),
+          url        : link.url,
+          expiryMins : link.expiryMins,
+        });
+      }
       break;
     }
 

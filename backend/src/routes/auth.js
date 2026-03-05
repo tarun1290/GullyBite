@@ -64,7 +64,9 @@ router.get('/callback', async (req, res) => {
     });
     const shortToken = tokenRes.data.access_token;
 
-    // Exchange short-lived token for long-lived token (valid ~60 days)
+    // Exchange short-lived token for long-lived / never-expiring token.
+    // The login config (3105026846366355) has "never expire" permission enabled,
+    // so expires_in will be absent — store NULL to indicate no expiry.
     const longTokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
       params: {
         grant_type: 'fb_exchange_token',
@@ -74,8 +76,8 @@ router.get('/callback', async (req, res) => {
       },
     });
     const longToken = longTokenRes.data.access_token;
-    const expiresIn = longTokenRes.data.expires_in || 5183944; // ~60 days in seconds
-    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+    const expiresIn = longTokenRes.data.expires_in || null;
+    const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
 
     // Get user info from Meta
     const userRes = await axios.get(`${META_GRAPH_URL}/me`, {
@@ -175,7 +177,8 @@ try {
   let longToken, expiresAt;
 
   if (code) {
-    // Embedded signup sends a code — exchange for token
+    // Embedded signup / Business Login sends a code — exchange for token.
+    // Config 3105026846366355 has "never expire" enabled → expires_in absent → store NULL.
     const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
       params: {
         client_id    : process.env.META_APP_ID,
@@ -184,11 +187,11 @@ try {
         code,
       },
     });
-    longToken  = tokenRes.data.access_token;
-    const expiresIn = tokenRes.data.expires_in || 5183944;
-    expiresAt  = new Date(Date.now() + expiresIn * 1000);
+    longToken = tokenRes.data.access_token;
+    const expiresIn = tokenRes.data.expires_in || null;
+    expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
   } else {
-    // Direct access token from FB.login — exchange for long-lived
+    // Direct access token from FB.login — exchange for long-lived / never-expiring.
     const longTokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
       params: {
         grant_type       : 'fb_exchange_token',
@@ -197,9 +200,9 @@ try {
         fb_exchange_token: accessToken,
       },
     });
-    longToken  = longTokenRes.data.access_token;
-    const expiresIn = longTokenRes.data.expires_in || 5183944;
-    expiresAt  = new Date(Date.now() + expiresIn * 1000);
+    longToken = longTokenRes.data.access_token;
+    const expiresIn = longTokenRes.data.expires_in || null;
+    expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
   }
 
     // Get Meta user profile

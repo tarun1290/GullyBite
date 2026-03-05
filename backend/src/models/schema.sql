@@ -339,15 +339,19 @@ CREATE TABLE IF NOT EXISTS payments (
   order_id        UUID NOT NULL REFERENCES orders(id),
 
   -- Razorpay IDs
-  rp_link_id      VARCHAR(255) UNIQUE,  -- plink_xxxxxxxx
-  rp_link_url     TEXT,                 -- Short URL sent to customer
+  rp_link_id      VARCHAR(255) UNIQUE,  -- plink_xxxxxxxx (fallback payment link flow)
+  rp_link_url     TEXT,                 -- Short URL sent to customer (fallback)
   rp_payment_id   VARCHAR(255),         -- pay_xxxxxxxx (after successful payment)
-  rp_order_id     VARCHAR(255),         -- order_xxxxxxxx
+  rp_order_id     VARCHAR(255),         -- order_xxxxxxxx (WhatsApp Pay flow)
 
   amount_rs       DECIMAL(10,2) NOT NULL,
   currency        VARCHAR(5) DEFAULT 'INR',
 
-  -- created → sent → paid / failed / expired
+  -- 'whatsapp_pay' = native WhatsApp Pay via Razorpay (primary)
+  -- 'link'         = Razorpay Payment Link sent as text (fallback)
+  payment_type    VARCHAR(20) DEFAULT 'whatsapp_pay',
+
+  -- created → sent → paid / failed / expired / refunded
   status          VARCHAR(30) DEFAULT 'created',
 
   payment_method  VARCHAR(50),     -- upi / card / netbanking / wallet
