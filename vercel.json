@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "backend/server.js": {
+      "includeFiles": "frontend/**"
+    }
+  },
   "rewrites": [
     { "source": "/(.*)", "destination": "/backend/server.js" }
   ]
