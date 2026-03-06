@@ -90,22 +90,30 @@ const sendCatalog = (pid, token, to, catalogId, introText) =>
   });
 
 // ─── ORDER SUMMARY ────────────────────────────────────────────
-// Shows cart items + total with Confirm/Cancel buttons
+// Shows cart items + total with Confirm/Cancel/Coupon buttons
 // items: [{ name, qty, price }]
-const sendOrderSummary = (pid, token, to, { orderNumber, items, subtotal, deliveryFee, total }) => {
+// discount: optional { code, amountRs }
+const sendOrderSummary = (pid, token, to, { orderNumber, items, subtotal, deliveryFee, total, discount }) => {
   const lines = items.map((i) => `• ${i.name} ×${i.qty} — ₹${i.price}`).join('\n');
+  let financials = `Subtotal: ₹${subtotal}\n`;
+  if (discount && discount.amountRs > 0) {
+    financials += `🎟 Coupon (${discount.code}): -₹${parseFloat(discount.amountRs).toFixed(0)}\n`;
+  }
+  financials += `Delivery: ₹${deliveryFee}\n*Total: ₹${total}*`;
+
+  const buttons = [{ id: 'CONFIRM_ORDER', title: '✅ Confirm & Pay' }];
+  if (discount && discount.amountRs > 0) {
+    buttons.push({ id: 'REMOVE_COUPON', title: '🗑 Remove Coupon' });
+  } else {
+    buttons.push({ id: 'APPLY_COUPON',  title: '🎟 Apply Coupon' });
+  }
+  buttons.push({ id: 'CANCEL_ORDER', title: '❌ Cancel' });
+
   return sendButtons(pid, token, to, {
     header: `🛒 Order #${orderNumber}`,
-    body: `*Your Order:*\n${lines}\n\n` +
-          `Subtotal: ₹${subtotal}\n` +
-          `Delivery: ₹${deliveryFee}\n` +
-          `*Total: ₹${total}*\n\n` +
-          `Ready to pay? Tap Confirm to pay securely inside WhatsApp.`,
+    body: `*Your Order:*\n${lines}\n\n${financials}\n\nReady to pay? Tap Confirm to pay securely inside WhatsApp.`,
     footer: 'UPI • WhatsApp Pay • Cards',
-    buttons: [
-      { id: 'CONFIRM_ORDER', title: '✅ Confirm & Pay' },
-      { id: 'CANCEL_ORDER', title: '❌ Cancel' },
-    ],
+    buttons,
   });
 };
 

@@ -15,6 +15,7 @@ const location = require('../services/location');
 const orderSvc = require('../services/order');
 const paymentSvc = require('../services/payment');
 const addressSvc = require('../services/address');
+const couponSvc = require('../services/coupon');
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
 // Meta calls this ONCE when you first configure the webhook.
@@ -177,6 +178,54 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  // ── Coupon code entry ─────────────────────────────────────────
+  if (conv.state === 'AWAITING_COUPON') {
+    const session = conv.session_data || {};
+    if (text === 'SKIP') {
+      await orderSvc.setState(conv.id, 'ORDER_REVIEW');
+      const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
+      await wa.sendOrderSummary(pid, token, to, {
+        orderNumber: tempNum,
+        items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+        subtotal:    session.subtotalRs.toFixed(0),
+        deliveryFee: session.deliveryFeeRs.toFixed(0),
+        total:       session.totalRs.toFixed(0),
+        discount:    null,
+      });
+      return;
+    }
+
+    // Validate the coupon against this branch's restaurant
+    const { rows: branchRes } = await db.query(
+      'SELECT restaurant_id FROM branches WHERE id=$1', [session.branchId]
+    );
+    const restaurantId = branchRes[0]?.restaurant_id;
+    const result = await couponSvc.validateCoupon(msg.text.body.trim(), restaurantId, session.subtotalRs);
+
+    if (!result.valid) {
+      await wa.sendText(pid, token, to, result.message);
+      return; // stay in AWAITING_COUPON so they can retry
+    }
+
+    const couponData   = { id: result.coupon.id, code: result.coupon.code, discountRs: result.discountRs };
+    const newTotal     = session.subtotalRs + session.deliveryFeeRs - result.discountRs;
+    await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
+      ...session, coupon: couponData, discountRs: result.discountRs, totalRs: newTotal,
+    });
+
+    await wa.sendText(pid, token, to, result.message);
+    const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
+    await wa.sendOrderSummary(pid, token, to, {
+      orderNumber: tempNum,
+      items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+      subtotal:    session.subtotalRs.toFixed(0),
+      deliveryFee: session.deliveryFeeRs.toFixed(0),
+      total:       newTotal.toFixed(0),
+      discount:    { code: couponData.code, amountRs: result.discountRs },
+    });
+    return;
+  }
+
   // State-based responses
   if (conv.state === 'AWAITING_LOCATION') {
     await wa.sendLocationRequest(pid, token, to);
@@ -307,25 +356,44 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  // Check if Meta's native checkout included a coupon code
+  const metaCouponCode = msg.order?.coupon_code;
+  let couponData = session.coupon || null;
+  if (metaCouponCode && !couponData) {
+    const { rows: branchRes } = await db.query('SELECT restaurant_id FROM branches WHERE id=$1', [branchId]);
+    const restaurantId = branchRes[0]?.restaurant_id;
+    const result = await couponSvc.validateCoupon(metaCouponCode, restaurantId, cart.subtotalRs);
+    if (result.valid) {
+      couponData = { id: result.coupon.id, code: result.coupon.code, discountRs: result.discountRs };
+      await wa.sendText(pid, token, to, result.message);
+    }
+  }
+
+  const discountRs   = couponData?.discountRs || 0;
+  const finalTotalRs = cart.subtotalRs + cart.deliveryFeeRs - discountRs;
+
   // Save cart to session
   await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
     ...session,
     cart: cart.cart,
-    subtotalRs: cart.subtotalRs,
+    subtotalRs:   cart.subtotalRs,
     deliveryFeeRs: cart.deliveryFeeRs,
-    totalRs: cart.totalRs,
+    totalRs:      finalTotalRs,
+    discountRs,
+    coupon:       couponData,
   });
 
   // Generate temp order number for display (real one created on confirm)
   const tempOrderNum = `TEMP-${Date.now().toString().slice(-6)}`;
 
-  // Show order summary with confirm/cancel buttons
+  // Show order summary with confirm/coupon/cancel buttons
   await wa.sendOrderSummary(pid, token, to, {
     orderNumber: tempOrderNum,
     items: cart.cart.map((i) => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
-    subtotal: cart.subtotalRs.toFixed(0),
+    subtotal:    cart.subtotalRs.toFixed(0),
     deliveryFee: cart.deliveryFeeRs.toFixed(0),
-    total: cart.totalRs.toFixed(0),
+    total:       finalTotalRs.toFixed(0),
+    discount:    couponData ? { code: couponData.code, amountRs: discountRs } : null,
   });
 
   if (cart.unavailable.length > 0) {
@@ -390,10 +458,13 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         subtotalRs   : session.subtotalRs,
         deliveryFeeRs: session.deliveryFeeRs,
         totalRs      : session.totalRs,
+        discountRs   : session.discountRs || 0,
+        couponId     : session.coupon?.id   || null,
+        couponCode   : session.coupon?.code || null,
         deliveryAddress: session.deliveryAddress,
         deliveryLat  : session.deliveryLat,
         deliveryLng  : session.deliveryLng,
-        waPhone      : customer.wa_phone,   // for referral attribution
+        waPhone      : customer.wa_phone,
       });
 
       const fullOrder = await orderSvc.getOrderDetails(order.id);
@@ -426,6 +497,33 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
           expiryMins : link.expiryMins,
         });
       }
+      break;
+    }
+
+    case 'APPLY_COUPON': {
+      await orderSvc.setState(conv.id, 'AWAITING_COUPON');
+      await wa.sendText(pid, token, to,
+        '🎟 Enter your coupon code below.\n\nType *SKIP* to continue without a coupon.'
+      );
+      break;
+    }
+
+    case 'REMOVE_COUPON': {
+      const session = conv.session_data || {};
+      const updatedTotal = session.subtotalRs + session.deliveryFeeRs;
+      await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
+        ...session, coupon: null, discountRs: 0, totalRs: updatedTotal,
+      });
+      const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
+      await wa.sendText(pid, token, to, '🗑 Coupon removed.');
+      await wa.sendOrderSummary(pid, token, to, {
+        orderNumber: tempNum,
+        items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+        subtotal:    session.subtotalRs.toFixed(0),
+        deliveryFee: session.deliveryFeeRs.toFixed(0),
+        total:       updatedTotal.toFixed(0),
+        discount:    null,
+      });
       break;
     }
 

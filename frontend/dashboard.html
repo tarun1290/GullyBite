@@ -321,6 +321,10 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
       <button class="sb-btn" onclick="goTab('integrations',this)"><span class="ic">🔗</span>POS &amp; Platforms</button>
     </div>
     <div class="sb-sec">
+      <div class="sb-cap">Marketing</div>
+      <button class="sb-btn" onclick="goTab('coupons',this)"><span class="ic">🏷️</span>Coupons &amp; Discounts</button>
+    </div>
+    <div class="sb-sec">
       <div class="sb-cap">Finance</div>
       <button class="sb-btn" onclick="goTab('settlements',this)"><span class="ic">💰</span>Settlements</button>
       <button class="sb-btn" onclick="goTab('referrals',this)"><span class="ic">🔗</span>Referrals Received</button>
@@ -658,6 +662,92 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
 
       </div>
 
+      <!-- ── COUPONS ────────────────────────────── -->
+      <div class="tab" id="tab-coupons">
+
+        <!-- Create coupon form -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>Create Coupon</h3></div>
+          <div class="cb">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+              <div>
+                <label class="lbl">Coupon Code *</label>
+                <input id="cp-code" class="inp" placeholder="e.g. WELCOME20" style="text-transform:uppercase">
+              </div>
+              <div>
+                <label class="lbl">Discount Type *</label>
+                <select id="cp-type" class="inp" onchange="toggleCouponTypeFields()">
+                  <option value="percent">Percentage (%)</option>
+                  <option value="flat">Flat Amount (₹)</option>
+                </select>
+              </div>
+              <div>
+                <label class="lbl">Discount Value *</label>
+                <input id="cp-value" class="inp" type="number" min="1" placeholder="e.g. 20">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+              <div>
+                <label class="lbl">Min Order Amount (₹)</label>
+                <input id="cp-min" class="inp" type="number" min="0" placeholder="0 = no minimum">
+              </div>
+              <div id="cp-maxdis-wrap">
+                <label class="lbl">Max Discount Cap (₹)</label>
+                <input id="cp-maxdis" class="inp" type="number" min="0" placeholder="Leave blank = no cap">
+              </div>
+              <div>
+                <label class="lbl">Usage Limit</label>
+                <input id="cp-limit" class="inp" type="number" min="1" placeholder="Leave blank = unlimited">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+              <div>
+                <label class="lbl">Valid From</label>
+                <input id="cp-from" class="inp" type="date">
+              </div>
+              <div>
+                <label class="lbl">Valid Until</label>
+                <input id="cp-until" class="inp" type="date">
+              </div>
+              <div style="display:flex;align-items:flex-end">
+                <button class="btn" onclick="createCoupon()" style="width:100%">Create Coupon</button>
+              </div>
+            </div>
+            <div>
+              <label class="lbl">Description (shown to customer on WhatsApp)</label>
+              <input id="cp-desc" class="inp" placeholder="e.g. 20% off on orders above ₹300">
+            </div>
+          </div>
+        </div>
+
+        <!-- Coupons table -->
+        <div class="card">
+          <div class="ch" style="justify-content:space-between;align-items:center">
+            <h3>Active Coupons</h3>
+            <span style="font-size:.8rem;color:var(--dim)">Customers apply these during WhatsApp checkout</span>
+          </div>
+          <div class="cb" style="padding:0">
+            <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+              <thead>
+                <tr style="background:var(--rim);text-align:left">
+                  <th style="padding:.7rem 1rem">Code</th>
+                  <th style="padding:.7rem 1rem">Discount</th>
+                  <th style="padding:.7rem 1rem">Min Order</th>
+                  <th style="padding:.7rem 1rem">Used / Limit</th>
+                  <th style="padding:.7rem 1rem">Validity</th>
+                  <th style="padding:.7rem 1rem">Status</th>
+                  <th style="padding:.7rem 1rem">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="cp-tbody">
+                <tr><td colspan="7" style="padding:2rem;text-align:center;color:var(--dim)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
       <!-- ── SETTINGS ────────────────────────────── -->
       <div class="tab" id="tab-settings">
 
@@ -839,6 +929,7 @@ const TMETA = {
   whatsapp:   { title: 'WhatsApp',           sub: 'Numbers and webhook config',         fn: loadWA },
   integrations:{ title: 'POS & Platform Integrations', sub: 'Sync menus from Swiggy, Zomato, PetPooja', fn: loadIntegrations },
   settlements: { title: 'Settlements',        sub: 'Weekly payout history',              fn: loadSettlements },
+  coupons:     { title: 'Coupons & Discounts', sub: 'Create and manage discount codes for WhatsApp orders', fn: loadCoupons },
   referrals:   { title: 'Referrals Received', sub: 'Customers referred by GullyBite admin — 7.5% fee applies', fn: loadReferrals },
   settings:    { title: 'Settings',           sub: 'Business profile and bank account',  fn: loadProfile },
 };
@@ -1605,6 +1696,93 @@ async function loadReferrals() {
         <td style="padding:.6rem 1rem;color:#a78bfa;font-weight:600">₹${parseFloat(r.referral_fee_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
         <td style="padding:.6rem 1rem;font-size:.78rem;color:var(--dim)">${new Date(r.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</td>
       </tr>`).join('');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ──────────────────── COUPONS ───────────────────────────── */
+function toggleCouponTypeFields() {
+  const isPercent = document.getElementById('cp-type').value === 'percent';
+  document.getElementById('cp-maxdis-wrap').style.display = isPercent ? '' : 'none';
+}
+
+async function loadCoupons() {
+  const tbody = document.getElementById('cp-tbody');
+  try {
+    const d = await api('/api/restaurant/coupons'); if (!d) return;
+    if (!d.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="padding:2rem;text-align:center;color:var(--dim)">No coupons yet — create one above</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.map(c => {
+      const discountLabel = c.discount_type === 'percent'
+        ? `${parseFloat(c.discount_value).toFixed(0)}%${c.max_discount_rs ? ` (max ₹${parseFloat(c.max_discount_rs).toFixed(0)})` : ''}`
+        : `₹${parseFloat(c.discount_value).toFixed(0)} flat`;
+      const validFrom  = c.valid_from  ? new Date(c.valid_from).toLocaleDateString('en-IN',  { day:'numeric', month:'short', year:'numeric' }) : '—';
+      const validUntil = c.valid_until ? new Date(c.valid_until).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '—';
+      const usedLabel  = c.usage_limit ? `${c.used_count} / ${c.usage_limit}` : `${c.used_count} / ∞`;
+      const isActive   = c.is_active;
+      return `<tr style="border-bottom:1px solid var(--rim)">
+        <td style="padding:.65rem 1rem;font-family:monospace;font-weight:700;letter-spacing:.05em">${c.code}</td>
+        <td style="padding:.65rem 1rem">${discountLabel}</td>
+        <td style="padding:.65rem 1rem">₹${parseFloat(c.min_order_rs||0).toFixed(0)}</td>
+        <td style="padding:.65rem 1rem">${usedLabel}</td>
+        <td style="padding:.65rem 1rem;font-size:.8rem">${validFrom} → ${validUntil}</td>
+        <td style="padding:.65rem 1rem">
+          <span style="font-size:.78rem;font-weight:600;color:${isActive ? '#22c55e' : '#6b7280'}">${isActive ? 'Active' : 'Inactive'}</span>
+        </td>
+        <td style="padding:.65rem 1rem;display:flex;gap:.5rem">
+          <button class="btn btn-sm" style="padding:.25rem .6rem;font-size:.78rem;background:${isActive ? '#374151' : 'var(--acc)'}"
+            onclick="toggleCoupon('${c.id}',${!isActive})">${isActive ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-sm" style="padding:.25rem .6rem;font-size:.78rem;background:#7f1d1d;color:#fca5a5"
+            onclick="deleteCoupon('${c.id}','${c.code}')">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function createCoupon() {
+  const code  = (document.getElementById('cp-code').value  || '').trim().toUpperCase();
+  const type  =  document.getElementById('cp-type').value;
+  const value =  parseFloat(document.getElementById('cp-value').value);
+  if (!code)        return toast('Coupon code is required', 'err');
+  if (!value || value <= 0) return toast('Discount value must be > 0', 'err');
+
+  const body = {
+    code,
+    description : document.getElementById('cp-desc').value.trim() || null,
+    discountType: type,
+    discountValue: value,
+    minOrderRs  : parseFloat(document.getElementById('cp-min').value)    || 0,
+    maxDiscountRs: parseFloat(document.getElementById('cp-maxdis').value) || null,
+    usageLimit  : parseInt(document.getElementById('cp-limit').value)    || null,
+    validFrom   : document.getElementById('cp-from').value  || null,
+    validUntil  : document.getElementById('cp-until').value || null,
+  };
+
+  try {
+    await api('/api/restaurant/coupons', { method: 'POST', body: JSON.stringify(body) });
+    toast('Coupon created!', 'ok');
+    ['cp-code','cp-desc','cp-value','cp-min','cp-maxdis','cp-limit','cp-from','cp-until'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('cp-type').value = 'percent';
+    toggleCouponTypeFields();
+    loadCoupons();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function toggleCoupon(id, active) {
+  try {
+    await api(`/api/restaurant/coupons/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: active }) });
+    loadCoupons();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function deleteCoupon(id, code) {
+  if (!confirm(`Delete coupon "${code}"? This cannot be undone.`)) return;
+  try {
+    await api(`/api/restaurant/coupons/${id}`, { method: 'DELETE' });
+    toast('Coupon deleted', 'ok');
+    loadCoupons();
   } catch (e) { toast(e.message, 'err'); }
 }
 

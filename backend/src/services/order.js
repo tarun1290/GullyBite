@@ -4,6 +4,7 @@
 
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const couponSvc = require('./coupon');
 
 // ─── GET OR CREATE CUSTOMER ───────────────────────────────────
 // Called every time we receive a message.
@@ -141,7 +142,7 @@ const findActiveReferral = async (client, waPhone, restaurantId) => {
 // ─── CREATE ORDER ─────────────────────────────────────────────
 // Called when customer taps "Confirm & Pay"
 // Wraps everything in a transaction (all-or-nothing)
-const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, deliveryAddress, deliveryLat, deliveryLng, waPhone }) => {
+const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone }) => {
   return db.transaction(async (client) => {
     // Generate human-readable order number
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -155,8 +156,6 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     const platformFeeRs = 0;
 
     // ── REFERRAL CHECK ─────────────────────────────────────────
-    // If customer was referred by admin within the 8-hour window,
-    // tag the order and compute 7.5% referral fee on subtotal.
     const { rows: br } = await client.query(
       'SELECT restaurant_id FROM branches WHERE id = $1', [branchId]
     );
@@ -169,17 +168,24 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     const { rows: orders } = await client.query(
       `INSERT INTO orders
         (order_number, customer_id, branch_id, conversation_id,
-         subtotal_rs, delivery_fee_rs, total_rs, platform_fee_rs,
+         subtotal_rs, delivery_fee_rs, discount_rs, total_rs, platform_fee_rs,
+         coupon_id, coupon_code,
          referral_id, referral_fee_rs,
          delivery_address, delivery_lat, delivery_lng, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'PENDING_PAYMENT')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'PENDING_PAYMENT')
        RETURNING *`,
       [orderNumber, customerId, branchId, convId,
-       subtotalRs, deliveryFeeRs, totalRs, platformFeeRs,
+       subtotalRs, deliveryFeeRs, discountRs, totalRs, platformFeeRs,
+       couponId, couponCode,
        referralId, referralFeeRs,
        deliveryAddress, deliveryLat, deliveryLng]
     );
     const order = orders[0];
+
+    // ── COUPON USAGE ────────────────────────────────────────────
+    if (couponId) {
+      await couponSvc.incrementUsage(client, couponId);
+    }
 
     // Update referral totals if this order is attributed
     if (referralId) {

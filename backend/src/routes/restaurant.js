@@ -806,6 +806,76 @@ router.post('/payout-account', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── COUPONS ──────────────────────────────────────────────────
+
+router.get('/coupons', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT * FROM coupons WHERE restaurant_id = $1 ORDER BY created_at DESC',
+      [req.restaurantId]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/coupons', express.json(), async (req, res) => {
+  try {
+    const { code, description, discountType, discountValue, minOrderRs, maxDiscountRs, usageLimit, validFrom, validUntil } = req.body;
+    if (!code || !discountType || !discountValue)
+      return res.status(400).json({ error: 'code, discountType and discountValue are required' });
+    if (!['percent', 'flat'].includes(discountType))
+      return res.status(400).json({ error: 'discountType must be percent or flat' });
+    if (discountType === 'percent' && parseFloat(discountValue) > 100)
+      return res.status(400).json({ error: 'Percent discount cannot exceed 100' });
+
+    const { rows } = await db.query(
+      `INSERT INTO coupons
+         (restaurant_id, code, description, discount_type, discount_value,
+          min_order_rs, max_discount_rs, usage_limit, valid_from, valid_until)
+       VALUES ($1,UPPER($2),$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [req.restaurantId, code.trim(), description || null, discountType,
+       parseFloat(discountValue), minOrderRs || 0, maxDiscountRs || null,
+       usageLimit || null, validFrom || null, validUntil || null]
+    );
+    res.json(rows[0]);
+  } catch (e) {
+    if (e.code === '23505') return res.status(409).json({ error: 'Coupon code already exists' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/coupons/:id', express.json(), async (req, res) => {
+  try {
+    const { isActive, description, validUntil, usageLimit, maxDiscountRs } = req.body;
+    const { rows } = await db.query(
+      `UPDATE coupons SET
+         is_active       = COALESCE($1, is_active),
+         description     = COALESCE($2, description),
+         valid_until     = COALESCE($3, valid_until),
+         usage_limit     = COALESCE($4, usage_limit),
+         max_discount_rs = COALESCE($5, max_discount_rs),
+         updated_at      = NOW()
+       WHERE id = $6 AND restaurant_id = $7 RETURNING *`,
+      [isActive ?? null, description ?? null, validUntil ?? null,
+       usageLimit ?? null, maxDiscountRs ?? null,
+       req.params.id, req.restaurantId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json(rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/coupons/:id', async (req, res) => {
+  try {
+    const { rowCount } = await db.query(
+      'DELETE FROM coupons WHERE id = $1 AND restaurant_id = $2',
+      [req.params.id, req.restaurantId]
+    );
+    if (!rowCount) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── REFERRALS RECEIVED ───────────────────────────────────────
 // GET /api/restaurant/referrals — all referrals for this restaurant + summary
 router.get('/referrals', async (req, res) => {
