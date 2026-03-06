@@ -7,7 +7,7 @@ const router = express.Router();
 const multer = require('multer');
 const axios  = require('axios');
 const db = require('../config/database');
-const { requireAuth } = require('./auth');
+const { requireAuth, requireApproved } = require('./auth');
 const catalog = require('../services/catalog');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
@@ -22,8 +22,8 @@ const upload = multer({
   },
 });
 
-// All routes below require authentication
-router.use(requireAuth);
+// All routes below require authentication + admin approval
+router.use(requireAuth, requireApproved);
 
 // ═══════════════════════════════════════════════════════════════
 // RESTAURANT PROFILE

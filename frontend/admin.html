@@ -182,6 +182,11 @@ pre.json{background:var(--ink3);border:1px solid var(--rim);border-radius:6px;pa
         Webhook Logs
         <span class="badge" id="nav-err-badge" style="display:none">!</span>
       </div>
+      <div class="nav-item" data-page="applications" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Applications
+        <span class="badge" id="nav-app-badge" style="display:none;background:#e8a020;color:#000"></span>
+      </div>
       <div class="nav-item" data-page="restaurants" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         Restaurants
@@ -280,6 +285,35 @@ pre.json{background:var(--ink3);border:1px solid var(--rim);border-radius:6px;pa
             <span id="logs-page-info">Page 1</span>
             <button id="logs-next" onclick="logsPage(1)">Next &#8594;</button>
             <span class="total" id="logs-total"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── APPLICATIONS ────────────────────────────────────────────── -->
+      <div class="page" id="page-applications">
+        <div class="table-wrap">
+          <div class="table-head">
+            <h2>Restaurant Applications</h2>
+            <span id="app-count" style="color:var(--dim);font-size:.75rem;margin-left:.5rem"></span>
+            <button class="btn-sm" style="margin-left:auto" onclick="loadApplications()">&#8635; Refresh</button>
+          </div>
+          <table>
+            <thead><tr><th>Brand / Business</th><th>Contact</th><th>GST</th><th>FSSAI</th><th>Type</th><th>Submitted</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="apps-tbody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <!-- Approve/Reject modal -->
+        <div id="app-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center">
+          <div style="background:var(--ink2);border:1px solid var(--rim2);border-radius:14px;padding:1.8rem;width:100%;max-width:440px;margin:1rem">
+            <h3 id="app-modal-title" style="margin-bottom:1rem;font-size:1rem"></h3>
+            <div style="margin-bottom:.75rem">
+              <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem" id="app-modal-label">Notes</label>
+              <textarea id="app-modal-notes" rows="3" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:8px;padding:.6rem .85rem;color:var(--tx);font-size:.87rem;font-family:inherit;resize:vertical;outline:none" placeholder="Optional notes…"></textarea>
+            </div>
+            <div style="display:flex;gap:.6rem;justify-content:flex-end">
+              <button class="btn-sm" onclick="closeAppModal()">Cancel</button>
+              <button class="btn-sm" id="app-modal-confirm" style="background:var(--wa);color:#000">Confirm</button>
+            </div>
           </div>
         </div>
       </div>
@@ -428,7 +462,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', logs: 'Webhook Logs', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -439,18 +473,20 @@ function nav(el) {
   document.getElementById('page-' + page).classList.add('active');
   document.getElementById('page-title').textContent = PAGE_TITLES[page];
   currentPage = page;
-  if (page === 'logs')        loadLogs();
-  if (page === 'restaurants') loadRestaurants();
-  if (page === 'orders')      loadOrders();
-  if (page === 'customers')   loadCustomers();
+  if (page === 'applications') loadApplications();
+  if (page === 'logs')         loadLogs();
+  if (page === 'restaurants')  loadRestaurants();
+  if (page === 'orders')       loadOrders();
+  if (page === 'customers')    loadCustomers();
 }
 
 function refreshCurrent() {
-  if (currentPage === 'overview')     loadAll();
-  else if (currentPage === 'logs')        loadLogs();
-  else if (currentPage === 'restaurants') loadRestaurants();
-  else if (currentPage === 'orders')      loadOrders();
-  else if (currentPage === 'customers')   loadCustomers();
+  if (currentPage === 'overview')      loadAll();
+  else if (currentPage === 'applications') loadApplications();
+  else if (currentPage === 'logs')         loadLogs();
+  else if (currentPage === 'restaurants')  loadRestaurants();
+  else if (currentPage === 'orders')       loadOrders();
+  else if (currentPage === 'customers')    loadCustomers();
 }
 
 // ─── STATS ────────────────────────────────────────────────────────
@@ -516,6 +552,126 @@ function loadAll() {
   loadStats();
   loadOverviewOrders();
   loadOverviewLogs();
+  loadApplicationsBadge();
+}
+
+// ─── APPLICATIONS ──────────────────────────────────────────────────
+let _appAction = null; // { id, action, name }
+
+async function loadApplicationsBadge() {
+  try {
+    const rows = await api('/api/admin/applications');
+    const pending = (rows || []).filter(r => r.approval_status === 'pending').length;
+    const badge = document.getElementById('nav-app-badge');
+    if (pending > 0) { badge.textContent = pending; badge.style.display = ''; }
+    else badge.style.display = 'none';
+  } catch {}
+}
+
+async function loadApplications() {
+  const tbody = document.getElementById('apps-tbody');
+  tbody.innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
+  try {
+    const rows = await api('/api/admin/applications');
+    document.getElementById('app-count').textContent = `${rows.length} record(s)`;
+    const pending = rows.filter(r => r.approval_status === 'pending').length;
+    const badge = document.getElementById('nav-app-badge');
+    if (pending > 0) { badge.textContent = pending; badge.style.display = ''; }
+    else badge.style.display = 'none';
+
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No applications</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => {
+      const statusBadge = r.approval_status === 'approved'
+        ? '<span class="badge green">Approved</span>'
+        : r.approval_status === 'rejected'
+        ? '<span class="badge red">Rejected</span>'
+        : '<span class="badge gold">Pending</span>';
+
+      const submitted = r.submitted_at ? new Date(r.submitted_at).toLocaleDateString('en-IN') : '—';
+      const fssaiExp  = r.fssai_expiry  ? new Date(r.fssai_expiry).toLocaleDateString('en-IN')  : '—';
+      const typeLabel = { veg:'Pure Veg', non_veg:'Non-Veg', both:'Veg & Non-Veg' }[r.restaurant_type] || '—';
+
+      const actions = r.approval_status === 'pending'
+        ? `<button class="btn-sm primary" onclick="openAppModal('${r.id}','approve','${(r.brand_name||r.business_name||'').replace(/'/g,"\\'")}')">Approve</button>
+           <button class="btn-sm danger"  style="margin-left:.3rem" onclick="openAppModal('${r.id}','reject','${(r.brand_name||r.business_name||'').replace(/'/g,"\\'")}')">Reject</button>`
+        : `<button class="btn-sm" onclick="openAppModal('${r.id}','approve','${(r.brand_name||r.business_name||'').replace(/'/g,"\\'")}')">Re-approve</button>`;
+
+      return `<tr>
+        <td><strong>${r.brand_name || r.business_name || '—'}</strong><br><span style="font-size:.75rem;color:var(--dim)">${r.registered_business_name || ''}</span></td>
+        <td>${r.owner_name || '—'}<br><span style="font-size:.75rem;color:var(--dim)">${r.phone || ''}</span><br><span style="font-size:.75rem;color:var(--dim)">${r.email || ''}</span></td>
+        <td style="font-size:.8rem">${r.gst_number || '—'}</td>
+        <td style="font-size:.8rem">${r.fssai_license || '—'}<br><span style="color:var(--dim);font-size:.72rem">Exp: ${fssaiExp}</span></td>
+        <td style="font-size:.8rem">${typeLabel}</td>
+        <td style="font-size:.8rem">${submitted}</td>
+        <td>${statusBadge}${r.approval_notes ? `<br><span style="font-size:.72rem;color:var(--dim)">${r.approval_notes}</span>` : ''}</td>
+        <td>${actions}</td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">${err.message}</td></tr>`;
+  }
+}
+
+function openAppModal(id, action, name) {
+  _appAction = { id, action, name };
+  const modal = document.getElementById('app-modal');
+  const title = document.getElementById('app-modal-title');
+  const label = document.getElementById('app-modal-label');
+  const btn   = document.getElementById('app-modal-confirm');
+  const notes = document.getElementById('app-modal-notes');
+  notes.value = '';
+  if (action === 'approve') {
+    title.textContent = `Approve "${name}"?`;
+    label.textContent = 'Notes (optional)';
+    notes.placeholder = 'Welcome message or any notes…';
+    btn.textContent = 'Approve';
+    btn.className = 'btn-sm primary';
+  } else {
+    title.textContent = `Reject "${name}"?`;
+    label.textContent = 'Rejection reason (required)';
+    notes.placeholder = 'e.g. GST number invalid, FSSAI expired…';
+    btn.textContent = 'Reject';
+    btn.className = 'btn-sm danger';
+  }
+  btn.onclick = confirmAppAction;
+  modal.style.display = 'flex';
+}
+
+function closeAppModal() {
+  document.getElementById('app-modal').style.display = 'none';
+  _appAction = null;
+}
+
+async function confirmAppAction() {
+  if (!_appAction) return;
+  const { id, action } = _appAction;
+  const notes = document.getElementById('app-modal-notes').value.trim();
+  if (action === 'reject' && !notes) {
+    alert('Please provide a rejection reason.');
+    return;
+  }
+  const btn = document.getElementById('app-modal-confirm');
+  btn.disabled = true;
+  try {
+    const res = await api(`/api/admin/applications/${id}/${action}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ notes }),
+    });
+    if (res.ok) {
+      closeAppModal();
+      toast(`Restaurant ${action === 'approve' ? 'approved' : 'rejected'} successfully`, 'ok');
+      loadApplications();
+    } else {
+      toast(res.error || 'Action failed', 'err');
+    }
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ─── WEBHOOK LOGS ─────────────────────────────────────────────────

@@ -281,4 +281,68 @@ router.post('/run-settlement', async (req, res) => {
   runSettlement().catch(console.error);
 });
 
+// ─── GET /api/admin/applications ─────────────────────────────
+// All pending + recently reviewed restaurant applications
+router.get('/applications', async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT
+        id, business_name, brand_name, registered_business_name,
+        owner_name, email, phone, city, restaurant_type,
+        gst_number, fssai_license, fssai_expiry,
+        approval_status, approval_notes, submitted_at, approved_at, created_at
+      FROM restaurants
+      WHERE approval_status IN ('pending','rejected')
+         OR (approval_status = 'approved' AND approved_at > NOW() - INTERVAL '7 days')
+      ORDER BY
+        CASE approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END,
+        submitted_at DESC NULLS LAST
+    `);
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PATCH /api/admin/applications/:id/approve ───────────────
+router.patch('/applications/:id/approve', express.json(), async (req, res) => {
+  try {
+    const { notes } = req.body;
+    const { rows } = await db.query(
+      `UPDATE restaurants SET
+         approval_status = 'approved',
+         approval_notes  = $1,
+         approved_at     = NOW(),
+         status          = 'active',
+         updated_at      = NOW()
+       WHERE id = $2 RETURNING id, business_name, email`,
+      [notes || null, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, restaurant: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PATCH /api/admin/applications/:id/reject ────────────────
+router.patch('/applications/:id/reject', express.json(), async (req, res) => {
+  try {
+    const { notes } = req.body;
+    if (!notes) return res.status(400).json({ error: 'Rejection reason is required' });
+    const { rows } = await db.query(
+      `UPDATE restaurants SET
+         approval_status = 'rejected',
+         approval_notes  = $1,
+         updated_at      = NOW()
+       WHERE id = $2 RETURNING id, business_name, email`,
+      [notes, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, restaurant: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

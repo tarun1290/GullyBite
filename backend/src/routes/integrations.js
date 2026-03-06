@@ -6,12 +6,12 @@
 const express = require('express');
 const router  = express.Router();
 const db      = require('../config/database');
-const { requireAuth } = require('./auth');
+const { requireAuth, requireApproved } = require('./auth');
 const petpooja = require('../services/integrations/petpooja');
 // const swiggy   = require('../services/integrations/swiggy');   // coming soon
 // const zomato   = require('../services/integrations/zomato');   // coming soon
 
-router.use(requireAuth);
+router.use(requireAuth, requireApproved);
 
 const SERVICES = {
   petpooja,

@@ -23,6 +23,7 @@ body{font-family:var(--font-body);background:var(--ink);color:var(--tx);min-heig
 h1,h2,h3{font-family:var(--font-head)}
 button{cursor:pointer;font-family:var(--font-body)}
 a{color:inherit;text-decoration:none}
+.hidden{display:none!important}
 
 /* ── NAV ─────────────────────────────────── */
 .nav{display:flex;align-items:center;justify-content:space-between;padding:1.3rem 2.5rem;border-bottom:1px solid var(--rim);position:sticky;top:0;z-index:99;background:rgba(10,13,16,.85);backdrop-filter:blur(18px)}
@@ -50,6 +51,47 @@ a{color:inherit;text-decoration:none}
 .feat h3{font-family:var(--font-body);font-size:.88rem;font-weight:600;margin-bottom:.28rem}
 .feat p{font-size:.8rem;color:var(--dim);line-height:1.65}
 
+/* ── ONBOARDING FORM ─────────────────────── */
+#pg-onboard{min-height:100vh;background:var(--ink);padding:2rem 1rem 4rem;display:flex;flex-direction:column;align-items:center}
+.ob-wrap{width:100%;max-width:640px;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both}
+.ob-header{text-align:center;margin-bottom:2.5rem;padding-top:1rem}
+.ob-header h2{font-size:1.9rem;margin-bottom:.5rem;color:#e8eef3}
+.ob-header p{color:var(--dim);font-size:.9rem}
+.ob-step-bar{display:flex;gap:.5rem;justify-content:center;margin-bottom:2rem}
+.ob-step{width:32px;height:4px;border-radius:100px;background:var(--rim2);transition:background .3s}
+.ob-step.done{background:var(--wa)}
+.ob-step.active{background:var(--gold2)}
+.ob-section{background:var(--ink2);border:1px solid var(--rim);border-radius:14px;padding:1.6rem;margin-bottom:1rem}
+.ob-section-title{font-size:.78rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:1.1rem}
+.ob-grid{display:grid;grid-template-columns:1fr 1fr;gap:.85rem}
+.ob-grid.full{grid-template-columns:1fr}
+@media(max-width:520px){.ob-grid{grid-template-columns:1fr}}
+.fld{display:flex;flex-direction:column;gap:.3rem}
+.fld label{font-size:.78rem;color:var(--dim);font-weight:500}
+.fld label span.req{color:#e05050;margin-left:2px}
+.fld input,.fld select{background:var(--ink3);border:1px solid var(--rim2);border-radius:8px;padding:.6rem .85rem;color:var(--tx);font-size:.87rem;font-family:var(--font-body);outline:none;transition:border-color .15s}
+.fld input:focus,.fld select:focus{border-color:var(--wa)}
+.fld input::placeholder{color:var(--dim)}
+.ob-submit{width:100%;padding:.85rem;background:var(--wa);color:#000;font-weight:700;font-size:.95rem;border:none;border-radius:100px;margin-top:.5rem;transition:all .2s}
+.ob-submit:hover:not(:disabled){background:var(--wa2)}
+.ob-submit:disabled{opacity:.55;cursor:not-allowed}
+.ob-disclaimer{font-size:.74rem;color:var(--dim);text-align:center;margin-top:.8rem;line-height:1.6}
+
+/* ── PENDING SCREEN ──────────────────────── */
+#pg-pending,#pg-rejected{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}
+.status-card{background:var(--ink2);border:1px solid var(--rim);border-radius:18px;padding:3rem 2.5rem;max-width:480px;width:100%;text-align:center;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both}
+.status-icon{font-size:3.5rem;margin-bottom:1.2rem}
+.status-card h2{font-size:1.6rem;margin-bottom:.7rem;color:#e8eef3}
+.status-card p{color:var(--dim);font-size:.9rem;line-height:1.75;margin-bottom:1.5rem}
+.status-timeline{list-style:none;text-align:left;margin:1.5rem 0;display:flex;flex-direction:column;gap:.75rem}
+.status-timeline li{display:flex;align-items:center;gap:.7rem;font-size:.84rem}
+.tl-dot{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7rem;flex-shrink:0}
+.tl-dot.done{background:rgba(37,211,102,.15);color:var(--wa);border:1px solid rgba(37,211,102,.3)}
+.tl-dot.wait{background:var(--ink3);color:var(--dim);border:1px solid var(--rim2)}
+.rejection-box{background:rgba(224,80,80,.08);border:1px solid rgba(224,80,80,.2);border-radius:10px;padding:1rem;margin:1rem 0;text-align:left;font-size:.84rem;line-height:1.6;color:#e05050}
+.btn-outline{display:inline-flex;align-items:center;gap:.4rem;background:transparent;color:var(--tx);font-weight:600;font-size:.85rem;padding:.65rem 1.4rem;border-radius:100px;border:1px solid var(--rim2);transition:all .2s}
+.btn-outline:hover{border-color:var(--tx);background:var(--ink3)}
+
 /* ── TOAST ───────────────────────────────── */
 #toast{position:fixed;bottom:1.3rem;right:1.3rem;background:var(--ink3);border:1px solid var(--rim2);border-radius:9px;padding:.68rem 1rem;font-size:.83rem;box-shadow:0 8px 28px rgba(0,0,0,.55);z-index:9999;transform:translateY(130%);transition:transform .24s cubic-bezier(.34,1.56,.64,1);max-width:310px;display:flex;align-items:center;gap:.42rem}
 #toast.on{transform:translateY(0)}
@@ -61,10 +103,7 @@ a{color:inherit;text-decoration:none}
 .spin{width:15px;height:15px;border:2px solid rgba(0,0,0,.15);border-top-color:#000;border-radius:50%;animation:rot .65s linear infinite;display:inline-block;vertical-align:middle}
 @keyframes rot{to{transform:rotate(360deg)}}
 
-@media(max-width:768px){
-  .nav{padding:.9rem 1.1rem}
-  .grid-feats{margin:2rem 1rem}
-}
+@media(max-width:768px){.nav{padding:.9rem 1.1rem}.grid-feats{margin:2rem 1rem}}
 </style>
 </head>
 <body>
@@ -101,25 +140,182 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
   <div style="height:3rem"></div>
 </div>
 
+<!-- ══════════════════════ ONBOARDING FORM ═════════════════════ -->
+<div id="pg-onboard" class="hidden">
+  <nav class="nav" style="width:100%;position:relative">
+    <div class="logo"><div class="logo-ring"></div>GullyBite</div>
+    <button class="btn-outline" onclick="doLogout()" style="font-size:.78rem;padding:.45rem 1rem">Sign out</button>
+  </nav>
+  <div class="ob-wrap">
+    <div class="ob-header">
+      <h2>Complete Your Profile</h2>
+      <p>We need a few details to verify your restaurant before activating your account.</p>
+    </div>
+    <div class="ob-step-bar">
+      <div class="ob-step done"></div>
+      <div class="ob-step done"></div>
+      <div class="ob-step active"></div>
+    </div>
+
+    <form id="ob-form" onsubmit="submitOnboarding(event)">
+      <!-- Contact -->
+      <div class="ob-section">
+        <div class="ob-section-title">Contact Person</div>
+        <div class="ob-grid">
+          <div class="fld">
+            <label>Full Name <span class="req">*</span></label>
+            <input id="ob-owner" type="text" placeholder="Ravi Kumar" required>
+          </div>
+          <div class="fld">
+            <label>Phone Number <span class="req">*</span></label>
+            <input id="ob-phone" type="tel" placeholder="+91 98765 43210" required>
+          </div>
+          <div class="fld" style="grid-column:1/-1">
+            <label>Email Address <span class="req">*</span></label>
+            <input id="ob-email" type="email" placeholder="ravi@restaurant.com" required>
+          </div>
+        </div>
+      </div>
+
+      <!-- Business -->
+      <div class="ob-section">
+        <div class="ob-section-title">Business Details</div>
+        <div class="ob-grid">
+          <div class="fld">
+            <label>Brand Name <span class="req">*</span><span style="color:var(--dim);font-weight:400"> (as seen by customers)</span></label>
+            <input id="ob-brand" type="text" placeholder="Spice Route Kitchen" required>
+          </div>
+          <div class="fld">
+            <label>Registered Business Name <span class="req">*</span></label>
+            <input id="ob-regbiz" type="text" placeholder="Spice Route Foods Pvt Ltd" required>
+          </div>
+          <div class="fld">
+            <label>City <span class="req">*</span></label>
+            <input id="ob-city" type="text" placeholder="Bengaluru" required>
+          </div>
+          <div class="fld">
+            <label>Restaurant Type <span class="req">*</span></label>
+            <select id="ob-type">
+              <option value="both">Veg &amp; Non-Veg</option>
+              <option value="veg">Pure Veg</option>
+              <option value="non_veg">Non-Veg Only</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compliance -->
+      <div class="ob-section">
+        <div class="ob-section-title">Compliance &amp; Licensing</div>
+        <div class="ob-grid">
+          <div class="fld">
+            <label>GST Number <span class="req">*</span></label>
+            <input id="ob-gst" type="text" placeholder="29AABCT1332L1ZN" maxlength="15" style="text-transform:uppercase" required>
+          </div>
+          <div class="fld">
+            <label>FSSAI License Number <span class="req">*</span></label>
+            <input id="ob-fssai" type="text" placeholder="10020011005427" maxlength="14" required>
+          </div>
+          <div class="fld">
+            <label>FSSAI License Expiry <span class="req">*</span></label>
+            <input id="ob-fssai-exp" type="date" required>
+          </div>
+        </div>
+      </div>
+
+      <button class="ob-submit" type="submit" id="ob-btn">Submit Application</button>
+      <p class="ob-disclaimer">By submitting, you confirm all details are accurate. Our team will review your application within 1–2 business days and notify you via email.</p>
+    </form>
+  </div>
+</div>
+
+<!-- ══════════════════════ PENDING SCREEN ══════════════════════ -->
+<div id="pg-pending" class="hidden">
+  <div class="status-card">
+    <div class="status-icon">⏳</div>
+    <h2>Application Under Review</h2>
+    <p>Thank you for registering with GullyBite. Our team is reviewing your details. You'll receive an email once your account is activated.</p>
+    <ul class="status-timeline">
+      <li><div class="tl-dot done">✓</div><span>Meta account connected</span></li>
+      <li><div class="tl-dot done">✓</div><span>Business details submitted</span></li>
+      <li><div class="tl-dot wait">○</div><span style="color:var(--dim)">Admin review &amp; approval</span></li>
+      <li><div class="tl-dot wait">○</div><span style="color:var(--dim)">Dashboard access granted</span></li>
+    </ul>
+    <p style="font-size:.8rem;color:var(--dim)">Typical review time: 1–2 business days</p>
+    <div style="margin-top:1.5rem;display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap">
+      <button class="btn-outline" onclick="checkStatus()">Check Status</button>
+      <button class="btn-outline" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════ REJECTED SCREEN ═════════════════════ -->
+<div id="pg-rejected" class="hidden">
+  <div class="status-card">
+    <div class="status-icon">❌</div>
+    <h2>Application Not Approved</h2>
+    <p>Unfortunately your application could not be approved at this time. Please review the reason below and contact us if you have questions.</p>
+    <div class="rejection-box" id="rejection-reason">—</div>
+    <p style="font-size:.8rem;color:var(--dim)">You can reapply after addressing the issues. Contact <a href="mailto:support@gullybite.com" style="color:var(--wa)">support@gullybite.com</a> for help.</p>
+    <div style="margin-top:1.5rem;display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap">
+      <button class="btn-outline" onclick="showPage('pg-onboard')">Update &amp; Reapply</button>
+      <button class="btn-outline" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+</div>
+
 <script>
+/* ─── PAGE ROUTER ───────────────────────────────────────────── */
+function showPage(id) {
+  ['pg-land','pg-onboard','pg-pending','pg-rejected'].forEach(p => {
+    document.getElementById(p).classList.toggle('hidden', p !== id);
+  });
+}
+
 /* ─── BOOT ──────────────────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const p = new URLSearchParams(location.search);
-  const t = p.get('token');
-  if (t) {
-    // OAuth redirect back with token — save and go straight to dashboard
-    localStorage.setItem('zm_token', t);
-    history.replaceState({}, '', '/');
-    window.location.href = '/dashboard';
-    return;
-  }
   if (p.get('error')) toast('Authentication failed — please try again', 'err');
 
-  // Already have a token — skip landing, go to dashboard
-  if (localStorage.getItem('zm_token')) {
-    window.location.href = '/dashboard';
+  const token = localStorage.getItem('zm_token');
+  if (!token) return; // show landing
+
+  // Have a token — check approval status
+  try {
+    const me = await fetch('/auth/me', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    }).then(r => r.json());
+
+    if (me.error) { localStorage.removeItem('zm_token'); return; }
+
+    routeByStatus(me);
+  } catch {
+    // network error — show landing, don't remove token
   }
 });
+
+function routeByStatus(me) {
+  if (me.approval_status === 'approved') {
+    window.location.href = '/dashboard';
+  } else if (me.approval_status === 'rejected') {
+    document.getElementById('rejection-reason').textContent = me.approval_notes || 'No reason provided.';
+    showPage('pg-rejected');
+  } else {
+    // pending — check if they've filled the form yet (onboarding_step < 5)
+    if ((me.onboarding_step || 1) < 5) {
+      prefillOnboarding(me);
+      showPage('pg-onboard');
+    } else {
+      showPage('pg-pending');
+    }
+  }
+}
+
+function prefillOnboarding(me) {
+  if (me.owner_name) document.getElementById('ob-owner').value = me.owner_name;
+  if (me.email)      document.getElementById('ob-email').value  = me.email;
+  if (me.phone)      document.getElementById('ob-phone').value  = me.phone;
+}
 
 /* ─── AUTH ───────────────────────────────────────────────────── */
 function startLogin() {
@@ -134,7 +330,7 @@ function startLogin() {
       btn2.innerHTML = '🟢 Get Started Free';
       return toast('Login cancelled', 'err');
     }
-    toast('Connecting account…', 'nfo');
+    toast('Verifying account…', 'nfo');
     fetch('/auth/facebook', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -142,15 +338,28 @@ function startLogin() {
     })
       .then(x => x.json())
       .then(d => {
-        if (d.token) {
-          localStorage.setItem('zm_token', d.token);
-          toast('Connected! Loading dashboard…', 'ok');
-          setTimeout(() => { window.location.href = '/dashboard'; }, 800);
-        } else {
+        if (!d.token) {
           toast(d.error || 'Login failed', 'err');
           [btn1, btn2].forEach(b => { b.disabled = false; });
           btn1.innerHTML = '🟢 Connect with Meta';
           btn2.innerHTML = '🟢 Get Started Free';
+          return;
+        }
+        localStorage.setItem('zm_token', d.token);
+        if (d.approvalStatus === 'approved') {
+          toast('Welcome back! Loading dashboard…', 'ok');
+          setTimeout(() => { window.location.href = '/dashboard'; }, 700);
+        } else if (d.needsOnboarding) {
+          showPage('pg-onboard');
+        } else if (d.approvalStatus === 'rejected') {
+          // fetch full details for rejection reason
+          fetch('/auth/me', { headers: { 'Authorization': `Bearer ${d.token}` } })
+            .then(r => r.json()).then(me => {
+              document.getElementById('rejection-reason').textContent = me.approval_notes || '—';
+              showPage('pg-rejected');
+            });
+        } else {
+          showPage('pg-pending');
         }
       })
       .catch(() => {
@@ -165,6 +374,66 @@ function startLogin() {
     override_default_response_type: true,
     extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
   });
+}
+
+/* ─── ONBOARDING SUBMIT ──────────────────────────────────────── */
+async function submitOnboarding(e) {
+  e.preventDefault();
+  const btn = document.getElementById('ob-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spin" style="border-top-color:#000"></div> Submitting…';
+
+  const token = localStorage.getItem('zm_token');
+  try {
+    const res = await fetch('/auth/onboarding', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        ownerName:              document.getElementById('ob-owner').value.trim(),
+        phone:                  document.getElementById('ob-phone').value.trim(),
+        brandName:              document.getElementById('ob-brand').value.trim(),
+        registeredBusinessName: document.getElementById('ob-regbiz').value.trim(),
+        gstNumber:              document.getElementById('ob-gst').value.trim().toUpperCase(),
+        fssaiLicense:           document.getElementById('ob-fssai').value.trim(),
+        fssaiExpiry:            document.getElementById('ob-fssai-exp').value,
+        restaurantType:         document.getElementById('ob-type').value,
+        city:                   document.getElementById('ob-city').value.trim(),
+      }),
+    }).then(r => r.json());
+
+    if (res.submitted) {
+      showPage('pg-pending');
+    } else {
+      toast(res.error || 'Submission failed', 'err');
+      btn.disabled = false;
+      btn.textContent = 'Submit Application';
+    }
+  } catch {
+    toast('Network error — try again', 'err');
+    btn.disabled = false;
+    btn.textContent = 'Submit Application';
+  }
+}
+
+/* ─── CHECK STATUS ───────────────────────────────────────────── */
+async function checkStatus() {
+  const token = localStorage.getItem('zm_token');
+  if (!token) return showPage('pg-land');
+  toast('Checking status…', 'nfo');
+  try {
+    const me = await fetch('/auth/me', {
+      headers: { 'Authorization': `Bearer ${token}` },
+    }).then(r => r.json());
+    routeByStatus(me);
+  } catch {
+    toast('Could not check status', 'err');
+  }
+}
+
+/* ─── LOGOUT ─────────────────────────────────────────────────── */
+function doLogout() {
+  localStorage.removeItem('zm_token');
+  showPage('pg-land');
 }
 
 /* ─── TOAST ──────────────────────────────────────────────────── */

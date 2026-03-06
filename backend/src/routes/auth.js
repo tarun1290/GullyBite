@@ -227,11 +227,11 @@ try {
 
     // Upsert restaurant record
     const { rows: existing } = await db.query(
-      'SELECT id FROM restaurants WHERE meta_user_id = $1',
+      'SELECT id, approval_status, onboarding_step FROM restaurants WHERE meta_user_id = $1',
       [metaUser.id]
     );
 
-    let restaurantId;
+    let restaurantId, approvalStatus, needsOnboarding;
     if (existing.length) {
       await db.query(
         `UPDATE restaurants SET
@@ -243,15 +243,19 @@ try {
          WHERE meta_user_id = $5`,
         [longToken, expiresAt, metaUser.name, metaUser.email, metaUser.id]
       );
-      restaurantId = existing[0].id;
+      restaurantId    = existing[0].id;
+      approvalStatus  = existing[0].approval_status || 'pending';
+      needsOnboarding = (existing[0].onboarding_step || 1) < 5;
     } else {
       const { rows: created } = await db.query(
         `INSERT INTO restaurants
-           (meta_user_id, meta_access_token, meta_token_expires_at, owner_name, email)
-         VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+           (meta_user_id, meta_access_token, meta_token_expires_at, owner_name, email, approval_status)
+         VALUES ($1,$2,$3,$4,$5,'pending') RETURNING id`,
         [metaUser.id, longToken, expiresAt, metaUser.name, metaUser.email]
       );
-      restaurantId = created[0].id;
+      restaurantId    = created[0].id;
+      approvalStatus  = 'pending';
+      needsOnboarding = true;
     }
 
     // Save WhatsApp accounts
@@ -281,7 +285,7 @@ try {
       { expiresIn: '30d' }
     );
 
-    res.json({ token: jwtToken });
+    res.json({ token: jwtToken, approvalStatus, needsOnboarding });
 
   } catch (err) {
     console.error('[Auth] Facebook login error:', err.response?.data || err.message);
@@ -289,12 +293,57 @@ try {
   }
 });
 
+// ─── COMPLETE ONBOARDING ──────────────────────────────────────
+// POST /auth/onboarding — Save business details after Meta OAuth
+// Requires JWT (any approval_status); sets approval_status = 'pending'
+router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
+  try {
+    const {
+      ownerName, phone, brandName, registeredBusinessName,
+      gstNumber, fssaiLicense, fssaiExpiry, restaurantType, city,
+    } = req.body;
+
+    if (!ownerName || !phone || !brandName || !registeredBusinessName || !gstNumber || !fssaiLicense || !fssaiExpiry) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    await db.query(
+      `UPDATE restaurants SET
+         owner_name                = $1,
+         phone                     = $2,
+         business_name             = $3,
+         brand_name                = $3,
+         registered_business_name  = $4,
+         gst_number                = $5,
+         fssai_license             = $6,
+         fssai_expiry              = $7,
+         restaurant_type           = $8,
+         city                      = $9,
+         approval_status           = 'pending',
+         submitted_at              = NOW(),
+         onboarding_step           = 5,
+         updated_at                = NOW()
+       WHERE id = $10`,
+      [ownerName, phone, brandName, registeredBusinessName,
+       gstNumber, fssaiLicense, fssaiExpiry, restaurantType || 'both',
+       city || null, req.restaurantId]
+    );
+
+    res.json({ submitted: true });
+  } catch (err) {
+    console.error('[Onboarding]', err.message);
+    res.status(500).json({ error: 'Failed to save details' });
+  }
+});
+
 // ─── GET CURRENT USER ─────────────────────────────────────────
 // GET /auth/me — Returns logged-in restaurant info
 router.get('/me', requireAuth, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT r.id, r.business_name, r.owner_name, r.email, r.phone, r.logo_url,
-            r.onboarding_step, r.commission_pct, r.status,
+    `SELECT r.id, r.business_name, r.brand_name, r.owner_name, r.email, r.phone,
+            r.logo_url, r.onboarding_step, r.commission_pct, r.status,
+            r.approval_status, r.approval_notes, r.submitted_at,
+            r.gst_number, r.fssai_license, r.fssai_expiry, r.restaurant_type,
             r.bank_name, r.bank_account_number, r.bank_ifsc
      FROM restaurants r WHERE r.id = $1`,
     [req.restaurantId]
@@ -318,4 +367,27 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { router, requireAuth };
+// ─── APPROVED-ONLY MIDDLEWARE ─────────────────────────────────
+// Use on dashboard routes. Blocks access until admin approves.
+async function requireApproved(req, res, next) {
+  try {
+    const { rows } = await db.query(
+      'SELECT approval_status FROM restaurants WHERE id = $1',
+      [req.restaurantId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Restaurant not found' });
+    if (rows[0].approval_status !== 'approved') {
+      return res.status(403).json({
+        error: 'pending_approval',
+        approval_status: rows[0].approval_status,
+        message: 'Your application is under review. You will be notified once approved.',
+      });
+    }
+    next();
+  } catch (err) {
+    console.error('[requireApproved]', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+module.exports = { router, requireAuth, requireApproved };
