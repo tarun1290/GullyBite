@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GullyBite — Admin Dashboard</title>
+<style>
+:root{
+  --ink:#0a0d10;--ink2:#111619;--ink3:#181e24;--ink4:#1e262f;
+  --rim:#253040;--rim2:#2e3d4e;
+  --wa:#25D366;--wa2:#1aad52;--wa-glow:rgba(37,211,102,.14);
+  --gold:#e8a020;--gold2:#f5b840;
+  --red:#e05050;--red2:#c03030;--red-glow:rgba(224,80,80,.12);
+  --blue:#4a90d9;--blue2:#357ac5;
+  --purple:#9b59b6;
+  --tx:#ccd8e2;--dim:#6e8698;--mute:#2e3d4e;
+  --r:8px;
+  --font:'Plus Jakarta Sans',system-ui,sans-serif;
+  --sidebar:220px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:var(--font);background:var(--ink);color:var(--tx);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{cursor:pointer;font-family:var(--font)}
+input,select,textarea{font-family:var(--font)}
+a{color:inherit;text-decoration:none}
+
+/* ── LOGIN ────────────────────────────────────────────────── */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:radial-gradient(ellipse 60% 50% at 50% 0%,rgba(37,211,102,.06),transparent 55%),var(--ink)}
+.login-card{background:var(--ink2);border:1px solid var(--rim);border-radius:16px;padding:2.5rem;width:100%;max-width:380px;text-align:center}
+.login-logo{display:flex;align-items:center;justify-content:center;gap:.5rem;font-size:1.4rem;font-weight:700;margin-bottom:.4rem}
+.login-logo .dot{width:10px;height:10px;border-radius:50%;background:var(--wa);box-shadow:0 0 0 0 rgba(37,211,102,.6);animation:pulse 2.4s ease infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(37,211,102,.6)}60%{box-shadow:0 0 0 9px rgba(37,211,102,0)}}
+.login-sub{color:var(--dim);font-size:.8rem;margin-bottom:2rem}
+.login-field{margin-bottom:1rem;text-align:left}
+.login-field label{display:block;font-size:.75rem;color:var(--dim);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.06em}
+.login-field input{width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:var(--r);padding:.65rem .85rem;color:var(--tx);font-size:.9rem;outline:none;transition:border-color .15s}
+.login-field input:focus{border-color:var(--wa)}
+.btn-login{width:100%;background:var(--wa);color:#000;font-weight:700;padding:.75rem;border:none;border-radius:var(--r);font-size:.9rem;transition:background .15s}
+.btn-login:hover{background:var(--wa2)}
+.login-err{color:var(--red);font-size:.8rem;margin-top:.75rem;min-height:1.2em}
+
+/* ── APP SHELL ────────────────────────────────────────────── */
+#app{display:none;height:100vh;flex-direction:row}
+#app.visible{display:flex}
+
+/* ── SIDEBAR ──────────────────────────────────────────────── */
+.sidebar{width:var(--sidebar);background:var(--ink2);border-right:1px solid var(--rim);display:flex;flex-direction:column;flex-shrink:0}
+.sb-logo{padding:1.2rem 1.1rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1rem}
+.sb-logo .dot{width:8px;height:8px;border-radius:50%;background:var(--wa)}
+.sb-badge{font-size:.65rem;background:var(--mute);color:var(--dim);padding:.1rem .45rem;border-radius:4px;margin-left:auto}
+nav{flex:1;padding:.6rem 0}
+.nav-item{display:flex;align-items:center;gap:.65rem;padding:.6rem 1.1rem;color:var(--dim);cursor:pointer;border-radius:0;transition:background .1s,color .1s;margin:1px .4rem;border-radius:6px;font-size:.875rem}
+.nav-item:hover{background:var(--ink3);color:var(--tx)}
+.nav-item.active{background:rgba(37,211,102,.1);color:var(--wa)}
+.nav-item svg{width:16px;height:16px;flex-shrink:0}
+.nav-item .badge{margin-left:auto;background:var(--red);color:#fff;border-radius:10px;font-size:.65rem;padding:.05rem .4rem;min-width:1.2em;text-align:center}
+.sb-footer{padding:1rem;border-top:1px solid var(--rim)}
+.sb-user{display:flex;align-items:center;gap:.6rem;font-size:.8rem;color:var(--dim)}
+.sb-avatar{width:28px;height:28px;border-radius:50%;background:var(--wa);display:flex;align-items:center;justify-content:center;color:#000;font-weight:700;font-size:.75rem;flex-shrink:0}
+.btn-logout{margin-left:auto;background:none;border:none;color:var(--dim);font-size:.75rem;padding:.2rem .4rem;border-radius:4px}
+.btn-logout:hover{color:var(--red)}
+
+/* ── MAIN AREA ────────────────────────────────────────────── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{padding:.75rem 1.5rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;gap:.75rem;background:var(--ink2);flex-shrink:0}
+.topbar h1{font-size:1rem;font-weight:600}
+.topbar .subtitle{color:var(--dim);font-size:.8rem;margin-left:.4rem}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:.6rem}
+.btn-sm{padding:.35rem .8rem;border-radius:6px;border:1px solid var(--rim2);background:var(--ink3);color:var(--tx);font-size:.78rem;cursor:pointer;transition:background .1s}
+.btn-sm:hover{background:var(--rim)}
+.btn-sm.primary{background:var(--wa);color:#000;border-color:var(--wa);font-weight:600}
+.btn-sm.primary:hover{background:var(--wa2)}
+.btn-sm.danger{background:var(--red);color:#fff;border-color:var(--red)}
+.btn-sm.danger:hover{background:var(--red2)}
+
+.content{flex:1;overflow-y:auto;padding:1.25rem 1.5rem}
+
+/* ── PAGES ────────────────────────────────────────────────── */
+.page{display:none}.page.active{display:block}
+
+/* ── STAT CARDS ───────────────────────────────────────────── */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:.75rem;margin-bottom:1.25rem}
+.stat-card{background:var(--ink2);border:1px solid var(--rim);border-radius:var(--r);padding:1rem 1.1rem}
+.stat-label{font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem}
+.stat-val{font-size:1.6rem;font-weight:700;line-height:1}
+.stat-sub{font-size:.72rem;color:var(--dim);margin-top:.4rem}
+.stat-card.green .stat-val{color:var(--wa)}
+.stat-card.gold  .stat-val{color:var(--gold2)}
+.stat-card.red   .stat-val{color:var(--red)}
+.stat-card.blue  .stat-val{color:var(--blue)}
+
+/* ── TABLES ───────────────────────────────────────────────── */
+.table-wrap{background:var(--ink2);border:1px solid var(--rim);border-radius:var(--r);overflow:hidden;margin-bottom:1rem}
+.table-head{padding:.75rem 1rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.table-head h2{font-size:.85rem;font-weight:600}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:.5rem .85rem;font-size:.7rem;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--rim);white-space:nowrap}
+td{padding:.55rem .85rem;font-size:.82rem;border-bottom:1px solid rgba(37,56,77,.4);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+
+/* ── BADGES ───────────────────────────────────────────────── */
+.badge{display:inline-flex;align-items:center;padding:.15rem .5rem;border-radius:4px;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.badge.green{background:rgba(37,211,102,.12);color:var(--wa)}
+.badge.red   {background:rgba(224,80,80,.12);color:var(--red)}
+.badge.gold  {background:rgba(232,160,32,.12);color:var(--gold2)}
+.badge.blue  {background:rgba(74,144,217,.12);color:var(--blue)}
+.badge.gray  {background:rgba(110,134,152,.1);color:var(--dim)}
+.badge.purple{background:rgba(155,89,182,.12);color:var(--purple)}
+
+/* ── FILTERS ──────────────────────────────────────────────── */
+.filters{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.6rem 1rem;border-bottom:1px solid var(--rim);background:var(--ink3)}
+.filters input,.filters select{background:var(--ink2);border:1px solid var(--rim2);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem;outline:none}
+.filters input:focus,.filters select:focus{border-color:var(--wa)}
+.filter-label{font-size:.72rem;color:var(--dim)}
+
+/* ── PAGINATION ───────────────────────────────────────────── */
+.pager{display:flex;align-items:center;gap:.5rem;padding:.6rem 1rem;border-top:1px solid var(--rim);font-size:.78rem;color:var(--dim)}
+.pager button{background:var(--ink3);border:1px solid var(--rim2);color:var(--tx);border-radius:5px;padding:.25rem .6rem;cursor:pointer}
+.pager button:disabled{opacity:.35;cursor:default}
+.pager .total{margin-left:auto}
+
+/* ── MODAL / LOG DETAIL ───────────────────────────────────── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+.overlay.open{display:flex}
+.modal{background:var(--ink2);border:1px solid var(--rim);border-radius:12px;width:90%;max-width:700px;max-height:85vh;display:flex;flex-direction:column}
+.modal-head{padding:1rem 1.1rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;gap:.6rem}
+.modal-head h3{font-size:.9rem;font-weight:600;flex:1}
+.btn-close{background:none;border:none;color:var(--dim);font-size:1.1rem;line-height:1;padding:.2rem .4rem}
+.btn-close:hover{color:var(--tx)}
+.modal-body{flex:1;overflow-y:auto;padding:1rem 1.1rem}
+pre.json{background:var(--ink3);border:1px solid var(--rim);border-radius:6px;padding:.85rem;font-size:.75rem;line-height:1.5;overflow-x:auto;white-space:pre-wrap;word-break:break-all;color:#c9e3f7}
+
+/* ── EMPTY STATE ──────────────────────────────────────────── */
+.empty{padding:3rem;text-align:center;color:var(--dim);font-size:.85rem}
+
+/* ── TOASTS ───────────────────────────────────────────────── */
+#toast{position:fixed;bottom:1.5rem;right:1.5rem;z-index:200;display:flex;flex-direction:column;gap:.5rem;pointer-events:none}
+.toast-msg{background:var(--ink3);border:1px solid var(--rim);border-radius:8px;padding:.65rem 1rem;font-size:.82rem;max-width:300px;animation:slideIn .2s ease;pointer-events:auto}
+.toast-msg.ok{border-color:var(--wa);color:var(--wa)}
+.toast-msg.err{border-color:var(--red);color:var(--red)}
+@keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── MISC ─────────────────────────────────────────────────── */
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem}
+@media(max-width:700px){.row2{grid-template-columns:1fr}}
+.monospace{font-family:'SF Mono',Consolas,monospace;font-size:.78rem}
+.truncate{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ──────────────────────────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo"><span class="dot"></span> GullyBite</div>
+    <div class="login-sub">Admin Dashboard</div>
+    <div class="login-field">
+      <label>Admin Key</label>
+      <input type="password" id="admin-key-input" placeholder="Enter your ADMIN_KEY" autocomplete="off">
+    </div>
+    <button class="btn-login" onclick="doLogin()">Sign In</button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- ── APP SHELL ───────────────────────────────────────────────────── -->
+<div id="app">
+  <!-- sidebar -->
+  <aside class="sidebar">
+    <div class="sb-logo">
+      <span class="dot"></span> GullyBite
+      <span class="sb-badge">Admin</span>
+    </div>
+    <nav>
+      <div class="nav-item active" data-page="overview" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        Overview
+      </div>
+      <div class="nav-item" data-page="logs" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Webhook Logs
+        <span class="badge" id="nav-err-badge" style="display:none">!</span>
+      </div>
+      <div class="nav-item" data-page="restaurants" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Restaurants
+      </div>
+      <div class="nav-item" data-page="orders" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        Orders
+      </div>
+      <div class="nav-item" data-page="customers" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Customers
+      </div>
+    </nav>
+    <div class="sb-footer">
+      <div class="sb-user">
+        <div class="sb-avatar">A</div>
+        Admin
+        <button class="btn-logout" onclick="logout()">Sign out</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- main -->
+  <div class="main">
+    <div class="topbar">
+      <h1 id="page-title">Overview</h1>
+      <span class="subtitle" id="page-sub"></span>
+      <div class="topbar-right">
+        <button class="btn-sm" onclick="refreshCurrent()">&#8635; Refresh</button>
+        <button class="btn-sm primary" onclick="runSettlement()">Run Settlement</button>
+      </div>
+    </div>
+    <div class="content">
+
+      <!-- ── OVERVIEW ──────────────────────────────────────────────── -->
+      <div class="page active" id="page-overview">
+        <div class="stat-grid" id="stat-grid">
+          <div class="stat-card"><div class="stat-label">Restaurants</div><div class="stat-val" id="s-restaurants">—</div><div class="stat-sub" id="s-restaurants-sub"></div></div>
+          <div class="stat-card green"><div class="stat-label">Total Orders</div><div class="stat-val" id="s-orders">—</div><div class="stat-sub" id="s-orders-sub"></div></div>
+          <div class="stat-card gold"><div class="stat-label">Total Revenue</div><div class="stat-val" id="s-revenue">—</div><div class="stat-sub" id="s-revenue-sub"></div></div>
+          <div class="stat-card blue"><div class="stat-label">Customers</div><div class="stat-val" id="s-customers">—</div><div class="stat-sub" id="s-customers-sub"></div></div>
+          <div class="stat-card"><div class="stat-label">Webhook Logs</div><div class="stat-val" id="s-logs">—</div><div class="stat-sub" id="s-logs-sub"></div></div>
+          <div class="stat-card red"><div class="stat-label">Pending Orders</div><div class="stat-val" id="s-pending">—</div><div class="stat-sub" id="s-pending-sub"></div></div>
+        </div>
+        <!-- quick tables -->
+        <div class="row2">
+          <div class="table-wrap">
+            <div class="table-head"><h2>Recent Orders</h2><button class="btn-sm" style="margin-left:auto" onclick="nav(document.querySelector('[data-page=orders]'))">View All</button></div>
+            <table><thead><tr><th>Order</th><th>Restaurant</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody id="ov-orders"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table>
+          </div>
+          <div class="table-wrap">
+            <div class="table-head"><h2>Recent Logs</h2><button class="btn-sm" style="margin-left:auto" onclick="nav(document.querySelector('[data-page=logs]'))">View All</button></div>
+            <table><thead><tr><th>Source</th><th>Event</th><th>Status</th><th>Time</th></tr></thead>
+            <tbody id="ov-logs"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody></table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── WEBHOOK LOGS ───────────────────────────────────────────── -->
+      <div class="page" id="page-logs">
+        <div class="table-wrap">
+          <div class="table-head"><h2>Webhook Logs</h2><span id="logs-count" style="color:var(--dim);font-size:.75rem"></span></div>
+          <div class="filters">
+            <span class="filter-label">Source:</span>
+            <select id="f-source" onchange="loadLogs()">
+              <option value="">All</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="razorpay">Razorpay</option>
+              <option value="3pl">3PL</option>
+              <option value="catalog">Catalog</option>
+            </select>
+            <span class="filter-label">Status:</span>
+            <select id="f-processed" onchange="loadLogs()">
+              <option value="">All</option>
+              <option value="true">Processed</option>
+              <option value="false">Unprocessed</option>
+            </select>
+            <span class="filter-label">Errors:</span>
+            <select id="f-has-error" onchange="loadLogs()">
+              <option value="">All</option>
+              <option value="true">Has Error</option>
+              <option value="false">No Error</option>
+            </select>
+            <input type="text" id="f-event" placeholder="Event type…" oninput="debounce(loadLogs)" style="width:130px">
+            <input type="date" id="f-date-from" onchange="loadLogs()">
+            <input type="date" id="f-date-to" onchange="loadLogs()">
+            <button class="btn-sm" onclick="clearLogFilters()">Clear</button>
+          </div>
+          <table>
+            <thead><tr><th>Time</th><th>Source</th><th>Event</th><th>Phone ID</th><th>Status</th><th>Error</th><th></th></tr></thead>
+            <tbody id="logs-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+          </table>
+          <div class="pager">
+            <button id="logs-prev" onclick="logsPage(-1)" disabled>&#8592; Prev</button>
+            <span id="logs-page-info">Page 1</span>
+            <button id="logs-next" onclick="logsPage(1)">Next &#8594;</button>
+            <span class="total" id="logs-total"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── RESTAURANTS ─────────────────────────────────────────────── -->
+      <div class="page" id="page-restaurants">
+        <div class="table-wrap">
+          <div class="table-head"><h2>Restaurants</h2></div>
+          <table>
+            <thead><tr><th>Business</th><th>Owner</th><th>Email</th><th>Branches</th><th>Orders</th><th>Revenue</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="restaurants-tbody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── ORDERS ──────────────────────────────────────────────────── -->
+      <div class="page" id="page-orders">
+        <div class="table-wrap">
+          <div class="table-head"><h2>All Orders</h2><span id="orders-count" style="color:var(--dim);font-size:.75rem;margin-left:.5rem"></span></div>
+          <div class="filters">
+            <span class="filter-label">Status:</span>
+            <select id="fo-status" onchange="loadOrders()">
+              <option value="">All</option>
+              <option value="PENDING">Pending</option>
+              <option value="CONFIRMED">Confirmed</option>
+              <option value="PREPARING">Preparing</option>
+              <option value="PACKED">Packed</option>
+              <option value="DISPATCHED">Dispatched</option>
+              <option value="DELIVERED">Delivered</option>
+              <option value="CANCELLED">Cancelled</option>
+            </select>
+            <input type="date" id="fo-date-from" onchange="loadOrders()">
+            <input type="date" id="fo-date-to" onchange="loadOrders()">
+            <button class="btn-sm" onclick="clearOrderFilters()">Clear</button>
+          </div>
+          <table>
+            <thead><tr><th>Order #</th><th>Restaurant</th><th>Branch</th><th>Customer</th><th>Total</th><th>Status</th><th>Time</th></tr></thead>
+            <tbody id="orders-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+          </table>
+          <div class="pager">
+            <button id="orders-prev" onclick="ordersPage(-1)" disabled>&#8592; Prev</button>
+            <span id="orders-page-info">Page 1</span>
+            <button id="orders-next" onclick="ordersPage(1)">Next &#8594;</button>
+            <span class="total" id="orders-total"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── CUSTOMERS ───────────────────────────────────────────────── -->
+      <div class="page" id="page-customers">
+        <div class="table-wrap">
+          <div class="table-head"><h2>Customers</h2>
+            <input type="text" id="fc-search" placeholder="Search phone / name…" oninput="debounce(loadCustomers)" style="margin-left:auto;width:200px;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem;outline:none">
+          </div>
+          <table>
+            <thead><tr><th>Phone</th><th>Name</th><th>Orders</th><th>Lifetime Value</th><th>Joined</th></tr></thead>
+            <tbody id="customers-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+          </table>
+          <div class="pager">
+            <button id="cust-prev" onclick="custPage(-1)" disabled>&#8592; Prev</button>
+            <span id="cust-page-info">Page 1</span>
+            <button id="cust-next" onclick="custPage(1)">Next &#8594;</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ── LOG DETAIL MODAL ──────────────────────────────────────────── -->
+<div class="overlay" id="log-modal" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modal-title">Log Detail</h3>
+      <button class="btn-close" onclick="closeLogModal()">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div id="modal-meta" style="margin-bottom:.75rem;font-size:.8rem;color:var(--dim);display:flex;gap:1rem;flex-wrap:wrap"></div>
+      <pre class="json" id="modal-payload"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- ── TOAST ──────────────────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────
+const BASE = '';  // same origin
+let adminKey = '';
+
+// ─── API HELPER ───────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const res = await fetch(BASE + path, {
+    ...opts,
+    headers: {
+      'Authorization': `Bearer ${adminKey}`,
+      'Content-Type' : 'application/json',
+      ...(opts.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || res.statusText);
+  }
+  return res.json();
+}
+
+// ─── AUTH ─────────────────────────────────────────────────────────
+async function doLogin() {
+  const key = document.getElementById('admin-key-input').value.trim();
+  const err = document.getElementById('login-err');
+  if (!key) { err.textContent = 'Please enter the admin key.'; return; }
+  try {
+    await fetch(BASE + '/api/admin/auth', {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ key }),
+    }).then(r => { if (!r.ok) throw new Error('Invalid key'); return r.json(); });
+    adminKey = key;
+    sessionStorage.setItem('gb_admin_key', key);
+    showApp();
+  } catch {
+    err.textContent = 'Invalid admin key. Please try again.';
+  }
+}
+
+function logout() {
+  adminKey = '';
+  sessionStorage.removeItem('gb_admin_key');
+  document.getElementById('app').classList.remove('visible');
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('admin-key-input').value = '';
+  document.getElementById('login-err').textContent = '';
+}
+
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').classList.add('visible');
+  loadAll();
+}
+
+document.getElementById('admin-key-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+// ─── NAVIGATION ───────────────────────────────────────────────────
+const PAGE_TITLES = { overview: 'Overview', logs: 'Webhook Logs', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers' };
+let currentPage = 'overview';
+
+function nav(el) {
+  const page = el.dataset.page;
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.getElementById('page-title').textContent = PAGE_TITLES[page];
+  currentPage = page;
+  if (page === 'logs')        loadLogs();
+  if (page === 'restaurants') loadRestaurants();
+  if (page === 'orders')      loadOrders();
+  if (page === 'customers')   loadCustomers();
+}
+
+function refreshCurrent() {
+  if (currentPage === 'overview')     loadAll();
+  else if (currentPage === 'logs')        loadLogs();
+  else if (currentPage === 'restaurants') loadRestaurants();
+  else if (currentPage === 'orders')      loadOrders();
+  else if (currentPage === 'customers')   loadCustomers();
+}
+
+// ─── STATS ────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const d = await api('/api/admin/stats');
+    document.getElementById('s-restaurants').textContent = d.restaurants.total;
+    document.getElementById('s-restaurants-sub').textContent = `${d.restaurants.active} active`;
+    document.getElementById('s-orders').textContent = d.orders.total;
+    document.getElementById('s-orders-sub').textContent = `${d.orders.today} today`;
+    document.getElementById('s-revenue').textContent = '₹' + fmtNum(d.revenue.total_rs);
+    document.getElementById('s-revenue-sub').textContent = '₹' + fmtNum(d.revenue.week_rs) + ' this week';
+    document.getElementById('s-customers').textContent = d.customers.total;
+    document.getElementById('s-customers-sub').textContent = `${d.customers.today} today`;
+    document.getElementById('s-logs').textContent = d.logs.total;
+    document.getElementById('s-logs-sub').textContent = `${d.logs.unprocessed} unprocessed`;
+    document.getElementById('s-pending').textContent = d.orders.pending;
+    document.getElementById('s-pending-sub').textContent = `${d.orders.cancelled} cancelled`;
+
+    // show badge on nav if errors
+    const badge = document.getElementById('nav-err-badge');
+    if (parseInt(d.logs.errors) > 0) {
+      badge.style.display = '';
+      badge.textContent = d.logs.errors;
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// ─── OVERVIEW QUICK TABLES ────────────────────────────────────────
+async function loadOverviewOrders() {
+  try {
+    const d = await api('/api/admin/orders?limit=8');
+    const tbody = document.getElementById('ov-orders');
+    if (!d.orders.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">No orders yet</td></tr>'; return; }
+    tbody.innerHTML = d.orders.map(o => `
+      <tr>
+        <td class="monospace">#${o.order_number}</td>
+        <td class="truncate">${esc(o.business_name)}</td>
+        <td>₹${o.total_rs}</td>
+        <td>${statusBadge(o.status)}</td>
+      </tr>`).join('');
+  } catch {}
+}
+
+async function loadOverviewLogs() {
+  try {
+    const d = await api('/api/admin/logs?limit=8');
+    const tbody = document.getElementById('ov-logs');
+    if (!d.logs.length) { tbody.innerHTML = '<tr><td colspan="4" class="empty">No logs yet</td></tr>'; return; }
+    tbody.innerHTML = d.logs.map(l => `
+      <tr>
+        <td>${sourceBadge(l.source)}</td>
+        <td class="truncate monospace">${esc(l.event_type || '—')}</td>
+        <td>${l.error_message ? '<span class="badge red">Error</span>' : l.processed ? '<span class="badge green">OK</span>' : '<span class="badge gray">Pending</span>'}</td>
+        <td style="color:var(--dim)">${timeAgo(l.received_at)}</td>
+      </tr>`).join('');
+  } catch {}
+}
+
+function loadAll() {
+  loadStats();
+  loadOverviewOrders();
+  loadOverviewLogs();
+}
+
+// ─── WEBHOOK LOGS ─────────────────────────────────────────────────
+let logsOffset = 0;
+const LOGS_LIMIT = 50;
+let logsTotalCount = 0;
+
+async function loadLogs() {
+  const source    = document.getElementById('f-source').value;
+  const processed = document.getElementById('f-processed').value;
+  const hasError  = document.getElementById('f-has-error').value;
+  const eventType = document.getElementById('f-event').value.trim();
+  const dateFrom  = document.getElementById('f-date-from').value;
+  const dateTo    = document.getElementById('f-date-to').value;
+
+  const params = new URLSearchParams({ limit: LOGS_LIMIT, offset: logsOffset });
+  if (source)    params.set('source', source);
+  if (processed !== '') params.set('processed', processed);
+  if (hasError !== '') params.set('has_error', hasError);
+  if (eventType) params.set('event_type', eventType);
+  if (dateFrom)  params.set('date_from', dateFrom);
+  if (dateTo)    params.set('date_to', dateTo + 'T23:59:59');
+
+  const tbody = document.getElementById('logs-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
+
+  try {
+    const d = await api('/api/admin/logs?' + params);
+    logsTotalCount = d.total;
+    document.getElementById('logs-count').textContent = `${d.total} total`;
+    document.getElementById('logs-total').textContent = `${d.total} entries`;
+    const page = Math.floor(logsOffset / LOGS_LIMIT) + 1;
+    const pages = Math.ceil(d.total / LOGS_LIMIT) || 1;
+    document.getElementById('logs-page-info').textContent = `Page ${page} / ${pages}`;
+    document.getElementById('logs-prev').disabled = logsOffset === 0;
+    document.getElementById('logs-next').disabled = logsOffset + LOGS_LIMIT >= d.total;
+
+    if (!d.logs.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No logs found</td></tr>'; return; }
+    tbody.innerHTML = d.logs.map(l => `
+      <tr>
+        <td style="color:var(--dim);font-size:.75rem">${fmtTime(l.received_at)}</td>
+        <td>${sourceBadge(l.source)}</td>
+        <td class="monospace truncate">${esc(l.event_type || '—')}</td>
+        <td class="monospace" style="font-size:.72rem;color:var(--dim)">${esc(l.phone_number_id || '—')}</td>
+        <td>${l.processed ? '<span class="badge green">OK</span>' : '<span class="badge gray">Pending</span>'}</td>
+        <td>${l.error_message ? `<span class="badge red" title="${esc(l.error_message)}">Error</span>` : '—'}</td>
+        <td><button class="btn-sm" onclick="openLogModal('${l.id}')">View</button></td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+function logsPage(dir) {
+  logsOffset = Math.max(0, logsOffset + dir * LOGS_LIMIT);
+  loadLogs();
+}
+
+function clearLogFilters() {
+  ['f-source','f-processed','f-has-error'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('f-event').value = '';
+  document.getElementById('f-date-from').value = '';
+  document.getElementById('f-date-to').value = '';
+  logsOffset = 0;
+  loadLogs();
+}
+
+// ─── LOG MODAL ────────────────────────────────────────────────────
+async function openLogModal(id) {
+  document.getElementById('log-modal').classList.add('open');
+  document.getElementById('modal-payload').textContent = 'Loading…';
+  document.getElementById('modal-meta').innerHTML = '';
+  document.getElementById('modal-title').textContent = 'Log Detail';
+  try {
+    const l = await api('/api/admin/logs/' + id);
+    document.getElementById('modal-title').textContent = l.event_type || 'Log Detail';
+    document.getElementById('modal-meta').innerHTML = [
+      `<span>${sourceBadge(l.source)}</span>`,
+      `<span style="color:var(--dim)">${fmtTime(l.received_at)}</span>`,
+      l.error_message ? `<span style="color:var(--red)">${esc(l.error_message)}</span>` : '',
+      l.phone_number_id ? `<span class="monospace">${esc(l.phone_number_id)}</span>` : '',
+    ].join('');
+    document.getElementById('modal-payload').textContent = JSON.stringify(l.payload, null, 2);
+  } catch (e) {
+    document.getElementById('modal-payload').textContent = e.message;
+  }
+}
+
+function closeLogModal() { document.getElementById('log-modal').classList.remove('open'); }
+function closeModal(e) { if (e.target.id === 'log-modal') closeLogModal(); }
+
+// ─── RESTAURANTS ──────────────────────────────────────────────────
+async function loadRestaurants() {
+  const tbody = document.getElementById('restaurants-tbody');
+  tbody.innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
+  try {
+    const rows = await api('/api/admin/restaurants');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No restaurants yet</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td><strong>${esc(r.business_name)}</strong><br><span style="color:var(--dim);font-size:.72rem">${r.id.slice(0,8)}</span></td>
+        <td>${esc(r.owner_name || '—')}</td>
+        <td class="truncate">${esc(r.email || '—')}</td>
+        <td style="text-align:center">${r.branch_count}</td>
+        <td style="text-align:center">${r.order_count}</td>
+        <td>₹${fmtNum(r.revenue_rs)}</td>
+        <td>${rStatusBadge(r.status)}</td>
+        <td>${r.status === 'active'
+          ? `<button class="btn-sm danger" onclick="setRestaurantStatus('${r.id}','suspended','${esc(r.business_name)}')">Suspend</button>`
+          : `<button class="btn-sm primary" onclick="setRestaurantStatus('${r.id}','active','${esc(r.business_name)}')">Activate</button>`
+        }</td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function setRestaurantStatus(id, status, name) {
+  if (!confirm(`${status === 'suspended' ? 'Suspend' : 'Activate'} "${name}"?`)) return;
+  try {
+    await api(`/api/admin/restaurants/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+    toast(`${name} is now ${status}`, 'ok');
+    loadRestaurants();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// ─── ORDERS ───────────────────────────────────────────────────────
+let ordersOffset = 0;
+const ORDERS_LIMIT = 50;
+
+async function loadOrders() {
+  const status   = document.getElementById('fo-status').value;
+  const dateFrom = document.getElementById('fo-date-from').value;
+  const dateTo   = document.getElementById('fo-date-to').value;
+
+  const params = new URLSearchParams({ limit: ORDERS_LIMIT, offset: ordersOffset });
+  if (status)   params.set('status', status);
+  if (dateFrom) params.set('date_from', dateFrom);
+  if (dateTo)   params.set('date_to', dateTo + 'T23:59:59');
+
+  const tbody = document.getElementById('orders-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
+  try {
+    const d = await api('/api/admin/orders?' + params);
+    document.getElementById('orders-count').textContent = `${d.total} total`;
+    document.getElementById('orders-total').textContent = `${d.total} orders`;
+    const page = Math.floor(ordersOffset / ORDERS_LIMIT) + 1;
+    const pages = Math.ceil(d.total / ORDERS_LIMIT) || 1;
+    document.getElementById('orders-page-info').textContent = `Page ${page} / ${pages}`;
+    document.getElementById('orders-prev').disabled = ordersOffset === 0;
+    document.getElementById('orders-next').disabled = ordersOffset + ORDERS_LIMIT >= d.total;
+
+    if (!d.orders.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No orders found</td></tr>'; return; }
+    tbody.innerHTML = d.orders.map(o => `
+      <tr>
+        <td class="monospace">#${o.order_number}</td>
+        <td class="truncate">${esc(o.business_name)}</td>
+        <td class="truncate">${esc(o.branch_name)}</td>
+        <td class="monospace" style="font-size:.75rem">${esc(o.wa_phone)}</td>
+        <td><strong>₹${o.total_rs}</strong></td>
+        <td>${statusBadge(o.status)}</td>
+        <td style="color:var(--dim);font-size:.75rem">${fmtTime(o.created_at)}</td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+function ordersPage(dir) {
+  ordersOffset = Math.max(0, ordersOffset + dir * ORDERS_LIMIT);
+  loadOrders();
+}
+
+function clearOrderFilters() {
+  document.getElementById('fo-status').value = '';
+  document.getElementById('fo-date-from').value = '';
+  document.getElementById('fo-date-to').value = '';
+  ordersOffset = 0;
+  loadOrders();
+}
+
+// ─── CUSTOMERS ────────────────────────────────────────────────────
+let custOffset = 0;
+const CUST_LIMIT = 50;
+
+async function loadCustomers() {
+  const search = document.getElementById('fc-search').value.trim();
+  const params = new URLSearchParams({ limit: CUST_LIMIT, offset: custOffset });
+  if (search) params.set('search', search);
+
+  const tbody = document.getElementById('customers-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
+  try {
+    const rows = await api('/api/admin/customers?' + params);
+    const page  = Math.floor(custOffset / CUST_LIMIT) + 1;
+    document.getElementById('cust-page-info').textContent = `Page ${page}`;
+    document.getElementById('cust-prev').disabled = custOffset === 0;
+    document.getElementById('cust-next').disabled = rows.length < CUST_LIMIT;
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No customers found</td></tr>'; return; }
+    tbody.innerHTML = rows.map(c => `
+      <tr>
+        <td class="monospace">${esc(c.wa_phone)}</td>
+        <td>${esc(c.name || '—')}</td>
+        <td style="text-align:center">${c.order_count}</td>
+        <td>₹${fmtNum(c.lifetime_rs)}</td>
+        <td style="color:var(--dim);font-size:.75rem">${fmtDate(c.created_at)}</td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+function custPage(dir) {
+  custOffset = Math.max(0, custOffset + dir * CUST_LIMIT);
+  loadCustomers();
+}
+
+// ─── SETTLEMENT ───────────────────────────────────────────────────
+async function runSettlement() {
+  if (!confirm('Run settlement now? This will initiate payouts to all restaurants.')) return;
+  try {
+    await api('/api/admin/run-settlement', { method: 'POST' });
+    toast('Settlement started successfully', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// ─── HELPERS ─────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtNum(n) {
+  const v = parseFloat(n) || 0;
+  if (v >= 1e7) return (v/1e7).toFixed(1) + 'Cr';
+  if (v >= 1e5) return (v/1e5).toFixed(1) + 'L';
+  if (v >= 1e3) return (v/1e3).toFixed(1) + 'K';
+  return v.toFixed(2);
+}
+
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return d.toLocaleDateString('en-IN', { day:'2-digit', month:'short' }) + ' ' +
+         d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true });
+}
+
+function fmtDate(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+function timeAgo(ts) {
+  const secs = Math.floor((Date.now() - new Date(ts)) / 1000);
+  if (secs < 60)   return secs + 's ago';
+  if (secs < 3600) return Math.floor(secs/60) + 'm ago';
+  if (secs < 86400) return Math.floor(secs/3600) + 'h ago';
+  return Math.floor(secs/86400) + 'd ago';
+}
+
+const STATUS_COLORS = {
+  PENDING:'gold', CONFIRMED:'blue', PREPARING:'blue', PACKED:'blue',
+  DISPATCHED:'purple', DELIVERED:'green', CANCELLED:'red',
+};
+function statusBadge(s) {
+  return `<span class="badge ${STATUS_COLORS[s]||'gray'}">${esc(s)}</span>`;
+}
+function sourceBadge(s) {
+  const m = { whatsapp:'green', razorpay:'gold', '3pl':'blue', catalog:'purple' };
+  return `<span class="badge ${m[s]||'gray'}">${esc(s)}</span>`;
+}
+function rStatusBadge(s) {
+  const m = { active:'green', suspended:'red', pending:'gold' };
+  return `<span class="badge ${m[s]||'gray'}">${esc(s)}</span>`;
+}
+
+let debounceTimer;
+function debounce(fn) {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(fn, 350);
+}
+
+function toast(msg, type = 'ok') {
+  const el = document.createElement('div');
+  el.className = `toast-msg ${type}`;
+  el.textContent = msg;
+  document.getElementById('toast').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ─── BOOT ─────────────────────────────────────────────────────────
+const savedKey = sessionStorage.getItem('gb_admin_key');
+if (savedKey) {
+  adminKey = savedKey;
+  // verify it's still valid
+  fetch(BASE + '/api/admin/auth', {
+    method : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body   : JSON.stringify({ key: savedKey }),
+  }).then(r => {
+    if (r.ok) showApp();
+    else { sessionStorage.removeItem('gb_admin_key'); adminKey = ''; }
+  }).catch(() => {});
+}
+</script>
+</body>
+</html>

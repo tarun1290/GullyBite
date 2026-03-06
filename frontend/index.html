@@ -9,13 +9,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --ink:#0a0d10;--ink2:#111619;--ink3:#181e24;--ink4:#1e262f;
+  --ink:#0a0d10;--ink2:#111619;--ink3:#181e24;
   --rim:#253040;--rim2:#2e3d4e;
-  --wa:#25D366;--wa2:#1aad52;--wa-glow:rgba(37,211,102,.14);
-  --gold:#e8a020;--gold2:#f5b840;--gold-glow:rgba(232,160,32,.13);
-  --red:#e05050;--blue:#4a90d9;
-  --tx:#ccd8e2;--dim:#6e8698;--mute:#2e3d4e;
-  --r:10px;
+  --wa:#25D366;--wa2:#1aad52;
+  --gold:#e8a020;--gold2:#f5b840;
+  --tx:#ccd8e2;--dim:#6e8698;
   --font-head:'Playfair Display',Georgia,serif;
   --font-body:'Plus Jakarta Sans',system-ui,sans-serif;
 }
@@ -26,17 +24,14 @@ h1,h2,h3{font-family:var(--font-head)}
 button{cursor:pointer;font-family:var(--font-body)}
 a{color:inherit;text-decoration:none}
 
-/* ── PAGE SYSTEM ─────────────────────────────── */
-.pg{display:none}.pg.on{display:block}
-#pg-dash{display:none;min-height:100vh}
-#pg-dash.on{display:flex}
-
-/* ── LANDING ─────────────────────────────────── */
-#pg-land{min-height:100vh;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(37,211,102,.06),transparent 55%),var(--ink)}
+/* ── NAV ─────────────────────────────────── */
 .nav{display:flex;align-items:center;justify-content:space-between;padding:1.3rem 2.5rem;border-bottom:1px solid var(--rim);position:sticky;top:0;z-index:99;background:rgba(10,13,16,.85);backdrop-filter:blur(18px)}
 .logo{display:flex;align-items:center;gap:.55rem;font-family:var(--font-head);font-weight:700;font-size:1.3rem;letter-spacing:-.01em}
 .logo-ring{width:10px;height:10px;border-radius:50%;background:var(--wa);box-shadow:0 0 0 0 rgba(37,211,102,.6);animation:ring 2.4s ease infinite}
 @keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(37,211,102,.6)}60%{box-shadow:0 0 0 9px rgba(37,211,102,0)}}
+
+/* ── HERO ────────────────────────────────── */
+#pg-land{min-height:100vh;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(37,211,102,.06),transparent 55%),var(--ink)}
 .hero{max-width:780px;margin:0 auto;padding:7rem 2rem 5rem;text-align:center;animation:riseIn .6s cubic-bezier(.22,1,.36,1) both}
 @keyframes riseIn{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}
 .hero-pill{display:inline-flex;align-items:center;gap:.4rem;background:rgba(232,160,32,.1);border:1px solid rgba(232,160,32,.22);color:var(--gold2);padding:.28rem .9rem;border-radius:100px;font-size:.7rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-bottom:1.75rem}
@@ -45,6 +40,9 @@ a{color:inherit;text-decoration:none}
 .hero p{font-size:1.05rem;color:var(--dim);max-width:480px;margin:0 auto 2.5rem;line-height:1.78}
 .btn-hero{display:inline-flex;align-items:center;gap:.5rem;background:var(--wa);color:#000;font-weight:700;font-size:.95rem;padding:.82rem 1.9rem;border-radius:100px;border:none;transition:all .22s;letter-spacing:-.01em}
 .btn-hero:hover{background:var(--wa2);transform:translateY(-3px);box-shadow:0 10px 28px rgba(37,211,102,.28)}
+.btn-hero:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
+
+/* ── FEATURES GRID ───────────────────────── */
 .grid-feats{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:1px;background:var(--rim);border:1px solid var(--rim);border-radius:14px;overflow:hidden;max-width:940px;margin:3.5rem auto}
 .feat{background:var(--ink2);padding:1.6rem 1.65rem;transition:background .12s}
 .feat:hover{background:var(--ink3)}
@@ -52,210 +50,20 @@ a{color:inherit;text-decoration:none}
 .feat h3{font-family:var(--font-body);font-size:.88rem;font-weight:600;margin-bottom:.28rem}
 .feat p{font-size:.8rem;color:var(--dim);line-height:1.65}
 
-/* ── SIDEBAR ─────────────────────────────────── */
-.sb{width:208px;flex-shrink:0;background:var(--ink2);border-right:1px solid var(--rim);display:flex;flex-direction:column;position:fixed;height:100vh;overflow-y:auto;z-index:50}
-.sb-logo{display:flex;align-items:center;gap:.5rem;padding:1.15rem 1.1rem;border-bottom:1px solid var(--rim);font-family:var(--font-head);font-weight:700;font-size:1.1rem}
-.sb-sec{padding:.8rem .55rem}
-.sb-cap{font-size:.63rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding:0 .55rem;margin-bottom:.28rem}
-.sb-btn{display:flex;align-items:center;gap:.55rem;padding:.48rem .6rem;border-radius:8px;color:var(--dim);font-size:.83rem;font-weight:500;border:none;background:none;width:100%;text-align:left;transition:all .11s;margin-bottom:1px}
-.sb-btn:hover{background:var(--ink3);color:var(--tx)}
-.sb-btn.act{background:rgba(37,211,102,.1);color:var(--wa)}
-.sb-btn .ic{font-size:.88rem;width:16px;text-align:center}
-.sb-foot{margin-top:auto;padding:.8rem;border-top:1px solid var(--rim)}
-.sb-user{display:flex;align-items:center;gap:.55rem}
-.sb-av{width:32px;height:32px;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,var(--wa),#0ea5e9);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;color:#000}
-.sb-nm{font-size:.82rem;font-weight:600}
-.sb-rl{font-size:.68rem;color:var(--mute)}
-
-/* ── MAIN ────────────────────────────────────── */
-.main{flex:1;margin-left:208px;min-height:100vh}
-.topbar{padding:1.4rem 2rem 1rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:40;background:rgba(10,13,16,.88);backdrop-filter:blur(14px)}
-.topbar h1{font-size:1.3rem;color:#e8eef3;letter-spacing:-.02em}
-.topbar p{font-size:.8rem;color:var(--dim);margin-top:.1rem}
-.topbar-r{display:flex;align-items:center;gap:.65rem}
-.live-dot{display:none;align-items:center;gap:.38rem;font-size:.77rem;color:var(--wa)}
-.live-dot span{width:6px;height:6px;background:var(--wa);border-radius:50%;animation:ring 2s infinite}
-.body{padding:1.6rem 2rem}
-.tab{display:none}
-.tab.on{display:block;animation:riseIn .26s ease both}
-
-/* ── UI TOKENS ───────────────────────────────── */
-.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:.8rem;margin-bottom:1.6rem}
-.stat{background:var(--ink3);border:1px solid var(--rim);border-radius:var(--r);padding:1.1rem 1.3rem;transition:border-color .12s}
-.stat:hover{border-color:var(--rim2)}
-.stat-l{font-size:.72rem;color:var(--dim);font-weight:500;margin-bottom:.3rem}
-.stat-v{font-family:var(--font-head);font-size:1.85rem;line-height:1;color:#e8eef3}
-.stat-s{font-size:.72rem;color:var(--wa);margin-top:.28rem}
-
-.card{background:var(--ink3);border:1px solid var(--rim);border-radius:var(--r);overflow:hidden;margin-bottom:1.1rem}
-.ch{padding:.82rem 1.3rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between;gap:1rem}
-.ch h3{font-family:var(--font-body);font-size:.87rem;font-weight:600}
-.cb{padding:1.3rem}
-
-/* buttons */
-.btn-p{display:inline-flex;align-items:center;gap:.38rem;background:var(--wa);color:#000;font-weight:700;font-size:.8rem;padding:.56rem 1.2rem;border-radius:8px;border:none;white-space:nowrap;transition:all .18s}
-.btn-p:hover{background:var(--wa2);transform:translateY(-1px)}
-.btn-p:disabled{opacity:.42;cursor:not-allowed;transform:none}
-.btn-g{display:inline-flex;align-items:center;gap:.38rem;background:transparent;border:1px solid var(--rim2);color:var(--tx);font-weight:500;font-size:.8rem;padding:.5rem 1rem;border-radius:8px;white-space:nowrap;transition:all .13s}
-.btn-g:hover{background:var(--ink2);border-color:var(--dim)}
-.btn-g:disabled{opacity:.4;cursor:not-allowed}
-.btn-del{background:transparent;border:1px solid rgba(224,80,80,.25);color:var(--red);font-size:.77rem;font-weight:500;padding:.4rem .78rem;border-radius:7px;transition:all .13s}
-.btn-del:hover{background:rgba(224,80,80,.08);border-color:var(--red)}
-.btn-sm{font-size:.75rem;padding:.36rem .75rem}
-.btn-gold{background:var(--gold);color:#000}
-.btn-gold:hover{background:var(--gold2)}
-
-/* forms */
-.fg{display:flex;flex-direction:column;gap:.26rem}
-.fg.span2{grid-column:1/-1}
-.fg label{font-size:.72rem;font-weight:600;color:var(--dim);letter-spacing:.025em}
-.fg label small{font-weight:400;color:var(--mute)}
-input,select,textarea{background:var(--ink2);border:1px solid var(--rim);color:var(--tx);padding:.56rem .8rem;border-radius:8px;font-family:var(--font-body);font-size:.83rem;outline:none;width:100%;transition:border-color .14s}
-input:focus,select:focus,textarea:focus{border-color:var(--wa)}
-input::placeholder,textarea::placeholder{color:var(--mute)}
-textarea{resize:vertical;min-height:66px}
-select option{background:var(--ink2)}
-.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:.88rem}
-
-/* toggle */
-.tog{display:flex;align-items:center;gap:.5rem;font-size:.83rem}
-.tsl{position:relative;width:37px;height:20px;flex-shrink:0}
-.tsl input{opacity:0;width:0;height:0}
-.tsl-track{position:absolute;inset:0;background:var(--ink2);border:1px solid var(--rim);border-radius:100px;cursor:pointer;transition:.2s}
-.tsl-track::before{content:'';position:absolute;width:12px;height:12px;top:3px;left:3px;background:var(--mute);border-radius:50%;transition:.2s}
-.tsl input:checked+.tsl-track{background:rgba(37,211,102,.12);border-color:var(--wa)}
-.tsl input:checked+.tsl-track::before{transform:translateX(17px);background:var(--wa)}
-
-/* badges */
-.badge{display:inline-flex;align-items:center;gap:.2rem;padding:.16rem .5rem;border-radius:100px;font-size:.68rem;font-weight:600}
-.bg{background:rgba(37,211,102,.1);color:var(--wa)}
-.ba{background:rgba(232,160,32,.1);color:var(--gold2)}
-.br{background:rgba(224,80,80,.1);color:var(--red)}
-.bb{background:rgba(74,144,217,.1);color:var(--blue)}
-.bd{background:var(--ink4);color:var(--dim)}
-
-/* table */
-.tbl{overflow-x:auto}
-table{width:100%;border-collapse:collapse}
-th{padding:.65rem .95rem;text-align:left;font-size:.66rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);border-bottom:1px solid var(--rim);background:var(--ink2)}
-td{padding:.8rem .95rem;font-size:.83rem;border-bottom:1px solid var(--rim);vertical-align:middle}
-tr:last-child td{border-bottom:none}
-tr:hover td{background:rgba(255,255,255,.012)}
-.mono{font-family:'SF Mono',monospace;font-size:.74rem;color:var(--dim)}
-
-/* chips */
-.chips{display:flex;gap:.3rem;flex-wrap:wrap;margin-bottom:1rem}
-.chip{padding:.25rem .7rem;border-radius:100px;border:1px solid var(--rim);background:transparent;color:var(--dim);font-size:.76rem;font-weight:500;transition:all .11s}
-.chip.on{border-color:var(--wa);color:var(--wa);background:rgba(37,211,102,.07)}
-.chip:hover:not(.on){border-color:var(--rim2);color:var(--tx)}
-
-/* empty */
-.empty{text-align:center;padding:2.6rem 2rem}
-.empty .ei{font-size:2rem;margin-bottom:.55rem}
-.empty h3{color:var(--dim);font-size:.9rem;margin-bottom:.25rem}
-.empty p{font-size:.8rem;color:var(--mute)}
-
-/* progress */
-.prog-wrap{background:var(--ink2);border-radius:100px;height:4px;overflow:hidden;margin-top:.32rem}
-.prog-bar{height:100%;background:var(--wa);border-radius:100px;transition:width .3s ease}
-
-/* spinner */
-.spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.07);border-top-color:var(--wa);border-radius:50%;animation:rot .65s linear infinite;display:inline-block;vertical-align:middle}
-@keyframes rot{to{transform:rotate(360deg)}}
-
-/* divider */
-.dv{border:none;border-top:1px solid var(--rim);margin:1.25rem 0}
-
-/* sec header */
-.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem;gap:1rem;flex-wrap:wrap}
-.sh h2{font-family:var(--font-body);font-size:.97rem;font-weight:600}
-
-/* info pairs */
-.ipair-row{display:flex;gap:1.6rem;flex-wrap:wrap}
-.ipair label{font-size:.64rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mute);display:block;margin-bottom:.2rem}
-.ipair code{font-size:.8rem}
-
-/* notice */
-.notice{display:flex;gap:.65rem;align-items:flex-start;border-radius:9px;padding:.82rem .95rem;margin-top:.85rem}
-.notice.wa{background:rgba(37,211,102,.05);border:1px solid rgba(37,211,102,.15)}
-.notice.am{background:rgba(232,160,32,.05);border:1px solid rgba(232,160,32,.15)}
-.notice-ico{font-size:1rem;flex-shrink:0;margin-top:.05rem}
-.notice-body h4{font-size:.8rem;font-weight:600;margin-bottom:.18rem}
-.notice-body p{font-size:.77rem;color:var(--dim);line-height:1.58}
-
-/* ── BRANCH CARD (hero component) ─────────────── */
-.bcard{background:var(--ink3);border:1px solid var(--rim);border-radius:14px;overflow:hidden;margin-bottom:.9rem;transition:border-color .14s}
-.bcard:hover{border-color:var(--rim2)}
-.bcard-hd{padding:1.05rem 1.3rem;display:flex;align-items:flex-start;gap:.85rem;flex-wrap:wrap}
-.bcard-name{font-family:var(--font-head);font-size:.96rem;font-weight:600}
-.bcard-addr{font-size:.77rem;color:var(--dim);margin-top:.12rem}
-.bcard-badges{display:flex;gap:.3rem;flex-wrap:wrap;margin-left:auto}
-.bcard-body{border-top:1px solid var(--rim);padding:1.05rem 1.3rem}
-.bcard-togs{display:flex;gap:1.4rem;flex-wrap:wrap;margin-top:.85rem;padding-top:.85rem;border-top:1px solid var(--rim)}
-
-/* catalog strip */
-.cat-strip{border-top:1px solid var(--rim);background:var(--ink2)}
-.cat-inner{display:flex;align-items:center;gap:.85rem;padding:.95rem 1.3rem;flex-wrap:wrap}
-.cat-ico{font-size:1.35rem;flex-shrink:0}
-.cat-inf{flex:1;min-width:145px}
-.cat-inf h4{font-size:.83rem;margin-bottom:.18rem}
-.cat-inf p{font-size:.76rem;color:var(--dim);line-height:1.55}
-.cat-id{display:inline-block;margin-top:.32rem;background:var(--ink3);border:1px solid var(--rim);border-radius:5px;padding:.1rem .42rem;font-family:'SF Mono',monospace;font-size:.7rem;color:var(--dim)}
-.cat-acts{display:flex;gap:.4rem;flex-wrap:wrap;flex-shrink:0}
-
-/* catalog creating animation */
-.cat-making{display:flex;align-items:center;gap:.65rem;padding:.85rem 1.3rem;border-top:1px solid rgba(37,211,102,.14);background:rgba(37,211,102,.04)}
-.cat-making .mspin{width:17px;height:17px;border:2px solid rgba(37,211,102,.18);border-top-color:var(--wa);border-radius:50%;animation:rot .65s linear infinite;flex-shrink:0}
-.cat-making p{font-size:.8rem;color:var(--wa)}
-
-/* sync progress strip */
-.sp-strip{padding:.7rem 1.3rem;border-top:1px solid var(--rim);background:var(--ink2);display:none}
-.sp-strip.on{display:block}
-.sp-row{display:flex;justify-content:space-between;font-size:.74rem;color:var(--dim);margin-bottom:.3rem}
-
-/* menu item row */
-.mi{display:flex;align-items:center;gap:.85rem;padding:.68rem .95rem;border-bottom:1px solid var(--rim);transition:background .1s}
-.mi:last-child{border-bottom:none}
-.mi:hover{background:rgba(255,255,255,.01)}
-.mi-th{width:36px;height:36px;border-radius:7px;object-fit:cover;flex-shrink:0}
-.mi-ph{width:36px;height:36px;border-radius:7px;background:var(--ink4);display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0}
-.mi-name{font-size:.84rem;font-weight:600}
-.mi-desc{font-size:.74rem;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:250px}
-.mi-price{font-family:var(--font-head);font-weight:600;font-size:.9rem;white-space:nowrap;flex-shrink:0}
-.mi-acts{display:flex;align-items:center;gap:.5rem;flex-shrink:0}
-
-/* onboarding */
-.ob{border:1px solid rgba(37,211,102,.15);border-radius:14px;background:linear-gradient(135deg,rgba(37,211,102,.05),rgba(14,165,233,.03));padding:1.4rem;margin-bottom:1.4rem;position:relative;overflow:hidden}
-.ob::after{content:'';position:absolute;top:-40px;right:-40px;width:180px;height:180px;border-radius:50%;background:radial-gradient(circle,rgba(37,211,102,.07),transparent 70%);pointer-events:none}
-.ob h3{font-family:var(--font-body);font-size:.97rem;font-weight:600;margin-bottom:1rem}
-.wz{display:flex;align-items:flex-start;gap:.82rem;padding:.72rem 0;border-bottom:1px solid var(--rim)}
-.wz:last-child{border-bottom:none}
-.wz-n{width:26px;height:26px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.76rem;font-weight:700;margin-top:.08rem}
-.wz-done{background:rgba(37,211,102,.12);color:var(--wa)}
-.wz-cur{background:rgba(37,211,102,.18);color:var(--wa);border:1px solid rgba(37,211,102,.35)}
-.wz-todo{background:var(--ink2);border:1px solid var(--rim);color:var(--mute)}
-.wz b{font-size:.84rem;display:block;margin-bottom:.16rem}
-.wz p{font-size:.77rem;color:var(--dim);line-height:1.55}
-
-/* toast */
+/* ── TOAST ───────────────────────────────── */
 #toast{position:fixed;bottom:1.3rem;right:1.3rem;background:var(--ink3);border:1px solid var(--rim2);border-radius:9px;padding:.68rem 1rem;font-size:.83rem;box-shadow:0 8px 28px rgba(0,0,0,.55);z-index:9999;transform:translateY(130%);transition:transform .24s cubic-bezier(.34,1.56,.64,1);max-width:310px;display:flex;align-items:center;gap:.42rem}
 #toast.on{transform:translateY(0)}
 #toast.ok{border-color:rgba(37,211,102,.3);color:var(--wa)}
-#toast.err{border-color:rgba(224,80,80,.3);color:var(--red)}
-#toast.nfo{border-color:rgba(74,144,217,.3);color:var(--blue)}
+#toast.err{border-color:rgba(224,80,80,.3);color:#e05050}
+#toast.nfo{border-color:rgba(74,144,217,.3);color:#4a90d9}
 
-/* ── CSV UPLOAD ── */
-.csv-drop{border:2px dashed var(--rim2);border-radius:10px;padding:1.4rem 1.5rem;display:flex;align-items:center;gap:1.1rem;cursor:pointer;transition:border-color .2s,background .2s;user-select:none}
-.csv-drop:hover,.csv-drop.drag{border-color:var(--wa);background:rgba(37,211,102,.04)}
-.csv-ico{font-size:2.1rem;flex-shrink:0}
-.csv-result-ok{background:rgba(37,211,102,.08);border:1px solid rgba(37,211,102,.2);border-radius:8px;padding:.6rem 1rem;font-size:.82rem;display:inline-block;margin-right:.5rem}
-.csv-result-warn{background:rgba(234,179,8,.08);border:1px solid rgba(234,179,8,.2);border-radius:8px;padding:.6rem 1rem;font-size:.82rem;display:inline-block}
+/* ── SPINNER ─────────────────────────────── */
+.spin{width:15px;height:15px;border:2px solid rgba(0,0,0,.15);border-top-color:#000;border-radius:50%;animation:rot .65s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes rot{to{transform:rotate(360deg)}}
 
 @media(max-width:768px){
-  .sb{display:none}.main{margin-left:0}
-  .body,.topbar{padding:1.1rem 1.1rem}
-  .grid-feats{margin:2rem 1rem}
   .nav{padding:.9rem 1.1rem}
+  .grid-feats{margin:2rem 1rem}
 }
 </style>
 </head>
@@ -269,16 +77,16 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
 </script>
 
 <!-- ══════════════════════ LANDING ══════════════════════════ -->
-<div id="pg-land" class="pg on">
+<div id="pg-land">
   <nav class="nav">
     <div class="logo"><div class="logo-ring"></div>GullyBite</div>
-    <button class="btn-hero" style="font-size:.84rem;padding:.65rem 1.4rem" onclick="startLogin()">🟢 Connect with Meta</button>
+    <button class="btn-hero" id="login-btn" style="font-size:.84rem;padding:.65rem 1.4rem" onclick="startLogin()">🟢 Connect with Meta</button>
   </nav>
   <section class="hero">
     <div class="hero-pill">✦ WhatsApp-native ordering</div>
     <h1>Your menu.<br>Their WhatsApp.<br><em>Fully automated.</em></h1>
     <p>Add a branch — we instantly create a WhatsApp Catalog for it. Customers browse, cart and pay without leaving WhatsApp.</p>
-    <button class="btn-hero" onclick="startLogin()">🟢 Get Started Free</button>
+    <button class="btn-hero" id="hero-btn" onclick="startLogin()">🟢 Get Started Free</button>
   </section>
   <div style="max-width:940px;margin:0 auto;padding:0 1.5rem">
     <div class="grid-feats">
@@ -293,1008 +101,80 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
   <div style="height:3rem"></div>
 </div>
 
-<!-- ══════════════════════ DASHBOARD ══════════════════════════ -->
-<div id="pg-dash" class="pg">
-
-  <!-- sidebar -->
-  <aside class="sb">
-    <div class="sb-logo"><div class="logo-ring"></div>GullyBite</div>
-    <div class="sb-sec">
-      <div class="sb-cap">Overview</div>
-      <button class="sb-btn act" onclick="goTab('overview',this)"><span class="ic">📊</span>Dashboard</button>
-      <button class="sb-btn"     onclick="goTab('orders',this)"><span class="ic">🛒</span>Orders</button>
-      <button class="sb-btn"     onclick="goTab('analytics',this)"><span class="ic">📈</span>Analytics</button>
-    </div>
-    <div class="sb-sec">
-      <div class="sb-cap">Restaurant</div>
-      <button class="sb-btn" onclick="goTab('branches',this)"><span class="ic">📍</span>Branches &amp; Catalog</button>
-      <button class="sb-btn" onclick="goTab('menu',this)"><span class="ic">🍽️</span>Menu Items</button>
-      <button class="sb-btn" onclick="goTab('whatsapp',this)"><span class="ic">💬</span>WhatsApp</button>
-    </div>
-    <div class="sb-sec">
-      <div class="sb-cap">Finance</div>
-      <button class="sb-btn" onclick="goTab('settlements',this)"><span class="ic">💰</span>Settlements</button>
-      <button class="sb-btn" onclick="goTab('settings',this)"><span class="ic">⚙️</span>Settings</button>
-    </div>
-    <div class="sb-foot">
-      <div class="sb-user">
-        <div class="sb-av" id="sb-av">R</div>
-        <div><div class="sb-nm" id="sb-nm">Restaurant</div><div class="sb-rl">Owner</div></div>
-      </div>
-    </div>
-  </aside>
-
-  <!-- main -->
-  <main class="main">
-    <div class="topbar">
-      <div>
-        <h1 id="pg-title">Dashboard</h1>
-        <p id="pg-sub">Welcome back</p>
-      </div>
-      <div class="topbar-r">
-        <div class="live-dot" id="live-dot"><span></span>WhatsApp Live</div>
-        <button class="btn-g btn-sm" onclick="logout()">Sign Out</button>
-      </div>
-    </div>
-
-    <div class="body">
-
-      <!-- ── OVERVIEW ─────────────────────────────── -->
-      <div class="tab on" id="tab-overview">
-        <div class="ob" id="ob" style="display:none">
-          <h3>🚀 Complete your setup to go live</h3>
-          <div id="ob-steps"></div>
-        </div>
-        <div class="stats">
-          <div class="stat"><div class="stat-l">Today's Orders</div><div class="stat-v" id="st-tod">—</div><div class="stat-s">All statuses</div></div>
-          <div class="stat"><div class="stat-l">Today's Revenue</div><div class="stat-v" id="st-rev">—</div><div class="stat-s">Delivered only</div></div>
-          <div class="stat"><div class="stat-l">This Week</div><div class="stat-v" id="st-wk">—</div><div class="stat-s">Total orders</div></div>
-          <div class="stat"><div class="stat-l">In Progress</div><div class="stat-v" id="st-act">—</div><div class="stat-s">Active orders</div></div>
-        </div>
-        <div class="card">
-          <div class="ch"><h3>Recent Orders</h3><button class="btn-g btn-sm" onclick="goTab('orders',null)">View All →</button></div>
-          <div id="recent-body"><div class="empty"><div class="ei">📋</div><h3>No orders yet</h3><p>Complete your setup to start receiving orders</p></div></div>
-        </div>
-      </div>
-
-      <!-- ── ORDERS ──────────────────────────────── -->
-      <div class="tab" id="tab-orders">
-        <div class="chips" id="ochips">
-          <button class="chip on"  onclick="doFilterOrders('ALL',this)">All</button>
-          <button class="chip" onclick="doFilterOrders('PENDING_PAYMENT',this)">⏳ Awaiting Payment</button>
-          <button class="chip" onclick="doFilterOrders('PAID',this)">✅ Paid</button>
-          <button class="chip" onclick="doFilterOrders('PREPARING',this)">👨‍🍳 Preparing</button>
-          <button class="chip" onclick="doFilterOrders('PACKED',this)">📦 Packed</button>
-          <button class="chip" onclick="doFilterOrders('DELIVERED',this)">🎉 Delivered</button>
-        </div>
-        <div class="card">
-          <div class="tbl">
-            <table>
-              <thead><tr><th>Order</th><th>Customer</th><th>Branch</th><th>Total</th><th>Status</th><th>Time</th><th>Action</th></tr></thead>
-              <tbody id="orders-body"><tr><td colspan="7"><div class="empty"><div class="ei">📋</div><h3>No orders</h3></div></td></tr></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── ANALYTICS ───────────────────────────── -->
-      <div class="tab" id="tab-analytics">
-        <div class="chips">
-          <button class="chip on" onclick="doAnalytics(7,this)">7 days</button>
-          <button class="chip" onclick="doAnalytics(30,this)">30 days</button>
-          <button class="chip" onclick="doAnalytics(90,this)">90 days</button>
-        </div>
-        <div class="stats">
-          <div class="stat"><div class="stat-l">Total Orders</div><div class="stat-v" id="an-o">—</div></div>
-          <div class="stat"><div class="stat-l">Revenue</div><div class="stat-v" id="an-r">—</div></div>
-          <div class="stat"><div class="stat-l">Avg Order</div><div class="stat-v" id="an-a">—</div></div>
-          <div class="stat"><div class="stat-l">Delivery Rate</div><div class="stat-v" id="an-d">—</div></div>
-        </div>
-        <div class="card">
-          <div class="ch"><h3>Daily Revenue</h3></div>
-          <div class="cb" id="chart"><div class="empty"><div class="ei">📊</div><h3>No data yet</h3></div></div>
-        </div>
-      </div>
-
-      <!-- ── BRANCHES & CATALOG ──────────────────── -->
-      <div class="tab" id="tab-branches">
-
-        <div class="card">
-          <div class="ch"><h3>➕ Add New Branch</h3></div>
-          <div class="cb">
-            <div class="fgrid">
-              <div class="fg"><label>Branch Name ★</label><input id="b-name" placeholder="Koramangala Outlet"></div>
-              <div class="fg"><label>City</label><input id="b-city" placeholder="Bangalore"></div>
-              <div class="fg span2"><label>Full Address</label><input id="b-addr" placeholder="Shop 5, Forum Mall, Koramangala, Bangalore 560095"></div>
-              <div class="fg">
-                <label>Latitude ★ <small>(right-click Google Maps → copy)</small></label>
-                <input id="b-lat" type="number" step="any" placeholder="12.93456">
-              </div>
-              <div class="fg"><label>Longitude ★</label><input id="b-lng" type="number" step="any" placeholder="77.61234"></div>
-              <div class="fg"><label>Delivery Radius (km)</label><input id="b-rad" type="number" value="5"></div>
-              <div class="fg"><label>Opening Time</label><input id="b-open" type="time" value="10:00"></div>
-              <div class="fg"><label>Closing Time</label><input id="b-close" type="time" value="22:00"></div>
-              <div class="fg"><label>Manager Phone</label><input id="b-mgr" placeholder="+91 98765 43210"></div>
-            </div>
-            <div class="notice wa">
-              <div class="notice-ico">⚡</div>
-              <div class="notice-body">
-                <h4>WhatsApp Catalog is auto-created for every branch</h4>
-                <p>The moment you save this branch, our backend calls Meta's Catalog API and creates a dedicated catalog — <em>"Your Restaurant — Branch Name"</em>. No manual setup in Commerce Manager needed.</p>
-              </div>
-            </div>
-            <button class="btn-p" id="add-b-btn" style="margin-top:.95rem" onclick="doAddBranch()">+ Add Branch</button>
-          </div>
-        </div>
-
-        <div class="sh">
-          <h2>Your Branches</h2>
-          <button class="btn-g btn-sm" onclick="loadBranches()">🔄 Refresh</button>
-        </div>
-        <div id="branch-list">
-          <div class="empty"><div class="ei">📍</div><h3>No branches yet</h3><p>Add your first branch above</p></div>
-        </div>
-      </div>
-
-      <!-- ── MENU ────────────────────────────────── -->
-      <div class="tab" id="tab-menu">
-        <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1.3rem;flex-wrap:wrap">
-          <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto">
-            <option value="">Select branch to manage menu...</option>
-          </select>
-          <div id="m-cat-badge" style="display:none"></div>
-          <button class="btn-p" id="m-sync-btn" style="display:none" onclick="doQuickSync()">🔄 Sync to WhatsApp</button>
-        </div>
-        <div class="card">
-          <div class="ch"><h3>➕ Add Menu Item</h3></div>
-          <div class="cb">
-            <div class="fgrid">
-              <div class="fg"><label>Item Name ★</label><input id="m-name" placeholder="Butter Chicken"></div>
-              <div class="fg"><label>Price (₹) ★</label><input id="m-price" type="number" placeholder="280"></div>
-              <div class="fg span2"><label>Description</label><input id="m-desc" placeholder="Tender chicken in rich tomato-cream gravy"></div>
-              <div class="fg">
-                <label>Food Type</label>
-                <select id="m-type">
-                  <option value="veg">🟢 Veg</option>
-                  <option value="non_veg">🔴 Non-Veg</option>
-                  <option value="vegan">🌱 Vegan</option>
-                  <option value="egg">🟡 Egg</option>
-                </select>
-              </div>
-              <div class="fg"><label>Category</label><select id="m-cat"><option value="">No category</option></select></div>
-              <div class="fg"><label>Image URL <small>(public https link)</small></label><input id="m-img" placeholder="https://cdn.example.com/dish.jpg"></div>
-            </div>
-            <button class="btn-p" style="margin-top:.95rem" onclick="doAddItem()">+ Add Item</button>
-          </div>
-        </div>
-        <!-- CSV Bulk Upload -->
-        <div class="card" style="margin-bottom:1.1rem">
-          <div class="ch">
-            <h3>📤 Bulk Upload via CSV</h3>
-            <button class="btn-g btn-sm" onclick="doDownloadSample()">⬇ Sample CSV</button>
-          </div>
-          <div class="cb">
-            <p style="font-size:.81rem;color:var(--dim);margin-bottom:.9rem">
-              Upload a CSV to add or update menu items for the selected branch in bulk.<br>
-              <strong>Required:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">name</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">price</code> &nbsp;·&nbsp;
-              <strong>Optional:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">category</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">description</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">food_type</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">image_url</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">is_bestseller</code>
-            </p>
-            <div class="csv-drop" id="csv-drop"
-                 onclick="document.getElementById('csv-file').click()"
-                 ondragover="event.preventDefault();this.classList.add('drag')"
-                 ondragleave="this.classList.remove('drag')"
-                 ondrop="event.preventDefault();this.classList.remove('drag');handleCsvDrop(event)">
-              <div class="csv-ico">📄</div>
-              <div>
-                <strong>Click to choose file or drag &amp; drop here</strong>
-                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv files only · up to 500 items per upload</p>
-              </div>
-              <input type="file" id="csv-file" accept=".csv,text/csv" style="display:none" onchange="handleCsvFile(this)">
-            </div>
-            <div id="csv-preview" style="display:none">
-              <div class="sh" style="margin-top:1rem">
-                <span id="csv-count" style="font-size:.84rem;color:var(--wa);font-weight:600"></span>
-                <div style="display:flex;gap:.5rem">
-                  <button class="btn-g btn-sm" onclick="resetCsv()">✕ Clear</button>
-                  <button class="btn-p btn-sm" id="csv-upload-btn" onclick="doUploadCsv()">⬆ Upload to Branch</button>
-                </div>
-              </div>
-              <div class="tbl" style="margin-top:.65rem;max-height:230px;overflow-y:auto">
-                <table>
-                  <thead><tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>Type</th><th>⭐</th></tr></thead>
-                  <tbody id="csv-preview-body"></tbody>
-                </table>
-              </div>
-            </div>
-            <div id="csv-result" style="display:none;margin-top:.9rem"></div>
-          </div>
-        </div>
-
-        <div id="menu-list">
-          <div class="empty"><div class="ei">🍽️</div><h3>Select a branch above</h3></div>
-        </div>
-      </div>
-
-      <!-- ── WHATSAPP ────────────────────────────── -->
-      <div class="tab" id="tab-whatsapp">
-        <div style="display:flex;gap:1rem;align-items:flex-start;background:linear-gradient(135deg,rgba(37,211,102,.06),rgba(14,165,233,.03));border:1px solid rgba(37,211,102,.15);border-radius:13px;padding:1.3rem 1.5rem;margin-bottom:1.3rem">
-          <span style="font-size:1.8rem">📱</span>
-          <div>
-            <h3 style="font-family:var(--font-body);font-size:.96rem;font-weight:600;margin-bottom:.28rem">WhatsApp Business Connected</h3>
-            <p style="font-size:.82rem;color:var(--dim)">Catalogs are managed per branch now. Go to <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--wa);cursor:pointer;font-size:.82rem;text-decoration:underline">Branches &amp; Catalog</button> to sync menus.</p>
-          </div>
-        </div>
-        <div id="wa-list"><div style="text-align:center;padding:2rem"><div class="spin"></div></div></div>
-        <div class="card" style="margin-top:1.1rem">
-          <div class="ch"><h3>📡 Webhook URL</h3></div>
-          <div class="cb">
-            <p style="font-size:.8rem;color:var(--dim);margin-bottom:.7rem">Paste this in Meta Developer Console → WhatsApp → Configuration → Callback URL:</p>
-            <div style="display:flex;gap:.48rem;align-items:center;flex-wrap:wrap">
-              <code id="wh-url" style="flex:1;background:var(--ink2);padding:.6rem .95rem;border-radius:8px;font-size:.78rem;border:1px solid var(--rim);word-break:break-all">Loading...</code>
-              <button class="btn-g btn-sm" onclick="copyWH()">📋 Copy</button>
-            </div>
-            <p style="margin-top:.55rem;font-size:.74rem;color:var(--dim)">Verify Token: value of <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">WEBHOOK_VERIFY_TOKEN</code> in your .env</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── SETTLEMENTS ─────────────────────────── -->
-      <div class="tab" id="tab-settlements">
-        <div class="card">
-          <div class="tbl">
-            <table>
-              <thead><tr><th>Period</th><th>Orders</th><th>Gross</th><th>Platform Fee</th><th>Net Payout</th><th>Status</th></tr></thead>
-              <tbody id="settle-body"><tr><td colspan="6"><div class="empty"><div class="ei">💰</div><h3>No settlements yet</h3><p>Settlements run every Monday at 9 AM IST</p></div></td></tr></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── SETTINGS ────────────────────────────── -->
-      <div class="tab" id="tab-settings">
-        <div class="card">
-          <div class="ch"><h3>Business Information</h3></div>
-          <div class="cb">
-            <div class="fgrid">
-              <div class="fg"><label>Business Name</label><input id="p-bname" placeholder="Burger Palace"></div>
-              <div class="fg"><label>Owner Name</label><input id="p-owner" placeholder="Rajesh Kumar"></div>
-              <div class="fg"><label>Phone</label><input id="p-phone" placeholder="+91 98765 43210"></div>
-              <div class="fg"><label>Email</label><input id="p-email"></div>
-              <div class="fg span2"><label>Logo URL</label><input id="p-logo" placeholder="https://example.com/logo.png"></div>
-            </div>
-            <hr class="dv">
-            <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Bank Account <span style="font-weight:400;font-size:.78rem">(for weekly settlements)</span></p>
-            <div class="fgrid">
-              <div class="fg"><label>Bank Name</label><input id="p-bank" placeholder="HDFC Bank"></div>
-              <div class="fg"><label>Account Number</label><input id="p-accno" placeholder="12345678901234"></div>
-              <div class="fg"><label>IFSC Code</label><input id="p-ifsc" placeholder="HDFC0001234"></div>
-            </div>
-            <button class="btn-p" style="margin-top:1.1rem" onclick="doSaveProfile()">💾 Save Changes</button>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </main>
-</div><!-- /dash -->
-
 <script>
-/* ─────────────────────────── STATE ─────────────────────── */
-let token    = localStorage.getItem('zm_token');
-let rest     = null;
-let branches = [];
-let oFilter  = 'ALL';
-
-/* ─────────────────────────── BOOT ──────────────────────── */
-document.addEventListener('DOMContentLoaded',()=>{
-  const el = document.getElementById('wh-url');
-  if(el) el.textContent = location.origin+'/webhooks/whatsapp';
+/* ─── BOOT ──────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
   const p = new URLSearchParams(location.search);
   const t = p.get('token');
-  if(t){localStorage.setItem('zm_token',t);token=t;history.replaceState({},'','/');}
-  if(p.get('error')) toast('Authentication failed — please try again','err');
-  token ? initDash() : showPg('land');
+  if (t) {
+    // OAuth redirect back with token — save and go straight to dashboard
+    localStorage.setItem('zm_token', t);
+    history.replaceState({}, '', '/');
+    window.location.href = '/dashboard';
+    return;
+  }
+  if (p.get('error')) toast('Authentication failed — please try again', 'err');
+
+  // Already have a token — skip landing, go to dashboard
+  if (localStorage.getItem('zm_token')) {
+    window.location.href = '/dashboard';
+  }
 });
-window.addEventListener('message',e=>{
-  if(e.origin!=='https://www.facebook.com')return;
-  try{
-    const d=JSON.parse(e.data);
-    if(d.type!=='WA_EMBEDDED_SIGNUP')return;
-    if(d.event==='FINISH'){window._emb=d.data;const s=localStorage.getItem('zm_token');if(s){token=s;setTimeout(initDash,800);}}
-    else if(d.event==='CANCEL') toast('Setup cancelled','err');
-    else if(d.event==='ERROR')  toast('Error: '+d.data.error_message,'err');
-  }catch(_){}
-});
 
-/* ─────────────────────────── AUTH ──────────────────────── */
-function startLogin(){
-  FB.login(r=>{
-    if(!r.authResponse)return toast('Login cancelled','err');
-    toast('Connecting account...','nfo');
-    fetch('/auth/facebook',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({accessToken:r.authResponse.accessToken,code:r.authResponse.code||null})})
-    .then(x=>x.json())
-    .then(d=>{
-      if(d.token){localStorage.setItem('zm_token',d.token);token=d.token;toast('Connected! Loading...','ok');setTimeout(initDash,900);}
-      else toast(d.error||'Login failed','err');
-    }).catch(()=>toast('Connection failed — try again','err'));
-  },{config_id:'3105026846366355',response_type:'code',override_default_response_type:true,
-    extras:{setup:{},featureType:'',sessionInfoVersion:'3'}});
-}
-function logout(){localStorage.removeItem('zm_token');token=null;rest=null;showPg('land');}
+/* ─── AUTH ───────────────────────────────────────────────────── */
+function startLogin() {
+  const btn1 = document.getElementById('login-btn');
+  const btn2 = document.getElementById('hero-btn');
+  [btn1, btn2].forEach(b => { b.disabled = true; b.innerHTML = '<div class="spin"></div> Connecting…'; });
 
-/* ─────────────────────────── ROUTING ───────────────────── */
-function showPg(n){
-  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
-  document.getElementById('pg-'+n).classList.add('on');
-}
-const TMETA={
-  overview:  {title:'Dashboard',        sub:'Your restaurant at a glance',      fn:loadOverview},
-  orders:    {title:'Orders',           sub:'Manage incoming orders',            fn:()=>loadOrders('ALL')},
-  analytics: {title:'Analytics',        sub:'Sales and performance',             fn:()=>doAnalytics(7,null)},
-  branches:  {title:'Branches & Catalog',sub:'Locations and WhatsApp catalogs', fn:loadBranches},
-  menu:      {title:'Menu Items',       sub:'Add and manage dishes',             fn:loadBranchSel},
-  whatsapp:  {title:'WhatsApp',         sub:'Numbers and webhook config',        fn:loadWA},
-  settlements:{title:'Settlements',     sub:'Weekly payout history',             fn:loadSettlements},
-  settings:  {title:'Settings',         sub:'Business profile and bank account', fn:loadProfile},
-};
-function goTab(n,el){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  document.getElementById('tab-'+n).classList.add('on');
-  document.querySelectorAll('.sb-btn').forEach(b=>b.classList.remove('act'));
-  if(el)el.classList.add('act');
-  const m=TMETA[n];
-  if(m){
-    document.getElementById('pg-title').textContent=m.title;
-    document.getElementById('pg-sub').textContent=m.sub;
-    if(m.fn)m.fn();
-  }
-}
-
-/* ─────────────────────────── API ────────────────────────── */
-async function api(path,opts={}){
-  const res=await fetch(path,{...opts,
-    headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`,...opts.headers},
-    body:opts.body?JSON.stringify(opts.body):undefined});
-  if(res.status===401){logout();return null;}
-  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||res.statusText);}
-  return res.json();
-}
-
-/* ─────────────────────────── INIT ──────────────────────── */
-async function initDash(){
-  showPg('dash');
-  try{
-    rest=await api('/auth/me');
-    if(!rest)return logout();
-    const nm=rest.business_name||rest.owner_name||'Restaurant';
-    document.getElementById('sb-nm').textContent=nm;
-    document.getElementById('sb-av').textContent=nm[0].toUpperCase();
-    loadOverview(); loadWA();
-  }catch(e){console.error(e);}
-}
-
-/* ─────────────────────────── OVERVIEW ──────────────────── */
-async function loadOverview(){
-  if((rest?.onboarding_step||1)<5){
-    document.getElementById('ob').style.display='block';
-    renderWizard(rest?.onboarding_step||1);
-  }
-  try{
-    const[d1,d7]=await Promise.all([api('/api/restaurant/analytics?days=1'),api('/api/restaurant/analytics?days=7')]);
-    document.getElementById('st-tod').textContent=d1?.summary?.total_orders??0;
-    document.getElementById('st-rev').textContent='₹'+Math.round(d1?.summary?.total_revenue??0);
-    document.getElementById('st-wk').textContent=d7?.summary?.total_orders??0;
-    document.getElementById('st-act').textContent='—';
-    loadRecent();
-  }catch(_){}
-}
-function renderWizard(step){
-  const steps=[
-    {l:'Connect with Meta',d:'Facebook OAuth — done!'},
-    {l:'Complete your profile',d:'Business name, logo, bank account',fn:()=>goTab('settings',null)},
-    {l:'Add your first branch',d:'GPS coordinates enable location-based ordering',fn:()=>goTab('branches',null)},
-    {l:'Add menu items',d:'Items sync to WhatsApp Catalog automatically',fn:()=>goTab('menu',null)},
-    {l:'Sync catalog & go live',d:'Click "Sync" on your branch after adding items',fn:()=>goTab('branches',null)},
-  ];
-  document.getElementById('ob-steps').innerHTML=steps.map((s,i)=>{
-    const n=i+1,done=n<=step,cur=n===step+1;
-    const cls=done?'wz-done':cur?'wz-cur':'wz-todo';
-    return`<div class="wz">
-      <div class="wz-n ${cls}">${done?'✓':n}</div>
-      <div style="flex:1"><b>${s.l}</b><p>${s.d}</p></div>
-      ${s.fn&&!done?`<button class="btn-g btn-sm" style="flex-shrink:0" onclick="(${s.fn.toString()})()">Go →</button>`:''}
-    </div>`;
-  }).join('');
-}
-async function loadRecent(){
-  const w=document.getElementById('recent-body');
-  try{
-    const o=await api('/api/restaurant/orders?limit=5');
-    if(!o?.length)return;
-    w.innerHTML=`<div class="tbl"><table>
-      <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
-      <tbody>${o.map(r=>`<tr>
-        <td><span class="mono">${r.order_number}</span></td>
-        <td>${r.customer_name||r.wa_phone}</td>
-        <td>₹${r.total_rs}</td>
-        <td>${sbadge(r.status)}</td>
-        <td>${oaction(r)}</td>
-      </tr>`).join('')}</tbody>
-    </table></div>`;
-  }catch(_){}
-}
-
-/* ─────────────────────────── ORDERS ────────────────────── */
-async function loadOrders(s){
-  oFilter=s;
-  const tb=document.getElementById('orders-body');
-  tb.innerHTML=`<tr><td colspan="7" style="text-align:center;padding:2rem"><div class="spin"></div></td></tr>`;
-  try{
-    const q=s==='ALL'?'':`&status=${s}`;
-    const o=await api(`/api/restaurant/orders?limit=60${q}`);
-    if(!o?.length){tb.innerHTML=`<tr><td colspan="7"><div class="empty"><div class="ei">📋</div><h3>No orders found</h3></div></td></tr>`;return;}
-    tb.innerHTML=o.map(r=>`<tr>
-      <td><span class="mono">${r.order_number}</span></td>
-      <td><div>${r.customer_name||'—'}</div><div style="font-size:.72rem;color:var(--dim)">${r.wa_phone}</div></td>
-      <td>${r.branch_name}</td>
-      <td>₹${r.total_rs}</td>
-      <td>${sbadge(r.status)}</td>
-      <td style="font-size:.73rem;color:var(--dim)">${timeAgo(r.created_at)}</td>
-      <td>${oaction(r)}</td>
-    </tr>`).join('');
-  }catch(e){toast('Failed to load orders','err');}
-}
-function doFilterOrders(s,el){
-  document.querySelectorAll('#ochips .chip').forEach(c=>c.classList.remove('on'));
-  if(el)el.classList.add('on');
-  loadOrders(s);
-}
-function sbadge(s){
-  const m={PENDING_PAYMENT:['⏳','ba'],PAID:['✅','bg'],CONFIRMED:['✅','bg'],
-    PREPARING:['👨‍🍳','bb'],PACKED:['📦','bb'],DISPATCHED:['🚴','bg'],
-    DELIVERED:['🎉','bg'],CANCELLED:['❌','br']};
-  const[ic,c]=m[s]||['•','bd'];
-  return`<span class="badge ${c}">${ic} ${s.replace(/_/g,' ')}</span>`;
-}
-function oaction(o){
-  const nxt={PAID:['CONFIRMED','✅ Confirm'],CONFIRMED:['PREPARING','👨‍🍳 Prep'],PREPARING:['PACKED','📦 Packed']};
-  const a=nxt[o.status];
-  if(!a)return`<span style="color:var(--mute);font-size:.73rem">—</span>`;
-  return`<button class="btn-g btn-sm" onclick="doUpdateOrder('${o.id}','${a[0]}')">${a[1]}</button>`;
-}
-async function doUpdateOrder(id,s){
-  try{await api(`/api/restaurant/orders/${id}/status`,{method:'PATCH',body:{status:s}});toast('Order updated ✓','ok');loadOrders(oFilter);}
-  catch(e){toast(e.message,'err');}
-}
-
-/* ─────────────────────────── ANALYTICS ─────────────────── */
-async function doAnalytics(days,el){
-  if(el){document.querySelectorAll('#tab-analytics .chip').forEach(c=>c.classList.remove('on'));el.classList.add('on');}
-  try{
-    const d=await api(`/api/restaurant/analytics?days=${days}`);
-    const s=d?.summary;
-    document.getElementById('an-o').textContent=s?.total_orders??0;
-    document.getElementById('an-r').textContent='₹'+Math.round(s?.total_revenue??0);
-    document.getElementById('an-a').textContent='₹'+Math.round(s?.avg_order_value??0);
-    const rt=s?.total_orders>0?Math.round((s.delivered/s.total_orders)*100):0;
-    document.getElementById('an-d').textContent=rt+'%';
-    if(d?.daily?.length)drawChart(d.daily);
-  }catch(_){}
-}
-function drawChart(daily){
-  const max=Math.max(...daily.map(d=>parseFloat(d.revenue)||0),1);
-  document.getElementById('chart').innerHTML=`
-    <div style="display:flex;align-items:flex-end;gap:3px;height:126px;overflow-x:auto;padding:.5rem 0">
-      ${daily.map(d=>{
-        const h=Math.max((parseFloat(d.revenue)/max)*100,2);
-        const dt=new Date(d.date).toLocaleDateString('en-IN',{month:'short',day:'numeric'});
-        return`<div style="flex:1;min-width:22px;display:flex;flex-direction:column;align-items:center;gap:3px">
-          <span style="font-size:.58rem;color:var(--dim)">₹${Math.round(d.revenue)}</span>
-          <div style="width:100%;background:var(--wa);border-radius:3px 3px 0 0;height:${h}%;min-height:3px;opacity:.8"></div>
-          <span style="font-size:.58rem;color:var(--dim);white-space:nowrap">${dt}</span>
-        </div>`;
-      }).join('')}
-    </div>`;
-}
-
-/* ─────────────── BRANCHES & CATALOG (hero feature) ─────── */
-async function doAddBranch(){
-  const btn=document.getElementById('add-b-btn');
-  const name=document.getElementById('b-name').value.trim();
-  const lat=parseFloat(document.getElementById('b-lat').value);
-  const lng=parseFloat(document.getElementById('b-lng').value);
-  if(!name||isNaN(lat)||isNaN(lng))return toast('Branch name, latitude and longitude are required','err');
-  btn.disabled=true;btn.innerHTML='<div class="spin"></div> Creating...';
-  try{
-    await api('/api/restaurant/branches',{method:'POST',body:{
-      name,city:document.getElementById('b-city').value,
-      address:document.getElementById('b-addr').value,
-      latitude:lat,longitude:lng,
-      deliveryRadiusKm:parseFloat(document.getElementById('b-rad').value)||5,
-      openingTime:document.getElementById('b-open').value,
-      closingTime:document.getElementById('b-close').value,
-      managerPhone:document.getElementById('b-mgr').value,
-    }});
-    ['b-name','b-city','b-addr','b-lat','b-lng','b-mgr'].forEach(id=>document.getElementById(id).value='');
-    toast(`✅ "${name}" added! Creating WhatsApp catalog...`,'ok');
-    loadBranches();
-    // Background catalog creation takes ~3s — poll to refresh
-    setTimeout(loadBranches,3500);
-    setTimeout(loadBranches,7000);
-  }catch(e){toast(e.message,'err');}
-  finally{btn.disabled=false;btn.innerHTML='+ Add Branch';}
-}
-
-async function loadBranches(){
-  const list=document.getElementById('branch-list');
-  try{
-    const data=await api('/api/restaurant/branches');
-    branches=data||[];
-    if(!branches.length){
-      list.innerHTML=`<div class="empty"><div class="ei">📍</div><h3>No branches yet</h3><p>Add your first branch above</p></div>`;
-      return;
+  FB.login(r => {
+    if (!r.authResponse) {
+      [btn1, btn2].forEach(b => { b.disabled = false; });
+      btn1.innerHTML = '🟢 Connect with Meta';
+      btn2.innerHTML = '🟢 Get Started Free';
+      return toast('Login cancelled', 'err');
     }
-    list.innerHTML=branches.map(b=>renderBranchCard(b)).join('');
-  }catch(e){toast('Failed to load branches','err');}
-}
-
-function renderBranchCard(b){
-  /* ── three catalog states ── */
-  let catHtml='';
-
-  if(!b.catalog_id){
-    // STATE 1 — No catalog yet
-    catHtml=`
-      <div class="cat-strip">
-        <div class="cat-inner">
-          <div class="cat-ico">⏳</div>
-          <div class="cat-inf">
-            <h4 style="color:var(--gold2)">Catalog not created yet</h4>
-            <p>Usually auto-creates within a few seconds. If it's been over 30 seconds, click to retry.</p>
-          </div>
-          <div class="cat-acts">
-            <button class="btn-p btn-sm" onclick="doCreateCatalog('${b.id}','${b.name.replace(/'/g,"\\'")}',this)">⚡ Create Catalog</button>
-            <button class="btn-g btn-sm" onclick="loadBranches()">🔄 Refresh</button>
-          </div>
-        </div>
-      </div>`;
-
-  }else if(!b.catalog_synced_at){
-    // STATE 2 — Created, never synced
-    catHtml=`
-      <div class="cat-strip">
-        <div class="cat-inner">
-          <div class="cat-ico">✅</div>
-          <div class="cat-inf">
-            <h4 style="color:var(--wa)">Catalog Created — Needs First Sync</h4>
-            <p>Your WhatsApp catalog exists. Add menu items then click <strong>Sync Menu</strong> to push them to WhatsApp customers.</p>
-            <div class="cat-id">${b.catalog_id}</div>
-          </div>
-          <div class="cat-acts">
-            <button class="btn-p btn-sm" id="sbtn-${b.id}" onclick="doSync('${b.id}','${b.name.replace(/'/g,"\\'")}')">🔄 Sync Menu</button>
-            <button class="btn-g btn-sm" onclick="goTab('menu',null);doSelectBranch('${b.id}')">🍽️ Add Items</button>
-          </div>
-        </div>
-        <div class="sp-strip" id="sp-${b.id}">
-          <div class="sp-row"><span id="sp-lbl-${b.id}">Syncing to WhatsApp...</span><span id="sp-pct-${b.id}">0%</span></div>
-          <div class="prog-wrap"><div class="prog-bar" id="sp-bar-${b.id}" style="width:0%"></div></div>
-        </div>
-      </div>`;
-
-  }else{
-    // STATE 3 — Live and synced
-    const when=new Date(b.catalog_synced_at).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-    catHtml=`
-      <div class="cat-strip">
-        <div class="cat-inner">
-          <div class="cat-ico">🟢</div>
-          <div class="cat-inf">
-            <h4 style="color:var(--wa)">Live on WhatsApp ✓</h4>
-            <p>Customers near this branch see this catalog. Last synced <strong>${when}</strong>.</p>
-            <div class="cat-id">${b.catalog_id}</div>
-          </div>
-          <div class="cat-acts">
-            <button class="btn-p btn-sm" id="sbtn-${b.id}" onclick="doSync('${b.id}','${b.name.replace(/'/g,"\\'")}')">🔄 Sync Menu</button>
-            <button class="btn-g btn-sm" onclick="goTab('menu',null);doSelectBranch('${b.id}')">🍽️ Edit Menu</button>
-          </div>
-        </div>
-        <div class="sp-strip" id="sp-${b.id}">
-          <div class="sp-row"><span id="sp-lbl-${b.id}">Syncing to WhatsApp...</span><span id="sp-pct-${b.id}">0%</span></div>
-          <div class="prog-wrap"><div class="prog-bar" id="sp-bar-${b.id}" style="width:0%"></div></div>
-        </div>
-      </div>`;
-  }
-
-  return`<div class="bcard" id="bc-${b.id}">
-    <div class="bcard-hd">
-      <div style="flex:1;min-width:0">
-        <div class="bcard-name">${b.name}</div>
-        <div class="bcard-addr">${b.address||b.city||'—'}</div>
-      </div>
-      <div class="bcard-badges">
-        <span class="badge ${b.is_open?'bg':'br'}">${b.is_open?'🟢 Open':'🔴 Closed'}</span>
-        <span class="badge ${b.accepts_orders?'bg':'ba'}">${b.accepts_orders?'Taking Orders':'Paused'}</span>
-      </div>
-    </div>
-    <div class="bcard-body">
-      <div class="ipair-row">
-        <div class="ipair"><label>Latitude</label><code>${b.latitude}</code></div>
-        <div class="ipair"><label>Longitude</label><code>${b.longitude}</code></div>
-        <div class="ipair"><label>Radius</label><code>${b.delivery_radius_km} km</code></div>
-        <div class="ipair"><label>Hours</label><code>${b.opening_time?.slice(0,5)} – ${b.closing_time?.slice(0,5)}</code></div>
-      </div>
-      <div class="bcard-togs">
-        <div class="tog">
-          <label class="tsl"><input type="checkbox" ${b.accepts_orders?'checked':''} onchange="doToggle('${b.id}','acceptsOrders',this.checked)"><div class="tsl-track"></div></label>
-          <span>Accepting orders</span>
-        </div>
-        <div class="tog">
-          <label class="tsl"><input type="checkbox" ${b.is_open?'checked':''} onchange="doToggle('${b.id}','isOpen',this.checked)"><div class="tsl-track"></div></label>
-          <span>Branch open</span>
-        </div>
-      </div>
-    </div>
-    ${catHtml}
-  </div>`;
-}
-
-/* create catalog (retry) */
-async function doCreateCatalog(branchId,branchName,btn){
-  const card=document.getElementById('bc-'+branchId);
-  const strip=card?.querySelector('.cat-strip');
-  if(strip){
-    strip.innerHTML=`<div class="cat-making">
-      <div class="mspin"></div>
-      <p>Creating catalog for <strong>${branchName}</strong>… usually takes a few seconds</p>
-    </div>`;
-  }
-  try{
-    const r=await api(`/api/restaurant/branches/${branchId}/create-catalog`,{method:'POST'});
-    if(r.success||r.alreadyExists) toast(`✅ Catalog ready for ${branchName}!`,'ok');
-    else toast(r.error||'Catalog creation failed','err');
-    loadBranches();
-  }catch(e){toast(e.message,'err');loadBranches();}
-}
-
-/* sync with animated progress bar */
-async function doSync(branchId,branchName){
-  const btn=document.getElementById('sbtn-'+branchId);
-  const sp =document.getElementById('sp-'+branchId);
-  const bar=document.getElementById('sp-bar-'+branchId);
-  const lbl=document.getElementById('sp-lbl-'+branchId);
-  const pct=document.getElementById('sp-pct-'+branchId);
-  if(btn){btn.disabled=true;btn.innerHTML='<div class="spin"></div> Syncing...';}
-  if(sp)sp.classList.add('on');
-  animBar(bar,pct,0,42,700);
-  try{
-    animBar(bar,pct,42,78,1100);
-    if(lbl)lbl.textContent='Pushing items to WhatsApp Catalog...';
-    const r=await api(`/api/restaurant/branches/${branchId}/sync-catalog`,{method:'POST'});
-    animBar(bar,pct,78,100,350);
-    if(lbl)lbl.textContent='Done!';
-    setTimeout(()=>{if(sp)sp.classList.remove('on');},1500);
-    if(r.success) toast(`✅ ${branchName}: ${r.updated} items live, ${r.deleted} removed`,'ok');
-    else toast(r.errors?.[0]||r.message||'Sync failed','err');
-    loadBranches();
-  }catch(e){
-    toast(e.message,'err');
-    if(sp)sp.classList.remove('on');
-  }finally{
-    if(btn){btn.disabled=false;btn.innerHTML='🔄 Sync Menu';}
-  }
-}
-function animBar(bar,pct,from,to,dur){
-  if(!bar)return;
-  const t0=performance.now();
-  (function s(now){
-    const p=Math.min((now-t0)/dur,1);
-    const v=from+(to-from)*p;
-    bar.style.width=v+'%';
-    if(pct)pct.textContent=Math.round(v)+'%';
-    if(p<1)requestAnimationFrame(s);
-  })(performance.now());
-}
-async function doToggle(id,field,val){
-  const body=field==='acceptsOrders'?{acceptsOrders:val}:{isOpen:val};
-  await api(`/api/restaurant/branches/${id}`,{method:'PATCH',body}).catch(()=>{});
-}
-
-/* ─────────────────────────── MENU ──────────────────────── */
-async function loadBranchSel(){
-  const sel=document.getElementById('m-branch');
-  try{
-    const data=await api('/api/restaurant/branches');
-    branches=data||[];
-    sel.innerHTML='<option value="">Select branch to manage menu...</option>'+
-      branches.map(b=>`<option value="${b.id}">${b.name} ${b.catalog_id?'✅':'⚠️ No catalog'}</option>`).join('');
-  }catch(_){}
-}
-function doSelectBranch(id){
-  const sel=document.getElementById('m-branch');
-  if(sel){sel.value=id;loadMenu();}
-}
-async function loadMenu(){
-  const branchId=document.getElementById('m-branch').value;
-  if(!branchId)return;
-  const cats=await api(`/api/restaurant/branches/${branchId}/categories`).catch(()=>[]);
-  const catSel=document.getElementById('m-cat');
-  catSel.innerHTML='<option value="">No category</option>'+(cats||[]).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
-  const branch=branches.find(b=>b.id===branchId);
-  const badge=document.getElementById('m-cat-badge');
-  const syncBtn=document.getElementById('m-sync-btn');
-  badge.style.display='flex';
-  syncBtn.style.display=branch?.catalog_id?'inline-flex':'none';
-  badge.innerHTML=branch?.catalog_id
-    ?`<span class="badge bg">✅ Catalog Live</span>`
-    :`<span class="badge ba">⚠️ No catalog — <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--gold2);cursor:pointer;font-size:.72rem;text-decoration:underline">create in Branches</button></span>`;
-  const list=document.getElementById('menu-list');
-  list.innerHTML=`<div style="text-align:center;padding:2rem"><div class="spin"></div></div>`;
-  try{
-    const grouped=await api(`/api/restaurant/branches/${branchId}/menu`);
-    if(!grouped?.length||grouped.every(g=>!g.items?.length)){
-      list.innerHTML=`<div class="empty"><div class="ei">🍽️</div><h3>No menu items yet</h3><p>Add above, then sync to WhatsApp</p></div>`;
-      return;
-    }
-    list.innerHTML=grouped.map(g=>`
-      <div class="card" style="margin-bottom:.9rem">
-        <div class="ch"><h3>${g.name}</h3><span class="badge bd">${g.items.length} items</span></div>
-        <div>${g.items.map(miRow).join('')}</div>
-      </div>`).join('');
-  }catch(e){toast('Failed to load menu','err');}
-}
-function miRow(item){
-  const ti={veg:'🟢',non_veg:'🔴',vegan:'🌱',egg:'🟡'};
-  const thumb=item.image_url
-    ?`<img class="mi-th" src="${item.image_url}" onerror="this.style.display='none'">`
-    :`<div class="mi-ph">${ti[item.food_type]||'🍽️'}</div>`;
-  return`<div class="mi">
-    ${thumb}
-    <div style="flex:1;min-width:0">
-      <div class="mi-name">${item.name}${item.is_bestseller?'<span class="badge ba" style="margin-left:.3rem;font-size:.6rem">⭐</span>':''}</div>
-      ${item.description?`<div class="mi-desc">${item.description}</div>`:''}
-    </div>
-    <div class="mi-price">₹${item.price_paise/100}</div>
-    <div class="mi-acts">
-      <label class="tsl"><input type="checkbox" ${item.is_available?'checked':''} onchange="doToggleItem('${item.id}',this.checked,'${item.name.replace(/'/g,"\\'")}')"><div class="tsl-track"></div></label>
-      <button class="btn-del" onclick="doDeleteItem('${item.id}','${item.name.replace(/'/g,"\\'")}')">🗑</button>
-    </div>
-  </div>`;
-}
-async function doAddItem(){
-  const branchId=document.getElementById('m-branch').value;
-  if(!branchId)return toast('Select a branch first','err');
-  const name=document.getElementById('m-name').value.trim();
-  const price=document.getElementById('m-price').value;
-  if(!name||!price)return toast('Name and price are required','err');
-  try{
-    await api(`/api/restaurant/branches/${branchId}/menu`,{method:'POST',body:{
-      name,priceRs:parseFloat(price),
-      description:document.getElementById('m-desc').value,
-      foodType:document.getElementById('m-type').value,
-      categoryId:document.getElementById('m-cat').value||null,
-      imageUrl:document.getElementById('m-img').value,
-    }});
-    toast(`"${name}" added! Click Sync to push to WhatsApp.`,'ok');
-    ['m-name','m-price','m-desc','m-img'].forEach(id=>document.getElementById(id).value='');
-    loadMenu();
-  }catch(e){toast(e.message,'err');}
-}
-async function doQuickSync(){
-  const branchId=document.getElementById('m-branch').value;
-  if(!branchId)return;
-  const branch=branches.find(b=>b.id===branchId);
-  if(!branch?.catalog_id)return toast('No catalog yet — create it in Branches tab first','err');
-  const btn=document.getElementById('m-sync-btn');
-  btn.disabled=true;btn.innerHTML='<div class="spin"></div> Syncing...';
-  try{
-    const r=await api(`/api/restaurant/branches/${branchId}/sync-catalog`,{method:'POST'});
-    if(r.success)toast(`✅ ${r.updated} items now live on WhatsApp!`,'ok');
-    else toast(r.errors?.[0]||'Sync failed','err');
-  }catch(e){toast(e.message,'err');}
-  finally{btn.disabled=false;btn.innerHTML='🔄 Sync to WhatsApp';}
-}
-async function doToggleItem(id,av,name){
-  try{await api(`/api/restaurant/menu/${id}`,{method:'PUT',body:{isAvailable:av}});toast(`"${name}" ${av?'back on menu':'marked unavailable'} ✓`,'ok');}
-  catch(e){toast(e.message,'err');}
-}
-async function doDeleteItem(id,name){
-  if(!confirm(`Delete "${name}"?`))return;
-  try{await api(`/api/restaurant/menu/${id}`,{method:'DELETE'});toast(`"${name}" deleted`,'ok');loadMenu();}
-  catch(e){toast(e.message,'err');}
-}
-
-/* ─────────────────────────── CSV UPLOAD ────────────────── */
-let csvParsed = [];
-
-function handleCsvFile(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => processCsvText(e.target.result, file.name);
-  reader.readAsText(file);
-}
-function handleCsvDrop(e) {
-  const file = e.dataTransfer.files[0];
-  if (!file || !file.name.toLowerCase().endsWith('.csv')) return toast('Please drop a .csv file','err');
-  const reader = new FileReader();
-  reader.onload = ev => processCsvText(ev.target.result, file.name);
-  reader.readAsText(file);
-}
-function processCsvText(text, filename) {
-  const branchId = document.getElementById('m-branch').value;
-  if (!branchId) return toast('Select a branch first, then upload CSV','err');
-  try {
-    csvParsed = parseCSV(text);
-    if (!csvParsed.length) return toast('CSV is empty or has no valid rows','err');
-    const missing = csvParsed.filter(r => !r.name || !r.price);
-    document.getElementById('csv-count').textContent =
-      `${csvParsed.length} items from "${filename}"` +
-      (missing.length ? ` · ⚠️ ${missing.length} rows missing name/price will be skipped` : '');
-    document.getElementById('csv-preview-body').innerHTML =
-      csvParsed.slice(0, 8).map((r, i) => `<tr>
-        <td style="color:var(--dim)">${i + 1}</td>
-        <td>${r.name || '<span style="color:var(--red)">missing</span>'}</td>
-        <td>${r.category || '—'}</td>
-        <td>${r.price ? '₹' + r.price : '<span style="color:var(--red)">missing</span>'}</td>
-        <td>${r.food_type || 'veg'}</td>
-        <td>${['true','yes','1'].includes((r.is_bestseller||'').toLowerCase()) ? '⭐' : ''}</td>
-      </tr>`).join('') +
-      (csvParsed.length > 8 ? `<tr><td colspan="6" style="text-align:center;color:var(--dim);font-size:.75rem">+ ${csvParsed.length - 8} more rows…</td></tr>` : '');
-    document.getElementById('csv-preview').style.display = 'block';
-    document.getElementById('csv-result').style.display = 'none';
-  } catch(e) { toast('Could not parse CSV: ' + e.message, 'err'); }
-}
-function parseCSV(text) {
-  const lines = text.trim().replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
-  if (lines.length < 2) throw new Error('Need a header row and at least one data row');
-  const headers = splitCSVLine(lines[0]).map(h => h.toLowerCase().trim().replace(/[^a-z0-9_]/g,'_'));
-  return lines.slice(1).filter(l => l.trim()).map(line => {
-    const vals = splitCSVLine(line);
-    const obj = {};
-    headers.forEach((h, i) => { obj[h] = (vals[i] || '').trim(); });
-    return obj;
+    toast('Connecting account…', 'nfo');
+    fetch('/auth/facebook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken: r.authResponse.accessToken, code: r.authResponse.code || null }),
+    })
+      .then(x => x.json())
+      .then(d => {
+        if (d.token) {
+          localStorage.setItem('zm_token', d.token);
+          toast('Connected! Loading dashboard…', 'ok');
+          setTimeout(() => { window.location.href = '/dashboard'; }, 800);
+        } else {
+          toast(d.error || 'Login failed', 'err');
+          [btn1, btn2].forEach(b => { b.disabled = false; });
+          btn1.innerHTML = '🟢 Connect with Meta';
+          btn2.innerHTML = '🟢 Get Started Free';
+        }
+      })
+      .catch(() => {
+        toast('Connection failed — try again', 'err');
+        [btn1, btn2].forEach(b => { b.disabled = false; });
+        btn1.innerHTML = '🟢 Connect with Meta';
+        btn2.innerHTML = '🟢 Get Started Free';
+      });
+  }, {
+    config_id: '3105026846366355',
+    response_type: 'code',
+    override_default_response_type: true,
+    extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
   });
 }
-function splitCSVLine(line) {
-  const result = []; let cur = ''; let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    if (line[i] === '"') { inQ = !inQ; }
-    else if (line[i] === ',' && !inQ) { result.push(cur); cur = ''; }
-    else { cur += line[i]; }
-  }
-  result.push(cur);
-  return result;
-}
-function resetCsv() {
-  csvParsed = [];
-  document.getElementById('csv-file').value = '';
-  document.getElementById('csv-preview').style.display = 'none';
-  document.getElementById('csv-result').style.display = 'none';
-}
-async function doUploadCsv() {
-  const branchId = document.getElementById('m-branch').value;
-  if (!branchId) return toast('Select a branch first', 'err');
-  if (!csvParsed.length) return toast('No CSV data to upload', 'err');
-  const btn = document.getElementById('csv-upload-btn');
-  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Uploading…';
-  try {
-    const r = await api(`/api/restaurant/branches/${branchId}/menu/csv`, {
-      method: 'POST', body: { items: csvParsed },
-    });
-    const el = document.getElementById('csv-result');
-    el.style.display = 'block';
-    el.innerHTML =
-      `<div style="display:flex;gap:.6rem;flex-wrap:wrap">
-        <span class="csv-result-ok">✅ <strong>${r.added}</strong> items added/updated</span>
-        ${r.skipped ? `<span class="csv-result-warn">⚠️ <strong>${r.skipped}</strong> rows skipped</span>` : ''}
-      </div>` +
-      (r.errors?.length ? `<div style="margin-top:.5rem;font-size:.75rem;color:var(--red)">${r.errors.slice(0,5).join('<br>')}</div>` : '');
-    toast(`✅ ${r.added} items uploaded!`, 'ok');
-    resetCsv();
-    loadMenu();
-  } catch(e) { toast(e.message, 'err'); }
-  finally { btn.disabled = false; btn.innerHTML = '⬆ Upload to Branch'; }
-}
-function doDownloadSample() {
-  const sample = [
-    'category,name,description,price,food_type,image_url,is_bestseller',
-    'Starters,Paneer Tikka,"Grilled cottage cheese, marinated in spices",280,veg,,false',
-    'Starters,Chicken Tikka,"Juicy chicken pieces, smoky and tender",320,non_veg,,true',
-    'Mains,Butter Chicken,Rich creamy tomato-based curry,450,non_veg,,true',
-    'Mains,Dal Makhani,Slow-cooked black lentils in butter,320,veg,,false',
-    'Breads,Butter Naan,Soft leavened flatbread with butter,60,veg,,false',
-    'Beverages,Mango Lassi,Chilled yogurt mango drink,120,veg,,false',
-  ].join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([sample], { type: 'text/csv' }));
-  a.download = 'gullybite-menu-sample.csv';
-  a.click();
-}
 
-/* ─────────────────────────── WHATSAPP ──────────────────── */
-async function loadWA(){
-  const list=document.getElementById('wa-list');
-  try{
-    const accounts=await api('/api/restaurant/whatsapp');
-    if(!accounts?.length){list.innerHTML=`<div class="empty"><div class="ei">📱</div><h3>No numbers found</h3><p>Try reconnecting your Meta account</p></div>`;return;}
-    document.getElementById('live-dot').style.display='flex';
-    list.innerHTML=accounts.map(a=>`
-      <div class="card" style="margin-bottom:.85rem">
-        <div class="ch">
-          <div><strong>${a.display_name||'WhatsApp Number'}</strong><span class="badge ${a.is_active?'bg':'br'}" style="margin-left:.5rem">${a.is_active?'Active':'Inactive'}</span></div>
-          <span style="font-size:.75rem;color:var(--dim)">Quality: <strong style="color:${a.quality_rating==='GREEN'?'var(--wa)':a.quality_rating==='RED'?'var(--red)':'var(--gold2)'}">${a.quality_rating||'—'}</strong></span>
-        </div>
-        <div class="cb">
-          <div class="ipair-row">
-            <div class="ipair"><label>Phone Number ID</label><code>${a.phone_number_id}</code></div>
-            <div class="ipair"><label>Display Number</label><code>${a.phone_display||'—'}</code></div>
-            <div class="ipair"><label>WABA ID</label><code>${a.waba_id||'—'}</code></div>
-          </div>
-        </div>
-      </div>`).join('');
-  }catch(_){}
-}
-function copyWH(){navigator.clipboard.writeText(document.getElementById('wh-url').textContent).then(()=>toast('Webhook URL copied!','ok'));}
-
-/* ─────────────────────────── SETTLEMENTS ───────────────── */
-async function loadSettlements(){
-  const tb=document.getElementById('settle-body');
-  try{
-    const d=await api('/api/restaurant/settlements');
-    if(!d?.length)return;
-    tb.innerHTML=d.map(s=>`<tr>
-      <td style="font-size:.8rem">${s.period_start} → ${s.period_end}</td>
-      <td>${s.orders_count}</td>
-      <td>₹${parseFloat(s.gross_revenue_rs).toFixed(0)}</td>
-      <td>₹${parseFloat(s.platform_fee_rs).toFixed(0)}</td>
-      <td><strong>₹${parseFloat(s.net_payout_rs).toFixed(0)}</strong></td>
-      <td>${sbadge(s.payout_status.toUpperCase())}</td>
-    </tr>`).join('');
-  }catch(_){}
-}
-
-/* ─────────────────────────── PROFILE ───────────────────── */
-async function loadProfile(){
-  try{
-    const r=await api('/auth/me');if(!r)return;
-    const map={'p-bname':'business_name','p-owner':'owner_name','p-phone':'phone','p-email':'email','p-logo':'logo_url','p-bank':'bank_name','p-accno':'bank_account_number','p-ifsc':'bank_ifsc'};
-    Object.entries(map).forEach(([id,k])=>{const e=document.getElementById(id);if(e)e.value=r[k]||'';});
-  }catch(_){}
-}
-async function doSaveProfile(){
-  try{
-    await api('/api/restaurant',{method:'PUT',body:{
-      businessName:document.getElementById('p-bname').value,
-      ownerName:document.getElementById('p-owner').value,
-      phone:document.getElementById('p-phone').value,
-      logoUrl:document.getElementById('p-logo').value,
-      bankName:document.getElementById('p-bank').value,
-      bankAccountNumber:document.getElementById('p-accno').value,
-      bankIfsc:document.getElementById('p-ifsc').value,
-    }});
-    toast('Profile saved ✓','ok');
-    const nm=document.getElementById('p-bname').value;
-    if(nm)document.getElementById('sb-nm').textContent=nm;
-  }catch(e){toast(e.message,'err');}
-}
-
-/* ─────────────────────────── TOAST ─────────────────────── */
+/* ─── TOAST ──────────────────────────────────────────────────── */
 let _tt;
-function toast(msg,type='ok'){
-  const el=document.getElementById('toast');
-  el.innerHTML=`<span>${{ok:'✓',err:'✗',nfo:'ℹ'}[type]||'•'}</span><span>${msg}</span>`;
-  el.className='on '+type;
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.innerHTML = `<span>${{ ok: '✓', err: '✗', nfo: 'ℹ' }[type] || '•'}</span><span>${msg}</span>`;
+  el.className = 'on ' + type;
   clearTimeout(_tt);
-  _tt=setTimeout(()=>el.classList.remove('on'),3800);
-}
-
-/* ─────────────────────────── UTILS ─────────────────────── */
-function timeAgo(ts){
-  const m=Math.round((Date.now()-new Date(ts))/60000);
-  if(m<1)return'just now';if(m<60)return m+'m ago';
-  if(m<1440)return Math.round(m/60)+'h ago';
-  return Math.round(m/1440)+'d ago';
+  _tt = setTimeout(() => el.classList.remove('on'), 3800);
 }
 </script>
 </body>

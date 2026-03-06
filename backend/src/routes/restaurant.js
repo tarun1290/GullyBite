@@ -8,6 +8,7 @@ const db = require('../config/database');
 const { requireAuth } = require('./auth');
 const catalog = require('../services/catalog');
 const orderSvc = require('../services/order');
+const wa = require('../services/whatsapp');
 
 // All routes below require authentication
 router.use(requireAuth);
@@ -140,15 +141,17 @@ router.post('/branches', async (req, res) => {
 
 router.patch('/branches/:id', async (req, res) => {
   try {
-    const { isOpen, acceptsOrders, deliveryRadiusKm, catalogId } = req.body;
+    const { isOpen, acceptsOrders, deliveryRadiusKm, catalogId, deliveryFeeRs } = req.body;
     await db.query(
       `UPDATE branches SET
          is_open            = COALESCE($1, is_open),
          accepts_orders     = COALESCE($2, accepts_orders),
          delivery_radius_km = COALESCE($3, delivery_radius_km),
-         catalog_id         = COALESCE($4, catalog_id)
-       WHERE id = $5 AND restaurant_id = $6`,
-      [isOpen, acceptsOrders, deliveryRadiusKm, catalogId, req.params.id, req.restaurantId]
+         catalog_id         = COALESCE($4, catalog_id),
+         delivery_fee_rs    = COALESCE($5, delivery_fee_rs)
+       WHERE id = $6 AND restaurant_id = $7`,
+      [isOpen, acceptsOrders, deliveryRadiusKm, catalogId, deliveryFeeRs,
+       req.params.id, req.restaurantId]
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -231,6 +234,10 @@ router.post('/branches/:branchId/menu', async (req, res) => {
       [req.restaurantId]
     );
 
+    // Auto-sync new item to Meta catalog in background
+    catalog.syncBranchCatalog(req.params.branchId)
+      .catch(err => console.error('[Menu] Auto-sync after add failed:', err.message));
+
     res.status(201).json(rows[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -239,27 +246,69 @@ router.put('/menu/:itemId', async (req, res) => {
   try {
     const { name, description, priceRs, imageUrl, isAvailable, isBestseller,
             itemGroupId, variantType, variantValue } = req.body;
+
+    // Availability-only toggle: use optimised single-item push (faster than full sync)
+    const onlyAvailability = isAvailable !== undefined &&
+      name === undefined && description === undefined && priceRs === undefined &&
+      imageUrl === undefined && isBestseller === undefined &&
+      itemGroupId === undefined && variantType === undefined && variantValue === undefined;
+
+    if (onlyAvailability) {
+      catalog.setItemAvailability(req.params.itemId, isAvailable)
+        .catch(err => console.error('[Menu] Availability sync failed:', err.message));
+      return res.json({ success: true });
+    }
+
+    // Full edit: update DB, then sync catalog in background
     const updates = [];
     const vals = [];
     if (name !== undefined)        { vals.push(name); updates.push(`name=$${vals.length}`); }
     if (description !== undefined) { vals.push(description); updates.push(`description=$${vals.length}`); }
     if (priceRs !== undefined)     { vals.push(Math.round(parseFloat(priceRs) * 100)); updates.push(`price_paise=$${vals.length}`); }
     if (imageUrl !== undefined)    { vals.push(imageUrl); updates.push(`image_url=$${vals.length}`); }
-    if (isAvailable !== undefined) { vals.push(isAvailable); updates.push(`is_available=$${vals.length}`); }
     if (isBestseller !== undefined){ vals.push(isBestseller); updates.push(`is_bestseller=$${vals.length}`); }
     if (itemGroupId !== undefined) { vals.push(itemGroupId || null); updates.push(`item_group_id=$${vals.length}`); }
     if (variantType !== undefined) { vals.push(variantType || null); updates.push(`variant_type=$${vals.length}`); }
     if (variantValue !== undefined){ vals.push(variantValue || null); updates.push(`variant_value=$${vals.length}`); }
     if (!updates.length) return res.json({ success: true });
     vals.push(req.params.itemId);
-    await db.query(`UPDATE menu_items SET ${updates.join(',')} WHERE id=$${vals.length}`, vals);
+    const { rows: updated } = await db.query(
+      `UPDATE menu_items SET ${updates.join(',')} WHERE id=$${vals.length} RETURNING branch_id`, vals
+    );
+    if (updated.length) {
+      catalog.syncBranchCatalog(updated[0].branch_id)
+        .catch(err => console.error('[Menu] Auto-sync after edit failed:', err.message));
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.delete('/menu/:itemId', async (req, res) => {
   try {
+    // Fetch item before deleting so we can push DELETE to Meta catalog
+    const { rows: items } = await db.query(
+      `SELECT mi.retailer_id, mi.branch_id, b.catalog_id, wa.access_token
+       FROM menu_items mi
+       JOIN branches b ON mi.branch_id = b.id
+       JOIN restaurants r ON b.restaurant_id = r.id
+       LEFT JOIN whatsapp_accounts wa ON wa.restaurant_id = r.id AND wa.is_active = TRUE
+       WHERE mi.id = $1`,
+      [req.params.itemId]
+    );
     await db.query('DELETE FROM menu_items WHERE id=$1', [req.params.itemId]);
+
+    // Push single DELETE to Meta catalog in background
+    if (items.length) {
+      const { retailer_id, catalog_id, access_token } = items[0];
+      if (catalog_id && retailer_id && access_token) {
+        const axios = require('axios');
+        const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+        axios.post(`${GRAPH}/${catalog_id}/batch`,
+          { requests: [{ method: 'DELETE', retailer_id }] },
+          { headers: { Authorization: `Bearer ${access_token}` }, timeout: 10000 }
+        ).catch(err => console.error('[Menu] Delete sync failed:', err.response?.data?.error?.message || err.message));
+      }
+    }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -339,6 +388,11 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
       'UPDATE restaurants SET onboarding_step=GREATEST(onboarding_step,4) WHERE id=$1',
       [req.restaurantId]
     );
+
+    // Auto-sync all uploaded items to Meta catalog in background
+    catalog.syncBranchCatalog(branchId)
+      .catch(err => console.error('[Menu] Auto-sync after CSV upload failed:', err.message));
+
     res.json({ success: true, ...results, total: items.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -429,13 +483,77 @@ router.patch('/orders/:orderId/status', async (req, res) => {
         ).catch(() => {});
       }
 
-      // When PACKED — 3PL dispatch would happen here (commented out)
-      // if (status === 'PACKED') {
-      //   await threepl.dispatchOrder(order.id)
-      // }
-    }
+      }
 
     res.json({ success: true, order });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/orders/:orderId/delivery
+// Called by the 3PL provider (or restaurant manually) after dispatch.
+// Stores tracking details and notifies the customer on WhatsApp.
+//
+// Body (all optional — send only what the 3PL provides):
+//   { provider, providerOrderId, trackingUrl, driverName, driverPhone,
+//     estimatedMins, costRs, status }
+router.put('/orders/:orderId/delivery', async (req, res) => {
+  try {
+    const {
+      provider, providerOrderId, trackingUrl,
+      driverName, driverPhone,
+      estimatedMins, costRs,
+      status = 'assigned',
+    } = req.body;
+
+    // Verify this order belongs to this restaurant
+    const { rows: orderRows } = await db.query(
+      `SELECT o.*, b.restaurant_id,
+              wa.phone_number_id, wa.access_token,
+              c.wa_phone, c.name AS customer_name
+       FROM orders o
+       JOIN branches b  ON o.branch_id    = b.id
+       JOIN customers c ON o.customer_id  = c.id
+       LEFT JOIN whatsapp_accounts wa
+         ON wa.restaurant_id = b.restaurant_id AND wa.is_active = TRUE
+       WHERE o.id = $1 AND b.restaurant_id = $2`,
+      [req.params.orderId, req.restaurantId]
+    );
+    if (!orderRows.length) return res.status(404).json({ error: 'Order not found' });
+    const order = orderRows[0];
+
+    // Update delivery record
+    await db.query(
+      `UPDATE deliveries SET
+         provider          = COALESCE($1, provider),
+         provider_order_id = COALESCE($2, provider_order_id),
+         tracking_url      = COALESCE($3, tracking_url),
+         driver_name       = COALESCE($4, driver_name),
+         driver_phone      = COALESCE($5, driver_phone),
+         estimated_mins    = COALESCE($6, estimated_mins),
+         cost_rs           = COALESCE($7, cost_rs),
+         status            = $8
+       WHERE order_id = $9`,
+      [provider, providerOrderId, trackingUrl, driverName, driverPhone,
+       estimatedMins, costRs, status, req.params.orderId]
+    );
+
+    // Mark order as DISPATCHED if status says so
+    if (status === 'picked_up' || status === 'dispatched') {
+      await orderSvc.updateStatus(req.params.orderId, 'DISPATCHED');
+    }
+
+    // Notify customer on WhatsApp with tracking link
+    if (order.phone_number_id && order.wa_phone) {
+      let msg = `🚴 *Your order is on the way!*\n\nOrder: #${order.order_number}`;
+      if (driverName)    msg += `\nDriver: ${driverName}`;
+      if (driverPhone)   msg += ` · ${driverPhone}`;
+      if (estimatedMins) msg += `\nETA: ~${estimatedMins} mins`;
+      if (trackingUrl)   msg += `\n\n🔗 *Live tracking:* ${trackingUrl}`;
+      await wa.sendText(order.phone_number_id, order.access_token, order.wa_phone, msg)
+        .catch(() => {});
+    }
+
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -513,8 +631,5 @@ router.post('/payout-account', async (req, res) => {
     res.json({ success: true, fundAccountId: result.fundAccountId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
-// Import for notifications
-const wa = require('../services/whatsapp');
 
 module.exports = router;

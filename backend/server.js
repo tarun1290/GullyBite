@@ -44,6 +44,16 @@ app.use('/webhooks/whatsapp', require('./src/webhooks/whatsapp'));
 app.use('/webhooks/razorpay', require('./src/webhooks/razorpay'));
 app.use('/webhooks/catalog',  require('./src/webhooks/catalog'));
 
+// Admin dashboard
+app.get('/admin', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/admin.html'));
+});
+
+// Restaurant dashboard (post-login)
+app.get('/dashboard', (_req, res) => {
+  res.sendFile(path.join(__dirname, '../frontend/dashboard.html'));
+});
+
 // Payment redirect page
 app.get('/payment-success', (req, res) => {
   const status = req.query.razorpay_payment_link_status;
