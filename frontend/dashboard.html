@@ -290,6 +290,11 @@ tr:hover td{background:rgba(255,255,255,.012)}
 </style>
 </head>
 <body>
+<div id="fb-root"></div>
+<script>
+window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml:true,version:'v25.0'})};
+(function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(d.getElementById(id))return;js=d.createElement(s);js.id=id;js.src="https://connect.facebook.net/en_US/sdk.js";fjs.parentNode.insertBefore(js,fjs)}(document,'script','facebook-jssdk'));
+</script>
 
 <div id="toast"></div>
 
@@ -1490,13 +1495,27 @@ async function doChangePassword() {
 }
 
 function doReconnectMeta() {
-  if (typeof FB === 'undefined') return toast('Facebook SDK not loaded', 'err');
+  if (typeof FB === 'undefined') {
+    toast('Facebook SDK not ready — please wait a moment and try again', 'err');
+    return;
+  }
+  const btn = document.querySelector('#wa-reconnect-wrap button');
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = 'Connecting…'; btn.disabled = true; }
+
   FB.login(resp => {
-    if (resp.authResponse) {
-      api('/auth/connect-meta', { method: 'POST', body: { accessToken: resp.authResponse.accessToken } })
-        .then(() => { toast('WhatsApp reconnected', 'ok'); loadProfile(); })
-        .catch(e => toast(e.message, 'err'));
+    if (!resp.authResponse) {
+      if (btn) { btn.textContent = orig; btn.disabled = false; }
+      toast('Meta login cancelled', 'err');
+      return;
     }
+    api('/auth/connect-meta', { method: 'POST', body: { accessToken: resp.authResponse.accessToken } })
+      .then(() => {
+        toast('WhatsApp reconnected successfully', 'ok');
+        loadProfile(); // refreshes the status indicator
+      })
+      .catch(e => toast(e.message, 'err'))
+      .finally(() => { if (btn) { btn.textContent = orig; btn.disabled = false; } });
   }, { scope: 'whatsapp_business_management,whatsapp_business_messaging,business_management' });
 }
 
