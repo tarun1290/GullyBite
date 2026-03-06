@@ -1,0 +1,2 @@
+id,business_name,brand_name,registered_business_name,owner_name,email,phone,city,restaurant_type,gst_number,fssai_license,fssai_expiry,logo_url,status,approval_status,onboarding_step,commission_pct
+a0000000-0000-0000-0000-000000000001,Spice Route Kitchen,Spice Route Kitchen,Spice Route Kitchen Pvt Ltd,Demo Owner,demo@spiceroutekitchen.com,+91 98765 43210,Mumbai,both,27AADCS0472N1Z1,12345678901234,2027-01-01,,active,approved,5,10.00
