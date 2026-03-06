@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/index.js": {
-      "includeFiles": "backend/**,frontend/**"
+      "includeFiles": "frontend/**"
     }
   },
   "rewrites": [

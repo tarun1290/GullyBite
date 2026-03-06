@@ -17,10 +17,18 @@ const Razorpay = require('razorpay');
 const crypto  = require('crypto');
 const db       = require('../config/database');
 
-const rzp = new Razorpay({
-  key_id    : process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+// Lazy init — avoid crashing on startup if env vars aren't set yet
+let _rzp = null;
+const getRzp = () => {
+  if (!_rzp) {
+    if (!process.env.RAZORPAY_KEY_ID) throw new Error('RAZORPAY_KEY_ID env var is not set');
+    _rzp = new Razorpay({
+      key_id    : process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+  }
+  return _rzp;
+};
 
 // ─── 1. CREATE RAZORPAY ORDER (WhatsApp Pay) ──────────────────
 // Creates a Razorpay Order that powers the native WhatsApp Pay flow.
@@ -29,7 +37,7 @@ const rzp = new Razorpay({
 const createRazorpayOrder = async (order, customer) => {
   const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 15;
 
-  const rzpOrder = await rzp.orders.create({
+  const rzpOrder = await getRzp().orders.create({
     amount  : Math.round(order.total_rs * 100), // paise
     currency: 'INR',
     receipt : order.order_number,               // shows on Razorpay dashboard
@@ -60,7 +68,7 @@ const createPaymentLink = async (order, customer) => {
   const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 15;
   const expiresAt  = Math.floor(Date.now() / 1000) + expiryMins * 60;
 
-  const link = await rzp.paymentLink.create({
+  const link = await getRzp().paymentLink.create({
     amount        : Math.round(order.total_rs * 100),
     currency      : 'INR',
     accept_partial: false,
@@ -215,7 +223,7 @@ const issueRefund = async (orderId, reason = 'Order cancelled') => {
   if (!rows.length) return null;
 
   const payment = rows[0];
-  const refund = await rzp.payments.refund(payment.rp_payment_id, {
+  const refund = await getRzp().payments.refund(payment.rp_payment_id, {
     amount: Math.round(payment.amount_rs * 100),
     notes : { reason, order_id: orderId },
   });
@@ -246,7 +254,7 @@ const registerPayoutAccount = async (restaurantId) => {
   }
 
   // Step 1: Create Razorpay Contact
-  const contact = await rzp.contacts.create({
+  const contact = await getRzp().contacts.create({
     name        : restaurant.business_name,
     email       : restaurant.email       || undefined,
     contact     : restaurant.phone       || undefined,
@@ -255,7 +263,7 @@ const registerPayoutAccount = async (restaurantId) => {
   });
 
   // Step 2: Create Fund Account (bank account linked to the contact)
-  const fundAccount = await rzp.fundAccount.create({
+  const fundAccount = await getRzp().fundAccount.create({
     contact_id  : contact.id,
     account_type: 'bank_account',
     bank_account: {
@@ -279,7 +287,7 @@ const registerPayoutAccount = async (restaurantId) => {
 // Transfers the net settlement amount to the restaurant's bank account.
 // Requires Razorpay X + RAZORPAY_ACCOUNT_NUMBER in .env.
 const createPayout = async (restaurant, amountRs, settlementId) => {
-  const payout = await rzp.payouts.create({
+  const payout = await getRzp().payouts.create({
     account_number   : process.env.RAZORPAY_ACCOUNT_NUMBER, // GullyBite's RazorpayX account
     fund_account_id  : restaurant.razorpay_fund_acct_id,
     amount           : Math.round(amountRs * 100),           // paise
