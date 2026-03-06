@@ -123,10 +123,25 @@ const buildCartFromCatalogOrder = async (productItems, branchId) => {
   return { cart, subtotalRs, deliveryFeeRs, totalRs, unavailable };
 };
 
+const REFERRAL_FEE_PCT = 0.075; // 7.5%
+
+// ─── CHECK ACTIVE REFERRAL ────────────────────────────────────
+const findActiveReferral = async (client, waPhone, restaurantId) => {
+  if (!waPhone || !restaurantId) return null;
+  const { rows } = await client.query(
+    `SELECT id FROM referrals
+     WHERE restaurant_id = $1 AND customer_wa_phone = $2
+       AND status = 'active' AND expires_at > NOW()
+     ORDER BY created_at DESC LIMIT 1`,
+    [restaurantId, waPhone]
+  );
+  return rows[0] || null;
+};
+
 // ─── CREATE ORDER ─────────────────────────────────────────────
 // Called when customer taps "Confirm & Pay"
 // Wraps everything in a transaction (all-or-nothing)
-const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, deliveryAddress, deliveryLat, deliveryLng }) => {
+const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, deliveryAddress, deliveryLat, deliveryLng, waPhone }) => {
   return db.transaction(async (client) => {
     // Generate human-readable order number
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -136,22 +151,49 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     const seq = String(parseInt(cnt[0].count) + 1).padStart(4, '0');
     const orderNumber = `ZM-${date}-${seq}`;
 
-    // No platform commission — GullyBite earns only via delivery fee pass-through
+    // No platform commission — GullyBite earns fixed monthly fee only
     const platformFeeRs = 0;
+
+    // ── REFERRAL CHECK ─────────────────────────────────────────
+    // If customer was referred by admin within the 8-hour window,
+    // tag the order and compute 7.5% referral fee on subtotal.
+    const { rows: br } = await client.query(
+      'SELECT restaurant_id FROM branches WHERE id = $1', [branchId]
+    );
+    const restaurantId  = br[0]?.restaurant_id;
+    const referral      = await findActiveReferral(client, waPhone, restaurantId);
+    const referralId    = referral?.id || null;
+    const referralFeeRs = referral ? parseFloat((subtotalRs * REFERRAL_FEE_PCT).toFixed(2)) : 0;
 
     // Create the order
     const { rows: orders } = await client.query(
       `INSERT INTO orders
         (order_number, customer_id, branch_id, conversation_id,
          subtotal_rs, delivery_fee_rs, total_rs, platform_fee_rs,
+         referral_id, referral_fee_rs,
          delivery_address, delivery_lat, delivery_lng, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'PENDING_PAYMENT')
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'PENDING_PAYMENT')
        RETURNING *`,
       [orderNumber, customerId, branchId, convId,
        subtotalRs, deliveryFeeRs, totalRs, platformFeeRs,
+       referralId, referralFeeRs,
        deliveryAddress, deliveryLat, deliveryLng]
     );
     const order = orders[0];
+
+    // Update referral totals if this order is attributed
+    if (referralId) {
+      await client.query(
+        `UPDATE referrals SET
+           status               = 'converted',
+           orders_count         = orders_count + 1,
+           total_order_value_rs = total_order_value_rs + $1,
+           referral_fee_rs      = referral_fee_rs + $2,
+           updated_at           = NOW()
+         WHERE id = $3`,
+        [subtotalRs, referralFeeRs, referralId]
+      );
+    }
 
     // Create order items
     for (const item of cart) {

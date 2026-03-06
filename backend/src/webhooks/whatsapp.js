@@ -393,6 +393,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         deliveryAddress: session.deliveryAddress,
         deliveryLat  : session.deliveryLat,
         deliveryLng  : session.deliveryLng,
+        waPhone      : customer.wa_phone,   // for referral attribution
       });
 
       const fullOrder = await orderSvc.getOrderDetails(order.id);

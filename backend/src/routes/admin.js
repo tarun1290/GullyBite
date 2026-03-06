@@ -345,4 +345,77 @@ router.patch('/applications/:id/reject', express.json(), async (req, res) => {
   }
 });
 
+// ─── REFERRALS ────────────────────────────────────────────────────
+// POST /api/admin/referrals — create a referral (admin sends WA link to customer)
+router.post('/referrals', express.json(), async (req, res) => {
+  try {
+    const { restaurantId, customerWaPhone, customerName, notes } = req.body;
+    if (!restaurantId || !customerWaPhone)
+      return res.status(400).json({ error: 'restaurantId and customerWaPhone are required' });
+
+    // Expire any old active referrals for same restaurant+customer before creating new one
+    await db.query(
+      `UPDATE referrals SET status='expired', updated_at=NOW()
+       WHERE restaurant_id=$1 AND customer_wa_phone=$2 AND status='active'`,
+      [restaurantId, customerWaPhone]
+    );
+
+    const { rows } = await db.query(
+      `INSERT INTO referrals
+         (restaurant_id, customer_wa_phone, customer_name, notes,
+          expires_at)
+       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '8 hours')
+       RETURNING *`,
+      [restaurantId, customerWaPhone.trim(), customerName || null, notes || null]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/referrals — list all referrals with restaurant name
+router.get('/referrals', async (req, res) => {
+  try {
+    // Auto-expire stale referrals first
+    await db.query(
+      `UPDATE referrals SET status='expired', updated_at=NOW()
+       WHERE status='active' AND expires_at < NOW()`
+    );
+
+    const { rows } = await db.query(
+      `SELECT r.*, res.business_name AS restaurant_name,
+              wa.phone_display AS restaurant_wa_phone
+       FROM referrals r
+       JOIN restaurants res ON res.id = r.restaurant_id
+       LEFT JOIN whatsapp_accounts wa ON wa.restaurant_id = r.restaurant_id AND wa.is_active = TRUE
+       ORDER BY r.created_at DESC
+       LIMIT 200`
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/referrals/stats — summary totals
+router.get('/referrals/stats', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT
+         COUNT(*)                                          AS total,
+         COUNT(*) FILTER (WHERE status='active')          AS active,
+         COUNT(*) FILTER (WHERE status='converted')       AS converted,
+         COUNT(*) FILTER (WHERE status='expired')         AS expired,
+         COALESCE(SUM(orders_count),0)                    AS total_orders,
+         COALESCE(SUM(total_order_value_rs),0)            AS total_order_value_rs,
+         COALESCE(SUM(referral_fee_rs),0)                 AS total_referral_fee_rs
+       FROM referrals`
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

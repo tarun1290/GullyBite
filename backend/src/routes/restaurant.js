@@ -806,4 +806,40 @@ router.post('/payout-account', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── REFERRALS RECEIVED ───────────────────────────────────────
+// GET /api/restaurant/referrals — all referrals for this restaurant + summary
+router.get('/referrals', async (req, res) => {
+  try {
+    // Auto-expire stale referrals
+    await db.query(
+      `UPDATE referrals SET status='expired', updated_at=NOW()
+       WHERE restaurant_id=$1 AND status='active' AND expires_at < NOW()`,
+      [req.restaurantId]
+    );
+
+    const { rows: list } = await db.query(
+      `SELECT id, customer_wa_phone, customer_name, status,
+              expires_at, orders_count, total_order_value_rs,
+              referral_fee_rs, notes, created_at
+       FROM referrals
+       WHERE restaurant_id = $1
+       ORDER BY created_at DESC`,
+      [req.restaurantId]
+    );
+
+    const { rows: summary } = await db.query(
+      `SELECT
+         COUNT(*)                                          AS total,
+         COUNT(*) FILTER (WHERE status='converted')       AS converted,
+         COALESCE(SUM(orders_count),0)                    AS total_orders,
+         COALESCE(SUM(total_order_value_rs),0)            AS total_order_value_rs,
+         COALESCE(SUM(referral_fee_rs),0)                 AS total_referral_fee_rs
+       FROM referrals WHERE restaurant_id = $1`,
+      [req.restaurantId]
+    );
+
+    res.json({ referrals: list, summary: summary[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

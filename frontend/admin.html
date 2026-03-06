@@ -199,6 +199,11 @@ pre.json{background:var(--ink3);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Customers
       </div>
+      <div class="nav-item" data-page="referrals" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        Referrals
+        <span class="badge" id="nav-ref-badge" style="display:none;background:#7c3aed;color:#fff"></span>
+      </div>
     </nav>
     <div class="sb-footer">
       <div class="sb-user">
@@ -380,6 +385,76 @@ pre.json{background:var(--ink3);border:1px solid var(--rim);border-radius:6px;pa
         </div>
       </div>
 
+      <!-- ── REFERRALS PAGE ──────────────────────────────────────── -->
+      <div class="page" id="page-referrals">
+
+        <!-- Stats strip -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.4rem">
+          <div class="stat-card"><div class="stat-val" id="ref-s-total">—</div><div class="stat-lbl">Total Referrals</div></div>
+          <div class="stat-card"><div class="stat-val" id="ref-s-active">—</div><div class="stat-lbl">Active (within 8h)</div></div>
+          <div class="stat-card"><div class="stat-val" id="ref-s-converted">—</div><div class="stat-lbl">Converted</div></div>
+          <div class="stat-card"><div class="stat-val" id="ref-s-fee">—</div><div class="stat-lbl">Total Referral Fees</div></div>
+        </div>
+
+        <!-- Create referral form -->
+        <div class="table-wrap" style="margin-bottom:1.2rem;padding:1.1rem 1.4rem">
+          <h3 style="margin-bottom:1rem;font-size:.95rem">Send a Referral</h3>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:.8rem;align-items:end">
+            <div>
+              <label style="font-size:.76rem;color:var(--dim);display:block;margin-bottom:.3rem">Restaurant</label>
+              <select id="ref-restaurant" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.42rem .6rem;color:var(--tx);font-size:.82rem">
+                <option value="">Select restaurant…</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:.76rem;color:var(--dim);display:block;margin-bottom:.3rem">Customer WhatsApp Number</label>
+              <input id="ref-phone" placeholder="919876543210" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.42rem .6rem;color:var(--tx);font-size:.82rem">
+            </div>
+            <div>
+              <label style="font-size:.76rem;color:var(--dim);display:block;margin-bottom:.3rem">Customer Name (optional)</label>
+              <input id="ref-name" placeholder="Rahul Sharma" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.42rem .6rem;color:var(--tx);font-size:.82rem">
+            </div>
+            <button class="btn-sm" style="background:#7c3aed;color:#fff;padding:.45rem 1rem;border-radius:6px;border:none;cursor:pointer;font-size:.82rem;white-space:nowrap" onclick="createReferral()">+ Create Referral</button>
+          </div>
+          <div style="margin-top:.7rem">
+            <label style="font-size:.76rem;color:var(--dim);display:block;margin-bottom:.3rem">Notes (optional)</label>
+            <input id="ref-notes" placeholder="e.g. Customer asked about biryanis on Instagram" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.42rem .6rem;color:var(--tx);font-size:.82rem">
+          </div>
+          <div id="ref-link-box" style="display:none;margin-top:.9rem;background:var(--ink3);border:1px solid #7c3aed44;border-radius:8px;padding:.8rem 1rem">
+            <div style="font-size:.76rem;color:#a78bfa;margin-bottom:.4rem">Referral created — share this restaurant's WhatsApp link with the customer. Attribution is live for 8 hours.</div>
+            <div style="display:flex;align-items:center;gap:.6rem">
+              <code id="ref-wa-link" style="flex:1;font-size:.8rem;color:var(--tx);word-break:break-all"></code>
+              <button class="btn-sm" onclick="copyRefLink()" style="white-space:nowrap">Copy Link</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Referrals list -->
+        <div class="table-wrap">
+          <div class="table-head">
+            <h2>All Referrals</h2>
+            <button class="btn-sm" style="margin-left:auto" onclick="loadReferrals()">&#8635; Refresh</button>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Customer Phone</th>
+                <th>Customer Name</th>
+                <th>Restaurant</th>
+                <th>Status</th>
+                <th>Expires / Expired</th>
+                <th>Orders</th>
+                <th>Order Value</th>
+                <th>Referral Fee (7.5%)</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="referrals-tbody"><tr><td colspan="9" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -462,7 +537,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', referrals: 'Referrals' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -478,15 +553,17 @@ function nav(el) {
   if (page === 'restaurants')  loadRestaurants();
   if (page === 'orders')       loadOrders();
   if (page === 'customers')    loadCustomers();
+  if (page === 'referrals')    loadReferrals();
 }
 
 function refreshCurrent() {
-  if (currentPage === 'overview')      loadAll();
+  if (currentPage === 'overview')          loadAll();
   else if (currentPage === 'applications') loadApplications();
   else if (currentPage === 'logs')         loadLogs();
   else if (currentPage === 'restaurants')  loadRestaurants();
   else if (currentPage === 'orders')       loadOrders();
   else if (currentPage === 'customers')    loadCustomers();
+  else if (currentPage === 'referrals')    loadReferrals();
 }
 
 // ─── STATS ────────────────────────────────────────────────────────
@@ -553,6 +630,7 @@ function loadAll() {
   loadOverviewOrders();
   loadOverviewLogs();
   loadApplicationsBadge();
+  loadReferralsBadge();
 }
 
 // ─── APPLICATIONS ──────────────────────────────────────────────────
@@ -959,6 +1037,127 @@ function toast(msg, type = 'ok') {
   el.textContent = msg;
   document.getElementById('toast').appendChild(el);
   setTimeout(() => el.remove(), 4000);
+}
+
+// ─── REFERRALS ────────────────────────────────────────────────────
+let _refRestaurants = []; // cache for dropdown
+let _lastRefLink    = '';
+
+async function loadReferralsBadge() {
+  try {
+    const d = await api('/api/admin/referrals/stats');
+    const badge = document.getElementById('nav-ref-badge');
+    if (d.active > 0) {
+      badge.textContent = d.active;
+      badge.style.display = 'inline-flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch (_) {}
+}
+
+async function loadReferrals() {
+  // Load stats
+  try {
+    const s = await api('/api/admin/referrals/stats');
+    document.getElementById('ref-s-total').textContent     = s.total;
+    document.getElementById('ref-s-active').textContent    = s.active;
+    document.getElementById('ref-s-converted').textContent = s.converted;
+    document.getElementById('ref-s-fee').textContent       = '₹' + parseFloat(s.total_referral_fee_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+  } catch (_) {}
+
+  // Populate restaurant dropdown if empty
+  if (_refRestaurants.length === 0) {
+    try {
+      const list = await api('/api/admin/restaurants');
+      _refRestaurants = list.restaurants || list;
+      const sel = document.getElementById('ref-restaurant');
+      _refRestaurants.forEach(r => {
+        const o = document.createElement('option');
+        o.value = r.id;
+        o.textContent = r.business_name;
+        sel.appendChild(o);
+      });
+    } catch (_) {}
+  }
+
+  // Load referral list
+  const tbody = document.getElementById('referrals-tbody');
+  try {
+    const rows = await api('/api/admin/referrals');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">No referrals yet</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => {
+      const statusColor = { active: '#22c55e', converted: '#7c3aed', expired: '#6b7280' }[r.status] || '#6b7280';
+      const expiresLabel = r.status === 'active'
+        ? `<span style="color:#22c55e">Expires ${timeAgo(r.expires_at)}</span>`
+        : fmtDate(r.expires_at);
+      return `<tr>
+        <td style="font-family:monospace">${r.customer_wa_phone}</td>
+        <td>${r.customer_name || '—'}</td>
+        <td>${r.restaurant_name}</td>
+        <td><span style="color:${statusColor};font-weight:600;text-transform:capitalize">${r.status}</span></td>
+        <td style="font-size:.78rem">${expiresLabel}</td>
+        <td>${r.orders_count}</td>
+        <td>₹${parseFloat(r.total_order_value_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+        <td style="font-weight:600;color:#a78bfa">₹${parseFloat(r.referral_fee_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+        <td style="font-size:.78rem">${fmtDate(r.created_at)}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">Error: ${e.message}</td></tr>`;
+  }
+}
+
+async function createReferral() {
+  const restaurantId     = document.getElementById('ref-restaurant').value;
+  const customerWaPhone  = document.getElementById('ref-phone').value.trim();
+  const customerName     = document.getElementById('ref-name').value.trim();
+  const notes            = document.getElementById('ref-notes').value.trim();
+
+  if (!restaurantId)    return toast('Select a restaurant', 'warn');
+  if (!customerWaPhone) return toast('Enter customer WhatsApp number', 'warn');
+
+  try {
+    const ref = await api('/api/admin/referrals', {
+      method: 'POST',
+      body: { restaurantId, customerWaPhone, customerName, notes }
+    });
+
+    // Build the WA link for the restaurant
+    const restaurant = _refRestaurants.find(r => r.id === restaurantId);
+    const waPhone    = ref.restaurant_wa_phone || '';
+    const waLink     = waPhone
+      ? `https://wa.me/${waPhone.replace(/[^0-9]/g, '')}?text=Hi! I want to order food.`
+      : `(No WhatsApp number connected for ${restaurant?.business_name})`;
+
+    _lastRefLink = waLink;
+    document.getElementById('ref-wa-link').textContent = waLink;
+    document.getElementById('ref-link-box').style.display = 'block';
+
+    // Clear form
+    document.getElementById('ref-phone').value = '';
+    document.getElementById('ref-name').value  = '';
+    document.getElementById('ref-notes').value = '';
+
+    toast('Referral created — attribution active for 8 hours', 'ok');
+    loadReferrals();
+    loadReferralsBadge();
+  } catch (e) {
+    toast(e.message, 'err');
+  }
+}
+
+function copyRefLink() {
+  if (!_lastRefLink) return;
+  navigator.clipboard.writeText(_lastRefLink).then(() => toast('Link copied', 'ok'));
+}
+
+function timeAgo(ts) {
+  const diff = new Date(ts) - Date.now();
+  if (diff <= 0) return 'now';
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  return h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────

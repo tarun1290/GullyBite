@@ -323,6 +323,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
     <div class="sb-sec">
       <div class="sb-cap">Finance</div>
       <button class="sb-btn" onclick="goTab('settlements',this)"><span class="ic">💰</span>Settlements</button>
+      <button class="sb-btn" onclick="goTab('referrals',this)"><span class="ic">🔗</span>Referrals Received</button>
       <button class="sb-btn" onclick="goTab('settings',this)"><span class="ic">⚙️</span>Settings</button>
     </div>
     <div class="sb-foot">
@@ -603,6 +604,60 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
         </div>
       </div>
 
+      <!-- ── REFERRALS ─────────────────────────────── -->
+      <div class="tab" id="tab-referrals">
+
+        <!-- Summary cards -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.4rem">
+          <div class="card" style="padding:1rem 1.2rem">
+            <div style="font-size:1.5rem;font-weight:700" id="rr-total">—</div>
+            <div style="font-size:.78rem;color:var(--dim);margin-top:.2rem">Total Referrals</div>
+          </div>
+          <div class="card" style="padding:1rem 1.2rem">
+            <div style="font-size:1.5rem;font-weight:700" id="rr-converted">—</div>
+            <div style="font-size:.78rem;color:var(--dim);margin-top:.2rem">Converted to Orders</div>
+          </div>
+          <div class="card" style="padding:1rem 1.2rem">
+            <div style="font-size:1.5rem;font-weight:700" id="rr-order-value">—</div>
+            <div style="font-size:.78rem;color:var(--dim);margin-top:.2rem">Total Order Value</div>
+          </div>
+          <div class="card" style="padding:1rem 1.2rem">
+            <div style="font-size:1.5rem;font-weight:700;color:#a78bfa" id="rr-fee">—</div>
+            <div style="font-size:.78rem;color:var(--dim);margin-top:.2rem">Referral Fees Owed (7.5%)</div>
+          </div>
+        </div>
+
+        <!-- Info banner -->
+        <div class="card" style="margin-bottom:1.2rem;padding:.85rem 1.2rem;background:#1e1b4b;border:1px solid #4c1d9544">
+          <p style="font-size:.82rem;color:#c4b5fd;margin:0">
+            When a customer is referred to you by GullyBite admin, any order they place within <strong>8 hours</strong> of the referral carries a <strong>7.5% referral fee</strong> on the order subtotal. This is settled monthly.
+          </p>
+        </div>
+
+        <!-- Referrals list -->
+        <div class="card">
+          <div class="ch"><h3>Referrals Received</h3></div>
+          <div class="cb" style="padding:0">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+              <thead>
+                <tr style="border-bottom:1px solid var(--rim)">
+                  <th style="padding:.6rem 1rem;text-align:left;color:var(--dim);font-weight:500">Customer</th>
+                  <th style="padding:.6rem 1rem;text-align:left;color:var(--dim);font-weight:500">Status</th>
+                  <th style="padding:.6rem 1rem;text-align:left;color:var(--dim);font-weight:500">Orders</th>
+                  <th style="padding:.6rem 1rem;text-align:left;color:var(--dim);font-weight:500">Order Value</th>
+                  <th style="padding:.6rem 1rem;text-align:left;color:var(--dim);font-weight:500">Referral Fee</th>
+                  <th style="padding:.6rem 1rem;text-align:left;color:var(--dim);font-weight:500">Referred On</th>
+                </tr>
+              </thead>
+              <tbody id="rr-tbody">
+                <tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--dim)">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
       <!-- ── SETTINGS ────────────────────────────── -->
       <div class="tab" id="tab-settings">
 
@@ -784,6 +839,7 @@ const TMETA = {
   whatsapp:   { title: 'WhatsApp',           sub: 'Numbers and webhook config',         fn: loadWA },
   integrations:{ title: 'POS & Platform Integrations', sub: 'Sync menus from Swiggy, Zomato, PetPooja', fn: loadIntegrations },
   settlements: { title: 'Settlements',        sub: 'Weekly payout history',              fn: loadSettlements },
+  referrals:   { title: 'Referrals Received', sub: 'Customers referred by GullyBite admin — 7.5% fee applies', fn: loadReferrals },
   settings:    { title: 'Settings',           sub: 'Business profile and bank account',  fn: loadProfile },
 };
 function goTab(n, el) {
@@ -1517,6 +1573,39 @@ function doReconnectMeta() {
       .catch(e => toast(e.message, 'err'))
       .finally(() => { if (btn) { btn.textContent = orig; btn.disabled = false; } });
   }, { scope: 'whatsapp_business_management,whatsapp_business_messaging,business_management' });
+}
+
+/* ─────────────────────────── REFERRALS ─────────────────── */
+async function loadReferrals() {
+  try {
+    const d = await api('/api/restaurant/referrals'); if (!d) return;
+    const s = d.summary;
+    document.getElementById('rr-total').textContent       = s.total;
+    document.getElementById('rr-converted').textContent   = s.converted;
+    document.getElementById('rr-order-value').textContent = '₹' + parseFloat(s.total_order_value_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    document.getElementById('rr-fee').textContent         = '₹' + parseFloat(s.total_referral_fee_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+
+    const tbody = document.getElementById('rr-tbody');
+    if (!d.referrals.length) {
+      tbody.innerHTML = '<tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--dim)">No referrals received yet</td></tr>';
+      return;
+    }
+    const statusColor = { active:'#22c55e', converted:'#a78bfa', expired:'#6b7280' };
+    tbody.innerHTML = d.referrals.map(r => `
+      <tr style="border-bottom:1px solid var(--rim)">
+        <td style="padding:.6rem 1rem">
+          <div style="font-family:monospace;font-size:.8rem">${r.customer_wa_phone}</div>
+          ${r.customer_name ? `<div style="font-size:.74rem;color:var(--dim)">${r.customer_name}</div>` : ''}
+        </td>
+        <td style="padding:.6rem 1rem">
+          <span style="color:${statusColor[r.status]||'#6b7280'};font-weight:600;text-transform:capitalize;font-size:.8rem">${r.status}</span>
+        </td>
+        <td style="padding:.6rem 1rem">${r.orders_count}</td>
+        <td style="padding:.6rem 1rem">₹${parseFloat(r.total_order_value_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+        <td style="padding:.6rem 1rem;color:#a78bfa;font-weight:600">₹${parseFloat(r.referral_fee_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+        <td style="padding:.6rem 1rem;font-size:.78rem;color:var(--dim)">${new Date(r.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}</td>
+      </tr>`).join('');
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ──────────────────── PRODUCT SETS ─────────────────────── */
