@@ -11,13 +11,187 @@
 // 7. You issue your own JWT so they stay logged into your dashboard
 
 const express = require('express');
-const axios = require('axios');
-const jwt = require('jsonwebtoken');
-const router = express.Router();
-const db = require('../config/database');
+const axios   = require('axios');
+const jwt     = require('jsonwebtoken');
+const bcrypt  = require('bcryptjs');
+const router  = express.Router();
+const db      = require('../config/database');
 
 const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
-const META_AUTH_URL = 'https://www.facebook.com/v25.0/dialog/oauth';
+const META_AUTH_URL  = 'https://www.facebook.com/v25.0/dialog/oauth';
+
+// ─── SIGN UP ──────────────────────────────────────────────────
+// POST /auth/signup — create account with email + password
+router.post('/signup', express.json(), async (req, res) => {
+  try {
+    const { ownerName, email, password } = req.body;
+    if (!ownerName || !email || !password)
+      return res.status(400).json({ error: 'Name, email and password are required' });
+    if (password.length < 8)
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+    // Check email not already taken
+    const { rows: existing } = await db.query(
+      'SELECT id FROM restaurants WHERE email = $1', [email.toLowerCase()]
+    );
+    if (existing.length)
+      return res.status(409).json({ error: 'An account with this email already exists' });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const { rows: created } = await db.query(
+      `INSERT INTO restaurants (owner_name, email, password_hash, approval_status, onboarding_step)
+       VALUES ($1, $2, $3, 'pending', 1) RETURNING id`,
+      [ownerName.trim(), email.toLowerCase().trim(), passwordHash]
+    );
+    const restaurantId = created[0].id;
+    const token = jwt.sign({ restaurantId }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, needsOnboarding: true, onboardingStep: 1 });
+  } catch (err) {
+    console.error('[Signup]', err.message);
+    res.status(500).json({ error: 'Sign up failed' });
+  }
+});
+
+// ─── SIGN IN ──────────────────────────────────────────────────
+// POST /auth/signin — email + password login
+router.post('/signin', express.json(), async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return res.status(400).json({ error: 'Email and password are required' });
+
+    const { rows } = await db.query(
+      `SELECT id, password_hash, approval_status, onboarding_step, meta_user_id
+       FROM restaurants WHERE email = $1`,
+      [email.toLowerCase()]
+    );
+    if (!rows.length)
+      return res.status(401).json({ error: 'No account found with this email' });
+
+    const restaurant = rows[0];
+    if (!restaurant.password_hash)
+      return res.status(401).json({ error: 'This account was created via Meta. Use "Continue with Meta" below.' });
+
+    const valid = await bcrypt.compare(password, restaurant.password_hash);
+    if (!valid)
+      return res.status(401).json({ error: 'Incorrect password' });
+
+    const token = jwt.sign({ restaurantId: restaurant.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const step  = restaurant.onboarding_step || 1;
+    res.json({
+      token,
+      approvalStatus:  restaurant.approval_status || 'pending',
+      onboardingStep:  step,
+      needsOnboarding: step < 5,
+      hasMetaConnected: !!restaurant.meta_user_id,
+    });
+  } catch (err) {
+    console.error('[Signin]', err.message);
+    res.status(500).json({ error: 'Sign in failed' });
+  }
+});
+
+// ─── CONNECT META / WHATSAPP ───────────────────────────────────
+// POST /auth/connect-meta — link WhatsApp Business to existing account
+// Called as step 3 of onboarding (after business details filled)
+router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
+  try {
+    const { accessToken, code } = req.body;
+    if (!accessToken && !code)
+      return res.status(400).json({ error: 'No token provided' });
+
+    let longToken, expiresAt;
+    if (code) {
+      const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
+        params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET, redirect_uri: process.env.META_OAUTH_REDIRECT_URI, code },
+      });
+      longToken = tokenRes.data.access_token;
+      const ei  = tokenRes.data.expires_in || null;
+      expiresAt = ei ? new Date(Date.now() + ei * 1000) : null;
+    } else {
+      const longRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
+        params: { grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET, fb_exchange_token: accessToken },
+      });
+      longToken = longRes.data.access_token;
+      const ei  = longRes.data.expires_in || null;
+      expiresAt = ei ? new Date(Date.now() + ei * 1000) : null;
+    }
+
+    const userRes  = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
+    const metaUser = userRes.data;
+
+    let wabaData = [];
+    try {
+      const wabaRes = await axios.get(`${META_GRAPH_URL}/${metaUser.id}/businesses`, {
+        params: { fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}', access_token: longToken },
+      });
+      wabaData = wabaRes.data?.data || [];
+    } catch (e) { console.warn('[connect-meta] Could not fetch WABAs:', e.message); }
+
+    // Update restaurant with Meta credentials + mark as submitted
+    await db.query(
+      `UPDATE restaurants SET
+         meta_user_id          = $1,
+         meta_access_token     = $2,
+         meta_token_expires_at = $3,
+         onboarding_step       = 5,
+         submitted_at          = COALESCE(submitted_at, NOW()),
+         approval_status       = CASE WHEN approval_status = 'approved' THEN 'approved' ELSE 'pending' END,
+         updated_at            = NOW()
+       WHERE id = $4`,
+      [metaUser.id, longToken, expiresAt, req.restaurantId]
+    );
+
+    // Save WhatsApp accounts
+    for (const biz of wabaData) {
+      for (const waba of biz.whatsapp_business_accounts?.data || []) {
+        for (const phone of waba.phone_numbers?.data || []) {
+          await db.query(
+            `INSERT INTO whatsapp_accounts
+               (restaurant_id, waba_id, phone_number_id, phone_display, display_name, quality_rating, access_token)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             ON CONFLICT (phone_number_id) DO UPDATE SET
+               display_name=EXCLUDED.display_name, quality_rating=EXCLUDED.quality_rating,
+               access_token=EXCLUDED.access_token, updated_at=NOW()`,
+            [req.restaurantId, waba.id, phone.id, phone.display_phone_number,
+             phone.verified_name, phone.quality_rating?.display_value || 'GREEN', longToken]
+          );
+        }
+      }
+    }
+
+    res.json({ connected: true });
+  } catch (err) {
+    console.error('[connect-meta]', err.response?.data || err.message);
+    res.status(500).json({ error: 'Failed to connect WhatsApp' });
+  }
+});
+
+// ─── CHANGE PASSWORD ──────────────────────────────────────────
+// POST /auth/change-password
+router.post('/change-password', requireAuth, express.json(), async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 8)
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+
+    const { rows } = await db.query('SELECT password_hash FROM restaurants WHERE id=$1', [req.restaurantId]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+
+    if (rows[0].password_hash) {
+      if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
+      const valid = await bcrypt.compare(currentPassword, rows[0].password_hash);
+      if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 12);
+    await db.query('UPDATE restaurants SET password_hash=$1, updated_at=NOW() WHERE id=$2', [hash, req.restaurantId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[change-password]', err.message);
+    res.status(500).json({ error: 'Password update failed' });
+  }
+});
 
 // ─── STEP 1: INITIATE OAUTH ───────────────────────────────────
 // Frontend calls this → we redirect to Facebook login
@@ -320,8 +494,7 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
          restaurant_type           = $8,
          city                      = $9,
          approval_status           = 'pending',
-         submitted_at              = NOW(),
-         onboarding_step           = 5,
+         onboarding_step           = 2,
          updated_at                = NOW()
        WHERE id = $10`,
       [ownerName, phone, brandName, registeredBusinessName,
@@ -340,11 +513,17 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
 // GET /auth/me — Returns logged-in restaurant info
 router.get('/me', requireAuth, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT r.id, r.business_name, r.brand_name, r.owner_name, r.email, r.phone,
+    `SELECT r.id, r.business_name, r.brand_name, r.registered_business_name,
+            r.owner_name, r.email, r.phone, r.city,
             r.logo_url, r.onboarding_step, r.commission_pct, r.status,
             r.approval_status, r.approval_notes, r.submitted_at,
             r.gst_number, r.fssai_license, r.fssai_expiry, r.restaurant_type,
-            r.bank_name, r.bank_account_number, r.bank_ifsc
+            r.bank_name, r.bank_account_number, r.bank_ifsc,
+            COALESCE(
+              (SELECT json_agg(json_build_object('waba_id', w.waba_id, 'name', w.display_name, 'phone', w.phone_display))
+               FROM whatsapp_accounts w WHERE w.restaurant_id = r.id),
+              '[]'::json
+            ) AS waba_accounts
      FROM restaurants r WHERE r.id = $1`,
     [req.restaurantId]
   );

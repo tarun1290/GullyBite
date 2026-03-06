@@ -600,15 +600,34 @@ tr:hover td{background:rgba(255,255,255,.012)}
 
       <!-- ── SETTINGS ────────────────────────────── -->
       <div class="tab" id="tab-settings">
-        <div class="card">
+
+        <!-- Business Information -->
+        <div class="card" style="margin-bottom:1.2rem">
           <div class="ch"><h3>Business Information</h3></div>
           <div class="cb">
             <div class="fgrid">
-              <div class="fg"><label>Business Name</label><input id="p-bname" placeholder="Burger Palace"></div>
-              <div class="fg"><label>Owner Name</label><input id="p-owner" placeholder="Rajesh Kumar"></div>
+              <div class="fg"><label>Brand Name</label><input id="p-bname" placeholder="Burger Palace"></div>
+              <div class="fg"><label>Registered Business Name</label><input id="p-legalname" placeholder="Burger Palace Pvt Ltd"></div>
+              <div class="fg"><label>Owner / Contact Name</label><input id="p-owner" placeholder="Rajesh Kumar"></div>
               <div class="fg"><label>Phone</label><input id="p-phone" placeholder="+91 98765 43210"></div>
               <div class="fg"><label>Email</label><input id="p-email"></div>
+              <div class="fg"><label>City</label><input id="p-city" placeholder="Mumbai"></div>
+              <div class="fg">
+                <label>Restaurant Type</label>
+                <select id="p-rtype">
+                  <option value="both">Veg &amp; Non-Veg</option>
+                  <option value="veg">Pure Veg</option>
+                  <option value="non_veg">Non-Veg Only</option>
+                </select>
+              </div>
               <div class="fg span2"><label>Logo URL</label><input id="p-logo" placeholder="https://example.com/logo.png"></div>
+            </div>
+            <hr class="dv">
+            <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Legal &amp; Compliance</p>
+            <div class="fgrid">
+              <div class="fg"><label>GST Number</label><input id="p-gst" placeholder="22AAAAA0000A1Z5" style="text-transform:uppercase"></div>
+              <div class="fg"><label>FSSAI License Number</label><input id="p-fssai" placeholder="12345678901234"></div>
+              <div class="fg"><label>FSSAI Expiry Date</label><input id="p-fssai-exp" type="date"></div>
             </div>
             <hr class="dv">
             <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Bank Account <span style="font-weight:400;font-size:.78rem">(for weekly settlements)</span></p>
@@ -617,9 +636,40 @@ tr:hover td{background:rgba(255,255,255,.012)}
               <div class="fg"><label>Account Number</label><input id="p-accno" placeholder="12345678901234"></div>
               <div class="fg"><label>IFSC Code</label><input id="p-ifsc" placeholder="HDFC0001234"></div>
             </div>
-            <button class="btn-p" style="margin-top:1.1rem" onclick="doSaveProfile()">💾 Save Changes</button>
+            <button class="btn-p" style="margin-top:1.1rem" onclick="doSaveProfile()">Save Changes</button>
           </div>
         </div>
+
+        <!-- WhatsApp Connection -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>WhatsApp Connection</h3></div>
+          <div class="cb">
+            <div id="wa-status-box" style="display:flex;align-items:center;gap:.8rem;padding:.7rem 1rem;border-radius:8px;background:var(--surface2,#f4f4f5);margin-bottom:1rem">
+              <span id="wa-status-dot" style="width:10px;height:10px;border-radius:50%;background:#6b7280;flex-shrink:0"></span>
+              <div>
+                <div id="wa-status-label" style="font-weight:600;font-size:.88rem">Checking...</div>
+                <div id="wa-status-sub" style="font-size:.78rem;color:var(--dim)"></div>
+              </div>
+            </div>
+            <div id="wa-reconnect-wrap" style="display:none">
+              <button class="btn-p" onclick="doReconnectMeta()">Reconnect WhatsApp Business</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Change Password -->
+        <div class="card">
+          <div class="ch"><h3>Change Password</h3></div>
+          <div class="cb">
+            <div class="fgrid" style="grid-template-columns:1fr 1fr 1fr">
+              <div class="fg"><label>Current Password</label><input id="p-curpw" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+              <div class="fg"><label>New Password</label><input id="p-newpw" type="password" placeholder="••••••••" autocomplete="new-password"></div>
+              <div class="fg"><label>Confirm New Password</label><input id="p-confpw" type="password" placeholder="••••••••" autocomplete="new-password"></div>
+            </div>
+            <button class="btn-p" style="margin-top:1.1rem" onclick="doChangePassword()">Update Password</button>
+          </div>
+        </div>
+
       </div>
 
     </div>
@@ -1357,25 +1407,97 @@ async function loadSettlements() {
 async function loadProfile() {
   try {
     const r = await api('/auth/me'); if (!r) return;
-    const map = { 'p-bname': 'business_name', 'p-owner': 'owner_name', 'p-phone': 'phone', 'p-email': 'email', 'p-logo': 'logo_url', 'p-bank': 'bank_name', 'p-accno': 'bank_account_number', 'p-ifsc': 'bank_ifsc' };
-    Object.entries(map).forEach(([id, k]) => { const e = document.getElementById(id); if (e) e.value = r[k] || ''; });
+    const map = {
+      'p-bname':    'business_name',
+      'p-legalname':'registered_business_name',
+      'p-owner':    'owner_name',
+      'p-phone':    'phone',
+      'p-email':    'email',
+      'p-city':     'city',
+      'p-logo':     'logo_url',
+      'p-gst':      'gst_number',
+      'p-fssai':    'fssai_license',
+      'p-bank':     'bank_name',
+      'p-accno':    'bank_account_number',
+      'p-ifsc':     'bank_ifsc',
+    };
+    Object.entries(map).forEach(([id, k]) => {
+      const e = document.getElementById(id); if (e) e.value = r[k] || '';
+    });
+    // Date field
+    const expEl = document.getElementById('p-fssai-exp');
+    if (expEl && r.fssai_expiry) expEl.value = r.fssai_expiry.split('T')[0];
+    // Select field
+    const rtEl = document.getElementById('p-rtype');
+    if (rtEl && r.restaurant_type) rtEl.value = r.restaurant_type;
+
+    // WhatsApp connection status
+    const waAccounts = r.waba_accounts;
+    const hasWA = waAccounts && waAccounts.length > 0;
+    const dot   = document.getElementById('wa-status-dot');
+    const lbl   = document.getElementById('wa-status-label');
+    const sub   = document.getElementById('wa-status-sub');
+    const wrap  = document.getElementById('wa-reconnect-wrap');
+    if (hasWA) {
+      dot.style.background  = '#22c55e';
+      lbl.textContent       = 'Connected';
+      sub.textContent       = waAccounts.map(a => a.name || a.waba_id).join(', ');
+      wrap.style.display    = 'none';
+    } else {
+      dot.style.background  = '#ef4444';
+      lbl.textContent       = 'Not connected';
+      sub.textContent       = 'Connect your WhatsApp Business account to start receiving orders';
+      wrap.style.display    = 'block';
+    }
   } catch (_) {}
 }
+
 async function doSaveProfile() {
   try {
     await api('/api/restaurant', { method: 'PUT', body: {
-      businessName:      document.getElementById('p-bname').value,
-      ownerName:         document.getElementById('p-owner').value,
-      phone:             document.getElementById('p-phone').value,
-      logoUrl:           document.getElementById('p-logo').value,
-      bankName:          document.getElementById('p-bank').value,
-      bankAccountNumber: document.getElementById('p-accno').value,
-      bankIfsc:          document.getElementById('p-ifsc').value,
+      businessName:           document.getElementById('p-bname').value,
+      registeredBusinessName: document.getElementById('p-legalname').value,
+      ownerName:              document.getElementById('p-owner').value,
+      phone:                  document.getElementById('p-phone').value,
+      city:                   document.getElementById('p-city').value,
+      restaurantType:         document.getElementById('p-rtype').value,
+      logoUrl:                document.getElementById('p-logo').value,
+      gstNumber:              document.getElementById('p-gst').value,
+      fssaiLicense:           document.getElementById('p-fssai').value,
+      fssaiExpiry:            document.getElementById('p-fssai-exp').value || null,
+      bankName:               document.getElementById('p-bank').value,
+      bankAccountNumber:      document.getElementById('p-accno').value,
+      bankIfsc:               document.getElementById('p-ifsc').value,
     }});
-    toast('Profile saved ✓', 'ok');
+    toast('Profile saved', 'ok');
     const nm = document.getElementById('p-bname').value;
     if (nm) document.getElementById('sb-nm').textContent = nm;
   } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doChangePassword() {
+  const cur  = document.getElementById('p-curpw').value.trim();
+  const nw   = document.getElementById('p-newpw').value.trim();
+  const conf = document.getElementById('p-confpw').value.trim();
+  if (!cur || !nw) return toast('Enter current and new password', 'err');
+  if (nw !== conf) return toast('New passwords do not match', 'err');
+  if (nw.length < 8) return toast('New password must be at least 8 characters', 'err');
+  try {
+    await api('/auth/change-password', { method: 'POST', body: { currentPassword: cur, newPassword: nw } });
+    toast('Password updated', 'ok');
+    ['p-curpw','p-newpw','p-confpw'].forEach(id => document.getElementById(id).value = '');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function doReconnectMeta() {
+  if (typeof FB === 'undefined') return toast('Facebook SDK not loaded', 'err');
+  FB.login(resp => {
+    if (resp.authResponse) {
+      api('/auth/connect-meta', { method: 'POST', body: { accessToken: resp.authResponse.accessToken } })
+        .then(() => { toast('WhatsApp reconnected', 'ok'); loadProfile(); })
+        .catch(e => toast(e.message, 'err'));
+    }
+  }, { scope: 'whatsapp_business_management,whatsapp_business_messaging,business_management' });
 }
 
 /* ──────────────────── PRODUCT SETS ─────────────────────── */

@@ -6,6 +6,7 @@
 -- ── NEW COLUMNS ON restaurants ──────────────────────────────────
 ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS brand_name VARCHAR(255);
 ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS registered_business_name VARCHAR(255);
+ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS city VARCHAR(100);
 ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS gst_number VARCHAR(20);
 ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS fssai_license VARCHAR(50);
 ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS fssai_expiry DATE;

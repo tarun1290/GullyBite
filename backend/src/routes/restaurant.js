@@ -49,19 +49,35 @@ router.get('/', async (req, res) => {
 // PUT /api/restaurant — Update profile
 router.put('/', async (req, res) => {
   try {
-    const { businessName, ownerName, phone, logoUrl, bankName, bankAccountNumber, bankIfsc } = req.body;
+    const {
+      businessName, registeredBusinessName, ownerName, phone, city,
+      restaurantType, logoUrl, gstNumber, fssaiLicense, fssaiExpiry,
+      bankName, bankAccountNumber, bankIfsc,
+    } = req.body;
     await db.query(
       `UPDATE restaurants SET
-         business_name = COALESCE($1, business_name),
-         owner_name = COALESCE($2, owner_name),
-         phone = COALESCE($3, phone),
-         logo_url = COALESCE($4, logo_url),
-         bank_name = COALESCE($5, bank_name),
-         bank_account_number = COALESCE($6, bank_account_number),
-         bank_ifsc = COALESCE($7, bank_ifsc),
-         onboarding_step = GREATEST(onboarding_step, 2)
-       WHERE id = $8`,
-      [businessName, ownerName, phone, logoUrl, bankName, bankAccountNumber, bankIfsc, req.restaurantId]
+         business_name              = COALESCE($1,  business_name),
+         registered_business_name   = COALESCE($2,  registered_business_name),
+         owner_name                 = COALESCE($3,  owner_name),
+         phone                      = COALESCE($4,  phone),
+         city                       = COALESCE($5,  city),
+         restaurant_type            = COALESCE($6,  restaurant_type),
+         logo_url                   = COALESCE($7,  logo_url),
+         gst_number                 = COALESCE($8,  gst_number),
+         fssai_license              = COALESCE($9,  fssai_license),
+         fssai_expiry               = COALESCE($10, fssai_expiry),
+         bank_name                  = COALESCE($11, bank_name),
+         bank_account_number        = COALESCE($12, bank_account_number),
+         bank_ifsc                  = COALESCE($13, bank_ifsc),
+         onboarding_step            = GREATEST(onboarding_step, 2)
+       WHERE id = $14`,
+      [
+        businessName || null, registeredBusinessName || null, ownerName || null,
+        phone || null, city || null, restaurantType || null, logoUrl || null,
+        gstNumber || null, fssaiLicense || null, fssaiExpiry || null,
+        bankName || null, bankAccountNumber || null, bankIfsc || null,
+        req.restaurantId,
+      ]
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
