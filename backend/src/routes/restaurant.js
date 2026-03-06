@@ -647,17 +647,24 @@ router.patch('/orders/:orderId/status', async (req, res) => {
 
     const order = await orderSvc.updateStatus(req.params.orderId, status);
 
-    // Send WhatsApp notification to customer
+    // Send WhatsApp notification to customer (template if mapped, else plain text)
     if (order) {
       const fullOrder = await orderSvc.getOrderDetails(order.id);
       if (fullOrder?.phone_number_id) {
-        await wa.sendStatusUpdate(
+        await notifyOrderStatus(
+          req.restaurantId,
           fullOrder.phone_number_id, fullOrder.access_token, fullOrder.wa_phone,
-          status, { orderNumber: fullOrder.order_number }
+          status,
+          {
+            order_number    : fullOrder.order_number,
+            customer_name   : fullOrder.customer_name,
+            total_rs        : `₹${parseFloat(fullOrder.total_rs).toFixed(0)}`,
+            branch_name     : fullOrder.branch_name,
+            restaurant_name : fullOrder.business_name,
+          }
         ).catch(() => {});
       }
-
-      }
+    }
 
     res.json({ success: true, order });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -681,12 +688,14 @@ router.put('/orders/:orderId/delivery', async (req, res) => {
 
     // Verify this order belongs to this restaurant
     const { rows: orderRows } = await db.query(
-      `SELECT o.*, b.restaurant_id,
+      `SELECT o.*, b.restaurant_id, b.name AS branch_name,
+              r.business_name,
               wa.phone_number_id, wa.access_token,
               c.wa_phone, c.name AS customer_name
        FROM orders o
-       JOIN branches b  ON o.branch_id    = b.id
-       JOIN customers c ON o.customer_id  = c.id
+       JOIN branches b     ON o.branch_id      = b.id
+       JOIN restaurants r  ON b.restaurant_id  = r.id
+       JOIN customers c    ON o.customer_id    = c.id
        LEFT JOIN whatsapp_accounts wa
          ON wa.restaurant_id = b.restaurant_id AND wa.is_active = TRUE
        WHERE o.id = $1 AND b.restaurant_id = $2`,
@@ -716,15 +725,22 @@ router.put('/orders/:orderId/delivery', async (req, res) => {
       await orderSvc.updateStatus(req.params.orderId, 'DISPATCHED');
     }
 
-    // Notify customer on WhatsApp with tracking link
+    // Notify customer (template if mapped for DISPATCHED, else plain text with driver/tracking details)
     if (order.phone_number_id && order.wa_phone) {
-      let msg = `🚴 *Your order is on the way!*\n\nOrder: #${order.order_number}`;
-      if (driverName)    msg += `\nDriver: ${driverName}`;
-      if (driverPhone)   msg += ` · ${driverPhone}`;
-      if (estimatedMins) msg += `\nETA: ~${estimatedMins} mins`;
-      if (trackingUrl)   msg += `\n\n🔗 *Live tracking:* ${trackingUrl}`;
-      await wa.sendText(order.phone_number_id, order.access_token, order.wa_phone, msg)
-        .catch(() => {});
+      await notifyOrderStatus(
+        req.restaurantId,
+        order.phone_number_id, order.access_token, order.wa_phone,
+        'DISPATCHED',
+        {
+          order_number    : order.order_number,
+          customer_name   : order.customer_name,
+          total_rs        : `₹${parseFloat(order.total_rs || 0).toFixed(0)}`,
+          branch_name     : order.branch_name,
+          restaurant_name : order.business_name,
+          eta             : estimatedMins ? `~${estimatedMins} mins` : '',
+          tracking_url    : trackingUrl || '',
+        }
+      ).catch(() => {});
     }
 
     res.json({ success: true });
@@ -911,5 +927,119 @@ router.get('/referrals', async (req, res) => {
     res.json({ referrals: list, summary: summary[0] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ─── WHATSAPP TEMPLATES ───────────────────────────────────────
+
+// GET /api/restaurant/whatsapp/templates
+// Fetches all message templates from Meta for this restaurant's WABA.
+// Requires an active whatsapp_account with a WABA ID and access token.
+router.get('/whatsapp/templates', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT waba_id, access_token FROM whatsapp_accounts WHERE restaurant_id = $1 AND is_active = TRUE LIMIT 1',
+      [req.restaurantId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'No active WhatsApp account found. Connect your account first.' });
+
+    const { waba_id, access_token } = rows[0];
+    const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+    const { data } = await axios.get(`${GRAPH}/${waba_id}/message_templates`, {
+      params: { fields: 'name,status,category,language,components', limit: 200 },
+      headers: { Authorization: `Bearer ${access_token}` },
+      timeout: 10000,
+    });
+    res.json(data.data || []);
+  } catch (e) {
+    const apiErr = e.response?.data?.error?.message;
+    res.status(500).json({ error: apiErr || e.message });
+  }
+});
+
+// GET /api/restaurant/whatsapp/template-mappings
+// Returns this restaurant's saved event → template mappings.
+router.get('/whatsapp/template-mappings', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT event_name, template_name, template_language, variable_map FROM whatsapp_template_mappings WHERE restaurant_id = $1',
+      [req.restaurantId]
+    );
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/whatsapp/template-mappings
+// Upserts event → template mappings.
+// Body: [{ eventName, templateName, templateLanguage, variableMap }]
+router.put('/whatsapp/template-mappings', express.json(), async (req, res) => {
+  try {
+    const mappings = req.body;
+    if (!Array.isArray(mappings)) return res.status(400).json({ error: 'Array of mappings required' });
+
+    for (const m of mappings) {
+      const { eventName, templateName, templateLanguage, variableMap } = m;
+      if (!eventName || !templateName) continue;
+      await db.query(
+        `INSERT INTO whatsapp_template_mappings
+           (restaurant_id, event_name, template_name, template_language, variable_map)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (restaurant_id, event_name)
+         DO UPDATE SET
+           template_name     = $3,
+           template_language = $4,
+           variable_map      = $5,
+           updated_at        = NOW()`,
+        [req.restaurantId, eventName, templateName, templateLanguage || 'en', JSON.stringify(variableMap || {})]
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/restaurant/whatsapp/template-mappings/:eventName
+// Removes a single event mapping (reverts to plain-text fallback).
+router.delete('/whatsapp/template-mappings/:eventName', async (req, res) => {
+  try {
+    await db.query(
+      'DELETE FROM whatsapp_template_mappings WHERE restaurant_id = $1 AND event_name = $2',
+      [req.restaurantId, req.params.eventName.toUpperCase()]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── SHARED: SEND STATUS NOTIFICATION (template → text fallback) ──────────
+// Called internally whenever an order status changes.
+// Looks up a saved template mapping; if found uses sendTemplate(),
+// otherwise falls back to sendStatusUpdate() plain text.
+// orderData fields available for variable_map binding:
+//   order_number, customer_name, total_rs, branch_name,
+//   restaurant_name, eta, tracking_url
+async function notifyOrderStatus(restaurantId, pid, token, waPhone, status, orderData) {
+  const { rows } = await db.query(
+    'SELECT template_name, template_language, variable_map FROM whatsapp_template_mappings WHERE restaurant_id = $1 AND event_name = $2',
+    [restaurantId, status]
+  );
+
+  if (rows.length) {
+    const { template_name, template_language, variable_map: varMap } = rows[0];
+    try {
+      const slots = Object.keys(varMap || {}).sort((a, b) => parseInt(a) - parseInt(b));
+      const components = slots.length
+        ? [{ type: 'body', parameters: slots.map(s => ({ type: 'text', text: String(orderData[varMap[s]] ?? '') })) }]
+        : [];
+      await wa.sendTemplate(pid, token, waPhone, { name: template_name, language: template_language || 'en', components });
+      return;
+    } catch (e) {
+      console.error(`[WA] Template send failed for ${status} (${template_name}), falling back to text:`, e.message);
+    }
+  }
+
+  // Fallback: plain text
+  await wa.sendStatusUpdate(pid, token, waPhone, status, {
+    orderNumber: orderData.order_number,
+    eta:         orderData.eta,
+    trackingUrl: orderData.tracking_url,
+  });
+}
 
 module.exports = router;

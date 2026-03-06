@@ -569,6 +569,50 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
             <p style="margin-top:.55rem;font-size:.74rem;color:var(--dim)">Verify Token: value of <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">WEBHOOK_VERIFY_TOKEN</code> in your .env</p>
           </div>
         </div>
+
+        <!-- ── Template Library ── -->
+        <div class="card" style="margin-top:1.1rem">
+          <div class="ch" style="justify-content:space-between;align-items:center">
+            <h3>📋 Message Template Library</h3>
+            <button class="btn-g btn-sm" id="tmpl-refresh-btn" onclick="loadWATemplates()">🔄 Refresh from Meta</button>
+          </div>
+          <div class="cb" style="padding:0">
+            <div style="padding:.6rem 1rem;font-size:.78rem;color:var(--dim);border-bottom:1px solid var(--rim)">
+              Templates are created and approved in <strong>Meta Business Manager → WhatsApp → Message Templates</strong>. Only <span style="color:#22c55e;font-weight:600">APPROVED</span> templates can be used for notifications.
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+              <thead>
+                <tr style="background:var(--rim);text-align:left">
+                  <th style="padding:.65rem 1rem">Name</th>
+                  <th style="padding:.65rem 1rem">Category</th>
+                  <th style="padding:.65rem 1rem">Status</th>
+                  <th style="padding:.65rem 1rem">Language</th>
+                  <th style="padding:.65rem 1rem">Body Preview</th>
+                </tr>
+              </thead>
+              <tbody id="tmpl-tbody">
+                <tr><td colspan="5" style="padding:2rem;text-align:center;color:var(--dim)">Click "Refresh from Meta" to load your templates</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Event Template Mappings ── -->
+        <div class="card" style="margin-top:1.1rem">
+          <div class="ch" style="justify-content:space-between;align-items:center">
+            <h3>⚡ Order Event Templates</h3>
+            <button class="btn" id="tmpl-save-btn" onclick="saveTemplateMappings()">💾 Save Mappings</button>
+          </div>
+          <div class="cb">
+            <p style="font-size:.8rem;color:var(--dim);margin-bottom:1rem">
+              Assign an approved template to each order event. Variables like <code style="background:var(--ink2);padding:.1rem .3rem;border-radius:3px">{{1}}</code> are automatically replaced with real order data. If no template is set, a plain-text message is sent instead.
+            </p>
+            <div id="event-mappings">
+              <div style="text-align:center;padding:1.5rem;color:var(--dim);font-size:.85rem">Load templates first using the "Refresh from Meta" button above</div>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <!-- ── SETTLEMENTS ─────────────────────────── -->
@@ -1535,8 +1579,168 @@ async function loadWA() {
         </div>
       </div>`).join('');
   } catch (_) {}
+  // Load template mappings from DB (fast); templates from Meta loaded on demand
+  loadTemplateMappings();
 }
 function copyWH() { navigator.clipboard.writeText(document.getElementById('wh-url').textContent).then(() => toast('Webhook URL copied!', 'ok')); }
+
+/* ─────────────────────────── WA TEMPLATES ──────────────── */
+let waTemplates    = [];
+let templateMappings = {}; // keyed by event name
+
+const EVENT_META = {
+  CONFIRMED : { label: '✅ Order Confirmed',  color: '#22c55e' },
+  PREPARING : { label: '👨‍🍳 Preparing',       color: '#f59e0b' },
+  PACKED    : { label: '📦 Packed & Ready',   color: '#3b82f6' },
+  DISPATCHED: { label: '🚴 Out for Delivery', color: '#8b5cf6' },
+  DELIVERED : { label: '🎉 Delivered',        color: '#10b981' },
+  CANCELLED : { label: '❌ Cancelled',        color: '#ef4444' },
+};
+
+const VAR_FIELDS = [
+  { value: '',                label: '— select field —' },
+  { value: 'order_number',    label: 'Order number  (#1234)' },
+  { value: 'customer_name',   label: 'Customer name' },
+  { value: 'total_rs',        label: 'Total amount  (₹)' },
+  { value: 'branch_name',     label: 'Branch / outlet name' },
+  { value: 'restaurant_name', label: 'Restaurant brand name' },
+  { value: 'eta',             label: 'Estimated delivery time' },
+  { value: 'tracking_url',    label: 'Delivery tracking link' },
+];
+
+async function loadWATemplates() {
+  const btn = document.getElementById('tmpl-refresh-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Loading…';
+  try {
+    waTemplates = await api('/api/restaurant/whatsapp/templates');
+    renderTemplateTable();
+    renderEventMappings();
+  } catch (e) { toast(e.message || 'Failed to load templates', 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = '🔄 Refresh from Meta'; }
+}
+
+function renderTemplateTable() {
+  const tbody = document.getElementById('tmpl-tbody');
+  if (!waTemplates.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:1.5rem;text-align:center;color:var(--dim)">No templates found. Create and submit templates for approval in Meta Business Manager.</td></tr>';
+    return;
+  }
+  const sc = { APPROVED:'#22c55e', PENDING:'#f59e0b', REJECTED:'#ef4444', PAUSED:'#6b7280' };
+  tbody.innerHTML = waTemplates.map(t => {
+    const body = t.components?.find(c => c.type === 'BODY')?.text || '—';
+    const preview = body.length > 90 ? body.substring(0, 90) + '…' : body;
+    return `<tr style="border-bottom:1px solid var(--rim)">
+      <td style="padding:.6rem 1rem;font-family:monospace;font-size:.8rem;font-weight:600">${t.name}</td>
+      <td style="padding:.6rem 1rem;font-size:.78rem">${t.category || '—'}</td>
+      <td style="padding:.6rem 1rem"><span style="font-size:.76rem;font-weight:600;color:${sc[t.status]||'#6b7280'}">${t.status}</span></td>
+      <td style="padding:.6rem 1rem;font-size:.78rem;color:var(--dim)">${t.language}</td>
+      <td style="padding:.6rem 1rem;font-size:.76rem;color:var(--dim);max-width:260px;word-break:break-word">${preview}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadTemplateMappings() {
+  try {
+    const rows = await api('/api/restaurant/whatsapp/template-mappings');
+    templateMappings = {};
+    (rows || []).forEach(r => {
+      templateMappings[r.event_name] = {
+        template_name    : r.template_name,
+        template_language: r.template_language,
+        variable_map     : r.variable_map || {},
+      };
+    });
+    if (waTemplates.length) renderEventMappings();
+  } catch (_) {}
+}
+
+function renderEventMappings() {
+  const container = document.getElementById('event-mappings');
+  const approved = waTemplates.filter(t => t.status === 'APPROVED');
+
+  container.innerHTML = Object.entries(EVENT_META).map(([event, meta]) => {
+    const saved   = templateMappings[event] || {};
+    const tmplName = saved.template_name || '';
+    const varMap   = saved.variable_map  || {};
+
+    const opts = [
+      `<option value="">— plain text fallback —</option>`,
+      ...approved.map(t => `<option value="${t.name}" ${t.name === tmplName ? 'selected' : ''}>${t.name} (${t.language})</option>`),
+    ].join('');
+
+    // Parse body variables from selected template
+    const sel = waTemplates.find(t => t.name === tmplName);
+    const bodyText = sel?.components?.find(c => c.type === 'BODY')?.text || '';
+    const slots = [...new Set([...bodyText.matchAll(/\{\{(\d+)\}\}/g)].map(m => m[1]))].sort((a, b) => +a - +b);
+
+    const varHtml = slots.length ? `
+      <div style="margin-top:.55rem;padding:.6rem .8rem;background:var(--ink2);border-radius:7px">
+        <div style="font-size:.72rem;color:var(--dim);margin-bottom:.4rem">Map variables → order data:</div>
+        ${slots.map(s => `
+          <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
+            <code style="background:var(--ink3);padding:.1rem .38rem;border-radius:4px;min-width:2.6rem;text-align:center;font-size:.76rem">{{${s}}}</code>
+            <select class="inp" style="padding:.24rem .5rem;font-size:.76rem;flex:1" onchange="setVarMap('${event}','${s}',this.value)">
+              ${VAR_FIELDS.map(f => `<option value="${f.value}" ${(varMap[s]||'') === f.value ? 'selected' : ''}>${f.label}</option>`).join('')}
+            </select>
+          </div>`).join('')}
+      </div>` : '';
+
+    const clearBtn = tmplName
+      ? `<button class="btn-g btn-sm" style="font-size:.74rem;padding:.22rem .55rem;margin-top:.4rem" onclick="clearEventTemplate('${event}')">✕ Clear</button>`
+      : '';
+
+    return `<div style="display:flex;align-items:flex-start;gap:1rem;padding:.85rem 0;border-bottom:1px solid var(--rim)">
+      <div style="min-width:170px;font-size:.82rem;font-weight:600;color:${meta.color};padding-top:.35rem">${meta.label}</div>
+      <div style="flex:1">
+        <select class="inp" style="font-size:.82rem" onchange="onEventTemplateChange('${event}',this.value)">
+          ${opts}
+        </select>
+        ${varHtml}
+        ${clearBtn}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function onEventTemplateChange(event, tmplName) {
+  const tmpl = waTemplates.find(t => t.name === tmplName);
+  if (!tmpl) { delete templateMappings[event]; renderEventMappings(); return; }
+  templateMappings[event] = {
+    template_name    : tmplName,
+    template_language: tmpl.language || 'en',
+    variable_map     : {},
+  };
+  renderEventMappings();
+}
+
+function setVarMap(event, slot, field) {
+  if (!templateMappings[event]) templateMappings[event] = { variable_map: {} };
+  if (!templateMappings[event].variable_map) templateMappings[event].variable_map = {};
+  templateMappings[event].variable_map[slot] = field;
+}
+
+function clearEventTemplate(event) {
+  delete templateMappings[event];
+  renderEventMappings();
+}
+
+async function saveTemplateMappings() {
+  const btn = document.getElementById('tmpl-save-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Saving…';
+  try {
+    const body = Object.entries(templateMappings)
+      .filter(([, v]) => v.template_name)
+      .map(([eventName, v]) => ({
+        eventName,
+        templateName    : v.template_name,
+        templateLanguage: v.template_language || 'en',
+        variableMap     : v.variable_map || {},
+      }));
+    await api('/api/restaurant/whatsapp/template-mappings', { method: 'PUT', body: JSON.stringify(body) });
+    toast('Template mappings saved!', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = '💾 Save Mappings'; }
+}
 
 /* ─────────────────────────── SETTLEMENTS ───────────────── */
 async function loadSettlements() {

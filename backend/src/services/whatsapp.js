@@ -245,4 +245,20 @@ const markRead = (pid, token, messageId) =>
     headers: { Authorization: `Bearer ${token}` },
   }).catch(() => {}); // Ignore errors silently
 
-module.exports = { sendText, sendButtons, sendAddressList, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, markRead };
+// ─── TEMPLATE MESSAGE ──────────────────────────────────────────
+// Sends a pre-approved Meta message template.
+// name:       Exact template name as registered in Meta Business Manager
+// language:   Language code, e.g. 'en', 'en_US'
+// components: Array of component objects — for body-only variable templates:
+//             [{ type: 'body', parameters: [{ type:'text', text:'value' }, …] }]
+const sendTemplate = (pid, token, to, { name, language, components = [] }) =>
+  sendMsg(pid, token, to, {
+    type: 'template',
+    template: {
+      name,
+      language: { code: language || 'en' },
+      ...(components.length && { components }),
+    },
+  });
+
+module.exports = { sendText, sendButtons, sendAddressList, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, markRead };
