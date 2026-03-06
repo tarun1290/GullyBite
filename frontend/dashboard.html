@@ -224,6 +224,35 @@ tr:hover td{background:rgba(255,255,255,.012)}
 #toast.err{border-color:rgba(224,80,80,.3);color:var(--red)}
 #toast.nfo{border-color:rgba(74,144,217,.3);color:var(--blue)}
 
+/* ── INTEGRATIONS ────────────────────────── */
+.int-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-bottom:1.4rem}
+.int-tile{background:var(--ink3);border:1px solid var(--rim);border-radius:14px;padding:1.25rem 1.3rem;cursor:pointer;transition:border-color .14s,box-shadow .14s;position:relative}
+.int-tile:hover{border-color:var(--rim2);box-shadow:0 4px 20px rgba(0,0,0,.28)}
+.int-tile.connected{border-color:rgba(37,211,102,.22)}
+.int-tile-hd{display:flex;align-items:center;gap:.8rem;margin-bottom:.75rem}
+.int-logo{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;flex-shrink:0}
+.int-logo.petpooja{background:rgba(130,60,220,.12);border:1px solid rgba(130,60,220,.2)}
+.int-logo.swiggy{background:rgba(252,93,17,.12);border:1px solid rgba(252,93,17,.2)}
+.int-logo.zomato{background:rgba(225,52,39,.12);border:1px solid rgba(225,52,39,.2)}
+.int-tile-name{font-size:.9rem;font-weight:700}
+.int-tile-desc{font-size:.76rem;color:var(--dim);line-height:1.55;margin-bottom:.9rem}
+.int-tile-foot{display:flex;align-items:center;justify-content:space-between;gap:.5rem}
+.int-status{font-size:.72rem;font-weight:600}
+.int-status.ok{color:var(--wa)}
+.int-status.err{color:var(--red)}
+.int-status.cfg{color:var(--gold2)}
+.int-status.off{color:var(--dim)}
+.int-sync-info{font-size:.68rem;color:var(--mute);margin-top:.45rem}
+/* integration modal overlay */
+#int-modal{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem}
+#int-modal.on{display:flex}
+.int-mbox{background:var(--ink2);border:1px solid var(--rim2);border-radius:16px;width:100%;max-width:480px;overflow:hidden;animation:riseIn .22s ease both}
+.int-mhd{padding:1.25rem 1.4rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;gap:.75rem}
+.int-mhd .int-logo{width:38px;height:38px;font-size:1.25rem}
+.int-mbody{padding:1.4rem}
+.int-mft{padding:1rem 1.4rem;border-top:1px solid var(--rim);display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end}
+.int-api-note{font-size:.74rem;color:var(--mute);line-height:1.55;margin-top:.65rem;padding:.6rem .8rem;background:var(--ink3);border-radius:8px;border:1px solid var(--rim)}
+
 /* CSV upload */
 .csv-drop{border:2px dashed var(--rim2);border-radius:10px;padding:1.4rem 1.5rem;display:flex;align-items:center;gap:1.1rem;cursor:pointer;transition:border-color .2s,background .2s;user-select:none}
 .csv-drop:hover,.csv-drop.drag{border-color:var(--wa);background:rgba(37,211,102,.04)}
@@ -258,6 +287,10 @@ tr:hover td{background:rgba(255,255,255,.012)}
       <button class="sb-btn" onclick="goTab('branches',this)"><span class="ic">📍</span>Branches &amp; Catalog</button>
       <button class="sb-btn" onclick="goTab('menu',this)"><span class="ic">🍽️</span>Menu Items</button>
       <button class="sb-btn" onclick="goTab('whatsapp',this)"><span class="ic">💬</span>WhatsApp</button>
+    </div>
+    <div class="sb-sec">
+      <div class="sb-cap">Integrations</div>
+      <button class="sb-btn" onclick="goTab('integrations',this)"><span class="ic">🔗</span>POS &amp; Platforms</button>
     </div>
     <div class="sb-sec">
       <div class="sb-cap">Finance</div>
@@ -495,6 +528,31 @@ tr:hover td{background:rgba(255,255,255,.012)}
         </div>
       </div>
 
+      <!-- ── INTEGRATIONS ──────────────────────────── -->
+      <div class="tab" id="tab-integrations">
+        <div class="notice wa" style="margin-bottom:1.3rem">
+          <div class="notice-ico">🔗</div>
+          <div class="notice-body">
+            <h4>Connect your existing POS or delivery platforms</h4>
+            <p>Once connected and enabled, your menu from Swiggy, Zomato or PetPooja syncs automatically into GullyBite and gets pushed to your WhatsApp Catalog — keeping everything in one place.</p>
+          </div>
+        </div>
+        <div class="int-grid" id="int-grid">
+          <!-- tiles rendered by JS -->
+        </div>
+        <div class="card">
+          <div class="ch"><h3>Sync Log</h3></div>
+          <div class="tbl">
+            <table>
+              <thead><tr><th>Platform</th><th>Branch</th><th>Items</th><th>Last Synced</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="int-log-body">
+                <tr><td colspan="6"><div class="empty"><div class="ei">🔗</div><h3>No integrations connected yet</h3><p>Click a tile above to configure</p></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- ── SETTINGS ────────────────────────────── -->
       <div class="tab" id="tab-settings">
         <div class="card">
@@ -522,6 +580,29 @@ tr:hover td{background:rgba(255,255,255,.012)}
     </div>
   </main>
 </div><!-- /dash -->
+
+<!-- ── INTEGRATION MODAL ──────────────────────────────── -->
+<div id="int-modal" onclick="if(event.target===this)closeIntModal()">
+  <div class="int-mbox">
+    <div class="int-mhd">
+      <div class="int-logo" id="im-logo"></div>
+      <div>
+        <div style="font-weight:700;font-size:.95rem" id="im-title"></div>
+        <div style="font-size:.74rem;color:var(--dim)" id="im-subtitle"></div>
+      </div>
+    </div>
+    <div class="int-mbody" id="im-body">
+      <!-- fields injected per platform -->
+    </div>
+    <div class="int-mft">
+      <button class="btn-del" onclick="doRemoveIntegration()">Remove</button>
+      <div style="flex:1"></div>
+      <button class="btn-g" onclick="closeIntModal()">Cancel</button>
+      <button class="btn-g" id="im-sync-btn" style="display:none" onclick="doSyncIntegration()">🔄 Sync Now</button>
+      <button class="btn-p" id="im-save-btn" onclick="doSaveIntegration()">Save &amp; Connect</button>
+    </div>
+  </div>
+</div>
 
 <script>
 /* ─────────────────────────── STATE ─────────────────────── */
@@ -559,8 +640,9 @@ const TMETA = {
   branches:   { title: 'Branches & Catalog', sub: 'Locations and WhatsApp catalogs',   fn: loadBranches },
   menu:       { title: 'Menu Items',         sub: 'Add and manage dishes',              fn: loadBranchSel },
   whatsapp:   { title: 'WhatsApp',           sub: 'Numbers and webhook config',         fn: loadWA },
-  settlements:{ title: 'Settlements',        sub: 'Weekly payout history',              fn: loadSettlements },
-  settings:   { title: 'Settings',           sub: 'Business profile and bank account',  fn: loadProfile },
+  integrations:{ title: 'POS & Platform Integrations', sub: 'Sync menus from Swiggy, Zomato, PetPooja', fn: loadIntegrations },
+  settlements: { title: 'Settlements',        sub: 'Weekly payout history',              fn: loadSettlements },
+  settings:    { title: 'Settings',           sub: 'Business profile and bank account',  fn: loadProfile },
 };
 function goTab(n, el) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
@@ -1192,6 +1274,247 @@ async function doSaveProfile() {
     const nm = document.getElementById('p-bname').value;
     if (nm) document.getElementById('sb-nm').textContent = nm;
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ─────────────────────── INTEGRATIONS ──────────────────── */
+const INT_DEFS = {
+  petpooja: {
+    name   : 'PetPooja',
+    emoji  : '🟣',
+    cls    : 'petpooja',
+    desc   : 'Sync your PetPooja POS menu directly — categories, items, prices and availability.',
+    apiNote: 'Get your API Key, Access Token and Restaurant ID from your PetPooja developer account.',
+    fields : [
+      { id: 'api_key',      label: 'API Key',        ph: 'pp_xxxxxxxxxxxxxxxx',  type: 'text' },
+      { id: 'access_token', label: 'Access Token',   ph: 'at_xxxxxxxxxxxxxxxx',  type: 'text' },
+      { id: 'outlet_id',    label: 'Restaurant ID',  ph: '12345',                type: 'text' },
+    ],
+  },
+  // ── Swiggy — coming soon (requires Swiggy Partner API approval) ──
+  // swiggy: {
+  //   name   : 'Swiggy',
+  //   emoji  : '🟠',
+  //   cls    : 'swiggy',
+  //   desc   : 'Pull your Swiggy menu automatically. Requires official Swiggy Partner API access.',
+  //   apiNote: 'Apply for Swiggy Partner API access at partner.swiggy.com.',
+  //   fields : [
+  //     { id: 'api_key',   label: 'API Key',   ph: 'sw_xxxxxxxxxxxxxxxx', type: 'text' },
+  //     { id: 'outlet_id', label: 'Outlet ID', ph: '123456',              type: 'text' },
+  //   ],
+  // },
+  // ── Zomato — coming soon (requires Zomato for Business API approval) ──
+  // zomato: {
+  //   name   : 'Zomato',
+  //   emoji  : '🔴',
+  //   cls    : 'zomato',
+  //   desc   : 'Import your Zomato menu automatically. Requires Zomato for Business API credentials.',
+  //   apiNote: 'Register at zomato.com/business to get your API Key and Restaurant ID.',
+  //   fields : [
+  //     { id: 'api_key',    label: 'API Key / Client ID',    ph: 'zm_xxxxxxxxxxxxxxxx', type: 'text' },
+  //     { id: 'api_secret', label: 'Client Secret',          ph: 'optional',            type: 'text' },
+  //     { id: 'outlet_id',  label: 'Restaurant ID (res_id)', ph: '12345',               type: 'text' },
+  //   ],
+  // },
+};
+
+let intData       = {};  // platform -> row from DB
+let intActivePlatform = null;
+
+async function loadIntegrations() {
+  const grid   = document.getElementById('int-grid');
+  const logTbl = document.getElementById('int-log-body');
+  grid.innerHTML = Object.entries(INT_DEFS).map(([p, d]) =>
+    `<div class="int-tile" id="int-tile-${p}" onclick="openIntModal('${p}')">
+       <div class="int-tile-hd">
+         <div class="int-logo ${d.cls}">${d.emoji}</div>
+         <div>
+           <div class="int-tile-name">${d.name}</div>
+           <div id="int-badge-${p}"><span class="badge bd">Not connected</span></div>
+         </div>
+         <div style="margin-left:auto" onclick="event.stopPropagation()">
+           <label class="tsl"><input type="checkbox" id="int-tog-${p}" onchange="doToggleInt('${p}',this.checked)"><div class="tsl-track"></div></label>
+         </div>
+       </div>
+       <div class="int-tile-desc">${d.desc}</div>
+       <div class="int-sync-info" id="int-sync-${p}">Click to configure</div>
+     </div>`
+  ).join('');
+
+  try {
+    const rows = await api('/api/restaurant/integrations');
+    intData = {};
+    (rows || []).forEach(r => { intData[r.platform] = r; });
+    Object.entries(INT_DEFS).forEach(([p]) => refreshIntTile(p));
+    renderIntLog();
+  } catch (e) { toast('Could not load integrations', 'err'); }
+}
+
+function refreshIntTile(platform) {
+  const row  = intData[platform];
+  const badge = document.getElementById(`int-badge-${platform}`);
+  const tog   = document.getElementById(`int-tog-${platform}`);
+  const sync  = document.getElementById(`int-sync-${platform}`);
+  const tile  = document.getElementById(`int-tile-${platform}`);
+  if (!badge) return;
+
+  if (!row) {
+    badge.innerHTML = `<span class="badge bd">Not connected</span>`;
+    if (tog) tog.checked = false;
+    if (sync) sync.textContent = 'Click to configure';
+    tile?.classList.remove('connected');
+    return;
+  }
+
+  const statusMap = { idle: ['bd','Configured'], syncing: ['bb','Syncing…'], success: ['bg','Connected'], error: ['br','Sync error'] };
+  const [cls, label] = statusMap[row.sync_status] || ['bd','Configured'];
+  badge.innerHTML = `<span class="badge ${cls}">${label}</span>`;
+  if (tog) tog.checked = row.is_active;
+  if (row.last_synced_at) {
+    if (sync) sync.textContent = `${row.item_count} items · synced ${timeAgo(row.last_synced_at)}`;
+  } else {
+    if (sync) sync.textContent = row.is_active ? 'Active — not synced yet' : 'Configured but disabled';
+  }
+  if (row.is_active && row.sync_status === 'success') tile?.classList.add('connected');
+  else tile?.classList.remove('connected');
+}
+
+function renderIntLog() {
+  const tb = document.getElementById('int-log-body');
+  const rows = Object.values(intData);
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="ei">🔗</div><h3>No integrations connected yet</h3><p>Click a tile above to configure</p></div></td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.map(r => {
+    const def = INT_DEFS[r.platform] || {};
+    const statusCls = { idle: 'bd', syncing: 'bb', success: 'bg', error: 'br' }[r.sync_status] || 'bd';
+    return `<tr>
+      <td><strong>${def.emoji || ''} ${def.name || r.platform}</strong></td>
+      <td style="font-size:.78rem;color:var(--dim)">${r.branch_id ? 'Branch set' : '—'}</td>
+      <td>${r.item_count || 0}</td>
+      <td style="font-size:.78rem;color:var(--dim)">${r.last_synced_at ? timeAgo(r.last_synced_at) : 'Never'}</td>
+      <td><span class="badge ${statusCls}">${r.sync_status}</span>${r.sync_error ? `<div style="font-size:.68rem;color:var(--red);margin-top:.2rem">${r.sync_error.substring(0,60)}</div>` : ''}</td>
+      <td><button class="btn-g btn-sm" onclick="doSyncPlatform('${r.platform}')">🔄 Sync</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function doToggleInt(platform, isActive) {
+  try {
+    const r = await api(`/api/restaurant/integrations/${platform}/toggle`, { method: 'PATCH', body: { isActive } });
+    if (intData[platform]) intData[platform].is_active = r.isActive;
+    refreshIntTile(platform);
+    toast(`${INT_DEFS[platform]?.name} ${r.isActive ? 'enabled — initial sync triggered' : 'disabled'}`, 'ok');
+    if (r.isActive) setTimeout(() => loadIntegrations(), 3500); // refresh after sync
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function openIntModal(platform) {
+  intActivePlatform = platform;
+  const def = INT_DEFS[platform];
+  const row = intData[platform] || {};
+
+  document.getElementById('im-logo').className = `int-logo ${def.cls}`;
+  document.getElementById('im-logo').textContent = def.emoji;
+  document.getElementById('im-title').textContent = `Connect ${def.name}`;
+  document.getElementById('im-subtitle').textContent = 'Enter your API credentials below';
+
+  // Build branch dropdown
+  const branchOpts = branches.map(b =>
+    `<option value="${b.id}" ${row.branch_id === b.id ? 'selected' : ''}>${b.name}</option>`
+  ).join('');
+
+  document.getElementById('im-body').innerHTML = `
+    <div class="fgrid" style="grid-template-columns:1fr">
+      <div class="fg">
+        <label>Sync into Branch ★</label>
+        <select id="im-branch">
+          <option value="">Select a branch…</option>
+          ${branchOpts}
+        </select>
+      </div>
+      ${def.fields.map(f => `
+        <div class="fg">
+          <label>${f.label}</label>
+          <input id="im-${f.id}" type="${f.type || 'text'}" placeholder="${f.ph}"
+            value="${row.api_key && f.id === 'api_key' ? '••••••••' : ''}">
+        </div>`).join('')}
+    </div>
+    <div class="int-api-note">ℹ️ ${def.apiNote}</div>`;
+
+  // Show Sync Now only if already configured
+  document.getElementById('im-sync-btn').style.display = row.sync_status ? 'inline-flex' : 'none';
+  document.getElementById('int-modal').classList.add('on');
+}
+
+function closeIntModal() {
+  document.getElementById('int-modal').classList.remove('on');
+  intActivePlatform = null;
+}
+
+async function doSaveIntegration() {
+  const platform = intActivePlatform;
+  if (!platform) return;
+  const def = INT_DEFS[platform];
+  const branchId = document.getElementById('im-branch').value;
+  if (!branchId) return toast('Please select a branch to sync into', 'err');
+
+  const body = { branchId };
+  def.fields.forEach(f => {
+    const val = document.getElementById(`im-${f.id}`)?.value?.trim();
+    if (val && val !== '••••••••') body[snakeToCamel(f.id)] = val;
+  });
+
+  const btn = document.getElementById('im-save-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Saving…';
+  try {
+    await api(`/api/restaurant/integrations/${platform}`, { method: 'POST', body });
+    toast(`${def.name} credentials saved!`, 'ok');
+    closeIntModal();
+    await loadIntegrations();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = 'Save &amp; Connect'; }
+}
+
+async function doSyncIntegration() {
+  const platform = intActivePlatform;
+  if (!platform) return;
+  const btn = document.getElementById('im-sync-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Syncing…';
+  try {
+    const r = await api(`/api/restaurant/integrations/${platform}/sync`, { method: 'POST' });
+    toast(`Sync complete — ${r.added} added, ${r.updated} updated`, 'ok');
+    closeIntModal();
+    await loadIntegrations();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = '🔄 Sync Now'; }
+}
+
+async function doSyncPlatform(platform) {
+  try {
+    toast(`Syncing ${INT_DEFS[platform]?.name}…`, 'nfo');
+    const r = await api(`/api/restaurant/integrations/${platform}/sync`, { method: 'POST' });
+    toast(`${INT_DEFS[platform]?.name}: ${r.added} added, ${r.updated} updated`, 'ok');
+    await loadIntegrations();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doRemoveIntegration() {
+  const platform = intActivePlatform;
+  if (!platform) return;
+  if (!confirm(`Remove ${INT_DEFS[platform]?.name} integration? This will not delete any menu items.`)) return;
+  try {
+    await api(`/api/restaurant/integrations/${platform}`, { method: 'DELETE' });
+    delete intData[platform];
+    toast('Integration removed', 'ok');
+    closeIntModal();
+    await loadIntegrations();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// snake_case → camelCase helper for field IDs
+function snakeToCamel(s) {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 }
 
 /* ─────────────────────────── TOAST ─────────────────────── */

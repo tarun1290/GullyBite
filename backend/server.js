@@ -37,6 +37,7 @@ app.get('/health', (req, res) => {
 const { router: authRouter } = require('./src/routes/auth');
 app.use('/auth', express.json(), authRouter);
 app.use('/api/restaurant', express.json(), require('./src/routes/restaurant'));
+app.use('/api/restaurant/integrations', express.json(), require('./src/routes/integrations'));
 app.use('/api/admin', express.json(), require('./src/routes/admin'));
 
 // Webhooks need raw body for HMAC signature verification
