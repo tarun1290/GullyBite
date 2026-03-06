@@ -1,7 +1,10 @@
 // server.js
 // Works both locally (npm run dev) AND on Vercel (serverless)
 
-require('dotenv').config();
+// Load .env — check backend/ first (local dev), then root (Vercel/other)
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const express = require('express');
 const cors = require('cors');
