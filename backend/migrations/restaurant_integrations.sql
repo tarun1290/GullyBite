@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS restaurant_integrations (
 -- Index for fast lookup
 CREATE INDEX IF NOT EXISTS idx_integrations_restaurant ON restaurant_integrations(restaurant_id);
 
+-- ── SUPABASE STORAGE SETUP (do this manually in the Supabase dashboard) ──
+-- 1. Go to your project → Storage → New Bucket
+-- 2. Bucket name: menu-images
+-- 3. Enable "Public bucket" toggle  (images must be publicly accessible for Meta Catalog)
+-- 4. Click Save
+-- After this, image URLs will be:
+--   https://<project-ref>.supabase.co/storage/v1/object/public/menu-images/<path>
+
 -- Add external_id to menu_items so POS items can be upserted by POS ID
 ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS external_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_menu_items_external ON menu_items(branch_id, external_id)

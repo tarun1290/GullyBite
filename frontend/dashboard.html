@@ -224,6 +224,29 @@ tr:hover td{background:rgba(255,255,255,.012)}
 #toast.err{border-color:rgba(224,80,80,.3);color:var(--red)}
 #toast.nfo{border-color:rgba(74,144,217,.3);color:var(--blue)}
 
+/* ── PRODUCT SETS / VARIANTS ─────────────── */
+.var-badge{display:inline-flex;align-items:center;gap:.22rem;background:rgba(74,144,217,.1);border:1px solid rgba(74,144,217,.22);color:var(--blue);font-size:.64rem;font-weight:700;padding:.1rem .42rem;border-radius:100px;margin-left:.3rem;cursor:default}
+.var-list{display:flex;flex-wrap:wrap;gap:.28rem;margin-top:.3rem}
+.var-chip{font-size:.68rem;background:var(--ink2);border:1px solid var(--rim);border-radius:100px;padding:.1rem .5rem;color:var(--dim)}
+/* variant / product-set modal */
+#var-modal{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem}
+#var-modal.on{display:flex}
+.var-mbox{background:var(--ink2);border:1px solid var(--rim2);border-radius:14px;width:100%;max-width:420px;overflow:hidden;animation:riseIn .22s ease both}
+.var-mhd{padding:1.1rem 1.3rem;border-bottom:1px solid var(--rim);font-weight:700;font-size:.93rem;display:flex;align-items:center;justify-content:space-between}
+.var-mbody{padding:1.3rem}
+.var-mft{padding:.9rem 1.3rem;border-top:1px solid var(--rim);display:flex;gap:.5rem;justify-content:flex-end}
+
+/* ── IMAGE UPLOADER ──────────────────────── */
+.img-pick{display:flex;gap:1rem;align-items:flex-start;grid-column:1/-1}
+.img-preview{width:96px;height:96px;border-radius:10px;border:2px dashed var(--rim2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:1.6rem;overflow:hidden;cursor:pointer;transition:border-color .18s,background .18s;position:relative;background:var(--ink2)}
+.img-preview:hover{border-color:var(--wa);background:rgba(37,211,102,.04)}
+.img-preview img{width:100%;height:100%;object-fit:cover;border-radius:8px}
+.img-preview .img-spin{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,13,16,.6);border-radius:8px}
+.img-right{flex:1;display:flex;flex-direction:column;gap:.5rem}
+.img-url-row{display:flex;gap:.4rem}
+.img-url-row input{flex:1}
+.img-hint{font-size:.7rem;color:var(--mute);line-height:1.5}
+
 /* ── INTEGRATIONS ────────────────────────── */
 .int-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-bottom:1.4rem}
 .int-tile{background:var(--ink3);border:1px solid var(--rim);border-radius:14px;padding:1.25rem 1.3rem;cursor:pointer;transition:border-color .14s,box-shadow .14s;position:relative}
@@ -423,6 +446,7 @@ tr:hover td{background:rgba(255,255,255,.012)}
           </select>
           <div id="m-cat-badge" style="display:none"></div>
           <button class="btn-p" id="m-sync-btn" style="display:none" onclick="doQuickSync()">🔄 Sync to WhatsApp</button>
+          <button class="btn-g btn-sm" id="m-sets-btn" style="display:none" onclick="doSyncSets()" title="Create/update category sections in WhatsApp catalog">📂 Sync Product Sets</button>
         </div>
         <div class="card">
           <div class="ch"><h3>➕ Add Menu Item</h3></div>
@@ -441,7 +465,28 @@ tr:hover td{background:rgba(255,255,255,.012)}
                 </select>
               </div>
               <div class="fg"><label>Category</label><select id="m-cat"><option value="">No category</option></select></div>
-              <div class="fg"><label>Image URL <small>(public https link)</small></label><input id="m-img" placeholder="https://cdn.example.com/dish.jpg"></div>
+              <!-- Image picker: upload file OR paste URL -->
+              <div class="fg span2">
+                <label>Item Image <small>(recommended 500×500px — shown in WhatsApp catalog)</small></label>
+                <div class="img-pick">
+                  <div class="img-preview" id="img-preview-box" title="Click to upload image" onclick="document.getElementById('m-img-file').click()">
+                    <span id="img-preview-icon">📷</span>
+                    <img id="img-preview-img" src="" style="display:none" alt="">
+                    <div class="img-spin" id="img-preview-spin" style="display:none"><div class="spin"></div></div>
+                  </div>
+                  <input type="file" id="m-img-file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="handleImgFile(this)">
+                  <div class="img-right">
+                    <div class="img-url-row">
+                      <input id="m-img" placeholder="https://cdn.example.com/dish.jpg" oninput="syncImgPreview(this.value)">
+                      <button class="btn-g btn-sm" type="button" onclick="document.getElementById('m-img-file').click()">📤 Upload</button>
+                    </div>
+                    <div class="img-hint">
+                      Click the box or use the Upload button to pick a photo from your device.<br>
+                      Or paste any public image URL above. Max 5 MB · JPEG, PNG, WebP, GIF.
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <button class="btn-p" style="margin-top:.95rem" onclick="doAddItem()">+ Add Item</button>
           </div>
@@ -580,6 +625,48 @@ tr:hover td{background:rgba(255,255,255,.012)}
     </div>
   </main>
 </div><!-- /dash -->
+
+<!-- ── VARIANT MODAL ──────────────────────────────────── -->
+<div id="var-modal" onclick="if(event.target===this)closeVarModal()">
+  <div class="var-mbox">
+    <div class="var-mhd">
+      <span id="var-modal-title">Add Variant</span>
+      <button onclick="closeVarModal()" style="background:none;border:none;color:var(--dim);font-size:1.1rem;cursor:pointer">✕</button>
+    </div>
+    <div class="var-mbody">
+      <p style="font-size:.8rem;color:var(--dim);margin-bottom:1rem">
+        Variants let customers pick size or portion from one product card in WhatsApp
+        (e.g. <em>Small / Regular / Large</em>). The first variant you add converts the
+        original item to <strong>Regular</strong>.
+      </p>
+      <div class="fgrid" style="grid-template-columns:1fr 1fr">
+        <div class="fg">
+          <label>Variant Label ★ <small>(e.g. Small, Half, 250ml)</small></label>
+          <input id="var-label" placeholder="Large">
+        </div>
+        <div class="fg">
+          <label>Price for this Variant (₹) ★</label>
+          <input id="var-price" type="number" placeholder="350">
+        </div>
+        <div class="fg">
+          <label>Variant Type</label>
+          <select id="var-type">
+            <option value="size">Size</option>
+            <option value="portion">Portion</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Original item becomes</label>
+          <input id="var-base-label" placeholder="Regular" value="Regular">
+        </div>
+      </div>
+    </div>
+    <div class="var-mft">
+      <button class="btn-g" onclick="closeVarModal()">Cancel</button>
+      <button class="btn-p" id="var-save-btn" onclick="doAddVariant()">+ Add Variant</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── INTEGRATION MODAL ──────────────────────────────── -->
 <div id="int-modal" onclick="if(event.target===this)closeIntModal()">
@@ -1026,6 +1113,8 @@ async function loadMenu() {
   const syncBtn = document.getElementById('m-sync-btn');
   badge.style.display   = 'flex';
   syncBtn.style.display = branch?.catalog_id ? 'inline-flex' : 'none';
+  const setsBtn = document.getElementById('m-sets-btn');
+  if (setsBtn) setsBtn.style.display = branch?.catalog_id ? 'inline-flex' : 'none';
   badge.innerHTML = branch?.catalog_id
     ? `<span class="badge bg">✅ Catalog Live</span>`
     : `<span class="badge ba">⚠️ No catalog — <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--gold2);cursor:pointer;font-size:.72rem;text-decoration:underline">create in Branches</button></span>`;
@@ -1049,16 +1138,21 @@ function miRow(item) {
   const thumb = item.image_url
     ? `<img class="mi-th" src="${item.image_url}" onerror="this.style.display='none'">`
     : `<div class="mi-ph">${ti[item.food_type] || '🍽️'}</div>`;
+  const variantBadge = item.item_group_id
+    ? `<span class="var-badge" title="Part of a variant group">⚡ ${item.variant_value || 'Variant'}</span>`
+    : '';
+  const safeName = item.name.replace(/'/g, "\\'");
   return `<div class="mi">
     ${thumb}
     <div style="flex:1;min-width:0">
-      <div class="mi-name">${item.name}${item.is_bestseller ? '<span class="badge ba" style="margin-left:.3rem;font-size:.6rem">⭐</span>' : ''}</div>
+      <div class="mi-name">${item.name}${item.is_bestseller ? '<span class="badge ba" style="margin-left:.3rem;font-size:.6rem">⭐</span>' : ''}${variantBadge}</div>
       ${item.description ? `<div class="mi-desc">${item.description}</div>` : ''}
     </div>
     <div class="mi-price">₹${item.price_paise / 100}</div>
     <div class="mi-acts">
-      <label class="tsl"><input type="checkbox" ${item.is_available ? 'checked' : ''} onchange="doToggleItem('${item.id}',this.checked,'${item.name.replace(/'/g, "\\'")}')"><div class="tsl-track"></div></label>
-      <button class="btn-del" onclick="doDeleteItem('${item.id}','${item.name.replace(/'/g, "\\'")}')">🗑</button>
+      <button class="btn-g btn-sm" title="Add size/portion variant" onclick="openVarModal('${item.id}','${safeName}','${item.item_group_id||''}')">+ Variant</button>
+      <label class="tsl"><input type="checkbox" ${item.is_available ? 'checked' : ''} onchange="doToggleItem('${item.id}',this.checked,'${safeName}')"><div class="tsl-track"></div></label>
+      <button class="btn-del" onclick="doDeleteItem('${item.id}','${safeName}')">🗑</button>
     </div>
   </div>`;
 }
@@ -1077,7 +1171,8 @@ async function doAddItem() {
       imageUrl:    document.getElementById('m-img').value,
     }});
     toast(`"${name}" added! Click Sync to push to WhatsApp.`, 'ok');
-    ['m-name', 'm-price', 'm-desc', 'm-img'].forEach(id => document.getElementById(id).value = '');
+    ['m-name', 'm-price', 'm-desc'].forEach(id => document.getElementById(id).value = '');
+    resetImgPicker();
     loadMenu();
   } catch (e) { toast(e.message, 'err'); }
 }
@@ -1274,6 +1369,140 @@ async function doSaveProfile() {
     const nm = document.getElementById('p-bname').value;
     if (nm) document.getElementById('sb-nm').textContent = nm;
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ──────────────────── PRODUCT SETS ─────────────────────── */
+async function doSyncSets() {
+  const branchId = document.getElementById('m-branch').value;
+  if (!branchId) return toast('Select a branch first', 'err');
+  const btn = document.getElementById('m-sets-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Syncing…';
+  try {
+    const r = await api(`/api/restaurant/branches/${branchId}/sync-sets`, { method: 'POST' });
+    if (r.skipped) toast('No categories with items to sync', 'nfo');
+    else toast(`Product sets synced — ${r.created} created, ${r.updated} updated`, 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = '📂 Sync Product Sets'; }
+}
+
+/* ──────────────────── VARIANTS ──────────────────────────── */
+let varItemId   = null;
+let varItemName = '';
+
+function openVarModal(itemId, itemName, existingGroupId) {
+  varItemId   = itemId;
+  varItemName = itemName;
+  document.getElementById('var-modal-title').textContent = `Add Variant to "${itemName}"`;
+  document.getElementById('var-label').value      = '';
+  document.getElementById('var-price').value      = '';
+  document.getElementById('var-type').value       = 'size';
+  document.getElementById('var-base-label').value = 'Regular';
+  // If already in a group, hide the "original becomes" row
+  const baseRow = document.getElementById('var-base-label').closest('.fg');
+  if (baseRow) baseRow.style.display = existingGroupId ? 'none' : '';
+  document.getElementById('var-modal').classList.add('on');
+}
+
+function closeVarModal() {
+  document.getElementById('var-modal').classList.remove('on');
+  varItemId = null;
+}
+
+async function doAddVariant() {
+  if (!varItemId) return;
+  const variantLabel = document.getElementById('var-label').value.trim();
+  const priceRs      = document.getElementById('var-price').value;
+  const variantType  = document.getElementById('var-type').value;
+  const baseLabel    = document.getElementById('var-base-label').value.trim() || 'Regular';
+  if (!variantLabel || !priceRs) return toast('Label and price are required', 'err');
+
+  const btn = document.getElementById('var-save-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Adding…';
+  try {
+    await api(`/api/restaurant/menu/${varItemId}/variants`, {
+      method: 'POST',
+      body  : { variantLabel, variantType, priceRs: parseFloat(priceRs), baseLabel },
+    });
+    toast(`"${variantLabel}" variant added! Syncing to WhatsApp…`, 'ok');
+    closeVarModal();
+    loadMenu();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = '+ Add Variant'; }
+}
+
+/* ─────────────────────── IMAGE UPLOAD ──────────────────── */
+function syncImgPreview(url) {
+  const img  = document.getElementById('img-preview-img');
+  const icon = document.getElementById('img-preview-icon');
+  if (url && url.startsWith('http')) {
+    img.src = url;
+    img.style.display = 'block';
+    icon.style.display = 'none';
+    img.onerror = () => { img.style.display = 'none'; icon.style.display = ''; icon.textContent = '📷'; };
+  } else {
+    img.style.display = 'none';
+    icon.style.display = '';
+    icon.textContent = '📷';
+  }
+}
+
+async function handleImgFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const spin  = document.getElementById('img-preview-spin');
+  const img   = document.getElementById('img-preview-img');
+  const icon  = document.getElementById('img-preview-icon');
+  const urlIn = document.getElementById('m-img');
+
+  // Show local preview immediately while uploading
+  const localUrl = URL.createObjectURL(file);
+  img.src = localUrl;
+  img.style.display = 'block';
+  icon.style.display = 'none';
+  spin.style.display = 'flex';
+
+  try {
+    const branchId = document.getElementById('m-branch').value;
+    if (!branchId) {
+      spin.style.display = 'none';
+      return toast('Select a branch before uploading an image', 'err');
+    }
+
+    const form = new FormData();
+    form.append('image', file);
+
+    const res = await fetch('/api/restaurant/menu/upload-image', {
+      method : 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body   : form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+    urlIn.value = data.url;
+    toast('Image uploaded!', 'ok');
+  } catch (e) {
+    toast(e.message, 'err');
+    // Revert preview on failure
+    img.style.display = 'none';
+    icon.style.display = '';
+    icon.textContent = '📷';
+    urlIn.value = '';
+  } finally {
+    spin.style.display = 'none';
+    input.value = '';            // reset file input so same file can be re-selected
+  }
+}
+
+function resetImgPicker() {
+  const img  = document.getElementById('img-preview-img');
+  const icon = document.getElementById('img-preview-icon');
+  img.src = '';
+  img.style.display = 'none';
+  icon.style.display = '';
+  icon.textContent = '📷';
+  document.getElementById('m-img').value = '';
 }
 
 /* ─────────────────────── INTEGRATIONS ──────────────────── */

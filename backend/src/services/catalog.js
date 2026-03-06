@@ -302,6 +302,12 @@ const syncBranchCatalog = async (branchId) => {
     [branchId]
   );
 
+  // Also sync category product sets (sections customers see in WhatsApp)
+  // Fire-and-forget — don't block or fail the main sync
+  syncCategoryProductSets(branchId).catch(err =>
+    console.warn('[Catalog] Product set sync failed (non-fatal):', err.message)
+  );
+
   const success = results.failed === 0;
   console.log(`[Catalog] Sync complete for "${branch.branch_name}":`, results);
 
@@ -365,18 +371,33 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
 
   // Push single-item update to Meta catalog
   if (item.catalog_id && item.access_token && item.retailer_id) {
+    // Rebuild variant fields so grouping is preserved when re-enabling a variant item
+    const variantFields = {};
+    if (item.item_group_id) {
+      variantFields.item_group_id = item.item_group_id;
+      if (item.variant_type === 'size' || item.variant_type === 'portion') {
+        variantFields.size = item.variant_value;
+      } else if (item.variant_value) {
+        variantFields.custom_label_4 = `${item.variant_type}:${item.variant_value}`;
+      }
+    }
+    const displayName = item.variant_value
+      ? `${item.name} - ${item.variant_value}`
+      : item.name;
+
     const request = isAvailable
       ? {
           method      : 'UPDATE',
           retailer_id : item.retailer_id,
           data: {
-            name        : item.name,
+            name        : displayName.substring(0, 100),
             price       : item.price_paise,
             currency    : 'INR',
             availability: 'in stock',
             url         : `${process.env.BASE_URL}/menu/${item.id}`,
             image_url   : item.image_url || `${process.env.BASE_URL}/placeholder.jpg`,
             google_product_category: '1567',
+            ...variantFields,   // preserves item_group_id + size on re-enable
           },
         }
       : {
@@ -394,4 +415,100 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
   }
 };
 
-module.exports = { createBranchCatalog, syncBranchCatalog, syncAllBranches, setItemAvailability };
+// ─── SYNC CATEGORY PRODUCT SETS ──────────────────────────────
+// Creates/updates a Meta Product Set per menu category for a branch.
+// Product sets are the "sections" customers see when browsing the catalog in WhatsApp:
+//   Starters | Mains | Desserts | Beverages
+// Each set filters on custom_label_2 (category name) + custom_label_1 (branch name)
+// so items from different branches never bleed into each other.
+const syncCategoryProductSets = async (branchId) => {
+  const { rows } = await db.query(`
+    SELECT
+      b.id          AS branch_id,
+      b.name        AS branch_name,
+      b.catalog_id,
+      wa.access_token
+    FROM branches b
+    JOIN restaurants r  ON b.restaurant_id = r.id
+    JOIN whatsapp_accounts wa
+      ON wa.restaurant_id = r.id AND wa.is_active = TRUE
+    WHERE b.id = $1
+  `, [branchId]);
+
+  if (!rows.length) throw new Error('Branch not found');
+  const branch = rows[0];
+
+  if (!branch.catalog_id || !branch.access_token) {
+    return { skipped: true, reason: 'No catalog or access token' };
+  }
+
+  // Only sync categories that have at least one available item
+  const { rows: cats } = await db.query(`
+    SELECT mc.id, mc.name, mc.meta_set_id
+    FROM menu_categories mc
+    WHERE mc.branch_id = $1
+      AND EXISTS (
+        SELECT 1 FROM menu_items mi
+        WHERE mi.category_id = mc.id AND mi.is_available = TRUE
+      )
+    ORDER BY mc.sort_order NULLS LAST, mc.name
+  `, [branchId]);
+
+  if (!cats.length) return { skipped: true, reason: 'No categories with available items' };
+
+  const results = { created: 0, updated: 0, failed: 0, sets: [] };
+
+  for (const cat of cats) {
+    // Filter: items in this category AND this branch
+    // custom_label_2 = category name, custom_label_1 = branch name
+    // Use 'eq' (exact match) not 'i_contains' — prevents a category named "Mains"
+    // from accidentally matching items in "Mains & Grills" or vice-versa.
+    const filter = JSON.stringify({
+      and: [
+        { custom_label_2: { eq: cat.name } },
+        { custom_label_1: { eq: branch.branch_name } },
+      ],
+    });
+
+    try {
+      if (cat.meta_set_id) {
+        // Update existing product set name/filter
+        await axios.post(
+          `${GRAPH}/${cat.meta_set_id}`,
+          { name: cat.name, filter },
+          {
+            headers: { Authorization: `Bearer ${branch.access_token}` },
+            timeout: 10000,
+          }
+        );
+        results.updated++;
+      } else {
+        // Create a new product set for this category
+        const res = await axios.post(
+          `${GRAPH}/${branch.catalog_id}/product_sets`,
+          { name: cat.name, filter },
+          {
+            headers: { Authorization: `Bearer ${branch.access_token}` },
+            timeout: 10000,
+          }
+        );
+        const setId = res.data.id;
+        await db.query(
+          'UPDATE menu_categories SET meta_set_id = $1 WHERE id = $2',
+          [setId, cat.id]
+        );
+        results.sets.push({ name: cat.name, setId });
+        results.created++;
+      }
+      console.log(`[Catalog] Product set "${cat.name}" synced for branch "${branch.branch_name}"`);
+    } catch (err) {
+      const msg = err.response?.data?.error?.message || err.message;
+      console.error(`[Catalog] Product set failed for "${cat.name}":`, msg);
+      results.failed++;
+    }
+  }
+
+  return { success: results.failed === 0, ...results };
+};
+
+module.exports = { createBranchCatalog, syncBranchCatalog, syncAllBranches, setItemAvailability, syncCategoryProductSets };

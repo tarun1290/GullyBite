@@ -4,11 +4,23 @@
 
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const axios  = require('axios');
 const db = require('../config/database');
 const { requireAuth } = require('./auth');
 const catalog = require('../services/catalog');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
+
+// ── Image upload via Supabase Storage ─────────────────────────
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits : { fileSize: 5 * 1024 * 1024 }, // 5 MB max
+  fileFilter(req, file, cb) {
+    const ok = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype);
+    cb(ok ? null : new Error('Only JPEG, PNG, WebP or GIF images are allowed'), ok);
+  },
+});
 
 // All routes below require authentication
 router.use(requireAuth);
@@ -53,6 +65,49 @@ router.put('/', async (req, res) => {
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// IMAGE UPLOAD
+// ═══════════════════════════════════════════════════════════════
+
+// POST /api/restaurant/menu/upload-image
+// Accepts: multipart/form-data with field "image"
+// Returns: { url: "https://..." }  — public URL ready to use in catalog
+router.post('/menu/upload-image', upload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No image file received' });
+
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    return res.status(500).json({ error: 'Image storage not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing)' });
+  }
+
+  const ext      = req.file.mimetype.split('/')[1].replace('jpeg', 'jpg');
+  const filename = `${req.restaurantId}/${Date.now()}.${ext}`;
+
+  try {
+    await axios.post(
+      `${SUPABASE_URL}/storage/v1/object/menu-images/${filename}`,
+      req.file.buffer,
+      {
+        headers: {
+          Authorization : `Bearer ${SERVICE_KEY}`,
+          apikey        : SERVICE_KEY,
+          'Content-Type': req.file.mimetype,
+          'x-upsert'    : 'true',
+        },
+        timeout: 20000,
+      }
+    );
+
+    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/menu-images/${filename}`;
+    res.json({ url: publicUrl });
+  } catch (err) {
+    const msg = err.response?.data?.message || err.message;
+    console.error('[ImageUpload] Supabase Storage error:', msg);
+    res.status(500).json({ error: `Image upload failed: ${msg}` });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -398,11 +453,114 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
 });
 
 // POST /api/restaurant/branches/:branchId/sync-catalog
-// Pushes all menu items to WhatsApp Catalog
+// Pushes all menu items to WhatsApp Catalog (also auto-syncs product sets after)
 router.post('/branches/:branchId/sync-catalog', async (req, res) => {
   try {
     const result = await catalog.syncBranchCatalog(req.params.branchId);
     res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/branches/:branchId/sync-sets
+// Creates/updates Meta Product Sets per category (sections customers see in WhatsApp)
+// Auto-called after every full sync; also available manually
+router.post('/branches/:branchId/sync-sets', async (req, res) => {
+  try {
+    const result = await catalog.syncCategoryProductSets(req.params.branchId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/branches/:branchId/item-groups
+// Returns all variant groups for a branch (for the variant management UI)
+router.get('/branches/:branchId/item-groups', async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT
+        item_group_id,
+        MIN(name) AS base_name,
+        json_agg(json_build_object(
+          'id',            id,
+          'name',          name,
+          'variant_type',  variant_type,
+          'variant_value', variant_value,
+          'price_paise',   price_paise,
+          'image_url',     image_url,
+          'is_available',  is_available,
+          'retailer_id',   retailer_id
+        ) ORDER BY price_paise) AS variants
+      FROM menu_items
+      WHERE branch_id = $1 AND item_group_id IS NOT NULL
+      GROUP BY item_group_id
+    `, [req.params.branchId]);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/menu/:itemId/variants
+// Adds a size/portion variant to an existing item.
+// On first call: generates item_group_id and tags the source item as 'Regular'.
+router.post('/menu/:itemId/variants', async (req, res) => {
+  const { v4: uuidv4 } = require('uuid');
+  try {
+    const { variantLabel, variantType = 'size', priceRs, imageUrl, baseLabel = 'Regular' } = req.body;
+    if (!variantLabel || !priceRs) {
+      return res.status(400).json({ error: 'variantLabel and priceRs are required' });
+    }
+
+    // Fetch source item — must belong to this restaurant
+    const { rows } = await db.query(`
+      SELECT mi.*, b.restaurant_id
+      FROM menu_items mi JOIN branches b ON mi.branch_id = b.id
+      WHERE mi.id = $1 AND b.restaurant_id = $2
+    `, [req.params.itemId, req.restaurantId]);
+
+    if (!rows.length) return res.status(404).json({ error: 'Item not found' });
+    const src = rows[0];
+
+    // If the source item has no group yet, initialise it as baseLabel (default: 'Regular')
+    let groupId = src.item_group_id;
+    if (!groupId) {
+      groupId = uuidv4();
+      const baseRetailerId = `${src.retailer_id}-${baseLabel.toLowerCase().replace(/\s+/g, '-')}`;
+      await db.query(`
+        UPDATE menu_items
+        SET item_group_id = $1, variant_type = $2, variant_value = $3,
+            retailer_id = $4, updated_at = NOW()
+        WHERE id = $5
+      `, [groupId, variantType, baseLabel, baseRetailerId, src.id]);
+    }
+
+    // Create the new variant item.
+    // Store ONLY the base name (without variant suffix) — catalog.js will build
+    // the display name as "Butter Chicken - Large" at sync time, preventing duplication.
+    const baseName    = src.name.replace(/\s*-\s*\S+$/, '').trim() || src.name;
+    const variantSlug = variantLabel.toLowerCase().replace(/\s+/g, '-');
+    const retailerId  = `${src.retailer_id.replace(/-regular$|-\S+$/, '')}-${variantSlug}`;
+    const pricePaise  = Math.round(parseFloat(priceRs) * 100);
+
+    const { rows: newItem } = await db.query(`
+      INSERT INTO menu_items
+        (branch_id, category_id, name, description, price_paise, retailer_id,
+         image_url, food_type, is_bestseller, item_group_id, variant_type, variant_value)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      ON CONFLICT (retailer_id) DO UPDATE SET
+        price_paise   = EXCLUDED.price_paise,
+        image_url     = COALESCE(EXCLUDED.image_url, menu_items.image_url),
+        variant_value = EXCLUDED.variant_value,
+        updated_at    = NOW()
+      RETURNING *
+    `, [
+      src.branch_id, src.category_id, baseName, src.description,
+      pricePaise, retailerId, imageUrl || src.image_url,
+      src.food_type, src.is_bestseller, groupId, variantType, variantLabel,
+    ]);
+
+    // Push updated group to Meta catalog in background
+    catalog.syncBranchCatalog(src.branch_id)
+      .catch(err => console.error('[Variant] Auto-sync failed:', err.message));
+
+    res.status(201).json(newItem[0]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
