@@ -5,6 +5,7 @@
 const db = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 const couponSvc = require('./coupon');
+const { calculateOrderCharges } = require('./charges');
 
 // ─── GET OR CREATE CUSTOMER ───────────────────────────────────
 // Called every time we receive a message.
@@ -112,16 +113,31 @@ const buildCartFromCatalogOrder = async (productItems, branchId) => {
   // This will be replaced by a live 3PL quote (Dunzo/Borzo/Shadowfax)
   // once the 3PL integration is active. For now: branch-level config or env fallback.
   const { rows: branchRows } = await db.query(
-    'SELECT delivery_fee_rs FROM branches WHERE id = $1',
+    `SELECT b.delivery_fee_rs,
+            r.delivery_fee_customer_pct, r.menu_gst_mode, r.menu_gst_pct,
+            r.packaging_charge_rs, r.packaging_gst_pct
+     FROM branches b
+     JOIN restaurants r ON b.restaurant_id = r.id
+     WHERE b.id = $1`,
     [branchId]
   );
-  const deliveryFeeRs = parseFloat(branchRows[0]?.delivery_fee_rs)
+  const branchRow = branchRows[0] || {};
+  const deliveryFeeRs = parseFloat(branchRow.delivery_fee_rs)
                      || parseFloat(process.env.DEFAULT_DELIVERY_FEE)
                      || 40;
 
-  const totalRs = subtotalRs + deliveryFeeRs;
+  // Calculate full charge breakdown using restaurant config
+  const restaurantConfig = {
+    delivery_fee_customer_pct: branchRow.delivery_fee_customer_pct ?? 100,
+    menu_gst_mode:             branchRow.menu_gst_mode             ?? 'included',
+    menu_gst_pct:              branchRow.menu_gst_pct              ?? 5,
+    packaging_charge_rs:       branchRow.packaging_charge_rs       ?? 0,
+    packaging_gst_pct:         branchRow.packaging_gst_pct         ?? 18,
+  };
 
-  return { cart, subtotalRs, deliveryFeeRs, totalRs, unavailable };
+  const charges = calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs, 0);
+
+  return { cart, subtotalRs, deliveryFeeRs: charges.customer_delivery_rs, totalRs: charges.customer_total_rs, charges, unavailable };
 };
 
 const REFERRAL_FEE_PCT = 0.075; // 7.5%
@@ -142,7 +158,7 @@ const findActiveReferral = async (client, waPhone, restaurantId) => {
 // ─── CREATE ORDER ─────────────────────────────────────────────
 // Called when customer taps "Confirm & Pay"
 // Wraps everything in a transaction (all-or-nothing)
-const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone }) => {
+const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null }) => {
   return db.transaction(async (client) => {
     // Generate human-readable order number
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
@@ -164,6 +180,9 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     const referralId    = referral?.id || null;
     const referralFeeRs = referral ? parseFloat((subtotalRs * REFERRAL_FEE_PCT).toFixed(2)) : 0;
 
+    // Resolve the actual customer total (charges may override passed totalRs)
+    const effectiveTotal = charges ? charges.customer_total_rs : totalRs;
+
     // Create the order
     const { rows: orders } = await client.query(
       `INSERT INTO orders
@@ -171,14 +190,29 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
          subtotal_rs, delivery_fee_rs, discount_rs, total_rs, platform_fee_rs,
          coupon_id, coupon_code,
          referral_id, referral_fee_rs,
-         delivery_address, delivery_lat, delivery_lng, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'PENDING_PAYMENT')
+         delivery_address, delivery_lat, delivery_lng,
+         food_gst_rs, delivery_fee_total_rs,
+         customer_delivery_rs, customer_delivery_gst_rs,
+         restaurant_delivery_rs, restaurant_delivery_gst_rs,
+         packaging_rs, packaging_gst_rs,
+         status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+               $17,$18,$19,$20,$21,$22,$23,$24,'PENDING_PAYMENT')
        RETURNING *`,
       [orderNumber, customerId, branchId, convId,
-       subtotalRs, deliveryFeeRs, discountRs, totalRs, platformFeeRs,
+       subtotalRs, charges ? charges.customer_delivery_rs : deliveryFeeRs,
+       discountRs, effectiveTotal, platformFeeRs,
        couponId, couponCode,
        referralId, referralFeeRs,
-       deliveryAddress, deliveryLat, deliveryLng]
+       deliveryAddress, deliveryLat, deliveryLng,
+       charges?.food_gst_rs                ?? 0,
+       charges?.delivery_fee_total_rs      ?? (charges ? charges.customer_delivery_rs : deliveryFeeRs),
+       charges?.customer_delivery_rs       ?? deliveryFeeRs,
+       charges?.customer_delivery_gst_rs   ?? 0,
+       charges?.restaurant_delivery_rs     ?? 0,
+       charges?.restaurant_delivery_gst_rs ?? 0,
+       charges?.packaging_rs               ?? 0,
+       charges?.packaging_gst_rs           ?? 0]
     );
     const order = orders[0];
 

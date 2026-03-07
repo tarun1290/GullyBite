@@ -208,9 +208,21 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     }
 
     const couponData   = { id: result.coupon.id, code: result.coupon.code, discountRs: result.discountRs };
-    const newTotal     = session.subtotalRs + session.deliveryFeeRs - result.discountRs;
+    let updatedCharges = session.charges || null;
+    if (updatedCharges) {
+      const { calculateOrderCharges } = require('../services/charges');
+      updatedCharges = calculateOrderCharges(
+        { delivery_fee_customer_pct: Math.round((updatedCharges.customer_delivery_rs / updatedCharges.delivery_fee_total_rs) * 100) || 100,
+          menu_gst_mode: updatedCharges.food_gst_rs > 0 ? 'extra' : 'included',
+          menu_gst_pct: updatedCharges.food_gst_rs > 0 ? (updatedCharges.food_gst_rs / updatedCharges.subtotal_rs * 100) : 5,
+          packaging_charge_rs: updatedCharges.packaging_rs,
+          packaging_gst_pct: updatedCharges.packaging_rs > 0 ? (updatedCharges.packaging_gst_rs / updatedCharges.packaging_rs * 100) : 18 },
+        session.subtotalRs, updatedCharges.delivery_fee_total_rs, result.discountRs
+      );
+    }
+    const newTotal = updatedCharges ? updatedCharges.customer_total_rs : (session.subtotalRs + session.deliveryFeeRs - result.discountRs);
     await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
-      ...session, coupon: couponData, discountRs: result.discountRs, totalRs: newTotal,
+      ...session, coupon: couponData, discountRs: result.discountRs, totalRs: newTotal, charges: updatedCharges,
     });
 
     await wa.sendText(pid, token, to, result.message);
@@ -218,8 +230,9 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     await wa.sendOrderSummary(pid, token, to, {
       orderNumber: tempNum,
       items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+      charges:     updatedCharges,
       subtotal:    session.subtotalRs.toFixed(0),
-      deliveryFee: session.deliveryFeeRs.toFixed(0),
+      deliveryFee: (updatedCharges ? updatedCharges.customer_delivery_rs : session.deliveryFeeRs).toFixed(0),
       total:       newTotal.toFixed(0),
       discount:    { code: couponData.code, amountRs: result.discountRs },
     });
@@ -369,18 +382,40 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     }
   }
 
-  const discountRs   = couponData?.discountRs || 0;
-  const finalTotalRs = cart.subtotalRs + cart.deliveryFeeRs - discountRs;
+  const discountRs = couponData?.discountRs || 0;
+
+  // Recalculate charges with coupon discount applied
+  let charges = cart.charges;
+  if (discountRs > 0 && charges) {
+    // Re-run with discount so customer_total_rs is correct
+    const { rows: branchRes2 } = await db.query(
+      `SELECT r.delivery_fee_customer_pct, r.menu_gst_mode, r.menu_gst_pct,
+              r.packaging_charge_rs, r.packaging_gst_pct
+       FROM branches b JOIN restaurants r ON b.restaurant_id = r.id WHERE b.id=$1`, [branchId]
+    );
+    const rc = branchRes2[0] || {};
+    const { calculateOrderCharges } = require('../services/charges');
+    charges = calculateOrderCharges(
+      { delivery_fee_customer_pct: rc.delivery_fee_customer_pct ?? 100,
+        menu_gst_mode: rc.menu_gst_mode ?? 'included',
+        menu_gst_pct: rc.menu_gst_pct ?? 5,
+        packaging_charge_rs: rc.packaging_charge_rs ?? 0,
+        packaging_gst_pct: rc.packaging_gst_pct ?? 18 },
+      cart.subtotalRs, charges.delivery_fee_total_rs, discountRs
+    );
+  }
+  const finalTotalRs = charges ? charges.customer_total_rs : (cart.subtotalRs + cart.deliveryFeeRs - discountRs);
 
   // Save cart to session
   await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
     ...session,
     cart: cart.cart,
-    subtotalRs:   cart.subtotalRs,
-    deliveryFeeRs: cart.deliveryFeeRs,
-    totalRs:      finalTotalRs,
+    subtotalRs:    cart.subtotalRs,
+    deliveryFeeRs: charges ? charges.customer_delivery_rs : cart.deliveryFeeRs,
+    totalRs:       finalTotalRs,
     discountRs,
-    coupon:       couponData,
+    coupon:        couponData,
+    charges,
   });
 
   // Generate temp order number for display (real one created on confirm)
@@ -390,8 +425,9 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   await wa.sendOrderSummary(pid, token, to, {
     orderNumber: tempOrderNum,
     items: cart.cart.map((i) => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+    charges,
     subtotal:    cart.subtotalRs.toFixed(0),
-    deliveryFee: cart.deliveryFeeRs.toFixed(0),
+    deliveryFee: (charges ? charges.customer_delivery_rs : cart.deliveryFeeRs).toFixed(0),
     total:       finalTotalRs.toFixed(0),
     discount:    couponData ? { code: couponData.code, amountRs: discountRs } : null,
   });
@@ -465,6 +501,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         deliveryLat  : session.deliveryLat,
         deliveryLng  : session.deliveryLng,
         waPhone      : customer.wa_phone,
+        charges      : session.charges || null,
       });
 
       const fullOrder = await orderSvc.getOrderDetails(order.id);
@@ -510,17 +547,30 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
 
     case 'REMOVE_COUPON': {
       const session = conv.session_data || {};
-      const updatedTotal = session.subtotalRs + session.deliveryFeeRs;
+      let restoredCharges = session.charges || null;
+      if (restoredCharges) {
+        const { calculateOrderCharges } = require('../services/charges');
+        restoredCharges = calculateOrderCharges(
+          { delivery_fee_customer_pct: Math.round((restoredCharges.customer_delivery_rs / restoredCharges.delivery_fee_total_rs) * 100) || 100,
+            menu_gst_mode: restoredCharges.food_gst_rs > 0 ? 'extra' : 'included',
+            menu_gst_pct: restoredCharges.food_gst_rs > 0 ? (restoredCharges.food_gst_rs / restoredCharges.subtotal_rs * 100) : 5,
+            packaging_charge_rs: restoredCharges.packaging_rs,
+            packaging_gst_pct: restoredCharges.packaging_rs > 0 ? (restoredCharges.packaging_gst_rs / restoredCharges.packaging_rs * 100) : 18 },
+          session.subtotalRs, restoredCharges.delivery_fee_total_rs, 0
+        );
+      }
+      const updatedTotal = restoredCharges ? restoredCharges.customer_total_rs : (session.subtotalRs + session.deliveryFeeRs);
       await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
-        ...session, coupon: null, discountRs: 0, totalRs: updatedTotal,
+        ...session, coupon: null, discountRs: 0, totalRs: updatedTotal, charges: restoredCharges,
       });
       const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
       await wa.sendText(pid, token, to, '🗑 Coupon removed.');
       await wa.sendOrderSummary(pid, token, to, {
         orderNumber: tempNum,
         items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+        charges:     restoredCharges,
         subtotal:    session.subtotalRs.toFixed(0),
-        deliveryFee: session.deliveryFeeRs.toFixed(0),
+        deliveryFee: (restoredCharges ? restoredCharges.customer_delivery_rs : session.deliveryFeeRs).toFixed(0),
         total:       updatedTotal.toFixed(0),
         discount:    null,
       });

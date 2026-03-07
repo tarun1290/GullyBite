@@ -53,6 +53,7 @@ router.put('/', async (req, res) => {
       businessName, registeredBusinessName, ownerName, phone, city,
       restaurantType, logoUrl, gstNumber, fssaiLicense, fssaiExpiry,
       bankName, bankAccountNumber, bankIfsc,
+      menuGstMode, deliveryFeeCustomerPct, packagingChargeRs, packagingGstPct,
     } = req.body;
     await db.query(
       `UPDATE restaurants SET
@@ -69,6 +70,10 @@ router.put('/', async (req, res) => {
          bank_name                  = COALESCE($11, bank_name),
          bank_account_number        = COALESCE($12, bank_account_number),
          bank_ifsc                  = COALESCE($13, bank_ifsc),
+         menu_gst_mode              = COALESCE($15, menu_gst_mode),
+         delivery_fee_customer_pct  = COALESCE($16, delivery_fee_customer_pct),
+         packaging_charge_rs        = COALESCE($17, packaging_charge_rs),
+         packaging_gst_pct          = COALESCE($18, packaging_gst_pct),
          onboarding_step            = GREATEST(onboarding_step, 2)
        WHERE id = $14`,
       [
@@ -77,6 +82,10 @@ router.put('/', async (req, res) => {
         gstNumber || null, fssaiLicense || null, fssaiExpiry || null,
         bankName || null, bankAccountNumber || null, bankIfsc || null,
         req.restaurantId,
+        menuGstMode || null,
+        deliveryFeeCustomerPct != null ? parseInt(deliveryFeeCustomerPct, 10) : null,
+        packagingChargeRs      != null ? parseFloat(packagingChargeRs)       : null,
+        packagingGstPct        != null ? parseFloat(packagingGstPct)         : null,
       ]
     );
     res.json({ success: true });
@@ -633,6 +642,26 @@ router.get('/orders', async (req, res) => {
       vals
     );
     res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/orders/:orderId — single order with items + charge breakdown
+router.get('/orders/:orderId', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT o.*, c.wa_phone, c.name AS customer_name, b.name AS branch_name
+       FROM orders o
+       JOIN branches b ON o.branch_id = b.id
+       JOIN customers c ON o.customer_id = c.id
+       WHERE o.id = $1 AND b.restaurant_id = $2`,
+      [req.params.orderId, req.restaurantId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Order not found' });
+    const { rows: items } = await db.query(
+      'SELECT * FROM order_items WHERE order_id = $1 ORDER BY id',
+      [req.params.orderId]
+    );
+    res.json({ ...rows[0], items });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

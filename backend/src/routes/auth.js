@@ -475,6 +475,7 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
     const {
       ownerName, phone, brandName, registeredBusinessName,
       gstNumber, fssaiLicense, fssaiExpiry, restaurantType, city,
+      menuGstMode, deliveryFeeCustomerPct, packagingChargeRs, packagingGstPct,
     } = req.body;
 
     if (!ownerName || !phone || !brandName || !registeredBusinessName || !gstNumber || !fssaiLicense || !fssaiExpiry) {
@@ -493,13 +494,21 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
          fssai_expiry              = $7,
          restaurant_type           = $8,
          city                      = $9,
+         menu_gst_mode             = COALESCE($11, menu_gst_mode),
+         delivery_fee_customer_pct = COALESCE($12, delivery_fee_customer_pct),
+         packaging_charge_rs       = COALESCE($13, packaging_charge_rs),
+         packaging_gst_pct         = COALESCE($14, packaging_gst_pct),
          approval_status           = 'pending',
          onboarding_step           = 2,
          updated_at                = NOW()
        WHERE id = $10`,
       [ownerName, phone, brandName, registeredBusinessName,
        gstNumber, fssaiLicense, fssaiExpiry, restaurantType || 'both',
-       city || null, req.restaurantId]
+       city || null, req.restaurantId,
+       menuGstMode || null,
+       deliveryFeeCustomerPct != null ? parseInt(deliveryFeeCustomerPct, 10) : null,
+       packagingChargeRs      != null ? parseFloat(packagingChargeRs)       : null,
+       packagingGstPct        != null ? parseFloat(packagingGstPct)         : null]
     );
 
     res.json({ submitted: true });
@@ -519,6 +528,8 @@ router.get('/me', requireAuth, async (req, res) => {
             r.approval_status, r.approval_notes, r.submitted_at,
             r.gst_number, r.fssai_license, r.fssai_expiry, r.restaurant_type,
             r.bank_name, r.bank_account_number, r.bank_ifsc,
+            r.menu_gst_mode, r.delivery_fee_customer_pct,
+            r.packaging_charge_rs, r.packaging_gst_pct,
             COALESCE(
               (SELECT json_agg(json_build_object('waba_id', w.waba_id, 'name', w.display_name, 'phone', w.phone_display))
                FROM whatsapp_accounts w WHERE w.restaurant_id = r.id),

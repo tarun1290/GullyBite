@@ -611,6 +611,40 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           </div>
           <div class="fld"><label>FSSAI Expiry Date <span class="req">*</span></label><input id="ob-fssai-exp" type="date" required style="max-width:220px"></div>
         </div>
+        <div class="ob-section">
+          <div class="ob-section-title">Pricing &amp; Charges</div>
+          <div class="fld">
+            <label>Menu Prices</label>
+            <select id="ob-gst-mode" onchange="toggleGstModeHint(this.value)">
+              <option value="included">GST included in menu prices (no extra line at checkout)</option>
+              <option value="extra">Add 5% food GST on top of menu prices at checkout</option>
+            </select>
+            <div id="ob-gst-hint" class="pwd-hint" style="display:none">Customers will see a "Food GST (5%)" line in their order summary.</div>
+          </div>
+          <div class="fld">
+            <label>Delivery Fee Split <span style="font-weight:400;color:var(--mute)">(% charged to customer)</span></label>
+            <div style="display:flex;align-items:center;gap:.6rem">
+              <input id="ob-delivery-pct" type="range" min="0" max="100" step="10" value="100" style="flex:1;accent-color:var(--acc)" oninput="updateDeliveryHint(this.value)">
+              <span id="ob-delivery-pct-val" style="font-weight:700;color:var(--acc);min-width:40px;text-align:right">100%</span>
+            </div>
+            <div id="ob-delivery-hint" class="pwd-hint">Customer pays 100% of delivery fee. Restaurant absorbs 0%.</div>
+          </div>
+          <div class="fld-row">
+            <div class="fld">
+              <label>Packaging Charge <span style="font-weight:400;color:var(--mute)">(per order, ₹ — 0 to disable)</span></label>
+              <input id="ob-pkg-charge" type="number" min="0" max="500" step="5" value="0" placeholder="0">
+            </div>
+            <div class="fld">
+              <label>Packaging GST %</label>
+              <select id="ob-pkg-gst">
+                <option value="0">0% (exempt)</option>
+                <option value="5">5%</option>
+                <option value="12">12%</option>
+                <option value="18" selected>18%</option>
+              </select>
+            </div>
+          </div>
+        </div>
         <button class="ob-submit" type="submit" id="ob-btn">Save &amp; Continue →</button>
         <p class="ob-note">Your information is encrypted and used only for verification purposes.</p>
       </form>
@@ -735,6 +769,16 @@ function routeByStatus(me) {
   else showPage('pg-pending');
 }
 
+function toggleGstModeHint(v) {
+  document.getElementById('ob-gst-hint').style.display = v === 'extra' ? '' : 'none';
+}
+function updateDeliveryHint(v) {
+  document.getElementById('ob-delivery-pct-val').textContent = v + '%';
+  const rest = 100 - parseInt(v, 10);
+  document.getElementById('ob-delivery-hint').textContent =
+    `Customer pays ${v}% of delivery fee. Restaurant absorbs ${rest}%.`;
+}
+
 function prefillOnboarding(me) {
   if (me.owner_name) document.getElementById('ob-owner').value = me.owner_name;
   if (me.email)      document.getElementById('ob-email').value  = me.email;
@@ -746,6 +790,17 @@ function prefillOnboarding(me) {
   if (me.fssai_expiry)  document.getElementById('ob-fssai-exp').value = me.fssai_expiry?.slice(0,10) || '';
   if (me.city)        document.getElementById('ob-city').value      = me.city;
   if (me.restaurant_type) document.getElementById('ob-type').value  = me.restaurant_type;
+  if (me.menu_gst_mode) {
+    document.getElementById('ob-gst-mode').value = me.menu_gst_mode;
+    toggleGstModeHint(me.menu_gst_mode);
+  }
+  if (me.delivery_fee_customer_pct != null) {
+    const pct = String(me.delivery_fee_customer_pct);
+    document.getElementById('ob-delivery-pct').value = pct;
+    updateDeliveryHint(pct);
+  }
+  if (me.packaging_charge_rs != null) document.getElementById('ob-pkg-charge').value = me.packaging_charge_rs;
+  if (me.packaging_gst_pct   != null) document.getElementById('ob-pkg-gst').value    = me.packaging_gst_pct;
 }
 
 /* ─── SIGN UP ───────────────────────────────────────────── */
@@ -832,6 +887,10 @@ async function submitBusinessDetails(e) {
       fssaiExpiry:            document.getElementById('ob-fssai-exp').value,
       restaurantType:         document.getElementById('ob-type').value,
       city:                   document.getElementById('ob-city').value.trim(),
+      menuGstMode:            document.getElementById('ob-gst-mode').value,
+      deliveryFeeCustomerPct: parseInt(document.getElementById('ob-delivery-pct').value, 10),
+      packagingChargeRs:      parseFloat(document.getElementById('ob-pkg-charge').value) || 0,
+      packagingGstPct:        parseFloat(document.getElementById('ob-pkg-gst').value),
     }, token);
     if (d.submitted) showPage('pg-connect');
     else toast(d.error || 'Save failed', 'err');

@@ -852,6 +852,42 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           </div>
         </div>
 
+        <!-- Pricing & Charges -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>Pricing &amp; Charges</h3><span style="font-size:.78rem;color:var(--dim)">Applied to all new orders</span></div>
+          <div class="cb">
+            <div class="fgrid">
+              <div class="fg span2">
+                <label>Menu Prices — GST Mode</label>
+                <select id="p-gst-mode" onchange="toggleDashGstHint(this.value)">
+                  <option value="included">GST included in menu prices (no extra line at checkout)</option>
+                  <option value="extra">Add 5% food GST on top of menu prices at checkout</option>
+                </select>
+                <div id="p-gst-mode-hint" style="font-size:.75rem;color:var(--dim);margin-top:.3rem;display:none">Customers will see a "Food GST (5%)" line item in their order summary.</div>
+              </div>
+              <div class="fg span2">
+                <label>Delivery Fee — Customer Pays <span id="p-del-pct-val" style="font-weight:700;color:var(--acc)">100%</span></label>
+                <input type="range" id="p-del-pct" min="0" max="100" step="10" value="100" style="width:100%;accent-color:var(--acc)" oninput="updateDashDeliveryHint(this.value)">
+                <div id="p-del-pct-hint" style="font-size:.75rem;color:var(--dim);margin-top:.3rem">Customer pays 100% of delivery fee. Restaurant absorbs 0%.</div>
+              </div>
+              <div class="fg">
+                <label>Packaging Charge per Order (₹)</label>
+                <input id="p-pkg-charge" type="number" min="0" max="500" step="5" value="0" placeholder="0 = disabled">
+              </div>
+              <div class="fg">
+                <label>Packaging GST %</label>
+                <select id="p-pkg-gst">
+                  <option value="0">0% (exempt)</option>
+                  <option value="5">5%</option>
+                  <option value="12">12%</option>
+                  <option value="18" selected>18%</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn-p" style="margin-top:1.1rem" onclick="doSaveChargeConfig()">Save Charge Settings</button>
+          </div>
+        </div>
+
         <!-- WhatsApp Connection -->
         <div class="card" style="margin-bottom:1.2rem">
           <div class="ch"><h3>WhatsApp Connection</h3></div>
@@ -887,6 +923,17 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
     </div>
   </main>
 </div><!-- /dash -->
+
+<!-- ── ORDER DETAIL MODAL ─────────────────────────────── -->
+<div id="ord-modal" onclick="if(event.target===this)closeOrdModal()" style="position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem">
+  <div style="background:#fff;border:1px solid var(--rim);border-radius:14px;width:100%;max-width:520px;overflow:hidden;animation:riseIn .22s ease both;box-shadow:var(--shadow)">
+    <div style="padding:1.1rem 1.3rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between">
+      <span id="ord-modal-title" style="font-weight:700;font-size:.95rem;color:var(--tx)">Order Detail</span>
+      <button onclick="closeOrdModal()" style="background:none;border:none;color:var(--dim);font-size:1.1rem;cursor:pointer">✕</button>
+    </div>
+    <div id="ord-modal-body" style="padding:1.3rem;max-height:70vh;overflow-y:auto;font-size:.84rem"></div>
+  </div>
+</div>
 
 <!-- ── VARIANT MODAL ──────────────────────────────────── -->
 <div id="var-modal" onclick="if(event.target===this)closeVarModal()">
@@ -1140,8 +1187,83 @@ function sbadge(s) {
 function oaction(o) {
   const nxt = { PAID: ['CONFIRMED', '✅ Confirm'], CONFIRMED: ['PREPARING', '👨‍🍳 Prep'], PREPARING: ['PACKED', '📦 Packed'] };
   const a = nxt[o.status];
-  if (!a) return `<span style="color:var(--mute);font-size:.73rem">—</span>`;
-  return `<button class="btn-g btn-sm" onclick="doUpdateOrder('${o.id}','${a[0]}')">${a[1]}</button>`;
+  const viewBtn = `<button class="btn-outline btn-sm" style="margin-left:.4rem" onclick="openOrdModal('${o.id}')">Detail</button>`;
+  if (!a) return viewBtn;
+  return `<button class="btn-g btn-sm" onclick="doUpdateOrder('${o.id}','${a[0]}')">${a[1]}</button>${viewBtn}`;
+}
+
+function closeOrdModal() {
+  document.getElementById('ord-modal').style.display = 'none';
+}
+
+async function openOrdModal(orderId) {
+  const modal = document.getElementById('ord-modal');
+  const body  = document.getElementById('ord-modal-body');
+  modal.style.display = 'flex';
+  body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--dim)">Loading…</div>';
+  try {
+    const o = await api(`/api/restaurant/orders/${orderId}`);
+    if (!o) { body.innerHTML = '<p>Order not found.</p>'; return; }
+
+    document.getElementById('ord-modal-title').textContent = `Order #${o.order_number}`;
+
+    const itemRows = (o.items || []).map(i =>
+      `<tr><td style="padding:.35rem 0">${i.item_name}</td><td style="text-align:center">×${i.quantity}</td><td style="text-align:right">₹${parseFloat(i.line_total_rs).toFixed(2)}</td></tr>`
+    ).join('');
+
+    const dl = (label, value, bold) =>
+      `<tr><td style="padding:.25rem 0;color:var(--dim)">${label}</td><td style="text-align:right;${bold?'font-weight:700':''}">₹${parseFloat(value||0).toFixed(2)}</td></tr>`;
+    const sep = `<tr><td colspan="2"><hr style="border:none;border-top:1px dashed var(--rim2);margin:.3rem 0"></td></tr>`;
+
+    const hasCharges = o.food_gst_rs != null || o.packaging_rs != null;
+
+    let chargeRows = dl('Subtotal', o.subtotal_rs);
+    if (hasCharges) {
+      if (parseFloat(o.food_gst_rs||0) > 0) chargeRows += dl('Food GST (5%)', o.food_gst_rs);
+      if (parseFloat(o.customer_delivery_rs||0) > 0) {
+        chargeRows += dl('Delivery', o.customer_delivery_rs);
+        chargeRows += dl('Delivery GST (18%)', o.customer_delivery_gst_rs);
+      } else if (parseFloat(o.delivery_fee_rs||0) > 0) {
+        chargeRows += dl('Delivery', o.delivery_fee_rs);
+      }
+      if (parseFloat(o.packaging_rs||0) > 0) {
+        chargeRows += dl('Packaging', o.packaging_rs);
+        if (parseFloat(o.packaging_gst_rs||0) > 0) chargeRows += dl('Packaging GST', o.packaging_gst_rs);
+      }
+    } else {
+      chargeRows += dl('Delivery', o.delivery_fee_rs);
+    }
+    if (parseFloat(o.discount_rs||0) > 0) {
+      chargeRows += `<tr><td style="padding:.25rem 0;color:var(--dim)">Discount ${o.coupon_code?`(${o.coupon_code})`:''}  </td><td style="text-align:right;color:#16a34a">−₹${parseFloat(o.discount_rs).toFixed(2)}</td></tr>`;
+    }
+    chargeRows += sep;
+    chargeRows += dl('Customer Total', o.total_rs, true);
+
+    let settlementNote = '';
+    if (parseFloat(o.restaurant_delivery_rs||0) > 0) {
+      const deduction = parseFloat(o.restaurant_delivery_rs||0) + parseFloat(o.restaurant_delivery_gst_rs||0);
+      settlementNote = `<div style="margin-top:.8rem;padding:.65rem .9rem;background:#fef9ec;border:1px solid #fde68a;border-radius:8px;font-size:.78rem;color:#92400e">
+        Settlement deduction: <strong>₹${deduction.toFixed(2)}</strong> (restaurant delivery share + GST)
+      </div>`;
+    }
+
+    body.innerHTML = `
+      <div style="margin-bottom:.8rem">
+        <span style="font-size:.75rem;color:var(--dim)">Customer</span>
+        <div style="font-weight:600">${o.customer_name||'—'} · ${o.wa_phone||''}</div>
+        ${o.delivery_address ? `<div style="font-size:.75rem;color:var(--dim);margin-top:.2rem">${o.delivery_address}</div>` : ''}
+      </div>
+      <div style="margin-bottom:.8rem">
+        <span style="font-size:.75rem;color:var(--dim)">Items</span>
+        <table style="width:100%;border-collapse:collapse;margin-top:.3rem">${itemRows}</table>
+      </div>
+      <div>
+        <span style="font-size:.75rem;color:var(--dim)">Charge Breakdown</span>
+        <table style="width:100%;border-collapse:collapse;margin-top:.3rem">${chargeRows}</table>
+      </div>
+      ${settlementNote}
+    `;
+  } catch (e) { body.innerHTML = `<p style="color:var(--red)">${e.message}</p>`; }
 }
 async function doUpdateOrder(id, s) {
   try { await api(`/api/restaurant/orders/${id}/status`, { method: 'PATCH', body: { status: s } }); toast('Order updated ✓', 'ok'); loadOrders(oFilter); }
@@ -1816,6 +1938,16 @@ async function loadProfile() {
     const rtEl = document.getElementById('p-rtype');
     if (rtEl && r.restaurant_type) rtEl.value = r.restaurant_type;
 
+    // Pricing & charge config
+    const gstModeEl = document.getElementById('p-gst-mode');
+    if (gstModeEl && r.menu_gst_mode) { gstModeEl.value = r.menu_gst_mode; toggleDashGstHint(r.menu_gst_mode); }
+    const delPctEl = document.getElementById('p-del-pct');
+    if (delPctEl && r.delivery_fee_customer_pct != null) { delPctEl.value = r.delivery_fee_customer_pct; updateDashDeliveryHint(r.delivery_fee_customer_pct); }
+    const pkgEl = document.getElementById('p-pkg-charge');
+    if (pkgEl && r.packaging_charge_rs != null) pkgEl.value = r.packaging_charge_rs;
+    const pkgGstEl = document.getElementById('p-pkg-gst');
+    if (pkgGstEl && r.packaging_gst_pct != null) pkgGstEl.value = r.packaging_gst_pct;
+
     // WhatsApp connection status
     const waAccounts = r.waba_accounts;
     const hasWA = waAccounts && waAccounts.length > 0;
@@ -1857,6 +1989,29 @@ async function doSaveProfile() {
     toast('Profile saved', 'ok');
     const nm = document.getElementById('p-bname').value;
     if (nm) document.getElementById('sb-nm').textContent = nm;
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function toggleDashGstHint(v) {
+  const el = document.getElementById('p-gst-mode-hint');
+  if (el) el.style.display = v === 'extra' ? '' : 'none';
+}
+function updateDashDeliveryHint(v) {
+  const valEl = document.getElementById('p-del-pct-val');
+  const hintEl = document.getElementById('p-del-pct-hint');
+  if (valEl) valEl.textContent = v + '%';
+  if (hintEl) hintEl.textContent = `Customer pays ${v}% of delivery fee. Restaurant absorbs ${100 - parseInt(v, 10)}%.`;
+}
+
+async function doSaveChargeConfig() {
+  try {
+    await api('/api/restaurant', { method: 'PUT', body: {
+      menuGstMode:            document.getElementById('p-gst-mode').value,
+      deliveryFeeCustomerPct: parseInt(document.getElementById('p-del-pct').value, 10),
+      packagingChargeRs:      parseFloat(document.getElementById('p-pkg-charge').value) || 0,
+      packagingGstPct:        parseFloat(document.getElementById('p-pkg-gst').value),
+    }});
+    toast('Charge settings saved', 'ok');
   } catch (e) { toast(e.message, 'err'); }
 }
 

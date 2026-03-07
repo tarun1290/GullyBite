@@ -71,7 +71,14 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
   const commissionRate = parseFloat(restaurant.commission_pct || 10) / 100;
   // Platform fee is calculated on subtotal (not delivery fee)
   const platformFee = orders.reduce((s, o) => s + parseFloat(o.subtotal_rs) * commissionRate, 0);
-  const deliveryCosts = orders.reduce((s, o) => s + parseFloat(o.delivery_fee_rs), 0);
+  const deliveryCosts = orders.reduce((s, o) => s + parseFloat(o.delivery_fee_rs || 0), 0);
+
+  // Deduct the restaurant's share of delivery fee + GST (split config)
+  // These are stored per-order when calculateOrderCharges() runs at order creation.
+  const restaurantDeliveryDeduction = orders.reduce(
+    (s, o) => s + parseFloat(o.restaurant_delivery_rs || 0) + parseFloat(o.restaurant_delivery_gst_rs || 0),
+    0
+  );
 
   // Get refunds for this period
   const { rows: refundRows } = await db.query(
@@ -86,7 +93,7 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
   );
   const refunds = parseFloat(refundRows[0].refunds);
 
-  const netPayout = grossRevenue - platformFee - deliveryCosts - refunds;
+  const netPayout = grossRevenue - platformFee - deliveryCosts - restaurantDeliveryDeduction - refunds;
 
   console.log(
     `  ${restaurant.business_name}: ${orders.length} orders, ` +
@@ -103,7 +110,10 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')
        RETURNING id`,
       [restaurant.id, periodStart, periodEnd,
-       grossRevenue.toFixed(2), platformFee.toFixed(2), deliveryCosts.toFixed(2),
+       grossRevenue.toFixed(2), platformFee.toFixed(2),
+       // delivery_costs_rs = full delivery costs (what platform/3PL incurs)
+       // + restaurant's own delivery share deduction for transparency
+       (deliveryCosts + restaurantDeliveryDeduction).toFixed(2),
        refunds.toFixed(2), netPayout.toFixed(2), orders.length]
     );
 

@@ -92,14 +92,30 @@ const sendCatalog = (pid, token, to, catalogId, introText) =>
 // ─── ORDER SUMMARY ────────────────────────────────────────────
 // Shows cart items + total with Confirm/Cancel/Coupon buttons
 // items: [{ name, qty, price }]
+// charges: optional full breakdown from calculateOrderCharges()
 // discount: optional { code, amountRs }
-const sendOrderSummary = (pid, token, to, { orderNumber, items, subtotal, deliveryFee, total, discount }) => {
+const sendOrderSummary = (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount }) => {
   const lines = items.map((i) => `• ${i.name} ×${i.qty} — ₹${i.price}`).join('\n');
-  let financials = `Subtotal: ₹${subtotal}\n`;
-  if (discount && discount.amountRs > 0) {
-    financials += `🎟 Coupon (${discount.code}): -₹${parseFloat(discount.amountRs).toFixed(0)}\n`;
+
+  let financials;
+  if (charges) {
+    // Full breakdown with GST lines
+    const { formatChargeBreakdown } = require('./charges');
+    financials = formatChargeBreakdown(
+      charges,
+      charges.food_gst_rs > 0 ? 'extra' : 'included'
+    );
+    if (discount && discount.amountRs > 0) {
+      // coupon line already included inside formatChargeBreakdown via charges.discount_rs
+    }
+  } else {
+    // Legacy simple breakdown
+    financials = `Subtotal: ₹${subtotal}\n`;
+    if (discount && discount.amountRs > 0) {
+      financials += `🎟 Coupon (${discount.code}): -₹${parseFloat(discount.amountRs).toFixed(0)}\n`;
+    }
+    financials += `Delivery: ₹${deliveryFee}\n*Total: ₹${total}*`;
   }
-  financials += `Delivery: ₹${deliveryFee}\n*Total: ₹${total}*`;
 
   const buttons = [{ id: 'CONFIRM_ORDER', title: '✅ Confirm & Pay' }];
   if (discount && discount.amountRs > 0) {
@@ -170,10 +186,10 @@ const sendPaymentRequest = (pid, token, to, { order, items }) => {
             status    : 'pending',
             expiration: { timestamp: expiryTs, description: 'Order expires if unpaid' },
             items     : orderItems,
-            subtotal  : { value: Math.round(order.subtotal_rs * 100),       offset: 100 },
-            shipping  : { value: Math.round(order.delivery_fee_rs * 100),    offset: 100 },
-            discount  : { value: Math.round((order.discount_rs || 0) * 100), offset: 100 },
-            tax       : { value: 0, offset: 100 },
+            subtotal  : { value: Math.round(order.subtotal_rs * 100),                                                                    offset: 100 },
+            shipping  : { value: Math.round((order.customer_delivery_rs || order.delivery_fee_rs || 0) * 100),                           offset: 100 },
+            discount  : { value: Math.round((order.discount_rs || 0) * 100),                                                             offset: 100 },
+            tax       : { value: Math.round(((order.food_gst_rs || 0) + (order.customer_delivery_gst_rs || 0) + (order.packaging_gst_rs || 0)) * 100), offset: 100 },
           },
         },
       },
