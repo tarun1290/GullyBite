@@ -3,141 +3,251 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GullyBite — WhatsApp Restaurant Platform</title>
+<title>GullyBite — WhatsApp Ordering for Restaurants</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
-  --ink:#0a0d10;--ink2:#111619;--ink3:#181e24;
-  --rim:#253040;--rim2:#2e3d4e;
-  --wa:#25D366;--wa2:#1aad52;
-  --gold:#e8a020;--gold2:#f5b840;
-  --red:#e05050;
-  --tx:#ccd8e2;--dim:#6e8698;
-  --font-head:'Playfair Display',Georgia,serif;
-  --font-body:'Plus Jakarta Sans',system-ui,sans-serif;
+  --bg   :#f1f5f9; --bg2  :#ffffff;
+  --rim  :#e2e8f0; --rim2 :#cbd5e1;
+  --tx   :#0f172a; --dim  :#64748b; --mute:#94a3b8;
+  --acc  :#4f46e5; --acc2 :#4338ca; --acc-glow:rgba(79,70,229,.12);
+  --wa   :#16a34a; --wa-light:#dcfce7;
+  --gold :#d97706;
+  --red  :#dc2626;
+  --font :'Plus Jakarta Sans',system-ui,sans-serif;
+  --r    :10px;
+  --shadow-sm:0 1px 3px rgba(15,23,42,.07),0 1px 2px rgba(15,23,42,.04);
+  --shadow   :0 4px 16px rgba(15,23,42,.08);
+  --shadow-lg:0 20px 60px rgba(15,23,42,.12);
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{font-family:var(--font-body);background:var(--ink);color:var(--tx);min-height:100vh;line-height:1.5;-webkit-font-smoothing:antialiased}
-h1,h2,h3{font-family:var(--font-head)}
-button{cursor:pointer;font-family:var(--font-body)}
+body{font-family:var(--font);background:var(--bg2);color:var(--tx);min-height:100vh;line-height:1.55;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:var(--font);letter-spacing:-.02em}
+button{cursor:pointer;font-family:var(--font)}
 a{color:inherit;text-decoration:none}
 .hidden{display:none!important}
 
-/* ── NAV ─────────────────────────────────── */
-.nav{display:flex;align-items:center;justify-content:space-between;padding:1.1rem 2.5rem;border-bottom:1px solid var(--rim);position:sticky;top:0;z-index:99;background:rgba(10,13,16,.9);backdrop-filter:blur(18px)}
-.logo{display:flex;align-items:center;gap:.55rem;font-family:var(--font-head);font-weight:700;font-size:1.25rem;letter-spacing:-.01em}
-.logo-ring{width:9px;height:9px;border-radius:50%;background:var(--wa);box-shadow:0 0 0 0 rgba(37,211,102,.6);animation:ring 2.4s ease infinite}
-@keyframes ring{0%,100%{box-shadow:0 0 0 0 rgba(37,211,102,.6)}60%{box-shadow:0 0 0 9px rgba(37,211,102,0)}}
-
-/* ── HERO ────────────────────────────────── */
-#pg-land{min-height:100vh;background:radial-gradient(ellipse 70% 50% at 50% 0%,rgba(37,211,102,.06),transparent 55%),var(--ink)}
-.hero{max-width:780px;margin:0 auto;padding:6.5rem 2rem 4rem;text-align:center;animation:riseIn .6s cubic-bezier(.22,1,.36,1) both}
-@keyframes riseIn{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}
-.hero-pill{display:inline-flex;align-items:center;gap:.4rem;background:rgba(232,160,32,.1);border:1px solid rgba(232,160,32,.22);color:var(--gold2);padding:.28rem .9rem;border-radius:100px;font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-bottom:1.6rem}
-.hero h1{font-size:clamp(2.6rem,6vw,4.8rem);line-height:1.04;margin-bottom:1.3rem;color:#e8eef3}
-.hero h1 em{font-style:italic;color:var(--wa)}
-.hero p{font-size:1rem;color:var(--dim);max-width:460px;margin:0 auto 2.2rem;line-height:1.78}
-.hero-btns{display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap}
-.btn-wa{display:inline-flex;align-items:center;gap:.45rem;background:var(--wa);color:#000;font-weight:700;font-size:.9rem;padding:.78rem 1.8rem;border-radius:100px;border:none;transition:all .2s}
-.btn-wa:hover{background:var(--wa2);transform:translateY(-2px);box-shadow:0 8px 24px rgba(37,211,102,.28)}
-.btn-wa:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
-.btn-outline{display:inline-flex;align-items:center;gap:.4rem;background:transparent;color:var(--tx);font-weight:600;font-size:.88rem;padding:.75rem 1.7rem;border-radius:100px;border:1px solid var(--rim2);transition:all .18s}
-.btn-outline:hover{border-color:var(--tx);background:var(--ink3)}
+/* ── NAV ───────────────────────────────────────────────── */
+.nav{display:flex;align-items:center;justify-content:space-between;padding:1rem 2.5rem;border-bottom:1px solid var(--rim);position:sticky;top:0;z-index:99;background:rgba(255,255,255,.92);backdrop-filter:blur(16px)}
+.logo{display:flex;align-items:center;gap:.6rem;font-weight:800;font-size:1.1rem;color:var(--tx);letter-spacing:-.03em}
+.logo-ring{width:30px;height:30px;border-radius:8px;background:var(--acc);display:flex;align-items:center;justify-content:center;color:#fff;font-size:1rem;flex-shrink:0;box-shadow:0 2px 10px rgba(79,70,229,.3)}
+.nav-links{display:flex;align-items:center;gap:.4rem}
+.btn-outline{display:inline-flex;align-items:center;gap:.4rem;background:transparent;color:var(--tx);font-weight:600;font-size:.85rem;padding:.55rem 1.2rem;border-radius:8px;border:1px solid var(--rim2);transition:all .15s;cursor:pointer}
+.btn-outline:hover{background:var(--bg);border-color:var(--dim)}
 .btn-outline:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{display:inline-flex;align-items:center;gap:.4rem;background:var(--acc);color:#fff;font-weight:700;font-size:.85rem;padding:.55rem 1.3rem;border-radius:8px;border:none;transition:all .15s;cursor:pointer}
+.btn-primary:hover{background:var(--acc2);box-shadow:0 3px 12px rgba(79,70,229,.25)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
 
-/* ── FEATURES GRID ───────────────────────── */
-.grid-feats{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1px;background:var(--rim);border:1px solid var(--rim);border-radius:14px;overflow:hidden;max-width:940px;margin:3rem auto}
-.feat{background:var(--ink2);padding:1.5rem 1.6rem;transition:background .12s}
-.feat:hover{background:var(--ink3)}
-.feat .fic{font-size:1.5rem;margin-bottom:.55rem}
-.feat h3{font-family:var(--font-body);font-size:.86rem;font-weight:600;margin-bottom:.25rem}
-.feat p{font-size:.78rem;color:var(--dim);line-height:1.65}
+/* ── LANDING PAGE ──────────────────────────────────────── */
 
-/* ── AUTH / FORM PAGES ───────────────────── */
-.auth-wrap{min-height:100vh;display:flex;flex-direction:column}
+/* ─ HERO ─ */
+.hero-section{padding:5.5rem 2rem 4rem;text-align:center;background:linear-gradient(180deg,rgba(79,70,229,.04) 0%,transparent 60%);border-bottom:1px solid var(--rim);position:relative;overflow:hidden}
+.hero-section::before{content:'';position:absolute;top:-60px;left:50%;transform:translateX(-50%);width:700px;height:700px;border-radius:50%;background:radial-gradient(circle,rgba(79,70,229,.06) 0%,transparent 65%);pointer-events:none}
+.hero-pill{display:inline-flex;align-items:center;gap:.45rem;background:rgba(22,163,74,.1);border:1px solid rgba(22,163,74,.2);color:var(--wa);padding:.3rem 1rem;border-radius:100px;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-bottom:1.6rem}
+.hero-pill span{width:6px;height:6px;border-radius:50%;background:var(--wa);animation:blink 1.8s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.hero h1{font-size:clamp(2.4rem,5.5vw,4.2rem);line-height:1.06;margin-bottom:1.3rem;font-weight:800;color:var(--tx)}
+.hero h1 .accent{color:var(--acc)}
+.hero h1 .wa-green{color:var(--wa)}
+.hero-sub{font-size:1.05rem;color:var(--dim);max-width:520px;margin:0 auto 2.2rem;line-height:1.75}
+.hero-btns{display:flex;gap:.7rem;justify-content:center;flex-wrap:wrap;margin-bottom:2.8rem}
+.btn-hero{display:inline-flex;align-items:center;gap:.5rem;background:var(--acc);color:#fff;font-weight:700;font-size:.95rem;padding:.82rem 2rem;border-radius:10px;border:none;transition:all .18s;cursor:pointer;box-shadow:0 4px 14px rgba(79,70,229,.28)}
+.btn-hero:hover{background:var(--acc2);transform:translateY(-1px);box-shadow:0 6px 20px rgba(79,70,229,.35)}
+.btn-hero-ghost{display:inline-flex;align-items:center;gap:.5rem;background:#fff;color:var(--tx);font-weight:600;font-size:.92rem;padding:.8rem 1.9rem;border-radius:10px;border:1px solid var(--rim2);transition:all .15s;cursor:pointer}
+.btn-hero-ghost:hover{border-color:var(--acc);color:var(--acc);background:rgba(79,70,229,.03)}
+
+/* hero mockup */
+.hero-mockup{max-width:860px;margin:0 auto;background:#fff;border:1px solid var(--rim);border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden}
+.mock-topbar{background:var(--bg);border-bottom:1px solid var(--rim);padding:.65rem 1.2rem;display:flex;align-items:center;gap:.5rem}
+.mock-dot{width:10px;height:10px;border-radius:50%}
+.mock-title{font-size:.72rem;font-weight:600;color:var(--mute);margin:0 auto}
+.mock-body{padding:1.2rem}
+.mock-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
+.mock-stat{background:var(--bg);border:1px solid var(--rim);border-radius:8px;padding:.8rem 1rem}
+.mock-stat-v{font-size:1.35rem;font-weight:700;color:var(--acc);line-height:1;margin-bottom:.2rem}
+.mock-stat-l{font-size:.65rem;color:var(--dim)}
+.mock-table{width:100%;border-collapse:collapse;font-size:.75rem}
+.mock-table th{background:var(--bg);padding:.45rem .7rem;text-align:left;color:var(--mute);font-weight:600;font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--rim)}
+.mock-table td{padding:.5rem .7rem;border-bottom:1px solid var(--rim);color:var(--tx)}
+.mock-table tr:last-child td{border-bottom:none}
+.mock-badge{display:inline-flex;padding:.15rem .5rem;border-radius:100px;font-size:.62rem;font-weight:600}
+.mock-badge.prep{background:#fef9c3;color:#92400e}
+.mock-badge.paid{background:#dbeafe;color:#1d4ed8}
+.mock-badge.done{background:#dcfce7;color:#15803d}
+.mock-btn{background:#fff;border:1px solid var(--rim);border-radius:5px;padding:.2rem .55rem;font-size:.65rem;color:var(--tx);cursor:pointer}
+
+/* ─ STATS STRIP ─ */
+.stats-strip{background:#fff;border-top:1px solid var(--rim);border-bottom:1px solid var(--rim);padding:2rem 2.5rem}
+.stats-inner{max-width:900px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;text-align:center}
+.strip-stat-v{font-size:2rem;font-weight:800;color:var(--acc);letter-spacing:-.04em;line-height:1}
+.strip-stat-l{font-size:.78rem;color:var(--dim);margin-top:.3rem;font-weight:500}
+
+/* ─ HOW IT WORKS ─ */
+.section{padding:5rem 2rem}
+.section-center{max-width:960px;margin:0 auto}
+.section-pill{display:inline-block;background:rgba(79,70,229,.08);color:var(--acc);font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:.3rem .85rem;border-radius:100px;margin-bottom:1rem;border:1px solid rgba(79,70,229,.15)}
+.section-title{font-size:clamp(1.7rem,3.5vw,2.4rem);font-weight:800;color:var(--tx);margin-bottom:.75rem;line-height:1.15}
+.section-sub{font-size:.95rem;color:var(--dim);max-width:520px;line-height:1.75}
+.section-head{margin-bottom:3.2rem}
+
+.steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.step-card{background:#fff;border:1px solid var(--rim);border-radius:14px;padding:1.8rem;position:relative;box-shadow:var(--shadow-sm)}
+.step-num{width:36px;height:36px;border-radius:9px;background:rgba(79,70,229,.1);color:var(--acc);font-weight:800;font-size:.88rem;display:flex;align-items:center;justify-content:center;margin-bottom:1rem;border:1px solid rgba(79,70,229,.15)}
+.step-card h3{font-size:.97rem;font-weight:700;margin-bottom:.5rem;color:var(--tx)}
+.step-card p{font-size:.83rem;color:var(--dim);line-height:1.7}
+.step-conn{display:none}
+
+/* ─ FEATURES ─ */
+.features-section{background:var(--bg);border-top:1px solid var(--rim);border-bottom:1px solid var(--rim)}
+.feats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+.feat-card{background:#fff;border:1px solid var(--rim);border-radius:14px;padding:1.6rem;box-shadow:var(--shadow-sm);transition:box-shadow .14s}
+.feat-card:hover{box-shadow:var(--shadow)}
+.feat-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-bottom:1rem;flex-shrink:0}
+.feat-icon.indigo{background:rgba(79,70,229,.1)}
+.feat-icon.green{background:#dcfce7}
+.feat-icon.amber{background:#fef3c7}
+.feat-icon.blue{background:#dbeafe}
+.feat-icon.violet{background:#ede9fe}
+.feat-icon.rose{background:#ffe4e6}
+.feat-card h3{font-size:.92rem;font-weight:700;margin-bottom:.4rem;color:var(--tx)}
+.feat-card p{font-size:.81rem;color:var(--dim);line-height:1.7}
+
+/* ─ COMPARISON ─ */
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;max-width:760px;margin:0 auto}
+.compare-card{border-radius:14px;padding:1.8rem;border:2px solid var(--rim)}
+.compare-card.them{background:var(--bg)}
+.compare-card.us{background:#fff;border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,70,229,.08)}
+.compare-card h3{font-size:.95rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
+.compare-row{display:flex;align-items:center;gap:.65rem;padding:.5rem 0;border-bottom:1px solid var(--rim);font-size:.83rem;color:var(--dim)}
+.compare-row:last-child{border-bottom:none}
+.compare-row.good{color:var(--tx)}
+.cico{font-size:.85rem;width:18px;flex-shrink:0}
+
+/* ─ PRICING ─ */
+.pricing-card{background:#fff;border:2px solid var(--acc);border-radius:18px;padding:2.4rem;max-width:420px;margin:0 auto;text-align:center;box-shadow:0 0 0 4px rgba(79,70,229,.07),var(--shadow)}
+.pricing-badge{display:inline-block;background:rgba(79,70,229,.1);color:var(--acc);font-size:.72rem;font-weight:700;padding:.25rem .8rem;border-radius:100px;margin-bottom:1.2rem;letter-spacing:.06em;text-transform:uppercase}
+.pricing-price{font-size:3.2rem;font-weight:800;color:var(--tx);letter-spacing:-.05em;line-height:1}
+.pricing-price span{font-size:1rem;font-weight:600;color:var(--dim);letter-spacing:0}
+.pricing-sub{font-size:.82rem;color:var(--dim);margin:.6rem 0 1.6rem}
+.pricing-feats{list-style:none;text-align:left;margin-bottom:1.8rem;display:flex;flex-direction:column;gap:.65rem}
+.pricing-feats li{display:flex;align-items:center;gap:.6rem;font-size:.85rem;color:var(--tx)}
+.pricing-feats li::before{content:'✓';color:var(--wa);font-weight:700;font-size:.88rem;flex-shrink:0}
+.pricing-note{font-size:.75rem;color:var(--mute);margin-top:.8rem}
+
+/* ─ CTA SECTION ─ */
+.cta-section{background:var(--acc);padding:4.5rem 2rem;text-align:center}
+.cta-section h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;color:#fff;margin-bottom:.8rem;line-height:1.15}
+.cta-section p{font-size:.97rem;color:rgba(255,255,255,.75);max-width:460px;margin:0 auto 2rem;line-height:1.75}
+.btn-cta{display:inline-flex;align-items:center;gap:.5rem;background:#fff;color:var(--acc);font-weight:700;font-size:.95rem;padding:.85rem 2.2rem;border-radius:10px;border:none;transition:all .18s;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.btn-cta:hover{background:var(--bg);transform:translateY(-1px);box-shadow:0 6px 22px rgba(0,0,0,.25)}
+
+/* ─ FOOTER ─ */
+.footer{background:var(--bg);border-top:1px solid var(--rim);padding:2rem 2.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}
+.footer-logo{font-weight:800;font-size:.97rem;color:var(--tx);display:flex;align-items:center;gap:.5rem;letter-spacing:-.02em}
+.footer-links{display:flex;gap:1.5rem;font-size:.82rem;color:var(--dim)}
+.footer-links a:hover{color:var(--tx)}
+.footer-copy{font-size:.78rem;color:var(--mute)}
+
+/* ── AUTH PAGES ─────────────────────────────────────────── */
+.auth-wrap{min-height:100vh;display:flex;flex-direction:column;background:var(--bg)}
 .auth-body{flex:1;display:flex;align-items:center;justify-content:center;padding:2rem 1rem}
-.auth-card{background:var(--ink2);border:1px solid var(--rim);border-radius:18px;padding:2.4rem;width:100%;max-width:440px;animation:riseIn .45s cubic-bezier(.22,1,.36,1) both}
-.auth-card h2{font-size:1.55rem;margin-bottom:.35rem;color:#e8eef3}
-.auth-card .sub{font-size:.84rem;color:var(--dim);margin-bottom:1.6rem}
+.auth-card{background:#fff;border:1px solid var(--rim);border-radius:16px;padding:2.4rem;width:100%;max-width:440px;animation:riseIn .4s cubic-bezier(.22,1,.36,1) both;box-shadow:var(--shadow)}
+.auth-card h2{font-size:1.55rem;font-weight:800;margin-bottom:.35rem;color:var(--tx)}
+.auth-card .sub{font-size:.84rem;color:var(--dim);margin-bottom:1.6rem;line-height:1.6}
 .fld{display:flex;flex-direction:column;gap:.28rem;margin-bottom:.85rem}
-.fld label{font-size:.76rem;color:var(--dim);font-weight:500}
+.fld label{font-size:.76rem;color:var(--dim);font-weight:600}
 .fld label .req{color:var(--red);margin-left:2px}
-.fld input,.fld select{background:var(--ink3);border:1px solid var(--rim2);border-radius:9px;padding:.62rem .9rem;color:var(--tx);font-size:.87rem;font-family:var(--font-body);outline:none;transition:border-color .15s;width:100%}
-.fld input:focus,.fld select:focus{border-color:var(--wa)}
-.fld input::placeholder{color:var(--dim)}
+.fld input,.fld select{background:#fff;border:1px solid var(--rim);border-radius:8px;padding:.6rem .9rem;color:var(--tx);font-size:.87rem;font-family:var(--font);outline:none;transition:border-color .14s,box-shadow .14s;width:100%}
+.fld input:focus,.fld select:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,70,229,.09)}
+.fld input::placeholder{color:var(--mute)}
 .fld-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
 @media(max-width:480px){.fld-row{grid-template-columns:1fr}}
-.btn-full{width:100%;padding:.82rem;background:var(--wa);color:#000;font-weight:700;font-size:.92rem;border:none;border-radius:100px;transition:background .18s;margin-top:.3rem}
-.btn-full:hover:not(:disabled){background:var(--wa2)}
-.btn-full:disabled{opacity:.55;cursor:not-allowed}
-.auth-divider{display:flex;align-items:center;gap:.6rem;margin:1.1rem 0;color:var(--dim);font-size:.76rem}
-.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--rim)}
+.btn-full{width:100%;padding:.8rem;background:var(--acc);color:#fff;font-weight:700;font-size:.92rem;border:none;border-radius:9px;transition:background .15s,box-shadow .15s;margin-top:.3rem;cursor:pointer}
+.btn-full:hover:not(:disabled){background:var(--acc2);box-shadow:0 3px 12px rgba(79,70,229,.25)}
+.btn-full:disabled{opacity:.5;cursor:not-allowed}
 .auth-switch{text-align:center;margin-top:1.2rem;font-size:.82rem;color:var(--dim)}
-.auth-switch a{color:var(--wa);font-weight:600;cursor:pointer}
+.auth-switch a{color:var(--acc);font-weight:600;cursor:pointer}
 .input-err{border-color:var(--red)!important}
 .field-err{font-size:.73rem;color:var(--red);margin-top:.2rem}
-.pwd-hint{font-size:.72rem;color:var(--dim);margin-top:.2rem}
+.pwd-hint{font-size:.72rem;color:var(--mute);margin-top:.2rem}
 
-/* ── ONBOARDING ──────────────────────────── */
+/* ── ONBOARDING ─────────────────────────────────────────── */
 .ob-wrap{width:100%;max-width:640px;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both;padding:1rem 0 3rem}
 .ob-header{text-align:center;margin-bottom:1.8rem}
-.ob-header h2{font-size:1.7rem;margin-bottom:.4rem;color:#e8eef3}
+.ob-header h2{font-size:1.65rem;font-weight:800;margin-bottom:.4rem;color:var(--tx)}
 .ob-header p{color:var(--dim);font-size:.87rem}
 .ob-steps{display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:2rem}
 .ob-step-item{display:flex;flex-direction:column;align-items:center;gap:.3rem;flex:1;max-width:120px}
-.ob-step-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;border:2px solid var(--rim2);background:var(--ink3);color:var(--dim);transition:all .3s}
-.ob-step-dot.done{background:rgba(37,211,102,.15);border-color:var(--wa);color:var(--wa)}
-.ob-step-dot.active{background:rgba(232,160,32,.15);border-color:var(--gold2);color:var(--gold2)}
+.ob-step-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;border:2px solid var(--rim2);background:#fff;color:var(--dim);transition:all .3s}
+.ob-step-dot.done{background:#dcfce7;border-color:var(--wa);color:var(--wa)}
+.ob-step-dot.active{background:rgba(79,70,229,.1);border-color:var(--acc);color:var(--acc)}
 .ob-step-label{font-size:.7rem;color:var(--dim);text-align:center}
-.ob-step-label.active{color:var(--tx)}
+.ob-step-label.active{color:var(--tx);font-weight:600}
 .ob-connector{flex:1;height:2px;background:var(--rim2);max-width:40px;margin-bottom:1.2rem;transition:background .3s}
 .ob-connector.done{background:var(--wa)}
-.ob-section{background:var(--ink2);border:1px solid var(--rim);border-radius:14px;padding:1.5rem;margin-bottom:.9rem}
-.ob-section-title{font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);margin-bottom:1rem}
-.ob-submit{width:100%;padding:.82rem;background:var(--wa);color:#000;font-weight:700;font-size:.92rem;border:none;border-radius:100px;margin-top:.4rem;transition:background .18s}
-.ob-submit:hover:not(:disabled){background:var(--wa2)}
-.ob-submit:disabled{opacity:.55;cursor:not-allowed}
-.ob-note{font-size:.72rem;color:var(--dim);text-align:center;margin-top:.7rem;line-height:1.6}
+.ob-section{background:#fff;border:1px solid var(--rim);border-radius:12px;padding:1.5rem;margin-bottom:.9rem;box-shadow:var(--shadow-sm)}
+.ob-section-title{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:1rem}
+.ob-submit{width:100%;padding:.82rem;background:var(--acc);color:#fff;font-weight:700;font-size:.92rem;border:none;border-radius:9px;margin-top:.4rem;transition:background .18s,box-shadow .18s;cursor:pointer}
+.ob-submit:hover:not(:disabled){background:var(--acc2);box-shadow:0 3px 12px rgba(79,70,229,.25)}
+.ob-submit:disabled{opacity:.5;cursor:not-allowed}
+.ob-note{font-size:.72rem;color:var(--mute);text-align:center;margin-top:.7rem;line-height:1.6}
 
-/* ── CONNECT WA STEP ─────────────────────── */
-.wa-connect-card{background:var(--ink2);border:1px solid var(--rim);border-radius:16px;padding:2rem 1.8rem;text-align:center}
+/* ── CONNECT WA STEP ────────────────────────────────────── */
+.wa-connect-card{background:#fff;border:1px solid var(--rim);border-radius:14px;padding:2rem 1.8rem;text-align:center;box-shadow:var(--shadow)}
 .wa-connect-card .wa-ic{font-size:3rem;margin-bottom:1rem}
-.wa-connect-card h3{font-size:1.2rem;margin-bottom:.5rem;color:#e8eef3}
+.wa-connect-card h3{font-size:1.2rem;font-weight:700;margin-bottom:.5rem;color:var(--tx)}
 .wa-connect-card p{color:var(--dim);font-size:.85rem;line-height:1.7;margin-bottom:1.4rem}
 .wa-bullets{list-style:none;text-align:left;margin-bottom:1.5rem;display:flex;flex-direction:column;gap:.5rem}
-.wa-bullets li{display:flex;align-items:center;gap:.6rem;font-size:.82rem;color:var(--dim)}
+.wa-bullets li{display:flex;align-items:center;gap:.6rem;font-size:.82rem;color:var(--tx)}
 .wa-bullets li::before{content:'✓';color:var(--wa);font-weight:700;flex-shrink:0}
-.btn-meta{display:flex;align-items:center;justify-content:center;gap:.55rem;width:100%;padding:.82rem;background:#1877f2;color:#fff;font-weight:700;font-size:.92rem;border:none;border-radius:100px;transition:background .18s}
+.btn-meta{display:flex;align-items:center;justify-content:center;gap:.55rem;width:100%;padding:.82rem;background:#1877f2;color:#fff;font-weight:700;font-size:.92rem;border:none;border-radius:9px;transition:background .18s;cursor:pointer}
 .btn-meta:hover:not(:disabled){background:#1565d8}
 .btn-meta:disabled{opacity:.55;cursor:not-allowed}
 
-/* ── STATUS SCREENS ──────────────────────── */
-.status-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}
-.status-card{background:var(--ink2);border:1px solid var(--rim);border-radius:18px;padding:2.8rem 2.4rem;max-width:460px;width:100%;text-align:center;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both}
-.status-icon{font-size:3.2rem;margin-bottom:1rem}
-.status-card h2{font-size:1.5rem;margin-bottom:.6rem;color:#e8eef3}
+/* ── STATUS SCREENS ─────────────────────────────────────── */
+.status-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem;background:var(--bg)}
+.status-card{background:#fff;border:1px solid var(--rim);border-radius:18px;padding:2.8rem 2.4rem;max-width:460px;width:100%;text-align:center;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both;box-shadow:var(--shadow)}
+.status-icon{font-size:3rem;margin-bottom:1rem}
+.status-card h2{font-size:1.5rem;font-weight:800;margin-bottom:.6rem;color:var(--tx)}
 .status-card p{color:var(--dim);font-size:.87rem;line-height:1.75;margin-bottom:1.3rem}
 .tl-list{list-style:none;text-align:left;margin:1.2rem 0;display:flex;flex-direction:column;gap:.65rem}
-.tl-list li{display:flex;align-items:center;gap:.65rem;font-size:.83rem}
+.tl-list li{display:flex;align-items:center;gap:.65rem;font-size:.83rem;color:var(--tx)}
 .tl-dot{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0}
-.tl-dot.done{background:rgba(37,211,102,.15);color:var(--wa);border:1px solid rgba(37,211,102,.3)}
-.tl-dot.wait{background:var(--ink3);color:var(--dim);border:1px solid var(--rim2)}
-.rej-box{background:rgba(224,80,80,.08);border:1px solid rgba(224,80,80,.22);border-radius:10px;padding:.9rem 1rem;margin:1rem 0;text-align:left;font-size:.83rem;line-height:1.6;color:var(--red)}
+.tl-dot.done{background:#dcfce7;color:var(--wa);border:1px solid rgba(22,163,74,.3)}
+.tl-dot.wait{background:var(--bg);color:var(--mute);border:1px solid var(--rim2)}
+.rej-box{background:#fff1f2;border:1px solid #fecaca;border-radius:10px;padding:.9rem 1rem;margin:1rem 0;text-align:left;font-size:.83rem;line-height:1.6;color:var(--red)}
 .btn-row{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin-top:1.3rem}
 
-/* ── TOAST ───────────────────────────────── */
-#toast{position:fixed;bottom:1.2rem;right:1.2rem;background:var(--ink3);border:1px solid var(--rim2);border-radius:9px;padding:.65rem .95rem;font-size:.82rem;box-shadow:0 8px 28px rgba(0,0,0,.55);z-index:9999;transform:translateY(130%);transition:transform .24s cubic-bezier(.34,1.56,.64,1);max-width:300px;display:flex;align-items:center;gap:.4rem}
+/* ── TOAST ──────────────────────────────────────────────── */
+#toast{position:fixed;bottom:1.3rem;right:1.3rem;background:#fff;border:1px solid var(--rim);border-radius:10px;padding:.7rem 1.1rem;font-size:.83rem;box-shadow:0 8px 30px rgba(15,23,42,.14);z-index:9999;transform:translateY(130%);transition:transform .24s cubic-bezier(.34,1.56,.64,1);max-width:310px;display:flex;align-items:center;gap:.4rem;color:var(--tx)}
 #toast.on{transform:translateY(0)}
-#toast.ok{border-color:rgba(37,211,102,.3);color:var(--wa)}
-#toast.err{border-color:rgba(224,80,80,.3);color:var(--red)}
-#toast.nfo{border-color:rgba(74,144,217,.3);color:#4a90d9}
-.spin{width:14px;height:14px;border:2px solid rgba(0,0,0,.18);border-top-color:#000;border-radius:50%;animation:rot .6s linear infinite;display:inline-block;vertical-align:middle}
+#toast.ok {background:#f0fdf4;border-color:#bbf7d0;color:#15803d}
+#toast.err{background:#fff1f2;border-color:#fecaca;color:#dc2626}
+#toast.nfo{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.spin{width:14px;height:14px;border:2px solid var(--rim);border-top-color:var(--acc);border-radius:50%;animation:rot .6s linear infinite;display:inline-block;vertical-align:middle}
 @keyframes rot{to{transform:rotate(360deg)}}
+@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
 
-@media(max-width:700px){.nav{padding:.85rem 1.1rem}.grid-feats{margin:2rem 1rem}}
+@media(max-width:900px){
+  .feats-grid{grid-template-columns:repeat(2,1fr)}
+  .steps-grid{grid-template-columns:1fr}
+  .compare-grid{grid-template-columns:1fr}
+  .mock-stats{grid-template-columns:repeat(2,1fr)}
+  .stats-inner{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:640px){
+  .nav{padding:.85rem 1.2rem}
+  .hero-section{padding:3.8rem 1.2rem 3rem}
+  .section{padding:3.5rem 1.2rem}
+  .feats-grid{grid-template-columns:1fr}
+  .stats-inner{grid-template-columns:1fr 1fr}
+  .footer{flex-direction:column;text-align:center}
+  .hero-mockup{display:none}
+}
 </style>
 </head>
 <body>
@@ -150,42 +260,251 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
 
 <!-- ══════════════════ LANDING ════════════════════════════ -->
 <div id="pg-land">
+
+  <!-- NAV -->
   <nav class="nav">
-    <div class="logo"><div class="logo-ring"></div>GullyBite</div>
-    <div style="display:flex;gap:.6rem">
-      <button class="btn-outline" style="font-size:.8rem;padding:.55rem 1.2rem" onclick="showPage('pg-signin')">Sign In</button>
-      <button class="btn-wa"      style="font-size:.8rem;padding:.55rem 1.2rem" onclick="showPage('pg-signup')">Get Started</button>
+    <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
+    <div class="nav-links">
+      <button class="btn-outline" onclick="showPage('pg-signin')">Sign In</button>
+      <button class="btn-primary" onclick="showPage('pg-signup')">Get Started Free →</button>
     </div>
   </nav>
-  <section class="hero">
-    <div class="hero-pill">✦ WhatsApp-native ordering</div>
-    <h1>Your menu.<br>Their WhatsApp.<br><em>Fully automated.</em></h1>
-    <p>Add a branch — we instantly create a WhatsApp Catalog. Customers browse, cart and pay without leaving WhatsApp.</p>
-    <div class="hero-btns">
-      <button class="btn-wa" onclick="showPage('pg-signup')">🚀 Get Started Free</button>
-      <button class="btn-outline" onclick="showPage('pg-signin')">Sign In</button>
+
+  <!-- HERO -->
+  <section class="hero-section">
+    <div class="hero">
+      <div class="hero-pill"><span></span> Now live across 12+ cities in India</div>
+      <h1>Turn WhatsApp into your<br><span class="wa-green">restaurant's</span> <span class="accent">ordering engine</span></h1>
+      <p class="hero-sub">GullyBite connects your menu to WhatsApp in minutes. Customers browse, order and pay — no app, no Swiggy, no commission. Just direct orders straight to your kitchen.</p>
+      <div class="hero-btns">
+        <button class="btn-hero" onclick="showPage('pg-signup')">🚀 Start for Free — No card needed</button>
+        <button class="btn-hero-ghost" onclick="showPage('pg-signin')">Sign In to Dashboard</button>
+      </div>
+
+      <!-- Dashboard Mockup -->
+      <div class="hero-mockup">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#ef4444"></div>
+          <div class="mock-dot" style="background:#f59e0b;margin-left:4px"></div>
+          <div class="mock-dot" style="background:#22c55e;margin-left:4px"></div>
+          <div class="mock-title">GullyBite Dashboard — Spice Route Kitchen</div>
+        </div>
+        <div class="mock-body">
+          <div class="mock-stats">
+            <div class="mock-stat"><div class="mock-stat-v">24</div><div class="mock-stat-l">Today's Orders</div></div>
+            <div class="mock-stat"><div class="mock-stat-v" style="color:#16a34a">₹12,480</div><div class="mock-stat-l">Today's Revenue</div></div>
+            <div class="mock-stat"><div class="mock-stat-v">6</div><div class="mock-stat-l">Active Orders</div></div>
+            <div class="mock-stat"><div class="mock-stat-v">₹50K</div><div class="mock-stat-l">Weekly Revenue</div></div>
+          </div>
+          <table class="mock-table">
+            <thead><tr><th>Order</th><th>Customer</th><th>Branch</th><th>Items</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td>#GB-1042</td><td>Priya M.</td><td>Koramangala</td><td>Butter Chicken + Naan ×2</td><td>₹680</td><td><span class="mock-badge prep">Preparing</span></td><td><button class="mock-btn">Confirm</button></td></tr>
+              <tr><td>#GB-1041</td><td>Rahul K.</td><td>Indiranagar</td><td>Biryani ×1</td><td>₹320</td><td><span class="mock-badge paid">Paid</span></td><td><button class="mock-btn">Start Prep</button></td></tr>
+              <tr><td>#GB-1040</td><td>Sneha R.</td><td>HSR Layout</td><td>Paneer Tikka + Dal Makhani</td><td>₹520</td><td><span class="mock-badge done">Delivered</span></td><td><button class="mock-btn">Mark Packed</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </section>
-  <div style="max-width:940px;margin:0 auto;padding:0 1.5rem">
-    <div class="grid-feats">
-      <div class="feat"><div class="fic">📍</div><h3>Location-Based Menu</h3><p>Customer shares GPS → nearest branch → only that branch's catalog shown in WhatsApp.</p></div>
-      <div class="feat"><div class="fic">⚡</div><h3>Auto Catalog Creation</h3><p>Add a branch → Meta Catalog API creates a dedicated catalog instantly. Zero manual steps.</p></div>
-      <div class="feat"><div class="fic">🛒</div><h3>Native WhatsApp Cart</h3><p>Browse, add to cart, checkout — no app downloads, no redirects, just WhatsApp.</p></div>
-      <div class="feat"><div class="fic">💳</div><h3>Razorpay Payments</h3><p>UPI, cards, netbanking — payment links via WhatsApp. Auto-refund on cancel.</p></div>
-      <div class="feat"><div class="fic">🔄</div><h3>Instant Sync</h3><p>Toggle unavailable → gone from catalog in seconds. Price change → synced immediately.</p></div>
-      <div class="feat"><div class="fic">💰</div><h3>Weekly Settlements</h3><p>Auto Monday payouts with full breakdown: gross, platform fee, net transfer to bank.</p></div>
+
+  <!-- STATS STRIP -->
+  <div class="stats-strip">
+    <div class="stats-inner">
+      <div>
+        <div class="strip-stat-v">₹0</div>
+        <div class="strip-stat-l">Commission on every order</div>
+      </div>
+      <div>
+        <div class="strip-stat-v">2 min</div>
+        <div class="strip-stat-l">To go live on WhatsApp</div>
+      </div>
+      <div>
+        <div class="strip-stat-v">100%</div>
+        <div class="strip-stat-l">Native WhatsApp checkout</div>
+      </div>
+      <div>
+        <div class="strip-stat-v">24/7</div>
+        <div class="strip-stat-l">Automated order management</div>
+      </div>
     </div>
   </div>
-  <div style="height:3rem"></div>
+
+  <!-- HOW IT WORKS -->
+  <section class="section" style="background:var(--bg)">
+    <div class="section-center">
+      <div class="section-head" style="text-align:center">
+        <div class="section-pill">How it works</div>
+        <h2 class="section-title">From signup to first order in under 10 minutes</h2>
+        <p class="section-sub" style="margin:0 auto">Three simple steps and your restaurant is live on WhatsApp — no technical setup, no developer needed.</p>
+      </div>
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-num">01</div>
+          <h3>Register &amp; Submit Details</h3>
+          <p>Create your account, fill in your restaurant's business details, FSSAI license and bank information. Our team verifies and activates your account within 1–2 business days.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">02</div>
+          <h3>Connect WhatsApp Business</h3>
+          <p>Link your Meta / WhatsApp Business account with one click. GullyBite auto-creates a product catalog for each branch and configures the order webhook — no code required.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">03</div>
+          <h3>Add Menu &amp; Start Selling</h3>
+          <p>Upload your menu via CSV or add items one by one. Customers can browse your catalog, add to cart and pay via UPI or card — entirely inside WhatsApp. Orders flow to your dashboard in real time.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="section features-section">
+    <div class="section-center">
+      <div class="section-head" style="text-align:center">
+        <div class="section-pill">Platform features</div>
+        <h2 class="section-title">Everything a modern restaurant needs</h2>
+        <p class="section-sub" style="margin:0 auto">Built specifically for Indian restaurants. No bloat, no per-order cut — just tools that help you sell more.</p>
+      </div>
+      <div class="feats-grid">
+        <div class="feat-card">
+          <div class="feat-icon indigo">📍</div>
+          <h3>Location-Based Branch Routing</h3>
+          <p>Customer shares their GPS location → GullyBite detects the nearest branch → shows only that branch's catalog. Multi-city coverage built in.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon green">🛒</div>
+          <h3>Native WhatsApp Cart &amp; Checkout</h3>
+          <p>Customers browse, build their cart and confirm orders entirely inside WhatsApp. No app download, no browser redirect, no friction.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon amber">⚡</div>
+          <h3>Auto Catalog Creation</h3>
+          <p>Add a branch and GullyBite instantly creates a dedicated Meta product catalog via API. Menu changes sync in seconds — toggle an item unavailable and it's gone from WhatsApp immediately.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon blue">💳</div>
+          <h3>Razorpay Payment Integration</h3>
+          <p>UPI, cards, net banking — GullyBite sends a payment link over WhatsApp. Payments are reconciled automatically. Auto-refund on cancelled orders.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon violet">🏷️</div>
+          <h3>Coupons &amp; Discount Codes</h3>
+          <p>Create percent or flat-amount discount codes with usage limits, minimum order thresholds and expiry dates. Customers apply codes directly during WhatsApp checkout.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon indigo">📋</div>
+          <h3>WhatsApp Message Templates</h3>
+          <p>Map approved Meta message templates to order events — Confirmed, Preparing, Dispatched, Delivered. Variables like order number and ETA are filled automatically.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon green">🔗</div>
+          <h3>Referral &amp; Affiliate Links</h3>
+          <p>Admin sends a restaurant's WhatsApp link to a prospective customer. If they order within 8 hours, a transparent 7.5% referral fee applies — tracked in both dashboards.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon amber">📊</div>
+          <h3>Real-Time Order Dashboard</h3>
+          <p>Live order stream with status management — Confirm → Preparing → Packed → Dispatched. Analytics on revenue, top items, busiest hours and customer retention.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon rose">💰</div>
+          <h3>Weekly Automatic Settlements</h3>
+          <p>Every Monday, your payout is calculated and transferred: gross revenue minus platform fee and delivery cost. Full itemised breakdown in the Settlements tab.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section class="section">
+    <div class="section-center">
+      <div class="section-head" style="text-align:center">
+        <div class="section-pill">Why GullyBite</div>
+        <h2 class="section-title">Stop paying 25–30% to aggregators</h2>
+        <p class="section-sub" style="margin:0 auto">Swiggy and Zomato take up to 30% of every order. GullyBite charges a flat monthly platform fee — and nothing more.</p>
+      </div>
+      <div class="compare-grid">
+        <div class="compare-card them">
+          <h3>❌ Swiggy / Zomato</h3>
+          <div class="compare-row"><span class="cico">✗</span>25–30% commission per order</div>
+          <div class="compare-row"><span class="cico">✗</span>You don't own the customer</div>
+          <div class="compare-row"><span class="cico">✗</span>Delayed weekly payouts</div>
+          <div class="compare-row"><span class="cico">✗</span>Controlled by platform algorithm</div>
+          <div class="compare-row"><span class="cico">✗</span>No direct customer communication</div>
+          <div class="compare-row"><span class="cico">✗</span>Paid ads to stay visible</div>
+        </div>
+        <div class="compare-card us">
+          <h3 style="color:var(--acc)">✅ GullyBite</h3>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Flat monthly fee, zero commission</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Direct WhatsApp relationship with customers</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Weekly automated bank transfers</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Your menu, your brand, your catalog</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Message customers via WhatsApp anytime</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>No ads, no algorithm — just orders</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="section" style="background:var(--bg);border-top:1px solid var(--rim)">
+    <div class="section-center">
+      <div class="section-head" style="text-align:center">
+        <div class="section-pill">Simple pricing</div>
+        <h2 class="section-title">One plan. No surprises.</h2>
+        <p class="section-sub" style="margin:0 auto">No per-order commission, no hidden fees. Just a predictable monthly subscription so you keep what you earn.</p>
+      </div>
+      <div class="pricing-card">
+        <div class="pricing-badge">Restaurant Plan</div>
+        <div class="pricing-price">₹2,999<span>/month</span></div>
+        <div class="pricing-sub">Billed monthly · Cancel anytime · GST extra</div>
+        <ul class="pricing-feats">
+          <li>Unlimited orders — no per-order commission</li>
+          <li>Up to 5 branches &amp; locations</li>
+          <li>Unlimited menu items &amp; catalog sync</li>
+          <li>WhatsApp ordering, cart &amp; checkout</li>
+          <li>Razorpay payment collection built in</li>
+          <li>Coupon &amp; discount system</li>
+          <li>Message template automation</li>
+          <li>Real-time order dashboard &amp; analytics</li>
+          <li>Weekly automatic bank settlements</li>
+          <li>Dedicated onboarding support</li>
+        </ul>
+        <button class="btn-full" onclick="showPage('pg-signup')">Get Started Free →</button>
+        <p class="pricing-note">First 14 days free. No credit card required to sign up.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <h2>Ready to own your orders?</h2>
+    <p>Join restaurants across India who've switched from aggregators to direct WhatsApp ordering with GullyBite.</p>
+    <button class="btn-cta" onclick="showPage('pg-signup')">🚀 Start Your Free Trial</button>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer-logo"><div style="width:24px;height:24px;border-radius:6px;background:var(--acc);display:flex;align-items:center;justify-content:center;color:#fff;font-size:.75rem">🍜</div>GullyBite</div>
+    <div class="footer-links">
+      <a href="mailto:support@gullybite.com">support@gullybite.com</a>
+      <a href="#">Privacy Policy</a>
+      <a href="#">Terms</a>
+    </div>
+    <div class="footer-copy">© 2025 GullyBite. All rights reserved.</div>
+  </footer>
+
 </div>
 
 <!-- ══════════════════ SIGN UP ════════════════════════════ -->
 <div id="pg-signup" class="hidden auth-wrap">
-  <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring"></div>GullyBite</div></nav>
+  <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring">🍜</div>GullyBite</div></nav>
   <div class="auth-body">
     <div class="auth-card">
       <h2>Create Account</h2>
-      <p class="sub">Start your free account — no credit card required</p>
+      <p class="sub">Start your free 14-day trial — no credit card required</p>
       <form onsubmit="doSignup(event)">
         <div class="fld">
           <label>Your Full Name <span class="req">*</span></label>
@@ -213,11 +532,11 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
 
 <!-- ══════════════════ SIGN IN ════════════════════════════ -->
 <div id="pg-signin" class="hidden auth-wrap">
-  <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring"></div>GullyBite</div></nav>
+  <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring">🍜</div>GullyBite</div></nav>
   <div class="auth-body">
     <div class="auth-card">
       <h2>Welcome Back</h2>
-      <p class="sub">Sign in to your GullyBite dashboard</p>
+      <p class="sub">Sign in to your GullyBite restaurant dashboard</p>
       <form onsubmit="doSignin(event)">
         <div class="fld">
           <label>Email Address <span class="req">*</span></label>
@@ -237,16 +556,15 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
 <!-- ══════════════════ ONBOARDING ═════════════════════════ -->
 <div id="pg-onboard" class="hidden auth-wrap">
   <nav class="nav" style="position:relative">
-    <div class="logo"><div class="logo-ring"></div>GullyBite</div>
+    <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
     <button class="btn-outline" style="font-size:.76rem;padding:.42rem .95rem" onclick="doLogout()">Sign out</button>
   </nav>
   <div class="auth-body" style="align-items:flex-start;padding-top:1.5rem">
     <div class="ob-wrap">
       <div class="ob-header">
         <h2>Complete Your Profile</h2>
-        <p>We verify all restaurants before granting access. Takes 2 minutes.</p>
+        <p>We verify all restaurants before granting access. Takes about 2 minutes.</p>
       </div>
-      <!-- step indicator -->
       <div class="ob-steps">
         <div class="ob-step-item">
           <div class="ob-step-dot done" id="s1-dot">✓</div>
@@ -264,7 +582,6 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
         </div>
       </div>
       <form onsubmit="submitBusinessDetails(event)">
-        <!-- Contact -->
         <div class="ob-section">
           <div class="ob-section-title">Contact Person</div>
           <div class="fld-row">
@@ -273,11 +590,10 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           </div>
           <div class="fld"><label>Email <span class="req">*</span></label><input id="ob-email" type="email" placeholder="ravi@restaurant.com" required></div>
         </div>
-        <!-- Business -->
         <div class="ob-section">
           <div class="ob-section-title">Business Details</div>
           <div class="fld-row">
-            <div class="fld"><label>Brand Name <span class="req">*</span> <span style="font-weight:400;color:var(--dim)">(customer-facing)</span></label><input id="ob-brand" type="text" placeholder="Spice Route Kitchen" required></div>
+            <div class="fld"><label>Brand Name <span class="req">*</span> <span style="font-weight:400;color:var(--mute)">(customer-facing)</span></label><input id="ob-brand" type="text" placeholder="Spice Route Kitchen" required></div>
             <div class="fld"><label>Registered Business Name <span class="req">*</span></label><input id="ob-regbiz" type="text" placeholder="Spice Route Foods Pvt Ltd" required></div>
           </div>
           <div class="fld-row">
@@ -287,7 +603,6 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
             </div>
           </div>
         </div>
-        <!-- Compliance -->
         <div class="ob-section">
           <div class="ob-section-title">Compliance &amp; Licensing</div>
           <div class="fld-row">
@@ -297,7 +612,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           <div class="fld"><label>FSSAI Expiry Date <span class="req">*</span></label><input id="ob-fssai-exp" type="date" required style="max-width:220px"></div>
         </div>
         <button class="ob-submit" type="submit" id="ob-btn">Save &amp; Continue →</button>
-        <p class="ob-note">Your information is encrypted and used only for verification.</p>
+        <p class="ob-note">Your information is encrypted and used only for verification purposes.</p>
       </form>
     </div>
   </div>
@@ -306,13 +621,13 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
 <!-- ══════════════════ CONNECT WHATSAPP ═══════════════════ -->
 <div id="pg-connect" class="hidden auth-wrap">
   <nav class="nav" style="position:relative">
-    <div class="logo"><div class="logo-ring"></div>GullyBite</div>
+    <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
     <button class="btn-outline" style="font-size:.76rem;padding:.42rem .95rem" onclick="doLogout()">Sign out</button>
   </nav>
   <div class="auth-body" style="align-items:flex-start;padding-top:1.5rem">
     <div class="ob-wrap">
       <div class="ob-header">
-        <h2>Connect WhatsApp</h2>
+        <h2>Connect WhatsApp Business</h2>
         <p>Link your WhatsApp Business account to start receiving orders.</p>
       </div>
       <div class="ob-steps">
@@ -324,13 +639,13 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
       </div>
       <div class="wa-connect-card">
         <div class="wa-ic">💬</div>
-        <h3>Connect WhatsApp Business</h3>
-        <p>We use Meta's official API to connect your WhatsApp Business number. Your customers will browse your menu and place orders directly in WhatsApp.</p>
+        <h3>One-click WhatsApp connection</h3>
+        <p>We use Meta's official Embedded Signup to link your WhatsApp Business number. Your product catalog is created automatically and the order webhook is configured — no code needed.</p>
         <ul class="wa-bullets">
-          <li>Your WhatsApp Business catalog is auto-created</li>
-          <li>Customers can browse, add to cart and pay natively</li>
-          <li>You manage everything from the GullyBite dashboard</li>
-          <li>No commission to Swiggy or Zomato</li>
+          <li>Your WhatsApp Business catalog is auto-created for every branch</li>
+          <li>Customers browse, add to cart and pay natively inside WhatsApp</li>
+          <li>All orders appear in real time on your GullyBite dashboard</li>
+          <li>Zero commission — you keep 100% of every order</li>
         </ul>
         <button class="btn-meta" id="connect-btn" onclick="doConnectMeta()">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
@@ -351,7 +666,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
     <ul class="tl-list">
       <li><div class="tl-dot done">✓</div><span>Account created</span></li>
       <li><div class="tl-dot done">✓</div><span>Business details submitted</span></li>
-      <li><div class="tl-dot done">✓</div><span>WhatsApp connected</span></li>
+      <li><div class="tl-dot done">✓</div><span>WhatsApp Business connected</span></li>
       <li><div class="tl-dot wait">○</div><span style="color:var(--dim)">Admin review &amp; approval</span></li>
       <li><div class="tl-dot wait">○</div><span style="color:var(--dim)">Dashboard access granted</span></li>
     </ul>
@@ -369,7 +684,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
     <h2>Application Not Approved</h2>
     <p>Your application could not be approved. Please see the reason below and contact us if you have questions.</p>
     <div class="rej-box" id="rejection-reason">—</div>
-    <p style="font-size:.78rem;color:var(--dim)">Contact <a href="mailto:support@gullybite.com" style="color:var(--wa)">support@gullybite.com</a> for help or to reapply.</p>
+    <p style="font-size:.78rem;color:var(--dim)">Contact <a href="mailto:support@gullybite.com" style="color:var(--acc)">support@gullybite.com</a> for help or to reapply.</p>
     <div class="btn-row">
       <button class="btn-outline" onclick="showPage('pg-onboard')">Update &amp; Reapply</button>
       <button class="btn-outline" onclick="doLogout()">Sign Out</button>
