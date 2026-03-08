@@ -277,32 +277,46 @@ router.post('/facebook', express.json(), async (req, res) => {
   }
 });
 
+// ─── SLUG HELPER ───────────────────────────────────────────────
+async function generateUniqueSlug(brandName) {
+  const base = brandName.toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '').trim()
+    .replace(/\s+/g, '-').replace(/-+/g, '-').substring(0, 40);
+  let slug = base;
+  let n = 1;
+  while (await col('restaurants').findOne({ store_slug: slug })) {
+    slug = `${base}-${n++}`;
+  }
+  return slug;
+}
+
 // ─── ONBOARDING ────────────────────────────────────────────────
 router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
   try {
     const {
-      ownerName, phone, brandName, registeredBusinessName,
-      gstNumber, fssaiLicense, fssaiExpiry, restaurantType, city,
-      menuGstMode, deliveryFeeCustomerPct, packagingChargeRs, packagingGstPct,
+      ownerName, phone, brandName, restaurantType, city,
     } = req.body;
 
-    if (!ownerName || !phone || !brandName || !registeredBusinessName || !gstNumber || !fssaiLicense || !fssaiExpiry)
-      return res.status(400).json({ error: 'All fields are required' });
+    if (!ownerName || !phone || !brandName)
+      return res.status(400).json({ error: 'Name, phone and restaurant name are required' });
+
+    // Generate unique store slug (only if not already set)
+    const existing = await col('restaurants').findOne({ _id: req.restaurantId }, { projection: { store_slug: 1 } });
+    let storeSlug = existing?.store_slug;
+    if (!storeSlug) {
+      storeSlug = await generateUniqueSlug(brandName);
+    }
+    const storeUrl = `${process.env.BASE_URL}/store/${storeSlug}`;
 
     const $set = {
       owner_name: ownerName, phone, business_name: brandName, brand_name: brandName,
-      registered_business_name: registeredBusinessName, gst_number: gstNumber,
-      fssai_license: fssaiLicense, fssai_expiry: fssaiExpiry,
       restaurant_type: restaurantType || 'both', city: city || null,
+      store_slug: storeSlug, store_url: storeUrl,
       approval_status: 'pending', onboarding_step: 2, updated_at: new Date(),
     };
-    if (menuGstMode)                   $set.menu_gst_mode              = menuGstMode;
-    if (deliveryFeeCustomerPct != null) $set.delivery_fee_customer_pct  = parseInt(deliveryFeeCustomerPct, 10);
-    if (packagingChargeRs      != null) $set.packaging_charge_rs        = parseFloat(packagingChargeRs);
-    if (packagingGstPct        != null) $set.packaging_gst_pct          = parseFloat(packagingGstPct);
 
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
-    res.json({ submitted: true });
+    res.json({ submitted: true, storeUrl });
   } catch (err) {
     console.error('[Onboarding]', err.message);
     res.status(500).json({ error: 'Failed to save details' });

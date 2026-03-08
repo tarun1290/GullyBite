@@ -573,91 +573,48 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
   <div class="auth-body" style="align-items:flex-start;padding-top:1.5rem">
     <div class="ob-wrap">
       <div class="ob-header">
-        <h2>Complete Your Profile</h2>
-        <p>We verify all restaurants before granting access. Takes about 2 minutes.</p>
+        <h2>Tell us about your restaurant</h2>
+        <p>Quick setup — takes less than a minute.</p>
       </div>
       <div class="ob-steps">
         <div class="ob-step-item">
-          <div class="ob-step-dot done" id="s1-dot">✓</div>
+          <div class="ob-step-dot done">✓</div>
           <div class="ob-step-label">Account</div>
         </div>
         <div class="ob-connector done"></div>
         <div class="ob-step-item">
-          <div class="ob-step-dot active" id="s2-dot">2</div>
-          <div class="ob-step-label active">Business Details</div>
+          <div class="ob-step-dot active">2</div>
+          <div class="ob-step-label active">Restaurant Info</div>
         </div>
-        <div class="ob-connector" id="s23-conn"></div>
+        <div class="ob-connector"></div>
         <div class="ob-step-item">
-          <div class="ob-step-dot" id="s3-dot">3</div>
+          <div class="ob-step-dot">3</div>
           <div class="ob-step-label">Connect WhatsApp</div>
         </div>
       </div>
       <form onsubmit="submitBusinessDetails(event)">
         <div class="ob-section">
-          <div class="ob-section-title">Contact Person</div>
           <div class="fld-row">
-            <div class="fld"><label>Full Name <span class="req">*</span></label><input id="ob-owner" type="text" placeholder="Ravi Kumar" required></div>
-            <div class="fld"><label>Phone <span class="req">*</span></label><input id="ob-phone" type="tel" placeholder="+91 98765 43210" required></div>
+            <div class="fld"><label>Your Full Name <span class="req">*</span></label><input id="ob-owner" type="text" placeholder="Ravi Kumar" required></div>
+            <div class="fld"><label>Phone Number <span class="req">*</span></label><input id="ob-phone" type="tel" placeholder="+91 98765 43210" required></div>
           </div>
-          <div class="fld"><label>Email <span class="req">*</span></label><input id="ob-email" type="email" placeholder="ravi@restaurant.com" required></div>
-        </div>
-        <div class="ob-section">
-          <div class="ob-section-title">Business Details</div>
-          <div class="fld-row">
-            <div class="fld"><label>Brand Name <span class="req">*</span> <span style="font-weight:400;color:var(--mute)">(customer-facing)</span></label><input id="ob-brand" type="text" placeholder="Spice Route Kitchen" required></div>
-            <div class="fld"><label>Registered Business Name <span class="req">*</span></label><input id="ob-regbiz" type="text" placeholder="Spice Route Foods Pvt Ltd" required></div>
+          <div class="fld">
+            <label>Restaurant Name <span class="req">*</span> <span style="font-weight:400;color:var(--mute)">(as customers will see it)</span></label>
+            <input id="ob-brand" type="text" placeholder="Spice Route Kitchen" required>
           </div>
           <div class="fld-row">
             <div class="fld"><label>City <span class="req">*</span></label><input id="ob-city" type="text" placeholder="Bengaluru" required></div>
-            <div class="fld"><label>Restaurant Type <span class="req">*</span></label>
-              <select id="ob-type"><option value="both">Veg &amp; Non-Veg</option><option value="veg">Pure Veg</option><option value="non_veg">Non-Veg Only</option></select>
-            </div>
-          </div>
-        </div>
-        <div class="ob-section">
-          <div class="ob-section-title">Compliance &amp; Licensing</div>
-          <div class="fld-row">
-            <div class="fld"><label>GST Number <span class="req">*</span></label><input id="ob-gst" type="text" placeholder="29AABCT1332L1ZN" maxlength="15" style="text-transform:uppercase" required></div>
-            <div class="fld"><label>FSSAI License <span class="req">*</span></label><input id="ob-fssai" type="text" placeholder="10020011005427" maxlength="14" required></div>
-          </div>
-          <div class="fld"><label>FSSAI Expiry Date <span class="req">*</span></label><input id="ob-fssai-exp" type="date" required style="max-width:220px"></div>
-        </div>
-        <div class="ob-section">
-          <div class="ob-section-title">Pricing &amp; Charges</div>
-          <div class="fld">
-            <label>Menu Prices</label>
-            <select id="ob-gst-mode" onchange="toggleGstModeHint(this.value)">
-              <option value="included">GST included in menu prices (no extra line at checkout)</option>
-              <option value="extra">Add 5% food GST on top of menu prices at checkout</option>
-            </select>
-            <div id="ob-gst-hint" class="pwd-hint" style="display:none">Customers will see a "Food GST (5%)" line in their order summary.</div>
-          </div>
-          <div class="fld">
-            <label>Delivery Fee Split <span style="font-weight:400;color:var(--mute)">(% charged to customer)</span></label>
-            <div style="display:flex;align-items:center;gap:.6rem">
-              <input id="ob-delivery-pct" type="range" min="0" max="100" step="10" value="100" style="flex:1;accent-color:var(--acc)" oninput="updateDeliveryHint(this.value)">
-              <span id="ob-delivery-pct-val" style="font-weight:700;color:var(--acc);min-width:40px;text-align:right">100%</span>
-            </div>
-            <div id="ob-delivery-hint" class="pwd-hint">Customer pays 100% of delivery fee. Restaurant absorbs 0%.</div>
-          </div>
-          <div class="fld-row">
-            <div class="fld">
-              <label>Packaging Charge <span style="font-weight:400;color:var(--mute)">(per order, ₹ — 0 to disable)</span></label>
-              <input id="ob-pkg-charge" type="number" min="0" max="500" step="5" value="0" placeholder="0">
-            </div>
-            <div class="fld">
-              <label>Packaging GST %</label>
-              <select id="ob-pkg-gst">
-                <option value="0">0% (exempt)</option>
-                <option value="5">5%</option>
-                <option value="12">12%</option>
-                <option value="18" selected>18%</option>
+            <div class="fld"><label>Restaurant Type</label>
+              <select id="ob-type">
+                <option value="both">Veg &amp; Non-Veg</option>
+                <option value="veg">Pure Veg</option>
+                <option value="non_veg">Non-Veg Only</option>
               </select>
             </div>
           </div>
         </div>
-        <button class="ob-submit" type="submit" id="ob-btn">Save &amp; Continue →</button>
-        <p class="ob-note">Your information is encrypted and used only for verification purposes.</p>
+        <button class="ob-submit" type="submit" id="ob-btn">Continue → Connect WhatsApp</button>
+        <p class="ob-note">You can add GST, FSSAI and other details later in your dashboard.</p>
       </form>
     </div>
   </div>
@@ -670,33 +627,48 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
     <button class="btn-outline" style="font-size:.76rem;padding:.42rem .95rem" onclick="doLogout()">Sign out</button>
   </nav>
   <div class="auth-body" style="align-items:flex-start;padding-top:1.5rem">
-    <div class="ob-wrap">
+    <div class="ob-wrap" style="max-width:640px">
       <div class="ob-header">
         <h2>Connect WhatsApp Business</h2>
-        <p>Link your WhatsApp Business account to start receiving orders.</p>
+        <p>Follow the steps below, then click Connect.</p>
       </div>
       <div class="ob-steps">
         <div class="ob-step-item"><div class="ob-step-dot done">✓</div><div class="ob-step-label">Account</div></div>
         <div class="ob-connector done"></div>
-        <div class="ob-step-item"><div class="ob-step-dot done">✓</div><div class="ob-step-label">Business Details</div></div>
+        <div class="ob-step-item"><div class="ob-step-dot done">✓</div><div class="ob-step-label">Restaurant Info</div></div>
         <div class="ob-connector done"></div>
         <div class="ob-step-item"><div class="ob-step-dot active">3</div><div class="ob-step-label active">Connect WhatsApp</div></div>
       </div>
-      <div class="wa-connect-card">
-        <div class="wa-ic">💬</div>
-        <h3>One-click WhatsApp connection</h3>
-        <p>We use Meta's official Embedded Signup to link your WhatsApp Business number. Your product catalog is created automatically and the order webhook is configured — no code needed.</p>
-        <ul class="wa-bullets">
-          <li>Your WhatsApp Business catalog is auto-created for every branch</li>
-          <li>Customers browse, add to cart and pay natively inside WhatsApp</li>
-          <li>All orders appear in real time on your GullyBite dashboard</li>
-          <li>Zero commission — you keep 100% of every order</li>
-        </ul>
+
+      <!-- Store URL -->
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:1rem 1.2rem;margin-bottom:1.1rem">
+        <p style="font-size:.72rem;font-weight:700;letter-spacing:.06em;color:#15803d;margin-bottom:.3rem">YOUR STORE URL — copy this, you'll need it below</p>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <input id="store-url-display" readonly style="flex:1;background:#fff;border:1px solid #bbf7d0;border-radius:7px;padding:.4rem .7rem;font-size:.8rem;color:#0f172a;outline:none;font-family:monospace" value="Loading…">
+          <button onclick="copyStoreUrl()" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:.4rem .9rem;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap">Copy</button>
+        </div>
+      </div>
+
+      <!-- Step-by-step instructions -->
+      <div style="background:#fff;border:1px solid var(--rim,#e2e8f0);border-radius:10px;padding:1.1rem 1.2rem;margin-bottom:1.1rem">
+        <p style="font-size:.82rem;font-weight:700;margin-bottom:.8rem">Setting up for the first time? Follow these steps:</p>
+        <ol style="padding-left:1.1rem;display:flex;flex-direction:column;gap:.6rem;font-size:.8rem;color:#334155;line-height:1.55">
+          <li><strong>Open Meta Business Manager</strong> → <a href="https://business.facebook.com" target="_blank" style="color:#4f46e5">business.facebook.com</a> → create a Business Portfolio if you don't have one yet.</li>
+          <li><strong>Create a WhatsApp Business Account (WABA)</strong> → inside your Portfolio → Accounts → WhatsApp Accounts → Add.</li>
+          <li><strong>Add a phone number</strong> to your WABA. Use a number that is NOT already on the regular WhatsApp app. Verify it via OTP.</li>
+          <li><strong>Set Privacy Policy &amp; Website URL</strong> → Business Settings → WhatsApp Accounts → your account → Settings → paste your Store URL (green box above) into both fields.</li>
+          <li><strong>Now click the button below</strong> → select your Business Portfolio → select your WABA and phone number → authorise GullyBite.</li>
+        </ol>
+      </div>
+
+      <!-- Connect button -->
+      <div style="background:#fff;border:1px solid var(--rim,#e2e8f0);border-radius:10px;padding:1.2rem;text-align:center">
+        <p style="font-size:.8rem;color:#64748b;margin-bottom:.9rem">Done with the steps above? Connect now.</p>
         <button class="btn-meta" id="connect-btn" onclick="doConnectMeta()">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
           Connect with Meta / Facebook
         </button>
-        <p style="margin-top:.8rem;font-size:.73rem;color:var(--dim)">You'll be redirected to Facebook to authorise your WhatsApp Business account. Takes about 2 minutes.</p>
+        <p style="margin-top:.6rem;font-size:.72rem;color:var(--dim)">Takes about 2 minutes. You'll be redirected back automatically.</p>
       </div>
     </div>
   </div>
@@ -769,49 +741,33 @@ function routeByStatus(me) {
   }
 
   if (status === 'approved') {
-    // Approved but WhatsApp not yet connected — show connect page
-    if (step < 5) { showPage('pg-connect'); return; }
-    // Fully onboarded — go to dashboard
+    if (step < 5) { populateStoreUrl(me); showPage('pg-connect'); return; }
     window.location.href = '/dashboard'; return;
   }
 
   // pending
   if (step < 2) { prefillOnboarding(me); showPage('pg-onboard'); }
+  else if (step < 5) { populateStoreUrl(me); showPage('pg-connect'); }
   else showPage('pg-pending');
 }
 
-function toggleGstModeHint(v) {
-  document.getElementById('ob-gst-hint').style.display = v === 'extra' ? '' : 'none';
+
+function populateStoreUrl(me) {
+  const el = document.getElementById('store-url-display');
+  if (el && me.store_url) el.value = me.store_url;
 }
-function updateDeliveryHint(v) {
-  document.getElementById('ob-delivery-pct-val').textContent = v + '%';
-  const rest = 100 - parseInt(v, 10);
-  document.getElementById('ob-delivery-hint').textContent =
-    `Customer pays ${v}% of delivery fee. Restaurant absorbs ${rest}%.`;
+function copyStoreUrl() {
+  const val = document.getElementById('store-url-display').value;
+  if (!val || val === 'Loading…') return;
+  navigator.clipboard.writeText(val).then(() => toast('Store URL copied!', 'ok'));
 }
 
 function prefillOnboarding(me) {
-  if (me.owner_name) document.getElementById('ob-owner').value = me.owner_name;
-  if (me.email)      document.getElementById('ob-email').value  = me.email;
-  if (me.phone)      document.getElementById('ob-phone').value  = me.phone;
-  if (me.brand_name) document.getElementById('ob-brand').value  = me.brand_name;
-  if (me.registered_business_name) document.getElementById('ob-regbiz').value = me.registered_business_name;
-  if (me.gst_number)  document.getElementById('ob-gst').value       = me.gst_number;
-  if (me.fssai_license) document.getElementById('ob-fssai').value   = me.fssai_license;
-  if (me.fssai_expiry)  document.getElementById('ob-fssai-exp').value = me.fssai_expiry?.slice(0,10) || '';
-  if (me.city)        document.getElementById('ob-city').value      = me.city;
+  if (me.owner_name)      document.getElementById('ob-owner').value = me.owner_name;
+  if (me.phone)           document.getElementById('ob-phone').value = me.phone;
+  if (me.brand_name)      document.getElementById('ob-brand').value = me.brand_name;
+  if (me.city)            document.getElementById('ob-city').value  = me.city;
   if (me.restaurant_type) document.getElementById('ob-type').value  = me.restaurant_type;
-  if (me.menu_gst_mode) {
-    document.getElementById('ob-gst-mode').value = me.menu_gst_mode;
-    toggleGstModeHint(me.menu_gst_mode);
-  }
-  if (me.delivery_fee_customer_pct != null) {
-    const pct = String(me.delivery_fee_customer_pct);
-    document.getElementById('ob-delivery-pct').value = pct;
-    updateDeliveryHint(pct);
-  }
-  if (me.packaging_charge_rs != null) document.getElementById('ob-pkg-charge').value = me.packaging_charge_rs;
-  if (me.packaging_gst_pct   != null) document.getElementById('ob-pkg-gst').value    = me.packaging_gst_pct;
 }
 
 /* ─── PASSWORD STRENGTH ─────────────────────────────────── */
@@ -899,24 +855,18 @@ async function submitBusinessDetails(e) {
   const token = localStorage.getItem('zm_token');
   try {
     const d = await post('/auth/onboarding', {
-      ownerName:              document.getElementById('ob-owner').value.trim(),
-      phone:                  document.getElementById('ob-phone').value.trim(),
-      brandName:              document.getElementById('ob-brand').value.trim(),
-      registeredBusinessName: document.getElementById('ob-regbiz').value.trim(),
-      gstNumber:              document.getElementById('ob-gst').value.trim().toUpperCase(),
-      fssaiLicense:           document.getElementById('ob-fssai').value.trim(),
-      fssaiExpiry:            document.getElementById('ob-fssai-exp').value,
-      restaurantType:         document.getElementById('ob-type').value,
-      city:                   document.getElementById('ob-city').value.trim(),
-      menuGstMode:            document.getElementById('ob-gst-mode').value,
-      deliveryFeeCustomerPct: parseInt(document.getElementById('ob-delivery-pct').value, 10),
-      packagingChargeRs:      parseFloat(document.getElementById('ob-pkg-charge').value) || 0,
-      packagingGstPct:        parseFloat(document.getElementById('ob-pkg-gst').value),
+      ownerName:      document.getElementById('ob-owner').value.trim(),
+      phone:          document.getElementById('ob-phone').value.trim(),
+      brandName:      document.getElementById('ob-brand').value.trim(),
+      restaurantType: document.getElementById('ob-type').value,
+      city:           document.getElementById('ob-city').value.trim(),
     }, token);
-    if (d.submitted) showPage('pg-connect');
-    else toast(d.error || 'Save failed', 'err');
+    if (d.submitted) {
+      if (d.storeUrl) document.getElementById('store-url-display').value = d.storeUrl;
+      showPage('pg-connect');
+    } else toast(d.error || 'Save failed', 'err');
   } catch (err) { toast(err.message, 'err'); }
-  finally { setLoading(btn, false, 'Save & Continue →'); }
+  finally { setLoading(btn, false, 'Continue → Connect WhatsApp'); }
 }
 
 /* ─── CONNECT WHATSAPP ──────────────────────────────────── */

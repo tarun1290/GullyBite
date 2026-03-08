@@ -681,11 +681,26 @@ async function loadApplications() {
            <button class="btn-sm danger"  style="margin-left:.3rem" onclick="openAppModal('${r.id}','reject','${(r.brand_name||r.business_name||'').replace(/'/g,"\\'")}')">Reject</button>`
         : `<button class="btn-sm" onclick="openAppModal('${r.id}','approve','${(r.brand_name||r.business_name||'').replace(/'/g,"\\'")}')">Re-approve</button>`;
 
+      const gstVerified   = r.gst_verified;
+      const fssaiVerified = r.fssai_verified;
+      const gstCell = r.gst_number
+        ? `<div style="font-size:.8rem">${r.gst_number}</div>
+           ${gstVerified
+             ? '<span class="badge green" style="font-size:.67rem">✓ Verified</span>'
+             : `<button class="btn-sm primary" style="font-size:.67rem;padding:.18rem .5rem;margin-top:.2rem" onclick="verifyCompliance('${r.id}','gst',true)">Verify</button>`}`
+        : '<span style="color:var(--dim)">—</span>';
+      const fssaiCell = r.fssai_license
+        ? `<div style="font-size:.8rem">${r.fssai_license}<br><span style="color:var(--dim);font-size:.72rem">Exp: ${fssaiExp}</span></div>
+           ${fssaiVerified
+             ? '<span class="badge green" style="font-size:.67rem">✓ Verified</span>'
+             : `<button class="btn-sm primary" style="font-size:.67rem;padding:.18rem .5rem;margin-top:.2rem" onclick="verifyCompliance('${r.id}','fssai',true)">Verify</button>`}`
+        : '<span style="color:var(--dim)">—</span>';
+
       return `<tr>
-        <td><strong>${r.brand_name || r.business_name || '—'}</strong><br><span style="font-size:.75rem;color:var(--dim)">${r.registered_business_name || ''}</span></td>
+        <td><strong>${r.brand_name || r.business_name || '—'}</strong><br><span style="font-size:.75rem;color:var(--dim)">${r.registered_business_name || ''}</span>${r.store_url ? `<br><a href="${r.store_url}" target="_blank" style="font-size:.72rem;color:var(--acc)">Store ↗</a>` : ''}</td>
         <td>${r.owner_name || '—'}<br><span style="font-size:.75rem;color:var(--dim)">${r.phone || ''}</span><br><span style="font-size:.75rem;color:var(--dim)">${r.email || ''}</span></td>
-        <td style="font-size:.8rem">${r.gst_number || '—'}</td>
-        <td style="font-size:.8rem">${r.fssai_license || '—'}<br><span style="color:var(--dim);font-size:.72rem">Exp: ${fssaiExp}</span></td>
+        <td>${gstCell}</td>
+        <td>${fssaiCell}</td>
         <td style="font-size:.8rem">${typeLabel}</td>
         <td style="font-size:.8rem">${submitted}</td>
         <td>${statusBadge}${r.approval_notes ? `<br><span style="font-size:.72rem;color:var(--dim)">${r.approval_notes}</span>` : ''}</td>
@@ -725,6 +740,16 @@ function openAppModal(id, action, name) {
 function closeAppModal() {
   document.getElementById('app-modal').style.display = 'none';
   _appAction = null;
+}
+
+async function verifyCompliance(id, type, verified) {
+  try {
+    await api(`/api/admin/applications/${id}/verify-${type}`, {
+      method: 'PATCH', body: JSON.stringify({ verified }),
+    });
+    toast(`${type.toUpperCase()} ${verified ? 'verified' : 'unverified'}`, 'ok');
+    loadApplications();
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 async function confirmAppAction() {

@@ -339,6 +339,30 @@ router.patch('/applications/:id/reject', express.json(), async (req, res) => {
   }
 });
 
+// ─── PATCH /api/admin/applications/:id/verify-gst ────────────
+router.patch('/applications/:id/verify-gst', express.json(), async (req, res) => {
+  try {
+    const { verified } = req.body; // true or false
+    await col('restaurants').updateOne(
+      { _id: req.params.id },
+      { $set: { gst_verified: !!verified, gst_verified_at: verified ? new Date() : null, updated_at: new Date() } }
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── PATCH /api/admin/applications/:id/verify-fssai ──────────
+router.patch('/applications/:id/verify-fssai', express.json(), async (req, res) => {
+  try {
+    const { verified } = req.body;
+    await col('restaurants').updateOne(
+      { _id: req.params.id },
+      { $set: { fssai_verified: !!verified, fssai_verified_at: verified ? new Date() : null, updated_at: new Date() } }
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── REFERRALS ────────────────────────────────────────────────────
 
 // POST /api/admin/referrals

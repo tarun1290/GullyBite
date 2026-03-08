@@ -53,6 +53,32 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', version: '1.0.0', time: new Date() });
 });
 
+// ─── PUBLIC STORE PAGE ────────────────────────────────────────
+app.get('/store/:slug', async (req, res) => {
+  try {
+    const { col } = require('./src/config/database');
+    const restaurant = await col('restaurants').findOne(
+      { store_slug: req.params.slug, approval_status: 'approved' },
+      { projection: { business_name: 1, brand_name: 1, city: 1, restaurant_type: 1, logo_url: 1, store_url: 1 } }
+    );
+    if (!restaurant) return res.status(404).send('<h2>Store not found</h2>');
+    const name = restaurant.brand_name || restaurant.business_name;
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>${name} — Order on WhatsApp</title>
+      <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:system-ui,sans-serif;background:#f8fafc;color:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}.card{background:#fff;border-radius:1rem;padding:2.5rem;text-align:center;max-width:420px;width:100%;box-shadow:0 4px 24px rgba(0,0,0,.08)}.logo{font-size:3rem;margin-bottom:1rem}h1{font-size:1.6rem;font-weight:700;margin-bottom:.4rem}p{color:#64748b;margin-bottom:1.5rem;font-size:.95rem}.badge{display:inline-block;padding:.25rem .75rem;border-radius:99px;font-size:.75rem;font-weight:600;margin-bottom:1rem}.veg{background:#dcfce7;color:#15803d}.nveg{background:#fee2e2;color:#b91c1c}.both{background:#e0e7ff;color:#4338ca}</style>
+    </head><body><div class="card">
+      ${restaurant.logo_url ? `<img src="${restaurant.logo_url}" alt="logo" style="width:80px;height:80px;border-radius:12px;object-fit:cover;margin-bottom:1rem">` : '<div class="logo">🍽️</div>'}
+      <h1>${name}</h1>
+      ${restaurant.city ? `<p style="margin-bottom:.5rem">📍 ${restaurant.city}</p>` : ''}
+      <span class="badge ${{veg:'veg',non_veg:'nveg',both:'both'}[restaurant.restaurant_type]||'both'}">${{veg:'Pure Veg',non_veg:'Non-Veg',both:'Veg &amp; Non-Veg'}[restaurant.restaurant_type]||'Veg &amp; Non-Veg'}</span>
+      <p>Order directly on WhatsApp — fast, simple and no app needed.</p>
+    </div></body></html>`);
+  } catch (err) {
+    res.status(500).send('<h2>Error loading store</h2>');
+  }
+});
+
 // ─── ENSURE DB CONNECTED BEFORE ANY ROUTE ─────────────────────
 const { ensureConnected } = require('./src/config/database');
 app.use(ensureConnected);
