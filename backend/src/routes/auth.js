@@ -361,6 +361,9 @@ router.get('/me', requireAuth, async (req, res) => {
 async function _saveWabaAccounts(restaurantId, wabaData, longToken) {
   for (const biz of wabaData) {
     for (const waba of biz.whatsapp_business_accounts?.data || []) {
+      // Subscribe this WABA to GullyBite's app webhooks using system user token
+      await _subscribeWaba(waba.id);
+
       for (const phone of waba.phone_numbers?.data || []) {
         await col('whatsapp_accounts').updateOne(
           { phone_number_id: phone.id },
@@ -373,6 +376,24 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken) {
         );
       }
     }
+  }
+}
+
+// Subscribe a WABA to GullyBite's app so we receive webhook events
+// Requires META_SYSTEM_USER_TOKEN in env (system user with whatsapp_business_management permission)
+async function _subscribeWaba(wabaId) {
+  const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+  if (!sysToken) {
+    console.warn('[subscribeWaba] META_SYSTEM_USER_TOKEN not set — skipping WABA subscription for', wabaId);
+    return;
+  }
+  try {
+    await axios.post(`${META_GRAPH_URL}/${wabaId}/subscribed_apps`, {}, {
+      params: { access_token: sysToken },
+    });
+    console.log(`[subscribeWaba] Subscribed WABA ${wabaId} to app webhooks`);
+  } catch (err) {
+    console.error(`[subscribeWaba] Failed for WABA ${wabaId}:`, err.response?.data || err.message);
   }
 }
 
