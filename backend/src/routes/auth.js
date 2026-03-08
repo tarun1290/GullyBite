@@ -19,6 +19,14 @@ router.post('/signup', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'Name, email and password are required' });
     if (password.length < 8)
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    if (!/[A-Z]/.test(password))
+      return res.status(400).json({ error: 'Password must contain at least one uppercase letter' });
+    if (!/[a-z]/.test(password))
+      return res.status(400).json({ error: 'Password must contain at least one lowercase letter' });
+    if (!/[0-9]/.test(password))
+      return res.status(400).json({ error: 'Password must contain at least one number' });
+    if (!/[^A-Za-z0-9]/.test(password))
+      return res.status(400).json({ error: 'Password must contain at least one special character (e.g. @, #, !)' });
 
     const existing = await col('restaurants').findOne({ email: email.toLowerCase() });
     if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
@@ -35,7 +43,7 @@ router.post('/signup', express.json(), async (req, res) => {
     res.json({ token, needsOnboarding: true, onboardingStep: 1 });
   } catch (err) {
     console.error('[Signup]', err.message);
-    res.status(500).json({ error: 'Sign up failed' });
+    res.status(500).json({ error: err.message });
   }
 });
 
