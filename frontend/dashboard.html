@@ -2088,16 +2088,6 @@ async function doChangePassword() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-function _setConnectBtns(loading) {
-  ['banner-connect-btn', 'wa-reconnect-btn'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.disabled = loading;
-    if (!loading) el.style.opacity = '';
-    else el.style.opacity = '.6';
-  });
-}
-
 async function _finishMetaConnect(code, accessToken) {
   try {
     const d = await api('/auth/connect-meta', { method: 'POST', body: { code: code || null, accessToken: accessToken || null } });
@@ -2173,15 +2163,8 @@ function _doMetaConnect() {
     return;
   }
 
-  // Test if popups are blocked before opening FB.login
-  const testPopup = window.open('', '_blank', 'width=1,height=1');
-  if (!testPopup || testPopup.closed || typeof testPopup.closed === 'undefined') {
-    toast('⚠️ Popups are blocked by your browser. Please allow popups for this site and try again.', 'err');
-    _resetConnectBtns();
-    return;
-  }
-  testPopup.close();
-
+  // Call FB.login directly — any window.open() before this consumes the user gesture
+  // and causes the browser to silently block FB.login's popup
   FB.login(async resp => {
     if (resp.authResponse?.code) {
       await _finishMetaConnect(resp.authResponse.code, null);
@@ -2198,7 +2181,7 @@ function _doMetaConnect() {
       if (rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
       loadProfile();
     } else {
-      toast('Connection cancelled or popup was blocked. Allow popups and try again.', 'err');
+      toast('Connection cancelled — please try again.', 'err');
     }
     _resetConnectBtns();
   }, {
