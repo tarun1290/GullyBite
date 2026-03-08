@@ -23,8 +23,9 @@ const upload = multer({
   },
 });
 
-// All routes below require authentication + admin approval
-router.use(requireAuth, requireApproved);
+// All routes below require authentication
+// requireApproved is applied only to routes that need WhatsApp (order flow, catalog sync)
+router.use(requireAuth);
 
 // ═══════════════════════════════════════════════════════════════
 // RESTAURANT PROFILE
@@ -461,7 +462,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
 });
 
 // POST /api/restaurant/branches/:branchId/sync-catalog
-router.post('/branches/:branchId/sync-catalog', async (req, res) => {
+router.post('/branches/:branchId/sync-catalog', requireApproved, async (req, res) => {
   try {
     const result = await catalog.syncBranchCatalog(req.params.branchId);
     res.json(result);
@@ -469,7 +470,7 @@ router.post('/branches/:branchId/sync-catalog', async (req, res) => {
 });
 
 // POST /api/restaurant/branches/:branchId/sync-sets
-router.post('/branches/:branchId/sync-sets', async (req, res) => {
+router.post('/branches/:branchId/sync-sets', requireApproved, async (req, res) => {
   try {
     const result = await catalog.syncCategoryProductSets(req.params.branchId);
     res.json(result);
@@ -578,7 +579,7 @@ router.post('/menu/:itemId/variants', async (req, res) => {
 });
 
 // POST /api/restaurant/branches/:branchId/create-catalog
-router.post('/branches/:branchId/create-catalog', async (req, res) => {
+router.post('/branches/:branchId/create-catalog', requireApproved, async (req, res) => {
   try {
     const result = await catalog.createBranchCatalog(req.params.branchId);
 
@@ -668,7 +669,7 @@ router.get('/orders/:orderId', async (req, res) => {
 });
 
 // Restaurant updates order status (CONFIRMED → PREPARING → PACKED)
-router.patch('/orders/:orderId/status', async (req, res) => {
+router.patch('/orders/:orderId/status', requireApproved, async (req, res) => {
   try {
     const { status } = req.body;
     const allowed = ['CONFIRMED', 'PREPARING', 'PACKED'];
@@ -940,7 +941,7 @@ router.get('/referrals', async (req, res) => {
 // ─── WHATSAPP TEMPLATES ───────────────────────────────────────
 
 // GET /api/restaurant/whatsapp/templates
-router.get('/whatsapp/templates', async (req, res) => {
+router.get('/whatsapp/templates', requireApproved, async (req, res) => {
   try {
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
     if (!wa_acc) return res.status(404).json({ error: 'No active WhatsApp account found. Connect your account first.' });
@@ -967,7 +968,7 @@ router.get('/whatsapp/template-mappings', async (req, res) => {
 });
 
 // PUT /api/restaurant/whatsapp/template-mappings
-router.put('/whatsapp/template-mappings', express.json(), async (req, res) => {
+router.put('/whatsapp/template-mappings', requireApproved, express.json(), async (req, res) => {
   try {
     const mappings = req.body;
     if (!Array.isArray(mappings)) return res.status(400).json({ error: 'Array of mappings required' });
@@ -995,7 +996,7 @@ router.put('/whatsapp/template-mappings', express.json(), async (req, res) => {
 });
 
 // DELETE /api/restaurant/whatsapp/template-mappings/:eventName
-router.delete('/whatsapp/template-mappings/:eventName', async (req, res) => {
+router.delete('/whatsapp/template-mappings/:eventName', requireApproved, async (req, res) => {
   try {
     await col('whatsapp_template_mappings').deleteOne({
       restaurant_id: req.restaurantId,

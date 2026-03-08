@@ -11,7 +11,7 @@ const petpooja = require('../services/integrations/petpooja');
 // const swiggy   = require('../services/integrations/swiggy');   // coming soon
 // const zomato   = require('../services/integrations/zomato');   // coming soon
 
-router.use(requireAuth, requireApproved);
+router.use(requireAuth);
 
 const SERVICES = {
   petpooja,
