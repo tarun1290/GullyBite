@@ -714,6 +714,15 @@ const PAGES = ['pg-land','pg-signup','pg-signin','pg-onboard','pg-connect','pg-p
 function showPage(id) {
   PAGES.forEach(p => document.getElementById(p).classList.toggle('hidden', p !== id));
   window.scrollTo(0,0);
+  if (id === 'pg-connect') _fetchStoreUrl();
+}
+async function _fetchStoreUrl() {
+  const token = localStorage.getItem('zm_token');
+  if (!token) return;
+  try {
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+    if (me.store_url) document.getElementById('store-url-display').value = me.store_url;
+  } catch (_) {}
 }
 
 /* ─── BOOT ─────────────────────────────────────────────── */
