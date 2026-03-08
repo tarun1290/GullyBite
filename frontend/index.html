@@ -970,24 +970,31 @@ window.addEventListener('message', async (event) => {
   // ── Our own popup posted back after OAuth redirect ──
   if (event.origin === window.location.origin && event.data?.type === 'GULLYBITE_OAUTH') {
     const { meta_token, code, error } = event.data;
-    if (error) { toast('Connection failed: ' + error, 'err'); _resetConnectBtn(); return; }
-
     const jwtToken = localStorage.getItem('zm_token');
+
     if (meta_token) {
-      // Server already processed: just update token and route
+      // Always update the token — server linked the account
       localStorage.setItem('zm_token', meta_token);
-      toast('WhatsApp connected!', 'ok');
-      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${meta_token}` } }).then(r => r.json());
-      routeByStatus(me);
-    } else if (code && jwtToken) {
-      toast('Linking WhatsApp…', 'nfo');
-      try {
-        const d = await post('/auth/connect-meta', { code, sessionInfo: _metaSessionInfo }, jwtToken);
-        if (d.connected) { toast('WhatsApp connected!', 'ok'); showPage('pg-pending'); }
-        else toast(d.error || 'Connection failed', 'err');
-      } catch { toast('Connection failed', 'err'); }
     }
-    _resetConnectBtn();
+    // The FB.login callback's fallback check will pick this up via /auth/me
+    // (it waits 2s then checks backend — by then the token is updated in localStorage)
+    // Only handle here if FB.login is NOT in progress (e.g. page redirect without popup)
+    if (!_connectInProgress) {
+      if (error) { toast('Connection failed: ' + error, 'err'); return; }
+      const activeToken = meta_token || jwtToken;
+      if (meta_token) {
+        toast('WhatsApp connected!', 'ok');
+        fetch('/auth/me', { headers: { Authorization: `Bearer ${meta_token}` } })
+          .then(r => r.json()).then(routeByStatus);
+      } else if (code && activeToken) {
+        toast('Linking WhatsApp…', 'nfo');
+        post('/auth/connect-meta', { code, sessionInfo: _metaSessionInfo }, activeToken)
+          .then(d => {
+            if (d.connected) { toast('WhatsApp connected!', 'ok'); showPage('pg-pending'); }
+            else toast(d.error || 'Connection failed', 'err');
+          }).catch(() => toast('Connection failed', 'err'));
+      }
+    }
     return;
   }
 
@@ -1008,33 +1015,55 @@ function _resetConnectBtn() {
   if (btn) { btn.disabled = false; btn.innerHTML = META_BTN_HTML; }
 }
 
+let _connectInProgress = false;
+
 function doConnectMeta() {
   const btn = document.getElementById('connect-btn');
   btn.disabled = true;
   btn.innerHTML = '<div class="spin" style="border-top-color:#fff;border-color:rgba(255,255,255,.25)"></div> Connecting…';
   _metaSessionInfo = {};
-  FB.login(r => {
-    if (!r.authResponse) {
-      btn.disabled = false;
-      btn.innerHTML = META_BTN_HTML;
-      return toast('Cancelled or popup blocked — please allow popups and try again', 'err');
-    }
-    toast('Linking WhatsApp…', 'nfo');
+  _connectInProgress = true;
+
+  FB.login(async r => {
     const token = localStorage.getItem('zm_token');
-    post('/auth/connect-meta', {
-      code: r.authResponse.code || null,
-      accessToken: r.authResponse.accessToken || null,
-      sessionInfo: _metaSessionInfo,
-    }, token)
-      .then(d => {
+
+    if (r.authResponse?.code) {
+      // FB SDK returned the code — normal path
+      toast('Linking WhatsApp…', 'nfo');
+      try {
+        const d = await post('/auth/connect-meta', {
+          code: r.authResponse.code,
+          sessionInfo: _metaSessionInfo,
+        }, token);
         if (d.connected) { toast('WhatsApp connected!', 'ok'); showPage('pg-pending'); }
         else toast(d.error || 'Connection failed', 'err');
-      })
-      .catch(() => toast('Connection failed', 'err'))
-      .finally(() => {
-        btn.disabled = false;
-        btn.innerHTML = META_BTN_HTML;
-      });
+      } catch { toast('Connection failed', 'err'); }
+      _connectInProgress = false;
+      _resetConnectBtn();
+      return;
+    }
+
+    // r.authResponse is null: popup closed/navigated away (redirect path)
+    // Wait briefly for the postMessage from the popup to arrive
+    toast('Verifying connection…', 'nfo');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Check backend — popup redirect may have completed the connection
+    try {
+      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+      if (me.meta_user_id) {
+        // Connection completed via the redirect path
+        const updatedToken = localStorage.getItem('zm_token'); // postMessage may have updated it
+        const latest = await fetch('/auth/me', { headers: { Authorization: `Bearer ${updatedToken}` } }).then(r => r.json());
+        toast('WhatsApp connected!', 'ok');
+        routeByStatus(latest);
+      } else {
+        toast('Cancelled — please try again', 'err');
+      }
+    } catch { toast('Cancelled — please try again', 'err'); }
+
+    _connectInProgress = false;
+    _resetConnectBtn();
   }, {
     config_id: '3105026846366355',
     response_type: 'code',
