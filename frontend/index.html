@@ -910,19 +910,40 @@ async function submitBusinessDetails(e) {
 }
 
 /* ─── CONNECT WHATSAPP ──────────────────────────────────── */
+const META_BTN_HTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Connect with Meta / Facebook';
+
+// Listen for embedded signup session info (WABA/phone number IDs from Meta)
+let _metaSessionInfo = {};
+window.addEventListener('message', (event) => {
+  if (!['https://www.facebook.com','https://web.facebook.com'].includes(event.origin)) return;
+  try {
+    const data = JSON.parse(event.data);
+    if (data.type === 'WA_EMBEDDED_SIGNUP') {
+      if (data.event === 'FINISH') _metaSessionInfo = data.data || {};
+      else if (data.event === 'CANCEL') console.log('[EmbeddedSignup] Cancelled at step:', data.data?.current_step);
+      else if (data.event === 'ERROR') console.error('[EmbeddedSignup] Error:', data.data);
+    }
+  } catch {}
+});
+
 function doConnectMeta() {
   const btn = document.getElementById('connect-btn');
   btn.disabled = true;
   btn.innerHTML = '<div class="spin" style="border-top-color:#fff;border-color:rgba(255,255,255,.25)"></div> Connecting…';
+  _metaSessionInfo = {};
   FB.login(r => {
     if (!r.authResponse) {
       btn.disabled = false;
-      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Connect with Meta / Facebook';
-      return toast('Cancelled', 'err');
+      btn.innerHTML = META_BTN_HTML;
+      return toast('Cancelled or popup blocked — please allow popups and try again', 'err');
     }
     toast('Linking WhatsApp…', 'nfo');
     const token = localStorage.getItem('zm_token');
-    post('/auth/connect-meta', { accessToken: r.authResponse.accessToken, code: r.authResponse.code || null }, token)
+    post('/auth/connect-meta', {
+      code: r.authResponse.code || null,
+      accessToken: r.authResponse.accessToken || null,
+      sessionInfo: _metaSessionInfo,
+    }, token)
       .then(d => {
         if (d.connected) { toast('WhatsApp connected!', 'ok'); showPage('pg-pending'); }
         else toast(d.error || 'Connection failed', 'err');
@@ -930,9 +951,14 @@ function doConnectMeta() {
       .catch(() => toast('Connection failed', 'err'))
       .finally(() => {
         btn.disabled = false;
-        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Connect with Meta / Facebook';
+        btn.innerHTML = META_BTN_HTML;
       });
-  }, { config_id: '3105026846366355', extras: { setup:{}, featureType:'', sessionInfoVersion:'3' } });
+  }, {
+    config_id: '3105026846366355',
+    response_type: 'code',
+    override_default_response_type: true,
+    extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
+  });
 }
 
 /* ─── CHECK STATUS ──────────────────────────────────────── */

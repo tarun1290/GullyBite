@@ -80,7 +80,7 @@ router.post('/signin', express.json(), async (req, res) => {
 // ─── CONNECT META / WHATSAPP ───────────────────────────────────
 router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
   try {
-    const { accessToken, code } = req.body;
+    const { accessToken, code, sessionInfo } = req.body;
     if (!accessToken && !code) return res.status(400).json({ error: 'No token provided' });
 
     let longToken, expiresAt;
@@ -111,10 +111,13 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
       wabaData = wabaRes.data?.data || [];
     } catch (e) { console.warn('[connect-meta] Could not fetch WABAs:', e.message); }
 
-    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: {
+    const $set = {
       meta_user_id: metaUser.id, meta_access_token: longToken, meta_token_expires_at: expiresAt,
       onboarding_step: 5, submitted_at: new Date(), approval_status: 'pending', updated_at: new Date(),
-    }});
+    };
+    if (sessionInfo?.phone_number_id) $set.meta_phone_number_id = sessionInfo.phone_number_id;
+    if (sessionInfo?.waba_id) $set.meta_waba_id = sessionInfo.waba_id;
+    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
 
     await _saveWabaAccounts(req.restaurantId, wabaData, longToken);
     res.json({ connected: true });
