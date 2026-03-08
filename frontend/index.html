@@ -670,6 +670,10 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           Connect with Meta / Facebook
         </button>
         <p style="margin-top:.6rem;font-size:.72rem;color:var(--dim)">Takes about 2 minutes. You'll be redirected back automatically.</p>
+        <div style="margin-top:1rem;padding-top:.9rem;border-top:1px solid #f1f5f9">
+          <p style="font-size:.75rem;color:var(--dim);margin-bottom:.4rem">Not ready yet? You can set up your menu and branches first.</p>
+          <button class="btn-outline" style="font-size:.78rem" onclick="window.location.href='/dashboard'">Go to Dashboard →</button>
+        </div>
       </div>
     </div>
   </div>
@@ -810,15 +814,10 @@ function routeByStatus(me) {
     showPage('pg-rejected'); return;
   }
 
-  if (status === 'approved') {
-    if (step < 5) { populateStoreUrl(me); showPage('pg-connect'); return; }
-    window.location.href = '/dashboard'; return;
-  }
-
-  // pending
+  // Step 2+ always goes to dashboard (WA connect banner shown there if needed)
+  // pg-connect is shown once by submitBusinessDetails right after onboarding — not on every login
   if (step < 2) { prefillOnboarding(me); showPage('pg-onboard'); }
-  else if (step < 5) { populateStoreUrl(me); showPage('pg-connect'); }
-  else window.location.href = '/dashboard'; // Meta connected → go to dashboard
+  else window.location.href = '/dashboard';
 }
 
 function populatePendingStatus(me) {
