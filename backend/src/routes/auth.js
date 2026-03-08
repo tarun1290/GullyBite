@@ -325,8 +325,20 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
 
 // ─── GET CURRENT USER ─────────────────────────────────────────
 router.get('/me', requireAuth, async (req, res) => {
-  const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+  let restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
   if (!restaurant) return res.status(404).json({ error: 'Not found' });
+
+  // Auto-generate store slug/url for restaurants that don't have one yet
+  if (!restaurant.store_url) {
+    const name = restaurant.brand_name || restaurant.business_name || 'my-restaurant';
+    const slug = await generateUniqueSlug(name);
+    const storeUrl = `${process.env.BASE_URL}/store/${slug}`;
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { store_slug: slug, store_url: storeUrl } }
+    );
+    restaurant = { ...restaurant, store_slug: slug, store_url: storeUrl };
+  }
 
   const waAccounts = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
   const waba_accounts = waAccounts.map(w => ({ waba_id: w.waba_id, name: w.display_name, phone: w.phone_display }));
