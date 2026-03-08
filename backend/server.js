@@ -30,7 +30,16 @@ app.get('/placeholder.jpg', (req, res) => {
   res.redirect('https://placehold.co/400x400/1a1a2e/ffffff?text=Food');
 });
 
-// ─── IMAGE SERVING (MongoDB GridFS) ───────────────────────────
+// ─── HEALTH CHECK (no DB needed) ──────────────────────────────
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', version: '1.0.0', time: new Date() });
+});
+
+// ─── ENSURE DB CONNECTED BEFORE ANY ROUTE THAT NEEDS IT ───────
+const { ensureConnected } = require('./src/config/database');
+app.use(ensureConnected);
+
+// ─── IMAGE SERVING (MongoDB GridFS — needs DB) ────────────────
 app.get('/images/:fileId', async (req, res) => {
   try {
     const { ObjectId } = require('mongodb');
@@ -46,11 +55,6 @@ app.get('/images/:fileId', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
-
-// ─── HEALTH CHECK ─────────────────────────────────────────────
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', version: '1.0.0', time: new Date() });
 });
 
 // ─── PUBLIC STORE PAGE ────────────────────────────────────────
@@ -78,10 +82,6 @@ app.get('/store/:slug', async (req, res) => {
     res.status(500).send('<h2>Error loading store</h2>');
   }
 });
-
-// ─── ENSURE DB CONNECTED BEFORE ANY ROUTE ─────────────────────
-const { ensureConnected } = require('./src/config/database');
-app.use(ensureConnected);
 
 // ─── ROUTES ───────────────────────────────────────────────────
 const { router: authRouter } = require('./src/routes/auth');

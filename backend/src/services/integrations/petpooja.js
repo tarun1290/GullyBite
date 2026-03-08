@@ -72,7 +72,7 @@ async function fetchMenu(integration) {
     external_id  : `pp_${item.itemid}`,      // prefix to avoid collisions with other POS
     name         : item.itemname,
     description  : item.item_description || item.itemname,
-    price        : parseFloat(item.price || item.itemallowvariation === '1' ? item.variations?.[0]?.price : item.price) || 0,
+    price        : parseFloat(item.itemallowvariation === '1' ? (item.variations?.[0]?.price ?? item.price) : item.price) || 0,
     food_type    : FOOD_TYPE_MAP[item.item_type] || 'veg',
     category     : catNameById[item.categoryid] || 'Menu',
     image_url    : item.item_image_url || null,

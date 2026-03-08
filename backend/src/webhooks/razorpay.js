@@ -41,7 +41,14 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
 });
 
 // ─── SHARED: CONFIRM PAID ORDER ───────────────────────────────
+// Guard against double-fire: Razorpay sends both order.paid and payment.captured
 const confirmPaidOrder = async (orderId) => {
+  const current = await col('orders').findOne({ _id: orderId }, { projection: { payment_status: 1 } });
+  if (current?.payment_status === 'paid') {
+    console.log(`[Razorpay] Order ${orderId} already confirmed — skipping duplicate event`);
+    return;
+  }
+
   await orderSvc.updateStatus(orderId, 'PAID');
 
   const order = await orderSvc.getOrderDetails(orderId);

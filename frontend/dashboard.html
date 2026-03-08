@@ -1810,7 +1810,15 @@ async function loadWATemplates() {
     waTemplates = await api('/api/restaurant/whatsapp/templates');
     renderTemplateTable();
     renderEventMappings();
-  } catch (e) { toast(e.message || 'Failed to load templates', 'err'); }
+  } catch (e) {
+    const msg = e.message || '';
+    if (msg.includes('pending_approval') || msg.includes('No active WhatsApp')) {
+      const tbody = document.getElementById('tmpl-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="padding:1.5rem;text-align:center;color:#92400e;background:#fffbeb">⏳ WhatsApp Business not yet approved by Meta. Templates will appear here once your account is approved.</td></tr>';
+    } else {
+      toast(msg || 'Failed to load templates', 'err');
+    }
+  }
   finally { btn.disabled = false; btn.innerHTML = '🔄 Refresh from Meta'; }
 }
 
@@ -1931,7 +1939,7 @@ async function saveTemplateMappings() {
         templateLanguage: v.template_language || 'en',
         variableMap     : v.variable_map || {},
       }));
-    await api('/api/restaurant/whatsapp/template-mappings', { method: 'PUT', body: JSON.stringify(body) });
+    await api('/api/restaurant/whatsapp/template-mappings', { method: 'PUT', body });
     toast('Template mappings saved!', 'ok');
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; btn.innerHTML = '💾 Save Mappings'; }
@@ -2245,7 +2253,7 @@ async function loadCoupons() {
         : `₹${parseFloat(c.discount_value).toFixed(0)} flat`;
       const validFrom  = c.valid_from  ? new Date(c.valid_from).toLocaleDateString('en-IN',  { day:'numeric', month:'short', year:'numeric' }) : '—';
       const validUntil = c.valid_until ? new Date(c.valid_until).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) : '—';
-      const usedLabel  = c.usage_limit ? `${c.used_count} / ${c.usage_limit}` : `${c.used_count} / ∞`;
+      const usedLabel  = c.usage_limit ? `${c.usage_count ?? 0} / ${c.usage_limit}` : `${c.usage_count ?? 0} / ∞`;
       const isActive   = c.is_active;
       return `<tr style="border-bottom:1px solid var(--rim)">
         <td style="padding:.65rem 1rem;font-family:monospace;font-weight:700;letter-spacing:.05em">${c.code}</td>
@@ -2287,7 +2295,7 @@ async function createCoupon() {
   };
 
   try {
-    await api('/api/restaurant/coupons', { method: 'POST', body: JSON.stringify(body) });
+    await api('/api/restaurant/coupons', { method: 'POST', body });
     toast('Coupon created!', 'ok');
     ['cp-code','cp-desc','cp-value','cp-min','cp-maxdis','cp-limit','cp-from','cp-until'].forEach(id => { document.getElementById(id).value = ''; });
     document.getElementById('cp-type').value = 'percent';
@@ -2298,7 +2306,7 @@ async function createCoupon() {
 
 async function toggleCoupon(id, active) {
   try {
-    await api(`/api/restaurant/coupons/${id}`, { method: 'PATCH', body: JSON.stringify({ isActive: active }) });
+    await api(`/api/restaurant/coupons/${id}`, { method: 'PATCH', body: { isActive: active } });
     loadCoupons();
   } catch (e) { toast(e.message, 'err'); }
 }

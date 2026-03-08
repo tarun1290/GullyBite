@@ -28,9 +28,13 @@ _connectPromise = connect().catch(err => {
 // Middleware: ensures DB is connected before any route runs
 const ensureConnected = async (req, res, next) => {
   if (!_db) {
-    try { await _connectPromise; } catch (err) {
+    try {
+      await _connectPromise;
+    } catch (err) {
       return res.status(503).json({ error: 'Database unavailable: ' + err.message });
     }
+    // If promise resolved but _db is still null (connection failed silently), return 503
+    if (!_db) return res.status(503).json({ error: 'Database unavailable' });
   }
   next();
 };
