@@ -6,7 +6,7 @@
 const express = require('express');
 const crypto  = require('crypto');
 const router  = express.Router();
-const db      = require('../config/database');
+const { col } = require('../config/database');
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
 // Meta calls this once when you configure the webhook URL.
@@ -62,38 +62,28 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
 });
 
 // ─── items_batch handler ──────────────────────────────────────
-// Fires after each batch push to /{catalog_id}/batch
-// value = { catalog_id, event_type, errors: [...] }
 const handleItemsBatch = async (catalogId, value) => {
   const { event_type, errors = [] } = value;
 
   if (errors.length > 0) {
     console.warn(`[Catalog] Batch errors for catalog ${catalogId}:`, JSON.stringify(errors));
-
-    // Mark the branch sync as having errors so dashboard can show a warning
-    await db.query(
-      `UPDATE branches
-         SET catalog_synced_at = NOW(),
-             catalog_sync_error = $2
-       WHERE catalog_id = $1`,
-      [catalogId, `Batch errors: ${errors.map(e => e.message || JSON.stringify(e)).join('; ')}`]
-    ).catch(() => {}); // non-fatal if column doesn't exist yet
+    await col('branches').updateOne(
+      { catalog_id: catalogId },
+      { $set: {
+        catalog_synced_at  : new Date(),
+        catalog_sync_error : `Batch errors: ${errors.map(e => e.message || JSON.stringify(e)).join('; ')}`,
+      }}
+    ).catch(() => {});
   } else {
     console.log(`[Catalog] Batch ${event_type} completed for catalog ${catalogId}`);
-
-    await db.query(
-      `UPDATE branches
-         SET catalog_synced_at = NOW(),
-             catalog_sync_error = NULL
-       WHERE catalog_id = $1`,
-      [catalogId]
+    await col('branches').updateOne(
+      { catalog_id: catalogId },
+      { $set: { catalog_synced_at: new Date(), catalog_sync_error: null } }
     ).catch(() => {});
   }
 };
 
 // ─── product_feed handler ─────────────────────────────────────
-// Fires when a product feed upload/schedule is processed by Meta
-// value = { catalog_id, feed_id, event_type, status, errors: [...] }
 const handleProductFeed = async (catalogId, value) => {
   const { feed_id, event_type, status, errors = [] } = value;
 
@@ -103,14 +93,10 @@ const handleProductFeed = async (catalogId, value) => {
     console.warn(`[Catalog] Feed errors:`, JSON.stringify(errors));
   }
 
-  // Update branch sync timestamp on successful feed processing
   if (status === 'complete' || status === 'completed') {
-    await db.query(
-      `UPDATE branches
-         SET catalog_synced_at = NOW(),
-             catalog_sync_error = NULL
-       WHERE catalog_id = $1`,
-      [catalogId]
+    await col('branches').updateOne(
+      { catalog_id: catalogId },
+      { $set: { catalog_synced_at: new Date(), catalog_sync_error: null } }
     ).catch(() => {});
   }
 };

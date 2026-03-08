@@ -125,7 +125,7 @@ router.get('/whatsapp', async (req, res) => {
   try {
     const docs = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
     res.json(mapIds(docs).map(d => {
-      const { _id, meta_access_token, ...rest } = d;
+      const { _id, access_token, meta_access_token, ...rest } = d;
       return rest;
     }));
   } catch (e) { res.status(500).json({ error: e.message }); }
