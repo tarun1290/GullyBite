@@ -15,7 +15,7 @@
 
 const Razorpay = require('razorpay');
 const crypto  = require('crypto');
-const db       = require('../config/database');
+const { col, newId } = require('../config/database');
 
 // Lazy init — avoid crashing on startup if env vars aren't set yet
 let _rzp = null;
@@ -31,17 +31,13 @@ const getRzp = () => {
 };
 
 // ─── 1. CREATE RAZORPAY ORDER (WhatsApp Pay) ──────────────────
-// Creates a Razorpay Order that powers the native WhatsApp Pay flow.
-// The order ID is referenced in the WhatsApp order_details message.
-// When the customer pays, Razorpay fires order.paid webhook.
 const createRazorpayOrder = async (order, customer) => {
   const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 15;
 
   const rzpOrder = await getRzp().orders.create({
-    amount  : Math.round(order.total_rs * 100), // paise
+    amount  : Math.round(order.total_rs * 100),
     currency: 'INR',
-    receipt : order.order_number,               // shows on Razorpay dashboard
-    // notes come back verbatim in every webhook — used to match our order
+    receipt : order.order_number,
     notes: {
       order_id    : order.id,
       order_number: order.order_number,
@@ -50,20 +46,26 @@ const createRazorpayOrder = async (order, customer) => {
   });
 
   const expiresAt = new Date(Date.now() + expiryMins * 60 * 1000);
-
-  await db.query(
-    `INSERT INTO payments
-       (order_id, rp_order_id, amount_rs, status, payment_type, expires_at)
-     VALUES ($1, $2, $3, 'sent', 'whatsapp_pay', $4)`,
-    [order.id, rzpOrder.id, order.total_rs, expiresAt]
-  );
+  await col('payments').insertOne({
+    _id: newId(),
+    order_id: order.id,
+    rp_order_id: rzpOrder.id,
+    rp_link_id: null,
+    rp_link_url: null,
+    rp_payment_id: null,
+    payment_method: null,
+    amount_rs: order.total_rs,
+    status: 'sent',
+    payment_type: 'whatsapp_pay',
+    expires_at: expiresAt,
+    paid_at: null,
+    created_at: new Date(),
+  });
 
   return rzpOrder;
 };
 
 // ─── 2. CREATE PAYMENT LINK (fallback) ────────────────────────
-// Used when WhatsApp Pay is unavailable or sendPaymentRequest fails.
-// Sends a short Razorpay URL the customer opens in a browser.
 const createPaymentLink = async (order, customer) => {
   const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 15;
   const expiresAt  = Math.floor(Date.now() / 1000) + expiryMins * 60;
@@ -89,19 +91,26 @@ const createPaymentLink = async (order, customer) => {
     expire_by      : expiresAt,
   });
 
-  await db.query(
-    `INSERT INTO payments
-       (order_id, rp_link_id, rp_link_url, amount_rs, status, payment_type, expires_at)
-     VALUES ($1, $2, $3, $4, 'sent', 'link', to_timestamp($5))`,
-    [order.id, link.id, link.short_url, order.total_rs, expiresAt]
-  );
+  await col('payments').insertOne({
+    _id: newId(),
+    order_id: order.id,
+    rp_order_id: null,
+    rp_link_id: link.id,
+    rp_link_url: link.short_url,
+    rp_payment_id: null,
+    payment_method: null,
+    amount_rs: order.total_rs,
+    status: 'sent',
+    payment_type: 'link',
+    expires_at: new Date(expiresAt * 1000),
+    paid_at: null,
+    created_at: new Date(),
+  });
 
   return { id: link.id, url: link.short_url, expiryMins };
 };
 
 // ─── VERIFY WEBHOOK SIGNATURE ─────────────────────────────────
-// CRITICAL SECURITY CHECK — both Razorpay webhooks call this.
-// Razorpay signs every webhook with HMAC-SHA256 using your secret.
 const verifyWebhookSignature = (rawBody, signature) => {
   if (!signature) return false;
   const expected = crypto
@@ -116,10 +125,7 @@ const verifyWebhookSignature = (rawBody, signature) => {
 };
 
 // ─── HANDLE ORDER PAID (WhatsApp Pay) ─────────────────────────
-// Triggered by Razorpay webhook events: order.paid / payment.captured
-// These fire when a customer pays through native WhatsApp Pay or Razorpay.
 const handleOrderPaid = async (event) => {
-  // order.paid gives us the order entity; payment.captured gives payment entity
   const rzpOrderId    = event.payload?.order?.entity?.id
                      || event.payload?.payment?.entity?.order_id;
   const paymentEntity = event.payload?.payment?.entity;
@@ -129,26 +135,18 @@ const handleOrderPaid = async (event) => {
     return null;
   }
 
-  const { rows } = await db.query(
-    'SELECT * FROM payments WHERE rp_order_id = $1',
-    [rzpOrderId]
-  );
-  if (!rows.length) {
+  const payment = await col('payments').findOne({ rp_order_id: rzpOrderId });
+  if (!payment) {
     console.error('[Payment] No payment record for Razorpay order:', rzpOrderId);
     return null;
   }
 
-  await db.query(
-    `UPDATE payments SET
-       status         = 'paid',
-       rp_payment_id  = $1,
-       payment_method = $2,
-       paid_at        = NOW()
-     WHERE rp_order_id = $3`,
-    [paymentEntity?.id, paymentEntity?.method, rzpOrderId]
+  await col('payments').updateOne(
+    { rp_order_id: rzpOrderId },
+    { $set: { status: 'paid', rp_payment_id: paymentEntity?.id, payment_method: paymentEntity?.method, paid_at: new Date() } }
   );
 
-  return rows[0].order_id;
+  return payment.order_id;
 };
 
 // ─── HANDLE PAYMENT LINK PAID (fallback flow) ─────────────────
@@ -156,43 +154,38 @@ const handlePaymentSuccess = async (event) => {
   const linkId        = event.payload?.payment_link?.entity?.id;
   const paymentEntity = event.payload?.payment?.entity;
 
-  const { rows } = await db.query(
-    'SELECT * FROM payments WHERE rp_link_id = $1',
-    [linkId]
-  );
-  if (!rows.length) {
+  const payment = await col('payments').findOne({ rp_link_id: linkId });
+  if (!payment) {
     console.error('[Payment] No payment record for link:', linkId);
     return null;
   }
 
-  await db.query(
-    `UPDATE payments SET
-       status         = 'paid',
-       rp_payment_id  = $1,
-       rp_order_id    = $2,
-       payment_method = $3,
-       paid_at        = NOW()
-     WHERE rp_link_id = $4`,
-    [paymentEntity?.id, paymentEntity?.order_id, paymentEntity?.method, linkId]
+  await col('payments').updateOne(
+    { rp_link_id: linkId },
+    { $set: { status: 'paid', rp_payment_id: paymentEntity?.id, rp_order_id: paymentEntity?.order_id, payment_method: paymentEntity?.method, paid_at: new Date() } }
   );
 
-  return rows[0].order_id;
+  return payment.order_id;
 };
 
 // ─── HANDLE PAYMENT FAILED ────────────────────────────────────
 const handlePaymentFailed = async (event) => {
-  const linkId    = event.payload?.payment_link?.entity?.id;
+  const linkId     = event.payload?.payment_link?.entity?.id;
   const rzpOrderId = event.payload?.payment?.entity?.order_id;
 
   if (linkId) {
-    await db.query("UPDATE payments SET status='failed' WHERE rp_link_id=$1", [linkId]);
-    const { rows } = await db.query('SELECT order_id FROM payments WHERE rp_link_id=$1', [linkId]);
-    return rows[0]?.order_id;
+    const payment = await col('payments').findOneAndUpdate(
+      { rp_link_id: linkId },
+      { $set: { status: 'failed' } }
+    );
+    return payment?.order_id || null;
   }
   if (rzpOrderId) {
-    await db.query("UPDATE payments SET status='failed' WHERE rp_order_id=$1", [rzpOrderId]);
-    const { rows } = await db.query('SELECT order_id FROM payments WHERE rp_order_id=$1', [rzpOrderId]);
-    return rows[0]?.order_id;
+    const payment = await col('payments').findOneAndUpdate(
+      { rp_order_id: rzpOrderId },
+      { $set: { status: 'failed' } }
+    );
+    return payment?.order_id || null;
   }
   return null;
 };
@@ -202,49 +195,32 @@ const handleLinkExpired = async (event) => {
   const linkId = event.payload?.payment_link?.entity?.id;
   if (!linkId) return null;
 
-  await db.query(
-    "UPDATE payments SET status='expired' WHERE rp_link_id=$1 AND status != 'paid'",
-    [linkId]
+  const payment = await col('payments').findOneAndUpdate(
+    { rp_link_id: linkId, status: { $ne: 'paid' } },
+    { $set: { status: 'expired' } }
   );
 
-  const { rows } = await db.query('SELECT order_id FROM payments WHERE rp_link_id=$1', [linkId]);
-  return rows[0]?.order_id;
+  return payment?.order_id || null;
 };
 
 // ─── ISSUE REFUND ─────────────────────────────────────────────
-// Called when a paid order is cancelled.
-// Works for both WhatsApp Pay and payment link flows
-// (both result in a rp_payment_id we can refund against).
 const issueRefund = async (orderId, reason = 'Order cancelled') => {
-  const { rows } = await db.query(
-    "SELECT * FROM payments WHERE order_id=$1 AND status='paid'",
-    [orderId]
-  );
-  if (!rows.length) return null;
+  const payment = await col('payments').findOne({ order_id: orderId, status: 'paid' });
+  if (!payment) return null;
 
-  const payment = rows[0];
   const refund = await getRzp().payments.refund(payment.rp_payment_id, {
     amount: Math.round(payment.amount_rs * 100),
     notes : { reason, order_id: orderId },
   });
 
-  await db.query("UPDATE payments SET status='refunded' WHERE id=$1", [payment.id]);
+  await col('payments').updateOne({ _id: payment._id }, { $set: { status: 'refunded' } });
   return refund;
 };
 
 // ─── REGISTER RESTAURANT PAYOUT ACCOUNT ───────────────────────
-// Called once when a restaurant adds their bank details.
-// Creates a Razorpay Contact + Fund Account so we can pay them weekly.
-// Requires Razorpay X account (razorpay.com → Razorpay X).
 const registerPayoutAccount = async (restaurantId) => {
-  const { rows } = await db.query(
-    `SELECT id, business_name, email, phone, bank_name,
-            bank_account_number, bank_ifsc, razorpay_fund_acct_id
-     FROM restaurants WHERE id = $1`,
-    [restaurantId]
-  );
-  if (!rows.length) throw new Error('Restaurant not found');
-  const restaurant = rows[0];
+  const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+  if (!restaurant) throw new Error('Restaurant not found');
 
   if (!restaurant.bank_account_number || !restaurant.bank_ifsc) {
     throw new Error('Bank account number and IFSC are required');
@@ -253,16 +229,14 @@ const registerPayoutAccount = async (restaurantId) => {
     return { alreadyRegistered: true, fundAccountId: restaurant.razorpay_fund_acct_id };
   }
 
-  // Step 1: Create Razorpay Contact
   const contact = await getRzp().contacts.create({
     name        : restaurant.business_name,
-    email       : restaurant.email       || undefined,
-    contact     : restaurant.phone       || undefined,
-    type        : 'vendor',               // 'vendor' = business payout recipient
-    reference_id: restaurant.id,
+    email       : restaurant.email || undefined,
+    contact     : restaurant.phone || undefined,
+    type        : 'vendor',
+    reference_id: restaurantId,
   });
 
-  // Step 2: Create Fund Account (bank account linked to the contact)
   const fundAccount = await getRzp().fundAccount.create({
     contact_id  : contact.id,
     account_type: 'bank_account',
@@ -273,10 +247,9 @@ const registerPayoutAccount = async (restaurantId) => {
     },
   });
 
-  // Save fund account ID — used every week during settlement
-  await db.query(
-    'UPDATE restaurants SET razorpay_fund_acct_id = $1 WHERE id = $2',
-    [fundAccount.id, restaurantId]
+  await col('restaurants').updateOne(
+    { _id: restaurantId },
+    { $set: { razorpay_fund_acct_id: fundAccount.id } }
   );
 
   console.log(`[Payment] Registered payout account for "${restaurant.business_name}": ${fundAccount.id}`);
@@ -284,17 +257,15 @@ const registerPayoutAccount = async (restaurantId) => {
 };
 
 // ─── CREATE PAYOUT (used by weekly settlement job) ────────────
-// Transfers the net settlement amount to the restaurant's bank account.
-// Requires Razorpay X + RAZORPAY_ACCOUNT_NUMBER in .env.
 const createPayout = async (restaurant, amountRs, settlementId) => {
   const payout = await getRzp().payouts.create({
-    account_number   : process.env.RAZORPAY_ACCOUNT_NUMBER, // GullyBite's RazorpayX account
+    account_number   : process.env.RAZORPAY_ACCOUNT_NUMBER,
     fund_account_id  : restaurant.razorpay_fund_acct_id,
-    amount           : Math.round(amountRs * 100),           // paise
+    amount           : Math.round(amountRs * 100),
     currency         : 'INR',
-    mode             : 'IMPS',    // instant bank transfer
+    mode             : 'IMPS',
     purpose          : 'payout',
-    queue_if_low_balance: true,   // don't fail if balance dips briefly
+    queue_if_low_balance: true,
     reference_id     : settlementId,
     narration        : `GullyBite Settlement - ${restaurant.business_name}`,
   });

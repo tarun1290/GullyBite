@@ -6,13 +6,14 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const axios  = require('axios');
-const db = require('../config/database');
+const { col, newId, mapId, mapIds, getBucket } = require('../config/database');
+const { Readable } = require('stream');
 const { requireAuth, requireApproved } = require('./auth');
 const catalog = require('../services/catalog');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
 
-// ── Image upload via Supabase Storage ─────────────────────────
+// ── Image upload via MongoDB GridFS ───────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
   limits : { fileSize: 5 * 1024 * 1024 }, // 5 MB max
@@ -32,17 +33,15 @@ router.use(requireAuth, requireApproved);
 // GET /api/restaurant — Get my restaurant + stats
 router.get('/', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      `SELECT r.*,
-        (SELECT COUNT(*) FROM branches WHERE restaurant_id = r.id) AS branch_count,
-        (SELECT COUNT(*) FROM whatsapp_accounts WHERE restaurant_id = r.id AND is_active) AS wa_count
-       FROM restaurants r WHERE r.id = $1`,
-      [req.restaurantId]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Not found' });
-    const r = rows[0];
-    delete r.meta_access_token; // Never send tokens to frontend!
-    res.json(r);
+    const r = await col('restaurants').findOne({ _id: req.restaurantId });
+    if (!r) return res.status(404).json({ error: 'Not found' });
+    const [branch_count, wa_count] = await Promise.all([
+      col('branches').countDocuments({ restaurant_id: req.restaurantId }),
+      col('whatsapp_accounts').countDocuments({ restaurant_id: req.restaurantId, is_active: true }),
+    ]);
+    const out = mapId(r);
+    delete out.meta_access_token;
+    res.json({ ...out, branch_count, wa_count });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -55,38 +54,29 @@ router.put('/', async (req, res) => {
       bankName, bankAccountNumber, bankIfsc,
       menuGstMode, deliveryFeeCustomerPct, packagingChargeRs, packagingGstPct,
     } = req.body;
-    await db.query(
-      `UPDATE restaurants SET
-         business_name              = COALESCE($1,  business_name),
-         registered_business_name   = COALESCE($2,  registered_business_name),
-         owner_name                 = COALESCE($3,  owner_name),
-         phone                      = COALESCE($4,  phone),
-         city                       = COALESCE($5,  city),
-         restaurant_type            = COALESCE($6,  restaurant_type),
-         logo_url                   = COALESCE($7,  logo_url),
-         gst_number                 = COALESCE($8,  gst_number),
-         fssai_license              = COALESCE($9,  fssai_license),
-         fssai_expiry               = COALESCE($10, fssai_expiry),
-         bank_name                  = COALESCE($11, bank_name),
-         bank_account_number        = COALESCE($12, bank_account_number),
-         bank_ifsc                  = COALESCE($13, bank_ifsc),
-         menu_gst_mode              = COALESCE($15, menu_gst_mode),
-         delivery_fee_customer_pct  = COALESCE($16, delivery_fee_customer_pct),
-         packaging_charge_rs        = COALESCE($17, packaging_charge_rs),
-         packaging_gst_pct          = COALESCE($18, packaging_gst_pct),
-         onboarding_step            = GREATEST(onboarding_step, 2)
-       WHERE id = $14`,
-      [
-        businessName || null, registeredBusinessName || null, ownerName || null,
-        phone || null, city || null, restaurantType || null, logoUrl || null,
-        gstNumber || null, fssaiLicense || null, fssaiExpiry || null,
-        bankName || null, bankAccountNumber || null, bankIfsc || null,
-        req.restaurantId,
-        menuGstMode || null,
-        deliveryFeeCustomerPct != null ? parseInt(deliveryFeeCustomerPct, 10) : null,
-        packagingChargeRs      != null ? parseFloat(packagingChargeRs)       : null,
-        packagingGstPct        != null ? parseFloat(packagingGstPct)         : null,
-      ]
+
+    const $set = {};
+    if (businessName            != null) $set.business_name             = businessName;
+    if (registeredBusinessName  != null) $set.registered_business_name  = registeredBusinessName;
+    if (ownerName               != null) $set.owner_name                = ownerName;
+    if (phone                   != null) $set.phone                     = phone;
+    if (city                    != null) $set.city                      = city;
+    if (restaurantType          != null) $set.restaurant_type           = restaurantType;
+    if (logoUrl                 != null) $set.logo_url                  = logoUrl;
+    if (gstNumber               != null) $set.gst_number                = gstNumber;
+    if (fssaiLicense            != null) $set.fssai_license             = fssaiLicense;
+    if (fssaiExpiry             != null) $set.fssai_expiry              = fssaiExpiry;
+    if (bankName                != null) $set.bank_name                 = bankName;
+    if (bankAccountNumber       != null) $set.bank_account_number       = bankAccountNumber;
+    if (bankIfsc                != null) $set.bank_ifsc                 = bankIfsc;
+    if (menuGstMode             != null) $set.menu_gst_mode             = menuGstMode;
+    if (deliveryFeeCustomerPct  != null) $set.delivery_fee_customer_pct = parseInt(deliveryFeeCustomerPct, 10);
+    if (packagingChargeRs       != null) $set.packaging_charge_rs       = parseFloat(packagingChargeRs);
+    if (packagingGstPct         != null) $set.packaging_gst_pct         = parseFloat(packagingGstPct);
+
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      [{ $set: { ...$set, onboarding_step: { $max: ['$onboarding_step', 2] } } }]
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -97,41 +87,32 @@ router.put('/', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 
 // POST /api/restaurant/menu/upload-image
-// Accepts: multipart/form-data with field "image"
-// Returns: { url: "https://..." }  — public URL ready to use in catalog
 router.post('/menu/upload-image', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image file received' });
 
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    return res.status(500).json({ error: 'Image storage not configured (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing)' });
-  }
-
   const ext      = req.file.mimetype.split('/')[1].replace('jpeg', 'jpg');
-  const filename = `${req.restaurantId}/${Date.now()}.${ext}`;
+  const filename = `${req.restaurantId}-${Date.now()}.${ext}`;
 
   try {
-    await axios.post(
-      `${SUPABASE_URL}/storage/v1/object/menu-images/${filename}`,
-      req.file.buffer,
-      {
-        headers: {
-          Authorization : `Bearer ${SERVICE_KEY}`,
-          apikey        : SERVICE_KEY,
-          'Content-Type': req.file.mimetype,
-          'x-upsert'    : 'true',
-        },
-        timeout: 20000,
-      }
-    );
+    const bucket = getBucket();
+    const uploadStream = bucket.openUploadStream(filename, {
+      contentType: req.file.mimetype,
+      metadata: { restaurantId: req.restaurantId },
+    });
 
-    const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/menu-images/${filename}`;
+    await new Promise((resolve, reject) => {
+      const readable = Readable.from(req.file.buffer);
+      readable.pipe(uploadStream);
+      uploadStream.on('finish', resolve);
+      uploadStream.on('error', reject);
+    });
+
+    const fileId = String(uploadStream.id);
+    const publicUrl = `${process.env.BASE_URL}/images/${fileId}`;
     res.json({ url: publicUrl });
   } catch (err) {
-    const msg = err.response?.data?.message || err.message;
-    console.error('[ImageUpload] Supabase Storage error:', msg);
-    res.status(500).json({ error: `Image upload failed: ${msg}` });
+    console.error('[ImageUpload] GridFS error:', err.message);
+    res.status(500).json({ error: `Image upload failed: ${err.message}` });
   }
 });
 
@@ -141,13 +122,11 @@ router.post('/menu/upload-image', upload.single('image'), async (req, res) => {
 
 router.get('/whatsapp', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      `SELECT id, waba_id, phone_number_id, phone_display, display_name,
-              quality_rating, messaging_limit, catalog_id, catalog_synced_at, is_active
-       FROM whatsapp_accounts WHERE restaurant_id = $1`,
-      [req.restaurantId]
-    );
-    res.json(rows);
+    const docs = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
+    res.json(mapIds(docs).map(d => {
+      const { _id, meta_access_token, ...rest } = d;
+      return rest;
+    }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -155,12 +134,12 @@ router.get('/whatsapp', async (req, res) => {
 router.put('/whatsapp/:id', async (req, res) => {
   try {
     const { catalogId, isActive } = req.body;
-    await db.query(
-      `UPDATE whatsapp_accounts SET
-         catalog_id = COALESCE($1, catalog_id),
-         is_active = COALESCE($2, is_active)
-       WHERE id = $3 AND restaurant_id = $4`,
-      [catalogId, isActive, req.params.id, req.restaurantId]
+    const $set = {};
+    if (catalogId !== undefined) $set.catalog_id = catalogId;
+    if (isActive  !== undefined) $set.is_active   = isActive;
+    await col('whatsapp_accounts').updateOne(
+      { _id: req.params.id, restaurant_id: req.restaurantId },
+      { $set }
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -172,11 +151,8 @@ router.put('/whatsapp/:id', async (req, res) => {
 
 router.get('/branches', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      'SELECT * FROM branches WHERE restaurant_id = $1 ORDER BY created_at',
-      [req.restaurantId]
-    );
-    res.json(rows);
+    const docs = await col('branches').find({ restaurant_id: req.restaurantId }).sort({ created_at: 1 }).toArray();
+    res.json(mapIds(docs));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -185,35 +161,43 @@ router.post('/branches', async (req, res) => {
     const { name, address, city, pincode, latitude, longitude, deliveryRadiusKm, openingTime, closingTime, managerPhone } = req.body;
     if (!latitude || !longitude) return res.status(400).json({ error: 'latitude and longitude are required' });
 
-    const { rows } = await db.query(
-      `INSERT INTO branches
-         (restaurant_id, name, address, city, pincode, latitude, longitude,
-          delivery_radius_km, opening_time, closing_time, manager_phone)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [req.restaurantId, name, address, city, pincode, latitude, longitude,
-       deliveryRadiusKm || 5, openingTime || '10:00', closingTime || '22:00', managerPhone]
+    const branchId = newId();
+    const now = new Date();
+    const branch = {
+      _id: branchId,
+      restaurant_id: req.restaurantId,
+      name,
+      address,
+      city,
+      pincode,
+      latitude: parseFloat(latitude),
+      longitude: parseFloat(longitude),
+      delivery_radius_km: deliveryRadiusKm || 5,
+      opening_time: openingTime || '10:00',
+      closing_time: closingTime || '22:00',
+      manager_phone: managerPhone || null,
+      is_open: true,
+      accepts_orders: true,
+      catalog_id: null,
+      delivery_fee_rs: null,
+      created_at: now,
+      updated_at: now,
+    };
+    await col('branches').insertOne(branch);
+
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      [{ $set: { onboarding_step: { $max: ['$onboarding_step', 3] } } }]
     );
 
-    await db.query(
-      'UPDATE restaurants SET onboarding_step = GREATEST(onboarding_step, 3) WHERE id = $1',
-      [req.restaurantId]
-    );
+    const newBranch = mapId(branch);
 
-    const newBranch = rows[0];
-
-    // ── AUTO-CREATE WHATSAPP CATALOG FOR THIS BRANCH ──────────
-    // Runs in background — don't await so the branch saves instantly
-    // Restaurant owner sees branch immediately, catalog creates in ~2 seconds
+    // AUTO-CREATE WHATSAPP CATALOG FOR THIS BRANCH (background)
     catalog.createBranchCatalog(newBranch.id)
       .then(result => {
-        if (result.success) {
-          console.log(`[Branch] Auto-created catalog for "${newBranch.name}": ${result.catalogId}`);
-        }
+        if (result.success) console.log(`[Branch] Auto-created catalog for "${newBranch.name}": ${result.catalogId}`);
       })
-      .catch(err => {
-        // Non-fatal — branch still saved, catalog can be retried
-        console.error(`[Branch] Auto catalog creation failed for "${newBranch.name}":`, err.message);
-      });
+      .catch(err => console.error(`[Branch] Auto catalog creation failed for "${newBranch.name}":`, err.message));
 
     res.status(201).json(newBranch);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -222,16 +206,15 @@ router.post('/branches', async (req, res) => {
 router.patch('/branches/:id', async (req, res) => {
   try {
     const { isOpen, acceptsOrders, deliveryRadiusKm, catalogId, deliveryFeeRs } = req.body;
-    await db.query(
-      `UPDATE branches SET
-         is_open            = COALESCE($1, is_open),
-         accepts_orders     = COALESCE($2, accepts_orders),
-         delivery_radius_km = COALESCE($3, delivery_radius_km),
-         catalog_id         = COALESCE($4, catalog_id),
-         delivery_fee_rs    = COALESCE($5, delivery_fee_rs)
-       WHERE id = $6 AND restaurant_id = $7`,
-      [isOpen, acceptsOrders, deliveryRadiusKm, catalogId, deliveryFeeRs,
-       req.params.id, req.restaurantId]
+    const $set = {};
+    if (isOpen             !== undefined) $set.is_open            = isOpen;
+    if (acceptsOrders      !== undefined) $set.accepts_orders     = acceptsOrders;
+    if (deliveryRadiusKm   !== undefined) $set.delivery_radius_km = deliveryRadiusKm;
+    if (catalogId          !== undefined) $set.catalog_id         = catalogId;
+    if (deliveryFeeRs      !== undefined) $set.delivery_fee_rs    = deliveryFeeRs;
+    await col('branches').updateOne(
+      { _id: req.params.id, restaurant_id: req.restaurantId },
+      { $set }
     );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -243,22 +226,19 @@ router.patch('/branches/:id', async (req, res) => {
 
 router.get('/branches/:branchId/categories', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      'SELECT * FROM menu_categories WHERE branch_id = $1 ORDER BY sort_order',
-      [req.params.branchId]
-    );
-    res.json(rows);
+    const docs = await col('menu_categories').find({ branch_id: req.params.branchId }).sort({ sort_order: 1 }).toArray();
+    res.json(mapIds(docs));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.post('/branches/:branchId/categories', async (req, res) => {
   try {
     const { name, description, sortOrder } = req.body;
-    const { rows } = await db.query(
-      'INSERT INTO menu_categories (branch_id, name, description, sort_order) VALUES ($1,$2,$3,$4) RETURNING *',
-      [req.params.branchId, name, description, sortOrder || 0]
-    );
-    res.status(201).json(rows[0]);
+    const catId = newId();
+    const now = new Date();
+    const cat = { _id: catId, branch_id: req.params.branchId, name, description: description || null, sort_order: sortOrder || 0, created_at: now };
+    await col('menu_categories').insertOne(cat);
+    res.status(201).json(mapId(cat));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -268,18 +248,15 @@ router.post('/branches/:branchId/categories', async (req, res) => {
 
 router.get('/branches/:branchId/menu', async (req, res) => {
   try {
-    const { rows: cats } = await db.query(
-      'SELECT * FROM menu_categories WHERE branch_id=$1 ORDER BY sort_order',
-      [req.params.branchId]
-    );
-    const { rows: items } = await db.query(
-      'SELECT * FROM menu_items WHERE branch_id=$1 ORDER BY sort_order, name',
-      [req.params.branchId]
-    );
-    // Group items by category
-    const result = cats.map((c) => ({ ...c, items: items.filter((i) => i.category_id === c.id) }));
-    result.push({ id: null, name: 'Uncategorized', items: items.filter((i) => !i.category_id) });
-    res.json(result.filter((c) => c.items.length > 0));
+    const [cats, items] = await Promise.all([
+      col('menu_categories').find({ branch_id: req.params.branchId }).sort({ sort_order: 1 }).toArray(),
+      col('menu_items').find({ branch_id: req.params.branchId }).sort({ sort_order: 1, name: 1 }).toArray(),
+    ]);
+    const mappedCats  = mapIds(cats);
+    const mappedItems = mapIds(items);
+    const result = mappedCats.map(c => ({ ...c, items: mappedItems.filter(i => i.category_id === c.id) }));
+    result.push({ id: null, name: 'Uncategorized', items: mappedItems.filter(i => !i.category_id) });
+    res.json(result.filter(c => c.items.length > 0));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -292,33 +269,41 @@ router.post('/branches/:branchId/menu', async (req, res) => {
     } = req.body;
     if (!name || !priceRs) return res.status(400).json({ error: 'name and priceRs required' });
 
-    // Generate unique retailer_id for WhatsApp Catalog
-    // Include variant value in the ID so variants are distinguishable
     const variantSuffix = variantValue ? `-${variantValue.toLowerCase().replace(/\s+/g, '-')}` : '';
     const retailerId = `ZM-${req.params.branchId.slice(0, 6)}-${Date.now()}${variantSuffix}`;
     const pricePaise = Math.round(parseFloat(priceRs) * 100);
+    const now = new Date();
+    const itemId = newId();
+    const item = {
+      _id: itemId,
+      branch_id: req.params.branchId,
+      category_id: categoryId || null,
+      name,
+      description: description || null,
+      price_paise: pricePaise,
+      retailer_id: retailerId,
+      image_url: imageUrl || null,
+      food_type: foodType || 'veg',
+      is_bestseller: isBestseller || false,
+      is_available: true,
+      sort_order: sortOrder || 0,
+      item_group_id: itemGroupId || null,
+      variant_type: variantType || null,
+      variant_value: variantValue || null,
+      created_at: now,
+      updated_at: now,
+    };
+    await col('menu_items').insertOne(item);
 
-    const { rows } = await db.query(
-      `INSERT INTO menu_items
-         (branch_id, category_id, name, description, price_paise, retailer_id,
-          image_url, food_type, is_bestseller, sort_order,
-          item_group_id, variant_type, variant_value)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-      [req.params.branchId, categoryId, name, description, pricePaise, retailerId,
-       imageUrl, foodType || 'veg', isBestseller || false, sortOrder || 0,
-       itemGroupId || null, variantType || null, variantValue || null]
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      [{ $set: { onboarding_step: { $max: ['$onboarding_step', 4] } } }]
     );
 
-    await db.query(
-      'UPDATE restaurants SET onboarding_step = GREATEST(onboarding_step, 4) WHERE id = $1',
-      [req.restaurantId]
-    );
-
-    // Auto-sync new item to Meta catalog in background
     catalog.syncBranchCatalog(req.params.branchId)
       .catch(err => console.error('[Menu] Auto-sync after add failed:', err.message));
 
-    res.status(201).json(rows[0]);
+    res.status(201).json(mapId(item));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -327,7 +312,6 @@ router.put('/menu/:itemId', async (req, res) => {
     const { name, description, priceRs, imageUrl, isAvailable, isBestseller,
             itemGroupId, variantType, variantValue } = req.body;
 
-    // Availability-only toggle: use optimised single-item push (faster than full sync)
     const onlyAvailability = isAvailable !== undefined &&
       name === undefined && description === undefined && priceRs === undefined &&
       imageUrl === undefined && isBestseller === undefined &&
@@ -339,24 +323,26 @@ router.put('/menu/:itemId', async (req, res) => {
       return res.json({ success: true });
     }
 
-    // Full edit: update DB, then sync catalog in background
-    const updates = [];
-    const vals = [];
-    if (name !== undefined)        { vals.push(name); updates.push(`name=$${vals.length}`); }
-    if (description !== undefined) { vals.push(description); updates.push(`description=$${vals.length}`); }
-    if (priceRs !== undefined)     { vals.push(Math.round(parseFloat(priceRs) * 100)); updates.push(`price_paise=$${vals.length}`); }
-    if (imageUrl !== undefined)    { vals.push(imageUrl); updates.push(`image_url=$${vals.length}`); }
-    if (isBestseller !== undefined){ vals.push(isBestseller); updates.push(`is_bestseller=$${vals.length}`); }
-    if (itemGroupId !== undefined) { vals.push(itemGroupId || null); updates.push(`item_group_id=$${vals.length}`); }
-    if (variantType !== undefined) { vals.push(variantType || null); updates.push(`variant_type=$${vals.length}`); }
-    if (variantValue !== undefined){ vals.push(variantValue || null); updates.push(`variant_value=$${vals.length}`); }
-    if (!updates.length) return res.json({ success: true });
-    vals.push(req.params.itemId);
-    const { rows: updated } = await db.query(
-      `UPDATE menu_items SET ${updates.join(',')} WHERE id=$${vals.length} RETURNING branch_id`, vals
+    const $set = { updated_at: new Date() };
+    if (name        !== undefined) $set.name          = name;
+    if (description !== undefined) $set.description   = description;
+    if (priceRs     !== undefined) $set.price_paise   = Math.round(parseFloat(priceRs) * 100);
+    if (imageUrl    !== undefined) $set.image_url     = imageUrl;
+    if (isBestseller!== undefined) $set.is_bestseller = isBestseller;
+    if (itemGroupId !== undefined) $set.item_group_id = itemGroupId || null;
+    if (variantType !== undefined) $set.variant_type  = variantType || null;
+    if (variantValue!== undefined) $set.variant_value = variantValue || null;
+    if (isAvailable !== undefined) $set.is_available  = isAvailable;
+
+    if (Object.keys($set).length === 1) return res.json({ success: true }); // only updated_at
+
+    const updated = await col('menu_items').findOneAndUpdate(
+      { _id: req.params.itemId },
+      { $set },
+      { returnDocument: 'after' }
     );
-    if (updated.length) {
-      catalog.syncBranchCatalog(updated[0].branch_id)
+    if (updated) {
+      catalog.syncBranchCatalog(updated.branch_id)
         .catch(err => console.error('[Menu] Auto-sync after edit failed:', err.message));
     }
     res.json({ success: true });
@@ -365,23 +351,18 @@ router.put('/menu/:itemId', async (req, res) => {
 
 router.delete('/menu/:itemId', async (req, res) => {
   try {
-    // Fetch item before deleting so we can push DELETE to Meta catalog
-    const { rows: items } = await db.query(
-      `SELECT mi.retailer_id, mi.branch_id, b.catalog_id, wa.access_token
-       FROM menu_items mi
-       JOIN branches b ON mi.branch_id = b.id
-       JOIN restaurants r ON b.restaurant_id = r.id
-       LEFT JOIN whatsapp_accounts wa ON wa.restaurant_id = r.id AND wa.is_active = TRUE
-       WHERE mi.id = $1`,
-      [req.params.itemId]
-    );
-    await db.query('DELETE FROM menu_items WHERE id=$1', [req.params.itemId]);
+    const item = await col('menu_items').findOne({ _id: req.params.itemId });
+    await col('menu_items').deleteOne({ _id: req.params.itemId });
 
-    // Push single DELETE to Meta catalog in background
-    if (items.length) {
-      const { retailer_id, catalog_id, access_token } = items[0];
+    if (item) {
+      const branch = await col('branches').findOne({ _id: item.branch_id });
+      const wa_acc = branch
+        ? await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true })
+        : null;
+      const catalog_id   = branch?.catalog_id;
+      const retailer_id  = item.retailer_id;
+      const access_token = wa_acc?.access_token;
       if (catalog_id && retailer_id && access_token) {
-        const axios = require('axios');
         const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
         axios.post(`${GRAPH}/${catalog_id}/batch`,
           { requests: [{ method: 'DELETE', retailer_id }] },
@@ -394,7 +375,7 @@ router.delete('/menu/:itemId', async (req, res) => {
 });
 
 // POST /api/restaurant/branches/:branchId/menu/csv
-// Bulk upsert menu items from a parsed CSV (array of row objects sent as JSON)
+// Bulk upsert menu items from a parsed CSV
 router.post('/branches/:branchId/menu/csv', async (req, res) => {
   try {
     const { items } = req.body;
@@ -420,16 +401,13 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
         let categoryId = null;
         if (categoryName) {
           if (!categoryCache[categoryName]) {
-            const { rows: ex } = await db.query(
-              'SELECT id FROM menu_categories WHERE branch_id=$1 AND name=$2', [branchId, categoryName]
-            );
-            if (ex.length) {
-              categoryCache[categoryName] = ex[0].id;
+            const ex = await col('menu_categories').findOne({ branch_id: branchId, name: categoryName });
+            if (ex) {
+              categoryCache[categoryName] = String(ex._id);
             } else {
-              const { rows: cr } = await db.query(
-                'INSERT INTO menu_categories (branch_id, name) VALUES ($1,$2) RETURNING id', [branchId, categoryName]
-              );
-              categoryCache[categoryName] = cr[0].id;
+              const catId = newId();
+              await col('menu_categories').insertOne({ _id: catId, branch_id: branchId, name: categoryName, sort_order: 0, created_at: new Date() });
+              categoryCache[categoryName] = catId;
             }
           }
           categoryId = categoryCache[categoryName];
@@ -441,21 +419,27 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
         const isBestseller = ['true', 'yes', '1'].includes((row.is_bestseller || '').toLowerCase());
         const imageUrl = (row.image_url || row.image || '').trim() || null;
         const pricePaise = Math.round(price * 100);
-        // Deterministic retailer_id — re-uploading same item updates instead of duplicating
         const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
         const retailerId = `ZM-${branchId.slice(0, 6)}-${slug}`;
+        const now = new Date();
 
-        await db.query(
-          `INSERT INTO menu_items
-             (branch_id, category_id, name, description, price_paise, retailer_id, image_url, food_type, is_bestseller)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-           ON CONFLICT (retailer_id) DO UPDATE SET
-             name=EXCLUDED.name, category_id=EXCLUDED.category_id,
-             description=EXCLUDED.description, price_paise=EXCLUDED.price_paise,
-             image_url=EXCLUDED.image_url, food_type=EXCLUDED.food_type,
-             is_bestseller=EXCLUDED.is_bestseller, updated_at=NOW()`,
-          [branchId, categoryId, name, (row.description || row.desc || '').trim(),
-           pricePaise, retailerId, imageUrl, foodType, isBestseller]
+        await col('menu_items').updateOne(
+          { retailer_id: retailerId },
+          {
+            $set: {
+              branch_id: branchId,
+              category_id: categoryId,
+              name,
+              description: (row.description || row.desc || '').trim() || null,
+              price_paise: pricePaise,
+              image_url: imageUrl,
+              food_type: foodType,
+              is_bestseller: isBestseller,
+              updated_at: now,
+            },
+            $setOnInsert: { _id: newId(), retailer_id: retailerId, is_available: true, sort_order: 0, created_at: now },
+          },
+          { upsert: true }
         );
         results.added++;
       } catch (e) {
@@ -464,12 +448,11 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
       }
     }
 
-    await db.query(
-      'UPDATE restaurants SET onboarding_step=GREATEST(onboarding_step,4) WHERE id=$1',
-      [req.restaurantId]
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      [{ $set: { onboarding_step: { $max: ['$onboarding_step', 4] } } }]
     );
 
-    // Auto-sync all uploaded items to Meta catalog in background
     catalog.syncBranchCatalog(branchId)
       .catch(err => console.error('[Menu] Auto-sync after CSV upload failed:', err.message));
 
@@ -478,7 +461,6 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
 });
 
 // POST /api/restaurant/branches/:branchId/sync-catalog
-// Pushes all menu items to WhatsApp Catalog (also auto-syncs product sets after)
 router.post('/branches/:branchId/sync-catalog', async (req, res) => {
   try {
     const result = await catalog.syncBranchCatalog(req.params.branchId);
@@ -487,8 +469,6 @@ router.post('/branches/:branchId/sync-catalog', async (req, res) => {
 });
 
 // POST /api/restaurant/branches/:branchId/sync-sets
-// Creates/updates Meta Product Sets per category (sections customers see in WhatsApp)
-// Auto-called after every full sync; also available manually
 router.post('/branches/:branchId/sync-sets', async (req, res) => {
   try {
     const result = await catalog.syncCategoryProductSets(req.params.branchId);
@@ -497,34 +477,39 @@ router.post('/branches/:branchId/sync-sets', async (req, res) => {
 });
 
 // GET /api/restaurant/branches/:branchId/item-groups
-// Returns all variant groups for a branch (for the variant management UI)
 router.get('/branches/:branchId/item-groups', async (req, res) => {
   try {
-    const { rows } = await db.query(`
-      SELECT
-        item_group_id,
-        MIN(name) AS base_name,
-        json_agg(json_build_object(
-          'id',            id,
-          'name',          name,
-          'variant_type',  variant_type,
-          'variant_value', variant_value,
-          'price_paise',   price_paise,
-          'image_url',     image_url,
-          'is_available',  is_available,
-          'retailer_id',   retailer_id
-        ) ORDER BY price_paise) AS variants
-      FROM menu_items
-      WHERE branch_id = $1 AND item_group_id IS NOT NULL
-      GROUP BY item_group_id
-    `, [req.params.branchId]);
-    res.json(rows);
+    const items = await col('menu_items').find({
+      branch_id: req.params.branchId,
+      item_group_id: { $ne: null },
+    }).toArray();
+
+    // Group by item_group_id in JS
+    const groups = {};
+    for (const item of items) {
+      const gid = item.item_group_id;
+      if (!groups[gid]) groups[gid] = { item_group_id: gid, base_name: item.name, variants: [] };
+      groups[gid].variants.push({
+        id:            String(item._id),
+        name:          item.name,
+        variant_type:  item.variant_type,
+        variant_value: item.variant_value,
+        price_paise:   item.price_paise,
+        image_url:     item.image_url,
+        is_available:  item.is_available,
+        retailer_id:   item.retailer_id,
+      });
+    }
+    // Sort variants by price
+    const result = Object.values(groups).map(g => ({
+      ...g,
+      variants: g.variants.sort((a, b) => a.price_paise - b.price_paise),
+    }));
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/restaurant/menu/:itemId/variants
-// Adds a size/portion variant to an existing item.
-// On first call: generates item_group_id and tags the source item as 'Regular'.
 router.post('/menu/:itemId/variants', async (req, res) => {
   const { v4: uuidv4 } = require('uuid');
   try {
@@ -534,76 +519,73 @@ router.post('/menu/:itemId/variants', async (req, res) => {
     }
 
     // Fetch source item — must belong to this restaurant
-    const { rows } = await db.query(`
-      SELECT mi.*, b.restaurant_id
-      FROM menu_items mi JOIN branches b ON mi.branch_id = b.id
-      WHERE mi.id = $1 AND b.restaurant_id = $2
-    `, [req.params.itemId, req.restaurantId]);
-
-    if (!rows.length) return res.status(404).json({ error: 'Item not found' });
-    const src = rows[0];
-
-    // If the source item has no group yet, initialise it as baseLabel (default: 'Regular')
-    let groupId = src.item_group_id;
-    if (!groupId) {
-      groupId = uuidv4();
-      const baseRetailerId = `${src.retailer_id}-${baseLabel.toLowerCase().replace(/\s+/g, '-')}`;
-      await db.query(`
-        UPDATE menu_items
-        SET item_group_id = $1, variant_type = $2, variant_value = $3,
-            retailer_id = $4, updated_at = NOW()
-        WHERE id = $5
-      `, [groupId, variantType, baseLabel, baseRetailerId, src.id]);
+    const srcItem = await col('menu_items').findOne({ _id: req.params.itemId });
+    if (!srcItem) return res.status(404).json({ error: 'Item not found' });
+    const branch = await col('branches').findOne({ _id: srcItem.branch_id });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Item not found' });
     }
 
-    // Create the new variant item.
-    // Store ONLY the base name (without variant suffix) — catalog.js will build
-    // the display name as "Butter Chicken - Large" at sync time, preventing duplication.
-    const baseName    = src.name.replace(/\s*-\s*\S+$/, '').trim() || src.name;
+    let groupId = srcItem.item_group_id;
+    if (!groupId) {
+      groupId = uuidv4();
+      const baseRetailerId = `${srcItem.retailer_id}-${baseLabel.toLowerCase().replace(/\s+/g, '-')}`;
+      await col('menu_items').updateOne(
+        { _id: srcItem._id },
+        { $set: { item_group_id: groupId, variant_type: variantType, variant_value: baseLabel, retailer_id: baseRetailerId, updated_at: new Date() } }
+      );
+    }
+
+    const baseName    = srcItem.name.replace(/\s*-\s*\S+$/, '').trim() || srcItem.name;
     const variantSlug = variantLabel.toLowerCase().replace(/\s+/g, '-');
-    const retailerId  = `${src.retailer_id.replace(/-regular$|-\S+$/, '')}-${variantSlug}`;
+    const retailerId  = `${srcItem.retailer_id.replace(/-regular$|-\S+$/, '')}-${variantSlug}`;
     const pricePaise  = Math.round(parseFloat(priceRs) * 100);
+    const now = new Date();
 
-    const { rows: newItem } = await db.query(`
-      INSERT INTO menu_items
-        (branch_id, category_id, name, description, price_paise, retailer_id,
-         image_url, food_type, is_bestseller, item_group_id, variant_type, variant_value)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      ON CONFLICT (retailer_id) DO UPDATE SET
-        price_paise   = EXCLUDED.price_paise,
-        image_url     = COALESCE(EXCLUDED.image_url, menu_items.image_url),
-        variant_value = EXCLUDED.variant_value,
-        updated_at    = NOW()
-      RETURNING *
-    `, [
-      src.branch_id, src.category_id, baseName, src.description,
-      pricePaise, retailerId, imageUrl || src.image_url,
-      src.food_type, src.is_bestseller, groupId, variantType, variantLabel,
-    ]);
+    const newItem = await col('menu_items').findOneAndUpdate(
+      { retailer_id: retailerId },
+      {
+        $set: {
+          price_paise:   pricePaise,
+          image_url:     imageUrl || srcItem.image_url,
+          variant_value: variantLabel,
+          updated_at:    now,
+        },
+        $setOnInsert: {
+          _id:          newId(),
+          branch_id:    srcItem.branch_id,
+          category_id:  srcItem.category_id,
+          name:         baseName,
+          description:  srcItem.description,
+          retailer_id:  retailerId,
+          food_type:    srcItem.food_type,
+          is_bestseller:srcItem.is_bestseller,
+          is_available: true,
+          sort_order:   0,
+          item_group_id:groupId,
+          variant_type: variantType,
+          created_at:   now,
+        },
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
 
-    // Push updated group to Meta catalog in background
-    catalog.syncBranchCatalog(src.branch_id)
+    catalog.syncBranchCatalog(srcItem.branch_id)
       .catch(err => console.error('[Variant] Auto-sync failed:', err.message));
 
-    res.status(201).json(newItem[0]);
+    res.status(201).json(mapId(newItem));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/restaurant/branches/:branchId/create-catalog
-// Manually trigger catalog creation (retry if auto-create failed)
 router.post('/branches/:branchId/create-catalog', async (req, res) => {
   try {
     const result = await catalog.createBranchCatalog(req.params.branchId);
 
     if (result.alreadyExists) {
-      return res.json({
-        success  : true,
-        message  : 'Catalog already exists',
-        catalogId: result.catalogId,
-      });
+      return res.json({ success: true, message: 'Catalog already exists', catalogId: result.catalogId });
     }
 
-    // Auto-sync menu after catalog is created
     if (result.success) {
       catalog.syncBranchCatalog(req.params.branchId)
         .catch(err => console.error('[Branch] Auto-sync after catalog create failed:', err.message));
@@ -622,46 +604,66 @@ router.post('/branches/:branchId/create-catalog', async (req, res) => {
 router.get('/orders', async (req, res) => {
   try {
     const { status, branchId, limit = 50, offset = 0 } = req.query;
-    let where = 'b.restaurant_id = $1';
-    const vals = [req.restaurantId];
 
-    if (status) { vals.push(status); where += ` AND o.status = $${vals.length}`; }
-    if (branchId) { vals.push(branchId); where += ` AND o.branch_id = $${vals.length}`; }
+    // Get all branch IDs for this restaurant
+    const branchFilter = { restaurant_id: req.restaurantId };
+    if (branchId) branchFilter._id = branchId;
+    const branches = await col('branches').find(branchFilter).project({ _id: 1 }).toArray();
+    const branchIds = branches.map(b => String(b._id));
 
-    vals.push(parseInt(limit), parseInt(offset));
+    const filter = { branch_id: { $in: branchIds } };
+    if (status) filter.status = status;
 
-    const { rows } = await db.query(
-      `SELECT o.*, c.name AS customer_name, c.wa_phone, b.name AS branch_name,
-              (SELECT json_agg(oi) FROM order_items oi WHERE oi.order_id = o.id) AS items
-       FROM orders o
-       JOIN branches b ON o.branch_id = b.id
-       JOIN customers c ON o.customer_id = c.id
-       WHERE ${where}
-       ORDER BY o.created_at DESC
-       LIMIT $${vals.length - 1} OFFSET $${vals.length}`,
-      vals
-    );
-    res.json(rows);
+    const orders = await col('orders')
+      .find(filter)
+      .sort({ created_at: -1 })
+      .skip(parseInt(offset))
+      .limit(parseInt(limit))
+      .toArray();
+
+    // Enrich with customer + branch names + order items
+    const enriched = await Promise.all(orders.map(async o => {
+      const [customer, branch, items] = await Promise.all([
+        col('customers').findOne({ _id: o.customer_id }),
+        col('branches').findOne({ _id: o.branch_id }),
+        col('order_items').find({ order_id: String(o._id) }).toArray(),
+      ]);
+      return {
+        ...mapId(o),
+        customer_name: customer?.name,
+        wa_phone:      customer?.wa_phone,
+        branch_name:   branch?.name,
+        items:         mapIds(items),
+      };
+    }));
+
+    res.json(enriched);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/restaurant/orders/:orderId — single order with items + charge breakdown
 router.get('/orders/:orderId', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      `SELECT o.*, c.wa_phone, c.name AS customer_name, b.name AS branch_name
-       FROM orders o
-       JOIN branches b ON o.branch_id = b.id
-       JOIN customers c ON o.customer_id = c.id
-       WHERE o.id = $1 AND b.restaurant_id = $2`,
-      [req.params.orderId, req.restaurantId]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Order not found' });
-    const { rows: items } = await db.query(
-      'SELECT * FROM order_items WHERE order_id = $1 ORDER BY id',
-      [req.params.orderId]
-    );
-    res.json({ ...rows[0], items });
+    const o = await col('orders').findOne({ _id: req.params.orderId });
+    if (!o) return res.status(404).json({ error: 'Order not found' });
+
+    const branch = await col('branches').findOne({ _id: o.branch_id });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const [customer, items] = await Promise.all([
+      col('customers').findOne({ _id: o.customer_id }),
+      col('order_items').find({ order_id: req.params.orderId }).sort({ _id: 1 }).toArray(),
+    ]);
+
+    res.json({
+      ...mapId(o),
+      customer_name: customer?.name,
+      wa_phone:      customer?.wa_phone,
+      branch_name:   branch?.name,
+      items:         mapIds(items),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -676,7 +678,6 @@ router.patch('/orders/:orderId/status', async (req, res) => {
 
     const order = await orderSvc.updateStatus(req.params.orderId, status);
 
-    // Send WhatsApp notification to customer (template if mapped, else plain text)
     if (order) {
       const fullOrder = await orderSvc.getOrderDetails(order.id);
       if (fullOrder?.phone_number_id) {
@@ -700,12 +701,6 @@ router.patch('/orders/:orderId/status', async (req, res) => {
 });
 
 // PUT /api/restaurant/orders/:orderId/delivery
-// Called by the 3PL provider (or restaurant manually) after dispatch.
-// Stores tracking details and notifies the customer on WhatsApp.
-//
-// Body (all optional — send only what the 3PL provides):
-//   { provider, providerOrderId, trackingUrl, driverName, driverPhone,
-//     estimatedMins, costRs, status }
 router.put('/orders/:orderId/delivery', async (req, res) => {
   try {
     const {
@@ -715,57 +710,46 @@ router.put('/orders/:orderId/delivery', async (req, res) => {
       status = 'assigned',
     } = req.body;
 
-    // Verify this order belongs to this restaurant
-    const { rows: orderRows } = await db.query(
-      `SELECT o.*, b.restaurant_id, b.name AS branch_name,
-              r.business_name,
-              wa.phone_number_id, wa.access_token,
-              c.wa_phone, c.name AS customer_name
-       FROM orders o
-       JOIN branches b     ON o.branch_id      = b.id
-       JOIN restaurants r  ON b.restaurant_id  = r.id
-       JOIN customers c    ON o.customer_id    = c.id
-       LEFT JOIN whatsapp_accounts wa
-         ON wa.restaurant_id = b.restaurant_id AND wa.is_active = TRUE
-       WHERE o.id = $1 AND b.restaurant_id = $2`,
-      [req.params.orderId, req.restaurantId]
-    );
-    if (!orderRows.length) return res.status(404).json({ error: 'Order not found' });
-    const order = orderRows[0];
+    const o = await col('orders').findOne({ _id: req.params.orderId });
+    if (!o) return res.status(404).json({ error: 'Order not found' });
+    const branch = await col('branches').findOne({ _id: o.branch_id });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const [restaurant, wa_acc, customer] = await Promise.all([
+      col('restaurants').findOne({ _id: req.restaurantId }),
+      col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true }),
+      col('customers').findOne({ _id: o.customer_id }),
+    ]);
 
     // Update delivery record
-    await db.query(
-      `UPDATE deliveries SET
-         provider          = COALESCE($1, provider),
-         provider_order_id = COALESCE($2, provider_order_id),
-         tracking_url      = COALESCE($3, tracking_url),
-         driver_name       = COALESCE($4, driver_name),
-         driver_phone      = COALESCE($5, driver_phone),
-         estimated_mins    = COALESCE($6, estimated_mins),
-         cost_rs           = COALESCE($7, cost_rs),
-         status            = $8
-       WHERE order_id = $9`,
-      [provider, providerOrderId, trackingUrl, driverName, driverPhone,
-       estimatedMins, costRs, status, req.params.orderId]
-    );
+    const $set = { status, updated_at: new Date() };
+    if (provider        != null) $set.provider          = provider;
+    if (providerOrderId != null) $set.provider_order_id = providerOrderId;
+    if (trackingUrl     != null) $set.tracking_url      = trackingUrl;
+    if (driverName      != null) $set.driver_name       = driverName;
+    if (driverPhone     != null) $set.driver_phone      = driverPhone;
+    if (estimatedMins   != null) $set.estimated_mins    = estimatedMins;
+    if (costRs          != null) $set.cost_rs           = costRs;
 
-    // Mark order as DISPATCHED if status says so
+    await col('deliveries').updateOne({ order_id: req.params.orderId }, { $set });
+
     if (status === 'picked_up' || status === 'dispatched') {
       await orderSvc.updateStatus(req.params.orderId, 'DISPATCHED');
     }
 
-    // Notify customer (template if mapped for DISPATCHED, else plain text with driver/tracking details)
-    if (order.phone_number_id && order.wa_phone) {
+    if (wa_acc?.phone_number_id && customer?.wa_phone) {
       await notifyOrderStatus(
         req.restaurantId,
-        order.phone_number_id, order.access_token, order.wa_phone,
+        wa_acc.phone_number_id, wa_acc.access_token, customer.wa_phone,
         'DISPATCHED',
         {
-          order_number    : order.order_number,
-          customer_name   : order.customer_name,
-          total_rs        : `₹${parseFloat(order.total_rs || 0).toFixed(0)}`,
-          branch_name     : order.branch_name,
-          restaurant_name : order.business_name,
+          order_number    : o.order_number,
+          customer_name   : customer?.name,
+          total_rs        : `₹${parseFloat(o.total_rs || 0).toFixed(0)}`,
+          branch_name     : branch.name,
+          restaurant_name : restaurant?.business_name,
           eta             : estimatedMins ? `~${estimatedMins} mins` : '',
           tracking_url    : trackingUrl || '',
         }
@@ -782,37 +766,37 @@ router.put('/orders/:orderId/delivery', async (req, res) => {
 
 router.get('/analytics', async (req, res) => {
   try {
-    const { days = 7 } = req.query;
+    const days = parseInt(req.query.days || 7);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const { rows: summary } = await db.query(
-      `SELECT
-         COUNT(*) AS total_orders,
-         COUNT(*) FILTER (WHERE o.status = 'DELIVERED') AS delivered,
-         COUNT(*) FILTER (WHERE o.status = 'CANCELLED') AS cancelled,
-         COALESCE(SUM(o.total_rs) FILTER (WHERE o.status = 'DELIVERED'), 0) AS total_revenue,
-         COALESCE(AVG(o.total_rs) FILTER (WHERE o.status = 'DELIVERED'), 0) AS avg_order_value
-       FROM orders o
-       JOIN branches b ON o.branch_id = b.id
-       WHERE b.restaurant_id = $1
-         AND o.created_at >= NOW() - INTERVAL '${parseInt(days)} days'`,
-      [req.restaurantId]
-    );
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1 }).toArray();
+    const branchIds = branches.map(b => String(b._id));
 
-    const { rows: daily } = await db.query(
-      `SELECT
-         DATE(o.created_at) AS date,
-         COUNT(*) AS orders,
-         COALESCE(SUM(o.total_rs) FILTER (WHERE o.status='DELIVERED'), 0) AS revenue
-       FROM orders o
-       JOIN branches b ON o.branch_id = b.id
-       WHERE b.restaurant_id = $1
-         AND o.created_at >= NOW() - INTERVAL '${parseInt(days)} days'
-       GROUP BY DATE(o.created_at)
-       ORDER BY date`,
-      [req.restaurantId]
-    );
+    const orders = await col('orders').find({
+      branch_id: { $in: branchIds },
+      created_at: { $gte: since },
+    }).toArray();
 
-    res.json({ summary: summary[0], daily });
+    const total_orders = orders.length;
+    const delivered    = orders.filter(o => o.status === 'DELIVERED');
+    const cancelled    = orders.filter(o => o.status === 'CANCELLED').length;
+    const total_revenue = delivered.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
+    const avg_order_value = delivered.length ? total_revenue / delivered.length : 0;
+
+    // Daily breakdown
+    const dailyMap = {};
+    for (const o of orders) {
+      const date = new Date(o.created_at).toISOString().slice(0, 10);
+      if (!dailyMap[date]) dailyMap[date] = { date, orders: 0, revenue: 0 };
+      dailyMap[date].orders++;
+      if (o.status === 'DELIVERED') dailyMap[date].revenue += parseFloat(o.total_rs) || 0;
+    }
+    const daily = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+
+    res.json({
+      summary: { total_orders, delivered: delivered.length, cancelled, total_revenue, avg_order_value },
+      daily,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -822,11 +806,12 @@ router.get('/analytics', async (req, res) => {
 
 router.get('/settlements', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      'SELECT * FROM settlements WHERE restaurant_id=$1 ORDER BY period_start DESC LIMIT 12',
-      [req.restaurantId]
-    );
-    res.json(rows);
+    const docs = await col('settlements')
+      .find({ restaurant_id: req.restaurantId })
+      .sort({ period_start: -1 })
+      .limit(12)
+      .toArray();
+    res.json(mapIds(docs));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -834,11 +819,6 @@ router.get('/settlements', async (req, res) => {
 // PAYOUT ACCOUNT
 // ═══════════════════════════════════════════════════════════════
 
-// POST /api/restaurant/payout-account
-// Registers the restaurant's bank account with Razorpay X so weekly
-// settlements can be transferred automatically.
-// Call this once after the restaurant fills in their bank details.
-// Requires: bank_account_number + bank_ifsc to be set on the restaurant.
 const paymentSvc = require('../services/payment');
 
 router.post('/payout-account', async (req, res) => {
@@ -855,11 +835,8 @@ router.post('/payout-account', async (req, res) => {
 
 router.get('/coupons', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      'SELECT * FROM coupons WHERE restaurant_id = $1 ORDER BY created_at DESC',
-      [req.restaurantId]
-    );
-    res.json(rows);
+    const docs = await col('coupons').find({ restaurant_id: req.restaurantId }).sort({ created_at: -1 }).toArray();
+    res.json(mapIds(docs));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -873,18 +850,32 @@ router.post('/coupons', express.json(), async (req, res) => {
     if (discountType === 'percent' && parseFloat(discountValue) > 100)
       return res.status(400).json({ error: 'Percent discount cannot exceed 100' });
 
-    const { rows } = await db.query(
-      `INSERT INTO coupons
-         (restaurant_id, code, description, discount_type, discount_value,
-          min_order_rs, max_discount_rs, usage_limit, valid_from, valid_until)
-       VALUES ($1,UPPER($2),$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [req.restaurantId, code.trim(), description || null, discountType,
-       parseFloat(discountValue), minOrderRs || 0, maxDiscountRs || null,
-       usageLimit || null, validFrom || null, validUntil || null]
-    );
-    res.json(rows[0]);
+    const couponCode = code.trim().toUpperCase();
+    // Check uniqueness
+    const existing = await col('coupons').findOne({ restaurant_id: req.restaurantId, code: couponCode });
+    if (existing) return res.status(409).json({ error: 'Coupon code already exists' });
+
+    const now = new Date();
+    const coupon = {
+      _id: newId(),
+      restaurant_id: req.restaurantId,
+      code: couponCode,
+      description: description || null,
+      discount_type: discountType,
+      discount_value: parseFloat(discountValue),
+      min_order_rs: minOrderRs || 0,
+      max_discount_rs: maxDiscountRs || null,
+      usage_limit: usageLimit || null,
+      usage_count: 0,
+      valid_from: validFrom ? new Date(validFrom) : null,
+      valid_until: validUntil ? new Date(validUntil) : null,
+      is_active: true,
+      created_at: now,
+      updated_at: now,
+    };
+    await col('coupons').insertOne(coupon);
+    res.json(mapId(coupon));
   } catch (e) {
-    if (e.code === '23505') return res.status(409).json({ error: 'Coupon code already exists' });
     res.status(500).json({ error: e.message });
   }
 });
@@ -892,89 +883,72 @@ router.post('/coupons', express.json(), async (req, res) => {
 router.patch('/coupons/:id', express.json(), async (req, res) => {
   try {
     const { isActive, description, validUntil, usageLimit, maxDiscountRs } = req.body;
-    const { rows } = await db.query(
-      `UPDATE coupons SET
-         is_active       = COALESCE($1, is_active),
-         description     = COALESCE($2, description),
-         valid_until     = COALESCE($3, valid_until),
-         usage_limit     = COALESCE($4, usage_limit),
-         max_discount_rs = COALESCE($5, max_discount_rs),
-         updated_at      = NOW()
-       WHERE id = $6 AND restaurant_id = $7 RETURNING *`,
-      [isActive ?? null, description ?? null, validUntil ?? null,
-       usageLimit ?? null, maxDiscountRs ?? null,
-       req.params.id, req.restaurantId]
+    const $set = { updated_at: new Date() };
+    if (isActive      !== undefined) $set.is_active      = isActive;
+    if (description   !== undefined) $set.description    = description;
+    if (validUntil    !== undefined) $set.valid_until    = validUntil ? new Date(validUntil) : null;
+    if (usageLimit    !== undefined) $set.usage_limit    = usageLimit;
+    if (maxDiscountRs !== undefined) $set.max_discount_rs= maxDiscountRs;
+
+    const updated = await col('coupons').findOneAndUpdate(
+      { _id: req.params.id, restaurant_id: req.restaurantId },
+      { $set },
+      { returnDocument: 'after' }
     );
-    if (!rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json(mapId(updated));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 router.delete('/coupons/:id', async (req, res) => {
   try {
-    const { rowCount } = await db.query(
-      'DELETE FROM coupons WHERE id = $1 AND restaurant_id = $2',
-      [req.params.id, req.restaurantId]
-    );
-    if (!rowCount) return res.status(404).json({ error: 'Not found' });
+    const result = await col('coupons').deleteOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!result.deletedCount) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── REFERRALS RECEIVED ───────────────────────────────────────
-// GET /api/restaurant/referrals — all referrals for this restaurant + summary
 router.get('/referrals', async (req, res) => {
   try {
+    const now = new Date();
     // Auto-expire stale referrals
-    await db.query(
-      `UPDATE referrals SET status='expired', updated_at=NOW()
-       WHERE restaurant_id=$1 AND status='active' AND expires_at < NOW()`,
-      [req.restaurantId]
+    await col('referrals').updateMany(
+      { restaurant_id: req.restaurantId, status: 'active', expires_at: { $lt: now } },
+      { $set: { status: 'expired', updated_at: now } }
     );
 
-    const { rows: list } = await db.query(
-      `SELECT id, customer_wa_phone, customer_name, status,
-              expires_at, orders_count, total_order_value_rs,
-              referral_fee_rs, notes, created_at
-       FROM referrals
-       WHERE restaurant_id = $1
-       ORDER BY created_at DESC`,
-      [req.restaurantId]
-    );
+    const list = await col('referrals')
+      .find({ restaurant_id: req.restaurantId })
+      .sort({ created_at: -1 })
+      .toArray();
 
-    const { rows: summary } = await db.query(
-      `SELECT
-         COUNT(*)                                          AS total,
-         COUNT(*) FILTER (WHERE status='converted')       AS converted,
-         COALESCE(SUM(orders_count),0)                    AS total_orders,
-         COALESCE(SUM(total_order_value_rs),0)            AS total_order_value_rs,
-         COALESCE(SUM(referral_fee_rs),0)                 AS total_referral_fee_rs
-       FROM referrals WHERE restaurant_id = $1`,
-      [req.restaurantId]
-    );
+    const mappedList = mapIds(list);
+    const total    = list.length;
+    const converted= list.filter(r => r.status === 'converted').length;
+    const total_orders          = list.reduce((s, r) => s + (r.orders_count || 0), 0);
+    const total_order_value_rs  = list.reduce((s, r) => s + (parseFloat(r.total_order_value_rs) || 0), 0);
+    const total_referral_fee_rs = list.reduce((s, r) => s + (parseFloat(r.referral_fee_rs) || 0), 0);
 
-    res.json({ referrals: list, summary: summary[0] });
+    res.json({
+      referrals: mappedList,
+      summary: { total, converted, total_orders, total_order_value_rs, total_referral_fee_rs },
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── WHATSAPP TEMPLATES ───────────────────────────────────────
 
 // GET /api/restaurant/whatsapp/templates
-// Fetches all message templates from Meta for this restaurant's WABA.
-// Requires an active whatsapp_account with a WABA ID and access token.
 router.get('/whatsapp/templates', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      'SELECT waba_id, access_token FROM whatsapp_accounts WHERE restaurant_id = $1 AND is_active = TRUE LIMIT 1',
-      [req.restaurantId]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'No active WhatsApp account found. Connect your account first.' });
+    const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (!wa_acc) return res.status(404).json({ error: 'No active WhatsApp account found. Connect your account first.' });
 
-    const { waba_id, access_token } = rows[0];
     const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
-    const { data } = await axios.get(`${GRAPH}/${waba_id}/message_templates`, {
+    const { data } = await axios.get(`${GRAPH}/${wa_acc.waba_id}/message_templates`, {
       params: { fields: 'name,status,category,language,components', limit: 200 },
-      headers: { Authorization: `Bearer ${access_token}` },
+      headers: { Authorization: `Bearer ${wa_acc.access_token}` },
       timeout: 10000,
     });
     res.json(data.data || []);
@@ -985,20 +959,14 @@ router.get('/whatsapp/templates', async (req, res) => {
 });
 
 // GET /api/restaurant/whatsapp/template-mappings
-// Returns this restaurant's saved event → template mappings.
 router.get('/whatsapp/template-mappings', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      'SELECT event_name, template_name, template_language, variable_map FROM whatsapp_template_mappings WHERE restaurant_id = $1',
-      [req.restaurantId]
-    );
-    res.json(rows);
+    const docs = await col('whatsapp_template_mappings').find({ restaurant_id: req.restaurantId }).toArray();
+    res.json(mapIds(docs));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // PUT /api/restaurant/whatsapp/template-mappings
-// Upserts event → template mappings.
-// Body: [{ eventName, templateName, templateLanguage, variableMap }]
 router.put('/whatsapp/template-mappings', express.json(), async (req, res) => {
   try {
     const mappings = req.body;
@@ -1007,17 +975,19 @@ router.put('/whatsapp/template-mappings', express.json(), async (req, res) => {
     for (const m of mappings) {
       const { eventName, templateName, templateLanguage, variableMap } = m;
       if (!eventName || !templateName) continue;
-      await db.query(
-        `INSERT INTO whatsapp_template_mappings
-           (restaurant_id, event_name, template_name, template_language, variable_map)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (restaurant_id, event_name)
-         DO UPDATE SET
-           template_name     = $3,
-           template_language = $4,
-           variable_map      = $5,
-           updated_at        = NOW()`,
-        [req.restaurantId, eventName, templateName, templateLanguage || 'en', JSON.stringify(variableMap || {})]
+      const now = new Date();
+      await col('whatsapp_template_mappings').updateOne(
+        { restaurant_id: req.restaurantId, event_name: eventName },
+        {
+          $set: {
+            template_name:     templateName,
+            template_language: templateLanguage || 'en',
+            variable_map:      variableMap || {},
+            updated_at:        now,
+          },
+          $setOnInsert: { _id: newId(), restaurant_id: req.restaurantId, event_name: eventName, created_at: now },
+        },
+        { upsert: true }
       );
     }
     res.json({ ok: true });
@@ -1025,32 +995,25 @@ router.put('/whatsapp/template-mappings', express.json(), async (req, res) => {
 });
 
 // DELETE /api/restaurant/whatsapp/template-mappings/:eventName
-// Removes a single event mapping (reverts to plain-text fallback).
 router.delete('/whatsapp/template-mappings/:eventName', async (req, res) => {
   try {
-    await db.query(
-      'DELETE FROM whatsapp_template_mappings WHERE restaurant_id = $1 AND event_name = $2',
-      [req.restaurantId, req.params.eventName.toUpperCase()]
-    );
+    await col('whatsapp_template_mappings').deleteOne({
+      restaurant_id: req.restaurantId,
+      event_name: req.params.eventName.toUpperCase(),
+    });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── SHARED: SEND STATUS NOTIFICATION (template → text fallback) ──────────
-// Called internally whenever an order status changes.
-// Looks up a saved template mapping; if found uses sendTemplate(),
-// otherwise falls back to sendStatusUpdate() plain text.
-// orderData fields available for variable_map binding:
-//   order_number, customer_name, total_rs, branch_name,
-//   restaurant_name, eta, tracking_url
 async function notifyOrderStatus(restaurantId, pid, token, waPhone, status, orderData) {
-  const { rows } = await db.query(
-    'SELECT template_name, template_language, variable_map FROM whatsapp_template_mappings WHERE restaurant_id = $1 AND event_name = $2',
-    [restaurantId, status]
-  );
+  const mapping = await col('whatsapp_template_mappings').findOne({
+    restaurant_id: restaurantId,
+    event_name: status,
+  });
 
-  if (rows.length) {
-    const { template_name, template_language, variable_map: varMap } = rows[0];
+  if (mapping) {
+    const { template_name, template_language, variable_map: varMap } = mapping;
     try {
       const slots = Object.keys(varMap || {}).sort((a, b) => parseInt(a) - parseInt(b));
       const components = slots.length
@@ -1063,7 +1026,6 @@ async function notifyOrderStatus(restaurantId, pid, token, waPhone, status, orde
     }
   }
 
-  // Fallback: plain text
   await wa.sendStatusUpdate(pid, token, waPhone, status, {
     orderNumber: orderData.order_number,
     eta:         orderData.eta,

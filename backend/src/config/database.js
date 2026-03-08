@@ -1,85 +1,59 @@
 // src/config/database.js
-// PostgreSQL connection using the 'pg' library
-// A "pool" = multiple DB connections kept open and reused for speed
+// MongoDB connection — replaces PostgreSQL/pg
 
-require('dotenv').config();
-const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
+const { MongoClient, GridFSBucket } = require('mongodb');
+const { v4: uuidv4 } = require('uuid');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 20,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 5_000,
-  // SSL required for cloud databases (Neon, Supabase, Heroku, etc.)
-  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
-});
+let _client = null;
+let _db = null;
+let _bucket = null;
 
-// Test connection on startup
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error('❌ Database connection FAILED:', err.message);
-    return; // don't crash — Vercel serverless can't process.exit
-  }
-  console.log('✅ Database connected');
-  release();
-});
-
-// ─── QUERY HELPER ─────────────────────────────────────────────
-// Use this everywhere instead of pool.query directly
-// It adds logging and consistent error handling
-// 
-// Usage examples:
-//   const { rows } = await db.query('SELECT * FROM orders WHERE id=$1', [orderId])
-//   const { rows } = await db.query('INSERT INTO orders (...) VALUES (...) RETURNING *', [...])
-const query = async (sql, params = []) => {
-  try {
-    return await pool.query(sql, params);
-  } catch (err) {
-    console.error('DB Error:', err.message, '| SQL:', sql.slice(0, 100));
-    throw err;
-  }
+const connect = async () => {
+  if (_db) return _db;
+  if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI env var is not set');
+  _client = new MongoClient(process.env.MONGODB_URI);
+  await _client.connect();
+  _db = _client.db(process.env.MONGODB_DB || 'gullybite');
+  _bucket = new GridFSBucket(_db, { bucketName: 'images' });
+  console.log('✅ MongoDB connected');
+  return _db;
 };
 
-// ─── TRANSACTION HELPER ───────────────────────────────────────
-// For operations that must ALL succeed or ALL fail together
-// Example: creating order + updating customer stats + deducting stock
-//
-// Usage:
-//   await db.transaction(async (client) => {
-//     await client.query('INSERT INTO orders ...')
-//     await client.query('UPDATE customers SET total_orders = ...')
-//   })
+// Connect on startup
+connect().catch(err => console.error('❌ MongoDB connection FAILED:', err.message));
+
+// Get a collection
+const col = (name) => {
+  if (!_db) throw new Error('MongoDB not connected yet');
+  return _db.collection(name);
+};
+
+// Transaction helper using MongoDB sessions
+// fn receives session; pass { session } to every collection op inside fn
 const transaction = async (fn) => {
-  const client = await pool.connect();
+  const session = _client.startSession();
   try {
-    await client.query('BEGIN');
-    const result = await fn(client);
-    await client.query('COMMIT');
+    let result;
+    await session.withTransaction(async () => {
+      result = await fn(session);
+    });
     return result;
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
   } finally {
-    client.release();
+    await session.endSession();
   }
 };
 
-// ─── SCHEMA SETUP ─────────────────────────────────────────────
-// Called by: npm run db:setup
-// Reads schema.sql and creates all tables
-const runSetup = async () => {
-  const schemaPath = path.join(__dirname, '../models/schema.sql');
-  const sql = fs.readFileSync(schemaPath, 'utf8');
-  try {
-    await pool.query(sql);
-    console.log('✅ All database tables created!');
-    process.exit(0);
-  } catch (err) {
-    console.error('❌ Schema setup failed:', err.message);
-    process.exit(1);
-  }
+// Add id = _id to document(s) for code compatibility
+const mapId  = (doc) => doc ? { ...doc, id: String(doc._id) } : null;
+const mapIds = (arr) => (arr || []).map(mapId);
+
+// Generate new UUID (used as _id)
+const newId = () => uuidv4();
+
+// Get the GridFS bucket for image storage
+const getBucket = () => {
+  if (!_bucket) throw new Error('MongoDB not connected yet');
+  return _bucket;
 };
 
-module.exports = { query, transaction, pool, runSetup };
+module.exports = { col, transaction, connect, mapId, mapIds, newId, getBucket };

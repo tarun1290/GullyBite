@@ -1,27 +1,17 @@
 // src/routes/auth.js
-// Meta OAuth 2.0 authentication flow
-//
-// HOW OAUTH WORKS (simple explanation):
-// 1. Restaurant owner clicks "Connect with Meta" on your frontend
-// 2. Your frontend calls GET /auth/login → you redirect to Facebook's login page
-// 3. Owner logs in on Facebook, approves your app
-// 4. Facebook redirects back to your /auth/callback with a one-time "code"
-// 5. You exchange that code for an access token (like a long-lived key)
-// 6. You store the token — now you can send/receive WhatsApp messages for them
-// 7. You issue your own JWT so they stay logged into your dashboard
+// Email/password + Meta OAuth authentication
 
 const express = require('express');
 const axios   = require('axios');
 const jwt     = require('jsonwebtoken');
 const bcrypt  = require('bcryptjs');
 const router  = express.Router();
-const db      = require('../config/database');
+const { col, newId } = require('../config/database');
 
 const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
 const META_AUTH_URL  = 'https://www.facebook.com/v25.0/dialog/oauth';
 
 // ─── SIGN UP ──────────────────────────────────────────────────
-// POST /auth/signup — create account with email + password
 router.post('/signup', express.json(), async (req, res) => {
   try {
     const { ownerName, email, password } = req.body;
@@ -30,21 +20,18 @@ router.post('/signup', express.json(), async (req, res) => {
     if (password.length < 8)
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
-    // Check email not already taken
-    const { rows: existing } = await db.query(
-      'SELECT id FROM restaurants WHERE email = $1', [email.toLowerCase()]
-    );
-    if (existing.length)
-      return res.status(409).json({ error: 'An account with this email already exists' });
+    const existing = await col('restaurants').findOne({ email: email.toLowerCase() });
+    if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const { rows: created } = await db.query(
-      `INSERT INTO restaurants (owner_name, email, password_hash, approval_status, onboarding_step)
-       VALUES ($1, $2, $3, 'pending', 1) RETURNING id`,
-      [ownerName.trim(), email.toLowerCase().trim(), passwordHash]
-    );
-    const restaurantId = created[0].id;
-    const token = jwt.sign({ restaurantId }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const id = newId();
+    await col('restaurants').insertOne({
+      _id: id, owner_name: ownerName.trim(), email: email.toLowerCase().trim(),
+      password_hash: passwordHash, approval_status: 'pending', onboarding_step: 1,
+      business_name: 'My Restaurant', status: 'active',
+      created_at: new Date(), updated_at: new Date(),
+    });
+    const token = jwt.sign({ restaurantId: id }, process.env.JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, needsOnboarding: true, onboardingStep: 1 });
   } catch (err) {
     console.error('[Signup]', err.message);
@@ -53,35 +40,26 @@ router.post('/signup', express.json(), async (req, res) => {
 });
 
 // ─── SIGN IN ──────────────────────────────────────────────────
-// POST /auth/signin — email + password login
 router.post('/signin', express.json(), async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password)
       return res.status(400).json({ error: 'Email and password are required' });
 
-    const { rows } = await db.query(
-      `SELECT id, password_hash, approval_status, onboarding_step, meta_user_id
-       FROM restaurants WHERE email = $1`,
-      [email.toLowerCase()]
-    );
-    if (!rows.length)
-      return res.status(401).json({ error: 'No account found with this email' });
-
-    const restaurant = rows[0];
+    const restaurant = await col('restaurants').findOne({ email: email.toLowerCase() });
+    if (!restaurant) return res.status(401).json({ error: 'No account found with this email' });
     if (!restaurant.password_hash)
       return res.status(401).json({ error: 'This account was created via Meta. Use "Continue with Meta" below.' });
 
     const valid = await bcrypt.compare(password, restaurant.password_hash);
-    if (!valid)
-      return res.status(401).json({ error: 'Incorrect password' });
+    if (!valid) return res.status(401).json({ error: 'Incorrect password' });
 
-    const token = jwt.sign({ restaurantId: restaurant.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const token = jwt.sign({ restaurantId: String(restaurant._id) }, process.env.JWT_SECRET, { expiresIn: '30d' });
     const step  = restaurant.onboarding_step || 1;
     res.json({
       token,
-      approvalStatus:  restaurant.approval_status || 'pending',
-      onboardingStep:  step,
+      approvalStatus : restaurant.approval_status || 'pending',
+      onboardingStep : step,
       needsOnboarding: step < 5,
       hasMetaConnected: !!restaurant.meta_user_id,
     });
@@ -92,29 +70,26 @@ router.post('/signin', express.json(), async (req, res) => {
 });
 
 // ─── CONNECT META / WHATSAPP ───────────────────────────────────
-// POST /auth/connect-meta — link WhatsApp Business to existing account
-// Called as step 3 of onboarding (after business details filled)
 router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
   try {
     const { accessToken, code } = req.body;
-    if (!accessToken && !code)
-      return res.status(400).json({ error: 'No token provided' });
+    if (!accessToken && !code) return res.status(400).json({ error: 'No token provided' });
 
     let longToken, expiresAt;
     if (code) {
       const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-        params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET, redirect_uri: process.env.META_OAUTH_REDIRECT_URI, code },
+        params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET,
+                  redirect_uri: process.env.META_OAUTH_REDIRECT_URI, code },
       });
       longToken = tokenRes.data.access_token;
-      const ei  = tokenRes.data.expires_in || null;
-      expiresAt = ei ? new Date(Date.now() + ei * 1000) : null;
+      expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
     } else {
       const longRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-        params: { grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET, fb_exchange_token: accessToken },
+        params: { grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID,
+                  client_secret: process.env.META_APP_SECRET, fb_exchange_token: accessToken },
       });
       longToken = longRes.data.access_token;
-      const ei  = longRes.data.expires_in || null;
-      expiresAt = ei ? new Date(Date.now() + ei * 1000) : null;
+      expiresAt = longRes.data.expires_in ? new Date(Date.now() + longRes.data.expires_in * 1000) : null;
     }
 
     const userRes  = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
@@ -128,38 +103,12 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
       wabaData = wabaRes.data?.data || [];
     } catch (e) { console.warn('[connect-meta] Could not fetch WABAs:', e.message); }
 
-    // Update restaurant with Meta credentials + mark as submitted
-    await db.query(
-      `UPDATE restaurants SET
-         meta_user_id          = $1,
-         meta_access_token     = $2,
-         meta_token_expires_at = $3,
-         onboarding_step       = 5,
-         submitted_at          = COALESCE(submitted_at, NOW()),
-         approval_status       = CASE WHEN approval_status = 'approved' THEN 'approved' ELSE 'pending' END,
-         updated_at            = NOW()
-       WHERE id = $4`,
-      [metaUser.id, longToken, expiresAt, req.restaurantId]
-    );
+    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: {
+      meta_user_id: metaUser.id, meta_access_token: longToken, meta_token_expires_at: expiresAt,
+      onboarding_step: 5, submitted_at: new Date(), approval_status: 'pending', updated_at: new Date(),
+    }});
 
-    // Save WhatsApp accounts
-    for (const biz of wabaData) {
-      for (const waba of biz.whatsapp_business_accounts?.data || []) {
-        for (const phone of waba.phone_numbers?.data || []) {
-          await db.query(
-            `INSERT INTO whatsapp_accounts
-               (restaurant_id, waba_id, phone_number_id, phone_display, display_name, quality_rating, access_token)
-             VALUES ($1,$2,$3,$4,$5,$6,$7)
-             ON CONFLICT (phone_number_id) DO UPDATE SET
-               display_name=EXCLUDED.display_name, quality_rating=EXCLUDED.quality_rating,
-               access_token=EXCLUDED.access_token, updated_at=NOW()`,
-            [req.restaurantId, waba.id, phone.id, phone.display_phone_number,
-             phone.verified_name, phone.quality_rating?.display_value || 'GREEN', longToken]
-          );
-        }
-      }
-    }
-
+    await _saveWabaAccounts(req.restaurantId, wabaData, longToken);
     res.json({ connected: true });
   } catch (err) {
     console.error('[connect-meta]', err.response?.data || err.message);
@@ -168,24 +117,23 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
 });
 
 // ─── CHANGE PASSWORD ──────────────────────────────────────────
-// POST /auth/change-password
 router.post('/change-password', requireAuth, express.json(), async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!newPassword || newPassword.length < 8)
       return res.status(400).json({ error: 'New password must be at least 8 characters' });
 
-    const { rows } = await db.query('SELECT password_hash FROM restaurants WHERE id=$1', [req.restaurantId]);
-    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    if (!restaurant) return res.status(404).json({ error: 'Not found' });
 
-    if (rows[0].password_hash) {
+    if (restaurant.password_hash) {
       if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
-      const valid = await bcrypt.compare(currentPassword, rows[0].password_hash);
+      const valid = await bcrypt.compare(currentPassword, restaurant.password_hash);
       if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
     }
 
     const hash = await bcrypt.hash(newPassword, 12);
-    await db.query('UPDATE restaurants SET password_hash=$1, updated_at=NOW() WHERE id=$2', [hash, req.restaurantId]);
+    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { password_hash: hash, updated_at: new Date() } });
     res.json({ ok: true });
   } catch (err) {
     console.error('[change-password]', err.message);
@@ -193,146 +141,63 @@ router.post('/change-password', requireAuth, express.json(), async (req, res) =>
   }
 });
 
-// ─── STEP 1: INITIATE OAUTH ───────────────────────────────────
-// Frontend calls this → we redirect to Facebook login
-// GET /auth/login
+// ─── INITIATE META OAUTH ──────────────────────────────────────
 router.get('/login', (req, res) => {
-  // These "scopes" are the permissions we're requesting
-  const scopes = [
-    'whatsapp_business_management',  // Access WA Business accounts
-    'whatsapp_business_messaging',   // Send and receive messages
-    'business_management',           // Access business info
-  ].join(',');
-
-  const authUrl =
-    `${META_AUTH_URL}?` +
-    `client_id=${process.env.META_APP_ID}` +
+  const scopes = ['whatsapp_business_management', 'whatsapp_business_messaging', 'business_management'].join(',');
+  const authUrl = `${META_AUTH_URL}?client_id=${process.env.META_APP_ID}` +
     `&redirect_uri=${encodeURIComponent(process.env.META_OAUTH_REDIRECT_URI)}` +
-    `&scope=${scopes}` +
-    `&response_type=code` +
-    `&state=${Buffer.from(Date.now().toString()).toString('base64')}`; // CSRF protection
-
+    `&scope=${scopes}&response_type=code` +
+    `&state=${Buffer.from(Date.now().toString()).toString('base64')}`;
   res.redirect(authUrl);
 });
 
-// ─── STEP 2: HANDLE CALLBACK ──────────────────────────────────
-// Facebook redirects here after user approves
-// GET /auth/callback?code=xxx
+// ─── META OAUTH CALLBACK ──────────────────────────────────────
 router.get('/callback', async (req, res) => {
   const { code, error } = req.query;
-
-  if (error || !code) {
-    console.error('[OAuth] Error or no code:', req.query);
-    return res.redirect(`${process.env.BASE_URL}/?error=oauth_failed`);
-  }
+  if (error || !code) return res.redirect(`${process.env.BASE_URL}/?error=oauth_failed`);
 
   try {
-    // Exchange code for short-lived access token
     const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-      params: {
-        client_id: process.env.META_APP_ID,
-        client_secret: process.env.META_APP_SECRET,
-        redirect_uri: process.env.META_OAUTH_REDIRECT_URI,
-        code,
-      },
+      params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET,
+                redirect_uri: process.env.META_OAUTH_REDIRECT_URI, code },
     });
-    const shortToken = tokenRes.data.access_token;
-
-    // Exchange short-lived token for long-lived / never-expiring token.
-    // The login config (3105026846366355) has "never expire" permission enabled,
-    // so expires_in will be absent — store NULL to indicate no expiry.
     const longTokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-      params: {
-        grant_type: 'fb_exchange_token',
-        client_id: process.env.META_APP_ID,
-        client_secret: process.env.META_APP_SECRET,
-        fb_exchange_token: shortToken,
-      },
+      params: { grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID,
+                client_secret: process.env.META_APP_SECRET, fb_exchange_token: tokenRes.data.access_token },
     });
     const longToken = longTokenRes.data.access_token;
-    const expiresIn = longTokenRes.data.expires_in || null;
-    const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
+    const expiresAt = longTokenRes.data.expires_in ? new Date(Date.now() + longTokenRes.data.expires_in * 1000) : null;
 
-    // Get user info from Meta
-    const userRes = await axios.get(`${META_GRAPH_URL}/me`, {
-      params: { fields: 'id,name,email', access_token: longToken },
-    });
+    const userRes  = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
     const metaUser = userRes.data;
 
-    // Get WhatsApp Business Accounts for this user
     let wabaData = [];
     try {
       const wabaRes = await axios.get(`${META_GRAPH_URL}/${metaUser.id}/businesses`, {
-        params: {
-          fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}',
-          access_token: longToken,
-        },
+        params: { fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}', access_token: longToken },
       });
       wabaData = wabaRes.data?.data || [];
-    } catch (e) {
-      console.warn('[OAuth] Could not fetch WABAs:', e.message);
-    }
+    } catch (e) { console.warn('[OAuth] Could not fetch WABAs:', e.message); }
 
-    // Upsert restaurant in our DB
-    const { rows: existing } = await db.query(
-      'SELECT id FROM restaurants WHERE meta_user_id = $1',
-      [metaUser.id]
-    );
-
+    const existing = await col('restaurants').findOne({ meta_user_id: metaUser.id });
     let restaurantId;
-    if (existing.length) {
-      // Update existing restaurant's token
-      await db.query(
-        `UPDATE restaurants SET
-           meta_access_token = $1,
-           meta_token_expires_at = $2,
-           owner_name = COALESCE(owner_name, $3),
-           email = COALESCE(email, $4),
-           updated_at = NOW()
-         WHERE meta_user_id = $5`,
-        [longToken, expiresAt, metaUser.name, metaUser.email, metaUser.id]
-      );
-      restaurantId = existing[0].id;
+    if (existing) {
+      await col('restaurants').updateOne({ meta_user_id: metaUser.id }, { $set: {
+        meta_access_token: longToken, meta_token_expires_at: expiresAt, updated_at: new Date(),
+      }});
+      restaurantId = String(existing._id);
     } else {
-      // New restaurant
-      const { rows: created } = await db.query(
-        `INSERT INTO restaurants (meta_user_id, meta_access_token, meta_token_expires_at, owner_name, email)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [metaUser.id, longToken, expiresAt, metaUser.name, metaUser.email]
-      );
-      restaurantId = created[0].id;
+      restaurantId = newId();
+      await col('restaurants').insertOne({
+        _id: restaurantId, meta_user_id: metaUser.id, meta_access_token: longToken,
+        meta_token_expires_at: expiresAt, owner_name: metaUser.name, email: metaUser.email,
+        business_name: 'My Restaurant', status: 'active', approval_status: 'pending',
+        onboarding_step: 1, created_at: new Date(), updated_at: new Date(),
+      });
     }
 
-    // Save WhatsApp accounts found
-    for (const biz of wabaData) {
-      const wabas = biz.whatsapp_business_accounts?.data || [];
-      for (const waba of wabas) {
-        for (const phone of waba.phone_numbers?.data || []) {
-          await db.query(
-            `INSERT INTO whatsapp_accounts
-               (restaurant_id, waba_id, phone_number_id, phone_display, display_name, quality_rating, access_token)
-             VALUES ($1,$2,$3,$4,$5,$6,$7)
-             ON CONFLICT (phone_number_id)
-             DO UPDATE SET
-               display_name = EXCLUDED.display_name,
-               quality_rating = EXCLUDED.quality_rating,
-               access_token = EXCLUDED.access_token,
-               updated_at = NOW()`,
-            [restaurantId, waba.id, phone.id, phone.display_phone_number,
-             phone.verified_name, phone.quality_rating?.display_value || 'GREEN', longToken]
-          );
-        }
-      }
-    }
-
-    // Issue our own JWT for dashboard authentication
-    const jwtToken = jwt.sign(
-      { restaurantId, metaUserId: metaUser.id },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
-    // Redirect to frontend with token
+    await _saveWabaAccounts(restaurantId, wabaData, longToken);
+    const jwtToken = jwt.sign({ restaurantId, metaUserId: metaUser.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
     res.redirect(`/dashboard.html?token=${jwtToken}`);
   } catch (err) {
     console.error('[OAuth] Callback error:', err.response?.data || err.message);
@@ -341,135 +206,70 @@ router.get('/callback', async (req, res) => {
 });
 
 // ─── FACEBOOK JS SDK LOGIN ─────────────────────────────────────
-// Called when user logs in via the Facebook JS SDK button
-// Receives the short-lived client token → exchanges for long-lived → issues JWT
 router.post('/facebook', express.json(), async (req, res) => {
   const { accessToken, code } = req.body;
-if (!accessToken && !code) return res.status(400).json({ error: 'No token provided' });
+  if (!accessToken && !code) return res.status(400).json({ error: 'No token provided' });
 
-try {
-  let longToken, expiresAt;
+  try {
+    let longToken, expiresAt;
+    if (code) {
+      const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
+        params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET,
+                  redirect_uri: process.env.META_OAUTH_REDIRECT_URI, code },
+      });
+      longToken = tokenRes.data.access_token;
+      expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
+    } else {
+      const longTokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
+        params: { grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID,
+                  client_secret: process.env.META_APP_SECRET, fb_exchange_token: accessToken },
+      });
+      longToken = longTokenRes.data.access_token;
+      expiresAt = longTokenRes.data.expires_in ? new Date(Date.now() + longTokenRes.data.expires_in * 1000) : null;
+    }
 
-  if (code) {
-    // Embedded signup / Business Login sends a code — exchange for token.
-    // Config 3105026846366355 has "never expire" enabled → expires_in absent → store NULL.
-    const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-      params: {
-        client_id    : process.env.META_APP_ID,
-        client_secret: process.env.META_APP_SECRET,
-        redirect_uri : process.env.META_OAUTH_REDIRECT_URI,
-        code,
-      },
-    });
-    longToken = tokenRes.data.access_token;
-    const expiresIn = tokenRes.data.expires_in || null;
-    expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
-  } else {
-    // Direct access token from FB.login — exchange for long-lived / never-expiring.
-    const longTokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-      params: {
-        grant_type       : 'fb_exchange_token',
-        client_id        : process.env.META_APP_ID,
-        client_secret    : process.env.META_APP_SECRET,
-        fb_exchange_token: accessToken,
-      },
-    });
-    longToken = longTokenRes.data.access_token;
-    const expiresIn = longTokenRes.data.expires_in || null;
-    expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
-  }
-
-    // Get Meta user profile
-    const userRes = await axios.get(`${META_GRAPH_URL}/me`, {
-      params: { fields: 'id,name,email', access_token: longToken },
-    });
+    const userRes  = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
     const metaUser = userRes.data;
 
-    // Get their WhatsApp Business Accounts
     let wabaData = [];
     try {
       const wabaRes = await axios.get(`${META_GRAPH_URL}/${metaUser.id}/businesses`, {
-        params: {
-          fields      : 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}',
-          access_token: longToken,
-        },
+        params: { fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}', access_token: longToken },
       });
       wabaData = wabaRes.data?.data || [];
-    } catch (e) {
-      console.warn('[Auth] Could not fetch WABAs:', e.message);
-    }
+    } catch (e) { console.warn('[Auth] Could not fetch WABAs:', e.message); }
 
-    // Upsert restaurant record
-    const { rows: existing } = await db.query(
-      'SELECT id, approval_status, onboarding_step FROM restaurants WHERE meta_user_id = $1',
-      [metaUser.id]
-    );
-
+    const existing = await col('restaurants').findOne({ meta_user_id: metaUser.id });
     let restaurantId, approvalStatus, needsOnboarding;
-    if (existing.length) {
-      await db.query(
-        `UPDATE restaurants SET
-           meta_access_token     = $1,
-           meta_token_expires_at = $2,
-           owner_name = COALESCE(owner_name, $3),
-           email      = COALESCE(email, $4),
-           updated_at = NOW()
-         WHERE meta_user_id = $5`,
-        [longToken, expiresAt, metaUser.name, metaUser.email, metaUser.id]
-      );
-      restaurantId    = existing[0].id;
-      approvalStatus  = existing[0].approval_status || 'pending';
-      needsOnboarding = (existing[0].onboarding_step || 1) < 5;
+    if (existing) {
+      await col('restaurants').updateOne({ meta_user_id: metaUser.id }, { $set: {
+        meta_access_token: longToken, meta_token_expires_at: expiresAt, updated_at: new Date(),
+      }});
+      restaurantId    = String(existing._id);
+      approvalStatus  = existing.approval_status || 'pending';
+      needsOnboarding = (existing.onboarding_step || 1) < 5;
     } else {
-      const { rows: created } = await db.query(
-        `INSERT INTO restaurants
-           (meta_user_id, meta_access_token, meta_token_expires_at, owner_name, email, approval_status)
-         VALUES ($1,$2,$3,$4,$5,'pending') RETURNING id`,
-        [metaUser.id, longToken, expiresAt, metaUser.name, metaUser.email]
-      );
-      restaurantId    = created[0].id;
+      restaurantId = newId();
+      await col('restaurants').insertOne({
+        _id: restaurantId, meta_user_id: metaUser.id, meta_access_token: longToken,
+        meta_token_expires_at: expiresAt, owner_name: metaUser.name, email: metaUser.email,
+        business_name: 'My Restaurant', status: 'active', approval_status: 'pending',
+        onboarding_step: 1, created_at: new Date(), updated_at: new Date(),
+      });
       approvalStatus  = 'pending';
       needsOnboarding = true;
     }
 
-    // Save WhatsApp accounts
-    for (const biz of wabaData) {
-      for (const waba of biz.whatsapp_business_accounts?.data || []) {
-        for (const phone of waba.phone_numbers?.data || []) {
-          await db.query(
-            `INSERT INTO whatsapp_accounts
-               (restaurant_id, waba_id, phone_number_id, phone_display, display_name, quality_rating, access_token)
-             VALUES ($1,$2,$3,$4,$5,$6,$7)
-             ON CONFLICT (phone_number_id) DO UPDATE SET
-               display_name   = EXCLUDED.display_name,
-               quality_rating = EXCLUDED.quality_rating,
-               access_token   = EXCLUDED.access_token,
-               updated_at     = NOW()`,
-            [restaurantId, waba.id, phone.id, phone.display_phone_number,
-             phone.verified_name, phone.quality_rating?.display_value || 'GREEN', longToken]
-          );
-        }
-      }
-    }
-
-    // Issue our JWT
-    const jwtToken = jwt.sign(
-      { restaurantId, metaUserId: metaUser.id },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' }
-    );
-
+    await _saveWabaAccounts(restaurantId, wabaData, longToken);
+    const jwtToken = jwt.sign({ restaurantId, metaUserId: metaUser.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
     res.json({ token: jwtToken, approvalStatus, needsOnboarding });
-
   } catch (err) {
     console.error('[Auth] Facebook login error:', err.response?.data || err.message);
     res.status(500).json({ error: 'Authentication failed' });
   }
 });
 
-// ─── COMPLETE ONBOARDING ──────────────────────────────────────
-// POST /auth/onboarding — Save business details after Meta OAuth
-// Requires JWT (any approval_status); sets approval_status = 'pending'
+// ─── ONBOARDING ────────────────────────────────────────────────
 router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
   try {
     const {
@@ -478,39 +278,22 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
       menuGstMode, deliveryFeeCustomerPct, packagingChargeRs, packagingGstPct,
     } = req.body;
 
-    if (!ownerName || !phone || !brandName || !registeredBusinessName || !gstNumber || !fssaiLicense || !fssaiExpiry) {
+    if (!ownerName || !phone || !brandName || !registeredBusinessName || !gstNumber || !fssaiLicense || !fssaiExpiry)
       return res.status(400).json({ error: 'All fields are required' });
-    }
 
-    await db.query(
-      `UPDATE restaurants SET
-         owner_name                = $1,
-         phone                     = $2,
-         business_name             = $3,
-         brand_name                = $3,
-         registered_business_name  = $4,
-         gst_number                = $5,
-         fssai_license             = $6,
-         fssai_expiry              = $7,
-         restaurant_type           = $8,
-         city                      = $9,
-         menu_gst_mode             = COALESCE($11, menu_gst_mode),
-         delivery_fee_customer_pct = COALESCE($12, delivery_fee_customer_pct),
-         packaging_charge_rs       = COALESCE($13, packaging_charge_rs),
-         packaging_gst_pct         = COALESCE($14, packaging_gst_pct),
-         approval_status           = 'pending',
-         onboarding_step           = 2,
-         updated_at                = NOW()
-       WHERE id = $10`,
-      [ownerName, phone, brandName, registeredBusinessName,
-       gstNumber, fssaiLicense, fssaiExpiry, restaurantType || 'both',
-       city || null, req.restaurantId,
-       menuGstMode || null,
-       deliveryFeeCustomerPct != null ? parseInt(deliveryFeeCustomerPct, 10) : null,
-       packagingChargeRs      != null ? parseFloat(packagingChargeRs)       : null,
-       packagingGstPct        != null ? parseFloat(packagingGstPct)         : null]
-    );
+    const $set = {
+      owner_name: ownerName, phone, business_name: brandName, brand_name: brandName,
+      registered_business_name: registeredBusinessName, gst_number: gstNumber,
+      fssai_license: fssaiLicense, fssai_expiry: fssaiExpiry,
+      restaurant_type: restaurantType || 'both', city: city || null,
+      approval_status: 'pending', onboarding_step: 2, updated_at: new Date(),
+    };
+    if (menuGstMode)                   $set.menu_gst_mode              = menuGstMode;
+    if (deliveryFeeCustomerPct != null) $set.delivery_fee_customer_pct  = parseInt(deliveryFeeCustomerPct, 10);
+    if (packagingChargeRs      != null) $set.packaging_charge_rs        = parseFloat(packagingChargeRs);
+    if (packagingGstPct        != null) $set.packaging_gst_pct          = parseFloat(packagingGstPct);
 
+    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
     res.json({ submitted: true });
   } catch (err) {
     console.error('[Onboarding]', err.message);
@@ -519,38 +302,44 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
 });
 
 // ─── GET CURRENT USER ─────────────────────────────────────────
-// GET /auth/me — Returns logged-in restaurant info
 router.get('/me', requireAuth, async (req, res) => {
-  const { rows } = await db.query(
-    `SELECT r.id, r.business_name, r.brand_name, r.registered_business_name,
-            r.owner_name, r.email, r.phone, r.city,
-            r.logo_url, r.onboarding_step, r.commission_pct, r.status,
-            r.approval_status, r.approval_notes, r.submitted_at,
-            r.gst_number, r.fssai_license, r.fssai_expiry, r.restaurant_type,
-            r.bank_name, r.bank_account_number, r.bank_ifsc,
-            r.menu_gst_mode, r.delivery_fee_customer_pct,
-            r.packaging_charge_rs, r.packaging_gst_pct,
-            COALESCE(
-              (SELECT json_agg(json_build_object('waba_id', w.waba_id, 'name', w.display_name, 'phone', w.phone_display))
-               FROM whatsapp_accounts w WHERE w.restaurant_id = r.id),
-              '[]'::json
-            ) AS waba_accounts
-     FROM restaurants r WHERE r.id = $1`,
-    [req.restaurantId]
-  );
-  if (!rows.length) return res.status(404).json({ error: 'Not found' });
-  res.json(rows[0]);
+  const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+  if (!restaurant) return res.status(404).json({ error: 'Not found' });
+
+  const waAccounts = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
+  const waba_accounts = waAccounts.map(w => ({ waba_id: w.waba_id, name: w.display_name, phone: w.phone_display }));
+
+  const { meta_access_token, password_hash, ...safe } = restaurant;
+  res.json({ ...safe, id: String(restaurant._id), waba_accounts });
 });
 
+// ─── WABA ACCOUNTS HELPER ─────────────────────────────────────
+async function _saveWabaAccounts(restaurantId, wabaData, longToken) {
+  for (const biz of wabaData) {
+    for (const waba of biz.whatsapp_business_accounts?.data || []) {
+      for (const phone of waba.phone_numbers?.data || []) {
+        await col('whatsapp_accounts').updateOne(
+          { phone_number_id: phone.id },
+          { $set: { restaurant_id: restaurantId, waba_id: waba.id,
+              phone_display: phone.display_phone_number, display_name: phone.verified_name,
+              quality_rating: phone.quality_rating?.display_value || 'GREEN',
+              access_token: longToken, is_active: true, updated_at: new Date() },
+            $setOnInsert: { _id: newId(), created_at: new Date() } },
+          { upsert: true }
+        );
+      }
+    }
+  }
+}
+
 // ─── JWT AUTH MIDDLEWARE ──────────────────────────────────────
-// Attach this to any route that needs login
 function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded    = jwt.verify(token, process.env.JWT_SECRET);
     req.restaurantId = decoded.restaurantId;
-    req.metaUserId = decoded.metaUserId;
+    req.metaUserId   = decoded.metaUserId;
     next();
   } catch {
     res.status(401).json({ error: 'Session expired. Please log in again.' });
@@ -558,18 +347,16 @@ function requireAuth(req, res, next) {
 }
 
 // ─── APPROVED-ONLY MIDDLEWARE ─────────────────────────────────
-// Use on dashboard routes. Blocks access until admin approves.
 async function requireApproved(req, res, next) {
   try {
-    const { rows } = await db.query(
-      'SELECT approval_status FROM restaurants WHERE id = $1',
-      [req.restaurantId]
+    const restaurant = await col('restaurants').findOne(
+      { _id: req.restaurantId }, { projection: { approval_status: 1 } }
     );
-    if (!rows.length) return res.status(404).json({ error: 'Restaurant not found' });
-    if (rows[0].approval_status !== 'approved') {
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+    if (restaurant.approval_status !== 'approved') {
       return res.status(403).json({
         error: 'pending_approval',
-        approval_status: rows[0].approval_status,
+        approval_status: restaurant.approval_status,
         message: 'Your application is under review. You will be notified once approved.',
       });
     }

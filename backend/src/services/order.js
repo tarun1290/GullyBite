@@ -2,91 +2,87 @@
 // Manages the complete order lifecycle:
 // customer lookup → conversation state → cart → order creation → status updates
 
-const db = require('../config/database');
+const { col, newId, mapId, mapIds, transaction } = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
 const couponSvc = require('./coupon');
 const { calculateOrderCharges } = require('./charges');
 
 // ─── GET OR CREATE CUSTOMER ───────────────────────────────────
-// Called every time we receive a message.
-// If customer doesn't exist, we create them automatically.
-// wa_phone: customer's number with country code, no plus (e.g. 919876543210)
 const getOrCreateCustomer = async (waPhone, profileName = null) => {
-  const { rows } = await db.query(
-    'SELECT * FROM customers WHERE wa_phone = $1',
-    [waPhone]
-  );
-  if (rows.length > 0) {
-    // Update name if WhatsApp sent us their profile name
-    if (profileName && rows[0].name !== profileName) {
-      await db.query('UPDATE customers SET name=$1 WHERE wa_phone=$2', [profileName, waPhone]);
+  const existing = await col('customers').findOne({ wa_phone: waPhone });
+  if (existing) {
+    if (profileName && existing.name !== profileName) {
+      await col('customers').updateOne({ wa_phone: waPhone }, { $set: { name: profileName } });
     }
-    return rows[0];
+    return mapId(existing);
   }
-  // New customer — create them
-  const { rows: created } = await db.query(
-    'INSERT INTO customers (wa_phone, name) VALUES ($1, $2) RETURNING *',
-    [waPhone, profileName]
-  );
-  return created[0];
+  const now = new Date();
+  const customer = {
+    _id: newId(),
+    wa_phone: waPhone,
+    name: profileName || null,
+    total_orders: 0,
+    total_spent_rs: 0,
+    last_order_at: null,
+    created_at: now,
+  };
+  await col('customers').insertOne(customer);
+  return mapId(customer);
 };
 
 // ─── GET OR CREATE CONVERSATION ───────────────────────────────
-// Each (customer, WhatsApp number) pair has one active conversation.
-// The conversation holds the "state" of where they are in the ordering flow.
 const getOrCreateConversation = async (customerId, waAccountId) => {
-  const { rows } = await db.query(
-    'SELECT * FROM conversations WHERE customer_id=$1 AND wa_account_id=$2 AND is_active=TRUE',
-    [customerId, waAccountId]
-  );
-  if (rows.length > 0) {
-    // Update last message timestamp (important for 24h window tracking)
-    await db.query('UPDATE conversations SET last_msg_at=NOW() WHERE id=$1', [rows[0].id]);
-    return rows[0];
+  const existing = await col('conversations').findOne({
+    customer_id: customerId,
+    wa_account_id: waAccountId,
+    is_active: true,
+  });
+  if (existing) {
+    await col('conversations').updateOne({ _id: existing._id }, { $set: { last_msg_at: new Date() } });
+    return mapId(existing);
   }
-  // Create fresh conversation
-  const { rows: created } = await db.query(
-    `INSERT INTO conversations (customer_id, wa_account_id, state, session_data)
-     VALUES ($1, $2, 'GREETING', '{}') RETURNING *`,
-    [customerId, waAccountId]
-  );
-  return created[0];
+  const now = new Date();
+  const conv = {
+    _id: newId(),
+    customer_id: customerId,
+    wa_account_id: waAccountId,
+    state: 'GREETING',
+    session_data: {},
+    is_active: true,
+    active_order_id: null,
+    last_msg_at: now,
+    created_at: now,
+  };
+  await col('conversations').insertOne(conv);
+  return mapId(conv);
 };
 
 // ─── UPDATE CONVERSATION STATE ────────────────────────────────
-// Called whenever the bot moves to the next step.
-// stateUpdates: optional new data to merge into session_data JSON
 const setState = async (convId, newState, sessionUpdates = {}) => {
-  const { rows } = await db.query('SELECT session_data FROM conversations WHERE id=$1', [convId]);
-  const current = rows[0]?.session_data || {};
+  const conv = await col('conversations').findOne({ _id: convId });
+  const current = conv?.session_data || {};
   const merged = { ...current, ...sessionUpdates };
 
-  await db.query(
-    'UPDATE conversations SET state=$1, session_data=$2, last_msg_at=NOW() WHERE id=$3',
-    [newState, JSON.stringify(merged), convId]
+  await col('conversations').updateOne(
+    { _id: convId },
+    { $set: { state: newState, session_data: merged, last_msg_at: new Date() } }
   );
   return merged;
 };
 
 // ─── PROCESS WHATSAPP CATALOG ORDER ──────────────────────────
-// When customer places an order from the WhatsApp Catalog,
-// Meta sends us: { product_items: [{ product_retailer_id, quantity }] }
-// We look up each item in our DB and build the cart
 const buildCartFromCatalogOrder = async (productItems, branchId) => {
-  // Extract the retailer_ids from Meta's order payload
-  const retailerIds = productItems.map((i) => i.product_retailer_id);
+  const retailerIds = productItems.map(i => i.product_retailer_id);
 
-  // Look up items in our DB
-  const { rows: menuItems } = await db.query(
-    `SELECT * FROM menu_items WHERE retailer_id = ANY($1) AND branch_id = $2 AND is_available = TRUE`,
-    [retailerIds, branchId]
-  );
+  const menuItems = await col('menu_items').find({
+    retailer_id: { $in: retailerIds },
+    branch_id: branchId,
+    is_available: true,
+  }).toArray();
 
-  // Map for quick lookup
   const itemMap = {};
-  menuItems.forEach((m) => { itemMap[m.retailer_id] = m; });
+  menuItems.forEach(m => { itemMap[m.retailer_id] = m; });
 
-  // Build cart with quantities and totals
   const cart = [];
   const unavailable = [];
 
@@ -98,7 +94,7 @@ const buildCartFromCatalogOrder = async (productItems, branchId) => {
     }
     const qty = parseInt(ordered.quantity) || 1;
     cart.push({
-      menuItemId: item.id,
+      menuItemId: String(item._id),
       retailerId: item.retailer_id,
       name: item.name,
       qty,
@@ -109,30 +105,21 @@ const buildCartFromCatalogOrder = async (productItems, branchId) => {
 
   const subtotalRs = cart.reduce((s, i) => s + i.lineTotalRs, 0);
 
-  // Delivery fee comes from the branch's configured rate.
-  // This will be replaced by a live 3PL quote (Dunzo/Borzo/Shadowfax)
-  // once the 3PL integration is active. For now: branch-level config or env fallback.
-  const { rows: branchRows } = await db.query(
-    `SELECT b.delivery_fee_rs,
-            r.delivery_fee_customer_pct, r.menu_gst_mode, r.menu_gst_pct,
-            r.packaging_charge_rs, r.packaging_gst_pct
-     FROM branches b
-     JOIN restaurants r ON b.restaurant_id = r.id
-     WHERE b.id = $1`,
-    [branchId]
-  );
-  const branchRow = branchRows[0] || {};
-  const deliveryFeeRs = parseFloat(branchRow.delivery_fee_rs)
+  const branch = await col('branches').findOne({ _id: branchId });
+  const restaurant = branch
+    ? await col('restaurants').findOne({ _id: branch.restaurant_id })
+    : null;
+
+  const deliveryFeeRs = parseFloat(branch?.delivery_fee_rs)
                      || parseFloat(process.env.DEFAULT_DELIVERY_FEE)
                      || 40;
 
-  // Calculate full charge breakdown using restaurant config
   const restaurantConfig = {
-    delivery_fee_customer_pct: branchRow.delivery_fee_customer_pct ?? 100,
-    menu_gst_mode:             branchRow.menu_gst_mode             ?? 'included',
-    menu_gst_pct:              branchRow.menu_gst_pct              ?? 5,
-    packaging_charge_rs:       branchRow.packaging_charge_rs       ?? 0,
-    packaging_gst_pct:         branchRow.packaging_gst_pct         ?? 18,
+    delivery_fee_customer_pct: restaurant?.delivery_fee_customer_pct ?? 100,
+    menu_gst_mode:             restaurant?.menu_gst_mode             ?? 'included',
+    menu_gst_pct:              restaurant?.menu_gst_pct              ?? 5,
+    packaging_charge_rs:       restaurant?.packaging_charge_rs       ?? 0,
+    packaging_gst_pct:         restaurant?.packaging_gst_pct         ?? 18,
   };
 
   const charges = calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs, 0);
@@ -143,190 +130,183 @@ const buildCartFromCatalogOrder = async (productItems, branchId) => {
 const REFERRAL_FEE_PCT = 0.075; // 7.5%
 
 // ─── CHECK ACTIVE REFERRAL ────────────────────────────────────
-const findActiveReferral = async (client, waPhone, restaurantId) => {
+const findActiveReferral = async (waPhone, restaurantId) => {
   if (!waPhone || !restaurantId) return null;
-  const { rows } = await client.query(
-    `SELECT id FROM referrals
-     WHERE restaurant_id = $1 AND customer_wa_phone = $2
-       AND status = 'active' AND expires_at > NOW()
-     ORDER BY created_at DESC LIMIT 1`,
-    [restaurantId, waPhone]
-  );
-  return rows[0] || null;
+  const now = new Date();
+  const referral = await col('referrals').findOne({
+    restaurant_id: restaurantId,
+    customer_wa_phone: waPhone,
+    status: 'active',
+    expires_at: { $gt: now },
+  }, { sort: { created_at: -1 } });
+  return referral ? mapId(referral) : null;
 };
 
 // ─── CREATE ORDER ─────────────────────────────────────────────
-// Called when customer taps "Confirm & Pay"
-// Wraps everything in a transaction (all-or-nothing)
 const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null }) => {
-  return db.transaction(async (client) => {
-    // Generate human-readable order number
-    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const { rows: cnt } = await client.query(
-      "SELECT COUNT(*) FROM orders WHERE created_at::date = CURRENT_DATE"
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+
+  // Generate sequential order number (count today's orders)
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+  const todayCount = await col('orders').countDocuments({ created_at: { $gte: todayStart } });
+  const seq = String(todayCount + 1).padStart(4, '0');
+  const orderNumber = `ZM-${dateStr}-${seq}`;
+
+  const platformFeeRs = 0;
+
+  const branch = await col('branches').findOne({ _id: branchId });
+  const restaurantId = branch?.restaurant_id;
+  const referral      = await findActiveReferral(waPhone, restaurantId);
+  const referralId    = referral?.id || null;
+  const referralFeeRs = referral ? parseFloat((subtotalRs * REFERRAL_FEE_PCT).toFixed(2)) : 0;
+
+  const effectiveTotal = charges ? charges.customer_total_rs : totalRs;
+
+  const orderId = newId();
+  const order = {
+    _id: orderId,
+    order_number: orderNumber,
+    customer_id: customerId,
+    branch_id: branchId,
+    conversation_id: convId,
+    subtotal_rs: subtotalRs,
+    delivery_fee_rs: charges ? charges.customer_delivery_rs : deliveryFeeRs,
+    discount_rs: discountRs,
+    total_rs: effectiveTotal,
+    platform_fee_rs: platformFeeRs,
+    coupon_id: couponId,
+    coupon_code: couponCode,
+    referral_id: referralId,
+    referral_fee_rs: referralFeeRs,
+    delivery_address: deliveryAddress,
+    delivery_lat: deliveryLat,
+    delivery_lng: deliveryLng,
+    food_gst_rs:                charges?.food_gst_rs                ?? 0,
+    delivery_fee_total_rs:      charges?.delivery_fee_total_rs      ?? (charges ? charges.customer_delivery_rs : deliveryFeeRs),
+    customer_delivery_rs:       charges?.customer_delivery_rs       ?? deliveryFeeRs,
+    customer_delivery_gst_rs:   charges?.customer_delivery_gst_rs   ?? 0,
+    restaurant_delivery_rs:     charges?.restaurant_delivery_rs     ?? 0,
+    restaurant_delivery_gst_rs: charges?.restaurant_delivery_gst_rs ?? 0,
+    packaging_rs:               charges?.packaging_rs               ?? 0,
+    packaging_gst_rs:           charges?.packaging_gst_rs           ?? 0,
+    status: 'PENDING_PAYMENT',
+    paid_at: null,
+    confirmed_at: null,
+    preparing_at: null,
+    packed_at: null,
+    dispatched_at: null,
+    delivered_at: null,
+    cancelled_at: null,
+    cancel_reason: null,
+    created_at: now,
+    updated_at: now,
+  };
+
+  await col('orders').insertOne(order);
+
+  // Coupon usage
+  if (couponId) {
+    await couponSvc.incrementUsage(couponId);
+  }
+
+  // Update referral totals
+  if (referralId) {
+    await col('referrals').updateOne(
+      { _id: referralId },
+      {
+        $set:  { status: 'converted', updated_at: now },
+        $inc:  { orders_count: 1, total_order_value_rs: subtotalRs, referral_fee_rs: referralFeeRs },
+      }
     );
-    const seq = String(parseInt(cnt[0].count) + 1).padStart(4, '0');
-    const orderNumber = `ZM-${date}-${seq}`;
+  }
 
-    // No platform commission — GullyBite earns fixed monthly fee only
-    const platformFeeRs = 0;
+  // Create order items
+  for (const item of cart) {
+    await col('order_items').insertOne({
+      _id: newId(),
+      order_id: orderId,
+      menu_item_id: item.menuItemId,
+      item_name: item.name,
+      unit_price_rs: item.unitPriceRs,
+      quantity: item.qty,
+      line_total_rs: item.lineTotalRs,
+    });
+  }
 
-    // ── REFERRAL CHECK ─────────────────────────────────────────
-    const { rows: br } = await client.query(
-      'SELECT restaurant_id FROM branches WHERE id = $1', [branchId]
-    );
-    const restaurantId  = br[0]?.restaurant_id;
-    const referral      = await findActiveReferral(client, waPhone, restaurantId);
-    const referralId    = referral?.id || null;
-    const referralFeeRs = referral ? parseFloat((subtotalRs * REFERRAL_FEE_PCT).toFixed(2)) : 0;
+  // Link order to conversation
+  await col('conversations').updateOne(
+    { _id: convId },
+    { $set: { active_order_id: orderId, state: 'AWAITING_PAYMENT' } }
+  );
 
-    // Resolve the actual customer total (charges may override passed totalRs)
-    const effectiveTotal = charges ? charges.customer_total_rs : totalRs;
-
-    // Create the order
-    const { rows: orders } = await client.query(
-      `INSERT INTO orders
-        (order_number, customer_id, branch_id, conversation_id,
-         subtotal_rs, delivery_fee_rs, discount_rs, total_rs, platform_fee_rs,
-         coupon_id, coupon_code,
-         referral_id, referral_fee_rs,
-         delivery_address, delivery_lat, delivery_lng,
-         food_gst_rs, delivery_fee_total_rs,
-         customer_delivery_rs, customer_delivery_gst_rs,
-         restaurant_delivery_rs, restaurant_delivery_gst_rs,
-         packaging_rs, packaging_gst_rs,
-         status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-               $17,$18,$19,$20,$21,$22,$23,$24,'PENDING_PAYMENT')
-       RETURNING *`,
-      [orderNumber, customerId, branchId, convId,
-       subtotalRs, charges ? charges.customer_delivery_rs : deliveryFeeRs,
-       discountRs, effectiveTotal, platformFeeRs,
-       couponId, couponCode,
-       referralId, referralFeeRs,
-       deliveryAddress, deliveryLat, deliveryLng,
-       charges?.food_gst_rs                ?? 0,
-       charges?.delivery_fee_total_rs      ?? (charges ? charges.customer_delivery_rs : deliveryFeeRs),
-       charges?.customer_delivery_rs       ?? deliveryFeeRs,
-       charges?.customer_delivery_gst_rs   ?? 0,
-       charges?.restaurant_delivery_rs     ?? 0,
-       charges?.restaurant_delivery_gst_rs ?? 0,
-       charges?.packaging_rs               ?? 0,
-       charges?.packaging_gst_rs           ?? 0]
-    );
-    const order = orders[0];
-
-    // ── COUPON USAGE ────────────────────────────────────────────
-    if (couponId) {
-      await couponSvc.incrementUsage(client, couponId);
-    }
-
-    // Update referral totals if this order is attributed
-    if (referralId) {
-      await client.query(
-        `UPDATE referrals SET
-           status               = 'converted',
-           orders_count         = orders_count + 1,
-           total_order_value_rs = total_order_value_rs + $1,
-           referral_fee_rs      = referral_fee_rs + $2,
-           updated_at           = NOW()
-         WHERE id = $3`,
-        [subtotalRs, referralFeeRs, referralId]
-      );
-    }
-
-    // Create order items
-    for (const item of cart) {
-      await client.query(
-        `INSERT INTO order_items
-          (order_id, menu_item_id, item_name, unit_price_rs, quantity, line_total_rs)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
-        [order.id, item.menuItemId, item.name, item.unitPriceRs, item.qty, item.lineTotalRs]
-      );
-    }
-
-    // Link order to conversation
-    await client.query(
-      'UPDATE conversations SET active_order_id=$1, state=$2 WHERE id=$3',
-      [order.id, 'AWAITING_PAYMENT', convId]
-    );
-
-    return order;
-  });
+  return mapId(order);
 };
 
 // ─── UPDATE ORDER STATUS ──────────────────────────────────────
-// Central function for moving orders through their lifecycle
-// Called by restaurant dashboard, payment webhook, delivery webhook
 const updateStatus = async (orderId, newStatus, extra = {}) => {
-  const tsCol = {
-    PAID: 'paid_at',
-    CONFIRMED: 'confirmed_at',
-    PREPARING: 'preparing_at',
-    PACKED: 'packed_at',
+  const tsField = {
+    PAID:       'paid_at',
+    CONFIRMED:  'confirmed_at',
+    PREPARING:  'preparing_at',
+    PACKED:     'packed_at',
     DISPATCHED: 'dispatched_at',
-    DELIVERED: 'delivered_at',
-    CANCELLED: 'cancelled_at',
+    DELIVERED:  'delivered_at',
+    CANCELLED:  'cancelled_at',
   }[newStatus];
 
-  let setClauses = ['status = $2', 'updated_at = NOW()'];
-  const params = [orderId, newStatus];
+  const $set = { status: newStatus, updated_at: new Date() };
+  if (tsField) $set[tsField] = new Date();
+  if (extra.cancelReason) $set.cancel_reason = extra.cancelReason;
 
-  if (tsCol) {
-    setClauses.push(`${tsCol} = NOW()`);
-  }
-  if (extra.cancelReason) {
-    params.push(extra.cancelReason);
-    setClauses.push(`cancel_reason = $${params.length}`);
-  }
-
-  const { rows } = await db.query(
-    `UPDATE orders SET ${setClauses.join(', ')} WHERE id = $1 RETURNING *`,
-    params
+  const updated = await col('orders').findOneAndUpdate(
+    { _id: orderId },
+    { $set },
+    { returnDocument: 'after' }
   );
 
   // Update customer stats on delivery
-  if (newStatus === 'DELIVERED' && rows[0]) {
-    await db.query(
-      `UPDATE customers SET
-        total_orders = total_orders + 1,
-        total_spent_rs = total_spent_rs + $1,
-        last_order_at = NOW()
-       WHERE id = $2`,
-      [rows[0].total_rs, rows[0].customer_id]
+  if (newStatus === 'DELIVERED' && updated) {
+    await col('customers').updateOne(
+      { _id: updated.customer_id },
+      {
+        $inc: { total_orders: 1, total_spent_rs: parseFloat(updated.total_rs) || 0 },
+        $set: { last_order_at: new Date() },
+      }
     );
   }
 
-  return rows[0];
+  return updated ? mapId(updated) : null;
 };
 
 // ─── GET FULL ORDER DETAILS ───────────────────────────────────
-// Returns order + items + customer + restaurant WhatsApp credentials
-// Used by webhooks to get everything needed to send notifications
 const getOrderDetails = async (orderId) => {
-  const { rows: orders } = await db.query(`
-    SELECT
-      o.*,
-      c.wa_phone, c.name AS customer_name,
-      b.name AS branch_name, b.address AS branch_address,
-      r.business_name,
-      wa.phone_number_id, wa.access_token
-    FROM orders o
-    JOIN customers c ON o.customer_id = c.id
-    JOIN branches b ON o.branch_id = b.id
-    JOIN restaurants r ON b.restaurant_id = r.id
-    LEFT JOIN whatsapp_accounts wa ON wa.restaurant_id = r.id AND wa.is_active = TRUE
-    WHERE o.id = $1
-  `, [orderId]);
+  const order = await col('orders').findOne({ _id: orderId });
+  if (!order) return null;
 
-  if (!orders.length) return null;
+  const [customer, branch, items] = await Promise.all([
+    col('customers').findOne({ _id: order.customer_id }),
+    col('branches').findOne({ _id: order.branch_id }),
+    col('order_items').find({ order_id: orderId }).toArray(),
+  ]);
 
-  const { rows: items } = await db.query(
-    'SELECT * FROM order_items WHERE order_id = $1',
-    [orderId]
-  );
+  const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
+  const wa_acc = restaurant
+    ? await col('whatsapp_accounts').findOne({ restaurant_id: String(restaurant._id), is_active: true })
+    : null;
 
-  return { ...orders[0], items };
+  return {
+    ...mapId(order),
+    wa_phone:        customer?.wa_phone,
+    customer_name:   customer?.name,
+    branch_name:     branch?.name,
+    branch_address:  branch?.address,
+    business_name:   restaurant?.business_name,
+    phone_number_id: wa_acc?.phone_number_id,
+    access_token:    wa_acc?.access_token,
+    items:           mapIds(items),
+  };
 };
 
 module.exports = {

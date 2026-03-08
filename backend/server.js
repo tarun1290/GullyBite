@@ -30,6 +30,24 @@ app.get('/placeholder.jpg', (req, res) => {
   res.redirect('https://placehold.co/400x400/1a1a2e/ffffff?text=Food');
 });
 
+// ─── IMAGE SERVING (MongoDB GridFS) ───────────────────────────
+app.get('/images/:fileId', async (req, res) => {
+  try {
+    const { ObjectId } = require('mongodb');
+    const { getBucket } = require('./src/config/database');
+    const bucket = getBucket();
+    let id;
+    try { id = new ObjectId(req.params.fileId); } catch { return res.status(400).json({ error: 'Invalid image ID' }); }
+    const files = await bucket.find({ _id: id }).toArray();
+    if (!files.length) return res.status(404).json({ error: 'Image not found' });
+    res.set('Content-Type', files[0].contentType || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=31536000');
+    bucket.openDownloadStream(id).pipe(res);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── HEALTH CHECK ─────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', version: '1.0.0', time: new Date() });

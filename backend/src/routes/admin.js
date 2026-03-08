@@ -4,7 +4,7 @@
 
 const express = require('express');
 const router  = express.Router();
-const db      = require('../config/database');
+const { col, newId, mapId, mapIds } = require('../config/database');
 const { runSettlement } = require('../jobs/settlement');
 
 // ─── AUTH MIDDLEWARE ──────────────────────────────────────────
@@ -18,7 +18,6 @@ const requireAdmin = (req, res, next) => {
 };
 
 // ─── POST /api/admin/auth ─────────────────────────────────────
-// Verify admin key — frontend calls this on login.
 router.post('/auth', express.json(), (req, res) => {
   const { key } = req.body;
   if (!key || key !== process.env.ADMIN_KEY) {
@@ -31,38 +30,43 @@ router.post('/auth', express.json(), (req, res) => {
 router.use(requireAdmin);
 
 // ─── GET /api/admin/stats ─────────────────────────────────────
-// Platform-wide summary numbers for the dashboard header.
 router.get('/stats', async (req, res) => {
   try {
-    const [restaurants, orders, revenue, customers, logs] = await Promise.all([
-      db.query(`SELECT COUNT(*) AS total,
-                  COUNT(*) FILTER (WHERE status='active') AS active
-                FROM restaurants`),
-      db.query(`SELECT COUNT(*) AS total,
-                  COUNT(*) FILTER (WHERE status='DELIVERED') AS delivered,
-                  COUNT(*) FILTER (WHERE status='PENDING')   AS pending,
-                  COUNT(*) FILTER (WHERE status='CANCELLED') AS cancelled,
-                  COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours') AS today
-                FROM orders`),
-      db.query(`SELECT COALESCE(SUM(total_rs),0) AS total_rs,
-                  COALESCE(SUM(total_rs) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours'),0) AS today_rs,
-                  COALESCE(SUM(total_rs) FILTER (WHERE created_at > NOW() - INTERVAL '7 days'),0) AS week_rs
-                FROM orders WHERE status != 'CANCELLED'`),
-      db.query(`SELECT COUNT(*) AS total,
-                  COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours') AS today
-                FROM customers`),
-      db.query(`SELECT COUNT(*) AS total,
-                  COUNT(*) FILTER (WHERE NOT processed) AS unprocessed,
-                  COUNT(*) FILTER (WHERE error_message IS NOT NULL) AS errors
-                FROM webhook_logs`),
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const lastWeek  = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [
+      totalRestaurants, activeRestaurants,
+      totalOrders, deliveredOrders, pendingOrders, cancelledOrders, todayOrders,
+      allNonCancelledOrders, todayOrders2, weekOrders,
+      totalCustomers, todayCustomers,
+      totalLogs, unprocessedLogs, errorLogs,
+    ] = await Promise.all([
+      col('restaurants').countDocuments({}),
+      col('restaurants').countDocuments({ status: 'active' }),
+      col('orders').countDocuments({}),
+      col('orders').countDocuments({ status: 'DELIVERED' }),
+      col('orders').countDocuments({ status: 'PENDING' }),
+      col('orders').countDocuments({ status: 'CANCELLED' }),
+      col('orders').countDocuments({ created_at: { $gt: yesterday } }),
+      col('orders').find({ status: { $ne: 'CANCELLED' } }).project({ total_rs: 1 }).toArray(),
+      col('orders').find({ status: { $ne: 'CANCELLED' }, created_at: { $gt: yesterday } }).project({ total_rs: 1 }).toArray(),
+      col('orders').find({ status: { $ne: 'CANCELLED' }, created_at: { $gt: lastWeek } }).project({ total_rs: 1 }).toArray(),
+      col('customers').countDocuments({}),
+      col('customers').countDocuments({ created_at: { $gt: yesterday } }),
+      col('webhook_logs').countDocuments({}),
+      col('webhook_logs').countDocuments({ processed: false }),
+      col('webhook_logs').countDocuments({ error_message: { $ne: null } }),
     ]);
 
+    const sumRs = (arr) => arr.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
+
     res.json({
-      restaurants: restaurants.rows[0],
-      orders     : orders.rows[0],
-      revenue    : revenue.rows[0],
-      customers  : customers.rows[0],
-      logs       : logs.rows[0],
+      restaurants: { total: totalRestaurants, active: activeRestaurants },
+      orders     : { total: totalOrders, delivered: deliveredOrders, pending: pendingOrders, cancelled: cancelledOrders, today: todayOrders },
+      revenue    : { total_rs: sumRs(allNonCancelledOrders), today_rs: sumRs(todayOrders2), week_rs: sumRs(weekOrders) },
+      customers  : { total: totalCustomers, today: todayCustomers },
+      logs       : { total: totalLogs, unprocessed: unprocessedLogs, errors: errorLogs },
     });
   } catch (err) {
     console.error('[Admin] stats error:', err.message);
@@ -71,23 +75,27 @@ router.get('/stats', async (req, res) => {
 });
 
 // ─── GET /api/admin/restaurants ──────────────────────────────
-// All restaurants with order counts and revenue.
 router.get('/restaurants', async (req, res) => {
   try {
-    const { rows } = await db.query(`
-      SELECT
-        r.id, r.business_name, r.owner_name, r.email, r.phone,
-        r.status, r.onboarding_step, r.created_at,
-        COUNT(DISTINCT b.id)   AS branch_count,
-        COUNT(DISTINCT o.id)   AS order_count,
-        COALESCE(SUM(o.total_rs) FILTER (WHERE o.status != 'CANCELLED'), 0) AS revenue_rs
-      FROM restaurants r
-      LEFT JOIN branches b ON b.restaurant_id = r.id
-      LEFT JOIN orders   o ON o.restaurant_id = r.id
-      GROUP BY r.id
-      ORDER BY r.created_at DESC
-    `);
-    res.json(rows);
+    const restaurants = await col('restaurants').find({}).sort({ created_at: -1 }).toArray();
+
+    const enriched = await Promise.all(restaurants.map(async r => {
+      const rid = String(r._id);
+      const branches = await col('branches').find({ restaurant_id: rid }).project({ _id: 1 }).toArray();
+      const branchIds = branches.map(b => String(b._id));
+
+      const orders = await col('orders').find({ branch_id: { $in: branchIds } }).project({ total_rs: 1, status: 1 }).toArray();
+      const revenue_rs = orders
+        .filter(o => o.status !== 'CANCELLED')
+        .reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
+
+      const out = mapId(r);
+      delete out.password_hash;
+      delete out.meta_access_token;
+      return { ...out, branch_count: branches.length, order_count: orders.length, revenue_rs };
+    }));
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -97,33 +105,26 @@ router.get('/restaurants', async (req, res) => {
 router.get('/branches', async (req, res) => {
   try {
     const { restaurant_id } = req.query;
-    const params = [];
-    const where  = restaurant_id ? `WHERE b.restaurant_id = $${params.push(restaurant_id)}` : '';
-    const { rows } = await db.query(`
-      SELECT
-        b.id, b.name, b.address, b.city,
-        b.latitude, b.longitude, b.delivery_radius_km, b.delivery_fee_rs,
-        b.is_open, b.accepts_orders,
-        b.catalog_id, b.catalog_synced_at, b.created_at,
-        r.business_name,
-        COUNT(DISTINCT mi.id) AS menu_item_count,
-        COUNT(DISTINCT o.id)  AS order_count
-      FROM branches b
-      JOIN restaurants r ON r.id = b.restaurant_id
-      LEFT JOIN menu_items mi ON mi.branch_id = b.id
-      LEFT JOIN orders     o  ON o.branch_id  = b.id
-      ${where}
-      GROUP BY b.id, r.business_name
-      ORDER BY b.created_at DESC
-    `, params);
-    res.json(rows);
+    const filter = restaurant_id ? { restaurant_id } : {};
+    const branches = await col('branches').find(filter).sort({ created_at: -1 }).toArray();
+
+    const enriched = await Promise.all(branches.map(async b => {
+      const bid = String(b._id);
+      const restaurant = await col('restaurants').findOne({ _id: b.restaurant_id }, { projection: { business_name: 1 } });
+      const [menuCount, orderCount] = await Promise.all([
+        col('menu_items').countDocuments({ branch_id: bid }),
+        col('orders').countDocuments({ branch_id: bid }),
+      ]);
+      return { ...mapId(b), business_name: restaurant?.business_name, menu_item_count: menuCount, order_count: orderCount };
+    }));
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── GET /api/admin/orders ────────────────────────────────────
-// All orders across all restaurants. Supports filtering + pagination.
 router.get('/orders', async (req, res) => {
   try {
     const {
@@ -132,45 +133,50 @@ router.get('/orders', async (req, res) => {
       date_from, date_to,
     } = req.query;
 
-    const conditions = [];
-    const params     = [];
+    const filter = {};
+    if (status)    filter.status    = status;
+    if (branch_id) filter.branch_id = branch_id;
+    if (date_from || date_to) {
+      filter.created_at = {};
+      if (date_from) filter.created_at.$gte = new Date(date_from);
+      if (date_to)   filter.created_at.$lte = new Date(date_to);
+    }
 
-    if (status)        conditions.push(`o.status = $${params.push(status)}`);
-    if (restaurant_id) conditions.push(`o.restaurant_id = $${params.push(restaurant_id)}`);
-    if (branch_id)     conditions.push(`o.branch_id = $${params.push(branch_id)}`);
-    if (date_from)     conditions.push(`o.created_at >= $${params.push(date_from)}`);
-    if (date_to)       conditions.push(`o.created_at <= $${params.push(date_to)}`);
+    // If filtering by restaurant, find branch IDs first
+    if (restaurant_id) {
+      const branches = await col('branches').find({ restaurant_id }).project({ _id: 1 }).toArray();
+      filter.branch_id = { $in: branches.map(b => String(b._id)) };
+    }
 
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const [data, total] = await Promise.all([
-      db.query(`
-        SELECT
-          o.id, o.order_number, o.status,
-          o.subtotal_rs, o.delivery_fee_rs, o.total_rs,
-          o.created_at, o.updated_at,
-          r.business_name,
-          b.name AS branch_name,
-          c.wa_phone, c.name AS customer_name
-        FROM orders o
-        JOIN restaurants r ON r.id = o.restaurant_id
-        JOIN branches    b ON b.id = o.branch_id
-        JOIN customers   c ON c.id = o.customer_id
-        ${where}
-        ORDER BY o.created_at DESC
-        LIMIT $${params.push(parseInt(limit))} OFFSET $${params.push(parseInt(offset))}
-      `, params),
-      db.query(`SELECT COUNT(*) AS total FROM orders o ${where}`, params.slice(0, conditions.length)),
+    const [orders, total] = await Promise.all([
+      col('orders').find(filter).sort({ created_at: -1 }).skip(parseInt(offset)).limit(parseInt(limit)).toArray(),
+      col('orders').countDocuments(filter),
     ]);
 
-    res.json({ orders: data.rows, total: parseInt(total.rows[0].total) });
+    const enriched = await Promise.all(orders.map(async o => {
+      const [branch, customer] = await Promise.all([
+        col('branches').findOne({ _id: o.branch_id }, { projection: { name: 1, restaurant_id: 1 } }),
+        col('customers').findOne({ _id: o.customer_id }, { projection: { name: 1, wa_phone: 1 } }),
+      ]);
+      const restaurant = branch
+        ? await col('restaurants').findOne({ _id: branch.restaurant_id }, { projection: { business_name: 1 } })
+        : null;
+      return {
+        ...mapId(o),
+        business_name: restaurant?.business_name,
+        branch_name:   branch?.name,
+        wa_phone:      customer?.wa_phone,
+        customer_name: customer?.name,
+      };
+    }));
+
+    res.json({ orders: enriched, total });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── GET /api/admin/logs ─────────────────────────────────────
-// Webhook logs with filtering and pagination.
 router.get('/logs', async (req, res) => {
   try {
     const {
@@ -180,50 +186,35 @@ router.get('/logs', async (req, res) => {
       has_error,
     } = req.query;
 
-    const conditions = [];
-    const params     = [];
-
-    if (source)     conditions.push(`source = $${params.push(source)}`);
-    if (event_type) conditions.push(`event_type ILIKE $${params.push('%' + event_type + '%')}`);
-    if (processed !== undefined && processed !== '') {
-      conditions.push(`processed = $${params.push(processed === 'true')}`);
+    const filter = {};
+    if (source)     filter.source     = source;
+    if (event_type) filter.event_type = { $regex: event_type, $options: 'i' };
+    if (processed !== undefined && processed !== '') filter.processed = processed === 'true';
+    if (has_error === 'true')  filter.error_message = { $ne: null };
+    if (has_error === 'false') filter.error_message = null;
+    if (date_from || date_to) {
+      filter.received_at = {};
+      if (date_from) filter.received_at.$gte = new Date(date_from);
+      if (date_to)   filter.received_at.$lte = new Date(date_to);
     }
-    if (has_error === 'true')  conditions.push(`error_message IS NOT NULL`);
-    if (has_error === 'false') conditions.push(`error_message IS NULL`);
-    if (date_from)  conditions.push(`received_at >= $${params.push(date_from)}`);
-    if (date_to)    conditions.push(`received_at <= $${params.push(date_to)}`);
 
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
-    const [data, total] = await Promise.all([
-      db.query(`
-        SELECT id, source, event_type, phone_number_id,
-               processed, error_message, received_at, processed_at,
-               payload
-        FROM webhook_logs
-        ${where}
-        ORDER BY received_at DESC
-        LIMIT $${params.push(parseInt(limit))} OFFSET $${params.push(parseInt(offset))}
-      `, params),
-      db.query(`SELECT COUNT(*) AS total FROM webhook_logs ${where}`, params.slice(0, conditions.length)),
+    const [docs, total] = await Promise.all([
+      col('webhook_logs').find(filter).sort({ received_at: -1 }).skip(parseInt(offset)).limit(parseInt(limit)).toArray(),
+      col('webhook_logs').countDocuments(filter),
     ]);
 
-    res.json({ logs: data.rows, total: parseInt(total.rows[0].total) });
+    res.json({ logs: mapIds(docs), total });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── GET /api/admin/logs/:id ──────────────────────────────────
-// Full payload for a single log entry.
 router.get('/logs/:id', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      'SELECT * FROM webhook_logs WHERE id = $1',
-      [req.params.id]
-    );
-    if (!rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    const doc = await col('webhook_logs').findOne({ _id: req.params.id });
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+    res.json(mapId(doc));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -233,43 +224,44 @@ router.get('/logs/:id', async (req, res) => {
 router.get('/customers', async (req, res) => {
   try {
     const { limit = 50, offset = 0, search } = req.query;
-    const params = [];
-    const where  = search
-      ? `WHERE c.wa_phone ILIKE $${params.push('%' + search + '%')} OR c.name ILIKE $${params.push('%' + search + '%')}`
-      : '';
 
-    const { rows } = await db.query(`
-      SELECT
-        c.id, c.wa_phone, c.name, c.created_at,
-        COUNT(DISTINCT o.id) AS order_count,
-        COALESCE(SUM(o.total_rs) FILTER (WHERE o.status != 'CANCELLED'), 0) AS lifetime_rs
-      FROM customers c
-      LEFT JOIN orders o ON o.customer_id = c.id
-      ${where}
-      GROUP BY c.id
-      ORDER BY c.created_at DESC
-      LIMIT $${params.push(parseInt(limit))} OFFSET $${params.push(parseInt(offset))}
-    `, params);
-    res.json(rows);
+    const filter = {};
+    if (search) {
+      filter.$or = [
+        { wa_phone: { $regex: search, $options: 'i' } },
+        { name:     { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const customers = await col('customers').find(filter).sort({ created_at: -1 })
+      .skip(parseInt(offset)).limit(parseInt(limit)).toArray();
+
+    const enriched = await Promise.all(customers.map(async c => {
+      const orders = await col('orders').find({ customer_id: String(c._id) }).project({ total_rs: 1, status: 1 }).toArray();
+      const lifetime_rs = orders.filter(o => o.status !== 'CANCELLED').reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
+      return { ...mapId(c), order_count: orders.length, lifetime_rs };
+    }));
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── PATCH /api/admin/restaurants/:id ────────────────────────
-// Suspend / reactivate a restaurant.
 router.patch('/restaurants/:id', express.json(), async (req, res) => {
   try {
     const { status } = req.body;
     if (!['active', 'suspended', 'pending'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
-    const { rows } = await db.query(
-      'UPDATE restaurants SET status=$1 WHERE id=$2 RETURNING id, business_name, status',
-      [status, req.params.id]
+    const updated = await col('restaurants').findOneAndUpdate(
+      { _id: req.params.id },
+      { $set: { status, updated_at: new Date() } },
+      { returnDocument: 'after', projection: { _id: 1, business_name: 1, status: 1 } }
     );
-    if (!rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json(rows[0]);
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json(mapId(updated));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -282,23 +274,31 @@ router.post('/run-settlement', async (req, res) => {
 });
 
 // ─── GET /api/admin/applications ─────────────────────────────
-// All pending + recently reviewed restaurant applications
 router.get('/applications', async (req, res) => {
   try {
-    const { rows } = await db.query(`
-      SELECT
-        id, business_name, brand_name, registered_business_name,
-        owner_name, email, phone, city, restaurant_type,
-        gst_number, fssai_license, fssai_expiry,
-        approval_status, approval_notes, submitted_at, approved_at, created_at
-      FROM restaurants
-      WHERE approval_status IN ('pending','rejected')
-         OR (approval_status = 'approved' AND approved_at > NOW() - INTERVAL '7 days')
-      ORDER BY
-        CASE approval_status WHEN 'pending' THEN 0 WHEN 'rejected' THEN 1 ELSE 2 END,
-        submitted_at DESC NULLS LAST
-    `);
-    res.json(rows);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const docs = await col('restaurants').find({
+      $or: [
+        { approval_status: 'pending' },
+        { approval_status: 'rejected' },
+        { approval_status: 'approved', approved_at: { $gt: sevenDaysAgo } },
+      ],
+    }).toArray();
+
+    // Sort: pending first, rejected second, approved last; then by submitted_at desc
+    const statusOrder = { pending: 0, rejected: 1, approved: 2 };
+    docs.sort((a, b) => {
+      const diff = (statusOrder[a.approval_status] || 2) - (statusOrder[b.approval_status] || 2);
+      if (diff !== 0) return diff;
+      const aTime = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+      const bTime = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    res.json(mapIds(docs).map(r => {
+      const { password_hash, meta_access_token, ...rest } = r;
+      return rest;
+    }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -308,18 +308,14 @@ router.get('/applications', async (req, res) => {
 router.patch('/applications/:id/approve', express.json(), async (req, res) => {
   try {
     const { notes } = req.body;
-    const { rows } = await db.query(
-      `UPDATE restaurants SET
-         approval_status = 'approved',
-         approval_notes  = $1,
-         approved_at     = NOW(),
-         status          = 'active',
-         updated_at      = NOW()
-       WHERE id = $2 RETURNING id, business_name, email`,
-      [notes || null, req.params.id]
+    const now = new Date();
+    const updated = await col('restaurants').findOneAndUpdate(
+      { _id: req.params.id },
+      { $set: { approval_status: 'approved', approval_notes: notes || null, approved_at: now, status: 'active', updated_at: now } },
+      { returnDocument: 'after', projection: { _id: 1, business_name: 1, email: 1 } }
     );
-    if (!rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, restaurant: rows[0] });
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -330,89 +326,96 @@ router.patch('/applications/:id/reject', express.json(), async (req, res) => {
   try {
     const { notes } = req.body;
     if (!notes) return res.status(400).json({ error: 'Rejection reason is required' });
-    const { rows } = await db.query(
-      `UPDATE restaurants SET
-         approval_status = 'rejected',
-         approval_notes  = $1,
-         updated_at      = NOW()
-       WHERE id = $2 RETURNING id, business_name, email`,
-      [notes, req.params.id]
+    const now = new Date();
+    const updated = await col('restaurants').findOneAndUpdate(
+      { _id: req.params.id },
+      { $set: { approval_status: 'rejected', approval_notes: notes, updated_at: now } },
+      { returnDocument: 'after', projection: { _id: 1, business_name: 1, email: 1 } }
     );
-    if (!rows.length) return res.status(404).json({ error: 'Not found' });
-    res.json({ ok: true, restaurant: rows[0] });
+    if (!updated) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── REFERRALS ────────────────────────────────────────────────────
-// POST /api/admin/referrals — create a referral (admin sends WA link to customer)
+
+// POST /api/admin/referrals
 router.post('/referrals', express.json(), async (req, res) => {
   try {
     const { restaurantId, customerWaPhone, customerName, notes } = req.body;
     if (!restaurantId || !customerWaPhone)
       return res.status(400).json({ error: 'restaurantId and customerWaPhone are required' });
 
-    // Expire any old active referrals for same restaurant+customer before creating new one
-    await db.query(
-      `UPDATE referrals SET status='expired', updated_at=NOW()
-       WHERE restaurant_id=$1 AND customer_wa_phone=$2 AND status='active'`,
-      [restaurantId, customerWaPhone]
+    const now = new Date();
+    // Expire old active referrals for same restaurant+customer
+    await col('referrals').updateMany(
+      { restaurant_id: restaurantId, customer_wa_phone: customerWaPhone, status: 'active' },
+      { $set: { status: 'expired', updated_at: now } }
     );
 
-    const { rows } = await db.query(
-      `INSERT INTO referrals
-         (restaurant_id, customer_wa_phone, customer_name, notes,
-          expires_at)
-       VALUES ($1, $2, $3, $4, NOW() + INTERVAL '8 hours')
-       RETURNING *`,
-      [restaurantId, customerWaPhone.trim(), customerName || null, notes || null]
-    );
-    res.json(rows[0]);
+    const expiresAt = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const referral = {
+      _id: newId(),
+      restaurant_id: restaurantId,
+      customer_wa_phone: customerWaPhone.trim(),
+      customer_name: customerName || null,
+      notes: notes || null,
+      status: 'active',
+      expires_at: expiresAt,
+      orders_count: 0,
+      total_order_value_rs: 0,
+      referral_fee_rs: 0,
+      created_at: now,
+      updated_at: now,
+    };
+    await col('referrals').insertOne(referral);
+    res.json(mapId(referral));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/admin/referrals — list all referrals with restaurant name
-router.get('/referrals', async (req, res) => {
-  try {
-    // Auto-expire stale referrals first
-    await db.query(
-      `UPDATE referrals SET status='expired', updated_at=NOW()
-       WHERE status='active' AND expires_at < NOW()`
-    );
-
-    const { rows } = await db.query(
-      `SELECT r.*, res.business_name AS restaurant_name,
-              wa.phone_display AS restaurant_wa_phone
-       FROM referrals r
-       JOIN restaurants res ON res.id = r.restaurant_id
-       LEFT JOIN whatsapp_accounts wa ON wa.restaurant_id = r.restaurant_id AND wa.is_active = TRUE
-       ORDER BY r.created_at DESC
-       LIMIT 200`
-    );
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/admin/referrals/stats — summary totals
+// GET /api/admin/referrals/stats
 router.get('/referrals/stats', async (req, res) => {
   try {
-    const { rows } = await db.query(
-      `SELECT
-         COUNT(*)                                          AS total,
-         COUNT(*) FILTER (WHERE status='active')          AS active,
-         COUNT(*) FILTER (WHERE status='converted')       AS converted,
-         COUNT(*) FILTER (WHERE status='expired')         AS expired,
-         COALESCE(SUM(orders_count),0)                    AS total_orders,
-         COALESCE(SUM(total_order_value_rs),0)            AS total_order_value_rs,
-         COALESCE(SUM(referral_fee_rs),0)                 AS total_referral_fee_rs
-       FROM referrals`
+    const all = await col('referrals').find({}).toArray();
+    const total     = all.length;
+    const active    = all.filter(r => r.status === 'active').length;
+    const converted = all.filter(r => r.status === 'converted').length;
+    const expired   = all.filter(r => r.status === 'expired').length;
+    const total_orders          = all.reduce((s, r) => s + (r.orders_count || 0), 0);
+    const total_order_value_rs  = all.reduce((s, r) => s + (parseFloat(r.total_order_value_rs) || 0), 0);
+    const total_referral_fee_rs = all.reduce((s, r) => s + (parseFloat(r.referral_fee_rs) || 0), 0);
+    res.json({ total, active, converted, expired, total_orders, total_order_value_rs, total_referral_fee_rs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/referrals
+router.get('/referrals', async (req, res) => {
+  try {
+    const now = new Date();
+    await col('referrals').updateMany(
+      { status: 'active', expires_at: { $lt: now } },
+      { $set: { status: 'expired', updated_at: now } }
     );
-    res.json(rows[0]);
+
+    const referrals = await col('referrals').find({}).sort({ created_at: -1 }).limit(200).toArray();
+
+    const enriched = await Promise.all(referrals.map(async r => {
+      const restaurant = await col('restaurants').findOne({ _id: r.restaurant_id }, { projection: { business_name: 1 } });
+      const wa_acc     = await col('whatsapp_accounts').findOne({ restaurant_id: r.restaurant_id, is_active: true }, { projection: { phone_display: 1 } });
+      return {
+        ...mapId(r),
+        restaurant_name:    restaurant?.business_name,
+        restaurant_wa_phone:wa_acc?.phone_display,
+      };
+    }));
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

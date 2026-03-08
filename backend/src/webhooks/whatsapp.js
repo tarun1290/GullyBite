@@ -9,7 +9,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const db = require('../config/database');
+const { col, newId } = require('../config/database');
 const wa = require('../services/whatsapp');
 const location = require('../services/location');
 const orderSvc = require('../services/order');
@@ -18,8 +18,6 @@ const addressSvc = require('../services/address');
 const couponSvc = require('../services/coupon');
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
-// Meta calls this ONCE when you first configure the webhook.
-// We must return the challenge token to prove we own this URL.
 router.get('/', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -27,20 +25,17 @@ router.get('/', (req, res) => {
 
   if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
     console.log('✅ Meta webhook verified!');
-    return res.status(200).send(challenge); // Echo back the challenge
+    return res.status(200).send(challenge);
   }
   console.error('❌ Webhook verification failed. Check WEBHOOK_VERIFY_TOKEN in .env');
   res.sendStatus(403);
 });
 
 // ─── POST: INCOMING EVENTS ────────────────────────────────────
-// Receives ALL WhatsApp events: messages, status updates, etc.
 router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
-  // 1. RESPOND IMMEDIATELY — prevents Meta from retrying
   res.sendStatus(200);
 
   try {
-    // 2. VERIFY SIGNATURE — prevents fake/spoofed webhooks
     const sig = req.headers['x-hub-signature-256']?.split('sha256=')[1];
     const expected = crypto
       .createHmac('sha256', process.env.WEBHOOK_APP_SECRET)
@@ -55,11 +50,8 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     const body = JSON.parse(req.body);
     if (body.object !== 'whatsapp_business_account') return;
 
-    // 3. LOG RAW WEBHOOK for analytics
     await logWebhook('whatsapp', body).catch(() => {});
 
-    // 4. PROCESS EACH ENTRY
-    // Meta may batch multiple events in one request
     for (const entry of body.entry || []) {
       for (const change of entry.changes || []) {
         if (change.field !== 'messages') continue;
@@ -72,36 +64,26 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
 });
 
 // ─── PROCESS A CHANGE OBJECT ──────────────────────────────────
-// A "change" contains messages and/or status updates
 const processChange = async (value) => {
   const phoneNumberId = value.metadata?.phone_number_id;
   if (!phoneNumberId) return;
 
-  // Lookup which restaurant this WA number belongs to
-  const { rows: waAccounts } = await db.query(
-    'SELECT * FROM whatsapp_accounts WHERE phone_number_id = $1 AND is_active = TRUE',
-    [phoneNumberId]
-  );
-  if (!waAccounts.length) {
+  const waAccount = await col('whatsapp_accounts').findOne({ phone_number_id: phoneNumberId, is_active: true });
+  if (!waAccount) {
     console.warn('[WA] Unknown phone_number_id:', phoneNumberId);
     return;
   }
-  const waAccount = waAccounts[0];
 
-  // Handle incoming messages
   for (const msg of value.messages || []) {
     const senderPhone = msg.from;
-    const senderName = value.contacts?.find((c) => c.wa_id === senderPhone)?.profile?.name;
+    const senderName = value.contacts?.find(c => c.wa_id === senderPhone)?.profile?.name;
 
-    // Mark as read immediately (shows blue ticks)
     await wa.markRead(phoneNumberId, waAccount.access_token, msg.id);
 
-    // Process message based on type
     try {
       await handleMessage(msg, senderPhone, senderName, waAccount);
     } catch (err) {
       console.error(`[WA] Error handling message from ${senderPhone}:`, err.message);
-      // Send friendly error to customer
       await wa.sendText(
         phoneNumberId, waAccount.access_token, senderPhone,
         '😅 Something went wrong. Type *MENU* to start over.'
@@ -109,38 +91,26 @@ const processChange = async (value) => {
     }
   }
 
-  // Handle status updates (sent/delivered/read/failed)
   for (const status of value.statuses || []) {
-    await handleStatus(status, waAccount.id);
+    await handleStatus(status);
   }
 };
 
 // ─── HANDLE INCOMING MESSAGE ──────────────────────────────────
-// Routes to appropriate handler based on message type and conversation state
 const handleMessage = async (msg, senderPhone, senderName, waAccount) => {
-  const pid = waAccount.phone_number_id;
-  const token = waAccount.access_token;
-
-  // Get or create customer
   const customer = await orderSvc.getOrCreateCustomer(senderPhone, senderName);
+  const conv = await orderSvc.getOrCreateConversation(customer.id, String(waAccount._id));
 
-  // Get or create conversation (holds our state machine)
-  const conv = await orderSvc.getOrCreateConversation(customer.id, waAccount.id);
-
-  // Route by message type
   if (msg.type === 'text') {
     await handleTextMessage(msg, customer, conv, waAccount);
   } else if (msg.type === 'location') {
     await handleLocationMessage(msg, customer, conv, waAccount);
   } else if (msg.type === 'order') {
-    // Customer placed order from WhatsApp Catalog
     await handleCatalogOrder(msg, customer, conv, waAccount);
   } else if (msg.type === 'interactive') {
-    // Customer tapped a button
     await handleInteractiveReply(msg, customer, conv, waAccount);
   } else {
-    // Voice note, image, etc. — politely redirect
-    await wa.sendText(pid, token, senderPhone,
+    await wa.sendText(waAccount.phone_number_id, waAccount.access_token, senderPhone,
       '👋 I can only handle text and orders. Type *MENU* to browse our menu!'
     );
   }
@@ -153,7 +123,6 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   const to = customer.wa_phone;
   const text = msg.text.body.trim().toUpperCase();
 
-  // Global commands — work from any state
   if (['HI', 'HELLO', 'HEY', 'START', 'MENU', 'ORDER'].includes(text)) {
     await orderSvc.setState(conv.id, 'GREETING');
     await wa.sendButtons(pid, token, to, {
@@ -168,7 +137,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
-  if (['TRACK', 'STATUS', 'WHERE'].some((w) => text.includes(w))) {
+  if (['TRACK', 'STATUS', 'WHERE'].some(w => text.includes(w))) {
     await sendTrackingInfo(customer, conv, waAccount);
     return;
   }
@@ -178,7 +147,6 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
-  // ── Coupon code entry ─────────────────────────────────────────
   if (conv.state === 'AWAITING_COUPON') {
     const session = conv.session_data || {};
     if (text === 'SKIP') {
@@ -195,16 +163,13 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       return;
     }
 
-    // Validate the coupon against this branch's restaurant
-    const { rows: branchRes } = await db.query(
-      'SELECT restaurant_id FROM branches WHERE id=$1', [session.branchId]
-    );
-    const restaurantId = branchRes[0]?.restaurant_id;
+    const branch = await col('branches').findOne({ _id: session.branchId });
+    const restaurantId = branch?.restaurant_id;
     const result = await couponSvc.validateCoupon(msg.text.body.trim(), restaurantId, session.subtotalRs);
 
     if (!result.valid) {
       await wa.sendText(pid, token, to, result.message);
-      return; // stay in AWAITING_COUPON so they can retry
+      return;
     }
 
     const couponData   = { id: result.coupon.id, code: result.coupon.code, discountRs: result.discountRs };
@@ -239,14 +204,12 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
-  // State-based responses
   if (conv.state === 'AWAITING_LOCATION') {
     await wa.sendLocationRequest(pid, token, to);
     return;
   }
 
   if (conv.state === 'SELECTING_ADDRESS') {
-    // Re-show address list if they typed instead of tapping
     const addresses = await addressSvc.getAddresses(customer.wa_phone);
     if (addresses.length > 0) {
       await wa.sendAddressList(pid, token, to, addresses);
@@ -257,14 +220,12 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
-  // Default: show welcome
   await wa.sendText(pid, token, to,
     'Type *MENU* to browse our menu 🍽️\nType *TRACK* to track your order 📦'
   );
 };
 
 // ─── LOCATION MESSAGE HANDLER ─────────────────────────────────
-// Customer shared their GPS → find nearest branch → send catalog
 const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
@@ -273,13 +234,11 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
 
   await wa.sendText(pid, token, to, '🔍 Finding the nearest restaurant for you...');
 
-  // Save location to customer record
-  await db.query(
-    'UPDATE customers SET last_lat=$1, last_lng=$2, last_address=$3 WHERE id=$4',
-    [latitude, longitude, address || locName, customer.id]
+  await col('customers').updateOne(
+    { _id: customer.id },
+    { $set: { last_lat: latitude, last_lng: longitude, last_address: address || locName || null } }
   );
 
-  // Find nearest deliverable branch
   const result = await location.findNearestBranch(latitude, longitude);
 
   if (!result.found) {
@@ -288,12 +247,8 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   }
 
   const branch = result.branch;
-
-  // Check if this location is already saved (avoid duplicate save prompts)
   const alreadySaved = await addressSvc.isNearSavedAddress(to, latitude, longitude);
 
-  // Save branch + delivery location to session
-  // Also stash pending save data if this is a new location
   await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
     branchId: branch.id,
     branchName: branch.name,
@@ -308,7 +263,6 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     }),
   });
 
-  // Tell customer which branch they'll get
   await wa.sendText(pid, token, to,
     `✅ Great! We'll deliver from:\n\n` +
     `🏪 *${branch.businessName} — ${branch.name}*\n` +
@@ -317,7 +271,6 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     `Opening our menu for you...`
   );
 
-  // Send catalog
   if (branch.catalogId) {
     await wa.sendCatalog(pid, token, to, branch.catalogId,
       `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
@@ -326,7 +279,6 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     await sendTextMenu(pid, token, to, branch.id);
   }
 
-  // If this is a new location, ask if customer wants to save it
   if (!alreadySaved) {
     await wa.sendButtons(pid, token, to, {
       body: '💾 *Save this delivery address for next time?*',
@@ -340,8 +292,6 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
 };
 
 // ─── CATALOG ORDER HANDLER ────────────────────────────────────
-// Customer placed an order from the WhatsApp in-app catalog
-// msg.order.product_items = [{ product_retailer_id, quantity }]
 const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
@@ -351,7 +301,6 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   const branchId = session.branchId;
 
   if (!branchId) {
-    // No branch selected yet — ask for location first
     await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
     await wa.sendLocationRequest(pid, token, to);
     return;
@@ -360,7 +309,6 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   const productItems = msg.order?.product_items || [];
   if (!productItems.length) return;
 
-  // Build cart from catalog order
   const cart = await orderSvc.buildCartFromCatalogOrder(productItems, branchId);
 
   if (!cart.cart.length) {
@@ -369,12 +317,11 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     return;
   }
 
-  // Check if Meta's native checkout included a coupon code
   const metaCouponCode = msg.order?.coupon_code;
   let couponData = session.coupon || null;
   if (metaCouponCode && !couponData) {
-    const { rows: branchRes } = await db.query('SELECT restaurant_id FROM branches WHERE id=$1', [branchId]);
-    const restaurantId = branchRes[0]?.restaurant_id;
+    const branch = await col('branches').findOne({ _id: branchId });
+    const restaurantId = branch?.restaurant_id;
     const result = await couponSvc.validateCoupon(metaCouponCode, restaurantId, cart.subtotalRs);
     if (result.valid) {
       couponData = { id: result.coupon.id, code: result.coupon.code, discountRs: result.discountRs };
@@ -384,29 +331,22 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
 
   const discountRs = couponData?.discountRs || 0;
 
-  // Recalculate charges with coupon discount applied
   let charges = cart.charges;
   if (discountRs > 0 && charges) {
-    // Re-run with discount so customer_total_rs is correct
-    const { rows: branchRes2 } = await db.query(
-      `SELECT r.delivery_fee_customer_pct, r.menu_gst_mode, r.menu_gst_pct,
-              r.packaging_charge_rs, r.packaging_gst_pct
-       FROM branches b JOIN restaurants r ON b.restaurant_id = r.id WHERE b.id=$1`, [branchId]
-    );
-    const rc = branchRes2[0] || {};
+    const branch = await col('branches').findOne({ _id: branchId });
+    const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
     const { calculateOrderCharges } = require('../services/charges');
     charges = calculateOrderCharges(
-      { delivery_fee_customer_pct: rc.delivery_fee_customer_pct ?? 100,
-        menu_gst_mode: rc.menu_gst_mode ?? 'included',
-        menu_gst_pct: rc.menu_gst_pct ?? 5,
-        packaging_charge_rs: rc.packaging_charge_rs ?? 0,
-        packaging_gst_pct: rc.packaging_gst_pct ?? 18 },
+      { delivery_fee_customer_pct: restaurant?.delivery_fee_customer_pct ?? 100,
+        menu_gst_mode: restaurant?.menu_gst_mode ?? 'included',
+        menu_gst_pct: restaurant?.menu_gst_pct ?? 5,
+        packaging_charge_rs: restaurant?.packaging_charge_rs ?? 0,
+        packaging_gst_pct: restaurant?.packaging_gst_pct ?? 18 },
       cart.subtotalRs, charges.delivery_fee_total_rs, discountRs
     );
   }
   const finalTotalRs = charges ? charges.customer_total_rs : (cart.subtotalRs + cart.deliveryFeeRs - discountRs);
 
-  // Save cart to session
   await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
     ...session,
     cart: cart.cart,
@@ -418,13 +358,11 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     charges,
   });
 
-  // Generate temp order number for display (real one created on confirm)
   const tempOrderNum = `TEMP-${Date.now().toString().slice(-6)}`;
 
-  // Show order summary with confirm/coupon/cancel buttons
   await wa.sendOrderSummary(pid, token, to, {
     orderNumber: tempOrderNum,
-    items: cart.cart.map((i) => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+    items: cart.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
     charges,
     subtotal:    cart.subtotalRs.toFixed(0),
     deliveryFee: (charges ? charges.customer_delivery_rs : cart.deliveryFeeRs).toFixed(0),
@@ -440,7 +378,6 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
 };
 
 // ─── INTERACTIVE REPLY HANDLER ────────────────────────────────
-// Customer tapped a button
 const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
@@ -448,16 +385,14 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
 
   const replyId = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id;
 
-  // ── Saved address selected from list ──────────────────────────
   if (replyId?.startsWith('ADDR_')) {
-    const addressId = replyId.slice(5); // strip 'ADDR_'
+    const addressId = replyId.slice(5);
     await handleSavedAddressSelected(addressId, customer, conv, waAccount);
     return;
   }
 
   switch (replyId) {
     case 'START_ORDER': {
-      // Check for saved addresses first; fall back to GPS request
       const addresses = await addressSvc.getAddresses(customer.wa_phone);
       if (addresses.length > 0) {
         await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
@@ -485,7 +420,6 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         return;
       }
 
-      // Create the actual order in DB
       const order = await orderSvc.createOrder({
         convId       : conv.id,
         customerId   : customer.id,
@@ -506,18 +440,13 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
 
       const fullOrder = await orderSvc.getOrderDetails(order.id);
 
-      // Create a delivery record immediately — 3PL details filled in after dispatch
-      await db.query(
-        `INSERT INTO deliveries (order_id, status, cost_rs)
-         VALUES ($1, 'pending', $2)
-         ON CONFLICT DO NOTHING`,
-        [order.id, session.deliveryFeeRs || 0]
+      // Create a delivery record immediately
+      await col('deliveries').updateOne(
+        { order_id: order.id },
+        { $setOnInsert: { _id: newId(), order_id: order.id, status: 'pending', cost_rs: session.deliveryFeeRs || 0, created_at: new Date() } },
+        { upsert: true }
       );
 
-      // PRIMARY: Native WhatsApp Pay via Razorpay
-      // Creates a Razorpay order and sends an interactive order_details message.
-      // Customer taps "Review and Pay" → UPI payment inside WhatsApp.
-      // Falls back to a payment link if WhatsApp Pay is not enabled on this WABA.
       try {
         await paymentSvc.createRazorpayOrder(fullOrder, customer);
         await wa.sendPaymentRequest(pid, token, to, {
@@ -598,7 +527,6 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         });
         await wa.sendText(pid, token, to, `✅ Saved as *${label}*! We'll use it next time.`);
       }
-      // Clear pending save fields from session
       const cleaned = { ...session };
       delete cleaned.pendingSaveLat;
       delete cleaned.pendingSaveLng;
@@ -613,26 +541,19 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
 };
 
 // ─── SAVED ADDRESS SELECTED ───────────────────────────────────
-// Customer picked one of their saved addresses from the list.
-// We use its lat/lng to find the nearest branch and send catalog.
 const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) => {
   const pid   = waAccount.phone_number_id;
   const token = waAccount.access_token;
   const to    = customer.wa_phone;
 
-  const { rows } = await db.query(
-    `SELECT * FROM customer_addresses WHERE id = $1 AND wa_phone = $2`,
-    [addressId, customer.wa_phone]
-  );
+  const addr = await col('customer_addresses').findOne({ _id: addressId, wa_phone: customer.wa_phone });
 
-  if (!rows.length || !rows[0].latitude) {
-    // Address not found or has no coordinates — fall back to GPS
+  if (!addr || !addr.latitude) {
     await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
     await wa.sendLocationRequest(pid, token, to);
     return;
   }
 
-  const addr = rows[0];
   await wa.sendText(pid, token, to,
     `📍 Using *${addr.label}*${addr.full_address ? `: ${addr.full_address}` : ''}\n\n🔍 Finding nearest restaurant...`
   );
@@ -672,28 +593,26 @@ const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) 
 
 // ─── TRACKING INFO ────────────────────────────────────────────
 const sendTrackingInfo = async (customer, conv, waAccount) => {
-  const { rows } = await db.query(
-    `SELECT o.*, b.name AS branch_name,
-            d.tracking_url, d.driver_name, d.driver_phone, d.estimated_mins
-     FROM orders o
-     JOIN branches b ON o.branch_id = b.id
-     LEFT JOIN deliveries d ON d.order_id = o.id
-     WHERE o.customer_id = $1
-       AND o.status NOT IN ('DELIVERED','CANCELLED','REFUNDED')
-     ORDER BY o.created_at DESC LIMIT 1`,
-    [customer.id]
-  );
-
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
   const to = customer.wa_phone;
 
-  if (!rows.length) {
+  const activeStatuses = ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED'];
+  const order = await col('orders').findOne(
+    { customer_id: customer.id, status: { $in: activeStatuses } },
+    { sort: { created_at: -1 } }
+  );
+
+  if (!order) {
     await wa.sendText(pid, token, to, 'No active orders found. Type *MENU* to place a new order! 🍽️');
     return;
   }
 
-  const order = rows[0];
+  const [branch, delivery] = await Promise.all([
+    col('branches').findOne({ _id: order.branch_id }, { projection: { name: 1 } }),
+    col('deliveries').findOne({ order_id: String(order._id) }),
+  ]);
+
   const statusEmoji = {
     PENDING_PAYMENT: '⏳ Awaiting payment',
     PAID: '✅ Payment received',
@@ -704,11 +623,11 @@ const sendTrackingInfo = async (customer, conv, waAccount) => {
   };
 
   let trackingLine = '';
-  if (order.status === 'DISPATCHED') {
-    if (order.tracking_url) trackingLine += `\n🔗 Track: ${order.tracking_url}`;
-    if (order.driver_name)   trackingLine += `\n🚴 Driver: ${order.driver_name}`;
-    if (order.driver_phone)  trackingLine += ` · ${order.driver_phone}`;
-    if (order.estimated_mins) trackingLine += `\n⏱ ETA: ~${order.estimated_mins} mins`;
+  if (order.status === 'DISPATCHED' && delivery) {
+    if (delivery.tracking_url) trackingLine += `\n🔗 Track: ${delivery.tracking_url}`;
+    if (delivery.driver_name)  trackingLine += `\n🚴 Driver: ${delivery.driver_name}`;
+    if (delivery.driver_phone) trackingLine += ` · ${delivery.driver_phone}`;
+    if (delivery.estimated_mins) trackingLine += `\n⏱ ETA: ~${delivery.estimated_mins} mins`;
   }
 
   await wa.sendText(pid, token, to,
@@ -716,7 +635,7 @@ const sendTrackingInfo = async (customer, conv, waAccount) => {
     `Order: #${order.order_number}\n` +
     `Status: ${statusEmoji[order.status] || order.status}\n` +
     `Amount: ₹${order.total_rs}\n` +
-    `From: ${order.branch_name}` +
+    `From: ${branch?.name || ''}` +
     trackingLine +
     `\n\n_We'll notify you at each step!_ 📱`
   );
@@ -728,24 +647,20 @@ const handleCancelRequest = async (customer, conv, waAccount) => {
   const token = waAccount.access_token;
   const to = customer.wa_phone;
 
-  const { rows } = await db.query(
-    `SELECT * FROM orders WHERE customer_id=$1
-     AND status IN ('PENDING_PAYMENT','PAID','CONFIRMED')
-     ORDER BY created_at DESC LIMIT 1`,
-    [customer.id]
+  const order = await col('orders').findOne(
+    { customer_id: customer.id, status: { $in: ['PENDING_PAYMENT', 'PAID', 'CONFIRMED'] } },
+    { sort: { created_at: -1 } }
   );
 
-  if (!rows.length) {
+  if (!order) {
     await wa.sendText(pid, token, to, 'No cancellable orders found.');
     return;
   }
 
-  const order = rows[0];
-  await orderSvc.updateStatus(order.id, 'CANCELLED', { cancelReason: 'Customer requested cancellation' });
+  await orderSvc.updateStatus(String(order._id), 'CANCELLED', { cancelReason: 'Customer requested cancellation' });
 
-  // Issue refund if already paid
   if (order.status === 'PAID') {
-    await paymentSvc.issueRefund(order.id).catch((e) =>
+    await paymentSvc.issueRefund(String(order._id)).catch(e =>
       console.error('[Refund] Failed:', e.message)
     );
   }
@@ -754,34 +669,33 @@ const handleCancelRequest = async (customer, conv, waAccount) => {
 };
 
 // ─── TEXT MENU FALLBACK ───────────────────────────────────────
-// Used when catalog_id isn't set up yet
 const sendTextMenu = async (pid, token, to, branchId) => {
-  const { rows } = await db.query(
-    `SELECT mi.name, mi.price_paise, mc.name AS cat
-     FROM menu_items mi
-     LEFT JOIN menu_categories mc ON mi.category_id = mc.id
-     WHERE mi.branch_id=$1 AND mi.is_available=TRUE
-     ORDER BY mc.sort_order, mi.sort_order LIMIT 30`,
-    [branchId]
-  );
+  const items = await col('menu_items').find({ branch_id: branchId, is_available: true })
+    .sort({ sort_order: 1 }).limit(30).toArray();
 
-  if (!rows.length) {
+  if (!items.length) {
     await wa.sendText(pid, token, to, 'Menu is being updated. Please try again in a few minutes!');
     return;
   }
 
-  // Group by category
-  const grouped = rows.reduce((acc, item) => {
-    const cat = item.cat || 'Menu';
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(item);
-    return acc;
-  }, {});
+  // Fetch categories for grouping
+  const catIds = [...new Set(items.map(i => i.category_id).filter(Boolean))];
+  const cats = catIds.length
+    ? await col('menu_categories').find({ _id: { $in: catIds } }).toArray()
+    : [];
+  const catMap = Object.fromEntries(cats.map(c => [String(c._id), c.name]));
+
+  const grouped = {};
+  for (const item of items) {
+    const cat = catMap[item.category_id] || 'Menu';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(item);
+  }
 
   let menuText = '🍽️ *Our Menu*\n\n';
-  for (const [cat, items] of Object.entries(grouped)) {
+  for (const [cat, catItems] of Object.entries(grouped)) {
     menuText += `*${cat}*\n`;
-    items.forEach((i) => { menuText += `• ${i.name} — ₹${i.price_paise / 100}\n`; });
+    catItems.forEach(i => { menuText += `• ${i.name} — ₹${i.price_paise / 100}\n`; });
     menuText += '\n';
   }
   menuText += '_To order, reply with items like: "2 Butter Chicken, 1 Naan"_';
@@ -790,26 +704,29 @@ const sendTextMenu = async (pid, token, to, branchId) => {
 };
 
 // ─── STATUS UPDATE HANDLER ────────────────────────────────────
-// When our sent messages are delivered/read/failed
-const handleStatus = async (status, waAccountId) => {
-  // Log failures — useful for debugging delivery issues
+const handleStatus = async (status) => {
   if (status.status === 'failed') {
     console.error('[WA] Message delivery failed:', {
       recipient: status.recipient_id,
       error: status.errors?.[0]?.title,
     });
   }
-  // Could update message delivery status in DB here for analytics
 };
 
 // ─── LOG WEBHOOK ──────────────────────────────────────────────
 const logWebhook = async (source, payload) => {
   const phoneNumberId = payload.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
-  await db.query(
-    `INSERT INTO webhook_logs (source, event_type, phone_number_id, payload)
-     VALUES ($1, $2, $3, $4)`,
-    [source, 'messages', phoneNumberId, JSON.stringify(payload)]
-  );
+  await col('webhook_logs').insertOne({
+    _id: newId(),
+    source,
+    event_type: 'messages',
+    phone_number_id: phoneNumberId || null,
+    payload,
+    processed: false,
+    error_message: null,
+    received_at: new Date(),
+    processed_at: null,
+  });
 };
 
 module.exports = router;
