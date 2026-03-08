@@ -370,7 +370,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
     </div>
 
     <!-- ══ WHATSAPP NOT CONNECTED BANNER ═══════════════════ -->
-    <div id="wa-connect-banner" style="display:none;background:#fffbeb;border-bottom:2px solid #f59e0b;padding:1rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+    <div id="wa-connect-banner" style="display:none;background:#fffbeb;border-bottom:2px solid #f59e0b;padding:1rem 2rem;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:.75rem">
         <span style="font-size:1.4rem">📵</span>
         <div>
@@ -385,7 +385,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
     </div>
 
     <!-- ══ PENDING APPROVAL BANNER ═══════════════════════════ -->
-    <div id="pending-banner" style="display:none;background:#f0f9ff;border-bottom:1px solid #bae6fd;padding:.75rem 2rem;display:flex;align-items:center;gap:.7rem">
+    <div id="pending-banner" style="display:none;background:#f0f9ff;border-bottom:1px solid #bae6fd;padding:.75rem 2rem;align-items:center;gap:.7rem">
       <span style="font-size:1.1rem">⏳</span>
       <span style="font-size:.82rem;color:#0369a1"><strong>Account under review</strong> — Our team will activate your account within 1–2 business days. You can explore the dashboard in the meantime.</span>
     </div>
@@ -1124,12 +1124,8 @@ async function initDash() {
 
     // Show WA connect banner if Meta not connected yet
     const waConnected = !!(rest.meta_user_id || (rest.waba_accounts && rest.waba_accounts.length > 0));
-    const waBanner    = document.getElementById('wa-connect-banner');
-    if (!waConnected) waBanner.style.display = 'flex';
-
-    // Show pending banner if connected but not yet approved
-    const pendingBanner = document.getElementById('pending-banner');
-    if (waConnected && rest.approval_status !== 'approved') pendingBanner.style.display = 'flex';
+    if (!waConnected) document.getElementById('wa-connect-banner').style.display = 'flex';
+    if (waConnected && rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
 
     loadOverview();
     loadWA();

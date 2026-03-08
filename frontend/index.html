@@ -815,9 +815,10 @@ function routeByStatus(me) {
     window.location.href = '/dashboard'; return;
   }
 
-  // After basic onboarding, always go to dashboard (WA connect + approval happen there)
+  // pending
   if (step < 2) { prefillOnboarding(me); showPage('pg-onboard'); }
-  else window.location.href = '/dashboard';
+  else if (step < 5) { populateStoreUrl(me); showPage('pg-connect'); }
+  else window.location.href = '/dashboard'; // Meta connected → go to dashboard
 }
 
 function populatePendingStatus(me) {
@@ -989,7 +990,7 @@ window.addEventListener('message', async (event) => {
         toast('Linking WhatsApp…', 'nfo');
         post('/auth/connect-meta', { code, sessionInfo: _metaSessionInfo }, activeToken)
           .then(d => {
-            if (d.connected) { toast('WhatsApp connected!', 'ok'); showPage('pg-pending'); }
+            if (d.connected) { toast('WhatsApp connected!', 'ok'); window.location.href = '/dashboard'; }
             else toast(d.error || 'Connection failed', 'err');
           }).catch(() => toast('Connection failed', 'err'));
       }
@@ -1034,7 +1035,7 @@ function doConnectMeta() {
           code: r.authResponse.code,
           sessionInfo: _metaSessionInfo,
         }, token);
-        if (d.connected) { toast('WhatsApp connected!', 'ok'); showPage('pg-pending'); }
+        if (d.connected) { toast('WhatsApp connected!', 'ok'); window.location.href = '/dashboard'; return; }
         else toast(d.error || 'Connection failed', 'err');
       } catch { toast('Connection failed', 'err'); }
       _connectInProgress = false;
