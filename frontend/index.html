@@ -815,10 +815,9 @@ function routeByStatus(me) {
     window.location.href = '/dashboard'; return;
   }
 
-  // pending
+  // After basic onboarding, always go to dashboard (WA connect + approval happen there)
   if (step < 2) { prefillOnboarding(me); showPage('pg-onboard'); }
-  else if (step < 5) { populateStoreUrl(me); showPage('pg-connect'); }
-  else { populatePendingStatus(me); showPage('pg-pending'); }
+  else window.location.href = '/dashboard';
 }
 
 function populatePendingStatus(me) {
