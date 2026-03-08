@@ -53,6 +53,10 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', version: '1.0.0', time: new Date() });
 });
 
+// ─── ENSURE DB CONNECTED BEFORE ANY ROUTE ─────────────────────
+const { ensureConnected } = require('./src/config/database');
+app.use(ensureConnected);
+
 // ─── ROUTES ───────────────────────────────────────────────────
 const { router: authRouter } = require('./src/routes/auth');
 app.use('/auth', express.json(), authRouter);

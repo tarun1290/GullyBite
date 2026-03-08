@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 let _client = null;
 let _db = null;
 let _bucket = null;
+let _connectPromise = null;
 
 const connect = async () => {
   if (_db) return _db;
@@ -19,10 +20,22 @@ const connect = async () => {
   return _db;
 };
 
-// Connect on startup
-connect().catch(err => console.error('❌ MongoDB connection FAILED:', err.message));
+// Connect on startup — store the promise so middleware can await it
+_connectPromise = connect().catch(err => {
+  console.error('❌ MongoDB connection FAILED:', err.message);
+});
 
-// Get a collection
+// Middleware: ensures DB is connected before any route runs
+const ensureConnected = async (req, res, next) => {
+  if (!_db) {
+    try { await _connectPromise; } catch (err) {
+      return res.status(503).json({ error: 'Database unavailable: ' + err.message });
+    }
+  }
+  next();
+};
+
+// Get a collection (synchronous — only call after ensureConnected)
 const col = (name) => {
   if (!_db) throw new Error('MongoDB not connected yet');
   return _db.collection(name);
@@ -56,4 +69,4 @@ const getBucket = () => {
   return _bucket;
 };
 
-module.exports = { col, transaction, connect, mapId, mapIds, newId, getBucket };
+module.exports = { col, transaction, connect, ensureConnected, mapId, mapIds, newId, getBucket };

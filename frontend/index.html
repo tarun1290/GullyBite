@@ -174,6 +174,11 @@ a{color:inherit;text-decoration:none}
 .input-err{border-color:var(--red)!important}
 .field-err{font-size:.73rem;color:var(--red);margin-top:.2rem}
 .pwd-hint{font-size:.72rem;color:var(--mute);margin-top:.2rem}
+.pwd-rules{list-style:none;margin:.45rem 0 0;padding:0;display:flex;flex-direction:column;gap:.22rem}
+.pwd-rules li{font-size:.72rem;color:var(--mute);padding-left:1.2rem;position:relative;transition:color .2s}
+.pwd-rules li::before{content:"✗";position:absolute;left:0;color:#f87171}
+.pwd-rules li.ok{color:#4ade80}
+.pwd-rules li.ok::before{content:"✓";color:#4ade80}
 
 /* ── ONBOARDING ─────────────────────────────────────────── */
 .ob-wrap{width:100%;max-width:640px;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both;padding:1rem 0 3rem}
@@ -516,8 +521,14 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
         </div>
         <div class="fld">
           <label>Password <span class="req">*</span></label>
-          <input id="su-pw" type="password" placeholder="Min 8 characters" autocomplete="new-password" required minlength="8">
-          <span class="pwd-hint">At least 8 characters</span>
+          <input id="su-pw" type="password" placeholder="Min 8 characters" autocomplete="new-password" required minlength="8" oninput="checkPwStrength(this.value)">
+          <ul class="pwd-rules" id="pwd-rules">
+            <li id="pr-len">At least 8 characters</li>
+            <li id="pr-upper">One uppercase letter (A–Z)</li>
+            <li id="pr-lower">One lowercase letter (a–z)</li>
+            <li id="pr-num">One number (0–9)</li>
+            <li id="pr-sym">One special character (@, #, ! …)</li>
+          </ul>
         </div>
         <div class="fld">
           <label>Confirm Password <span class="req">*</span></label>
@@ -801,6 +812,16 @@ function prefillOnboarding(me) {
   }
   if (me.packaging_charge_rs != null) document.getElementById('ob-pkg-charge').value = me.packaging_charge_rs;
   if (me.packaging_gst_pct   != null) document.getElementById('ob-pkg-gst').value    = me.packaging_gst_pct;
+}
+
+/* ─── PASSWORD STRENGTH ─────────────────────────────────── */
+function checkPwStrength(pw) {
+  const set = (id, ok) => document.getElementById(id)?.classList.toggle('ok', ok);
+  set('pr-len',   pw.length >= 8);
+  set('pr-upper', /[A-Z]/.test(pw));
+  set('pr-lower', /[a-z]/.test(pw));
+  set('pr-num',   /[0-9]/.test(pw));
+  set('pr-sym',   /[^A-Za-z0-9]/.test(pw));
 }
 
 /* ─── SIGN UP ───────────────────────────────────────────── */
