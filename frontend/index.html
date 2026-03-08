@@ -38,6 +38,7 @@ a{color:inherit;text-decoration:none}
 .btn-outline{display:inline-flex;align-items:center;gap:.4rem;background:transparent;color:var(--tx);font-weight:600;font-size:.85rem;padding:.55rem 1.2rem;border-radius:8px;border:1px solid var(--rim2);transition:all .15s;cursor:pointer}
 .btn-outline:hover{background:var(--bg);border-color:var(--dim)}
 .btn-outline:disabled{opacity:.5;cursor:not-allowed}
+.btn-link{background:none;border:none;color:var(--acc);font-weight:600;font-size:.84rem;cursor:pointer;padding:0;text-decoration:underline}
 .btn-primary{display:inline-flex;align-items:center;gap:.4rem;background:var(--acc);color:#fff;font-weight:700;font-size:.85rem;padding:.55rem 1.3rem;border-radius:8px;border:none;transition:all .15s;cursor:pointer}
 .btn-primary:hover{background:var(--acc2);box-shadow:0 3px 12px rgba(79,70,229,.25)}
 .btn-primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
@@ -680,10 +681,21 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
     <div class="status-icon">⏳</div>
     <h2>Application Under Review</h2>
     <p>Thank you for registering. Our team is reviewing your details and will activate your account within 1–2 business days.</p>
+
+    <!-- WhatsApp connection status badge -->
+    <div id="wa-status-badge" style="display:none;align-items:center;gap:.6rem;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:.7rem 1.1rem;margin:.5rem 0 1.2rem;font-size:.84rem">
+      <span style="width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block;flex-shrink:0"></span>
+      <span>WhatsApp connected — <strong id="wa-status-phone"></strong></span>
+    </div>
+    <div id="wa-status-warn" style="display:none;align-items:center;gap:.6rem;background:#fefce8;border:1px solid #fde047;border-radius:10px;padding:.7rem 1.1rem;margin:.5rem 0 1.2rem;font-size:.84rem">
+      <span style="width:10px;height:10px;border-radius:50%;background:#eab308;display:inline-block;flex-shrink:0"></span>
+      <span>WhatsApp not connected yet — <button class="btn-link" onclick="showPage('pg-connect')">connect now →</button></span>
+    </div>
+
     <ul class="tl-list">
       <li><div class="tl-dot done">✓</div><span>Account created</span></li>
       <li><div class="tl-dot done">✓</div><span>Business details submitted</span></li>
-      <li><div class="tl-dot done">✓</div><span>WhatsApp Business connected</span></li>
+      <li id="tl-wa-step"><div class="tl-dot wait" id="tl-wa-dot">○</div><span id="tl-wa-label" style="color:var(--dim)">WhatsApp Business connected</span></li>
       <li><div class="tl-dot wait">○</div><span style="color:var(--dim)">Admin review &amp; approval</span></li>
       <li><div class="tl-dot wait">○</div><span style="color:var(--dim)">Dashboard access granted</span></li>
     </ul>
@@ -728,10 +740,28 @@ async function _fetchStoreUrl() {
 /* ─── BOOT ─────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
   const params = new URLSearchParams(location.search);
+
+  // ── If this page loaded INSIDE a popup (Meta OAuth redirect), talk to parent and close ──
+  if (window.opener && window.opener !== window) {
+    const metaTokenInPopup = params.get('meta_token');
+    const codeInPopup      = params.get('code');
+    const errorInPopup     = params.get('error');
+    if (metaTokenInPopup || codeInPopup || errorInPopup) {
+      window.opener.postMessage({
+        type: 'GULLYBITE_OAUTH',
+        meta_token: metaTokenInPopup || null,
+        code: codeInPopup || null,
+        error: errorInPopup || null,
+      }, window.location.origin);
+      window.close();
+      return; // don't render anything in the popup
+    }
+  }
+
   if (params.get('error'))
     toast('Authentication failed — please try again', 'err');
 
-  // Fallback A: server OAuth callback redirected here with ?meta_token= (account already linked)
+  // Fallback A: server OAuth callback redirected here with ?meta_token= (no popup — direct nav)
   const metaToken = params.get('meta_token');
   if (metaToken) {
     history.replaceState({}, '', location.pathname);
@@ -744,7 +774,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const token = localStorage.getItem('zm_token');
 
-  // Fallback B: Meta redirected back with ?code= before JS callback fired
+  // Fallback B: Meta redirected back with ?code= and no popup (direct nav, token in storage)
   const oauthCode = params.get('code');
   if (oauthCode && token) {
     history.replaceState({}, '', location.pathname);
@@ -788,7 +818,29 @@ function routeByStatus(me) {
   // pending
   if (step < 2) { prefillOnboarding(me); showPage('pg-onboard'); }
   else if (step < 5) { populateStoreUrl(me); showPage('pg-connect'); }
-  else showPage('pg-pending');
+  else { populatePendingStatus(me); showPage('pg-pending'); }
+}
+
+function populatePendingStatus(me) {
+  const waConnected = !!(me.meta_user_id || (me.waba_accounts && me.waba_accounts.length > 0));
+  const phone = me.waba_accounts?.[0]?.phone || me.meta_waba_id || '';
+  const badge = document.getElementById('wa-status-badge');
+  const warn  = document.getElementById('wa-status-warn');
+  const dot   = document.getElementById('tl-wa-dot');
+  const label = document.getElementById('tl-wa-label');
+
+  if (waConnected) {
+    badge.style.display = 'flex';
+    warn.style.display  = 'none';
+    document.getElementById('wa-status-phone').textContent = phone || 'WhatsApp Business Account';
+    dot.className = 'tl-dot done'; dot.textContent = '✓';
+    label.style.color = ''; label.textContent = 'WhatsApp Business connected';
+  } else {
+    badge.style.display = 'none';
+    warn.style.display  = 'flex';
+    dot.className = 'tl-dot wait'; dot.textContent = '○';
+    label.style.color = 'var(--dim)'; label.textContent = 'WhatsApp Business connected';
+  }
 }
 
 
@@ -912,9 +964,34 @@ async function submitBusinessDetails(e) {
 /* ─── CONNECT WHATSAPP ──────────────────────────────────── */
 const META_BTN_HTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Connect with Meta / Facebook';
 
-// Listen for embedded signup session info (WABA/phone number IDs from Meta)
+// Listen for messages — both from Meta's embedded signup popup AND from our own popup window
 let _metaSessionInfo = {};
-window.addEventListener('message', (event) => {
+window.addEventListener('message', async (event) => {
+  // ── Our own popup posted back after OAuth redirect ──
+  if (event.origin === window.location.origin && event.data?.type === 'GULLYBITE_OAUTH') {
+    const { meta_token, code, error } = event.data;
+    if (error) { toast('Connection failed: ' + error, 'err'); _resetConnectBtn(); return; }
+
+    const jwtToken = localStorage.getItem('zm_token');
+    if (meta_token) {
+      // Server already processed: just update token and route
+      localStorage.setItem('zm_token', meta_token);
+      toast('WhatsApp connected!', 'ok');
+      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${meta_token}` } }).then(r => r.json());
+      routeByStatus(me);
+    } else if (code && jwtToken) {
+      toast('Linking WhatsApp…', 'nfo');
+      try {
+        const d = await post('/auth/connect-meta', { code, sessionInfo: _metaSessionInfo }, jwtToken);
+        if (d.connected) { toast('WhatsApp connected!', 'ok'); showPage('pg-pending'); }
+        else toast(d.error || 'Connection failed', 'err');
+      } catch { toast('Connection failed', 'err'); }
+    }
+    _resetConnectBtn();
+    return;
+  }
+
+  // ── Meta embedded signup session info ──
   if (!['https://www.facebook.com','https://web.facebook.com'].includes(event.origin)) return;
   try {
     const data = JSON.parse(event.data);
@@ -925,6 +1002,11 @@ window.addEventListener('message', (event) => {
     }
   } catch {}
 });
+
+function _resetConnectBtn() {
+  const btn = document.getElementById('connect-btn');
+  if (btn) { btn.disabled = false; btn.innerHTML = META_BTN_HTML; }
+}
 
 function doConnectMeta() {
   const btn = document.getElementById('connect-btn');
