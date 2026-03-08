@@ -187,11 +187,17 @@ router.get('/callback', async (req, res) => {
       wabaData = wabaRes.data?.data || [];
     } catch (e) { console.warn('[OAuth] Could not fetch WABAs:', e.message); }
 
-    const existing = await col('restaurants').findOne({ meta_user_id: metaUser.id });
+    // Find by meta_user_id first, then by matching email (to link to existing email signup)
+    let existing = await col('restaurants').findOne({ meta_user_id: metaUser.id });
+    if (!existing && metaUser.email) {
+      existing = await col('restaurants').findOne({ email: metaUser.email.toLowerCase() });
+    }
     let restaurantId;
     if (existing) {
-      await col('restaurants').updateOne({ meta_user_id: metaUser.id }, { $set: {
-        meta_access_token: longToken, meta_token_expires_at: expiresAt, updated_at: new Date(),
+      await col('restaurants').updateOne({ _id: existing._id }, { $set: {
+        meta_user_id: metaUser.id, meta_access_token: longToken, meta_token_expires_at: expiresAt,
+        onboarding_step: Math.max(existing.onboarding_step || 1, 5),
+        submitted_at: existing.submitted_at || new Date(), updated_at: new Date(),
       }});
       restaurantId = String(existing._id);
     } else {
@@ -200,13 +206,14 @@ router.get('/callback', async (req, res) => {
         _id: restaurantId, meta_user_id: metaUser.id, meta_access_token: longToken,
         meta_token_expires_at: expiresAt, owner_name: metaUser.name, email: metaUser.email,
         business_name: 'My Restaurant', status: 'active', approval_status: 'pending',
-        onboarding_step: 1, created_at: new Date(), updated_at: new Date(),
+        onboarding_step: 5, submitted_at: new Date(), created_at: new Date(), updated_at: new Date(),
       });
     }
 
     await _saveWabaAccounts(restaurantId, wabaData, longToken);
     const jwtToken = jwt.sign({ restaurantId, metaUserId: metaUser.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.redirect(`/dashboard.html?token=${jwtToken}`);
+    // Pass token via URL fragment (not query string) to avoid it appearing in server logs
+    res.redirect(`/?meta_token=${jwtToken}`);
   } catch (err) {
     console.error('[OAuth] Callback error:', err.response?.data || err.message);
     res.redirect('/?error=oauth_failed');

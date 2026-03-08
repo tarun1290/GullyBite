@@ -727,10 +727,41 @@ async function _fetchStoreUrl() {
 
 /* ─── BOOT ─────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
-  if (new URLSearchParams(location.search).get('error'))
+  const params = new URLSearchParams(location.search);
+  if (params.get('error'))
     toast('Authentication failed — please try again', 'err');
 
+  // Fallback A: server OAuth callback redirected here with ?meta_token= (account already linked)
+  const metaToken = params.get('meta_token');
+  if (metaToken) {
+    history.replaceState({}, '', location.pathname);
+    localStorage.setItem('zm_token', metaToken);
+    toast('WhatsApp connected!', 'ok');
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${metaToken}` } }).then(r => r.json());
+    routeByStatus(me);
+    return;
+  }
+
   const token = localStorage.getItem('zm_token');
+
+  // Fallback B: Meta redirected back with ?code= before JS callback fired
+  const oauthCode = params.get('code');
+  if (oauthCode && token) {
+    history.replaceState({}, '', location.pathname);
+    try {
+      toast('Finishing WhatsApp connection…', 'nfo');
+      const d = await post('/auth/connect-meta', { code: oauthCode }, token);
+      if (d.connected) {
+        toast('WhatsApp connected!', 'ok');
+        const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+        routeByStatus(me);
+        return;
+      } else {
+        toast(d.error || 'Connection failed', 'err');
+      }
+    } catch { toast('Connection failed', 'err'); }
+  }
+
   if (!token) return;
 
   try {
@@ -901,7 +932,7 @@ function doConnectMeta() {
         btn.disabled = false;
         btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Connect with Meta / Facebook';
       });
-  }, { config_id: '3105026846366355', response_type: 'code', override_default_response_type: true, extras: { setup:{}, featureType:'', sessionInfoVersion:'3' } });
+  }, { config_id: '3105026846366355', extras: { setup:{}, featureType:'', sessionInfoVersion:'3' } });
 }
 
 /* ─── CHECK STATUS ──────────────────────────────────────── */
