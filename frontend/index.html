@@ -987,7 +987,7 @@ window.addEventListener('message', async (event) => {
           .then(r => r.json()).then(routeByStatus);
       } else if (code && activeToken) {
         toast('Linking WhatsApp…', 'nfo');
-        post('/auth/connect-meta', { code, sessionInfo: _metaSessionInfo }, activeToken)
+        post('/auth/connect-meta', { code, sessionInfo: _metaSessionInfo, fromJsSdk: true }, activeToken)
           .then(d => {
             if (d.connected) { toast('WhatsApp connected!', 'ok'); window.location.href = '/dashboard'; }
             else toast(d.error || 'Connection failed', 'err');
@@ -1033,6 +1033,7 @@ function doConnectMeta() {
         const d = await post('/auth/connect-meta', {
           code: r.authResponse.code,
           sessionInfo: _metaSessionInfo,
+          fromJsSdk: true,
         }, token);
         if (d.connected) { toast('WhatsApp connected!', 'ok'); window.location.href = '/dashboard'; return; }
         else toast(d.error || 'Connection failed', 'err');
