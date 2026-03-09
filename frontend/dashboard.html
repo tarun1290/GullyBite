@@ -1757,25 +1757,35 @@ async function loadWA() {
   const list = document.getElementById('wa-list');
   try {
     const accounts = await api('/api/restaurant/whatsapp');
-    if (!accounts?.length) { list.innerHTML = `<div class="empty"><div class="ei">📱</div><h3>No numbers found</h3><p>Try reconnecting your Meta account</p></div>`; return; }
+    if (!accounts?.length) {
+      list.innerHTML = `<div class="empty"><div class="ei">📱</div><h3>No numbers found</h3><p>Try reconnecting your Meta account</p></div>`;
+      return;
+    }
     document.getElementById('live-dot').style.display = 'flex';
     list.innerHTML = accounts.map(a => {
       const hasCatalog = !!a.catalog_id;
-      const catalogBadge = hasCatalog
-        ? `<span style="display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:600;color:#15803d;background:#dcfce7;padding:.2rem .55rem;border-radius:99px">✅ Catalog linked</span>`
-        : `<span style="display:inline-flex;align-items:center;gap:.3rem;font-size:.75rem;font-weight:600;color:#92400e;background:#fef3c7;padding:.2rem .55rem;border-radius:99px">⚠️ No catalog</span>`;
-      const provisionBtn = !hasCatalog
-        ? `<button class="btn-g btn-sm" style="font-size:.75rem" onclick="provisionCatalog('${a.id}')">Create &amp; Link Catalog</button>`
+      const cartOn     = !!a.cart_enabled;
+
+      const pill = (ok, label) => ok
+        ? `<span style="display:inline-flex;align-items:center;gap:.25rem;font-size:.72rem;font-weight:600;color:#15803d;background:#dcfce7;padding:.18rem .5rem;border-radius:99px">${label}</span>`
+        : `<span style="display:inline-flex;align-items:center;gap:.25rem;font-size:.72rem;font-weight:600;color:#92400e;background:#fef3c7;padding:.18rem .5rem;border-radius:99px">${label}</span>`;
+
+      const needsSetup = !hasCatalog || !cartOn;
+      const setupBtn = needsSetup
+        ? `<button class="btn-g btn-sm" style="font-size:.75rem;margin-top:.75rem" onclick="provisionCatalog('${a.id}',this)">
+             ${!hasCatalog ? '🛍️ Create Catalog &amp; Enable Cart' : '🛒 Enable Cart Icon'}
+           </button>`
         : '';
-      return `
-      <div class="card" style="margin-bottom:.85rem">
+
+      return `<div class="card" style="margin-bottom:.85rem">
         <div class="ch">
-          <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
             <strong>${a.display_name || 'WhatsApp Number'}</strong>
             <span class="badge ${a.is_active ? 'bg' : 'br'}">${a.is_active ? 'Active' : 'Inactive'}</span>
-            ${catalogBadge}
+            ${pill(hasCatalog, hasCatalog ? '✅ Catalog' : '⚠️ No Catalog')}
+            ${pill(cartOn,     cartOn     ? '🛒 Cart On' : '⚠️ Cart Off')}
           </div>
-          <span style="font-size:.75rem;color:var(--dim)">Quality: <strong style="color:${a.quality_rating === 'GREEN' ? 'var(--wa)' : a.quality_rating === 'RED' ? 'var(--red)' : 'var(--gold2)'}">${a.quality_rating || '—'}</strong></span>
+          <span style="font-size:.75rem;color:var(--dim)">Quality: <strong style="color:${a.quality_rating === 'GREEN' ? '#15803d' : a.quality_rating === 'RED' ? 'var(--red)' : 'var(--gold2)'}">${a.quality_rating || '—'}</strong></span>
         </div>
         <div class="cb">
           <div class="ipair-row">
@@ -1784,27 +1794,29 @@ async function loadWA() {
             <div class="ipair"><label>WABA ID</label><code>${a.waba_id || '—'}</code></div>
             <div class="ipair"><label>Catalog ID</label><code>${a.catalog_id || '—'}</code></div>
           </div>
-          ${provisionBtn ? `<div style="margin-top:.75rem">${provisionBtn}</div>` : ''}
+          ${setupBtn}
         </div>
       </div>`;
     }).join('');
   } catch (_) {}
-  // Load template mappings from DB (fast); templates from Meta loaded on demand
   loadTemplateMappings();
 }
 
-async function provisionCatalog(waAccountId) {
-  const btn = event.currentTarget;
-  btn.disabled = true; btn.innerHTML = '<div class="spin" style="width:12px;height:12px;border-width:2px"></div> Creating…';
+async function provisionCatalog(waAccountId, btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:.4rem"><span style="width:12px;height:12px;border:2px solid rgba(0,0,0,.2);border-top-color:#333;border-radius:50%;animation:spin .7s linear infinite;display:inline-block"></span> Setting up…</span>';
   try {
     const d = await api(`/api/restaurant/whatsapp/${waAccountId}/provision-catalog`, { method: 'POST' });
-    toast(`Catalog created & linked! ID: ${d.catalog_id}`, 'ok');
+    toast(`Catalog linked & cart icon enabled!`, 'ok');
     loadWA();
   } catch (e) {
-    toast(e.message || 'Failed to create catalog', 'err');
-    btn.disabled = false; btn.innerHTML = 'Create &amp; Link Catalog';
+    toast(e.message || 'Setup failed — please try again', 'err');
+    btn.disabled = false;
+    btn.innerHTML = orig;
   }
 }
+
 function copyWH() { navigator.clipboard.writeText(document.getElementById('wh-url').textContent).then(() => toast('Webhook URL copied!', 'ok')); }
 
 /* ─────────────────────────── WA TEMPLATES ──────────────── */

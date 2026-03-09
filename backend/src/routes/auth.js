@@ -361,22 +361,29 @@ router.get('/me', requireAuth, async (req, res) => {
 async function _saveWabaAccounts(restaurantId, wabaData, longToken) {
   for (const biz of wabaData) {
     for (const waba of biz.whatsapp_business_accounts?.data || []) {
-      // Subscribe this WABA to GullyBite's app webhooks using system user token
       await _subscribeWaba(waba.id);
 
       for (const phone of waba.phone_numbers?.data || []) {
         await col('whatsapp_accounts').updateOne(
           { phone_number_id: phone.id },
-          { $set: { restaurant_id: restaurantId, waba_id: waba.id,
-              phone_display: phone.display_phone_number, display_name: phone.verified_name,
+          {
+            $set: {
+              restaurant_id : restaurantId,
+              waba_id       : waba.id,
+              phone_display : phone.display_phone_number,
+              display_name  : phone.verified_name,
               quality_rating: phone.quality_rating?.display_value || 'GREEN',
-              access_token: longToken, is_active: true, updated_at: new Date() },
-            $setOnInsert: { _id: newId(), created_at: new Date() } },
+              access_token  : longToken,
+              is_active     : true,
+              updated_at    : new Date(),
+            },
+            $setOnInsert: { _id: newId(), created_at: new Date() },
+          },
           { upsert: true }
         );
       }
 
-      // Auto-provision a catalog for this WABA (fire-and-forget, non-blocking)
+      // Auto-provision catalog + enable cart icon for every phone number under this WABA
       _provisionWabaCatalog(restaurantId, waba.id, longToken).catch(err =>
         console.error(`[Catalog] Auto-provision failed for WABA ${waba.id}:`, err.message)
       );
@@ -384,93 +391,11 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken) {
   }
 }
 
-// ─── AUTO-PROVISION CATALOG PER WABA ─────────────────────────
-// Creates one Meta catalog per WABA if it doesn't already exist,
-// links it to the WABA, and propagates catalog_id to all branches.
-async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
-  // Check if any whatsapp_account for this WABA already has a catalog_id
-  const existingAcc = await col('whatsapp_accounts').findOne(
-    { waba_id: wabaId, catalog_id: { $exists: true, $ne: null } }
-  );
-  if (existingAcc?.catalog_id) {
-    console.log(`[Catalog] WABA ${wabaId} already has catalog ${existingAcc.catalog_id} — skipping`);
-    // Still ensure branches are linked (in case new branches were added since last connect)
-    await _linkCatalogToBranches(restaurantId, existingAcc.catalog_id);
-    return;
-  }
-
-  const restaurant = await col('restaurants').findOne({ _id: restaurantId });
-  if (!restaurant) return;
-
-  // Get the Meta Business ID that owns this WABA
-  let businessId;
-  try {
-    const meRes = await axios.get(`${META_GRAPH_URL}/me/businesses`, {
-      params: { access_token: accessToken, fields: 'id,name' },
-      timeout: 10000,
-    });
-    const businesses = meRes.data?.data || [];
-    if (!businesses.length) throw new Error('No Meta Business account found');
-    businessId = businesses[0].id;
-  } catch (err) {
-    throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
-  }
-
-  // Create the catalog (one per WABA, named after the restaurant)
-  const catalogName = restaurant.brand_name || restaurant.business_name || 'GullyBite Menu';
-  let catalogId;
-  try {
-    const createRes = await axios.post(
-      `${META_GRAPH_URL}/${businessId}/owned_product_catalogs`,
-      { name: catalogName, vertical: 'commerce' },
-      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
-    );
-    catalogId = createRes.data.id;
-    console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
-  } catch (err) {
-    throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
-  }
-
-  // Link the catalog to the WABA so it appears in WhatsApp Business
-  try {
-    await axios.post(
-      `${META_GRAPH_URL}/${wabaId}/product_catalogs`,
-      { catalog_id: catalogId },
-      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 10000 }
-    );
-    console.log(`[Catalog] Linked catalog ${catalogId} to WABA ${wabaId}`);
-  } catch (err) {
-    // Non-fatal — catalog is created even if linking fails (can retry later)
-    console.warn(`[Catalog] Could not link catalog to WABA: ${err.response?.data?.error?.message || err.message}`);
-  }
-
-  // Save catalog_id on all whatsapp_accounts for this WABA
-  await col('whatsapp_accounts').updateMany(
-    { waba_id: wabaId },
-    { $set: { catalog_id: catalogId, updated_at: new Date() } }
-  );
-
-  // Propagate to existing branches
-  await _linkCatalogToBranches(restaurantId, catalogId);
-}
-
-// Set catalog_id on all branches of a restaurant that don't have one yet
-async function _linkCatalogToBranches(restaurantId, catalogId) {
-  const result = await col('branches').updateMany(
-    { restaurant_id: restaurantId, catalog_id: { $in: [null, undefined, ''] } },
-    { $set: { catalog_id: catalogId, updated_at: new Date() } }
-  );
-  if (result.modifiedCount > 0) {
-    console.log(`[Catalog] Linked catalog ${catalogId} to ${result.modifiedCount} branch(es) of restaurant ${restaurantId}`);
-  }
-}
-
-// Subscribe a WABA to GullyBite's app so we receive webhook events
-// Requires META_SYSTEM_USER_TOKEN in env (system user with whatsapp_business_management permission)
+// ─── SUBSCRIBE WABA TO WEBHOOKS ───────────────────────────────
 async function _subscribeWaba(wabaId) {
   const sysToken = process.env.META_SYSTEM_USER_TOKEN;
   if (!sysToken) {
-    console.warn('[subscribeWaba] META_SYSTEM_USER_TOKEN not set — skipping WABA subscription for', wabaId);
+    console.warn('[subscribeWaba] META_SYSTEM_USER_TOKEN not set — skipping for', wabaId);
     return;
   }
   try {
@@ -480,6 +405,117 @@ async function _subscribeWaba(wabaId) {
     console.log(`[subscribeWaba] Subscribed WABA ${wabaId} to app webhooks`);
   } catch (err) {
     console.error(`[subscribeWaba] Failed for WABA ${wabaId}:`, err.response?.data || err.message);
+  }
+}
+
+// ─── AUTO-PROVISION CATALOG PER WABA ─────────────────────────
+// Creates one Meta catalog per WABA (if missing), links it to the WABA,
+// enables the cart icon on every phone number, and propagates to branches.
+async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
+  // Check if any account for this WABA already has a catalog_id
+  const existingAcc = await col('whatsapp_accounts').findOne(
+    { waba_id: wabaId, catalog_id: { $exists: true, $ne: null } }
+  );
+
+  let catalogId = existingAcc?.catalog_id;
+
+  if (!catalogId) {
+    const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+    if (!restaurant) return;
+
+    // Get the Meta Business ID that owns this WABA
+    let businessId;
+    try {
+      const meRes = await axios.get(`${META_GRAPH_URL}/me/businesses`, {
+        params: { access_token: accessToken, fields: 'id,name' },
+        timeout: 10000,
+      });
+      const businesses = meRes.data?.data || [];
+      if (!businesses.length) throw new Error('No Meta Business account found');
+      businessId = businesses[0].id;
+    } catch (err) {
+      throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
+    }
+
+    // Create one catalog for this WABA named after the restaurant
+    const catalogName = restaurant.brand_name || restaurant.business_name || 'GullyBite Menu';
+    try {
+      const createRes = await axios.post(
+        `${META_GRAPH_URL}/${businessId}/owned_product_catalogs`,
+        { name: catalogName, vertical: 'commerce' },
+        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+      );
+      catalogId = createRes.data.id;
+      console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
+    } catch (err) {
+      throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+    }
+
+    // Link catalog to WABA (makes it appear in WhatsApp Business Manager)
+    try {
+      await axios.post(
+        `${META_GRAPH_URL}/${wabaId}/product_catalogs`,
+        { catalog_id: catalogId },
+        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 10000 }
+      );
+      console.log(`[Catalog] Linked catalog ${catalogId} to WABA ${wabaId}`);
+    } catch (err) {
+      console.warn(`[Catalog] Could not link catalog to WABA: ${err.response?.data?.error?.message || err.message}`);
+    }
+
+    // Save catalog_id on all whatsapp_accounts for this WABA
+    await col('whatsapp_accounts').updateMany(
+      { waba_id: wabaId },
+      { $set: { catalog_id: catalogId, updated_at: new Date() } }
+    );
+  }
+
+  // Enable cart icon + catalog visibility on every phone number under this WABA
+  const phones = await col('whatsapp_accounts').find({ waba_id: wabaId }).toArray();
+  for (const phone of phones) {
+    await _enableCommerceSettings(phone.phone_number_id, catalogId, accessToken);
+  }
+
+  // Propagate catalog_id to existing branches that don't have one
+  await _linkCatalogToBranches(restaurantId, catalogId);
+}
+
+// ─── ENABLE CART ICON ON A PHONE NUMBER ──────────────────────
+// Calls POST /{phone_number_id}/whatsapp_commerce_settings to show
+// the catalog/cart icon inside WhatsApp chats for that number.
+async function _enableCommerceSettings(phoneNumberId, catalogId, accessToken) {
+  try {
+    await axios.post(
+      `${META_GRAPH_URL}/${phoneNumberId}/whatsapp_commerce_settings`,
+      {
+        is_catalog_visible: true,
+        is_cart_enabled   : true,
+      },
+      {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 10000,
+      }
+    );
+    // Mark commerce as enabled in DB
+    await col('whatsapp_accounts').updateOne(
+      { phone_number_id: phoneNumberId },
+      { $set: { cart_enabled: true, catalog_id: catalogId, updated_at: new Date() } }
+    );
+    console.log(`[Commerce] Cart + catalog icon enabled on phone ${phoneNumberId}`);
+  } catch (err) {
+    console.error(`[Commerce] Failed to enable cart on ${phoneNumberId}:`, err.response?.data?.error?.message || err.message);
+  }
+}
+
+// ─── LINK CATALOG TO BRANCHES ────────────────────────────────
+// Sets catalog_id on branches that don't have one yet.
+async function _linkCatalogToBranches(restaurantId, catalogId) {
+  const result = await col('branches').updateMany(
+    { restaurant_id: restaurantId, catalog_id: { $in: [null, undefined, ''] } },
+    { $set: { catalog_id: catalogId, updated_at: new Date() } }
+  );
+  if (result.modifiedCount > 0) {
+    console.log(`[Catalog] Linked catalog ${catalogId} to ${result.modifiedCount} branch(es)`);
   }
 }
 
@@ -518,4 +554,4 @@ async function requireApproved(req, res, next) {
   }
 }
 
-module.exports = { router, requireAuth, requireApproved, _provisionWabaCatalog, _linkCatalogToBranches };
+module.exports = { router, requireAuth, requireApproved, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };

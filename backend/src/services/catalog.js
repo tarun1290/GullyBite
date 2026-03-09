@@ -20,7 +20,7 @@ const createBranchCatalog = async (branchId) => {
   const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
   const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true });
 
-  // Reuse the WABA-level catalog if it already exists — don't create a second one
+  // Reuse the WABA-level catalog if already provisioned — one catalog per WABA, not per branch
   if (wa_acc?.catalog_id) {
     await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: wa_acc.catalog_id } });
     console.log(`[Catalog] Branch "${branch.name}" inherited WABA catalog ${wa_acc.catalog_id}`);
@@ -86,17 +86,17 @@ const syncBranchCatalog = async (branchId) => {
   const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
   const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true });
 
-  // If branch has no catalog_id, fall back to the WABA-level catalog_id
+  // If branch has no catalog_id, inherit from the WABA-level catalog
   if (!branch.catalog_id && wa_acc?.catalog_id) {
     await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: wa_acc.catalog_id } });
     branch.catalog_id = wa_acc.catalog_id;
-    console.log(`[Catalog] Inherited catalog ${wa_acc.catalog_id} from WABA for branch "${branch.name}"`);
+    console.log(`[Catalog] Branch "${branch.name}" inherited catalog ${wa_acc.catalog_id} from WABA`);
   }
 
   if (!branch.catalog_id) {
     throw new Error(
       `No catalog found for branch "${branch.name}". ` +
-      `Connect your WhatsApp Business account first — a catalog will be created automatically.`
+      `Connect your WhatsApp Business account — a catalog will be created automatically.`
     );
   }
 
