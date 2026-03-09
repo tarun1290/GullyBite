@@ -78,16 +78,22 @@ router.post('/signin', express.json(), async (req, res) => {
 });
 
 // ─── CONNECT META / WHATSAPP ───────────────────────────────────
+// When the code comes from FB.login() (JS SDK), the SDK uses its own internal
+// redirect URI — NOT the server-side OAuth redirect URI. We must match it exactly.
+const JS_SDK_REDIRECT_URI = 'https://www.facebook.com/connect/login_success.html';
+
 router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
   try {
-    const { accessToken, code, sessionInfo } = req.body;
+    const { accessToken, code, sessionInfo, fromJsSdk } = req.body;
     if (!accessToken && !code) return res.status(400).json({ error: 'No token provided' });
 
     let longToken, expiresAt;
     if (code) {
+      // JS SDK codes require JS_SDK_REDIRECT_URI; server-side OAuth codes use META_OAUTH_REDIRECT_URI
+      const redirectUri = fromJsSdk ? JS_SDK_REDIRECT_URI : process.env.META_OAUTH_REDIRECT_URI;
       const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
         params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET,
-                  redirect_uri: process.env.META_OAUTH_REDIRECT_URI, code },
+                  redirect_uri: redirectUri, code },
       });
       longToken = tokenRes.data.access_token;
       expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
