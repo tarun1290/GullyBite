@@ -132,19 +132,18 @@ router.get('/whatsapp', async (req, res) => {
 });
 
 // POST /api/restaurant/whatsapp/:id/provision-catalog
-// Manually trigger catalog auto-provision for a WABA (in case it failed at signup)
+// Manually trigger catalog creation + cart icon enablement for a WABA
 router.post('/whatsapp/:id/provision-catalog', async (req, res) => {
   try {
     const wa = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!wa) return res.status(404).json({ error: 'WhatsApp account not found' });
     if (!wa.access_token) return res.status(400).json({ error: 'No access token — please reconnect your Meta account' });
 
-    // Dynamically require auth helpers without circular dep
     const { _provisionWabaCatalog } = require('./auth');
     await _provisionWabaCatalog(req.restaurantId, wa.waba_id, wa.access_token);
 
     const updated = await col('whatsapp_accounts').findOne({ _id: req.params.id });
-    res.json({ success: true, catalog_id: updated.catalog_id });
+    res.json({ success: true, catalog_id: updated.catalog_id, cart_enabled: updated.cart_enabled });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
