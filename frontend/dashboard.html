@@ -1763,27 +1763,45 @@ async function loadWA() {
     }
     document.getElementById('live-dot').style.display = 'flex';
     list.innerHTML = accounts.map(a => {
+      const registered = !!a.phone_registered;
       const hasCatalog = !!a.catalog_id;
       const cartOn     = !!a.cart_enabled;
+      const allDone    = registered && hasCatalog && cartOn;
 
       const pill = (ok, label) => ok
         ? `<span style="display:inline-flex;align-items:center;gap:.25rem;font-size:.72rem;font-weight:600;color:#15803d;background:#dcfce7;padding:.18rem .5rem;border-radius:99px">${label}</span>`
         : `<span style="display:inline-flex;align-items:center;gap:.25rem;font-size:.72rem;font-weight:600;color:#92400e;background:#fef3c7;padding:.18rem .5rem;border-radius:99px">${label}</span>`;
 
-      const needsSetup = !hasCatalog || !cartOn;
-      const setupBtn = needsSetup
-        ? `<button class="btn-g btn-sm" style="font-size:.75rem;margin-top:.75rem" onclick="provisionCatalog('${a.id}',this)">
-             ${!hasCatalog ? '🛍️ Create Catalog &amp; Enable Cart' : '🛒 Enable Cart Icon'}
-           </button>`
-        : '';
+      const checklist = `
+        <div style="margin-top:.85rem;padding:.75rem;background:#f8fafc;border-radius:.5rem;border:1px solid var(--rim)">
+          <div style="font-size:.72rem;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">Setup Checklist</div>
+          <div style="display:flex;flex-direction:column;gap:.35rem">
+            <div style="display:flex;align-items:center;gap:.5rem;font-size:.8rem">
+              <span style="color:${registered ? '#15803d' : '#dc2626'};font-size:1rem">${registered ? '✅' : '⭕'}</span>
+              <span style="${registered ? 'color:#15803d' : ''}">Phone number registered with Cloud API</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;font-size:.8rem">
+              <span style="color:${hasCatalog ? '#15803d' : '#dc2626'};font-size:1rem">${hasCatalog ? '✅' : '⭕'}</span>
+              <span style="${hasCatalog ? 'color:#15803d' : ''}">Catalog created &amp; linked to WABA</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;font-size:.8rem">
+              <span style="color:${cartOn ? '#15803d' : '#dc2626'};font-size:1rem">${cartOn ? '✅' : '⭕'}</span>
+              <span style="${cartOn ? 'color:#15803d' : ''}">Cart icon enabled on phone number</span>
+            </div>
+          </div>
+          ${!allDone ? `<button class="btn-g btn-sm" style="font-size:.75rem;margin-top:.7rem;width:100%;justify-content:center" onclick="completeSetup('${a.id}',this)">
+            ▶ Complete Setup Now
+          </button>` : `<p style="font-size:.75rem;color:#15803d;margin-top:.5rem;font-weight:600">✅ Fully set up — ready for Meta approval</p>`}
+        </div>`;
 
       return `<div class="card" style="margin-bottom:.85rem">
         <div class="ch">
           <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
             <strong>${a.display_name || 'WhatsApp Number'}</strong>
             <span class="badge ${a.is_active ? 'bg' : 'br'}">${a.is_active ? 'Active' : 'Inactive'}</span>
-            ${pill(hasCatalog, hasCatalog ? '✅ Catalog' : '⚠️ No Catalog')}
-            ${pill(cartOn,     cartOn     ? '🛒 Cart On' : '⚠️ Cart Off')}
+            ${pill(registered, registered ? '📱 Registered' : '⚠️ Not Registered')}
+            ${pill(hasCatalog, hasCatalog  ? '✅ Catalog'    : '⚠️ No Catalog')}
+            ${pill(cartOn,     cartOn      ? '🛒 Cart On'    : '⚠️ Cart Off')}
           </div>
           <span style="font-size:.75rem;color:var(--dim)">Quality: <strong style="color:${a.quality_rating === 'GREEN' ? '#15803d' : a.quality_rating === 'RED' ? 'var(--red)' : 'var(--gold2)'}">${a.quality_rating || '—'}</strong></span>
         </div>
@@ -1794,7 +1812,7 @@ async function loadWA() {
             <div class="ipair"><label>WABA ID</label><code>${a.waba_id || '—'}</code></div>
             <div class="ipair"><label>Catalog ID</label><code>${a.catalog_id || '—'}</code></div>
           </div>
-          ${setupBtn}
+          ${checklist}
         </div>
       </div>`;
     }).join('');
@@ -1802,13 +1820,34 @@ async function loadWA() {
   loadTemplateMappings();
 }
 
+async function completeSetup(waAccountId, btn) {
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:.4rem"><span style="width:12px;height:12px;border:2px solid rgba(0,0,0,.2);border-top-color:#333;border-radius:50%;animation:spin .7s linear infinite;display:inline-block"></span> Running setup…</span>';
+  try {
+    const d = await api(`/api/restaurant/whatsapp/${waAccountId}/complete-setup`, { method: 'POST' });
+    const ok = d.phone_registered && d.cart_enabled && d.catalog_id;
+    if (ok) {
+      toast('All setup steps complete — ready for Meta approval!', 'ok');
+    } else {
+      const failed = Object.entries(d.steps || {}).filter(([,v]) => v !== 'ok').map(([k,v]) => `${k}: ${v}`);
+      toast(`Partial setup — ${failed.join('; ')}`, 'nfo');
+    }
+    loadWA();
+  } catch (e) {
+    toast(e.message || 'Setup failed — please try again', 'err');
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
 async function provisionCatalog(waAccountId, btn) {
   const orig = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span style="display:inline-flex;align-items:center;gap:.4rem"><span style="width:12px;height:12px;border:2px solid rgba(0,0,0,.2);border-top-color:#333;border-radius:50%;animation:spin .7s linear infinite;display:inline-block"></span> Setting up…</span>';
   try {
-    const d = await api(`/api/restaurant/whatsapp/${waAccountId}/provision-catalog`, { method: 'POST' });
-    toast(`Catalog linked & cart icon enabled!`, 'ok');
+    await api(`/api/restaurant/whatsapp/${waAccountId}/provision-catalog`, { method: 'POST' });
+    toast('Catalog linked & cart icon enabled!', 'ok');
     loadWA();
   } catch (e) {
     toast(e.message || 'Setup failed — please try again', 'err');
