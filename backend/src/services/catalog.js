@@ -20,6 +20,13 @@ const createBranchCatalog = async (branchId) => {
   const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
   const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true });
 
+  // Reuse the WABA-level catalog if it already exists — don't create a second one
+  if (wa_acc?.catalog_id) {
+    await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: wa_acc.catalog_id } });
+    console.log(`[Catalog] Branch "${branch.name}" inherited WABA catalog ${wa_acc.catalog_id}`);
+    return { alreadyExists: false, catalogId: wa_acc.catalog_id, inherited: true };
+  }
+
   const accessToken = restaurant?.meta_access_token || wa_acc?.access_token;
   if (!accessToken) throw new Error('No Meta access token found. Please reconnect your Meta account.');
 
@@ -76,15 +83,22 @@ const syncBranchCatalog = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!branch) throw new Error('Branch not found');
 
-  if (!branch.catalog_id) {
-    throw new Error(
-      `No catalog_id set for branch "${branch.name}". ` +
-      `Create a catalog in Meta Commerce Manager and paste the ID in your dashboard.`
-    );
-  }
-
   const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
   const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true });
+
+  // If branch has no catalog_id, fall back to the WABA-level catalog_id
+  if (!branch.catalog_id && wa_acc?.catalog_id) {
+    await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: wa_acc.catalog_id } });
+    branch.catalog_id = wa_acc.catalog_id;
+    console.log(`[Catalog] Inherited catalog ${wa_acc.catalog_id} from WABA for branch "${branch.name}"`);
+  }
+
+  if (!branch.catalog_id) {
+    throw new Error(
+      `No catalog found for branch "${branch.name}". ` +
+      `Connect your WhatsApp Business account first — a catalog will be created automatically.`
+    );
+  }
 
   if (!wa_acc?.access_token) {
     throw new Error('No WhatsApp access token found. Please reconnect your Meta account.');

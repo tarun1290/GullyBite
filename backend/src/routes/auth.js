@@ -375,7 +375,93 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken) {
           { upsert: true }
         );
       }
+
+      // Auto-provision a catalog for this WABA (fire-and-forget, non-blocking)
+      _provisionWabaCatalog(restaurantId, waba.id, longToken).catch(err =>
+        console.error(`[Catalog] Auto-provision failed for WABA ${waba.id}:`, err.message)
+      );
     }
+  }
+}
+
+// ─── AUTO-PROVISION CATALOG PER WABA ─────────────────────────
+// Creates one Meta catalog per WABA if it doesn't already exist,
+// links it to the WABA, and propagates catalog_id to all branches.
+async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
+  // Check if any whatsapp_account for this WABA already has a catalog_id
+  const existingAcc = await col('whatsapp_accounts').findOne(
+    { waba_id: wabaId, catalog_id: { $exists: true, $ne: null } }
+  );
+  if (existingAcc?.catalog_id) {
+    console.log(`[Catalog] WABA ${wabaId} already has catalog ${existingAcc.catalog_id} — skipping`);
+    // Still ensure branches are linked (in case new branches were added since last connect)
+    await _linkCatalogToBranches(restaurantId, existingAcc.catalog_id);
+    return;
+  }
+
+  const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+  if (!restaurant) return;
+
+  // Get the Meta Business ID that owns this WABA
+  let businessId;
+  try {
+    const meRes = await axios.get(`${META_GRAPH_URL}/me/businesses`, {
+      params: { access_token: accessToken, fields: 'id,name' },
+      timeout: 10000,
+    });
+    const businesses = meRes.data?.data || [];
+    if (!businesses.length) throw new Error('No Meta Business account found');
+    businessId = businesses[0].id;
+  } catch (err) {
+    throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
+  }
+
+  // Create the catalog (one per WABA, named after the restaurant)
+  const catalogName = restaurant.brand_name || restaurant.business_name || 'GullyBite Menu';
+  let catalogId;
+  try {
+    const createRes = await axios.post(
+      `${META_GRAPH_URL}/${businessId}/owned_product_catalogs`,
+      { name: catalogName, vertical: 'commerce' },
+      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+    );
+    catalogId = createRes.data.id;
+    console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
+  } catch (err) {
+    throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+  }
+
+  // Link the catalog to the WABA so it appears in WhatsApp Business
+  try {
+    await axios.post(
+      `${META_GRAPH_URL}/${wabaId}/product_catalogs`,
+      { catalog_id: catalogId },
+      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 10000 }
+    );
+    console.log(`[Catalog] Linked catalog ${catalogId} to WABA ${wabaId}`);
+  } catch (err) {
+    // Non-fatal — catalog is created even if linking fails (can retry later)
+    console.warn(`[Catalog] Could not link catalog to WABA: ${err.response?.data?.error?.message || err.message}`);
+  }
+
+  // Save catalog_id on all whatsapp_accounts for this WABA
+  await col('whatsapp_accounts').updateMany(
+    { waba_id: wabaId },
+    { $set: { catalog_id: catalogId, updated_at: new Date() } }
+  );
+
+  // Propagate to existing branches
+  await _linkCatalogToBranches(restaurantId, catalogId);
+}
+
+// Set catalog_id on all branches of a restaurant that don't have one yet
+async function _linkCatalogToBranches(restaurantId, catalogId) {
+  const result = await col('branches').updateMany(
+    { restaurant_id: restaurantId, catalog_id: { $in: [null, undefined, ''] } },
+    { $set: { catalog_id: catalogId, updated_at: new Date() } }
+  );
+  if (result.modifiedCount > 0) {
+    console.log(`[Catalog] Linked catalog ${catalogId} to ${result.modifiedCount} branch(es) of restaurant ${restaurantId}`);
   }
 }
 
@@ -432,4 +518,4 @@ async function requireApproved(req, res, next) {
   }
 }
 
-module.exports = { router, requireAuth, requireApproved };
+module.exports = { router, requireAuth, requireApproved, _provisionWabaCatalog, _linkCatalogToBranches };
