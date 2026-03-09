@@ -131,6 +131,92 @@ router.get('/whatsapp', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/restaurant/whatsapp/:id/setup-status
+// Returns live setup checklist status from Meta for a phone number
+router.get('/whatsapp/:id/setup-status', async (req, res) => {
+  try {
+    const wa = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!wa) return res.status(404).json({ error: 'WhatsApp account not found' });
+    if (!wa.access_token) return res.status(400).json({ error: 'No access token' });
+
+    const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+    const axios = require('axios');
+
+    // Fetch phone number details from Meta
+    let phoneStatus = null;
+    try {
+      const r = await axios.get(`${GRAPH}/${wa.phone_number_id}`, {
+        params: { fields: 'verified_name,display_phone_number,status,quality_rating,is_official_business_account,account_mode', access_token: wa.access_token },
+        timeout: 8000,
+      });
+      phoneStatus = r.data;
+    } catch (e) { phoneStatus = { error: e.response?.data?.error?.message || e.message }; }
+
+    // Check WABA subscription
+    let wabaSubscribed = false;
+    try {
+      const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+      if (sysToken) {
+        const r = await axios.get(`${GRAPH}/${wa.waba_id}/subscribed_apps`, {
+          params: { access_token: sysToken }, timeout: 8000,
+        });
+        wabaSubscribed = (r.data?.data || []).some(app => app.id === process.env.META_APP_ID);
+      }
+    } catch (_) {}
+
+    res.json({
+      phone_number_id : wa.phone_number_id,
+      phone_registered: wa.phone_registered || false,
+      cart_enabled    : wa.cart_enabled     || false,
+      catalog_id      : wa.catalog_id       || null,
+      waba_subscribed : wabaSubscribed,
+      meta            : phoneStatus,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/whatsapp/:id/complete-setup
+// Runs all setup steps: register phone, subscribe WABA, provision catalog, enable cart
+router.post('/whatsapp/:id/complete-setup', async (req, res) => {
+  try {
+    const wa = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!wa) return res.status(404).json({ error: 'WhatsApp account not found' });
+    if (!wa.access_token) return res.status(400).json({ error: 'No access token — please reconnect your Meta account' });
+
+    const { _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings } = require('./auth');
+    const results = { register: null, catalog: null, cart: null };
+
+    try {
+      await _registerPhoneNumber(wa.phone_number_id, wa.access_token);
+      results.register = 'ok';
+    } catch (e) { results.register = e.message; }
+
+    try {
+      await _provisionWabaCatalog(req.restaurantId, wa.waba_id, wa.access_token);
+      results.catalog = 'ok';
+    } catch (e) { results.catalog = e.message; }
+
+    try {
+      const updated = await col('whatsapp_accounts').findOne({ _id: req.params.id });
+      if (updated.catalog_id) {
+        await _enableCommerceSettings(wa.phone_number_id, updated.catalog_id, wa.access_token);
+        results.cart = 'ok';
+      } else {
+        results.cart = 'skipped — no catalog yet';
+      }
+    } catch (e) { results.cart = e.message; }
+
+    const final = await col('whatsapp_accounts').findOne({ _id: req.params.id });
+    res.json({
+      success        : results.register === 'ok',
+      phone_registered: final.phone_registered || false,
+      cart_enabled    : final.cart_enabled     || false,
+      catalog_id      : final.catalog_id       || null,
+      steps           : results,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/restaurant/whatsapp/:id/provision-catalog
 // Manually trigger catalog creation + cart icon enablement for a WABA
 router.post('/whatsapp/:id/provision-catalog', async (req, res) => {

@@ -381,6 +381,11 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken) {
           },
           { upsert: true }
         );
+
+        // Register phone number with Cloud API — resolves "Connecting phone number" in WA Manager
+        _registerPhoneNumber(phone.id, longToken).catch(err =>
+          console.error(`[Register] Phone ${phone.id} registration failed:`, err.message)
+        );
       }
 
       // Auto-provision catalog + enable cart icon for every phone number under this WABA
@@ -405,6 +410,40 @@ async function _subscribeWaba(wabaId) {
     console.log(`[subscribeWaba] Subscribed WABA ${wabaId} to app webhooks`);
   } catch (err) {
     console.error(`[subscribeWaba] Failed for WABA ${wabaId}:`, err.response?.data || err.message);
+  }
+}
+
+// ─── REGISTER PHONE NUMBER WITH CLOUD API ────────────────────
+// Resolves "Connecting phone number to [App]" in WhatsApp Business Manager.
+// Must be called once per phone number after Embedded Signup.
+async function _registerPhoneNumber(phoneNumberId, accessToken) {
+  try {
+    await axios.post(
+      `${META_GRAPH_URL}/${phoneNumberId}/register`,
+      { messaging_product: 'whatsapp', pin: '000000' },
+      {
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        timeout: 10000,
+      }
+    );
+    await col('whatsapp_accounts').updateOne(
+      { phone_number_id: phoneNumberId },
+      { $set: { phone_registered: true, updated_at: new Date() } }
+    );
+    console.log(`[Register] Phone ${phoneNumberId} registered with Cloud API`);
+  } catch (err) {
+    const apiErr = err.response?.data?.error;
+    // Code 80007 = already registered — treat as success
+    if (apiErr?.code === 80007 || apiErr?.error_subcode === 2388053) {
+      await col('whatsapp_accounts').updateOne(
+        { phone_number_id: phoneNumberId },
+        { $set: { phone_registered: true, updated_at: new Date() } }
+      );
+      console.log(`[Register] Phone ${phoneNumberId} was already registered`);
+      return;
+    }
+    console.error(`[Register] Failed for phone ${phoneNumberId}:`, apiErr?.message || err.message);
+    throw err;
   }
 }
 
@@ -554,4 +593,4 @@ async function requireApproved(req, res, next) {
   }
 }
 
-module.exports = { router, requireAuth, requireApproved, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };
+module.exports = { router, requireAuth, requireApproved, _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };
