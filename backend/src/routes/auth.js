@@ -91,9 +91,13 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     if (code) {
       // JS SDK codes require JS_SDK_REDIRECT_URI; server-side OAuth codes use META_OAUTH_REDIRECT_URI
       const redirectUri = fromJsSdk ? JS_SDK_REDIRECT_URI : process.env.META_OAUTH_REDIRECT_URI;
-      const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-        params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET,
-                  redirect_uri: redirectUri, code },
+      // Meta requires POST + grant_type for embedded signup code exchange
+      const tokenRes = await axios.post(`${META_GRAPH_URL}/oauth/access_token`, {
+        client_id: process.env.META_APP_ID,
+        client_secret: process.env.META_APP_SECRET,
+        redirect_uri: redirectUri,
+        code,
+        grant_type: 'authorization_code',
       });
       longToken = tokenRes.data.access_token;
       expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
