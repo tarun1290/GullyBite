@@ -5,8 +5,20 @@ const express = require('express');
 const axios   = require('axios');
 const jwt     = require('jsonwebtoken');
 const bcrypt  = require('bcryptjs');
+const multer  = require('multer');
 const router  = express.Router();
-const { col, newId } = require('../config/database');
+const { col, newId, getBucket } = require('../config/database');
+const { Readable } = require('stream');
+
+// ── Document upload config (GST / FSSAI certificates) ────────
+const docUpload = multer({
+  storage: multer.memoryStorage(),
+  limits : { fileSize: 10 * 1024 * 1024 }, // 10 MB max per document
+  fileFilter(req, file, cb) {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    cb(allowed.includes(file.mimetype) ? null : new Error('Only JPEG, PNG, WebP or PDF files are allowed'), allowed.includes(file.mimetype));
+  },
+});
 
 const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
 const META_AUTH_URL  = 'https://www.facebook.com/v25.0/dialog/oauth';
@@ -393,6 +405,88 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
     res.status(500).json({ error: 'Failed to save details' });
   }
 });
+
+// ─── ONBOARDING STEP 2: DOCUMENT UPLOAD (GST + FSSAI) ────────
+// Uncomment this block when ready to enable mandatory document upload during onboarding.
+// Accepts: gst_doc (file), fssai_doc (file), gst_number (text), fssai_license (text), fssai_expiry (text)
+// Files stored in MongoDB GridFS, URLs saved on the restaurant document.
+//
+// router.post('/onboarding/documents',
+//   requireAuth,
+//   docUpload.fields([
+//     { name: 'gst_doc', maxCount: 1 },
+//     { name: 'fssai_doc', maxCount: 1 },
+//   ]),
+//   async (req, res) => {
+//     try {
+//       const { gst_number, fssai_license, fssai_expiry } = req.body;
+//
+//       if (!gst_number || !fssai_license) {
+//         return res.status(400).json({ error: 'GST number and FSSAI license number are required' });
+//       }
+//       if (!req.files?.gst_doc?.[0] || !req.files?.fssai_doc?.[0]) {
+//         return res.status(400).json({ error: 'Both GST and FSSAI document uploads are required' });
+//       }
+//
+//       // Validate GST format: 15 chars alphanumeric
+//       const gstRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+//       if (!gstRegex.test(gst_number.toUpperCase())) {
+//         return res.status(400).json({ error: 'Invalid GST number format' });
+//       }
+//
+//       // Validate FSSAI: 14 digits
+//       const fssaiRegex = /^[0-9]{14}$/;
+//       if (!fssaiRegex.test(fssai_license)) {
+//         return res.status(400).json({ error: 'FSSAI license must be a 14-digit number' });
+//       }
+//
+//       const bucket = getBucket();
+//       const uploadToGridFS = async (file, docType) => {
+//         const ext = file.mimetype === 'application/pdf' ? 'pdf' : file.mimetype.split('/')[1].replace('jpeg', 'jpg');
+//         const filename = `${req.restaurantId}-${docType}-${Date.now()}.${ext}`;
+//         const uploadStream = bucket.openUploadStream(filename, {
+//           contentType: file.mimetype,
+//           metadata: { restaurantId: req.restaurantId, docType },
+//         });
+//         await new Promise((resolve, reject) => {
+//           const readable = Readable.from(file.buffer);
+//           readable.pipe(uploadStream);
+//           uploadStream.on('finish', resolve);
+//           uploadStream.on('error', reject);
+//         });
+//         return `${process.env.BASE_URL}/images/${String(uploadStream.id)}`;
+//       };
+//
+//       const [gstDocUrl, fssaiDocUrl] = await Promise.all([
+//         uploadToGridFS(req.files.gst_doc[0], 'gst'),
+//         uploadToGridFS(req.files.fssai_doc[0], 'fssai'),
+//       ]);
+//
+//       const now = new Date();
+//       await col('restaurants').updateOne(
+//         { _id: req.restaurantId },
+//         {
+//           $set: {
+//             gst_number: gst_number.toUpperCase(),
+//             gst_doc_url: gstDocUrl,
+//             gst_verified: false,
+//             fssai_license: fssai_license,
+//             fssai_doc_url: fssaiDocUrl,
+//             fssai_expiry: fssai_expiry ? new Date(fssai_expiry) : null,
+//             fssai_verified: false,
+//             documents_submitted_at: now,
+//             updated_at: now,
+//           },
+//         }
+//       );
+//
+//       res.json({ ok: true, gst_doc_url: gstDocUrl, fssai_doc_url: fssaiDocUrl });
+//     } catch (err) {
+//       console.error('[Onboarding/Documents]', err.message);
+//       res.status(500).json({ error: 'Document upload failed: ' + err.message });
+//     }
+//   }
+// );
 
 // ─── GET CURRENT USER ─────────────────────────────────────────
 router.get('/me', requireAuth, async (req, res) => {
