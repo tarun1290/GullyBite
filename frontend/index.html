@@ -260,7 +260,7 @@ a{color:inherit;text-decoration:none}
 <div id="toast"></div>
 <div id="fb-root"></div>
 <script>
-window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml:true,version:'v25.0'})};
+window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml:true,version:'v22.0'})};
 (function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(d.getElementById(id))return;js=d.createElement(s);js.id=id;js.src="https://connect.facebook.net/en_US/sdk.js";fjs.parentNode.insertBefore(js,fjs)}(document,'script','facebook-jssdk'));
 </script>
 
@@ -953,8 +953,8 @@ async function submitBusinessDetails(e) {
       city:           document.getElementById('ob-city').value.trim(),
     }, token);
     if (d.submitted) {
-      if (d.storeUrl) document.getElementById('store-url-display').value = d.storeUrl;
-      showPage('pg-connect');
+      toast('Details saved! Redirecting to dashboard…', 'ok');
+      window.location.href = '/dashboard';
     } else toast(d.error || 'Save failed', 'err');
   } catch (err) { toast(err.message, 'err'); }
   finally { setLoading(btn, false, 'Continue → Connect WhatsApp'); }
