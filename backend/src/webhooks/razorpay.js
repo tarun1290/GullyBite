@@ -22,8 +22,9 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     const event = JSON.parse(req.body);
     console.log('[Razorpay] Event:', event.event);
 
+    const logId = newId();
     await col('webhook_logs').insertOne({
-      _id: newId(),
+      _id: logId,
       source: 'razorpay',
       event_type: event.event,
       phone_number_id: null,
@@ -35,6 +36,12 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     }).catch(() => {});
 
     await handleEvent(event);
+
+    // Mark webhook as processed
+    await col('webhook_logs').updateOne(
+      { _id: logId },
+      { $set: { processed: true, processed_at: new Date() } }
+    ).catch(() => {});
   } catch (err) {
     console.error('[Razorpay] Webhook error:', err.message);
   }

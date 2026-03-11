@@ -445,6 +445,47 @@ router.get('/referrals', async (req, res) => {
   }
 });
 
+// ─── GET /api/admin/settlements ──────────────────────────────
+router.get('/settlements', async (req, res) => {
+  try {
+    const { restaurant_id, status, limit = 50, offset = 0 } = req.query;
+    const filter = {};
+    if (restaurant_id) filter.restaurant_id = restaurant_id;
+    if (status) filter.payout_status = status;
+
+    const [settlements, total] = await Promise.all([
+      col('settlements').find(filter).sort({ created_at: -1 }).skip(parseInt(offset)).limit(parseInt(limit)).toArray(),
+      col('settlements').countDocuments(filter),
+    ]);
+
+    const enriched = await Promise.all(settlements.map(async s => {
+      const restaurant = await col('restaurants').findOne({ _id: s.restaurant_id }, { projection: { business_name: 1 } });
+      return { ...mapId(s), business_name: restaurant?.business_name || '—' };
+    }));
+
+    res.json({ settlements: enriched, total });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/admin/settlements/stats ───────────────────────
+router.get('/settlements/stats', async (req, res) => {
+  try {
+    const all = await col('settlements').find({}).toArray();
+    const total = all.length;
+    const pending    = all.filter(s => s.payout_status === 'pending').length;
+    const processing = all.filter(s => s.payout_status === 'processing').length;
+    const completed  = all.filter(s => s.payout_status === 'completed').length;
+    const failed     = all.filter(s => s.payout_status === 'failed').length;
+    const total_payout_rs = all.reduce((sum, s) => sum + (parseFloat(s.net_payout_rs) || 0), 0);
+    const total_fee_rs    = all.reduce((sum, s) => sum + (parseFloat(s.platform_fee_rs) || 0), 0);
+    res.json({ total, pending, processing, completed, failed, total_payout_rs, total_fee_rs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/admin/clear-cache ─────────────────────────────
 // Clears stale/test data: expired tokens, orphan sessions, temp records
 router.post('/clear-cache', async (req, res) => {

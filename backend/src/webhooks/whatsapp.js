@@ -50,13 +50,21 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     const body = JSON.parse(req.body);
     if (body.object !== 'whatsapp_business_account') return;
 
-    await logWebhook('whatsapp', body).catch(() => {});
+    const logId = await logWebhook('whatsapp', body).catch(() => null);
 
     for (const entry of body.entry || []) {
       for (const change of entry.changes || []) {
         if (change.field !== 'messages') continue;
         await processChange(change.value);
       }
+    }
+
+    // Mark webhook as processed
+    if (logId) {
+      await col('webhook_logs').updateOne(
+        { _id: logId },
+        { $set: { processed: true, processed_at: new Date() } }
+      ).catch(() => {});
     }
   } catch (err) {
     console.error('[WA Webhook] Processing error:', err.message);
@@ -716,8 +724,9 @@ const handleStatus = async (status) => {
 // ─── LOG WEBHOOK ──────────────────────────────────────────────
 const logWebhook = async (source, payload) => {
   const phoneNumberId = payload.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
+  const id = newId();
   await col('webhook_logs').insertOne({
-    _id: newId(),
+    _id: id,
     source,
     event_type: 'messages',
     phone_number_id: phoneNumberId || null,
@@ -727,6 +736,7 @@ const logWebhook = async (source, payload) => {
     received_at: new Date(),
     processed_at: null,
   });
+  return id;
 };
 
 module.exports = router;
