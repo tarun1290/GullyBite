@@ -337,8 +337,8 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <div class="table-wrap">
           <div class="table-head"><h2>Restaurants</h2></div>
           <table>
-            <thead><tr><th>Business</th><th>Owner</th><th>Email</th><th>Branches</th><th>Orders</th><th>Revenue</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody id="restaurants-tbody"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody>
+            <thead><tr><th>Business</th><th>Owner</th><th>Branches</th><th>Catalog</th><th>Orders</th><th>Fulfillment</th><th>Issues</th><th>Earnings</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="restaurants-tbody"><tr><td colspan="10" class="empty">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -954,26 +954,34 @@ function closeModal(e) { if (e.target.id === 'log-modal') closeLogModal(); }
 // ─── RESTAURANTS ──────────────────────────────────────────────────
 async function loadRestaurants() {
   const tbody = document.getElementById('restaurants-tbody');
-  tbody.innerHTML = '<tr><td colspan="8" class="empty">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="10" class="empty">Loading…</td></tr>';
   try {
     const rows = await api('/api/admin/restaurants');
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No restaurants yet</td></tr>'; return; }
-    tbody.innerHTML = rows.map(r => `
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty">No restaurants yet</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => {
+      const o = r.orders || {};
+      const orderTip = `Delivered: ${o.delivered||0}\nPending: ${o.pending||0}\nConfirmed: ${o.confirmed||0}\nPreparing: ${o.preparing||0}\nOut for Delivery: ${o.out_for_delivery||0}\nCancelled: ${o.cancelled||0}`;
+      const fpct = r.fulfillment_pct || 0;
+      const fColor = fpct >= 80 ? 'var(--wa)' : fpct >= 50 ? 'var(--gold)' : 'var(--red)';
+      return `
       <tr>
         <td><strong>${esc(r.business_name)}</strong><br><span style="color:var(--dim);font-size:.72rem">${r.id.slice(0,8)}</span></td>
         <td>${esc(r.owner_name || '—')}</td>
-        <td class="truncate">${esc(r.email || '—')}</td>
         <td style="text-align:center">${r.branch_count}</td>
-        <td style="text-align:center">${r.order_count}</td>
+        <td style="text-align:center">${r.catalog_count || 0}</td>
+        <td style="text-align:center;cursor:help" title="${orderTip}"><strong>${o.total||0}</strong><br><span style="color:var(--wa);font-size:.72rem">${o.delivered||0} del</span></td>
+        <td style="text-align:center"><span style="color:${fColor};font-weight:600">${fpct}%</span></td>
+        <td style="text-align:center">${r.issues ? `<span style="color:var(--red);font-weight:600">${r.issues}</span>` : '<span style="color:var(--mute)">0</span>'}</td>
         <td>₹${fmtNum(r.revenue_rs)}</td>
         <td>${rStatusBadge(r.status)}</td>
         <td style="white-space:nowrap">${r.status === 'active'
           ? `<button class="btn-sm danger" onclick="setRestaurantStatus('${r.id}','suspended','${esc(r.business_name)}')">Suspend</button>`
           : `<button class="btn-sm primary" onclick="setRestaurantStatus('${r.id}','active','${esc(r.business_name)}')">Activate</button>`
         } <button class="btn-sm" style="color:var(--red);border-color:var(--red);margin-left:.3rem" onclick="deleteRestaurant('${r.id}','${esc(r.business_name).replace(/'/g,"\\'")}')">Delete</button></td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">${esc(e.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="empty">${esc(e.message)}</td></tr>`;
   }
 }
 
