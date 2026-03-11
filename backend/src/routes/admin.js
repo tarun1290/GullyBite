@@ -515,6 +515,13 @@ router.post('/clear-cache', async (req, res) => {
     });
     results.orphan_wa_accounts_removed = orphanWA.deletedCount;
 
+    // Mark all unprocessed webhook logs as processed (legacy cleanup)
+    const staleLogs = await col('webhook_logs').updateMany(
+      { processed: false },
+      { $set: { processed: true, processed_at: new Date() } }
+    );
+    results.stale_logs_marked_processed = staleLogs.modifiedCount;
+
     res.json({ ok: true, cleared: results });
   } catch (err) {
     res.status(500).json({ error: err.message });

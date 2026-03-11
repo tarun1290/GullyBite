@@ -1276,7 +1276,7 @@ async function loadReferrals() {
     tbody.innerHTML = rows.map(r => {
       const statusColor = { active: '#22c55e', converted: '#7c3aed', expired: '#6b7280' }[r.status] || '#6b7280';
       const expiresLabel = r.status === 'active'
-        ? `<span style="color:#22c55e">Expires ${timeAgo(r.expires_at)}</span>`
+        ? `<span style="color:#22c55e">Expires ${timeUntil(r.expires_at)}</span>`
         : fmtDate(r.expires_at);
       return `<tr>
         <td style="font-family:monospace">${r.customer_wa_phone}</td>
@@ -1339,7 +1339,7 @@ function copyRefLink() {
   navigator.clipboard.writeText(_lastRefLink).then(() => toast('Link copied', 'ok'));
 }
 
-function timeAgo(ts) {
+function timeUntil(ts) {
   const diff = new Date(ts) - Date.now();
   if (diff <= 0) return 'now';
   const h = Math.floor(diff / 3600000);
