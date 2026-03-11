@@ -379,10 +379,13 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           <div style="font-size:.8rem;color:#b45309;margin-top:.15rem">Connect WhatsApp to start receiving orders. All selling features are locked until connected.</div>
         </div>
       </div>
-      <button class="btn-gold" id="banner-connect-btn" onclick="doBannerConnect()" style="white-space:nowrap;flex-shrink:0">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-        Connect WhatsApp Now
-      </button>
+      <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <button class="btn-gold" id="banner-connect-btn" onclick="doBannerConnect()" style="white-space:nowrap;flex-shrink:0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Connect WhatsApp Now
+        </button>
+        <a id="dash-connect-fallback" href="/auth/login?source=dashboard" style="display:none;font-size:.78rem;color:#92400e;text-decoration:underline;font-weight:600">Popup blocked? Click here</a>
+      </div>
     </div>
 
     <!-- ══ PENDING APPROVAL BANNER ═══════════════════════════ -->
@@ -1075,8 +1078,20 @@ document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('wh-url');
   if (el) el.textContent = location.origin + '/webhooks/whatsapp';
 
+  // Handle OAuth redirect from Meta (redirect-based flow)
+  const params = new URLSearchParams(location.search);
+  const metaToken = params.get('meta_token');
+  if (metaToken) {
+    localStorage.setItem('zm_token', metaToken);
+    token = metaToken;
+    history.replaceState({}, '', '/dashboard');
+  }
+  if (params.get('error')) {
+    setTimeout(() => toast('Meta connection failed — please try again', 'err'), 500);
+    history.replaceState({}, '', '/dashboard');
+  }
+
   if (!token) {
-    // No token — send back to landing page
     window.location.href = '/';
     return;
   }
@@ -2279,20 +2294,31 @@ function _setConnectBtns(loading) {
   }
 }
 
+function _showDashFallback() {
+  const el = document.getElementById('dash-connect-fallback');
+  if (el) el.style.display = 'inline';
+}
+
 function _doMetaConnect() {
-  // Immediately show loading state so user knows something is happening
   _setBtnLoading('banner-connect-btn', true);
   _setBtnLoading('wa-reconnect-btn', true);
 
   if (typeof FB === 'undefined' || typeof FB.login !== 'function') {
-    toast('Facebook SDK not loaded yet. Please wait a few seconds and try again.', 'err');
+    toast('Facebook SDK not loaded. Redirecting to Meta login…', 'nfo');
     _resetConnectBtns();
+    window.location.href = '/auth/login?source=dashboard';
     return;
   }
 
-  // Safety timeout — if FB.login callback never fires (popup blocked), reset buttons after 10s
+  // Safety timeout — if popup blocked, show redirect fallback
   let callbackFired = false;
-  setTimeout(() => { if (!callbackFired) { _resetConnectBtns(); toast('Popup may have been blocked. Please allow popups for this site and try again.', 'err'); } }, 10000);
+  setTimeout(() => {
+    if (!callbackFired) {
+      _resetConnectBtns();
+      _showDashFallback();
+      toast('Popup may have been blocked. Use the redirect link or allow popups.', 'err');
+    }
+  }, 8000);
 
   try {
     FB.login(async resp => {
@@ -2302,7 +2328,7 @@ function _doMetaConnect() {
         await _finishMetaConnect(resp.authResponse.code, null);
         return;
       }
-      // authResponse null — popup may have redirected via /auth/callback
+      // authResponse null — popup closed or navigated away
       toast('Verifying connection…', 'nfo');
       await new Promise(r => setTimeout(r, 2000));
       const fresh = await api('/auth/me').catch(() => null);
@@ -2312,8 +2338,10 @@ function _doMetaConnect() {
         document.getElementById('wa-connect-banner').style.display = 'none';
         if (rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
         loadProfile();
+        renderWizard();
       } else {
         toast('Connection cancelled — please try again.', 'err');
+        _showDashFallback();
       }
       _resetConnectBtns();
     }, {
@@ -2324,8 +2352,9 @@ function _doMetaConnect() {
     });
   } catch (err) {
     console.error('[GullyBite] FB.login error:', err);
-    toast('Failed to open Meta login: ' + err.message, 'err');
+    toast('Redirecting to Meta login…', 'nfo');
     _resetConnectBtns();
+    window.location.href = '/auth/login?source=dashboard';
   }
 }
 
