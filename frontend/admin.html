@@ -967,10 +967,10 @@ async function loadRestaurants() {
         <td style="text-align:center">${r.order_count}</td>
         <td>₹${fmtNum(r.revenue_rs)}</td>
         <td>${rStatusBadge(r.status)}</td>
-        <td>${r.status === 'active'
+        <td style="white-space:nowrap">${r.status === 'active'
           ? `<button class="btn-sm danger" onclick="setRestaurantStatus('${r.id}','suspended','${esc(r.business_name)}')">Suspend</button>`
           : `<button class="btn-sm primary" onclick="setRestaurantStatus('${r.id}','active','${esc(r.business_name)}')">Activate</button>`
-        }</td>
+        } <button class="btn-sm" style="color:var(--red);border-color:var(--red);margin-left:.3rem" onclick="deleteRestaurant('${r.id}','${esc(r.business_name).replace(/'/g,"\\'")}')">Delete</button></td>
       </tr>`).join('');
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="8" class="empty">${esc(e.message)}</td></tr>`;
@@ -983,6 +983,22 @@ async function setRestaurantStatus(id, status, name) {
     await api(`/api/admin/restaurants/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
     toast(`${name} is now ${status}`, 'ok');
     loadRestaurants();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function deleteRestaurant(id, name) {
+  const confirmed = prompt(`This will permanently delete "${name}" and all its data (orders, branches, menu, payments).\n\nThe restaurant will be archived internally for your records.\n\nType the restaurant name to confirm:`);
+  if (!confirmed || confirmed.trim().toLowerCase() !== name.trim().toLowerCase()) {
+    if (confirmed !== null) toast('Name did not match — deletion cancelled', 'err');
+    return;
+  }
+  try {
+    const res = await api(`/api/admin/restaurants/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      toast(`"${name}" deleted and archived`, 'ok');
+      loadRestaurants();
+      loadStats();
+    }
   } catch (e) { toast(e.message, 'err'); }
 }
 

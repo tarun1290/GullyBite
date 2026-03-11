@@ -486,6 +486,72 @@ router.get('/settlements/stats', async (req, res) => {
   }
 });
 
+// ─── DELETE /api/admin/restaurants/:id ────────────────────────
+// Archives the restaurant internally, then deletes all live data
+router.delete('/restaurants/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const restaurant = await col('restaurants').findOne({ _id: id });
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+
+    // Get branch IDs for cascading delete
+    const branches = await col('branches').find({ restaurant_id: id }, { projection: { _id: 1 } }).toArray();
+    const branchIds = branches.map(b => b._id);
+
+    // Gather summary stats for the archive
+    const [orderCount, revenue, waAccounts] = await Promise.all([
+      col('orders').countDocuments({ restaurant_id: id }),
+      col('orders').find({ restaurant_id: id, status: { $ne: 'CANCELLED' } }).project({ total_rs: 1 }).toArray(),
+      col('whatsapp_accounts').find({ restaurant_id: id }).toArray(),
+    ]);
+    const totalRevenue = revenue.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
+
+    // Archive to internal collection (never exposed to public APIs)
+    const { password_hash, ...safeRestaurant } = restaurant;
+    await col('archived_restaurants').insertOne({
+      _id: newId(),
+      original_id: id,
+      restaurant: safeRestaurant,
+      wa_phones: waAccounts.map(w => w.phone_display || w.phone_number_id),
+      branch_count: branches.length,
+      order_count: orderCount,
+      total_revenue_rs: totalRevenue,
+      deleted_by: 'admin',
+      deleted_at: new Date(),
+    });
+
+    // Delete all live data
+    await Promise.all([
+      col('restaurants').deleteOne({ _id: id }),
+      col('whatsapp_accounts').deleteMany({ restaurant_id: id }),
+      col('branches').deleteMany({ restaurant_id: id }),
+      col('menu_items').deleteMany({ restaurant_id: id }),
+      col('menu_categories').deleteMany({ branch_id: { $in: branchIds } }),
+      col('orders').deleteMany({ restaurant_id: id }),
+      col('payments').deleteMany({ restaurant_id: id }),
+      col('coupons').deleteMany({ restaurant_id: id }),
+      col('settlements').deleteMany({ restaurant_id: id }),
+      col('referrals').deleteMany({ restaurant_id: id }),
+    ]);
+
+    console.log(`[Admin] Deleted restaurant "${restaurant.business_name}" (${id}) — archived as internal record`);
+    res.json({ ok: true, archived: true, business_name: restaurant.business_name });
+  } catch (err) {
+    console.error('[Admin] Delete restaurant error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/admin/archived-restaurants ─────────────────────
+router.get('/archived-restaurants', async (req, res) => {
+  try {
+    const docs = await col('archived_restaurants').find({}).sort({ deleted_at: -1 }).toArray();
+    res.json(mapIds(docs));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/admin/clear-cache ─────────────────────────────
 // Clears stale/test data: expired tokens, orphan sessions, temp records
 router.post('/clear-cache', async (req, res) => {
