@@ -962,6 +962,25 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           </div>
         </div>
 
+        <!-- Delete Account -->
+        <div class="card" style="margin-top:1.2rem;border-color:#fecaca">
+          <div class="ch" style="background:#fff1f2"><h3 style="color:#dc2626">Delete Account</h3></div>
+          <div class="cb">
+            <p style="font-size:.84rem;color:var(--dim);margin-bottom:.8rem;line-height:1.65">
+              Permanently delete your GullyBite account, all restaurant data, branches, menu items, orders and WhatsApp connections. <strong style="color:#dc2626">This action cannot be undone.</strong>
+            </p>
+            <div id="delete-confirm-wrap" style="display:none;margin-bottom:1rem">
+              <label style="font-size:.78rem;font-weight:600;color:#dc2626;margin-bottom:.35rem;display:block">Type your email address to confirm deletion:</label>
+              <input id="delete-confirm-email" type="email" placeholder="your-email@example.com" style="width:100%;padding:.5rem .75rem;border:1px solid #fecaca;border-radius:7px;font-size:.85rem;outline:none;margin-bottom:.6rem">
+              <div style="display:flex;gap:.6rem">
+                <button class="btn-p" style="background:#dc2626;flex:1" id="delete-confirm-btn" onclick="doDeleteAccount()">Yes, Delete My Account</button>
+                <button class="btn-g" style="flex-shrink:0" onclick="document.getElementById('delete-confirm-wrap').style.display='none'">Cancel</button>
+              </div>
+            </div>
+            <button class="btn-g" id="delete-account-btn" style="color:#dc2626;border-color:#fecaca" onclick="document.getElementById('delete-confirm-wrap').style.display='block';this.style.display='none'">Delete Account</button>
+          </div>
+        </div>
+
       </div>
 
     </div>
@@ -2173,6 +2192,25 @@ async function doChangePassword() {
     toast('Password updated', 'ok');
     ['p-curpw','p-newpw','p-confpw'].forEach(id => document.getElementById(id).value = '');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doDeleteAccount() {
+  const confirmEmail = document.getElementById('delete-confirm-email').value.trim();
+  const actualEmail  = rest?.email;
+  if (!confirmEmail || confirmEmail.toLowerCase() !== (actualEmail || '').toLowerCase()) {
+    return toast('Email does not match — please type your account email to confirm', 'err');
+  }
+  const btn = document.getElementById('delete-confirm-btn');
+  btn.disabled = true; btn.textContent = 'Deleting…';
+  try {
+    await api('/auth/delete-account', { method: 'DELETE' });
+    toast('Account deleted', 'ok');
+    localStorage.removeItem('zm_token');
+    setTimeout(() => { window.location.href = '/'; }, 1200);
+  } catch (e) {
+    toast(e.message || 'Failed to delete account', 'err');
+    btn.disabled = false; btn.textContent = 'Yes, Delete My Account';
+  }
 }
 
 async function _finishMetaConnect(code, accessToken) {

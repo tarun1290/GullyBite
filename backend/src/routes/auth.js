@@ -162,6 +162,37 @@ router.post('/change-password', requireAuth, express.json(), async (req, res) =>
   }
 });
 
+// ─── DELETE ACCOUNT ──────────────────────────────────────────
+router.delete('/delete-account', requireAuth, async (req, res) => {
+  try {
+    const id = req.restaurantId;
+
+    // Get branch IDs to clean up menu items/categories linked by branch
+    const branches = await col('branches').find({ restaurant_id: id }, { projection: { _id: 1 } }).toArray();
+    const branchIds = branches.map(b => b._id);
+
+    // Delete all related data across collections
+    await Promise.all([
+      col('restaurants').deleteOne({ _id: id }),
+      col('whatsapp_accounts').deleteMany({ restaurant_id: id }),
+      col('branches').deleteMany({ restaurant_id: id }),
+      col('menu_items').deleteMany({ restaurant_id: id }),
+      col('menu_categories').deleteMany({ branch_id: { $in: branchIds } }),
+      col('orders').deleteMany({ restaurant_id: id }),
+      col('payments').deleteMany({ restaurant_id: id }),
+      col('coupons').deleteMany({ restaurant_id: id }),
+      col('settlements').deleteMany({ restaurant_id: id }),
+      col('referrals').deleteMany({ restaurant_id: id }),
+    ]);
+
+    console.log(`[delete-account] Deleted restaurant ${id} and all associated data`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[delete-account]', err.message);
+    res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
 // ─── INITIATE META OAUTH ──────────────────────────────────────
 router.get('/login', (req, res) => {
   const scopes = ['whatsapp_business_management', 'whatsapp_business_messaging', 'business_management'].join(',');
