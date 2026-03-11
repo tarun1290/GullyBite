@@ -143,10 +143,10 @@ const syncBranchCatalog = async (branchId) => {
       const variantFields = {};
       if (item.item_group_id) {
         variantFields.item_group_id = item.item_group_id;
-        if (item.variant_type === 'size' || item.variant_type === 'portion') {
+        // Meta only groups variants by size/color/pattern/gender fields.
+        // For food, always use 'size' so WhatsApp shows the variant picker.
+        if (item.variant_value) {
           variantFields.size = item.variant_value;
-        } else if (item.variant_value) {
-          variantFields.custom_label_4 = `${item.variant_type}:${item.variant_value}`;
         }
       }
 
@@ -256,10 +256,8 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
     const variantFields = {};
     if (item.item_group_id) {
       variantFields.item_group_id = item.item_group_id;
-      if (item.variant_type === 'size' || item.variant_type === 'portion') {
+      if (item.variant_value) {
         variantFields.size = item.variant_value;
-      } else if (item.variant_value) {
-        variantFields.custom_label_4 = `${item.variant_type}:${item.variant_value}`;
       }
     }
     const displayName = item.variant_value ? `${item.name} - ${item.variant_value}` : item.name;
