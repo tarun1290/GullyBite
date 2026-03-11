@@ -8,8 +8,8 @@ const bcrypt  = require('bcryptjs');
 const router  = express.Router();
 const { col, newId } = require('../config/database');
 
-const META_GRAPH_URL = 'https://graph.facebook.com/v22.0';
-const META_AUTH_URL  = 'https://www.facebook.com/v22.0/dialog/oauth';
+const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
+const META_AUTH_URL  = 'https://www.facebook.com/v25.0/dialog/oauth';
 
 // ─── SIGN UP ──────────────────────────────────────────────────
 router.post('/signup', express.json(), async (req, res) => {
