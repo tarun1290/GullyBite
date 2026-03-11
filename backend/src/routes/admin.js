@@ -84,15 +84,52 @@ router.get('/restaurants', async (req, res) => {
       const branches = await col('branches').find({ restaurant_id: rid }).project({ _id: 1 }).toArray();
       const branchIds = branches.map(b => String(b._id));
 
-      const orders = await col('orders').find({ branch_id: { $in: branchIds } }).project({ total_rs: 1, status: 1 }).toArray();
+      // Orders with full status breakdown
+      const orders = await col('orders').find({ branch_id: { $in: branchIds } })
+        .project({ total_rs: 1, status: 1, delivered_at: 1 }).toArray();
+
+      const ordersByStatus = {
+        total: orders.length,
+        delivered: orders.filter(o => o.status === 'DELIVERED').length,
+        pending: orders.filter(o => o.status === 'PENDING').length,
+        confirmed: orders.filter(o => o.status === 'CONFIRMED').length,
+        preparing: orders.filter(o => o.status === 'PREPARING').length,
+        out_for_delivery: orders.filter(o => o.status === 'OUT_FOR_DELIVERY').length,
+        cancelled: orders.filter(o => o.status === 'CANCELLED').length,
+      };
+
       const revenue_rs = orders
         .filter(o => o.status !== 'CANCELLED')
         .reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
 
+      // Fulfillment rate = delivered / (total - cancelled) * 100
+      const nonCancelled = ordersByStatus.total - ordersByStatus.cancelled;
+      const fulfillment_pct = nonCancelled > 0
+        ? Math.round((ordersByStatus.delivered / nonCancelled) * 100)
+        : 0;
+
+      // Catalog count (menu items across all branches)
+      const [catalogCount, issueCount] = await Promise.all([
+        col('menu_items').countDocuments({ branch_id: { $in: branchIds } }),
+        // Issues = cancelled orders + failed payments
+        col('payments').countDocuments({ restaurant_id: rid, status: { $in: ['failed', 'refunded'] } }),
+      ]);
+
+      const issues = ordersByStatus.cancelled + issueCount;
+
       const out = mapId(r);
       delete out.password_hash;
       delete out.meta_access_token;
-      return { ...out, branch_count: branches.length, order_count: orders.length, revenue_rs };
+      return {
+        ...out,
+        branch_count: branches.length,
+        catalog_count: catalogCount,
+        orders: ordersByStatus,
+        order_count: orders.length,
+        fulfillment_pct,
+        issues,
+        revenue_rs,
+      };
     }));
 
     res.json(enriched);
