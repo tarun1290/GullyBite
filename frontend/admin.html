@@ -203,6 +203,11 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Customers
       </div>
+      <div class="nav-item" data-page="settlements" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Settlements
+        <span class="badge" id="nav-settle-badge" style="display:none;background:#d97706;color:#000"></span>
+      </div>
       <div class="nav-item" data-page="referrals" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
         Referrals
@@ -389,6 +394,70 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         </div>
       </div>
 
+      <!-- ── SETTLEMENTS PAGE ────────────────────────────────────── -->
+      <div class="page" id="page-settlements">
+        <!-- Stats strip -->
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:1rem;margin-bottom:1.4rem">
+          <div class="stat-card"><div class="stat-val" id="stl-s-total">—</div><div class="stat-label">Total Settlements</div></div>
+          <div class="stat-card gold"><div class="stat-val" id="stl-s-pending">—</div><div class="stat-label">Pending Payout</div></div>
+          <div class="stat-card blue"><div class="stat-val" id="stl-s-processing">—</div><div class="stat-label">Processing</div></div>
+          <div class="stat-card green"><div class="stat-val" id="stl-s-completed">—</div><div class="stat-label">Completed</div></div>
+          <div class="stat-card red"><div class="stat-val" id="stl-s-failed">—</div><div class="stat-label">Failed</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.4rem">
+          <div class="stat-card" style="border-left:3px solid var(--wa)"><div class="stat-label">Total Payouts</div><div class="stat-val" id="stl-s-payout">—</div></div>
+          <div class="stat-card" style="border-left:3px solid var(--acc)"><div class="stat-label">Platform Fees Earned</div><div class="stat-val" id="stl-s-fees">—</div></div>
+        </div>
+
+        <!-- Run Settlement button -->
+        <div style="margin-bottom:1.2rem;display:flex;gap:.8rem;align-items:center">
+          <button class="btn-sm primary" onclick="runSettlement()" style="padding:.5rem 1.2rem;font-size:.85rem">Run Settlement Now</button>
+          <span style="font-size:.78rem;color:var(--dim)">Settlements auto-run every Monday 9:00 AM IST. Use this button for manual runs.</span>
+        </div>
+
+        <!-- Settlements table -->
+        <div class="table-wrap">
+          <div class="table-head">
+            <h2>Settlement History</h2>
+            <span id="stl-count" style="color:var(--dim);font-size:.75rem;margin-left:.5rem"></span>
+            <div style="margin-left:auto;display:flex;gap:.5rem">
+              <select id="fs-status" onchange="loadSettlements()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem">
+                <option value="">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+              </select>
+              <button class="btn-sm" onclick="loadSettlements()">&#8635; Refresh</button>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Restaurant</th>
+                <th>Period</th>
+                <th>Orders</th>
+                <th>Gross Revenue</th>
+                <th>Platform Fee</th>
+                <th>Delivery</th>
+                <th>Refunds</th>
+                <th>Net Payout</th>
+                <th>Status</th>
+                <th>Payout ID</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="stl-tbody"><tr><td colspan="11" class="empty">Loading…</td></tr></tbody>
+          </table>
+          <div class="pager">
+            <button id="stl-prev" onclick="stlPage(-1)" disabled>&#8592; Prev</button>
+            <span id="stl-page-info">Page 1</span>
+            <button id="stl-next" onclick="stlPage(1)">Next &#8594;</button>
+            <span class="total" id="stl-total"></span>
+          </div>
+        </div>
+      </div>
+
       <!-- ── REFERRALS PAGE ──────────────────────────────────────── -->
       <div class="page" id="page-referrals">
 
@@ -541,7 +610,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', referrals: 'Referrals' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -557,6 +626,7 @@ function nav(el) {
   if (page === 'restaurants')  loadRestaurants();
   if (page === 'orders')       loadOrders();
   if (page === 'customers')    loadCustomers();
+  if (page === 'settlements')  loadSettlements();
   if (page === 'referrals')    loadReferrals();
 }
 
@@ -567,6 +637,7 @@ function refreshCurrent() {
   else if (currentPage === 'restaurants')  loadRestaurants();
   else if (currentPage === 'orders')       loadOrders();
   else if (currentPage === 'customers')    loadCustomers();
+  else if (currentPage === 'settlements')  loadSettlements();
   else if (currentPage === 'referrals')    loadReferrals();
 }
 
@@ -634,7 +705,17 @@ function loadAll() {
   loadOverviewOrders();
   loadOverviewLogs();
   loadApplicationsBadge();
+  loadSettlementsBadge();
   loadReferralsBadge();
+}
+
+async function loadSettlementsBadge() {
+  try {
+    const s = await api('/api/admin/settlements/stats');
+    const badge = document.getElementById('nav-settle-badge');
+    if (s.pending > 0) { badge.textContent = s.pending; badge.style.display = 'inline-flex'; }
+    else badge.style.display = 'none';
+  } catch {}
 }
 
 // ─── APPLICATIONS ──────────────────────────────────────────────────
@@ -996,12 +1077,89 @@ function custPage(dir) {
   loadCustomers();
 }
 
-// ─── SETTLEMENT ───────────────────────────────────────────────────
+// ─── SETTLEMENTS ──────────────────────────────────────────────────
+let stlOffset = 0;
+const STL_LIMIT = 50;
+
+async function loadSettlements() {
+  // Load stats
+  try {
+    const s = await api('/api/admin/settlements/stats');
+    document.getElementById('stl-s-total').textContent      = s.total;
+    document.getElementById('stl-s-pending').textContent     = s.pending;
+    document.getElementById('stl-s-processing').textContent  = s.processing;
+    document.getElementById('stl-s-completed').textContent   = s.completed;
+    document.getElementById('stl-s-failed').textContent      = s.failed;
+    document.getElementById('stl-s-payout').textContent      = '₹' + fmtNum(s.total_payout_rs);
+    document.getElementById('stl-s-fees').textContent        = '₹' + fmtNum(s.total_fee_rs);
+
+    // Badge for pending settlements
+    const badge = document.getElementById('nav-settle-badge');
+    if (s.pending > 0) { badge.textContent = s.pending; badge.style.display = 'inline-flex'; }
+    else badge.style.display = 'none';
+  } catch {}
+
+  // Load table
+  const statusFilter = document.getElementById('fs-status').value;
+  const params = new URLSearchParams({ limit: STL_LIMIT, offset: stlOffset });
+  if (statusFilter) params.set('status', statusFilter);
+
+  const tbody = document.getElementById('stl-tbody');
+  tbody.innerHTML = '<tr><td colspan="11" class="empty">Loading…</td></tr>';
+
+  try {
+    const d = await api('/api/admin/settlements?' + params);
+    document.getElementById('stl-count').textContent = `${d.total} total`;
+    document.getElementById('stl-total').textContent = `${d.total} settlements`;
+    const page = Math.floor(stlOffset / STL_LIMIT) + 1;
+    const pages = Math.ceil(d.total / STL_LIMIT) || 1;
+    document.getElementById('stl-page-info').textContent = `Page ${page} / ${pages}`;
+    document.getElementById('stl-prev').disabled = stlOffset === 0;
+    document.getElementById('stl-next').disabled = stlOffset + STL_LIMIT >= d.total;
+
+    if (!d.settlements.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No settlements yet. Click "Run Settlement Now" to generate.</td></tr>'; return; }
+
+    tbody.innerHTML = d.settlements.map(s => {
+      const periodStart = fmtDate(s.period_start);
+      const periodEnd   = fmtDate(s.period_end);
+      const payoutBadge = {
+        pending:    '<span class="badge gold">Pending</span>',
+        processing: '<span class="badge blue">Processing</span>',
+        completed:  '<span class="badge green">Completed</span>',
+        failed:     '<span class="badge red">Failed</span>',
+      }[s.payout_status] || '<span class="badge gray">' + esc(s.payout_status) + '</span>';
+
+      return `<tr>
+        <td><strong>${esc(s.business_name)}</strong><br><span style="font-size:.72rem;color:var(--dim)">${s.restaurant_id.slice(0,8)}</span></td>
+        <td style="font-size:.78rem;white-space:nowrap">${periodStart}<br>→ ${periodEnd}</td>
+        <td style="text-align:center">${s.orders_count}</td>
+        <td>₹${fmtNum(s.gross_revenue_rs)}</td>
+        <td style="color:var(--acc)">₹${fmtNum(s.platform_fee_rs)}</td>
+        <td>₹${fmtNum(s.delivery_costs_rs)}</td>
+        <td>${s.refunds_rs > 0 ? '<span style="color:var(--red)">₹' + fmtNum(s.refunds_rs) + '</span>' : '—'}</td>
+        <td><strong>₹${fmtNum(s.net_payout_rs)}</strong></td>
+        <td>${payoutBadge}</td>
+        <td class="monospace" style="font-size:.72rem;color:var(--dim)">${s.rp_payout_id ? s.rp_payout_id.slice(0,14) + '…' : '—'}</td>
+        <td style="color:var(--dim);font-size:.75rem">${fmtTime(s.created_at)}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="11" class="empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+function stlPage(dir) {
+  stlOffset = Math.max(0, stlOffset + dir * STL_LIMIT);
+  loadSettlements();
+}
+
 async function runSettlement() {
-  if (!confirm('Run settlement now? This will initiate payouts to all restaurants.')) return;
+  if (!confirm('Run settlement now? This will calculate payouts for all restaurants with delivered orders in the current period.')) return;
   try {
     await api('/api/admin/run-settlement', { method: 'POST' });
-    toast('Settlement started successfully', 'ok');
+    toast('Settlement started — refresh in a few seconds to see results', 'ok');
+    // Auto-refresh after a short delay
+    setTimeout(() => { if (currentPage === 'settlements') loadSettlements(); }, 3000);
   } catch (e) { toast(e.message, 'err'); }
 }
 
