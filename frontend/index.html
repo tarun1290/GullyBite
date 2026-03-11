@@ -260,7 +260,7 @@ a{color:inherit;text-decoration:none}
 <div id="toast"></div>
 <div id="fb-root"></div>
 <script>
-window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml:true,version:'v25.0'})};
+window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml:true,version:'v21.0'});console.log('[GullyBite] FB SDK ready')};
 (function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(d.getElementById(id))return;js=d.createElement(s);js.id=id;js.src="https://connect.facebook.net/en_US/sdk.js";fjs.parentNode.insertBefore(js,fjs)}(document,'script','facebook-jssdk'));
 </script>
 
@@ -587,11 +587,6 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           <div class="ob-step-dot active">2</div>
           <div class="ob-step-label active">Restaurant Info</div>
         </div>
-        <div class="ob-connector"></div>
-        <div class="ob-step-item">
-          <div class="ob-step-dot">3</div>
-          <div class="ob-step-label">Connect WhatsApp</div>
-        </div>
       </div>
       <form onsubmit="submitBusinessDetails(event)">
         <div class="ob-section">
@@ -614,7 +609,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
             </div>
           </div>
         </div>
-        <button class="ob-submit" type="submit" id="ob-btn">Continue → Connect WhatsApp</button>
+        <button class="ob-submit" type="submit" id="ob-btn">Save & Go to Dashboard</button>
         <p class="ob-note">You can add GST, FSSAI and other details later in your dashboard.</p>
       </form>
     </div>
@@ -957,7 +952,7 @@ async function submitBusinessDetails(e) {
       window.location.href = '/dashboard';
     } else toast(d.error || 'Save failed', 'err');
   } catch (err) { toast(err.message, 'err'); }
-  finally { setLoading(btn, false, 'Continue → Connect WhatsApp'); }
+  finally { setLoading(btn, false, 'Save & Go to Dashboard'); }
 }
 
 /* ─── CONNECT WHATSAPP ──────────────────────────────────── */

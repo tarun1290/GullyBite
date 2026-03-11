@@ -307,7 +307,7 @@ tr:hover td{background:rgba(79,70,229,.02)}
 <body>
 <div id="fb-root"></div>
 <script>
-window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml:true,version:'v25.0'})};
+window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml:true,version:'v21.0'});console.log('[GullyBite] FB SDK ready')};
 (function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(d.getElementById(id))return;js=d.createElement(s);js.id=id;js.src="https://connect.facebook.net/en_US/sdk.js";fjs.parentNode.insertBefore(js,fjs)}(document,'script','facebook-jssdk'));
 </script>
 
@@ -1156,7 +1156,7 @@ async function initDash() {
 async function loadOverview() {
   if ((rest?.onboarding_step || 1) < 5) {
     document.getElementById('ob').style.display = 'block';
-    renderWizard(rest?.onboarding_step || 1);
+    renderWizard();
   }
   try {
     const [d1, d7] = await Promise.all([
@@ -1170,21 +1170,23 @@ async function loadOverview() {
     loadRecent();
   } catch (_) {}
 }
-function renderWizard(step) {
+function renderWizard() {
+  const waConnected = !!(rest.meta_user_id || (rest.waba_accounts && rest.waba_accounts.length > 0));
+  const profileDone = !!(rest.brand_name && rest.phone);
   const steps = [
-    { l: 'Connect with Meta',    d: 'Facebook OAuth — done!' },
-    { l: 'Complete your profile', d: 'Business name, logo, bank account',             fn: () => goTab('settings', null) },
-    { l: 'Add your first branch', d: 'GPS coordinates enable location-based ordering', fn: () => goTab('branches', null) },
-    { l: 'Add menu items',        d: 'Items sync to WhatsApp Catalog automatically',   fn: () => goTab('menu', null) },
-    { l: 'Sync catalog & go live',d: 'Click "Sync" on your branch after adding items', fn: () => goTab('branches', null) },
+    { l: 'Connect with Meta',     d: 'Link your WhatsApp Business account',             done: waConnected,  fn: () => doBannerConnect() },
+    { l: 'Complete your profile',  d: 'Business name, logo, bank account',               done: profileDone,  fn: () => goTab('settings', null) },
+    { l: 'Add your first branch',  d: 'GPS coordinates enable location-based ordering',  done: false,        fn: () => goTab('branches', null) },
+    { l: 'Add menu items',         d: 'Items sync to WhatsApp Catalog automatically',    done: false,        fn: () => goTab('menu', null) },
+    { l: 'Sync catalog & go live', d: 'Click "Sync" on your branch after adding items',  done: false,        fn: () => goTab('branches', null) },
   ];
   document.getElementById('ob-steps').innerHTML = steps.map((s, i) => {
-    const n = i + 1, done = n <= step, cur = n === step + 1;
-    const cls = done ? 'wz-done' : cur ? 'wz-cur' : 'wz-todo';
+    const n = i + 1;
+    const cls = s.done ? 'wz-done' : 'wz-cur';
     return `<div class="wz">
-      <div class="wz-n ${cls}">${done ? '✓' : n}</div>
+      <div class="wz-n ${cls}">${s.done ? '✓' : n}</div>
       <div style="flex:1"><b>${s.l}</b><p>${s.d}</p></div>
-      ${s.fn && !done ? `<button class="btn-g btn-sm" style="flex-shrink:0" onclick="(${s.fn.toString()})()">Go →</button>` : ''}
+      ${s.fn && !s.done ? `<button class="btn-g btn-sm" style="flex-shrink:0" onclick="(${s.fn.toString()})()">Go →</button>` : ''}
     </div>`;
   }).join('');
 }
@@ -2282,39 +2284,49 @@ function _doMetaConnect() {
   _setBtnLoading('banner-connect-btn', true);
   _setBtnLoading('wa-reconnect-btn', true);
 
-  if (typeof FB === 'undefined') {
+  if (typeof FB === 'undefined' || typeof FB.login !== 'function') {
     toast('Facebook SDK not loaded yet. Please wait a few seconds and try again.', 'err');
     _resetConnectBtns();
     return;
   }
 
-  // Call FB.login directly — any window.open() before this consumes the user gesture
-  // and causes the browser to silently block FB.login's popup
-  FB.login(async resp => {
-    if (resp.authResponse?.code) {
-      await _finishMetaConnect(resp.authResponse.code, null);
-      return;
-    }
-    // authResponse null — popup may have redirected via /auth/callback
-    toast('Verifying connection…', 'nfo');
-    await new Promise(r => setTimeout(r, 2000));
-    const fresh = await api('/auth/me').catch(() => null);
-    if (fresh?.meta_user_id) {
-      toast('WhatsApp connected!', 'ok');
-      rest = fresh;
-      document.getElementById('wa-connect-banner').style.display = 'none';
-      if (rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
-      loadProfile();
-    } else {
-      toast('Connection cancelled — please try again.', 'err');
-    }
+  // Safety timeout — if FB.login callback never fires (popup blocked), reset buttons after 10s
+  let callbackFired = false;
+  setTimeout(() => { if (!callbackFired) { _resetConnectBtns(); toast('Popup may have been blocked. Please allow popups for this site and try again.', 'err'); } }, 10000);
+
+  try {
+    FB.login(async resp => {
+      callbackFired = true;
+      console.log('[GullyBite] FB.login response:', JSON.stringify(resp));
+      if (resp.authResponse?.code) {
+        await _finishMetaConnect(resp.authResponse.code, null);
+        return;
+      }
+      // authResponse null — popup may have redirected via /auth/callback
+      toast('Verifying connection…', 'nfo');
+      await new Promise(r => setTimeout(r, 2000));
+      const fresh = await api('/auth/me').catch(() => null);
+      if (fresh?.meta_user_id) {
+        toast('WhatsApp connected!', 'ok');
+        rest = fresh;
+        document.getElementById('wa-connect-banner').style.display = 'none';
+        if (rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
+        loadProfile();
+      } else {
+        toast('Connection cancelled — please try again.', 'err');
+      }
+      _resetConnectBtns();
+    }, {
+      config_id: '3105026846366355',
+      response_type: 'code',
+      override_default_response_type: true,
+      extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
+    });
+  } catch (err) {
+    console.error('[GullyBite] FB.login error:', err);
+    toast('Failed to open Meta login: ' + err.message, 'err');
     _resetConnectBtns();
-  }, {
-    config_id: '3105026846366355',
-    response_type: 'code',
-    override_default_response_type: true,
-    extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
-  });
+  }
 }
 
 /* ─────────────────────────── REFERRALS ─────────────────── */
