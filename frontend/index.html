@@ -587,6 +587,11 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           <div class="ob-step-dot active">2</div>
           <div class="ob-step-label active">Restaurant Info</div>
         </div>
+        <div class="ob-connector"></div>
+        <div class="ob-step-item">
+          <div class="ob-step-dot">3</div>
+          <div class="ob-step-label">Connect WhatsApp</div>
+        </div>
       </div>
       <form onsubmit="submitBusinessDetails(event)">
         <div class="ob-section">
@@ -609,7 +614,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
             </div>
           </div>
         </div>
-        <button class="ob-submit" type="submit" id="ob-btn">Save & Go to Dashboard</button>
+        <button class="ob-submit" type="submit" id="ob-btn">Continue → Connect WhatsApp</button>
         <p class="ob-note">You can add GST, FSSAI and other details later in your dashboard.</p>
       </form>
     </div>
@@ -664,10 +669,13 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
           Connect with Meta / Facebook
         </button>
+        <p id="connect-fallback" style="display:none;margin-top:.6rem;font-size:.78rem">
+          Popup not opening? <a href="#" id="connect-redirect-link" style="color:#4f46e5;font-weight:600;text-decoration:underline">Click here to connect via redirect</a>
+        </p>
         <p style="margin-top:.6rem;font-size:.72rem;color:var(--dim)">Takes about 2 minutes. You'll be redirected back automatically.</p>
         <div style="margin-top:1rem;padding-top:.9rem;border-top:1px solid #f1f5f9">
-          <p style="font-size:.75rem;color:var(--dim);margin-bottom:.4rem">Not ready yet? You can set up your menu and branches first.</p>
-          <button class="btn-outline" style="font-size:.78rem" onclick="window.location.href='/dashboard'">Go to Dashboard →</button>
+          <p style="font-size:.75rem;color:var(--dim);margin-bottom:.4rem">Not ready yet? You can always connect later from your dashboard.</p>
+          <button class="btn-outline" style="font-size:.78rem" onclick="window.location.href='/dashboard'">Skip for now → Go to Dashboard</button>
         </div>
       </div>
     </div>
@@ -948,11 +956,11 @@ async function submitBusinessDetails(e) {
       city:           document.getElementById('ob-city').value.trim(),
     }, token);
     if (d.submitted) {
-      toast('Details saved! Redirecting to dashboard…', 'ok');
-      window.location.href = '/dashboard';
+      toast('Details saved! Now connect your WhatsApp.', 'ok');
+      showPage('pg-connect');
     } else toast(d.error || 'Save failed', 'err');
   } catch (err) { toast(err.message, 'err'); }
-  finally { setLoading(btn, false, 'Save & Go to Dashboard'); }
+  finally { setLoading(btn, false, 'Continue → Connect WhatsApp'); }
 }
 
 /* ─── CONNECT WHATSAPP ──────────────────────────────────── */
@@ -1009,6 +1017,13 @@ function _resetConnectBtn() {
   if (btn) { btn.disabled = false; btn.innerHTML = META_BTN_HTML; }
 }
 
+function _showRedirectFallback() {
+  const el = document.getElementById('connect-fallback');
+  const link = document.getElementById('connect-redirect-link');
+  if (el) el.style.display = 'block';
+  if (link) link.href = '/auth/login?source=signup';
+}
+
 let _connectInProgress = false;
 
 function doConnectMeta() {
@@ -1018,53 +1033,86 @@ function doConnectMeta() {
   _metaSessionInfo = {};
   _connectInProgress = true;
 
-  FB.login(async r => {
-    const token = localStorage.getItem('zm_token');
-
-    if (r.authResponse?.code) {
-      // FB SDK returned the code — normal path
-      toast('Linking WhatsApp…', 'nfo');
-      try {
-        const d = await post('/auth/connect-meta', {
-          code: r.authResponse.code,
-          sessionInfo: _metaSessionInfo,
-          fromJsSdk: true,
-        }, token);
-        if (d.connected) { toast('WhatsApp connected!', 'ok'); window.location.href = '/dashboard'; return; }
-        else toast(d.error || 'Connection failed', 'err');
-      } catch { toast('Connection failed', 'err'); }
-      _connectInProgress = false;
-      _resetConnectBtn();
-      return;
-    }
-
-    // r.authResponse is null: popup closed/navigated away (redirect path)
-    // Wait briefly for the postMessage from the popup to arrive
-    toast('Verifying connection…', 'nfo');
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Check backend — popup redirect may have completed the connection
-    try {
-      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
-      if (me.meta_user_id) {
-        // Connection completed via the redirect path
-        const updatedToken = localStorage.getItem('zm_token'); // postMessage may have updated it
-        const latest = await fetch('/auth/me', { headers: { Authorization: `Bearer ${updatedToken}` } }).then(r => r.json());
-        toast('WhatsApp connected!', 'ok');
-        routeByStatus(latest);
-      } else {
-        toast('Cancelled — please try again', 'err');
-      }
-    } catch { toast('Cancelled — please try again', 'err'); }
-
+  // Check if FB SDK loaded
+  if (typeof FB === 'undefined' || typeof FB.login !== 'function') {
+    toast('Facebook SDK not loaded. Using redirect method…', 'nfo');
     _connectInProgress = false;
     _resetConnectBtn();
-  }, {
-    config_id: '3105026846366355',
-    response_type: 'code',
-    override_default_response_type: true,
-    extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
-  });
+    _showRedirectFallback();
+    // Redirect directly to Meta OAuth
+    window.location.href = '/auth/login?source=signup';
+    return;
+  }
+
+  // Safety timeout — if popup blocked, show redirect fallback
+  let callbackFired = false;
+  setTimeout(() => {
+    if (!callbackFired) {
+      _connectInProgress = false;
+      _resetConnectBtn();
+      _showRedirectFallback();
+      toast('Popup was blocked. Use the redirect link below or allow popups for this site.', 'err');
+    }
+  }, 8000);
+
+  try {
+    FB.login(async r => {
+      callbackFired = true;
+      const token = localStorage.getItem('zm_token');
+      console.log('[GullyBite] FB.login response:', JSON.stringify(r));
+
+      if (r.authResponse?.code) {
+        toast('Linking WhatsApp…', 'nfo');
+        try {
+          const d = await post('/auth/connect-meta', {
+            code: r.authResponse.code,
+            sessionInfo: _metaSessionInfo,
+            fromJsSdk: true,
+          }, token);
+          if (d.connected) { toast('WhatsApp connected!', 'ok'); window.location.href = '/dashboard'; return; }
+          else toast(d.error || 'Connection failed', 'err');
+        } catch { toast('Connection failed', 'err'); }
+        _connectInProgress = false;
+        _resetConnectBtn();
+        return;
+      }
+
+      // authResponse null — popup closed or navigated away
+      toast('Verifying connection…', 'nfo');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      try {
+        const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+        if (me.meta_user_id) {
+          const updatedToken = localStorage.getItem('zm_token');
+          const latest = await fetch('/auth/me', { headers: { Authorization: `Bearer ${updatedToken}` } }).then(r => r.json());
+          toast('WhatsApp connected!', 'ok');
+          routeByStatus(latest);
+        } else {
+          toast('Cancelled — please try again', 'err');
+          _showRedirectFallback();
+        }
+      } catch {
+        toast('Cancelled — please try again', 'err');
+        _showRedirectFallback();
+      }
+
+      _connectInProgress = false;
+      _resetConnectBtn();
+    }, {
+      config_id: '3105026846366355',
+      response_type: 'code',
+      override_default_response_type: true,
+      extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
+    });
+  } catch (err) {
+    console.error('[GullyBite] FB.login error:', err);
+    toast('Could not open Meta login. Using redirect…', 'nfo');
+    _connectInProgress = false;
+    _resetConnectBtn();
+    _showRedirectFallback();
+    window.location.href = '/auth/login?source=signup';
+  }
 }
 
 /* ─── CHECK STATUS ──────────────────────────────────────── */

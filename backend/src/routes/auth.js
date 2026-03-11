@@ -195,18 +195,32 @@ router.delete('/delete-account', requireAuth, async (req, res) => {
 
 // ─── INITIATE META OAUTH ──────────────────────────────────────
 router.get('/login', (req, res) => {
+  const source = req.query.source || 'index'; // 'signup', 'dashboard', or 'index'
   const scopes = ['whatsapp_business_management', 'whatsapp_business_messaging', 'business_management'].join(',');
+  const stateObj = { ts: Date.now(), source };
+  const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
   const authUrl = `${META_AUTH_URL}?client_id=${process.env.META_APP_ID}` +
     `&redirect_uri=${encodeURIComponent(process.env.META_OAUTH_REDIRECT_URI)}` +
     `&scope=${scopes}&response_type=code` +
-    `&state=${Buffer.from(Date.now().toString()).toString('base64')}`;
+    `&state=${encodeURIComponent(state)}`;
   res.redirect(authUrl);
 });
 
 // ─── META OAUTH CALLBACK ──────────────────────────────────────
 router.get('/callback', async (req, res) => {
-  const { code, error } = req.query;
-  if (error || !code) return res.redirect(`${process.env.BASE_URL}/?error=oauth_failed`);
+  const { code, error, state } = req.query;
+
+  // Parse source from state (signup, dashboard, or index)
+  let source = 'index';
+  try {
+    const stateObj = JSON.parse(Buffer.from(decodeURIComponent(state || ''), 'base64').toString());
+    source = stateObj.source || 'index';
+  } catch {}
+
+  if (error || !code) {
+    const dest = source === 'dashboard' ? '/dashboard?error=oauth_failed' : '/?error=oauth_failed';
+    return res.redirect(dest);
+  }
 
   try {
     const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
@@ -256,11 +270,17 @@ router.get('/callback', async (req, res) => {
 
     await _saveWabaAccounts(restaurantId, wabaData, longToken);
     const jwtToken = jwt.sign({ restaurantId, metaUserId: metaUser.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    // Pass token via URL fragment (not query string) to avoid it appearing in server logs
-    res.redirect(`/?meta_token=${jwtToken}`);
+
+    // Redirect based on source — dashboard goes back to dashboard, signup/index goes to index
+    if (source === 'dashboard') {
+      res.redirect(`/dashboard?meta_token=${jwtToken}`);
+    } else {
+      res.redirect(`/?meta_token=${jwtToken}`);
+    }
   } catch (err) {
     console.error('[OAuth] Callback error:', err.response?.data || err.message);
-    res.redirect('/?error=oauth_failed');
+    const dest = source === 'dashboard' ? '/dashboard?error=oauth_failed' : '/?error=oauth_failed';
+    res.redirect(dest);
   }
 });
 
