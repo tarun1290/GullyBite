@@ -445,4 +445,39 @@ router.get('/referrals', async (req, res) => {
   }
 });
 
+// ─── POST /api/admin/clear-cache ─────────────────────────────
+// Clears stale/test data: expired tokens, orphan sessions, temp records
+router.post('/clear-cache', async (req, res) => {
+  try {
+    const results = {};
+
+    // Clear expired Meta tokens
+    const expiredTokens = await col('restaurants').updateMany(
+      { meta_token_expires_at: { $lt: new Date() } },
+      { $unset: { meta_access_token: '', meta_token_expires_at: '' } }
+    );
+    results.expired_tokens_cleared = expiredTokens.modifiedCount;
+
+    // Clear stale/abandoned signups (no onboarding completed, older than 30 days)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const staleSignups = await col('restaurants').deleteMany({
+      onboarding_step: { $lt: 2 },
+      created_at: { $lt: thirtyDaysAgo },
+      meta_user_id: { $exists: false },
+    });
+    results.stale_signups_removed = staleSignups.deletedCount;
+
+    // Clear orphan whatsapp_accounts with no matching restaurant
+    const allRestIds = (await col('restaurants').find({}, { projection: { _id: 1 } }).toArray()).map(r => r._id);
+    const orphanWA = await col('whatsapp_accounts').deleteMany({
+      restaurant_id: { $nin: allRestIds },
+    });
+    results.orphan_wa_accounts_removed = orphanWA.deletedCount;
+
+    res.json({ ok: true, cleared: results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
