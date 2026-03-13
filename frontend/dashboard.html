@@ -2374,8 +2374,19 @@ function _doMetaConnect() {
     }
   }, 8000);
 
+  // Override window.open to force proper popup dimensions for Meta Embedded Signup
+  const _origOpen = window.open;
+  window.open = function(url, name, features) {
+    const w = 580, h = 680;
+    const left = Math.round(window.screenX + (window.outerWidth  - w) / 2);
+    const top  = Math.round(window.screenY + (window.outerHeight - h) / 2);
+    return _origOpen.call(window, url, name,
+      `width=${w},height=${h},left=${left},top=${top},scrollbars=yes,resizable=yes`);
+  };
+
   try {
     FB.login(async resp => {
+      window.open = _origOpen; // restore after popup closes
       callbackFired = true;
       console.log('[GullyBite] FB.login response:', JSON.stringify(resp));
       if (resp.authResponse?.code) {
@@ -2405,6 +2416,7 @@ function _doMetaConnect() {
       extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
     });
   } catch (err) {
+    window.open = _origOpen; // restore on error
     console.error('[GullyBite] FB.login error:', err);
     toast('Redirecting to Meta login…', 'nfo');
     _resetConnectBtns();
