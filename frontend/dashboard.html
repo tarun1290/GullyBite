@@ -461,12 +461,23 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
             <div class="fgrid">
               <div class="fg"><label>Branch Name ★</label><input id="b-name" placeholder="Koramangala Outlet"></div>
               <div class="fg"><label>City</label><input id="b-city" placeholder="Bangalore"></div>
-              <div class="fg span2"><label>Full Address</label><input id="b-addr" placeholder="Shop 5, Forum Mall, Koramangala, Bangalore 560095"></div>
-              <div class="fg">
-                <label>Latitude ★ <small>(right-click Google Maps → copy)</small></label>
-                <input id="b-lat" type="number" step="any" placeholder="12.93456">
+              <div class="fg span2" style="position:relative">
+                <label>Search Address ★ <small>type to search, select from suggestions</small></label>
+                <input id="b-addr-search" autocomplete="off" placeholder="e.g. Forum Mall, Koramangala, Bangalore" oninput="addrSearch(this.value)" onfocus="addrSearch(this.value)">
+                <div id="addr-suggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;z-index:999;max-height:220px;overflow-y:auto;margin-top:3px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
               </div>
-              <div class="fg"><label>Longitude ★</label><input id="b-lng" type="number" step="any" placeholder="77.61234"></div>
+              <div class="fg span2">
+                <label>Full Address <small style="color:var(--wa)">(auto-filled)</small></label>
+                <input id="b-addr" readonly placeholder="Auto-filled from selection above" style="color:var(--dim);cursor:default">
+              </div>
+              <div class="fg">
+                <label>Latitude <small style="color:var(--wa)">(auto-filled)</small></label>
+                <input id="b-lat" readonly placeholder="Auto-filled" style="color:var(--dim);cursor:default">
+              </div>
+              <div class="fg">
+                <label>Longitude <small style="color:var(--wa)">(auto-filled)</small></label>
+                <input id="b-lng" readonly placeholder="Auto-filled" style="color:var(--dim);cursor:default">
+              </div>
               <div class="fg"><label>Delivery Radius (km)</label><input id="b-rad" type="number" value="5"></div>
               <div class="fg"><label>Opening Time</label><input id="b-open" type="time" value="10:00"></div>
               <div class="fg"><label>Closing Time</label><input id="b-close" type="time" value="22:00"></div>
@@ -1380,13 +1391,56 @@ function drawChart(daily) {
     </div>`;
 }
 
+/* ─────────────── ADDRESS AUTOCOMPLETE (Nominatim) ───────── */
+let _addrTimer = null;
+function addrSearch(q) {
+  clearTimeout(_addrTimer);
+  const box = document.getElementById('addr-suggestions');
+  if (!q || q.length < 3) { box.style.display = 'none'; return; }
+  _addrTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&countrycodes=in&limit=6`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      const results = await res.json();
+      if (!results.length) { box.style.display = 'none'; return; }
+      box.innerHTML = results.map((r, i) =>
+        `<div class="addr-item" onclick="addrPick(${i})" data-i="${i}"
+          style="padding:.65rem .9rem;cursor:pointer;font-size:.83rem;border-bottom:1px solid var(--bdr);line-height:1.4"
+          onmouseover="this.style.background='var(--ink3)'" onmouseout="this.style.background=''"
+        >${r.display_name}</div>`
+      ).join('');
+      box._results = results;
+      box.style.display = 'block';
+    } catch { box.style.display = 'none'; }
+  }, 350);
+}
+function addrPick(i) {
+  const box = document.getElementById('addr-suggestions');
+  const r   = box._results[i];
+  if (!r) return;
+  const addr = r.display_name;
+  const city = r.address?.city || r.address?.town || r.address?.village || r.address?.county || '';
+  document.getElementById('b-addr-search').value = addr;
+  document.getElementById('b-addr').value = addr;
+  document.getElementById('b-city').value = city;
+  document.getElementById('b-lat').value  = parseFloat(r.lat).toFixed(6);
+  document.getElementById('b-lng').value  = parseFloat(r.lon).toFixed(6);
+  box.style.display = 'none';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#addr-suggestions') && e.target.id !== 'b-addr-search')
+    document.getElementById('addr-suggestions').style.display = 'none';
+});
+
 /* ─────────────── BRANCHES & CATALOG (hero feature) ─────── */
 async function doAddBranch() {
   const btn  = document.getElementById('add-b-btn');
   const name = document.getElementById('b-name').value.trim();
   const lat  = parseFloat(document.getElementById('b-lat').value);
   const lng  = parseFloat(document.getElementById('b-lng').value);
-  if (!name || isNaN(lat) || isNaN(lng)) return toast('Branch name, latitude and longitude are required', 'err');
+  if (!name || isNaN(lat) || isNaN(lng)) return toast('Branch name and address selection are required', 'err');
   btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Creating...';
   try {
     await api('/api/restaurant/branches', { method: 'POST', body: {
@@ -1398,7 +1452,7 @@ async function doAddBranch() {
       closingTime: document.getElementById('b-close').value,
       managerPhone: document.getElementById('b-mgr').value,
     }});
-    ['b-name', 'b-city', 'b-addr', 'b-lat', 'b-lng', 'b-mgr'].forEach(id => document.getElementById(id).value = '');
+    ['b-name', 'b-city', 'b-addr', 'b-addr-search', 'b-lat', 'b-lng', 'b-mgr'].forEach(id => document.getElementById(id).value = '');
     toast(`✅ "${name}" added! Creating WhatsApp catalog...`, 'ok');
     loadBranches();
     setTimeout(loadBranches, 3500);
