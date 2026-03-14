@@ -1,2 +1,0 @@
-id,restaurant_id,name,address,city,pincode,latitude,longitude,delivery_radius_km,opening_time,closing_time,is_open,accepts_orders,delivery_fee_rs
-b0000000-0000-0000-0000-000000000001,a0000000-0000-0000-0000-000000000001,Main Branch,"Shop 12, Food Street, Bandra West",Mumbai,400050,19.05972600,72.83578700,5.0,10:00:00,23:00:00,true,true,40.00
