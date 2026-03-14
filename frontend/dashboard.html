@@ -1666,12 +1666,18 @@ function renderBranchCard(b) {
           <div class="cat-ico">⏳</div>
           <div class="cat-inf">
             <h4 style="color:var(--gold2)">Catalog not created yet</h4>
-            <p>Usually auto-creates within a few seconds. If it's been over 30 seconds, click to retry.</p>
+            <p>Catalog is created automatically when you add menu items. Or click ⚡ to create now.
+              <br><span style="color:var(--dim);font-size:.75rem">If auto-creation fails, paste your Catalog ID from <a href="https://business.facebook.com/commerce" target="_blank" style="color:var(--wa)">Meta Business Suite</a> below.</span>
+            </p>
           </div>
           <div class="cat-acts">
             <button class="btn-p btn-sm" onclick="doCreateCatalog('${b.id}','${b.name.replace(/'/g, "\\'")}',this)">⚡ Create Catalog</button>
             <button class="btn-g btn-sm" onclick="loadBranches()">🔄 Refresh</button>
           </div>
+        </div>
+        <div style="display:flex;gap:.5rem;margin-top:.6rem;align-items:center">
+          <input id="manual-cat-${b.id}" placeholder="Paste Catalog ID from Meta Business Suite (optional)" style="flex:1;font-size:.78rem;padding:.38rem .6rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:6px;color:var(--fg)">
+          <button class="btn-g btn-sm" onclick="doSetManualCatalog('${b.id}',this)">Save ID</button>
         </div>
       </div>`;
   } else if (!b.catalog_synced_at) {
@@ -1765,6 +1771,18 @@ async function doCreateCatalog(branchId, branchName, btn) {
     else toast(r.error || 'Catalog creation failed', 'err');
     loadBranches();
   } catch (e) { toast(e.message, 'err'); loadBranches(); }
+}
+
+async function doSetManualCatalog(branchId, btn) {
+  const catId = document.getElementById('manual-cat-' + branchId)?.value.trim();
+  if (!catId) return toast('Paste a Catalog ID first', 'err');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    await api(`/api/restaurant/branches/${branchId}`, { method: 'PATCH', body: { catalogId: catId } });
+    toast('✅ Catalog ID saved! You can now sync your menu.', 'ok');
+    loadBranches();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Save ID'; }
 }
 
 async function doSync(branchId, branchName) {
