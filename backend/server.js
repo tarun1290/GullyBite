@@ -83,6 +83,47 @@ app.get('/store/:slug', async (req, res) => {
   }
 });
 
+// ─── PUBLIC CATALOG FEED (Meta fetches this periodically) ─────
+// No auth — URL contains an unguessable token
+app.get('/feed/:feedToken', async (req, res) => {
+  try {
+    const { col } = require('./src/config/database');
+    const restaurant = await col('restaurants').findOne({ catalog_feed_token: req.params.feedToken });
+    if (!restaurant) return res.status(404).type('text/plain').send('Feed not found');
+
+    const rid = String(restaurant._id);
+    const branches = await col('branches').find({ restaurant_id: rid }).toArray();
+    const branchIds = branches.map(b => String(b._id));
+
+    const items = await col('menu_items').find({
+      branch_id: { $in: branchIds },
+      is_available: true,
+      retailer_id: { $exists: true, $ne: null },
+    }).toArray();
+
+    const esc = v => `"${String(v || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`;
+    const brandName = esc(restaurant.business_name || 'Restaurant');
+    const baseUrl = process.env.BASE_URL || 'https://gully-bite.vercel.app';
+
+    const header = 'id,title,description,availability,condition,price,link,image_link,brand,google_product_category';
+    const rows = items.map(item => {
+      const title = esc((item.variant_value ? `${item.name} - ${item.variant_value}` : item.name).substring(0, 100));
+      const desc  = esc((item.description || item.name).substring(0, 999));
+      const price = `${(item.price_paise / 100).toFixed(2)} INR`;
+      const link  = `${baseUrl}/menu/${String(item._id)}`;
+      const img   = item.image_url || `${baseUrl}/placeholder.jpg`;
+      return [item.retailer_id, title, desc, 'in stock', 'new', price, link, img, brandName, '1567'].join(',');
+    });
+
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send([header, ...rows].join('\n'));
+  } catch (err) {
+    console.error('[Feed]', err.message);
+    res.status(500).type('text/plain').send('Error generating feed');
+  }
+});
+
 // ─── ROUTES ───────────────────────────────────────────────────
 const { router: authRouter } = require('./src/routes/auth');
 app.use('/auth', express.json(), authRouter);
