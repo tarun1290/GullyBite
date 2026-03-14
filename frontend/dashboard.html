@@ -297,6 +297,15 @@ tr:hover td{background:rgba(79,70,229,.02)}
 .csv-ico{font-size:2.1rem;flex-shrink:0}
 .csv-result-ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.6rem 1rem;font-size:.82rem;display:inline-block;margin-right:.5rem;color:#15803d}
 .csv-result-warn{background:#fefce8;border:1px solid #fef08a;border-radius:8px;padding:.6rem 1rem;font-size:.82rem;display:inline-block;color:#92400e}
+/* CSV column mapper */
+.csv-mapper{background:var(--ink2);border:1px solid var(--bdr);border-radius:10px;padding:1rem 1.1rem;margin-top:.85rem}
+.csv-mapper h4{font-size:.84rem;font-weight:600;color:var(--fg);margin-bottom:.75rem}
+.csv-mapper-grid{display:grid;grid-template-columns:1fr auto 1fr;gap:.45rem .7rem;align-items:center}
+.csv-mapper-grid .cm-your{font-size:.78rem;color:var(--dim);padding:.28rem .5rem;background:var(--ink3);border-radius:5px;text-align:center}
+.csv-mapper-grid .cm-arrow{font-size:.9rem;color:var(--dim);text-align:center}
+.csv-mapper-grid select{font-size:.78rem;padding:.28rem .4rem;background:var(--ink3);color:var(--fg);border:1px solid var(--bdr);border-radius:5px;width:100%}
+.csv-mapper-grid select.required-unmapped{border-color:var(--red);background:rgba(220,38,38,.08)}
+.csv-mapper-grid select.mapped{border-color:var(--wa)}
 
 @media(max-width:768px){
   .sb{display:none}.main{margin-left:0}
@@ -518,6 +527,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
               </div>
               <input type="file" id="outlet-csv-file" accept=".csv,text/csv" style="display:none" onchange="handleOutletCsvFile(this)">
             </div>
+            <div id="csv-mapper-outlet" style="display:none"></div>
             <div id="outlet-csv-preview" style="display:none">
               <div class="sh" style="margin-top:1rem">
                 <span id="outlet-csv-count" style="font-size:.84rem;color:var(--wa);font-weight:600"></span>
@@ -623,6 +633,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
               </div>
               <input type="file" id="csv-file" accept=".csv,text/csv" style="display:none" onchange="handleCsvFile(this)">
             </div>
+            <div id="csv-mapper-menu" style="display:none"></div>
             <div id="csv-preview" style="display:none">
               <div class="sh" style="margin-top:1rem">
                 <span id="csv-count" style="font-size:.84rem;color:var(--wa);font-weight:600"></span>
@@ -1479,22 +1490,7 @@ document.addEventListener('click', e => {
 });
 
 /* ─────────────── OUTLET CSV UPLOAD ─────────────────────── */
-let outletCsvParsed = [];
-
-// Proper CSV tokenizer — handles quoted fields, empty cells, CRLF
-function parseCsvLine(line) {
-  const cols = []; let cur = '', inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') {
-      if (inQ && line[i+1] === '"') { cur += '"'; i++; } // escaped ""
-      else inQ = !inQ;
-    } else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-    else cur += c;
-  }
-  cols.push(cur.trim());
-  return cols;
-}
+let outletCsvParsed = [], _outletCsvRaw = null;
 
 function handleOutletCsvFile(input) {
   const file = input.files[0]; if (!file) return;
@@ -1509,40 +1505,35 @@ function handleOutletCsvDrop(e) {
   reader.readAsText(file);
 }
 function processOutletCsvText(text) {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return toast('CSV must have a header row and at least one outlet', 'err');
-  const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase().replace(/\s+/g,'_'));
-  const rows = [];
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const vals = parseCsvLine(lines[i]);
-    const row = {};
-    headers.forEach((h, idx) => { row[h] = vals[idx] ?? ''; });
-    if ((row.branch_name || '').trim() && (row.address || '').trim()) rows.push(row);
-  }
-  if (!rows.length) return toast('No valid rows found — make sure columns branch_name and address are filled', 'err');
-  outletCsvParsed = rows;
-  const tbody = document.getElementById('outlet-csv-preview-body');
-  tbody.innerHTML = rows.map((r, i) => {
-    const hasCoords = r.latitude && r.longitude;
-    return `<tr>
-      <td>${i+1}</td>
-      <td><strong>${r.branch_name}</strong></td>
-      <td>${r.city||'—'}</td>
-      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.address}">${r.address}</td>
-      <td>${r.delivery_radius_km||'5'}</td>
-      <td style="white-space:nowrap">${hasCoords
-        ? `<span style="color:var(--wa);font-size:.75rem">✅ coords set</span>`
-        : `<span style="color:var(--dim);font-size:.75rem">📍 will geocode</span>`}</td>
-    </tr>`;
-  }).join('');
-  document.getElementById('outlet-csv-count').textContent = `${rows.length} outlet${rows.length>1?'s':''} ready`;
-  document.getElementById('outlet-csv-preview').style.display = 'block';
-  document.getElementById('outlet-csv-result').style.display  = 'none';
+  try {
+    _outletCsvRaw = parseRawCSV(text);
+    document.getElementById('outlet-csv-preview').style.display = 'none';
+    document.getElementById('outlet-csv-result').style.display  = 'none';
+    renderMapper('csv-mapper-outlet', _outletCsvRaw.headers, OUTLET_FIELDS, mapping => {
+      const mapped = applyMapping(_outletCsvRaw.rows, mapping);
+      outletCsvParsed = mapped.filter(r => (r.branch_name||'').trim() && (r.address||'').trim());
+      if (!outletCsvParsed.length) return toast('No rows with both Branch Name and Address after mapping', 'err');
+      const tbody = document.getElementById('outlet-csv-preview-body');
+      tbody.innerHTML = outletCsvParsed.map((r, i) => {
+        const hasCoords = r.latitude && r.longitude;
+        return `<tr>
+          <td>${i+1}</td><td><strong>${r.branch_name}</strong></td><td>${r.city||'—'}</td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.address}">${r.address}</td>
+          <td>${r.delivery_radius_km||'5'}</td>
+          <td>${hasCoords
+            ? '<span style="color:var(--wa);font-size:.75rem">✅ coords set</span>'
+            : '<span style="color:var(--dim);font-size:.75rem">📍 will geocode</span>'}</td>
+        </tr>`;
+      }).join('');
+      document.getElementById('outlet-csv-count').textContent = `${outletCsvParsed.length} outlet${outletCsvParsed.length>1?'s':''} ready`;
+      document.getElementById('outlet-csv-preview').style.display = 'block';
+    });
+  } catch (e) { toast('Could not parse CSV: ' + e.message, 'err'); }
 }
 function resetOutletCsv() {
-  outletCsvParsed = [];
+  outletCsvParsed = []; _outletCsvRaw = null;
   document.getElementById('outlet-csv-file').value = '';
+  document.getElementById('csv-mapper-outlet').style.display  = 'none';
   document.getElementById('outlet-csv-preview').style.display = 'none';
   document.getElementById('outlet-csv-result').style.display  = 'none';
 }
@@ -1933,8 +1924,153 @@ async function doDeleteItem(id, name) {
   catch (e) { toast(e.message, 'err'); }
 }
 
-/* ─────────────────────────── CSV UPLOAD ────────────────── */
-let csvParsed = [];
+/* ═══════════════════════ SMART CSV MAPPER ════════════════ */
+// Robust CSV tokenizer — handles quoted fields, empty cells, CRLF
+function splitCSVLine(line) {
+  const result = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+      else inQ = !inQ;
+    } else if (c === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+    else cur += c;
+  }
+  result.push(cur.trim());
+  return result;
+}
+function parseRawCSV(text) {
+  const lines = text.trim().replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  if (lines.length < 2) throw new Error('Need a header row and at least one data row');
+  const headers = splitCSVLine(lines[0]);
+  const rows = lines.slice(1).filter(l => l.trim()).map(line => {
+    const vals = splitCSVLine(line);
+    const obj = {};
+    headers.forEach((h, i) => { obj[i] = vals[i] ?? ''; });
+    return obj;
+  });
+  return { headers, rows };
+}
+
+// Field definitions with aliases for auto-matching
+const MENU_FIELDS = [
+  { key:'name',        label:'Item Name',          required:true,  aliases:['name','item','item_name','product','dish','food','title','menu_item'] },
+  { key:'price',       label:'Price (₹)',           required:true,  aliases:['price','rate','mrp','cost','amount','selling_price','sp','rs','inr'] },
+  { key:'category',    label:'Category',            required:false, aliases:['category','cat','section','group','type','menu_section','course'] },
+  { key:'description', label:'Description',         required:false, aliases:['description','desc','details','about','info','note','notes'] },
+  { key:'food_type',   label:'Food Type (veg/non_veg)', required:false, aliases:['food_type','type','veg_nonveg','veg','nonveg','diet','food_category','is_veg'] },
+  { key:'image_url',   label:'Image URL',           required:false, aliases:['image_url','image','img','photo','picture','url','photo_url','image_link'] },
+  { key:'is_bestseller',label:'Bestseller (true/false)',required:false,aliases:['is_bestseller','bestseller','popular','featured','hot','recommended','best','top'] },
+];
+const OUTLET_FIELDS = [
+  { key:'branch_name', label:'Branch / Outlet Name', required:true,  aliases:['branch_name','name','outlet','outlet_name','location','branch','store','store_name','shop'] },
+  { key:'address',     label:'Full Address',          required:true,  aliases:['address','addr','full_address','street','street_address','location','full_addr'] },
+  { key:'city',        label:'City',                  required:false, aliases:['city','town','district','area','locality'] },
+  { key:'latitude',    label:'Latitude',              required:false, aliases:['latitude','lat','y','geo_lat'] },
+  { key:'longitude',   label:'Longitude',             required:false, aliases:['longitude','lng','lon','long','x','geo_lng'] },
+  { key:'delivery_radius_km', label:'Delivery Radius (km)', required:false, aliases:['delivery_radius_km','radius','delivery_radius','range','km','delivery_km'] },
+  { key:'opening_time',label:'Opening Time',          required:false, aliases:['opening_time','open_time','opens','from','start','start_time','open'] },
+  { key:'closing_time',label:'Closing Time',          required:false, aliases:['closing_time','close_time','closes','to','end','end_time','close'] },
+  { key:'manager_phone',label:'Manager Phone',        required:false, aliases:['manager_phone','phone','contact','mobile','manager','manager_mobile','contact_no'] },
+];
+
+function autoMatch(headerRaw, fields) {
+  const h = headerRaw.toLowerCase().trim().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+  for (const f of fields) {
+    if (f.aliases.includes(h)) return f.key;
+  }
+  // partial match
+  for (const f of fields) {
+    if (f.aliases.some(a => h.includes(a) || a.includes(h))) return f.key;
+  }
+  return '__skip__';
+}
+
+function renderMapper(containerId, headers, fields, onConfirm) {
+  const container = document.getElementById(containerId);
+  const skipOpt = '<option value="__skip__">(skip this column)</option>';
+  const fieldOpts = fields.map(f =>
+    `<option value="${f.key}">${f.label}${f.required?' ★':''}</option>`
+  ).join('');
+
+  const rows = headers.map((h, i) => {
+    const matched = autoMatch(h, fields);
+    const selClass = matched === '__skip__' ? '' : 'mapped';
+    return `<div class="cm-your">${h || '(empty)'}</div>
+    <div class="cm-arrow">→</div>
+    <select id="cm-sel-${containerId}-${i}" class="${selClass}" onchange="updateMapperSel(this)">
+      ${skipOpt}${fieldOpts}
+    </select>`;
+  }).join('');
+
+  container.style.display = 'block';
+  container.innerHTML = `
+    <div class="csv-mapper">
+      <h4>🗂️ Map your columns — we auto-detected the best match, adjust if needed</h4>
+      <div class="csv-mapper-grid">${rows}</div>
+      <div style="display:flex;gap:.6rem;margin-top:.9rem;align-items:center">
+        <button class="btn-p btn-sm" onclick="confirmMapper('${containerId}',${JSON.stringify(headers).replace(/'/g,"\\'")},'${JSON.stringify(fields).replace(/'/g,"\\'")}')" >✅ Confirm Mapping & Preview</button>
+        <span style="font-size:.76rem;color:var(--dim)">★ = required field</span>
+      </div>
+      <div id="${containerId}-err" style="margin-top:.5rem;font-size:.78rem;color:var(--red)"></div>
+    </div>`;
+
+  // Set auto-matched values after render
+  headers.forEach((h, i) => {
+    const sel = document.getElementById(`cm-sel-${containerId}-${i}`);
+    if (sel) { sel.value = autoMatch(h, fields); updateMapperSel(sel); }
+  });
+
+  // Store refs
+  container._headers = headers;
+  container._fields  = fields;
+  container._onConfirm = onConfirm;
+}
+
+function updateMapperSel(sel) {
+  sel.className = sel.value === '__skip__' ? '' : 'mapped';
+  const f = (sel._fields || []).find(f => f.key === sel.value);
+  if (f?.required) sel.className = 'mapped';
+}
+
+function confirmMapper(containerId, headersJson, fieldsJson) {
+  const container = document.getElementById(containerId);
+  const headers = container._headers;
+  const fields  = container._fields;
+  const mapping = {}; // fieldKey → colIndex
+  let missingRequired = [];
+
+  headers.forEach((h, i) => {
+    const sel = document.getElementById(`cm-sel-${containerId}-${i}`);
+    if (sel && sel.value !== '__skip__') {
+      if (!(sel.value in mapping)) mapping[sel.value] = i; // first wins
+    }
+  });
+
+  fields.filter(f => f.required).forEach(f => {
+    if (!(f.key in mapping)) missingRequired.push(f.label);
+  });
+
+  const errEl = document.getElementById(`${containerId}-err`);
+  if (missingRequired.length) {
+    errEl.textContent = `Please map required fields: ${missingRequired.join(', ')}`;
+    return;
+  }
+  errEl.textContent = '';
+  container._onConfirm(mapping);
+}
+
+function applyMapping(rawRows, mapping) {
+  return rawRows.map(row => {
+    const out = {};
+    for (const [key, idx] of Object.entries(mapping)) { out[key] = row[idx] ?? ''; }
+    return out;
+  });
+}
+
+/* ─────────────── MENU CSV ─────────────────────────────── */
+let csvParsed = [], _csvRaw = null;
+
 function handleCsvFile(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -1952,50 +2088,33 @@ function processCsvText(text, filename) {
   const branchId = document.getElementById('m-branch').value;
   if (!branchId) return toast('Select a branch first, then upload CSV', 'err');
   try {
-    csvParsed = parseCSV(text);
-    if (!csvParsed.length) return toast('CSV is empty or has no valid rows', 'err');
-    const missing = csvParsed.filter(r => !r.name || !r.price);
-    document.getElementById('csv-count').textContent =
-      `${csvParsed.length} items from "${filename}"` +
-      (missing.length ? ` · ⚠️ ${missing.length} rows missing name/price will be skipped` : '');
-    document.getElementById('csv-preview-body').innerHTML =
-      csvParsed.slice(0, 8).map((r, i) => `<tr>
-        <td style="color:var(--dim)">${i + 1}</td>
-        <td>${r.name || '<span style="color:var(--red)">missing</span>'}</td>
-        <td>${r.category || '—'}</td>
-        <td>${r.price ? '₹' + r.price : '<span style="color:var(--red)">missing</span>'}</td>
-        <td>${r.food_type || 'veg'}</td>
-        <td>${['true','yes','1'].includes((r.is_bestseller || '').toLowerCase()) ? '⭐' : ''}</td>
-      </tr>`).join('') +
-      (csvParsed.length > 8 ? `<tr><td colspan="6" style="text-align:center;color:var(--dim);font-size:.75rem">+ ${csvParsed.length - 8} more rows…</td></tr>` : '');
-    document.getElementById('csv-preview').style.display = 'block';
-    document.getElementById('csv-result').style.display  = 'none';
+    _csvRaw = parseRawCSV(text);
+    document.getElementById('csv-preview').style.display  = 'none';
+    document.getElementById('csv-result').style.display   = 'none';
+    renderMapper('csv-mapper-menu', _csvRaw.headers, MENU_FIELDS, mapping => {
+      csvParsed = applyMapping(_csvRaw.rows, mapping);
+      const missing = csvParsed.filter(r => !r.name || !r.price);
+      document.getElementById('csv-count').textContent =
+        `${csvParsed.length} items from "${filename}"` +
+        (missing.length ? ` · ⚠️ ${missing.length} rows missing name/price will be skipped` : '');
+      document.getElementById('csv-preview-body').innerHTML =
+        csvParsed.slice(0,8).map((r,i) => `<tr>
+          <td style="color:var(--dim)">${i+1}</td>
+          <td>${r.name||'<span style="color:var(--red)">missing</span>'}</td>
+          <td>${r.category||'—'}</td>
+          <td>${r.price?'₹'+r.price:'<span style="color:var(--red)">missing</span>'}</td>
+          <td>${r.food_type||'veg'}</td>
+          <td>${['true','yes','1'].includes((r.is_bestseller||'').toLowerCase())?'⭐':''}</td>
+        </tr>`).join('') +
+        (csvParsed.length>8?`<tr><td colspan="6" style="text-align:center;color:var(--dim);font-size:.75rem">+ ${csvParsed.length-8} more rows…</td></tr>`:'');
+      document.getElementById('csv-preview').style.display = 'block';
+    });
   } catch (e) { toast('Could not parse CSV: ' + e.message, 'err'); }
 }
-function parseCSV(text) {
-  const lines = text.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  if (lines.length < 2) throw new Error('Need a header row and at least one data row');
-  const headers = splitCSVLine(lines[0]).map(h => h.toLowerCase().trim().replace(/[^a-z0-9_]/g, '_'));
-  return lines.slice(1).filter(l => l.trim()).map(line => {
-    const vals = splitCSVLine(line);
-    const obj  = {};
-    headers.forEach((h, i) => { obj[h] = (vals[i] || '').trim(); });
-    return obj;
-  });
-}
-function splitCSVLine(line) {
-  const result = []; let cur = ''; let inQ = false;
-  for (let i = 0; i < line.length; i++) {
-    if (line[i] === '"') { inQ = !inQ; }
-    else if (line[i] === ',' && !inQ) { result.push(cur); cur = ''; }
-    else { cur += line[i]; }
-  }
-  result.push(cur);
-  return result;
-}
 function resetCsv() {
-  csvParsed = [];
+  csvParsed = []; _csvRaw = null;
   document.getElementById('csv-file').value    = '';
+  document.getElementById('csv-mapper-menu').style.display = 'none';
   document.getElementById('csv-preview').style.display = 'none';
   document.getElementById('csv-result').style.display  = 'none';
 }
