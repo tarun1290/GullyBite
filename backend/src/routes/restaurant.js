@@ -307,7 +307,7 @@ router.post('/branches', async (req, res) => {
 });
 
 // POST /api/restaurant/branches/csv
-// Bulk-create branches from CSV rows; auto-geocodes via Nominatim if lat/lng missing
+// Bulk-create branches from CSV rows (geocoding done on frontend before this call)
 router.post('/branches/csv', async (req, res) => {
   try {
     const { branches: rows } = req.body;
@@ -317,26 +317,14 @@ router.post('/branches/csv', async (req, res) => {
     const created = [], skipped = [], errors = [];
 
     for (const row of rows) {
-      const name = (row.branch_name || '').trim();
-      const address = (row.address || '').trim();
-      if (!name || !address) { skipped.push({ row, reason: 'branch_name and address are required' }); continue; }
+      const name    = (row.branch_name || '').trim();
+      const address = (row.address     || '').trim();
+      const lat     = parseFloat(row.latitude);
+      const lng     = parseFloat(row.longitude);
 
-      let lat = parseFloat(row.latitude);
-      let lng = parseFloat(row.longitude);
-
-      // Auto-geocode via Nominatim if lat/lng not provided
-      if (isNaN(lat) || isNaN(lng)) {
-        try {
-          await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit: 1 req/sec
-          const geoRes = await axios.get('https://nominatim.openstreetmap.org/search', {
-            params: { q: address, format: 'json', addressdetails: 1, countrycodes: 'in', limit: 1 },
-            headers: { 'User-Agent': 'GullyBite/1.0' },
-          });
-          if (!geoRes.data?.length) { skipped.push({ row, reason: `Could not geocode address: "${address}"` }); continue; }
-          lat = parseFloat(geoRes.data[0].lat);
-          lng = parseFloat(geoRes.data[0].lon);
-        } catch (ge) { skipped.push({ row, reason: `Geocoding failed: ${ge.message}` }); continue; }
-      }
+      if (!name)          { skipped.push({ row, reason: 'branch_name is required' }); continue; }
+      if (!address)       { skipped.push({ row, reason: 'address is required' });     continue; }
+      if (isNaN(lat) || isNaN(lng)) { skipped.push({ row, reason: 'latitude and longitude are required — geocoding should have run on the client' }); continue; }
 
       try {
         const branchId = newId();
@@ -346,7 +334,7 @@ router.post('/branches/csv', async (req, res) => {
           restaurant_id: req.restaurantId,
           name,
           address,
-          city: (row.city || '').trim() || null,
+          city: (row.city    || '').trim() || null,
           pincode: (row.pincode || '').trim() || null,
           latitude: lat,
           longitude: lng,
