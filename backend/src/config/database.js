@@ -20,22 +20,27 @@ const connect = async () => {
   return _db;
 };
 
-// Connect on startup — store the promise so middleware can await it
+// Connect on startup — let the promise reject so ensureConnected can catch it
 _connectPromise = connect().catch(err => {
   console.error('❌ MongoDB connection FAILED:', err.message);
+  throw err; // re-throw so awaiting it also rejects
 });
 
 // Middleware: ensures DB is connected before any route runs
 const ensureConnected = async (req, res, next) => {
-  if (!_db) {
+  if (_db) return next(); // already connected (warm start)
+  try {
+    await _connectPromise;
+  } catch (_) {
+    // First attempt failed — retry once (handles Vercel cold-start race)
     try {
-      await _connectPromise;
+      await connect();
     } catch (err) {
-      return res.status(503).json({ error: 'Database unavailable: ' + err.message });
+      console.error('❌ DB unavailable on retry:', err.message);
+      return res.status(503).json({ error: 'Database unavailable — ' + err.message });
     }
-    // If promise resolved but _db is still null (connection failed silently), return 503
-    if (!_db) return res.status(503).json({ error: 'Database unavailable' });
   }
+  if (!_db) return res.status(503).json({ error: 'Database unavailable' });
   next();
 };
 

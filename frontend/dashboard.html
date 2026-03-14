@@ -1657,7 +1657,7 @@ async function loadBranches() {
       return;
     }
     list.innerHTML = branches.map(b => renderBranchCard(b)).join('');
-  } catch (e) { toast('Failed to load branches', 'err'); }
+  } catch (e) { toast('Failed to load branches: ' + e.message, 'err'); }
 }
 
 function renderBranchCard(b) {
