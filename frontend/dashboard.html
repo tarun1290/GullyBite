@@ -584,7 +584,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
                 <span id="csv-count" style="font-size:.84rem;color:var(--wa);font-weight:600"></span>
                 <div style="display:flex;gap:.5rem">
                   <button class="btn-g btn-sm" onclick="resetCsv()">✕ Clear</button>
-                  <button class="btn-p btn-sm" id="csv-upload-btn" onclick="doUploadCsv()">⬆ Upload to Branch</button>
+                  <button class="btn-p btn-sm" id="csv-upload-btn" onclick="doUploadCsv()">⬆ Upload & Sync to WhatsApp</button>
                 </div>
               </div>
               <div class="tbl" style="margin-top:.65rem;max-height:230px;overflow-y:auto">
@@ -1809,22 +1809,38 @@ async function doUploadCsv() {
   if (!branchId)     return toast('Select a branch first', 'err');
   if (!csvParsed.length) return toast('No CSV data to upload', 'err');
   const btn = document.getElementById('csv-upload-btn');
+  const el  = document.getElementById('csv-result');
   btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Uploading…';
   try {
     const r = await api(`/api/restaurant/branches/${branchId}/menu/csv`, { method: 'POST', body: { items: csvParsed } });
-    const el = document.getElementById('csv-result');
     el.style.display = 'block';
     el.innerHTML =
-      `<div style="display:flex;gap:.6rem;flex-wrap:wrap">
+      `<div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
         <span class="csv-result-ok">✅ <strong>${r.added}</strong> items added/updated</span>
         ${r.skipped ? `<span class="csv-result-warn">⚠️ <strong>${r.skipped}</strong> rows skipped</span>` : ''}
+        <span id="csv-sync-status" style="font-size:.8rem;color:var(--dim);margin-left:.4rem">🔄 Syncing to WhatsApp catalog…</span>
       </div>` +
       (r.errors?.length ? `<div style="margin-top:.5rem;font-size:.75rem;color:var(--red)">${r.errors.slice(0, 5).join('<br>')}</div>` : '');
-    toast(`✅ ${r.added} items uploaded!`, 'ok');
     resetCsv();
     loadMenu();
+    // Auto-sync to Meta catalog after successful upload
+    const branch = branches.find(b => b.id === branchId);
+    const syncEl = document.getElementById('csv-sync-status');
+    if (branch?.catalog_id) {
+      try {
+        const s = await api(`/api/restaurant/branches/${branchId}/sync-catalog`, { method: 'POST' });
+        if (syncEl) syncEl.innerHTML = s.success
+          ? `<span style="color:var(--wa)">✅ ${s.updated} items live on WhatsApp!</span>`
+          : `<span style="color:var(--red)">⚠️ Sync failed: ${s.errors?.[0] || 'unknown error'}</span>`;
+      } catch (se) {
+        if (syncEl) syncEl.innerHTML = `<span style="color:var(--red)">⚠️ Sync failed: ${se.message}</span>`;
+      }
+    } else {
+      if (syncEl) syncEl.innerHTML = `<span style="color:var(--dim)">ℹ️ Go to Branches tab → Sync Menu to push to WhatsApp</span>`;
+    }
+    toast(`✅ ${r.added} items uploaded!`, 'ok');
   } catch (e) { toast(e.message, 'err'); }
-  finally { btn.disabled = false; btn.innerHTML = '⬆ Upload to Branch'; }
+  finally { btn.disabled = false; btn.innerHTML = '⬆ Upload & Sync'; }
 }
 function doDownloadSample() {
   const sample = [
