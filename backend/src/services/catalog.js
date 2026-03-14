@@ -30,6 +30,31 @@ const createBranchCatalog = async (branchId) => {
   const accessToken = restaurant?.meta_access_token || wa_acc?.access_token;
   if (!accessToken) throw new Error('No Meta access token found. Please reconnect your Meta account.');
 
+  // ── STEP 0: FETCH EXISTING WABA CATALOG (avoids permission error) ──
+  // The embedded-signup token often cannot CREATE catalogs but CAN read them.
+  // If the WABA already owns one, inherit it rather than trying to create.
+  if (wa_acc?.waba_id) {
+    try {
+      const existing = await axios.get(`${GRAPH}/${wa_acc.waba_id}/product_catalogs`, {
+        params: { access_token: accessToken, fields: 'id,name' },
+        timeout: 10000,
+      });
+      const catalogs = existing.data?.data || [];
+      if (catalogs.length) {
+        const catalogId = catalogs[0].id;
+        await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: catalogId } });
+        await col('whatsapp_accounts').updateOne(
+          { restaurant_id: branch.restaurant_id, is_active: true },
+          { $set: { catalog_id: catalogId } }
+        );
+        console.log(`[Catalog] Inherited existing WABA catalog ${catalogId} for branch "${branch.name}"`);
+        return { success: true, catalogId, inherited: true };
+      }
+    } catch (e) {
+      console.warn('[Catalog] Could not fetch WABA catalogs:', e.response?.data?.error?.message || e.message);
+    }
+  }
+
   // ── STEP A: GET BUSINESS ID ──────────────────────────────────
   let businessId;
   try {

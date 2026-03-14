@@ -617,32 +617,49 @@ async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
     const restaurant = await col('restaurants').findOne({ _id: restaurantId });
     if (!restaurant) return;
 
-    // Get the Meta Business ID that owns this WABA
-    let businessId;
+    // Try fetching catalogs already linked to this WABA (avoids (#100) permission error on creation)
     try {
-      const meRes = await axios.get(`${META_GRAPH_URL}/me/businesses`, {
+      const wabaRes = await axios.get(`${META_GRAPH_URL}/${wabaId}/product_catalogs`, {
         params: { access_token: accessToken, fields: 'id,name' },
         timeout: 10000,
       });
-      const businesses = meRes.data?.data || [];
-      if (!businesses.length) throw new Error('No Meta Business account found');
-      businessId = businesses[0].id;
-    } catch (err) {
-      throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
+      const existing = wabaRes.data?.data || [];
+      if (existing.length) {
+        catalogId = existing[0].id;
+        console.log(`[Catalog] Found existing WABA catalog ${catalogId} for WABA ${wabaId}`);
+      }
+    } catch (e) {
+      console.warn(`[Catalog] Could not fetch WABA catalogs for ${wabaId}:`, e.response?.data?.error?.message || e.message);
     }
 
-    // Create one catalog for this WABA named after the restaurant
-    const catalogName = restaurant.brand_name || restaurant.business_name || 'GullyBite Menu';
-    try {
-      const createRes = await axios.post(
-        `${META_GRAPH_URL}/${businessId}/owned_product_catalogs`,
-        { name: catalogName, vertical: 'commerce' },
-        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
-      );
-      catalogId = createRes.data.id;
-      console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
-    } catch (err) {
-      throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+    if (!catalogId) {
+      // Get the Meta Business ID that owns this WABA
+      let businessId;
+      try {
+        const meRes = await axios.get(`${META_GRAPH_URL}/me/businesses`, {
+          params: { access_token: accessToken, fields: 'id,name' },
+          timeout: 10000,
+        });
+        const businesses = meRes.data?.data || [];
+        if (!businesses.length) throw new Error('No Meta Business account found');
+        businessId = businesses[0].id;
+      } catch (err) {
+        throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
+      }
+
+      // Create one catalog for this WABA named after the restaurant
+      const catalogName = restaurant.brand_name || restaurant.business_name || 'GullyBite Menu';
+      try {
+        const createRes = await axios.post(
+          `${META_GRAPH_URL}/${businessId}/owned_product_catalogs`,
+          { name: catalogName, vertical: 'commerce' },
+          { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+        );
+        catalogId = createRes.data.id;
+        console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
+      } catch (err) {
+        throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+      }
     }
 
     // Link catalog to WABA (makes it appear in WhatsApp Business Manager)
