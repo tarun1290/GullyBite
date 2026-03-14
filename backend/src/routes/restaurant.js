@@ -306,6 +306,85 @@ router.post('/branches', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/restaurant/branches/csv
+// Bulk-create branches from CSV rows; auto-geocodes via Nominatim if lat/lng missing
+router.post('/branches/csv', async (req, res) => {
+  try {
+    const { branches: rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'No rows provided' });
+    if (rows.length > 50) return res.status(400).json({ error: 'Max 50 outlets per upload' });
+
+    const created = [], skipped = [], errors = [];
+
+    for (const row of rows) {
+      const name = (row.branch_name || '').trim();
+      const address = (row.address || '').trim();
+      if (!name || !address) { skipped.push({ row, reason: 'branch_name and address are required' }); continue; }
+
+      let lat = parseFloat(row.latitude);
+      let lng = parseFloat(row.longitude);
+
+      // Auto-geocode via Nominatim if lat/lng not provided
+      if (isNaN(lat) || isNaN(lng)) {
+        try {
+          await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit: 1 req/sec
+          const geoRes = await axios.get('https://nominatim.openstreetmap.org/search', {
+            params: { q: address, format: 'json', addressdetails: 1, countrycodes: 'in', limit: 1 },
+            headers: { 'User-Agent': 'GullyBite/1.0' },
+          });
+          if (!geoRes.data?.length) { skipped.push({ row, reason: `Could not geocode address: "${address}"` }); continue; }
+          lat = parseFloat(geoRes.data[0].lat);
+          lng = parseFloat(geoRes.data[0].lon);
+        } catch (ge) { skipped.push({ row, reason: `Geocoding failed: ${ge.message}` }); continue; }
+      }
+
+      try {
+        const branchId = newId();
+        const now = new Date();
+        const branch = {
+          _id: branchId,
+          restaurant_id: req.restaurantId,
+          name,
+          address,
+          city: (row.city || '').trim() || null,
+          pincode: (row.pincode || '').trim() || null,
+          latitude: lat,
+          longitude: lng,
+          delivery_radius_km: parseFloat(row.delivery_radius_km) || 5,
+          opening_time: row.opening_time || '10:00',
+          closing_time: row.closing_time || '22:00',
+          manager_phone: (row.manager_phone || '').trim() || null,
+          is_open: true,
+          accepts_orders: true,
+          catalog_id: null,
+          delivery_fee_rs: null,
+          created_at: now,
+          updated_at: now,
+        };
+        await col('branches').insertOne(branch);
+        const newBranch = mapId(branch);
+        created.push({ id: newBranch.id, name: newBranch.name, latitude: lat, longitude: lng });
+
+        // Auto-create WhatsApp catalog (background)
+        catalog.createBranchCatalog(newBranch.id)
+          .then(r => { if (r.success) console.log(`[Branch CSV] Catalog created for "${name}": ${r.catalogId}`); })
+          .catch(e => console.error(`[Branch CSV] Catalog creation failed for "${name}":`, e.message));
+      } catch (rowErr) {
+        errors.push({ row, reason: rowErr.message });
+      }
+    }
+
+    if (created.length) {
+      await col('restaurants').updateOne(
+        { _id: req.restaurantId },
+        [{ $set: { onboarding_step: { $max: ['$onboarding_step', 3] } } }]
+      );
+    }
+
+    res.json({ created: created.length, skipped: skipped.length, errors: errors.length, details: { created, skipped, errors } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.patch('/branches/:id', async (req, res) => {
   try {
     const { isOpen, acceptsOrders, deliveryRadiusKm, catalogId, deliveryFeeRs } = req.body;
