@@ -119,10 +119,17 @@ const syncBranchCatalog = async (branchId) => {
   }
 
   if (!branch.catalog_id) {
-    throw new Error(
-      `No catalog found for branch "${branch.name}". ` +
-      `Connect your WhatsApp Business account — a catalog will be created automatically.`
-    );
+    // No catalog yet — create one now (first menu upload triggers catalog creation)
+    try {
+      const created = await createBranchCatalog(branchId);
+      branch.catalog_id = created.catalogId;
+      console.log(`[Catalog] Auto-created catalog ${branch.catalog_id} for "${branch.name}" on first sync`);
+    } catch (createErr) {
+      throw new Error(
+        `Could not create WhatsApp catalog for "${branch.name}": ${createErr.message}. ` +
+        `If you see "Missing Permission", reconnect your Meta account or create a catalog manually in Meta Business Suite and enter the Catalog ID.`
+      );
+    }
   }
 
   if (!wa_acc?.access_token) {
