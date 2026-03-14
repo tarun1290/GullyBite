@@ -312,6 +312,7 @@ tr:hover td{background:rgba(79,70,229,.02)}
   .body,.topbar{padding:1.1rem 1.1rem}
 }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js"></script>
 </head>
 <body>
 <div id="fb-root"></div>
@@ -523,9 +524,9 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
               <div class="csv-ico">📍</div>
               <div>
                 <strong>Click to choose file or drag &amp; drop here</strong>
-                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv files only · up to 50 outlets per upload</p>
+                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv or .xlsx · any column format · up to 50 outlets per upload</p>
               </div>
-              <input type="file" id="outlet-csv-file" accept=".csv,text/csv" style="display:none" onchange="handleOutletCsvFile(this)">
+              <input type="file" id="outlet-csv-file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="handleOutletCsvFile(this)">
             </div>
             <div id="csv-mapper-outlet" style="display:none"></div>
             <div id="outlet-csv-preview" style="display:none">
@@ -629,9 +630,9 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
               <div class="csv-ico">📄</div>
               <div>
                 <strong>Click to choose file or drag &amp; drop here</strong>
-                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv files only · up to 500 items per upload</p>
+                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv or .xlsx · any column format · up to 500 items per upload</p>
               </div>
-              <input type="file" id="csv-file" accept=".csv,text/csv" style="display:none" onchange="handleCsvFile(this)">
+              <input type="file" id="csv-file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="handleCsvFile(this)">
             </div>
             <div id="csv-mapper-menu" style="display:none"></div>
             <div id="csv-preview" style="display:none">
@@ -1494,19 +1495,15 @@ let outletCsvParsed = [], _outletCsvRaw = null;
 
 function handleOutletCsvFile(input) {
   const file = input.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => processOutletCsvText(e.target.result);
-  reader.readAsText(file);
+  processOutletFile(file);
 }
 function handleOutletCsvDrop(e) {
   const file = e.dataTransfer.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => processOutletCsvText(ev.target.result);
-  reader.readAsText(file);
+  processOutletFile(file);
 }
-function processOutletCsvText(text) {
+async function processOutletFile(file) {
   try {
-    _outletCsvRaw = parseRawCSV(text);
+    _outletCsvRaw = await parseFile(file);
     document.getElementById('outlet-csv-preview').style.display = 'none';
     document.getElementById('outlet-csv-result').style.display  = 'none';
     renderMapper('csv-mapper-outlet', _outletCsvRaw.headers, OUTLET_FIELDS, mapping => {
@@ -1939,6 +1936,47 @@ function splitCSVLine(line) {
   result.push(cur.trim());
   return result;
 }
+// Parse CSV or Excel file — returns same {headers, rows} format
+async function parseFile(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (ext === 'xlsx' || ext === 'xls') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+          if (!data.length || data.length < 2) throw new Error('Need a header row and at least one data row');
+          const headers = data[0].map(h => String(h || '').trim()).filter(h => h);
+          const colCount = headers.length;
+          const rows = data.slice(1)
+            .filter(r => r.slice(0, colCount).some(c => String(c).trim() !== ''))
+            .map(r => {
+              const obj = {};
+              headers.forEach((h, i) => { obj[i] = String(r[i] ?? '').trim(); });
+              return obj;
+            });
+          if (!rows.length) throw new Error('No data rows found');
+          resolve({ headers, rows });
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = () => reject(new Error('File read failed'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+  // CSV / text
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try { resolve(parseRawCSV(e.target.result)); }
+      catch (err) { reject(err); }
+    };
+    reader.onerror = () => reject(new Error('File read failed'));
+    reader.readAsText(file);
+  });
+}
+
 function parseRawCSV(text) {
   const lines = text.trim().replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
   if (lines.length < 2) throw new Error('Need a header row and at least one data row');
@@ -2073,29 +2111,24 @@ let csvParsed = [], _csvRaw = null;
 
 function handleCsvFile(input) {
   const file = input.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => processCsvText(e.target.result, file.name);
-  reader.readAsText(file);
+  processCsvFile(file);
 }
 function handleCsvDrop(e) {
-  const file = e.dataTransfer.files[0];
-  if (!file || !file.name.toLowerCase().endsWith('.csv')) return toast('Please drop a .csv file', 'err');
-  const reader = new FileReader();
-  reader.onload = ev => processCsvText(ev.target.result, file.name);
-  reader.readAsText(file);
+  const file = e.dataTransfer.files[0]; if (!file) return;
+  processCsvFile(file);
 }
-function processCsvText(text, filename) {
+async function processCsvFile(file) {
   const branchId = document.getElementById('m-branch').value;
   if (!branchId) return toast('Select a branch first, then upload CSV', 'err');
   try {
-    _csvRaw = parseRawCSV(text);
+    _csvRaw = await parseFile(file);
     document.getElementById('csv-preview').style.display  = 'none';
     document.getElementById('csv-result').style.display   = 'none';
     renderMapper('csv-mapper-menu', _csvRaw.headers, MENU_FIELDS, mapping => {
       csvParsed = applyMapping(_csvRaw.rows, mapping);
       const missing = csvParsed.filter(r => !r.name || !r.price);
       document.getElementById('csv-count').textContent =
-        `${csvParsed.length} items from "${filename}"` +
+        `${csvParsed.length} items from "${file.name}"` +
         (missing.length ? ` · ⚠️ ${missing.length} rows missing name/price will be skipped` : '');
       document.getElementById('csv-preview-body').innerHTML =
         csvParsed.slice(0,8).map((r,i) => `<tr>
