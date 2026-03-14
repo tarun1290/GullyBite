@@ -493,6 +493,50 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
             <button class="btn-p" id="add-b-btn" style="margin-top:.95rem" onclick="doAddBranch()">+ Add Branch</button>
           </div>
         </div>
+        <!-- Outlet CSV Bulk Upload -->
+        <div class="card" style="margin-bottom:1.1rem">
+          <div class="ch">
+            <h3>📋 Bulk Add Outlets via CSV</h3>
+            <button class="btn-g btn-sm" onclick="doDownloadOutletSample()">⬇ Sample CSV</button>
+          </div>
+          <div class="cb">
+            <p style="font-size:.81rem;color:var(--dim);margin-bottom:.9rem">
+              Upload a CSV to create multiple branches at once. WhatsApp catalog is auto-created for each.<br>
+              <strong>Required:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">branch_name</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">address</code> &nbsp;·&nbsp;
+              <strong>Optional:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">city</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">latitude</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">longitude</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">delivery_radius_km</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">opening_time</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">closing_time</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">manager_phone</code><br>
+              <em style="color:var(--wa);font-size:.77rem">Tip: Leave latitude/longitude blank — they are auto-detected from the address.</em>
+            </p>
+            <div class="csv-drop" id="outlet-csv-drop"
+                 onclick="document.getElementById('outlet-csv-file').click()"
+                 ondragover="event.preventDefault();this.classList.add('drag')"
+                 ondragleave="this.classList.remove('drag')"
+                 ondrop="event.preventDefault();this.classList.remove('drag');handleOutletCsvDrop(event)">
+              <div class="csv-ico">📍</div>
+              <div>
+                <strong>Click to choose file or drag &amp; drop here</strong>
+                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv files only · up to 50 outlets per upload</p>
+              </div>
+              <input type="file" id="outlet-csv-file" accept=".csv,text/csv" style="display:none" onchange="handleOutletCsvFile(this)">
+            </div>
+            <div id="outlet-csv-preview" style="display:none">
+              <div class="sh" style="margin-top:1rem">
+                <span id="outlet-csv-count" style="font-size:.84rem;color:var(--wa);font-weight:600"></span>
+                <div style="display:flex;gap:.5rem">
+                  <button class="btn-g btn-sm" onclick="resetOutletCsv()">✕ Clear</button>
+                  <button class="btn-p btn-sm" id="outlet-csv-btn" onclick="doUploadOutletCsv()">📍 Create Branches</button>
+                </div>
+              </div>
+              <div class="tbl" style="margin-top:.65rem;max-height:200px;overflow-y:auto">
+                <table>
+                  <thead><tr><th>#</th><th>Branch Name</th><th>City</th><th>Address</th><th>Radius (km)</th><th>Hours</th></tr></thead>
+                  <tbody id="outlet-csv-preview-body"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="outlet-csv-result" style="display:none;margin-top:.9rem"></div>
+          </div>
+        </div>
+
         <div class="sh">
           <h2>Your Branches</h2>
           <button class="btn-g btn-sm" onclick="loadBranches()">🔄 Refresh</button>
@@ -1433,6 +1477,91 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#addr-suggestions') && e.target.id !== 'b-addr-search')
     document.getElementById('addr-suggestions').style.display = 'none';
 });
+
+/* ─────────────── OUTLET CSV UPLOAD ─────────────────────── */
+let outletCsvParsed = [];
+
+function handleOutletCsvFile(input) {
+  const file = input.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => processOutletCsvText(e.target.result);
+  reader.readAsText(file);
+}
+function handleOutletCsvDrop(e) {
+  const file = e.dataTransfer.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => processOutletCsvText(ev.target.result);
+  reader.readAsText(file);
+}
+function processOutletCsvText(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return toast('CSV must have a header row and at least one outlet', 'err');
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g,'_'));
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g) || lines[i].split(',');
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = (vals[idx] || '').replace(/^"|"$/g, '').trim(); });
+    if (row.branch_name || row.address) rows.push(row);
+  }
+  if (!rows.length) return toast('No valid rows found in CSV', 'err');
+  outletCsvParsed = rows;
+  const tbody = document.getElementById('outlet-csv-preview-body');
+  tbody.innerHTML = rows.map((r, i) =>
+    `<tr><td>${i+1}</td><td><strong>${r.branch_name||'—'}</strong></td><td>${r.city||'—'}</td>
+     <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.address||''}">${r.address||'—'}</td>
+     <td>${r.delivery_radius_km||'5'}</td>
+     <td style="white-space:nowrap">${r.opening_time||'10:00'} – ${r.closing_time||'22:00'}</td></tr>`
+  ).join('');
+  document.getElementById('outlet-csv-count').textContent = `${rows.length} outlet${rows.length>1?'s':''} ready to create`;
+  document.getElementById('outlet-csv-preview').style.display = 'block';
+  document.getElementById('outlet-csv-result').style.display  = 'none';
+}
+function resetOutletCsv() {
+  outletCsvParsed = [];
+  document.getElementById('outlet-csv-file').value = '';
+  document.getElementById('outlet-csv-preview').style.display = 'none';
+  document.getElementById('outlet-csv-result').style.display  = 'none';
+}
+async function doUploadOutletCsv() {
+  if (!outletCsvParsed.length) return toast('No CSV data to upload', 'err');
+  const btn = document.getElementById('outlet-csv-btn');
+  const el  = document.getElementById('outlet-csv-result');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Creating branches…';
+  try {
+    const r = await api('/api/restaurant/branches/csv', { method: 'POST', body: { branches: outletCsvParsed } });
+    el.style.display = 'block';
+    const errHtml = r.details?.errors?.length
+      ? `<div style="margin-top:.5rem;font-size:.75rem;color:var(--red)">${r.details.errors.slice(0,5).map(e=>`${e.row?.branch_name||'Row'}: ${e.reason}`).join('<br>')}</div>` : '';
+    const skipHtml = r.details?.skipped?.length
+      ? `<div style="margin-top:.4rem;font-size:.75rem;color:var(--gold)">${r.details.skipped.slice(0,5).map(s=>`${s.row?.branch_name||'Row'}: ${s.reason}`).join('<br>')}</div>` : '';
+    el.innerHTML =
+      `<div style="display:flex;gap:.6rem;flex-wrap:wrap">
+        <span class="csv-result-ok">✅ <strong>${r.created}</strong> branch${r.created!==1?'es':''} created</span>
+        ${r.skipped ? `<span class="csv-result-warn">⚠️ <strong>${r.skipped}</strong> skipped</span>` : ''}
+        ${r.errors  ? `<span style="background:rgba(220,38,38,.12);color:#dc2626;padding:.2rem .55rem;border-radius:6px;font-size:.8rem">❌ <strong>${r.errors}</strong> failed</span>` : ''}
+        <span style="font-size:.8rem;color:var(--dim);margin-left:.3rem">WhatsApp catalogs being created in background…</span>
+      </div>${errHtml}${skipHtml}`;
+    toast(`✅ ${r.created} branch${r.created!==1?'es':''} created!`, 'ok');
+    resetOutletCsv();
+    loadBranches();
+    setTimeout(loadBranches, 5000); // reload after catalogs are created
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = '📍 Create Branches'; }
+}
+function doDownloadOutletSample() {
+  const sample = [
+    'branch_name,address,city,latitude,longitude,delivery_radius_km,opening_time,closing_time,manager_phone',
+    'Koramangala Outlet,"Shop 5, Forum Mall, Koramangala, Bangalore 560095",Bangalore,12.934533,77.612487,5,10:00,22:00,+919876543210',
+    'Indiranagar Branch,"100 Feet Road, Indiranagar, Bangalore 560038",Bangalore,,,5,11:00,23:00,+919876543211',
+    'HSR Layout,"Sector 2, HSR Layout, Bangalore 560102",Bangalore,,,4,10:00,22:00,',
+  ].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(sample);
+  a.download = 'gullybite_outlets_sample.csv';
+  a.click();
+}
 
 /* ─────────────── BRANCHES & CATALOG (hero feature) ─────── */
 async function doAddBranch() {
