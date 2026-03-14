@@ -1481,6 +1481,21 @@ document.addEventListener('click', e => {
 /* ─────────────── OUTLET CSV UPLOAD ─────────────────────── */
 let outletCsvParsed = [];
 
+// Proper CSV tokenizer — handles quoted fields, empty cells, CRLF
+function parseCsvLine(line) {
+  const cols = []; let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQ && line[i+1] === '"') { cur += '"'; i++; } // escaped ""
+      else inQ = !inQ;
+    } else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+    else cur += c;
+  }
+  cols.push(cur.trim());
+  return cols;
+}
+
 function handleOutletCsvFile(input) {
   const file = input.files[0]; if (!file) return;
   const reader = new FileReader();
@@ -1496,25 +1511,32 @@ function handleOutletCsvDrop(e) {
 function processOutletCsvText(text) {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return toast('CSV must have a header row and at least one outlet', 'err');
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g,'_'));
+  const headers = parseCsvLine(lines[0]).map(h => h.toLowerCase().replace(/\s+/g,'_'));
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
-    const vals = lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g) || lines[i].split(',');
+    const vals = parseCsvLine(lines[i]);
     const row = {};
-    headers.forEach((h, idx) => { row[h] = (vals[idx] || '').replace(/^"|"$/g, '').trim(); });
-    if (row.branch_name || row.address) rows.push(row);
+    headers.forEach((h, idx) => { row[h] = vals[idx] ?? ''; });
+    if ((row.branch_name || '').trim() && (row.address || '').trim()) rows.push(row);
   }
-  if (!rows.length) return toast('No valid rows found in CSV', 'err');
+  if (!rows.length) return toast('No valid rows found — make sure columns branch_name and address are filled', 'err');
   outletCsvParsed = rows;
   const tbody = document.getElementById('outlet-csv-preview-body');
-  tbody.innerHTML = rows.map((r, i) =>
-    `<tr><td>${i+1}</td><td><strong>${r.branch_name||'—'}</strong></td><td>${r.city||'—'}</td>
-     <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.address||''}">${r.address||'—'}</td>
-     <td>${r.delivery_radius_km||'5'}</td>
-     <td style="white-space:nowrap">${r.opening_time||'10:00'} – ${r.closing_time||'22:00'}</td></tr>`
-  ).join('');
-  document.getElementById('outlet-csv-count').textContent = `${rows.length} outlet${rows.length>1?'s':''} ready to create`;
+  tbody.innerHTML = rows.map((r, i) => {
+    const hasCoords = r.latitude && r.longitude;
+    return `<tr>
+      <td>${i+1}</td>
+      <td><strong>${r.branch_name}</strong></td>
+      <td>${r.city||'—'}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.address}">${r.address}</td>
+      <td>${r.delivery_radius_km||'5'}</td>
+      <td style="white-space:nowrap">${hasCoords
+        ? `<span style="color:var(--wa);font-size:.75rem">✅ coords set</span>`
+        : `<span style="color:var(--dim);font-size:.75rem">📍 will geocode</span>`}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('outlet-csv-count').textContent = `${rows.length} outlet${rows.length>1?'s':''} ready`;
   document.getElementById('outlet-csv-preview').style.display = 'block';
   document.getElementById('outlet-csv-result').style.display  = 'none';
 }
@@ -1524,29 +1546,73 @@ function resetOutletCsv() {
   document.getElementById('outlet-csv-preview').style.display = 'none';
   document.getElementById('outlet-csv-result').style.display  = 'none';
 }
+
+// Geocode a single address via Nominatim (frontend, no API key needed)
+async function geocodeAddress(address) {
+  const res = await fetch(
+    `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&countrycodes=in&limit=1`,
+    { headers: { 'Accept-Language': 'en' } }
+  );
+  const data = await res.json();
+  if (!data.length) throw new Error(`Address not found: "${address}"`);
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+}
+
 async function doUploadOutletCsv() {
   if (!outletCsvParsed.length) return toast('No CSV data to upload', 'err');
   const btn = document.getElementById('outlet-csv-btn');
   const el  = document.getElementById('outlet-csv-result');
-  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Creating branches…';
-  try {
-    const r = await api('/api/restaurant/branches/csv', { method: 'POST', body: { branches: outletCsvParsed } });
+  btn.disabled = true;
+
+  // Step 1 — geocode any rows missing lat/lng (frontend, 1 req/sec Nominatim limit)
+  const toGeocode = outletCsvParsed.filter(r => !r.latitude || !r.longitude);
+  const geocodeFailed = [];
+  if (toGeocode.length) {
+    btn.innerHTML = `<div class="spin"></div> Geocoding 0/${toGeocode.length}…`;
+    for (let i = 0; i < toGeocode.length; i++) {
+      btn.innerHTML = `<div class="spin"></div> Geocoding ${i+1}/${toGeocode.length}…`;
+      try {
+        if (i > 0) await new Promise(r => setTimeout(r, 1100)); // Nominatim: 1 req/sec
+        const { lat, lng } = await geocodeAddress(toGeocode[i].address);
+        toGeocode[i].latitude  = String(lat);
+        toGeocode[i].longitude = String(lng);
+      } catch (ge) {
+        geocodeFailed.push({ name: toGeocode[i].branch_name, reason: ge.message });
+      }
+    }
+  }
+
+  // Step 2 — send all successfully geocoded rows to backend
+  const readyRows = outletCsvParsed.filter(r => r.latitude && r.longitude);
+  if (!readyRows.length) {
     el.style.display = 'block';
+    el.innerHTML = `<div style="color:var(--red);font-size:.83rem">❌ Could not geocode any addresses. Try adding latitude/longitude columns manually.<br>
+      ${geocodeFailed.map(f=>`<strong>${f.name}</strong>: ${f.reason}`).join('<br>')}</div>`;
+    btn.disabled = false; btn.innerHTML = '📍 Create Branches';
+    return;
+  }
+
+  btn.innerHTML = `<div class="spin"></div> Creating ${readyRows.length} branch${readyRows.length>1?'es':''}…`;
+  try {
+    const r = await api('/api/restaurant/branches/csv', { method: 'POST', body: { branches: readyRows } });
+    el.style.display = 'block';
+    const failedGeoHtml = geocodeFailed.length
+      ? `<div style="margin-top:.45rem;font-size:.75rem;color:var(--red)">📍 Geocoding failed (add coordinates manually):<br>${geocodeFailed.map(f=>`<strong>${f.name}</strong>: ${f.reason}`).join('<br>')}</div>` : '';
     const errHtml = r.details?.errors?.length
-      ? `<div style="margin-top:.5rem;font-size:.75rem;color:var(--red)">${r.details.errors.slice(0,5).map(e=>`${e.row?.branch_name||'Row'}: ${e.reason}`).join('<br>')}</div>` : '';
-    const skipHtml = r.details?.skipped?.length
-      ? `<div style="margin-top:.4rem;font-size:.75rem;color:var(--gold)">${r.details.skipped.slice(0,5).map(s=>`${s.row?.branch_name||'Row'}: ${s.reason}`).join('<br>')}</div>` : '';
+      ? `<div style="margin-top:.45rem;font-size:.75rem;color:var(--red)">${r.details.errors.slice(0,5).map(e=>`<strong>${e.row?.branch_name||'Row'}</strong>: ${e.reason}`).join('<br>')}</div>` : '';
     el.innerHTML =
       `<div style="display:flex;gap:.6rem;flex-wrap:wrap">
         <span class="csv-result-ok">✅ <strong>${r.created}</strong> branch${r.created!==1?'es':''} created</span>
-        ${r.skipped ? `<span class="csv-result-warn">⚠️ <strong>${r.skipped}</strong> skipped</span>` : ''}
-        ${r.errors  ? `<span style="background:rgba(220,38,38,.12);color:#dc2626;padding:.2rem .55rem;border-radius:6px;font-size:.8rem">❌ <strong>${r.errors}</strong> failed</span>` : ''}
-        <span style="font-size:.8rem;color:var(--dim);margin-left:.3rem">WhatsApp catalogs being created in background…</span>
-      </div>${errHtml}${skipHtml}`;
-    toast(`✅ ${r.created} branch${r.created!==1?'es':''} created!`, 'ok');
-    resetOutletCsv();
-    loadBranches();
-    setTimeout(loadBranches, 5000); // reload after catalogs are created
+        ${geocodeFailed.length ? `<span class="csv-result-warn">⚠️ <strong>${geocodeFailed.length}</strong> geocoding failed</span>` : ''}
+        ${r.errors ? `<span style="background:rgba(220,38,38,.12);color:#dc2626;padding:.2rem .55rem;border-radius:6px;font-size:.8rem">❌ <strong>${r.errors}</strong> failed</span>` : ''}
+        ${r.created ? `<span style="font-size:.8rem;color:var(--dim)">WhatsApp catalogs creating in background…</span>` : ''}
+      </div>${failedGeoHtml}${errHtml}`;
+    if (r.created) {
+      toast(`✅ ${r.created} branch${r.created!==1?'es':''} created!`, 'ok');
+      resetOutletCsv();
+      loadBranches();
+      setTimeout(loadBranches, 5000);
+    }
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; btn.innerHTML = '📍 Create Branches'; }
 }
