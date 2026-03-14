@@ -1203,4 +1203,104 @@ async function notifyOrderStatus(restaurantId, pid, token, waPhone, status, orde
   });
 }
 
+// POST /api/restaurant/catalog/register-feed
+// Registers a live feed URL with Meta's Catalog API (schedule: daily at 2AM)
+router.post('/catalog/register-feed', async (req, res) => {
+  try {
+    const axios = require('axios');
+    const crypto = require('crypto');
+    const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+
+    if (!wa_acc?.access_token) return res.status(400).json({ error: 'No Meta access token. Please reconnect WhatsApp.' });
+
+    // Generate or reuse feed token
+    let feedToken = restaurant.catalog_feed_token;
+    if (!feedToken) {
+      feedToken = crypto.randomBytes(24).toString('hex');
+      await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { catalog_feed_token: feedToken } });
+    }
+
+    const baseUrl = process.env.BASE_URL || 'https://gully-bite.vercel.app';
+    const feedUrl = `${baseUrl}/feed/${feedToken}`;
+
+    // Find a branch with a catalog
+    const branch = await col('branches').findOne({ restaurant_id: req.restaurantId, catalog_id: { $exists: true, $ne: null } });
+    if (!branch?.catalog_id) return res.status(400).json({ error: 'No catalog found. Add menu items first so a catalog is created, then register the feed.' });
+
+    const feedName = `${restaurant.business_name || 'GullyBite'} Live Menu Feed`;
+
+    // Check if feed already registered
+    if (restaurant.meta_feed_id) {
+      // Update the existing feed's URL/schedule
+      try {
+        await axios.post(
+          `${GRAPH}/${restaurant.meta_feed_id}`,
+          { schedule: { interval: 'DAILY', url: feedUrl, hour: 2 } },
+          { headers: { Authorization: `Bearer ${wa_acc.access_token}` }, timeout: 15000 }
+        );
+        await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { catalog_feed_url: feedUrl, catalog_feed_updated_at: new Date() } });
+        return res.json({ success: true, feedId: restaurant.meta_feed_id, feedUrl, updated: true });
+      } catch (e) {
+        // Feed no longer exists on Meta — fall through to create new
+        console.warn('[Feed] Existing feed update failed, creating new:', e.response?.data?.error?.message || e.message);
+        await col('restaurants').updateOne({ _id: req.restaurantId }, { $unset: { meta_feed_id: '' } });
+      }
+    }
+
+    // Register new feed with Meta
+    const feedRes = await axios.post(
+      `${GRAPH}/${branch.catalog_id}/product_feeds`,
+      {
+        name: feedName,
+        schedule: { interval: 'DAILY', url: feedUrl, hour: 2 },
+      },
+      { headers: { Authorization: `Bearer ${wa_acc.access_token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+    );
+
+    const feedId = feedRes.data.id;
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { meta_feed_id: feedId, catalog_feed_token: feedToken, catalog_feed_url: feedUrl, catalog_feed_registered_at: new Date() } }
+    );
+
+    res.json({ success: true, feedId, feedUrl });
+  } catch (e) {
+    console.error('[Feed] Register failed:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// GET /api/restaurant/catalog/feed-status
+router.get('/catalog/feed-status', async (req, res) => {
+  try {
+    const axios = require('axios');
+    const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+
+    if (!restaurant.meta_feed_id) return res.json({ registered: false, feedUrl: restaurant.catalog_feed_url || null });
+
+    // Fetch latest upload status from Meta
+    let lastUpload = null;
+    try {
+      const r = await axios.get(`${GRAPH}/${restaurant.meta_feed_id}/uploads`, {
+        params: { access_token: wa_acc?.access_token, limit: 1, fields: 'end_time,num_detected_items,num_invalid_items,url' },
+        timeout: 10000,
+      });
+      lastUpload = r.data?.data?.[0] || null;
+    } catch (e) { /* non-fatal */ }
+
+    res.json({
+      registered: true,
+      feedId: restaurant.meta_feed_id,
+      feedUrl: restaurant.catalog_feed_url,
+      registeredAt: restaurant.catalog_feed_registered_at,
+      lastUpload,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

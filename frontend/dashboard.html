@@ -723,6 +723,24 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           </div>
         </div>
 
+        <!-- ── LIVE CATALOG FEED ── -->
+        <div class="card" id="feed-card" style="margin-top:1.2rem">
+          <div class="ch"><h3>📡 Live Catalog Feed</h3></div>
+          <div class="cb">
+            <p style="font-size:.83rem;color:var(--dim);margin-bottom:1rem;line-height:1.6">
+              Meta fetches your menu from a secure URL daily and keeps your WhatsApp catalog in sync automatically.
+              This is the <strong>URL-based feed</strong> option in Meta Commerce Manager.
+            </p>
+            <div id="feed-status-area">
+              <div class="spin" style="margin:1rem auto;display:block;width:20px;height:20px"></div>
+            </div>
+            <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-top:1rem">
+              <button class="btn-p" id="feed-register-btn" onclick="doRegisterFeed(this)">📡 Register Feed with Meta</button>
+              <button class="btn-g btn-sm" onclick="loadFeedStatus()">🔄 Check Status</button>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <!-- ── SETTLEMENTS ─────────────────────────── -->
@@ -2289,6 +2307,7 @@ async function loadWA() {
     }).join('');
   } catch (_) {}
   loadTemplateMappings();
+  loadFeedStatus();
 }
 
 async function completeSetup(waAccountId, btn) {
@@ -3298,6 +3317,56 @@ async function doRemoveIntegration() {
 // snake_case → camelCase helper for field IDs
 function snakeToCamel(s) {
   return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+/* ─────────────── CATALOG LIVE FEED ─────────────── */
+async function loadFeedStatus() {
+  const area = document.getElementById('feed-status-area');
+  if (!area) return;
+  try {
+    const s = await api('/api/restaurant/catalog/feed-status');
+    if (!s.registered) {
+      area.innerHTML = `<div style="font-size:.83rem;color:var(--dim)">
+        <span style="color:var(--gold2)">⚠ Feed not registered yet.</span>
+        Click "Register Feed with Meta" below — Meta will fetch your menu daily and keep the catalog in sync.
+      </div>`;
+    } else {
+      const lastSync = s.lastUpload?.end_time
+        ? new Date(s.lastUpload.end_time).toLocaleString('en-IN')
+        : 'Not synced yet';
+      const items = s.lastUpload?.num_detected_items ?? '—';
+      const invalid = s.lastUpload?.num_invalid_items ?? 0;
+      area.innerHTML = `
+        <div style="display:grid;gap:.5rem;font-size:.82rem">
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <span style="color:var(--wa);font-size:1rem">✅</span>
+            <strong>Feed registered with Meta</strong>
+            <span style="color:var(--dim);font-size:.75rem">(syncs daily at 2 AM)</span>
+          </div>
+          <div style="background:var(--ink2);border-radius:8px;padding:.6rem .85rem;display:flex;flex-direction:column;gap:.25rem">
+            <div style="color:var(--dim);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em">Feed URL</div>
+            <div style="font-family:monospace;font-size:.75rem;word-break:break-all;color:var(--fg)">${s.feedUrl}</div>
+          </div>
+          <div style="display:flex;gap:1.5rem;font-size:.8rem;flex-wrap:wrap">
+            <span>🕐 Last sync: <strong>${lastSync}</strong></span>
+            <span>📦 Items detected: <strong>${items}</strong></span>
+            ${invalid > 0 ? `<span style="color:var(--red)">⚠ ${invalid} invalid</span>` : ''}
+          </div>
+        </div>`;
+    }
+  } catch (e) {
+    if (area) area.innerHTML = `<span style="color:var(--dim);font-size:.82rem">Could not load feed status</span>`;
+  }
+}
+
+async function doRegisterFeed(btn) {
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Registering…';
+  try {
+    const r = await api('/api/restaurant/catalog/register-feed', { method: 'POST' });
+    toast(r.updated ? '✅ Feed URL updated on Meta!' : '✅ Feed registered! Meta will sync daily.', 'ok');
+    loadFeedStatus();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = '📡 Register Feed with Meta'; }
 }
 
 /* ─────────────────────────── TOAST ─────────────────────── */
