@@ -1001,12 +1001,10 @@ async function deleteRestaurant(id, name) {
     return;
   }
   try {
-    const res = await api(`/api/admin/restaurants/${id}`, { method: 'DELETE' });
-    if (res.ok) {
-      toast(`"${name}" deleted and archived`, 'ok');
-      loadRestaurants();
-      loadStats();
-    }
+    await api(`/api/admin/restaurants/${id}`, { method: 'DELETE' });
+    toast(`"${name}" deleted and archived`, 'ok');
+    loadRestaurants();
+    loadStats();
   } catch (e) { toast(e.message, 'err'); }
 }
 
