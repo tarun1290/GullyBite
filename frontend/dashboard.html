@@ -571,8 +571,7 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
           <div class="ch"><h3>➕ Add Menu Item</h3></div>
           <div class="cb">
             <div class="fgrid">
-              <div class="fg"><label>Item Name ★</label><input id="m-name" placeholder="Butter Chicken"></div>
-              <div class="fg"><label>Price (₹) ★</label><input id="m-price" type="number" placeholder="280"></div>
+              <div class="fg span2"><label>Item Name ★</label><input id="m-name" placeholder="Butter Chicken"></div>
               <div class="fg span2"><label>Description</label><input id="m-desc" placeholder="Tender chicken in rich tomato-cream gravy"></div>
               <div class="fg">
                 <label>Food Type</label>
@@ -592,6 +591,28 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
                   </select>
                   <input id="m-cat-new" placeholder="Category name" style="display:none;flex:1;padding:.45rem .65rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;color:var(--fg);font-size:.85rem" onkeydown="if(event.key==='Escape'){document.getElementById('m-cat').value='';onCatChange(document.getElementById('m-cat'))}">
                 </div>
+              </div>
+              <!-- Variants toggle -->
+              <div class="fg span2">
+                <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;user-select:none">
+                  <input type="checkbox" id="m-has-variants" onchange="onVariantToggle(this)" style="width:15px;height:15px;accent-color:var(--wa)">
+                  <span>This item has variants <small style="color:var(--dim)">(e.g. Small / Medium / Large, Half / Full)</small></span>
+                </label>
+              </div>
+              <!-- Single price row (hidden when variants on) -->
+              <div class="fg" id="m-price-row"><label>Price (₹) ★</label><input id="m-price" type="number" placeholder="280"></div>
+              <!-- Variant builder (hidden by default) -->
+              <div class="fg span2" id="m-variants-section" style="display:none">
+                <label style="margin-bottom:.4rem;display:block">Variant Type
+                  <select id="m-variant-type" style="margin-left:.5rem;padding:.28rem .5rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:6px;color:var(--fg);font-size:.82rem">
+                    <option value="Size">Size (Small / Medium / Large)</option>
+                    <option value="Portion">Portion (Half / Full)</option>
+                    <option value="Pack">Pack (Single / Family / Party)</option>
+                    <option value="Custom">Custom</option>
+                  </select>
+                </label>
+                <div id="m-variant-rows" style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.5rem"></div>
+                <button type="button" class="btn-g btn-sm" onclick="addVariantRow()" style="align-self:flex-start">+ Add variant</button>
               </div>
               <!-- Image picker: upload file OR paste URL -->
               <div class="fg span2">
@@ -1926,6 +1947,39 @@ function miRow(item) {
     </div>
   </div>`;
 }
+/* ─── VARIANT BUILDER ─────────────────────────────────── */
+const VARIANT_PRESETS = {
+  Size:    ['Small', 'Medium', 'Large'],
+  Portion: ['Half', 'Full'],
+  Pack:    ['Single', 'Family', 'Party Pack'],
+  Custom:  ['Option 1', 'Option 2'],
+};
+function onVariantToggle(cb) {
+  const on = cb.checked;
+  document.getElementById('m-variants-section').style.display = on ? 'block' : 'none';
+  document.getElementById('m-price-row').style.display = on ? 'none' : '';
+  if (on && !document.getElementById('m-variant-rows').children.length) {
+    const type = document.getElementById('m-variant-type').value;
+    (VARIANT_PRESETS[type] || ['Option 1']).forEach(v => addVariantRow(v));
+  }
+}
+function addVariantRow(name = '') {
+  const rows = document.getElementById('m-variant-rows');
+  const idx  = rows.children.length;
+  const div  = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:.4rem;align-items:center';
+  div.innerHTML = `
+    <input placeholder="Variant name (e.g. Small)" value="${name}"
+      style="flex:1.4;padding:.42rem .6rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:7px;color:var(--fg);font-size:.84rem"
+      class="vr-name">
+    <input type="number" placeholder="Price ₹"
+      style="flex:1;padding:.42rem .6rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:7px;color:var(--fg);font-size:.84rem"
+      class="vr-price">
+    <button type="button" onclick="this.parentElement.remove()"
+      style="background:none;border:none;color:var(--red);font-size:1.1rem;cursor:pointer;padding:0 .2rem" title="Remove">×</button>`;
+  rows.appendChild(div);
+}
+
 function onCatChange(sel) {
   const newInput = document.getElementById('m-cat-new');
   if (sel.value === '__new__') {
@@ -1939,21 +1993,17 @@ function onCatChange(sel) {
 async function doAddItem() {
   const branchId = document.getElementById('m-branch').value;
   if (!branchId) return toast('Select a branch first', 'err');
-  const name  = document.getElementById('m-name').value.trim();
-  const price = document.getElementById('m-price').value;
-  if (!name || !price) return toast('Name and price are required', 'err');
+  const name = document.getElementById('m-name').value.trim();
+  if (!name) return toast('Item name is required', 'err');
 
-  // Resolve category — create new if "+ New category" was chosen
+  // Resolve category
   let categoryId = document.getElementById('m-cat').value || null;
   if (categoryId === '__new__') {
     const newCatName = document.getElementById('m-cat-new').value.trim();
     if (!newCatName) return toast('Enter a category name', 'err');
     try {
-      const cat = await api(`/api/restaurant/branches/${branchId}/categories`, {
-        method: 'POST', body: { name: newCatName },
-      });
+      const cat = await api(`/api/restaurant/branches/${branchId}/categories`, { method: 'POST', body: { name: newCatName } });
       categoryId = cat.id;
-      // Add to dropdown and select it
       const sel = document.getElementById('m-cat');
       const opt = new Option(newCatName, cat.id, true, true);
       sel.insertBefore(opt, sel.querySelector('option[value="__new__"]'));
@@ -1963,16 +2013,50 @@ async function doAddItem() {
     } catch (e) { return toast('Could not create category: ' + e.message, 'err'); }
   }
 
+  const common = {
+    description: document.getElementById('m-desc').value,
+    foodType:    document.getElementById('m-type').value,
+    categoryId,
+    imageUrl:    document.getElementById('m-img').value,
+  };
+
+  const hasVariants = document.getElementById('m-has-variants').checked;
+
   try {
-    await api(`/api/restaurant/branches/${branchId}/menu`, { method: 'POST', body: {
-      name, priceRs: parseFloat(price),
-      description: document.getElementById('m-desc').value,
-      foodType:    document.getElementById('m-type').value,
-      categoryId:  categoryId,
-      imageUrl:    document.getElementById('m-img').value,
-    }});
-    toast(`"${name}" added! Click Sync to push to WhatsApp.`, 'ok');
+    if (hasVariants) {
+      // Collect variant rows
+      const rows = [...document.getElementById('m-variant-rows').querySelectorAll('div')];
+      const variants = rows.map(r => ({
+        name:  r.querySelector('.vr-name').value.trim(),
+        price: parseFloat(r.querySelector('.vr-price').value),
+      })).filter(v => v.name && !isNaN(v.price) && v.price > 0);
+      if (!variants.length) return toast('Add at least one variant with a name and price', 'err');
+
+      // Shared itemGroupId groups all variants together
+      const groupId = `GRP-${Date.now()}`;
+      const variantType = document.getElementById('m-variant-type').value;
+      for (const v of variants) {
+        await api(`/api/restaurant/branches/${branchId}/menu`, { method: 'POST', body: {
+          ...common, name, priceRs: v.price,
+          itemGroupId: groupId, variantType, variantValue: v.name,
+        }});
+      }
+      toast(`"${name}" added with ${variants.length} variants! Click Sync to push.`, 'ok');
+    } else {
+      const price = document.getElementById('m-price').value;
+      if (!price) return toast('Price is required', 'err');
+      await api(`/api/restaurant/branches/${branchId}/menu`, { method: 'POST', body: {
+        ...common, name, priceRs: parseFloat(price),
+      }});
+      toast(`"${name}" added! Click Sync to push to WhatsApp.`, 'ok');
+    }
+
+    // Reset form
     ['m-name', 'm-price', 'm-desc'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('m-has-variants').checked = false;
+    document.getElementById('m-variants-section').style.display = 'none';
+    document.getElementById('m-price-row').style.display = '';
+    document.getElementById('m-variant-rows').innerHTML = '';
     resetImgPicker();
     loadMenu();
   } catch (e) { toast(e.message, 'err'); }
