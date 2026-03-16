@@ -68,19 +68,38 @@ const createBranchCatalog = async (branchId) => {
     throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
   }
 
-  // ── STEP B: CREATE THE CATALOG ───────────────────────────────
-  const catalogName = `${restaurant.business_name} - ${branch.name}`;
+  // ── STEP A.5: CHECK EXISTING BUSINESS CATALOGS ───────────────
+  // The embedded-signup token usually lacks permission to CREATE catalogs
+  // but CAN read existing ones. Inherit before trying to create.
   let catalogId;
   try {
-    const createRes = await axios.post(
-      `${GRAPH}/${businessId}/owned_product_catalogs`,
-      { name: catalogName, vertical: 'commerce' },
-      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
-    );
-    catalogId = createRes.data.id;
-    console.log(`[Catalog] Created catalog "${catalogName}" with ID: ${catalogId}`);
-  } catch (err) {
-    throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+    const bizCatalogRes = await axios.get(`${GRAPH}/${businessId}/owned_product_catalogs`, {
+      params: { access_token: accessToken, fields: 'id,name' },
+      timeout: 10000,
+    });
+    const bizCatalogs = bizCatalogRes.data?.data || [];
+    if (bizCatalogs.length) {
+      catalogId = bizCatalogs[0].id;
+      console.log(`[Catalog] Found existing business catalog ${catalogId} — inheriting instead of creating`);
+    }
+  } catch (e) {
+    console.warn('[Catalog] Could not read business catalogs:', e.response?.data?.error?.message || e.message);
+  }
+
+  // ── STEP B: CREATE THE CATALOG (only if none found above) ────
+  if (!catalogId) {
+    const catalogName = `${restaurant.business_name} - ${branch.name}`;
+    try {
+      const createRes = await axios.post(
+        `${GRAPH}/${businessId}/owned_product_catalogs`,
+        { name: catalogName, vertical: 'commerce' },
+        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+      );
+      catalogId = createRes.data.id;
+      console.log(`[Catalog] Created catalog "${catalogName}" with ID: ${catalogId}`);
+    } catch (err) {
+      throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+    }
   }
 
   // ── STEP C: SAVE CATALOG ID TO DB ───────────────────────────

@@ -707,18 +707,35 @@ async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
         throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
       }
 
-      // Create one catalog for this WABA named after the restaurant
-      const catalogName = restaurant.brand_name || restaurant.business_name || 'GullyBite Menu';
+      // Check if business already owns any catalogs before trying to create one
       try {
-        const createRes = await axios.post(
-          `${META_GRAPH_URL}/${businessId}/owned_product_catalogs`,
-          { name: catalogName, vertical: 'commerce' },
-          { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
-        );
-        catalogId = createRes.data.id;
-        console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
-      } catch (err) {
-        throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+        const bizCatRes = await axios.get(`${META_GRAPH_URL}/${businessId}/owned_product_catalogs`, {
+          params: { access_token: accessToken, fields: 'id,name' },
+          timeout: 10000,
+        });
+        const bizCatalogs = bizCatRes.data?.data || [];
+        if (bizCatalogs.length) {
+          catalogId = bizCatalogs[0].id;
+          console.log(`[Catalog] Found existing business catalog ${catalogId} for WABA ${wabaId} — inheriting`);
+        }
+      } catch (e) {
+        console.warn(`[Catalog] Could not read business catalogs:`, e.response?.data?.error?.message || e.message);
+      }
+
+      if (!catalogId) {
+        // Create one catalog for this WABA named after the restaurant
+        const catalogName = restaurant.brand_name || restaurant.business_name || 'GullyBite Menu';
+        try {
+          const createRes = await axios.post(
+            `${META_GRAPH_URL}/${businessId}/owned_product_catalogs`,
+            { name: catalogName, vertical: 'commerce' },
+            { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+          );
+          catalogId = createRes.data.id;
+          console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
+        } catch (err) {
+          throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+        }
       }
     }
 

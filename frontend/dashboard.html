@@ -2190,17 +2190,29 @@ async function doFixCatalog() {
   const sel = document.getElementById('m-branch');
   const branchId = sel?.value;
   if (!branchId) return toast('Select a branch first', 'err');
-  if (!confirm('This will clear the stale catalog link and re-discover the correct one from Meta. Continue?')) return;
+
+  // First try auto-discovery
   try {
-    toast('Re-discovering catalog…', 'nfo');
+    toast('Re-discovering catalog from Meta…', 'nfo');
     const r = await api(`/api/restaurant/branches/${branchId}/fix-catalog`, { method: 'POST' });
     if (r.catalogId) {
       toast(`✅ Catalog fixed! ID: ${r.catalogId} — try syncing again`, 'ok');
       branches = await api('/api/restaurant/branches');
       await loadMenu(branchId);
-    } else {
-      toast(r.error || 'Fix failed', 'err');
+      return;
     }
+  } catch (_) {}
+
+  // Auto-discovery failed — ask user to paste the catalog ID manually
+  const manualId = prompt(
+    'Auto-discovery failed.\n\nTo find your Catalog ID:\n1. Go to Meta Business Suite → Commerce Manager\n2. Select your catalog → Settings\n3. Copy the numeric Catalog ID\n\nPaste it here:'
+  );
+  if (!manualId?.trim()) return;
+  try {
+    await api(`/api/restaurant/branches/${branchId}`, { method: 'PATCH', body: { catalogId: manualId.trim() } });
+    toast(`✅ Catalog ID saved — try syncing now`, 'ok');
+    branches = await api('/api/restaurant/branches');
+    await loadMenu(branchId);
   } catch (e) { toast(e.message, 'err'); }
 }
 async function doToggleItem(id, av, name) {
