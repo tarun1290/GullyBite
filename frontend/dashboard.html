@@ -1873,7 +1873,11 @@ async function loadMenu() {
   if (!branchId) return;
   const cats   = await api(`/api/restaurant/branches/${branchId}/categories`).catch(() => []);
   const catSel = document.getElementById('m-cat');
-  catSel.innerHTML = '<option value="">No category</option>' + (cats || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  catSel.innerHTML = '<option value="">No category</option>' +
+    (cats || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+    '<option value="__new__">+ New category…</option>';
+  document.getElementById('m-cat-new').style.display = 'none';
+  document.getElementById('m-cat-new').value = '';
   const branch  = branches.find(b => b.id === branchId);
   const badge   = document.getElementById('m-cat-badge');
   const syncBtn = document.getElementById('m-sync-btn');
