@@ -404,11 +404,38 @@ router.get('/branches/:branchId/categories', async (req, res) => {
 router.post('/branches/:branchId/categories', async (req, res) => {
   try {
     const { name, description, sortOrder } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Category name is required' });
     const catId = newId();
     const now = new Date();
-    const cat = { _id: catId, branch_id: req.params.branchId, name, description: description || null, sort_order: sortOrder || 0, created_at: now };
+    const cat = { _id: catId, branch_id: req.params.branchId, name: name.trim(), description: description || null, sort_order: sortOrder || 0, created_at: now };
     await col('menu_categories').insertOne(cat);
     res.status(201).json(mapId(cat));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/branches/:branchId/categories/:catId', async (req, res) => {
+  try {
+    const { name, sortOrder } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Category name is required' });
+    const result = await col('menu_categories').findOneAndUpdate(
+      { _id: req.params.catId, branch_id: req.params.branchId },
+      { $set: { name: name.trim(), sort_order: sortOrder ?? undefined, updated_at: new Date() } },
+      { returnDocument: 'after' }
+    );
+    if (!result) return res.status(404).json({ error: 'Category not found' });
+    res.json(mapId(result));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/branches/:branchId/categories/:catId', async (req, res) => {
+  try {
+    await col('menu_categories').deleteOne({ _id: req.params.catId, branch_id: req.params.branchId });
+    // Unlink items from this category (don't delete items, just uncategorize)
+    await col('menu_items').updateMany(
+      { branch_id: req.params.branchId, category_id: req.params.catId },
+      { $set: { category_id: null } }
+    );
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
