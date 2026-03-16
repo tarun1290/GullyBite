@@ -210,27 +210,64 @@ const syncBranchCatalog = async (branchId) => {
 
   const BATCH_SIZE = 100;
   const results = { updated: 0, deleted: 0, failed: 0, errors: [] };
+  let catalogFixed = false; // guard: only auto-heal catalog once per sync
 
   for (let i = 0; i < requests.length; i += BATCH_SIZE) {
-    const batch    = requests.slice(i, i + BATCH_SIZE);
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const batch      = requests.slice(i, i + BATCH_SIZE);
+    const batchNum   = Math.floor(i / BATCH_SIZE) + 1;
     const totalBatches = Math.ceil(requests.length / BATCH_SIZE);
 
     console.log(`[Catalog] Branch "${branch.name}" — batch ${batchNum}/${totalBatches} (${batch.length} items)`);
 
-    try {
-      await axios.post(
-        `${GRAPH}/${branch.catalog_id}/items_batch`,
-        { allow_upsert: true, item_type: 'PRODUCT_ITEM', requests: batch },
-        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 30000 }
-      );
-      results.updated += batch.filter(r => r.method === 'UPDATE').length;
-      results.deleted += batch.filter(r => r.method === 'DELETE').length;
-    } catch (err) {
-      const errMsg = err.response?.data?.error?.message || err.message;
-      console.error(`[Catalog] Batch ${batchNum} failed:`, errMsg);
-      results.failed += batch.length;
-      results.errors.push(`Batch ${batchNum}: ${errMsg}`);
+    // Up to 2 attempts: 1st normal, 2nd after auto-healing stale catalog_id
+    let batchDone = false;
+    for (let attempt = 0; attempt < 2 && !batchDone; attempt++) {
+      try {
+        await axios.post(
+          `${GRAPH}/${branch.catalog_id}/items_batch`,
+          { allow_upsert: true, item_type: 'PRODUCT_ITEM', requests: batch },
+          { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+        );
+        results.updated += batch.filter(r => r.method === 'UPDATE').length;
+        results.deleted += batch.filter(r => r.method === 'DELETE').length;
+        batchDone = true;
+      } catch (err) {
+        const errMsg = err.response?.data?.error?.message || err.message;
+
+        // Detect stale / inaccessible catalog_id and auto-heal on first attempt
+        const isStale = attempt === 0 && !catalogFixed && (
+          errMsg.includes('does not exist') ||
+          errMsg.includes('missing permissions') ||
+          errMsg.includes('Unsupported post request')
+        );
+
+        if (isStale) {
+          console.warn(`[Catalog] Stale catalog_id "${branch.catalog_id}" — clearing and re-discovering…`);
+          try {
+            // Wipe stale IDs from DB so createBranchCatalog does a fresh lookup
+            await col('branches').updateOne({ _id: branchId }, { $unset: { catalog_id: '' } });
+            await col('whatsapp_accounts').updateMany(
+              { restaurant_id: branch.restaurant_id }, { $unset: { catalog_id: '' } }
+            );
+            branch.catalog_id = null;
+            const rediscovered = await createBranchCatalog(branchId);
+            branch.catalog_id = rediscovered.catalogId;
+            catalogFixed = true;
+            console.log(`[Catalog] Re-discovered catalog: ${branch.catalog_id} — retrying batch ${batchNum}…`);
+            // attempt loop continues → attempt 1 will retry with the new catalog_id
+          } catch (fixErr) {
+            console.error(`[Catalog] Re-discovery failed:`, fixErr.message);
+            results.failed += batch.length;
+            results.errors.push(`Batch ${batchNum}: catalog re-discovery failed — ${fixErr.message}`);
+            batchDone = true;
+          }
+        } else {
+          console.error(`[Catalog] Batch ${batchNum} failed:`, errMsg);
+          results.failed += batch.length;
+          results.errors.push(`Batch ${batchNum}: ${errMsg}`);
+          batchDone = true;
+        }
+      }
     }
 
     if (i + BATCH_SIZE < requests.length) {
@@ -390,4 +427,15 @@ const syncCategoryProductSets = async (branchId) => {
   return { success: results.failed === 0, ...results };
 };
 
-module.exports = { createBranchCatalog, syncBranchCatalog, syncAllBranches, setItemAvailability, syncCategoryProductSets };
+// ─── CLEAR STALE CATALOG & RE-DISCOVER ───────────────────────
+const rediscoverCatalog = async (branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch) throw new Error('Branch not found');
+  const oldId = branch.catalog_id;
+  await col('branches').updateOne({ _id: branchId }, { $unset: { catalog_id: '' } });
+  await col('whatsapp_accounts').updateMany({ restaurant_id: branch.restaurant_id }, { $unset: { catalog_id: '' } });
+  console.log(`[Catalog] Cleared stale catalog_id "${oldId}" for branch "${branch.name}"`);
+  return await createBranchCatalog(branchId);
+};
+
+module.exports = { createBranchCatalog, syncBranchCatalog, syncAllBranches, setItemAvailability, syncCategoryProductSets, rediscoverCatalog };

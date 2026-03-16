@@ -1929,7 +1929,7 @@ async function loadMenu() {
   const setsBtn = document.getElementById('m-sets-btn');
   if (setsBtn) setsBtn.style.display = branch?.catalog_id ? 'inline-flex' : 'none';
   badge.innerHTML = branch?.catalog_id
-    ? `<span class="badge bg">✅ Catalog Live</span>`
+    ? `<span class="badge bg">✅ Catalog Live</span><button class="btn-g btn-sm" onclick="doFixCatalog()" title="Re-discover catalog from Meta if sync fails" style="font-size:.7rem;padding:.25rem .55rem;margin-left:.35rem">🔧 Fix Catalog</button>`
     : `<span class="badge ba">⚠️ No catalog — <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--gold2);cursor:pointer;font-size:.72rem;text-decoration:underline">create in Branches</button></span>`;
   const list = document.getElementById('menu-list');
   list.innerHTML = `<div style="text-align:center;padding:2rem"><div class="spin"></div></div>`;
@@ -2184,6 +2184,24 @@ async function doQuickSync() {
     else toast(r.errors?.[0] || 'Sync failed', 'err');
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; btn.innerHTML = '🔄 Sync to WhatsApp'; }
+}
+
+async function doFixCatalog() {
+  const sel = document.getElementById('m-branch');
+  const branchId = sel?.value;
+  if (!branchId) return toast('Select a branch first', 'err');
+  if (!confirm('This will clear the stale catalog link and re-discover the correct one from Meta. Continue?')) return;
+  try {
+    toast('Re-discovering catalog…', 'nfo');
+    const r = await api(`/api/restaurant/branches/${branchId}/fix-catalog`, { method: 'POST' });
+    if (r.catalogId) {
+      toast(`✅ Catalog fixed! ID: ${r.catalogId} — try syncing again`, 'ok');
+      branches = await api('/api/restaurant/branches');
+      await loadMenu(branchId);
+    } else {
+      toast(r.error || 'Fix failed', 'err');
+    }
+  } catch (e) { toast(e.message, 'err'); }
 }
 async function doToggleItem(id, av, name) {
   try { await api(`/api/restaurant/menu/${id}`, { method: 'PUT', body: { isAvailable: av } }); toast(`"${name}" ${av ? 'back on menu' : 'marked unavailable'} ✓`, 'ok'); }

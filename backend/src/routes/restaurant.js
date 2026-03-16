@@ -673,6 +673,15 @@ router.post('/branches/:branchId/sync-sets', requireApproved, async (req, res) =
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/restaurant/branches/:branchId/fix-catalog
+// Clears stale catalog_id and re-discovers/re-links the correct one from the WABA
+router.post('/branches/:branchId/fix-catalog', async (req, res) => {
+  try {
+    const result = await catalog.rediscoverCatalog(req.params.branchId);
+    res.json({ success: true, catalogId: result.catalogId, inherited: result.inherited || false });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/restaurant/branches/:branchId/item-groups
 router.get('/branches/:branchId/item-groups', async (req, res) => {
   try {
