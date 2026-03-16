@@ -2924,7 +2924,12 @@ async function doDeleteAccount() {
 
 async function _finishMetaConnect(code, accessToken) {
   try {
-    const d = await api('/auth/connect-meta', { method: 'POST', body: { code: code || null, accessToken: accessToken || null, fromJsSdk: true } });
+    const d = await api('/auth/connect-meta', { method: 'POST', body: {
+      code: code || null,
+      accessToken: accessToken || null,
+      fromJsSdk: true,
+      sessionInfo: _embeddedSignupSessionInfo || null,
+    } });
     if (d.connected || d.ok) {
       toast('WhatsApp connected!', 'ok');
       rest = await api('/auth/me');
@@ -2938,6 +2943,23 @@ async function _finishMetaConnect(code, accessToken) {
   } catch (e) { toast(e.message || 'Connection failed', 'err'); }
   _setConnectBtns(false);
 }
+
+// Capture session info (phone_number_id + waba_id) from Meta Embedded Signup popup
+let _embeddedSignupSessionInfo = null;
+window.addEventListener('message', (event) => {
+  if (event.origin !== 'https://www.facebook.com' && event.origin !== 'https://web.facebook.com') return;
+  try {
+    const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+    if (data?.type === 'WA_EMBEDDED_SIGNUP') {
+      if (data.event === 'FINISH') {
+        _embeddedSignupSessionInfo = data.data || null;
+        console.log('[GullyBite] Embedded signup session info captured:', _embeddedSignupSessionInfo);
+      } else if (data.event === 'CANCEL' || data.event === 'ERROR') {
+        _embeddedSignupSessionInfo = null;
+      }
+    }
+  } catch (_) {}
+});
 
 // Listen for postMessage from popup window (OAuth redirect inside popup)
 window.addEventListener('message', async (event) => {

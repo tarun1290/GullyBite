@@ -133,15 +133,25 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
       wabaData = wabaRes.data?.data || [];
     } catch (e) { console.warn('[connect-meta] Could not fetch WABAs:', e.message); }
 
+    // Get current restaurant to preserve approval_status
+    const currentRestaurant = await col('restaurants').findOne(
+      { _id: req.restaurantId }, { projection: { approval_status: 1, submitted_at: 1 } }
+    );
+
     const $set = {
       meta_user_id: metaUser.id, meta_access_token: longToken, meta_token_expires_at: expiresAt,
-      onboarding_step: 5, submitted_at: new Date(), approval_status: 'pending', updated_at: new Date(),
+      onboarding_step: 5, updated_at: new Date(),
     };
+    // Only reset to pending if not already in an approved/rejected state
+    if (!currentRestaurant?.approval_status || currentRestaurant.approval_status === 'pending') {
+      $set.approval_status = 'pending';
+      $set.submitted_at = currentRestaurant?.submitted_at || new Date();
+    }
     if (sessionInfo?.phone_number_id) $set.meta_phone_number_id = sessionInfo.phone_number_id;
     if (sessionInfo?.waba_id) $set.meta_waba_id = sessionInfo.waba_id;
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
 
-    await _saveWabaAccounts(req.restaurantId, wabaData, longToken);
+    await _saveWabaAccounts(req.restaurantId, wabaData, longToken, sessionInfo);
     res.json({ connected: true });
   } catch (err) {
     console.error('[connect-meta]', err.response?.data || err.message);
@@ -513,7 +523,7 @@ router.get('/me', requireAuth, async (req, res) => {
 });
 
 // ─── WABA ACCOUNTS HELPER ─────────────────────────────────────
-async function _saveWabaAccounts(restaurantId, wabaData, longToken) {
+async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo = null) {
   for (const biz of wabaData) {
     for (const waba of biz.whatsapp_business_accounts?.data || []) {
       await _subscribeWaba(waba.id);
@@ -547,6 +557,56 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken) {
       _provisionWabaCatalog(restaurantId, waba.id, longToken).catch(err =>
         console.error(`[Catalog] Auto-provision failed for WABA ${waba.id}:`, err.message)
       );
+    }
+  }
+
+  // Fallback: if the businesses API returned nothing but embedded signup gave us a waba_id,
+  // query that WABA's phone numbers directly — embedded signup tokens are scoped to the WABA
+  if (!wabaData.length && sessionInfo?.waba_id) {
+    console.log(`[saveWabaAccounts] Falling back to direct WABA query for ${sessionInfo.waba_id}`);
+    try {
+      const phoneRes = await axios.get(`${META_GRAPH_URL}/${sessionInfo.waba_id}/phone_numbers`, {
+        params: { fields: 'id,display_phone_number,verified_name,quality_rating', access_token: longToken },
+        timeout: 10000,
+      });
+      const phones = phoneRes.data?.data || [];
+
+      // If WABA has no registered phone numbers yet but we know the phone_number_id from sessionInfo,
+      // create a placeholder record so the UI shows "Connected"
+      if (!phones.length && sessionInfo.phone_number_id) {
+        phones.push({ id: sessionInfo.phone_number_id, display_phone_number: '—', verified_name: 'WhatsApp Business', quality_rating: null });
+      }
+
+      await _subscribeWaba(sessionInfo.waba_id);
+
+      for (const phone of phones) {
+        await col('whatsapp_accounts').updateOne(
+          { phone_number_id: phone.id },
+          {
+            $set: {
+              restaurant_id : restaurantId,
+              waba_id       : sessionInfo.waba_id,
+              phone_display : phone.display_phone_number,
+              display_name  : phone.verified_name,
+              quality_rating: phone.quality_rating?.display_value || 'GREEN',
+              access_token  : longToken,
+              is_active     : true,
+              updated_at    : new Date(),
+            },
+            $setOnInsert: { _id: newId(), created_at: new Date() },
+          },
+          { upsert: true }
+        );
+        _registerPhoneNumber(phone.id, longToken).catch(err =>
+          console.error(`[Register] Phone ${phone.id} registration failed:`, err.message)
+        );
+      }
+
+      _provisionWabaCatalog(restaurantId, sessionInfo.waba_id, longToken).catch(err =>
+        console.error(`[Catalog] Auto-provision failed for WABA ${sessionInfo.waba_id}:`, err.message)
+      );
+    } catch (e) {
+      console.warn('[saveWabaAccounts] Direct WABA fallback failed:', e.response?.data?.error?.message || e.message);
     }
   }
 }
