@@ -583,7 +583,16 @@ window.fbAsyncInit=function(){FB.init({appId:'831623239943250',cookie:true,xfbml
                   <option value="egg">🟡 Egg</option>
                 </select>
               </div>
-              <div class="fg"><label>Category</label><select id="m-cat"><option value="">No category</option></select></div>
+              <div class="fg">
+                <label>Category</label>
+                <div style="display:flex;gap:.4rem;align-items:center">
+                  <select id="m-cat" style="flex:1" onchange="onCatChange(this)">
+                    <option value="">No category</option>
+                    <option value="__new__">+ New category…</option>
+                  </select>
+                  <input id="m-cat-new" placeholder="Category name" style="display:none;flex:1;padding:.45rem .65rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;color:var(--fg);font-size:.85rem" onkeydown="if(event.key==='Escape'){document.getElementById('m-cat').value='';onCatChange(document.getElementById('m-cat'))}">
+                </div>
+              </div>
               <!-- Image picker: upload file OR paste URL -->
               <div class="fg span2">
                 <label>Item Image <small>(recommended 500×500px — shown in WhatsApp catalog)</small></label>
@@ -1913,18 +1922,49 @@ function miRow(item) {
     </div>
   </div>`;
 }
+function onCatChange(sel) {
+  const newInput = document.getElementById('m-cat-new');
+  if (sel.value === '__new__') {
+    newInput.style.display = 'block';
+    newInput.focus();
+  } else {
+    newInput.style.display = 'none';
+    newInput.value = '';
+  }
+}
 async function doAddItem() {
   const branchId = document.getElementById('m-branch').value;
   if (!branchId) return toast('Select a branch first', 'err');
   const name  = document.getElementById('m-name').value.trim();
   const price = document.getElementById('m-price').value;
   if (!name || !price) return toast('Name and price are required', 'err');
+
+  // Resolve category — create new if "+ New category" was chosen
+  let categoryId = document.getElementById('m-cat').value || null;
+  if (categoryId === '__new__') {
+    const newCatName = document.getElementById('m-cat-new').value.trim();
+    if (!newCatName) return toast('Enter a category name', 'err');
+    try {
+      const cat = await api(`/api/restaurant/branches/${branchId}/categories`, {
+        method: 'POST', body: { name: newCatName },
+      });
+      categoryId = cat.id;
+      // Add to dropdown and select it
+      const sel = document.getElementById('m-cat');
+      const opt = new Option(newCatName, cat.id, true, true);
+      sel.insertBefore(opt, sel.querySelector('option[value="__new__"]'));
+      sel.value = cat.id;
+      document.getElementById('m-cat-new').style.display = 'none';
+      document.getElementById('m-cat-new').value = '';
+    } catch (e) { return toast('Could not create category: ' + e.message, 'err'); }
+  }
+
   try {
     await api(`/api/restaurant/branches/${branchId}/menu`, { method: 'POST', body: {
       name, priceRs: parseFloat(price),
       description: document.getElementById('m-desc').value,
       foodType:    document.getElementById('m-type').value,
-      categoryId:  document.getElementById('m-cat').value || null,
+      categoryId:  categoryId,
       imageUrl:    document.getElementById('m-img').value,
     }});
     toast(`"${name}" added! Click Sync to push to WhatsApp.`, 'ok');
