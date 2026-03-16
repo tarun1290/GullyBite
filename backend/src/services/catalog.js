@@ -219,8 +219,8 @@ const syncBranchCatalog = async (branchId) => {
 
     try {
       await axios.post(
-        `${GRAPH}/${branch.catalog_id}/batch`,
-        { requests: batch },
+        `${GRAPH}/${branch.catalog_id}/items_batch`,
+        { allow_upsert: true, requests: batch },
         { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 30000 }
       );
       results.updated += batch.filter(r => r.method === 'UPDATE').length;
@@ -314,9 +314,9 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
       : { method: 'DELETE', retailer_id: item.retailer_id };
 
     await axios.post(
-      `${GRAPH}/${branch.catalog_id}/batch`,
-      { requests: [request] },
-      { headers: { Authorization: `Bearer ${wa_acc.access_token}` }, timeout: 10000 }
+      `${GRAPH}/${branch.catalog_id}/items_batch`,
+      { allow_upsert: true, requests: [request] },
+      { headers: { Authorization: `Bearer ${accessToken}` }, timeout: 10000 }
     ).catch(err => {
       console.error('[Catalog] Single item toggle failed:', err.response?.data?.error?.message || err.message);
     });
