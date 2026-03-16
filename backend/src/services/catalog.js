@@ -132,7 +132,9 @@ const syncBranchCatalog = async (branchId) => {
     }
   }
 
-  if (!wa_acc?.access_token) {
+  // Use token from whatsapp_accounts OR fall back to restaurant.meta_access_token
+  const accessToken = wa_acc?.access_token || restaurant?.meta_access_token;
+  if (!accessToken) {
     throw new Error('No WhatsApp access token found. Please reconnect your Meta account.');
   }
 
@@ -219,7 +221,7 @@ const syncBranchCatalog = async (branchId) => {
       await axios.post(
         `${GRAPH}/${branch.catalog_id}/batch`,
         { requests: batch },
-        { headers: { Authorization: `Bearer ${wa_acc.access_token}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 30000 }
       );
       results.updated += batch.filter(r => r.method === 'UPDATE').length;
       results.deleted += batch.filter(r => r.method === 'DELETE').length;
@@ -329,8 +331,12 @@ const syncCategoryProductSets = async (branchId) => {
   const wa_acc = branch
     ? await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true })
     : null;
+  const restaurant2 = branch
+    ? await col('restaurants').findOne({ _id: branch.restaurant_id })
+    : null;
+  const syncToken = wa_acc?.access_token || restaurant2?.meta_access_token;
 
-  if (!branch.catalog_id || !wa_acc?.access_token) {
+  if (!branch.catalog_id || !syncToken) {
     return { skipped: true, reason: 'No catalog or access token' };
   }
 
@@ -357,14 +363,14 @@ const syncCategoryProductSets = async (branchId) => {
         await axios.post(
           `${GRAPH}/${cat.meta_set_id}`,
           { name: cat.name, filter },
-          { headers: { Authorization: `Bearer ${wa_acc.access_token}` }, timeout: 10000 }
+          { headers: { Authorization: `Bearer ${syncToken}` }, timeout: 10000 }
         );
         results.updated++;
       } else {
         const res = await axios.post(
           `${GRAPH}/${branch.catalog_id}/product_sets`,
           { name: cat.name, filter },
-          { headers: { Authorization: `Bearer ${wa_acc.access_token}` }, timeout: 10000 }
+          { headers: { Authorization: `Bearer ${syncToken}` }, timeout: 10000 }
         );
         const setId = res.data.id;
         await col('menu_categories').updateOne({ _id: String(cat._id) }, { $set: { meta_set_id: setId } });
