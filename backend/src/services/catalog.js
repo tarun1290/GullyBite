@@ -167,7 +167,7 @@ const syncBranchCatalog = async (branchId) => {
     .filter(item => item.retailer_id)
     .map(item => {
       if (!item.is_available) {
-        return { method: 'DELETE', retailer_id: item.retailer_id };
+        return { method: 'DELETE', retailer_id: item.retailer_id, item_type: 'PRODUCT_ITEM' };
       }
 
       const displayName = item.variant_value
@@ -189,6 +189,7 @@ const syncBranchCatalog = async (branchId) => {
       return {
         method      : 'UPDATE',
         retailer_id : item.retailer_id,
+        item_type   : 'PRODUCT_ITEM',
         data: {
           name        : displayName.substring(0, 100),
           description : (item.description || item.name).substring(0, 1000),
@@ -300,6 +301,7 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
       ? {
           method      : 'UPDATE',
           retailer_id : item.retailer_id,
+          item_type   : 'PRODUCT_ITEM',
           data: {
             name        : displayName.substring(0, 100),
             price       : item.price_paise,
@@ -311,7 +313,7 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
             ...variantFields,
           },
         }
-      : { method: 'DELETE', retailer_id: item.retailer_id };
+      : { method: 'DELETE', retailer_id: item.retailer_id, item_type: 'PRODUCT_ITEM' };
 
     await axios.post(
       `${GRAPH}/${branch.catalog_id}/items_batch`,

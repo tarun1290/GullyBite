@@ -562,7 +562,7 @@ router.delete('/menu/:itemId', async (req, res) => {
       if (catalog_id && retailer_id && access_token) {
         const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
         axios.post(`${GRAPH}/${catalog_id}/items_batch`,
-          { allow_upsert: true, requests: [{ method: 'DELETE', retailer_id }] },
+          { allow_upsert: true, requests: [{ method: 'DELETE', retailer_id, item_type: 'PRODUCT_ITEM' }] },
           { headers: { Authorization: `Bearer ${access_token}` }, timeout: 10000 }
         ).catch(err => console.error('[Menu] Delete sync failed:', err.response?.data?.error?.message || err.message));
       }
