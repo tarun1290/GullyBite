@@ -318,7 +318,7 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
     await axios.post(
       `${GRAPH}/${branch.catalog_id}/items_batch`,
       { allow_upsert: true, item_type: 'PRODUCT_ITEM', requests: [request] },
-      { headers: { Authorization: `Bearer ${accessToken}` }, timeout: 10000 }
+      { headers: { Authorization: `Bearer ${wa_acc.access_token}`, 'Content-Type': 'application/json' }, timeout: 10000 }
     ).catch(err => {
       console.error('[Catalog] Single item toggle failed:', err.response?.data?.error?.message || err.message);
     });
