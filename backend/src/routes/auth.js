@@ -218,7 +218,7 @@ router.delete('/delete-account', requireAuth, async (req, res) => {
 // ─── INITIATE META OAUTH ──────────────────────────────────────
 router.get('/login', (req, res) => {
   const source = req.query.source || 'index'; // 'signup', 'dashboard', or 'index'
-  const scopes = ['whatsapp_business_management', 'whatsapp_business_messaging', 'business_management'].join(',');
+  const scopes = ['whatsapp_business_management', 'whatsapp_business_messaging', 'business_management', 'catalog_management'].join(',');
   const stateObj = { ts: Date.now(), source };
   const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
   const authUrl = `${META_AUTH_URL}?client_id=${process.env.META_APP_ID}` +
