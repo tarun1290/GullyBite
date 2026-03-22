@@ -8,10 +8,13 @@ const multer = require('multer');
 const axios  = require('axios');
 const { col, newId, mapId, mapIds, getBucket } = require('../config/database');
 const { Readable } = require('stream');
-const { requireAuth, requireApproved } = require('./auth');
+const { requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS } = require('./auth');
+const bcrypt = require('bcryptjs');
 const catalog = require('../services/catalog');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
+const etaSvc = require('../services/eta');
+const notify = require('../services/notify');
 
 // ── Image upload via MongoDB GridFS ───────────────────────────
 const upload = multer({
@@ -47,13 +50,14 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/restaurant — Update profile
-router.put('/', async (req, res) => {
+router.put('/', requirePermission('manage_settings'), async (req, res) => {
   try {
     const {
       businessName, registeredBusinessName, ownerName, phone, city,
       restaurantType, logoUrl, gstNumber, fssaiLicense, fssaiExpiry,
       bankName, bankAccountNumber, bankIfsc,
       menuGstMode, deliveryFeeCustomerPct, packagingChargeRs, packagingGstPct,
+      notificationPhones, notificationSettings,
     } = req.body;
 
     const $set = {};
@@ -74,6 +78,8 @@ router.put('/', async (req, res) => {
     if (deliveryFeeCustomerPct  != null) $set.delivery_fee_customer_pct = parseInt(deliveryFeeCustomerPct, 10);
     if (packagingChargeRs       != null) $set.packaging_charge_rs       = parseFloat(packagingChargeRs);
     if (packagingGstPct         != null) $set.packaging_gst_pct         = parseFloat(packagingGstPct);
+    if (notificationPhones     != null) $set.notification_phones       = Array.isArray(notificationPhones) ? notificationPhones.filter(Boolean) : [];
+    if (notificationSettings   != null) $set.notification_settings     = notificationSettings;
 
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
@@ -375,18 +381,49 @@ router.post('/branches/csv', async (req, res) => {
 
 router.patch('/branches/:id', async (req, res) => {
   try {
-    const { isOpen, acceptsOrders, deliveryRadiusKm, catalogId, deliveryFeeRs } = req.body;
+    const {
+      isOpen, acceptsOrders, deliveryRadiusKm, catalogId, deliveryFeeRs,
+      basePrepTimeMin, avgItemPrepMin, managerPhone,
+      // Dynamic pricing fields
+      dynamicPricingEnabled, baseDeliveryFeeRs, perKmFeeRs,
+      freeDeliveryWithinKm, maxDeliveryFeeRs, minDeliveryFeeRs,
+      surgeMultiplier, surgeReason, timeMultipliers,
+    } = req.body;
     const $set = {};
-    if (isOpen             !== undefined) $set.is_open            = isOpen;
-    if (acceptsOrders      !== undefined) $set.accepts_orders     = acceptsOrders;
-    if (deliveryRadiusKm   !== undefined) $set.delivery_radius_km = deliveryRadiusKm;
-    if (catalogId          !== undefined) $set.catalog_id         = catalogId;
-    if (deliveryFeeRs      !== undefined) $set.delivery_fee_rs    = deliveryFeeRs;
+    if (isOpen             !== undefined) $set.is_open              = isOpen;
+    if (acceptsOrders      !== undefined) $set.accepts_orders       = acceptsOrders;
+    if (deliveryRadiusKm   !== undefined) $set.delivery_radius_km   = deliveryRadiusKm;
+    if (catalogId          !== undefined) $set.catalog_id           = catalogId;
+    if (deliveryFeeRs      !== undefined) $set.delivery_fee_rs      = deliveryFeeRs;
+    if (basePrepTimeMin    !== undefined) $set.base_prep_time_min   = parseInt(basePrepTimeMin) || 15;
+    if (avgItemPrepMin     !== undefined) $set.avg_item_prep_min    = parseInt(avgItemPrepMin) || 3;
+    if (managerPhone       !== undefined) $set.manager_phone        = managerPhone || null;
+    // Dynamic pricing
+    if (dynamicPricingEnabled !== undefined) $set.dynamic_pricing_enabled = !!dynamicPricingEnabled;
+    if (baseDeliveryFeeRs     !== undefined) $set.base_delivery_fee_rs    = parseFloat(baseDeliveryFeeRs) || 30;
+    if (perKmFeeRs            !== undefined) $set.per_km_fee_rs           = parseFloat(perKmFeeRs) || 7;
+    if (freeDeliveryWithinKm  !== undefined) $set.free_delivery_within_km = parseFloat(freeDeliveryWithinKm) || 0;
+    if (maxDeliveryFeeRs      !== undefined) $set.max_delivery_fee_rs     = parseFloat(maxDeliveryFeeRs) || 150;
+    if (minDeliveryFeeRs      !== undefined) $set.min_delivery_fee_rs     = parseFloat(minDeliveryFeeRs) || 20;
+    if (surgeMultiplier       !== undefined) $set.surge_multiplier        = Math.max(1.0, parseFloat(surgeMultiplier) || 1.0);
+    if (surgeReason           !== undefined) $set.surge_reason            = surgeReason || null;
+    if (timeMultipliers       !== undefined) $set.time_multipliers        = Array.isArray(timeMultipliers) ? timeMultipliers : [];
     await col('branches').updateOne(
       { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set }
     );
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/branches/:branchId/surge — current surge / dynamic pricing info
+router.get('/branches/:branchId/surge', async (req, res) => {
+  try {
+    const branch = await col('branches').findOne({ _id: req.params.branchId, restaurant_id: req.restaurantId });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+    const { getSurgeInfo } = require('../services/dynamicPricing');
+    const info = await getSurgeInfo(req.params.branchId);
+    res.json(info);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -457,7 +494,7 @@ router.get('/branches/:branchId/menu', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/branches/:branchId/menu', async (req, res) => {
+router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async (req, res) => {
   try {
     const {
       name, description, priceRs, categoryId, foodType, imageUrl,
@@ -504,7 +541,7 @@ router.post('/branches/:branchId/menu', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.put('/menu/:itemId', async (req, res) => {
+router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) => {
   try {
     const { name, description, priceRs, imageUrl, isAvailable, isBestseller,
             itemGroupId, variantType, variantValue } = req.body;
@@ -546,7 +583,7 @@ router.put('/menu/:itemId', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.delete('/menu/:itemId', async (req, res) => {
+router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res) => {
   try {
     const item = await col('menu_items').findOne({ _id: req.params.itemId });
     await col('menu_items').deleteOne({ _id: req.params.itemId });
@@ -874,15 +911,23 @@ router.get('/orders/:orderId', async (req, res) => {
 });
 
 // Restaurant updates order status (CONFIRMED → PREPARING → PACKED)
-router.patch('/orders/:orderId/status', requireApproved, async (req, res) => {
+router.patch('/orders/:orderId/status', requireApproved, requirePermission('manage_orders'), async (req, res) => {
   try {
     const { status } = req.body;
-    const allowed = ['CONFIRMED', 'PREPARING', 'PACKED'];
+    // Role-based status restrictions
+    let allowed = ['CONFIRMED', 'PREPARING', 'PACKED'];
+    if (req.userRole === 'kitchen')  allowed = ['PREPARING', 'PACKED'];
+    if (req.userRole === 'delivery') allowed = ['DISPATCHED', 'DELIVERED'];
     if (!allowed.includes(status)) {
-      return res.status(400).json({ error: `Status must be one of: ${allowed.join(', ')}` });
+      return res.status(400).json({ error: `Your role allows: ${allowed.join(', ')}` });
     }
 
     const order = await orderSvc.updateStatus(req.params.orderId, status);
+
+    // Recalculate ETA on status change
+    let etaResult = null;
+    try { etaResult = await etaSvc.updateETAOnStatusChange(req.params.orderId, status); }
+    catch (e) { console.warn('[ETA] update error:', e.message); }
 
     if (order) {
       const fullOrder = await orderSvc.getOrderDetails(order.id);
@@ -897,12 +942,22 @@ router.patch('/orders/:orderId/status', requireApproved, async (req, res) => {
             total_rs        : `₹${parseFloat(fullOrder.total_rs).toFixed(0)}`,
             branch_name     : fullOrder.branch_name,
             restaurant_name : fullOrder.business_name,
+            eta             : etaResult?.etaText || '',
           }
         ).catch(() => {});
       }
     }
 
-    res.json({ success: true, order });
+    // Fire-and-forget manager notification
+    if (order) {
+      const fullOrderForNotify = await orderSvc.getOrderDetails(order.id);
+      if (fullOrderForNotify) {
+        notify.notifyOrderStatusChange(fullOrderForNotify, req.body._oldStatus || '', status)
+          .catch(err => console.error('[Notify]', err.message));
+      }
+    }
+
+    res.json({ success: true, order, eta: etaResult });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -970,7 +1025,7 @@ router.put('/orders/:orderId/delivery', async (req, res) => {
 // ANALYTICS
 // ═══════════════════════════════════════════════════════════════
 
-router.get('/analytics', async (req, res) => {
+router.get('/analytics', requirePermission('view_analytics'), async (req, res) => {
   try {
     const days = parseInt(req.query.days || 7);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -1006,11 +1061,232 @@ router.get('/analytics', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Helper: get branch IDs and date range
+async function _analyticsContext(req) {
+  const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1, name: 1 }).toArray();
+  const branchIds = branches.map(b => String(b._id));
+  const branchMap = Object.fromEntries(branches.map(b => [String(b._id), b.name]));
+  const periodDays = { '7d': 7, '30d': 30, '90d': 90, 'all': 3650 }[req.query.period] || 30;
+  const since = new Date(Date.now() - periodDays * 86400000);
+  const prevSince = new Date(since.getTime() - periodDays * 86400000);
+  return { branchIds, branchMap, since, prevSince, periodDays };
+}
+
+// GET /api/restaurant/analytics/overview
+router.get('/analytics/overview', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const { branchIds, since, prevSince, periodDays } = await _analyticsContext(req);
+    const baseMatch = { branch_id: { $in: branchIds } };
+
+    const [current, previous, statusCounts, uniqueCust] = await Promise.all([
+      col('orders').aggregate([
+        { $match: { ...baseMatch, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $group: { _id: null, total: { $sum: 1 }, revenue: { $sum: { $toDouble: '$total_rs' } } } },
+      ]).toArray(),
+      col('orders').aggregate([
+        { $match: { ...baseMatch, created_at: { $gte: prevSince, $lt: since }, status: { $ne: 'CANCELLED' } } },
+        { $group: { _id: null, total: { $sum: 1 }, revenue: { $sum: { $toDouble: '$total_rs' } } } },
+      ]).toArray(),
+      col('orders').aggregate([
+        { $match: { ...baseMatch, created_at: { $gte: since } } },
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]).toArray(),
+      col('orders').aggregate([
+        { $match: { ...baseMatch, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $group: { _id: '$customer_id' } },
+        { $count: 'total' },
+      ]).toArray(),
+    ]);
+
+    const cur = current[0] || { total: 0, revenue: 0 };
+    const prev = previous[0] || { total: 0, revenue: 0 };
+    const pctChange = (c, p) => p > 0 ? +((c - p) / p * 100).toFixed(1) : (c > 0 ? 100 : 0);
+    const statusMap = Object.fromEntries(statusCounts.map(s => [s._id, s.count]));
+
+    res.json({
+      total_orders: cur.total,
+      total_revenue_rs: +cur.revenue.toFixed(2),
+      avg_order_value_rs: cur.total ? +(cur.revenue / cur.total).toFixed(2) : 0,
+      total_customers: uniqueCust[0]?.total || 0,
+      changes: {
+        orders_pct: pctChange(cur.total, prev.total),
+        revenue_pct: pctChange(cur.revenue, prev.revenue),
+      },
+      orders_by_status: statusMap,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/analytics/revenue
+router.get('/analytics/revenue', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const { branchIds, since } = await _analyticsContext(req);
+    const gran = req.query.granularity || 'day';
+
+    let dateExpr;
+    if (gran === 'week') dateExpr = { $dateToString: { format: '%G-W%V', date: '$created_at' } };
+    else if (gran === 'month') dateExpr = { $dateToString: { format: '%Y-%m', date: '$created_at' } };
+    else dateExpr = { $dateToString: { format: '%Y-%m-%d', date: '$created_at' } };
+
+    const data = await col('orders').aggregate([
+      { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+      { $group: { _id: dateExpr, revenue_rs: { $sum: { $toDouble: '$total_rs' } }, order_count: { $sum: 1 } } },
+      { $sort: { _id: 1 } },
+      { $project: { _id: 0, date: '$_id', revenue_rs: { $round: ['$revenue_rs', 2] }, order_count: 1 } },
+    ]).toArray();
+
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/analytics/top-items
+router.get('/analytics/top-items', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const { branchIds, since } = await _analyticsContext(req);
+    const limit = Math.min(20, parseInt(req.query.limit) || 10);
+
+    // Get order IDs in range
+    const orderIds = await col('orders').distinct('_id', {
+      branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' },
+    });
+
+    const data = await col('order_items').aggregate([
+      { $match: { order_id: { $in: orderIds.map(String) } } },
+      { $group: {
+        _id: '$item_name',
+        total_quantity: { $sum: { $ifNull: ['$quantity', { $ifNull: ['$qty', 1] }] } },
+        total_revenue_rs: { $sum: { $toDouble: { $ifNull: ['$line_total_rs', 0] } } },
+        order_count: { $sum: 1 },
+      }},
+      { $sort: { total_quantity: -1 } },
+      { $limit: limit },
+      { $project: { _id: 0, item_name: '$_id', total_quantity: 1, total_revenue_rs: { $round: ['$total_revenue_rs', 2] }, order_count: 1 } },
+    ]).toArray();
+
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/analytics/peak-hours
+router.get('/analytics/peak-hours', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const { branchIds, since } = await _analyticsContext(req);
+
+    const [hourly, daily] = await Promise.all([
+      col('orders').aggregate([
+        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $group: { _id: { $hour: '$created_at' }, order_count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+        { $project: { _id: 0, hour: '$_id', order_count: 1 } },
+      ]).toArray(),
+      col('orders').aggregate([
+        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $group: { _id: { $dayOfWeek: '$created_at' }, order_count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+      ]).toArray(),
+    ]);
+
+    // Fill missing hours (0-23)
+    const hourMap = Object.fromEntries(hourly.map(h => [h.hour, h.order_count]));
+    const hours = Array.from({ length: 24 }, (_, i) => ({ hour: i, order_count: hourMap[i] || 0 }));
+
+    // Map day numbers to names (MongoDB: 1=Sun..7=Sat)
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const days = daily.map(d => ({ day: dayNames[(d._id - 1) % 7], order_count: d.order_count }));
+
+    res.json({ hours, days });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/analytics/customers
+router.get('/analytics/customers', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const { branchIds, since } = await _analyticsContext(req);
+    const baseMatch = { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } };
+
+    const [custOrders, topCust] = await Promise.all([
+      col('orders').aggregate([
+        { $match: baseMatch },
+        { $group: { _id: '$customer_id', order_count: { $sum: 1 }, total_spent: { $sum: { $toDouble: '$total_rs' } } } },
+      ]).toArray(),
+      col('orders').aggregate([
+        { $match: baseMatch },
+        { $group: { _id: '$customer_id', order_count: { $sum: 1 }, total_spent: { $sum: { $toDouble: '$total_rs' } } } },
+        { $sort: { total_spent: -1 } },
+        { $limit: 10 },
+      ]).toArray(),
+    ]);
+
+    const total = custOrders.length;
+    const returning = custOrders.filter(c => c.order_count >= 2).length;
+    const newCust = total - returning;
+    const avgOrders = total > 0 ? +(custOrders.reduce((s, c) => s + c.order_count, 0) / total).toFixed(1) : 0;
+
+    // Enrich top customers with names
+    const topIds = topCust.map(c => c._id).filter(Boolean);
+    const customers = topIds.length ? await col('customers').find({ _id: { $in: topIds } }, { projection: { name: 1, wa_phone: 1 } }).toArray() : [];
+    const custMap = Object.fromEntries(customers.map(c => [String(c._id), c]));
+
+    res.json({
+      new_customers: newCust,
+      returning_customers: returning,
+      repeat_rate_pct: total > 0 ? +(returning / total * 100).toFixed(1) : 0,
+      avg_orders_per_customer: avgOrders,
+      top_customers: topCust.map(c => ({
+        name: custMap[c._id]?.name || 'Unknown',
+        wa_phone: custMap[c._id]?.wa_phone || '',
+        order_count: c.order_count,
+        total_spent_rs: +c.total_spent.toFixed(2),
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/analytics/delivery
+router.get('/analytics/delivery', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const { branchIds, branchMap, since } = await _analyticsContext(req);
+
+    const [deliveryTimes, branchStats] = await Promise.all([
+      col('orders').aggregate([
+        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: 'DELIVERED', confirmed_at: { $exists: true }, delivered_at: { $exists: true } } },
+        { $addFields: {
+          delivery_min: { $divide: [{ $subtract: ['$delivered_at', '$confirmed_at'] }, 60000] },
+          prep_min: { $cond: [{ $and: ['$preparing_at', '$confirmed_at'] }, { $divide: [{ $subtract: ['$preparing_at', '$confirmed_at'] }, 60000] }, null] },
+        }},
+        { $group: { _id: null, avg_delivery: { $avg: '$delivery_min' }, avg_prep: { $avg: '$prep_min' }, count: { $sum: 1 } } },
+      ]).toArray(),
+      col('orders').aggregate([
+        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $group: {
+          _id: '$branch_id',
+          order_count: { $sum: 1 },
+          revenue_rs: { $sum: { $toDouble: '$total_rs' } },
+        }},
+        { $sort: { order_count: -1 } },
+      ]).toArray(),
+    ]);
+
+    const dt = deliveryTimes[0] || {};
+
+    res.json({
+      avg_delivery_time_min: dt.avg_delivery ? +dt.avg_delivery.toFixed(1) : null,
+      avg_prep_time_min: dt.avg_prep ? +dt.avg_prep.toFixed(1) : null,
+      delivered_count: dt.count || 0,
+      orders_by_branch: branchStats.map(b => ({
+        branch_name: branchMap[b._id] || b._id,
+        order_count: b.order_count,
+        revenue_rs: +b.revenue_rs.toFixed(2),
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ═══════════════════════════════════════════════════════════════
 // SETTLEMENTS
 // ═══════════════════════════════════════════════════════════════
 
-router.get('/settlements', async (req, res) => {
+router.get('/settlements', requirePermission('view_payments'), async (req, res) => {
   try {
     const docs = await col('settlements')
       .find({ restaurant_id: req.restaurantId })
@@ -1027,7 +1303,7 @@ router.get('/settlements', async (req, res) => {
 
 const paymentSvc = require('../services/payment');
 
-router.post('/payout-account', async (req, res) => {
+router.post('/payout-account', requirePermission('manage_settings'), async (req, res) => {
   try {
     const result = await paymentSvc.registerPayoutAccount(req.restaurantId);
     if (result.alreadyRegistered) {
@@ -1046,7 +1322,7 @@ router.get('/coupons', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/coupons', express.json(), async (req, res) => {
+router.post('/coupons', requirePermission('manage_coupons'), express.json(), async (req, res) => {
   try {
     const { code, description, discountType, discountValue, minOrderRs, maxDiscountRs, usageLimit, validFrom, validUntil } = req.body;
     if (!code || !discountType || !discountValue)
@@ -1086,7 +1362,7 @@ router.post('/coupons', express.json(), async (req, res) => {
   }
 });
 
-router.patch('/coupons/:id', express.json(), async (req, res) => {
+router.patch('/coupons/:id', requirePermission('manage_coupons'), express.json(), async (req, res) => {
   try {
     const { isActive, description, validUntil, usageLimit, maxDiscountRs } = req.body;
     const $set = { updated_at: new Date() };
@@ -1106,7 +1382,7 @@ router.patch('/coupons/:id', express.json(), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.delete('/coupons/:id', async (req, res) => {
+router.delete('/coupons/:id', requirePermission('manage_coupons'), async (req, res) => {
   try {
     const result = await col('coupons').deleteOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!result.deletedCount) return res.status(404).json({ error: 'Not found' });
@@ -1336,6 +1612,363 @@ router.get('/catalog/feed-status', async (req, res) => {
       registeredAt: restaurant.catalog_feed_registered_at,
       lastUpload,
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// CUSTOMERS — Order history per customer
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/customers — list customers who ordered from this restaurant
+router.get('/customers', async (req, res) => {
+  try {
+    const { search, limit = 50, offset = 0 } = req.query;
+
+    const branches   = await col('branches').find({ restaurant_id: req.restaurantId }, { projection: { _id: 1 } }).toArray();
+    const branchIds  = branches.map(b => String(b._id));
+
+    // Get unique customer IDs from orders
+    const orderFilter = { branch_id: { $in: branchIds } };
+    const customerIds = await col('orders').distinct('customer_id', orderFilter);
+
+    const customerFilter = { _id: { $in: customerIds } };
+    if (search) {
+      customerFilter.$or = [
+        { name    : { $regex: search, $options: 'i' } },
+        { wa_phone: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const customers = await col('customers')
+      .find(customerFilter)
+      .sort({ last_order_at: -1, created_at: -1 })
+      .skip(parseInt(offset))
+      .limit(parseInt(limit))
+      .toArray();
+
+    res.json(customers.map(c => ({
+      id          : String(c._id),
+      name        : c.name,
+      wa_phone    : c.wa_phone,
+      total_orders: c.total_orders || 0,
+      total_spent : c.total_spent_rs || 0,
+      last_order_at: c.last_order_at,
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/customers/:customerId/orders — order history for one customer
+router.get('/customers/:customerId/orders', async (req, res) => {
+  try {
+    const branches  = await col('branches').find({ restaurant_id: req.restaurantId }, { projection: { _id: 1, name: 1 } }).toArray();
+    const branchIds = branches.map(b => String(b._id));
+    const branchMap = Object.fromEntries(branches.map(b => [String(b._id), b.name]));
+
+    const orders = await col('orders')
+      .find({ customer_id: req.params.customerId, branch_id: { $in: branchIds } })
+      .sort({ created_at: -1 })
+      .limit(20)
+      .toArray();
+
+    const enriched = await Promise.all(orders.map(async o => {
+      const items = await col('order_items').find({ order_id: String(o._id) }).toArray();
+      return {
+        id          : String(o._id),
+        order_number: o.order_number,
+        status      : o.status,
+        total_rs    : o.total_rs,
+        branch_name : branchMap[o.branch_id] || '',
+        created_at  : o.created_at,
+        items       : items.map(i => ({ name: i.name, qty: i.quantity || i.qty || 1, price: i.unit_price_rs })),
+      };
+    }));
+
+    res.json(enriched);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── GET /api/restaurant/ratings ──────────────────────────────
+router.get('/ratings', requireApproved, async (req, res) => {
+  try {
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId }, { projection: { _id: 1, name: 1 } }).toArray();
+    const branchIds = branches.map(b => String(b._id));
+    const branchMap = Object.fromEntries(branches.map(b => [String(b._id), b.name]));
+
+    const query = { branch_id: { $in: branchIds } };
+    if (req.query.branch_id && branchIds.includes(req.query.branch_id)) {
+      query.branch_id = req.query.branch_id;
+    }
+
+    const page  = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit) || 20);
+    const skip  = (page - 1) * limit;
+
+    const [ratings, total] = await Promise.all([
+      col('order_ratings').find(query).sort({ created_at: -1 }).skip(skip).limit(limit).toArray(),
+      col('order_ratings').countDocuments(query),
+    ]);
+
+    // Enrich with customer name and order number
+    const customerIds = [...new Set(ratings.map(r => r.customer_id).filter(Boolean))];
+    const orderIds    = [...new Set(ratings.map(r => r.order_id).filter(Boolean))];
+
+    const [customers, orders] = await Promise.all([
+      customerIds.length ? col('customers').find({ _id: { $in: customerIds } }, { projection: { name: 1, wa_phone: 1 } }).toArray() : [],
+      orderIds.length    ? col('orders').find({ _id: { $in: orderIds } }, { projection: { order_number: 1 } }).toArray() : [],
+    ]);
+
+    const custMap  = Object.fromEntries(customers.map(c => [String(c._id), c]));
+    const orderMap = Object.fromEntries(orders.map(o => [String(o._id), o.order_number]));
+
+    const enriched = ratings.map(r => ({
+      id:             String(r._id),
+      order_number:   orderMap[r.order_id] || r.order_id,
+      customer_name:  custMap[r.customer_id]?.name || 'Unknown',
+      branch_name:    branchMap[r.branch_id] || '',
+      food_rating:    r.food_rating,
+      delivery_rating:r.delivery_rating,
+      comment:        r.comment,
+      created_at:     r.created_at,
+    }));
+
+    res.json({ ratings: enriched, total, page, pages: Math.ceil(total / limit) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── GET /api/restaurant/ratings/summary ─────────────────────
+router.get('/ratings/summary', requireApproved, async (req, res) => {
+  try {
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId }, { projection: { _id: 1 } }).toArray();
+    const branchIds = branches.map(b => String(b._id));
+
+    const query = { branch_id: { $in: branchIds } };
+    if (req.query.branch_id && branchIds.includes(req.query.branch_id)) {
+      query.branch_id = req.query.branch_id;
+    }
+
+    const allRatings = await col('order_ratings').find(query).toArray();
+    const total = allRatings.length;
+
+    if (!total) {
+      return res.json({ avg_food: 0, avg_delivery: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } });
+    }
+
+    const sumFood     = allRatings.reduce((s, r) => s + (r.food_rating || 0), 0);
+    const sumDelivery = allRatings.reduce((s, r) => s + (r.delivery_rating || 0), 0);
+    const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (const r of allRatings) {
+      const star = Math.max(1, Math.min(5, r.food_rating || 3));
+      distribution[star] = (distribution[star] || 0) + 1;
+    }
+
+    res.json({
+      avg_food:     +(sumFood / total).toFixed(1),
+      avg_delivery: +(sumDelivery / total).toFixed(1),
+      total,
+      distribution,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// LOYALTY
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/loyalty/stats
+router.get('/loyalty/stats', requireApproved, async (req, res) => {
+  try {
+    const allLoyalty = await col('loyalty_points').find({ restaurant_id: req.restaurantId }).toArray();
+    const total = allLoyalty.length;
+    const totalBalance = allLoyalty.reduce((s, l) => s + (l.points_balance || 0), 0);
+    const totalLifetime = allLoyalty.reduce((s, l) => s + (l.lifetime_points || 0), 0);
+
+    const tierCounts = { bronze: 0, silver: 0, gold: 0, platinum: 0 };
+    for (const l of allLoyalty) { tierCounts[l.tier] = (tierCounts[l.tier] || 0) + 1; }
+
+    // Points redeemed (sum of negative transactions)
+    const redeemTx = await col('loyalty_transactions')
+      .find({ restaurant_id: req.restaurantId, type: 'redeem' })
+      .toArray();
+    const totalRedeemed = redeemTx.reduce((s, t) => s + Math.abs(t.points || 0), 0);
+
+    res.json({
+      total_members: total,
+      total_points_issued: totalLifetime,
+      total_points_redeemed: totalRedeemed,
+      total_points_balance: totalBalance,
+      tiers: tierCounts,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/loyalty/customers
+router.get('/loyalty/customers', requireApproved, async (req, res) => {
+  try {
+    const page  = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, parseInt(req.query.limit) || 20);
+    const skip  = (page - 1) * limit;
+
+    const [docs, total] = await Promise.all([
+      col('loyalty_points')
+        .find({ restaurant_id: req.restaurantId })
+        .sort({ lifetime_points: -1 })
+        .skip(skip).limit(limit).toArray(),
+      col('loyalty_points').countDocuments({ restaurant_id: req.restaurantId }),
+    ]);
+
+    const customerIds = docs.map(d => d.customer_id).filter(Boolean);
+    const customers = customerIds.length
+      ? await col('customers').find({ _id: { $in: customerIds } }).toArray()
+      : [];
+    const custMap = Object.fromEntries(customers.map(c => [String(c._id), c]));
+
+    const enriched = docs.map(d => {
+      const c = custMap[d.customer_id] || {};
+      return {
+        id: String(d._id),
+        customer_name: c.name || 'Unknown',
+        wa_phone: c.wa_phone || '',
+        points_balance: d.points_balance,
+        lifetime_points: d.lifetime_points,
+        tier: d.tier,
+        total_orders: c.total_orders || 0,
+        total_spent_rs: c.total_spent_rs || 0,
+        last_order_at: c.last_order_at,
+      };
+    });
+
+    res.json({ customers: enriched, total, page, pages: Math.ceil(total / limit) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TEAM / USER MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/users
+router.get('/users', requirePermission('manage_users'), async (req, res) => {
+  try {
+    const users = await col('restaurant_users')
+      .find({ restaurant_id: req.restaurantId })
+      .sort({ role: 1, name: 1 })
+      .toArray();
+    res.json(users.map(u => ({
+      id: String(u._id),
+      name: u.name,
+      phone: u.phone,
+      email: u.email,
+      role: u.role,
+      branch_ids: u.branch_ids || [],
+      permissions: u.permissions,
+      is_active: u.is_active,
+      last_login_at: u.last_login_at,
+      created_at: u.created_at,
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/users
+router.post('/users', requirePermission('manage_users'), express.json(), async (req, res) => {
+  try {
+    const { name, phone, pin, role, branchIds } = req.body;
+    if (!name || !phone || !pin || !role)
+      return res.status(400).json({ error: 'Name, phone, PIN and role are required' });
+    if (!['manager', 'kitchen', 'delivery'].includes(role))
+      return res.status(400).json({ error: 'Role must be manager, kitchen or delivery' });
+    if (pin.length < 4 || pin.length > 6)
+      return res.status(400).json({ error: 'PIN must be 4-6 digits' });
+
+    const existing = await col('restaurant_users').findOne({ restaurant_id: req.restaurantId, phone });
+    if (existing) return res.status(409).json({ error: 'A user with this phone already exists' });
+
+    const pinHash = await bcrypt.hash(pin, 10);
+    const permissions = { ...(ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.delivery) };
+
+    const id = newId();
+    await col('restaurant_users').insertOne({
+      _id: id,
+      restaurant_id: req.restaurantId,
+      name: name.trim(),
+      phone: phone.trim(),
+      email: req.body.email || null,
+      pin_hash: pinHash,
+      role,
+      branch_ids: branchIds || [],
+      permissions,
+      is_active: true,
+      last_login_at: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    res.json({ id, name, phone, role, permissions });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/users/:id
+router.put('/users/:id', requirePermission('manage_users'), express.json(), async (req, res) => {
+  try {
+    const { name, role, branchIds, permissions, isActive } = req.body;
+    const user = await col('restaurant_users').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role === 'owner') return res.status(403).json({ error: 'Cannot edit owner account' });
+
+    const $set = { updated_at: new Date() };
+    if (name !== undefined)        $set.name        = name.trim();
+    if (role !== undefined && ['manager', 'kitchen', 'delivery'].includes(role)) $set.role = role;
+    if (branchIds !== undefined)   $set.branch_ids  = branchIds;
+    if (permissions !== undefined)  $set.permissions = permissions;
+    if (isActive !== undefined)    $set.is_active   = isActive;
+
+    // If role changed and no custom permissions, apply defaults
+    if (role && !permissions) {
+      $set.permissions = { ...(ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.delivery) };
+    }
+
+    await col('restaurant_users').updateOne({ _id: req.params.id }, { $set });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/restaurant/users/:id (soft-delete)
+router.delete('/users/:id', requirePermission('manage_users'), async (req, res) => {
+  try {
+    const user = await col('restaurant_users').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role === 'owner') return res.status(403).json({ error: 'Cannot delete owner account' });
+    if (req.userId && req.params.id === req.userId) return res.status(400).json({ error: 'Cannot delete yourself' });
+
+    await col('restaurant_users').updateOne({ _id: req.params.id }, { $set: { is_active: false, updated_at: new Date() } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/users/:id/reset-pin
+router.put('/users/:id/reset-pin', requirePermission('manage_users'), express.json(), async (req, res) => {
+  try {
+    const { pin } = req.body;
+    if (!pin || pin.length < 4 || pin.length > 6)
+      return res.status(400).json({ error: 'PIN must be 4-6 digits' });
+
+    const user = await col('restaurant_users').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const pinHash = await bcrypt.hash(pin, 10);
+    await col('restaurant_users').updateOne({ _id: req.params.id }, { $set: { pin_hash: pinHash, updated_at: new Date() } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/me — current user info
+router.get('/me', async (req, res) => {
+  try {
+    if (req.userId) {
+      const user = await col('restaurant_users').findOne({ _id: req.userId });
+      if (user) return res.json({ id: String(user._id), name: user.name, role: user.role, permissions: user.permissions, branchIds: user.branch_ids });
+    }
+    // Fallback for owner without restaurant_users entry
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    res.json({ id: null, name: restaurant?.owner_name || 'Owner', role: 'owner', permissions: ROLE_PERMISSIONS.owner, branchIds: [] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

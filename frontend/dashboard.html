@@ -310,9 +310,11 @@ tr:hover td{background:rgba(79,70,229,.02)}
 @media(max-width:768px){
   .sb{display:none}.main{margin-left:0}
   .body,.topbar{padding:1.1rem 1.1rem}
+  #tab-analytics [style*="grid-template-columns"]{grid-template-columns:1fr !important}
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <div id="fb-root"></div>
@@ -333,6 +335,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
       <div class="sb-cap">Overview</div>
       <button class="sb-btn act" onclick="goTab('overview',this)"><span class="ic">📊</span>Dashboard</button>
       <button class="sb-btn"     onclick="goTab('orders',this)"><span class="ic">🛒</span>Orders</button>
+      <button class="sb-btn"     onclick="goTab('customers',this)"><span class="ic">👥</span>Customers</button>
       <button class="sb-btn"     onclick="goTab('analytics',this)"><span class="ic">📈</span>Analytics</button>
     </div>
     <div class="sb-sec">
@@ -346,8 +349,17 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
       <button class="sb-btn" onclick="goTab('integrations',this)"><span class="ic">🔗</span>POS &amp; Platforms</button>
     </div>
     <div class="sb-sec">
+      <div class="sb-cap">Feedback</div>
+      <button class="sb-btn" onclick="goTab('ratings',this)"><span class="ic">⭐</span>Ratings</button>
+      <button class="sb-btn" onclick="goTab('loyalty',this)"><span class="ic">🏅</span>Loyalty</button>
+    </div>
+    <div class="sb-sec">
       <div class="sb-cap">Marketing</div>
       <button class="sb-btn" onclick="goTab('coupons',this)"><span class="ic">🏷️</span>Coupons &amp; Discounts</button>
+    </div>
+    <div class="sb-sec" id="sb-team-sec" style="display:none">
+      <div class="sb-cap">Team</div>
+      <button class="sb-btn" onclick="goTab('team',this)"><span class="ic">👥</span>Team</button>
     </div>
     <div class="sb-sec">
       <div class="sb-cap">Finance</div>
@@ -358,10 +370,24 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
     <div class="sb-foot">
       <div class="sb-user">
         <div class="sb-av" id="sb-av">R</div>
-        <div><div class="sb-nm" id="sb-nm">Restaurant</div><div class="sb-rl">Owner</div></div>
+        <div><div class="sb-nm" id="sb-nm">Restaurant</div><div class="sb-rl" id="sb-rl">Owner</div></div>
       </div>
     </div>
   </aside>
+
+  <!-- PIN Login Screen (for staff, hidden by default) -->
+  <div id="pin-login-screen" style="display:none;position:fixed;inset:0;background:var(--ink);z-index:9999;display:none;align-items:center;justify-content:center">
+    <div class="card" style="width:380px;max-width:90vw;text-align:center;padding:2rem">
+      <div style="font-size:2.5rem;margin-bottom:.5rem">🍜</div>
+      <h2 style="margin-bottom:.3rem">GullyBite Staff Login</h2>
+      <p style="color:var(--dim);font-size:.82rem;margin-bottom:1.5rem">Enter your PIN to access the dashboard</p>
+      <div class="fg" style="margin-bottom:.7rem;text-align:left"><label>Restaurant ID</label><input id="pin-rid" placeholder="Enter restaurant ID"></div>
+      <div class="fg" style="margin-bottom:.7rem;text-align:left"><label>Phone Number</label><input id="pin-phone" placeholder="+91 98765 43210"></div>
+      <div class="fg" style="margin-bottom:.7rem;text-align:left"><label>PIN</label><input id="pin-code" type="password" placeholder="••••" maxlength="6"></div>
+      <button class="btn-p" style="width:100%" onclick="doPinLogin()">Login</button>
+      <p style="margin-top:1rem;font-size:.78rem;color:var(--dim)">Restaurant owner? <a href="/" style="color:var(--acc)">Login with Meta</a></p>
+    </div>
+  </div>
 
   <!-- main -->
   <main class="main">
@@ -437,8 +463,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
         <div class="card">
           <div class="tbl">
             <table>
-              <thead><tr><th>Order</th><th>Customer</th><th>Branch</th><th>Total</th><th>Status</th><th>Time</th><th>Action</th></tr></thead>
-              <tbody id="orders-body"><tr><td colspan="7"><div class="empty"><div class="ei">📋</div><h3>No orders</h3></div></td></tr></tbody>
+              <thead><tr><th>Order</th><th>Customer</th><th>Branch</th><th>Total</th><th>Status</th><th>ETA</th><th>Time</th><th>Action</th></tr></thead>
+              <tbody id="orders-body"><tr><td colspan="8"><div class="empty"><div class="ei">📋</div><h3>No orders</h3></div></td></tr></tbody>
             </table>
           </div>
         </div>
@@ -446,20 +472,113 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
 
       <!-- ── ANALYTICS ───────────────────────────── -->
       <div class="tab" id="tab-analytics">
-        <div class="chips">
-          <button class="chip on" onclick="doAnalytics(7,this)">7 days</button>
-          <button class="chip" onclick="doAnalytics(30,this)">30 days</button>
-          <button class="chip" onclick="doAnalytics(90,this)">90 days</button>
+        <!-- Period selector -->
+        <div class="chips" id="an-period-chips">
+          <button class="chip on" onclick="anSetPeriod('7d',this)">7 days</button>
+          <button class="chip" onclick="anSetPeriod('30d',this)">30 days</button>
+          <button class="chip" onclick="anSetPeriod('90d',this)">90 days</button>
+          <button class="chip" onclick="anSetPeriod('all',this)">All time</button>
         </div>
-        <div class="stats">
-          <div class="stat"><div class="stat-l">Total Orders</div><div class="stat-v" id="an-o">—</div></div>
-          <div class="stat"><div class="stat-l">Revenue</div><div class="stat-v" id="an-r">—</div></div>
-          <div class="stat"><div class="stat-l">Avg Order</div><div class="stat-v" id="an-a">—</div></div>
-          <div class="stat"><div class="stat-l">Delivery Rate</div><div class="stat-v" id="an-d">—</div></div>
+
+        <!-- Overview cards -->
+        <div class="stats" id="an-overview">
+          <div class="stat">
+            <div class="stat-l">Total Orders</div>
+            <div class="stat-v" id="an-total-orders">—</div>
+            <div class="stat-s" id="an-orders-change"></div>
+          </div>
+          <div class="stat">
+            <div class="stat-l">Revenue</div>
+            <div class="stat-v" id="an-total-revenue">—</div>
+            <div class="stat-s" id="an-revenue-change"></div>
+          </div>
+          <div class="stat">
+            <div class="stat-l">Avg Order Value</div>
+            <div class="stat-v" id="an-avg-order">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-l">Customers</div>
+            <div class="stat-v" id="an-total-customers">—</div>
+          </div>
         </div>
+
+        <!-- Order status breakdown -->
+        <div class="card" style="margin-bottom:1.1rem">
+          <div class="ch"><h3>Order Status Breakdown</h3></div>
+          <div class="cb" id="an-status-breakdown" style="display:flex;gap:.6rem;flex-wrap:wrap"></div>
+        </div>
+
+        <!-- Revenue chart -->
+        <div class="card" style="margin-bottom:1.1rem">
+          <div class="ch">
+            <h3>Revenue & Orders</h3>
+            <div class="chips" style="margin:0">
+              <button class="chip on" onclick="anSetGranularity('day',this)">Daily</button>
+              <button class="chip" onclick="anSetGranularity('week',this)">Weekly</button>
+              <button class="chip" onclick="anSetGranularity('month',this)">Monthly</button>
+            </div>
+          </div>
+          <div class="cb" style="height:320px;position:relative"><canvas id="an-revenue-chart"></canvas></div>
+        </div>
+
+        <!-- Two-column: Top Items + Peak Hours -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.1rem;margin-bottom:1.1rem">
+          <div class="card" style="margin:0">
+            <div class="ch"><h3>Top Selling Items</h3></div>
+            <div class="cb" style="height:300px;position:relative"><canvas id="an-items-chart"></canvas></div>
+          </div>
+          <div class="card" style="margin:0">
+            <div class="ch"><h3>Peak Order Hours</h3></div>
+            <div class="cb" style="height:300px;position:relative"><canvas id="an-hours-chart"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Two-column: Customers + Day of Week -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.1rem;margin-bottom:1.1rem">
+          <div class="card" style="margin:0">
+            <div class="ch"><h3>Customer Insights</h3></div>
+            <div class="cb">
+              <div style="display:flex;gap:1.2rem;align-items:center;margin-bottom:1rem">
+                <div style="width:160px;height:160px;position:relative"><canvas id="an-cust-donut"></canvas></div>
+                <div id="an-cust-stats" style="font-size:.82rem;color:var(--dim);line-height:1.8"></div>
+              </div>
+              <table class="tbl" style="font-size:.8rem">
+                <thead><tr><th>Customer</th><th>Phone</th><th>Orders</th><th>Spent</th></tr></thead>
+                <tbody id="an-top-cust"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card" style="margin:0">
+            <div class="ch"><h3>Orders by Day of Week</h3></div>
+            <div class="cb" style="height:250px;position:relative"><canvas id="an-days-chart"></canvas></div>
+          </div>
+        </div>
+
+        <!-- Delivery & Branch Performance -->
         <div class="card">
-          <div class="ch"><h3>Daily Revenue</h3></div>
-          <div class="cb" id="chart"><div class="empty"><div class="ei">📊</div><h3>No data yet</h3></div></div>
+          <div class="ch"><h3>Delivery & Branch Performance</h3></div>
+          <div class="cb">
+            <div class="stats" style="margin-bottom:1rem">
+              <div class="stat"><div class="stat-l">Avg Delivery Time</div><div class="stat-v" id="an-avg-delivery">—</div></div>
+              <div class="stat"><div class="stat-l">Avg Prep Time</div><div class="stat-v" id="an-avg-prep">—</div></div>
+              <div class="stat"><div class="stat-l">Delivered Orders</div><div class="stat-v" id="an-delivered-count">—</div></div>
+            </div>
+            <table class="tbl" style="font-size:.8rem">
+              <thead><tr><th>Branch</th><th>Orders</th><th>Revenue</th></tr></thead>
+              <tbody id="an-branch-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── CUSTOMERS ────────────────────────────── -->
+      <div class="tab" id="tab-customers">
+        <div class="card">
+          <div class="ch">
+            <h3>👥 Customers</h3>
+            <input id="cust-search" placeholder="Search by name or phone…" oninput="debounceCustSearch()" style="width:220px;padding:.4rem .7rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem">
+          </div>
+          <div class="cb" id="cust-list"><div class="empty"><div class="ei">👥</div><h3>Loading customers…</h3></div></div>
         </div>
       </div>
 
@@ -971,6 +1090,157 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
 
       </div>
 
+      <!-- ── RATINGS ─────────────────────────────── -->
+      <div class="tab" id="tab-ratings">
+        <!-- Summary cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem">
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Avg Food Rating</div>
+            <div id="rt-avg-food" style="font-size:2rem;font-weight:700;color:var(--gold)">—</div>
+          </div>
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Avg Delivery Rating</div>
+            <div id="rt-avg-delivery" style="font-size:2rem;font-weight:700;color:var(--blue)">—</div>
+          </div>
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Total Reviews</div>
+            <div id="rt-total" style="font-size:2rem;font-weight:700;color:var(--acc)">—</div>
+          </div>
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Rating Distribution</div>
+            <div id="rt-dist" style="font-size:.75rem;text-align:left"></div>
+          </div>
+        </div>
+        <!-- Branch filter -->
+        <div style="display:flex;align-items:center;gap:.7rem;margin-bottom:1rem">
+          <label style="font-size:.82rem;font-weight:600;color:var(--dim)">Branch:</label>
+          <select id="rt-branch" onchange="loadRatings()" style="padding:.4rem .7rem;border:1px solid var(--rim);border-radius:var(--r);font-size:.82rem">
+            <option value="">All Branches</option>
+          </select>
+        </div>
+        <!-- Ratings table -->
+        <div class="card">
+          <div class="ch"><h3>Customer Ratings</h3><span id="rt-count" style="font-size:.75rem;color:var(--dim)"></span></div>
+          <div class="cb" style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+              <thead><tr style="border-bottom:2px solid var(--rim)">
+                <th style="text-align:left;padding:.5rem">Order</th>
+                <th style="text-align:left;padding:.5rem">Customer</th>
+                <th style="text-align:left;padding:.5rem">Branch</th>
+                <th style="text-align:center;padding:.5rem">Food</th>
+                <th style="text-align:center;padding:.5rem">Delivery</th>
+                <th style="text-align:left;padding:.5rem">Comment</th>
+                <th style="text-align:left;padding:.5rem">Date</th>
+              </tr></thead>
+              <tbody id="rt-tbody"><tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--dim)">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div id="rt-pager" style="display:flex;justify-content:center;gap:.5rem;margin-top:1rem"></div>
+        </div>
+      </div>
+
+      <!-- ── TEAM ──────────────────────────────────── -->
+      <div class="tab" id="tab-team">
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>👥 Team Members</h3>
+            <button class="btn-p btn-sm" onclick="openAddUserModal()">+ Add User</button>
+          </div>
+          <div class="cb" style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+              <thead><tr style="border-bottom:2px solid var(--rim)">
+                <th style="text-align:left;padding:.5rem">Name</th>
+                <th style="text-align:left;padding:.5rem">Phone</th>
+                <th style="text-align:center;padding:.5rem">Role</th>
+                <th style="text-align:left;padding:.5rem">Branches</th>
+                <th style="text-align:center;padding:.5rem">Active</th>
+                <th style="text-align:left;padding:.5rem">Last Login</th>
+                <th style="text-align:center;padding:.5rem">Actions</th>
+              </tr></thead>
+              <tbody id="team-tbody"><tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--dim)">Loading…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><h3>Role Permissions Reference</h3></div>
+          <div class="cb" style="font-size:.8rem;color:var(--dim)">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem">
+              <div><strong style="color:var(--acc)">👑 Owner</strong><br>Full access to everything</div>
+              <div><strong style="color:var(--wa)">📋 Manager</strong><br>Orders, menu, analytics, coupons. No settings or user management.</div>
+              <div><strong style="color:var(--gold)">👨‍🍳 Kitchen</strong><br>View orders, update status (Preparing → Packed). View menu only.</div>
+              <div><strong style="color:var(--blue)">🚴 Delivery</strong><br>View orders, update status (Dispatched → Delivered).</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── ADD USER MODAL ─────────────────────────── -->
+      <div id="user-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;display:none;align-items:center;justify-content:center">
+        <div class="card" style="width:440px;max-width:95vw;max-height:90vh;overflow-y:auto">
+          <div class="ch"><h3 id="user-modal-title">Add Team Member</h3><button onclick="closeUserModal()" style="background:none;border:none;font-size:1.3rem;cursor:pointer">×</button></div>
+          <div class="cb">
+            <div class="fg" style="margin-bottom:.7rem"><label>Name ★</label><input id="u-name" placeholder="Rahul Sharma"></div>
+            <div class="fg" style="margin-bottom:.7rem"><label>Phone ★</label><input id="u-phone" placeholder="+91 98765 43210"></div>
+            <div class="fg" style="margin-bottom:.7rem"><label>PIN (4-6 digits) ★</label><input id="u-pin" type="password" placeholder="1234" maxlength="6"></div>
+            <div class="fg" style="margin-bottom:.7rem">
+              <label>Role ★</label>
+              <select id="u-role" style="padding:.5rem;border:1px solid var(--rim);border-radius:var(--r);width:100%">
+                <option value="manager">📋 Manager</option>
+                <option value="kitchen">👨‍🍳 Kitchen</option>
+                <option value="delivery">🚴 Delivery</option>
+              </select>
+            </div>
+            <div class="fg" style="margin-bottom:.7rem">
+              <label>Branches (leave empty for all)</label>
+              <div id="u-branches" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.3rem"></div>
+            </div>
+            <input type="hidden" id="u-edit-id">
+            <button class="btn-p" style="width:100%;margin-top:.5rem" onclick="doSaveUser()">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── LOYALTY ──────────────────────────────── -->
+      <div class="tab" id="tab-loyalty">
+        <!-- Summary cards -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem;margin-bottom:1.5rem">
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Total Members</div>
+            <div id="ly-members" style="font-size:2rem;font-weight:700;color:var(--acc)">—</div>
+          </div>
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Points Issued</div>
+            <div id="ly-issued" style="font-size:2rem;font-weight:700;color:var(--wa)">—</div>
+          </div>
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Points Redeemed</div>
+            <div id="ly-redeemed" style="font-size:2rem;font-weight:700;color:var(--gold)">—</div>
+          </div>
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Tier Breakdown</div>
+            <div id="ly-tiers" style="font-size:.75rem;text-align:left"></div>
+          </div>
+        </div>
+        <!-- Loyalty customers table -->
+        <div class="card">
+          <div class="ch"><h3>Loyalty Members</h3><span id="ly-count" style="font-size:.75rem;color:var(--dim)"></span></div>
+          <div class="cb" style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+              <thead><tr style="border-bottom:2px solid var(--rim)">
+                <th style="text-align:left;padding:.5rem">Customer</th>
+                <th style="text-align:left;padding:.5rem">Phone</th>
+                <th style="text-align:center;padding:.5rem">Points</th>
+                <th style="text-align:center;padding:.5rem">Lifetime</th>
+                <th style="text-align:center;padding:.5rem">Tier</th>
+                <th style="text-align:center;padding:.5rem">Orders</th>
+                <th style="text-align:right;padding:.5rem">Spent</th>
+              </tr></thead>
+              <tbody id="ly-tbody"><tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--dim)">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div id="ly-pager" style="display:flex;justify-content:center;gap:.5rem;margin-top:1rem"></div>
+        </div>
+      </div>
+
       <!-- ── SETTINGS ────────────────────────────── -->
       <div class="tab" id="tab-settings">
 
@@ -1068,6 +1338,37 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
               </div>
             </div>
             <button class="btn-p" style="margin-top:1.1rem" onclick="doSaveChargeConfig()">Save Charge Settings</button>
+          </div>
+        </div>
+
+        <!-- Notification Settings -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>🔔 Notification Settings</h3><span style="font-size:.78rem;color:var(--dim)">WhatsApp alerts to owner/manager</span></div>
+          <div class="cb">
+            <div class="fgrid">
+              <div class="fg span2">
+                <label>Owner Notification Phones</label>
+                <input id="p-notify-phones" placeholder="919876543210, 919876543211 (comma-separated, with country code)">
+                <span style="font-size:.72rem;color:var(--dim)">Enter phone numbers with country code, no + prefix. e.g., 919876543210</span>
+              </div>
+            </div>
+            <hr class="dv">
+            <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.7rem">Notify me when:</p>
+            <div style="display:flex;flex-wrap:wrap;gap:1.2rem;margin-bottom:.5rem">
+              <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
+                <input type="checkbox" id="p-notify-new-order" checked> New order received
+              </label>
+              <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
+                <input type="checkbox" id="p-notify-payment" checked> Payment received
+              </label>
+              <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
+                <input type="checkbox" id="p-notify-cancelled" checked> Order cancelled
+              </label>
+              <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
+                <input type="checkbox" id="p-notify-low-activity"> Low activity alert (no orders in 2 hrs)
+              </label>
+            </div>
+            <button class="btn-p" style="margin-top:.8rem" onclick="doSaveNotifySettings()">Save Notification Settings</button>
           </div>
         </div>
 
@@ -1228,9 +1529,22 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (!token) {
+    // Show PIN login screen for staff, or redirect to Meta login for owner
+    const pinMode = params.get('staff');
+    if (pinMode) {
+      document.getElementById('pin-login-screen').style.display = 'flex';
+      return;
+    }
     window.location.href = '/';
     return;
   }
+
+  // Load current user info and apply permissions
+  fetch('/api/restaurant/me', { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => r.ok ? r.json() : null)
+    .then(user => { if (user) applyPermissions(user); })
+    .catch(() => {});
+
   initDash();
 });
 
@@ -1246,13 +1560,17 @@ function logout() {
 const TMETA = {
   overview:   { title: 'Dashboard',          sub: 'Your restaurant at a glance',       fn: loadOverview },
   orders:     { title: 'Orders',             sub: 'Manage incoming orders',             fn: () => loadOrders('ALL') },
-  analytics:  { title: 'Analytics',          sub: 'Sales and performance',              fn: () => doAnalytics(7, null) },
+  customers:  { title: 'Customers',          sub: 'Order history and reorder activity', fn: loadCustomers },
+  analytics:  { title: 'Analytics',          sub: 'Sales and performance',              fn: () => loadAnalytics() },
   branches:   { title: 'Branches & Catalog', sub: 'Locations and WhatsApp catalogs',   fn: loadBranches },
   menu:       { title: 'Menu Items',         sub: 'Add and manage dishes',              fn: loadBranchSel },
   whatsapp:   { title: 'WhatsApp',           sub: 'Numbers and webhook config',         fn: loadWA },
   integrations:{ title: 'POS & Platform Integrations', sub: 'Sync menus from Swiggy, Zomato, PetPooja', fn: loadIntegrations },
   settlements: { title: 'Settlements',        sub: 'Weekly payout history',              fn: loadSettlements },
   coupons:     { title: 'Coupons & Discounts', sub: 'Create and manage discount codes for WhatsApp orders', fn: loadCoupons },
+  ratings:     { title: 'Ratings',             sub: 'Customer ratings and feedback',      fn: loadRatings },
+  loyalty:     { title: 'Loyalty',             sub: 'Customer loyalty points and rewards', fn: loadLoyalty },
+  team:        { title: 'Team',               sub: 'Manage staff access and roles',       fn: loadTeam },
   referrals:   { title: 'Referrals Received', sub: 'Customers referred by GullyBite admin — 7.5% fee applies', fn: loadReferrals },
   settings:    { title: 'Settings',           sub: 'Business profile and bank account',  fn: loadProfile },
 };
@@ -1363,19 +1681,20 @@ async function loadRecent() {
 async function loadOrders(s) {
   oFilter = s;
   const tb = document.getElementById('orders-body');
-  tb.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:2rem"><div class="spin"></div></td></tr>`;
+  tb.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:2rem"><div class="spin"></div></td></tr>`;
   try {
     const q = s === 'ALL' ? '' : `&status=${s}`;
     const o = await api(`/api/restaurant/orders?limit=60${q}`);
-    if (!o?.length) { tb.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="ei">📋</div><h3>No orders found</h3></div></td></tr>`; return; }
+    if (!o?.length) { tb.innerHTML = `<tr><td colspan="8"><div class="empty"><div class="ei">📋</div><h3>No orders found</h3></div></td></tr>`; return; }
     tb.innerHTML = o.map(r => `<tr>
       <td><span class="mono">${r.order_number}</span></td>
       <td><div>${r.customer_name || '—'}</div><div style="font-size:.72rem;color:var(--dim)">${r.wa_phone}</div></td>
       <td>${r.branch_name}</td>
       <td>₹${r.total_rs}</td>
       <td>${sbadge(r.status)}</td>
+      <td style="font-size:.73rem">${fmtEta(r)}</td>
       <td style="font-size:.73rem;color:var(--dim)">${timeAgo(r.created_at)}</td>
-      <td>${oaction(r)}</td>
+      <td>${oaction({...r, customer_id: r.customer_id})}</td>
     </tr>`).join('');
   } catch (e) { toast('Failed to load orders', 'err'); }
 }
@@ -1400,12 +1719,28 @@ function sbadge(s) {
   const [c, label] = m[s] || ['bd', s.replace(/_/g, ' ')];
   return `<span class="badge ${c}">${label}</span>`;
 }
+function fmtEta(o) {
+  const active = ['PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED'];
+  if (o.status === 'DELIVERED') {
+    // Show actual time taken
+    if (o.created_at && o.delivered_at) {
+      const mins = Math.round((new Date(o.delivered_at) - new Date(o.created_at)) / 60000);
+      return `<span style="color:var(--wa)">Delivered in ${mins} min</span>`;
+    }
+    return '<span style="color:var(--wa)">Delivered</span>';
+  }
+  if (active.includes(o.status) && o.eta_text) {
+    return `<span style="color:var(--gold);font-weight:600">⏱ ${o.eta_text}</span>`;
+  }
+  return '<span style="color:var(--mute)">—</span>';
+}
 function oaction(o) {
   const nxt = { PAID: ['CONFIRMED', '✅ Confirm'], CONFIRMED: ['PREPARING', '👨‍🍳 Prep'], PREPARING: ['PACKED', '📦 Packed'] };
   const a = nxt[o.status];
   const viewBtn = `<button class="btn-outline btn-sm" style="margin-left:.4rem" onclick="openOrdModal('${o.id}')">Detail</button>`;
-  if (!a) return viewBtn;
-  return `<button class="btn-g btn-sm" onclick="doUpdateOrder('${o.id}','${a[0]}')">${a[1]}</button>${viewBtn}`;
+  const histBtn = o.customer_id ? `<button class="btn-outline btn-sm" style="margin-left:.3rem;font-size:.7rem" onclick="showCustOrderHistory('${o.customer_id}','${(o.customer_name||'Customer').replace(/'/g,"\\'")}')">History</button>` : '';
+  if (!a) return viewBtn + histBtn;
+  return `<button class="btn-g btn-sm" onclick="doUpdateOrder('${o.id}','${a[0]}')">${a[1]}</button>${viewBtn}${histBtn}`;
 }
 
 function closeOrdModal() {
@@ -1455,6 +1790,18 @@ async function openOrdModal(orderId) {
     chargeRows += sep;
     chargeRows += dl('Customer Total', o.total_rs, true);
 
+    // Dynamic pricing breakdown
+    let dynamicNote = '';
+    if (o.delivery_fee_breakdown && o.delivery_fee_breakdown.distanceKm !== null) {
+      const bd = o.delivery_fee_breakdown;
+      const parts = [`${bd.distanceKm} km`];
+      if (bd.baseFee) parts.push(`Base ₹${bd.baseFee}`);
+      if (bd.distanceFee) parts.push(`Distance ₹${bd.distanceFee}`);
+      if (bd.effectiveMultiplier > 1.0) parts.push(`${bd.effectiveMultiplier}x${bd.reason ? ' (' + bd.reason + ')' : ''}`);
+      if (bd.capped) parts.push('Capped');
+      dynamicNote = `<div style="margin-top:.4rem;font-size:.72rem;color:var(--dim)">⚡ ${parts.join(' · ')}</div>`;
+    }
+
     let settlementNote = '';
     if (parseFloat(o.restaurant_delivery_rs||0) > 0) {
       const deduction = parseFloat(o.restaurant_delivery_rs||0) + parseFloat(o.restaurant_delivery_gst_rs||0);
@@ -1477,6 +1824,7 @@ async function openOrdModal(orderId) {
         <span style="font-size:.75rem;color:var(--dim)">Charge Breakdown</span>
         <table style="width:100%;border-collapse:collapse;margin-top:.3rem">${chargeRows}</table>
       </div>
+      ${dynamicNote}
       ${settlementNote}
     `;
   } catch (e) { body.innerHTML = `<p style="color:var(--red)">${e.message}</p>`; }
@@ -1486,34 +1834,328 @@ async function doUpdateOrder(id, s) {
   catch (e) { toast(e.message, 'err'); }
 }
 
-/* ─────────────────────────── ANALYTICS ─────────────────── */
-async function doAnalytics(days, el) {
-  if (el) { document.querySelectorAll('#tab-analytics .chip').forEach(c => c.classList.remove('on')); el.classList.add('on'); }
+/* ─────────────────────────── CUSTOMERS ─────────────────── */
+let _custSearch = '';
+let _custDebounce;
+
+function debounceCustSearch() {
+  clearTimeout(_custDebounce);
+  _custDebounce = setTimeout(() => {
+    _custSearch = document.getElementById('cust-search')?.value || '';
+    loadCustomers();
+  }, 350);
+}
+
+async function loadCustomers() {
+  const el = document.getElementById('cust-list');
+  if (!el) return;
+  el.innerHTML = '<div class="empty"><div class="ei">⏳</div><h3>Loading…</h3></div>';
   try {
-    const d = await api(`/api/restaurant/analytics?days=${days}`);
-    const s = d?.summary;
-    document.getElementById('an-o').textContent = s?.total_orders ?? 0;
-    document.getElementById('an-r').textContent = '₹' + Math.round(s?.total_revenue ?? 0);
-    document.getElementById('an-a').textContent = '₹' + Math.round(s?.avg_order_value ?? 0);
-    const rt = s?.total_orders > 0 ? Math.round((s.delivered / s.total_orders) * 100) : 0;
-    document.getElementById('an-d').textContent = rt + '%';
-    if (d?.daily?.length) drawChart(d.daily);
+    const qs = _custSearch ? `?search=${encodeURIComponent(_custSearch)}` : '';
+    const custs = await api(`/api/restaurant/customers${qs}`);
+    if (!custs.length) {
+      el.innerHTML = '<div class="empty"><div class="ei">👥</div><h3>No customers yet</h3><p>Orders placed via WhatsApp will appear here.</p></div>';
+      return;
+    }
+    el.innerHTML = custs.map(c => `
+      <div class="order-row" style="cursor:pointer" onclick="toggleCustHistory('${c.id}',this)">
+        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+          <div style="font-weight:600">${c.name || 'Unknown'}</div>
+          <div style="color:var(--dim);font-size:.85rem">+${c.wa_phone}</div>
+          <div style="margin-left:auto;display:flex;gap:1rem;font-size:.85rem">
+            <span title="Total orders">🛒 ${c.total_orders}</span>
+            <span title="Total spent">💰 ₹${(c.total_spent||0).toFixed(0)}</span>
+            ${c.last_order_at ? `<span style="color:var(--dim)">${new Date(c.last_order_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</span>` : ''}
+          </div>
+        </div>
+        <div id="ch-${c.id}" style="display:none;margin-top:1rem"></div>
+      </div>
+    `).join('');
+  } catch(e) {
+    el.innerHTML = `<div class="empty"><div class="ei">❌</div><h3>${e.message}</h3></div>`;
+  }
+}
+
+async function toggleCustHistory(custId, row) {
+  const hist = document.getElementById(`ch-${custId}`);
+  if (!hist) return;
+  if (hist.style.display !== 'none') { hist.style.display = 'none'; return; }
+  hist.style.display = 'block';
+  hist.innerHTML = '<div style="color:var(--dim);font-size:.85rem;padding:.5rem 0">Loading order history…</div>';
+  try {
+    const orders = await api(`/api/restaurant/customers/${custId}/orders`);
+    if (!orders.length) { hist.innerHTML = '<div style="color:var(--dim);font-size:.85rem">No orders found.</div>'; return; }
+    hist.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem;margin-top:.5rem">
+        <thead><tr style="color:var(--dim);text-align:left">
+          <th style="padding:.4rem .6rem">Order #</th>
+          <th style="padding:.4rem .6rem">Branch</th>
+          <th style="padding:.4rem .6rem">Items</th>
+          <th style="padding:.4rem .6rem">Total</th>
+          <th style="padding:.4rem .6rem">Status</th>
+          <th style="padding:.4rem .6rem">Date</th>
+        </tr></thead>
+        <tbody>${orders.map(o => `
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:.4rem .6rem;font-weight:600">#${o.order_number}</td>
+            <td style="padding:.4rem .6rem">${o.branch_name}</td>
+            <td style="padding:.4rem .6rem">${o.items.map(i=>`${i.qty}x ${i.name}`).join(', ')}</td>
+            <td style="padding:.4rem .6rem">₹${o.total_rs}</td>
+            <td style="padding:.4rem .6rem">${sbadge(o.status)}</td>
+            <td style="padding:.4rem .6rem;color:var(--dim)">${new Date(o.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    hist.innerHTML = `<div style="color:var(--danger);font-size:.85rem">${e.message}</div>`;
+  }
+}
+
+// Modal reuse: show customer order history from the Orders tab
+async function showCustOrderHistory(custId, custName) {
+  const modal = document.getElementById('ord-modal');
+  const body  = document.getElementById('ord-modal-body');
+  const title = document.getElementById('ord-modal-title');
+  modal.style.display = 'flex';
+  title.textContent = `Order History — ${custName}`;
+  body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--dim)">Loading…</div>';
+  try {
+    const orders = await api(`/api/restaurant/customers/${custId}/orders`);
+    if (!orders.length) { body.innerHTML = '<p style="padding:1rem;color:var(--dim)">No orders found for this customer.</p>'; return; }
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+        <thead><tr style="color:var(--dim);text-align:left;border-bottom:2px solid var(--border)">
+          <th style="padding:.5rem .6rem">Order #</th>
+          <th style="padding:.5rem .6rem">Branch</th>
+          <th style="padding:.5rem .6rem">Items</th>
+          <th style="padding:.5rem .6rem">Total</th>
+          <th style="padding:.5rem .6rem">Status</th>
+          <th style="padding:.5rem .6rem">Date</th>
+        </tr></thead>
+        <tbody>${orders.map(o => `
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:.45rem .6rem;font-weight:600">#${o.order_number}</td>
+            <td style="padding:.45rem .6rem">${o.branch_name}</td>
+            <td style="padding:.45rem .6rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.items.map(i=>`${i.qty}x ${i.name}`).join(', ')}</td>
+            <td style="padding:.45rem .6rem">₹${o.total_rs}</td>
+            <td style="padding:.45rem .6rem">${sbadge(o.status)}</td>
+            <td style="padding:.45rem .6rem;color:var(--dim)">${new Date(o.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'})}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    body.innerHTML = `<div style="padding:1rem;color:var(--danger)">${e.message}</div>`;
+  }
+}
+
+/* ─────────────────────────── ANALYTICS ─────────────────── */
+let _anPeriod = '7d', _anGranularity = 'day';
+const _anCharts = {};
+
+function anSetPeriod(p, el) {
+  _anPeriod = p;
+  if (el) { document.querySelectorAll('#an-period-chips .chip').forEach(c => c.classList.remove('on')); el.classList.add('on'); }
+  loadAnalytics();
+}
+function anSetGranularity(g, el) {
+  _anGranularity = g;
+  if (el) { el.closest('.chips').querySelectorAll('.chip').forEach(c => c.classList.remove('on')); el.classList.add('on'); }
+  anLoadRevenue();
+}
+
+async function loadAnalytics() {
+  await Promise.all([anLoadOverview(), anLoadRevenue(), anLoadTopItems(), anLoadPeakHours(), anLoadCustomers(), anLoadDelivery()]);
+}
+
+async function anLoadOverview() {
+  try {
+    const d = await api(`/api/restaurant/analytics/overview?period=${_anPeriod}`);
+    if (!d) return;
+    document.getElementById('an-total-orders').textContent = d.total_orders ?? 0;
+    document.getElementById('an-total-revenue').textContent = '₹' + Math.round(d.total_revenue_rs ?? 0).toLocaleString('en-IN');
+    document.getElementById('an-avg-order').textContent = '₹' + Math.round(d.avg_order_value_rs ?? 0);
+    document.getElementById('an-total-customers').textContent = d.total_customers ?? 0;
+
+    const fmtPct = (v) => { const cls = v >= 0 ? '' : ' dn'; return `<span class="stat-s${cls}">${v >= 0 ? '↑' : '↓'} ${Math.abs(v)}% vs prev period</span>`; };
+    document.getElementById('an-orders-change').innerHTML = d.changes ? fmtPct(d.changes.orders_pct) : '';
+    document.getElementById('an-revenue-change').innerHTML = d.changes ? fmtPct(d.changes.revenue_pct) : '';
+
+    // Status breakdown pills
+    const statusColors = { PENDING_PAYMENT:'#94a3b8', PAID:'#2563eb', CONFIRMED:'#7c3aed', PREPARING:'#d97706', PACKED:'#0891b2', DISPATCHED:'#4f46e5', DELIVERED:'#16a34a', CANCELLED:'#dc2626' };
+    const sb = document.getElementById('an-status-breakdown');
+    if (d.orders_by_status) {
+      sb.innerHTML = Object.entries(d.orders_by_status).map(([s, c]) =>
+        `<span style="display:inline-flex;align-items:center;gap:.35rem;padding:.3rem .7rem;border-radius:100px;font-size:.75rem;font-weight:500;background:${statusColors[s] || '#94a3b8'}15;color:${statusColors[s] || '#64748b'};border:1px solid ${statusColors[s] || '#94a3b8'}30">
+          <span style="width:7px;height:7px;border-radius:50%;background:${statusColors[s] || '#94a3b8'}"></span>${s.replace(/_/g,' ')} (${c})
+        </span>`
+      ).join('');
+    } else { sb.innerHTML = '<span style="color:var(--dim);font-size:.82rem">No data</span>'; }
   } catch (_) {}
 }
-function drawChart(daily) {
-  const max = Math.max(...daily.map(d => parseFloat(d.revenue) || 0), 1);
-  document.getElementById('chart').innerHTML = `
-    <div style="display:flex;align-items:flex-end;gap:3px;height:126px;overflow-x:auto;padding:.5rem 0">
-      ${daily.map(d => {
-        const h = Math.max((parseFloat(d.revenue) / max) * 100, 2);
-        const dt = new Date(d.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
-        return `<div style="flex:1;min-width:22px;display:flex;flex-direction:column;align-items:center;gap:3px">
-          <span style="font-size:.58rem;color:var(--dim)">₹${Math.round(d.revenue)}</span>
-          <div style="width:100%;background:var(--wa);border-radius:3px 3px 0 0;height:${h}%;min-height:3px;opacity:.8"></div>
-          <span style="font-size:.58rem;color:var(--dim);white-space:nowrap">${dt}</span>
-        </div>`;
-      }).join('')}
-    </div>`;
+
+async function anLoadRevenue() {
+  try {
+    const data = await api(`/api/restaurant/analytics/revenue?period=${_anPeriod}&granularity=${_anGranularity}`);
+    if (!data || !data.length) { _destroyChart('revenue'); return; }
+
+    const labels = data.map(d => d.date);
+    const revenues = data.map(d => d.revenue_rs);
+    const orders = data.map(d => d.order_count);
+
+    _destroyChart('revenue');
+    const ctx = document.getElementById('an-revenue-chart').getContext('2d');
+    _anCharts.revenue = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { type: 'line', label: 'Revenue (₹)', data: revenues, borderColor: '#4f46e5', backgroundColor: 'rgba(79,70,229,.1)', fill: true, tension: .3, yAxisID: 'y', pointRadius: 2 },
+          { type: 'bar', label: 'Orders', data: orders, backgroundColor: 'rgba(22,163,74,.6)', borderRadius: 4, yAxisID: 'y1', barPercentage: .6 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { position: 'top', labels: { font: { size: 11 }, usePointStyle: true, pointStyleWidth: 10 } } },
+        scales: {
+          y:  { position: 'left', title: { display: true, text: 'Revenue (₹)', font: { size: 11 } }, ticks: { callback: v => '₹' + v.toLocaleString('en-IN') } },
+          y1: { position: 'right', title: { display: true, text: 'Orders', font: { size: 11 } }, grid: { drawOnChartArea: false } },
+          x:  { ticks: { font: { size: 10 }, maxRotation: 45 } },
+        },
+      },
+    });
+  } catch (_) {}
+}
+
+async function anLoadTopItems() {
+  try {
+    const data = await api(`/api/restaurant/analytics/top-items?period=${_anPeriod}&limit=10`);
+    if (!data || !data.length) { _destroyChart('items'); return; }
+
+    const labels = data.map(d => d.item_name);
+    const qtys = data.map(d => d.total_quantity);
+    const revs = data.map(d => d.total_revenue_rs);
+
+    _destroyChart('items');
+    const ctx = document.getElementById('an-items-chart').getContext('2d');
+    _anCharts.items = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Quantity', data: qtys, backgroundColor: 'rgba(79,70,229,.7)', borderRadius: 4 },
+          { label: 'Revenue (₹)', data: revs, backgroundColor: 'rgba(217,119,6,.6)', borderRadius: 4 },
+        ],
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { font: { size: 10 }, usePointStyle: true, pointStyleWidth: 8 } } },
+        scales: { x: { ticks: { font: { size: 10 } } }, y: { ticks: { font: { size: 10 } } } },
+      },
+    });
+  } catch (_) {}
+}
+
+async function anLoadPeakHours() {
+  try {
+    const data = await api(`/api/restaurant/analytics/peak-hours?period=${_anPeriod}`);
+    if (!data) return;
+
+    // Hourly chart
+    if (data.hours?.length) {
+      _destroyChart('hours');
+      const ctx = document.getElementById('an-hours-chart').getContext('2d');
+      const fmtHour = h => h === 0 ? '12am' : h < 12 ? h + 'am' : h === 12 ? '12pm' : (h - 12) + 'pm';
+      const maxVal = Math.max(...data.hours.map(h => h.order_count));
+      const bgColors = data.hours.map(h => h.order_count >= maxVal * 0.8 ? 'rgba(220,38,38,.7)' : h.order_count >= maxVal * 0.5 ? 'rgba(217,119,6,.7)' : 'rgba(79,70,229,.5)');
+      _anCharts.hours = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.hours.map(h => fmtHour(h.hour)),
+          datasets: [{ label: 'Orders', data: data.hours.map(h => h.order_count), backgroundColor: bgColors, borderRadius: 3 }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { ticks: { font: { size: 9 }, maxRotation: 90 } }, y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        },
+      });
+    }
+
+    // Day of week chart
+    if (data.days?.length) {
+      _destroyChart('days');
+      const ctx2 = document.getElementById('an-days-chart').getContext('2d');
+      const dayColors = ['#dc2626','#2563eb','#7c3aed','#d97706','#0891b2','#4f46e5','#16a34a'];
+      _anCharts.days = new Chart(ctx2, {
+        type: 'bar',
+        data: {
+          labels: data.days.map(d => d.day.slice(0, 3)),
+          datasets: [{ label: 'Orders', data: data.days.map(d => d.order_count), backgroundColor: dayColors.slice(0, data.days.length), borderRadius: 6, barPercentage: .6 }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        },
+      });
+    }
+  } catch (_) {}
+}
+
+async function anLoadCustomers() {
+  try {
+    const data = await api(`/api/restaurant/analytics/customers?period=${_anPeriod}`);
+    if (!data) return;
+
+    // Donut chart
+    _destroyChart('custDonut');
+    const ctx = document.getElementById('an-cust-donut').getContext('2d');
+    _anCharts.custDonut = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['New', 'Returning'],
+        datasets: [{ data: [data.new_customers, data.returning_customers], backgroundColor: ['#4f46e5', '#16a34a'], borderWidth: 0, cutout: '65%' }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, usePointStyle: true, padding: 12 } } } },
+    });
+
+    // Stats text
+    document.getElementById('an-cust-stats').innerHTML = `
+      <div><strong>${data.new_customers}</strong> new customers</div>
+      <div><strong>${data.returning_customers}</strong> returning</div>
+      <div>Repeat rate: <strong>${data.repeat_rate_pct}%</strong></div>
+      <div>Avg orders/customer: <strong>${data.avg_orders_per_customer}</strong></div>`;
+
+    // Top customers table
+    const tbody = document.getElementById('an-top-cust');
+    if (data.top_customers?.length) {
+      tbody.innerHTML = data.top_customers.map(c =>
+        `<tr><td>${c.name || '—'}</td><td>${c.wa_phone || '—'}</td><td>${c.order_count}</td><td>₹${Math.round(c.total_spent_rs).toLocaleString('en-IN')}</td></tr>`
+      ).join('');
+    } else { tbody.innerHTML = '<tr><td colspan="4" style="color:var(--dim);text-align:center">No data yet</td></tr>'; }
+  } catch (_) {}
+}
+
+async function anLoadDelivery() {
+  try {
+    const data = await api(`/api/restaurant/analytics/delivery?period=${_anPeriod}`);
+    if (!data) return;
+
+    document.getElementById('an-avg-delivery').textContent = data.avg_delivery_time_min != null ? data.avg_delivery_time_min + ' min' : '—';
+    document.getElementById('an-avg-prep').textContent = data.avg_prep_time_min != null ? data.avg_prep_time_min + ' min' : '—';
+    document.getElementById('an-delivered-count').textContent = data.delivered_count ?? 0;
+
+    const tbody = document.getElementById('an-branch-table');
+    if (data.orders_by_branch?.length) {
+      tbody.innerHTML = data.orders_by_branch.map(b =>
+        `<tr><td>${b.branch_name}</td><td>${b.order_count}</td><td>₹${Math.round(b.revenue_rs).toLocaleString('en-IN')}</td></tr>`
+      ).join('');
+    } else { tbody.innerHTML = '<tr><td colspan="3" style="color:var(--dim);text-align:center">No data yet</td></tr>'; }
+  } catch (_) {}
+}
+
+function _destroyChart(key) {
+  if (_anCharts[key]) { _anCharts[key].destroy(); _anCharts[key] = null; }
 }
 
 /* ─────────────── ADDRESS AUTOCOMPLETE (Nominatim) ───────── */
@@ -1809,6 +2451,9 @@ function renderBranchCard(b) {
         <div class="ipair"><label>Longitude</label><code>${b.longitude}</code></div>
         <div class="ipair"><label>Radius</label><code>${b.delivery_radius_km} km</code></div>
         <div class="ipair"><label>Hours</label><code>${b.opening_time?.slice(0,5)} – ${b.closing_time?.slice(0,5)}</code></div>
+        <div class="ipair"><label>Base Prep</label><input type="number" value="${b.base_prep_time_min ?? 15}" min="5" max="60" style="width:50px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','basePrepTimeMin',this.value)"> min</div>
+        <div class="ipair"><label>Per-Item</label><input type="number" value="${b.avg_item_prep_min ?? 3}" min="0" max="15" style="width:50px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','avgItemPrepMin',this.value)"> min</div>
+        <div class="ipair"><label>Manager Phone</label><input type="text" value="${b.manager_phone || ''}" placeholder="919876543210" style="width:120px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','managerPhone',this.value)"></div>
       </div>
       <div class="bcard-togs">
         <div class="tog">
@@ -1820,6 +2465,26 @@ function renderBranchCard(b) {
           <span>Branch open</span>
         </div>
       </div>
+      <!-- Dynamic Pricing -->
+      <details class="dp-section" style="margin-top:.75rem;border:1px solid var(--bdr);border-radius:8px;padding:.6rem .8rem">
+        <summary style="cursor:pointer;font-weight:600;font-size:.85rem;color:var(--fg)">
+          ⚡ Dynamic Delivery Pricing ${b.dynamic_pricing_enabled ? '<span style="color:var(--wa);font-size:.75rem;font-weight:400"> — Active</span>' : '<span style="color:var(--dim);font-size:.75rem;font-weight:400"> — Off</span>'}
+        </summary>
+        <div style="margin-top:.6rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem .8rem;font-size:.8rem">
+          <div class="tog" style="grid-column:1/-1">
+            <label class="tsl"><input type="checkbox" ${b.dynamic_pricing_enabled ? 'checked' : ''} onchange="doToggle('${b.id}','dynamicPricingEnabled',this.checked)"><div class="tsl-track"></div></label>
+            <span>Enable dynamic pricing</span>
+          </div>
+          <div class="ipair"><label>Base Fee (₹)</label><input type="number" value="${b.base_delivery_fee_rs ?? 30}" min="0" step="5" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','baseDeliveryFeeRs',this.value)"></div>
+          <div class="ipair"><label>Per-km (₹)</label><input type="number" value="${b.per_km_fee_rs ?? 7}" min="0" step="1" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','perKmFeeRs',this.value)"></div>
+          <div class="ipair"><label>Free within (km)</label><input type="number" value="${b.free_delivery_within_km ?? 0}" min="0" step="0.5" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','freeDeliveryWithinKm',this.value)"></div>
+          <div class="ipair"><label>Min Fee (₹)</label><input type="number" value="${b.min_delivery_fee_rs ?? 20}" min="0" step="5" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','minDeliveryFeeRs',this.value)"></div>
+          <div class="ipair"><label>Max Fee (₹)</label><input type="number" value="${b.max_delivery_fee_rs ?? 150}" min="0" step="10" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','maxDeliveryFeeRs',this.value)"></div>
+          <div class="ipair"><label>Surge ×</label><input type="number" value="${b.surge_multiplier ?? 1.0}" min="1" max="5" step="0.1" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','surgeMultiplier',this.value)"></div>
+          <div class="ipair" style="grid-column:1/-1"><label>Surge Reason</label><input type="text" value="${b.surge_reason || ''}" placeholder="e.g. Rain, High demand" style="width:100%;max-width:250px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','surgeReason',this.value)"></div>
+        </div>
+        <div id="surge-info-${b.id}" style="margin-top:.5rem;font-size:.75rem;color:var(--dim)"></div>
+      </details>
     </div>
     ${catHtml}
   </div>`;
@@ -2782,6 +3447,283 @@ async function saveTemplateMappings() {
   finally { btn.disabled = false; btn.innerHTML = '💾 Save Mappings'; }
 }
 
+/* ─────────────────────────── RATINGS ───────────────────── */
+let _rtPage = 1;
+async function loadRatings(page) {
+  _rtPage = page || 1;
+  try {
+    // Populate branch filter if empty
+    const brSel = document.getElementById('rt-branch');
+    if (brSel.options.length <= 1) {
+      const brs = await api('/api/restaurant/branches');
+      (brs || []).forEach(b => { const o = document.createElement('option'); o.value = b.id; o.textContent = b.name; brSel.appendChild(o); });
+    }
+    const branchFilter = brSel.value;
+    const qb = branchFilter ? `&branch_id=${branchFilter}` : '';
+
+    // Load summary
+    const sum = await api(`/api/restaurant/ratings/summary?${qb}`);
+    document.getElementById('rt-avg-food').textContent = sum.total ? `${sum.avg_food} ⭐` : '—';
+    document.getElementById('rt-avg-delivery').textContent = sum.total ? `${sum.avg_delivery} ⭐` : '—';
+    document.getElementById('rt-total').textContent = sum.total || '0';
+    const distEl = document.getElementById('rt-dist');
+    if (sum.total) {
+      distEl.innerHTML = [5,4,3,2,1].map(s => {
+        const pct = ((sum.distribution[s] || 0) / sum.total * 100).toFixed(0);
+        const clr = s >= 4 ? 'var(--wa)' : s === 3 ? 'var(--gold)' : 'var(--red)';
+        return `<div style="display:flex;align-items:center;gap:.4rem;margin:.15rem 0"><span style="width:1.5rem">${s}⭐</span><div style="flex:1;height:6px;background:var(--rim);border-radius:3px"><div style="width:${pct}%;height:100%;background:${clr};border-radius:3px"></div></div><span style="width:2rem;text-align:right">${sum.distribution[s]||0}</span></div>`;
+      }).join('');
+    } else { distEl.innerHTML = '<span style="color:var(--mute)">No ratings yet</span>'; }
+
+    // Load paginated ratings
+    const data = await api(`/api/restaurant/ratings?page=${_rtPage}&limit=20${qb}`);
+    document.getElementById('rt-count').textContent = `${data.total} total`;
+    const tb = document.getElementById('rt-tbody');
+    if (!data.ratings.length) {
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--dim)">No ratings yet. Ratings will appear here after customers rate their orders.</td></tr>';
+    } else {
+      tb.innerHTML = data.ratings.map(r => {
+        const fc = r.food_rating >= 4 ? 'var(--wa)' : r.food_rating === 3 ? 'var(--gold)' : 'var(--red)';
+        const dc = r.delivery_rating >= 4 ? 'var(--wa)' : r.delivery_rating === 3 ? 'var(--gold)' : 'var(--red)';
+        const date = new Date(r.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'2-digit' });
+        return `<tr style="border-bottom:1px solid var(--rim)">
+          <td style="padding:.5rem">#${r.order_number}</td>
+          <td style="padding:.5rem">${r.customer_name}</td>
+          <td style="padding:.5rem">${r.branch_name}</td>
+          <td style="padding:.5rem;text-align:center"><span style="color:${fc};font-weight:600">${r.food_rating}⭐</span></td>
+          <td style="padding:.5rem;text-align:center"><span style="color:${dc};font-weight:600">${r.delivery_rating}⭐</span></td>
+          <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(r.comment||'').replace(/"/g,'&quot;')}">${r.comment || '<span style="color:var(--mute)">—</span>'}</td>
+          <td style="padding:.5rem;color:var(--dim)">${date}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Pager
+    const pager = document.getElementById('rt-pager');
+    if (data.pages > 1) {
+      pager.innerHTML = Array.from({ length: data.pages }, (_, i) => i + 1)
+        .map(p => `<button onclick="loadRatings(${p})" style="padding:.3rem .6rem;border:1px solid ${p===_rtPage?'var(--acc)':'var(--rim)'};border-radius:var(--r);background:${p===_rtPage?'var(--acc)':'#fff'};color:${p===_rtPage?'#fff':'var(--tx)'};cursor:pointer;font-size:.75rem">${p}</button>`)
+        .join('');
+    } else { pager.innerHTML = ''; }
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ─────────────────────────── TEAM / RBAC ──────────────── */
+let _currentUser = null;
+
+function applyPermissions(user) {
+  _currentUser = user;
+  const p = user?.permissions || {};
+  const role = user?.role || 'owner';
+
+  // Show/hide sidebar sections based on permissions
+  const hide = (sel) => { const el = document.querySelector(sel); if (el) el.style.display = 'none'; };
+  const show = (sel) => { const el = document.querySelector(sel); if (el) el.style.display = ''; };
+
+  if (!p.view_analytics && role !== 'owner') hide('.sb-btn[onclick*="analytics"]');
+  if (!p.manage_settings && role !== 'owner') { hide('.sb-btn[onclick*="settings"]'); hide('.sb-btn[onclick*="integrations"]'); }
+  if (!p.manage_coupons && role !== 'owner') hide('.sb-btn[onclick*="coupons"]');
+  if (!p.view_payments && role !== 'owner') hide('.sb-btn[onclick*="settlements"]');
+  if (!p.view_menu && role !== 'owner') hide('.sb-btn[onclick*="menu"]');
+  if (p.manage_users || role === 'owner') show('#sb-team-sec');
+
+  // Update sidebar footer
+  const rl = document.getElementById('sb-rl');
+  if (rl) {
+    const labels = { owner: '👑 Owner', manager: '📋 Manager', kitchen: '👨‍🍳 Kitchen', delivery: '🚴 Delivery' };
+    rl.textContent = labels[role] || role;
+  }
+  const nm = document.getElementById('sb-nm');
+  if (nm && user?.name) nm.textContent = user.name;
+}
+
+async function doPinLogin() {
+  const rid   = document.getElementById('pin-rid').value.trim();
+  const phone = document.getElementById('pin-phone').value.trim();
+  const pin   = document.getElementById('pin-code').value.trim();
+  if (!rid || !phone || !pin) { toast('All fields required', 'err'); return; }
+  try {
+    const res = await fetch('/auth/pin-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ restaurantId: rid, phone, pin }),
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.error || 'Login failed', 'err'); return; }
+    localStorage.setItem('zm_token', data.token);
+    token = data.token;
+    document.getElementById('pin-login-screen').style.display = 'none';
+    applyPermissions(data.user);
+    goTab('orders', document.querySelector('.sb-btn[onclick*="orders"]'));
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function loadTeam() {
+  const tb = document.getElementById('team-tbody');
+  try {
+    const users = await api('/api/restaurant/users');
+    const branches = await api('/api/restaurant/branches');
+    const brMap = Object.fromEntries((branches||[]).map(b => [b.id, b.name]));
+    if (!users.length) {
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--dim)">No team members yet.</td></tr>';
+      return;
+    }
+    const roleBadge = (r) => {
+      const m = { owner:'👑', manager:'📋', kitchen:'👨‍🍳', delivery:'🚴' };
+      const c = { owner:'var(--acc)', manager:'var(--wa)', kitchen:'var(--gold)', delivery:'var(--blue)' };
+      return `<span style="color:${c[r]||'var(--dim)'};font-weight:600">${m[r]||''} ${r.charAt(0).toUpperCase()+r.slice(1)}</span>`;
+    };
+    tb.innerHTML = users.map(u => {
+      const brNames = (u.branch_ids||[]).length ? u.branch_ids.map(id => brMap[id]||id).join(', ') : 'All';
+      const lastLogin = u.last_login_at ? new Date(u.last_login_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : 'Never';
+      const actions = u.role === 'owner' ? '<span style="color:var(--mute);font-size:.75rem">Owner</span>' : `
+        <button class="btn-outline btn-sm" onclick="editUser('${u.id}')">Edit</button>
+        <button class="btn-outline btn-sm" style="color:var(--gold)" onclick="resetUserPin('${u.id}','${u.name.replace(/'/g,"\\'")}')">PIN</button>
+        <button class="btn-outline btn-sm" style="color:var(--red)" onclick="toggleUser('${u.id}',${u.is_active},'${u.name.replace(/'/g,"\\'")}')">${u.is_active?'Deactivate':'Activate'}</button>`;
+      return `<tr style="border-bottom:1px solid var(--rim);${!u.is_active?'opacity:.5':''}">
+        <td style="padding:.5rem">${u.name}</td>
+        <td style="padding:.5rem;font-size:.75rem;color:var(--dim)">${u.phone}</td>
+        <td style="padding:.5rem;text-align:center">${roleBadge(u.role)}</td>
+        <td style="padding:.5rem;font-size:.75rem">${brNames}</td>
+        <td style="padding:.5rem;text-align:center">${u.is_active?'<span style="color:var(--wa)">✓</span>':'<span style="color:var(--red)">✗</span>'}</td>
+        <td style="padding:.5rem;font-size:.75rem;color:var(--dim)">${lastLogin}</td>
+        <td style="padding:.5rem;text-align:center">${actions}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function openAddUserModal(editId) {
+  document.getElementById('user-modal').style.display = 'flex';
+  document.getElementById('u-edit-id').value = editId || '';
+  document.getElementById('user-modal-title').textContent = editId ? 'Edit Team Member' : 'Add Team Member';
+  if (!editId) { document.getElementById('u-name').value=''; document.getElementById('u-phone').value=''; document.getElementById('u-pin').value=''; document.getElementById('u-role').value='manager'; }
+
+  // Populate branch checkboxes
+  const brDiv = document.getElementById('u-branches');
+  try {
+    const branches = await api('/api/restaurant/branches');
+    brDiv.innerHTML = (branches||[]).map(b =>
+      `<label style="display:flex;align-items:center;gap:.3rem;font-size:.8rem;padding:.2rem .5rem;border:1px solid var(--rim);border-radius:4px;cursor:pointer"><input type="checkbox" class="u-br-cb" value="${b.id}"> ${b.name}</label>`
+    ).join('');
+  } catch (_) {}
+}
+function closeUserModal() { document.getElementById('user-modal').style.display = 'none'; }
+
+async function doSaveUser() {
+  const editId = document.getElementById('u-edit-id').value;
+  const name   = document.getElementById('u-name').value.trim();
+  const phone  = document.getElementById('u-phone').value.trim();
+  const pin    = document.getElementById('u-pin').value.trim();
+  const role   = document.getElementById('u-role').value;
+  const branchIds = [...document.querySelectorAll('.u-br-cb:checked')].map(c => c.value);
+
+  if (!name) { toast('Name is required', 'err'); return; }
+
+  try {
+    if (editId) {
+      await api(`/api/restaurant/users/${editId}`, { method: 'PUT', body: { name, role, branchIds } });
+      toast('User updated', 'ok');
+    } else {
+      if (!phone || !pin) { toast('Phone and PIN are required', 'err'); return; }
+      await api('/api/restaurant/users', { method: 'POST', body: { name, phone, pin, role, branchIds } });
+      toast('User created', 'ok');
+    }
+    closeUserModal();
+    loadTeam();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function editUser(id) {
+  try {
+    const users = await api('/api/restaurant/users');
+    const u = users.find(x => x.id === id);
+    if (!u) return;
+    await openAddUserModal(id);
+    document.getElementById('u-name').value = u.name;
+    document.getElementById('u-phone').value = u.phone;
+    document.getElementById('u-role').value = u.role;
+    // Check branch checkboxes
+    (u.branch_ids||[]).forEach(bid => {
+      const cb = document.querySelector(`.u-br-cb[value="${bid}"]`);
+      if (cb) cb.checked = true;
+    });
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function resetUserPin(id, name) {
+  const pin = prompt(`Enter new PIN for ${name} (4-6 digits):`);
+  if (!pin) return;
+  try {
+    await api(`/api/restaurant/users/${id}/reset-pin`, { method: 'PUT', body: { pin } });
+    toast('PIN reset successfully', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function toggleUser(id, isActive, name) {
+  if (isActive && !confirm(`Deactivate ${name}?`)) return;
+  try {
+    if (isActive) {
+      await api(`/api/restaurant/users/${id}`, { method: 'DELETE' });
+    } else {
+      await api(`/api/restaurant/users/${id}`, { method: 'PUT', body: { isActive: true } });
+    }
+    toast(isActive ? 'User deactivated' : 'User activated', 'ok');
+    loadTeam();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ─────────────────────────── LOYALTY ───────────────────── */
+let _lyPage = 1;
+async function loadLoyalty(page) {
+  _lyPage = page || 1;
+  try {
+    // Load stats
+    const stats = await api('/api/restaurant/loyalty/stats');
+    document.getElementById('ly-members').textContent = stats.total_members || '0';
+    document.getElementById('ly-issued').textContent = (stats.total_points_issued || 0).toLocaleString();
+    document.getElementById('ly-redeemed').textContent = (stats.total_points_redeemed || 0).toLocaleString();
+    const tiers = stats.tiers || {};
+    document.getElementById('ly-tiers').innerHTML = [
+      { k:'platinum', l:'💎 Platinum', c:'var(--acc)' },
+      { k:'gold', l:'🥇 Gold', c:'var(--gold)' },
+      { k:'silver', l:'🥈 Silver', c:'var(--blue)' },
+      { k:'bronze', l:'🥉 Bronze', c:'var(--dim)' },
+    ].map(t => `<div style="display:flex;justify-content:space-between;margin:.15rem 0"><span style="color:${t.c}">${t.l}</span><strong>${tiers[t.k]||0}</strong></div>`).join('');
+
+    // Load paginated customers
+    const data = await api(`/api/restaurant/loyalty/customers?page=${_lyPage}&limit=20`);
+    document.getElementById('ly-count').textContent = `${data.total} members`;
+    const tb = document.getElementById('ly-tbody');
+    if (!data.customers.length) {
+      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--dim)">No loyalty members yet. Points are earned automatically after each delivered order.</td></tr>';
+    } else {
+      const tierBadge = (t) => {
+        const m = { platinum:'💎', gold:'🥇', silver:'🥈', bronze:'🥉' };
+        const c = { platinum:'var(--acc)', gold:'var(--gold)', silver:'var(--blue)', bronze:'var(--dim)' };
+        return `<span style="color:${c[t]||'var(--dim)'};font-weight:600">${m[t]||'🥉'} ${t.charAt(0).toUpperCase()+t.slice(1)}</span>`;
+      };
+      tb.innerHTML = data.customers.map(c => `<tr style="border-bottom:1px solid var(--rim)">
+        <td style="padding:.5rem">${c.customer_name}</td>
+        <td style="padding:.5rem;font-size:.75rem;color:var(--dim)">${c.wa_phone}</td>
+        <td style="padding:.5rem;text-align:center;font-weight:600">${c.points_balance}</td>
+        <td style="padding:.5rem;text-align:center;color:var(--dim)">${c.lifetime_points}</td>
+        <td style="padding:.5rem;text-align:center">${tierBadge(c.tier)}</td>
+        <td style="padding:.5rem;text-align:center">${c.total_orders}</td>
+        <td style="padding:.5rem;text-align:right">₹${parseFloat(c.total_spent_rs||0).toFixed(0)}</td>
+      </tr>`).join('');
+    }
+
+    // Pager
+    const pager = document.getElementById('ly-pager');
+    if (data.pages > 1) {
+      pager.innerHTML = Array.from({ length: data.pages }, (_, i) => i + 1)
+        .map(p => `<button onclick="loadLoyalty(${p})" style="padding:.3rem .6rem;border:1px solid ${p===_lyPage?'var(--acc)':'var(--rim)'};border-radius:var(--r);background:${p===_lyPage?'var(--acc)':'#fff'};color:${p===_lyPage?'#fff':'var(--tx)'};cursor:pointer;font-size:.75rem">${p}</button>`)
+        .join('');
+    } else { pager.innerHTML = ''; }
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 /* ─────────────────────────── SETTLEMENTS ───────────────── */
 async function loadSettlements() {
   const tb = document.getElementById('settle-body');
@@ -2847,6 +3789,16 @@ async function loadProfile() {
     if (gstBadge)   gstBadge.style.display   = r.gst_verified   ? '' : 'none';
     if (fssaiBadge) fssaiBadge.style.display  = r.fssai_verified ? '' : 'none';
 
+    // Notification settings
+    const notifyPhonesEl = document.getElementById('p-notify-phones');
+    if (notifyPhonesEl && r.notification_phones) notifyPhonesEl.value = r.notification_phones.join(', ');
+    const ns = r.notification_settings || {};
+    const setChk = (id, val, def = true) => { const el = document.getElementById(id); if (el) el.checked = val !== undefined ? val : def; };
+    setChk('p-notify-new-order', ns.new_order);
+    setChk('p-notify-payment', ns.payment);
+    setChk('p-notify-cancelled', ns.cancelled);
+    setChk('p-notify-low-activity', ns.low_activity, false);
+
     // WhatsApp connection status
     const waAccounts = r.waba_accounts;
     const hasWA = waAccounts && waAccounts.length > 0;
@@ -2893,6 +3845,21 @@ async function doSaveProfile() {
     toast('Profile saved', 'ok');
     const nm = document.getElementById('p-bname').value;
     if (nm) document.getElementById('sb-nm').textContent = nm;
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doSaveNotifySettings() {
+  try {
+    const phonesRaw = document.getElementById('p-notify-phones').value;
+    const notificationPhones = phonesRaw.split(',').map(p => p.trim()).filter(Boolean);
+    const notificationSettings = {
+      new_order:    document.getElementById('p-notify-new-order').checked,
+      payment:      document.getElementById('p-notify-payment').checked,
+      cancelled:    document.getElementById('p-notify-cancelled').checked,
+      low_activity: document.getElementById('p-notify-low-activity').checked,
+    };
+    await api('/api/restaurant', { method: 'PUT', body: { notificationPhones, notificationSettings } });
+    toast('Notification settings saved', 'ok');
   } catch (e) { toast(e.message, 'err'); }
 }
 

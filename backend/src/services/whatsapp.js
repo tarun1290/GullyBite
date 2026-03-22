@@ -94,7 +94,7 @@ const sendCatalog = (pid, token, to, catalogId, introText) =>
 // items: [{ name, qty, price }]
 // charges: optional full breakdown from calculateOrderCharges()
 // discount: optional { code, amountRs }
-const sendOrderSummary = (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount }) => {
+const sendOrderSummary = (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote }) => {
   const lines = items.map((i) => `• ${i.name} ×${i.qty} — ₹${i.price}`).join('\n');
 
   let financials;
@@ -115,6 +115,11 @@ const sendOrderSummary = (pid, token, to, { orderNumber, items, charges, subtota
       financials += `🎟 Coupon (${discount.code}): -₹${parseFloat(discount.amountRs).toFixed(0)}\n`;
     }
     financials += `Delivery: ₹${deliveryFee}\n*Total: ₹${total}*`;
+  }
+
+  // Dynamic pricing note (distance, surge info)
+  if (dynamicNote) {
+    financials += `\n${dynamicNote}`;
   }
 
   const buttons = [{ id: 'CONFIRM_ORDER', title: '✅ Confirm & Pay' }];
@@ -277,4 +282,21 @@ const sendTemplate = (pid, token, to, { name, language, components = [] }) =>
     },
   });
 
-module.exports = { sendText, sendButtons, sendAddressList, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, markRead };
+// ─── INTERACTIVE LIST ────────────────────────────────────────
+// Shows a tappable list (max 10 rows). Used for order history, etc.
+// sections: [{ title: 'Section', rows: [{ id, title, description }] }]
+const sendList = (pid, token, to, { body, footer, buttonText, sections }) =>
+  sendMsg(pid, token, to, {
+    type: 'interactive',
+    interactive: {
+      type: 'list',
+      body: { text: body },
+      ...(footer && { footer: { text: footer } }),
+      action: {
+        button: buttonText || 'View',
+        sections,
+      },
+    },
+  });
+
+module.exports = { sendText, sendButtons, sendList, sendAddressList, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, markRead };

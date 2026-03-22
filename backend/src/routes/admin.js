@@ -631,4 +631,215 @@ router.post('/clear-cache', async (req, res) => {
   }
 });
 
+// ─── GET /api/admin/ratings/stats ─────────────────────────────
+router.get('/ratings/stats', async (req, res) => {
+  try {
+    const allRatings = await col('order_ratings').find({}).toArray();
+    const total = allRatings.length;
+
+    if (!total) {
+      return res.json({ avg_food: 0, avg_delivery: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } });
+    }
+
+    const sumFood     = allRatings.reduce((s, r) => s + (r.food_rating || 0), 0);
+    const sumDelivery = allRatings.reduce((s, r) => s + (r.delivery_rating || 0), 0);
+    const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (const r of allRatings) {
+      const star = Math.max(1, Math.min(5, r.food_rating || 3));
+      distribution[star] = (distribution[star] || 0) + 1;
+    }
+
+    res.json({
+      avg_food:     +(sumFood / total).toFixed(1),
+      avg_delivery: +(sumDelivery / total).toFixed(1),
+      total,
+      distribution,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// WEBHOOK RETRY & DEAD LETTER QUEUE
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/admin/webhook-retry/stats — retry & DLQ overview
+router.get('/webhook-retry/stats', async (req, res) => {
+  try {
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const [pendingRetries, inDlq, successLast24h, failedLast24h] = await Promise.all([
+      col('webhook_logs').countDocuments({ retry_status: 'pending', moved_to_dlq: false }),
+      col('webhook_logs').countDocuments({ moved_to_dlq: true, dismissed: { $ne: true } }),
+      col('webhook_logs').countDocuments({ retry_status: 'success', retry_count: { $gte: 1 }, processed_at: { $gte: oneDayAgo } }),
+      col('webhook_logs').countDocuments({ retry_status: { $in: ['exhausted', 'pending'] }, error_history: { $exists: true, $not: { $size: 0 } }, received_at: { $gte: oneDayAgo } }),
+    ]);
+
+    const totalRetried24h = successLast24h + failedLast24h;
+    const successRate = totalRetried24h > 0 ? +((successLast24h / totalRetried24h) * 100).toFixed(1) : 0;
+
+    // Average retries before success (last 24h)
+    const successDocs = await col('webhook_logs').find(
+      { retry_status: 'success', retry_count: { $gte: 1 }, processed_at: { $gte: oneDayAgo } },
+      { projection: { retry_count: 1 } }
+    ).toArray();
+    const avgRetries = successDocs.length > 0
+      ? +(successDocs.reduce((s, d) => s + (d.retry_count || 0), 0) / successDocs.length).toFixed(1)
+      : 0;
+
+    res.json({
+      pending_retries: pendingRetries,
+      in_dlq: inDlq,
+      success_rate_24h: successRate,
+      avg_retries_before_success: avgRetries,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/dlq — paginated dead letter queue
+router.get('/dlq', async (req, res) => {
+  try {
+    const { source, limit = 50, offset = 0, dismissed } = req.query;
+    const filter = { moved_to_dlq: true };
+    if (source) filter.source = source;
+    if (dismissed === 'true') filter.dismissed = true;
+    else if (dismissed === 'false' || dismissed === undefined) filter.dismissed = { $ne: true };
+
+    const [docs, total] = await Promise.all([
+      col('webhook_logs').find(filter).sort({ dlq_at: -1 }).skip(parseInt(offset)).limit(parseInt(limit)).toArray(),
+      col('webhook_logs').countDocuments(filter),
+    ]);
+
+    res.json({ entries: mapIds(docs), total });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/dlq/:id/retry — manually retry a DLQ entry
+router.post('/dlq/:id/retry', async (req, res) => {
+  try {
+    const result = await col('webhook_logs').updateOne(
+      { _id: req.params.id, moved_to_dlq: true },
+      {
+        $set: {
+          retry_count: 0,
+          retry_status: 'pending',
+          next_retry_at: new Date(),
+          moved_to_dlq: false,
+          dlq_at: null,
+          dismissed: false,
+        },
+      }
+    );
+    if (result.matchedCount === 0) return res.status(404).json({ error: 'DLQ entry not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/dlq/:id/dismiss — permanently dismiss a DLQ entry
+router.post('/dlq/:id/dismiss', async (req, res) => {
+  try {
+    const result = await col('webhook_logs').updateOne(
+      { _id: req.params.id },
+      { $set: { dismissed: true, dismissed_at: new Date() } }
+    );
+    if (result.matchedCount === 0) return res.status(404).json({ error: 'Entry not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ABUSE PROTECTION — BLOCKED PHONES & RATE LIMIT STATS
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/admin/blocked-phones — list all blocked numbers
+router.get('/blocked-phones', async (req, res) => {
+  try {
+    const docs = await col('blocked_phones').find({}).sort({ blocked_at: -1 }).limit(200).toArray();
+    // Mark expired ones
+    const now = new Date();
+    const enriched = docs.map(d => ({
+      ...mapId(d),
+      is_active: !d.expires_at || d.expires_at > now,
+    }));
+    res.json(enriched);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/blocked-phones — manually block a phone
+router.post('/blocked-phones', async (req, res) => {
+  try {
+    const { wa_phone, reason, durationHours } = req.body;
+    if (!wa_phone) return res.status(400).json({ error: 'wa_phone is required' });
+
+    const now = new Date();
+    const expiresAt = durationHours ? new Date(now.getTime() + durationHours * 60 * 60 * 1000) : null;
+
+    await col('blocked_phones').updateOne(
+      { wa_phone },
+      {
+        $set: {
+          reason: reason || 'Manually blocked by admin',
+          blocked_at: now,
+          expires_at: expiresAt,
+          blocked_by: 'admin',
+        },
+        $setOnInsert: { _id: newId() },
+      },
+      { upsert: true }
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/admin/blocked-phones/:id — unblock a phone
+router.delete('/blocked-phones/:id', async (req, res) => {
+  try {
+    const result = await col('blocked_phones').deleteOne({ _id: req.params.id });
+    if (result.deletedCount === 0) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/rate-limit/stats — rate limit & abuse overview
+router.get('/rate-limit/stats', async (req, res) => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [rateLimitedToday, autoBlockedToday, activeBlocks, topPhones] = await Promise.all([
+      col('webhook_logs').countDocuments({
+        event_type: 'rate_limited',
+        received_at: { $gte: todayStart },
+      }),
+      col('blocked_phones').countDocuments({
+        blocked_by: 'auto',
+        blocked_at: { $gte: todayStart },
+      }),
+      col('blocked_phones').countDocuments({
+        $or: [{ expires_at: null }, { expires_at: { $gt: now } }],
+      }),
+      col('webhook_logs').aggregate([
+        { $match: { event_type: 'rate_limited', received_at: { $gte: todayStart } } },
+        { $group: { _id: '$error_message', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 },
+      ]).toArray(),
+    ]);
+
+    // Extract phone from "Rate limited: 919876543210" format
+    const topRateLimited = topPhones.map(p => ({
+      phone: (p._id || '').replace('Rate limited: ', ''),
+      count: p.count,
+    }));
+
+    res.json({
+      rate_limited_today: rateLimitedToday,
+      auto_blocked_today: autoBlockedToday,
+      active_blocks: activeBlocks,
+      top_rate_limited: topRateLimited,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

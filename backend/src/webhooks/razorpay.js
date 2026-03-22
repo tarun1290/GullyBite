@@ -7,11 +7,14 @@ const { col, newId } = require('../config/database');
 const paymentSvc = require('../services/payment');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
+const notify = require('../services/notify');
+const { getNextRetryAt, retryDefaults } = require('../utils/retry');
 
 // ─── POST: PAYMENT EVENTS ─────────────────────────────────────
 router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   res.sendStatus(200);
 
+  let logId = null;
   try {
     const signature = req.headers['x-razorpay-signature'];
     if (!paymentSvc.verifyWebhookSignature(req.body, signature)) {
@@ -22,7 +25,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     const event = JSON.parse(req.body);
     console.log('[Razorpay] Event:', event.event);
 
-    const logId = newId();
+    logId = newId();
     await col('webhook_logs').insertOne({
       _id: logId,
       source: 'razorpay',
@@ -33,19 +36,35 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       error_message: null,
       received_at: new Date(),
       processed_at: null,
+      ...retryDefaults(),
     }).catch(() => {});
 
-    await handleEvent(event);
+    await processRazorpayWebhook(logId, event);
 
     // Mark webhook as processed
     await col('webhook_logs').updateOne(
       { _id: logId },
-      { $set: { processed: true, processed_at: new Date() } }
+      { $set: { processed: true, processed_at: new Date(), retry_status: 'success' } }
     ).catch(() => {});
   } catch (err) {
     console.error('[Razorpay] Webhook error:', err.message);
+    // Schedule for retry
+    if (logId) {
+      await col('webhook_logs').updateOne(
+        { _id: logId },
+        {
+          $set: { error_message: err.message, last_error: err.message, retry_status: 'pending', next_retry_at: getNextRetryAt(0) },
+          $push: { error_history: { error: err.message, attempted_at: new Date() } },
+        }
+      ).catch(() => {});
+    }
   }
 });
+
+// ─── REUSABLE PROCESSOR (called by POST handler and retry job) ──
+const processRazorpayWebhook = async (logId, event) => {
+  await handleEvent(event);
+};
 
 // ─── SHARED: CONFIRM PAID ORDER ───────────────────────────────
 // Guard against double-fire: Razorpay sends both order.paid and payment.captured
@@ -66,6 +85,9 @@ const confirmPaidOrder = async (orderId) => {
     'CONFIRMED',
     { orderNumber: order.order_number }
   );
+
+  // Fire-and-forget manager notification
+  notify.notifyNewOrder(order).catch(err => console.error('[Notify] Failed:', err.message));
 
   console.log(`✅ Order ${order.order_number} PAID — ₹${order.total_rs}`);
 };
@@ -160,3 +182,4 @@ const handleEvent = async (event) => {
 };
 
 module.exports = router;
+module.exports.processRazorpayWebhook = processRazorpayWebhook;

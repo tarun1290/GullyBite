@@ -186,6 +186,11 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         Webhook Logs
         <span class="badge" id="nav-err-badge" style="display:none">!</span>
       </div>
+      <div class="nav-item" data-page="dlq" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Dead Letter Queue
+        <span class="badge" id="nav-dlq-badge" style="display:none;background:#dc2626"></span>
+      </div>
       <div class="nav-item" data-page="applications" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         Applications
@@ -212,6 +217,11 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
         Referrals
         <span class="badge" id="nav-ref-badge" style="display:none;background:#7c3aed;color:#fff"></span>
+      </div>
+      <div class="nav-item" data-page="abuse" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Abuse Protection
+        <span class="badge" id="nav-abuse-badge" style="display:none;background:#dc2626"></span>
       </div>
     </nav>
     <div class="sb-footer">
@@ -244,6 +254,7 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
           <div class="stat-card blue"><div class="stat-label">Customers</div><div class="stat-val" id="s-customers">—</div><div class="stat-sub" id="s-customers-sub"></div></div>
           <div class="stat-card"><div class="stat-label">Webhook Logs</div><div class="stat-val" id="s-logs">—</div><div class="stat-sub" id="s-logs-sub"></div></div>
           <div class="stat-card red"><div class="stat-label">Pending Orders</div><div class="stat-val" id="s-pending">—</div><div class="stat-sub" id="s-pending-sub"></div></div>
+          <div class="stat-card gold"><div class="stat-label">Avg Rating</div><div class="stat-val" id="s-rating">—</div><div class="stat-sub" id="s-rating-sub"></div></div>
         </div>
         <!-- quick tables -->
         <div class="row2">
@@ -299,6 +310,39 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
             <span id="logs-page-info">Page 1</span>
             <button id="logs-next" onclick="logsPage(1)">Next &#8594;</button>
             <span class="total" id="logs-total"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── DEAD LETTER QUEUE ────────────────────────────────────────── -->
+      <div class="page" id="page-dlq">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.2rem">
+          <div class="stat-card"><div class="stat-label">Pending Retries</div><div class="stat-val" id="dlq-pending">—</div></div>
+          <div class="stat-card"><div class="stat-label">In DLQ</div><div class="stat-val" id="dlq-count">—</div></div>
+          <div class="stat-card"><div class="stat-label">24h Success Rate</div><div class="stat-val" id="dlq-success-rate">—</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Retries to Success</div><div class="stat-val" id="dlq-avg-retries">—</div></div>
+        </div>
+        <div class="table-wrap">
+          <div class="table-head">
+            <h2>Dead Letter Queue</h2>
+            <span id="dlq-total" style="color:var(--dim);font-size:.75rem;margin-left:.5rem"></span>
+            <div style="margin-left:auto;display:flex;gap:.4rem">
+              <select id="f-dlq-source" onchange="loadDlq()" style="font-size:.78rem;padding:.25rem .5rem;border:1px solid var(--border);border-radius:5px">
+                <option value="">All sources</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="razorpay">Razorpay</option>
+              </select>
+              <button class="btn-sm" onclick="loadDlq()">Refresh</button>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>Failed At</th><th>Source</th><th>Event</th><th>Retries</th><th>Last Error</th><th>Error History</th><th>Actions</th></tr></thead>
+            <tbody id="dlq-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+          </table>
+          <div class="pager">
+            <button id="dlq-prev" onclick="dlqPage(-1)" disabled>&#8592; Prev</button>
+            <span id="dlq-page-info">Page 1</span>
+            <button id="dlq-next" onclick="dlqPage(1)">Next &#8594;</button>
           </div>
         </div>
       </div>
@@ -528,9 +572,70 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
 
       </div>
 
+      <!-- ── ABUSE PROTECTION ──────────────────────────────────────────── -->
+      <div class="page" id="page-abuse">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.2rem">
+          <div class="stat-card"><div class="stat-label">Rate Limited Today</div><div class="stat-val" id="abuse-rl-today">—</div></div>
+          <div class="stat-card"><div class="stat-label">Auto-Blocked Today</div><div class="stat-val" id="abuse-ab-today">—</div></div>
+          <div class="stat-card"><div class="stat-label">Active Blocks</div><div class="stat-val" id="abuse-active">—</div></div>
+        </div>
+
+        <!-- Top Rate-Limited -->
+        <div class="table-wrap" style="margin-bottom:1.2rem">
+          <div class="table-head"><h2>Top Rate-Limited Phones (Today)</h2></div>
+          <table>
+            <thead><tr><th>Phone</th><th>Hits</th><th>Action</th></tr></thead>
+            <tbody id="abuse-top-tbody"><tr><td colspan="3" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Blocked Phones -->
+        <div class="table-wrap">
+          <div class="table-head">
+            <h2>Blocked Phones</h2>
+            <button class="btn-sm" style="margin-left:auto;background:#dc2626;color:#fff;border:none;border-radius:5px;padding:.3rem .7rem;cursor:pointer" onclick="showBlockModal()">+ Block Phone</button>
+          </div>
+          <table>
+            <thead><tr><th>Phone</th><th>Reason</th><th>Blocked By</th><th>Blocked At</th><th>Expires</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="abuse-blocked-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
+
+<!-- ── BLOCK PHONE MODAL ─────────────────────────────────────────── -->
+<div class="overlay" id="block-modal" onclick="if(event.target.id==='block-modal')this.classList.remove('open')">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head">
+      <h3>Block Phone Number</h3>
+      <button class="btn-close" onclick="document.getElementById('block-modal').classList.remove('open')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">WhatsApp Phone Number</label>
+        <input id="block-phone" placeholder="919876543210" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;color:var(--tx);font-size:.85rem">
+        <span style="font-size:.7rem;color:var(--dim)">Country code + number, no + prefix</span>
+      </div>
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Reason</label>
+        <input id="block-reason" placeholder="Spam, abuse, etc." style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;color:var(--tx);font-size:.85rem">
+      </div>
+      <div style="margin-bottom:1rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Duration</label>
+        <select id="block-duration" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;color:var(--tx);font-size:.85rem">
+          <option value="1">1 hour</option>
+          <option value="24" selected>24 hours</option>
+          <option value="168">7 days</option>
+          <option value="">Permanent</option>
+        </select>
+      </div>
+      <button style="width:100%;background:#dc2626;color:#fff;border:none;border-radius:6px;padding:.55rem;font-size:.88rem;font-weight:600;cursor:pointer" onclick="doBlockPhone()">Block Phone</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── LOG DETAIL MODAL ──────────────────────────────────────────── -->
 <div class="overlay" id="log-modal" onclick="closeModal(event)">
@@ -610,7 +715,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', abuse: 'Abuse Protection' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -623,22 +728,26 @@ function nav(el) {
   currentPage = page;
   if (page === 'applications') loadApplications();
   if (page === 'logs')         loadLogs();
+  if (page === 'dlq')          loadDlq();
   if (page === 'restaurants')  loadRestaurants();
   if (page === 'orders')       loadOrders();
   if (page === 'customers')    loadCustomers();
   if (page === 'settlements')  loadSettlements();
   if (page === 'referrals')    loadReferrals();
+  if (page === 'abuse')        loadAbuse();
 }
 
 function refreshCurrent() {
   if (currentPage === 'overview')          loadAll();
   else if (currentPage === 'applications') loadApplications();
   else if (currentPage === 'logs')         loadLogs();
+  else if (currentPage === 'dlq')          loadDlq();
   else if (currentPage === 'restaurants')  loadRestaurants();
   else if (currentPage === 'orders')       loadOrders();
   else if (currentPage === 'customers')    loadCustomers();
   else if (currentPage === 'settlements')  loadSettlements();
   else if (currentPage === 'referrals')    loadReferrals();
+  else if (currentPage === 'abuse')        loadAbuse();
 }
 
 // ─── STATS ────────────────────────────────────────────────────────
@@ -658,6 +767,13 @@ async function loadStats() {
     document.getElementById('s-pending').textContent = d.orders.pending;
     document.getElementById('s-pending-sub').textContent = `${d.orders.cancelled} cancelled`;
 
+    // Load rating stats
+    try {
+      const r = await api('/api/admin/ratings/stats');
+      document.getElementById('s-rating').textContent = r.total ? `${r.avg_food} ⭐` : '—';
+      document.getElementById('s-rating-sub').textContent = `${r.total} reviews`;
+    } catch (_) {}
+
     // show badge on nav if errors
     const badge = document.getElementById('nav-err-badge');
     if (parseInt(d.logs.errors) > 0) {
@@ -666,6 +782,14 @@ async function loadStats() {
     } else {
       badge.style.display = 'none';
     }
+
+    // Load DLQ badge
+    try {
+      const dlqStats = await api('/api/admin/webhook-retry/stats');
+      const dlqBadge = document.getElementById('nav-dlq-badge');
+      if (dlqBadge && dlqStats.in_dlq > 0) { dlqBadge.textContent = dlqStats.in_dlq; dlqBadge.style.display = ''; }
+      else if (dlqBadge) dlqBadge.style.display = 'none';
+    } catch (_) {}
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -904,7 +1028,7 @@ async function loadLogs() {
         <td>${sourceBadge(l.source)}</td>
         <td class="monospace truncate">${esc(l.event_type || '—')}</td>
         <td class="monospace" style="font-size:.72rem;color:var(--dim)">${esc(l.phone_number_id || '—')}</td>
-        <td>${l.processed ? '<span class="badge green">OK</span>' : '<span class="badge gray">Pending</span>'}</td>
+        <td>${retryStatusBadge(l)}</td>
         <td>${l.error_message ? `<span class="badge red" title="${esc(l.error_message)}">Error</span>` : '—'}</td>
         <td><button class="btn-sm" onclick="openLogModal('${l.id}')">View</button></td>
       </tr>`).join('');
@@ -950,6 +1074,184 @@ async function openLogModal(id) {
 
 function closeLogModal() { document.getElementById('log-modal').classList.remove('open'); }
 function closeModal(e) { if (e.target.id === 'log-modal') closeLogModal(); }
+
+// ─── DEAD LETTER QUEUE ───────────────────────────────────────────
+let dlqOffset = 0;
+const DLQ_LIMIT = 50;
+
+async function loadDlq() {
+  await Promise.all([loadDlqStats(), loadDlqTable()]);
+}
+
+async function loadDlqStats() {
+  try {
+    const d = await api('/api/admin/webhook-retry/stats');
+    document.getElementById('dlq-pending').textContent = d.pending_retries ?? 0;
+    document.getElementById('dlq-count').textContent = d.in_dlq ?? 0;
+    document.getElementById('dlq-success-rate').textContent = (d.success_rate_24h ?? 0) + '%';
+    document.getElementById('dlq-avg-retries').textContent = d.avg_retries_before_success ?? '—';
+
+    // Update nav badge
+    const badge = document.getElementById('nav-dlq-badge');
+    if (badge) {
+      if (d.in_dlq > 0) { badge.textContent = d.in_dlq; badge.style.display = ''; }
+      else badge.style.display = 'none';
+    }
+  } catch (_) {}
+}
+
+async function loadDlqTable() {
+  const source = document.getElementById('f-dlq-source').value;
+  const params = new URLSearchParams({ limit: DLQ_LIMIT, offset: dlqOffset });
+  if (source) params.set('source', source);
+
+  const tbody = document.getElementById('dlq-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
+
+  try {
+    const d = await api('/api/admin/dlq?' + params);
+    document.getElementById('dlq-total').textContent = `${d.total} entries`;
+    const page = Math.floor(dlqOffset / DLQ_LIMIT) + 1;
+    const pages = Math.ceil(d.total / DLQ_LIMIT) || 1;
+    document.getElementById('dlq-page-info').textContent = `Page ${page} / ${pages}`;
+    document.getElementById('dlq-prev').disabled = dlqOffset === 0;
+    document.getElementById('dlq-next').disabled = dlqOffset + DLQ_LIMIT >= d.total;
+
+    if (!d.entries.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">No entries in DLQ</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = d.entries.map(e => {
+      const errHistHtml = (e.error_history || []).map((h, i) =>
+        `<div style="font-size:.7rem;color:var(--dim);padding:.15rem 0;border-bottom:1px solid var(--border)">#${i+1} ${fmtTime(h.attempted_at)}: ${esc(h.error)}</div>`
+      ).join('');
+
+      return `<tr>
+        <td style="color:var(--dim);font-size:.75rem">${fmtTime(e.dlq_at || e.received_at)}</td>
+        <td>${sourceBadge(e.source)}</td>
+        <td class="monospace truncate" style="max-width:160px">${esc(e.event_type || '—')}</td>
+        <td style="text-align:center;font-weight:600">${e.retry_count || 0} / ${e.max_retries || 5}</td>
+        <td style="max-width:200px;font-size:.75rem;color:var(--red);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.last_error || '')}">${esc(e.last_error || '—')}</td>
+        <td><button class="btn-sm" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="font-size:.7rem">Expand</button><div style="display:none;max-height:150px;overflow-y:auto;margin-top:.3rem">${errHistHtml || '<span style="color:var(--dim);font-size:.72rem">No history</span>'}</div></td>
+        <td style="white-space:nowrap;display:flex;gap:.3rem">
+          <button class="btn-sm" style="background:#2563eb;color:#fff;border:none;border-radius:4px;font-size:.72rem;padding:.22rem .5rem;cursor:pointer" onclick="dlqRetry('${e.id}')">Retry</button>
+          <button class="btn-sm" style="background:#6b7280;color:#fff;border:none;border-radius:4px;font-size:.72rem;padding:.22rem .5rem;cursor:pointer" onclick="dlqDismiss('${e.id}')">Dismiss</button>
+          <button class="btn-sm" onclick="openLogModal('${e.id}')" style="font-size:.72rem">View</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+function dlqPage(dir) {
+  dlqOffset = Math.max(0, dlqOffset + dir * DLQ_LIMIT);
+  loadDlqTable();
+}
+
+async function dlqRetry(id) {
+  try {
+    await api('/api/admin/dlq/' + id + '/retry', { method: 'POST' });
+    loadDlq();
+  } catch (e) { alert('Retry failed: ' + e.message); }
+}
+
+async function dlqDismiss(id) {
+  if (!confirm('Permanently dismiss this entry?')) return;
+  try {
+    await api('/api/admin/dlq/' + id + '/dismiss', { method: 'POST' });
+    loadDlq();
+  } catch (e) { alert('Dismiss failed: ' + e.message); }
+}
+
+// ─── ABUSE PROTECTION ─────────────────────────────────────────────
+async function loadAbuse() {
+  await Promise.all([loadAbuseStats(), loadBlockedPhones()]);
+}
+
+async function loadAbuseStats() {
+  try {
+    const d = await api('/api/admin/rate-limit/stats');
+    document.getElementById('abuse-rl-today').textContent = d.rate_limited_today ?? 0;
+    document.getElementById('abuse-ab-today').textContent = d.auto_blocked_today ?? 0;
+    document.getElementById('abuse-active').textContent = d.active_blocks ?? 0;
+
+    // Nav badge
+    const badge = document.getElementById('nav-abuse-badge');
+    if (badge) {
+      if (d.active_blocks > 0) { badge.textContent = d.active_blocks; badge.style.display = ''; }
+      else badge.style.display = 'none';
+    }
+
+    // Top rate-limited table
+    const tbody = document.getElementById('abuse-top-tbody');
+    if (d.top_rate_limited?.length) {
+      tbody.innerHTML = d.top_rate_limited.map(p => `
+        <tr>
+          <td class="monospace">${esc(p.phone)}</td>
+          <td style="font-weight:600">${p.count}</td>
+          <td><button class="btn-sm" style="background:#dc2626;color:#fff;border:none;border-radius:4px;font-size:.72rem;padding:.2rem .5rem;cursor:pointer" onclick="quickBlock('${esc(p.phone)}')">Block</button></td>
+        </tr>`).join('');
+    } else {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty">No rate-limited phones today</td></tr>';
+    }
+  } catch (_) {}
+}
+
+async function loadBlockedPhones() {
+  const tbody = document.getElementById('abuse-blocked-tbody');
+  try {
+    const data = await api('/api/admin/blocked-phones');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No blocked phones</td></tr>'; return; }
+    tbody.innerHTML = data.map(b => `
+      <tr>
+        <td class="monospace">${esc(b.wa_phone)}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(b.reason || '')}">${esc(b.reason || '—')}</td>
+        <td>${b.blocked_by === 'auto' ? '<span class="badge gold">Auto</span>' : '<span class="badge blue">Admin</span>'}</td>
+        <td style="font-size:.75rem;color:var(--dim)">${fmtTime(b.blocked_at)}</td>
+        <td style="font-size:.75rem">${b.expires_at ? fmtTime(b.expires_at) : '<span style="color:var(--red)">Never</span>'}</td>
+        <td>${b.is_active ? '<span class="badge red">Active</span>' : '<span class="badge gray">Expired</span>'}</td>
+        <td><button class="btn-sm" onclick="unblockPhone('${b.id}')" style="font-size:.72rem">Unblock</button></td>
+      </tr>`).join('');
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`; }
+}
+
+function showBlockModal() {
+  document.getElementById('block-phone').value = '';
+  document.getElementById('block-reason').value = '';
+  document.getElementById('block-duration').value = '24';
+  document.getElementById('block-modal').classList.add('open');
+}
+
+function quickBlock(phone) {
+  document.getElementById('block-phone').value = phone;
+  document.getElementById('block-reason').value = 'Excessive rate-limit violations';
+  document.getElementById('block-duration').value = '24';
+  document.getElementById('block-modal').classList.add('open');
+}
+
+async function doBlockPhone() {
+  const wa_phone = document.getElementById('block-phone').value.trim();
+  const reason = document.getElementById('block-reason').value.trim();
+  const durVal = document.getElementById('block-duration').value;
+  const durationHours = durVal ? parseInt(durVal) : null;
+  if (!wa_phone) return alert('Phone number is required');
+  try {
+    await api('/api/admin/blocked-phones', { method: 'POST', body: { wa_phone, reason, durationHours } });
+    document.getElementById('block-modal').classList.remove('open');
+    loadAbuse();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
+async function unblockPhone(id) {
+  if (!confirm('Unblock this phone number?')) return;
+  try {
+    await api('/api/admin/blocked-phones/' + id, { method: 'DELETE' });
+    loadAbuse();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
 
 // ─── RESTAURANTS ──────────────────────────────────────────────────
 async function loadRestaurants() {
@@ -1232,6 +1534,15 @@ function sourceBadge(s) {
 function rStatusBadge(s) {
   const m = { active:'green', suspended:'red', pending:'gold' };
   return `<span class="badge ${m[s]||'gray'}">${esc(s)}</span>`;
+}
+function retryStatusBadge(l) {
+  if (l.processed) return '<span class="badge green">OK</span>';
+  if (l.moved_to_dlq) return '<span class="badge red">DLQ</span>';
+  const rs = l.retry_status || 'none';
+  if (rs === 'pending')  return `<span class="badge gold">Retry ${l.retry_count || 0}/${l.max_retries || 5}</span>`;
+  if (rs === 'retrying') return '<span class="badge blue">Retrying…</span>';
+  if (rs === 'exhausted') return '<span class="badge red">Exhausted</span>';
+  return '<span class="badge gray">Pending</span>';
 }
 
 let debounceTimer;

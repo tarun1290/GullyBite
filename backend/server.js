@@ -9,7 +9,7 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+const { apiLimiter, authLimiter } = require('./src/middleware/rateLimit');
 
 const app = express();
 
@@ -21,7 +21,29 @@ app.use(cors({
     : '*',
   credentials: true,
 }));
-app.use('/api/', rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
+
+// ─── RATE LIMITING ───────────────────────────────────────────
+// General API rate limit: 100 req/min per IP
+app.use('/api/', (req, res, next) => {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const { allowed, remaining, retryAfterMs } = apiLimiter.isAllowed(ip);
+  if (!allowed) {
+    res.set('Retry-After', String(Math.ceil((retryAfterMs || 60000) / 1000)));
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
+  res.set('X-RateLimit-Remaining', String(remaining));
+  next();
+});
+// Stricter limit for auth endpoints: 5 attempts per 15 min per IP
+app.use('/auth/', (req, res, next) => {
+  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  const { allowed, retryAfterMs } = authLimiter.isAllowed(ip);
+  if (!allowed) {
+    res.set('Retry-After', String(Math.ceil((retryAfterMs || 900000) / 1000)));
+    return res.status(429).json({ error: 'Too many login attempts. Please wait 15 minutes.' });
+  }
+  next();
+});
 
 // ─── STATIC FILES ─────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '../frontend')));
@@ -185,6 +207,9 @@ if (process.env.NODE_ENV !== 'production') {
 
     const { scheduleSettlement } = require('./src/jobs/settlement');
     scheduleSettlement();
+
+    const { scheduleWebhookRetry } = require('./src/jobs/webhook-retry');
+    scheduleWebhookRetry();
   });
 }
 

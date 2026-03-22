@@ -51,8 +51,15 @@ router.post('/signup', express.json(), async (req, res) => {
       business_name: 'My Restaurant', status: 'active',
       created_at: new Date(), updated_at: new Date(),
     });
-    const token = jwt.sign({ restaurantId: id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, needsOnboarding: true, onboardingStep: 1 });
+    const ownerUser = await ensureOwnerUser(id, ownerName.trim());
+    const token = jwt.sign({
+      restaurantId: id,
+      userId: String(ownerUser._id),
+      role: 'owner',
+      permissions: ROLE_PERMISSIONS.owner,
+      branchIds: [],
+    }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
   } catch (err) {
     console.error('[Signup]', err.message);
     res.status(500).json({ error: err.message });
@@ -74,7 +81,14 @@ router.post('/signin', express.json(), async (req, res) => {
     const valid = await bcrypt.compare(password, restaurant.password_hash);
     if (!valid) return res.status(401).json({ error: 'Incorrect password' });
 
-    const token = jwt.sign({ restaurantId: String(restaurant._id) }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const ownerUser = await ensureOwnerUser(String(restaurant._id), restaurant.owner_name);
+    const token = jwt.sign({
+      restaurantId: String(restaurant._id),
+      userId: String(ownerUser._id),
+      role: 'owner',
+      permissions: ROLE_PERMISSIONS.owner,
+      branchIds: [],
+    }, process.env.JWT_SECRET, { expiresIn: '30d' });
     const step  = restaurant.onboarding_step || 1;
     res.json({
       token,
@@ -82,6 +96,7 @@ router.post('/signin', express.json(), async (req, res) => {
       onboardingStep : step,
       needsOnboarding: step < 5,
       hasMetaConnected: !!restaurant.meta_user_id,
+      user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner },
     });
   } catch (err) {
     console.error('[Signin]', err.message);
@@ -291,7 +306,12 @@ router.get('/callback', async (req, res) => {
     }
 
     await _saveWabaAccounts(restaurantId, wabaData, longToken);
-    const jwtToken = jwt.sign({ restaurantId, metaUserId: metaUser.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const ownerUser = await ensureOwnerUser(restaurantId, metaUser.name);
+    const jwtToken = jwt.sign({
+      restaurantId, metaUserId: metaUser.id,
+      userId: String(ownerUser._id), role: 'owner',
+      permissions: ROLE_PERMISSIONS.owner, branchIds: [],
+    }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
     // Redirect based on source — dashboard goes back to dashboard, signup/index goes to index
     if (source === 'dashboard') {
@@ -362,8 +382,13 @@ router.post('/facebook', express.json(), async (req, res) => {
     }
 
     await _saveWabaAccounts(restaurantId, wabaData, longToken);
-    const jwtToken = jwt.sign({ restaurantId, metaUserId: metaUser.id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token: jwtToken, approvalStatus, needsOnboarding });
+    const ownerUser2 = await ensureOwnerUser(restaurantId, metaUser.name);
+    const jwtToken = jwt.sign({
+      restaurantId, metaUserId: metaUser.id,
+      userId: String(ownerUser2._id), role: 'owner',
+      permissions: ROLE_PERMISSIONS.owner, branchIds: [],
+    }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token: jwtToken, approvalStatus, needsOnboarding, user: { id: String(ownerUser2._id), name: ownerUser2.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
   } catch (err) {
     console.error('[Auth] Facebook login error:', err.response?.data || err.message);
     res.status(500).json({ error: 'Authentication failed' });
@@ -807,6 +832,75 @@ async function _linkCatalogToBranches(restaurantId, catalogId) {
   }
 }
 
+// ─── ROLE PERMISSION TEMPLATES ───────────────────────────────
+const ROLE_PERMISSIONS = {
+  owner:    { view_orders:true, manage_orders:true, view_menu:true, manage_menu:true, view_analytics:true, manage_settings:true, manage_coupons:true, manage_users:true, view_payments:true },
+  manager:  { view_orders:true, manage_orders:true, view_menu:true, manage_menu:true, view_analytics:true, manage_settings:false, manage_coupons:true, manage_users:false, view_payments:true },
+  kitchen:  { view_orders:true, manage_orders:true, view_menu:true, manage_menu:false, view_analytics:false, manage_settings:false, manage_coupons:false, manage_users:false, view_payments:false },
+  delivery: { view_orders:true, manage_orders:true, view_menu:false, manage_menu:false, view_analytics:false, manage_settings:false, manage_coupons:false, manage_users:false, view_payments:false },
+};
+
+// ─── AUTO-CREATE OWNER USER ──────────────────────────────────
+async function ensureOwnerUser(restaurantId, ownerName, phone) {
+  const existing = await col('restaurant_users').findOne({ restaurant_id: restaurantId, role: 'owner' });
+  if (existing) return existing;
+  const doc = {
+    _id: newId(),
+    restaurant_id: restaurantId,
+    name: ownerName || 'Owner',
+    phone: phone || '',
+    email: null,
+    pin_hash: null,
+    role: 'owner',
+    branch_ids: [],
+    permissions: { ...ROLE_PERMISSIONS.owner },
+    is_active: true,
+    last_login_at: new Date(),
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
+  await col('restaurant_users').insertOne(doc);
+  return doc;
+}
+
+// ─── PIN LOGIN ───────────────────────────────────────────────
+router.post('/pin-login', express.json(), async (req, res) => {
+  try {
+    const { restaurantId, phone, pin } = req.body;
+    if (!restaurantId || !phone || !pin)
+      return res.status(400).json({ error: 'Restaurant ID, phone and PIN are required' });
+
+    const user = await col('restaurant_users').findOne({
+      restaurant_id: restaurantId,
+      phone,
+      is_active: true,
+    });
+    if (!user) return res.status(401).json({ error: 'No account found with this phone number' });
+    if (!user.pin_hash) return res.status(401).json({ error: 'PIN not set. Ask the owner to set your PIN.' });
+
+    const valid = await bcrypt.compare(pin, user.pin_hash);
+    if (!valid) return res.status(401).json({ error: 'Incorrect PIN' });
+
+    await col('restaurant_users').updateOne({ _id: user._id }, { $set: { last_login_at: new Date() } });
+
+    const token = jwt.sign({
+      restaurantId,
+      userId: String(user._id),
+      role: user.role,
+      permissions: user.permissions,
+      branchIds: user.branch_ids,
+    }, process.env.JWT_SECRET, { expiresIn: '12h' });
+
+    res.json({
+      token,
+      user: { id: String(user._id), name: user.name, role: user.role, permissions: user.permissions, branchIds: user.branch_ids },
+    });
+  } catch (err) {
+    console.error('[PIN Login]', err.message);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
 // ─── JWT AUTH MIDDLEWARE ──────────────────────────────────────
 function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -815,10 +909,23 @@ function requireAuth(req, res, next) {
     const decoded    = jwt.verify(token, process.env.JWT_SECRET);
     req.restaurantId = decoded.restaurantId;
     req.metaUserId   = decoded.metaUserId;
+    req.userId       = decoded.userId || null;
+    req.userRole     = decoded.role || 'owner';
+    req.userPermissions = decoded.permissions || ROLE_PERMISSIONS.owner;
+    req.userBranchIds   = decoded.branchIds || [];
     next();
   } catch {
     res.status(401).json({ error: 'Session expired. Please log in again.' });
   }
+}
+
+// ─── PERMISSION MIDDLEWARE ───────────────────────────────────
+function requirePermission(permKey) {
+  return (req, res, next) => {
+    if (req.userRole === 'owner') return next(); // owner has all
+    if (req.userPermissions?.[permKey]) return next();
+    res.status(403).json({ error: `Permission denied: ${permKey}` });
+  };
 }
 
 // ─── APPROVED-ONLY MIDDLEWARE ─────────────────────────────────
@@ -842,4 +949,4 @@ async function requireApproved(req, res, next) {
   }
 }
 
-module.exports = { router, requireAuth, requireApproved, _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };
+module.exports = { router, requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS, ensureOwnerUser, _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };

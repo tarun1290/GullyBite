@@ -6,6 +6,7 @@ const { col, newId, mapId, mapIds, transaction } = require('../config/database')
 const { v4: uuidv4 } = require('uuid');
 const couponSvc = require('./coupon');
 const { calculateOrderCharges } = require('./charges');
+const { calculateDynamicDeliveryFee } = require('./dynamicPricing');
 
 // ─── GET OR CREATE CUSTOMER ───────────────────────────────────
 const getOrCreateCustomer = async (waPhone, profileName = null) => {
@@ -71,7 +72,8 @@ const setState = async (convId, newState, sessionUpdates = {}) => {
 };
 
 // ─── PROCESS WHATSAPP CATALOG ORDER ──────────────────────────
-const buildCartFromCatalogOrder = async (productItems, branchId) => {
+// deliveryLat/deliveryLng are optional — when provided, dynamic pricing kicks in
+const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = null, deliveryLng = null) => {
   const retailerIds = productItems.map(i => i.product_retailer_id);
 
   const menuItems = await col('menu_items').find({
@@ -110,9 +112,9 @@ const buildCartFromCatalogOrder = async (productItems, branchId) => {
     ? await col('restaurants').findOne({ _id: branch.restaurant_id })
     : null;
 
-  const deliveryFeeRs = parseFloat(branch?.delivery_fee_rs)
-                     || parseFloat(process.env.DEFAULT_DELIVERY_FEE)
-                     || 40;
+  // Dynamic delivery fee — uses distance + surge + time-of-day when enabled
+  const dynamicResult = await calculateDynamicDeliveryFee(branchId, deliveryLat, deliveryLng);
+  const deliveryFeeRs = dynamicResult.deliveryFeeRs;
 
   const restaurantConfig = {
     delivery_fee_customer_pct: restaurant?.delivery_fee_customer_pct ?? 100,
@@ -124,7 +126,14 @@ const buildCartFromCatalogOrder = async (productItems, branchId) => {
 
   const charges = calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs, 0);
 
-  return { cart, subtotalRs, deliveryFeeRs: charges.customer_delivery_rs, totalRs: charges.customer_total_rs, charges, unavailable };
+  return {
+    cart, subtotalRs,
+    deliveryFeeRs: charges.customer_delivery_rs,
+    totalRs: charges.customer_total_rs,
+    charges, unavailable,
+    deliveryFeeBreakdown: dynamicResult.breakdown,
+    dynamicPricing: dynamicResult.dynamic,
+  };
 };
 
 const REFERRAL_FEE_PCT = 0.075; // 7.5%
@@ -143,7 +152,7 @@ const findActiveReferral = async (waPhone, restaurantId) => {
 };
 
 // ─── CREATE ORDER ─────────────────────────────────────────────
-const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null }) => {
+const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null }) => {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -191,6 +200,7 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     restaurant_delivery_gst_rs: charges?.restaurant_delivery_gst_rs ?? 0,
     packaging_rs:               charges?.packaging_rs               ?? 0,
     packaging_gst_rs:           charges?.packaging_gst_rs           ?? 0,
+    delivery_fee_breakdown:     deliveryFeeBreakdown                || null,
     status: 'PENDING_PAYMENT',
     paid_at: null,
     confirmed_at: null,
@@ -275,6 +285,33 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
         $set: { last_order_at: new Date() },
       }
     );
+
+    // Award loyalty points + send notification
+    setTimeout(async () => {
+      try {
+        const customer = await col('customers').findOne({ _id: updated.customer_id });
+        const waAcc    = await col('whatsapp_accounts').findOne({ restaurant_id: updated.restaurant_id, is_active: true });
+        if (customer?.wa_phone && waAcc?.phone_number_id && waAcc?.access_token) {
+          // Loyalty points
+          try {
+            const loyalty = require('./loyalty');
+            const reward = await loyalty.earnPoints(updated.customer_id, updated.restaurant_id, orderId, updated.total_rs);
+            if (reward.pointsEarned > 0) {
+              const wa = require('./whatsapp');
+              let msg = `🎉 You earned *${reward.pointsEarned} loyalty points*!\n💰 Balance: ${reward.newBalance} points\n🏅 Tier: ${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}\n\nRedeem points on your next order!`;
+              if (reward.tierUpgraded) {
+                msg = `🎊 *Congratulations!* You've been upgraded to *${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}*!\n\n` + msg;
+              }
+              await wa.sendText(waAcc.phone_number_id, waAcc.access_token, customer.wa_phone, msg);
+            }
+          } catch (e) { console.error('[Loyalty] earn error:', e.message); }
+
+          // Rating request (after loyalty msg)
+          const { sendRatingRequest } = require('../webhooks/whatsapp');
+          await sendRatingRequest(orderId, waAcc.phone_number_id, waAcc.access_token, customer.wa_phone);
+        }
+      } catch (e) { console.error('[Rating] delayed send error:', e.message); }
+    }, 2 * 60 * 1000);
   }
 
   return updated ? mapId(updated) : null;
