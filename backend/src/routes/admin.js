@@ -352,6 +352,13 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
       { returnDocument: 'after', projection: { _id: 1, business_name: 1, email: 1 } }
     );
     if (!updated) return res.status(404).json({ error: 'Not found' });
+
+    // Auto-list in WhatsApp directory (fire-and-forget)
+    const directory = require('../services/directory');
+    directory.listRestaurant(req.params.id).catch(err =>
+      console.error('[Directory] Auto-list failed:', err.message)
+    );
+
     res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -521,6 +528,84 @@ router.get('/settlements/stats', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── GET /api/admin/settlements/:id/download ────────────────
+router.get('/settlements/:id/download', async (req, res) => {
+  try {
+    const settlement = await col('settlements').findOne({ _id: req.params.id });
+    if (!settlement) return res.status(404).json({ error: 'Settlement not found' });
+    const { generateSettlementExcel } = require('../services/settlement-export');
+    const { buffer, filename } = await generateSettlementExcel(req.params.id);
+    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.set('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(Buffer.from(buffer));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── DIRECTORY ───────────────────────────────────────────────
+const directory = require('../services/directory');
+
+router.get('/directory/listings', async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query;
+    const result = await directory.getAllListings({ limit: parseInt(limit), offset: parseInt(offset) });
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/directory/stats', async (req, res) => {
+  try {
+    res.json(await directory.getStats());
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.patch('/directory/listings/:id/toggle', async (req, res) => {
+  try {
+    const { isActive } = req.body;
+    await col('directory_listings').updateOne(
+      { _id: req.params.id },
+      { $set: { is_active: !!isActive, updated_at: new Date() } }
+    );
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.post('/directory/sync-all', async (req, res) => {
+  res.json({ message: 'Directory sync started' });
+  try {
+    const restaurants = await col('restaurants').find({ approval_status: 'approved', status: 'active' }).toArray();
+    for (const r of restaurants) {
+      await directory.listRestaurant(String(r._id)).catch(e =>
+        console.error(`[Directory] Sync failed for ${r.business_name}:`, e.message)
+      );
+    }
+    console.log(`[Directory] Synced ${restaurants.length} listings`);
+  } catch (err) { console.error('[Directory] Sync-all error:', err.message); }
+});
+
+// ─── CHECKOUT CONFIG ─────────────────────────────────────────
+router.post('/checkout/generate-keys', async (req, res) => {
+  try {
+    const { generateKeyPair } = require('../services/checkout-crypto');
+    const keys = generateKeyPair();
+    // Return keys — admin should set WA_CHECKOUT_PRIVATE_KEY_B64 env var
+    // and upload publicKey to Meta's Checkout settings
+    res.json({
+      publicKey: keys.publicKey,
+      privateKeyB64: keys.privateKeyB64,
+      instructions: 'Set WA_CHECKOUT_PRIVATE_KEY_B64 in your .env to privateKeyB64. Upload publicKey to Meta Checkout settings.',
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/checkout/status', async (req, res) => {
+  try {
+    const configured = !!process.env.WA_CHECKOUT_PRIVATE_KEY_B64;
+    const verifyToken = process.env.WA_CHECKOUT_VERIFY_TOKEN || '(not set)';
+    const webhookSecret = !!process.env.WA_CHECKOUT_WEBHOOK_SECRET;
+    res.json({ configured, verifyToken: configured ? verifyToken : null, webhookSecret });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ─── DELETE /api/admin/restaurants/:id ────────────────────────
@@ -838,6 +923,49 @@ router.get('/rate-limit/stats', async (req, res) => {
       auto_blocked_today: autoBlockedToday,
       active_blocks: activeBlocks,
       top_rate_limited: topRateLimited,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 3PL DELIVERY STATS
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/admin/delivery/stats — platform-wide delivery stats
+router.get('/delivery/stats', async (req, res) => {
+  try {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [totalToday, deliveredToday, failedToday, activeNow, allDeliveredToday] = await Promise.all([
+      col('deliveries').countDocuments({ created_at: { $gte: todayStart } }),
+      col('deliveries').countDocuments({ status: 'delivered', delivered_at: { $gte: todayStart } }),
+      col('deliveries').countDocuments({ status: { $in: ['failed', 'cancelled'] }, updated_at: { $gte: todayStart } }),
+      col('deliveries').countDocuments({ status: { $in: ['pending', 'assigned', 'picked_up'] } }),
+      col('deliveries').find({ status: 'delivered', delivered_at: { $gte: todayStart } }).toArray(),
+    ]);
+
+    // Average delivery time today
+    let avgDeliveryMin = 0;
+    const withTimes = allDeliveredToday.filter(d => d.delivered_at && d.created_at);
+    if (withTimes.length) {
+      const totalMin = withTimes.reduce((s, d) => s + (new Date(d.delivered_at) - new Date(d.created_at)) / 60000, 0);
+      avgDeliveryMin = Math.round(totalMin / withTimes.length);
+    }
+
+    // 3PL cost today
+    const costToday = allDeliveredToday.reduce((s, d) => s + (parseFloat(d.cost_rs) || 0), 0);
+
+    const failureRate = totalToday > 0 ? Math.round(failedToday / totalToday * 100) : 0;
+
+    res.json({
+      total_today: totalToday,
+      delivered_today: deliveredToday,
+      failed_today: failedToday,
+      active_now: activeNow,
+      avg_delivery_min: avgDeliveryMin,
+      cost_today_rs: Math.round(costToday * 100) / 100,
+      failure_rate_pct: failureRate,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

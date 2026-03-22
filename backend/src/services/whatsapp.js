@@ -299,4 +299,26 @@ const sendList = (pid, token, to, { body, footer, buttonText, sections }) =>
     },
   });
 
-module.exports = { sendText, sendButtons, sendList, sendAddressList, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, markRead };
+// ─── DOCUMENT MESSAGE ─────────────────────────────────────────
+// Upload a buffer as media, then send as a document message.
+// buffer: Buffer, mimeType: e.g. 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+const sendDocument = async (pid, token, to, { buffer, filename, caption, mimeType }) => {
+  const FormData = require('form-data');
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', mimeType || 'application/octet-stream');
+  form.append('file', buffer, { filename, contentType: mimeType });
+
+  const uploadUrl = `https://graph.facebook.com/${process.env.WA_API_VERSION}/${pid}/media`;
+  const { data: media } = await axios.post(uploadUrl, form, {
+    headers: { Authorization: `Bearer ${token}`, ...form.getHeaders() },
+    timeout: 30000,
+  });
+
+  return sendMsg(pid, token, to, {
+    type: 'document',
+    document: { id: media.id, filename, ...(caption && { caption }) },
+  });
+};
+
+module.exports = { sendText, sendButtons, sendList, sendAddressList, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, sendDocument, markRead };

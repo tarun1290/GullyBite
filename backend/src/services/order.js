@@ -72,8 +72,9 @@ const setState = async (convId, newState, sessionUpdates = {}) => {
 };
 
 // ─── PROCESS WHATSAPP CATALOG ORDER ──────────────────────────
-// deliveryLat/deliveryLng are optional — when provided, dynamic pricing kicks in
-const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = null, deliveryLng = null) => {
+// deliveryLat/deliveryLng trigger 3PL quote for real delivery pricing
+// orderDetails: { deliveryAddress, customerName, customerPhone } for 3PL API
+const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = null, deliveryLng = null, orderDetails = {}) => {
   const retailerIds = productItems.map(i => i.product_retailer_id);
 
   const menuItems = await col('menu_items').find({
@@ -112,8 +113,8 @@ const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = n
     ? await col('restaurants').findOne({ _id: branch.restaurant_id })
     : null;
 
-  // Dynamic delivery fee — uses distance + surge + time-of-day when enabled
-  const dynamicResult = await calculateDynamicDeliveryFee(branchId, deliveryLat, deliveryLng);
+  // 3PL delivery quote — gets real pricing from delivery partner
+  const dynamicResult = await calculateDynamicDeliveryFee(branchId, deliveryLat, deliveryLng, orderDetails);
   const deliveryFeeRs = dynamicResult.deliveryFeeRs;
 
   const restaurantConfig = {
@@ -133,6 +134,14 @@ const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = n
     charges, unavailable,
     deliveryFeeBreakdown: dynamicResult.breakdown,
     dynamicPricing: dynamicResult.dynamic,
+    // 3PL quote data for session storage → used at dispatch time
+    deliveryQuote: dynamicResult.dynamic ? {
+      providerName:  dynamicResult.breakdown.providerName,
+      providerFeeRs: dynamicResult.breakdown.baseFeeRs,
+      quoteId:       dynamicResult.breakdown.quoteId,
+      estimatedMins: dynamicResult.breakdown.estimatedMins,
+      distanceKm:    dynamicResult.breakdown.distanceKm,
+    } : null,
   };
 };
 
@@ -152,7 +161,7 @@ const findActiveReferral = async (waPhone, restaurantId) => {
 };
 
 // ─── CREATE ORDER ─────────────────────────────────────────────
-const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null }) => {
+const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null, deliveryQuote = null }) => {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -245,6 +254,27 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     });
   }
 
+  // Create delivery record (pending dispatch until payment confirmed)
+  await col('deliveries').insertOne({
+    _id: newId(),
+    order_id: orderId,
+    provider: deliveryQuote?.providerName || process.env.DEFAULT_DELIVERY_PROVIDER || 'porter',
+    provider_order_id: null,
+    tracking_url: null,
+    driver_name: null,
+    driver_phone: null,
+    driver_lat: null,
+    driver_lng: null,
+    status: 'pending',
+    estimated_mins: deliveryQuote?.estimatedMins || null,
+    cost_rs: deliveryQuote?.providerFeeRs || 0,
+    quote_id: deliveryQuote?.quoteId || null,
+    picked_up_at: null,
+    delivered_at: null,
+    created_at: now,
+    updated_at: now,
+  });
+
   // Link order to conversation
   await col('conversations').updateOne(
     { _id: convId },
@@ -314,8 +344,26 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
     }, 2 * 60 * 1000);
   }
 
+  // Fire-and-forget POS status sync
+  if (updated && updated.pos_platform && updated.pos_external_id) {
+    syncPOSStatus(updated).catch(() => {});
+  }
+
   return updated ? mapId(updated) : null;
 };
+
+async function syncPOSStatus(order) {
+  const integration = await col('restaurant_integrations').findOne({
+    restaurant_id: order.restaurant_id,
+    platform: order.pos_platform,
+    is_active: true,
+  });
+  if (!integration) return;
+  const svc = require(`./integrations/${order.pos_platform}`);
+  if (svc.updateOrderStatus) {
+    await svc.updateOrderStatus(integration, order.pos_external_id, order.status);
+  }
+}
 
 // ─── GET FULL ORDER DETAILS ───────────────────────────────────
 const getOrderDetails = async (orderId) => {

@@ -5,6 +5,8 @@
 const cron = require('node-cron');
 const { col, newId } = require('../config/database');
 const paymentSvc = require('../services/payment');
+const { generateSettlementExcel } = require('../services/settlement-export');
+const wa = require('../services/whatsapp');
 
 // ─── SCHEDULE THE JOB ─────────────────────────────────────────
 const scheduleSettlement = () => {
@@ -134,8 +136,43 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     console.log(`  ⚠️  ${restaurant.business_name}: No payout account — call POST /api/restaurant/payout-account first`);
   }
 
+  // ── SEND SETTLEMENT EXCEL VIA WHATSAPP (fire-and-forget) ────
+  sendSettlementWhatsApp(restaurant, settlementId, netPayout, orders.length, periodStart, periodEnd).catch(err =>
+    console.error(`  ⚠️  WhatsApp settlement report failed for ${restaurant.business_name}:`, err.message)
+  );
+
   return { id: settlementId };
 };
+
+async function sendSettlementWhatsApp(restaurant, settlementId, netPayout, orderCount, periodStart, periodEnd) {
+  // Need WA account linked to this restaurant
+  const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: String(restaurant._id) });
+  if (!waAccount) return; // No WA account, skip silently
+
+  const managerPhone = restaurant.phone;
+  if (!managerPhone) return;
+
+  const name = restaurant.brand_name || restaurant.business_name;
+  const period = `${formatDate(periodStart)} to ${formatDate(periodEnd)}`;
+
+  // Send summary text first
+  await wa.sendText(waAccount.phone_number_id, waAccount.access_token, managerPhone,
+    `💰 *Weekly Settlement — ${name}*\n\n` +
+    `Period: ${period}\n` +
+    `Orders: ${orderCount}\n` +
+    `Net Payout: ₹${netPayout.toFixed(2)}\n\n` +
+    `Your detailed Excel report is attached below.`
+  );
+
+  // Generate and send Excel
+  const { buffer, filename } = await generateSettlementExcel(settlementId);
+  await wa.sendDocument(waAccount.phone_number_id, waAccount.access_token, managerPhone, {
+    buffer: Buffer.from(buffer),
+    filename,
+    caption: `Settlement report for ${period}`,
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
 
 // ─── UTILITIES ────────────────────────────────────────────────
 const getLastMonday = (date) => {

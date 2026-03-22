@@ -218,6 +218,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         Referrals
         <span class="badge" id="nav-ref-badge" style="display:none;background:#7c3aed;color:#fff"></span>
       </div>
+      <div class="nav-item" data-page="directory" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+        Directory
+      </div>
       <div class="nav-item" data-page="abuse" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Abuse Protection
@@ -255,6 +259,7 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
           <div class="stat-card"><div class="stat-label">Webhook Logs</div><div class="stat-val" id="s-logs">—</div><div class="stat-sub" id="s-logs-sub"></div></div>
           <div class="stat-card red"><div class="stat-label">Pending Orders</div><div class="stat-val" id="s-pending">—</div><div class="stat-sub" id="s-pending-sub"></div></div>
           <div class="stat-card gold"><div class="stat-label">Avg Rating</div><div class="stat-val" id="s-rating">—</div><div class="stat-sub" id="s-rating-sub"></div></div>
+          <div class="stat-card blue"><div class="stat-label">Deliveries Today</div><div class="stat-val" id="s-deliveries">—</div><div class="stat-sub" id="s-deliveries-sub"></div></div>
         </div>
         <!-- quick tables -->
         <div class="row2">
@@ -489,9 +494,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
                 <th>Status</th>
                 <th>Payout ID</th>
                 <th>Created</th>
+                <th></th>
               </tr>
             </thead>
-            <tbody id="stl-tbody"><tr><td colspan="11" class="empty">Loading…</td></tr></tbody>
+            <tbody id="stl-tbody"><tr><td colspan="12" class="empty">Loading…</td></tr></tbody>
           </table>
           <div class="pager">
             <button id="stl-prev" onclick="stlPage(-1)" disabled>&#8592; Prev</button>
@@ -570,6 +576,27 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
           </table>
         </div>
 
+      </div>
+
+      <!-- ── DIRECTORY ──────────────────────────────────────────────────── -->
+      <div class="page" id="page-directory">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.2rem">
+          <div class="stat-card"><div class="stat-val" id="dir-total">—</div><div class="stat-label">Total Listings</div></div>
+          <div class="stat-card green"><div class="stat-val" id="dir-active">—</div><div class="stat-label">Active</div></div>
+          <div class="stat-card"><div class="stat-val" id="dir-views">—</div><div class="stat-label">Total Views</div></div>
+          <div class="stat-card"><div class="stat-val" id="dir-orders">—</div><div class="stat-label">Orders via Directory</div></div>
+        </div>
+        <div style="margin-bottom:1.2rem;display:flex;gap:.8rem;align-items:center">
+          <button class="btn-sm primary" onclick="syncAllDirectory()" style="padding:.5rem 1.2rem;font-size:.85rem">Sync All Listings</button>
+          <span style="font-size:.78rem;color:var(--dim)">Re-syncs all approved restaurants into the directory.</span>
+        </div>
+        <div class="table-wrap">
+          <div class="table-head"><h2>Directory Listings</h2></div>
+          <table>
+            <thead><tr><th>Restaurant</th><th>City</th><th>Type</th><th>Views</th><th>Orders</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="dir-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- ── ABUSE PROTECTION ──────────────────────────────────────────── -->
@@ -715,7 +742,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', abuse: 'Abuse Protection' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', abuse: 'Abuse Protection' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -734,6 +761,7 @@ function nav(el) {
   if (page === 'customers')    loadCustomers();
   if (page === 'settlements')  loadSettlements();
   if (page === 'referrals')    loadReferrals();
+  if (page === 'directory')    loadDirectory();
   if (page === 'abuse')        loadAbuse();
 }
 
@@ -747,6 +775,7 @@ function refreshCurrent() {
   else if (currentPage === 'customers')    loadCustomers();
   else if (currentPage === 'settlements')  loadSettlements();
   else if (currentPage === 'referrals')    loadReferrals();
+  else if (currentPage === 'directory')    loadDirectory();
   else if (currentPage === 'abuse')        loadAbuse();
 }
 
@@ -789,6 +818,15 @@ async function loadStats() {
       const dlqBadge = document.getElementById('nav-dlq-badge');
       if (dlqBadge && dlqStats.in_dlq > 0) { dlqBadge.textContent = dlqStats.in_dlq; dlqBadge.style.display = ''; }
       else if (dlqBadge) dlqBadge.style.display = 'none';
+    } catch (_) {}
+
+    // Load delivery stats
+    try {
+      const ds = await api('/api/admin/delivery/stats');
+      const el = document.getElementById('s-deliveries');
+      const sub = document.getElementById('s-deliveries-sub');
+      if (el) el.textContent = ds.total_today;
+      if (sub) sub.textContent = `${ds.active_now} active · ${ds.avg_delivery_min}m avg · ₹${fmtNum(ds.cost_today_rs)} cost`;
     } catch (_) {}
   } catch (e) { toast(e.message, 'err'); }
 }
@@ -1166,6 +1204,52 @@ async function dlqDismiss(id) {
   } catch (e) { alert('Dismiss failed: ' + e.message); }
 }
 
+// ─── DIRECTORY ───────────────────────────────────────────────────
+async function loadDirectory() {
+  // Stats
+  try {
+    const s = await api('/api/admin/directory/stats');
+    document.getElementById('dir-total').textContent  = s.total;
+    document.getElementById('dir-active').textContent = s.active;
+    document.getElementById('dir-views').textContent  = fmtNum(s.total_views);
+    document.getElementById('dir-orders').textContent = fmtNum(s.total_orders);
+  } catch {}
+
+  // Listings
+  const tbody = document.getElementById('dir-tbody');
+  try {
+    const d = await api('/api/admin/directory/listings?limit=100');
+    if (!d.listings?.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No directory listings yet. Approve restaurants to auto-list them.</td></tr>'; return; }
+
+    const typeLabel = { veg: '<span class="badge green">Veg</span>', non_veg: '<span class="badge red">Non-Veg</span>', both: '<span class="badge blue">Both</span>' };
+    tbody.innerHTML = d.listings.map(l => `<tr>
+      <td><strong>${esc(l.brand_name || l.business_name)}</strong><br><span style="font-size:.72rem;color:var(--dim)">${l.restaurant_id.slice(0,8)}</span></td>
+      <td>${esc(l.city || '—')}</td>
+      <td>${typeLabel[l.restaurant_type] || typeLabel.both}</td>
+      <td>${l.view_count || 0}</td>
+      <td>${l.order_count || 0}</td>
+      <td>${l.is_active ? '<span class="badge green">Active</span>' : '<span class="badge gray">Inactive</span>'}</td>
+      <td><label class="toggle-sm"><input type="checkbox" ${l.is_active ? 'checked' : ''} onchange="toggleDirectoryListing('${l._id}',this.checked)"></label></td>
+    </tr>`).join('');
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`; }
+}
+
+async function toggleDirectoryListing(id, isActive) {
+  try {
+    await api(`/api/admin/directory/listings/${id}/toggle`, { method: 'PATCH', body: { isActive } });
+    toast(isActive ? 'Listing activated' : 'Listing deactivated', 'ok');
+  } catch (e) { toast(e.message, 'err'); loadDirectory(); }
+}
+
+async function syncAllDirectory() {
+  if (!confirm('Re-sync all approved restaurants into the directory?')) return;
+  try {
+    await api('/api/admin/directory/sync-all', { method: 'POST' });
+    toast('Directory sync started — refresh in a few seconds', 'ok');
+    setTimeout(() => { if (currentPage === 'directory') loadDirectory(); }, 3000);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 // ─── ABUSE PROTECTION ─────────────────────────────────────────────
 async function loadAbuse() {
   await Promise.all([loadAbuseStats(), loadBlockedPhones()]);
@@ -1429,7 +1513,7 @@ async function loadSettlements() {
   if (statusFilter) params.set('status', statusFilter);
 
   const tbody = document.getElementById('stl-tbody');
-  tbody.innerHTML = '<tr><td colspan="11" class="empty">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="12" class="empty">Loading…</td></tr>';
 
   try {
     const d = await api('/api/admin/settlements?' + params);
@@ -1441,7 +1525,7 @@ async function loadSettlements() {
     document.getElementById('stl-prev').disabled = stlOffset === 0;
     document.getElementById('stl-next').disabled = stlOffset + STL_LIMIT >= d.total;
 
-    if (!d.settlements.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No settlements yet. Click "Run Settlement Now" to generate.</td></tr>'; return; }
+    if (!d.settlements.length) { tbody.innerHTML = '<tr><td colspan="12" class="empty">No settlements yet. Click "Run Settlement Now" to generate.</td></tr>'; return; }
 
     tbody.innerHTML = d.settlements.map(s => {
       const periodStart = fmtDate(s.period_start);
@@ -1465,6 +1549,7 @@ async function loadSettlements() {
         <td>${payoutBadge}</td>
         <td class="monospace" style="font-size:.72rem;color:var(--dim)">${s.rp_payout_id ? s.rp_payout_id.slice(0,14) + '…' : '—'}</td>
         <td style="color:var(--dim);font-size:.75rem">${fmtTime(s.created_at)}</td>
+        <td><button class="btn-sm" onclick="downloadSettlement('${s.id}')" title="Download Excel" style="padding:.2rem .5rem;font-size:.75rem">📥 Excel</button></td>
       </tr>`;
     }).join('');
   } catch (e) {
@@ -1475,6 +1560,18 @@ async function loadSettlements() {
 function stlPage(dir) {
   stlOffset = Math.max(0, stlOffset + dir * STL_LIMIT);
   loadSettlements();
+}
+
+async function downloadSettlement(id) {
+  try {
+    const resp = await fetch(`/api/admin/settlements/${id}/download`, { headers: { 'x-admin-key': ADMIN_KEY } });
+    if (!resp.ok) throw new Error('Download failed');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = resp.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || `settlement_${id}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 async function runSettlement() {

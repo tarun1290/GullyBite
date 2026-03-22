@@ -382,32 +382,17 @@ router.post('/branches/csv', async (req, res) => {
 router.patch('/branches/:id', async (req, res) => {
   try {
     const {
-      isOpen, acceptsOrders, deliveryRadiusKm, catalogId, deliveryFeeRs,
+      isOpen, acceptsOrders, deliveryRadiusKm, catalogId,
       basePrepTimeMin, avgItemPrepMin, managerPhone,
-      // Dynamic pricing fields
-      dynamicPricingEnabled, baseDeliveryFeeRs, perKmFeeRs,
-      freeDeliveryWithinKm, maxDeliveryFeeRs, minDeliveryFeeRs,
-      surgeMultiplier, surgeReason, timeMultipliers,
     } = req.body;
     const $set = {};
     if (isOpen             !== undefined) $set.is_open              = isOpen;
     if (acceptsOrders      !== undefined) $set.accepts_orders       = acceptsOrders;
     if (deliveryRadiusKm   !== undefined) $set.delivery_radius_km   = deliveryRadiusKm;
     if (catalogId          !== undefined) $set.catalog_id           = catalogId;
-    if (deliveryFeeRs      !== undefined) $set.delivery_fee_rs      = deliveryFeeRs;
     if (basePrepTimeMin    !== undefined) $set.base_prep_time_min   = parseInt(basePrepTimeMin) || 15;
     if (avgItemPrepMin     !== undefined) $set.avg_item_prep_min    = parseInt(avgItemPrepMin) || 3;
     if (managerPhone       !== undefined) $set.manager_phone        = managerPhone || null;
-    // Dynamic pricing
-    if (dynamicPricingEnabled !== undefined) $set.dynamic_pricing_enabled = !!dynamicPricingEnabled;
-    if (baseDeliveryFeeRs     !== undefined) $set.base_delivery_fee_rs    = parseFloat(baseDeliveryFeeRs) || 30;
-    if (perKmFeeRs            !== undefined) $set.per_km_fee_rs           = parseFloat(perKmFeeRs) || 7;
-    if (freeDeliveryWithinKm  !== undefined) $set.free_delivery_within_km = parseFloat(freeDeliveryWithinKm) || 0;
-    if (maxDeliveryFeeRs      !== undefined) $set.max_delivery_fee_rs     = parseFloat(maxDeliveryFeeRs) || 150;
-    if (minDeliveryFeeRs      !== undefined) $set.min_delivery_fee_rs     = parseFloat(minDeliveryFeeRs) || 20;
-    if (surgeMultiplier       !== undefined) $set.surge_multiplier        = Math.max(1.0, parseFloat(surgeMultiplier) || 1.0);
-    if (surgeReason           !== undefined) $set.surge_reason            = surgeReason || null;
-    if (timeMultipliers       !== undefined) $set.time_multipliers        = Array.isArray(timeMultipliers) ? timeMultipliers : [];
     await col('branches').updateOne(
       { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set }
@@ -416,7 +401,7 @@ router.patch('/branches/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/restaurant/branches/:branchId/surge — current surge / dynamic pricing info
+// GET /api/restaurant/branches/:branchId/surge — current 3PL surge / delivery status
 router.get('/branches/:branchId/surge', async (req, res) => {
   try {
     const branch = await col('branches').findOne({ _id: req.params.branchId, restaurant_id: req.restaurantId });
@@ -1022,6 +1007,104 @@ router.put('/orders/:orderId/delivery', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 3PL DELIVERY MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/orders/:orderId/delivery — get delivery status
+router.get('/orders/:orderId/delivery', async (req, res) => {
+  try {
+    const o = await col('orders').findOne({ _id: req.params.orderId });
+    if (!o) return res.status(404).json({ error: 'Order not found' });
+    const branch = await col('branches').findOne({ _id: o.branch_id });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const deliveryService = require('../services/delivery');
+    const delivery = await deliveryService.getDeliveryStatus(req.params.orderId);
+    if (!delivery) return res.json({ delivery: null });
+    res.json({ delivery: mapId(delivery) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/orders/:orderId/dispatch — manual dispatch / re-dispatch
+router.post('/orders/:orderId/dispatch', async (req, res) => {
+  try {
+    const o = await col('orders').findOne({ _id: req.params.orderId });
+    if (!o) return res.status(404).json({ error: 'Order not found' });
+    const branch = await col('branches').findOne({ _id: o.branch_id });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const deliveryService = require('../services/delivery');
+    const task = await deliveryService.dispatchDelivery(req.params.orderId);
+    res.json({ success: true, task });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/orders/:orderId/cancel-delivery — cancel active delivery
+router.post('/orders/:orderId/cancel-delivery', async (req, res) => {
+  try {
+    const o = await col('orders').findOne({ _id: req.params.orderId });
+    if (!o) return res.status(404).json({ error: 'Order not found' });
+    const branch = await col('branches').findOne({ _id: o.branch_id });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const deliveryService = require('../services/delivery');
+    const result = await deliveryService.cancelDelivery(req.params.orderId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/delivery/stats — delivery analytics
+router.get('/delivery/stats', async (req, res) => {
+  try {
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1 }).toArray();
+    const branchIds = branches.map(b => String(b._id));
+
+    const orderIds = await col('orders').find({ branch_id: { $in: branchIds } }).project({ _id: 1 }).toArray();
+    const ids = orderIds.map(o => o._id);
+
+    const deliveries = await col('deliveries').find({ order_id: { $in: ids } }).toArray();
+
+    const delivered = deliveries.filter(d => d.status === 'delivered');
+    const failed = deliveries.filter(d => d.status === 'failed' || d.status === 'cancelled');
+    const active = deliveries.filter(d => ['pending', 'assigned', 'picked_up'].includes(d.status));
+
+    // Average delivery time (for completed deliveries)
+    let avgDeliveryMin = 0;
+    const withTimes = delivered.filter(d => d.delivered_at && d.created_at);
+    if (withTimes.length) {
+      const totalMin = withTimes.reduce((s, d) => s + (new Date(d.delivered_at) - new Date(d.created_at)) / 60000, 0);
+      avgDeliveryMin = Math.round(totalMin / withTimes.length);
+    }
+
+    // Average 3PL cost
+    const withCost = delivered.filter(d => d.cost_rs > 0);
+    const avgCostRs = withCost.length
+      ? Math.round(withCost.reduce((s, d) => s + parseFloat(d.cost_rs || 0), 0) / withCost.length * 100) / 100
+      : 0;
+
+    const successRate = deliveries.length
+      ? Math.round(delivered.length / deliveries.length * 100)
+      : 0;
+
+    res.json({
+      total: deliveries.length,
+      delivered: delivered.length,
+      failed: failed.length,
+      active: active.length,
+      avg_delivery_min: avgDeliveryMin,
+      avg_cost_rs: avgCostRs,
+      success_rate_pct: successRate,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
 // ANALYTICS
 // ═══════════════════════════════════════════════════════════════
 
@@ -1294,6 +1377,21 @@ router.get('/settlements', requirePermission('view_payments'), async (req, res) 
       .limit(12)
       .toArray();
     res.json(mapIds(docs));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/settlements/:id/download', requirePermission('view_payments'), async (req, res) => {
+  try {
+    const settlement = await col('settlements').findOne({ _id: req.params.id });
+    if (!settlement) return res.status(404).json({ error: 'Settlement not found' });
+    if (settlement.restaurant_id !== req.restaurantId) {
+      return res.status(403).json({ error: 'Not your settlement' });
+    }
+    const { generateSettlementExcel } = require('../services/settlement-export');
+    const { buffer, filename } = await generateSettlementExcel(req.params.id);
+    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.set('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(Buffer.from(buffer));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1970,6 +2068,40 @@ router.get('/me', async (req, res) => {
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
     res.json({ id: null, name: restaurant?.owner_name || 'Owner', role: 'owner', permissions: ROLE_PERMISSIONS.owner, branchIds: [] });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// CAMPAIGNS (MPM Marketing)
+// ═══════════════════════════════════════════════════════════════
+
+const campaignSvc = require('../services/campaigns');
+
+router.get('/campaigns', async (req, res) => {
+  try {
+    const docs = await campaignSvc.getCampaigns(req.restaurantId);
+    res.json(mapIds(docs));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/campaigns', requirePermission('manage_settings'), async (req, res) => {
+  try {
+    const campaign = await campaignSvc.createCampaign(req.restaurantId, req.body);
+    res.json(mapId(campaign));
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.post('/campaigns/:id/send', requirePermission('manage_settings'), async (req, res) => {
+  try {
+    const result = await campaignSvc.sendCampaign(req.params.id);
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.delete('/campaigns/:id', requirePermission('manage_settings'), async (req, res) => {
+  try {
+    await campaignSvc.deleteCampaign(req.params.id, req.restaurantId);
+    res.json({ success: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
 module.exports = router;

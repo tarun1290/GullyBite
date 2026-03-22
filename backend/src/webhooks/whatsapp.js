@@ -426,9 +426,13 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     const reorderCart = session.reorderCart;
     const subtotalRs  = reorderCart.reduce((s, i) => s + (i.lineTotalRs || i.unitPriceRs * i.qty), 0);
 
-    // Dynamic delivery fee + charge breakdown
+    // 3PL delivery quote + charge breakdown
     const { calculateDynamicDeliveryFee } = require('../services/dynamicPricing');
-    const dynamicResult = await calculateDynamicDeliveryFee(branch.id, latitude, longitude);
+    const dynamicResult = await calculateDynamicDeliveryFee(branch.id, latitude, longitude, {
+      deliveryAddress: address || locName || 'Your location',
+      customerName: customer.name,
+      customerPhone: customer.wa_phone,
+    });
 
     const branchDoc    = await col('branches').findOne({ _id: branch.id });
     const restaurantDoc = branchDoc
@@ -447,6 +451,14 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
       subtotalRs, dynamicResult.deliveryFeeRs, 0
     );
 
+    const deliveryQuote = dynamicResult.dynamic ? {
+      providerName:  dynamicResult.breakdown.providerName,
+      providerFeeRs: dynamicResult.breakdown.baseFeeRs,
+      quoteId:       dynamicResult.breakdown.quoteId,
+      estimatedMins: dynamicResult.breakdown.estimatedMins,
+      distanceKm:    dynamicResult.breakdown.distanceKm,
+    } : null;
+
     await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
       branchId       : branch.id,
       branchName     : branch.name,
@@ -462,6 +474,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
       charges,
       deliveryFeeBreakdown: dynamicResult.breakdown,
       dynamicPricing:       dynamicResult.dynamic,
+      deliveryQuote,
     });
 
     await wa.sendText(pid, token, to,
@@ -541,7 +554,11 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   const productItems = msg.order?.product_items || [];
   if (!productItems.length) return;
 
-  const cart = await orderSvc.buildCartFromCatalogOrder(productItems, branchId, session.deliveryLat, session.deliveryLng);
+  const cart = await orderSvc.buildCartFromCatalogOrder(productItems, branchId, session.deliveryLat, session.deliveryLng, {
+    deliveryAddress: session.deliveryAddress,
+    customerName: customer.name,
+    customerPhone: customer.wa_phone,
+  });
 
   if (!cart.cart.length) {
     await wa.sendText(pid, token, to, '⚠️ Some items are no longer available. Please browse the menu again.');
@@ -590,18 +607,20 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     charges,
     deliveryFeeBreakdown: cart.deliveryFeeBreakdown || null,
     dynamicPricing:       cart.dynamicPricing || false,
+    deliveryQuote:        cart.deliveryQuote || null,
   });
 
   const tempOrderNum = `TEMP-${Date.now().toString().slice(-6)}`;
 
-  // Build surge/dynamic info text for order summary
+  // Build 3PL delivery info text for order summary
   let dynamicNote = null;
   if (cart.dynamicPricing && cart.deliveryFeeBreakdown) {
     const bd = cart.deliveryFeeBreakdown;
     const parts = [];
-    if (bd.distanceKm !== null) parts.push(`📍 ${bd.distanceKm} km`);
-    if (bd.effectiveMultiplier > 1.0) parts.push(`⚡ ${bd.effectiveMultiplier}x${bd.reason ? ' (' + bd.reason + ')' : ''}`);
-    if (bd.capped) parts.push('🔒 Fee capped');
+    if (bd.distanceKm) parts.push(`📍 ${bd.distanceKm} km`);
+    if (bd.providerName) parts.push(`🚴 ${bd.providerName}`);
+    if (bd.estimatedMins) parts.push(`⏱ ~${bd.estimatedMins} min`);
+    if (bd.surgeReason) parts.push(`⚡ ${bd.surgeReason}`);
     if (parts.length) dynamicNote = parts.join(' · ');
   }
 
@@ -709,6 +728,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         waPhone      : customer.wa_phone,
         charges      : session.charges || null,
         deliveryFeeBreakdown: session.deliveryFeeBreakdown || null,
+        deliveryQuote: session.deliveryQuote || null,
       });
 
       const fullOrder = await orderSvc.getOrderDetails(order.id);

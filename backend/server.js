@@ -157,6 +157,9 @@ app.use('/api/admin', express.json(), require('./src/routes/admin'));
 app.use('/webhooks/whatsapp', require('./src/webhooks/whatsapp'));
 app.use('/webhooks/razorpay', require('./src/webhooks/razorpay'));
 app.use('/webhooks/catalog',  require('./src/webhooks/catalog'));
+app.use('/webhooks/delivery',  require('./src/webhooks/delivery'));
+app.use('/webhooks/directory', require('./src/webhooks/directory'));
+app.use('/webhooks/checkout',  require('./src/webhooks/checkout'));
 
 // Admin dashboard
 app.get('/admin', (_req, res) => {
@@ -210,6 +213,9 @@ if (process.env.NODE_ENV !== 'production') {
 
     const { scheduleWebhookRetry } = require('./src/jobs/webhook-retry');
     scheduleWebhookRetry();
+
+    const { scheduleCampaignSender } = require('./src/jobs/campaign-sender');
+    scheduleCampaignSender();
   });
 }
 

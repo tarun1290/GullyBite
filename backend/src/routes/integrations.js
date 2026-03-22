@@ -6,12 +6,16 @@ const express = require('express');
 const router  = express.Router();
 const { col, newId, mapId, mapIds } = require('../config/database');
 const { requireAuth } = require('./auth');
-const petpooja = require('../services/integrations/petpooja');
+const petpooja   = require('../services/integrations/petpooja');
+const urbanpiper = require('../services/integrations/urbanpiper');
+const dotpe      = require('../services/integrations/dotpe');
 
 router.use(requireAuth);
 
 const SERVICES = {
   petpooja,
+  urbanpiper,
+  dotpe,
 };
 
 // ─── GET /api/restaurant/integrations ─────────────────────────

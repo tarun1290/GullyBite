@@ -89,8 +89,56 @@ const confirmPaidOrder = async (orderId) => {
   // Fire-and-forget manager notification
   notify.notifyNewOrder(order).catch(err => console.error('[Notify] Failed:', err.message));
 
+  // Auto-dispatch to 3PL delivery partner (fire-and-forget — NEVER block payment flow)
+  const deliveryService = require('../services/delivery');
+  deliveryService.dispatchDelivery(orderId)
+    .then(async (task) => {
+      console.log(`[3PL] Dispatched order ${order.order_number}: taskId=${task.taskId}`);
+      // Send tracking link to customer via WhatsApp
+      if (task.trackingUrl && order.phone_number_id && order.wa_phone) {
+        await wa.sendText(order.phone_number_id, order.access_token, order.wa_phone,
+          `🚴 Your delivery is being arranged!\n\n` +
+          `📍 Track your order live:\n${task.trackingUrl}\n\n` +
+          `Estimated delivery: ${task.estimatedMins || '25-35'} minutes`
+        );
+      }
+    })
+    .catch(err => {
+      console.error(`[3PL] Dispatch failed for order ${order.order_number}:`, err.message);
+      // Notify manager about dispatch failure — order is PAID regardless
+      notify.sendManagerNotification(order.restaurant_id || order.branch_id, order.branch_id,
+        `⚠️ Auto-dispatch failed for Order #${order.order_number}: ${err.message}\nPlease dispatch manually from the dashboard.`
+      ).catch(() => {});
+    });
+
+  // Fire-and-forget POS order push (UrbanPiper / DotPe)
+  pushOrderToPOS(order).catch(err =>
+    console.error(`[POS] Order push failed for ${order.order_number}:`, err.message)
+  );
+
   console.log(`✅ Order ${order.order_number} PAID — ₹${order.total_rs}`);
 };
+
+async function pushOrderToPOS(order) {
+  const integration = await col('restaurant_integrations').findOne({
+    restaurant_id: order.restaurant_id,
+    is_active: true,
+    platform: { $in: ['urbanpiper', 'dotpe'] },
+  });
+  if (!integration) return; // No active POS integration
+
+  const items = await col('order_items').find({ order_id: String(order._id) }).toArray();
+  const svc = require(`../services/integrations/${integration.platform}`);
+  if (!svc.pushOrder) return;
+
+  const result = await svc.pushOrder(integration, order, items);
+  if (result?.externalOrderId) {
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: { pos_external_id: result.externalOrderId, pos_platform: integration.platform } }
+    );
+  }
+}
 
 // ─── EVENT ROUTER ─────────────────────────────────────────────
 const handleEvent = async (event) => {

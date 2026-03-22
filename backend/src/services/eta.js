@@ -1,52 +1,40 @@
 // src/services/eta.js
-// Dynamic ETA calculation — no external APIs, uses Haversine formula
+// ETA calculation — uses 3PL delivery estimates + kitchen queue
 
 const { col } = require('../config/database');
+const deliveryService = require('./delivery');
 
-// ─── HAVERSINE DISTANCE (km) ─────────────────────────────────
-const getHaversineDistance = (lat1, lng1, lat2, lng2) => {
-  const R = 6371; // Earth radius in km
-  const toRad = (deg) => deg * (Math.PI / 180);
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-
-// ─── CALCULATE ETA ───────────────────────────────────────────
+// ─── CALCULATE ETA ───────────────────────────────────────────────
+// Uses 3PL quote for delivery time, adds kitchen prep on top
 const calculateETA = async (branchId, deliveryLat, deliveryLng) => {
   const branch = await col('branches').findOne({ _id: branchId });
-  if (!branch || !branch.latitude || !branch.longitude) {
-    return { prepTimeMinutes: 20, deliveryTimeMinutes: 15, totalMinutes: 35, etaText: '30-40 min' };
+  if (!branch) {
+    return { prepTimeMinutes: 20, deliveryTimeMinutes: 15, totalMinutes: 35, etaText: '30-40 min', distanceKm: null };
   }
 
   // ── Prep time ──
-  const basePrepMin   = branch.base_prep_time_min ?? 15;
-  const perItemMin    = branch.avg_item_prep_min  ?? 0;
-
-  // Kitchen queue load
+  const basePrepMin = branch.base_prep_time_min ?? 15;
   const activeOrders = await col('orders').countDocuments({
     branch_id: branchId,
     status: { $in: ['PAID', 'CONFIRMED', 'PREPARING'] },
   });
-  let prepTimeMinutes = basePrepMin + (activeOrders * 5);
+  // 3 min per active order, capped at 45 min queue
+  const queueMin = Math.min(activeOrders * 3, 45);
+  const prepTimeMinutes = Math.min(basePrepMin + queueMin, 60);
 
-  // Add per-item time if we have item count context (optional)
-  // This is handled at call site by passing itemCount
-  prepTimeMinutes = Math.min(prepTimeMinutes, 60);
+  // ── Delivery time from 3PL ──
+  let deliveryTimeMinutes = 25; // safe default
+  let distanceKm = null;
 
-  // ── Delivery time ──
-  let deliveryTimeMinutes = 15; // default
   if (deliveryLat && deliveryLng) {
-    const straightLine = getHaversineDistance(
-      branch.latitude, branch.longitude,
-      deliveryLat, deliveryLng
-    );
-    const roadDistance = straightLine * 1.4;
-    deliveryTimeMinutes = Math.round((roadDistance / 20) * 60); // 20 km/h avg
-    deliveryTimeMinutes = Math.max(10, Math.min(45, deliveryTimeMinutes));
+    try {
+      const quote = await deliveryService.getDeliveryQuote(branchId, deliveryLat, deliveryLng);
+      deliveryTimeMinutes = quote.estimatedMins || 25;
+      distanceKm = quote.distanceKm || null;
+    } catch (err) {
+      console.error(`[ETA] 3PL quote failed, using default:`, err.message);
+      // Fall back to 25 min default
+    }
   }
 
   const totalMinutes = prepTimeMinutes + deliveryTimeMinutes;
@@ -54,28 +42,32 @@ const calculateETA = async (branchId, deliveryLat, deliveryLng) => {
   const hi = totalMinutes + 5;
   const etaText = `${lo}-${hi} min`;
 
-  return { prepTimeMinutes, deliveryTimeMinutes, totalMinutes, etaText };
+  return { prepTimeMinutes, deliveryTimeMinutes, totalMinutes, etaText, distanceKm };
 };
 
-// ─── UPDATE ETA ON STATUS CHANGE ─────────────────────────────
+// ─── UPDATE ETA ON STATUS CHANGE ─────────────────────────────────
+// Uses live 3PL ETA when available, falls back to elapsed-time subtraction
 const updateETAOnStatusChange = async (orderId, newStatus) => {
   const order = await col('orders').findOne({ _id: orderId });
   if (!order) return null;
 
-  const branch = await col('branches').findOne({ _id: order.branch_id });
-  if (!branch) return null;
-
-  let deliveryTimeMinutes = 15;
-  if (order.delivery_lat && order.delivery_lng && branch.latitude && branch.longitude) {
-    const roadDist = getHaversineDistance(
-      branch.latitude, branch.longitude,
-      order.delivery_lat, order.delivery_lng
-    ) * 1.4;
-    deliveryTimeMinutes = Math.max(10, Math.min(45, Math.round((roadDist / 20) * 60)));
-  }
-
   const now = new Date();
   let remainingMin;
+
+  // Try to get live ETA from 3PL
+  let liveDeliveryMins = null;
+  try {
+    const delivery = await col('deliveries').findOne({ order_id: orderId });
+    if (delivery?.provider_order_id && delivery.status !== 'delivered' && delivery.status !== 'cancelled') {
+      const provider = deliveryService.getProvider(delivery.provider);
+      const status = await provider.getTaskStatus(delivery.provider_order_id);
+      if (status.estimatedMins) liveDeliveryMins = status.estimatedMins;
+    }
+  } catch (err) {
+    console.error(`[ETA] Live status fetch failed for order ${orderId}:`, err.message);
+  }
+
+  const deliveryTimeMinutes = liveDeliveryMins || order.estimated_delivery_min || 25;
 
   switch (newStatus) {
     case 'CONFIRMED': {
@@ -121,4 +113,4 @@ const updateETAOnStatusChange = async (orderId, newStatus) => {
   return { remainingMin, etaText };
 };
 
-module.exports = { getHaversineDistance, calculateETA, updateETAOnStatusChange };
+module.exports = { calculateETA, updateETAOnStatusChange };

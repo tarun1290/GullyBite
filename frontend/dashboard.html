@@ -356,6 +356,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
     <div class="sb-sec">
       <div class="sb-cap">Marketing</div>
       <button class="sb-btn" onclick="goTab('coupons',this)"><span class="ic">🏷️</span>Coupons &amp; Discounts</button>
+      <button class="sb-btn" onclick="goTab('campaigns',this)"><span class="ic">📢</span>Campaigns</button>
     </div>
     <div class="sb-sec" id="sb-team-sec" style="display:none">
       <div class="sb-cap">Team</div>
@@ -918,8 +919,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
         <div class="card">
           <div class="tbl">
             <table>
-              <thead><tr><th>Period</th><th>Orders</th><th>Gross</th><th>Platform Fee</th><th>Net Payout</th><th>Status</th></tr></thead>
-              <tbody id="settle-body"><tr><td colspan="6"><div class="empty"><div class="ei">💰</div><h3>No settlements yet</h3><p>Settlements run every Monday at 9 AM IST</p></div></td></tr></tbody>
+              <thead><tr><th>Period</th><th>Orders</th><th>Gross</th><th>Platform Fee</th><th>Net Payout</th><th>Status</th><th></th></tr></thead>
+              <tbody id="settle-body"><tr><td colspan="7"><div class="empty"><div class="ei">💰</div><h3>No settlements yet</h3><p>Settlements run every Monday at 9 AM IST</p></div></td></tr></tbody>
             </table>
           </div>
         </div>
@@ -1139,6 +1140,82 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
         </div>
       </div>
 
+      <!-- ── CAMPAIGNS ─────────────────────────────── -->
+      <div class="tab" id="tab-campaigns">
+        <div class="notice wa" style="margin-bottom:1.3rem">
+          <div class="notice-ico">📢</div>
+          <div class="notice-body">
+            <h4>WhatsApp Product Campaigns</h4>
+            <p>Send multi-product messages (MPM) to your customers. Pick products from your menu, choose a customer segment, and send or schedule the campaign.</p>
+          </div>
+        </div>
+
+        <!-- Create campaign form -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>New Campaign</h3></div>
+          <div class="cb">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+              <div>
+                <label class="lbl">Campaign Name *</label>
+                <input id="cmp-name" class="inp" placeholder="e.g. Weekend Special Menu">
+              </div>
+              <div>
+                <label class="lbl">Branch *</label>
+                <select id="cmp-branch" class="inp" onchange="loadCampaignProducts()">
+                  <option value="">Select branch…</option>
+                </select>
+              </div>
+            </div>
+            <div style="margin-bottom:1rem">
+              <label class="lbl">Select Products * (max 30)</label>
+              <div id="cmp-products" style="max-height:200px;overflow-y:auto;border:1px solid var(--rim);border-radius:8px;padding:.6rem;background:var(--ink4)">
+                <span style="color:var(--dim);font-size:.82rem">Select a branch first</span>
+              </div>
+              <div style="font-size:.72rem;color:var(--dim);margin-top:.3rem"><span id="cmp-sel-count">0</span>/30 selected</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+              <div>
+                <label class="lbl">Customer Segment</label>
+                <select id="cmp-segment" class="inp">
+                  <option value="all">All Customers</option>
+                  <option value="recent">Recent (last 30 days)</option>
+                  <option value="inactive">Inactive (60+ days)</option>
+                </select>
+              </div>
+              <div>
+                <label class="lbl">Schedule (optional)</label>
+                <input id="cmp-schedule" class="inp" type="datetime-local">
+              </div>
+              <div style="display:flex;align-items:flex-end;gap:.5rem">
+                <button class="btn" onclick="createCampaign()" style="flex:1">Create</button>
+                <button class="btn-g" onclick="createAndSendCampaign()" style="flex:1">Send Now</button>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+              <div>
+                <label class="lbl">Header Text</label>
+                <input id="cmp-header" class="inp" placeholder="e.g. Weekend Specials 🔥" maxlength="60">
+              </div>
+              <div>
+                <label class="lbl">Body Text</label>
+                <input id="cmp-body" class="inp" placeholder="Check out our latest picks!" maxlength="1024">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Campaigns table -->
+        <div class="card">
+          <div class="ch"><h3>Campaign History</h3></div>
+          <div class="tbl">
+            <table>
+              <thead><tr><th>Name</th><th>Products</th><th>Segment</th><th>Sent</th><th>Failed</th><th>Status</th><th>Created</th><th></th></tr></thead>
+              <tbody id="cmp-tbody"><tr><td colspan="8"><div class="empty"><div class="ei">📢</div><h3>No campaigns yet</h3><p>Create your first campaign above</p></div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- ── TEAM ──────────────────────────────────── -->
       <div class="tab" id="tab-team">
         <div class="card" style="margin-bottom:1.2rem">
@@ -1316,11 +1393,11 @@ window.fbAsyncInit=function(){FB.init({appId:'1030816782804757',cookie:true,xfbm
                 <label>Delivery Fee — Customer Pays (%)</label>
                 <div style="display:flex;align-items:center;gap:.6rem">
                   <input type="number" id="p-del-pct" min="0" max="100" step="1" value="100" placeholder="0–100" style="width:100px" oninput="updateDashDeliveryHint(this.value)">
-                  <span style="font-size:.82rem;color:var(--dim)">% of delivery fee charged to customer</span>
+                  <span style="font-size:.82rem;color:var(--dim)">% of delivery partner's fee charged to customer</span>
                 </div>
                 <div id="p-del-pct-hint" style="font-size:.78rem;color:var(--dim);margin-top:.45rem;line-height:1.55;background:var(--ink4);border-radius:7px;padding:.45rem .7rem;border:1px solid var(--rim)">
                   Customer pays <strong>100%</strong> of the delivery fee. Your restaurant absorbs <strong>0%</strong>.<br>
-                  <span style="color:var(--mute)">Example: if delivery costs ₹40 and you set 70%, customer pays ₹28 and restaurant absorbs ₹12.</span>
+                  <span style="color:var(--mute)">What % of the delivery partner's fee is charged to the customer. The restaurant absorbs the remainder, deducted at settlement.</span>
                 </div>
               </div>
               <div class="fg">
@@ -1568,6 +1645,7 @@ const TMETA = {
   integrations:{ title: 'POS & Platform Integrations', sub: 'Sync menus from Swiggy, Zomato, PetPooja', fn: loadIntegrations },
   settlements: { title: 'Settlements',        sub: 'Weekly payout history',              fn: loadSettlements },
   coupons:     { title: 'Coupons & Discounts', sub: 'Create and manage discount codes for WhatsApp orders', fn: loadCoupons },
+  campaigns:   { title: 'Campaigns',          sub: 'Send product lists to customers via WhatsApp',  fn: loadCampaigns },
   ratings:     { title: 'Ratings',             sub: 'Customer ratings and feedback',      fn: loadRatings },
   loyalty:     { title: 'Loyalty',             sub: 'Customer loyalty points and rewards', fn: loadLoyalty },
   team:        { title: 'Team',               sub: 'Manage staff access and roles',       fn: loadTeam },
@@ -1827,11 +1905,55 @@ async function openOrdModal(orderId) {
       ${dynamicNote}
       ${settlementNote}
     `;
+
+    // Load delivery info
+    try {
+      const dRes = await api('/api/restaurant/orders/' + id + '/delivery');
+      const d = dRes.delivery;
+      if (d) {
+        const statusColors = { delivered: '#16a34a', picked_up: '#2563eb', assigned: '#d97706', pending: '#6b7280', failed: '#dc2626', cancelled: '#dc2626' };
+        const statusColor = statusColors[d.status] || '#6b7280';
+        let deliveryHtml = `
+          <div style="margin-top:.8rem;padding:.65rem .9rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px">
+            <div style="font-size:.75rem;color:var(--dim);margin-bottom:.4rem">🚴 Delivery</div>
+            <div style="display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;font-size:.82rem">
+              <span style="background:${statusColor}22;color:${statusColor};padding:.15rem .5rem;border-radius:4px;font-weight:600;font-size:.75rem">${(d.status||'pending').toUpperCase()}</span>
+              ${d.provider ? `<span style="color:var(--dim)">${d.provider}</span>` : ''}
+              ${d.driver_name ? `<span>👤 ${d.driver_name}</span>` : ''}
+              ${d.driver_phone ? `<a href="tel:${d.driver_phone}" style="color:var(--wa)">📞 ${d.driver_phone}</a>` : ''}
+              ${d.estimated_mins ? `<span>⏱ ~${d.estimated_mins} min</span>` : ''}
+              ${d.cost_rs ? `<span style="color:var(--dim)">₹${parseFloat(d.cost_rs).toFixed(0)} 3PL cost</span>` : ''}
+            </div>
+            <div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap">
+              ${d.tracking_url ? `<a href="${d.tracking_url}" target="_blank" class="btn-p btn-sm" style="text-decoration:none;font-size:.75rem">📍 Track Delivery</a>` : ''}
+              ${(d.status === 'failed' || d.status === 'cancelled') ? `<button class="btn-g btn-sm" style="font-size:.75rem" onclick="doDispatch('${id}')">🔄 Re-dispatch</button>` : ''}
+              ${(d.status === 'assigned' || d.status === 'picked_up') ? `<button class="btn-sm" style="font-size:.75rem;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;border-radius:4px;cursor:pointer" onclick="doCancelDelivery('${id}')">❌ Cancel Delivery</button>` : ''}
+              ${d.status === 'pending' ? `<button class="btn-p btn-sm" style="font-size:.75rem" onclick="doDispatch('${id}')">🚴 Dispatch Now</button>` : ''}
+            </div>
+          </div>`;
+        body.innerHTML += deliveryHtml;
+      }
+    } catch (de) { /* delivery info optional */ }
   } catch (e) { body.innerHTML = `<p style="color:var(--red)">${e.message}</p>`; }
 }
 async function doUpdateOrder(id, s) {
   try { await api(`/api/restaurant/orders/${id}/status`, { method: 'PATCH', body: { status: s } }); toast('Order updated ✓', 'ok'); loadOrders(oFilter); }
   catch (e) { toast(e.message, 'err'); }
+}
+async function doDispatch(orderId) {
+  try {
+    await api(`/api/restaurant/orders/${orderId}/dispatch`, { method: 'POST' });
+    toast('Delivery dispatched ✓', 'ok');
+    showOrderDetail(orderId);
+  } catch (e) { toast(e.message, 'err'); }
+}
+async function doCancelDelivery(orderId) {
+  if (!confirm('Cancel the active delivery?')) return;
+  try {
+    await api(`/api/restaurant/orders/${orderId}/cancel-delivery`, { method: 'POST' });
+    toast('Delivery cancelled', 'ok');
+    showOrderDetail(orderId);
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ─────────────────────────── CUSTOMERS ─────────────────── */
@@ -2465,26 +2587,10 @@ function renderBranchCard(b) {
           <span>Branch open</span>
         </div>
       </div>
-      <!-- Dynamic Pricing -->
-      <details class="dp-section" style="margin-top:.75rem;border:1px solid var(--bdr);border-radius:8px;padding:.6rem .8rem">
-        <summary style="cursor:pointer;font-weight:600;font-size:.85rem;color:var(--fg)">
-          ⚡ Dynamic Delivery Pricing ${b.dynamic_pricing_enabled ? '<span style="color:var(--wa);font-size:.75rem;font-weight:400"> — Active</span>' : '<span style="color:var(--dim);font-size:.75rem;font-weight:400"> — Off</span>'}
-        </summary>
-        <div style="margin-top:.6rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem .8rem;font-size:.8rem">
-          <div class="tog" style="grid-column:1/-1">
-            <label class="tsl"><input type="checkbox" ${b.dynamic_pricing_enabled ? 'checked' : ''} onchange="doToggle('${b.id}','dynamicPricingEnabled',this.checked)"><div class="tsl-track"></div></label>
-            <span>Enable dynamic pricing</span>
-          </div>
-          <div class="ipair"><label>Base Fee (₹)</label><input type="number" value="${b.base_delivery_fee_rs ?? 30}" min="0" step="5" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','baseDeliveryFeeRs',this.value)"></div>
-          <div class="ipair"><label>Per-km (₹)</label><input type="number" value="${b.per_km_fee_rs ?? 7}" min="0" step="1" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','perKmFeeRs',this.value)"></div>
-          <div class="ipair"><label>Free within (km)</label><input type="number" value="${b.free_delivery_within_km ?? 0}" min="0" step="0.5" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','freeDeliveryWithinKm',this.value)"></div>
-          <div class="ipair"><label>Min Fee (₹)</label><input type="number" value="${b.min_delivery_fee_rs ?? 20}" min="0" step="5" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','minDeliveryFeeRs',this.value)"></div>
-          <div class="ipair"><label>Max Fee (₹)</label><input type="number" value="${b.max_delivery_fee_rs ?? 150}" min="0" step="10" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','maxDeliveryFeeRs',this.value)"></div>
-          <div class="ipair"><label>Surge ×</label><input type="number" value="${b.surge_multiplier ?? 1.0}" min="1" max="5" step="0.1" style="width:60px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','surgeMultiplier',this.value)"></div>
-          <div class="ipair" style="grid-column:1/-1"><label>Surge Reason</label><input type="text" value="${b.surge_reason || ''}" placeholder="e.g. Rain, High demand" style="width:100%;max-width:250px;padding:.2rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem" onchange="doToggle('${b.id}','surgeReason',this.value)"></div>
-        </div>
-        <div id="surge-info-${b.id}" style="margin-top:.5rem;font-size:.75rem;color:var(--dim)"></div>
-      </details>
+      <!-- Delivery Info -->
+      <div style="margin-top:.75rem;padding:.6rem .8rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;font-size:.8rem;color:var(--dim)">
+        🚴 <strong>Delivery</strong> — Fee is calculated automatically by our delivery partner based on distance. Radius: <strong>${b.delivery_radius_km || '—'} km</strong>
+      </div>
     </div>
     ${catHtml}
   </div>`;
@@ -3737,8 +3843,21 @@ async function loadSettlements() {
       <td>₹${parseFloat(s.platform_fee_rs).toFixed(0)}</td>
       <td><strong>₹${parseFloat(s.net_payout_rs).toFixed(0)}</strong></td>
       <td>${sbadge(s.payout_status.toUpperCase())}</td>
+      <td><button class="btn-xs" onclick="downloadSettlement('${s.id}')" title="Download Excel">📥</button></td>
     </tr>`).join('');
   } catch (_) {}
+}
+
+async function downloadSettlement(id) {
+  try {
+    const resp = await fetch(`/api/restaurant/settlements/${id}/download`, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+    if (!resp.ok) throw new Error('Download failed');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = resp.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || `settlement_${id}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
+  } catch (e) { alert('Download failed: ' + e.message); }
 }
 
 /* ─────────────────────────── PROFILE ───────────────────── */
@@ -4201,6 +4320,133 @@ async function deleteCoupon(id, code) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+/* ──────────────────── CAMPAIGNS (MPM) ────────────────────── */
+let cmpProducts = []; // products for selected branch
+
+async function loadCampaigns() {
+  // Populate branch dropdown
+  const sel = document.getElementById('cmp-branch');
+  sel.innerHTML = '<option value="">Select branch…</option>' +
+    branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+
+  const tb = document.getElementById('cmp-tbody');
+  try {
+    const rows = await api('/api/restaurant/campaigns');
+    if (!rows?.length) {
+      tb.innerHTML = '<tr><td colspan="8"><div class="empty"><div class="ei">📢</div><h3>No campaigns yet</h3><p>Create your first campaign above</p></div></td></tr>';
+      return;
+    }
+    const segLabel = { all: 'All', recent: 'Recent 30d', inactive: 'Inactive 60d+' };
+    tb.innerHTML = rows.map(c => {
+      const statusMap = { draft: 'bd', scheduled: 'bb', sending: 'bb', sent: 'bg', failed: 'br' };
+      return `<tr>
+        <td><strong>${c.name}</strong></td>
+        <td>${c.product_ids?.length || 0}</td>
+        <td>${segLabel[c.segment] || c.segment}</td>
+        <td>${c.sent_count || 0}</td>
+        <td>${c.failed_count || 0}</td>
+        <td><span class="badge ${statusMap[c.status] || 'bd'}">${c.status}</span></td>
+        <td style="font-size:.78rem;color:var(--dim)">${timeAgo(c.created_at)}</td>
+        <td>
+          ${c.status === 'draft' || c.status === 'scheduled' ? `<button class="btn-g btn-sm" onclick="sendCampaignNow('${c.id}')">Send</button>` : ''}
+          ${c.status !== 'sending' ? `<button class="btn-sm" style="color:var(--red)" onclick="deleteCampaignRow('${c.id}','${c.name}')">Delete</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (_) {}
+}
+
+async function loadCampaignProducts() {
+  const branchId = document.getElementById('cmp-branch').value;
+  const container = document.getElementById('cmp-products');
+  if (!branchId) { container.innerHTML = '<span style="color:var(--dim);font-size:.82rem">Select a branch first</span>'; return; }
+
+  try {
+    const items = await api(`/api/restaurant/branches/${branchId}/items`);
+    cmpProducts = items || [];
+    if (!cmpProducts.length) { container.innerHTML = '<span style="color:var(--dim);font-size:.82rem">No menu items found for this branch</span>'; return; }
+
+    container.innerHTML = cmpProducts.map(item => `
+      <label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:6px;cursor:pointer;font-size:.82rem" class="cmp-prod-row">
+        <input type="checkbox" value="${item.id}" class="cmp-prod-cb" onchange="updateCmpCount()">
+        <span>${item.food_type === 'veg' ? '🟢' : '🔴'}</span>
+        <span style="flex:1">${item.name}${item.variant_value ? ' — ' + item.variant_value : ''}</span>
+        <span style="color:var(--dim)">₹${((item.price_paise || 0) / 100).toFixed(0)}</span>
+      </label>`).join('');
+  } catch (e) { container.innerHTML = `<span style="color:var(--red);font-size:.82rem">${e.message}</span>`; }
+}
+
+function updateCmpCount() {
+  const checked = document.querySelectorAll('.cmp-prod-cb:checked');
+  document.getElementById('cmp-sel-count').textContent = checked.length;
+  if (checked.length > 30) {
+    alert('Maximum 30 products per campaign');
+    checked[checked.length - 1].checked = false;
+    document.getElementById('cmp-sel-count').textContent = 30;
+  }
+}
+
+function getCmpBody() {
+  const name = document.getElementById('cmp-name').value.trim();
+  const branchId = document.getElementById('cmp-branch').value;
+  const productIds = [...document.querySelectorAll('.cmp-prod-cb:checked')].map(cb => cb.value);
+  if (!name) { toast('Enter a campaign name', 'err'); return null; }
+  if (!branchId) { toast('Select a branch', 'err'); return null; }
+  if (!productIds.length) { toast('Select at least one product', 'err'); return null; }
+
+  return {
+    branchId,
+    name,
+    productIds,
+    segment: document.getElementById('cmp-segment').value,
+    scheduleAt: document.getElementById('cmp-schedule').value || null,
+    headerText: document.getElementById('cmp-header').value.trim() || null,
+    bodyText: document.getElementById('cmp-body').value.trim() || null,
+  };
+}
+
+async function createCampaign() {
+  const body = getCmpBody();
+  if (!body) return;
+  try {
+    await api('/api/restaurant/campaigns', { method: 'POST', body });
+    toast(body.scheduleAt ? 'Campaign scheduled!' : 'Campaign created (draft)', 'ok');
+    loadCampaigns();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function createAndSendCampaign() {
+  const body = getCmpBody();
+  if (!body) return;
+  body.scheduleAt = null; // send immediately
+  try {
+    const campaign = await api('/api/restaurant/campaigns', { method: 'POST', body });
+    toast('Sending campaign…', 'nfo');
+    const result = await api(`/api/restaurant/campaigns/${campaign.id}/send`, { method: 'POST' });
+    toast(`Campaign sent: ${result.sent} delivered, ${result.failed} failed`, 'ok');
+    loadCampaigns();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function sendCampaignNow(id) {
+  if (!confirm('Send this campaign now?')) return;
+  try {
+    toast('Sending…', 'nfo');
+    const result = await api(`/api/restaurant/campaigns/${id}/send`, { method: 'POST' });
+    toast(`Sent: ${result.sent} delivered, ${result.failed} failed`, 'ok');
+    loadCampaigns();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function deleteCampaignRow(id, name) {
+  if (!confirm(`Delete campaign "${name}"?`)) return;
+  try {
+    await api(`/api/restaurant/campaigns/${id}`, { method: 'DELETE' });
+    toast('Campaign deleted', 'ok');
+    loadCampaigns();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 /* ──────────────────── PRODUCT SETS ─────────────────────── */
 async function doSyncSets() {
   const branchId = document.getElementById('m-branch').value;
@@ -4347,6 +4593,30 @@ const INT_DEFS = {
       { id: 'api_key',      label: 'API Key',        ph: 'pp_xxxxxxxxxxxxxxxx',  type: 'text' },
       { id: 'access_token', label: 'Access Token',   ph: 'at_xxxxxxxxxxxxxxxx',  type: 'text' },
       { id: 'outlet_id',    label: 'Restaurant ID',  ph: '12345',                type: 'text' },
+    ],
+  },
+  urbanpiper: {
+    name   : 'UrbanPiper',
+    emoji  : '🔵',
+    cls    : 'urbanpiper',
+    desc   : 'Connect via UrbanPiper to sync menus from Swiggy, Zomato & more. Orders auto-push to your POS.',
+    apiNote: 'Get your API Key and API Secret from your UrbanPiper dashboard → Settings → API Keys.',
+    fields : [
+      { id: 'api_key',    label: 'API Key',    ph: 'up_xxxxxxxxxxxxxxxx', type: 'text' },
+      { id: 'api_secret', label: 'API Secret', ph: 'secret_xxxxxxxxxxxx', type: 'text' },
+      { id: 'outlet_id',  label: 'Store / Location ID', ph: '12345',      type: 'text' },
+    ],
+  },
+  dotpe: {
+    name   : 'DotPe',
+    emoji  : '🟡',
+    cls    : 'dotpe',
+    desc   : 'Sync your DotPe POS menu and push WhatsApp orders to your DotPe dashboard automatically.',
+    apiNote: 'Get your Partner API Key, Access Token and Store ID from your DotPe partner account.',
+    fields : [
+      { id: 'api_key',      label: 'Partner API Key', ph: 'dp_xxxxxxxxxxxxxxxx', type: 'text' },
+      { id: 'access_token', label: 'Access Token',    ph: 'at_xxxxxxxxxxxxxxxx', type: 'text' },
+      { id: 'outlet_id',    label: 'Store / Outlet ID', ph: '12345',             type: 'text' },
     ],
   },
   // ── Swiggy — coming soon (requires Swiggy Partner API approval) ──
@@ -4496,7 +4766,7 @@ function openIntModal(platform) {
         <div class="fg">
           <label>${f.label}</label>
           <input id="im-${f.id}" type="${f.type || 'text'}" placeholder="${f.ph}"
-            value="${row.api_key && f.id === 'api_key' ? '••••••••' : ''}">
+            value="${row[f.id] && ['api_key','api_secret','access_token'].includes(f.id) ? '••••••••' : ''}">
         </div>`).join('')}
     </div>
     <div class="int-api-note">ℹ️ ${def.apiNote}</div>`;
