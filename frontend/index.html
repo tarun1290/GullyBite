@@ -175,6 +175,14 @@ a{color:inherit;text-decoration:none}
 .input-err{border-color:var(--red)!important}
 .field-err{font-size:.73rem;color:var(--red);margin-top:.2rem}
 .pwd-hint{font-size:.72rem;color:var(--mute);margin-top:.2rem}
+.pwd-rules{list-style:none;margin:.45rem 0 0;padding:0;display:flex;flex-direction:column;gap:.22rem}
+.pwd-rules li{font-size:.72rem;color:var(--mute);padding-left:1.2rem;position:relative;transition:color .2s}
+.pwd-rules li::before{content:"✗";position:absolute;left:0;color:#f87171}
+.pwd-rules li.ok{color:#4ade80}
+.pwd-rules li.ok::before{content:"✓";color:#4ade80}
+.auth-divider{display:flex;align-items:center;gap:.8rem;margin:1.2rem 0}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--rim2)}
+.auth-divider span{font-size:.75rem;color:var(--mute);font-weight:600}
 
 /* ── ONBOARDING ─────────────────────────────────────────── */
 .ob-wrap{width:100%;max-width:640px;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both;padding:1rem 0 3rem}
@@ -272,7 +280,7 @@ a{color:inherit;text-decoration:none}
   <nav class="nav">
     <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
     <div class="nav-links">
-      <button class="btn-primary" onclick="showPage('pg-google')">Sign In →</button>
+      <button class="btn-primary" onclick="showPage('pg-signin')">Sign In →</button>
     </div>
   </nav>
 
@@ -283,8 +291,8 @@ a{color:inherit;text-decoration:none}
       <h1>Turn WhatsApp into your<br><span class="wa-green">restaurant's</span> <span class="accent">ordering engine</span></h1>
       <p class="hero-sub">GullyBite connects your menu to WhatsApp in minutes. Customers browse, order and pay — no app, no Swiggy, no commission. Just direct orders straight to your kitchen.</p>
       <div class="hero-btns">
-        <button class="btn-hero" onclick="showPage('pg-google')">🚀 Start for Free — No card needed</button>
-        <button class="btn-hero-ghost" onclick="showPage('pg-google')">Sign In to Dashboard</button>
+        <button class="btn-hero" onclick="showPage('pg-signup')">🚀 Start for Free — No card needed</button>
+        <button class="btn-hero-ghost" onclick="showPage('pg-signin')">Sign In to Dashboard</button>
       </div>
 
       <!-- Dashboard Mockup -->
@@ -478,7 +486,7 @@ a{color:inherit;text-decoration:none}
           <li>Weekly automatic bank settlements</li>
           <li>Dedicated onboarding support</li>
         </ul>
-        <button class="btn-full" onclick="showPage('pg-google')">Get Started Free →</button>
+        <button class="btn-full" onclick="showPage('pg-signup')">Get Started Free →</button>
         <p class="pricing-note">First 14 days free. No credit card required to sign up.</p>
       </div>
     </div>
@@ -488,7 +496,7 @@ a{color:inherit;text-decoration:none}
   <section class="cta-section">
     <h2>Ready to own your orders?</h2>
     <p>Join restaurants across India who've switched from aggregators to direct WhatsApp ordering with GullyBite.</p>
-    <button class="btn-cta" onclick="showPage('pg-google')">🚀 Start Your Free Trial</button>
+    <button class="btn-cta" onclick="showPage('pg-signup')">🚀 Start Your Free Trial</button>
   </section>
 
   <!-- FOOTER -->
@@ -504,18 +512,73 @@ a{color:inherit;text-decoration:none}
 
 </div>
 
-<!-- ══════════════════ GOOGLE SIGN IN ═══════════════════════ -->
-<div id="pg-google" class="hidden auth-wrap">
+<!-- ══════════════════ SIGN UP ═══════════════════════════════ -->
+<div id="pg-signup" class="hidden auth-wrap">
   <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring">🍜</div>GullyBite</div></nav>
   <div class="auth-body">
-    <div class="auth-card" style="text-align:center">
-      <h2>Welcome to GullyBite</h2>
-      <p class="sub">Sign in or create your account to get started</p>
-      <button class="btn-google" id="google-btn" onclick="doGoogleLogin()">
+    <div class="auth-card">
+      <h2>Create Account</h2>
+      <p class="sub">Start your free 14-day trial — no credit card required</p>
+      <button class="btn-google" onclick="doGoogleLogin()">
         <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
         Continue with Google
       </button>
-      <p class="sub" style="margin-top:1.2rem;font-size:.76rem;color:var(--mute)">No credit card required. Free 14-day trial.</p>
+      <div class="auth-divider"><span>OR</span></div>
+      <form onsubmit="doSignup(event)">
+        <div class="fld">
+          <label>Your Full Name <span class="req">*</span></label>
+          <input id="su-name" type="text" placeholder="Ravi Kumar" autocomplete="name" required>
+        </div>
+        <div class="fld">
+          <label>Work Email <span class="req">*</span></label>
+          <input id="su-email" type="email" placeholder="ravi@restaurant.com" autocomplete="email" required>
+        </div>
+        <div class="fld">
+          <label>Password <span class="req">*</span></label>
+          <input id="su-pw" type="password" placeholder="Min 8 characters" autocomplete="new-password" required minlength="8" oninput="checkPwStrength(this.value)">
+          <ul class="pwd-rules" id="pwd-rules">
+            <li id="pr-len">At least 8 characters</li>
+            <li id="pr-upper">One uppercase letter (A–Z)</li>
+            <li id="pr-lower">One lowercase letter (a–z)</li>
+            <li id="pr-num">One number (0–9)</li>
+            <li id="pr-sym">One special character (@, #, ! …)</li>
+          </ul>
+        </div>
+        <div class="fld">
+          <label>Confirm Password <span class="req">*</span></label>
+          <input id="su-pw2" type="password" placeholder="Re-enter password" autocomplete="new-password" required>
+        </div>
+        <button class="btn-full" type="submit" id="su-btn">Create Account →</button>
+      </form>
+      <p class="auth-switch">Already have an account? <a onclick="showPage('pg-signin')">Sign In</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ SIGN IN ═══════════════════════════════ -->
+<div id="pg-signin" class="hidden auth-wrap">
+  <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring">🍜</div>GullyBite</div></nav>
+  <div class="auth-body">
+    <div class="auth-card">
+      <h2>Welcome Back</h2>
+      <p class="sub">Sign in to your GullyBite restaurant dashboard</p>
+      <button class="btn-google" onclick="doGoogleLogin()">
+        <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <div class="auth-divider"><span>OR</span></div>
+      <form onsubmit="doSignin(event)">
+        <div class="fld">
+          <label>Email Address <span class="req">*</span></label>
+          <input id="si-email" type="email" placeholder="ravi@restaurant.com" autocomplete="email" required>
+        </div>
+        <div class="fld">
+          <label>Password <span class="req">*</span></label>
+          <input id="si-pw" type="password" placeholder="Your password" autocomplete="current-password" required>
+        </div>
+        <button class="btn-full" type="submit" id="si-btn">Sign In →</button>
+      </form>
+      <p class="auth-switch">New to GullyBite? <a onclick="showPage('pg-signup')">Create Account</a></p>
     </div>
   </div>
 </div>
@@ -765,7 +828,7 @@ End of document upload block ═════════════════
 </div>
 
 <script>
-const PAGES = ['pg-land','pg-google','pg-onboard','pg-connect','pg-pending','pg-rejected'];
+const PAGES = ['pg-land','pg-signup','pg-signin','pg-onboard','pg-connect','pg-pending','pg-rejected'];
 function showPage(id) {
   PAGES.forEach(p => document.getElementById(p).classList.toggle('hidden', p !== id));
   window.scrollTo(0,0);
@@ -917,6 +980,58 @@ async function handleGoogleResponse(response) {
   } catch (err) { console.error('[Google] Error:', err); toast(err.message || 'Sign in failed', 'err'); }
   finally { btn.disabled = false; btn.innerHTML = _googleBtnHtml; }
 }
+/* ─── EMAIL/PASSWORD AUTH ──────────────────────────────── */
+function checkPwStrength(pw) {
+  const set = (id, ok) => document.getElementById(id)?.classList.toggle('ok', ok);
+  set('pr-len',   pw.length >= 8);
+  set('pr-upper', /[A-Z]/.test(pw));
+  set('pr-lower', /[a-z]/.test(pw));
+  set('pr-num',   /[0-9]/.test(pw));
+  set('pr-sym',   /[^A-Za-z0-9]/.test(pw));
+}
+
+async function doSignup(e) {
+  e.preventDefault();
+  const btn = document.getElementById('su-btn');
+  const pw  = document.getElementById('su-pw').value;
+  const pw2 = document.getElementById('su-pw2').value;
+  if (pw !== pw2) return toast('Passwords do not match', 'err');
+
+  setLoading(btn, true, 'Creating account…');
+  try {
+    const d = await post('/auth/signup', {
+      ownerName: document.getElementById('su-name').value.trim(),
+      email:     document.getElementById('su-email').value.trim(),
+      password:  pw,
+    });
+    if (d.token) {
+      localStorage.setItem('zm_token', d.token);
+      toast('Account created!', 'ok');
+      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+      prefillOnboarding(me);
+      showPage('pg-onboard');
+    } else toast(d.error || 'Sign up failed', 'err');
+  } catch (err) { toast(err.message, 'err'); }
+  finally { setLoading(btn, false, 'Create Account →'); }
+}
+
+async function doSignin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('si-btn');
+  setLoading(btn, true, 'Signing in…');
+  try {
+    const d = await post('/auth/signin', {
+      email:    document.getElementById('si-email').value.trim(),
+      password: document.getElementById('si-pw').value,
+    });
+    if (!d.token) return toast(d.error || 'Sign in failed', 'err');
+    localStorage.setItem('zm_token', d.token);
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+    routeByStatus(me);
+  } catch (err) { toast(err.message, 'err'); }
+  finally { setLoading(btn, false, 'Sign In →'); }
+}
+
 const _googleBtnHtml = '<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Continue with Google';
 
 function doGoogleLogin() {

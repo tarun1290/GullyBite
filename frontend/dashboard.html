@@ -1467,6 +1467,26 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
 
 
+        <!-- Change Password -->
+        <div class="card" style="margin-top:1.2rem">
+          <div class="ch"><h3>Change Password</h3></div>
+          <div class="cb">
+            <div class="fld">
+              <label>Current Password</label>
+              <input id="cp-current" type="password" placeholder="Enter current password" autocomplete="current-password">
+            </div>
+            <div class="fld">
+              <label>New Password</label>
+              <input id="cp-new" type="password" placeholder="Min 8 characters" autocomplete="new-password">
+            </div>
+            <div class="fld">
+              <label>Confirm New Password</label>
+              <input id="cp-confirm" type="password" placeholder="Re-enter new password" autocomplete="new-password">
+            </div>
+            <button class="btn-p" id="cp-btn" onclick="doChangePassword()">Update Password</button>
+          </div>
+        </div>
+
         <!-- Delete Account -->
         <div class="card" style="margin-top:1.2rem;border-color:#fecaca">
           <div class="ch" style="background:#fff1f2"><h3 style="color:#dc2626">Delete Account</h3></div>
@@ -3999,6 +4019,26 @@ async function doSaveChargeConfig() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+
+async function doChangePassword() {
+  const btn = document.getElementById('cp-btn');
+  const cur = document.getElementById('cp-current').value;
+  const np  = document.getElementById('cp-new').value;
+  const nc  = document.getElementById('cp-confirm').value;
+  if (!np || np.length < 8) return toast('New password must be at least 8 characters', 'err');
+  if (np !== nc) return toast('Passwords do not match', 'err');
+  btn.disabled = true; btn.textContent = 'Updating…';
+  try {
+    const d = await api('/auth/change-password', { method: 'POST', body: { currentPassword: cur, newPassword: np } });
+    if (d && d.ok) {
+      toast('Password updated!', 'ok');
+      document.getElementById('cp-current').value = '';
+      document.getElementById('cp-new').value = '';
+      document.getElementById('cp-confirm').value = '';
+    } else toast(d.error || 'Failed', 'err');
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Update Password'; }
+}
 
 async function doDeleteAccount() {
   const confirmEmail = document.getElementById('delete-confirm-email').value.trim();

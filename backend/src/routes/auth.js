@@ -1,5 +1,5 @@
 // src/routes/auth.js
-// Google OAuth + Meta WhatsApp authentication
+// Email/password + Google OAuth + Meta WhatsApp authentication
 
 const express = require('express');
 const axios   = require('axios');
@@ -21,6 +21,87 @@ const docUpload = multer({
 });
 
 const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
+
+// ─── SIGN UP ──────────────────────────────────────────────────
+router.post('/signup', express.json(), async (req, res) => {
+  try {
+    const { ownerName, email, password } = req.body;
+    if (!ownerName || !email || !password)
+      return res.status(400).json({ error: 'Name, email and password are required' });
+    if (password.length < 8)
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    if (!/[A-Z]/.test(password))
+      return res.status(400).json({ error: 'Password must contain at least one uppercase letter' });
+    if (!/[a-z]/.test(password))
+      return res.status(400).json({ error: 'Password must contain at least one lowercase letter' });
+    if (!/[0-9]/.test(password))
+      return res.status(400).json({ error: 'Password must contain at least one number' });
+    if (!/[^A-Za-z0-9]/.test(password))
+      return res.status(400).json({ error: 'Password must contain at least one special character (e.g. @, #, !)' });
+
+    const existing = await col('restaurants').findOne({ email: email.toLowerCase() });
+    if (existing) return res.status(409).json({ error: 'An account with this email already exists. Try signing in instead.' });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const id = newId();
+    await col('restaurants').insertOne({
+      _id: id, owner_name: ownerName.trim(), email: email.toLowerCase().trim(),
+      password_hash: passwordHash, auth_provider: 'local',
+      approval_status: 'pending', onboarding_step: 1,
+      business_name: 'My Restaurant', status: 'active',
+      created_at: new Date(), updated_at: new Date(),
+    });
+    const ownerUser = await ensureOwnerUser(id, ownerName.trim());
+    const token = jwt.sign({
+      restaurantId: id,
+      userId: String(ownerUser._id),
+      role: 'owner',
+      permissions: ROLE_PERMISSIONS.owner,
+      branchIds: [],
+    }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
+  } catch (err) {
+    console.error('[Signup]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── SIGN IN ──────────────────────────────────────────────────
+router.post('/signin', express.json(), async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return res.status(400).json({ error: 'Email and password are required' });
+
+    const restaurant = await col('restaurants').findOne({ email: email.toLowerCase() });
+    if (!restaurant) return res.status(401).json({ error: 'No account found with this email' });
+    if (!restaurant.password_hash)
+      return res.status(401).json({ error: 'This account uses Google sign-in. Please use "Continue with Google" instead.' });
+
+    const valid = await bcrypt.compare(password, restaurant.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Incorrect password' });
+
+    const ownerUser = await ensureOwnerUser(String(restaurant._id), restaurant.owner_name);
+    const token = jwt.sign({
+      restaurantId: String(restaurant._id),
+      userId: String(ownerUser._id),
+      role: 'owner',
+      permissions: ROLE_PERMISSIONS.owner,
+      branchIds: [],
+    }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const step = restaurant.onboarding_step || 1;
+    res.json({
+      token,
+      approvalStatus: restaurant.approval_status || 'pending',
+      onboardingStep: step,
+      needsOnboarding: step < 2,
+      user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner },
+    });
+  } catch (err) {
+    console.error('[Signin]', err.message);
+    res.status(500).json({ error: 'Sign in failed' });
+  }
+});
 
 // ─── GOOGLE SIGN IN ──────────────────────────────────────────
 router.post('/google', express.json(), async (req, res) => {
@@ -58,6 +139,9 @@ router.post('/google', express.json(), async (req, res) => {
       const $set = { google_id: googleId, updated_at: new Date() };
       if (picture) $set.profile_picture = picture;
       if (name && !restaurant.owner_name) $set.owner_name = name;
+      // Link accounts: if they signed up with email/password, mark as 'both'
+      if (restaurant.auth_provider === 'local') $set.auth_provider = 'both';
+      else if (!restaurant.auth_provider) $set.auth_provider = 'google';
       await col('restaurants').updateOne({ _id: restaurant._id }, { $set });
       restaurantId    = String(restaurant._id);
       approvalStatus  = restaurant.approval_status || 'pending';
@@ -67,7 +151,7 @@ router.post('/google', express.json(), async (req, res) => {
       await col('restaurants').insertOne({
         _id: restaurantId, google_id: googleId,
         owner_name: name || 'Owner', email: email?.toLowerCase(),
-        profile_picture: picture || null,
+        profile_picture: picture || null, auth_provider: 'google',
         business_name: 'My Restaurant', status: 'active',
         approval_status: 'pending', onboarding_step: 1,
         created_at: new Date(), updated_at: new Date(),
@@ -141,6 +225,8 @@ router.get('/google/callback', async (req, res) => {
       const $set = { google_id: googleId, updated_at: new Date() };
       if (picture) $set.profile_picture = picture;
       if (name && !restaurant.owner_name) $set.owner_name = name;
+      if (restaurant.auth_provider === 'local') $set.auth_provider = 'both';
+      else if (!restaurant.auth_provider) $set.auth_provider = 'google';
       await col('restaurants').updateOne({ _id: restaurant._id }, { $set });
       restaurantId = String(restaurant._id);
     } else {
@@ -148,7 +234,7 @@ router.get('/google/callback', async (req, res) => {
       await col('restaurants').insertOne({
         _id: restaurantId, google_id: googleId,
         owner_name: name || 'Owner', email: email?.toLowerCase(),
-        profile_picture: picture || null,
+        profile_picture: picture || null, auth_provider: 'google',
         business_name: 'My Restaurant', status: 'active',
         approval_status: 'pending', onboarding_step: 1,
         created_at: new Date(), updated_at: new Date(),
@@ -241,6 +327,35 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
   } catch (err) {
     console.error('[connect-meta]', err.response?.data || err.message);
     res.status(500).json({ error: 'Failed to connect WhatsApp' });
+  }
+});
+
+// ─── CHANGE PASSWORD ──────────────────────────────────────────
+router.post('/change-password', requireAuth, express.json(), async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 8)
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    if (!restaurant) return res.status(404).json({ error: 'Not found' });
+
+    if (restaurant.password_hash) {
+      if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
+      const valid = await bcrypt.compare(currentPassword, restaurant.password_hash);
+      if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 12);
+    const $set = { password_hash: hash, updated_at: new Date() };
+    // If Google-only account sets a password, upgrade to 'both'
+    if (restaurant.auth_provider === 'google') $set.auth_provider = 'both';
+    else if (!restaurant.auth_provider) $set.auth_provider = 'local';
+    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[change-password]', err.message);
+    res.status(500).json({ error: 'Password update failed' });
   }
 });
 
