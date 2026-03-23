@@ -98,6 +98,82 @@ router.post('/google', express.json(), async (req, res) => {
   }
 });
 
+// ─── GOOGLE OAUTH REDIRECT CALLBACK ──────────────────────────
+// Google redirects here after user consents (redirect mode)
+router.get('/google/callback', async (req, res) => {
+  const { code, error } = req.query;
+  console.log('[Google Callback] Hit, code present:', !!code, 'error:', error || 'none');
+
+  if (error || !code) {
+    return res.redirect('/?error=google_auth_failed');
+  }
+
+  try {
+    // Build the redirect_uri that matches what the frontend sent to Google
+    const redirectUri = `${req.protocol}://${req.get('host')}/auth/google/callback`;
+    console.log('[Google Callback] Using redirect_uri:', redirectUri);
+
+    // 1. Exchange code for tokens
+    const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    });
+    console.log('[Google Callback] Token exchange successful');
+
+    // 2. Fetch user profile
+    const userRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokenRes.data.access_token}` },
+    });
+    const { id: googleId, name, email, picture } = userRes.data;
+    console.log('[Google Callback] User:', { googleId, name, email });
+
+    // 3. Find or create restaurant
+    let restaurant = await col('restaurants').findOne({ google_id: googleId });
+    if (!restaurant && email) {
+      restaurant = await col('restaurants').findOne({ email: email.toLowerCase() });
+    }
+
+    let restaurantId;
+    if (restaurant) {
+      const $set = { google_id: googleId, updated_at: new Date() };
+      if (picture) $set.profile_picture = picture;
+      if (name && !restaurant.owner_name) $set.owner_name = name;
+      await col('restaurants').updateOne({ _id: restaurant._id }, { $set });
+      restaurantId = String(restaurant._id);
+    } else {
+      restaurantId = newId();
+      await col('restaurants').insertOne({
+        _id: restaurantId, google_id: googleId,
+        owner_name: name || 'Owner', email: email?.toLowerCase(),
+        profile_picture: picture || null,
+        business_name: 'My Restaurant', status: 'active',
+        approval_status: 'pending', onboarding_step: 1,
+        created_at: new Date(), updated_at: new Date(),
+      });
+    }
+
+    // 4. Issue JWT
+    const ownerUser = await ensureOwnerUser(restaurantId, name);
+    const jwtToken = jwt.sign({
+      restaurantId,
+      userId: String(ownerUser._id),
+      role: 'owner',
+      permissions: ROLE_PERMISSIONS.owner,
+      branchIds: [],
+    }, process.env.JWT_SECRET, { expiresIn: '30d' });
+
+    console.log('[Google Callback] Success, redirecting with token');
+    // Redirect to frontend with token in URL — frontend will pick it up
+    res.redirect(`/?google_token=${jwtToken}`);
+  } catch (err) {
+    console.error('[Google Callback] FAILED:', err.response?.data || err.message);
+    res.redirect('/?error=google_auth_failed');
+  }
+});
+
 // ─── CONNECT META / WHATSAPP ───────────────────────────────────
 // When the code comes from FB.login() (JS SDK), the SDK uses its own internal
 // redirect URI — NOT the server-side OAuth redirect URI. We must match it exactly.

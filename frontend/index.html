@@ -795,11 +795,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   initGoogleAuth();
 
   const params = new URLSearchParams(location.search);
-  if (params.get('error'))
-    toast('Authentication failed — please try again', 'err');
 
-  // Clean URL params
-  if (params.has('error')) history.replaceState({}, '', location.pathname);
+  if (params.get('error')) {
+    toast('Authentication failed — please try again', 'err');
+    history.replaceState({}, '', location.pathname);
+  }
+
+  // Handle Google OAuth redirect callback — token passed via URL
+  const googleToken = params.get('google_token');
+  if (googleToken) {
+    history.replaceState({}, '', location.pathname);
+    localStorage.setItem('zm_token', googleToken);
+    console.log('[Boot] Google token received via redirect');
+    try {
+      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${googleToken}` } }).then(r => r.json());
+      if (me.error) { localStorage.removeItem('zm_token'); toast('Session expired', 'err'); return; }
+      routeByStatus(me);
+    } catch { toast('Connection error', 'err'); }
+    return;
+  }
 
   const token = localStorage.getItem('zm_token');
   if (!token) return;
@@ -869,6 +883,7 @@ function prefillOnboarding(me) {
 }
 
 /* ─── GOOGLE SIGN IN ───────────────────────────────────── */
+const GOOGLE_CLIENT_ID = '554056535730-r6qprte4lndpak89n1dm2hmo07t6kiig.apps.googleusercontent.com';
 let _googleCodeClient;
 function initGoogleAuth() {
   if (typeof google === 'undefined' || !google.accounts) {
@@ -876,41 +891,37 @@ function initGoogleAuth() {
     return;
   }
   _googleCodeClient = google.accounts.oauth2.initCodeClient({
-    client_id: '554056535730-r6qprte4lndpak89n1dm2hmo07t6kiig.apps.googleusercontent.com',
+    client_id: GOOGLE_CLIENT_ID,
     scope: 'openid email profile',
-    ux_mode: 'popup',
-    callback: handleGoogleResponse,
+    ux_mode: 'redirect',
+    redirect_uri: location.origin + '/auth/google/callback',
   });
+  console.log('[Google] Code client initialized (redirect mode), redirect_uri:', location.origin + '/auth/google/callback');
 }
 
 async function handleGoogleResponse(response) {
-  console.log('[Google] Callback fired, response:', JSON.stringify(response));
-  if (response.error) { console.error('[Google] Error from GIS:', response.error); return toast('Google sign-in failed: ' + response.error, 'err'); }
-  if (!response.code) { console.error('[Google] No code in response'); return toast('Google sign-in failed — no authorization code', 'err'); }
+  console.log('[Google] Callback fired, response keys:', Object.keys(response));
+  if (response.error) { console.error('[Google] Error:', response.error); toast('Google sign-in failed: ' + response.error, 'err'); return; }
+  if (!response.code) { console.error('[Google] No code received'); toast('Google sign-in failed — no authorization code', 'err'); return; }
   const btn = document.getElementById('google-btn');
   btn.disabled = true;
   btn.textContent = 'Signing in…';
   try {
-    console.log('[Google] Exchanging code with backend...');
     const r = await fetch('/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: response.code }) });
-    console.log('[Google] Backend response status:', r.status);
     const d = await r.json();
-    console.log('[Google] Backend response:', JSON.stringify(d));
+    console.log('[Google] Backend status:', r.status, 'response:', JSON.stringify(d));
     if (!d.token) { toast(d.error || 'Sign in failed', 'err'); return; }
     localStorage.setItem('zm_token', d.token);
-    console.log('[Google] Token stored, fetching /auth/me...');
     const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
-    console.log('[Google] /auth/me response:', JSON.stringify({ onboarding_step: me.onboarding_step, approval_status: me.approval_status, brand_name: me.brand_name }));
     routeByStatus(me);
-  } catch (err) { console.error('[Google] Frontend error:', err); toast(err.message || 'Sign in failed', 'err'); }
-  finally {
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Continue with Google';
-  }
+  } catch (err) { console.error('[Google] Error:', err); toast(err.message || 'Sign in failed', 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = _googleBtnHtml; }
 }
+const _googleBtnHtml = '<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Continue with Google';
 
 function doGoogleLogin() {
   if (!_googleCodeClient) return toast('Google sign-in loading — please wait a moment', 'err');
+  console.log('[Google] Requesting authorization code (redirect mode)...');
   _googleCodeClient.requestCode();
 }
 
