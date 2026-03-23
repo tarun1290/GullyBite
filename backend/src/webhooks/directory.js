@@ -34,7 +34,9 @@ router.post('/', express.json(), async (req, res) => {
     if (!value?.messages?.length) return;
 
     const msg = value.messages[0];
-    const from = msg.from; // Customer's phone number
+    const contact = value.contacts?.[0];
+    // [BSUID] from may be phone or BSUID — Meta accepts both for sending
+    const from = msg.user_id || contact?.user_id || msg.from;
 
     // Mark as read
     wa.markRead(DIR_PID(), DIR_TOKEN(), msg.id).catch(() => {});
@@ -124,10 +126,17 @@ async function handleInteractive(from, interactive) {
     });
 
     const name = listing.brand_name || listing.business_name;
-    if (waAccount?.wa_phone_number) {
-      const orderUrl = `https://wa.me/${waAccount.wa_phone_number}?text=Hi%2C%20I%27d%20like%20to%20order`;
+    // [WhatsApp2026] Prefer username-based link, fall back to phone
+    const orderUrl = (waAccount?.business_username && waAccount?.username_status === 'active')
+      ? `https://wa.me/${waAccount.business_username}?text=Hi%2C%20I%27d%20like%20to%20order`
+      : waAccount?.wa_phone_number
+        ? `https://wa.me/${waAccount.wa_phone_number}?text=Hi%2C%20I%27d%20like%20to%20order`
+        : null;
+    if (orderUrl) {
+      const usernameNote = (waAccount?.business_username && waAccount?.username_status === 'active')
+        ? `\n💬 @${waAccount.business_username}` : '';
       return wa.sendText(DIR_PID(), DIR_TOKEN(), from,
-        `Great choice! To order from *${name}*, send them a message on WhatsApp:\n\n` +
+        `Great choice! To order from *${name}*, send them a message on WhatsApp:${usernameNote}\n\n` +
         `👉 ${orderUrl}\n\n` +
         `Just say "Hi" and they'll send you their menu!`
       );

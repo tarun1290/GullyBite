@@ -20,7 +20,10 @@ const etaSvc = require('../services/eta');
 const loyaltySvc = require('../services/loyalty');
 const notify = require('../services/notify');
 const { getNextRetryAt, retryDefaults } = require('../utils/retry');
-const { waMessageLimiter, waOrderLimiter, abuseDetector, isPhoneBlocked, extractSenderPhone, extractPhoneNumberId } = require('../middleware/rateLimit');
+const { waMessageLimiter, waOrderLimiter, abuseDetector, isPhoneBlocked, extractSenderIdentifier, extractPhoneNumberId } = require('../middleware/rateLimit');
+const customerIdentity = require('../services/customerIdentity');
+const issueSvc = require('../services/issues');
+const { logActivity } = require('../services/activityLog');
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
 router.get('/', (req, res) => {
@@ -57,30 +60,30 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     const body = JSON.parse(req.body);
     if (body.object !== 'whatsapp_business_account') return;
 
-    // ── ABUSE CHECK: blocked phone ──
-    const senderPhone = extractSenderPhone(body);
-    if (senderPhone) {
-      const blocked = await isPhoneBlocked(senderPhone);
+    // [BSUID] ── ABUSE CHECK: blocked identifier (phone or BSUID) ──
+    const senderIdentifier = extractSenderIdentifier(body);
+    if (senderIdentifier) {
+      const blocked = await isPhoneBlocked(senderIdentifier);
       if (blocked) {
-        console.warn(`[WA Webhook] Blocked phone dropped: ${senderPhone}`);
+        console.warn(`[WA Webhook] Blocked identifier dropped: ${senderIdentifier}`);
         return; // silently drop — already returned 200
       }
 
       // ── RATE LIMIT CHECK ──
-      const { allowed } = waMessageLimiter.isAllowed(senderPhone);
+      const { allowed } = waMessageLimiter.isAllowed(senderIdentifier);
       if (!allowed) {
-        console.warn(`[RateLimit] WhatsApp message rate limited: ${senderPhone}`);
+        console.warn(`[RateLimit] WhatsApp message rate limited: ${senderIdentifier}`);
         // Record violation for abuse detection
-        abuseDetector.recordViolation(senderPhone).catch(() => {});
+        abuseDetector.recordViolation(senderIdentifier).catch(() => {});
         // Log rate-limited event
         await col('webhook_logs').insertOne({
           _id: newId(),
           source: 'whatsapp',
           event_type: 'rate_limited',
           phone_number_id: extractPhoneNumberId(body),
-          payload: { from: senderPhone, note: 'Rate limited — payload omitted' },
+          payload: { from: senderIdentifier, note: 'Rate limited — payload omitted' },
           processed: true,
-          error_message: `Rate limited: ${senderPhone}`,
+          error_message: `Rate limited: ${senderIdentifier}`,
           received_at: new Date(),
           processed_at: new Date(),
           ...retryDefaults(),
@@ -141,17 +144,38 @@ const processChange = async (value) => {
   waAccount.access_token = process.env.META_SYSTEM_USER_TOKEN || waAccount.access_token;
 
   for (const msg of value.messages || []) {
-    const senderPhone = msg.from;
-    const senderName = value.contacts?.find(c => c.wa_id === senderPhone)?.profile?.name;
+    // [BSUID] Extract both phone and BSUID from webhook payload
+    const contact = value.contacts?.find(c => c.wa_id === msg.from || c.user_id === msg.from || c.user_id === msg.user_id);
+    const { bsuid, wa_phone } = customerIdentity.extractIdentifiers(msg, contact);
+    const senderName = contact?.profile?.name;
+    // Best identifier for sending error messages back
+    const replyTo = wa_phone || bsuid || msg.from;
 
     await wa.markRead(phoneNumberId, waAccount.access_token, msg.id);
 
+    // [WhatsApp2026] Show typing indicator while processing
+    wa.showTyping(phoneNumberId, waAccount.access_token, replyTo);
+
+    logActivity({
+      actorType: 'customer', actorId: wa_phone || bsuid, actorName: senderName,
+      action: 'customer.message_received', category: 'webhook',
+      description: `Incoming ${msg.type} message from ${senderName || wa_phone || bsuid}`,
+      restaurantId: waAccount.restaurant_id, resourceType: 'message',
+      metadata: { type: msg.type, state: 'processing' }, severity: 'info',
+    });
+
     try {
-      await handleMessage(msg, senderPhone, senderName, waAccount);
+      await handleMessage(msg, { bsuid, wa_phone }, senderName, waAccount);
     } catch (err) {
-      console.error(`[WA] Error handling message from ${senderPhone}:`, err.message);
+      console.error(`[WA] Error handling message from ${customerIdentity.displayIdentifier({ wa_phone, bsuid })}:`, err.message);
+      logActivity({
+        actorType: 'webhook', action: 'bot.error', category: 'webhook',
+        description: `Error processing message: ${err.message}`,
+        restaurantId: waAccount.restaurant_id, severity: 'error',
+        metadata: { error: err.message, from: wa_phone || bsuid },
+      });
       await wa.sendText(
-        phoneNumberId, waAccount.access_token, senderPhone,
+        phoneNumberId, waAccount.access_token, replyTo,
         '😅 Something went wrong. Type *MENU* to start over.'
       );
     }
@@ -163,9 +187,20 @@ const processChange = async (value) => {
 };
 
 // ─── HANDLE INCOMING MESSAGE ──────────────────────────────────
-const handleMessage = async (msg, senderPhone, senderName, waAccount) => {
-  const customer = await orderSvc.getOrCreateCustomer(senderPhone, senderName);
+// [BSUID] senderIdentifiers is now { bsuid, wa_phone } instead of plain phone string
+const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
+  const customer = await orderSvc.getOrCreateCustomer({
+    bsuid: senderIdentifiers.bsuid,
+    wa_phone: senderIdentifiers.wa_phone,
+    profile_name: senderName,
+  });
   const conv = await orderSvc.getOrCreateConversation(customer.id, String(waAccount._id));
+
+  // [BSUID] Handle contacts message type (phone number sharing flow — Step 13)
+  if (msg.type === 'contacts' && conv.state === 'AWAITING_PHONE_FOR_PAYMENT') {
+    await handlePhoneShared(msg, customer, conv, waAccount);
+    return;
+  }
 
   if (msg.type === 'text') {
     await handleTextMessage(msg, customer, conv, waAccount);
@@ -176,8 +211,44 @@ const handleMessage = async (msg, senderPhone, senderName, waAccount) => {
   } else if (msg.type === 'interactive') {
     await handleInteractiveReply(msg, customer, conv, waAccount);
   } else {
-    await wa.sendText(waAccount.phone_number_id, waAccount.access_token, senderPhone,
-      '👋 I can only handle text and orders. Type *MENU* to browse our menu!'
+    // If in issue description state, capture media as issue content
+    const msgType = msg.type;
+    if (conv && conv.state === 'AWAITING_ISSUE_DESCRIPTION') {
+      const session = conv.session_data || {};
+      const pid = waAccount.phone_number_id;
+      const token = waAccount.access_token;
+      const to = customerIdentity.resolveRecipient(customer);
+      const waAccount2 = await col('whatsapp_accounts').findOne({ phone_number_id: pid });
+      const restId = waAccount2?.restaurant_id || session.restaurant_id;
+      const mediaObj = msg[msgType]; // msg.image, msg.audio, etc
+      const mediaItem = mediaObj ? [{ media_id: mediaObj.id, media_type: msgType, caption: mediaObj.caption || null }] : [];
+
+      const issue = await issueSvc.createIssue({
+        customerId: customer._id,
+        customerName: customer.name || customer.wa_name,
+        customerPhone: customer.wa_phone,
+        orderId: session.issue_order_id || null,
+        orderNumber: session.issue_order_number || null,
+        restaurantId: restId,
+        branchId: session.issue_branch_id || null,
+        category: session.issue_category,
+        description: mediaObj?.caption || `[${msgType} message]`,
+        media: mediaItem,
+        source: 'whatsapp',
+      });
+
+      await wa.sendText(pid, token, to,
+        `✅ Issue #${issue.issue_number} has been created.\n\nWe'll get back to you shortly. You'll receive updates here on WhatsApp.`
+      );
+      await orderSvc.setState(conv.id, 'GREETING', {});
+      return;
+    }
+
+    // Capture image, audio, video, document, sticker, etc. to inbox
+    await captureCustomerMessage(msg, customer, conv, waAccount);
+    const to = customerIdentity.resolveRecipient(customer);
+    await wa.sendText(waAccount.phone_number_id, waAccount.access_token, to,
+      'Thanks for your message! The restaurant team will get back to you shortly. 😊\n\nType *MENU* to browse our menu or *TRACK* to check your order.'
     );
   }
 };
@@ -186,7 +257,7 @@ const handleMessage = async (msg, senderPhone, senderName, waAccount) => {
 const handleTextMessage = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to = customer.wa_phone;
+  const to = customerIdentity.resolveRecipient(customer);
   const text = msg.text.body.trim().toUpperCase();
 
   if (['HI', 'HELLO', 'HEY', 'START', 'MENU', 'ORDER'].includes(text)) {
@@ -227,6 +298,61 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   if (text.startsWith('REORDER')) {
     const num = parseInt(text.replace('REORDER', '').trim()) || 1;
     await handleReorder(customer, conv, waAccount, num);
+    return;
+  }
+
+  if (['COMPLAINT', 'ISSUE', 'PROBLEM', 'HELP', 'REFUND'].includes(text)) {
+    // Show issue category picker
+    await wa.sendList(pid, token, to, {
+      body: "I'm sorry you're having an issue. What's this about?",
+      buttonText: 'Select Category',
+      sections: [{
+        title: 'Issue Type',
+        rows: [
+          { id: 'ISS_food_quality', title: '🍕 Food Quality', description: 'Cold, bad taste, undercooked' },
+          { id: 'ISS_missing_item', title: '📦 Missing Items', description: 'Item missing from order' },
+          { id: 'ISS_wrong_order', title: '❌ Wrong Order', description: 'Received wrong items' },
+          { id: 'ISS_delivery_late', title: '🛵 Delivery Issue', description: 'Late, damaged, not received' },
+          { id: 'ISS_payment_failed', title: '💰 Payment Issue', description: 'Wrong charge, refund, failed payment' },
+          { id: 'ISS_general', title: '💬 Something Else', description: 'Other feedback or question' },
+        ],
+      }],
+    });
+    await orderSvc.setState(conv.id, 'SELECTING_ISSUE_CATEGORY', {});
+    return;
+  }
+
+  if (text === 'REOPEN') {
+    // Find customer's most recent resolved issue
+    const lastIssue = await col('issues').findOne(
+      { customer_id: customer._id, status: { $in: ['resolved', 'closed'] } },
+      { sort: { created_at: -1 } }
+    );
+    if (lastIssue) {
+      await issueSvc.reopenIssue(lastIssue._id, {
+        actorType: 'customer', actorName: customer.name || customer.wa_name,
+        actorId: customer._id, reason: 'Customer reopened via WhatsApp'
+      });
+      await wa.sendText(pid, token, to, `Your issue #${lastIssue.issue_number} has been reopened. We'll look into it again.`);
+    } else {
+      await wa.sendText(pid, token, to, "You don't have any recent resolved issues to reopen. Type COMPLAINT to report a new issue.");
+    }
+    return;
+  }
+
+  // [BSUID] Handle phone number typed as text during phone collection flow
+  if (conv.state === 'AWAITING_PHONE_FOR_PAYMENT') {
+    const rawPhone = msg.text.body.trim().replace(/[\s\-\(\)]/g, '');
+    // Accept 10-digit Indian number or with country code
+    const phoneMatch = rawPhone.match(/^(?:\+?91)?(\d{10})$/);
+    if (!phoneMatch) {
+      await wa.sendText(pid, token, to,
+        '❌ That doesn\'t look like a valid phone number.\n\nPlease enter a 10-digit Indian mobile number (e.g. 9876543210).'
+      );
+      return;
+    }
+    const phone = '91' + phoneMatch[1];
+    await linkPhoneAndResumeOrder(phone, customer, conv, waAccount);
     return;
   }
 
@@ -384,7 +510,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   }
 
   if (conv.state === 'SELECTING_ADDRESS') {
-    const addresses = await addressSvc.getAddresses(customer.wa_phone);
+    const addresses = await addressSvc.getAddresses({ customer_id: customer.id });
     if (addresses.length > 0) {
       await wa.sendAddressList(pid, token, to, addresses);
     } else {
@@ -394,8 +520,40 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  if (conv.state === 'AWAITING_ISSUE_DESCRIPTION') {
+    const session = conv.session_data || {};
+    // Collect the description
+    const description = msg.text?.body || '';
+
+    // Create the issue
+    const waAccount2 = await col('whatsapp_accounts').findOne({ phone_number_id: pid });
+    const restId = waAccount2?.restaurant_id || session.restaurant_id;
+
+    const issue = await issueSvc.createIssue({
+      customerId: customer._id,
+      customerName: customer.name || customer.wa_name,
+      customerPhone: customer.wa_phone,
+      orderId: session.issue_order_id || null,
+      orderNumber: session.issue_order_number || null,
+      restaurantId: restId,
+      branchId: session.issue_branch_id || null,
+      category: session.issue_category,
+      description,
+      media: [],
+      source: 'whatsapp',
+    });
+
+    await wa.sendText(pid, token, to,
+      `✅ Issue #${issue.issue_number} has been created.\n\nWe'll get back to you shortly. You'll receive updates here on WhatsApp.\n\nType MENU to browse our menu or TRACK to check your order.`
+    );
+    await orderSvc.setState(conv.id, 'GREETING', {});
+    return;
+  }
+
+  // ── GENERAL MESSAGE — not recognized by any handler → route to restaurant inbox ──
+  await captureCustomerMessage(msg, customer, conv, waAccount);
   await wa.sendText(pid, token, to,
-    'Type *MENU* to browse our menu 🍽️\nType *TRACK* to track your order 📦'
+    'Thanks for your message! The restaurant team will get back to you shortly. 😊\n\nIn the meantime:\n• Type *MENU* to browse our menu 🍽️\n• Type *TRACK* to track your order 📦'
   );
 };
 
@@ -403,7 +561,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
 const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to = customer.wa_phone;
+  const to = customerIdentity.resolveRecipient(customer);
   const { latitude, longitude, address, name: locName } = msg.location;
 
   await wa.sendText(pid, token, to, '🔍 Finding the nearest restaurant for you...');
@@ -421,7 +579,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   }
 
   const branch = result.branch;
-  const alreadySaved = await addressSvc.isNearSavedAddress(to, latitude, longitude);
+  const alreadySaved = await addressSvc.isNearSavedAddress({ customer_id: customer.id }, latitude, longitude);
 
   // ── REORDER: if customer came from "REORDER N", restore their cart ──
   const session = conv.session_data || {};
@@ -434,7 +592,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     const dynamicResult = await calculateDynamicDeliveryFee(branch.id, latitude, longitude, {
       deliveryAddress: address || locName || 'Your location',
       customerName: customer.name,
-      customerPhone: customer.wa_phone,
+      customerPhone: customer.wa_phone || customer.bsuid || '',
     });
 
     const branchDoc    = await col('branches').findOne({ _id: branch.id });
@@ -497,17 +655,23 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  // [WhatsApp2026] Preserve structured address from address form if present
+  const structuredAddr = session.pendingStructuredAddress || null;
+  const addrSource = session.addressSource || 'gps';
+  const displayAddress = (structuredAddr ? session.pendingFullAddress : null) || address || locName || 'Your location';
+
   await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
     branchId: branch.id,
     branchName: branch.name,
     catalogId: branch.catalogId,
     deliveryLat: latitude,
     deliveryLng: longitude,
-    deliveryAddress: address || locName || 'Your location',
+    deliveryAddress: displayAddress,
+    ...(structuredAddr ? { structuredAddress: structuredAddr, addressSource: addrSource } : {}),
     ...(alreadySaved ? {} : {
       pendingSaveLat    : latitude,
       pendingSaveLng    : longitude,
-      pendingSaveAddress: address || locName || null,
+      pendingSaveAddress: displayAddress,
     }),
   });
 
@@ -543,7 +707,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
 const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to = customer.wa_phone;
+  const to = customerIdentity.resolveRecipient(customer);
 
   const session = conv.session_data || {};
   const branchId = session.branchId;
@@ -560,7 +724,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   const cart = await orderSvc.buildCartFromCatalogOrder(productItems, branchId, session.deliveryLat, session.deliveryLng, {
     deliveryAddress: session.deliveryAddress,
     customerName: customer.name,
-    customerPhone: customer.wa_phone,
+    customerPhone: customer.wa_phone || customer.bsuid || '',
   });
 
   if (!cart.cart.length) {
@@ -649,7 +813,14 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
 const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to = customer.wa_phone;
+  const to = customerIdentity.resolveRecipient(customer);
+
+  // [WhatsApp2026] Handle nfm_reply (address forms and WhatsApp Flows)
+  const nfmReply = msg.interactive?.nfm_reply;
+  if (nfmReply) {
+    await handleNfmReply(nfmReply, customer, conv, waAccount);
+    return;
+  }
 
   const replyId = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id;
 
@@ -674,9 +845,62 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  // ── Issue category selection: ISS_<category> ──
+  if (replyId?.startsWith('ISS_')) {
+    const category = replyId.replace('ISS_', '');
+    // Store category in session, ask which order
+    await orderSvc.setState(conv.id, 'SELECTING_ISSUE_ORDER', { issue_category: category });
+
+    // Fetch recent orders for this customer
+    const recentOrders = await col('orders').find({ customer_id: customer._id })
+      .sort({ created_at: -1 }).limit(5).toArray();
+
+    if (recentOrders.length) {
+      const rows = recentOrders.map(o => ({
+        id: 'ISSORD_' + o._id,
+        title: '#' + (o.order_number || o._id.toString().slice(-6)),
+        description: new Date(o.created_at).toLocaleDateString() + ' · ₹' + (o.total_rs || 0),
+      }));
+      rows.push({ id: 'ISSORD_none', title: 'Not about a specific order', description: 'General feedback' });
+
+      await wa.sendList(pid, token, to, {
+        body: 'Which order is this about?',
+        buttonText: 'Select Order',
+        sections: [{ title: 'Recent Orders', rows }],
+      });
+    } else {
+      // No orders — skip to description
+      await orderSvc.setState(conv.id, 'AWAITING_ISSUE_DESCRIPTION', { issue_category: category });
+      await wa.sendText(pid, token, to, 'Please describe your issue. You can also send photos or voice notes.');
+    }
+    return;
+  }
+
+  // ── Issue order selection: ISSORD_<orderId> ──
+  if (replyId?.startsWith('ISSORD_')) {
+    const session = conv.session_data || {};
+    const ordVal = replyId.replace('ISSORD_', '');
+    let orderId = null, orderNumber = null, branchId = null;
+
+    if (ordVal !== 'none') {
+      const order = await col('orders').findOne({ _id: ordVal });
+      if (order) {
+        orderId = order._id;
+        orderNumber = order.order_number;
+        branchId = order.branch_id;
+      }
+    }
+
+    await orderSvc.setState(conv.id, 'AWAITING_ISSUE_DESCRIPTION', {
+      ...session, issue_order_id: orderId, issue_order_number: orderNumber, issue_branch_id: branchId,
+    });
+    await wa.sendText(pid, token, to, 'Please describe your issue. You can also send photos or voice notes.');
+    return;
+  }
+
   switch (replyId) {
     case 'START_ORDER': {
-      const addresses = await addressSvc.getAddresses(customer.wa_phone);
+      const addresses = await addressSvc.getAddresses({ customer_id: customer.id });
       if (addresses.length > 0) {
         await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
         await wa.sendAddressList(pid, token, to, addresses);
@@ -690,6 +914,14 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
     case 'USE_NEW_LOCATION':
       await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
       await wa.sendLocationRequest(pid, token, to);
+      break;
+
+    // [WhatsApp2026] Native address form — opens structured address input
+    case 'TYPE_ADDRESS':
+      await orderSvc.setState(conv.id, 'AWAITING_ADDRESS_FORM');
+      await wa.sendAddressRequest(pid, token, to, {
+        savedAddress: customer.name ? { name: customer.name, phone_number: customer.wa_phone } : undefined,
+      });
       break;
 
     case 'VIEW_HISTORY':
@@ -707,8 +939,21 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         return;
       }
 
+      // [BSUID] If customer has no phone number, we need to collect it before payment
+      // Razorpay and 3PL delivery require a real phone number
+      if (!customer.wa_phone) {
+        await orderSvc.setState(conv.id, 'AWAITING_PHONE_FOR_PAYMENT');
+        await wa.sendText(pid, token, to,
+          '📱 *We need your phone number to process payment and delivery.*\n\n' +
+          'Please share your contact by tapping the 📎 attachment button → *Contact* → share your own contact.\n\n' +
+          'Or simply type your 10-digit phone number below.\n\n' +
+          '_Your number is only used for payment & delivery updates._'
+        );
+        return;
+      }
+
       // Order creation rate limit — 5 per 10 minutes
-      const orderRateCheck = waOrderLimiter.isAllowed(customer.wa_phone);
+      const orderRateCheck = waOrderLimiter.isAllowed(customerIdentity.resolveRecipient(customer));
       if (!orderRateCheck.allowed) {
         await wa.sendText(pid, token, to, '⚠️ You\'re placing orders too quickly. Please wait a few minutes and try again.');
         return;
@@ -728,10 +973,12 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         deliveryAddress: session.deliveryAddress,
         deliveryLat  : session.deliveryLat,
         deliveryLng  : session.deliveryLng,
-        waPhone      : customer.wa_phone,
+        waPhone      : customer.wa_phone || customer.bsuid,
         charges      : session.charges || null,
         deliveryFeeBreakdown: session.deliveryFeeBreakdown || null,
         deliveryQuote: session.deliveryQuote || null,
+        structuredAddress: session.structuredAddress || null,
+        addressSource: session.addressSource || null,
       });
 
       const fullOrder = await orderSvc.getOrderDetails(order.id);
@@ -846,8 +1093,8 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       const session = conv.session_data || {};
       if (replyId !== 'SAVE_ADDR_SKIP' && session.pendingSaveLat) {
         const label = replyId === 'SAVE_ADDR_HOME' ? 'Home' : 'Work';
-        const existingAddrs = await addressSvc.getAddresses(customer.wa_phone);
-        await addressSvc.saveAddress(customer.wa_phone, {
+        const existingAddrs = await addressSvc.getAddresses({ customer_id: customer.id });
+        await addressSvc.saveAddress({ customer_id: customer.id, wa_phone: customer.wa_phone }, {
           label,
           fullAddress : session.pendingSaveAddress,
           latitude    : session.pendingSaveLat,
@@ -873,9 +1120,9 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
 const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) => {
   const pid   = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to    = customer.wa_phone;
+  const to    = customerIdentity.resolveRecipient(customer);
 
-  const addr = await col('customer_addresses').findOne({ _id: addressId, wa_phone: customer.wa_phone });
+  const addr = await col('customer_addresses').findOne({ _id: addressId, $or: [{ customer_id: customer.id }, { wa_phone: customer.wa_phone }] });
 
   if (!addr || !addr.latitude) {
     await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
@@ -924,7 +1171,7 @@ const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) 
 const sendOrderHistory = async (customer, waAccount) => {
   const pid   = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to    = customer.wa_phone;
+  const to    = customerIdentity.resolveRecipient(customer);
 
   const orders = await col('orders')
     .find({ customer_id: customer.id, status: { $in: ['DELIVERED', 'COMPLETED'] } })
@@ -981,7 +1228,7 @@ const sendOrderHistory = async (customer, waAccount) => {
 const handleReorder = async (customer, conv, waAccount, orderNum) => {
   const pid   = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to    = customer.wa_phone;
+  const to    = customerIdentity.resolveRecipient(customer);
 
   const orders = await col('orders')
     .find({ customer_id: customer.id, status: { $in: ['DELIVERED', 'COMPLETED'] } })
@@ -1005,7 +1252,7 @@ const handleReorderById = async (orderId, customer, conv, waAccount) => {
   // Verify the order belongs to this customer
   const order = await col('orders').findOne({ _id: orderId, customer_id: customer.id });
   if (!order) {
-    await wa.sendText(waAccount.phone_number_id, waAccount.access_token, customer.wa_phone,
+    await wa.sendText(waAccount.phone_number_id, waAccount.access_token, customerIdentity.resolveRecipient(customer),
       'Order not found. Type *HISTORY* to see your past orders.'
     );
     return;
@@ -1017,7 +1264,7 @@ const handleReorderById = async (orderId, customer, conv, waAccount) => {
 const _processReorder = async (orderId, customer, conv, waAccount) => {
   const pid   = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to    = customer.wa_phone;
+  const to    = customerIdentity.resolveRecipient(customer);
 
   const order = await col('orders').findOne({ _id: orderId });
   if (!order) {
@@ -1091,7 +1338,7 @@ const _processReorder = async (orderId, customer, conv, waAccount) => {
 const sendTrackingInfo = async (customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to = customer.wa_phone;
+  const to = customerIdentity.resolveRecipient(customer);
 
   const activeStatuses = ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED'];
   const order = await col('orders').findOne(
@@ -1143,7 +1390,7 @@ const sendTrackingInfo = async (customer, conv, waAccount) => {
 const handleCancelRequest = async (customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to = customer.wa_phone;
+  const to = customerIdentity.resolveRecipient(customer);
 
   const order = await col('orders').findOne(
     { customer_id: customer.id, status: { $in: ['PENDING_PAYMENT', 'PAID', 'CONFIRMED'] } },
@@ -1211,7 +1458,7 @@ const sendTextMenu = async (pid, token, to, branchId) => {
 const sendLoyaltyBalance = async (customer, waAccount) => {
   const pid   = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to    = customer.wa_phone;
+  const to    = customerIdentity.resolveRecipient(customer);
 
   // Get loyalty across all restaurants this customer has ordered from
   const loyaltyDocs = await col('loyalty_points')
@@ -1249,7 +1496,7 @@ const sendLoyaltyBalance = async (customer, waAccount) => {
 const handleRatingReply = async (orderId, score, customer, conv, waAccount) => {
   const pid   = waAccount.phone_number_id;
   const token = waAccount.access_token;
-  const to    = customer.wa_phone;
+  const to    = customerIdentity.resolveRecipient(customer);
 
   // Check for duplicate rating
   const existing = await col('order_ratings').findOne({ order_id: orderId });
@@ -1288,12 +1535,37 @@ const handleRatingReply = async (orderId, score, customer, conv, waAccount) => {
 };
 
 // ─── SEND RATING REQUEST (called after delivery) ─────────────
+// [WhatsApp2026] Tries WhatsApp Flow first (richer form with food + delivery rating + comment).
+// Falls back to simple 3-button rating if Flow is not configured or fails.
 const sendRatingRequest = async (orderId, pid, token, to) => {
   try {
     const order = await col('orders').findOne({ _id: orderId });
     if (!order) return;
     const existing = await col('order_ratings').findOne({ order_id: orderId });
     if (existing) return; // already rated
+
+    // Try WhatsApp Flow if RATING_FLOW_ID is configured
+    const flowId = process.env.RATING_FLOW_ID;
+    if (flowId) {
+      try {
+        await wa.sendFlow(pid, token, to, {
+          flowId,
+          flowToken: `rating_${orderId}`,
+          flowCta: '⭐ Rate Order',
+          screenId: 'RATING_SCREEN',
+          flowData: {
+            body: `How was your order #${order.order_number}?\n\nTap below to rate your food and delivery experience.`,
+            footer: 'Your feedback helps improve quality',
+            screenData: { order_number: order.order_number, order_id: orderId },
+          },
+        });
+        return; // Flow sent successfully
+      } catch (flowErr) {
+        console.warn('[Rating] Flow send failed, falling back to buttons:', flowErr.message);
+      }
+    }
+
+    // Fallback: simple 3-button rating
     await wa.sendButtons(pid, token, to, {
       header: '⭐ Rate Your Order',
       body: `How was your order #${order.order_number}?\n\nTap a rating below:`,
@@ -1315,7 +1587,25 @@ const handleStatus = async (status) => {
     console.error('[WA] Message delivery failed:', {
       recipient: status.recipient_id,
       error: status.errors?.[0]?.title,
+      code: status.errors?.[0]?.code,
     });
+  }
+
+  // [WhatsApp2026] Track message status in message_statuses collection
+  if (status.id && ['sent', 'delivered', 'read', 'failed'].includes(status.status)) {
+    try {
+      const msgTracking = require('../services/messageTracking');
+      const errorInfo = status.status === 'failed' && status.errors?.[0]
+        ? { code: status.errors[0].code, message: status.errors[0].title }
+        : null;
+      await msgTracking.updateStatus(status.id, status.status, errorInfo);
+    } catch (_) {} // Non-critical
+
+    // Campaign message tracking (existing)
+    try {
+      const campaignSvc = require('../services/campaigns');
+      await campaignSvc.trackMessageStatus(status.id, status.status);
+    } catch (_) {} // Non-critical
   }
 };
 
@@ -1336,6 +1626,392 @@ const logWebhook = async (source, payload) => {
     ...retryDefaults(),
   });
   return id;
+};
+
+// ─── [BSUID] PHONE SHARING FLOW ─────────────────────────────
+// Handles contacts message type when customer shares their contact card
+const handlePhoneShared = async (msg, customer, conv, waAccount) => {
+  const pid = waAccount.phone_number_id;
+  const token = waAccount.access_token;
+  const to = customerIdentity.resolveRecipient(customer);
+
+  try {
+    // Extract phone from contacts message payload
+    // contacts[0].phones[0].phone or .wa_id
+    const contact = msg.contacts?.[0];
+    const phoneEntry = contact?.phones?.[0];
+    const rawPhone = phoneEntry?.wa_id || phoneEntry?.phone || '';
+    const cleaned = rawPhone.replace(/[\s\-\(\)\+]/g, '');
+
+    // Accept 10-digit or with 91 prefix
+    const phoneMatch = cleaned.match(/^(?:91)?(\d{10})$/);
+    if (!phoneMatch) {
+      await wa.sendText(pid, token, to,
+        '❌ We couldn\'t read a valid phone number from that contact.\n\n' +
+        'Please try again or type your 10-digit phone number directly.'
+      );
+      return;
+    }
+
+    const phone = '91' + phoneMatch[1];
+    await linkPhoneAndResumeOrder(phone, customer, conv, waAccount);
+  } catch (err) {
+    console.error('[BSUID] handlePhoneShared error:', err.message);
+    await wa.sendText(pid, token, to,
+      '⚠️ Something went wrong. Please type your 10-digit phone number to continue.'
+    );
+  }
+};
+
+// Links a phone number to a BSUID-only customer and resumes the CONFIRM_ORDER flow
+const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
+  const pid = waAccount.phone_number_id;
+  const token = waAccount.access_token;
+  const to = customerIdentity.resolveRecipient(customer);
+
+  // Check if another customer already has this phone
+  const existing = await col('customers').findOne({ wa_phone: phone, _id: { $ne: customer.id } });
+  if (existing) {
+    // Merge: link BSUID to the existing phone-based customer record
+    // Update existing record with this customer's BSUID
+    await col('customers').updateOne(
+      { _id: existing._id },
+      { $set: { bsuid: customer.bsuid, identifier_type: 'both', updated_at: new Date() } }
+    );
+    // Point conversation to the merged customer
+    await col('conversations').updateOne(
+      { _id: conv.id },
+      { $set: { customer_id: String(existing._id) } }
+    );
+    // Update customer reference for the resumed flow
+    customer = { ...customer, id: String(existing._id), wa_phone: phone, identifier_type: 'both' };
+  } else {
+    // Link phone to current customer
+    await col('customers').updateOne(
+      { _id: customer.id },
+      { $set: { wa_phone: phone, identifier_type: 'both', updated_at: new Date() } }
+    );
+    customer = { ...customer, wa_phone: phone, identifier_type: 'both' };
+  }
+
+  await wa.sendText(pid, token, to, `✅ Phone number linked: *${phone.slice(2)}*\n\nProcessing your order now...`);
+
+  // Resume the order flow — transition back to ORDER_REVIEW and trigger CONFIRM_ORDER
+  await orderSvc.setState(conv.id, 'ORDER_REVIEW');
+
+  // Re-fetch conversation to get fresh session data
+  const freshConv = await orderSvc.getOrCreateConversation(customer.id, String(waAccount._id));
+
+  // Simulate the CONFIRM_ORDER action by calling handleInteractiveReply with a synthetic message
+  // Instead, directly inline the order creation to avoid recursion complexity
+  const session = freshConv.session_data || {};
+  if (!session.cart?.length) {
+    await wa.sendText(pid, token, to, 'Your cart appears empty. Type *MENU* to start over.');
+    return;
+  }
+
+  const orderRateCheck = waOrderLimiter.isAllowed(phone);
+  if (!orderRateCheck.allowed) {
+    await wa.sendText(pid, token, to, '⚠️ You\'re placing orders too quickly. Please wait a few minutes.');
+    return;
+  }
+
+  const order = await orderSvc.createOrder({
+    convId       : freshConv.id,
+    customerId   : customer.id,
+    branchId     : session.branchId,
+    cart         : session.cart,
+    subtotalRs   : session.subtotalRs,
+    deliveryFeeRs: session.deliveryFeeRs,
+    totalRs      : session.totalRs,
+    discountRs   : session.discountRs || 0,
+    couponId     : session.coupon?.id   || null,
+    couponCode   : session.coupon?.code || null,
+    deliveryAddress: session.deliveryAddress,
+    deliveryLat  : session.deliveryLat,
+    deliveryLng  : session.deliveryLng,
+    waPhone      : phone,
+    charges      : session.charges || null,
+    deliveryFeeBreakdown: session.deliveryFeeBreakdown || null,
+    deliveryQuote: session.deliveryQuote || null,
+  });
+
+  const fullOrder = await orderSvc.getOrderDetails(order.id);
+
+  // ETA
+  let etaText = '';
+  try {
+    const eta = await etaSvc.calculateETA(session.branchId, session.deliveryLat, session.deliveryLng);
+    await col('orders').updateOne({ _id: order.id }, { $set: {
+      estimated_prep_min: eta.prepTimeMinutes,
+      estimated_delivery_min: eta.deliveryTimeMinutes,
+      estimated_total_min: eta.totalMinutes,
+      eta_text: eta.etaText,
+    }});
+    etaText = eta.etaText;
+  } catch (etaErr) { console.warn('[ETA] calc error:', etaErr.message); }
+
+  // Delivery record
+  await col('deliveries').updateOne(
+    { order_id: order.id },
+    { $setOnInsert: { _id: newId(), order_id: order.id, status: 'pending', cost_rs: session.deliveryFeeRs || 0, created_at: new Date() } },
+    { upsert: true }
+  );
+
+  // Payment
+  try {
+    await paymentSvc.createRazorpayOrder(fullOrder, customer);
+    await wa.sendPaymentRequest(pid, token, to, { order: fullOrder, items: fullOrder.items });
+    if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
+  } catch (waPayErr) {
+    console.warn('[WA] WhatsApp Pay failed, falling back to payment link:', waPayErr.message);
+    const link = await paymentSvc.createPaymentLink(fullOrder, customer);
+    await wa.sendPaymentLink(pid, token, to, {
+      orderNumber: order.order_number,
+      total      : order.total_rs.toFixed(0),
+      url        : link.url,
+      expiryMins : link.expiryMins,
+    });
+    if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
+  }
+};
+
+// ─── NFM REPLY HANDLER (Address Forms + WhatsApp Flows) ────
+// [WhatsApp2026] Handles nfm_reply interactive type from:
+//   1. Native address_message forms → structured address fields
+//   2. WhatsApp Flows → feedback/rating forms
+const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
+  const pid   = waAccount.phone_number_id;
+  const token = waAccount.access_token;
+  const to    = customerIdentity.resolveRecipient(customer);
+
+  // Parse response body — Meta sends JSON string in nfm_reply.response_json
+  let responseData = {};
+  try {
+    responseData = typeof nfmReply.response_json === 'string'
+      ? JSON.parse(nfmReply.response_json)
+      : nfmReply.response_json || {};
+  } catch { responseData = {}; }
+
+  // ── WhatsApp Flow response (has flow_token) ──
+  if (responseData.flow_token) {
+    await handleFlowResponse(responseData, customer, conv, waAccount);
+    return;
+  }
+
+  // ── Address form response ──
+  const addr = responseData.values || responseData;
+  const structuredAddress = {
+    name:          addr.name || null,
+    phone_number:  addr.phone_number || null,
+    in_pin_code:   addr.in_pin_code || null,
+    floor_number:  addr.floor_number || null,
+    building_name: addr.building_name || null,
+    address:       addr.address || null,
+    landmark_area: addr.landmark_area || null,
+    city:          addr.city || null,
+  };
+
+  // Build a readable full address string
+  const parts = [
+    structuredAddress.building_name,
+    structuredAddress.floor_number ? `Floor ${structuredAddress.floor_number}` : null,
+    structuredAddress.address,
+    structuredAddress.landmark_area,
+    structuredAddress.city,
+    structuredAddress.in_pin_code,
+  ].filter(Boolean);
+  const fullAddress = parts.join(', ') || 'Address provided via form';
+
+  // Save as a customer address
+  await addressSvc.saveAddress({ customer_id: customer.id, wa_phone: customer.wa_phone }, {
+    label: 'Delivered',
+    fullAddress,
+    landmark: structuredAddress.landmark_area,
+    flatNo: [structuredAddress.building_name, structuredAddress.floor_number ? `Floor ${structuredAddress.floor_number}` : null].filter(Boolean).join(', ') || null,
+    makeDefault: false,
+  });
+
+  // Store structured address in session for order creation
+  await wa.sendText(pid, token, to, `📍 Got it! Address: *${fullAddress}*\n\n🔍 Finding nearest restaurant...`);
+
+  // Use geocoding if we have pin code + city, else do text-based branch assignment
+  // For now, use the saved address without lat/lng — the branch is found by text match or fallback
+  const session = conv.session_data || {};
+
+  // If we have a branch already (reorder flow), skip location lookup
+  if (session.branchId) {
+    await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
+      ...session,
+      deliveryAddress: fullAddress,
+      structuredAddress,
+      addressSource: 'address_form',
+    });
+
+    const branch = await col('branches').findOne({ _id: session.branchId });
+    if (branch?.catalog_id) {
+      await wa.sendCatalog(pid, token, to, branch.catalog_id, `🍽️ Here's our menu from *${branch.name}*!`);
+    }
+    return;
+  }
+
+  // No GPS coords from address form — ask for location to find nearest branch
+  await orderSvc.setState(conv.id, 'AWAITING_LOCATION', {
+    ...session,
+    pendingStructuredAddress: structuredAddress,
+    pendingFullAddress: fullAddress,
+    addressSource: 'address_form',
+  });
+  await wa.sendText(pid, token, to,
+    '📍 To find your nearest restaurant, please also share your GPS location.\n' +
+    '_Tap the button below — your address details are saved!_'
+  );
+  await wa.sendLocationRequest(pid, token, to);
+};
+
+// ─── WHATSAPP FLOW RESPONSE HANDLER ─────────────────────────
+// [WhatsApp2026] Handles responses from WhatsApp Flows (rating/feedback forms)
+const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
+  const pid   = waAccount.phone_number_id;
+  const token = waAccount.access_token;
+  const to    = customerIdentity.resolveRecipient(customer);
+
+  const flowToken = responseData.flow_token || '';
+  // flow_token format: "rating_<orderId>" or "feedback_<orderId>"
+  const parts = flowToken.split('_');
+  const flowType = parts[0];
+  const orderId = parts.slice(1).join('_');
+
+  if (flowType === 'rating' || flowType === 'feedback') {
+    const foodRating     = parseInt(responseData.food_rating) || 0;
+    const deliveryRating = parseInt(responseData.delivery_rating) || foodRating;
+    const comment        = responseData.comment || responseData.feedback || null;
+
+    if (!orderId || !foodRating) {
+      await wa.sendText(pid, token, to, 'Thanks for your feedback! 😊');
+      return;
+    }
+
+    // Dedup check
+    const existing = await col('order_ratings').findOne({ order_id: orderId });
+    if (existing) {
+      await wa.sendText(pid, token, to, 'You\'ve already rated this order. Thank you! 😊');
+      return;
+    }
+
+    const order = await col('orders').findOne({ _id: orderId });
+    try {
+      await col('order_ratings').insertOne({
+        _id: newId(),
+        order_id: orderId,
+        customer_id: customer.id,
+        branch_id: order?.branch_id || null,
+        restaurant_id: order?.restaurant_id || null,
+        food_rating: foodRating,
+        delivery_rating: deliveryRating,
+        comment,
+        source: 'whatsapp_flow',
+        created_at: new Date(),
+      });
+    } catch (e) {
+      if (e.code !== 11000) console.error('[Flow Rating] save error:', e.message);
+    }
+
+    const emoji = foodRating >= 4 ? '🎉' : '🙏';
+    await wa.sendText(pid, token, to, `Thank you for rating! ${emoji} Your feedback helps us improve.`);
+    await orderSvc.setState(conv.id, 'GREETING', {});
+  }
+};
+
+// ─── CAPTURE CUSTOMER MESSAGE TO INBOX ──────────────────────
+// Saves a general (non-order-flow) message to customer_messages for the restaurant dashboard inbox.
+const captureCustomerMessage = async (msg, customer, conv, waAccount) => {
+  try {
+    // Resolve restaurant_id from the conversation context or WA account
+    const session = conv?.session_data || {};
+    let restaurantId = null;
+    let branchId = session.branchId || null;
+    if (branchId) {
+      const branch = await col('branches').findOne({ _id: branchId });
+      restaurantId = branch?.restaurant_id || null;
+    }
+    if (!restaurantId) {
+      restaurantId = waAccount.restaurant_id || null;
+    }
+
+    // Find any active order for context
+    const activeOrder = await col('orders').findOne(
+      { customer_id: customer.id, status: { $in: ['CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED'] } },
+      { sort: { created_at: -1 }, projection: { _id: 1, order_number: 1 } }
+    );
+
+    // Extract message content
+    const messageType = msg.type || 'text';
+    let text = null;
+    let mediaId = null;
+    let mediaMime = null;
+    let caption = null;
+
+    if (messageType === 'text') {
+      text = msg.text?.body || null;
+    } else if (['image', 'video', 'audio', 'document', 'sticker'].includes(messageType)) {
+      const media = msg[messageType];
+      mediaId = media?.id || null;
+      mediaMime = media?.mime_type || null;
+      caption = media?.caption || null;
+    } else if (messageType === 'location') {
+      text = `📍 Location: ${msg.location?.latitude}, ${msg.location?.longitude}`;
+      if (msg.location?.address) text += ` — ${msg.location.address}`;
+    }
+
+    const doc = {
+      _id: newId(),
+      restaurant_id: restaurantId,
+      branch_id: branchId,
+      customer_id: customer.id,
+      customer_name: customer.name || null,
+      customer_phone: customer.wa_phone || null,
+      customer_bsuid: customer.bsuid || null,
+      direction: 'inbound',
+      message_type: messageType,
+      text,
+      media_id: mediaId,
+      media_url: null,
+      media_mime_type: mediaMime,
+      caption,
+      wa_message_id: msg.id || null,
+      conversation_state: conv?.state || null,
+      related_order_id: activeOrder ? String(activeOrder._id) : null,
+      related_order_number: activeOrder?.order_number || null,
+      status: 'unread',
+      read_at: null,
+      read_by: null,
+      replied_at: null,
+      replied_by: null,
+      resolved_at: null,
+      resolved_by: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    await col('customer_messages').insertOne(doc);
+
+    logActivity({
+      actorType: 'customer',
+      actorId: customer.id,
+      actorName: customer.name || customer.wa_phone || customer.bsuid,
+      action: 'customer.message_unhandled',
+      category: 'webhook',
+      description: `Customer message to inbox: "${(text || caption || messageType).substring(0, 80)}"`,
+      restaurantId,
+      branchId,
+      resourceType: 'customer_message',
+      resourceId: String(doc._id),
+      severity: 'warning',
+    });
+  } catch (err) {
+    console.error('[Inbox] Failed to capture message:', err.message);
+  }
 };
 
 module.exports = router;

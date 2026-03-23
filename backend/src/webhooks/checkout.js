@@ -11,6 +11,7 @@ const { col, newId } = require('../config/database');
 const { decryptCheckoutPayload, verifyCheckoutSignature } = require('../services/checkout-crypto');
 const { calculateOrderCharges } = require('../services/charges');
 const orderSvc = require('../services/order');
+const customerIdentity = require('../services/customerIdentity');
 
 // ─── WEBHOOK VERIFICATION ───────────────────────────────────────
 router.get('/', (req, res) => {
@@ -271,23 +272,11 @@ async function handleOrder(value) {
     ? [data.shipping_address.address_line1, data.shipping_address.address_line2, data.shipping_address.city].filter(Boolean).join(', ')
     : '';
 
-  // Find or create customer
-  let customer = await col('customers').findOne({
-    restaurant_id: waAccount.restaurant_id,
+  // [BSUID] Use universal identity resolution for customer creation
+  const customer = await customerIdentity.getOrCreateCustomer({
     wa_phone: customerPhone,
+    profile_name: customerName,
   });
-  if (!customer) {
-    customer = {
-      _id: newId(),
-      restaurant_id: waAccount.restaurant_id,
-      wa_phone: customerPhone,
-      name: customerName,
-      total_orders: 0,
-      total_spent_rs: 0,
-      created_at: new Date(),
-    };
-    await col('customers').insertOne(customer);
-  }
 
   // Create order
   const orderId = newId();
@@ -297,7 +286,7 @@ async function handleOrder(value) {
     order_number: orderNumber,
     restaurant_id: waAccount.restaurant_id,
     branch_id: branchId,
-    customer_id: String(customer._id),
+    customer_id: customer.id,
     customer_name: customerName,
     customer_phone: customerPhone,
     delivery_address: deliveryAddress,

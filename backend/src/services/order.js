@@ -9,26 +9,20 @@ const { calculateOrderCharges } = require('./charges');
 const { calculateDynamicDeliveryFee } = require('./dynamicPricing');
 
 // ─── GET OR CREATE CUSTOMER ───────────────────────────────────
-const getOrCreateCustomer = async (waPhone, profileName = null) => {
-  const existing = await col('customers').findOne({ wa_phone: waPhone });
-  if (existing) {
-    if (profileName && existing.name !== profileName) {
-      await col('customers').updateOne({ wa_phone: waPhone }, { $set: { name: profileName } });
-    }
-    return mapId(existing);
+// [BSUID] Delegates to customerIdentity.js for universal identity resolution
+// Backward-compatible: accepts (waPhone, name) OR ({ bsuid, wa_phone, profile_name })
+const customerIdentity = require('./customerIdentity');
+
+const getOrCreateCustomer = async (waPhoneOrIdentifiers, profileName = null) => {
+  // Support both old signature (phone, name) and new ({ bsuid, wa_phone, profile_name })
+  if (typeof waPhoneOrIdentifiers === 'object' && waPhoneOrIdentifiers !== null) {
+    return customerIdentity.getOrCreateCustomer(waPhoneOrIdentifiers);
   }
-  const now = new Date();
-  const customer = {
-    _id: newId(),
-    wa_phone: waPhone,
-    name: profileName || null,
-    total_orders: 0,
-    total_spent_rs: 0,
-    last_order_at: null,
-    created_at: now,
-  };
-  await col('customers').insertOne(customer);
-  return mapId(customer);
+  // Legacy: plain phone string
+  return customerIdentity.getOrCreateCustomer({
+    wa_phone: waPhoneOrIdentifiers,
+    profile_name: profileName,
+  });
 };
 
 // ─── GET OR CREATE CONVERSATION ───────────────────────────────
@@ -148,12 +142,14 @@ const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = n
 const REFERRAL_FEE_PCT = 0.075; // 7.5%
 
 // ─── CHECK ACTIVE REFERRAL ────────────────────────────────────
-const findActiveReferral = async (waPhone, restaurantId) => {
-  if (!waPhone || !restaurantId) return null;
+// [BSUID] Accept phone or BSUID identifier for referral lookup
+const findActiveReferral = async (identifier, restaurantId) => {
+  if (!identifier || !restaurantId) return null;
   const now = new Date();
+  // Try phone first, then BSUID
   const referral = await col('referrals').findOne({
     restaurant_id: restaurantId,
-    customer_wa_phone: waPhone,
+    $or: [{ customer_wa_phone: identifier }, { customer_bsuid: identifier }],
     status: 'active',
     expires_at: { $gt: now },
   }, { sort: { created_at: -1 } });
@@ -161,7 +157,7 @@ const findActiveReferral = async (waPhone, restaurantId) => {
 };
 
 // ─── CREATE ORDER ─────────────────────────────────────────────
-const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null, deliveryQuote = null }) => {
+const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null, deliveryQuote = null, structuredAddress = null, addressSource = null }) => {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -201,6 +197,8 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     delivery_address: deliveryAddress,
     delivery_lat: deliveryLat,
     delivery_lng: deliveryLng,
+    structured_address: structuredAddress || null,  // [WhatsApp2026] Native address form fields
+    address_source: addressSource || 'gps',         // gps | address_form | saved
     food_gst_rs:                charges?.food_gst_rs                ?? 0,
     delivery_fee_total_rs:      charges?.delivery_fee_total_rs      ?? (charges ? charges.customer_delivery_rs : deliveryFeeRs),
     customer_delivery_rs:       charges?.customer_delivery_rs       ?? deliveryFeeRs,
@@ -322,7 +320,10 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
         const customer = await col('customers').findOne({ _id: updated.customer_id });
         const waAcc    = await col('whatsapp_accounts').findOne({ restaurant_id: updated.restaurant_id, is_active: true });
         const waToken = process.env.META_SYSTEM_USER_TOKEN || waAcc?.access_token;
-        if (customer?.wa_phone && waAcc?.phone_number_id && waToken) {
+        // [BSUID] Use resolveRecipient — phone preferred, BSUID fallback
+        const { resolveRecipient } = require('./customerIdentity');
+        const toId = customer ? (customer.wa_phone || customer.bsuid) : null;
+        if (toId && waAcc?.phone_number_id && waToken) {
           // Loyalty points
           try {
             const loyalty = require('./loyalty');
@@ -333,13 +334,13 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
               if (reward.tierUpgraded) {
                 msg = `🎊 *Congratulations!* You've been upgraded to *${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}*!\n\n` + msg;
               }
-              await wa.sendText(waAcc.phone_number_id, waToken, customer.wa_phone, msg);
+              await wa.sendText(waAcc.phone_number_id, waToken, toId, msg);
             }
           } catch (e) { console.error('[Loyalty] earn error:', e.message); }
 
           // Rating request (after loyalty msg)
           const { sendRatingRequest } = require('../webhooks/whatsapp');
-          await sendRatingRequest(orderId, waAcc.phone_number_id, waToken, customer.wa_phone);
+          await sendRatingRequest(orderId, waAcc.phone_number_id, waToken, toId);
         }
       } catch (e) { console.error('[Rating] delayed send error:', e.message); }
     }, 2 * 60 * 1000);
@@ -385,6 +386,8 @@ const getOrderDetails = async (orderId) => {
   return {
     ...mapId(order),
     wa_phone:        customer?.wa_phone,
+    bsuid:           customer?.bsuid,
+    identifier_type: customer?.identifier_type,
     customer_name:   customer?.name,
     branch_name:     branch?.name,
     branch_address:  branch?.address,

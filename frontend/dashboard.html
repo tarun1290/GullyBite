@@ -98,6 +98,7 @@ a{color:inherit;text-decoration:none}
 .btn-sm{font-size:.75rem;padding:.32rem .7rem}
 .btn-gold{background:var(--gold);color:#fff}
 .btn-gold:hover{background:var(--gold2)}
+.msg-filter-btn.active{background:var(--wa);color:#fff;border-color:var(--wa)}
 
 /* forms */
 .lbl,.fg label{font-size:.72rem;font-weight:600;color:var(--dim);letter-spacing:.025em;display:block;margin-bottom:.25rem}
@@ -336,6 +337,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
       <button class="sb-btn act" onclick="goTab('overview',this)"><span class="ic">📊</span>Dashboard</button>
       <button class="sb-btn"     onclick="goTab('orders',this)"><span class="ic">🛒</span>Orders</button>
       <button class="sb-btn"     onclick="goTab('customers',this)"><span class="ic">👥</span>Customers</button>
+      <button class="sb-btn"     onclick="goTab('messages',this)"><span class="ic">💬</span>Messages <span id="msg-badge" style="display:none;background:var(--red);color:#fff;font-size:.6rem;padding:.1rem .35rem;border-radius:9px;margin-left:.3rem">0</span></button>
       <button class="sb-btn"     onclick="goTab('analytics',this)"><span class="ic">📈</span>Analytics</button>
     </div>
     <div class="sb-sec">
@@ -580,6 +582,45 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <input id="cust-search" placeholder="Search by name or phone…" oninput="debounceCustSearch()" style="width:220px;padding:.4rem .7rem;border:1px solid var(--border);border-radius:8px;font-size:.85rem">
           </div>
           <div class="cb" id="cust-list"><div class="empty"><div class="ei">👥</div><h3>Loading customers…</h3></div></div>
+        </div>
+      </div>
+
+      <!-- ── MESSAGES INBOX ────────────────────────── -->
+      <div class="tab" id="tab-messages">
+        <div style="display:flex;gap:1rem;height:calc(100vh - 120px);min-height:500px">
+          <!-- Left: Thread list -->
+          <div style="width:340px;flex-shrink:0;display:flex;flex-direction:column;background:var(--ink2);border-radius:var(--r);border:1px solid var(--rim);overflow:hidden">
+            <div style="padding:.7rem;border-bottom:1px solid var(--rim)">
+              <input id="msg-search" placeholder="Search messages…" oninput="debounceMsgSearch()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--rim);border-radius:8px;font-size:.82rem">
+              <div style="display:flex;gap:.3rem;margin-top:.5rem">
+                <button class="btn-sm msg-filter-btn active" data-filter="all" onclick="setMsgFilter('all',this)">All</button>
+                <button class="btn-sm msg-filter-btn" data-filter="unread" onclick="setMsgFilter('unread',this)">Unread</button>
+                <button class="btn-sm msg-filter-btn" data-filter="active_orders" onclick="setMsgFilter('active_orders',this)">Active Orders</button>
+                <button class="btn-sm msg-filter-btn" data-filter="resolved" onclick="setMsgFilter('resolved',this)">Resolved</button>
+              </div>
+            </div>
+            <div id="msg-thread-list" style="flex:1;overflow-y:auto;padding:.4rem"></div>
+          </div>
+          <!-- Right: Thread view -->
+          <div style="flex:1;display:flex;flex-direction:column;background:var(--ink2);border-radius:var(--r);border:1px solid var(--rim);overflow:hidden">
+            <div id="msg-thread-header" style="padding:.7rem 1rem;border-bottom:1px solid var(--rim);display:none">
+              <div style="display:flex;align-items:center;gap:.7rem">
+                <div style="flex:1">
+                  <div id="msg-thread-name" style="font-weight:600;font-size:.9rem"></div>
+                  <div id="msg-thread-info" style="font-size:.72rem;color:var(--dim)"></div>
+                </div>
+                <button class="btn-g btn-sm" id="msg-resolve-btn" onclick="resolveThread()">✅ Resolve</button>
+              </div>
+              <div id="msg-window-warning" style="display:none;margin-top:.4rem;padding:.3rem .6rem;background:#fef3c7;border-radius:6px;font-size:.72rem;color:#92400e">⚠️ 24-hour reply window has expired. Use template messages to contact this customer.</div>
+            </div>
+            <div id="msg-thread-body" style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.4rem">
+              <div style="text-align:center;color:var(--dim);padding:3rem 0;font-size:.85rem">Select a conversation to view messages</div>
+            </div>
+            <div id="msg-reply-bar" style="display:none;padding:.6rem;border-top:1px solid var(--rim);gap:.4rem">
+              <input id="msg-reply-input" placeholder="Type a reply…" style="flex:1;padding:.5rem .7rem;border:1px solid var(--rim);border-radius:8px;font-size:.85rem" onkeydown="if(event.key==='Enter')sendMsgReply()">
+              <button class="btn-p btn-sm" onclick="sendMsgReply()">Send</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -857,6 +898,47 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
           <div class="cb" id="product-sets-list">
             <p style="color:var(--dim);font-size:.82rem">Loading...</p>
+          </div>
+        </div>
+
+        <!-- ── COLLECTIONS CARD ── -->
+        <div class="card" id="collections-card" style="margin-top:1.1rem;display:none">
+          <div class="ch">
+            <h3>🗂️ Collections <small style="color:var(--dim);font-weight:400">(customer-facing storefront tabs)</small></h3>
+            <div style="display:flex;gap:.4rem">
+              <button class="btn-g btn-sm" onclick="doAutoCreateCollections()">🪄 Auto-Create</button>
+              <button class="btn-g btn-sm" onclick="doSyncAllCollections()">🔄 Sync to WhatsApp</button>
+              <button class="btn-p btn-sm" onclick="openCreateCollModal()">+ Create</button>
+            </div>
+          </div>
+          <div class="cb">
+            <div style="display:flex;gap:.6rem;align-items:center;padding:.5rem .7rem;background:linear-gradient(90deg,rgba(79,70,229,.04),rgba(37,211,102,.04));border-radius:8px;margin-bottom:.6rem">
+              <span style="font-size:.72rem;color:var(--dim)">📋 Menu Items → 📂 Product Sets → 🗂️ <b>Collections</b> → What customers see as tabs in WhatsApp</span>
+            </div>
+            <div id="collections-list">
+              <p style="color:var(--dim);font-size:.82rem">Loading...</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── CREATE/EDIT COLLECTION MODAL ── -->
+        <div id="coll-modal" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.4);align-items:center;justify-content:center">
+          <div style="background:var(--ink2);border-radius:12px;padding:1.5rem;width:480px;max-width:92vw;box-shadow:var(--shadow);max-height:85vh;overflow-y:auto">
+            <h3 id="coll-modal-title" style="margin-bottom:1rem;font-size:1rem">Create Collection</h3>
+            <div class="fgrid" style="gap:.6rem">
+              <div class="fg span2"><label>Collection Name</label><input id="coll-name" placeholder="e.g. 🥟 Momos, ☕ Coffee"></div>
+              <div class="fg span2"><label>Description <small>(optional, 200 chars)</small></label><input id="coll-desc" maxlength="200" placeholder="Browse our momo selection"></div>
+              <div class="fg"><label>Sort Order</label><input id="coll-sort" type="number" value="0"></div>
+              <div class="fg"><label>Cover Image URL <small>(optional)</small></label><input id="coll-cover" placeholder="https://..."></div>
+              <div class="fg span2">
+                <label>Product Sets <small>(check to include)</small></label>
+                <div id="coll-sets-picker" style="max-height:180px;overflow-y:auto;border:1px solid var(--rim);border-radius:8px;padding:.5rem"></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:.5rem;margin-top:1rem;justify-content:flex-end">
+              <button class="btn-g" onclick="closeCollModal()">Cancel</button>
+              <button class="btn-p" id="coll-save-btn" onclick="doSaveColl()">Create</button>
+            </div>
           </div>
         </div>
 
@@ -1210,6 +1292,16 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <h4>WhatsApp Product Campaigns</h4>
             <p>Send multi-product messages (MPM) to your customers. Pick products from your menu, choose a customer segment, and send or schedule the campaign.</p>
           </div>
+        </div>
+
+        <!-- [WhatsApp2026] Campaign Best Practices -->
+        <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:8px;padding:.85rem 1rem;margin-bottom:1.2rem;font-size:.8rem;line-height:1.6;color:#1e3a5f">
+          <strong>Campaign Best Practices (Meta 2026):</strong><br>
+          &bull; Segment your audience — targeted messages get better engagement<br>
+          &bull; Avoid sending the same template to 10K+ users at once<br>
+          &bull; Meta monitors customer feedback (blocks, reports) and may pause delivery<br>
+          &bull; Start with a small test batch before sending to your full audience<br>
+          &bull; Use "Recent" audience (ordered in last 30 days) for best results
         </div>
 
         <!-- Create campaign form -->
@@ -1770,6 +1862,7 @@ const TMETA = {
   ratings:     { title: 'Ratings',             sub: 'Customer ratings and feedback',      fn: loadRatings },
   loyalty:     { title: 'Loyalty',             sub: 'Customer loyalty points and rewards', fn: loadLoyalty },
   team:        { title: 'Team',               sub: 'Manage staff access and roles',       fn: loadTeam },
+  messages:    { title: 'Messages',            sub: 'Customer messages and replies',      fn: loadMessages },
   referrals:   { title: 'Referrals Received', sub: 'Customers referred by GullyBite admin — 7.5% fee applies', fn: loadReferrals },
   settings:    { title: 'Settings',           sub: 'Business profile and bank account',  fn: loadProfile },
 };
@@ -1824,6 +1917,7 @@ async function initDash() {
     loadOverview();
     loadWA();
     loadCatalogStatus();
+    startMsgPoll();
 
     // If we arrived from Meta OAuth redirect, complete the connection now
     if (window._pendingMetaAccessToken) {
@@ -1882,7 +1976,7 @@ async function loadRecent() {
       <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
       <tbody>${o.map(r => `<tr>
         <td><span class="mono">${r.order_number}</span></td>
-        <td>${r.customer_name || r.wa_phone}</td>
+        <td>${r.customer_name || r.wa_phone || r.bsuid?.slice(0,12)+'…' || '—'}</td>
         <td>₹${r.total_rs}</td>
         <td>${sbadge(r.status)}</td>
         <td>${oaction(r)}</td>
@@ -1902,7 +1996,7 @@ async function loadOrders(s) {
     if (!o?.length) { tb.innerHTML = `<tr><td colspan="8"><div class="empty"><div class="ei">📋</div><h3>No orders found</h3></div></td></tr>`; return; }
     tb.innerHTML = o.map(r => `<tr>
       <td><span class="mono">${r.order_number}</span></td>
-      <td><div>${r.customer_name || '—'}</div><div style="font-size:.72rem;color:var(--dim)">${r.wa_phone}</div></td>
+      <td><div>${r.customer_name || '—'}</div><div style="font-size:.72rem;color:var(--dim)">${r.wa_phone || r.bsuid?.slice(0,12)+'…' || ''}</div></td>
       <td>${r.branch_name}</td>
       <td>₹${r.total_rs}</td>
       <td>${sbadge(r.status)}</td>
@@ -2027,7 +2121,7 @@ async function openOrdModal(orderId) {
     body.innerHTML = `
       <div style="margin-bottom:.8rem">
         <span style="font-size:.75rem;color:var(--dim)">Customer</span>
-        <div style="font-weight:600">${o.customer_name||'—'} · ${o.wa_phone||''}</div>
+        <div style="font-weight:600">${o.customer_name||'—'} · ${o.wa_phone || o.bsuid?.slice(0,12)+'…' || ''}</div>
         ${o.delivery_address ? `<div style="font-size:.75rem;color:var(--dim);margin-top:.2rem">${o.delivery_address}</div>` : ''}
       </div>
       <div style="margin-bottom:.8rem">
@@ -2119,7 +2213,7 @@ async function loadCustomers() {
       <div class="order-row" style="cursor:pointer" onclick="toggleCustHistory('${c.id}',this)">
         <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
           <div style="font-weight:600">${c.name || 'Unknown'}</div>
-          <div style="color:var(--dim);font-size:.85rem">+${c.wa_phone}</div>
+          <div style="color:var(--dim);font-size:.85rem">${c.wa_phone ? '+'+c.wa_phone : c.bsuid?.slice(0,12)+'…' || '—'}</div>
           <div style="margin-left:auto;display:flex;gap:1rem;font-size:.85rem">
             <span title="Total orders">🛒 ${c.total_orders}</span>
             <span title="Total spent">💰 ₹${(c.total_spent||0).toFixed(0)}</span>
@@ -2388,7 +2482,7 @@ async function anLoadCustomers() {
     const tbody = document.getElementById('an-top-cust');
     if (data.top_customers?.length) {
       tbody.innerHTML = data.top_customers.map(c =>
-        `<tr><td>${c.name || '—'}</td><td>${c.wa_phone || '—'}</td><td>${c.order_count}</td><td>₹${Math.round(c.total_spent_rs).toLocaleString('en-IN')}</td></tr>`
+        `<tr><td>${c.name || '—'}</td><td>${c.wa_phone || c.bsuid?.slice(0,12)+'…' || '—'}</td><td>${c.order_count}</td><td>₹${Math.round(c.total_spent_rs).toLocaleString('en-IN')}</td></tr>`
       ).join('');
     } else { tbody.innerHTML = '<tr><td colspan="4" style="color:var(--dim);text-align:center">No data yet</td></tr>'; }
   } catch (_) {}
@@ -2863,6 +2957,7 @@ async function loadMenu() {
     }).join('');
   } catch (e) { toast('Failed to load menu', 'err'); }
   loadProductSets();
+  loadCollections();
 }
 function miRow(item, isGroupedVariant) {
   const ti    = { veg: '🟢', non_veg: '🔴', vegan: '🌱', egg: '🟡' };
@@ -3507,11 +3602,163 @@ async function loadWA() {
           </div>
           ${checklist}
         </div>
+        <div id="wa-username-section-${a._id || a.id}" class="cb" style="border-top:1px solid var(--rim);padding-top:.8rem"></div>
+        <div id="wa-messaging-section-${a._id || a.id}" class="cb" style="border-top:1px solid var(--rim);padding-top:.8rem"></div>
       </div>`;
     }).join('');
   } catch (_) {}
   loadTemplateMappings();
   loadFeedStatus();
+  loadUsernameStatus();
+  loadMessagingStatus();
+  loadMessagingAnalytics();
+}
+
+// [WhatsApp2026] Load username status for this restaurant
+async function loadUsernameStatus() {
+  try {
+    const data = await api('/api/restaurant/username');
+    // Find the first WA account section to inject into
+    const sections = document.querySelectorAll('[id^="wa-username-section-"]');
+    sections.forEach(section => {
+      if (!data || data.username_status === 'not_claimed') {
+        section.innerHTML = `
+          <div style="display:flex;align-items:center;gap:.6rem">
+            <span style="font-size:1.2rem">@</span>
+            <div>
+              <div style="font-size:.85rem;font-weight:600">WhatsApp Business Username</div>
+              <p style="font-size:.78rem;color:var(--dim);margin-top:.15rem">Claim a @username to make your business searchable on WhatsApp. Contact GullyBite support to set it up.</p>
+            </div>
+          </div>`;
+      } else if (data.username_status === 'active') {
+        section.innerHTML = `
+          <div style="display:flex;align-items:center;gap:.6rem">
+            <span style="font-size:1.2rem;background:#dcfce7;padding:.3rem .5rem;border-radius:6px">@</span>
+            <div style="flex:1">
+              <div style="font-size:.85rem;font-weight:600">@${esc(data.business_username)} <span style="color:#22c55e;font-size:.75rem">Active</span></div>
+              <div style="display:flex;align-items:center;gap:.5rem;margin-top:.3rem">
+                <code style="font-size:.78rem;background:var(--ink2);padding:.2rem .5rem;border-radius:4px;border:1px solid var(--rim)">wa.me/${data.business_username}</code>
+                <button class="btn-g btn-sm" onclick="navigator.clipboard.writeText('https://wa.me/${data.business_username}');toast('Link copied!','ok')" style="font-size:.72rem">Copy Link</button>
+                <button class="btn-g btn-sm" onclick="navigator.clipboard.writeText('Message us on WhatsApp: @${data.business_username}');toast('Copied!','ok')" style="font-size:.72rem">Share Text</button>
+              </div>
+            </div>
+          </div>`;
+      } else if (data.username_status === 'pending_claim' || data.username_status === 'suggested') {
+        const suggestion = data.business_username || (data.username_suggestions?.[0]);
+        section.innerHTML = `
+          <div style="display:flex;align-items:center;gap:.6rem">
+            <span style="font-size:1.2rem;background:#fef9c3;padding:.3rem .5rem;border-radius:6px">@</span>
+            <div>
+              <div style="font-size:.85rem;font-weight:600">Suggested Username: @${esc(suggestion || '?')} <span style="color:#eab308;font-size:.75rem">${data.username_status.replace('_', ' ')}</span></div>
+              <p style="font-size:.78rem;color:var(--dim);margin-top:.15rem">Contact GullyBite admin to finalize your username claim.</p>
+            </div>
+          </div>`;
+      }
+    });
+  } catch (_) {}
+}
+
+// [WhatsApp2026] Load messaging limit / verification status
+async function loadMessagingStatus() {
+  try {
+    const data = await api('/api/restaurant/messaging-status');
+    const sections = document.querySelectorAll('[id^="wa-messaging-section-"]');
+    sections.forEach(section => {
+      const tier = data.messaging_limit_tier;
+      const tierLabel = tier === 'TIER_100K' ? '100K/day' : tier === 'TIER_10K' ? '10K/day' : tier === 'TIER_2K' ? '2K/day' : tier === 'TIER_1K' ? '1K/day' : tier || '—';
+      const isMax = tier === 'TIER_100K' || tier === 'UNLIMITED';
+      const verStatus = data.business_verification_status || 'not_started';
+      const verColor = verStatus === 'verified' ? '#22c55e' : verStatus === 'pending' ? '#eab308' : '#94a3b8';
+
+      section.innerHTML = `
+        <div style="display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap">
+          <div>
+            <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin-bottom:.15rem">Daily Messaging Limit</div>
+            <div style="font-size:1rem;font-weight:700;color:${isMax ? '#22c55e' : 'var(--tx)'}">${tierLabel} ${isMax ? '<span style="font-size:.75rem;background:#dcfce7;padding:.15rem .4rem;border-radius:6px;color:#15803d;font-weight:600">Fully Unlocked</span>' : ''}</div>
+            ${!isMax ? '<p style="font-size:.72rem;color:var(--dim);margin-top:.15rem">Complete Business Verification to unlock 100K messages/day</p>' : ''}
+          </div>
+          <div>
+            <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin-bottom:.15rem">Business Verification</div>
+            <span style="display:inline-block;padding:.2rem .5rem;border-radius:8px;font-size:.78rem;font-weight:600;background:${verColor}20;color:${verColor}">${verStatus.replace('_', ' ')}</span>
+          </div>
+        </div>`;
+    });
+  } catch (_) {}
+}
+
+// [WhatsApp2026] Load messaging analytics — stats, costs, and account health
+async function loadMessagingAnalytics() {
+  try {
+    const [stats, costs, health] = await Promise.all([
+      api('/api/restaurant/messaging/stats').catch(() => null),
+      api('/api/restaurant/messaging/costs').catch(() => null),
+      api('/api/restaurant/messaging/health').catch(() => null),
+    ]);
+
+    const sections = document.querySelectorAll('[id^="wa-messaging-section-"]');
+    sections.forEach(section => {
+      // Append analytics below existing messaging status
+      let html = section.innerHTML;
+
+      // Message delivery stats
+      if (stats && stats.total > 0) {
+        const deliveryRate = stats.total > 0 ? ((stats.delivered + stats.read) / stats.total * 100).toFixed(1) : '0';
+        const readRate = stats.total > 0 ? (stats.read / stats.total * 100).toFixed(1) : '0';
+        html += `
+          <div style="margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--rim)">
+            <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin-bottom:.5rem">Message Analytics (All Time)</div>
+            <div style="display:flex;gap:1rem;flex-wrap:wrap">
+              <div style="text-align:center"><div style="font-size:1.1rem;font-weight:700">${stats.total}</div><div style="font-size:.7rem;color:var(--dim)">Total Sent</div></div>
+              <div style="text-align:center"><div style="font-size:1.1rem;font-weight:700;color:#22c55e">${deliveryRate}%</div><div style="font-size:.7rem;color:var(--dim)">Delivered</div></div>
+              <div style="text-align:center"><div style="font-size:1.1rem;font-weight:700;color:#2563eb">${readRate}%</div><div style="font-size:.7rem;color:var(--dim)">Read</div></div>
+              <div style="text-align:center"><div style="font-size:1.1rem;font-weight:700;color:#dc2626">${stats.failed}</div><div style="font-size:.7rem;color:var(--dim)">Failed</div></div>
+            </div>
+          </div>`;
+      }
+
+      // Cost breakdown
+      if (costs && costs.breakdown?.length) {
+        const totalCost = costs.breakdown.reduce((s, b) => s + b.cost_rs, 0);
+        html += `
+          <div style="margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--rim)">
+            <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin-bottom:.4rem">Estimated Messaging Costs</div>
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:baseline">
+              <div style="font-size:1.1rem;font-weight:700">₹${totalCost.toFixed(2)}</div>
+              <div style="font-size:.72rem;color:var(--dim)">${costs.breakdown.map(b => `${b.category}: ₹${b.cost_rs.toFixed(2)} (${b.count})`).join(' · ')}</div>
+            </div>
+          </div>`;
+      }
+
+      // Account health
+      if (health && health.latest) {
+        const h = health.latest;
+        const qColor = h.quality_rating === 'GREEN' ? '#22c55e' : h.quality_rating === 'YELLOW' ? '#eab308' : h.quality_rating === 'RED' ? '#dc2626' : '#94a3b8';
+        html += `
+          <div style="margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--rim)">
+            <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.03em;margin-bottom:.4rem">Account Quality</div>
+            <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+              <span style="display:inline-block;padding:.2rem .5rem;border-radius:8px;font-size:.78rem;font-weight:600;background:${qColor}20;color:${qColor}">${h.quality_rating || 'Unknown'}</span>
+              <span style="font-size:.72rem;color:var(--dim)">Checked: ${new Date(h.checked_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              <button class="btn-g btn-sm" onclick="checkAccountHealth()" style="font-size:.68rem">Refresh</button>
+            </div>
+            ${h.quality_rating === 'RED' || h.quality_rating === 'LOW' || h.quality_rating === 'FLAGGED' ?
+              '<p style="font-size:.72rem;color:#dc2626;margin-top:.3rem">⚠️ Quality is degraded. Reduce template message volume and check customer feedback.</p>' : ''}
+          </div>`;
+      }
+
+      section.innerHTML = html;
+    });
+  } catch (_) {}
+}
+
+async function checkAccountHealth() {
+  try {
+    const result = await api('/api/restaurant/messaging/health/check', { method: 'POST' });
+    toast(`Quality: ${result.quality_rating || 'Unknown'}, Limit: ${result.messaging_limit || 'Unknown'}`, 'ok');
+    loadMessagingAnalytics();
+  } catch (e) {
+    toast(e.message || 'Failed to check health', 'err');
+  }
 }
 
 async function completeSetup(waAccountId, btn) {
@@ -3990,7 +4237,7 @@ async function loadLoyalty(page) {
       };
       tb.innerHTML = data.customers.map(c => `<tr style="border-bottom:1px solid var(--rim)">
         <td style="padding:.5rem">${c.customer_name}</td>
-        <td style="padding:.5rem;font-size:.75rem;color:var(--dim)">${c.wa_phone}</td>
+        <td style="padding:.5rem;font-size:.75rem;color:var(--dim)">${c.wa_phone || c.bsuid?.slice(0,12)+'…' || '—'}</td>
         <td style="padding:.5rem;text-align:center;font-weight:600">${c.points_balance}</td>
         <td style="padding:.5rem;text-align:center;color:var(--dim)">${c.lifetime_points}</td>
         <td style="padding:.5rem;text-align:center">${tierBadge(c.tier)}</td>
@@ -4534,7 +4781,7 @@ async function loadReferrals() {
     tbody.innerHTML = d.referrals.map(r => `
       <tr style="border-bottom:1px solid var(--rim)">
         <td style="padding:.6rem 1rem">
-          <div style="font-family:monospace;font-size:.8rem">${r.customer_wa_phone}</div>
+          <div style="font-family:monospace;font-size:.8rem">${r.customer_wa_phone || r.customer_bsuid?.slice(0,12)+'…' || '—'}</div>
           ${r.customer_name ? `<div style="font-size:.74rem;color:var(--dim)">${r.customer_name}</div>` : ''}
         </td>
         <td style="padding:.6rem 1rem">
@@ -4653,18 +4900,43 @@ async function loadCampaigns() {
     }
     const segLabel = { all: 'All', recent: 'Recent 30d', inactive: 'Inactive 60d+' };
     tb.innerHTML = rows.map(c => {
-      const statusMap = { draft: 'bd', scheduled: 'bb', sending: 'bb', sent: 'bg', failed: 'br' };
+      const statusMap = { draft: 'bd', scheduled: 'bb', sending: 'bb', paused: 'bb', sent: 'bg', failed: 'br' };
+      const s = c.stats || {};
+      const total = s.total_recipients || c.sent_count || 0;
+      const sentCount = s.sent || c.sent_count || 0;
+      const failedCount = s.failed || c.failed_count || 0;
+      const deliveredCount = s.delivered || 0;
+      const readCount = s.read || 0;
+      // Batch progress
+      const batchInfo = (c.status === 'sending' || c.status === 'paused') && c.total_batches
+        ? `<div style="font-size:.72rem;color:var(--dim);margin-top:.2rem">Batch ${c.current_batch || 0} / ${c.total_batches} &middot; ${sentCount} / ${total} sent</div>` : '';
+      // Delivery stats
+      const deliveryStats = sentCount > 0
+        ? `<div style="font-size:.72rem;margin-top:.2rem">` +
+          `<span style="color:#22c55e">Delivered: ${deliveredCount} (${total > 0 ? Math.round(deliveredCount/sentCount*100) : 0}%)</span> ` +
+          `<span style="color:#3b82f6">Read: ${readCount} (${sentCount > 0 ? Math.round(readCount/sentCount*100) : 0}%)</span> ` +
+          `<span style="color:var(--red)">Failed: ${failedCount} (${sentCount > 0 ? Math.round(failedCount/sentCount*100) : 0}%)</span>` +
+          `</div>` : '';
+      // High failure warning
+      const failWarning = failedCount > 0 && sentCount > 0 && (failedCount / sentCount) > 0.1
+        ? `<div style="background:#fef2f2;color:#991b1b;font-size:.72rem;padding:.25rem .5rem;border-radius:4px;margin-top:.3rem">High failure rate — Meta may be pacing this campaign</div>` : '';
+      // Pause reason
+      const pauseInfo = c.status === 'paused' && c.pause_reason
+        ? `<div style="background:#fef9c3;color:#854d0e;font-size:.72rem;padding:.25rem .5rem;border-radius:4px;margin-top:.3rem">${esc(c.pause_reason)}</div>` : '';
+
       return `<tr>
-        <td><strong>${c.name}</strong></td>
+        <td><strong>${esc(c.name)}</strong>${batchInfo}${deliveryStats}${failWarning}${pauseInfo}</td>
         <td>${c.product_ids?.length || 0}</td>
         <td>${segLabel[c.segment] || c.segment}</td>
-        <td>${c.sent_count || 0}</td>
-        <td>${c.failed_count || 0}</td>
+        <td>${sentCount}</td>
+        <td>${failedCount}</td>
         <td><span class="badge ${statusMap[c.status] || 'bd'}">${c.status}</span></td>
         <td style="font-size:.78rem;color:var(--dim)">${timeAgo(c.created_at)}</td>
-        <td>
-          ${c.status === 'draft' || c.status === 'scheduled' ? `<button class="btn-g btn-sm" onclick="sendCampaignNow('${c.id}')">Send</button>` : ''}
-          ${c.status !== 'sending' ? `<button class="btn-sm" style="color:var(--red)" onclick="deleteCampaignRow('${c.id}','${c.name}')">Delete</button>` : ''}
+        <td style="white-space:nowrap">
+          ${c.status === 'draft' || c.status === 'scheduled' ? `<button class="btn-g btn-sm" onclick="sendCampaignNow('${c.id || c._id}')">Send</button> ` : ''}
+          ${c.status === 'sending' ? `<button class="btn-sm" style="background:#eab308;color:#fff" onclick="pauseCampaignNow('${c.id || c._id}')">Pause</button> ` : ''}
+          ${c.status === 'paused' ? `<button class="btn-g btn-sm" onclick="resumeCampaignNow('${c.id || c._id}')">Resume</button> ` : ''}
+          ${c.status !== 'sending' ? `<button class="btn-sm" style="color:var(--red)" onclick="deleteCampaignRow('${c.id || c._id}','${esc(c.name)}')">Delete</button>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -4758,6 +5030,25 @@ async function deleteCampaignRow(id, name) {
   try {
     await api(`/api/restaurant/campaigns/${id}`, { method: 'DELETE' });
     toast('Campaign deleted', 'ok');
+    loadCampaigns();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// [WhatsApp2026] Pause/Resume campaign
+async function pauseCampaignNow(id) {
+  if (!confirm('Pause this campaign? Remaining messages will stop sending.')) return;
+  try {
+    await api(`/api/restaurant/campaigns/${id}/pause`, { method: 'POST' });
+    toast('Campaign paused', 'ok');
+    loadCampaigns();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function resumeCampaignNow(id) {
+  if (!confirm('Resume this campaign? Sending will continue from where it stopped.')) return;
+  try {
+    await api(`/api/restaurant/campaigns/${id}/resume`, { method: 'POST' });
+    toast('Campaign resumed — sending in background', 'ok');
     loadCampaigns();
   } catch (e) { toast(e.message, 'err'); }
 }
@@ -4894,6 +5185,186 @@ async function doSyncAllSets() {
     if (r.skipped) toast('No sets to sync', 'nfo');
     else toast(`Synced — ${r.created} created, ${r.updated} updated on Meta`, 'ok');
     loadProductSets();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ──────────────────── COLLECTIONS ───────────────────────── */
+let _editingCollId = null;
+let _collProductSets = []; // cached sets for the picker
+
+async function loadCollections() {
+  const branchId = document.getElementById('m-branch').value;
+  const card = document.getElementById('collections-card');
+  if (!branchId) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  const area = document.getElementById('collections-list');
+  try {
+    const colls = await api(`/api/restaurant/collections?branch_id=${branchId}`);
+    if (!colls?.length) {
+      area.innerHTML = `<p style="color:var(--dim);font-size:.82rem">No collections yet. Click <b>Auto-Create</b> to generate from product sets, or <b>Create</b> to add manually.</p>`;
+      return;
+    }
+    area.innerHTML = `<div style="display:flex;flex-direction:column;gap:.4rem">${colls.map((c, idx) => {
+      const syncBadge = c.synced
+        ? '<span style="font-size:.65rem;color:var(--wa)">🟢 synced</span>'
+        : '<span style="font-size:.65rem;color:var(--gold)">🟡 pending</span>';
+      const activeBadge = c.is_active === false
+        ? '<span style="font-size:.65rem;color:var(--mute)">⚪ inactive</span>' : '';
+      const setCount = c.product_sets?.length || 0;
+      const setNames = c.product_sets?.map(s => s.name).join(', ') || '—';
+      const safeName = esc(c.name);
+      return `<div style="display:flex;align-items:center;gap:.6rem;padding:.55rem .7rem;background:var(--ink);border-radius:8px" draggable="true" data-coll-id="${c.id}" data-coll-idx="${idx}">
+        <span style="cursor:grab;color:var(--mute);font-size:1rem" title="Drag to reorder">⠿</span>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:.84rem">${safeName}</div>
+          <div style="font-size:.7rem;color:var(--dim)">${setCount} set${setCount !== 1 ? 's' : ''}: ${esc(setNames)}</div>
+        </div>
+        ${activeBadge} ${syncBadge}
+        <button class="btn-g btn-sm" style="font-size:.72rem" onclick="openEditCollModal('${c.id}')">✏ Edit</button>
+        <button class="btn-del btn-sm" style="font-size:.72rem" onclick="doDeleteColl('${c.id}','${safeName.replace(/'/g,"\\'")}')">🗑</button>
+      </div>`;
+    }).join('')}</div>`;
+
+    // Simple drag-and-drop reorder
+    setupCollDragDrop(colls);
+  } catch (e) { area.innerHTML = `<p style="color:var(--red);font-size:.82rem">${e.message}</p>`; }
+}
+
+function setupCollDragDrop(colls) {
+  const items = document.querySelectorAll('[data-coll-id]');
+  let dragSrc = null;
+  items.forEach(item => {
+    item.addEventListener('dragstart', (e) => { dragSrc = item; item.style.opacity = '.4'; });
+    item.addEventListener('dragend', () => { item.style.opacity = '1'; });
+    item.addEventListener('dragover', (e) => e.preventDefault());
+    item.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      if (dragSrc === item) return;
+      const fromIdx = parseInt(dragSrc.dataset.collIdx);
+      const toIdx = parseInt(item.dataset.collIdx);
+      // Build new order
+      const reordered = [...colls];
+      const [moved] = reordered.splice(fromIdx, 1);
+      reordered.splice(toIdx, 0, moved);
+      const orderItems = reordered.map((c, i) => ({ id: c.id, sort_order: i }));
+      try {
+        await api('/api/restaurant/collections/reorder', { method: 'PUT', body: { items: orderItems } });
+        toast('Order updated', 'ok');
+        loadCollections();
+      } catch (err) { toast(err.message, 'err'); }
+    });
+  });
+}
+
+async function openCreateCollModal() {
+  _editingCollId = null;
+  document.getElementById('coll-modal-title').textContent = 'Create Collection';
+  document.getElementById('coll-save-btn').textContent = 'Create';
+  ['coll-name', 'coll-desc', 'coll-cover'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('coll-sort').value = '0';
+  await loadCollSetsPicker([]);
+  document.getElementById('coll-modal').style.display = 'flex';
+}
+
+async function openEditCollModal(collId) {
+  const branchId = document.getElementById('m-branch').value;
+  const colls = await api(`/api/restaurant/collections?branch_id=${branchId}`);
+  const coll = colls?.find(c => c.id === collId);
+  if (!coll) return toast('Collection not found', 'err');
+
+  _editingCollId = collId;
+  document.getElementById('coll-modal-title').textContent = 'Edit Collection';
+  document.getElementById('coll-save-btn').textContent = 'Save';
+  document.getElementById('coll-name').value = coll.name;
+  document.getElementById('coll-desc').value = coll.description || '';
+  document.getElementById('coll-sort').value = coll.sort_order || 0;
+  document.getElementById('coll-cover').value = coll.cover_image_url || '';
+
+  const selectedIds = (coll.product_set_ids || []);
+  await loadCollSetsPicker(selectedIds);
+  document.getElementById('coll-modal').style.display = 'flex';
+}
+
+async function loadCollSetsPicker(selectedIds) {
+  const branchId = document.getElementById('m-branch').value;
+  const picker = document.getElementById('coll-sets-picker');
+  try {
+    _collProductSets = await api(`/api/restaurant/product-sets?branch_id=${branchId}`);
+    if (!_collProductSets?.length) {
+      picker.innerHTML = '<p style="font-size:.78rem;color:var(--dim)">No product sets. Create product sets first.</p>';
+      return;
+    }
+    picker.innerHTML = _collProductSets.map(s => {
+      const checked = selectedIds.includes(s.id) ? 'checked' : '';
+      return `<label style="display:flex;align-items:center;gap:.4rem;padding:.25rem 0;font-size:.82rem;cursor:pointer">
+        <input type="checkbox" class="coll-set-cb" value="${s.id}" ${checked}>
+        ${esc(s.name)} <span style="font-size:.65rem;color:var(--dim)">(${s.type})</span>
+      </label>`;
+    }).join('');
+  } catch { picker.innerHTML = '<p style="font-size:.78rem;color:var(--red)">Failed to load sets</p>'; }
+}
+
+function closeCollModal() {
+  document.getElementById('coll-modal').style.display = 'none';
+  _editingCollId = null;
+}
+
+async function doSaveColl() {
+  const branchId = document.getElementById('m-branch').value;
+  if (!branchId) return toast('Select a branch first', 'err');
+  const name = document.getElementById('coll-name').value.trim();
+  if (!name) return toast('Collection name required', 'err');
+
+  const selectedSets = [...document.querySelectorAll('.coll-set-cb:checked')].map(cb => cb.value);
+
+  const body = {
+    branchId, name,
+    description: document.getElementById('coll-desc').value.trim() || null,
+    productSetIds: selectedSets,
+    coverImageUrl: document.getElementById('coll-cover').value.trim() || null,
+    sortOrder: parseInt(document.getElementById('coll-sort').value) || 0,
+  };
+
+  try {
+    if (_editingCollId) {
+      await api(`/api/restaurant/collections/${_editingCollId}`, { method: 'PUT', body });
+      toast(`Collection "${name}" updated`, 'ok');
+    } else {
+      await api('/api/restaurant/collections', { method: 'POST', body });
+      toast(`Collection "${name}" created`, 'ok');
+    }
+    closeCollModal();
+    loadCollections();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doDeleteColl(id, name) {
+  if (!confirm(`Delete collection "${name}"? It will also be removed from WhatsApp.`)) return;
+  try {
+    await api(`/api/restaurant/collections/${id}`, { method: 'DELETE' });
+    toast(`Collection "${name}" deleted`, 'ok');
+    loadCollections();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doAutoCreateCollections() {
+  const branchId = document.getElementById('m-branch').value;
+  if (!branchId) return toast('Select a branch first', 'err');
+  try {
+    const r = await api('/api/restaurant/collections/auto-create', { method: 'POST', body: { branchId } });
+    toast(`Auto-created ${r.created} collections (${r.skipped} skipped)`, 'ok');
+    loadCollections();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doSyncAllCollections() {
+  const branchId = document.getElementById('m-branch').value;
+  if (!branchId) return toast('Select a branch first', 'err');
+  try {
+    const r = await api('/api/restaurant/collections/sync', { method: 'POST', body: { branchId } });
+    if (r.skipped) toast('No collections to sync', 'nfo');
+    else toast(`Synced — ${r.created} created, ${r.updated} updated on Meta`, 'ok');
+    loadCollections();
   } catch (e) { toast(e.message, 'err'); }
 }
 
@@ -5330,6 +5801,250 @@ async function doRegisterFeed(btn) {
     loadFeedStatus();
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; btn.innerHTML = '📡 Register Feed with Meta'; }
+}
+
+/* ─────────────────────────── MESSAGES INBOX ─────────────── */
+let msgFilter = 'all', msgSearch = '', msgThreads = [], msgActiveCust = null, msgPollTimer = null, msgThreadPollTimer = null, _lastUnreadCount = 0;
+
+async function loadMessages() {
+  msgActiveCust = null;
+  clearInterval(msgThreadPollTimer);
+  document.getElementById('msg-thread-header').style.display = 'none';
+  document.getElementById('msg-reply-bar').style.display = 'none';
+  document.getElementById('msg-thread-body').innerHTML = '<div style="text-align:center;color:var(--dim);padding:3rem 0;font-size:.85rem">Select a conversation to view messages</div>';
+  await fetchThreads();
+  startMsgPoll();
+}
+
+async function fetchThreads() {
+  const list = document.getElementById('msg-thread-list');
+  try {
+    const qs = new URLSearchParams();
+    if (msgFilter && msgFilter !== 'all') qs.set('status', msgFilter);
+    if (msgSearch) qs.set('search', msgSearch);
+    const r = await api('/api/restaurant/messages?' + qs);
+    msgThreads = r.threads || [];
+    if (!msgThreads.length) {
+      list.innerHTML = '<div style="text-align:center;color:var(--dim);padding:2rem .5rem;font-size:.82rem">No conversations found</div>';
+      return;
+    }
+    list.innerHTML = msgThreads.map(t => {
+      const unread = t.unread_count || 0;
+      const active = msgActiveCust === t.customer_id;
+      const lastMsg = t.last_message_text || (t.last_message_type && t.last_message_type !== 'text' ? '📎 ' + t.last_message_type : '');
+      const preview = lastMsg.length > 60 ? lastMsg.slice(0, 60) + '…' : lastMsg;
+      return `<div onclick="loadMsgThread('${t.customer_id}')" style="padding:.6rem .7rem;border-radius:8px;cursor:pointer;border:1px solid ${active ? 'var(--wa)' : 'transparent'};background:${active ? 'rgba(37,211,102,.08)' : 'transparent'};transition:all .15s" onmouseover="this.style.background='var(--ink3)'" onmouseout="this.style.background='${active ? 'rgba(37,211,102,.08)' : 'transparent'}'">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:${unread ? '700' : '500'};font-size:.84rem">${t.customer_name || t.customer_phone || 'Unknown'}</span>
+          <span style="font-size:.68rem;color:var(--dim)">${t.last_message_at ? timeAgo(t.last_message_at) : ''}</span>
+        </div>
+        <div style="font-size:.76rem;color:var(--dim);margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${preview}</div>
+        ${unread ? `<span style="display:inline-block;margin-top:.25rem;background:var(--wa);color:#fff;font-size:.6rem;padding:.1rem .4rem;border-radius:9px;font-weight:600">${unread} new</span>` : ''}
+        ${t.has_active_order ? '<span style="display:inline-block;margin-top:.25rem;margin-left:.3rem;font-size:.6rem;padding:.1rem .4rem;border-radius:9px;background:var(--gold);color:#000;font-weight:600">Active Order</span>' : ''}
+      </div>`;
+    }).join('');
+  } catch (e) {
+    list.innerHTML = `<div style="padding:1rem;color:var(--red);font-size:.82rem">Failed to load: ${e.message}</div>`;
+  }
+}
+
+function renderMsgBubble(m) {
+  const isInbound = m.direction === 'inbound';
+  const align = isInbound ? 'flex-start' : 'flex-end';
+  const bg = isInbound ? 'var(--ink3)' : 'rgba(37,211,102,.15)';
+  const border = isInbound ? '' : 'border:1px solid rgba(37,211,102,.3);';
+  const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const type = m.message_type || 'text';
+  let content = '';
+
+  if (type === 'image') {
+    const mediaId = m.media_id;
+    content = `<div class="msg-media-img" data-media-id="${mediaId}" style="margin-bottom:.3rem;cursor:pointer" onclick="openMsgMedia('${mediaId}')">
+      <div style="width:200px;height:140px;background:var(--ink2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:2rem">📷</div>
+    </div>`;
+    if (m.caption) content += `<div>${m.caption}</div>`;
+    if (mediaId) fetchMsgMediaThumb(mediaId);
+  } else if (type === 'audio') {
+    content = `<div class="msg-media-audio" data-media-id="${m.media_id}"><div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0"><span style="font-size:1.2rem">🎵</span><span style="color:var(--dim);font-size:.8rem">Voice message</span></div></div>`;
+    if (m.media_id) fetchMsgMediaAudio(m.media_id);
+  } else if (type === 'video') {
+    content = `<div style="display:flex;align-items:center;gap:.4rem"><span style="font-size:1.1rem">🎬</span><span>Video</span></div>`;
+    if (m.caption) content += `<div style="margin-top:.2rem">${m.caption}</div>`;
+  } else if (type === 'document') {
+    content = `<div style="display:flex;align-items:center;gap:.4rem;cursor:pointer" onclick="openMsgMedia('${m.media_id}')"><span style="font-size:1.1rem">📎</span><span>${m.caption || 'Document'}</span></div>`;
+  } else if (type === 'location') {
+    content = '📍 Location shared';
+  } else if (type === 'sticker') {
+    content = '🏷️ Sticker';
+  } else {
+    content = m.text || '';
+  }
+
+  return `<div style="align-self:${align};max-width:75%;padding:.5rem .7rem;border-radius:12px;background:${bg};${border}font-size:.83rem;line-height:1.45">
+    <div>${content}</div>
+    <div style="font-size:.62rem;color:var(--dim);text-align:right;margin-top:.2rem">${time}${!isInbound ? ' · ' + (m.status || 'sent') : ''}</div>
+  </div>`;
+}
+
+async function fetchMsgMediaThumb(mediaId) {
+  try {
+    const r = await api('/api/restaurant/messages/media/' + mediaId);
+    if (!r.url) return;
+    const el = document.querySelector(`.msg-media-img[data-media-id="${mediaId}"]`);
+    if (el) el.innerHTML = `<img src="${r.url}" style="max-width:200px;max-height:200px;border-radius:8px;object-fit:cover;cursor:pointer" onclick="window.open(this.src,'_blank')" onerror="this.style.display='none';this.parentElement.innerHTML='<span style=&quot;font-size:.78rem;color:var(--dim)&quot;>📷 Image unavailable</span>'">`;
+  } catch (_) {}
+}
+
+async function fetchMsgMediaAudio(mediaId) {
+  try {
+    const r = await api('/api/restaurant/messages/media/' + mediaId);
+    if (!r.url) return;
+    const el = document.querySelector(`.msg-media-audio[data-media-id="${mediaId}"]`);
+    if (el) el.innerHTML = `<audio controls preload="none" style="max-width:240px;height:32px"><source src="${r.url}" type="${r.mime_type || 'audio/ogg'}">Audio</audio>`;
+  } catch (_) {}
+}
+
+async function openMsgMedia(mediaId) {
+  try {
+    const r = await api('/api/restaurant/messages/media/' + mediaId);
+    if (r.url) window.open(r.url, '_blank');
+  } catch (e) { toast('Could not load media', 'err'); }
+}
+
+async function loadMsgThread(customerId) {
+  msgActiveCust = customerId;
+  clearInterval(msgThreadPollTimer);
+  const header = document.getElementById('msg-thread-header');
+  const body = document.getElementById('msg-thread-body');
+  const replyBar = document.getElementById('msg-reply-bar');
+  const warning = document.getElementById('msg-window-warning');
+
+  body.innerHTML = '<div class="spin" style="margin:2rem auto;display:block;width:22px;height:22px"></div>';
+  header.style.display = 'block';
+
+  try {
+    const r = await api('/api/restaurant/messages/thread/' + customerId);
+    const msgs = r.messages || [];
+    const thread = msgThreads.find(t => t.customer_id === customerId) || {};
+
+    document.getElementById('msg-thread-name').textContent = thread.customer_name || thread.customer_phone || 'Customer';
+    document.getElementById('msg-thread-info').textContent = thread.customer_phone || '';
+    document.getElementById('msg-resolve-btn').style.display = thread.status === 'resolved' ? 'none' : '';
+
+    // Check 24h window
+    const lastInbound = msgs.filter(m => m.direction === 'inbound').pop();
+    const windowOpen = lastInbound && (Date.now() - new Date(lastInbound.created_at).getTime()) < 24 * 60 * 60 * 1000;
+    warning.style.display = windowOpen ? 'none' : 'block';
+    replyBar.style.display = 'flex';
+    document.getElementById('msg-reply-input').disabled = !windowOpen;
+
+    if (!msgs.length) {
+      body.innerHTML = '<div style="text-align:center;color:var(--dim);padding:2rem 0;font-size:.82rem">No messages in this thread</div>';
+    } else {
+      body.innerHTML = msgs.map(renderMsgBubble).join('');
+      body.scrollTop = body.scrollHeight;
+    }
+    // Refresh thread list to update unread counts
+    fetchThreads();
+
+    // Start 5-second thread polling
+    msgThreadPollTimer = setInterval(() => refreshActiveThread(), 5000);
+  } catch (e) {
+    body.innerHTML = `<div style="padding:1rem;color:var(--red);font-size:.82rem">Error: ${e.message}</div>`;
+  }
+}
+
+async function refreshActiveThread() {
+  if (!msgActiveCust) return;
+  try {
+    const r = await api('/api/restaurant/messages/thread/' + msgActiveCust);
+    const msgs = r.messages || [];
+    const body = document.getElementById('msg-thread-body');
+    const wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 60;
+    body.innerHTML = msgs.map(renderMsgBubble).join('');
+    if (wasAtBottom) body.scrollTop = body.scrollHeight;
+
+    // Update 24h window
+    const lastInbound = msgs.filter(m => m.direction === 'inbound').pop();
+    const windowOpen = lastInbound && (Date.now() - new Date(lastInbound.created_at).getTime()) < 24 * 60 * 60 * 1000;
+    document.getElementById('msg-window-warning').style.display = windowOpen ? 'none' : 'block';
+    document.getElementById('msg-reply-input').disabled = !windowOpen;
+  } catch (_) {}
+}
+
+async function sendMsgReply() {
+  const input = document.getElementById('msg-reply-input');
+  const text = input.value.trim();
+  if (!text || !msgActiveCust) return;
+  input.disabled = true;
+  try {
+    await api('/api/restaurant/messages/reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer_id: msgActiveCust, text })
+    });
+    input.value = '';
+    refreshActiveThread();
+    fetchThreads();
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+}
+
+async function resolveThread() {
+  if (!msgActiveCust) return;
+  try {
+    await api('/api/restaurant/messages/thread/' + msgActiveCust + '/resolve', { method: 'PUT' });
+    toast('Thread resolved', 'ok');
+    document.getElementById('msg-resolve-btn').style.display = 'none';
+    fetchThreads();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function setMsgFilter(f, btn) {
+  msgFilter = f;
+  document.querySelectorAll('.msg-filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  fetchThreads();
+}
+
+let _msgSearchTimer;
+function debounceMsgSearch() {
+  clearTimeout(_msgSearchTimer);
+  _msgSearchTimer = setTimeout(() => {
+    msgSearch = document.getElementById('msg-search').value.trim();
+    fetchThreads();
+  }, 350);
+}
+
+function startMsgPoll() {
+  clearInterval(msgPollTimer);
+  // Request notification permission
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+  msgPollTimer = setInterval(async () => {
+    try {
+      const r = await api('/api/restaurant/messages/unread-count');
+      const badge = document.getElementById('msg-badge');
+      const newCount = r.count || 0;
+      if (newCount > 0) { badge.textContent = newCount; badge.style.display = ''; }
+      else { badge.style.display = 'none'; }
+      // Browser notification on new messages
+      if (newCount > _lastUnreadCount && _lastUnreadCount >= 0) {
+        const diff = newCount - _lastUnreadCount;
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('New message' + (diff > 1 ? 's' : ''), { body: diff + ' new customer message' + (diff > 1 ? 's' : ''), icon: '/favicon.ico', tag: 'msg-notify' });
+        }
+      }
+      _lastUnreadCount = newCount;
+    } catch (_) {}
+    // Refresh thread list if we're on the messages tab
+    if (document.getElementById('tab-messages').classList.contains('on')) fetchThreads();
+  }, 10000);
 }
 
 /* ─────────────────────────── TOAST ─────────────────────── */

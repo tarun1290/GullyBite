@@ -6,6 +6,8 @@ const express = require('express');
 const router  = express.Router();
 const { col, newId, mapId, mapIds } = require('../config/database');
 const { runSettlement } = require('../jobs/settlement');
+const { logActivity } = require('../services/activityLog');
+const issueSvc = require('../services/issues');
 
 // ─── AUTH MIDDLEWARE ──────────────────────────────────────────
 const requireAdmin = (req, res, next) => {
@@ -23,6 +25,11 @@ router.post('/auth', express.json(), (req, res) => {
   if (!key || key !== process.env.ADMIN_KEY) {
     return res.status(403).json({ error: 'Invalid admin key' });
   }
+  logActivity({
+    actorType: 'admin', actorId: null, actorName: 'Admin',
+    action: 'admin.login', category: 'auth',
+    description: 'Admin logged in', severity: 'info',
+  });
   res.json({ ok: true });
 });
 
@@ -193,7 +200,7 @@ router.get('/orders', async (req, res) => {
     const enriched = await Promise.all(orders.map(async o => {
       const [branch, customer] = await Promise.all([
         col('branches').findOne({ _id: o.branch_id }, { projection: { name: 1, restaurant_id: 1 } }),
-        col('customers').findOne({ _id: o.customer_id }, { projection: { name: 1, wa_phone: 1 } }),
+        col('customers').findOne({ _id: o.customer_id }, { projection: { name: 1, wa_phone: 1, bsuid: 1 } }),
       ]);
       const restaurant = branch
         ? await col('restaurants').findOne({ _id: branch.restaurant_id }, { projection: { business_name: 1 } })
@@ -202,7 +209,7 @@ router.get('/orders', async (req, res) => {
         ...mapId(o),
         business_name: restaurant?.business_name,
         branch_name:   branch?.name,
-        wa_phone:      customer?.wa_phone,
+        wa_phone:      customer?.wa_phone || customer?.bsuid || '',
         customer_name: customer?.name,
       };
     }));
@@ -306,6 +313,12 @@ router.patch('/restaurants/:id', express.json(), async (req, res) => {
 
 // ─── POST /api/admin/run-settlement ──────────────────────────
 router.post('/run-settlement', async (req, res) => {
+  logActivity({
+    actorType: 'admin', actorId: null, actorName: 'Admin',
+    action: 'settlement.generated', category: 'settlement',
+    description: 'Settlement run triggered manually by admin',
+    resourceType: 'settlement', resourceId: null, severity: 'info',
+  });
   res.json({ message: 'Settlement started' });
   runSettlement().catch(console.error);
 });
@@ -359,6 +372,33 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
       console.error('[Directory] Auto-list failed:', err.message)
     );
 
+    // [WhatsApp2026] Auto-generate username suggestions on approval (fire-and-forget)
+    (async () => {
+      try {
+        const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.params.id, is_active: true });
+        if (waAcc && !waAcc.username_suggestions?.length) {
+          const restaurant = await col('restaurants').findOne({ _id: req.params.id });
+          const suggestions = usernameSvc.generateUsernameSuggestions(
+            restaurant?.brand_name || restaurant?.business_name,
+            restaurant?.business_name,
+            restaurant?.city,
+            restaurant?.restaurant_type
+          );
+          if (suggestions.length) {
+            await col('whatsapp_accounts').updateOne({ _id: waAcc._id }, {
+              $set: { username_suggestions: suggestions, username_status: 'suggested', username_updated_at: new Date() },
+            });
+          }
+        }
+      } catch (e) { console.error('[WhatsApp2026] Auto-suggest failed:', e.message); }
+    })();
+
+    logActivity({
+      actorType: 'admin', actorId: null, actorName: 'Admin',
+      action: 'restaurant.approved', category: 'auth',
+      description: `Restaurant "${updated.business_name}" approved`,
+      restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'info',
+    });
     res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -377,6 +417,12 @@ router.patch('/applications/:id/reject', express.json(), async (req, res) => {
       { returnDocument: 'after', projection: { _id: 1, business_name: 1, email: 1 } }
     );
     if (!updated) return res.status(404).json({ error: 'Not found' });
+    logActivity({
+      actorType: 'admin', actorId: null, actorName: 'Admin',
+      action: 'restaurant.rejected', category: 'auth',
+      description: `Restaurant "${updated.business_name}" rejected: ${notes}`,
+      restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'warning',
+    });
     res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1006,6 +1052,12 @@ router.post('/templates', express.json(), async (req, res) => {
     const result = await templateSvc.createTemplate(waba_id, {
       name, category, language, components, allow_category_change,
     });
+    logActivity({
+      actorType: 'admin', actorId: null, actorName: 'Admin',
+      action: 'template.created', category: 'template',
+      description: `Template "${name}" created on WABA ${waba_id}`,
+      resourceType: 'template', resourceId: result?.id || name, severity: 'info',
+    });
     res.json(result);
   } catch (e) {
     const metaErr = e.response?.data?.error;
@@ -1080,6 +1132,489 @@ router.get('/templates/notifications', async (req, res) => {
       .limit(limit)
       .toArray();
     res.json(mapIds(logs));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── BUSINESS USERNAMES ────────────────────────────────────────
+const usernameSvc = require('../services/username');
+
+// GET /api/admin/usernames — all restaurants with username status
+router.get('/usernames', async (req, res) => {
+  try {
+    const { search, status } = req.query;
+    const data = await usernameSvc.getAllUsernameStatuses({ search, statusFilter: status });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/usernames/:waAccountId/check — check availability
+router.post('/usernames/:waAccountId/check', express.json(), async (req, res) => {
+  try {
+    const result = await usernameSvc.checkUsernameAvailability(req.body.username, req.params.waAccountId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/usernames/:waAccountId/set-target — set pending_claim
+router.post('/usernames/:waAccountId/set-target', express.json(), async (req, res) => {
+  try {
+    const result = await usernameSvc.setTargetUsername(req.params.waAccountId, req.body.username);
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// POST /api/admin/usernames/:waAccountId/confirm — confirm as active
+router.post('/usernames/:waAccountId/confirm', express.json(), async (req, res) => {
+  try {
+    const result = await usernameSvc.confirmUsername(req.params.waAccountId, req.body.username);
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// POST /api/admin/usernames/:waAccountId/release — release username
+router.post('/usernames/:waAccountId/release', async (req, res) => {
+  try {
+    const result = await usernameSvc.releaseUsername(req.params.waAccountId);
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// POST /api/admin/usernames/:waAccountId/sync — sync from Meta
+router.post('/usernames/:waAccountId/sync', async (req, res) => {
+  try {
+    const result = await usernameSvc.syncUsernameFromMeta(req.params.waAccountId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/usernames/sync-all — sync all WABAs
+router.post('/usernames/sync-all', async (req, res) => {
+  try {
+    const result = await usernameSvc.syncAllUsernames();
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/usernames/auto-suggest — generate suggestions for all
+router.post('/usernames/auto-suggest', async (req, res) => {
+  try {
+    const result = await usernameSvc.autoSuggestAll();
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/usernames/:waAccountId/suggest — generate suggestions for one
+router.post('/usernames/:waAccountId/suggest', async (req, res) => {
+  try {
+    const acc = await col('whatsapp_accounts').findOne({ _id: req.params.waAccountId });
+    if (!acc) return res.status(404).json({ error: 'Account not found' });
+    const restaurant = await col('restaurants').findOne({ _id: acc.restaurant_id });
+    const suggestions = usernameSvc.generateUsernameSuggestions(
+      restaurant?.brand_name || restaurant?.business_name,
+      restaurant?.business_name,
+      restaurant?.city,
+      restaurant?.restaurant_type
+    );
+    await col('whatsapp_accounts').updateOne({ _id: acc._id }, {
+      $set: { username_suggestions: suggestions, username_updated_at: new Date() },
+    });
+    res.json({ suggestions });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── BUSINESS VERIFICATION STATUS ──────────────────────────────
+// GET /api/admin/restaurants/:id/verification — check Meta verification status
+router.get('/restaurants/:id/verification', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.params.id });
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+
+    const stored = {
+      business_verification_status: restaurant.business_verification_status || 'not_started',
+      messaging_limit_tier: restaurant.messaging_limit_tier || null,
+    };
+
+    // Try to fetch from Meta if business ID available
+    if (restaurant.meta_business_id && TOKEN()) {
+      try {
+        const axios = require('axios');
+        const { data } = await axios.get(
+          `${GRAPH()}/${restaurant.meta_business_id}`,
+          { params: { fields: 'verification_status', access_token: TOKEN() }, timeout: 8000 }
+        );
+        if (data.verification_status) {
+          const status = data.verification_status === 'verified' ? 'verified'
+            : data.verification_status === 'pending' ? 'pending' : stored.business_verification_status;
+          if (status !== stored.business_verification_status) {
+            await col('restaurants').updateOne({ _id: req.params.id }, {
+              $set: { business_verification_status: status, updated_at: new Date() },
+            });
+            stored.business_verification_status = status;
+          }
+        }
+      } catch (err) {
+        console.warn(`[WhatsApp2026] Verification status fetch failed:`, err.response?.data?.error?.message || err.message);
+      }
+    }
+
+    // Fetch messaging limit for the WA account
+    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.params.id, is_active: true });
+    if (waAcc?.phone_number_id && TOKEN()) {
+      try {
+        const axios = require('axios');
+        const { data } = await axios.get(
+          `${GRAPH()}/${waAcc.phone_number_id}`,
+          { params: { fields: 'messaging_limit_tier,quality_rating', access_token: TOKEN() }, timeout: 8000 }
+        );
+        stored.messaging_limit_tier = data.messaging_limit_tier || null;
+        stored.quality_rating = data.quality_rating || null;
+        // Store on WA account
+        await col('whatsapp_accounts').updateOne({ _id: waAcc._id }, {
+          $set: { messaging_limit_tier: data.messaging_limit_tier, quality_rating: data.quality_rating, updated_at: new Date() },
+        });
+      } catch (err) {
+        console.warn(`[WhatsApp2026] Messaging limit fetch failed:`, err.response?.data?.error?.message || err.message);
+      }
+    }
+
+    res.json(stored);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/admin/restaurants/:id/verification — manually set verification status
+router.patch('/restaurants/:id/verification', express.json(), async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['not_started', 'pending', 'verified', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    await col('restaurants').updateOne({ _id: req.params.id }, {
+      $set: { business_verification_status: status, updated_at: new Date() },
+    });
+    res.json({ ok: true, status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+const GRAPH = () => `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+const TOKEN = () => process.env.META_SYSTEM_USER_TOKEN;
+
+// ═══════════════════════════════════════════════════════════════
+// ACTIVITY MONITORING — GOD-VIEW
+// ═══════════════════════════════════════════════════════════════
+
+const actLog = require('../services/activityLog');
+
+// GET /api/admin/activity — global activity feed
+router.get('/activity', async (req, res) => {
+  try {
+    const result = await actLog.getActivities({
+      restaurantId: req.query.restaurant_id,
+      category: req.query.category,
+      action: req.query.action,
+      severity: req.query.severity,
+      actorType: req.query.actor_type,
+      from: req.query.from,
+      to: req.query.to,
+      search: req.query.search,
+    }, {
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 50,
+    });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/activity/restaurant/:id — per-restaurant activity
+router.get('/activity/restaurant/:id', async (req, res) => {
+  try {
+    const result = await actLog.getActivities({
+      restaurantId: req.params.id,
+      category: req.query.category,
+      severity: req.query.severity,
+      from: req.query.from,
+      to: req.query.to,
+    }, {
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 50,
+    });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/activity/stats — aggregated stats
+router.get('/activity/stats', async (req, res) => {
+  try {
+    const stats = await actLog.getActivityStats();
+    res.json(stats);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/activity/errors — recent errors + critical
+router.get('/activity/errors', async (req, res) => {
+  try {
+    const result = await actLog.getErrors({
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 50,
+    });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/webhooks/live — live webhook traffic
+router.get('/webhooks/live', async (req, res) => {
+  try {
+    const match = {};
+    if (req.query.source) match.source = req.query.source;
+    if (req.query.restaurant_id) match.phone_number_id = { $exists: true }; // approximate filter
+    if (req.query.processed === 'true') match.processed = true;
+    if (req.query.processed === 'false') match.processed = false;
+
+    const limit = parseInt(req.query.limit) || 30;
+    const since = req.query.since ? new Date(req.query.since) : null;
+    if (since) match.received_at = { $gt: since };
+
+    const logs = await col('webhook_logs')
+      .find(match)
+      .sort({ received_at: -1 })
+      .limit(limit)
+      .project({ payload: 0 }) // exclude large payloads in list view
+      .toArray();
+
+    res.json(logs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/webhooks/:id — single webhook with full payload
+router.get('/webhooks/:id', async (req, res) => {
+  try {
+    const log = await col('webhook_logs').findOne({ _id: req.params.id });
+    if (!log) return res.status(404).json({ error: 'Not found' });
+    res.json(log);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── ISSUES ──────────────────────────────────────────────────────────
+
+// GET /api/admin/issues — list all issues (with filters)
+router.get('/issues', async (req, res) => {
+  try {
+    const { status, category, priority, routed_to, restaurant_id, search, admin_queue, page = 1, limit = 30 } = req.query;
+    const filters = { status, category, priority, search };
+    if (routed_to) filters.routedTo = routed_to;
+    if (restaurant_id) filters.restaurantId = restaurant_id;
+    if (admin_queue === 'true') filters.adminQueue = true;
+    const result = await issueSvc.listIssues(filters, { page: parseInt(page), limit: parseInt(limit) });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/issues/stats — global issue stats
+router.get('/issues/stats', async (req, res) => {
+  try {
+    const filters = {};
+    if (req.query.restaurant_id) filters.restaurantId = req.query.restaurant_id;
+    if (req.query.admin_queue === 'true') filters.adminQueue = true;
+    const stats = await issueSvc.getIssueStats(filters);
+    res.json(stats);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/issues/:id — single issue detail
+router.get('/issues/:id', async (req, res) => {
+  try {
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue) return res.status(404).json({ error: 'Issue not found' });
+
+    // Enrich with delivery and payment context
+    const enriched = { ...issue };
+    if (issue.order_id) {
+      const order = await col('orders').findOne({ _id: issue.order_id });
+      if (order) enriched._order = { status: order.status, total_rs: order.total_rs, payment_status: order.payment_status };
+      const delivery = await col('deliveries').findOne({ order_id: issue.order_id });
+      if (delivery) enriched._delivery = { provider: delivery.provider, provider_order_id: delivery.provider_order_id, tracking_url: delivery.tracking_url, status: delivery.status, rider_name: delivery.rider_name, rider_phone: delivery.rider_phone };
+      const payment = await col('payments').findOne({ order_id: issue.order_id, status: 'paid' });
+      if (payment) enriched._payment = { rp_payment_id: payment.rp_payment_id, amount_rs: payment.amount_rs, method: payment.method };
+    }
+    res.json(enriched);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/issues/:id/status — update status
+router.put('/issues/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: 'status required' });
+    const updated = await issueSvc.updateStatus(req.params.id, status, {
+      actorType: 'admin', actorName: 'GullyBite Admin',
+    });
+    if (!updated) return res.status(404).json({ error: 'Issue not found' });
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/issues/:id/assign — reassign issue
+router.put('/issues/:id/assign', async (req, res) => {
+  try {
+    const { assigned_to, routed_to } = req.body;
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue) return res.status(404).json({ error: 'Issue not found' });
+
+    const updates = { updated_at: new Date() };
+    if (assigned_to) updates.assigned_to = assigned_to;
+    if (routed_to) updates.routed_to = routed_to;
+
+    await col('issues').updateOne({ _id: req.params.id }, { $set: updates });
+    const updated = await issueSvc.assignIssue(req.params.id, assigned_to || issue.assigned_to, {
+      actorType: 'admin', actorName: 'GullyBite Admin',
+    });
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/issues/:id/message — add message to issue thread
+router.post('/issues/:id/message', async (req, res) => {
+  try {
+    const { text, internal, notify_customer } = req.body;
+    if (!text) return res.status(400).json({ error: 'text required' });
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue) return res.status(404).json({ error: 'Issue not found' });
+
+    const msg = await issueSvc.addMessage(req.params.id, {
+      senderType: 'admin',
+      senderName: 'GullyBite Support',
+      text, internal: !!internal, sentVia: 'dashboard',
+    });
+
+    // Send to customer via WhatsApp if requested and not internal
+    if (notify_customer !== false && !internal) {
+      try {
+        const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: issue.restaurant_id });
+        if (waAccount) {
+          const wa = require('../services/whatsapp');
+          const custId = require('../services/customerIdentity');
+          const customer = await col('customers').findOne({ _id: issue.customer_id });
+          if (customer) {
+            const to = custId.resolveRecipient(customer);
+            const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+            await wa.sendText(waAccount.phone_number_id, sysToken, to,
+              `Re: Issue #${issue.issue_number}\n\n${text}`
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
+    res.json(msg);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/issues/:id/refund — process refund (admin only)
+router.post('/issues/:id/refund', async (req, res) => {
+  try {
+    const { amount_rs } = req.body;
+    const result = await issueSvc.processRefund(req.params.id, {
+      amountRs: amount_rs ? parseFloat(amount_rs) : undefined,
+      actorName: 'GullyBite Admin',
+    });
+
+    // Notify customer about refund
+    try {
+      const issue = result.issue;
+      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: issue.restaurant_id });
+      if (waAccount) {
+        const wa = require('../services/whatsapp');
+        const custId = require('../services/customerIdentity');
+        const customer = await col('customers').findOne({ _id: issue.customer_id });
+        if (customer) {
+          const to = custId.resolveRecipient(customer);
+          const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+          const amt = result.issue.refund_amount_rs;
+          await wa.sendText(waAccount.phone_number_id, sysToken, to,
+            `Good news! A refund of ₹${amt} for order #${issue.order_number || ''} has been processed. It will reflect in 5-7 business days.\n\nRefund ref: ${result.refund?.id || ''}`
+          );
+        }
+      }
+    } catch (_) {}
+
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/issues/:id/resolve — resolve issue
+router.post('/issues/:id/resolve', async (req, res) => {
+  try {
+    const { resolution_type, resolution_notes, refund_amount_rs, credit_amount_rs } = req.body;
+    const updated = await issueSvc.resolveIssue(req.params.id, {
+      resolutionType: resolution_type || 'no_action',
+      resolutionNotes: resolution_notes || null,
+      refundAmountRs: refund_amount_rs ? parseFloat(refund_amount_rs) : null,
+      creditAmountRs: credit_amount_rs ? parseFloat(credit_amount_rs) : null,
+      actorType: 'admin', actorName: 'GullyBite Admin',
+    });
+    if (!updated) return res.status(404).json({ error: 'Issue not found' });
+
+    // Notify customer
+    try {
+      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: updated.restaurant_id });
+      if (waAccount) {
+        const wa = require('../services/whatsapp');
+        const custId = require('../services/customerIdentity');
+        const customer = await col('customers').findOne({ _id: updated.customer_id });
+        if (customer) {
+          const to = custId.resolveRecipient(customer);
+          const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+          await wa.sendText(waAccount.phone_number_id, sysToken, to,
+            `Your issue #${updated.issue_number} has been resolved. ${resolution_notes || ''}\n\nIf you're still unsatisfied, reply REOPEN.`
+          );
+        }
+      }
+    } catch (_) {}
+
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/issues/:id/reopen — reopen issue
+router.post('/issues/:id/reopen', async (req, res) => {
+  try {
+    const updated = await issueSvc.reopenIssue(req.params.id, {
+      actorType: 'admin', actorName: 'GullyBite Admin',
+      reason: req.body.reason,
+    });
+    if (!updated) return res.status(404).json({ error: 'Issue not found' });
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/issues/:id/flag-settlement — flag refund for settlement deduction
+router.post('/issues/:id/flag-settlement', async (req, res) => {
+  try {
+    const { deduct_from, amount_rs, notes } = req.body;
+    // deduct_from: "restaurant" | "platform" | "3pl"
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue) return res.status(404).json({ error: 'Issue not found' });
+
+    await col('issues').updateOne({ _id: req.params.id }, {
+      $set: {
+        settlement_flag: { deduct_from: deduct_from || 'restaurant', amount_rs: parseFloat(amount_rs) || issue.refund_amount_rs, notes },
+        updated_at: new Date(),
+      },
+    });
+
+    // If deducting from restaurant's settlement
+    if (deduct_from === 'restaurant' && issue.order_id) {
+      await col('orders').updateOne({ _id: issue.order_id }, {
+        $set: { settlement_deduction_rs: parseFloat(amount_rs) || issue.refund_amount_rs, settlement_deduction_reason: `Issue ${issue.issue_number}`, updated_at: new Date() },
+      });
+    }
+
+    await issueSvc.addMessage(req.params.id, {
+      senderType: 'admin', senderName: 'GullyBite Admin',
+      text: `Flagged for settlement: deduct ₹${amount_rs || issue.refund_amount_rs} from ${deduct_from || 'restaurant'}`,
+      internal: true, sentVia: 'dashboard',
+    });
+
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

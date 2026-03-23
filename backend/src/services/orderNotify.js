@@ -6,6 +6,7 @@
 const { col, newId } = require('../config/database');
 const templateSvc = require('./template');
 const wa = require('./whatsapp');
+const { resolveRecipient } = require('./customerIdentity');
 
 // Map order status → event name used in template_mappings
 const STATUS_TO_EVENT = {
@@ -47,8 +48,9 @@ const sendOrderTemplateMessage = async (orderId, newStatus, orderContext = null)
       return false;
     }
 
-    // Need phone_number_id and wa_phone to send
-    if (!context.order.phone_number_id || !context.order.wa_phone) {
+    // [BSUID] Need phone_number_id and a reachable identifier to send
+    const toIdentifier = context.order.wa_phone || context.order.bsuid;
+    if (!context.order.phone_number_id || !toIdentifier) {
       console.warn(`[OrderNotify] Missing WA details for order ${orderId}`);
       return false;
     }
@@ -68,7 +70,7 @@ const sendOrderTemplateMessage = async (orderId, newStatus, orderContext = null)
     try {
       await templateSvc.sendTemplateMessage(
         context.order.phone_number_id,
-        context.order.wa_phone,
+        toIdentifier,
         mapping.template_name,
         'en',
         componentParams

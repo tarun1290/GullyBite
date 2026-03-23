@@ -12,7 +12,8 @@ const apiUrl = (phoneNumberId) =>
 // All functions below call this one.
 // phoneNumberId: Your Meta phone number ID (from developer console)
 // accessToken:   Restaurant's Meta access token
-// to:            Customer's phone number (with country code, no + sign)
+// to:            Customer identifier — phone number OR BSUID (Meta accepts both)
+//                [BSUID] Use customerIdentity.resolveRecipient(customer) to get the best value
 // body:          Message payload (different per message type)
 const sendMsg = async (phoneNumberId, accessToken, to, body) => {
   const payload = { messaging_product: 'whatsapp', recipient_type: 'individual', to, ...body };
@@ -258,6 +259,52 @@ const sendAddressList = (pid, token, to, addresses) => {
   });
 };
 
+// ─── ADDRESS REQUEST (Native Address Form) ──────────────────
+// [WhatsApp2026] Sends an interactive address_message form.
+// Meta renders a native structured form (name, phone, building, floor, pin_code, etc.)
+// Customer fills it in-app — we get back an nfm_reply with all fields.
+// savedAddress: optional pre-fill from a saved address
+const sendAddressRequest = (pid, token, to, { savedAddress } = {}) => {
+  const params = {
+    country: 'IN',
+    ...(savedAddress && {
+      values: {
+        ...(savedAddress.name && { name: savedAddress.name }),
+        ...(savedAddress.phone_number && { phone_number: savedAddress.phone_number }),
+        ...(savedAddress.in_pin_code && { in_pin_code: savedAddress.in_pin_code }),
+        ...(savedAddress.floor_number && { floor_number: savedAddress.floor_number }),
+        ...(savedAddress.building_name && { building_name: savedAddress.building_name }),
+        ...(savedAddress.address && { address: savedAddress.address }),
+        ...(savedAddress.landmark_area && { landmark_area: savedAddress.landmark_area }),
+        ...(savedAddress.city && { city: savedAddress.city }),
+      },
+    }),
+  };
+
+  return sendMsg(pid, token, to, {
+    type: 'interactive',
+    interactive: {
+      type: 'address_message',
+      body: {
+        text: '📍 *Enter your delivery address*\n\nFill in the form below so we can deliver to the right spot.',
+      },
+      action: {
+        name: 'address_message',
+        parameters: params,
+      },
+    },
+  });
+};
+
+// ─── TYPING INDICATOR ────────────────────────────────────────
+// [WhatsApp2026] Shows "typing…" bubble for up to 25 seconds.
+// Purely cosmetic — use before long operations to keep UX smooth.
+const showTyping = (pid, token, to) =>
+  axios.post(apiUrl(pid), { messaging_product: 'whatsapp', recipient_type: 'individual', to, status: 'typing' }, {
+    headers: { Authorization: `Bearer ${token}` },
+    timeout: 5000,
+  }).catch(() => {}); // Best-effort, never block
+
 // ─── MARK AS READ ─────────────────────────────────────────────
 // Shows blue double-tick on the customer's screen
 // Always call this when you receive a message — it's good UX
@@ -265,6 +312,38 @@ const markRead = (pid, token, messageId) =>
   axios.post(apiUrl(pid), { messaging_product: 'whatsapp', status: 'read', message_id: messageId }, {
     headers: { Authorization: `Bearer ${token}` },
   }).catch(() => {}); // Ignore errors silently
+
+// ─── WHATSAPP FLOW MESSAGE ───────────────────────────────────
+// [WhatsApp2026] Sends a WhatsApp Flow — mini-app for structured input.
+// Used for rating/feedback forms that replace simple button taps.
+// flowId: the Flow ID from Meta Business Manager
+// flowToken: custom token to identify the response (e.g., "rating_<orderId>")
+// flowCta: button text (max 20 chars)
+// screenId: initial screen to display
+// flowData: optional data to pass to the Flow
+const sendFlow = (pid, token, to, { flowId, flowToken, flowCta, screenId, flowData }) =>
+  sendMsg(pid, token, to, {
+    type: 'interactive',
+    interactive: {
+      type: 'flow',
+      body: { text: flowData?.body || 'Please fill in the form below.' },
+      ...(flowData?.footer && { footer: { text: flowData.footer } }),
+      action: {
+        name: 'flow',
+        parameters: {
+          flow_message_version: '3',
+          flow_id: flowId,
+          flow_token: flowToken,
+          flow_cta: (flowCta || 'Open Form').substring(0, 20),
+          flow_action: 'navigate',
+          flow_action_payload: {
+            screen: screenId || 'RATING_SCREEN',
+            data: flowData?.screenData || {},
+          },
+        },
+      },
+    },
+  });
 
 // ─── TEMPLATE MESSAGE ──────────────────────────────────────────
 // Sends a pre-approved Meta message template.
@@ -321,4 +400,4 @@ const sendDocument = async (pid, token, to, { buffer, filename, caption, mimeTyp
   });
 };
 
-module.exports = { sendText, sendButtons, sendList, sendAddressList, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, sendDocument, markRead };
+module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };

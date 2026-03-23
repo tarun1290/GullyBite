@@ -23,6 +23,11 @@ async function listRestaurant(restaurantId) {
   const branches = await col('branches').find({ restaurant_id: restaurantId }).toArray();
   const primaryBranch = branches[0];
 
+  // [WhatsApp2026] Include username and wa_link from WA account
+  const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: restaurantId, is_active: true });
+  const { getWaLink } = require('./username');
+  const waLink = waAccount ? getWaLink(waAccount) : null;
+
   const listing = {
     restaurant_id: restaurantId,
     business_name: restaurant.business_name,
@@ -32,6 +37,8 @@ async function listRestaurant(restaurantId) {
     logo_url: restaurant.logo_url || null,
     store_slug: restaurant.store_slug || null,
     cuisine_tags: restaurant.cuisine_tags || [],
+    business_username: waAccount?.business_username || null,
+    wa_link: waLink,
     is_active: true,
     branch_count: branches.length,
     primary_branch: primaryBranch ? {
@@ -73,12 +80,18 @@ async function searchListings({ query, city, type, limit = 10 }) {
   if (city) filter.city = { $regex: city, $options: 'i' };
   if (type && type !== 'all') filter.restaurant_type = type;
   if (query) {
+    // [WhatsApp2026] Strip @ prefix for username searches
+    const cleanQuery = query.startsWith('@') ? query.substring(1) : query;
     filter.$or = [
-      { brand_name: { $regex: query, $options: 'i' } },
-      { business_name: { $regex: query, $options: 'i' } },
-      { cuisine_tags: { $regex: query, $options: 'i' } },
-      { city: { $regex: query, $options: 'i' } },
+      { brand_name: { $regex: cleanQuery, $options: 'i' } },
+      { business_name: { $regex: cleanQuery, $options: 'i' } },
+      { cuisine_tags: { $regex: cleanQuery, $options: 'i' } },
+      { city: { $regex: cleanQuery, $options: 'i' } },
+      { business_username: { $regex: cleanQuery, $options: 'i' } },
     ];
+    // TODO: When Meta launches username search API, add verification:
+    // GET https://graph.facebook.com/v21.0/whatsapp_username_search?q={username}
+    // For now, we trust the manually entered username from admin
   }
 
   return col('directory_listings')
@@ -163,11 +176,17 @@ async function sendRestaurantCard(to, listing) {
   const cuisine = listing.cuisine_tags?.length ? `🍽️ ${listing.cuisine_tags.join(', ')}` : '';
   const baseUrl = process.env.BASE_URL || 'https://gully-bite.vercel.app';
 
+  // [WhatsApp2026] Show username if available
+  const usernameDisplay = listing.business_username
+    ? `💬 @${listing.business_username}\n`
+    : '';
+
   const body =
     `*${name}*\n` +
     `${typeLabel[listing.restaurant_type] || 'Veg & Non-Veg 🟡'}\n` +
     `${area}\n` +
     (cuisine ? `${cuisine}\n` : '') +
+    usernameDisplay +
     `\nTap below to start ordering on WhatsApp!`;
 
   const buttons = [

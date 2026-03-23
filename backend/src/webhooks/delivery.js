@@ -9,6 +9,7 @@ const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
 const notify = require('../services/notify');
 const orderNotify = require('../services/orderNotify');
+const { resolveRecipient } = require('../services/customerIdentity');
 
 // POST /webhooks/delivery — 3PL status updates
 router.post('/', express.json(), async (req, res) => {
@@ -74,7 +75,7 @@ router.post('/', express.json(), async (req, res) => {
     if (newStatus === 'assigned' && $set.driver_name) {
       // Rider assigned — notify customer
       if (wa_acc && customer) {
-        await wa.sendText(wa_acc.phone_number_id, wa_acc.access_token, customer.wa_phone,
+        await wa.sendText(wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
           `🏍️ *Rider assigned!*\n\n` +
           `👤 ${$set.driver_name}\n` +
           `📞 ${$set.driver_phone || 'Contact via app'}\n` +
@@ -89,7 +90,7 @@ router.post('/', express.json(), async (req, res) => {
       const dispatched = await orderNotify.sendOrderTemplateMessage(delivery.order_id, 'DISPATCHED').catch(() => false);
       if (!dispatched && wa_acc && customer) {
         const eta = $set.estimated_mins || delivery.estimated_mins;
-        await wa.sendText(wa_acc.phone_number_id, wa_acc.access_token, customer.wa_phone,
+        await wa.sendText(wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
           `📦 *Your order has been picked up!*\n\n` +
           `🏍️ ${$set.driver_name || delivery.driver_name || 'Your rider'} is on the way.\n` +
           (eta ? `⏱ ETA: ~${eta} minutes\n` : '') +

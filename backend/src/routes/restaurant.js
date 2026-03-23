@@ -16,6 +16,8 @@ const wa = require('../services/whatsapp');
 const etaSvc = require('../services/eta');
 const notify = require('../services/notify');
 const orderNotify = require('../services/orderNotify');
+const { logActivity: log } = require('../services/activityLog');
+const issueSvc = require('../services/issues');
 
 // ── Image upload via MongoDB GridFS ───────────────────────────
 const upload = multer({
@@ -552,6 +554,16 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
       .catch(err => console.error('[Menu] Auto-sync after add failed:', err.message));
 
     res.status(201).json(mapId(item));
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'menu.item_added', category: 'menu',
+      description: `Added menu item "${name}"`,
+      restaurantId: req.restaurantId || req.restaurant?._id,
+      branchId: req.params.branchId || null,
+      resourceType: 'menu_item', resourceId: itemId,
+      severity: 'info',
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -624,6 +636,16 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
         .catch(err => console.error('[Menu] Auto-sync after edit failed:', err.message));
     }
     res.json({ success: true });
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'menu.item_updated', category: 'menu',
+      description: `Updated menu item ${req.params.itemId}`,
+      restaurantId: req.restaurantId || req.restaurant?._id,
+      branchId: updated?.branch_id || null,
+      resourceType: 'menu_item', resourceId: req.params.itemId,
+      severity: 'info',
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -637,6 +659,16 @@ router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res
         .catch(err => console.error('[Menu] Delete sync failed:', err.message));
     }
     res.json({ success: true });
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'menu.item_deleted', category: 'menu',
+      description: `Deleted menu item ${req.params.itemId}${item ? ` ("${item.name}")` : ''}`,
+      restaurantId: req.restaurantId || req.restaurant?._id,
+      branchId: item?.branch_id || null,
+      resourceType: 'menu_item', resourceId: req.params.itemId,
+      severity: 'info',
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -842,6 +874,16 @@ router.post('/branches/:branchId/sync-catalog', requireApproved, async (req, res
   try {
     const result = await catalog.syncBranchCatalog(req.params.branchId);
     res.json(result);
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'catalog.sync_triggered', category: 'catalog',
+      description: `Catalog sync triggered for branch ${req.params.branchId}`,
+      restaurantId: req.restaurantId || req.restaurant?._id,
+      branchId: req.params.branchId,
+      resourceType: 'branch', resourceId: req.params.branchId,
+      severity: 'info',
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1085,6 +1127,161 @@ router.post('/product-sets/sync', requirePermission('manage_menu'), async (req, 
 });
 
 // ═══════════════════════════════════════════════════════════════
+// CATALOG COLLECTIONS
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/collections?branch_id=X
+router.get('/collections', async (req, res) => {
+  try {
+    const { branch_id } = req.query;
+    if (!branch_id) return res.status(400).json({ error: 'branch_id required' });
+    const collections = await col('catalog_collections').find({ branch_id }).sort({ sort_order: 1 }).toArray();
+
+    // Enrich with product set names
+    const allSetIds = [...new Set(collections.flatMap(c => c.product_set_ids || []))];
+    const sets = allSetIds.length
+      ? await col('product_sets').find({ _id: { $in: allSetIds } }).toArray()
+      : [];
+    const setMap = Object.fromEntries(sets.map(s => [String(s._id), { id: String(s._id), name: s.name, meta_product_set_id: s.meta_product_set_id }]));
+
+    const enriched = collections.map(c => ({
+      ...mapId(c),
+      product_sets: (c.product_set_ids || []).map(id => setMap[id] || { id, name: '(unknown)' }),
+      synced: !!c.meta_collection_id,
+    }));
+
+    res.json(enriched);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/collections
+router.post('/collections', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { branchId, name, description, productSetIds, coverImageUrl, sortOrder } = req.body;
+    if (!branchId || !name) return res.status(400).json({ error: 'branchId and name required' });
+
+    const branch = await col('branches').findOne({ _id: branchId });
+    if (!branch || branch.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Branch not found' });
+
+    // Validate product set IDs belong to this branch
+    const validSets = Array.isArray(productSetIds)
+      ? await col('product_sets').find({ _id: { $in: productSetIds }, branch_id: branchId }).toArray()
+      : [];
+
+    const now = new Date();
+    const doc = {
+      _id: newId(),
+      branch_id: branchId,
+      restaurant_id: req.restaurantId,
+      catalog_id: branch.catalog_id || null,
+      meta_collection_id: null,
+      name,
+      description: description || null,
+      product_set_ids: validSets.map(s => String(s._id)),
+      cover_image_url: coverImageUrl || null,
+      is_active: true,
+      sort_order: sortOrder ?? 0,
+      created_at: now,
+      updated_at: now,
+    };
+    await col('catalog_collections').insertOne(doc);
+
+    // Sync to Meta
+    if (branch.catalog_id) {
+      catalog.syncCollections(branchId)
+        .catch(err => console.error('[Collections] Sync after create failed:', err.message));
+    }
+
+    res.status(201).json(mapId(doc));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/collections/:id
+router.put('/collections/:id', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { name, description, productSetIds, coverImageUrl, sortOrder, isActive } = req.body;
+    const $set = { updated_at: new Date() };
+    if (name           !== undefined) $set.name = name;
+    if (description    !== undefined) $set.description = description || null;
+    if (coverImageUrl  !== undefined) $set.cover_image_url = coverImageUrl || null;
+    if (sortOrder      !== undefined) $set.sort_order = sortOrder;
+    if (isActive       !== undefined) $set.is_active = isActive;
+    if (Array.isArray(productSetIds)) $set.product_set_ids = productSetIds;
+
+    const updated = await col('catalog_collections').findOneAndUpdate(
+      { _id: req.params.id, restaurant_id: req.restaurantId },
+      { $set },
+      { returnDocument: 'after' }
+    );
+    if (!updated) return res.status(404).json({ error: 'Collection not found' });
+
+    // Re-sync to Meta
+    if (updated.branch_id) {
+      catalog.syncCollections(updated.branch_id)
+        .catch(err => console.error('[Collections] Sync after update failed:', err.message));
+    }
+
+    res.json(mapId(updated));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/restaurant/collections/:id
+router.delete('/collections/:id', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const coll = await col('catalog_collections').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!coll) return res.status(404).json({ error: 'Collection not found' });
+
+    // Delete from Meta first
+    if (coll.meta_collection_id) {
+      try {
+        await catalog.deleteCollection(coll.meta_collection_id);
+      } catch (err) {
+        console.warn(`[Collections] Meta delete failed (continuing): ${err.message}`);
+      }
+    }
+
+    await col('catalog_collections').deleteOne({ _id: req.params.id });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/collections/auto-create
+router.post('/collections/auto-create', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { branchId } = req.body;
+    if (!branchId) return res.status(400).json({ error: 'branchId required' });
+    const result = await catalog.autoCreateCollections(branchId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/collections/reorder — bulk update sort_order
+router.put('/collections/reorder', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { items } = req.body; // [{ id, sort_order }]
+    if (!Array.isArray(items)) return res.status(400).json({ error: 'items array required' });
+    const ops = items.map(item =>
+      col('catalog_collections').updateOne(
+        { _id: item.id, restaurant_id: req.restaurantId },
+        { $set: { sort_order: item.sort_order, updated_at: new Date() } }
+      )
+    );
+    await Promise.all(ops);
+    res.json({ success: true, updated: items.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/collections/sync — sync all collections for a branch
+router.post('/collections/sync', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { branchId } = req.body;
+    if (!branchId) return res.status(400).json({ error: 'branchId required' });
+    const result = await catalog.syncCollections(branchId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
 // VARIANT HELPERS
 // ═══════════════════════════════════════════════════════════════
 
@@ -1204,6 +1401,16 @@ router.post('/catalog/sync', async (req, res) => {
   try {
     const results = await catalog.syncAllBranches(req.restaurantId);
     res.json({ success: true, results });
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'catalog.sync_triggered', category: 'catalog',
+      description: 'Full catalog sync triggered for all branches',
+      restaurantId: req.restaurantId || req.restaurant?._id,
+      branchId: null,
+      resourceType: 'restaurant', resourceId: req.restaurantId,
+      severity: 'info',
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1386,7 +1593,7 @@ router.get('/orders', async (req, res) => {
       return {
         ...mapId(o),
         customer_name: customer?.name,
-        wa_phone:      customer?.wa_phone,
+        wa_phone:      customer?.wa_phone || customer?.bsuid || '',
         branch_name:   branch?.name,
         items:         mapIds(items),
       };
@@ -1415,7 +1622,7 @@ router.get('/orders/:orderId', async (req, res) => {
     res.json({
       ...mapId(o),
       customer_name: customer?.name,
-      wa_phone:      customer?.wa_phone,
+      wa_phone:      customer?.wa_phone || customer?.bsuid || '',
       branch_name:   branch?.name,
       items:         mapIds(items),
     });
@@ -1471,6 +1678,17 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
     }
 
     res.json({ success: true, order, eta: etaResult });
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'order.status_changed', category: 'order',
+      description: `Order ${req.params.orderId} status changed from ${req.body._oldStatus || 'unknown'} to ${status}`,
+      restaurantId: req.restaurantId || req.restaurant?._id,
+      branchId: order?.branch_id || null,
+      resourceType: 'order', resourceId: req.params.orderId,
+      severity: 'info',
+      metadata: { oldStatus: req.body._oldStatus || null, newStatus: status },
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1513,10 +1731,11 @@ router.put('/orders/:orderId/delivery', async (req, res) => {
       await orderSvc.updateStatus(req.params.orderId, 'DISPATCHED');
     }
 
-    if (wa_acc?.phone_number_id && customer?.wa_phone) {
+    const customerRecipient = customer?.wa_phone || customer?.bsuid;
+    if (wa_acc?.phone_number_id && customerRecipient) {
       await notifyOrderStatus(
         req.restaurantId,
-        wa_acc.phone_number_id, wa_acc.access_token, customer.wa_phone,
+        wa_acc.phone_number_id, wa_acc.access_token, customerRecipient,
         'DISPATCHED',
         {
           _orderId        : req.params.orderId,
@@ -1836,7 +2055,7 @@ router.get('/analytics/customers', requirePermission('view_analytics'), async (r
 
     // Enrich top customers with names
     const topIds = topCust.map(c => c._id).filter(Boolean);
-    const customers = topIds.length ? await col('customers').find({ _id: { $in: topIds } }, { projection: { name: 1, wa_phone: 1 } }).toArray() : [];
+    const customers = topIds.length ? await col('customers').find({ _id: { $in: topIds } }, { projection: { name: 1, wa_phone: 1, bsuid: 1 } }).toArray() : [];
     const custMap = Object.fromEntries(customers.map(c => [String(c._id), c]));
 
     res.json({
@@ -1846,7 +2065,7 @@ router.get('/analytics/customers', requirePermission('view_analytics'), async (r
       avg_orders_per_customer: avgOrders,
       top_customers: topCust.map(c => ({
         name: custMap[c._id]?.name || 'Unknown',
-        wa_phone: custMap[c._id]?.wa_phone || '',
+        wa_phone: custMap[c._id]?.wa_phone || custMap[c._id]?.bsuid || '',
         order_count: c.order_count,
         total_spent_rs: +c.total_spent.toFixed(2),
       })),
@@ -2287,6 +2506,7 @@ router.get('/customers', async (req, res) => {
       customerFilter.$or = [
         { name    : { $regex: search, $options: 'i' } },
         { wa_phone: { $regex: search, $options: 'i' } },
+        { bsuid   : { $regex: search, $options: 'i' } },
       ];
     }
 
@@ -2300,7 +2520,7 @@ router.get('/customers', async (req, res) => {
     res.json(customers.map(c => ({
       id          : String(c._id),
       name        : c.name,
-      wa_phone    : c.wa_phone,
+      wa_phone    : c.wa_phone || c.bsuid || '',
       total_orders: c.total_orders || 0,
       total_spent : c.total_spent_rs || 0,
       last_order_at: c.last_order_at,
@@ -2364,7 +2584,7 @@ router.get('/ratings', requireApproved, async (req, res) => {
     const orderIds    = [...new Set(ratings.map(r => r.order_id).filter(Boolean))];
 
     const [customers, orders] = await Promise.all([
-      customerIds.length ? col('customers').find({ _id: { $in: customerIds } }, { projection: { name: 1, wa_phone: 1 } }).toArray() : [],
+      customerIds.length ? col('customers').find({ _id: { $in: customerIds } }, { projection: { name: 1, wa_phone: 1, bsuid: 1 } }).toArray() : [],
       orderIds.length    ? col('orders').find({ _id: { $in: orderIds } }, { projection: { order_number: 1 } }).toArray() : [],
     ]);
 
@@ -2478,7 +2698,7 @@ router.get('/loyalty/customers', requireApproved, async (req, res) => {
       return {
         id: String(d._id),
         customer_name: c.name || 'Unknown',
-        wa_phone: c.wa_phone || '',
+        wa_phone: c.wa_phone || c.bsuid || '',
         points_balance: d.points_balance,
         lifetime_points: d.lifetime_points,
         tier: d.tier,
@@ -2655,6 +2875,642 @@ router.delete('/campaigns/:id', requirePermission('manage_settings'), async (req
     await campaignSvc.deleteCampaign(req.params.id, req.restaurantId);
     res.json({ success: true });
   } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// [WhatsApp2026] Campaign pause / resume
+router.post('/campaigns/:id/pause', requirePermission('manage_settings'), async (req, res) => {
+  try {
+    const result = await campaignSvc.pauseCampaign(req.params.id, req.restaurantId);
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+router.post('/campaigns/:id/resume', requirePermission('manage_settings'), async (req, res) => {
+  try {
+    const result = await campaignSvc.resumeCampaign(req.params.id, req.restaurantId);
+    res.json(result);
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// ─── BUSINESS USERNAME (read-only for restaurant) ─────────────
+const usernameSvc = require('../services/username');
+
+// GET /api/restaurant/username — get username status
+router.get('/username', async (req, res) => {
+  try {
+    const status = await usernameSvc.getUsernameStatus(req.restaurantId);
+    res.json(status || { username_status: 'not_claimed' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── MESSAGING LIMIT & VERIFICATION ───────────────────────────
+// GET /api/restaurant/messaging-status — current tier, quality, verification
+router.get('/messaging-status', async (req, res) => {
+  try {
+    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+
+    const result = {
+      messaging_limit_tier: waAcc?.messaging_limit_tier || null,
+      quality_rating: waAcc?.quality_rating || null,
+      business_verification_status: restaurant?.business_verification_status || 'not_started',
+    };
+
+    // Try to fetch fresh data from Meta
+    const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+    if (waAcc?.phone_number_id && sysToken) {
+      try {
+        const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+        const { data } = await require('axios').get(`${GRAPH}/${waAcc.phone_number_id}`, {
+          params: { fields: 'messaging_limit_tier,quality_rating', access_token: sysToken },
+          timeout: 8000,
+        });
+        result.messaging_limit_tier = data.messaging_limit_tier || result.messaging_limit_tier;
+        result.quality_rating = data.quality_rating || result.quality_rating;
+        // Update stored values
+        await col('whatsapp_accounts').updateOne({ _id: waAcc._id }, {
+          $set: { messaging_limit_tier: data.messaging_limit_tier, quality_rating: data.quality_rating },
+        });
+      } catch (err) {
+        console.warn(`[WhatsApp2026] Messaging status fetch:`, err.response?.data?.error?.message || err.message);
+      }
+    }
+
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── [WhatsApp2026] MESSAGE STATS ────────────────────────────
+// GET /messaging/stats?from=2026-03-01&to=2026-03-31
+router.get('/messaging/stats', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const msgTracking = require('../services/messageTracking');
+    const stats = await msgTracking.getMessageStats(req.restaurant._id, {
+      from: req.query.from,
+      to: req.query.to,
+    });
+    res.json(stats);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /messaging/costs?from=...&to=...
+router.get('/messaging/costs', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const msgTracking = require('../services/messageTracking');
+    const [breakdown, trend] = await Promise.all([
+      msgTracking.getCostBreakdown(req.restaurant._id, { from: req.query.from, to: req.query.to }),
+      msgTracking.getDailyCostTrend(req.restaurant._id, parseInt(req.query.days) || 30),
+    ]);
+    res.json({ breakdown, trend });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── [WhatsApp2026] ACCOUNT QUALITY & HEALTH ────────────────
+// GET /messaging/health
+router.get('/messaging/health', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const msgTracking = require('../services/messageTracking');
+    const [latest, history] = await Promise.all([
+      msgTracking.getLatestHealth(req.restaurant._id),
+      msgTracking.getHealthHistory(req.restaurant._id, 10),
+    ]);
+    res.json({ latest, history });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /messaging/health/check — trigger a fresh quality check
+router.post('/messaging/health/check', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const msgTracking = require('../services/messageTracking');
+    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id, is_active: true });
+    if (!waAcc) return res.status(404).json({ error: 'No active WhatsApp account' });
+
+    const token = process.env.META_SYSTEM_USER_TOKEN || waAcc.access_token;
+    const result = await msgTracking.checkAccountQuality(waAcc.phone_number_id, token, req.restaurant._id);
+    if (!result) return res.status(502).json({ error: 'Failed to fetch quality from Meta' });
+
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// MESSAGES INBOX
+// ═══════════════════════════════════════════════════════════════
+
+const customerIdentity = require('../services/customerIdentity');
+const { logActivity } = require('../services/activityLog');
+
+// GET /api/restaurant/messages — inbox threads (grouped by customer)
+router.get('/messages', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const restId = req.restaurant._id;
+    const { status, customer_id, search, page = 1, limit = 30 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    if (customer_id) {
+      // Thread view — all messages with this customer
+      const match = { restaurant_id: restId, customer_id };
+      const msgs = await col('customer_messages').find(match)
+        .sort({ created_at: 1 }).toArray();
+      // Mark unread as read
+      const unreadIds = msgs.filter(m => m.status === 'unread' && m.direction === 'inbound').map(m => m._id);
+      if (unreadIds.length) {
+        await col('customer_messages').updateMany(
+          { _id: { $in: unreadIds } },
+          { $set: { status: 'read', read_at: new Date(), read_by: req.user?.email || req.user?.phone || null, updated_at: new Date() } }
+        );
+      }
+      return res.json({ messages: msgs.map(m => ({ ...m, id: String(m._id) })) });
+    }
+
+    // Threads overview — aggregate latest message per customer
+    const match = { restaurant_id: restId };
+    if (status && status !== 'all') match.status = status;
+    if (search) match.$or = [
+      { text: { $regex: search, $options: 'i' } },
+      { customer_name: { $regex: search, $options: 'i' } },
+      { customer_phone: { $regex: search, $options: 'i' } },
+    ];
+
+    const threads = await col('customer_messages').aggregate([
+      { $match: { restaurant_id: restId, ...(status && status !== 'all' ? {} : {}) } },
+      { $sort: { created_at: -1 } },
+      {
+        $group: {
+          _id: '$customer_id',
+          customer_name: { $first: '$customer_name' },
+          customer_phone: { $first: '$customer_phone' },
+          customer_bsuid: { $first: '$customer_bsuid' },
+          last_message: { $first: '$text' },
+          last_message_type: { $first: '$message_type' },
+          last_direction: { $first: '$direction' },
+          last_status: { $first: '$status' },
+          last_time: { $first: '$created_at' },
+          related_order_id: { $first: '$related_order_id' },
+          related_order_number: { $first: '$related_order_number' },
+          unread_count: {
+            $sum: { $cond: [{ $and: [{ $eq: ['$status', 'unread'] }, { $eq: ['$direction', 'inbound'] }] }, 1, 0] },
+          },
+          total_messages: { $sum: 1 },
+        },
+      },
+      { $sort: { unread_count: -1, last_time: -1 } },
+      { $skip: skip },
+      { $limit: parseInt(limit) },
+    ]).toArray();
+
+    // Filter by search if specified (on aggregated fields)
+    let filtered = threads;
+    if (search) {
+      const re = new RegExp(search, 'i');
+      filtered = threads.filter(t =>
+        re.test(t.customer_name || '') || re.test(t.customer_phone || '') || re.test(t.last_message || '')
+      );
+    }
+    if (status && status !== 'all') {
+      if (status === 'unread') filtered = filtered.filter(t => t.unread_count > 0);
+      else if (status === 'active_orders') filtered = filtered.filter(t => t.related_order_id);
+    }
+
+    res.json({ threads: filtered.map(t => ({
+      customer_id: t._id,
+      customer_name: t.customer_name,
+      customer_phone: t.customer_phone,
+      customer_bsuid: t.customer_bsuid,
+      last_message_text: t.last_message,
+      last_message_type: t.last_message_type,
+      last_direction: t.last_direction,
+      status: t.last_status,
+      last_message_at: t.last_time,
+      related_order_id: t.related_order_id,
+      has_active_order: !!t.related_order_id,
+      related_order_number: t.related_order_number,
+      unread_count: t.unread_count,
+      total_messages: t.total_messages,
+    })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/messages/thread/:customer_id — full thread
+router.get('/messages/thread/:customer_id', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const restId = req.restaurant._id;
+    const msgs = await col('customer_messages')
+      .find({ restaurant_id: restId, customer_id: req.params.customer_id })
+      .sort({ created_at: 1 }).toArray();
+
+    // Mark unread inbound as read
+    const unreadIds = msgs.filter(m => m.status === 'unread' && m.direction === 'inbound').map(m => m._id);
+    if (unreadIds.length) {
+      await col('customer_messages').updateMany(
+        { _id: { $in: unreadIds } },
+        { $set: { status: 'read', read_at: new Date(), read_by: req.user?.email || req.user?.phone || null, updated_at: new Date() } }
+      );
+    }
+
+    res.json({ messages: msgs.map(m => ({ ...m, id: String(m._id) })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/messages/unread-count
+router.get('/messages/unread-count', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const count = await col('customer_messages').countDocuments({
+      restaurant_id: req.restaurant._id,
+      direction: 'inbound',
+      status: 'unread',
+    });
+    res.json({ count });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/messages/:id/status — update status
+router.put('/messages/:id/status', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['read', 'replied', 'resolved'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    const $set = { status, updated_at: new Date() };
+    if (status === 'read') { $set.read_at = new Date(); $set.read_by = req.user?.email || req.user?.phone || null; }
+    if (status === 'resolved') { $set.resolved_at = new Date(); $set.resolved_by = req.user?.email || req.user?.phone || null; }
+    await col('customer_messages').updateOne(
+      { _id: req.params.id, restaurant_id: req.restaurant._id },
+      { $set }
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/messages/thread/:customer_id/resolve — resolve entire thread
+router.put('/messages/thread/:customer_id/resolve', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const now = new Date();
+    await col('customer_messages').updateMany(
+      { restaurant_id: req.restaurant._id, customer_id: req.params.customer_id, status: { $ne: 'resolved' } },
+      { $set: { status: 'resolved', resolved_at: now, resolved_by: req.user?.email || req.user?.phone || null, updated_at: now } }
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/messages/reply — send reply to customer
+router.post('/messages/reply', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { customer_id, text, reply_to_message_id } = req.body;
+    if (!customer_id || !text?.trim()) return res.status(400).json({ error: 'customer_id and text required' });
+
+    const restId = req.restaurant._id;
+
+    // Check 24h window
+    const lastInbound = await col('customer_messages').findOne(
+      { restaurant_id: restId, customer_id, direction: 'inbound' },
+      { sort: { created_at: -1 } }
+    );
+    if (!lastInbound) return res.status(404).json({ error: 'No messages from this customer' });
+
+    const hoursSince = (Date.now() - new Date(lastInbound.created_at).getTime()) / (1000 * 60 * 60);
+    if (hoursSince > 24) {
+      return res.status(400).json({
+        error: 'The 24-hour reply window has expired. Use a template message to reach this customer.',
+        window_expired: true,
+        hours_since: Math.round(hoursSince),
+      });
+    }
+
+    // Rate limit: max 10 replies per customer per hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const recentReplies = await col('customer_messages').countDocuments({
+      restaurant_id: restId, customer_id, direction: 'outbound', created_at: { $gte: oneHourAgo },
+    });
+    if (recentReplies >= 10) {
+      return res.status(429).json({ error: 'Reply limit reached. Maximum 10 replies per customer per hour.' });
+    }
+
+    // Load WA account
+    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: restId, is_active: true });
+    if (!waAcc) return res.status(400).json({ error: 'No active WhatsApp account' });
+
+    // Resolve customer recipient
+    const customer = await col('customers').findOne({ _id: customer_id });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    const to = customerIdentity.resolveRecipient(customer);
+
+    const token = process.env.META_SYSTEM_USER_TOKEN || waAcc.access_token;
+
+    // Build message body with optional contextual reply
+    const body = { type: 'text', text: { body: text.trim(), preview_url: false } };
+    if (reply_to_message_id) {
+      body.context = { message_id: reply_to_message_id };
+    }
+
+    const result = await wa.sendMsg(waAcc.phone_number_id, token, to, body);
+    const wamId = result?.messages?.[0]?.id || null;
+
+    // Save outbound message
+    const msgDoc = {
+      _id: newId(),
+      restaurant_id: restId,
+      branch_id: null,
+      customer_id,
+      customer_name: customer.name || null,
+      customer_phone: customer.wa_phone || null,
+      customer_bsuid: customer.bsuid || null,
+      direction: 'outbound',
+      message_type: 'text',
+      text: text.trim(),
+      media_id: null,
+      media_url: null,
+      media_mime_type: null,
+      caption: null,
+      wa_message_id: wamId,
+      conversation_state: null,
+      related_order_id: lastInbound.related_order_id || null,
+      related_order_number: lastInbound.related_order_number || null,
+      status: 'replied',
+      read_at: null,
+      read_by: null,
+      replied_at: new Date(),
+      replied_by: req.user?.email || req.user?.phone || null,
+      resolved_at: null,
+      resolved_by: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+    await col('customer_messages').insertOne(msgDoc);
+
+    // Mark thread as replied
+    await col('customer_messages').updateMany(
+      { restaurant_id: restId, customer_id, direction: 'inbound', status: { $in: ['unread', 'read'] } },
+      { $set: { status: 'replied', replied_at: new Date(), replied_by: req.user?.email || req.user?.phone || null, updated_at: new Date() } }
+    );
+
+    logActivity({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'message.replied', category: 'messages',
+      description: `Replied to customer ${customer.name || customer.wa_phone}: "${text.substring(0, 60)}"`,
+      restaurantId: restId, resourceType: 'customer_message', resourceId: String(msgDoc._id),
+      severity: 'info',
+    });
+
+    res.json({ ...msgDoc, id: String(msgDoc._id), wa_message_id: wamId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/messages/media/:media_id — resolve Meta media URL
+router.get('/messages/media/:media_id', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id, is_active: true });
+    if (!waAcc) return res.status(400).json({ error: 'No WhatsApp account' });
+    const token = process.env.META_SYSTEM_USER_TOKEN || waAcc.access_token;
+    const { data } = await axios.get(
+      `https://graph.facebook.com/${process.env.WA_API_VERSION}/${req.params.media_id}`,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
+    );
+    res.json({ url: data.url, mime_type: data.mime_type });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── ISSUES ──────────────────────────────────────────────────────────
+
+// GET /api/restaurant/issues — list issues for this restaurant
+router.get('/issues', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { status, category, priority, search, page = 1, limit = 30 } = req.query;
+    const result = await issueSvc.listIssues(
+      { restaurantId: req.restaurant._id, status, category, priority, search },
+      { page: parseInt(page), limit: parseInt(limit) }
+    );
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/issues/stats — issue stats for this restaurant
+router.get('/issues/stats', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const stats = await issueSvc.getIssueStats({ restaurantId: req.restaurant._id });
+    res.json(stats);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/issues/:id — single issue detail
+router.get('/issues/:id', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+    res.json(issue);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/issues — create issue from dashboard
+router.post('/issues', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { customer_id, order_id, category, subcategory, description, media } = req.body;
+    if (!customer_id || !category || !description) return res.status(400).json({ error: 'customer_id, category, description required' });
+
+    // Look up customer and order
+    const customer = await col('customers').findOne({ _id: customer_id });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    let order = null;
+    if (order_id) {
+      order = await col('orders').findOne({ _id: order_id });
+    }
+
+    const issue = await issueSvc.createIssue({
+      customerId: customer._id,
+      customerName: customer.name || customer.wa_name,
+      customerPhone: customer.wa_phone,
+      orderId: order?._id || null,
+      orderNumber: order?.order_number || null,
+      restaurantId: req.restaurant._id,
+      branchId: order?.branch_id || null,
+      category,
+      subcategory,
+      description,
+      media: media || [],
+      source: 'dashboard',
+    });
+
+    // Send WhatsApp notification to customer
+    try {
+      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+      if (waAccount) {
+        const wa = require('../services/whatsapp');
+        const custId = require('../services/customerIdentity');
+        const to = custId.resolveRecipient(customer);
+        const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+        await wa.sendText(waAccount.phone_number_id, sysToken, to,
+          `Your issue #${issue.issue_number} has been logged. Our team will look into it shortly.`
+        );
+      }
+    } catch (_) {}
+
+    res.status(201).json(issue);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/issues/:id/status — update issue status
+router.put('/issues/:id/status', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: 'status required' });
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+
+    const updated = await issueSvc.updateStatus(req.params.id, status, {
+      actorType: 'restaurant', actorName: req.restaurant.business_name || 'Restaurant',
+      actorId: req.restaurant._id,
+    });
+
+    // Notify customer for key transitions
+    try {
+      if (['assigned', 'in_progress', 'resolved'].includes(status)) {
+        const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+        if (waAccount) {
+          const wa = require('../services/whatsapp');
+          const custId = require('../services/customerIdentity');
+          const customer = await col('customers').findOne({ _id: issue.customer_id });
+          if (customer) {
+            const to = custId.resolveRecipient(customer);
+            const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+            const msgs = {
+              assigned: `We're looking into your issue #${issue.issue_number}. We'll update you soon.`,
+              in_progress: `We're actively working on your issue #${issue.issue_number}.`,
+              resolved: `Your issue #${issue.issue_number} has been resolved. ${issue.resolution_notes || ''}\n\nIf you're still unsatisfied, reply REOPEN.`,
+            };
+            if (msgs[status]) await wa.sendText(waAccount.phone_number_id, sysToken, to, msgs[status]);
+          }
+        }
+      }
+    } catch (_) {}
+
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/issues/:id/message — add message to issue thread
+router.post('/issues/:id/message', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { text, internal } = req.body;
+    if (!text) return res.status(400).json({ error: 'text required' });
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+
+    const msg = await issueSvc.addMessage(req.params.id, {
+      senderType: 'restaurant',
+      senderName: req.restaurant.business_name || 'Restaurant',
+      text, internal: !!internal, sentVia: 'dashboard',
+    });
+
+    // Send to customer via WhatsApp (unless internal)
+    if (!internal) {
+      try {
+        const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+        if (waAccount) {
+          const wa = require('../services/whatsapp');
+          const custId = require('../services/customerIdentity');
+          const customer = await col('customers').findOne({ _id: issue.customer_id });
+          if (customer) {
+            const to = custId.resolveRecipient(customer);
+            const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+            await wa.sendText(waAccount.phone_number_id, sysToken, to,
+              `Re: Issue #${issue.issue_number}\n\n${text}`
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
+    res.json(msg);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/issues/:id/escalate — escalate to admin
+router.post('/issues/:id/escalate', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    if (!reason) return res.status(400).json({ error: 'reason required' });
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+
+    // Determine escalation target
+    let routeTo = 'admin';
+    if (['wrong_charge', 'refund_request', 'payment_failed', 'coupon_issue'].includes(issue.category)) routeTo = 'admin_financial';
+    if (['delivery_late', 'delivery_not_received', 'delivery_damaged', 'rider_behavior', 'wrong_address'].includes(issue.category)) routeTo = 'admin_delivery';
+
+    const updated = await issueSvc.escalateToAdmin(req.params.id, {
+      escalatedBy: req.restaurant._id,
+      reason,
+      routeTo,
+    });
+
+    // Notify customer
+    try {
+      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+      if (waAccount) {
+        const wa = require('../services/whatsapp');
+        const custId = require('../services/customerIdentity');
+        const customer = await col('customers').findOne({ _id: issue.customer_id });
+        if (customer) {
+          const to = custId.resolveRecipient(customer);
+          const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+          await wa.sendText(waAccount.phone_number_id, sysToken, to,
+            `Your issue #${issue.issue_number} has been escalated to our support team for faster resolution.`
+          );
+        }
+      }
+    } catch (_) {}
+
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/issues/:id/resolve — resolve issue
+router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { resolution_type, resolution_notes } = req.body;
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+
+    const updated = await issueSvc.resolveIssue(req.params.id, {
+      resolutionType: resolution_type || 'no_action',
+      resolutionNotes: resolution_notes || null,
+      actorType: 'restaurant', actorName: req.restaurant.business_name || 'Restaurant',
+      actorId: req.restaurant._id,
+    });
+
+    // Notify customer
+    try {
+      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+      if (waAccount) {
+        const wa = require('../services/whatsapp');
+        const custId = require('../services/customerIdentity');
+        const customer = await col('customers').findOne({ _id: issue.customer_id });
+        if (customer) {
+          const to = custId.resolveRecipient(customer);
+          const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+          await wa.sendText(waAccount.phone_number_id, sysToken, to,
+            `Your issue #${issue.issue_number} has been resolved. ${resolution_notes || ''}\n\nIf you're still unsatisfied, reply REOPEN.`
+          );
+        }
+      }
+    } catch (_) {}
+
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/issues/:id/reopen — reopen resolved issue
+router.post('/issues/:id/reopen', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const issue = await issueSvc.getIssue(req.params.id);
+    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+
+    const updated = await issueSvc.reopenIssue(req.params.id, {
+      actorType: 'restaurant', actorName: req.restaurant.business_name || 'Restaurant',
+      actorId: req.restaurant._id, reason: req.body.reason,
+    });
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

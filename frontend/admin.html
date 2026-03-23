@@ -75,6 +75,8 @@ nav{flex:1;padding:.6rem 0}
 .btn-sm.primary:hover{background:var(--acc2);border-color:var(--acc2)}
 .btn-sm.danger{background:var(--red);color:#fff;border-color:var(--red)}
 .btn-sm.danger:hover{background:var(--red2);border-color:var(--red2)}
+.act-sub.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+.act-sub.active:hover{background:var(--acc2);border-color:var(--acc2)}
 
 .content{flex:1;overflow-y:auto;padding:1.25rem 1.5rem}
 
@@ -230,6 +232,16 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Abuse Protection
         <span class="badge" id="nav-abuse-badge" style="display:none;background:#dc2626"></span>
+      </div>
+      <div class="nav-item" data-page="usernames" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M2 17a8 8 0 0 1 8-8"/></svg>
+        Usernames
+      </div>
+      <div style="border-top:1px solid var(--rim);margin:.4rem .6rem"></div>
+      <div class="nav-item" data-page="activity" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Activity Monitor
+        <span class="badge" id="nav-activity-badge" style="display:none;background:var(--red)"></span>
       </div>
     </nav>
     <div class="sb-footer">
@@ -614,6 +626,17 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
           <button class="btn-sm" onclick="seedMappings()">Seed Defaults</button>
         </div>
 
+        <!-- [BSUID] Contact Book API Reminder -->
+        <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.82rem;line-height:1.5">
+          <strong style="color:#92400e">⚠ WhatsApp Username Migration (June 2026)</strong><br>
+          <span style="color:#78350f">
+            Meta is rolling out WhatsApp usernames. Users who adopt a username may hide their phone number — webhooks will send a <strong>BSUID</strong> instead.<br>
+            <strong>Action required:</strong> Enable the <em>Meta Contact Book API</em> for each WABA to request phone numbers from BSUID-only users.
+            Go to <strong>Meta Business Suite → WhatsApp Manager → Settings → Contact Book</strong> and enable it for all active WABAs.<br>
+            GullyBite already handles BSUID customers and collects phone numbers at payment time, but enabling Contact Book gives a fallback phone resolution path.
+          </span>
+        </div>
+
         <!-- Event Mappings -->
         <div class="table-wrap" style="margin-bottom:1.2rem">
           <div class="table-head"><h2>Event → Template Mappings</h2></div>
@@ -672,9 +695,177 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         </div>
       </div>
 
+      <!-- ── BUSINESS USERNAMES ──────────────────────────────────────────── -->
+      <div class="page" id="page-usernames">
+        <!-- Bulk actions -->
+        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+          <select id="un-status-filter" onchange="loadUsernames()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.4rem .7rem;font-size:.85rem">
+            <option value="all">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="pending_claim">Pending Claim</option>
+            <option value="suggested">Suggested</option>
+            <option value="not_claimed">Not Claimed</option>
+            <option value="released">Released</option>
+          </select>
+          <input id="un-search" placeholder="Search restaurant or username…" oninput="loadUsernames()" style="flex:1;max-width:280px;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.4rem .7rem;font-size:.85rem">
+          <button class="btn-sm primary" onclick="unAutoSuggestAll()">Auto-Suggest All</button>
+          <button class="btn-sm" onclick="unSyncAll()">Sync All from Meta</button>
+        </div>
+
+        <!-- Usernames table -->
+        <div class="table-wrap">
+          <div class="table-head"><h2>Business Usernames</h2></div>
+          <table>
+            <thead><tr><th>Restaurant</th><th>WABA Display</th><th>Username</th><th>Status</th><th>wa.me Link</th><th>Actions</th></tr></thead>
+            <tbody id="un-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── ACTIVITY MONITOR ─────────────────────── -->
+      <div class="page" id="page-activity">
+        <!-- Stats row -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.75rem;margin-bottom:1.2rem" id="act-stats-row"></div>
+
+        <!-- Sub-tabs -->
+        <div style="display:flex;gap:.4rem;margin-bottom:1rem">
+          <button class="btn-sm act-sub active" data-sub="feed" onclick="actSub('feed',this)">Live Feed</button>
+          <button class="btn-sm act-sub" data-sub="webhooks" onclick="actSub('webhooks',this)">Webhooks</button>
+          <button class="btn-sm act-sub" data-sub="errors" onclick="actSub('errors',this)">Errors</button>
+        </div>
+
+        <!-- Filters -->
+        <div id="act-filters" style="display:flex;gap:.5rem;margin-bottom:.9rem;flex-wrap:wrap">
+          <select id="act-cat-filter" onchange="loadActivityFeed()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.35rem .6rem;font-size:.82rem">
+            <option value="">All Categories</option>
+            <option value="order">Orders</option>
+            <option value="menu">Menu</option>
+            <option value="catalog">Catalog</option>
+            <option value="payment">Payments</option>
+            <option value="auth">Auth</option>
+            <option value="customer">Customer</option>
+            <option value="admin">Admin</option>
+            <option value="webhook">Webhook</option>
+          </select>
+          <select id="act-sev-filter" onchange="loadActivityFeed()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.35rem .6rem;font-size:.82rem">
+            <option value="">All Severities</option>
+            <option value="info">Info</option>
+            <option value="warning">Warning</option>
+            <option value="error">Error</option>
+            <option value="critical">Critical</option>
+          </select>
+          <input id="act-search" placeholder="Search activity…" oninput="debounceActSearch()" style="flex:1;max-width:260px;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.35rem .6rem;font-size:.82rem">
+          <label style="display:flex;align-items:center;gap:.3rem;font-size:.8rem;color:var(--dim);cursor:pointer">
+            <input type="checkbox" id="act-auto-refresh" checked onchange="toggleActPoll()" style="accent-color:var(--acc)"> Auto-refresh
+          </label>
+        </div>
+
+        <!-- Feed content -->
+        <div id="act-feed-area">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th style="width:140px">Time</th><th>Actor</th><th>Action</th><th>Description</th><th>Severity</th><th>Restaurant</th></tr></thead>
+              <tbody id="act-feed-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div id="act-feed-pager" style="display:flex;justify-content:center;gap:.4rem;margin-top:.7rem"></div>
+        </div>
+
+        <!-- Webhooks area (hidden by default) -->
+        <div id="act-webhooks-area" style="display:none">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th style="width:140px">Time</th><th>Type</th><th>Phone</th><th>Status</th><th style="width:60px">View</th></tr></thead>
+              <tbody id="act-wh-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div id="act-wh-pager" style="display:flex;justify-content:center;gap:.4rem;margin-top:.7rem"></div>
+        </div>
+
+        <!-- Errors area (hidden by default) -->
+        <div id="act-errors-area" style="display:none">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th style="width:140px">Time</th><th>Action</th><th>Description</th><th>Actor</th><th>Restaurant</th></tr></thead>
+              <tbody id="act-err-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <div id="act-err-pager" style="display:flex;justify-content:center;gap:.4rem;margin-top:.7rem"></div>
+        </div>
+
+        <!-- Webhook detail modal -->
+        <div id="act-wh-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center">
+          <div style="background:#fff;border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow-y:auto;padding:1.5rem;box-shadow:var(--shadow)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+              <h3>Webhook Detail</h3>
+              <button class="btn-sm" onclick="document.getElementById('act-wh-modal').style.display='none'">Close</button>
+            </div>
+            <pre id="act-wh-detail" style="background:var(--ink);padding:1rem;border-radius:8px;font-size:.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all"></pre>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
+
+<!-- ── USERNAME MANAGEMENT MODAL ─────────────────────────────────── -->
+<div class="overlay" id="un-modal" onclick="if(event.target.id==='un-modal')this.classList.remove('open')">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <h3 id="un-modal-title">Manage Username</h3>
+      <button class="btn-close" onclick="document.getElementById('un-modal').classList.remove('open')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="un-modal-waid">
+      <div id="un-modal-current" style="margin-bottom:1rem"></div>
+
+      <!-- Suggestions -->
+      <div id="un-modal-suggestions" style="margin-bottom:1rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.4rem">Suggested Usernames</label>
+        <div id="un-suggestions-list" style="display:flex;flex-wrap:wrap;gap:.4rem"></div>
+      </div>
+
+      <!-- Custom input -->
+      <div style="margin-bottom:1rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Custom Username</label>
+        <div style="display:flex;gap:.4rem;align-items:center">
+          <span style="font-size:.9rem;color:var(--dim)">@</span>
+          <input id="un-custom-input" placeholder="beyondsnacks" oninput="unValidateCustom()" style="flex:1;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem" maxlength="30">
+          <span id="un-custom-status" style="font-size:.85rem"></span>
+        </div>
+        <div id="un-custom-error" style="font-size:.72rem;color:var(--red);min-height:1em;margin-top:.2rem"></div>
+      </div>
+
+      <!-- Actions -->
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn-sm primary" id="un-btn-set" onclick="unSetTarget()" disabled>Set as Target Username</button>
+        <button class="btn-sm" id="un-btn-confirm" onclick="unConfirmUsername()" style="display:none">Confirm Active</button>
+        <button class="btn-sm" id="un-btn-sync" onclick="unSyncOne()">Sync from Meta</button>
+        <button class="btn-sm" id="un-btn-release" onclick="unReleaseUsername()" style="display:none;background:var(--red);color:#fff">Release</button>
+        <button class="btn-sm" id="un-btn-suggest" onclick="unGenerateSuggestions()">Regenerate Suggestions</button>
+      </div>
+
+      <!-- Instructions -->
+      <div id="un-claim-instructions" style="display:none;margin-top:1rem;background:var(--ink4);border:1px solid var(--rim);border-radius:8px;padding:.85rem;font-size:.8rem;line-height:1.5">
+        <strong>How to claim in Meta Business Suite:</strong><br>
+        1. Open Meta Business Suite for this WABA<br>
+        2. Go to WhatsApp Manager → Settings → Username<br>
+        3. Claim the username: <strong id="un-claim-target">@username</strong><br>
+        4. Come back here and click "Sync from Meta" or "Confirm Active"
+      </div>
+
+      <!-- Manual confirm input (shown when sync fails) -->
+      <div id="un-manual-confirm" style="display:none;margin-top:.75rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Manual entry (if Meta sync unavailable):</label>
+        <div style="display:flex;gap:.4rem">
+          <input id="un-manual-input" placeholder="username claimed in Meta" style="flex:1;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.4rem .7rem;font-size:.85rem">
+          <button class="btn-sm primary" onclick="unManualConfirm()">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ── BLOCK PHONE MODAL ─────────────────────────────────────────── -->
 <div class="overlay" id="block-modal" onclick="if(event.target.id==='block-modal')this.classList.remove('open')">
@@ -863,7 +1054,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', activity: 'Activity Monitor' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -885,6 +1076,8 @@ function nav(el) {
   if (page === 'directory')    loadDirectory();
   if (page === 'templates')    loadTemplates();
   if (page === 'abuse')        loadAbuse();
+  if (page === 'usernames')    loadUsernames();
+  if (page === 'activity')     loadActivity();
 }
 
 function refreshCurrent() {
@@ -900,6 +1093,8 @@ function refreshCurrent() {
   else if (currentPage === 'directory')    loadDirectory();
   else if (currentPage === 'templates')    loadTemplates();
   else if (currentPage === 'abuse')        loadAbuse();
+  else if (currentPage === 'usernames')    loadUsernames();
+  else if (currentPage === 'activity')     loadActivity();
 }
 
 // ─── STATS ────────────────────────────────────────────────────────
@@ -1549,7 +1744,7 @@ async function loadOrders() {
         <td class="monospace">#${o.order_number}</td>
         <td class="truncate">${esc(o.business_name)}</td>
         <td class="truncate">${esc(o.branch_name)}</td>
-        <td class="monospace" style="font-size:.75rem">${esc(o.wa_phone)}</td>
+        <td class="monospace" style="font-size:.75rem">${esc(o.wa_phone || o.bsuid?.slice(0,12)+'…' || '—')}</td>
         <td><strong>₹${o.total_rs}</strong></td>
         <td>${statusBadge(o.status)}</td>
         <td style="color:var(--dim);font-size:.75rem">${fmtTime(o.created_at)}</td>
@@ -1592,7 +1787,7 @@ async function loadCustomers() {
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No customers found</td></tr>'; return; }
     tbody.innerHTML = rows.map(c => `
       <tr>
-        <td class="monospace">${esc(c.wa_phone)}</td>
+        <td class="monospace">${esc(c.wa_phone || c.bsuid?.slice(0,12)+'…' || '—')}</td>
         <td>${esc(c.name || '—')}</td>
         <td style="text-align:center">${c.order_count}</td>
         <td>₹${fmtNum(c.lifetime_rs)}</td>
@@ -1865,10 +2060,14 @@ async function createReferral() {
 
     // Build the WA link for the restaurant
     const restaurant = _refRestaurants.find(r => r.id === restaurantId);
+    // [WhatsApp2026] Prefer username-based link
     const waPhone    = ref.restaurant_wa_phone || '';
-    const waLink     = waPhone
-      ? `https://wa.me/${waPhone.replace(/[^0-9]/g, '')}?text=Hi! I want to order food.`
-      : `(No WhatsApp number connected for ${restaurant?.business_name})`;
+    const waUsername  = ref.restaurant_wa_username || '';
+    const waLink     = waUsername
+      ? `https://wa.me/${waUsername}?text=Hi! I want to order food.`
+      : waPhone
+        ? `https://wa.me/${waPhone.replace(/[^0-9]/g, '')}?text=Hi! I want to order food.`
+        : `(No WhatsApp number connected for ${restaurant?.business_name})`;
 
     _lastRefLink = waLink;
     document.getElementById('ref-wa-link').textContent = waLink;
@@ -2084,6 +2283,366 @@ if (savedKey) {
     if (r.ok) showApp();
     else { sessionStorage.removeItem('gb_admin_key'); adminKey = ''; }
   }).catch(() => {});
+}
+
+/* ──────────────────── BUSINESS USERNAMES ────────────────────── */
+let _unData = [];
+
+async function loadUsernames() {
+  const search = document.getElementById('un-search')?.value || '';
+  const status = document.getElementById('un-status-filter')?.value || 'all';
+  try {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (status !== 'all') params.set('status', status);
+    _unData = await api(`/api/admin/usernames?${params}`);
+    renderUsernames();
+  } catch (e) { console.error('[Usernames]', e); }
+}
+
+function renderUsernames() {
+  const tbody = document.getElementById('un-tbody');
+  if (!_unData.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">No usernames found</td></tr>';
+    return;
+  }
+  const statusBadge = (s) => {
+    const colors = { active: '#22c55e', pending_claim: '#eab308', suggested: '#3b82f6', not_claimed: '#94a3b8', released: '#ef4444', rejected: '#ef4444' };
+    return `<span style="display:inline-block;padding:.15rem .5rem;border-radius:10px;font-size:.72rem;font-weight:600;background:${colors[s] || '#94a3b8'}20;color:${colors[s] || '#94a3b8'}">${(s || 'not_claimed').replace(/_/g, ' ')}</span>`;
+  };
+  tbody.innerHTML = _unData.map(u => {
+    const waLink = (u.business_username && u.username_status === 'active')
+      ? `wa.me/${u.business_username}` : u.wa_phone_number ? `wa.me/${u.wa_phone_number}` : '—';
+    return `<tr>
+      <td>${esc(u.restaurant_name || '—')}<br><span style="font-size:.72rem;color:var(--dim)">${esc(u.city || '')}</span></td>
+      <td>${esc(u.display_name || '—')}</td>
+      <td style="font-family:monospace;font-size:.82rem">${u.business_username ? '@' + esc(u.business_username) : '<span style="color:var(--dim)">—</span>'}</td>
+      <td>${statusBadge(u.username_status)}</td>
+      <td style="font-size:.78rem">${waLink !== '—' ? `<a href="https://${waLink}" target="_blank" style="color:var(--acc)">${waLink}</a>` : '—'}</td>
+      <td><button class="btn-sm" onclick="openUnModal('${u._id}')">Manage</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function openUnModal(waAccountId) {
+  const u = _unData.find(x => x._id === waAccountId);
+  if (!u) return;
+  document.getElementById('un-modal-waid').value = waAccountId;
+  document.getElementById('un-modal-title').textContent = `Username: ${u.restaurant_name || 'Restaurant'}`;
+
+  // Current status
+  const cur = document.getElementById('un-modal-current');
+  if (u.business_username && u.username_status === 'active') {
+    cur.innerHTML = `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:.7rem;font-size:.85rem">Active: <strong>@${esc(u.business_username)}</strong> — <a href="https://wa.me/${u.business_username}" target="_blank" style="color:var(--acc)">wa.me/${u.business_username}</a></div>`;
+  } else if (u.business_username && u.username_status === 'pending_claim') {
+    cur.innerHTML = `<div style="background:#fef9c3;border:1px solid #fcd34d;border-radius:8px;padding:.7rem;font-size:.85rem">Pending claim: <strong>@${esc(u.business_username)}</strong></div>`;
+  } else {
+    cur.innerHTML = `<div style="background:var(--ink4);border:1px solid var(--rim);border-radius:8px;padding:.7rem;font-size:.85rem;color:var(--dim)">No username claimed</div>`;
+  }
+
+  // Suggestions
+  const suggestions = u.username_suggestions || [];
+  const listEl = document.getElementById('un-suggestions-list');
+  listEl.innerHTML = suggestions.length
+    ? suggestions.map(s => `<button class="btn-sm" onclick="unPickSuggestion('${s}')" style="font-family:monospace;font-size:.78rem">@${s}</button>`).join('')
+    : '<span style="font-size:.8rem;color:var(--dim)">No suggestions yet — click "Regenerate"</span>';
+
+  // Show/hide buttons based on status
+  document.getElementById('un-btn-confirm').style.display = u.username_status === 'pending_claim' ? '' : 'none';
+  document.getElementById('un-btn-release').style.display = (u.username_status === 'active' || u.username_status === 'pending_claim') ? '' : 'none';
+  document.getElementById('un-claim-instructions').style.display = u.username_status === 'pending_claim' ? '' : 'none';
+  if (u.business_username) document.getElementById('un-claim-target').textContent = '@' + u.business_username;
+  document.getElementById('un-manual-confirm').style.display = 'none';
+  document.getElementById('un-custom-input').value = '';
+  document.getElementById('un-custom-status').textContent = '';
+  document.getElementById('un-custom-error').textContent = '';
+  document.getElementById('un-btn-set').disabled = true;
+
+  document.getElementById('un-modal').classList.add('open');
+}
+
+function unPickSuggestion(username) {
+  document.getElementById('un-custom-input').value = username;
+  unValidateCustom();
+}
+
+let _unValidateTimer = null;
+function unValidateCustom() {
+  const input = document.getElementById('un-custom-input').value.trim().toLowerCase();
+  const statusEl = document.getElementById('un-custom-status');
+  const errorEl = document.getElementById('un-custom-error');
+  const btn = document.getElementById('un-btn-set');
+  btn.disabled = true;
+  statusEl.textContent = '';
+  errorEl.textContent = '';
+  if (!input || input.length < 5) { errorEl.textContent = input ? 'Min 5 characters' : ''; return; }
+
+  clearTimeout(_unValidateTimer);
+  _unValidateTimer = setTimeout(async () => {
+    try {
+      const waId = document.getElementById('un-modal-waid').value;
+      const r = await api(`/api/admin/usernames/${waId}/check`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: input }) });
+      if (r.available) {
+        statusEl.textContent = '✅';
+        errorEl.textContent = '';
+        btn.disabled = false;
+      } else {
+        statusEl.textContent = '❌';
+        errorEl.textContent = r.error || 'Not available';
+        btn.disabled = true;
+      }
+    } catch (e) { errorEl.textContent = e.message; }
+  }, 400);
+}
+
+async function unSetTarget() {
+  const waId = document.getElementById('un-modal-waid').value;
+  const username = document.getElementById('un-custom-input').value.trim().toLowerCase();
+  if (!username) return;
+  try {
+    await api(`/api/admin/usernames/${waId}/set-target`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
+    toast(`Target username set: @${username}`, 'ok');
+    document.getElementById('un-modal').classList.remove('open');
+    loadUsernames();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function unConfirmUsername() {
+  const waId = document.getElementById('un-modal-waid').value;
+  const u = _unData.find(x => x._id === waId);
+  const username = u?.business_username;
+  if (!username || !confirm(`Confirm @${username} as the active username?`)) return;
+  try {
+    await api(`/api/admin/usernames/${waId}/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
+    toast(`Username @${username} is now active!`, 'ok');
+    document.getElementById('un-modal').classList.remove('open');
+    loadUsernames();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function unSyncOne() {
+  const waId = document.getElementById('un-modal-waid').value;
+  try {
+    const r = await api(`/api/admin/usernames/${waId}/sync`, { method: 'POST' });
+    if (r.synced) {
+      toast(`Synced: @${r.username}`, 'ok');
+      document.getElementById('un-modal').classList.remove('open');
+      loadUsernames();
+    } else {
+      toast(r.reason || 'No username found on Meta', 'nfo');
+      document.getElementById('un-manual-confirm').style.display = '';
+    }
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function unManualConfirm() {
+  const waId = document.getElementById('un-modal-waid').value;
+  const username = document.getElementById('un-manual-input').value.trim().toLowerCase();
+  if (!username) return toast('Enter a username', 'err');
+  try {
+    await api(`/api/admin/usernames/${waId}/confirm`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
+    toast(`Username @${username} confirmed!`, 'ok');
+    document.getElementById('un-modal').classList.remove('open');
+    loadUsernames();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function unReleaseUsername() {
+  const waId = document.getElementById('un-modal-waid').value;
+  const u = _unData.find(x => x._id === waId);
+  if (!confirm(`Release username @${u?.business_username}? Customers will no longer find this restaurant by this username.`)) return;
+  try {
+    await api(`/api/admin/usernames/${waId}/release`, { method: 'POST' });
+    toast('Username released', 'ok');
+    document.getElementById('un-modal').classList.remove('open');
+    loadUsernames();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function unGenerateSuggestions() {
+  const waId = document.getElementById('un-modal-waid').value;
+  try {
+    const r = await api(`/api/admin/usernames/${waId}/suggest`, { method: 'POST' });
+    toast(`Generated ${r.suggestions?.length || 0} suggestions`, 'ok');
+    loadUsernames();
+    // Refresh modal
+    setTimeout(() => openUnModal(waId), 300);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function unAutoSuggestAll() {
+  try {
+    const r = await api('/api/admin/usernames/auto-suggest', { method: 'POST' });
+    toast(`Suggestions generated for ${r.updated} / ${r.total} accounts`, 'ok');
+    loadUsernames();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function unSyncAll() {
+  try {
+    const r = await api('/api/admin/usernames/sync-all', { method: 'POST' });
+    toast(`Sync complete: ${r.synced} synced, ${r.not_available} unavailable, ${r.failed} failed`, 'ok');
+    loadUsernames();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// ─── ACTIVITY MONITOR ───────────────────────────────────────────
+let actPage = 1, actWhPage = 1, actErrPage = 1, actCurrentSub = 'feed', actPollTimer = null;
+const SEV_COLORS = { info: '#3b82f6', warning: '#f59e0b', error: '#ef4444', critical: '#dc2626' };
+const SEV_BG     = { info: 'rgba(59,130,246,.08)', warning: 'rgba(245,158,11,.08)', error: 'rgba(239,68,68,.08)', critical: 'rgba(220,38,38,.12)' };
+
+async function loadActivity() {
+  await Promise.all([loadActivityStats(), loadActivityFeed()]);
+  toggleActPoll();
+}
+
+async function loadActivityStats() {
+  try {
+    const s = await api('/api/admin/activity/stats');
+    document.getElementById('act-stats-row').innerHTML = [
+      statCard('Today', s.today, 'var(--acc)'),
+      statCard('This Week', s.week, 'var(--blue)'),
+      statCard('This Month', s.month, 'var(--wa)'),
+      statCard('Error Rate', s.error_rate + '%', s.error_rate > 5 ? 'var(--red)' : 'var(--dim)'),
+    ].join('');
+    // Update error badge
+    const errBadge = document.getElementById('nav-activity-badge');
+    const errCount = (s.by_severity || []).filter(x => x.severity === 'error' || x.severity === 'critical').reduce((a, b) => a + b.count, 0);
+    if (errCount > 0) { errBadge.textContent = errCount; errBadge.style.display = ''; }
+    else { errBadge.style.display = 'none'; }
+  } catch (_) {}
+}
+
+function statCard(label, val, color) {
+  return `<div style="background:#fff;border:1px solid var(--rim);border-radius:10px;padding:1rem 1.1rem;box-shadow:var(--shadow-sm)">
+    <div style="font-size:.72rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;font-weight:600;margin-bottom:.3rem">${label}</div>
+    <div style="font-size:1.6rem;font-weight:700;color:${color}">${val}</div>
+  </div>`;
+}
+
+function actSub(sub, btn) {
+  actCurrentSub = sub;
+  document.querySelectorAll('.act-sub').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('act-feed-area').style.display = sub === 'feed' ? '' : 'none';
+  document.getElementById('act-webhooks-area').style.display = sub === 'webhooks' ? '' : 'none';
+  document.getElementById('act-errors-area').style.display = sub === 'errors' ? '' : 'none';
+  document.getElementById('act-filters').style.display = sub === 'feed' ? 'flex' : 'none';
+  if (sub === 'feed') loadActivityFeed();
+  if (sub === 'webhooks') loadWebhooks();
+  if (sub === 'errors') loadErrors();
+}
+
+async function loadActivityFeed(page) {
+  if (page) actPage = page;
+  const tbody = document.getElementById('act-feed-tbody');
+  tbody.innerHTML = '<tr><td colspan="6" class="empty">Loading…</td></tr>';
+  try {
+    const qs = new URLSearchParams({ page: actPage, limit: 50 });
+    const cat = document.getElementById('act-cat-filter').value;
+    const sev = document.getElementById('act-sev-filter').value;
+    const search = document.getElementById('act-search').value.trim();
+    if (cat) qs.set('category', cat);
+    if (sev) qs.set('severity', sev);
+    if (search) qs.set('search', search);
+    const r = await api('/api/admin/activity?' + qs);
+    const acts = r.activities || [];
+    if (!acts.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No activity found</td></tr>'; return; }
+    tbody.innerHTML = acts.map(a => {
+      const time = new Date(a.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const sColor = SEV_COLORS[a.severity] || '#64748b';
+      const sBg = SEV_BG[a.severity] || '';
+      return `<tr style="background:${sBg}">
+        <td style="font-size:.78rem;color:var(--dim);white-space:nowrap">${time}</td>
+        <td style="font-size:.82rem"><span style="background:rgba(79,70,229,.08);color:var(--acc);padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600">${a.actor_type}</span> ${a.actor_name || a.actor_id || ''}</td>
+        <td style="font-size:.82rem;font-weight:500">${a.action}</td>
+        <td style="font-size:.8rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.description || '').replace(/"/g, '&quot;')}">${a.description || ''}</td>
+        <td><span style="color:${sColor};font-weight:600;font-size:.76rem;text-transform:uppercase">${a.severity}</span></td>
+        <td style="font-size:.78rem;color:var(--dim)">${a.restaurant_id || '—'}</td>
+      </tr>`;
+    }).join('');
+    renderPager('act-feed-pager', r.page, r.pages, loadActivityFeed);
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="6" class="empty" style="color:var(--red)">${e.message}</td></tr>`; }
+}
+
+async function loadWebhooks(page) {
+  if (page) actWhPage = page;
+  const tbody = document.getElementById('act-wh-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
+  try {
+    const r = await api('/api/admin/webhooks/live?page=' + actWhPage + '&limit=50');
+    const whs = r.webhooks || [];
+    if (!whs.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No webhook logs</td></tr>'; return; }
+    tbody.innerHTML = whs.map(w => {
+      const time = new Date(w.received_at || w.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      return `<tr>
+        <td style="font-size:.78rem;color:var(--dim);white-space:nowrap">${time}</td>
+        <td style="font-size:.82rem">${w.type || 'message'}</td>
+        <td style="font-size:.82rem">${w.phone_number_id || '—'}</td>
+        <td><span style="color:${w.status === 'processed' ? 'var(--wa)' : w.status === 'failed' ? 'var(--red)' : 'var(--dim)'};font-size:.78rem;font-weight:600">${w.status || 'received'}</span></td>
+        <td><button class="btn-sm" onclick="viewWebhook('${w._id}')" style="padding:.15rem .4rem;font-size:.72rem">View</button></td>
+      </tr>`;
+    }).join('');
+    renderPager('act-wh-pager', r.page || 1, r.pages || 1, loadWebhooks);
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="5" class="empty" style="color:var(--red)">${e.message}</td></tr>`; }
+}
+
+async function loadErrors(page) {
+  if (page) actErrPage = page;
+  const tbody = document.getElementById('act-err-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
+  try {
+    const r = await api('/api/admin/activity/errors?page=' + actErrPage + '&limit=50');
+    const errs = r.errors || [];
+    if (!errs.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No errors found</td></tr>'; return; }
+    tbody.innerHTML = errs.map(e => {
+      const time = new Date(e.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const sColor = e.severity === 'critical' ? '#dc2626' : '#ef4444';
+      return `<tr style="background:rgba(239,68,68,.05)">
+        <td style="font-size:.78rem;color:var(--dim);white-space:nowrap">${time}</td>
+        <td style="font-size:.82rem;font-weight:500">${e.action}</td>
+        <td style="font-size:.8rem;max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(e.description || '').replace(/"/g, '&quot;')}">${e.description || ''}</td>
+        <td style="font-size:.82rem">${e.actor_name || e.actor_type || '—'}</td>
+        <td style="font-size:.78rem;color:var(--dim)">${e.restaurant_id || '—'}</td>
+      </tr>`;
+    }).join('');
+    renderPager('act-err-pager', r.page, Math.ceil((r.total || 0) / (r.limit || 50)), loadErrors);
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="5" class="empty" style="color:var(--red)">${e.message}</td></tr>`; }
+}
+
+function renderPager(elId, current, total, fn) {
+  if (total <= 1) { document.getElementById(elId).innerHTML = ''; return; }
+  let html = '';
+  if (current > 1) html += `<button class="btn-sm" onclick="(${fn.name})(${current - 1})">&laquo; Prev</button>`;
+  html += `<span style="padding:.3rem .6rem;font-size:.78rem;color:var(--dim)">Page ${current} of ${total}</span>`;
+  if (current < total) html += `<button class="btn-sm" onclick="(${fn.name})(${current + 1})">Next &raquo;</button>`;
+  document.getElementById(elId).innerHTML = html;
+}
+
+async function viewWebhook(id) {
+  try {
+    const r = await api('/api/admin/webhooks/' + id);
+    document.getElementById('act-wh-detail').textContent = JSON.stringify(r, null, 2);
+    document.getElementById('act-wh-modal').style.display = 'flex';
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+let _actSearchTimer;
+function debounceActSearch() {
+  clearTimeout(_actSearchTimer);
+  _actSearchTimer = setTimeout(() => loadActivityFeed(1), 400);
+}
+
+function toggleActPoll() {
+  clearInterval(actPollTimer);
+  if (document.getElementById('act-auto-refresh').checked && currentPage === 'activity') {
+    actPollTimer = setInterval(() => {
+      loadActivityStats();
+      if (actCurrentSub === 'feed') loadActivityFeed();
+      else if (actCurrentSub === 'webhooks') loadWebhooks();
+      else if (actCurrentSub === 'errors') loadErrors();
+    }, 5000);
+  }
 }
 </script>
 </body>

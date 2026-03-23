@@ -9,7 +9,9 @@ const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
 const notify = require('../services/notify');
 const orderNotify = require('../services/orderNotify');
+const { resolveRecipient } = require('../services/customerIdentity');
 const { getNextRetryAt, retryDefaults } = require('../utils/retry');
+const { logActivity } = require('../services/activityLog');
 
 // ─── POST: PAYMENT EVENTS ─────────────────────────────────────
 router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
@@ -20,6 +22,12 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     const signature = req.headers['x-razorpay-signature'];
     if (!paymentSvc.verifyWebhookSignature(req.body, signature)) {
       console.error('[Razorpay] ⚠️ Invalid signature — ignoring webhook');
+      logActivity({
+        actorType: 'system', actorId: null, actorName: 'Razorpay Webhook',
+        action: 'payment.signature_invalid', category: 'payment',
+        description: 'Razorpay webhook signature verification failed',
+        resourceType: 'webhook', resourceId: null, severity: 'critical',
+      });
       return;
     }
 
@@ -85,7 +93,7 @@ const confirmPaidOrder = async (orderId) => {
   const templateSent = await orderNotify.sendOrderTemplateMessage(orderId, 'PAID').catch(() => false);
   if (!templateSent) {
     await wa.sendStatusUpdate(
-      order.phone_number_id, order.access_token, order.wa_phone,
+      order.phone_number_id, order.access_token, resolveRecipient(order),
       'CONFIRMED',
       { orderNumber: order.order_number }
     );
@@ -100,8 +108,8 @@ const confirmPaidOrder = async (orderId) => {
     .then(async (task) => {
       console.log(`[3PL] Dispatched order ${order.order_number}: taskId=${task.taskId}`);
       // Send tracking link to customer via WhatsApp
-      if (task.trackingUrl && order.phone_number_id && order.wa_phone) {
-        await wa.sendText(order.phone_number_id, order.access_token, order.wa_phone,
+      if (task.trackingUrl && order.phone_number_id && resolveRecipient(order)) {
+        await wa.sendText(order.phone_number_id, order.access_token, resolveRecipient(order),
           `🚴 Your delivery is being arranged!\n\n` +
           `📍 Track your order live:\n${task.trackingUrl}\n\n` +
           `Estimated delivery: ${task.estimatedMins || '25-35'} minutes`
@@ -120,6 +128,13 @@ const confirmPaidOrder = async (orderId) => {
   pushOrderToPOS(order).catch(err =>
     console.error(`[POS] Order push failed for ${order.order_number}:`, err.message)
   );
+
+  logActivity({
+    actorType: 'system', actorId: null, actorName: 'Razorpay',
+    action: 'payment.confirmed', category: 'payment',
+    description: `Payment confirmed for order #${order.order_number} — ₹${order.total_rs}`,
+    restaurantId: order.restaurant_id, resourceType: 'order', resourceId: orderId, severity: 'info',
+  });
 
   console.log(`✅ Order ${order.order_number} PAID — ₹${order.total_rs}`);
 };
@@ -172,7 +187,7 @@ const handleEvent = async (event) => {
       if (!order) break;
 
       await wa.sendButtons(
-        order.phone_number_id, order.access_token, order.wa_phone,
+        order.phone_number_id, order.access_token, resolveRecipient(order),
         {
           body   : `❌ Payment failed for order #${order.order_number}.\n\nWould you like to try again?`,
           buttons: [
@@ -181,6 +196,13 @@ const handleEvent = async (event) => {
           ],
         }
       );
+
+      logActivity({
+        actorType: 'system', actorId: null, actorName: 'Razorpay',
+        action: 'payment.failed', category: 'payment',
+        description: `Payment failed for order #${order.order_number}`,
+        restaurantId: order.restaurant_id, resourceType: 'order', resourceId: orderId, severity: 'warning',
+      });
       break;
     }
 
@@ -194,7 +216,7 @@ const handleEvent = async (event) => {
       if (!order) break;
 
       await wa.sendText(
-        order.phone_number_id, order.access_token, order.wa_phone,
+        order.phone_number_id, order.access_token, resolveRecipient(order),
         `⏱️ Payment for order #${order.order_number} expired.\n\nType *MENU* to start a new order anytime!`
       );
       break;
@@ -203,6 +225,12 @@ const handleEvent = async (event) => {
     case 'refund.processed': {
       const refund = event.payload?.refund?.entity;
       if (!refund) break;
+      logActivity({
+        actorType: 'system', actorId: null, actorName: 'Razorpay',
+        action: 'payment.refund_processed', category: 'payment',
+        description: `Refund ${refund.id} processed: ₹${refund.amount / 100}`,
+        resourceType: 'refund', resourceId: refund.id, severity: 'info',
+      });
       console.log(`✅ Refund ${refund.id} processed: ₹${refund.amount / 100}`);
       break;
     }

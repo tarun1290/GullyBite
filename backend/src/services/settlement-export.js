@@ -136,7 +136,7 @@ async function generateSettlementExcel(settlementId) {
       order_id: String(order._id),
       date: order.created_at || order.delivered_at,
       customer: order.customer_name || '—',
-      phone: order.customer_phone || '—',
+      phone: order.customer_phone || order.customer_bsuid || '—',
       subtotal: round2(order.subtotal_rs),
       food_gst: round2(order.food_gst_rs),
       cust_delivery: round2(order.customer_delivery_rs),
@@ -234,6 +234,51 @@ async function generateSettlementExcel(settlementId) {
     ws4.addRow({ payment_id: 'No refunds in this period' });
     ws4.getCell('A2').font = { italic: true, color: { argb: 'FF6B7280' } };
   }
+
+  // ── SHEET 5: MESSAGING COSTS ────────────────────────────────
+  // [WhatsApp2026] WhatsApp messaging cost breakdown for the settlement period
+  const ws5 = wb.addWorksheet('Messaging Costs');
+  ws5.columns = [
+    { header: 'Category', key: 'category', width: 18 },
+    { header: 'Messages', key: 'count', width: 12 },
+    { header: 'Rate (₹)', key: 'rate', width: 12 },
+    { header: 'Cost (₹)', key: 'cost', width: 14 },
+  ];
+
+  try {
+    const msgTracking = require('./messageTracking');
+    const breakdown = await msgTracking.getCostBreakdown(settlement.restaurant_id, {
+      from: settlement.period_start,
+      to: settlement.period_end,
+    });
+
+    let totalMsgCost = 0;
+    for (const b of breakdown) {
+      ws5.addRow({
+        category: b.category.charAt(0).toUpperCase() + b.category.slice(1),
+        count: b.count,
+        rate: msgTracking.MESSAGING_RATES[b.category] || 0,
+        cost: round2(b.cost_rs),
+      });
+      totalMsgCost += b.cost_rs;
+    }
+
+    // Total row
+    const totalRow = ws5.addRow({ category: 'TOTAL', count: '', rate: '', cost: round2(totalMsgCost) });
+    totalRow.font = { bold: true };
+
+    ws5.eachRow((row, rowNum) => {
+      if (rowNum === 1) return;
+      row.getCell(3).numFmt = CURRENCY_FMT;
+      row.getCell(4).numFmt = CURRENCY_FMT;
+    });
+  } catch {
+    ws5.addRow({ category: 'No messaging data available' });
+    ws5.getCell('A2').font = { italic: true, color: { argb: 'FF6B7280' } };
+  }
+
+  styleHeaders(ws5);
+  autoWidth(ws5);
 
   // ── RETURN BUFFER ─────────────────────────────────────────
   const buffer = await wb.xlsx.writeBuffer();

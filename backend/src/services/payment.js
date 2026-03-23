@@ -41,7 +41,7 @@ const createRazorpayOrder = async (order, customer) => {
     notes: {
       order_id    : order.id,
       order_number: order.order_number,
-      customer_wa : customer.wa_phone,
+      customer_wa : customer.wa_phone || customer.bsuid || '',
     },
   });
 
@@ -75,16 +75,18 @@ const createPaymentLink = async (order, customer) => {
     currency      : 'INR',
     accept_partial: false,
     description   : `Order ${order.order_number} — ${order.business_name}`,
+    // [BSUID] Razorpay requires a phone number — wa_phone must be present
+    // The phone request flow (Step 13) ensures wa_phone is collected before payment
     customer: {
       name   : customer.name || 'Customer',
-      contact: customer.wa_phone.startsWith('+') ? customer.wa_phone : `+${customer.wa_phone}`,
+      contact: customer.wa_phone ? (customer.wa_phone.startsWith('+') ? customer.wa_phone : `+${customer.wa_phone}`) : '',
     },
     notify         : { sms: false, email: false },
     reminder_enable: false,
     notes: {
       order_id    : order.id,
       order_number: order.order_number,
-      customer_wa : customer.wa_phone,
+      customer_wa : customer.wa_phone || customer.bsuid || '',
     },
     callback_url   : `${process.env.BASE_URL}/payment-success`,
     callback_method: 'get',

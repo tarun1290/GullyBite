@@ -88,6 +88,7 @@ async function dispatchDelivery(orderId) {
     lng: parseFloat(order.delivery_lng),
     address: order.delivery_address || '',
     contactName: customer?.name || 'Customer',
+    // [BSUID] 3PL requires phone — use wa_phone if available, otherwise empty (manager handles manually)
     contactPhone: customer?.wa_phone || '',
   };
 

@@ -152,27 +152,37 @@ class AbuseDetector {
 const abuseDetector = new AbuseDetector();
 
 // ─── BLOCKED PHONE CHECK ─────────────────────────────────────────
-// Returns the block document if phone is currently blocked, null otherwise
-const isPhoneBlocked = async (waPhone) => {
+// [BSUID] Returns the block document if identifier (phone OR bsuid) is currently blocked
+const isPhoneBlocked = async (identifier) => {
+  if (!identifier) return null;
   try {
+    // Check both wa_phone and bsuid fields
     return await col('blocked_phones').findOne({
-      wa_phone: waPhone,
-      $or: [{ expires_at: null }, { expires_at: { $gt: new Date() } }],
+      $or: [{ wa_phone: identifier }, { bsuid: identifier }],
+      $and: [{ $or: [{ expires_at: null }, { expires_at: { $gt: new Date() } }] }],
     });
   } catch {
     return null; // If DB fails, don't block — fail open
   }
 };
 
-// ─── HELPER: EXTRACT SENDER PHONE FROM WA WEBHOOK PAYLOAD ───────
-const extractSenderPhone = (rawBody) => {
+// [BSUID] Extract sender identifier from WA webhook payload
+// Returns the best available identifier (phone or BSUID)
+const extractSenderIdentifier = (rawBody) => {
   try {
     const body = typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody;
-    return body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from || null;
+    const value = body?.entry?.[0]?.changes?.[0]?.value;
+    const msg = value?.messages?.[0];
+    const contact = value?.contacts?.[0];
+    // Prefer user_id (BSUID) if present, otherwise use from field
+    return msg?.user_id || contact?.user_id || msg?.from || null;
   } catch {
     return null;
   }
 };
+
+// Legacy alias — still works for existing callers
+const extractSenderPhone = extractSenderIdentifier;
 
 const extractPhoneNumberId = (rawBody) => {
   try {
@@ -192,5 +202,6 @@ module.exports = {
   abuseDetector,
   isPhoneBlocked,
   extractSenderPhone,
+  extractSenderIdentifier,
   extractPhoneNumberId,
 };

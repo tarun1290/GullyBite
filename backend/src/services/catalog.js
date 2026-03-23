@@ -646,6 +646,12 @@ const syncProductSets = async (branchId) => {
   }
 
   console.log(`[Catalog] syncProductSets for "${branch.name}": created=${results.created}, updated=${results.updated}, failed=${results.failed}`);
+
+  // Chain: sync collections after product sets
+  await syncCollections(branchId).catch(err =>
+    console.error('[Catalog] Collection sync failed:', err.message)
+  );
+
   return { success: results.failed === 0, ...results };
 };
 
@@ -756,6 +762,11 @@ const autoCreateProductSets = async (branchId) => {
     await syncProductSets(branchId);
   }
 
+  // 5. Auto-create collections from the new product sets
+  await autoCreateCollections(branchId).catch(err =>
+    console.warn('[Catalog] Auto-create collections after sets failed:', err.message)
+  );
+
   console.log(`[Catalog] autoCreateProductSets for "${branch.name}": created=${created}, skipped=${skipped}`);
   return { created, skipped };
 };
@@ -763,6 +774,297 @@ const autoCreateProductSets = async (branchId) => {
 // Legacy wrapper — backwards compat with existing syncBranchCatalog call
 const syncCategoryProductSets = async (branchId) => {
   return syncProductSets(branchId);
+};
+
+// ─── CATALOG COLLECTIONS — CRUD + SYNC ──────────────────────
+// Collections are the customer-facing storefront tabs that group product sets.
+// Chain: Menu Items → Product Sets → Collections → What customers see in WhatsApp
+
+// Create a collection on Meta
+const createCollection = async (catalogId, name, productSetIds, description, coverImageUrl) => {
+  const token = _getCatalogToken();
+  try {
+    const body = { name, product_set_ids: productSetIds };
+    if (description) body.description = description;
+    if (coverImageUrl) body.cover_image_url = coverImageUrl;
+    const res = await axios.post(
+      `${GRAPH}/${catalogId}/product_set_collections`,
+      body,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+    );
+    console.log(`[Catalog] Created collection "${name}" → ${res.data.id}`);
+    return res.data;
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`[Catalog] createCollection "${name}" failed:`, msg);
+    throw new Error(msg);
+  }
+};
+
+// Update a collection on Meta
+const updateCollection = async (metaCollectionId, updates) => {
+  const token = _getCatalogToken();
+  try {
+    const body = {};
+    if (updates.name !== undefined)           body.name = updates.name;
+    if (updates.productSetIds !== undefined)   body.product_set_ids = updates.productSetIds;
+    if (updates.description !== undefined)     body.description = updates.description;
+    if (updates.coverImageUrl !== undefined)   body.cover_image_url = updates.coverImageUrl;
+    await axios.post(
+      `${GRAPH}/${metaCollectionId}`,
+      body,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+    );
+    console.log(`[Catalog] Updated collection ${metaCollectionId}`);
+    return { success: true };
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`[Catalog] updateCollection failed:`, msg);
+    throw new Error(msg);
+  }
+};
+
+// Delete a collection from Meta
+const deleteCollection = async (metaCollectionId) => {
+  const token = _getCatalogToken();
+  try {
+    await axios.delete(`${GRAPH}/${metaCollectionId}`, {
+      params: { access_token: token },
+      timeout: 15000,
+    });
+    console.log(`[Catalog] Deleted collection ${metaCollectionId}`);
+    return { success: true };
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`[Catalog] deleteCollection failed:`, msg);
+    throw new Error(msg);
+  }
+};
+
+// List collections on Meta for a catalog
+const listCollections = async (catalogId) => {
+  const token = _getCatalogToken();
+  try {
+    const res = await axios.get(
+      `${GRAPH}/${catalogId}/product_set_collections`,
+      { params: { access_token: token, fields: 'id,name,description,product_set_ids' }, timeout: 15000 }
+    );
+    return res.data?.data || [];
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`[Catalog] listCollections failed:`, msg);
+    return [];
+  }
+};
+
+// Sync all catalog_collections for a branch to Meta
+const syncCollections = async (branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch) throw new Error('Branch not found');
+  if (!branch.catalog_id) return { skipped: true, reason: 'No catalog' };
+
+  const collections = await col('catalog_collections').find({
+    branch_id: branchId,
+    is_active: true,
+  }).sort({ sort_order: 1 }).toArray();
+
+  if (!collections.length) return { skipped: true, reason: 'No collections' };
+
+  const results = { created: 0, updated: 0, failed: 0, skipped: 0 };
+
+  for (const coll of collections) {
+    // Resolve product_set_ids → only include sets that have been synced to Meta
+    const sets = await col('product_sets').find({
+      _id: { $in: coll.product_set_ids },
+      meta_product_set_id: { $exists: true, $ne: null },
+    }).toArray();
+
+    const metaSetIds = sets.map(s => s.meta_product_set_id);
+
+    if (!metaSetIds.length) {
+      console.warn(`[Catalog] Collection "${coll.name}" has zero synced product sets — skipping`);
+      results.skipped++;
+      continue;
+    }
+
+    try {
+      if (coll.meta_collection_id) {
+        await updateCollection(coll.meta_collection_id, {
+          name: coll.name,
+          productSetIds: metaSetIds,
+          description: coll.description,
+          coverImageUrl: coll.cover_image_url,
+        });
+        results.updated++;
+      } else {
+        const created = await createCollection(
+          branch.catalog_id,
+          coll.name,
+          metaSetIds,
+          coll.description,
+          coll.cover_image_url
+        );
+        await col('catalog_collections').updateOne(
+          { _id: coll._id },
+          { $set: { meta_collection_id: created.id, updated_at: new Date() } }
+        );
+        results.created++;
+      }
+    } catch (err) {
+      console.error(`[Catalog] Collection "${coll.name}" sync failed:`, err.message);
+      results.failed++;
+    }
+  }
+
+  console.log(`[Catalog] syncCollections for "${branch.name}": created=${results.created}, updated=${results.updated}, failed=${results.failed}, skipped=${results.skipped}`);
+  return { success: results.failed === 0, ...results };
+};
+
+// ─── AUTO-CREATE COLLECTIONS FROM PRODUCT SETS ──────────────
+// Groups product sets into customer-friendly collections
+const autoCreateCollections = async (branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch) throw new Error('Branch not found');
+
+  const sets = await col('product_sets').find({
+    branch_id: branchId,
+    is_active: true,
+  }).sort({ sort_order: 1 }).toArray();
+
+  if (!sets.length) return { created: 0, skipped: 0, message: 'No product sets' };
+
+  const now = new Date();
+  let created = 0;
+  let skipped = 0;
+
+  // Known groupings: keyword → { emoji, collectionName }
+  const KNOWN_GROUPS = {
+    momo:       { emoji: '🥟', name: 'Momos' },
+    coffee:     { emoji: '☕', name: 'Coffee' },
+    matcha:     { emoji: '🍵', name: 'Matcha' },
+    tea:        { emoji: '🍵', name: 'Tea' },
+    sushi:      { emoji: '🍣', name: 'Sushi' },
+    maki:       { emoji: '🍣', name: 'Sushi' },
+    nigiri:     { emoji: '🍣', name: 'Sushi' },
+    dessert:    { emoji: '🍰', name: 'Desserts' },
+    cake:       { emoji: '🍰', name: 'Desserts' },
+    pastry:     { emoji: '🥐', name: 'Viennoiserie' },
+    croissant:  { emoji: '🥐', name: 'Viennoiserie' },
+    viennoiserie: { emoji: '🥐', name: 'Viennoiserie' },
+    mocktail:   { emoji: '🍹', name: 'Mocktails' },
+    milkshake:  { emoji: '🥤', name: 'Milkshakes' },
+    shake:      { emoji: '🥤', name: 'Milkshakes' },
+    smoothie:   { emoji: '🥤', name: 'Smoothies' },
+    biryani:    { emoji: '🍚', name: 'Biryani' },
+    pizza:      { emoji: '🍕', name: 'Pizza' },
+    burger:     { emoji: '🍔', name: 'Burgers' },
+    noodle:     { emoji: '🍜', name: 'Noodles' },
+    wrap:       { emoji: '🌯', name: 'Wraps' },
+    salad:      { emoji: '🥗', name: 'Salads' },
+    sandwich:   { emoji: '🥪', name: 'Sandwiches' },
+    beverage:   { emoji: '🥤', name: 'Beverages' },
+    drink:      { emoji: '🥤', name: 'Beverages' },
+    starter:    { emoji: '🍢', name: 'Starters' },
+    appetizer:  { emoji: '🍢', name: 'Starters' },
+    bread:      { emoji: '🍞', name: 'Breads' },
+    naan:       { emoji: '🍞', name: 'Breads' },
+    roti:       { emoji: '🍞', name: 'Breads' },
+    rice:       { emoji: '🍚', name: 'Rice' },
+    thali:      { emoji: '🍽️', name: 'Thali' },
+    snack:      { emoji: '🍿', name: 'Snacks' },
+  };
+
+  // Group sets into collections
+  const collectionGroups = new Map(); // collectionName → { emoji, setIds[] }
+  const comboSets = [];
+  const bestsellerSets = [];
+
+  for (const set of sets) {
+    const nameLower = set.name.toLowerCase();
+
+    // Bestsellers → special collection
+    if (nameLower.includes('bestseller') || nameLower.includes('best seller')) {
+      bestsellerSets.push(String(set._id));
+      continue;
+    }
+
+    // Combos & Deals → special collection
+    if (nameLower.includes('combo') || nameLower.includes('deal')) {
+      comboSets.push(String(set._id));
+      continue;
+    }
+
+    // Try known groupings
+    let matched = false;
+    for (const [keyword, group] of Object.entries(KNOWN_GROUPS)) {
+      if (nameLower.includes(keyword)) {
+        const key = group.name;
+        if (!collectionGroups.has(key)) {
+          collectionGroups.set(key, { emoji: group.emoji, setIds: [] });
+        }
+        collectionGroups.get(key).setIds.push(String(set._id));
+        matched = true;
+        break;
+      }
+    }
+
+    // Fallback: group by first word of set name
+    if (!matched) {
+      const firstWord = set.name.split(/\s+/)[0];
+      if (firstWord && firstWord.length > 1) {
+        const key = firstWord;
+        if (!collectionGroups.has(key)) {
+          collectionGroups.set(key, { emoji: '', setIds: [] });
+        }
+        collectionGroups.get(key).setIds.push(String(set._id));
+      }
+    }
+  }
+
+  // Helper to create a collection if it doesn't exist
+  async function _ensureCollection(name, setIds, sortOrder) {
+    if (!setIds.length) return;
+    const existing = await col('catalog_collections').findOne({ branch_id: branchId, name });
+    if (existing) { skipped++; return; }
+    await col('catalog_collections').insertOne({
+      _id: newId(),
+      branch_id: branchId,
+      restaurant_id: branch.restaurant_id,
+      catalog_id: branch.catalog_id || null,
+      meta_collection_id: null,
+      name,
+      description: null,
+      product_set_ids: setIds,
+      cover_image_url: null,
+      is_active: true,
+      sort_order: sortOrder,
+      created_at: now,
+      updated_at: now,
+    });
+    created++;
+    console.log(`[Catalog] Auto-created collection "${name}" (${setIds.length} sets) for branch "${branch.name}"`);
+  }
+
+  // 1. Bestsellers at sort_order 0
+  await _ensureCollection('⭐ Bestsellers', bestsellerSets, 0);
+
+  // 2. Regular collections
+  let order = 1;
+  for (const [name, group] of collectionGroups) {
+    const displayName = group.emoji ? `${group.emoji} ${name}` : name;
+    await _ensureCollection(displayName, group.setIds, order++);
+  }
+
+  // 3. Combos & Deals last
+  await _ensureCollection('🎁 Combos & Deals', comboSets, order);
+
+  // Sync to Meta
+  if (created > 0 && branch.catalog_id) {
+    await syncCollections(branchId);
+  }
+
+  console.log(`[Catalog] autoCreateCollections for "${branch.name}": created=${created}, skipped=${skipped}`);
+  return { created, skipped };
 };
 
 // ─── CLEAR STALE CATALOG & RE-DISCOVER ───────────────────────
@@ -826,4 +1128,11 @@ module.exports = {
   rediscoverCatalog,
   fetchBusinessCatalogs,
   fetchWabaCatalogs,
+  // Collections
+  createCollection,
+  updateCollection,
+  deleteCollection,
+  listCollections,
+  syncCollections,
+  autoCreateCollections,
 };
