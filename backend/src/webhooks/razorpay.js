@@ -8,6 +8,7 @@ const paymentSvc = require('../services/payment');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
 const notify = require('../services/notify');
+const orderNotify = require('../services/orderNotify');
 const { getNextRetryAt, retryDefaults } = require('../utils/retry');
 
 // ─── POST: PAYMENT EVENTS ─────────────────────────────────────
@@ -80,11 +81,15 @@ const confirmPaidOrder = async (orderId) => {
   const order = await orderSvc.getOrderDetails(orderId);
   if (!order) return;
 
-  await wa.sendStatusUpdate(
-    order.phone_number_id, order.access_token, order.wa_phone,
-    'CONFIRMED',
-    { orderNumber: order.order_number }
-  );
+  // Try template message first, fall back to plain text
+  const templateSent = await orderNotify.sendOrderTemplateMessage(orderId, 'PAID').catch(() => false);
+  if (!templateSent) {
+    await wa.sendStatusUpdate(
+      order.phone_number_id, order.access_token, order.wa_phone,
+      'CONFIRMED',
+      { orderNumber: order.order_number }
+    );
+  }
 
   // Fire-and-forget manager notification
   notify.notifyNewOrder(order).catch(err => console.error('[Notify] Failed:', err.message));

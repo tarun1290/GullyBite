@@ -942,9 +942,14 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <button class="btn" id="tmpl-save-btn" onclick="saveTemplateMappings()">💾 Save Mappings</button>
           </div>
           <div class="cb">
-            <p style="font-size:.8rem;color:var(--dim);margin-bottom:1rem">
-              Assign an approved template to each order event. Variables like <code style="background:var(--ink2);padding:.1rem .3rem;border-radius:3px">{{1}}</code> are automatically replaced with real order data. If no template is set, a plain-text message is sent instead.
+            <p style="font-size:.8rem;color:var(--dim);margin-bottom:.6rem">
+              Assign an approved template to each order event. Variables like <code style="background:var(--ink2);padding:.1rem .3rem;border-radius:3px">{{1}}</code> are automatically replaced with real order data. If no template is set, the platform default template is used.
             </p>
+            <div id="global-tpl-info" style="display:none;background:rgba(79,70,229,.04);border:1px solid rgba(79,70,229,.12);border-radius:8px;padding:.7rem .9rem;margin-bottom:1rem;font-size:.8rem">
+              <strong style="color:var(--acc)">Platform defaults active</strong>
+              <span style="color:var(--dim)"> — The admin has configured default templates for order events. Your per-restaurant overrides (below) take priority when set.</span>
+              <div id="global-tpl-list" style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem"></div>
+            </div>
             <div id="event-mappings">
               <div style="text-align:center;padding:1.5rem;color:var(--dim);font-size:.85rem">Load templates first using the "Refresh from Meta" button above</div>
             </div>
@@ -3612,7 +3617,10 @@ function renderTemplateTable() {
 
 async function loadTemplateMappings() {
   try {
-    const rows = await api('/api/restaurant/whatsapp/template-mappings');
+    const [rows, defaults] = await Promise.all([
+      api('/api/restaurant/whatsapp/template-mappings'),
+      api('/api/restaurant/whatsapp/template-defaults').catch(() => []),
+    ]);
     templateMappings = {};
     (rows || []).forEach(r => {
       templateMappings[r.event_name] = {
@@ -3621,6 +3629,17 @@ async function loadTemplateMappings() {
         variable_map     : r.variable_map || {},
       };
     });
+    // Show global defaults info
+    const infoBox = document.getElementById('global-tpl-info');
+    const listEl = document.getElementById('global-tpl-list');
+    if (defaults?.length) {
+      infoBox.style.display = 'block';
+      listEl.innerHTML = defaults.map(d =>
+        `<span style="background:rgba(79,70,229,.08);color:var(--acc);padding:.15rem .45rem;border-radius:4px;font-size:.75rem">${d.event} → ${d.template_name}</span>`
+      ).join('');
+    } else {
+      infoBox.style.display = 'none';
+    }
     if (waTemplates.length) renderEventMappings();
   } catch (_) {}
 }

@@ -15,6 +15,7 @@ const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
 const etaSvc = require('../services/eta');
 const notify = require('../services/notify');
+const orderNotify = require('../services/orderNotify');
 
 // ── Image upload via MongoDB GridFS ───────────────────────────
 const upload = multer({
@@ -1448,6 +1449,7 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
           fullOrder.phone_number_id, fullOrder.access_token, fullOrder.wa_phone,
           status,
           {
+            _orderId        : order.id,
             order_number    : fullOrder.order_number,
             customer_name   : fullOrder.customer_name,
             total_rs        : `₹${parseFloat(fullOrder.total_rs).toFixed(0)}`,
@@ -1517,6 +1519,7 @@ router.put('/orders/:orderId/delivery', async (req, res) => {
         wa_acc.phone_number_id, wa_acc.access_token, customer.wa_phone,
         'DISPATCHED',
         {
+          _orderId        : req.params.orderId,
           order_number    : o.order_number,
           customer_name   : customer?.name,
           total_rs        : `₹${parseFloat(o.total_rs || 0).toFixed(0)}`,
@@ -2065,6 +2068,14 @@ router.get('/whatsapp/templates', requireApproved, async (req, res) => {
   }
 });
 
+// GET /api/restaurant/whatsapp/template-defaults — global admin-level defaults
+router.get('/whatsapp/template-defaults', async (req, res) => {
+  try {
+    const defaults = await col('template_mappings').find({ is_active: true }).toArray();
+    res.json(mapIds(defaults));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/restaurant/whatsapp/template-mappings
 router.get('/whatsapp/template-mappings', async (req, res) => {
   try {
@@ -2115,6 +2126,18 @@ router.delete('/whatsapp/template-mappings/:eventName', requireApproved, async (
 // ─── SHARED: SEND STATUS NOTIFICATION (template → text fallback) ──────────
 async function notifyOrderStatus(restaurantId, pid, _token, waPhone, status, orderData) {
   const token = process.env.META_SYSTEM_USER_TOKEN || _token;
+
+  // Try new centralized template system first (orderNotify.js → template_mappings)
+  if (orderData._orderId) {
+    try {
+      const sent = await orderNotify.sendOrderTemplateMessage(orderData._orderId, status);
+      if (sent) return; // Template sent successfully
+    } catch (e) {
+      console.error(`[WA] orderNotify failed for ${status}, trying legacy:`, e.message);
+    }
+  }
+
+  // Legacy: per-restaurant template mapping (whatsapp_template_mappings collection)
   const mapping = await col('whatsapp_template_mappings').findOne({
     restaurant_id: restaurantId,
     event_name: status,
@@ -2134,6 +2157,7 @@ async function notifyOrderStatus(restaurantId, pid, _token, waPhone, status, ord
     }
   }
 
+  // Final fallback: plain text status update
   await wa.sendStatusUpdate(pid, token, waPhone, status, {
     orderNumber: orderData.order_number,
     eta:         orderData.eta,

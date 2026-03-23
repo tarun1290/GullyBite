@@ -222,6 +222,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
         Directory
       </div>
+      <div class="nav-item" data-page="templates" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        Templates
+      </div>
       <div class="nav-item" data-page="abuse" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         Abuse Protection
@@ -599,6 +603,45 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         </div>
       </div>
 
+      <!-- ── TEMPLATES ──────────────────────────────────────────────── -->
+      <div class="page" id="page-templates">
+        <!-- Sync bar -->
+        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem">
+          <label style="font-size:.8rem;color:var(--dim)">WABA ID:</label>
+          <input id="tpl-waba-id" placeholder="Enter WABA ID" style="flex:1;max-width:280px;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.4rem .7rem;font-size:.85rem">
+          <button class="btn-sm primary" onclick="syncTemplates()">Sync from Meta</button>
+          <button class="btn-sm" onclick="showCreateTemplateModal()">+ Create Template</button>
+          <button class="btn-sm" onclick="seedMappings()">Seed Defaults</button>
+        </div>
+
+        <!-- Event Mappings -->
+        <div class="table-wrap" style="margin-bottom:1.2rem">
+          <div class="table-head"><h2>Event → Template Mappings</h2></div>
+          <table>
+            <thead><tr><th>Event</th><th>Template Name</th><th>Description</th><th>Variables</th><th>Active</th><th>Action</th></tr></thead>
+            <tbody id="tpl-mappings-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Templates List -->
+        <div class="table-wrap" style="margin-bottom:1.2rem">
+          <div class="table-head"><h2>All Templates</h2></div>
+          <table>
+            <thead><tr><th>Name</th><th>Category</th><th>Language</th><th>Status</th><th>Components</th><th>Action</th></tr></thead>
+            <tbody id="tpl-list-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+
+        <!-- Recent Notifications Log -->
+        <div class="table-wrap">
+          <div class="table-head"><h2>Recent Notification Sends</h2></div>
+          <table>
+            <thead><tr><th>Order ID</th><th>Event</th><th>Template</th><th>Status</th><th>Sent At</th></tr></thead>
+            <tbody id="tpl-notif-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- ── ABUSE PROTECTION ──────────────────────────────────────────── -->
       <div class="page" id="page-abuse">
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.2rem">
@@ -660,6 +703,84 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         </select>
       </div>
       <button style="width:100%;background:#dc2626;color:#fff;border:none;border-radius:6px;padding:.55rem;font-size:.88rem;font-weight:600;cursor:pointer" onclick="doBlockPhone()">Block Phone</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CREATE TEMPLATE MODAL ─────────────────────────────────────── -->
+<div class="overlay" id="tpl-create-modal" onclick="if(event.target.id==='tpl-create-modal')this.classList.remove('open')">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-head">
+      <h3>Create Template</h3>
+      <button class="btn-close" onclick="document.getElementById('tpl-create-modal').classList.remove('open')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.8rem">
+        <div>
+          <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Template Name</label>
+          <input id="tpl-name" placeholder="order_confirmed" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
+          <span style="font-size:.68rem;color:var(--dim)">Lowercase, underscores only</span>
+        </div>
+        <div>
+          <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Category</label>
+          <select id="tpl-category" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
+            <option value="UTILITY">UTILITY (order updates)</option>
+            <option value="MARKETING">MARKETING (promos)</option>
+            <option value="AUTHENTICATION">AUTHENTICATION (OTP)</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Body Text</label>
+        <textarea id="tpl-body" rows="4" placeholder="Hi {{1}}, your order {{2}} is confirmed! Total: {{3}}" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;resize:vertical;font-family:var(--font)"></textarea>
+        <span style="font-size:.68rem;color:var(--dim)">Use {{1}}, {{2}}, etc. for variables</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:.8rem">
+        <div>
+          <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Footer (optional)</label>
+          <input id="tpl-footer" placeholder="Powered by GullyBite" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
+        </div>
+        <div>
+          <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Language</label>
+          <input id="tpl-lang" value="en" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
+        </div>
+      </div>
+      <div style="margin-bottom:1rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Example Values (comma-separated, for Meta approval)</label>
+        <input id="tpl-examples" placeholder="John, ZM-20260324-0001, ₹450" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
+      </div>
+      <button style="width:100%;background:var(--acc);color:#fff;border:none;border-radius:6px;padding:.55rem;font-size:.88rem;font-weight:600;cursor:pointer" onclick="doCreateTemplate()">Create Template on Meta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── EDIT MAPPING MODAL ──────────────────────────────────────────── -->
+<div class="overlay" id="tpl-mapping-modal" onclick="if(event.target.id==='tpl-mapping-modal')this.classList.remove('open')">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head">
+      <h3 id="tpl-mapping-title">Edit Mapping</h3>
+      <button class="btn-close" onclick="document.getElementById('tpl-mapping-modal').classList.remove('open')">&#x2715;</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="tpl-map-event">
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Template Name</label>
+        <input id="tpl-map-name" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
+      </div>
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Description</label>
+        <input id="tpl-map-desc" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
+      </div>
+      <div style="margin-bottom:.8rem">
+        <label style="font-size:.78rem;color:var(--dim);display:block;margin-bottom:.3rem">Variables (JSON array)</label>
+        <textarea id="tpl-map-vars" rows="4" style="width:100%;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.45rem .7rem;font-size:.82rem;font-family:'Courier New',monospace;resize:vertical"></textarea>
+        <span style="font-size:.68rem;color:var(--dim)">e.g. [{"position":1,"source":"order.customer_name","fallback":"Customer"}]</span>
+      </div>
+      <div style="margin-bottom:1rem;display:flex;align-items:center;gap:.5rem">
+        <input type="checkbox" id="tpl-map-active" checked>
+        <label for="tpl-map-active" style="font-size:.85rem">Active</label>
+      </div>
+      <button style="width:100%;background:var(--acc);color:#fff;border:none;border-radius:6px;padding:.55rem;font-size:.88rem;font-weight:600;cursor:pointer" onclick="doSaveMapping()">Save Mapping</button>
     </div>
   </div>
 </div>
@@ -742,7 +863,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', abuse: 'Abuse Protection' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -762,6 +883,7 @@ function nav(el) {
   if (page === 'settlements')  loadSettlements();
   if (page === 'referrals')    loadReferrals();
   if (page === 'directory')    loadDirectory();
+  if (page === 'templates')    loadTemplates();
   if (page === 'abuse')        loadAbuse();
 }
 
@@ -776,6 +898,7 @@ function refreshCurrent() {
   else if (currentPage === 'settlements')  loadSettlements();
   else if (currentPage === 'referrals')    loadReferrals();
   else if (currentPage === 'directory')    loadDirectory();
+  else if (currentPage === 'templates')    loadTemplates();
   else if (currentPage === 'abuse')        loadAbuse();
 }
 
@@ -1775,6 +1898,177 @@ function timeUntil(ts) {
   const h = Math.floor(diff / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
   return h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
+}
+
+// ─── TEMPLATES ─────────────────────────────────────────────────────
+async function loadTemplates() {
+  await Promise.all([loadTemplateMappings(), loadTemplateList(), loadTemplateNotifications()]);
+}
+
+async function loadTemplateMappings() {
+  try {
+    const mappings = await api('/api/admin/templates/mappings');
+    const tbody = document.getElementById('tpl-mappings-tbody');
+    if (!mappings.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No mappings yet. Click "Seed Defaults" to create.</td></tr>'; return; }
+    tbody.innerHTML = mappings.map(m => `<tr>
+      <td><strong>${m.event}</strong></td>
+      <td><code style="font-size:.8rem;background:var(--ink);padding:.15rem .4rem;border-radius:4px">${m.template_name}</code></td>
+      <td style="color:var(--dim);font-size:.8rem">${m.description || '—'}</td>
+      <td style="font-size:.75rem">${(m.variables||[]).map(v => '<span style="background:var(--ink);padding:.1rem .3rem;border-radius:3px;margin:.1rem">{{' + v.position + '}} → ' + v.source + '</span>').join(' ')}</td>
+      <td>${m.is_active ? '<span style="color:#16a34a">Active</span>' : '<span style="color:var(--dim)">Off</span>'}</td>
+      <td><button class="btn-sm" onclick='editMapping(${JSON.stringify(m).replace(/'/g,"&#39;")})'>Edit</button></td>
+    </tr>`).join('');
+  } catch (e) { console.error('loadTemplateMappings:', e); }
+}
+
+async function loadTemplateList() {
+  try {
+    const wabaId = document.getElementById('tpl-waba-id').value;
+    const url = wabaId ? `/api/admin/templates?waba_id=${wabaId}` : '/api/admin/templates';
+    const templates = await api(url);
+    const tbody = document.getElementById('tpl-list-tbody');
+    if (!templates.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No templates synced. Enter WABA ID and click "Sync from Meta".</td></tr>'; return; }
+    const statusBadge = (s) => {
+      const colors = { APPROVED: '#16a34a', PENDING: '#d97706', REJECTED: '#dc2626', DELETED: '#94a3b8' };
+      return `<span style="color:${colors[s]||'var(--dim)'};font-weight:600;font-size:.8rem">${s}</span>`;
+    };
+    tbody.innerHTML = templates.map(t => `<tr>
+      <td><strong>${t.name}</strong></td>
+      <td style="font-size:.8rem">${t.category}</td>
+      <td>${t.language}</td>
+      <td>${statusBadge(t.status)}</td>
+      <td style="font-size:.75rem">${(t.components||[]).map(c => c.type).join(', ')}</td>
+      <td>
+        <button class="btn-sm danger" style="font-size:.72rem;padding:.2rem .5rem" onclick="deleteTemplate('${t.name}')">Delete</button>
+      </td>
+    </tr>`).join('');
+  } catch (e) { console.error('loadTemplateList:', e); }
+}
+
+async function loadTemplateNotifications() {
+  try {
+    const logs = await api('/api/admin/templates/notifications?limit=30');
+    const tbody = document.getElementById('tpl-notif-tbody');
+    if (!logs.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No template sends yet.</td></tr>'; return; }
+    tbody.innerHTML = logs.map(l => `<tr>
+      <td style="font-size:.8rem;font-family:monospace">${String(l.order_id).slice(-8)}</td>
+      <td>${l.event}</td>
+      <td><code style="font-size:.78rem">${l.template_name}</code></td>
+      <td style="color:${l.status==='sent'?'#16a34a':'#dc2626'}">${l.status}</td>
+      <td style="font-size:.8rem;color:var(--dim)">${new Date(l.sent_at).toLocaleString()}</td>
+    </tr>`).join('');
+  } catch (e) { console.error('loadTemplateNotifications:', e); }
+}
+
+async function syncTemplates() {
+  const wabaId = document.getElementById('tpl-waba-id').value.trim();
+  if (!wabaId) { toast('Enter a WABA ID first', 'err'); return; }
+  try {
+    toast('Syncing templates from Meta…');
+    const res = await api('/api/admin/templates/sync', { method: 'POST', body: JSON.stringify({ waba_id: wabaId }) });
+    toast(`Synced ${res.total} templates`);
+    loadTemplateList();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function seedMappings() {
+  try {
+    await api('/api/admin/templates/seed', { method: 'POST' });
+    toast('Default mappings seeded');
+    loadTemplateMappings();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function showCreateTemplateModal() {
+  const wabaId = document.getElementById('tpl-waba-id').value.trim();
+  if (!wabaId) { toast('Enter a WABA ID first', 'err'); return; }
+  document.getElementById('tpl-name').value = '';
+  document.getElementById('tpl-category').value = 'UTILITY';
+  document.getElementById('tpl-body').value = '';
+  document.getElementById('tpl-footer').value = '';
+  document.getElementById('tpl-lang').value = 'en';
+  document.getElementById('tpl-examples').value = '';
+  document.getElementById('tpl-create-modal').classList.add('open');
+}
+
+async function doCreateTemplate() {
+  const wabaId = document.getElementById('tpl-waba-id').value.trim();
+  const name = document.getElementById('tpl-name').value.trim();
+  const body = document.getElementById('tpl-body').value.trim();
+  const footer = document.getElementById('tpl-footer').value.trim();
+  const lang = document.getElementById('tpl-lang').value.trim() || 'en';
+  const category = document.getElementById('tpl-category').value;
+  const examples = document.getElementById('tpl-examples').value.trim();
+
+  if (!name || !body) { toast('Name and body are required', 'err'); return; }
+
+  // Count {{N}} placeholders
+  const varMatches = body.match(/\{\{\d+\}\}/g) || [];
+  const varCount = new Set(varMatches).size;
+
+  // Build components
+  const components = [];
+
+  // Body component
+  const bodyComp = { type: 'BODY', text: body };
+  if (varCount > 0 && examples) {
+    const exVals = examples.split(',').map(s => s.trim());
+    bodyComp.example = { body_text: [exVals.slice(0, varCount)] };
+  }
+  components.push(bodyComp);
+
+  if (footer) components.push({ type: 'FOOTER', text: footer });
+
+  try {
+    await api('/api/admin/templates', {
+      method: 'POST',
+      body: JSON.stringify({ waba_id: wabaId, name, category, language: lang, components }),
+    });
+    toast('Template created — awaiting Meta approval');
+    document.getElementById('tpl-create-modal').classList.remove('open');
+    loadTemplateList();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function deleteTemplate(name) {
+  const wabaId = document.getElementById('tpl-waba-id').value.trim();
+  if (!wabaId) { toast('Enter a WABA ID first', 'err'); return; }
+  if (!confirm(`Delete template "${name}" from Meta? This deletes ALL languages.`)) return;
+  try {
+    await api('/api/admin/templates', { method: 'DELETE', body: JSON.stringify({ waba_id: wabaId, name }) });
+    toast('Template deleted');
+    loadTemplateList();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function editMapping(m) {
+  document.getElementById('tpl-map-event').value = m.event;
+  document.getElementById('tpl-mapping-title').textContent = `Edit: ${m.event}`;
+  document.getElementById('tpl-map-name').value = m.template_name || '';
+  document.getElementById('tpl-map-desc').value = m.description || '';
+  document.getElementById('tpl-map-vars').value = JSON.stringify(m.variables || [], null, 2);
+  document.getElementById('tpl-map-active').checked = m.is_active !== false;
+  document.getElementById('tpl-mapping-modal').classList.add('open');
+}
+
+async function doSaveMapping() {
+  const event = document.getElementById('tpl-map-event').value;
+  const template_name = document.getElementById('tpl-map-name').value.trim();
+  const description = document.getElementById('tpl-map-desc').value.trim();
+  const is_active = document.getElementById('tpl-map-active').checked;
+  let variables;
+  try { variables = JSON.parse(document.getElementById('tpl-map-vars').value); }
+  catch { toast('Invalid JSON for variables', 'err'); return; }
+
+  try {
+    await api(`/api/admin/templates/mappings/${event}`, {
+      method: 'PUT',
+      body: JSON.stringify({ template_name, description, variables, is_active }),
+    });
+    toast('Mapping saved');
+    document.getElementById('tpl-mapping-modal').classList.remove('open');
+    loadTemplateMappings();
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────

@@ -970,4 +970,117 @@ router.get('/delivery/stats', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── TEMPLATE MANAGEMENT ────────────────────────────────────
+const templateSvc = require('../services/template');
+
+// GET /api/admin/templates?waba_id=xxx — list all templates from local DB
+router.get('/templates', async (req, res) => {
+  try {
+    const { waba_id, status, name } = req.query;
+    const filter = {};
+    if (waba_id) filter.waba_id = waba_id;
+    if (status) filter.status = status;
+    if (name) filter.name = { $regex: name, $options: 'i' };
+    const templates = await col('templates').find(filter).sort({ updated_at: -1 }).toArray();
+    res.json(mapIds(templates));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/templates/sync — pull all templates from Meta into local DB
+router.post('/templates/sync', express.json(), async (req, res) => {
+  try {
+    const { waba_id } = req.body;
+    if (!waba_id) return res.status(400).json({ error: 'waba_id required' });
+    const result = await templateSvc.syncTemplates(waba_id);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/templates — create a new template on Meta
+router.post('/templates', express.json(), async (req, res) => {
+  try {
+    const { waba_id, name, category, language, components, allow_category_change } = req.body;
+    if (!waba_id || !name || !components?.length) {
+      return res.status(400).json({ error: 'waba_id, name, and components required' });
+    }
+    const result = await templateSvc.createTemplate(waba_id, {
+      name, category, language, components, allow_category_change,
+    });
+    res.json(result);
+  } catch (e) {
+    const metaErr = e.response?.data?.error;
+    res.status(metaErr ? 400 : 500).json({ error: metaErr?.message || e.message });
+  }
+});
+
+// PUT /api/admin/templates/:metaId — update template components on Meta
+router.put('/templates/:metaId', express.json(), async (req, res) => {
+  try {
+    const { components } = req.body;
+    if (!components?.length) return res.status(400).json({ error: 'components required' });
+    const result = await templateSvc.updateTemplate(req.params.metaId, components);
+    res.json(result);
+  } catch (e) {
+    const metaErr = e.response?.data?.error;
+    res.status(metaErr ? 400 : 500).json({ error: metaErr?.message || e.message });
+  }
+});
+
+// DELETE /api/admin/templates — delete template by name from Meta
+router.delete('/templates', express.json(), async (req, res) => {
+  try {
+    const { waba_id, name } = req.body;
+    if (!waba_id || !name) return res.status(400).json({ error: 'waba_id and name required' });
+    const result = await templateSvc.deleteTemplate(waba_id, name);
+    res.json(result);
+  } catch (e) {
+    const metaErr = e.response?.data?.error;
+    res.status(metaErr ? 400 : 500).json({ error: metaErr?.message || e.message });
+  }
+});
+
+// GET /api/admin/templates/mappings — get all event-to-template mappings
+router.get('/templates/mappings', async (req, res) => {
+  try {
+    const mappings = await templateSvc.getEventMappings();
+    res.json(mappings);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/templates/mappings/:event — update an event mapping
+router.put('/templates/mappings/:event', express.json(), async (req, res) => {
+  try {
+    const { template_name, variables, is_active, description } = req.body;
+    const updates = {};
+    if (template_name !== undefined) updates.template_name = template_name;
+    if (variables !== undefined) updates.variables = variables;
+    if (is_active !== undefined) updates.is_active = is_active;
+    if (description !== undefined) updates.description = description;
+    const result = await templateSvc.updateEventMapping(req.params.event, updates);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/templates/seed — force re-seed default mappings
+router.post('/templates/seed', async (req, res) => {
+  try {
+    await templateSvc.seedDefaultMappings();
+    const mappings = await templateSvc.getEventMappings();
+    res.json({ seeded: true, mappings });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/templates/notifications — view recent template send logs
+router.get('/templates/notifications', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const logs = await col('order_notifications')
+      .find({})
+      .sort({ sent_at: -1 })
+      .limit(limit)
+      .toArray();
+    res.json(mapIds(logs));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

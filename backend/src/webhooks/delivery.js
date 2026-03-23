@@ -8,6 +8,7 @@ const { col, newId } = require('../config/database');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
 const notify = require('../services/notify');
+const orderNotify = require('../services/orderNotify');
 
 // POST /webhooks/delivery — 3PL status updates
 router.post('/', express.json(), async (req, res) => {
@@ -84,7 +85,9 @@ router.post('/', express.json(), async (req, res) => {
 
     if (newStatus === 'picked_up') {
       await orderSvc.updateStatus(delivery.order_id, 'DISPATCHED');
-      if (wa_acc && customer) {
+      // Try template, fall back to plain text
+      const dispatched = await orderNotify.sendOrderTemplateMessage(delivery.order_id, 'DISPATCHED').catch(() => false);
+      if (!dispatched && wa_acc && customer) {
         const eta = $set.estimated_mins || delivery.estimated_mins;
         await wa.sendText(wa_acc.phone_number_id, wa_acc.access_token, customer.wa_phone,
           `📦 *Your order has been picked up!*\n\n` +
@@ -97,6 +100,8 @@ router.post('/', express.json(), async (req, res) => {
 
     if (newStatus === 'delivered') {
       await orderSvc.updateStatus(delivery.order_id, 'DELIVERED');
+      // Try template for delivered notification
+      orderNotify.sendOrderTemplateMessage(delivery.order_id, 'DELIVERED').catch(() => {});
       // DELIVERED handler in order service triggers rating request + loyalty points
     }
 

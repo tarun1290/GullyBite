@@ -1,0 +1,141 @@
+// src/services/orderNotify.js
+// Sends WhatsApp template messages for order lifecycle events
+// Fire-and-forget — failures must NEVER break order flow
+// Deduplicates via order_notifications collection
+
+const { col, newId } = require('../config/database');
+const templateSvc = require('./template');
+const wa = require('./whatsapp');
+
+// Map order status → event name used in template_mappings
+const STATUS_TO_EVENT = {
+  PAID:       'payment_received',
+  CONFIRMED:  'order_confirmed',
+  PREPARING:  'order_preparing',
+  PACKED:     'order_packed',
+  DISPATCHED: 'order_dispatched',
+  DELIVERED:  'order_delivered',
+  CANCELLED:  'order_cancelled',
+};
+
+// ─── SEND ORDER TEMPLATE MESSAGE ────────────────────────────
+// Main entry point — call this after any order status change
+// Returns true if template sent, false if fell back to text or skipped
+const sendOrderTemplateMessage = async (orderId, newStatus, orderContext = null) => {
+  const event = STATUS_TO_EVENT[newStatus];
+  if (!event) {
+    console.warn(`[OrderNotify] No event mapping for status: ${newStatus}`);
+    return false;
+  }
+
+  try {
+    // Dedup check — don't send same event twice for same order
+    const existing = await col('order_notifications').findOne({
+      order_id: orderId,
+      event,
+      status: 'sent',
+    });
+    if (existing) {
+      console.log(`[OrderNotify] Already sent ${event} for order ${orderId}, skipping`);
+      return false;
+    }
+
+    // Build context if not provided
+    const context = orderContext || await buildOrderContext(orderId);
+    if (!context) {
+      console.warn(`[OrderNotify] Could not build context for order ${orderId}`);
+      return false;
+    }
+
+    // Need phone_number_id and wa_phone to send
+    if (!context.order.phone_number_id || !context.order.wa_phone) {
+      console.warn(`[OrderNotify] Missing WA details for order ${orderId}`);
+      return false;
+    }
+
+    // Get the template mapping for this event
+    const mapping = await templateSvc.getMappingForEvent(event);
+    if (!mapping || !mapping.is_active) {
+      console.log(`[OrderNotify] No active mapping for event ${event}, skipping template`);
+      return false;
+    }
+
+    // Resolve variables from context
+    const componentParams = templateSvc.resolveTemplateVariables(mapping.variables, context);
+
+    // Try sending template
+    let sent = false;
+    try {
+      await templateSvc.sendTemplateMessage(
+        context.order.phone_number_id,
+        context.order.wa_phone,
+        mapping.template_name,
+        'en',
+        componentParams
+      );
+      sent = true;
+    } catch (err) {
+      const metaErr = err.response?.data?.error;
+      console.error(`[OrderNotify] Template send failed for ${event}:`,
+        metaErr?.message || err.message);
+      // Don't record as sent — will fall back to text in caller
+    }
+
+    // Record in audit log
+    await col('order_notifications').insertOne({
+      _id: newId(),
+      order_id: orderId,
+      event,
+      template_name: mapping.template_name,
+      status: sent ? 'sent' : 'failed',
+      error: sent ? null : 'Template send failed',
+      sent_at: new Date(),
+    });
+
+    return sent;
+  } catch (err) {
+    console.error(`[OrderNotify] Error for ${event} on order ${orderId}:`, err.message);
+    return false;
+  }
+};
+
+// ─── BUILD ORDER CONTEXT ────────────────────────────────────
+// Assembles the full context object used for variable resolution
+const buildOrderContext = async (orderId) => {
+  const orderSvc = require('./order');
+  const fullOrder = await orderSvc.getOrderDetails(orderId);
+  if (!fullOrder) return null;
+
+  // Get delivery info if exists
+  const delivery = await col('deliveries').findOne({ order_id: orderId });
+
+  // Get branch & restaurant
+  const branch = fullOrder.branch_id
+    ? await col('branches').findOne({ _id: fullOrder.branch_id })
+    : null;
+
+  return {
+    order: {
+      ...fullOrder,
+      business_name: fullOrder.business_name || branch?.name || '',
+    },
+    delivery: delivery ? {
+      driver_name: delivery.driver_name,
+      driver_phone: delivery.driver_phone,
+      tracking_url: delivery.tracking_url,
+      estimated_mins: delivery.estimated_mins,
+      status: delivery.status,
+    } : {},
+    branch: branch ? {
+      name: branch.name,
+      address: branch.address,
+      phone: branch.manager_phone,
+    } : {},
+  };
+};
+
+module.exports = {
+  sendOrderTemplateMessage,
+  buildOrderContext,
+  STATUS_TO_EVENT,
+};
