@@ -778,6 +778,22 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
                 </div>
               </div>
             </div>
+              <!-- ── Advanced / Meta Catalog Fields (collapsible) ── -->
+              <div class="fg span2" style="margin-top:.4rem">
+                <div style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:.4rem;color:var(--dim);font-size:.82rem" onclick="const s=document.getElementById('m-adv-section');s.style.display=s.style.display==='none'?'block':'none';this.querySelector('span').textContent=s.style.display==='none'?'▼':'▲'">
+                  <span>▼</span> Advanced / Meta Catalog Fields
+                </div>
+                <div id="m-adv-section" style="display:none;margin-top:.65rem">
+                  <div class="fgrid" style="gap:.6rem .9rem">
+                    <div class="fg"><label>Item Group ID <small style="color:var(--dim)">(variants share same ID)</small></label><input id="m-group-id" placeholder="e.g. MOMO-VEG-CLASSIC"></div>
+                    <div class="fg"><label>Size / Portion</label><input id="m-size" placeholder="e.g. 6 Pcs, Regular (8 oz)"></div>
+                    <div class="fg"><label>Sale Price (₹)</label><input id="m-sale-price" type="number" placeholder="199"></div>
+                    <div class="fg"><label>Stock Quantity</label><input id="m-stock-qty" type="number" placeholder="Leave blank for unlimited"></div>
+                    <div class="fg span2"><label>Product Tags <small style="color:var(--dim)">(comma-separated)</small></label><input id="m-tags" placeholder="Veg, Steamed Momos, Spicy"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <button class="btn-p" style="margin-top:.95rem" onclick="doAddItem()">+ Add Item</button>
           </div>
         </div>
@@ -789,9 +805,10 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
           <div class="cb">
             <p style="font-size:.81rem;color:var(--dim);margin-bottom:.9rem">
-              Upload a CSV to add or update menu items for the selected branch in bulk.<br>
-              <strong>Required:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">name</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">price</code> &nbsp;·&nbsp;
-              <strong>Optional:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">category</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">description</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">food_type</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">image_url</code>, <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">is_bestseller</code>
+              Upload a CSV to add or update menu items in bulk. Supports the <strong>Meta Commerce Manager template</strong> (all 29 columns) — download it from Meta or use our template below.<br>
+              <strong>Required:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">name</code> (or <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">title</code>), <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">price</code> &nbsp;·&nbsp;
+              <strong>Variants:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">item_group_id</code> + <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">size</code> &nbsp;·&nbsp;
+              <strong>Price format:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">280</code> or <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">280.00 INR</code>
             </p>
             <div class="csv-drop" id="csv-drop"
                  onclick="document.getElementById('csv-file').click()"
@@ -826,6 +843,46 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
         <div id="menu-list">
           <div class="empty"><div class="ei">🍽️</div><h3>Select a branch above</h3></div>
+        </div>
+
+        <!-- ── PRODUCT SETS SECTION ── -->
+        <div class="card" id="product-sets-card" style="margin-top:1.1rem;display:none">
+          <div class="ch">
+            <h3>📂 Product Sets <small style="color:var(--dim);font-weight:400">(browsable catalog sections)</small></h3>
+            <div style="display:flex;gap:.4rem">
+              <button class="btn-g btn-sm" onclick="doAutoCreateSets()">🪄 Auto-Create</button>
+              <button class="btn-g btn-sm" onclick="doSyncAllSets()">🔄 Sync All</button>
+              <button class="btn-p btn-sm" onclick="openCreateSetModal()">+ Create Set</button>
+            </div>
+          </div>
+          <div class="cb" id="product-sets-list">
+            <p style="color:var(--dim);font-size:.82rem">Loading...</p>
+          </div>
+        </div>
+
+        <!-- ── CREATE/EDIT SET MODAL ── -->
+        <div id="set-modal" style="display:none;position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.4);align-items:center;justify-content:center">
+          <div style="background:var(--ink2);border-radius:12px;padding:1.5rem;width:420px;max-width:92vw;box-shadow:var(--shadow)">
+            <h3 id="set-modal-title" style="margin-bottom:1rem;font-size:1rem">Create Product Set</h3>
+            <div class="fgrid" style="gap:.6rem">
+              <div class="fg span2"><label>Set Name</label><input id="set-name" placeholder="e.g. Momos, Bestsellers"></div>
+              <div class="fg">
+                <label>Type</label>
+                <select id="set-type" onchange="onSetTypeChange()">
+                  <option value="category">Category (tag filter)</option>
+                  <option value="tag">Tag (product_tags[0])</option>
+                  <option value="manual">Manual (pick items)</option>
+                </select>
+              </div>
+              <div class="fg"><label>Sort Order</label><input id="set-sort" type="number" value="0"></div>
+              <div class="fg span2" id="set-filter-row"><label>Filter Value</label><input id="set-filter" placeholder="Tag value to match"></div>
+              <div class="fg span2" id="set-manual-row" style="display:none"><label>Retailer IDs <small>(comma-separated)</small></label><input id="set-manual-ids" placeholder="ZM-abc-001, ZM-abc-002"></div>
+            </div>
+            <div style="display:flex;gap:.5rem;margin-top:1rem;justify-content:flex-end">
+              <button class="btn-g" onclick="closeSetModal()">Cancel</button>
+              <button class="btn-p" id="set-save-btn" onclick="doSaveSet()">Create</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2768,31 +2825,65 @@ async function loadMenu() {
       list.innerHTML = `<div class="empty"><div class="ei">🍽️</div><h3>No menu items yet</h3><p>Add above, then sync to WhatsApp</p></div>`;
       return;
     }
-    list.innerHTML = grouped.map(g => `
-      <div class="card" style="margin-bottom:.9rem">
+    list.innerHTML = grouped.map(g => {
+      // Group items by item_group_id for variant clustering
+      const standalone = [];
+      const variantGroups = {};
+      for (const item of g.items) {
+        if (item.item_group_id) {
+          if (!variantGroups[item.item_group_id]) variantGroups[item.item_group_id] = [];
+          variantGroups[item.item_group_id].push(item);
+        } else {
+          standalone.push(item);
+        }
+      }
+      let html = standalone.map(miRow).join('');
+      for (const [gid, variants] of Object.entries(variantGroups)) {
+        const first = variants[0];
+        const safeName = first.name.replace(/'/g, "\\'");
+        html += `<div class="mi-group" style="border-left:3px solid var(--acc);margin:.3rem 0;border-radius:4px;background:rgba(79,70,229,.03)">
+          <div style="display:flex;align-items:center;gap:.5rem;padding:.45rem .8rem;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.grp-arr').textContent=this.nextElementSibling.style.display==='none'?'▶':'▼'">
+            <span class="grp-arr" style="font-size:.7rem;color:var(--dim)">▼</span>
+            <span style="font-weight:600;font-size:.85rem">${first.name}</span>
+            <span class="badge bd" style="font-size:.65rem">${variants.length} variants</span>
+            <button class="btn-g btn-sm" style="margin-left:auto;font-size:.72rem" onclick="event.stopPropagation();openVarModal('${first.id}','${safeName}','${gid}')">+ Add Variant</button>
+          </div>
+          <div>${variants.map(v => miRow(v, true)).join('')}</div>
+        </div>`;
+      }
+      return `<div class="card" style="margin-bottom:.9rem">
         <div class="ch"><h3>${g.name}</h3><span class="badge bd">${g.items.length} items</span></div>
-        <div>${g.items.map(miRow).join('')}</div>
-      </div>`).join('');
+        <div>${html}</div>
+      </div>`;
+    }).join('');
   } catch (e) { toast('Failed to load menu', 'err'); }
+  loadProductSets();
 }
-function miRow(item) {
+function miRow(item, isGroupedVariant) {
   const ti    = { veg: '🟢', non_veg: '🔴', vegan: '🌱', egg: '🟡' };
   const thumb = item.image_url
     ? `<img class="mi-th" src="${item.image_url}" onerror="this.style.display='none'">`
     : `<div class="mi-ph">${ti[item.food_type] || '🍽️'}</div>`;
   const variantBadge = item.item_group_id
-    ? `<span class="var-badge" title="Part of a variant group">⚡ ${item.variant_value || 'Variant'}</span>`
+    ? `<span class="var-badge" title="Part of a variant group">⚡ ${item.size || item.variant_value || 'Variant'}</span>`
     : '';
+  const saleBadge = item.sale_price_paise
+    ? `<span style="text-decoration:line-through;color:var(--mute);font-size:.75rem;margin-right:.3rem">₹${item.price_paise / 100}</span><span style="color:var(--red);font-weight:600">₹${item.sale_price_paise / 100}</span>`
+    : `₹${item.price_paise / 100}`;
+  const syncDot = item.catalog_sync_status === 'synced' ? '🟢' : item.catalog_sync_status === 'error' ? '🔴' : '🟡';
   const safeName = item.name.replace(/'/g, "\\'");
-  return `<div class="mi">
+  const indent = isGroupedVariant ? 'padding-left:1.8rem;' : '';
+  return `<div class="mi" style="${indent}">
     ${thumb}
     <div style="flex:1;min-width:0">
-      <div class="mi-name">${item.name}${item.is_bestseller ? '<span class="badge ba" style="margin-left:.3rem;font-size:.6rem">⭐</span>' : ''}${variantBadge}</div>
-      ${item.description ? `<div class="mi-desc">${item.description}</div>` : ''}
+      <div class="mi-name">${isGroupedVariant ? '' : item.name}${isGroupedVariant ? (item.size || item.variant_value || 'Variant') : ''}${item.is_bestseller ? '<span class="badge ba" style="margin-left:.3rem;font-size:.6rem">⭐</span>' : ''}${!isGroupedVariant ? variantBadge : ''}</div>
+      ${item.description && !isGroupedVariant ? `<div class="mi-desc">${item.description}</div>` : ''}
+      ${item.product_tags?.length ? `<div style="display:flex;gap:.25rem;flex-wrap:wrap;margin-top:.2rem">${item.product_tags.map(t => `<span style="font-size:.62rem;background:var(--ink);padding:.1rem .4rem;border-radius:10px;color:var(--dim)">${t}</span>`).join('')}</div>` : ''}
     </div>
-    <div class="mi-price">₹${item.price_paise / 100}</div>
+    <div class="mi-price">${saleBadge}</div>
     <div class="mi-acts">
-      <button class="btn-g btn-sm" title="Add size/portion variant" onclick="openVarModal('${item.id}','${safeName}','${item.item_group_id||''}')">+ Variant</button>
+      <span title="Sync: ${item.catalog_sync_status||'pending'}" style="font-size:.65rem">${syncDot}</span>
+      ${!isGroupedVariant ? `<button class="btn-g btn-sm" title="Add size/portion variant" onclick="openVarModal('${item.id}','${safeName}','${item.item_group_id||''}')">+ Variant</button>` : ''}
       <label class="tsl"><input type="checkbox" ${item.is_available ? 'checked' : ''} onchange="doToggleItem('${item.id}',this.checked,'${safeName}')"><div class="tsl-track"></div></label>
       <button class="btn-del" onclick="doDeleteItem('${item.id}','${safeName}')">🗑</button>
     </div>
@@ -2952,11 +3043,24 @@ async function doAddItem() {
     } catch (e) { return toast('Could not create category: ' + e.message, 'err'); }
   }
 
+  // Collect advanced Meta fields
+  const advGroupId  = (document.getElementById('m-group-id')?.value || '').trim() || undefined;
+  const advSize     = (document.getElementById('m-size')?.value || '').trim() || undefined;
+  const advSalePrice= document.getElementById('m-sale-price')?.value || undefined;
+  const advStockQty = document.getElementById('m-stock-qty')?.value || undefined;
+  const advTagsRaw  = (document.getElementById('m-tags')?.value || '').trim();
+  const advTags     = advTagsRaw ? advTagsRaw.split(',').map(t => t.trim()).filter(Boolean) : undefined;
+
   const common = {
     description: document.getElementById('m-desc').value,
     foodType:    document.getElementById('m-type').value,
     categoryId,
     imageUrl:    document.getElementById('m-img').value,
+    ...(advGroupId  && { itemGroupId: advGroupId }),
+    ...(advSize     && { size: advSize }),
+    ...(advSalePrice && { salePriceRs: parseFloat(advSalePrice) }),
+    ...(advStockQty && { quantityToSellOnFacebook: parseInt(advStockQty) }),
+    ...(advTags     && { productTags: advTags }),
   };
 
   const hasVariants = document.getElementById('m-has-variants').checked;
@@ -2991,7 +3095,7 @@ async function doAddItem() {
     }
 
     // Reset form
-    ['m-name', 'm-price', 'm-desc'].forEach(id => document.getElementById(id).value = '');
+    ['m-name', 'm-price', 'm-desc', 'm-group-id', 'm-size', 'm-sale-price', 'm-stock-qty', 'm-tags'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('m-has-variants').checked = false;
     document.getElementById('m-variants-section').style.display = 'none';
     document.getElementById('m-price-row').style.display = '';
@@ -3324,17 +3428,15 @@ async function doUploadCsv() {
 }
 function doDownloadSample() {
   const sample = [
-    'category,name,description,price,food_type,image_url,is_bestseller',
-    'Starters,Paneer Tikka,"Grilled cottage cheese, marinated in spices",280,veg,,false',
-    'Starters,Chicken Tikka,"Juicy chicken pieces, smoky and tender",320,non_veg,,true',
-    'Mains,Butter Chicken,Rich creamy tomato-based curry,450,non_veg,,true',
-    'Mains,Dal Makhani,Slow-cooked black lentils in butter,320,veg,,false',
-    'Breads,Butter Naan,Soft leavened flatbread with butter,60,veg,,false',
-    'Beverages,Mango Lassi,Chilled yogurt mango drink,120,veg,,false',
+    'id,title,description,availability,condition,price,link,image_link,brand,google_product_category,fb_product_category,quantity_to_sell_on_facebook,sale_price,sale_price_effective_date,item_group_id,gender,color,size,age_group,material,pattern,shipping,shipping_weight,video[0].url,video[0].tag[0],gtin,product_tags[0],product_tags[1],style[0]',
+    ',,Grilled cottage cheese marinated in spices,in stock,new,280.00 INR,,,,Food Beverages & Tobacco > Food Items,Food & Beverages > Prepared Food,,,,,,,,,,,,,,,,Veg,Starters,',
+    ',,Juicy chicken pieces smoky and tender,in stock,new,320.00 INR,,,,Food Beverages & Tobacco > Food Items,Food & Beverages > Prepared Food,,,,TIKKA-CHICKEN,,,,,,,,,,,,Non-Veg,Starters,',
+    ',Chicken Tikka,Boneless pieces,in stock,new,320.00 INR,,,,,,,,,,,,6 Pcs,,,,,,,,,,Non-Veg,Starters,',
+    ',Chicken Tikka,Family size,in stock,new,580.00 INR,,,,,,,,,,,,12 Pcs,,,,,,,,,,Non-Veg,Starters,',
   ].join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([sample], { type: 'text/csv' }));
-  a.download = 'gullybite-menu-sample.csv';
+  a.download = 'gullybite-meta-catalog-template.csv';
   a.click();
 }
 
@@ -4653,6 +4755,127 @@ async function doSyncSets() {
     else toast(`Product sets synced — ${r.created} created, ${r.updated} updated`, 'ok');
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; btn.innerHTML = '📂 Sync Product Sets'; }
+}
+
+/* ──────────────────── PRODUCT SETS ──────────────────────── */
+let _editingSetId = null;
+
+async function loadProductSets() {
+  const branchId = document.getElementById('m-branch').value;
+  const card = document.getElementById('product-sets-card');
+  if (!branchId) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  const area = document.getElementById('product-sets-list');
+  try {
+    const sets = await api(`/api/restaurant/product-sets?branch_id=${branchId}`);
+    if (!sets?.length) {
+      area.innerHTML = `<p style="color:var(--dim);font-size:.82rem">No product sets yet. Click <b>Auto-Create</b> to generate from your menu categories, or <b>Create Set</b> to add manually.</p>`;
+      return;
+    }
+    area.innerHTML = `<div style="display:flex;flex-direction:column;gap:.4rem">${sets.map(s => {
+      const syncBadge = s.meta_product_set_id
+        ? `<span style="font-size:.65rem;color:var(--wa)">🟢 synced</span>`
+        : `<span style="font-size:.65rem;color:var(--gold)">🟡 pending</span>`;
+      const typeBadge = `<span class="badge bd" style="font-size:.62rem">${s.type}</span>`;
+      const safeName = s.name.replace(/'/g, "\\'");
+      return `<div style="display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;background:var(--ink);border-radius:8px">
+        <span style="font-weight:600;font-size:.84rem;flex:1">${s.name}</span>
+        ${typeBadge} ${syncBadge}
+        <button class="btn-g btn-sm" style="font-size:.72rem" onclick="openEditSetModal('${s.id}','${safeName}','${s.type}','${(s.filter_value||'').replace(/'/g,"\\'")}','${(s.manual_retailer_ids||[]).join(',')}',${s.sort_order||0})">✏ Edit</button>
+        <button class="btn-del btn-sm" style="font-size:.72rem" onclick="doDeleteSet('${s.id}','${safeName}')">🗑</button>
+      </div>`;
+    }).join('')}</div>`;
+  } catch (e) { area.innerHTML = `<p style="color:var(--red);font-size:.82rem">${e.message}</p>`; }
+}
+
+function onSetTypeChange() {
+  const t = document.getElementById('set-type').value;
+  document.getElementById('set-filter-row').style.display = t !== 'manual' ? '' : 'none';
+  document.getElementById('set-manual-row').style.display = t === 'manual' ? '' : 'none';
+}
+
+function openCreateSetModal() {
+  _editingSetId = null;
+  document.getElementById('set-modal-title').textContent = 'Create Product Set';
+  document.getElementById('set-save-btn').textContent = 'Create';
+  ['set-name', 'set-filter', 'set-manual-ids'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('set-sort').value = '0';
+  document.getElementById('set-type').value = 'category';
+  onSetTypeChange();
+  document.getElementById('set-modal').style.display = 'flex';
+}
+
+function openEditSetModal(id, name, type, filterVal, manualIds, sortOrder) {
+  _editingSetId = id;
+  document.getElementById('set-modal-title').textContent = 'Edit Product Set';
+  document.getElementById('set-save-btn').textContent = 'Save';
+  document.getElementById('set-name').value = name;
+  document.getElementById('set-type').value = type;
+  document.getElementById('set-filter').value = filterVal;
+  document.getElementById('set-manual-ids').value = manualIds;
+  document.getElementById('set-sort').value = sortOrder;
+  onSetTypeChange();
+  document.getElementById('set-modal').style.display = 'flex';
+}
+
+function closeSetModal() {
+  document.getElementById('set-modal').style.display = 'none';
+  _editingSetId = null;
+}
+
+async function doSaveSet() {
+  const branchId = document.getElementById('m-branch').value;
+  if (!branchId) return toast('Select a branch first', 'err');
+  const name = document.getElementById('set-name').value.trim();
+  if (!name) return toast('Set name required', 'err');
+  const type = document.getElementById('set-type').value;
+  const body = {
+    branchId, name, type,
+    filterValue: document.getElementById('set-filter').value.trim() || null,
+    manualRetailerIds: type === 'manual' ? document.getElementById('set-manual-ids').value.split(',').map(s => s.trim()).filter(Boolean) : [],
+    sortOrder: parseInt(document.getElementById('set-sort').value) || 0,
+  };
+  try {
+    if (_editingSetId) {
+      await api(`/api/restaurant/product-sets/${_editingSetId}`, { method: 'PUT', body });
+      toast(`Set "${name}" updated`, 'ok');
+    } else {
+      await api('/api/restaurant/product-sets', { method: 'POST', body });
+      toast(`Set "${name}" created`, 'ok');
+    }
+    closeSetModal();
+    loadProductSets();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doDeleteSet(id, name) {
+  if (!confirm(`Delete product set "${name}"?`)) return;
+  try {
+    await api(`/api/restaurant/product-sets/${id}`, { method: 'DELETE' });
+    toast(`Set "${name}" deleted`, 'ok');
+    loadProductSets();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doAutoCreateSets() {
+  const branchId = document.getElementById('m-branch').value;
+  if (!branchId) return toast('Select a branch first', 'err');
+  try {
+    const r = await api('/api/restaurant/product-sets/auto-create', { method: 'POST', body: { branchId } });
+    toast(`Auto-created ${r.created} sets (${r.skipped} skipped)`, 'ok');
+    loadProductSets();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doSyncAllSets() {
+  const branchId = document.getElementById('m-branch').value;
+  if (!branchId) return toast('Select a branch first', 'err');
+  try {
+    const r = await api('/api/restaurant/product-sets/sync', { method: 'POST', body: { branchId } });
+    if (r.skipped) toast('No sets to sync', 'nfo');
+    else toast(`Synced — ${r.created} created, ${r.updated} updated on Meta`, 'ok');
+    loadProductSets();
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ──────────────────── VARIANTS ──────────────────────────── */

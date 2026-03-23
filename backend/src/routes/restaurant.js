@@ -483,6 +483,13 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
       name, description, priceRs, categoryId, foodType, imageUrl,
       isBestseller, sortOrder,
       itemGroupId, variantType, variantValue,
+      // New Meta 29-column fields
+      size, salePriceRs, salePriceEffectiveDate,
+      brand, googleProductCategory, fbProductCategory,
+      link, quantityToSellOnFacebook, productTags,
+      gender, color, ageGroup, material, pattern,
+      shipping, shippingWeight, videoUrl, videoTag,
+      gtin, style,
     } = req.body;
     if (!name || !priceRs) return res.status(400).json({ error: 'name and priceRs required' });
 
@@ -507,6 +514,29 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
       item_group_id: itemGroupId || null,
       variant_type: variantType || null,
       variant_value: variantValue || null,
+      // Meta 29-column fields
+      size: size || variantValue || null,
+      sale_price_paise: salePriceRs ? Math.round(parseFloat(salePriceRs) * 100) : null,
+      sale_price_effective_date: salePriceEffectiveDate || null,
+      brand: brand || null,
+      google_product_category: googleProductCategory || 'Food, Beverages & Tobacco > Food Items',
+      fb_product_category: fbProductCategory || 'Food & Beverages > Prepared Food',
+      link: link || null,
+      quantity_to_sell_on_facebook: quantityToSellOnFacebook || null,
+      product_tags: Array.isArray(productTags) ? productTags : (productTags ? [productTags] : []),
+      gender: gender || null,
+      color: color || null,
+      age_group: ageGroup || null,
+      material: material || null,
+      pattern: pattern || null,
+      shipping: shipping || null,
+      shipping_weight: shippingWeight || null,
+      video_url: videoUrl || null,
+      video_tag: videoTag || null,
+      gtin: gtin || null,
+      style: style || null,
+      catalog_sync_status: 'pending',
+      catalog_synced_at: null,
       created_at: now,
       updated_at: now,
     };
@@ -527,12 +557,21 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
 router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) => {
   try {
     const { name, description, priceRs, imageUrl, isAvailable, isBestseller,
-            itemGroupId, variantType, variantValue } = req.body;
+            itemGroupId, variantType, variantValue,
+            // New Meta 29-column fields
+            size, salePriceRs, salePriceEffectiveDate,
+            brand, googleProductCategory, fbProductCategory,
+            link, quantityToSellOnFacebook, productTags,
+            gender, color, ageGroup, material, pattern,
+            shipping, shippingWeight, videoUrl, videoTag,
+            gtin, style,
+    } = req.body;
 
     const onlyAvailability = isAvailable !== undefined &&
       name === undefined && description === undefined && priceRs === undefined &&
       imageUrl === undefined && isBestseller === undefined &&
-      itemGroupId === undefined && variantType === undefined && variantValue === undefined;
+      itemGroupId === undefined && variantType === undefined && variantValue === undefined &&
+      size === undefined && salePriceRs === undefined && productTags === undefined;
 
     if (onlyAvailability) {
       catalog.setItemAvailability(req.params.itemId, isAvailable)
@@ -540,7 +579,7 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
       return res.json({ success: true });
     }
 
-    const $set = { updated_at: new Date() };
+    const $set = { updated_at: new Date(), catalog_sync_status: 'pending' };
     if (name        !== undefined) $set.name          = name;
     if (description !== undefined) $set.description   = description;
     if (priceRs     !== undefined) $set.price_paise   = Math.round(parseFloat(priceRs) * 100);
@@ -550,6 +589,27 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
     if (variantType !== undefined) $set.variant_type  = variantType || null;
     if (variantValue!== undefined) $set.variant_value = variantValue || null;
     if (isAvailable !== undefined) $set.is_available  = isAvailable;
+    // Meta 29-column fields — partial update
+    if (size                    !== undefined) $set.size = size || null;
+    if (salePriceRs             !== undefined) $set.sale_price_paise = salePriceRs ? Math.round(parseFloat(salePriceRs) * 100) : null;
+    if (salePriceEffectiveDate  !== undefined) $set.sale_price_effective_date = salePriceEffectiveDate || null;
+    if (brand                   !== undefined) $set.brand = brand || null;
+    if (googleProductCategory   !== undefined) $set.google_product_category = googleProductCategory || null;
+    if (fbProductCategory       !== undefined) $set.fb_product_category = fbProductCategory || null;
+    if (link                    !== undefined) $set.link = link || null;
+    if (quantityToSellOnFacebook!== undefined) $set.quantity_to_sell_on_facebook = quantityToSellOnFacebook || null;
+    if (productTags             !== undefined) $set.product_tags = Array.isArray(productTags) ? productTags : (productTags ? [productTags] : []);
+    if (gender                  !== undefined) $set.gender = gender || null;
+    if (color                   !== undefined) $set.color = color || null;
+    if (ageGroup                !== undefined) $set.age_group = ageGroup || null;
+    if (material                !== undefined) $set.material = material || null;
+    if (pattern                 !== undefined) $set.pattern = pattern || null;
+    if (shipping                !== undefined) $set.shipping = shipping || null;
+    if (shippingWeight          !== undefined) $set.shipping_weight = shippingWeight || null;
+    if (videoUrl                !== undefined) $set.video_url = videoUrl || null;
+    if (videoTag                !== undefined) $set.video_tag = videoTag || null;
+    if (gtin                    !== undefined) $set.gtin = gtin || null;
+    if (style                   !== undefined) $set.style = style || null;
 
     if (Object.keys($set).length === 1) return res.json({ success: true }); // only updated_at
 
@@ -579,8 +639,85 @@ router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── META COMMERCE MANAGER CSV COLUMN ALIASES ─────────────────
+const META_COLUMN_ALIASES = {
+  'id': 'retailer_id', 'title': 'name', 'description': 'description',
+  'price': 'price', 'sale_price': 'sale_price', 'image_link': 'image_url',
+  'availability': 'availability', 'brand': 'brand', 'link': 'link',
+  'item_group_id': 'item_group_id', 'size': 'size',
+  'google_product_category': 'google_product_category',
+  'fb_product_category': 'fb_product_category',
+  'quantity_to_sell_on_facebook': 'quantity_to_sell_on_facebook',
+  'product_tags[0]': '_tag0', 'product_tags[1]': '_tag1',
+  'sale_price_effective_date': 'sale_price_effective_date',
+  'gender': 'gender', 'color': 'color', 'age_group': 'age_group',
+  'material': 'material', 'pattern': 'pattern',
+  'shipping': 'shipping', 'shipping_weight': 'shipping_weight',
+  'video[0].url': 'video_url', 'video[0].tag[0]': 'video_tag',
+  'gtin': 'gtin', 'style[0]': 'style', 'condition': '_condition',
+};
+
+// Parse "199.00 INR" or "299" or 149 → paise integer
+function _parsePriceToPaise(priceStr) {
+  if (!priceStr) return null;
+  if (typeof priceStr === 'number') return Math.round(priceStr * 100);
+  const cleaned = String(priceStr).replace(/[^0-9.]/g, '');
+  const num = parseFloat(cleaned);
+  if (isNaN(num)) return null;
+  return Math.round(num * 100);
+}
+
+// Parse "in stock" → true, "out of stock" → false
+function _parseAvailability(val) {
+  if (val === undefined || val === null) return true; // default available
+  if (typeof val === 'boolean') return val;
+  const str = String(val).toLowerCase().trim();
+  return str === 'in stock' || str === 'true' || str === '1' || str === 'yes';
+}
+
+// Normalize CSV row keys using Meta column aliases
+function _normalizeCSVRow(row) {
+  const normalized = {};
+  for (const [key, val] of Object.entries(row)) {
+    const mapped = META_COLUMN_ALIASES[key] || key;
+    normalized[mapped] = val;
+  }
+  // Merge tags
+  const tags = [];
+  if (normalized._tag0) tags.push(normalized._tag0);
+  if (normalized._tag1) tags.push(normalized._tag1);
+  if (Array.isArray(normalized.product_tags)) tags.push(...normalized.product_tags);
+  normalized.product_tags = [...new Set(tags)];
+  delete normalized._tag0;
+  delete normalized._tag1;
+  delete normalized._condition;
+
+  // Parse Meta price format → paise
+  if (normalized.price && typeof normalized.price === 'string' && normalized.price.includes('INR')) {
+    normalized.price_paise = _parsePriceToPaise(normalized.price);
+    normalized.price = null; // clear so main parser doesn't re-process
+  }
+  if (normalized.sale_price) {
+    normalized.sale_price_paise = _parsePriceToPaise(normalized.sale_price);
+    delete normalized.sale_price;
+  }
+
+  // Parse availability
+  if (normalized.availability !== undefined) {
+    normalized.is_available = _parseAvailability(normalized.availability);
+    delete normalized.availability;
+  }
+
+  // Auto-generate retailer_id for variants
+  if (normalized.item_group_id && normalized.size && !normalized.retailer_id) {
+    normalized.retailer_id = `${normalized.item_group_id}-${normalized.size.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+  }
+
+  return normalized;
+}
+
 // POST /api/restaurant/branches/:branchId/menu/csv
-// Bulk upsert menu items from a parsed CSV
+// Bulk upsert menu items from a parsed CSV (supports Meta Commerce Manager template)
 router.post('/branches/:branchId/menu/csv', async (req, res) => {
   try {
     const { items } = req.body;
@@ -592,11 +729,13 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
     const results = { added: 0, skipped: 0, errors: [] };
     const categoryCache = {};
 
-    for (const [i, row] of items.entries()) {
+    for (const [i, rawRow] of items.entries()) {
+      const row = _normalizeCSVRow(rawRow);
       const rowNum = i + 2;
       const name = (row.name || '').trim();
-      const priceRaw = (row.price || row.price_rs || '').toString().replace(/[₹,\s]/g, '');
-      const price = parseFloat(priceRaw);
+      // Support Meta "199.00 INR" format or plain number
+      const priceRaw = row.price_paise ? null : (row.price || row.price_rs || '').toString().replace(/[₹,\s]/g, '');
+      const price = row.price_paise ? row.price_paise / 100 : parseFloat(priceRaw);
 
       if (!name) { results.errors.push(`Row ${rowNum}: missing name`); results.skipped++; continue; }
       if (isNaN(price) || price <= 0) { results.errors.push(`Row ${rowNum} "${name}": invalid price "${row.price}"`); results.skipped++; continue; }
@@ -623,10 +762,16 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
         const foodType = validTypes.includes(rawType) ? rawType : 'veg';
         const isBestseller = ['true', 'yes', '1'].includes((row.is_bestseller || '').toLowerCase());
         const imageUrl = (row.image_url || row.image || '').trim() || null;
-        const pricePaise = Math.round(price * 100);
+        const pricePaise = row.price_paise || Math.round(price * 100);
         const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-        const retailerId = `ZM-${branchId.slice(0, 6)}-${slug}`;
+        const retailerId = row.retailer_id || `ZM-${branchId.slice(0, 6)}-${slug}`;
         const now = new Date();
+
+        // Build product_tags from available data
+        const csvTags = [];
+        if (row['product_tags[0]'] || row.product_tag_0) csvTags.push(row['product_tags[0]'] || row.product_tag_0);
+        if (row['product_tags[1]'] || row.product_tag_1) csvTags.push(row['product_tags[1]'] || row.product_tag_1);
+        if (row.product_tags && Array.isArray(row.product_tags)) csvTags.push(...row.product_tags);
 
         await col('menu_items').updateOne(
           { retailer_id: retailerId },
@@ -640,9 +785,32 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
               image_url: imageUrl,
               food_type: foodType,
               is_bestseller: isBestseller,
+              // Meta 29-column fields
+              item_group_id: row.item_group_id || null,
+              size: row.size || null,
+              sale_price_paise: row.sale_price_paise || null,
+              sale_price_effective_date: row.sale_price_effective_date || null,
+              brand: row.brand || null,
+              google_product_category: row.google_product_category || 'Food, Beverages & Tobacco > Food Items',
+              fb_product_category: row.fb_product_category || 'Food & Beverages > Prepared Food',
+              link: row.link || null,
+              quantity_to_sell_on_facebook: row.quantity_to_sell_on_facebook || null,
+              product_tags: csvTags.length ? [...new Set(csvTags)] : [],
+              gender: row.gender || null,
+              color: row.color || null,
+              age_group: row.age_group || null,
+              material: row.material || null,
+              pattern: row.pattern || null,
+              shipping: row.shipping || null,
+              shipping_weight: row.shipping_weight || null,
+              video_url: row.video_url || row['video[0].url'] || null,
+              video_tag: row.video_tag || row['video[0].tag[0]'] || null,
+              gtin: row.gtin || null,
+              style: row.style || row['style[0]'] || null,
+              catalog_sync_status: 'pending',
               updated_at: now,
             },
-            $setOnInsert: { _id: newId(), retailer_id: retailerId, is_available: true, sort_order: 0, created_at: now },
+            $setOnInsert: { _id: newId(), retailer_id: retailerId, is_available: true, sort_order: 0, catalog_synced_at: null, created_at: now },
           },
           { upsert: true }
         );
@@ -658,6 +826,9 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
       [{ $set: { onboarding_step: { $max: ['$onboarding_step', 4] } } }]
     );
 
+    // Auto-create product sets from tags/categories, then sync catalog
+    catalog.autoCreateProductSets(branchId)
+      .catch(err => console.error('[Menu] Auto-create sets after CSV upload failed:', err.message));
     catalog.syncBranchCatalog(branchId)
       .catch(err => console.error('[Menu] Auto-sync after CSV upload failed:', err.message));
 
@@ -786,6 +957,210 @@ router.post('/menu/:itemId/variants', async (req, res) => {
 
     catalog.syncBranchCatalog(srcItem.branch_id)
       .catch(err => console.error('[Variant] Auto-sync failed:', err.message));
+
+    res.status(201).json(mapId(newItem));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PRODUCT SETS — browsable catalog sections on WhatsApp
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/product-sets?branch_id=X
+router.get('/product-sets', async (req, res) => {
+  try {
+    const { branch_id } = req.query;
+    if (!branch_id) return res.status(400).json({ error: 'branch_id required' });
+    const sets = await col('product_sets').find({ branch_id }).sort({ sort_order: 1, name: 1 }).toArray();
+    res.json(mapIds(sets));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/product-sets
+router.post('/product-sets', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { branchId, name, type, filterValue, manualRetailerIds, sortOrder } = req.body;
+    if (!branchId || !name || !type) return res.status(400).json({ error: 'branchId, name, type required' });
+    if (!['category', 'tag', 'manual'].includes(type)) return res.status(400).json({ error: 'type must be category, tag, or manual' });
+
+    const branch = await col('branches').findOne({ _id: branchId });
+    if (!branch || branch.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Branch not found' });
+
+    const now = new Date();
+    const set = {
+      _id: newId(),
+      branch_id: branchId,
+      restaurant_id: req.restaurantId,
+      catalog_id: branch.catalog_id || null,
+      meta_product_set_id: null,
+      name,
+      type,
+      filter_value: filterValue || null,
+      manual_retailer_ids: Array.isArray(manualRetailerIds) ? manualRetailerIds : [],
+      is_active: true,
+      sort_order: sortOrder || 0,
+      created_at: now,
+      updated_at: now,
+    };
+    await col('product_sets').insertOne(set);
+
+    // Push to Meta immediately if catalog exists
+    if (branch.catalog_id) {
+      catalog.syncProductSets(branchId)
+        .catch(err => console.error('[ProductSets] Sync after create failed:', err.message));
+    }
+
+    res.status(201).json(mapId(set));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/product-sets/:id
+router.put('/product-sets/:id', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { name, type, filterValue, manualRetailerIds, sortOrder, isActive } = req.body;
+    const $set = { updated_at: new Date() };
+    if (name            !== undefined) $set.name = name;
+    if (type            !== undefined) $set.type = type;
+    if (filterValue     !== undefined) $set.filter_value = filterValue || null;
+    if (manualRetailerIds!== undefined) $set.manual_retailer_ids = Array.isArray(manualRetailerIds) ? manualRetailerIds : [];
+    if (sortOrder       !== undefined) $set.sort_order = sortOrder;
+    if (isActive        !== undefined) $set.is_active = isActive;
+
+    const updated = await col('product_sets').findOneAndUpdate(
+      { _id: req.params.id, restaurant_id: req.restaurantId },
+      { $set },
+      { returnDocument: 'after' }
+    );
+    if (!updated) return res.status(404).json({ error: 'Product set not found' });
+
+    // Re-sync to Meta
+    if (updated.branch_id) {
+      catalog.syncProductSets(updated.branch_id)
+        .catch(err => console.error('[ProductSets] Sync after update failed:', err.message));
+    }
+
+    res.json(mapId(updated));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/restaurant/product-sets/:id
+router.delete('/product-sets/:id', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const set = await col('product_sets').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!set) return res.status(404).json({ error: 'Product set not found' });
+
+    // Delete from Meta first
+    if (set.meta_product_set_id) {
+      try {
+        await catalog.deleteProductSet(set.meta_product_set_id);
+      } catch (err) {
+        console.warn(`[ProductSets] Meta delete failed (continuing): ${err.message}`);
+      }
+    }
+
+    await col('product_sets').deleteOne({ _id: req.params.id });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/product-sets/auto-create — auto-create sets from menu categories/tags
+router.post('/product-sets/auto-create', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { branchId } = req.body;
+    if (!branchId) return res.status(400).json({ error: 'branchId required' });
+    const result = await catalog.autoCreateProductSets(branchId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/product-sets/sync — sync all sets for a branch
+router.post('/product-sets/sync', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { branchId } = req.body;
+    if (!branchId) return res.status(400).json({ error: 'branchId required' });
+    const result = await catalog.syncProductSets(branchId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// VARIANT HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/menu/variants/:itemGroupId — get all variants in a group
+router.get('/menu/variants/:itemGroupId', async (req, res) => {
+  try {
+    const items = await col('menu_items').find({ item_group_id: req.params.itemGroupId }).sort({ sort_order: 1, price_paise: 1 }).toArray();
+    res.json(mapIds(items));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/menu/variant — add a variant to an existing product group
+router.post('/menu/variant', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { itemGroupId, branchId, name, size, priceRs, imageUrl } = req.body;
+    if (!itemGroupId || !branchId || !size || !priceRs) {
+      return res.status(400).json({ error: 'itemGroupId, branchId, size, priceRs required' });
+    }
+
+    // Auto-generate retailer_id from group + size
+    const retailerId = `${itemGroupId}-${size.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+
+    // Copy shared fields from an existing variant in the same group
+    const existing = await col('menu_items').findOne({ item_group_id: itemGroupId, branch_id: branchId });
+
+    const pricePaise = Math.round(parseFloat(priceRs) * 100);
+    const now = new Date();
+    const itemName = name || existing?.name || 'Product';
+
+    const newItem = await col('menu_items').findOneAndUpdate(
+      { retailer_id: retailerId },
+      {
+        $set: {
+          price_paise: pricePaise,
+          size,
+          variant_value: size,
+          image_url: imageUrl || existing?.image_url || null,
+          catalog_sync_status: 'pending',
+          updated_at: now,
+        },
+        $setOnInsert: {
+          _id: newId(),
+          branch_id: branchId,
+          category_id: existing?.category_id || null,
+          name: itemName,
+          description: existing?.description || null,
+          retailer_id: retailerId,
+          food_type: existing?.food_type || 'veg',
+          is_bestseller: existing?.is_bestseller || false,
+          is_available: true,
+          sort_order: 0,
+          item_group_id: itemGroupId,
+          variant_type: existing?.variant_type || 'size',
+          // Copy Meta fields from existing variant
+          product_tags: existing?.product_tags || [],
+          google_product_category: existing?.google_product_category || 'Food, Beverages & Tobacco > Food Items',
+          fb_product_category: existing?.fb_product_category || 'Food & Beverages > Prepared Food',
+          brand: existing?.brand || null,
+          sale_price_paise: null,
+          sale_price_effective_date: null,
+          link: null,
+          quantity_to_sell_on_facebook: null,
+          gender: null, color: null, age_group: null,
+          material: null, pattern: null,
+          shipping: null, shipping_weight: null,
+          video_url: null, video_tag: null,
+          gtin: null, style: null,
+          catalog_synced_at: null,
+          created_at: now,
+        },
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    // Trigger catalog sync
+    catalog.syncBranchCatalog(branchId)
+      .catch(err => console.error('[Variant] Auto-sync after add failed:', err.message));
 
     res.status(201).json(mapId(newItem));
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -4,7 +4,7 @@
 
 const bizSdk = require('facebook-nodejs-business-sdk');
 const axios   = require('axios');
-const { col } = require('../config/database');
+const { col, newId } = require('../config/database');
 
 const Business       = bizSdk.Business;
 const ProductCatalog = bizSdk.ProductCatalog;
@@ -142,45 +142,63 @@ const createBranchCatalog = async (branchId) => {
   return { success: true, catalogId, branchId };
 };
 
-// ─── BUILD BATCH REQUEST FOR A MENU ITEM ─────────────────────
-function _buildItemRequest(item, branch, catMap) {
-  if (!item.retailer_id) return null;
-
-  if (!item.is_available) {
-    return { method: 'DELETE', retailer_id: item.retailer_id, item_type: 'PRODUCT_ITEM' };
-  }
-
-  const displayName = item.variant_value
-    ? `${item.name} - ${item.variant_value}`
-    : item.name;
-
-  const variantFields = {};
-  if (item.item_group_id) {
-    variantFields.item_group_id = item.item_group_id;
-    if (item.variant_value) variantFields.size = item.variant_value;
-  }
-
-  const categoryName = catMap[item.category_id]?.name || 'Menu';
+// ─── MAP MENU ITEM → META COMMERCE MANAGER 29-COLUMN FORMAT ──
+function mapMenuItemToMetaProduct(item, restaurant, branch) {
+  const brandName = item.brand || restaurant?.business_name || 'Restaurant';
+  const priceFormatted = (item.price_paise / 100).toFixed(2) + ' INR';
+  const salePriceFormatted = item.sale_price_paise
+    ? (item.sale_price_paise / 100).toFixed(2) + ' INR'
+    : '';
+  const productLink = item.link || `${process.env.BASE_URL || 'https://gullybite.com'}/menu/${String(item._id)}`;
+  const tags = item.product_tags || [];
 
   return {
-    method      : 'UPDATE',
-    retailer_id : item.retailer_id,
-    item_type   : 'PRODUCT_ITEM',
-    data: {
-      name        : displayName.substring(0, 100),
-      description : (item.description || item.name).substring(0, 1000),
-      price       : item.price_paise,
-      currency    : 'INR',
-      availability: 'in stock',
-      url         : `${process.env.BASE_URL}/menu/${String(item._id)}`,
-      image_url   : item.image_url || `${process.env.BASE_URL}/placeholder.jpg`,
-      google_product_category: '1567',
-      custom_label_0: item.food_type,
-      custom_label_1: branch.name.substring(0, 100),
-      custom_label_2: categoryName,
-      custom_label_3: item.is_bestseller ? 'bestseller' : 'regular',
-      ...variantFields,
-    },
+    id: item.retailer_id || String(item._id),
+    title: (item.name || '').substring(0, 100),
+    description: (item.description || item.name || '').substring(0, 1000),
+    availability: item.is_available ? 'in stock' : 'out of stock',
+    condition: 'new',
+    price: priceFormatted,
+    link: productLink,
+    image_link: item.image_url || '',
+    brand: brandName,
+    google_product_category: item.google_product_category || 'Food, Beverages & Tobacco > Food Items',
+    fb_product_category: item.fb_product_category || 'Food & Beverages > Prepared Food',
+    quantity_to_sell_on_facebook: item.quantity_to_sell_on_facebook != null ? String(item.quantity_to_sell_on_facebook) : '',
+    sale_price: salePriceFormatted,
+    sale_price_effective_date: item.sale_price_effective_date || '',
+    item_group_id: item.item_group_id || '',
+    gender: item.gender || '',
+    color: item.color || '',
+    size: item.size || item.variant_value || '',
+    age_group: item.age_group || '',
+    material: item.material || '',
+    pattern: item.pattern || '',
+    shipping: item.shipping || '',
+    shipping_weight: item.shipping_weight || '',
+    'video[0].url': item.video_url || '',
+    'video[0].tag[0]': item.video_tag || '',
+    gtin: item.gtin || '',
+    'product_tags[0]': tags[0] || '',
+    'product_tags[1]': tags[1] || '',
+    'style[0]': item.style || '',
+  };
+}
+
+// ─── BUILD BATCH REQUEST FOR A MENU ITEM (uses 29-column mapper) ──
+function _buildItemRequest(item, restaurant, branch) {
+  if (!item.retailer_id) return null;
+
+  const retailerId = item.retailer_id;
+
+  // For unavailable items, send UPDATE with "out of stock" instead of DELETE
+  // so Meta keeps the product but marks it unavailable
+  const data = mapMenuItemToMetaProduct(item, restaurant, branch);
+
+  return {
+    method: 'UPDATE',
+    retailer_id: retailerId,
+    data,
   };
 }
 
@@ -211,15 +229,12 @@ const syncBranchCatalog = async (branchId) => {
     }
   }
 
+  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
+
   initSdk(token);
 
   // Get all menu items for this branch
   const items = await col('menu_items').find({ branch_id: branchId }).toArray();
-  const catIds = [...new Set(items.map(i => i.category_id).filter(Boolean))];
-  const cats = catIds.length
-    ? await col('menu_categories').find({ _id: { $in: catIds } }).toArray()
-    : [];
-  const catMap = Object.fromEntries(cats.map(c => [String(c._id), c]));
 
   if (!items.length) {
     return { success: false, message: 'No menu items found for this branch' };
@@ -233,9 +248,11 @@ const syncBranchCatalog = async (branchId) => {
     return (a.sort_order || 0) - (b.sort_order || 0);
   });
 
-  const requests = items.map(item => _buildItemRequest(item, branch, catMap)).filter(Boolean);
+  const requests = items.map(item => _buildItemRequest(item, restaurant, branch)).filter(Boolean);
 
-  const BATCH_SIZE = 100;
+  console.log(`[Catalog] Syncing ${requests.length} items to catalog ${branch.catalog_id} for "${branch.name}"`);
+
+  const BATCH_SIZE = 4999;
   const results = { updated: 0, deleted: 0, failed: 0, errors: [] };
   let catalogFixed = false;
 
@@ -373,16 +390,10 @@ const addProduct = async (menuItemId) => {
   const branch = await col('branches').findOne({ _id: item.branch_id });
   if (!branch?.catalog_id) return { skipped: true, reason: 'No catalog' };
 
-  const { token } = await _getAccessToken(branch.restaurant_id);
+  const { token, restaurant } = await _getAccessToken(branch.restaurant_id);
   initSdk(token);
 
-  const catMap = {};
-  if (item.category_id) {
-    const cat = await col('menu_categories').findOne({ _id: item.category_id });
-    if (cat) catMap[String(cat._id)] = cat;
-  }
-
-  const request = _buildItemRequest(item, branch, catMap);
+  const request = _buildItemRequest(item, restaurant, branch);
   if (!request) return { skipped: true };
 
   try {
@@ -396,6 +407,7 @@ const addProduct = async (menuItemId) => {
       { _id: menuItemId },
       { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
     );
+    console.log(`[Catalog] addProduct synced: ${item.retailer_id}`);
     return { success: true, retailer_id: item.retailer_id };
   } catch (err) {
     const errMsg = err._error?.error?.message || err.message;
@@ -448,19 +460,11 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
 
   if (!branch?.catalog_id || !item.retailer_id) return;
 
-  const { token } = await _getAccessToken(branch.restaurant_id);
+  const { token, restaurant } = await _getAccessToken(branch.restaurant_id);
   initSdk(token);
 
-  const catMap = {};
-  if (item.category_id) {
-    const cat = await col('menu_categories').findOne({ _id: item.category_id });
-    if (cat) catMap[String(cat._id)] = cat;
-  }
-
-  const request = isAvailable
-    ? _buildItemRequest({ ...item, is_available: true }, branch, catMap)
-    : { method: 'DELETE', retailer_id: item.retailer_id, item_type: 'PRODUCT_ITEM' };
-
+  // Use the 29-column mapper — availability is encoded as "in stock" / "out of stock"
+  const request = _buildItemRequest({ ...item, is_available: isAvailable }, restaurant, branch);
   if (!request) return;
 
   try {
@@ -536,64 +540,229 @@ const getSyncStatus = async (restaurantId) => {
   };
 };
 
-// ─── SYNC CATEGORY PRODUCT SETS ──────────────────────────────
-const syncCategoryProductSets = async (branchId) => {
+// ─── PRODUCT SETS — CRUD + SYNC ─────────────────────────────
+
+// Build Meta filter JSON from product_set document
+function _buildSetFilter(set) {
+  if (set.type === 'manual' && set.manual_retailer_ids?.length) {
+    return JSON.stringify({ retailer_id: { is_any: set.manual_retailer_ids } });
+  }
+  if (set.type === 'tag' && set.filter_value) {
+    return JSON.stringify({ 'product_tags[0]': { contains: set.filter_value } });
+  }
+  if (set.type === 'category' && set.filter_value) {
+    return JSON.stringify({ 'product_tags[1]': { contains: set.filter_value } });
+  }
+  // Fallback: empty filter matches all products
+  return JSON.stringify({});
+}
+
+// Create a product set on Meta
+const createProductSet = async (catalogId, name, filter) => {
+  const token = _getCatalogToken();
+  try {
+    const res = await axios.post(
+      `${GRAPH}/${catalogId}/product_sets`,
+      { name, filter },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+    );
+    console.log(`[Catalog] Created product set "${name}" → ${res.data.id}`);
+    return res.data;
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`[Catalog] createProductSet "${name}" failed:`, msg);
+    throw new Error(msg);
+  }
+};
+
+// Update a product set on Meta
+const updateProductSet = async (metaProductSetId, name, filter) => {
+  const token = _getCatalogToken();
+  try {
+    await axios.post(
+      `${GRAPH}/${metaProductSetId}`,
+      { name, filter },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+    );
+    console.log(`[Catalog] Updated product set "${name}" (${metaProductSetId})`);
+    return { success: true };
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`[Catalog] updateProductSet "${name}" failed:`, msg);
+    throw new Error(msg);
+  }
+};
+
+// Delete a product set from Meta
+const deleteProductSet = async (metaProductSetId) => {
+  const token = _getCatalogToken();
+  try {
+    await axios.delete(`${GRAPH}/${metaProductSetId}`, {
+      params: { access_token: token },
+      timeout: 15000,
+    });
+    console.log(`[Catalog] Deleted product set ${metaProductSetId}`);
+    return { success: true };
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`[Catalog] deleteProductSet failed:`, msg);
+    throw new Error(msg);
+  }
+};
+
+// Sync all product_sets for a branch to Meta
+const syncProductSets = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!branch) throw new Error('Branch not found');
+  if (!branch.catalog_id) return { skipped: true, reason: 'No catalog' };
 
-  const { token } = await _getAccessToken(branch.restaurant_id);
+  const sets = await col('product_sets').find({
+    branch_id: branchId,
+    is_active: true,
+  }).sort({ sort_order: 1 }).toArray();
 
-  if (!branch.catalog_id || !token) {
-    return { skipped: true, reason: 'No catalog or access token' };
-  }
+  if (!sets.length) return { skipped: true, reason: 'No product sets' };
 
-  initSdk(token);
+  const results = { created: 0, updated: 0, failed: 0 };
 
-  const availableItems = await col('menu_items').find({
-    branch_id: branchId, is_available: true, category_id: { $ne: null },
-  }).toArray();
-  const catIds = [...new Set(availableItems.map(i => i.category_id))];
-
-  if (!catIds.length) return { skipped: true, reason: 'No categories with available items' };
-
-  const cats = await col('menu_categories').find({ _id: { $in: catIds } }).sort({ sort_order: 1, name: 1 }).toArray();
-  const results = { created: 0, updated: 0, failed: 0, sets: [] };
-
-  const catalogObj = new ProductCatalog(branch.catalog_id);
-
-  for (const cat of cats) {
-    const filter = JSON.stringify({
-      and: [
-        { custom_label_2: { eq: cat.name } },
-        { custom_label_1: { eq: branch.name } },
-      ],
-    });
-
+  for (const set of sets) {
+    const filter = _buildSetFilter(set);
     try {
-      if (cat.meta_set_id) {
-        // Update existing set via raw API (SDK ProductSet.update works too)
-        await axios.post(
-          `${GRAPH}/${cat.meta_set_id}`,
-          { name: cat.name, filter },
-          { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
-        );
+      if (set.meta_product_set_id) {
+        await updateProductSet(set.meta_product_set_id, set.name, filter);
         results.updated++;
       } else {
-        const created = await catalogObj.createProductSet([], { name: cat.name, filter });
-        const setId = created.id;
-        await col('menu_categories').updateOne({ _id: String(cat._id) }, { $set: { meta_set_id: setId } });
-        results.sets.push({ name: cat.name, setId });
+        const created = await createProductSet(branch.catalog_id, set.name, filter);
+        await col('product_sets').updateOne(
+          { _id: set._id },
+          { $set: { meta_product_set_id: created.id, updated_at: new Date() } }
+        );
         results.created++;
       }
-      console.log(`[Catalog] Product set "${cat.name}" synced for branch "${branch.name}"`);
     } catch (err) {
-      const msg = err._error?.error?.message || err.response?.data?.error?.message || err.message;
-      console.error(`[Catalog] Product set failed for "${cat.name}":`, msg);
+      console.error(`[Catalog] Product set "${set.name}" sync failed:`, err.message);
       results.failed++;
     }
   }
 
+  console.log(`[Catalog] syncProductSets for "${branch.name}": created=${results.created}, updated=${results.updated}, failed=${results.failed}`);
   return { success: results.failed === 0, ...results };
+};
+
+// ─── AUTO-CREATE PRODUCT SETS FROM MENU TAGS/CATEGORIES ──────
+const autoCreateProductSets = async (branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch) throw new Error('Branch not found');
+
+  const items = await col('menu_items').find({ branch_id: branchId, is_available: true }).toArray();
+  if (!items.length) return { created: 0, skipped: 0, message: 'No menu items' };
+
+  const now = new Date();
+  let created = 0;
+  let skipped = 0;
+
+  // 1. Extract unique product_tags[1] values → category-based sets
+  const tagValues = new Set();
+  for (const item of items) {
+    const tags = item.product_tags || [];
+    if (tags[1]) tagValues.add(tags[1]);
+  }
+
+  for (const tagVal of tagValues) {
+    const existing = await col('product_sets').findOne({ branch_id: branchId, name: tagVal });
+    if (existing) { skipped++; continue; }
+
+    await col('product_sets').insertOne({
+      _id: newId(),
+      branch_id: branchId,
+      restaurant_id: branch.restaurant_id,
+      catalog_id: branch.catalog_id || null,
+      meta_product_set_id: null,
+      name: tagVal,
+      type: 'category',
+      filter_value: tagVal,
+      manual_retailer_ids: [],
+      is_active: true,
+      sort_order: created + 1,
+      created_at: now,
+      updated_at: now,
+    });
+    created++;
+    console.log(`[Catalog] Auto-created product set "${tagVal}" for branch "${branch.name}"`);
+  }
+
+  // 2. Also create sets from menu_categories if no tag-based sets exist for them
+  const catIds = [...new Set(items.map(i => i.category_id).filter(Boolean))];
+  if (catIds.length) {
+    const cats = await col('menu_categories').find({ _id: { $in: catIds } }).sort({ sort_order: 1 }).toArray();
+    for (const cat of cats) {
+      const existing = await col('product_sets').findOne({ branch_id: branchId, name: cat.name });
+      if (existing) { skipped++; continue; }
+
+      await col('product_sets').insertOne({
+        _id: newId(),
+        branch_id: branchId,
+        restaurant_id: branch.restaurant_id,
+        catalog_id: branch.catalog_id || null,
+        meta_product_set_id: null,
+        name: cat.name,
+        type: 'tag',
+        filter_value: cat.name,
+        manual_retailer_ids: [],
+        is_active: true,
+        sort_order: created + 1,
+        created_at: now,
+        updated_at: now,
+      });
+      created++;
+      console.log(`[Catalog] Auto-created product set from category "${cat.name}" for branch "${branch.name}"`);
+    }
+  }
+
+  // 3. Create "Bestsellers" set from bestseller items
+  const bestsellers = items.filter(i => i.is_bestseller && i.retailer_id);
+  if (bestsellers.length) {
+    const existing = await col('product_sets').findOne({ branch_id: branchId, name: 'Bestsellers' });
+    if (!existing) {
+      await col('product_sets').insertOne({
+        _id: newId(),
+        branch_id: branchId,
+        restaurant_id: branch.restaurant_id,
+        catalog_id: branch.catalog_id || null,
+        meta_product_set_id: null,
+        name: 'Bestsellers',
+        type: 'manual',
+        filter_value: null,
+        manual_retailer_ids: bestsellers.map(i => i.retailer_id),
+        is_active: true,
+        sort_order: -1, // show first
+        created_at: now,
+        updated_at: now,
+      });
+      created++;
+      console.log(`[Catalog] Auto-created "Bestsellers" set (${bestsellers.length} items) for branch "${branch.name}"`);
+    } else {
+      // Update existing Bestsellers set with current bestseller items
+      await col('product_sets').updateOne(
+        { _id: existing._id },
+        { $set: { manual_retailer_ids: bestsellers.map(i => i.retailer_id), updated_at: now } }
+      );
+      skipped++;
+    }
+  }
+
+  // 4. Sync all sets to Meta
+  if (created > 0 && branch.catalog_id) {
+    await syncProductSets(branchId);
+  }
+
+  console.log(`[Catalog] autoCreateProductSets for "${branch.name}": created=${created}, skipped=${skipped}`);
+  return { created, skipped };
+};
+
+// Legacy wrapper — backwards compat with existing syncBranchCatalog call
+const syncCategoryProductSets = async (branchId) => {
+  return syncProductSets(branchId);
 };
 
 // ─── CLEAR STALE CATALOG & RE-DISCOVER ───────────────────────
@@ -648,6 +817,12 @@ module.exports = {
   getCatalogProducts,
   getSyncStatus,
   syncCategoryProductSets,
+  syncProductSets,
+  createProductSet,
+  updateProductSet,
+  deleteProductSet,
+  autoCreateProductSets,
+  mapMenuItemToMetaProduct,
   rediscoverCatalog,
   fetchBusinessCatalogs,
   fetchWabaCatalogs,
