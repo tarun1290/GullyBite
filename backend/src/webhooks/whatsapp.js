@@ -137,6 +137,9 @@ const processChange = async (value) => {
     return;
   }
 
+  // Use system user token for all messaging (never-expiring, set via env var)
+  waAccount.access_token = process.env.META_SYSTEM_USER_TOKEN || waAccount.access_token;
+
   for (const msg of value.messages || []) {
     const senderPhone = msg.from;
     const senderName = value.contacts?.find(c => c.wa_id === senderPhone)?.profile?.name;

@@ -12,18 +12,24 @@ const ProductItem    = bizSdk.ProductItem;
 
 const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
 
-// ── SDK init helper — uses per-restaurant token or platform token ────
+// ── SDK init helper — always uses platform catalog token ────
 function initSdk(accessToken) {
   bizSdk.FacebookAdsApi.init(accessToken);
   return bizSdk.FacebookAdsApi.getDefaultApi();
 }
 
-// ── Get the best available access token for a restaurant ──
+// ── Get the catalog token (never-expiring system user token from env) ──
+function _getCatalogToken() {
+  const token = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN;
+  if (!token) throw new Error('META_CATALOG_TOKEN not configured. Please set this environment variable.');
+  return token;
+}
+
+// ── Get catalog context for a restaurant (token + related docs) ──
 async function _getAccessToken(restaurantId) {
   const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: restaurantId, is_active: true });
   const restaurant = await col('restaurants').findOne({ _id: restaurantId });
-  const token = wa_acc?.access_token || restaurant?.meta_access_token || process.env.WA_CATALOG_TOKEN;
-  if (!token) throw new Error('No Meta access token found. Please reconnect your Meta account.');
+  const token = _getCatalogToken();
   return { token, wa_acc, restaurant };
 }
 
@@ -116,12 +122,12 @@ const createBranchCatalog = async (branchId) => {
   await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: catalogId } });
 
   // STEP D: Associate catalog with WhatsApp account
-  if (wa_acc?.waba_id && wa_acc?.access_token) {
+  if (wa_acc?.waba_id) {
     try {
       await axios.post(
         `${GRAPH}/${wa_acc.waba_id}/product_catalogs`,
         { catalog_id: catalogId },
-        { headers: { Authorization: `Bearer ${wa_acc.access_token}` }, timeout: 10000 }
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
       );
       await col('whatsapp_accounts').updateOne(
         { restaurant_id: branch.restaurant_id, is_active: true },
@@ -601,6 +607,36 @@ const rediscoverCatalog = async (branchId) => {
   return await createBranchCatalog(branchId);
 };
 
+// ─── FETCH CATALOGS FROM META API ────────────────────────────
+const fetchBusinessCatalogs = async (businessId) => {
+  const token = _getCatalogToken();
+  try {
+    const res = await axios.get(`${GRAPH}/${businessId}/owned_product_catalogs`, {
+      params: { fields: 'id,name,product_count,vertical', access_token: token },
+      timeout: 10000,
+    });
+    console.log(`[Catalog] Found ${res.data.data?.length || 0} catalogs for business ${businessId}`);
+    return res.data.data || [];
+  } catch (err) {
+    console.error('[Catalog] Failed to fetch business catalogs:', err.response?.data?.error?.message || err.message);
+    return [];
+  }
+};
+
+const fetchWabaCatalogs = async (wabaId) => {
+  const token = _getCatalogToken();
+  try {
+    const res = await axios.get(`${GRAPH}/${wabaId}/product_catalogs`, {
+      params: { fields: 'id,name,product_count', access_token: token },
+      timeout: 10000,
+    });
+    return res.data.data || [];
+  } catch (err) {
+    console.error('[Catalog] Failed to fetch WABA catalogs:', err.response?.data?.error?.message || err.message);
+    return [];
+  }
+};
+
 module.exports = {
   createBranchCatalog,
   syncBranchCatalog,
@@ -613,4 +649,6 @@ module.exports = {
   getSyncStatus,
   syncCategoryProductSets,
   rediscoverCatalog,
+  fetchBusinessCatalogs,
+  fetchWabaCatalogs,
 };

@@ -413,10 +413,40 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
 
     await _saveWabaAccounts(req.restaurantId, wabaData, longToken, sessionInfo);
 
-    // Step 6: Verify what was saved
+    // Step 6: Auto-fetch catalog info using system token
+    const catToken = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN;
+    if (catToken) {
+      try {
+        const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+        if (wa_acc?.waba_id) {
+          console.log('[connect-meta] 6. Auto-fetching catalogs for WABA', wa_acc.waba_id);
+          const wabaCatRes = await axios.get(`${META_GRAPH_URL}/${wa_acc.waba_id}/product_catalogs`, {
+            params: { fields: 'id,name,product_count', access_token: catToken }, timeout: 10000,
+          });
+          const catalogs = wabaCatRes.data?.data || [];
+          if (catalogs.length) {
+            const primaryCatalog = catalogs.find(c => c.vertical === 'commerce') || catalogs[0];
+            await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: {
+              meta_catalog_id: primaryCatalog.id,
+              meta_catalog_name: primaryCatalog.name,
+              meta_available_catalogs: catalogs.map(c => ({ id: c.id, name: c.name, product_count: c.product_count })),
+              catalog_auto_fetched: true,
+              catalog_fetched_at: new Date(),
+            }});
+            console.log(`[connect-meta] 6. Auto-linked catalog "${primaryCatalog.name}" (${primaryCatalog.id})`);
+          } else {
+            console.log('[connect-meta] 6. No existing catalogs found — will be created on first menu item');
+          }
+        }
+      } catch (e) {
+        console.warn('[connect-meta] 6. Catalog auto-fetch failed (non-fatal):', e.response?.data?.error?.message || e.message);
+      }
+    }
+
+    // Step 7: Verify what was saved
     const waAccountCount = await col('whatsapp_accounts').countDocuments({ restaurant_id: req.restaurantId });
-    console.log('[connect-meta] 6. WhatsApp accounts in DB after save:', waAccountCount);
-    console.log('[connect-meta] 6. Success — restaurant', req.restaurantId, 'connected. Fields saved: meta_user_id=' + metaUser.id + ', whatsapp_connected=true, waba_accounts=' + waAccountCount);
+    console.log('[connect-meta] 7. WhatsApp accounts in DB after save:', waAccountCount);
+    console.log('[connect-meta] 7. Success — restaurant', req.restaurantId, 'connected. Fields saved: meta_user_id=' + metaUser.id + ', whatsapp_connected=true, waba_accounts=' + waAccountCount);
     res.json({ connected: true });
   } catch (err) {
     console.error('[connect-meta] FAILED:', JSON.stringify(err.response?.data || err.message));
@@ -768,13 +798,15 @@ async function _subscribeWaba(wabaId) {
 // ─── REGISTER PHONE NUMBER WITH CLOUD API ────────────────────
 // Resolves "Connecting phone number to [App]" in WhatsApp Business Manager.
 // Must be called once per phone number after Embedded Signup.
-async function _registerPhoneNumber(phoneNumberId, accessToken) {
+async function _registerPhoneNumber(phoneNumberId, _accessToken) {
+  const sysToken = process.env.META_SYSTEM_USER_TOKEN || _accessToken;
+  if (!sysToken) { console.warn('[Register] META_SYSTEM_USER_TOKEN not configured, skipping'); return; }
   try {
     await axios.post(
       `${META_GRAPH_URL}/${phoneNumberId}/register`,
       { messaging_product: 'whatsapp', pin: '000000' },
       {
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${sysToken}`, 'Content-Type': 'application/json' },
         timeout: 10000,
       }
     );
@@ -802,7 +834,10 @@ async function _registerPhoneNumber(phoneNumberId, accessToken) {
 // ─── AUTO-PROVISION CATALOG PER WABA ─────────────────────────
 // Creates one Meta catalog per WABA (if missing), links it to the WABA,
 // enables the cart icon on every phone number, and propagates to branches.
-async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
+async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
+  const catToken = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN || _accessToken;
+  if (!catToken) { console.warn('[Catalog] META_CATALOG_TOKEN not configured, skipping'); return; }
+
   // Check if any account for this WABA already has a catalog_id
   const existingAcc = await col('whatsapp_accounts').findOne(
     { waba_id: wabaId, catalog_id: { $exists: true, $ne: null } }
@@ -814,10 +849,10 @@ async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
     const restaurant = await col('restaurants').findOne({ _id: restaurantId });
     if (!restaurant) return;
 
-    // Try fetching catalogs already linked to this WABA (avoids (#100) permission error on creation)
+    // Try fetching catalogs already linked to this WABA
     try {
       const wabaRes = await axios.get(`${META_GRAPH_URL}/${wabaId}/product_catalogs`, {
-        params: { access_token: accessToken, fields: 'id,name' },
+        params: { access_token: catToken, fields: 'id,name' },
         timeout: 10000,
       });
       const existing = wabaRes.data?.data || [];
@@ -834,7 +869,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
       let businessId;
       try {
         const meRes = await axios.get(`${META_GRAPH_URL}/me/businesses`, {
-          params: { access_token: accessToken, fields: 'id,name' },
+          params: { access_token: catToken, fields: 'id,name' },
           timeout: 10000,
         });
         const businesses = meRes.data?.data || [];
@@ -847,7 +882,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
       // Check if business already owns any catalogs before trying to create one
       try {
         const bizCatRes = await axios.get(`${META_GRAPH_URL}/${businessId}/owned_product_catalogs`, {
-          params: { access_token: accessToken, fields: 'id,name' },
+          params: { access_token: catToken, fields: 'id,name' },
           timeout: 10000,
         });
         const bizCatalogs = bizCatRes.data?.data || [];
@@ -866,7 +901,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
           const createRes = await axios.post(
             `${META_GRAPH_URL}/${businessId}/owned_product_catalogs`,
             { name: catalogName, vertical: 'commerce' },
-            { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+            { headers: { Authorization: `Bearer ${catToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
           );
           catalogId = createRes.data.id;
           console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
@@ -881,7 +916,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
       await axios.post(
         `${META_GRAPH_URL}/${wabaId}/product_catalogs`,
         { catalog_id: catalogId },
-        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 10000 }
+        { headers: { Authorization: `Bearer ${catToken}`, 'Content-Type': 'application/json' }, timeout: 10000 }
       );
       console.log(`[Catalog] Linked catalog ${catalogId} to WABA ${wabaId}`);
     } catch (err) {
@@ -895,10 +930,19 @@ async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
     );
   }
 
+  // Store catalog info on the restaurant document for dashboard display
+  if (catalogId) {
+    await col('restaurants').updateOne(
+      { _id: restaurantId },
+      { $set: { meta_catalog_id: catalogId, catalog_fetched_at: new Date() } }
+    );
+  }
+
   // Enable cart icon + catalog visibility on every phone number under this WABA
+  const sysToken = process.env.META_SYSTEM_USER_TOKEN || catToken;
   const phones = await col('whatsapp_accounts').find({ waba_id: wabaId }).toArray();
   for (const phone of phones) {
-    await _enableCommerceSettings(phone.phone_number_id, catalogId, accessToken);
+    await _enableCommerceSettings(phone.phone_number_id, catalogId, sysToken);
   }
 
   // Propagate catalog_id to existing branches that don't have one
@@ -908,7 +952,9 @@ async function _provisionWabaCatalog(restaurantId, wabaId, accessToken) {
 // ─── ENABLE CART ICON ON A PHONE NUMBER ──────────────────────
 // Calls POST /{phone_number_id}/whatsapp_commerce_settings to show
 // the catalog/cart icon inside WhatsApp chats for that number.
-async function _enableCommerceSettings(phoneNumberId, catalogId, accessToken) {
+async function _enableCommerceSettings(phoneNumberId, catalogId, _accessToken) {
+  const sysToken = process.env.META_SYSTEM_USER_TOKEN || _accessToken;
+  if (!sysToken) { console.warn('[Commerce] META_SYSTEM_USER_TOKEN not configured, skipping'); return; }
   try {
     await axios.post(
       `${META_GRAPH_URL}/${phoneNumberId}/whatsapp_commerce_settings`,
@@ -917,7 +963,7 @@ async function _enableCommerceSettings(phoneNumberId, catalogId, accessToken) {
         is_cart_enabled   : true,
       },
       {
-        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${sysToken}`, 'Content-Type': 'application/json' },
         timeout: 10000,
       }
     );

@@ -143,7 +143,9 @@ router.get('/whatsapp/:id/setup-status', async (req, res) => {
   try {
     const wa = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!wa) return res.status(404).json({ error: 'WhatsApp account not found' });
-    if (!wa.access_token) return res.status(400).json({ error: 'No access token' });
+    const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+    if (!sysToken && !wa.access_token) return res.status(400).json({ error: 'META_SYSTEM_USER_TOKEN not configured' });
+    const effectiveToken = sysToken || wa.access_token;
 
     const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
     const axios = require('axios');
@@ -152,7 +154,7 @@ router.get('/whatsapp/:id/setup-status', async (req, res) => {
     let phoneStatus = null;
     try {
       const r = await axios.get(`${GRAPH}/${wa.phone_number_id}`, {
-        params: { fields: 'verified_name,display_phone_number,status,quality_rating,is_official_business_account,account_mode', access_token: wa.access_token },
+        params: { fields: 'verified_name,display_phone_number,status,quality_rating,is_official_business_account,account_mode', access_token: effectiveToken },
         timeout: 8000,
       });
       phoneStatus = r.data;
@@ -187,25 +189,23 @@ router.post('/whatsapp/:id/complete-setup', async (req, res) => {
   try {
     const wa = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!wa) return res.status(404).json({ error: 'WhatsApp account not found' });
-    if (!wa.access_token) return res.status(400).json({ error: 'No access token — please reconnect your Meta account' });
-
     const { _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings } = require('./auth');
     const results = { register: null, catalog: null, cart: null };
 
     try {
-      await _registerPhoneNumber(wa.phone_number_id, wa.access_token);
+      await _registerPhoneNumber(wa.phone_number_id);
       results.register = 'ok';
     } catch (e) { results.register = e.message; }
 
     try {
-      await _provisionWabaCatalog(req.restaurantId, wa.waba_id, wa.access_token);
+      await _provisionWabaCatalog(req.restaurantId, wa.waba_id);
       results.catalog = 'ok';
     } catch (e) { results.catalog = e.message; }
 
     try {
       const updated = await col('whatsapp_accounts').findOne({ _id: req.params.id });
       if (updated.catalog_id) {
-        await _enableCommerceSettings(wa.phone_number_id, updated.catalog_id, wa.access_token);
+        await _enableCommerceSettings(wa.phone_number_id, updated.catalog_id);
         results.cart = 'ok';
       } else {
         results.cart = 'skipped — no catalog yet';
@@ -229,10 +229,8 @@ router.post('/whatsapp/:id/provision-catalog', async (req, res) => {
   try {
     const wa = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!wa) return res.status(404).json({ error: 'WhatsApp account not found' });
-    if (!wa.access_token) return res.status(400).json({ error: 'No access token — please reconnect your Meta account' });
-
     const { _provisionWabaCatalog } = require('./auth');
-    await _provisionWabaCatalog(req.restaurantId, wa.waba_id, wa.access_token);
+    await _provisionWabaCatalog(req.restaurantId, wa.waba_id);
 
     const updated = await col('whatsapp_accounts').findOne({ _id: req.params.id });
     res.json({ success: true, catalog_id: updated.catalog_id, cart_enabled: updated.cart_enabled });
@@ -881,6 +879,101 @@ router.post('/catalog/toggle-auto-sync', async (req, res) => {
     );
     res.json({ success: true, catalogSyncEnabled: !!enabled });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/catalogs — List available catalogs from Meta
+router.get('/catalogs', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+
+    if (!restaurant?.meta_user_id && !wa_acc?.waba_id) {
+      return res.status(400).json({ error: 'Meta Business not connected. Complete WhatsApp setup first.' });
+    }
+
+    const catToken = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN;
+    if (!catToken) return res.status(500).json({ error: 'META_CATALOG_TOKEN not configured on the server.' });
+
+    let catalogs = [];
+
+    // Try WABA catalogs first
+    if (wa_acc?.waba_id) {
+      catalogs = await catalog.fetchWabaCatalogs(wa_acc.waba_id);
+    }
+
+    // If none found via WABA, try business catalogs
+    if (!catalogs.length && restaurant?.meta_business_id) {
+      catalogs = await catalog.fetchBusinessCatalogs(restaurant.meta_business_id);
+    }
+
+    // If still none, try fetching business ID from Meta and then catalogs
+    if (!catalogs.length) {
+      try {
+        const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+        const meRes = await require('axios').get(`${GRAPH}/me/businesses`, {
+          params: { access_token: catToken, fields: 'id,name' }, timeout: 10000,
+        });
+        const businesses = meRes.data?.data || [];
+        if (businesses.length) {
+          const bizId = businesses[0].id;
+          if (!restaurant.meta_business_id) {
+            await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_business_id: bizId } });
+          }
+          catalogs = await catalog.fetchBusinessCatalogs(bizId);
+        }
+      } catch (e) {
+        console.warn('[Catalogs] Business lookup failed:', e.response?.data?.error?.message || e.message);
+      }
+    }
+
+    // Update stored list
+    if (catalogs.length) {
+      await col('restaurants').updateOne(
+        { _id: req.restaurantId },
+        { $set: { meta_available_catalogs: catalogs, catalog_fetched_at: new Date() } }
+      );
+    }
+
+    // Determine active catalog
+    const activeCatalogId = restaurant?.meta_catalog_id || wa_acc?.catalog_id || null;
+
+    res.json({ active_catalog_id: activeCatalogId, catalogs });
+  } catch (e) {
+    console.error('[Catalogs] Failed:', e.message);
+    res.status(500).json({ error: 'Failed to fetch catalogs from Meta' });
+  }
+});
+
+// PUT /api/restaurant/catalog — Change active catalog
+router.put('/catalog', async (req, res) => {
+  try {
+    const { catalog_id, catalog_name } = req.body;
+    if (!catalog_id) return res.status(400).json({ error: 'catalog_id is required' });
+
+    // Update restaurant
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { meta_catalog_id: catalog_id, meta_catalog_name: catalog_name || '', updated_at: new Date() } }
+    );
+
+    // Update all whatsapp accounts
+    await col('whatsapp_accounts').updateMany(
+      { restaurant_id: req.restaurantId },
+      { $set: { catalog_id: catalog_id, updated_at: new Date() } }
+    );
+
+    // Update all branches
+    await col('branches').updateMany(
+      { restaurant_id: req.restaurantId },
+      { $set: { catalog_id: catalog_id, updated_at: new Date() } }
+    );
+
+    console.log(`[Catalog] Restaurant ${req.restaurantId} switched to catalog ${catalog_id}`);
+    res.json({ success: true, catalog_id });
+  } catch (e) {
+    console.error('[Catalog] Switch failed:', e.message);
+    res.status(500).json({ error: 'Failed to update catalog' });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1584,9 +1677,10 @@ router.get('/whatsapp/templates', requireApproved, async (req, res) => {
     if (!wa_acc) return res.status(404).json({ error: 'No active WhatsApp account found. Connect your account first.' });
 
     const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+    const sysToken = process.env.META_SYSTEM_USER_TOKEN || wa_acc.access_token;
     const { data } = await axios.get(`${GRAPH}/${wa_acc.waba_id}/message_templates`, {
       params: { fields: 'name,status,category,language,components', limit: 200 },
-      headers: { Authorization: `Bearer ${wa_acc.access_token}` },
+      headers: { Authorization: `Bearer ${sysToken}` },
       timeout: 10000,
     });
     res.json(data.data || []);
@@ -1644,7 +1738,8 @@ router.delete('/whatsapp/template-mappings/:eventName', requireApproved, async (
 });
 
 // ─── SHARED: SEND STATUS NOTIFICATION (template → text fallback) ──────────
-async function notifyOrderStatus(restaurantId, pid, token, waPhone, status, orderData) {
+async function notifyOrderStatus(restaurantId, pid, _token, waPhone, status, orderData) {
+  const token = process.env.META_SYSTEM_USER_TOKEN || _token;
   const mapping = await col('whatsapp_template_mappings').findOne({
     restaurant_id: restaurantId,
     event_name: status,
@@ -1682,7 +1777,8 @@ router.post('/catalog/register-feed', async (req, res) => {
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
 
-    if (!wa_acc?.access_token) return res.status(400).json({ error: 'No Meta access token. Please reconnect WhatsApp.' });
+    const catToken = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN || wa_acc?.access_token;
+    if (!catToken) return res.status(400).json({ error: 'META_CATALOG_TOKEN not configured.' });
 
     // Generate or reuse feed token
     let feedToken = restaurant.catalog_feed_token;
@@ -1707,7 +1803,7 @@ router.post('/catalog/register-feed', async (req, res) => {
         await axios.post(
           `${GRAPH}/${restaurant.meta_feed_id}`,
           { schedule: { interval: 'DAILY', url: feedUrl, hour: 2 } },
-          { headers: { Authorization: `Bearer ${wa_acc.access_token}` }, timeout: 15000 }
+          { headers: { Authorization: `Bearer ${catToken}` }, timeout: 15000 }
         );
         await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { catalog_feed_url: feedUrl, catalog_feed_updated_at: new Date() } });
         return res.json({ success: true, feedId: restaurant.meta_feed_id, feedUrl, updated: true });
@@ -1725,7 +1821,7 @@ router.post('/catalog/register-feed', async (req, res) => {
         name: feedName,
         schedule: { interval: 'DAILY', url: feedUrl, hour: 2 },
       },
-      { headers: { Authorization: `Bearer ${wa_acc.access_token}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+      { headers: { Authorization: `Bearer ${catToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
     );
 
     const feedId = feedRes.data.id;
@@ -1755,7 +1851,7 @@ router.get('/catalog/feed-status', async (req, res) => {
     let lastUpload = null;
     try {
       const r = await axios.get(`${GRAPH}/${restaurant.meta_feed_id}/uploads`, {
-        params: { access_token: wa_acc?.access_token, limit: 1, fields: 'end_time,num_detected_items,num_invalid_items,url' },
+        params: { access_token: process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN || wa_acc?.access_token, limit: 1, fields: 'end_time,num_detected_items,num_invalid_items,url' },
         timeout: 10000,
       });
       lastUpload = r.data?.data?.[0] || null;

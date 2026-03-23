@@ -1467,13 +1467,36 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
 
 
-        <!-- Meta Catalog Sync -->
+        <!-- Meta Catalog -->
         <div class="card" style="margin-bottom:1.2rem">
           <div class="ch"><h3>Meta Product Catalog</h3></div>
           <div class="cb">
-            <p style="font-size:.82rem;color:var(--dim);margin-bottom:1rem;line-height:1.6">
-              Sync your menu items to Meta's Product Catalog for WhatsApp Commerce, Instagram Shopping, and Facebook Shops.
-            </p>
+            <!-- Connected Catalog Display -->
+            <div id="catalog-connected-box" style="display:none;padding:.8rem 1rem;border-radius:8px;background:var(--surface2,#f4f4f5);margin-bottom:1rem">
+              <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem">
+                <span style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>
+                <span style="font-weight:600;font-size:.88rem" id="catalog-active-name">—</span>
+              </div>
+              <div style="font-size:.78rem;color:var(--dim);margin-bottom:.4rem">
+                Catalog ID: <code id="catalog-active-id" style="background:var(--ink2);padding:.1rem .4rem;border-radius:4px;font-size:.75rem">—</code>
+              </div>
+              <div id="catalog-product-count" style="font-size:.78rem;color:var(--dim)"></div>
+            </div>
+            <div id="catalog-not-connected" style="display:none;padding:.8rem 1rem;border-radius:8px;background:#fffbeb;margin-bottom:1rem">
+              <p style="font-size:.82rem;color:#92400e;margin:0">No catalog linked yet. One will be auto-created when you add your first menu item, or click "Create Catalog" below.</p>
+            </div>
+            <div id="catalog-loading" style="font-size:.82rem;color:var(--dim);margin-bottom:1rem">Loading catalog info...</div>
+
+            <!-- Change Catalog Dropdown -->
+            <div id="catalog-change-section" style="display:none;margin-bottom:1rem">
+              <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:.4rem">Change Catalog</label>
+              <div style="display:flex;gap:.5rem;align-items:center">
+                <select id="catalog-select" style="flex:1;padding:.45rem .6rem;border:1px solid var(--bdr);border-radius:6px;font-size:.82rem;background:var(--bg);color:var(--fg)"></select>
+                <button class="btn-p btn-sm" onclick="doChangeCatalog()">Save</button>
+              </div>
+            </div>
+
+            <!-- Sync Status -->
             <div id="catalog-status-box" style="padding:.7rem 1rem;border-radius:8px;background:var(--surface2,#f4f4f5);margin-bottom:1rem">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
                 <span style="font-weight:600;font-size:.85rem">Sync Status</span>
@@ -1490,6 +1513,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <div style="display:flex;gap:.6rem">
               <button class="btn-p" id="catalog-sync-btn" onclick="doCatalogSync()">Sync All Items Now</button>
               <button class="btn-g" id="catalog-create-btn" onclick="doCatalogCreate()">Create Catalog</button>
+              <button class="btn-g" id="catalog-refresh-btn" onclick="loadCatalogStatus()">Refresh</button>
             </div>
           </div>
         </div>
@@ -2549,18 +2573,12 @@ function renderBranchCard(b) {
           <div class="cat-ico">⏳</div>
           <div class="cat-inf">
             <h4 style="color:var(--gold2)">Catalog not created yet</h4>
-            <p>Catalog is created automatically when you add menu items. Or click ⚡ to create now.
-              <br><span style="color:var(--dim);font-size:.75rem">If auto-creation fails, paste your Catalog ID from <a href="https://business.facebook.com/commerce" target="_blank" style="color:var(--wa)">Meta Business Suite</a> below.</span>
-            </p>
+            <p>Catalog is created automatically when you add menu items. Or click ⚡ to create now.</p>
           </div>
           <div class="cat-acts">
             <button class="btn-p btn-sm" onclick="doCreateCatalog('${b.id}','${b.name.replace(/'/g, "\\'")}',this)">⚡ Create Catalog</button>
             <button class="btn-g btn-sm" onclick="loadBranches()">🔄 Refresh</button>
           </div>
-        </div>
-        <div style="display:flex;gap:.5rem;margin-top:.6rem;align-items:center">
-          <input id="manual-cat-${b.id}" placeholder="Paste Catalog ID from Meta Business Suite (optional)" style="flex:1;font-size:.78rem;padding:.38rem .6rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:6px;color:var(--fg)">
-          <button class="btn-g btn-sm" onclick="doSetManualCatalog('${b.id}',this)">Save ID</button>
         </div>
       </div>`;
   } else if (!b.catalog_synced_at) {
@@ -2663,17 +2681,7 @@ async function doCreateCatalog(branchId, branchName, btn) {
   } catch (e) { toast(e.message, 'err'); loadBranches(); }
 }
 
-async function doSetManualCatalog(branchId, btn) {
-  const catId = document.getElementById('manual-cat-' + branchId)?.value.trim();
-  if (!catId) return toast('Paste a Catalog ID first', 'err');
-  btn.disabled = true; btn.textContent = 'Saving…';
-  try {
-    await api(`/api/restaurant/branches/${branchId}`, { method: 'PATCH', body: { catalogId: catId } });
-    toast('✅ Catalog ID saved! You can now sync your menu.', 'ok');
-    loadBranches();
-  } catch (e) { toast(e.message, 'err'); }
-  finally { btn.disabled = false; btn.textContent = 'Save ID'; }
-}
+// Manual catalog ID input removed — catalogs are auto-fetched from Meta
 
 async function doSync(branchId, branchName) {
   const btn = document.getElementById('sbtn-' + branchId);
@@ -4060,29 +4068,85 @@ async function doSaveChargeConfig() {
 
 /* ─── META CATALOG ─────────────────────────────────────── */
 async function loadCatalogStatus() {
+  const loadingEl = document.getElementById('catalog-loading');
+  const connBox = document.getElementById('catalog-connected-box');
+  const notConn = document.getElementById('catalog-not-connected');
+  const changeSec = document.getElementById('catalog-change-section');
+
   try {
-    const d = await api('/api/restaurant/catalog/status');
-    if (!d) return;
+    // Fetch sync status and catalog list in parallel
+    const [d, catData] = await Promise.all([
+      api('/api/restaurant/catalog/status'),
+      api('/api/restaurant/catalogs').catch(() => null),
+    ]);
 
-    const lastSync = d.lastFullSync ? new Date(d.lastFullSync).toLocaleString() : 'Never synced';
-    document.getElementById('catalog-last-sync').textContent = lastSync;
-    document.getElementById('catalog-auto-sync').checked = d.catalogSyncEnabled || false;
+    if (loadingEl) loadingEl.style.display = 'none';
 
-    if (d.branches && d.branches.length) {
-      const html = d.branches.map(b => {
-        const syncIcon = b.catalogId ? '✓' : '—';
-        return `<div style="display:flex;justify-content:space-between;padding:.25rem 0;border-bottom:1px solid var(--rim,#e5e7eb)">
-          <span>${b.branchName}</span>
-          <span>${syncIcon} ${b.syncedItems}/${b.totalItems} synced${b.errorItems ? ` · <span style="color:var(--red,#dc2626)">${b.errorItems} errors</span>` : ''}</span>
-        </div>`;
-      }).join('');
-      document.getElementById('catalog-branch-stats').innerHTML = html;
+    // Show sync status
+    if (d) {
+      const lastSync = d.lastFullSync ? new Date(d.lastFullSync).toLocaleString() : 'Never synced';
+      document.getElementById('catalog-last-sync').textContent = lastSync;
+      document.getElementById('catalog-auto-sync').checked = d.catalogSyncEnabled || false;
+
+      if (d.branches && d.branches.length) {
+        const html = d.branches.map(b => {
+          const syncIcon = b.catalogId ? '✓' : '—';
+          return `<div style="display:flex;justify-content:space-between;padding:.25rem 0;border-bottom:1px solid var(--rim,#e5e7eb)">
+            <span>${b.branchName}</span>
+            <span>${syncIcon} ${b.syncedItems}/${b.totalItems} synced${b.errorItems ? ` · <span style="color:var(--red,#dc2626)">${b.errorItems} errors</span>` : ''}</span>
+          </div>`;
+        }).join('');
+        document.getElementById('catalog-branch-stats').innerHTML = html;
+      } else {
+        document.getElementById('catalog-branch-stats').textContent = 'No branches found';
+      }
+    }
+
+    // Show connected catalog info
+    if (catData && catData.catalogs && catData.catalogs.length) {
+      const active = catData.catalogs.find(c => c.id === catData.active_catalog_id) || catData.catalogs[0];
+      connBox.style.display = 'block';
+      notConn.style.display = 'none';
+      document.getElementById('catalog-active-name').textContent = active.name || 'Unnamed Catalog';
+      document.getElementById('catalog-active-id').textContent = active.id;
+      const countEl = document.getElementById('catalog-product-count');
+      if (countEl) countEl.textContent = active.product_count != null ? `${active.product_count} products` : '';
+
+      // Populate change dropdown if multiple catalogs
+      if (catData.catalogs.length > 1) {
+        changeSec.style.display = 'block';
+        const select = document.getElementById('catalog-select');
+        select.innerHTML = catData.catalogs.map(c =>
+          `<option value="${c.id}" ${c.id === catData.active_catalog_id ? 'selected' : ''}>${c.name || c.id} (${c.product_count ?? 0} products)</option>`
+        ).join('');
+      } else {
+        changeSec.style.display = 'none';
+      }
+    } else if (catData && catData.error) {
+      connBox.style.display = 'none';
+      notConn.style.display = 'block';
+      notConn.querySelector('p').textContent = catData.error;
     } else {
-      document.getElementById('catalog-branch-stats').textContent = 'No branches found';
+      connBox.style.display = 'none';
+      notConn.style.display = 'block';
     }
   } catch (e) {
+    if (loadingEl) loadingEl.style.display = 'none';
+    notConn.style.display = 'block';
     document.getElementById('catalog-branch-stats').textContent = 'Could not load status';
   }
+}
+
+async function doChangeCatalog() {
+  const select = document.getElementById('catalog-select');
+  if (!select) return;
+  const catalogId = select.value;
+  const catalogName = select.options[select.selectedIndex]?.text || '';
+  try {
+    await api('/api/restaurant/catalog', { method: 'PUT', body: { catalog_id: catalogId, catalog_name: catalogName } });
+    toast('Catalog updated!', 'ok');
+    loadCatalogStatus();
+  } catch (e) { toast(e.message || 'Failed to update catalog', 'err'); }
 }
 
 async function doCatalogSync() {

@@ -321,7 +321,8 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
       try {
         const customer = await col('customers').findOne({ _id: updated.customer_id });
         const waAcc    = await col('whatsapp_accounts').findOne({ restaurant_id: updated.restaurant_id, is_active: true });
-        if (customer?.wa_phone && waAcc?.phone_number_id && waAcc?.access_token) {
+        const waToken = process.env.META_SYSTEM_USER_TOKEN || waAcc?.access_token;
+        if (customer?.wa_phone && waAcc?.phone_number_id && waToken) {
           // Loyalty points
           try {
             const loyalty = require('./loyalty');
@@ -332,13 +333,13 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
               if (reward.tierUpgraded) {
                 msg = `🎊 *Congratulations!* You've been upgraded to *${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}*!\n\n` + msg;
               }
-              await wa.sendText(waAcc.phone_number_id, waAcc.access_token, customer.wa_phone, msg);
+              await wa.sendText(waAcc.phone_number_id, waToken, customer.wa_phone, msg);
             }
           } catch (e) { console.error('[Loyalty] earn error:', e.message); }
 
           // Rating request (after loyalty msg)
           const { sendRatingRequest } = require('../webhooks/whatsapp');
-          await sendRatingRequest(orderId, waAcc.phone_number_id, waAcc.access_token, customer.wa_phone);
+          await sendRatingRequest(orderId, waAcc.phone_number_id, waToken, customer.wa_phone);
         }
       } catch (e) { console.error('[Rating] delayed send error:', e.message); }
     }, 2 * 60 * 1000);
