@@ -280,7 +280,7 @@ router.get('/google/callback', async (req, res) => {
 // META_OAUTH_REDIRECT_URI in .env must point to {BASE_URL}/auth/callback
 router.get('/callback', async (req, res) => {
   const { code, error, error_reason } = req.query;
-  console.log('[Meta Callback] Hit — code:', !!code, 'error:', error || 'none', 'reason:', error_reason || 'none');
+  console.log('[Meta Callback] 1. Hit — code:', !!code, 'error:', error || 'none', 'reason:', error_reason || 'none');
 
   if (error || !code) {
     console.error('[Meta Callback] No code or error present');
@@ -288,7 +288,8 @@ router.get('/callback', async (req, res) => {
   }
 
   try {
-    // Exchange code for long-lived token using server-side redirect URI
+    // Exchange code for token using server-side redirect URI
+    console.log('[Meta Callback] 2. Exchanging code, redirect_uri:', process.env.META_OAUTH_REDIRECT_URI);
     const tokenRes = await axios.post(`${META_GRAPH_URL}/oauth/access_token`, {
       client_id: process.env.META_APP_ID,
       client_secret: process.env.META_APP_SECRET,
@@ -297,19 +298,18 @@ router.get('/callback', async (req, res) => {
       grant_type: 'authorization_code',
     });
     const longToken = tokenRes.data.access_token;
-    const expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
-    console.log('[Meta Callback] Token exchange successful');
+    console.log('[Meta Callback] 2. Token exchange successful, token length:', longToken?.length, 'expires_in:', tokenRes.data.expires_in);
 
     // Fetch Meta user profile
     const userRes = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
     const metaUser = userRes.data;
-    console.log('[Meta Callback] Meta user:', { id: metaUser.id, name: metaUser.name });
+    console.log('[Meta Callback] 3. Meta user:', { id: metaUser.id, name: metaUser.name });
 
-    // Redirect to frontend with the Meta access token as a query param.
-    // The dashboard picks this up and calls POST /connect-meta with the user's JWT + this token.
+    // Redirect to frontend — the dashboard will call POST /connect-meta with the user's JWT + this token
+    console.log('[Meta Callback] 4. Redirecting to dashboard with meta_access_token');
     res.redirect(`/dashboard.html?meta_access_token=${encodeURIComponent(longToken)}`);
   } catch (err) {
-    console.error('[Meta Callback] FAILED:', err.response?.data || err.message);
+    console.error('[Meta Callback] FAILED:', JSON.stringify(err.response?.data || err.message));
     res.redirect('/?error=meta_auth_failed&reason=' + encodeURIComponent(err.response?.data?.error?.message || err.message));
   }
 });
@@ -329,8 +329,7 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     if (code) {
       // JS SDK codes require JS_SDK_REDIRECT_URI; server-side OAuth codes use META_OAUTH_REDIRECT_URI
       const redirectUri = fromJsSdk ? JS_SDK_REDIRECT_URI : process.env.META_OAUTH_REDIRECT_URI;
-      console.log('[connect-meta] Exchanging code, redirect_uri:', redirectUri, 'META_APP_ID:', process.env.META_APP_ID);
-      // Meta requires POST + grant_type for embedded signup code exchange
+      console.log('[connect-meta] 1. Exchanging code, redirect_uri:', redirectUri, 'fromJsSdk:', fromJsSdk);
       const tokenRes = await axios.post(`${META_GRAPH_URL}/oauth/access_token`, {
         client_id: process.env.META_APP_ID,
         client_secret: process.env.META_APP_SECRET,
@@ -340,37 +339,66 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
       });
       longToken = tokenRes.data.access_token;
       expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
+      console.log('[connect-meta] 1. Code exchange successful, token length:', longToken?.length);
     } else {
+      // accessToken path — exchange short-lived token for long-lived
+      console.log('[connect-meta] 1. Exchanging access token (fb_exchange_token), token length:', accessToken?.length);
       const longRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
         params: { grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID,
                   client_secret: process.env.META_APP_SECRET, fb_exchange_token: accessToken },
       });
       longToken = longRes.data.access_token;
       expiresAt = longRes.data.expires_in ? new Date(Date.now() + longRes.data.expires_in * 1000) : null;
+      console.log('[connect-meta] 1. Token exchange successful, new token length:', longToken?.length);
     }
 
-    console.log('[connect-meta] Token exchange successful, got long-lived token');
+    console.log('[connect-meta] 2. Fetching Meta user profile...');
 
     const userRes  = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
     const metaUser = userRes.data;
     console.log('[connect-meta] Meta user:', { id: metaUser.id, name: metaUser.name, email: metaUser.email });
 
+    // Step 3: Fetch WABA data from businesses endpoint
     let wabaData = [];
     try {
+      console.log('[connect-meta] 3. Fetching WABAs via /me/businesses...');
       const wabaRes = await axios.get(`${META_GRAPH_URL}/${metaUser.id}/businesses`, {
         params: { fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}', access_token: longToken },
       });
       wabaData = wabaRes.data?.data || [];
-    } catch (e) { console.warn('[connect-meta] Could not fetch WABAs:', e.response?.data || e.message); }
-    console.log('[connect-meta] WABA data found:', wabaData.length, 'businesses');
+      console.log('[connect-meta] 3. WABA data from businesses:', wabaData.length, 'businesses found');
+    } catch (e) {
+      console.warn('[connect-meta] 3. Could not fetch WABAs via businesses:', e.response?.data?.error?.message || e.message);
+    }
 
-    // Get current restaurant to preserve approval_status
+    // Step 3b: If businesses endpoint returned nothing, try shared WABAs endpoint
+    if (!wabaData.length) {
+      try {
+        console.log('[connect-meta] 3b. Trying /me/whatsapp_business_accounts fallback...');
+        const directRes = await axios.get(`${META_GRAPH_URL}/me/whatsapp_business_accounts`, {
+          params: { fields: 'id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}', access_token: longToken },
+        });
+        const directWabas = directRes.data?.data || [];
+        if (directWabas.length) {
+          console.log('[connect-meta] 3b. Found', directWabas.length, 'WABAs via direct endpoint');
+          // Wrap in businesses format for _saveWabaAccounts
+          wabaData = [{ id: 'direct', name: 'Direct', whatsapp_business_accounts: { data: directWabas } }];
+        }
+      } catch (e) {
+        console.warn('[connect-meta] 3b. Direct WABA fetch also failed:', e.response?.data?.error?.message || e.message);
+      }
+    }
+
+    // Step 4: Save to database
+    console.log('[connect-meta] 4. Saving to database for restaurant:', req.restaurantId);
     const currentRestaurant = await col('restaurants').findOne(
       { _id: req.restaurantId }, { projection: { approval_status: 1, submitted_at: 1 } }
     );
+    console.log('[connect-meta] 4. Current restaurant state:', { approval_status: currentRestaurant?.approval_status, has_submitted_at: !!currentRestaurant?.submitted_at });
 
     const $set = {
       meta_user_id: metaUser.id, meta_access_token: longToken, meta_token_expires_at: expiresAt,
+      whatsapp_connected: true,
       onboarding_step: 5, updated_at: new Date(),
     };
     // Only reset to pending if not already in an approved/rejected state
@@ -380,10 +408,15 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     }
     if (sessionInfo?.phone_number_id) $set.meta_phone_number_id = sessionInfo.phone_number_id;
     if (sessionInfo?.waba_id) $set.meta_waba_id = sessionInfo.waba_id;
-    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
+    const updateResult = await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
+    console.log('[connect-meta] 5. Database update result:', { matchedCount: updateResult.matchedCount, modifiedCount: updateResult.modifiedCount });
 
     await _saveWabaAccounts(req.restaurantId, wabaData, longToken, sessionInfo);
-    console.log('[connect-meta] Success — restaurant', req.restaurantId, 'connected');
+
+    // Step 6: Verify what was saved
+    const waAccountCount = await col('whatsapp_accounts').countDocuments({ restaurant_id: req.restaurantId });
+    console.log('[connect-meta] 6. WhatsApp accounts in DB after save:', waAccountCount);
+    console.log('[connect-meta] 6. Success — restaurant', req.restaurantId, 'connected. Fields saved: meta_user_id=' + metaUser.id + ', whatsapp_connected=true, waba_accounts=' + waAccountCount);
     res.json({ connected: true });
   } catch (err) {
     console.error('[connect-meta] FAILED:', JSON.stringify(err.response?.data || err.message));
@@ -604,16 +637,24 @@ router.get('/me', requireAuth, async (req, res) => {
   const waba_accounts = waAccounts.map(w => ({ waba_id: w.waba_id, name: w.display_name, phone: w.phone_display }));
 
   const { meta_access_token, password_hash, ...safe } = restaurant;
-  res.json({ ...safe, id: String(restaurant._id), waba_accounts });
+  // Derive whatsapp_connected from actual data if not explicitly set
+  const whatsapp_connected = !!(restaurant.whatsapp_connected || restaurant.meta_user_id || waba_accounts.length > 0);
+  res.json({ ...safe, id: String(restaurant._id), waba_accounts, whatsapp_connected });
 });
 
 // ─── WABA ACCOUNTS HELPER ─────────────────────────────────────
 async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo = null) {
+  console.log('[saveWabaAccounts] Starting — businesses:', wabaData.length, 'sessionInfo:', JSON.stringify(sessionInfo || {}));
+  let savedCount = 0;
   for (const biz of wabaData) {
-    for (const waba of biz.whatsapp_business_accounts?.data || []) {
+    const wabas = biz.whatsapp_business_accounts?.data || [];
+    console.log('[saveWabaAccounts] Business', biz.id, '→', wabas.length, 'WABAs');
+    for (const waba of wabas) {
       await _subscribeWaba(waba.id);
 
-      for (const phone of waba.phone_numbers?.data || []) {
+      const phones = waba.phone_numbers?.data || [];
+      console.log('[saveWabaAccounts] WABA', waba.id, '→', phones.length, 'phone numbers');
+      for (const phone of phones) {
         await col('whatsapp_accounts').updateOne(
           { phone_number_id: phone.id },
           {
@@ -631,14 +672,14 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
           },
           { upsert: true }
         );
+        savedCount++;
+        console.log('[saveWabaAccounts] Saved phone', phone.id, '(' + phone.display_phone_number + ')');
 
-        // Register phone number with Cloud API — resolves "Connecting phone number" in WA Manager
         _registerPhoneNumber(phone.id, longToken).catch(err =>
           console.error(`[Register] Phone ${phone.id} registration failed:`, err.message)
         );
       }
 
-      // Auto-provision catalog + enable cart icon for every phone number under this WABA
       _provisionWabaCatalog(restaurantId, waba.id, longToken).catch(err =>
         console.error(`[Catalog] Auto-provision failed for WABA ${waba.id}:`, err.message)
       );
@@ -690,9 +731,20 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
       _provisionWabaCatalog(restaurantId, sessionInfo.waba_id, longToken).catch(err =>
         console.error(`[Catalog] Auto-provision failed for WABA ${sessionInfo.waba_id}:`, err.message)
       );
+      savedCount += phones.length;
     } catch (e) {
       console.warn('[saveWabaAccounts] Direct WABA fallback failed:', e.response?.data?.error?.message || e.message);
     }
+  }
+
+  // If no WABA accounts were saved at all but we know Meta auth succeeded,
+  // log a warning — the whatsapp_connected flag on the restaurant doc will still show green
+  if (savedCount === 0) {
+    console.warn('[saveWabaAccounts] WARNING: Zero whatsapp_accounts saved for restaurant', restaurantId,
+      '— businesses:', wabaData.length, 'sessionInfo.waba_id:', sessionInfo?.waba_id || 'none',
+      '. The whatsapp_connected flag is still set on the restaurant document.');
+  } else {
+    console.log('[saveWabaAccounts] Done — saved', savedCount, 'phone records for restaurant', restaurantId);
   }
 }
 

@@ -1632,12 +1632,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const metaAccessToken = params.get('meta_access_token');
   if (metaAccessToken) {
     history.replaceState({}, '', '/dashboard.html');
-    // After dashboard loads, call connect-meta with the Meta access token
-    setTimeout(async () => {
-      if (!token) { toast('Please sign in first, then reconnect WhatsApp.', 'err'); return; }
-      toast('Completing WhatsApp connection…', 'nfo');
-      await _finishMetaConnect(null, metaAccessToken);
-    }, 1000);
+    // Store the token — it will be picked up after initDash() completes
+    window._pendingMetaAccessToken = metaAccessToken;
   }
   if (params.get('error')) {
     setTimeout(() => toast('Meta connection failed — please try again', 'err'), 500);
@@ -1735,13 +1731,21 @@ async function initDash() {
     document.getElementById('topbar-nm').textContent = nm;
 
     // Show WA connect banner if Meta not connected yet
-    const waConnected = !!(rest.meta_user_id || (rest.waba_accounts && rest.waba_accounts.length > 0));
+    const waConnected = !!(rest.whatsapp_connected || rest.meta_user_id || (rest.waba_accounts && rest.waba_accounts.length > 0));
     if (!waConnected) document.getElementById('wa-connect-banner').style.display = 'flex';
     if (waConnected && rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
 
     loadOverview();
     loadWA();
     loadCatalogStatus();
+
+    // If we arrived from Meta OAuth redirect, complete the connection now
+    if (window._pendingMetaAccessToken) {
+      const metaToken = window._pendingMetaAccessToken;
+      delete window._pendingMetaAccessToken;
+      toast('Completing WhatsApp connection…', 'nfo');
+      _finishMetaConnect(null, metaToken);
+    }
   } catch (e) { console.error(e); }
 }
 
@@ -1764,7 +1768,7 @@ async function loadOverview() {
   } catch (_) {}
 }
 function renderWizard() {
-  const waConnected = !!(rest.meta_user_id || (rest.waba_accounts && rest.waba_accounts.length > 0));
+  const waConnected = !!(rest.whatsapp_connected || rest.meta_user_id || (rest.waba_accounts && rest.waba_accounts.length > 0));
   const profileDone = !!(rest.brand_name && rest.phone);
   const steps = [
     { l: 'Connect with Meta',     d: 'Link your WhatsApp Business account',             done: waConnected,  fn: () => doBannerConnect() },
@@ -3964,9 +3968,9 @@ async function loadProfile() {
     setChk('p-notify-cancelled', ns.cancelled);
     setChk('p-notify-low-activity', ns.low_activity, false);
 
-    // WhatsApp connection status
-    const waAccounts = r.waba_accounts;
-    const hasWA = waAccounts && waAccounts.length > 0;
+    // WhatsApp connection status — check whatsapp_connected flag (derived from meta_user_id + waba_accounts on backend)
+    const waAccounts = r.waba_accounts || [];
+    const hasWA = !!(r.whatsapp_connected || r.meta_user_id || waAccounts.length > 0);
     const dot   = document.getElementById('wa-status-dot');
     const lbl   = document.getElementById('wa-status-label');
     const sub   = document.getElementById('wa-status-sub');
@@ -3974,7 +3978,9 @@ async function loadProfile() {
     if (hasWA) {
       dot.style.background  = '#22c55e';
       lbl.textContent       = 'Connected';
-      sub.textContent       = waAccounts.map(a => a.name || a.waba_id).join(', ');
+      sub.textContent       = waAccounts.length
+        ? waAccounts.map(a => a.name || a.waba_id).join(', ')
+        : 'WhatsApp Business account linked';
       wrap.style.display    = 'none';
     } else {
       dot.style.background  = '#ef4444';
@@ -4172,10 +4178,11 @@ async function _finishMetaConnect(code, accessToken) {
     if (d.connected || d.ok) {
       toast('WhatsApp connected!', 'ok');
       rest = await api('/auth/me');
-      // Hide banners
+      // Hide banners and update all status indicators
       document.getElementById('wa-connect-banner').style.display  = 'none';
       if (rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
       loadProfile();
+      renderWizard();
     } else {
       toast(d.error || 'Connection failed', 'err');
     }
@@ -4296,7 +4303,7 @@ function _doMetaConnect() {
       toast('Verifying connection…', 'nfo');
       await new Promise(r => setTimeout(r, 2000));
       const fresh = await api('/auth/me').catch(() => null);
-      if (fresh?.meta_user_id) {
+      if (fresh?.whatsapp_connected || fresh?.meta_user_id) {
         toast('WhatsApp connected!', 'ok');
         rest = fresh;
         document.getElementById('wa-connect-banner').style.display = 'none';
