@@ -1231,7 +1231,7 @@ function _showRedirectFallback() {
   const el = document.getElementById('connect-fallback');
   const link = document.getElementById('connect-redirect-link');
   if (el) el.style.display = 'block';
-  if (link) link.href = '#'; // Popup fallback — redirect not available
+  if (link) link.href = `https://www.facebook.com/v25.0/dialog/oauth?client_id=1670288721053166&redirect_uri=${encodeURIComponent(location.origin + '/auth/callback')}&scope=business_management,whatsapp_business_management,whatsapp_business_messaging`;
 }
 
 let _connectInProgress = false;

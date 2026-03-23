@@ -274,6 +274,46 @@ router.get('/google/callback', async (req, res) => {
   }
 });
 
+// ─── META OAUTH REDIRECT CALLBACK ────────────────────────────────
+// Meta redirects here after user completes Embedded Signup or OAuth consent.
+// This is the server-side fallback when FB.login() popup is blocked or unavailable.
+// META_OAUTH_REDIRECT_URI in .env must point to {BASE_URL}/auth/callback
+router.get('/callback', async (req, res) => {
+  const { code, error, error_reason } = req.query;
+  console.log('[Meta Callback] Hit — code:', !!code, 'error:', error || 'none', 'reason:', error_reason || 'none');
+
+  if (error || !code) {
+    console.error('[Meta Callback] No code or error present');
+    return res.redirect('/?error=meta_auth_failed&reason=' + encodeURIComponent(error_reason || error || 'no_code'));
+  }
+
+  try {
+    // Exchange code for long-lived token using server-side redirect URI
+    const tokenRes = await axios.post(`${META_GRAPH_URL}/oauth/access_token`, {
+      client_id: process.env.META_APP_ID,
+      client_secret: process.env.META_APP_SECRET,
+      redirect_uri: process.env.META_OAUTH_REDIRECT_URI,
+      code,
+      grant_type: 'authorization_code',
+    });
+    const longToken = tokenRes.data.access_token;
+    const expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
+    console.log('[Meta Callback] Token exchange successful');
+
+    // Fetch Meta user profile
+    const userRes = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
+    const metaUser = userRes.data;
+    console.log('[Meta Callback] Meta user:', { id: metaUser.id, name: metaUser.name });
+
+    // Redirect to frontend with the Meta access token as a query param.
+    // The dashboard picks this up and calls POST /connect-meta with the user's JWT + this token.
+    res.redirect(`/dashboard.html?meta_access_token=${encodeURIComponent(longToken)}`);
+  } catch (err) {
+    console.error('[Meta Callback] FAILED:', err.response?.data || err.message);
+    res.redirect('/?error=meta_auth_failed&reason=' + encodeURIComponent(err.response?.data?.error?.message || err.message));
+  }
+});
+
 // ─── CONNECT META / WHATSAPP ───────────────────────────────────
 // When the code comes from FB.login() (JS SDK), the SDK uses its own internal
 // redirect URI — NOT the server-side OAuth redirect URI. We must match it exactly.
