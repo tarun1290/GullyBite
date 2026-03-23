@@ -20,17 +20,22 @@ const connect = async () => {
   return _db;
 };
 
-// Connect on startup — let the promise reject so ensureConnected can catch it
+// Connect on startup — store rejected promise for ensureConnected to retry
 _connectPromise = connect().catch(err => {
   console.error('❌ MongoDB connection FAILED:', err.message);
-  throw err; // re-throw so awaiting it also rejects
+  _connectPromise = null; // mark as failed so ensureConnected retries
 });
 
 // Middleware: ensures DB is connected before any route runs
 const ensureConnected = async (req, res, next) => {
   if (_db) return next(); // already connected (warm start)
   try {
-    await _connectPromise;
+    // If initial connect succeeded, await it; otherwise retry
+    if (_connectPromise) {
+      await _connectPromise;
+    } else {
+      await connect();
+    }
   } catch (_) {
     // First attempt failed — retry once (handles Vercel cold-start race)
     try {
