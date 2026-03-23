@@ -175,11 +175,6 @@ a{color:inherit;text-decoration:none}
 .input-err{border-color:var(--red)!important}
 .field-err{font-size:.73rem;color:var(--red);margin-top:.2rem}
 .pwd-hint{font-size:.72rem;color:var(--mute);margin-top:.2rem}
-.pwd-rules{list-style:none;margin:.45rem 0 0;padding:0;display:flex;flex-direction:column;gap:.22rem}
-.pwd-rules li{font-size:.72rem;color:var(--mute);padding-left:1.2rem;position:relative;transition:color .2s}
-.pwd-rules li::before{content:"✗";position:absolute;left:0;color:#f87171}
-.pwd-rules li.ok{color:#4ade80}
-.pwd-rules li.ok::before{content:"✓";color:#4ade80}
 
 /* ── ONBOARDING ─────────────────────────────────────────── */
 .ob-wrap{width:100%;max-width:640px;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both;padding:1rem 0 3rem}
@@ -220,9 +215,9 @@ a{color:inherit;text-decoration:none}
 .wa-bullets{list-style:none;text-align:left;margin-bottom:1.5rem;display:flex;flex-direction:column;gap:.5rem}
 .wa-bullets li{display:flex;align-items:center;gap:.6rem;font-size:.82rem;color:var(--tx)}
 .wa-bullets li::before{content:'✓';color:var(--wa);font-weight:700;flex-shrink:0}
-.btn-meta{display:flex;align-items:center;justify-content:center;gap:.55rem;width:100%;padding:.82rem;background:#1877f2;color:#fff;font-weight:700;font-size:.92rem;border:none;border-radius:9px;transition:background .18s;cursor:pointer}
-.btn-meta:hover:not(:disabled){background:#1565d8}
-.btn-meta:disabled{opacity:.55;cursor:not-allowed}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:.6rem;width:100%;padding:.82rem;background:#fff;color:#333;font-weight:600;font-size:.92rem;border:1px solid var(--rim2);border-radius:9px;transition:all .18s;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.btn-google:hover:not(:disabled){background:#f8f9fa;border-color:var(--dim);box-shadow:0 2px 6px rgba(0,0,0,.12)}
+.btn-google:disabled{opacity:.55;cursor:not-allowed}
 
 /* ── STATUS SCREENS ─────────────────────────────────────── */
 .status-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem;background:var(--bg)}
@@ -268,11 +263,7 @@ a{color:inherit;text-decoration:none}
 </head>
 <body>
 <div id="toast"></div>
-<div id="fb-root"></div>
-<script>
-window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbml:true,version:'v25.0'});console.log('[GullyBite] FB SDK ready')};
-(function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(d.getElementById(id))return;js=d.createElement(s);js.id=id;js.src="https://connect.facebook.net/en_US/sdk.js";fjs.parentNode.insertBefore(js,fjs)}(document,'script','facebook-jssdk'));
-</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <!-- ══════════════════ LANDING ════════════════════════════ -->
 <div id="pg-land">
@@ -281,8 +272,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
   <nav class="nav">
     <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
     <div class="nav-links">
-      <button class="btn-outline" onclick="showPage('pg-signin')">Sign In</button>
-      <button class="btn-primary" onclick="showPage('pg-signup')">Get Started Free →</button>
+      <button class="btn-primary" onclick="showPage('pg-google')">Sign In →</button>
     </div>
   </nav>
 
@@ -293,8 +283,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
       <h1>Turn WhatsApp into your<br><span class="wa-green">restaurant's</span> <span class="accent">ordering engine</span></h1>
       <p class="hero-sub">GullyBite connects your menu to WhatsApp in minutes. Customers browse, order and pay — no app, no Swiggy, no commission. Just direct orders straight to your kitchen.</p>
       <div class="hero-btns">
-        <button class="btn-hero" onclick="showPage('pg-signup')">🚀 Start for Free — No card needed</button>
-        <button class="btn-hero-ghost" onclick="showPage('pg-signin')">Sign In to Dashboard</button>
+        <button class="btn-hero" onclick="showPage('pg-google')">🚀 Start for Free — No card needed</button>
+        <button class="btn-hero-ghost" onclick="showPage('pg-google')">Sign In to Dashboard</button>
       </div>
 
       <!-- Dashboard Mockup -->
@@ -488,7 +478,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           <li>Weekly automatic bank settlements</li>
           <li>Dedicated onboarding support</li>
         </ul>
-        <button class="btn-full" onclick="showPage('pg-signup')">Get Started Free →</button>
+        <button class="btn-full" onclick="showPage('pg-google')">Get Started Free →</button>
         <p class="pricing-note">First 14 days free. No credit card required to sign up.</p>
       </div>
     </div>
@@ -498,7 +488,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
   <section class="cta-section">
     <h2>Ready to own your orders?</h2>
     <p>Join restaurants across India who've switched from aggregators to direct WhatsApp ordering with GullyBite.</p>
-    <button class="btn-cta" onclick="showPage('pg-signup')">🚀 Start Your Free Trial</button>
+    <button class="btn-cta" onclick="showPage('pg-google')">🚀 Start Your Free Trial</button>
   </section>
 
   <!-- FOOTER -->
@@ -514,63 +504,18 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
 
 </div>
 
-<!-- ══════════════════ SIGN UP ════════════════════════════ -->
-<div id="pg-signup" class="hidden auth-wrap">
+<!-- ══════════════════ GOOGLE SIGN IN ═══════════════════════ -->
+<div id="pg-google" class="hidden auth-wrap">
   <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring">🍜</div>GullyBite</div></nav>
   <div class="auth-body">
-    <div class="auth-card">
-      <h2>Create Account</h2>
-      <p class="sub">Start your free 14-day trial — no credit card required</p>
-      <form onsubmit="doSignup(event)">
-        <div class="fld">
-          <label>Your Full Name <span class="req">*</span></label>
-          <input id="su-name" type="text" placeholder="Ravi Kumar" autocomplete="name" required>
-        </div>
-        <div class="fld">
-          <label>Work Email <span class="req">*</span></label>
-          <input id="su-email" type="email" placeholder="ravi@restaurant.com" autocomplete="email" required>
-        </div>
-        <div class="fld">
-          <label>Password <span class="req">*</span></label>
-          <input id="su-pw" type="password" placeholder="Min 8 characters" autocomplete="new-password" required minlength="8" oninput="checkPwStrength(this.value)">
-          <ul class="pwd-rules" id="pwd-rules">
-            <li id="pr-len">At least 8 characters</li>
-            <li id="pr-upper">One uppercase letter (A–Z)</li>
-            <li id="pr-lower">One lowercase letter (a–z)</li>
-            <li id="pr-num">One number (0–9)</li>
-            <li id="pr-sym">One special character (@, #, ! …)</li>
-          </ul>
-        </div>
-        <div class="fld">
-          <label>Confirm Password <span class="req">*</span></label>
-          <input id="su-pw2" type="password" placeholder="Re-enter password" autocomplete="new-password" required>
-        </div>
-        <button class="btn-full" type="submit" id="su-btn">Create Account →</button>
-      </form>
-      <p class="auth-switch">Already have an account? <a onclick="showPage('pg-signin')">Sign In</a></p>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════ SIGN IN ════════════════════════════ -->
-<div id="pg-signin" class="hidden auth-wrap">
-  <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring">🍜</div>GullyBite</div></nav>
-  <div class="auth-body">
-    <div class="auth-card">
-      <h2>Welcome Back</h2>
-      <p class="sub">Sign in to your GullyBite restaurant dashboard</p>
-      <form onsubmit="doSignin(event)">
-        <div class="fld">
-          <label>Email Address <span class="req">*</span></label>
-          <input id="si-email" type="email" placeholder="ravi@restaurant.com" autocomplete="email" required>
-        </div>
-        <div class="fld">
-          <label>Password <span class="req">*</span></label>
-          <input id="si-pw" type="password" placeholder="Your password" autocomplete="current-password" required>
-        </div>
-        <button class="btn-full" type="submit" id="si-btn">Sign In →</button>
-      </form>
-      <p class="auth-switch">New to GullyBite? <a onclick="showPage('pg-signup')">Create Account</a></p>
+    <div class="auth-card" style="text-align:center">
+      <h2>Welcome to GullyBite</h2>
+      <p class="sub">Sign in or create your account to get started</p>
+      <button class="btn-google" id="google-btn" onclick="doGoogleLogin()">
+        <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <p class="sub" style="margin-top:1.2rem;font-size:.76rem;color:var(--mute)">No credit card required. Free 14-day trial.</p>
     </div>
   </div>
 </div>
@@ -820,11 +765,21 @@ End of document upload block ═════════════════
 </div>
 
 <script>
-const PAGES = ['pg-land','pg-signup','pg-signin','pg-onboard','pg-connect','pg-pending','pg-rejected'];
+const PAGES = ['pg-land','pg-google','pg-onboard','pg-connect','pg-pending','pg-rejected'];
 function showPage(id) {
   PAGES.forEach(p => document.getElementById(p).classList.toggle('hidden', p !== id));
   window.scrollTo(0,0);
-  if (id === 'pg-connect') _fetchStoreUrl();
+  if (id === 'pg-connect') { _fetchStoreUrl(); _loadFbSdk(); }
+}
+
+/* ─── LAZY FB SDK (for WhatsApp Embedded Signup only) ───── */
+let _fbSdkLoaded = false;
+function _loadFbSdk() {
+  if (_fbSdkLoaded) return;
+  _fbSdkLoaded = true;
+  window.fbAsyncInit = function() { FB.init({ appId:'1670288721053166', cookie:true, xfbml:true, version:'v25.0' }); console.log('[GullyBite] FB SDK ready'); };
+  const s = document.createElement('script'); s.src = 'https://connect.facebook.net/en_US/sdk.js'; s.async = true; s.defer = true;
+  document.body.appendChild(s);
 }
 async function _fetchStoreUrl() {
   const token = localStorage.getItem('zm_token');
@@ -837,59 +792,16 @@ async function _fetchStoreUrl() {
 
 /* ─── BOOT ─────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
+  initGoogleAuth();
+
   const params = new URLSearchParams(location.search);
-
-  // ── If this page loaded INSIDE a popup (Meta OAuth redirect), talk to parent and close ──
-  if (window.opener && window.opener !== window) {
-    const metaTokenInPopup = params.get('meta_token');
-    const codeInPopup      = params.get('code');
-    const errorInPopup     = params.get('error');
-    if (metaTokenInPopup || codeInPopup || errorInPopup) {
-      window.opener.postMessage({
-        type: 'GULLYBITE_OAUTH',
-        meta_token: metaTokenInPopup || null,
-        code: codeInPopup || null,
-        error: errorInPopup || null,
-      }, window.location.origin);
-      window.close();
-      return; // don't render anything in the popup
-    }
-  }
-
   if (params.get('error'))
     toast('Authentication failed — please try again', 'err');
 
-  // Fallback A: server OAuth callback redirected here with ?meta_token= (no popup — direct nav)
-  const metaToken = params.get('meta_token');
-  if (metaToken) {
-    history.replaceState({}, '', location.pathname);
-    localStorage.setItem('zm_token', metaToken);
-    toast('WhatsApp connected!', 'ok');
-    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${metaToken}` } }).then(r => r.json());
-    routeByStatus(me);
-    return;
-  }
+  // Clean URL params
+  if (params.has('error')) history.replaceState({}, '', location.pathname);
 
   const token = localStorage.getItem('zm_token');
-
-  // Fallback B: Meta redirected back with ?code= and no popup (direct nav, token in storage)
-  const oauthCode = params.get('code');
-  if (oauthCode && token) {
-    history.replaceState({}, '', location.pathname);
-    try {
-      toast('Finishing WhatsApp connection…', 'nfo');
-      const d = await post('/auth/connect-meta', { code: oauthCode }, token);
-      if (d.connected) {
-        toast('WhatsApp connected!', 'ok');
-        const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
-        routeByStatus(me);
-        return;
-      } else {
-        toast(d.error || 'Connection failed', 'err');
-      }
-    } catch { toast('Connection failed', 'err'); }
-  }
-
   if (!token) return;
 
   try {
@@ -955,81 +867,47 @@ function prefillOnboarding(me) {
   if (me.restaurant_type) document.getElementById('ob-type').value  = me.restaurant_type;
 }
 
-/* ─── PASSWORD STRENGTH ─────────────────────────────────── */
-function checkPwStrength(pw) {
-  const set = (id, ok) => document.getElementById(id)?.classList.toggle('ok', ok);
-  set('pr-len',   pw.length >= 8);
-  set('pr-upper', /[A-Z]/.test(pw));
-  set('pr-lower', /[a-z]/.test(pw));
-  set('pr-num',   /[0-9]/.test(pw));
-  set('pr-sym',   /[^A-Za-z0-9]/.test(pw));
+/* ─── GOOGLE SIGN IN ───────────────────────────────────── */
+let _googleCodeClient;
+function initGoogleAuth() {
+  if (typeof google === 'undefined' || !google.accounts) {
+    setTimeout(initGoogleAuth, 200);
+    return;
+  }
+  _googleCodeClient = google.accounts.oauth2.initCodeClient({
+    client_id: 'GOOGLE_CLIENT_ID_PLACEHOLDER',
+    scope: 'openid email profile',
+    ux_mode: 'popup',
+    callback: handleGoogleResponse,
+  });
 }
 
-/* ─── SIGN UP ───────────────────────────────────────────── */
-async function doSignup(e) {
-  e.preventDefault();
-  const btn = document.getElementById('su-btn');
-  const pw  = document.getElementById('su-pw').value;
-  const pw2 = document.getElementById('su-pw2').value;
-  if (pw !== pw2) return toast('Passwords do not match', 'err');
-
-  setLoading(btn, true, 'Creating account…');
+async function handleGoogleResponse(response) {
+  if (response.error) return toast('Google sign-in cancelled', 'err');
+  const btn = document.getElementById('google-btn');
+  btn.disabled = true;
+  btn.textContent = 'Signing in…';
   try {
-    const d = await post('/auth/signup', {
-      ownerName: document.getElementById('su-name').value.trim(),
-      email:     document.getElementById('su-email').value.trim(),
-      password:  pw,
-    });
-    if (d.token) {
-      localStorage.setItem('zm_token', d.token);
-      toast('Account created!', 'ok');
-      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
-      prefillOnboarding(me);
-      showPage('pg-onboard');
-    } else toast(d.error || 'Sign up failed', 'err');
-  } catch (err) { toast(err.message, 'err'); }
-  finally { setLoading(btn, false, 'Create Account →'); }
-}
-
-/* ─── SIGN IN ───────────────────────────────────────────── */
-async function doSignin(e) {
-  e.preventDefault();
-  const btn = document.getElementById('si-btn');
-  setLoading(btn, true, 'Signing in…');
-  try {
-    const d = await post('/auth/signin', {
-      email:    document.getElementById('si-email').value.trim(),
-      password: document.getElementById('si-pw').value,
-    });
-    if (!d.token) return toast(d.error || 'Sign in failed', 'err');
+    const d = await post('/auth/google', { code: response.code });
+    if (!d.token) { toast(d.error || 'Sign in failed', 'err'); return; }
     localStorage.setItem('zm_token', d.token);
-    if (d.approvalStatus === 'approved') {
+    if (d.approvalStatus === 'approved' && !d.needsOnboarding) {
       window.location.href = '/dashboard';
     } else {
       const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
-      routeByStatus(me);
+      if (d.needsOnboarding) { prefillOnboarding(me); showPage('pg-onboard'); }
+      else routeByStatus(me);
     }
   } catch (err) { toast(err.message, 'err'); }
-  finally { setLoading(btn, false, 'Sign In →'); }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Continue with Google';
+  }
 }
 
-/* ─── META LOGIN (existing users) ──────────────────────── */
-function doMetaLogin() {
-  const btn = document.getElementById('si-meta-btn');
-  btn.disabled = true;
-  FB.login(r => {
-    if (!r.authResponse) { btn.disabled = false; return toast('Login cancelled', 'err'); }
-    toast('Verifying…', 'nfo');
-    post('/auth/facebook', { accessToken: r.authResponse.accessToken, code: r.authResponse.code || null })
-      .then(d => {
-        if (!d.token) { toast(d.error || 'Login failed', 'err'); btn.disabled = false; return; }
-        localStorage.setItem('zm_token', d.token);
-        if (d.approvalStatus === 'approved') { window.location.href = '/dashboard'; return; }
-        fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } })
-          .then(r => r.json()).then(routeByStatus);
-      })
-      .catch(() => { toast('Connection failed', 'err'); btn.disabled = false; });
-  }, { config_id: '967221625965151', response_type: 'code', override_default_response_type: true, extras: { setup:{}, featureType:'', sessionInfoVersion:'3' } });
+function doGoogleLogin() {
+  if (!_googleCodeClient) return toast('Google sign-in loading — please wait a moment', 'err');
+  _googleCodeClient.requestCode();
 }
 
 /* ─── BUSINESS DETAILS FORM ─────────────────────────────── */
@@ -1205,7 +1083,7 @@ function _showRedirectFallback() {
   const el = document.getElementById('connect-fallback');
   const link = document.getElementById('connect-redirect-link');
   if (el) el.style.display = 'block';
-  if (link) link.href = '/auth/login?source=signup';
+  if (link) link.href = '#'; // Popup fallback — redirect not available
 }
 
 let _connectInProgress = false;
@@ -1224,7 +1102,7 @@ function doConnectMeta() {
     _resetConnectBtn();
     _showRedirectFallback();
     // Redirect directly to Meta OAuth
-    window.location.href = '/auth/login?source=signup';
+    toast('Please enable popups and try again', 'err');
     return;
   }
 
@@ -1295,7 +1173,7 @@ function doConnectMeta() {
     _connectInProgress = false;
     _resetConnectBtn();
     _showRedirectFallback();
-    window.location.href = '/auth/login?source=signup';
+    toast('Please enable popups and try again', 'err');
   }
 }
 

@@ -1,5 +1,5 @@
 // src/routes/auth.js
-// Email/password + Meta OAuth authentication
+// Google OAuth + Meta WhatsApp authentication
 
 const express = require('express');
 const axios   = require('axios');
@@ -21,86 +21,75 @@ const docUpload = multer({
 });
 
 const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
-const META_AUTH_URL  = 'https://www.facebook.com/v25.0/dialog/oauth';
 
-// ─── SIGN UP ──────────────────────────────────────────────────
-router.post('/signup', express.json(), async (req, res) => {
+// ─── GOOGLE SIGN IN ──────────────────────────────────────────
+router.post('/google', express.json(), async (req, res) => {
   try {
-    const { ownerName, email, password } = req.body;
-    if (!ownerName || !email || !password)
-      return res.status(400).json({ error: 'Name, email and password are required' });
-    if (password.length < 8)
-      return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    if (!/[A-Z]/.test(password))
-      return res.status(400).json({ error: 'Password must contain at least one uppercase letter' });
-    if (!/[a-z]/.test(password))
-      return res.status(400).json({ error: 'Password must contain at least one lowercase letter' });
-    if (!/[0-9]/.test(password))
-      return res.status(400).json({ error: 'Password must contain at least one number' });
-    if (!/[^A-Za-z0-9]/.test(password))
-      return res.status(400).json({ error: 'Password must contain at least one special character (e.g. @, #, !)' });
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Authorization code required' });
 
-    const existing = await col('restaurants').findOne({ email: email.toLowerCase() });
-    if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
-
-    const passwordHash = await bcrypt.hash(password, 12);
-    const id = newId();
-    await col('restaurants').insertOne({
-      _id: id, owner_name: ownerName.trim(), email: email.toLowerCase().trim(),
-      password_hash: passwordHash, approval_status: 'pending', onboarding_step: 1,
-      business_name: 'My Restaurant', status: 'active',
-      created_at: new Date(), updated_at: new Date(),
+    // 1. Exchange auth code for tokens
+    const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: 'postmessage',
+      grant_type: 'authorization_code',
     });
-    const ownerUser = await ensureOwnerUser(id, ownerName.trim());
+
+    // 2. Fetch user profile
+    const userRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${tokenRes.data.access_token}` },
+    });
+    const { id: googleId, name, email, picture } = userRes.data;
+
+    // 3. Find or create restaurant
+    let restaurant = await col('restaurants').findOne({ google_id: googleId });
+    if (!restaurant && email) {
+      restaurant = await col('restaurants').findOne({ email: email.toLowerCase() });
+    }
+
+    let restaurantId, needsOnboarding, approvalStatus;
+    if (restaurant) {
+      const $set = { google_id: googleId, updated_at: new Date() };
+      if (picture) $set.profile_picture = picture;
+      if (name && !restaurant.owner_name) $set.owner_name = name;
+      await col('restaurants').updateOne({ _id: restaurant._id }, { $set });
+      restaurantId    = String(restaurant._id);
+      approvalStatus  = restaurant.approval_status || 'pending';
+      needsOnboarding = (restaurant.onboarding_step || 1) < 2;
+    } else {
+      restaurantId = newId();
+      await col('restaurants').insertOne({
+        _id: restaurantId, google_id: googleId,
+        owner_name: name || 'Owner', email: email?.toLowerCase(),
+        profile_picture: picture || null,
+        business_name: 'My Restaurant', status: 'active',
+        approval_status: 'pending', onboarding_step: 1,
+        created_at: new Date(), updated_at: new Date(),
+      });
+      approvalStatus  = 'pending';
+      needsOnboarding = true;
+    }
+
+    // 4. Issue JWT
+    const ownerUser = await ensureOwnerUser(restaurantId, name);
     const token = jwt.sign({
-      restaurantId: id,
+      restaurantId,
       userId: String(ownerUser._id),
       role: 'owner',
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
-  } catch (err) {
-    console.error('[Signup]', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
 
-// ─── SIGN IN ──────────────────────────────────────────────────
-router.post('/signin', express.json(), async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    if (!email || !password)
-      return res.status(400).json({ error: 'Email and password are required' });
-
-    const restaurant = await col('restaurants').findOne({ email: email.toLowerCase() });
-    if (!restaurant) return res.status(401).json({ error: 'No account found with this email' });
-    if (!restaurant.password_hash)
-      return res.status(401).json({ error: 'This account was created via Meta. Use "Continue with Meta" below.' });
-
-    const valid = await bcrypt.compare(password, restaurant.password_hash);
-    if (!valid) return res.status(401).json({ error: 'Incorrect password' });
-
-    const ownerUser = await ensureOwnerUser(String(restaurant._id), restaurant.owner_name);
-    const token = jwt.sign({
-      restaurantId: String(restaurant._id),
-      userId: String(ownerUser._id),
-      role: 'owner',
-      permissions: ROLE_PERMISSIONS.owner,
-      branchIds: [],
-    }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    const step  = restaurant.onboarding_step || 1;
     res.json({
-      token,
-      approvalStatus : restaurant.approval_status || 'pending',
-      onboardingStep : step,
-      needsOnboarding: step < 5,
-      hasMetaConnected: !!restaurant.meta_user_id,
+      token, approvalStatus, needsOnboarding,
+      onboardingStep: restaurant?.onboarding_step || 1,
       user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner },
     });
   } catch (err) {
-    console.error('[Signin]', err.message);
-    res.status(500).json({ error: 'Sign in failed' });
+    console.error('[Google Auth]', err.response?.data || err.message);
+    res.status(500).json({ error: 'Google authentication failed' });
   }
 });
 
@@ -174,31 +163,6 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
   }
 });
 
-// ─── CHANGE PASSWORD ──────────────────────────────────────────
-router.post('/change-password', requireAuth, express.json(), async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-    if (!newPassword || newPassword.length < 8)
-      return res.status(400).json({ error: 'New password must be at least 8 characters' });
-
-    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
-    if (!restaurant) return res.status(404).json({ error: 'Not found' });
-
-    if (restaurant.password_hash) {
-      if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
-      const valid = await bcrypt.compare(currentPassword, restaurant.password_hash);
-      if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
-    }
-
-    const hash = await bcrypt.hash(newPassword, 12);
-    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { password_hash: hash, updated_at: new Date() } });
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('[change-password]', err.message);
-    res.status(500).json({ error: 'Password update failed' });
-  }
-});
-
 // ─── DELETE ACCOUNT ──────────────────────────────────────────
 router.delete('/delete-account', requireAuth, async (req, res) => {
   try {
@@ -227,171 +191,6 @@ router.delete('/delete-account', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[delete-account]', err.message);
     res.status(500).json({ error: 'Failed to delete account' });
-  }
-});
-
-// ─── INITIATE META OAUTH ──────────────────────────────────────
-router.get('/login', (req, res) => {
-  const source = req.query.source || 'index'; // 'signup', 'dashboard', or 'index'
-  const scopes = ['whatsapp_business_management', 'whatsapp_business_messaging', 'business_management', 'catalog_management'].join(',');
-  const stateObj = { ts: Date.now(), source };
-  const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
-  const authUrl = `${META_AUTH_URL}?client_id=${process.env.META_APP_ID}` +
-    `&redirect_uri=${encodeURIComponent(process.env.META_OAUTH_REDIRECT_URI)}` +
-    `&scope=${scopes}&response_type=code` +
-    `&state=${encodeURIComponent(state)}`;
-  res.redirect(authUrl);
-});
-
-// ─── META OAUTH CALLBACK ──────────────────────────────────────
-router.get('/callback', async (req, res) => {
-  const { code, error, state } = req.query;
-
-  // Parse source from state (signup, dashboard, or index)
-  let source = 'index';
-  try {
-    const stateObj = JSON.parse(Buffer.from(decodeURIComponent(state || ''), 'base64').toString());
-    source = stateObj.source || 'index';
-  } catch {}
-
-  if (error || !code) {
-    const dest = source === 'dashboard' ? '/dashboard?error=oauth_failed' : '/?error=oauth_failed';
-    return res.redirect(dest);
-  }
-
-  try {
-    const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-      params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET,
-                redirect_uri: process.env.META_OAUTH_REDIRECT_URI, code },
-    });
-    const longTokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-      params: { grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID,
-                client_secret: process.env.META_APP_SECRET, fb_exchange_token: tokenRes.data.access_token },
-    });
-    const longToken = longTokenRes.data.access_token;
-    const expiresAt = longTokenRes.data.expires_in ? new Date(Date.now() + longTokenRes.data.expires_in * 1000) : null;
-
-    const userRes  = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
-    const metaUser = userRes.data;
-
-    let wabaData = [];
-    try {
-      const wabaRes = await axios.get(`${META_GRAPH_URL}/${metaUser.id}/businesses`, {
-        params: { fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}', access_token: longToken },
-      });
-      wabaData = wabaRes.data?.data || [];
-    } catch (e) { console.warn('[OAuth] Could not fetch WABAs:', e.message); }
-
-    // Find by meta_user_id first, then by matching email (to link to existing email signup)
-    let existing = await col('restaurants').findOne({ meta_user_id: metaUser.id });
-    if (!existing && metaUser.email) {
-      existing = await col('restaurants').findOne({ email: metaUser.email.toLowerCase() });
-    }
-    let restaurantId;
-    if (existing) {
-      await col('restaurants').updateOne({ _id: existing._id }, { $set: {
-        meta_user_id: metaUser.id, meta_access_token: longToken, meta_token_expires_at: expiresAt,
-        onboarding_step: Math.max(existing.onboarding_step || 1, 5),
-        submitted_at: existing.submitted_at || new Date(), updated_at: new Date(),
-      }});
-      restaurantId = String(existing._id);
-    } else {
-      restaurantId = newId();
-      await col('restaurants').insertOne({
-        _id: restaurantId, meta_user_id: metaUser.id, meta_access_token: longToken,
-        meta_token_expires_at: expiresAt, owner_name: metaUser.name, email: metaUser.email,
-        business_name: 'My Restaurant', status: 'active', approval_status: 'pending',
-        onboarding_step: 5, submitted_at: new Date(), created_at: new Date(), updated_at: new Date(),
-      });
-    }
-
-    await _saveWabaAccounts(restaurantId, wabaData, longToken);
-    const ownerUser = await ensureOwnerUser(restaurantId, metaUser.name);
-    const jwtToken = jwt.sign({
-      restaurantId, metaUserId: metaUser.id,
-      userId: String(ownerUser._id), role: 'owner',
-      permissions: ROLE_PERMISSIONS.owner, branchIds: [],
-    }, process.env.JWT_SECRET, { expiresIn: '30d' });
-
-    // Redirect based on source — dashboard goes back to dashboard, signup/index goes to index
-    if (source === 'dashboard') {
-      res.redirect(`/dashboard?meta_token=${jwtToken}`);
-    } else {
-      res.redirect(`/?meta_token=${jwtToken}`);
-    }
-  } catch (err) {
-    console.error('[OAuth] Callback error:', err.response?.data || err.message);
-    const dest = source === 'dashboard' ? '/dashboard?error=oauth_failed' : '/?error=oauth_failed';
-    res.redirect(dest);
-  }
-});
-
-// ─── FACEBOOK JS SDK LOGIN ─────────────────────────────────────
-router.post('/facebook', express.json(), async (req, res) => {
-  const { accessToken, code } = req.body;
-  if (!accessToken && !code) return res.status(400).json({ error: 'No token provided' });
-
-  try {
-    let longToken, expiresAt;
-    if (code) {
-      const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-        params: { client_id: process.env.META_APP_ID, client_secret: process.env.META_APP_SECRET,
-                  redirect_uri: process.env.META_OAUTH_REDIRECT_URI, code },
-      });
-      longToken = tokenRes.data.access_token;
-      expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
-    } else {
-      const longTokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-        params: { grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID,
-                  client_secret: process.env.META_APP_SECRET, fb_exchange_token: accessToken },
-      });
-      longToken = longTokenRes.data.access_token;
-      expiresAt = longTokenRes.data.expires_in ? new Date(Date.now() + longTokenRes.data.expires_in * 1000) : null;
-    }
-
-    const userRes  = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
-    const metaUser = userRes.data;
-
-    let wabaData = [];
-    try {
-      const wabaRes = await axios.get(`${META_GRAPH_URL}/${metaUser.id}/businesses`, {
-        params: { fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}', access_token: longToken },
-      });
-      wabaData = wabaRes.data?.data || [];
-    } catch (e) { console.warn('[Auth] Could not fetch WABAs:', e.message); }
-
-    const existing = await col('restaurants').findOne({ meta_user_id: metaUser.id });
-    let restaurantId, approvalStatus, needsOnboarding;
-    if (existing) {
-      await col('restaurants').updateOne({ meta_user_id: metaUser.id }, { $set: {
-        meta_access_token: longToken, meta_token_expires_at: expiresAt, updated_at: new Date(),
-      }});
-      restaurantId    = String(existing._id);
-      approvalStatus  = existing.approval_status || 'pending';
-      needsOnboarding = (existing.onboarding_step || 1) < 5;
-    } else {
-      restaurantId = newId();
-      await col('restaurants').insertOne({
-        _id: restaurantId, meta_user_id: metaUser.id, meta_access_token: longToken,
-        meta_token_expires_at: expiresAt, owner_name: metaUser.name, email: metaUser.email,
-        business_name: 'My Restaurant', status: 'active', approval_status: 'pending',
-        onboarding_step: 1, created_at: new Date(), updated_at: new Date(),
-      });
-      approvalStatus  = 'pending';
-      needsOnboarding = true;
-    }
-
-    await _saveWabaAccounts(restaurantId, wabaData, longToken);
-    const ownerUser2 = await ensureOwnerUser(restaurantId, metaUser.name);
-    const jwtToken = jwt.sign({
-      restaurantId, metaUserId: metaUser.id,
-      userId: String(ownerUser2._id), role: 'owner',
-      permissions: ROLE_PERMISSIONS.owner, branchIds: [],
-    }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token: jwtToken, approvalStatus, needsOnboarding, user: { id: String(ownerUser2._id), name: ownerUser2.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
-  } catch (err) {
-    console.error('[Auth] Facebook login error:', err.response?.data || err.message);
-    res.status(500).json({ error: 'Authentication failed' });
   }
 });
 

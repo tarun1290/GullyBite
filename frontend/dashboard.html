@@ -1466,18 +1466,6 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
 
-        <!-- Change Password -->
-        <div class="card">
-          <div class="ch"><h3>Change Password</h3></div>
-          <div class="cb">
-            <div class="fgrid" style="grid-template-columns:1fr 1fr 1fr">
-              <div class="fg"><label>Current Password</label><input id="p-curpw" type="password" placeholder="••••••••" autocomplete="current-password"></div>
-              <div class="fg"><label>New Password</label><input id="p-newpw" type="password" placeholder="••••••••" autocomplete="new-password"></div>
-              <div class="fg"><label>Confirm New Password</label><input id="p-confpw" type="password" placeholder="••••••••" autocomplete="new-password"></div>
-            </div>
-            <button class="btn-p" style="margin-top:1.1rem" onclick="doChangePassword()">Update Password</button>
-          </div>
-        </div>
 
         <!-- Delete Account -->
         <div class="card" style="margin-top:1.2rem;border-color:#fecaca">
@@ -4005,19 +3993,6 @@ async function doSaveChargeConfig() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-async function doChangePassword() {
-  const cur  = document.getElementById('p-curpw').value.trim();
-  const nw   = document.getElementById('p-newpw').value.trim();
-  const conf = document.getElementById('p-confpw').value.trim();
-  if (!cur || !nw) return toast('Enter current and new password', 'err');
-  if (nw !== conf) return toast('New passwords do not match', 'err');
-  if (nw.length < 8) return toast('New password must be at least 8 characters', 'err');
-  try {
-    await api('/auth/change-password', { method: 'POST', body: { currentPassword: cur, newPassword: nw } });
-    toast('Password updated', 'ok');
-    ['p-curpw','p-newpw','p-confpw'].forEach(id => document.getElementById(id).value = '');
-  } catch (e) { toast(e.message, 'err'); }
-}
 
 async function doDeleteAccount() {
   const confirmEmail = document.getElementById('delete-confirm-email').value.trim();
