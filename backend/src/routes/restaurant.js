@@ -574,20 +574,8 @@ router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res
     await col('menu_items').deleteOne({ _id: req.params.itemId });
 
     if (item) {
-      const branch = await col('branches').findOne({ _id: item.branch_id });
-      const wa_acc = branch
-        ? await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true })
-        : null;
-      const catalog_id   = branch?.catalog_id;
-      const retailer_id  = item.retailer_id;
-      const access_token = wa_acc?.access_token;
-      if (catalog_id && retailer_id && access_token) {
-        const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
-        axios.post(`${GRAPH}/${catalog_id}/items_batch`,
-          { allow_upsert: true, item_type: 'PRODUCT_ITEM', requests: [{ method: 'DELETE', retailer_id, item_type: 'PRODUCT_ITEM' }] },
-          { headers: { Authorization: `Bearer ${access_token}` }, timeout: 10000 }
-        ).catch(err => console.error('[Menu] Delete sync failed:', err.response?.data?.error?.message || err.message));
-      }
+      catalog.deleteProduct(item, item.branch_id)
+        .catch(err => console.error('[Menu] Delete sync failed:', err.message));
     }
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -823,6 +811,76 @@ router.post('/branches/:branchId/create-catalog', requireApproved, async (req, r
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// CATALOG API — Meta Product Catalog management
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/catalog/status — sync status for all branches
+router.get('/catalog/status', async (req, res) => {
+  try {
+    const status = await catalog.getSyncStatus(req.restaurantId);
+    res.json(status);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/catalog/sync — full sync all branches
+router.post('/catalog/sync', async (req, res) => {
+  try {
+    const results = await catalog.syncAllBranches(req.restaurantId);
+    res.json({ success: true, results });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/catalog/products?branchId=... — list products in Meta catalog
+router.get('/catalog/products', async (req, res) => {
+  try {
+    const { branchId } = req.query;
+    if (!branchId) return res.status(400).json({ error: 'branchId required' });
+    const result = await catalog.getCatalogProducts(branchId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/catalog/product — add single item to catalog
+router.post('/catalog/product', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { menuItemId } = req.body;
+    if (!menuItemId) return res.status(400).json({ error: 'menuItemId required' });
+    const result = await catalog.addProduct(menuItemId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/catalog/product/:id — update single item in catalog
+router.put('/catalog/product/:id', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const result = await catalog.updateProduct(req.params.id);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/restaurant/catalog/product/:id — remove item from catalog
+router.delete('/catalog/product/:id', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const item = await col('menu_items').findOne({ _id: req.params.id });
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+    const result = await catalog.deleteProduct(item, item.branch_id);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/catalog/toggle-auto-sync — enable/disable auto sync
+router.post('/catalog/toggle-auto-sync', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { catalog_sync_enabled: !!enabled, updated_at: new Date() } }
+    );
+    res.json({ success: true, catalogSyncEnabled: !!enabled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ═══════════════════════════════════════════════════════════════

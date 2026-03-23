@@ -1,11 +1,31 @@
 // src/services/catalog.js
-// Syncs branch-specific menu to Meta WhatsApp Catalog Batch API
+// Syncs branch-specific menu to Meta WhatsApp Catalog via facebook-nodejs-business-sdk
 // Each branch has its OWN catalog — menus stay separated by location
 
-const axios = require('axios');
+const bizSdk = require('facebook-nodejs-business-sdk');
+const axios   = require('axios');
 const { col } = require('../config/database');
 
+const Business       = bizSdk.Business;
+const ProductCatalog = bizSdk.ProductCatalog;
+const ProductItem    = bizSdk.ProductItem;
+
 const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+
+// ── SDK init helper — uses per-restaurant token or platform token ────
+function initSdk(accessToken) {
+  bizSdk.FacebookAdsApi.init(accessToken);
+  return bizSdk.FacebookAdsApi.getDefaultApi();
+}
+
+// ── Get the best available access token for a restaurant ──
+async function _getAccessToken(restaurantId) {
+  const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: restaurantId, is_active: true });
+  const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+  const token = wa_acc?.access_token || restaurant?.meta_access_token || process.env.WA_CATALOG_TOKEN;
+  if (!token) throw new Error('No Meta access token found. Please reconnect your Meta account.');
+  return { token, wa_acc, restaurant };
+}
 
 // ─── AUTO-CREATE CATALOG FOR A BRANCH ────────────────────────
 const createBranchCatalog = async (branchId) => {
@@ -17,27 +37,22 @@ const createBranchCatalog = async (branchId) => {
     return { alreadyExists: true, catalogId: branch.catalog_id };
   }
 
-  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
-  const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true });
+  const { token, wa_acc, restaurant } = await _getAccessToken(branch.restaurant_id);
 
-  // Reuse the WABA-level catalog if already provisioned — one catalog per WABA, not per branch
+  // Reuse the WABA-level catalog if already provisioned
   if (wa_acc?.catalog_id) {
     await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: wa_acc.catalog_id } });
     console.log(`[Catalog] Branch "${branch.name}" inherited WABA catalog ${wa_acc.catalog_id}`);
     return { alreadyExists: false, catalogId: wa_acc.catalog_id, inherited: true };
   }
 
-  const accessToken = restaurant?.meta_access_token || wa_acc?.access_token;
-  if (!accessToken) throw new Error('No Meta access token found. Please reconnect your Meta account.');
+  initSdk(token);
 
-  // ── STEP 0: FETCH EXISTING WABA CATALOG (avoids permission error) ──
-  // The embedded-signup token often cannot CREATE catalogs but CAN read them.
-  // If the WABA already owns one, inherit it rather than trying to create.
+  // STEP 0: Fetch existing WABA catalog
   if (wa_acc?.waba_id) {
     try {
       const existing = await axios.get(`${GRAPH}/${wa_acc.waba_id}/product_catalogs`, {
-        params: { access_token: accessToken, fields: 'id,name' },
-        timeout: 10000,
+        params: { access_token: token, fields: 'id,name' }, timeout: 10000,
       });
       const catalogs = existing.data?.data || [];
       if (catalogs.length) {
@@ -55,11 +70,11 @@ const createBranchCatalog = async (branchId) => {
     }
   }
 
-  // ── STEP A: GET BUSINESS ID ──────────────────────────────────
+  // STEP A: Get business ID via SDK
   let businessId;
   try {
     const meRes = await axios.get(`${GRAPH}/me/businesses`, {
-      params: { access_token: accessToken, fields: 'id,name' },
+      params: { access_token: token, fields: 'id,name' },
     });
     const businesses = meRes.data?.data || [];
     if (!businesses.length) throw new Error('No Meta Business account found');
@@ -68,50 +83,49 @@ const createBranchCatalog = async (branchId) => {
     throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
   }
 
-  // ── STEP A.5: CHECK EXISTING BUSINESS CATALOGS ───────────────
-  // The embedded-signup token usually lacks permission to CREATE catalogs
-  // but CAN read existing ones. Inherit before trying to create.
+  // STEP A.5: Check existing business catalogs via SDK
   let catalogId;
   try {
-    const bizCatalogRes = await axios.get(`${GRAPH}/${businessId}/owned_product_catalogs`, {
-      params: { access_token: accessToken, fields: 'id,name' },
-      timeout: 10000,
-    });
-    const bizCatalogs = bizCatalogRes.data?.data || [];
+    const biz = new Business(businessId);
+    const bizCatalogs = await biz.getOwnedProductCatalogs(['id', 'name']);
     if (bizCatalogs.length) {
       catalogId = bizCatalogs[0].id;
-      console.log(`[Catalog] Found existing business catalog ${catalogId} — inheriting instead of creating`);
+      console.log(`[Catalog] Found existing business catalog ${catalogId} — inheriting`);
     }
   } catch (e) {
-    console.warn('[Catalog] Could not read business catalogs:', e.response?.data?.error?.message || e.message);
+    console.warn('[Catalog] Could not read business catalogs:', e.message);
   }
 
-  // ── STEP B: CREATE THE CATALOG (only if none found above) ────
+  // STEP B: Create catalog via SDK
   if (!catalogId) {
     const catalogName = `${restaurant.business_name} - ${branch.name}`;
     try {
-      const createRes = await axios.post(
-        `${GRAPH}/${businessId}/owned_product_catalogs`,
-        { name: catalogName, vertical: 'commerce' },
-        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
-      );
-      catalogId = createRes.data.id;
+      const biz = new Business(businessId);
+      const created = await biz.createOwnedProductCatalog([], {
+        name: catalogName,
+        vertical: 'commerce',
+      });
+      catalogId = created.id;
       console.log(`[Catalog] Created catalog "${catalogName}" with ID: ${catalogId}`);
     } catch (err) {
-      throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
+      throw new Error(`Catalog creation failed: ${err.message}`);
     }
   }
 
-  // ── STEP C: SAVE CATALOG ID TO DB ───────────────────────────
+  // STEP C: Save catalog ID
   await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: catalogId } });
 
-  // ── STEP D: ASSOCIATE CATALOG WITH WHATSAPP ACCOUNT ─────────
+  // STEP D: Associate catalog with WhatsApp account
   if (wa_acc?.waba_id && wa_acc?.access_token) {
     try {
       await axios.post(
         `${GRAPH}/${wa_acc.waba_id}/product_catalogs`,
         { catalog_id: catalogId },
-        { headers: { Authorization: `Bearer ${wa_acc.access_token}`, 'Content-Type': 'application/json' }, timeout: 10000 }
+        { headers: { Authorization: `Bearer ${wa_acc.access_token}` }, timeout: 10000 }
+      );
+      await col('whatsapp_accounts').updateOne(
+        { restaurant_id: branch.restaurant_id, is_active: true },
+        { $set: { catalog_id: catalogId } }
       );
       console.log(`[Catalog] Linked catalog ${catalogId} to WABA ${wa_acc.waba_id}`);
     } catch (err) {
@@ -119,18 +133,59 @@ const createBranchCatalog = async (branchId) => {
     }
   }
 
-  return { success: true, catalogId, catalogName, branchId };
+  return { success: true, catalogId, branchId };
 };
+
+// ─── BUILD BATCH REQUEST FOR A MENU ITEM ─────────────────────
+function _buildItemRequest(item, branch, catMap) {
+  if (!item.retailer_id) return null;
+
+  if (!item.is_available) {
+    return { method: 'DELETE', retailer_id: item.retailer_id, item_type: 'PRODUCT_ITEM' };
+  }
+
+  const displayName = item.variant_value
+    ? `${item.name} - ${item.variant_value}`
+    : item.name;
+
+  const variantFields = {};
+  if (item.item_group_id) {
+    variantFields.item_group_id = item.item_group_id;
+    if (item.variant_value) variantFields.size = item.variant_value;
+  }
+
+  const categoryName = catMap[item.category_id]?.name || 'Menu';
+
+  return {
+    method      : 'UPDATE',
+    retailer_id : item.retailer_id,
+    item_type   : 'PRODUCT_ITEM',
+    data: {
+      name        : displayName.substring(0, 100),
+      description : (item.description || item.name).substring(0, 1000),
+      price       : item.price_paise,
+      currency    : 'INR',
+      availability: 'in stock',
+      url         : `${process.env.BASE_URL}/menu/${String(item._id)}`,
+      image_url   : item.image_url || `${process.env.BASE_URL}/placeholder.jpg`,
+      google_product_category: '1567',
+      custom_label_0: item.food_type,
+      custom_label_1: branch.name.substring(0, 100),
+      custom_label_2: categoryName,
+      custom_label_3: item.is_bestseller ? 'bestseller' : 'regular',
+      ...variantFields,
+    },
+  };
+}
 
 // ─── SYNC ONE BRANCH CATALOG ──────────────────────────────────
 const syncBranchCatalog = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!branch) throw new Error('Branch not found');
 
-  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
-  const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true });
+  const { token, wa_acc } = await _getAccessToken(branch.restaurant_id);
 
-  // If branch has no catalog_id, inherit from the WABA-level catalog
+  // Inherit catalog from WABA if branch doesn't have one
   if (!branch.catalog_id && wa_acc?.catalog_id) {
     await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: wa_acc.catalog_id } });
     branch.catalog_id = wa_acc.catalog_id;
@@ -138,7 +193,6 @@ const syncBranchCatalog = async (branchId) => {
   }
 
   if (!branch.catalog_id) {
-    // No catalog yet — create one now (first menu upload triggers catalog creation)
     try {
       const created = await createBranchCatalog(branchId);
       branch.catalog_id = created.catalogId;
@@ -146,21 +200,15 @@ const syncBranchCatalog = async (branchId) => {
     } catch (createErr) {
       throw new Error(
         `Could not create WhatsApp catalog for "${branch.name}": ${createErr.message}. ` +
-        `If you see "Missing Permission", reconnect your Meta account or create a catalog manually in Meta Business Suite and enter the Catalog ID.`
+        `If you see "Missing Permission", reconnect your Meta account.`
       );
     }
   }
 
-  // Use token from whatsapp_accounts OR fall back to restaurant.meta_access_token
-  const accessToken = wa_acc?.access_token || restaurant?.meta_access_token;
-  if (!accessToken) {
-    throw new Error('No WhatsApp access token found. Please reconnect your Meta account.');
-  }
+  initSdk(token);
 
-  // Get all menu items for this branch with their category
+  // Get all menu items for this branch
   const items = await col('menu_items').find({ branch_id: branchId }).toArray();
-
-  // Fetch category names
   const catIds = [...new Set(items.map(i => i.category_id).filter(Boolean))];
   const cats = catIds.length
     ? await col('menu_categories').find({ _id: { $in: catIds } }).toArray()
@@ -176,60 +224,14 @@ const syncBranchCatalog = async (branchId) => {
     const ga = a.item_group_id || String(a._id);
     const gb = b.item_group_id || String(b._id);
     if (ga !== gb) return ga < gb ? -1 : 1;
-    const ca = catMap[a.category_id]?.sort_order ?? 999;
-    const cb = catMap[b.category_id]?.sort_order ?? 999;
-    if (ca !== cb) return ca - cb;
     return (a.sort_order || 0) - (b.sort_order || 0);
   });
 
-  const requests = items
-    .filter(item => item.retailer_id)
-    .map(item => {
-      if (!item.is_available) {
-        return { method: 'DELETE', retailer_id: item.retailer_id, item_type: 'PRODUCT_ITEM' };
-      }
-
-      const displayName = item.variant_value
-        ? `${item.name} - ${item.variant_value}`
-        : item.name;
-
-      const variantFields = {};
-      if (item.item_group_id) {
-        variantFields.item_group_id = item.item_group_id;
-        // Meta only groups variants by size/color/pattern/gender fields.
-        // For food, always use 'size' so WhatsApp shows the variant picker.
-        if (item.variant_value) {
-          variantFields.size = item.variant_value;
-        }
-      }
-
-      const categoryName = catMap[item.category_id]?.name || 'Menu';
-
-      return {
-        method      : 'UPDATE',
-        retailer_id : item.retailer_id,
-        item_type   : 'PRODUCT_ITEM',
-        data: {
-          name        : displayName.substring(0, 100),
-          description : (item.description || item.name).substring(0, 1000),
-          price       : item.price_paise,
-          currency    : 'INR',
-          availability: 'in stock',
-          url         : `${process.env.BASE_URL}/menu/${String(item._id)}`,
-          image_url   : item.image_url || `${process.env.BASE_URL}/placeholder.jpg`,
-          google_product_category: '1567',
-          custom_label_0: item.food_type,
-          custom_label_1: branch.name.substring(0, 100),
-          custom_label_2: categoryName,
-          custom_label_3: item.is_bestseller ? 'bestseller' : 'regular',
-          ...variantFields,
-        },
-      };
-    });
+  const requests = items.map(item => _buildItemRequest(item, branch, catMap)).filter(Boolean);
 
   const BATCH_SIZE = 100;
   const results = { updated: 0, deleted: 0, failed: 0, errors: [] };
-  let catalogFixed = false; // guard: only auto-heal catalog once per sync
+  let catalogFixed = false;
 
   for (let i = 0; i < requests.length; i += BATCH_SIZE) {
     const batch      = requests.slice(i, i + BATCH_SIZE);
@@ -238,22 +240,34 @@ const syncBranchCatalog = async (branchId) => {
 
     console.log(`[Catalog] Branch "${branch.name}" — batch ${batchNum}/${totalBatches} (${batch.length} items)`);
 
-    // Up to 2 attempts: 1st normal, 2nd after auto-healing stale catalog_id
     let batchDone = false;
     for (let attempt = 0; attempt < 2 && !batchDone; attempt++) {
       try {
-        await axios.post(
-          `${GRAPH}/${branch.catalog_id}/items_batch`,
-          { allow_upsert: true, item_type: 'PRODUCT_ITEM', requests: batch },
-          { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 30000 }
-        );
+        // Use SDK createItemsBatch
+        const catalogObj = new ProductCatalog(branch.catalog_id);
+        await catalogObj.createItemsBatch([], {
+          allow_upsert: true,
+          item_type: 'PRODUCT_ITEM',
+          requests: batch,
+        });
         results.updated += batch.filter(r => r.method === 'UPDATE').length;
         results.deleted += batch.filter(r => r.method === 'DELETE').length;
         batchDone = true;
-      } catch (err) {
-        const errMsg = err.response?.data?.error?.message || err.message;
 
-        // Detect stale / inaccessible catalog_id and auto-heal on first attempt
+        // Update sync status on items
+        const syncedIds = batch
+          .filter(r => r.method === 'UPDATE')
+          .map(r => items.find(it => it.retailer_id === r.retailer_id)?._id)
+          .filter(Boolean);
+        if (syncedIds.length) {
+          await col('menu_items').updateMany(
+            { _id: { $in: syncedIds } },
+            { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
+          );
+        }
+      } catch (err) {
+        const errMsg = err._error?.error?.message || err.message;
+
         const isStale = attempt === 0 && !catalogFixed && (
           errMsg.includes('does not exist') ||
           errMsg.includes('missing permissions') ||
@@ -263,7 +277,6 @@ const syncBranchCatalog = async (branchId) => {
         if (isStale) {
           console.warn(`[Catalog] Stale catalog_id "${branch.catalog_id}" — clearing and re-discovering…`);
           try {
-            // Wipe stale IDs from DB so createBranchCatalog does a fresh lookup
             await col('branches').updateOne({ _id: branchId }, { $unset: { catalog_id: '' } });
             await col('whatsapp_accounts').updateMany(
               { restaurant_id: branch.restaurant_id }, { $unset: { catalog_id: '' } }
@@ -273,7 +286,6 @@ const syncBranchCatalog = async (branchId) => {
             branch.catalog_id = rediscovered.catalogId;
             catalogFixed = true;
             console.log(`[Catalog] Re-discovered catalog: ${branch.catalog_id} — retrying batch ${batchNum}…`);
-            // attempt loop continues → attempt 1 will retry with the new catalog_id
           } catch (fixErr) {
             console.error(`[Catalog] Re-discovery failed:`, fixErr.message);
             results.failed += batch.length;
@@ -284,6 +296,17 @@ const syncBranchCatalog = async (branchId) => {
           console.error(`[Catalog] Batch ${batchNum} failed:`, errMsg);
           results.failed += batch.length;
           results.errors.push(`Batch ${batchNum}: ${errMsg}`);
+
+          // Mark failed items
+          const failedIds = batch
+            .map(r => items.find(it => it.retailer_id === r.retailer_id)?._id)
+            .filter(Boolean);
+          if (failedIds.length) {
+            await col('menu_items').updateMany(
+              { _id: { $in: failedIds } },
+              { $set: { catalog_sync_status: 'error' } }
+            ).catch(() => {});
+          }
           batchDone = true;
         }
       }
@@ -300,25 +323,23 @@ const syncBranchCatalog = async (branchId) => {
     console.warn('[Catalog] Product set sync failed (non-fatal):', err.message)
   );
 
-  const success = results.failed === 0;
   console.log(`[Catalog] Sync complete for "${branch.name}":`, results);
 
   return {
-    success,
-    branchName : branch.name,
-    catalogId  : branch.catalog_id,
-    total      : items.length,
-    updated    : results.updated,
-    deleted    : results.deleted,
-    failed     : results.failed,
-    errors     : results.errors,
+    success   : results.failed === 0,
+    branchName: branch.name,
+    catalogId : branch.catalog_id,
+    total     : items.length,
+    updated   : results.updated,
+    deleted   : results.deleted,
+    failed    : results.failed,
+    errors    : results.errors,
   };
 };
 
 // ─── SYNC ALL BRANCHES OF A RESTAURANT ───────────────────────
 const syncAllBranches = async (restaurantId) => {
   const branches = await col('branches').find({ restaurant_id: restaurantId, accepts_orders: true }).toArray();
-
   const results = [];
   for (const branch of branches) {
     try {
@@ -328,7 +349,83 @@ const syncAllBranches = async (restaurantId) => {
       results.push({ branchName: branch.name, success: false, error: err.message });
     }
   }
+
+  // Update restaurant-level last sync timestamp
+  await col('restaurants').updateOne(
+    { _id: restaurantId },
+    { $set: { last_catalog_sync: new Date() } }
+  );
+
   return results;
+};
+
+// ─── ADD SINGLE PRODUCT TO CATALOG ───────────────────────────
+const addProduct = async (menuItemId) => {
+  const item = await col('menu_items').findOne({ _id: menuItemId });
+  if (!item || !item.retailer_id) return { skipped: true };
+
+  const branch = await col('branches').findOne({ _id: item.branch_id });
+  if (!branch?.catalog_id) return { skipped: true, reason: 'No catalog' };
+
+  const { token } = await _getAccessToken(branch.restaurant_id);
+  initSdk(token);
+
+  const catMap = {};
+  if (item.category_id) {
+    const cat = await col('menu_categories').findOne({ _id: item.category_id });
+    if (cat) catMap[String(cat._id)] = cat;
+  }
+
+  const request = _buildItemRequest(item, branch, catMap);
+  if (!request) return { skipped: true };
+
+  try {
+    const catalogObj = new ProductCatalog(branch.catalog_id);
+    await catalogObj.createItemsBatch([], {
+      allow_upsert: true,
+      item_type: 'PRODUCT_ITEM',
+      requests: [request],
+    });
+    await col('menu_items').updateOne(
+      { _id: menuItemId },
+      { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
+    );
+    return { success: true, retailer_id: item.retailer_id };
+  } catch (err) {
+    const errMsg = err._error?.error?.message || err.message;
+    console.error('[Catalog] addProduct failed:', errMsg);
+    await col('menu_items').updateOne({ _id: menuItemId }, { $set: { catalog_sync_status: 'error' } });
+    return { success: false, error: errMsg };
+  }
+};
+
+// ─── UPDATE SINGLE PRODUCT IN CATALOG ────────────────────────
+const updateProduct = async (menuItemId) => {
+  // Same as addProduct — batch UPDATE creates or updates
+  return addProduct(menuItemId);
+};
+
+// ─── DELETE SINGLE PRODUCT FROM CATALOG ──────────────────────
+const deleteProduct = async (menuItem, branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch?.catalog_id || !menuItem?.retailer_id) return { skipped: true };
+
+  const { token } = await _getAccessToken(branch.restaurant_id);
+  initSdk(token);
+
+  try {
+    const catalogObj = new ProductCatalog(branch.catalog_id);
+    await catalogObj.createItemsBatch([], {
+      allow_upsert: true,
+      item_type: 'PRODUCT_ITEM',
+      requests: [{ method: 'DELETE', retailer_id: menuItem.retailer_id, item_type: 'PRODUCT_ITEM' }],
+    });
+    return { success: true, retailer_id: menuItem.retailer_id };
+  } catch (err) {
+    const errMsg = err._error?.error?.message || err.message;
+    console.error('[Catalog] deleteProduct failed:', errMsg);
+    return { success: false, error: errMsg };
+  }
 };
 
 // ─── TOGGLE SINGLE ITEM AVAILABILITY ─────────────────────────
@@ -337,48 +434,100 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
   if (!item) return;
 
   const branch = await col('branches').findOne({ _id: item.branch_id });
-  const wa_acc = branch
-    ? await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true })
-    : null;
 
-  await col('menu_items').updateOne({ _id: menuItemId }, { $set: { is_available: isAvailable, updated_at: new Date() } });
+  await col('menu_items').updateOne(
+    { _id: menuItemId },
+    { $set: { is_available: isAvailable, updated_at: new Date(), catalog_sync_status: 'pending' } }
+  );
 
-  if (branch?.catalog_id && wa_acc?.access_token && item.retailer_id) {
-    const variantFields = {};
-    if (item.item_group_id) {
-      variantFields.item_group_id = item.item_group_id;
-      if (item.variant_value) {
-        variantFields.size = item.variant_value;
-      }
-    }
-    const displayName = item.variant_value ? `${item.name} - ${item.variant_value}` : item.name;
+  if (!branch?.catalog_id || !item.retailer_id) return;
 
-    const request = isAvailable
-      ? {
-          method      : 'UPDATE',
-          retailer_id : item.retailer_id,
-          item_type   : 'PRODUCT_ITEM',
-          data: {
-            name        : displayName.substring(0, 100),
-            price       : item.price_paise,
-            currency    : 'INR',
-            availability: 'in stock',
-            url         : `${process.env.BASE_URL}/menu/${String(item._id)}`,
-            image_url   : item.image_url || `${process.env.BASE_URL}/placeholder.jpg`,
-            google_product_category: '1567',
-            ...variantFields,
-          },
-        }
-      : { method: 'DELETE', retailer_id: item.retailer_id, item_type: 'PRODUCT_ITEM' };
+  const { token } = await _getAccessToken(branch.restaurant_id);
+  initSdk(token);
 
-    await axios.post(
-      `${GRAPH}/${branch.catalog_id}/items_batch`,
-      { allow_upsert: true, item_type: 'PRODUCT_ITEM', requests: [request] },
-      { headers: { Authorization: `Bearer ${wa_acc.access_token}`, 'Content-Type': 'application/json' }, timeout: 10000 }
-    ).catch(err => {
-      console.error('[Catalog] Single item toggle failed:', err.response?.data?.error?.message || err.message);
+  const catMap = {};
+  if (item.category_id) {
+    const cat = await col('menu_categories').findOne({ _id: item.category_id });
+    if (cat) catMap[String(cat._id)] = cat;
+  }
+
+  const request = isAvailable
+    ? _buildItemRequest({ ...item, is_available: true }, branch, catMap)
+    : { method: 'DELETE', retailer_id: item.retailer_id, item_type: 'PRODUCT_ITEM' };
+
+  if (!request) return;
+
+  try {
+    const catalogObj = new ProductCatalog(branch.catalog_id);
+    await catalogObj.createItemsBatch([], {
+      allow_upsert: true,
+      item_type: 'PRODUCT_ITEM',
+      requests: [request],
+    });
+    await col('menu_items').updateOne(
+      { _id: menuItemId },
+      { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
+    );
+  } catch (err) {
+    console.error('[Catalog] Availability toggle failed:', err._error?.error?.message || err.message);
+    await col('menu_items').updateOne({ _id: menuItemId }, { $set: { catalog_sync_status: 'error' } });
+  }
+};
+
+// ─── GET ALL PRODUCTS IN A CATALOG (via SDK) ─────────────────
+const getCatalogProducts = async (branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch?.catalog_id) return { products: [], catalogId: null };
+
+  const { token } = await _getAccessToken(branch.restaurant_id);
+  initSdk(token);
+
+  try {
+    const catalogObj = new ProductCatalog(branch.catalog_id);
+    const products = await catalogObj.getProducts(
+      ['id', 'retailer_id', 'name', 'description', 'price', 'currency', 'availability', 'image_url', 'url'],
+      { limit: 250 }
+    );
+    return {
+      catalogId: branch.catalog_id,
+      products: products.map(p => p._data),
+      total: products.length,
+    };
+  } catch (err) {
+    console.error('[Catalog] getProducts failed:', err._error?.error?.message || err.message);
+    return { catalogId: branch.catalog_id, products: [], error: err._error?.error?.message || err.message };
+  }
+};
+
+// ─── GET SYNC STATUS FOR A RESTAURANT ────────────────────────
+const getSyncStatus = async (restaurantId) => {
+  const branches = await col('branches').find({ restaurant_id: restaurantId }).toArray();
+  const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+
+  const branchStatuses = [];
+  for (const branch of branches) {
+    const totalItems = await col('menu_items').countDocuments({ branch_id: String(branch._id) });
+    const syncedItems = await col('menu_items').countDocuments({ branch_id: String(branch._id), catalog_sync_status: 'synced' });
+    const errorItems = await col('menu_items').countDocuments({ branch_id: String(branch._id), catalog_sync_status: 'error' });
+    const pendingItems = totalItems - syncedItems - errorItems;
+
+    branchStatuses.push({
+      branchId  : String(branch._id),
+      branchName: branch.name,
+      catalogId : branch.catalog_id || null,
+      lastSync  : branch.catalog_synced_at || null,
+      totalItems,
+      syncedItems,
+      pendingItems,
+      errorItems,
     });
   }
+
+  return {
+    catalogSyncEnabled: restaurant?.catalog_sync_enabled || false,
+    lastFullSync      : restaurant?.last_catalog_sync || null,
+    branches          : branchStatuses,
+  };
 };
 
 // ─── SYNC CATEGORY PRODUCT SETS ──────────────────────────────
@@ -386,27 +535,25 @@ const syncCategoryProductSets = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!branch) throw new Error('Branch not found');
 
-  const wa_acc = branch
-    ? await col('whatsapp_accounts').findOne({ restaurant_id: branch.restaurant_id, is_active: true })
-    : null;
-  const restaurant2 = branch
-    ? await col('restaurants').findOne({ _id: branch.restaurant_id })
-    : null;
-  const syncToken = wa_acc?.access_token || restaurant2?.meta_access_token;
+  const { token } = await _getAccessToken(branch.restaurant_id);
 
-  if (!branch.catalog_id || !syncToken) {
+  if (!branch.catalog_id || !token) {
     return { skipped: true, reason: 'No catalog or access token' };
   }
 
-  // Categories with at least one available item
-  const availableItems = await col('menu_items').find({ branch_id: branchId, is_available: true, category_id: { $ne: null } }).toArray();
+  initSdk(token);
+
+  const availableItems = await col('menu_items').find({
+    branch_id: branchId, is_available: true, category_id: { $ne: null },
+  }).toArray();
   const catIds = [...new Set(availableItems.map(i => i.category_id))];
 
   if (!catIds.length) return { skipped: true, reason: 'No categories with available items' };
 
   const cats = await col('menu_categories').find({ _id: { $in: catIds } }).sort({ sort_order: 1, name: 1 }).toArray();
-
   const results = { created: 0, updated: 0, failed: 0, sets: [] };
+
+  const catalogObj = new ProductCatalog(branch.catalog_id);
 
   for (const cat of cats) {
     const filter = JSON.stringify({
@@ -418,26 +565,23 @@ const syncCategoryProductSets = async (branchId) => {
 
     try {
       if (cat.meta_set_id) {
+        // Update existing set via raw API (SDK ProductSet.update works too)
         await axios.post(
           `${GRAPH}/${cat.meta_set_id}`,
           { name: cat.name, filter },
-          { headers: { Authorization: `Bearer ${syncToken}` }, timeout: 10000 }
+          { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
         );
         results.updated++;
       } else {
-        const res = await axios.post(
-          `${GRAPH}/${branch.catalog_id}/product_sets`,
-          { name: cat.name, filter },
-          { headers: { Authorization: `Bearer ${syncToken}` }, timeout: 10000 }
-        );
-        const setId = res.data.id;
+        const created = await catalogObj.createProductSet([], { name: cat.name, filter });
+        const setId = created.id;
         await col('menu_categories').updateOne({ _id: String(cat._id) }, { $set: { meta_set_id: setId } });
         results.sets.push({ name: cat.name, setId });
         results.created++;
       }
       console.log(`[Catalog] Product set "${cat.name}" synced for branch "${branch.name}"`);
     } catch (err) {
-      const msg = err.response?.data?.error?.message || err.message;
+      const msg = err._error?.error?.message || err.response?.data?.error?.message || err.message;
       console.error(`[Catalog] Product set failed for "${cat.name}":`, msg);
       results.failed++;
     }
@@ -457,4 +601,16 @@ const rediscoverCatalog = async (branchId) => {
   return await createBranchCatalog(branchId);
 };
 
-module.exports = { createBranchCatalog, syncBranchCatalog, syncAllBranches, setItemAvailability, syncCategoryProductSets, rediscoverCatalog };
+module.exports = {
+  createBranchCatalog,
+  syncBranchCatalog,
+  syncAllBranches,
+  addProduct,
+  updateProduct,
+  deleteProduct,
+  setItemAvailability,
+  getCatalogProducts,
+  getSyncStatus,
+  syncCategoryProductSets,
+  rediscoverCatalog,
+};

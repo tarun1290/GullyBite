@@ -1467,6 +1467,33 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
 
 
+        <!-- Meta Catalog Sync -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>Meta Product Catalog</h3></div>
+          <div class="cb">
+            <p style="font-size:.82rem;color:var(--dim);margin-bottom:1rem;line-height:1.6">
+              Sync your menu items to Meta's Product Catalog for WhatsApp Commerce, Instagram Shopping, and Facebook Shops.
+            </p>
+            <div id="catalog-status-box" style="padding:.7rem 1rem;border-radius:8px;background:var(--surface2,#f4f4f5);margin-bottom:1rem">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+                <span style="font-weight:600;font-size:.85rem">Sync Status</span>
+                <span id="catalog-last-sync" style="font-size:.75rem;color:var(--dim)">Never synced</span>
+              </div>
+              <div id="catalog-branch-stats" style="font-size:.8rem;color:var(--dim)">Loading...</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem">
+              <label style="font-size:.84rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:.5rem">
+                <input type="checkbox" id="catalog-auto-sync" onchange="toggleCatalogAutoSync(this.checked)" style="width:16px;height:16px">
+                Auto-sync when menu changes
+              </label>
+            </div>
+            <div style="display:flex;gap:.6rem">
+              <button class="btn-p" id="catalog-sync-btn" onclick="doCatalogSync()">Sync All Items Now</button>
+              <button class="btn-g" id="catalog-create-btn" onclick="doCatalogCreate()">Create Catalog</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Change Password -->
         <div class="card" style="margin-top:1.2rem">
           <div class="ch"><h3>Change Password</h3></div>
@@ -1710,6 +1737,7 @@ async function initDash() {
 
     loadOverview();
     loadWA();
+    loadCatalogStatus();
   } catch (e) { console.error(e); }
 }
 
@@ -4019,6 +4047,76 @@ async function doSaveChargeConfig() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+
+/* ─── META CATALOG ─────────────────────────────────────── */
+async function loadCatalogStatus() {
+  try {
+    const d = await api('/api/restaurant/catalog/status');
+    if (!d) return;
+
+    const lastSync = d.lastFullSync ? new Date(d.lastFullSync).toLocaleString() : 'Never synced';
+    document.getElementById('catalog-last-sync').textContent = lastSync;
+    document.getElementById('catalog-auto-sync').checked = d.catalogSyncEnabled || false;
+
+    if (d.branches && d.branches.length) {
+      const html = d.branches.map(b => {
+        const syncIcon = b.catalogId ? '✓' : '—';
+        return `<div style="display:flex;justify-content:space-between;padding:.25rem 0;border-bottom:1px solid var(--rim,#e5e7eb)">
+          <span>${b.branchName}</span>
+          <span>${syncIcon} ${b.syncedItems}/${b.totalItems} synced${b.errorItems ? ` · <span style="color:var(--red,#dc2626)">${b.errorItems} errors</span>` : ''}</span>
+        </div>`;
+      }).join('');
+      document.getElementById('catalog-branch-stats').innerHTML = html;
+    } else {
+      document.getElementById('catalog-branch-stats').textContent = 'No branches found';
+    }
+  } catch (e) {
+    document.getElementById('catalog-branch-stats').textContent = 'Could not load status';
+  }
+}
+
+async function doCatalogSync() {
+  const btn = document.getElementById('catalog-sync-btn');
+  btn.disabled = true; btn.textContent = 'Syncing…';
+  try {
+    const d = await api('/api/restaurant/catalog/sync', { method: 'POST' });
+    if (d) {
+      const total = d.results?.reduce((s, r) => s + (r.updated || 0), 0) || 0;
+      const failed = d.results?.reduce((s, r) => s + (r.failed || 0), 0) || 0;
+      toast(failed ? `Synced ${total} items, ${failed} failed` : `Synced ${total} items!`, failed ? 'err' : 'ok');
+      loadCatalogStatus();
+    }
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Sync All Items Now'; }
+}
+
+async function doCatalogCreate() {
+  const btn = document.getElementById('catalog-create-btn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    // Create catalog for first branch
+    const branches = rest?.branches || [];
+    if (!branches.length) {
+      // Fetch branches
+      const brData = await api('/api/restaurant/branches');
+      if (brData && brData.length) {
+        const result = await api(`/api/restaurant/branches/${brData[0]._id || brData[0].id}/create-catalog`, { method: 'POST' });
+        if (result) toast(result.catalogId ? `Catalog created: ${result.catalogId}` : 'Catalog ready', 'ok');
+        loadCatalogStatus();
+      } else {
+        toast('No branches found — add a branch first', 'err');
+      }
+    }
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Create Catalog'; }
+}
+
+async function toggleCatalogAutoSync(enabled) {
+  try {
+    await api('/api/restaurant/catalog/toggle-auto-sync', { method: 'POST', body: { enabled } });
+    toast(enabled ? 'Auto-sync enabled' : 'Auto-sync disabled', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
 
 async function doChangePassword() {
   const btn = document.getElementById('cp-btn');
