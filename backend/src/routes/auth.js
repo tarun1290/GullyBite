@@ -40,7 +40,11 @@ router.post('/signup', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'Password must contain at least one special character (e.g. @, #, !)' });
 
     const existing = await col('restaurants').findOne({ email: email.toLowerCase() });
-    if (existing) return res.status(409).json({ error: 'An account with this email already exists. Try signing in instead.' });
+    if (existing) {
+      if (existing.google_id && !existing.password_hash)
+        return res.status(409).json({ error: 'An account with this email already exists. Please sign in with Google.' });
+      return res.status(409).json({ error: 'An account with this email already exists. Try signing in instead.' });
+    }
 
     const passwordHash = await bcrypt.hash(password, 12);
     const id = newId();
@@ -193,8 +197,8 @@ router.get('/google/callback', async (req, res) => {
   }
 
   try {
-    // Build the redirect_uri that matches what the frontend sent to Google
-    const redirectUri = `${req.protocol}://${req.get('host')}/auth/google/callback`;
+    // Use BASE_URL to ensure https — req.protocol returns 'http' behind Vercel's proxy
+    const redirectUri = `${process.env.BASE_URL}/auth/google/callback`;
     console.log('[Google Callback] Using redirect_uri:', redirectUri);
 
     // 1. Exchange code for tokens
