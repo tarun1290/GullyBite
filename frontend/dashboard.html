@@ -99,6 +99,7 @@ a{color:inherit;text-decoration:none}
 .btn-gold{background:var(--gold);color:#fff}
 .btn-gold:hover{background:var(--gold2)}
 .msg-filter-btn.active{background:var(--wa);color:#fff;border-color:var(--wa)}
+.iss-filter-btn.active{background:var(--pri);color:#fff;border-color:var(--pri)}
 
 /* forms */
 .lbl,.fg label{font-size:.72rem;font-weight:600;color:var(--dim);letter-spacing:.025em;display:block;margin-bottom:.25rem}
@@ -354,6 +355,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
       <div class="sb-cap">Feedback</div>
       <button class="sb-btn" onclick="goTab('ratings',this)"><span class="ic">⭐</span>Ratings</button>
       <button class="sb-btn" onclick="goTab('loyalty',this)"><span class="ic">🏅</span>Loyalty</button>
+      <button class="sb-btn" onclick="goTab('issues',this)"><span class="ic">🎫</span>Issues <span id="issue-badge" style="display:none;background:var(--red);color:#fff;font-size:.6rem;padding:.1rem .35rem;border-radius:9px;margin-left:.3rem">0</span></button>
     </div>
     <div class="sb-sec">
       <div class="sb-cap">Marketing</div>
@@ -609,6 +611,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
                   <div id="msg-thread-name" style="font-weight:600;font-size:.9rem"></div>
                   <div id="msg-thread-info" style="font-size:.72rem;color:var(--dim)"></div>
                 </div>
+                <button class="btn-g btn-sm" onclick="createIssueFromThread()" title="Create issue from this conversation">🎫 Create Issue</button>
                 <button class="btn-g btn-sm" id="msg-resolve-btn" onclick="resolveThread()">✅ Resolve</button>
               </div>
               <div id="msg-window-warning" style="display:none;margin-top:.4rem;padding:.3rem .6rem;background:#fef3c7;border-radius:6px;font-size:.72rem;color:#92400e">⚠️ 24-hour reply window has expired. Use template messages to contact this customer.</div>
@@ -620,6 +623,111 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               <input id="msg-reply-input" placeholder="Type a reply…" style="flex:1;padding:.5rem .7rem;border:1px solid var(--rim);border-radius:8px;font-size:.85rem" onkeydown="if(event.key==='Enter')sendMsgReply()">
               <button class="btn-p btn-sm" onclick="sendMsgReply()">Send</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── ISSUES ───────────────────────────────── -->
+      <div class="tab" id="tab-issues">
+        <!-- Stats row -->
+        <div id="iss-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.6rem;margin-bottom:1rem"></div>
+        <!-- Filters -->
+        <div style="display:flex;gap:.4rem;margin-bottom:.8rem;flex-wrap:wrap;align-items:center">
+          <button class="btn-g btn-sm iss-filter-btn active" data-f="open_all" onclick="setIssFilter('open_all',this)">Open</button>
+          <button class="btn-g btn-sm iss-filter-btn" data-f="in_progress" onclick="setIssFilter('in_progress',this)">In Progress</button>
+          <button class="btn-g btn-sm iss-filter-btn" data-f="escalated" onclick="setIssFilter('escalated',this)">Escalated</button>
+          <button class="btn-g btn-sm iss-filter-btn" data-f="resolved" onclick="setIssFilter('resolved',this)">Resolved</button>
+          <button class="btn-g btn-sm iss-filter-btn" data-f="" onclick="setIssFilter('',this)">All</button>
+          <select id="iss-cat-filter" onchange="loadIssueList()" style="margin-left:auto;padding:.3rem .5rem;border:1px solid var(--rim2);border-radius:6px;font-size:.78rem">
+            <option value="">All Categories</option>
+            <option value="food_quality">🍕 Food Quality</option>
+            <option value="missing_item">📦 Missing Item</option>
+            <option value="wrong_order">❌ Wrong Order</option>
+            <option value="delivery_late">🛵 Late Delivery</option>
+            <option value="delivery_not_received">🚫 Not Received</option>
+            <option value="delivery_damaged">💥 Damaged</option>
+            <option value="wrong_charge">💸 Wrong Charge</option>
+            <option value="refund_request">💰 Refund</option>
+            <option value="payment_failed">⚠️ Payment Failed</option>
+            <option value="general">💬 General</option>
+          </select>
+          <input id="iss-search" placeholder="Search issues…" oninput="debounceIssSearch()" style="padding:.3rem .5rem;border:1px solid var(--rim2);border-radius:6px;font-size:.78rem;width:180px">
+        </div>
+        <!-- Issue list -->
+        <div class="tbl" style="overflow-x:auto">
+          <table>
+            <thead><tr><th>Issue #</th><th>Category</th><th>Customer</th><th>Order</th><th>Priority</th><th>Status</th><th>SLA</th><th>Created</th><th></th></tr></thead>
+            <tbody id="iss-tbody"><tr><td colspan="9" style="text-align:center;color:var(--dim);padding:2rem">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div id="iss-pager" style="display:flex;justify-content:center;gap:.4rem;margin-top:.6rem"></div>
+
+        <!-- Issue detail overlay -->
+        <div id="iss-detail" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;overflow-y:auto">
+          <div style="margin:2rem auto;max-width:800px;background:var(--ink2);border-radius:12px;border:1px solid var(--rim);box-shadow:0 12px 40px rgba(0,0,0,.25)">
+            <!-- Header -->
+            <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;gap:.7rem;flex-wrap:wrap">
+              <span id="iss-d-number" style="font-weight:700;font-size:.95rem"></span>
+              <span id="iss-d-category" style="font-size:.78rem;padding:.15rem .5rem;border-radius:6px;background:var(--ink3)"></span>
+              <span id="iss-d-priority" style="font-size:.72rem;font-weight:700;padding:.12rem .4rem;border-radius:4px"></span>
+              <span id="iss-d-status" style="font-size:.72rem;font-weight:600;padding:.12rem .4rem;border-radius:4px"></span>
+              <span id="iss-d-sla" style="font-size:.72rem;margin-left:auto"></span>
+              <button class="btn-g btn-sm" onclick="closeIssDetail()">✕ Close</button>
+            </div>
+            <!-- Customer + order info -->
+            <div style="padding:.8rem 1.2rem;border-bottom:1px solid var(--rim);display:flex;gap:1.5rem;font-size:.82rem;flex-wrap:wrap">
+              <div><span style="color:var(--dim)">Customer:</span> <strong id="iss-d-cust"></strong></div>
+              <div><span style="color:var(--dim)">Phone:</span> <span id="iss-d-phone"></span></div>
+              <div><span style="color:var(--dim)">Order:</span> <span id="iss-d-order"></span></div>
+            </div>
+            <!-- Description -->
+            <div style="padding:.8rem 1.2rem;border-bottom:1px solid var(--rim)">
+              <div style="font-size:.72rem;color:var(--dim);margin-bottom:.3rem;text-transform:uppercase;font-weight:600">Description</div>
+              <div id="iss-d-desc" style="font-size:.85rem;line-height:1.5"></div>
+              <div id="iss-d-media" style="margin-top:.4rem;display:flex;gap:.4rem;flex-wrap:wrap"></div>
+            </div>
+            <!-- Messages thread -->
+            <div style="padding:.8rem 1.2rem;border-bottom:1px solid var(--rim)">
+              <div style="font-size:.72rem;color:var(--dim);margin-bottom:.5rem;text-transform:uppercase;font-weight:600">Communication</div>
+              <div id="iss-d-msgs" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:.35rem"></div>
+              <div style="margin-top:.6rem;display:flex;gap:.4rem;align-items:center">
+                <input id="iss-d-reply" placeholder="Type a response…" style="flex:1;padding:.45rem .65rem;border:1px solid var(--rim);border-radius:8px;font-size:.82rem" onkeydown="if(event.key==='Enter'&&!event.shiftKey)sendIssMsg()">
+                <label style="font-size:.72rem;display:flex;align-items:center;gap:.2rem;color:var(--dim);cursor:pointer;white-space:nowrap"><input type="checkbox" id="iss-d-internal" style="accent-color:var(--wa)"> Internal</label>
+                <button class="btn-p btn-sm" onclick="sendIssMsg()">Send</button>
+              </div>
+            </div>
+            <!-- Actions -->
+            <div id="iss-d-actions" style="padding:.8rem 1.2rem;display:flex;gap:.4rem;flex-wrap:wrap"></div>
+          </div>
+        </div>
+
+        <!-- Create issue modal (from inbox) -->
+        <div id="iss-create-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:910;overflow-y:auto">
+          <div style="margin:3rem auto;max-width:500px;background:var(--ink2);border-radius:12px;border:1px solid var(--rim);padding:1.2rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+              <h3 style="font-size:.95rem">Create Issue</h3>
+              <button class="btn-g btn-sm" onclick="document.getElementById('iss-create-modal').style.display='none'">✕</button>
+            </div>
+            <div class="fgrid" style="gap:.6rem">
+              <div class="fg span2"><label>Customer ID</label><input id="iss-c-cust" readonly style="color:var(--dim)"></div>
+              <div class="fg span2"><label>Order ID (optional)</label><input id="iss-c-order" placeholder="Leave blank if not order-specific"></div>
+              <div class="fg span2">
+                <label>Category</label>
+                <select id="iss-c-cat">
+                  <option value="food_quality">🍕 Food Quality</option>
+                  <option value="missing_item">📦 Missing Item</option>
+                  <option value="wrong_order">❌ Wrong Order</option>
+                  <option value="delivery_late">🛵 Late Delivery</option>
+                  <option value="delivery_not_received">🚫 Not Received</option>
+                  <option value="wrong_charge">💸 Wrong Charge</option>
+                  <option value="refund_request">💰 Refund</option>
+                  <option value="payment_failed">⚠️ Payment Failed</option>
+                  <option value="general">💬 General</option>
+                </select>
+              </div>
+              <div class="fg span2"><label>Description</label><textarea id="iss-c-desc" rows="3" style="width:100%;padding:.5rem;border:1px solid var(--rim);border-radius:8px;font-size:.83rem;font-family:inherit"></textarea></div>
+            </div>
+            <button class="btn-p" style="margin-top:.8rem;width:100%" onclick="doCreateIssue()">Create Issue</button>
           </div>
         </div>
       </div>
@@ -1863,6 +1971,7 @@ const TMETA = {
   loyalty:     { title: 'Loyalty',             sub: 'Customer loyalty points and rewards', fn: loadLoyalty },
   team:        { title: 'Team',               sub: 'Manage staff access and roles',       fn: loadTeam },
   messages:    { title: 'Messages',            sub: 'Customer messages and replies',      fn: loadMessages },
+  issues:      { title: 'Issues',              sub: 'Customer complaints and resolutions', fn: loadIssues },
   referrals:   { title: 'Referrals Received', sub: 'Customers referred by GullyBite admin — 7.5% fee applies', fn: loadReferrals },
   settings:    { title: 'Settings',           sub: 'Business profile and bank account',  fn: loadProfile },
 };
@@ -6020,6 +6129,12 @@ function debounceMsgSearch() {
   }, 350);
 }
 
+function createIssueFromThread() {
+  if (!msgActiveCust) return;
+  const thread = msgThreads.find(t => t.customer_id === msgActiveCust) || {};
+  openCreateIssue(msgActiveCust, thread.related_order_id || '', thread.last_message_text || '');
+}
+
 function startMsgPoll() {
   clearInterval(msgPollTimer);
   // Request notification permission
@@ -6045,6 +6160,254 @@ function startMsgPoll() {
     // Refresh thread list if we're on the messages tab
     if (document.getElementById('tab-messages').classList.contains('on')) fetchThreads();
   }, 10000);
+}
+
+/* ─────────────────────────── ISSUES ──────────────────────── */
+let issFilter = 'open_all', issPage = 1, issActiveIssue = null;
+const ISS_PRI_CLR = { critical: '#dc2626', high: '#f59e0b', medium: '#3b82f6', low: '#94a3b8' };
+const ISS_PRI_BG  = { critical: 'rgba(220,38,38,.1)', high: 'rgba(245,158,11,.1)', medium: 'rgba(59,130,246,.08)', low: 'rgba(148,163,184,.08)' };
+const ISS_ST_CLR  = { open: '#3b82f6', assigned: '#8b5cf6', in_progress: '#f59e0b', waiting_customer: '#6366f1', escalated_to_admin: '#dc2626', resolved: '#16a34a', closed: '#64748b', reopened: '#ef4444' };
+
+async function loadIssues() {
+  await Promise.all([loadIssueStats(), loadIssueList()]);
+}
+
+async function loadIssueStats() {
+  try {
+    const s = await api('/api/restaurant/issues/stats');
+    document.getElementById('iss-stats').innerHTML = [
+      issStat('Open', s.open, '#3b82f6'),
+      issStat('In Progress', s.in_progress, '#f59e0b'),
+      issStat('Escalated', s.escalated, '#dc2626'),
+      issStat('Resolved', s.resolved, '#16a34a'),
+      issStat('SLA Breached', s.sla_breached, s.sla_breached > 0 ? '#dc2626' : '#94a3b8'),
+    ].join('');
+    // Update sidebar badge
+    const badge = document.getElementById('issue-badge');
+    const openCount = (s.open || 0) + (s.in_progress || 0);
+    if (openCount > 0) { badge.textContent = openCount; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+  } catch (_) {}
+}
+
+function issStat(label, val, clr) {
+  return `<div style="background:var(--ink2);border:1px solid var(--rim);border-radius:10px;padding:.7rem .8rem">
+    <div style="font-size:.65rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;font-weight:600">${label}</div>
+    <div style="font-size:1.4rem;font-weight:700;color:${clr}">${val || 0}</div>
+  </div>`;
+}
+
+async function loadIssueList(page) {
+  if (page) issPage = page;
+  const tbody = document.getElementById('iss-tbody');
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--dim);padding:2rem">Loading…</td></tr>';
+  try {
+    const qs = new URLSearchParams({ page: issPage, limit: 20 });
+    if (issFilter) qs.set('status', issFilter);
+    const cat = document.getElementById('iss-cat-filter').value;
+    if (cat) qs.set('category', cat);
+    const search = document.getElementById('iss-search').value.trim();
+    if (search) qs.set('search', search);
+    const r = await api('/api/restaurant/issues?' + qs);
+    const issues = r.issues || [];
+    if (!issues.length) { tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--dim);padding:2rem">No issues found</td></tr>'; return; }
+    tbody.innerHTML = issues.map(i => {
+      const sla = slaLabel(i);
+      const priClr = ISS_PRI_CLR[i.priority] || '#94a3b8';
+      const stClr = ISS_ST_CLR[i.status] || '#64748b';
+      return `<tr style="cursor:pointer" onclick="openIssDetail('${i._id}')">
+        <td style="font-weight:600;font-size:.8rem;white-space:nowrap">${i.issue_number}</td>
+        <td style="font-size:.78rem">${catLabel(i.category)}</td>
+        <td style="font-size:.8rem">${i.customer_name || '—'}</td>
+        <td style="font-size:.78rem;color:var(--dim)">${i.order_number || '—'}</td>
+        <td><span style="color:${priClr};font-weight:600;font-size:.72rem;text-transform:uppercase">${i.priority}</span></td>
+        <td><span style="background:${stClr};color:#fff;font-size:.68rem;padding:.12rem .4rem;border-radius:4px;font-weight:600">${i.status.replace(/_/g,' ')}</span></td>
+        <td style="font-size:.72rem">${sla}</td>
+        <td style="font-size:.72rem;color:var(--dim)">${timeAgo(i.created_at)}</td>
+        <td><button class="btn-g btn-sm" style="font-size:.7rem;padding:.15rem .4rem" onclick="event.stopPropagation();openIssDetail('${i._id}')">View</button></td>
+      </tr>`;
+    }).join('');
+    // Pager
+    const pager = document.getElementById('iss-pager');
+    if (r.pages > 1) {
+      let h = '';
+      if (r.page > 1) h += `<button class="btn-g btn-sm" onclick="loadIssueList(${r.page-1})">« Prev</button>`;
+      h += `<span style="font-size:.78rem;color:var(--dim);padding:.3rem .5rem">Page ${r.page} of ${r.pages}</span>`;
+      if (r.page < r.pages) h += `<button class="btn-g btn-sm" onclick="loadIssueList(${r.page+1})">Next »</button>`;
+      pager.innerHTML = h;
+    } else pager.innerHTML = '';
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="9" style="color:var(--red);padding:1rem">${e.message}</td></tr>`; }
+}
+
+function catLabel(cat) {
+  const map = { food_quality:'🍕 Food Quality', missing_item:'📦 Missing Item', wrong_order:'❌ Wrong Order', portion_size:'📏 Portion', packaging:'📦 Packaging', hygiene:'🧹 Hygiene', delivery_late:'🕐 Late', delivery_not_received:'🚫 Not Received', delivery_damaged:'💥 Damaged', rider_behavior:'🛵 Rider', wrong_address:'📍 Wrong Addr', wrong_charge:'💸 Wrong Charge', refund_request:'💰 Refund', payment_failed:'⚠️ Payment', coupon_issue:'🏷️ Coupon', general:'💬 General', app_issue:'📱 App' };
+  return map[cat] || cat;
+}
+
+function slaLabel(issue) {
+  if (['resolved','closed'].includes(issue.status)) return '<span style="color:#16a34a">✓</span>';
+  if (!issue.sla_deadline) return '—';
+  const remaining = new Date(issue.sla_deadline).getTime() - Date.now();
+  if (remaining <= 0) return '<span style="color:#dc2626;font-weight:600">🔴 Breached</span>';
+  const hrs = Math.floor(remaining / 3600000);
+  const mins = Math.floor((remaining % 3600000) / 60000);
+  if (remaining < 3600000) return `<span style="color:#dc2626">🟡 ${mins}m left</span>`;
+  if (hrs < 6) return `<span style="color:#f59e0b">🟡 ${hrs}h ${mins}m</span>`;
+  return `<span style="color:#16a34a">🟢 ${hrs}h</span>`;
+}
+
+function setIssFilter(f, btn) {
+  issFilter = f; issPage = 1;
+  document.querySelectorAll('.iss-filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadIssueList();
+}
+
+let _issSearchTimer;
+function debounceIssSearch() {
+  clearTimeout(_issSearchTimer);
+  _issSearchTimer = setTimeout(() => { issPage = 1; loadIssueList(); }, 400);
+}
+
+async function openIssDetail(id) {
+  issActiveIssue = id;
+  document.getElementById('iss-detail').style.display = 'block';
+  try {
+    const i = await api('/api/restaurant/issues/' + id);
+    document.getElementById('iss-d-number').textContent = i.issue_number;
+    document.getElementById('iss-d-category').textContent = catLabel(i.category);
+    const priClr = ISS_PRI_CLR[i.priority] || '#94a3b8';
+    const priBg = ISS_PRI_BG[i.priority] || '';
+    document.getElementById('iss-d-priority').style.cssText = `font-size:.72rem;font-weight:700;padding:.12rem .4rem;border-radius:4px;background:${priBg};color:${priClr};text-transform:uppercase`;
+    document.getElementById('iss-d-priority').textContent = i.priority;
+    const stClr = ISS_ST_CLR[i.status] || '#64748b';
+    document.getElementById('iss-d-status').style.cssText = `font-size:.72rem;font-weight:600;padding:.12rem .4rem;border-radius:4px;background:${stClr};color:#fff`;
+    document.getElementById('iss-d-status').textContent = i.status.replace(/_/g, ' ');
+    document.getElementById('iss-d-sla').innerHTML = slaLabel(i);
+    document.getElementById('iss-d-cust').textContent = i.customer_name || 'Unknown';
+    document.getElementById('iss-d-phone').textContent = i.customer_phone || '—';
+    document.getElementById('iss-d-order').textContent = i.order_number || '—';
+    document.getElementById('iss-d-desc').textContent = i.description || '';
+
+    // Media
+    const mediaEl = document.getElementById('iss-d-media');
+    mediaEl.innerHTML = (i.media || []).map(m => {
+      if (m.media_type === 'image') return `<div style="width:80px;height:80px;background:var(--ink3);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="openMsgMedia('${m.media_id}')">📷</div>`;
+      return `<span style="font-size:.78rem;color:var(--dim)">${m.media_type}: ${m.media_id}</span>`;
+    }).join('');
+
+    // Messages thread
+    const msgsEl = document.getElementById('iss-d-msgs');
+    msgsEl.innerHTML = (i.messages || []).map(m => {
+      const isCust = m.sender_type === 'customer';
+      const isSys = m.sender_type === 'system';
+      if (isSys) return `<div style="text-align:center;font-size:.72rem;color:var(--dim);padding:.2rem 0">${m.text}</div>`;
+      const align = isCust ? 'flex-start' : 'flex-end';
+      const bg = isCust ? 'var(--ink3)' : m.internal ? 'rgba(139,92,246,.1)' : 'rgba(37,211,102,.12)';
+      const border = m.internal ? 'border:1px dashed rgba(139,92,246,.3);' : '';
+      const time = new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return `<div style="align-self:${align};max-width:80%;padding:.4rem .6rem;border-radius:10px;background:${bg};${border}font-size:.82rem;line-height:1.4">
+        <div style="font-size:.65rem;font-weight:600;color:var(--dim);margin-bottom:.15rem">${m.sender_name}${m.internal ? ' (internal)' : ''}</div>
+        <div>${m.text}</div>
+        <div style="font-size:.6rem;color:var(--dim);text-align:right;margin-top:.15rem">${time}</div>
+      </div>`;
+    }).join('');
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+
+    // Action buttons
+    const acts = document.getElementById('iss-d-actions');
+    let btns = '';
+    if (['open','reopened'].includes(i.status)) btns += `<button class="btn-p btn-sm" onclick="issAction('assigned')">Assign to me</button>`;
+    if (['open','assigned','reopened'].includes(i.status)) btns += `<button class="btn-p btn-sm" onclick="issAction('in_progress')">Mark In Progress</button>`;
+    if (!['resolved','closed'].includes(i.status)) {
+      btns += `<button class="btn-g btn-sm" style="color:#dc2626;border-color:#dc2626" onclick="issEscalate()">Escalate to GullyBite</button>`;
+      btns += `<button class="btn-g btn-sm" style="color:#16a34a;border-color:#16a34a" onclick="issResolve()">Resolve</button>`;
+    }
+    if (i.status === 'resolved') btns += `<button class="btn-g btn-sm" onclick="issAction('reopened')">Reopen</button>`;
+    acts.innerHTML = btns;
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+function closeIssDetail() { document.getElementById('iss-detail').style.display = 'none'; issActiveIssue = null; }
+
+async function issAction(status) {
+  if (!issActiveIssue) return;
+  try {
+    if (status === 'reopened') {
+      await api('/api/restaurant/issues/' + issActiveIssue + '/reopen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    } else {
+      await api('/api/restaurant/issues/' + issActiveIssue + '/status', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    }
+    toast('Status updated', 'ok');
+    openIssDetail(issActiveIssue);
+    loadIssueList();
+    loadIssueStats();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function sendIssMsg() {
+  const input = document.getElementById('iss-d-reply');
+  const text = input.value.trim();
+  if (!text || !issActiveIssue) return;
+  const internal = document.getElementById('iss-d-internal').checked;
+  input.disabled = true;
+  try {
+    await api('/api/restaurant/issues/' + issActiveIssue + '/message', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, internal })
+    });
+    input.value = '';
+    document.getElementById('iss-d-internal').checked = false;
+    openIssDetail(issActiveIssue);
+  } catch (e) { toast(e.message, 'err'); }
+  finally { input.disabled = false; input.focus(); }
+}
+
+function issEscalate() {
+  const reason = prompt('Reason for escalation to GullyBite admin:');
+  if (!reason) return;
+  api('/api/restaurant/issues/' + issActiveIssue + '/escalate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason })
+  }).then(() => { toast('Issue escalated to admin', 'ok'); openIssDetail(issActiveIssue); loadIssueList(); loadIssueStats(); })
+    .catch(e => toast(e.message, 'err'));
+}
+
+function issResolve() {
+  const resolutionType = prompt('Resolution type:\nfull_refund, partial_refund, credit, replacement, redelivery, apology, explanation, no_action');
+  if (!resolutionType) return;
+  const notes = prompt('Resolution notes (optional):') || '';
+  api('/api/restaurant/issues/' + issActiveIssue + '/resolve', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resolution_type: resolutionType, resolution_notes: notes })
+  }).then(() => { toast('Issue resolved', 'ok'); openIssDetail(issActiveIssue); loadIssueList(); loadIssueStats(); })
+    .catch(e => toast(e.message, 'err'));
+}
+
+// Create issue from inbox
+function openCreateIssue(customerId, orderId, description) {
+  document.getElementById('iss-c-cust').value = customerId || '';
+  document.getElementById('iss-c-order').value = orderId || '';
+  document.getElementById('iss-c-desc').value = description || '';
+  document.getElementById('iss-c-cat').value = 'general';
+  document.getElementById('iss-create-modal').style.display = 'block';
+}
+
+async function doCreateIssue() {
+  const custId = document.getElementById('iss-c-cust').value.trim();
+  const orderId = document.getElementById('iss-c-order').value.trim();
+  const cat = document.getElementById('iss-c-cat').value;
+  const desc = document.getElementById('iss-c-desc').value.trim();
+  if (!custId || !desc) { toast('Customer and description required', 'err'); return; }
+  try {
+    const issue = await api('/api/restaurant/issues', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer_id: custId, order_id: orderId || undefined, category: cat, description: desc })
+    });
+    toast('Issue ' + issue.issue_number + ' created', 'ok');
+    document.getElementById('iss-create-modal').style.display = 'none';
+    goTab('issues', document.querySelector('[onclick*="issues"]'));
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 /* ─────────────────────────── TOAST ─────────────────────── */

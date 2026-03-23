@@ -77,6 +77,8 @@ nav{flex:1;padding:.6rem 0}
 .btn-sm.danger:hover{background:var(--red2);border-color:var(--red2)}
 .act-sub.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 .act-sub.active:hover{background:var(--acc2);border-color:var(--acc2)}
+.adm-iss-tab.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+.adm-iss-tab.active:hover{background:var(--acc2);border-color:var(--acc2)}
 
 .content{flex:1;overflow-y:auto;padding:1.25rem 1.5rem}
 
@@ -242,6 +244,11 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         Activity Monitor
         <span class="badge" id="nav-activity-badge" style="display:none;background:var(--red)"></span>
+      </div>
+      <div class="nav-item" data-page="issues" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Issues
+        <span class="badge" id="nav-issues-badge" style="display:none"></span>
       </div>
     </nav>
     <div class="sb-footer">
@@ -805,6 +812,84 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         </div>
       </div>
 
+      <!-- ── ISSUES COMMAND CENTER ───────────── -->
+      <div class="page" id="page-issues">
+        <!-- Stats -->
+        <div id="adm-iss-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.65rem;margin-bottom:1rem"></div>
+        <!-- Tabs + Filters -->
+        <div style="display:flex;gap:.4rem;margin-bottom:.7rem;flex-wrap:wrap;align-items:center">
+          <button class="btn-sm adm-iss-tab active" data-f="admin_queue" onclick="setAdmIssTab('admin_queue',this)">Admin Queue</button>
+          <button class="btn-sm adm-iss-tab" data-f="open_all" onclick="setAdmIssTab('open_all',this)">All Open</button>
+          <button class="btn-sm adm-iss-tab" data-f="escalated" onclick="setAdmIssTab('escalated',this)">Escalated</button>
+          <button class="btn-sm adm-iss-tab" data-f="sla_breached" onclick="setAdmIssTab('sla_breached',this)">SLA Breached</button>
+          <button class="btn-sm adm-iss-tab" data-f="resolved" onclick="setAdmIssTab('resolved',this)">Resolved</button>
+          <button class="btn-sm adm-iss-tab" data-f="" onclick="setAdmIssTab('',this)">All</button>
+          <select id="adm-iss-cat" onchange="loadAdmIssueList()" style="margin-left:auto;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .5rem;font-size:.8rem">
+            <option value="">All Categories</option>
+            <option value="food_quality">Food Quality</option><option value="missing_item">Missing Item</option>
+            <option value="wrong_order">Wrong Order</option><option value="delivery_late">Late Delivery</option>
+            <option value="delivery_not_received">Not Received</option><option value="delivery_damaged">Damaged</option>
+            <option value="wrong_charge">Wrong Charge</option><option value="refund_request">Refund</option>
+            <option value="payment_failed">Payment Failed</option><option value="general">General</option>
+          </select>
+          <select id="adm-iss-pri" onchange="loadAdmIssueList()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .5rem;font-size:.8rem">
+            <option value="">All Priorities</option>
+            <option value="critical">Critical</option><option value="high">High</option>
+            <option value="medium">Medium</option><option value="low">Low</option>
+          </select>
+          <input id="adm-iss-search" placeholder="Search…" oninput="debounceAdmIssSearch()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .5rem;font-size:.8rem;width:180px">
+        </div>
+        <!-- Table -->
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Issue #</th><th>Restaurant</th><th>Category</th><th>Customer</th><th>Order</th><th>Priority</th><th>Status</th><th>Routed To</th><th>SLA</th><th>Age</th><th></th></tr></thead>
+            <tbody id="adm-iss-tbody"><tr><td colspan="11" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div id="adm-iss-pager" style="display:flex;justify-content:center;gap:.4rem;margin-top:.6rem"></div>
+
+        <!-- Issue detail modal -->
+        <div id="adm-iss-detail" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;overflow-y:auto">
+          <div style="margin:1.5rem auto;max-width:850px;background:#fff;border-radius:12px;box-shadow:var(--shadow);overflow:hidden">
+            <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+              <span id="adm-iss-d-num" style="font-weight:700;font-size:.95rem"></span>
+              <span id="adm-iss-d-cat" style="font-size:.78rem;padding:.12rem .5rem;border-radius:6px;background:var(--ink)"></span>
+              <span id="adm-iss-d-pri" style="font-size:.72rem;font-weight:700;padding:.12rem .4rem;border-radius:4px"></span>
+              <span id="adm-iss-d-st" style="font-size:.72rem;font-weight:600;padding:.12rem .4rem;border-radius:4px;color:#fff"></span>
+              <span id="adm-iss-d-sla" style="font-size:.72rem;margin-left:auto"></span>
+              <button class="btn-sm" onclick="document.getElementById('adm-iss-detail').style.display='none'">Close</button>
+            </div>
+            <!-- Info row -->
+            <div style="padding:.7rem 1.2rem;border-bottom:1px solid var(--rim);display:flex;gap:1.5rem;font-size:.82rem;flex-wrap:wrap">
+              <div><span style="color:var(--dim)">Customer:</span> <strong id="adm-iss-d-cust"></strong></div>
+              <div><span style="color:var(--dim)">Phone:</span> <span id="adm-iss-d-phone"></span></div>
+              <div><span style="color:var(--dim)">Order:</span> <span id="adm-iss-d-order"></span></div>
+              <div><span style="color:var(--dim)">Restaurant:</span> <span id="adm-iss-d-rest"></span></div>
+              <div><span style="color:var(--dim)">Routed:</span> <span id="adm-iss-d-route"></span></div>
+            </div>
+            <!-- Payment / Delivery context -->
+            <div id="adm-iss-d-context" style="display:none;padding:.6rem 1.2rem;border-bottom:1px solid var(--rim);font-size:.8rem;background:var(--ink4)"></div>
+            <!-- Description -->
+            <div style="padding:.7rem 1.2rem;border-bottom:1px solid var(--rim)">
+              <div style="font-size:.7rem;color:var(--dim);text-transform:uppercase;font-weight:600;margin-bottom:.25rem">Description</div>
+              <div id="adm-iss-d-desc" style="font-size:.85rem;line-height:1.5"></div>
+            </div>
+            <!-- Messages -->
+            <div style="padding:.7rem 1.2rem;border-bottom:1px solid var(--rim)">
+              <div style="font-size:.7rem;color:var(--dim);text-transform:uppercase;font-weight:600;margin-bottom:.4rem">Thread</div>
+              <div id="adm-iss-d-msgs" style="max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:.3rem"></div>
+              <div style="margin-top:.5rem;display:flex;gap:.4rem;align-items:center">
+                <input id="adm-iss-d-reply" placeholder="Reply…" style="flex:1;padding:.4rem .6rem;border:1px solid var(--rim);border-radius:7px;font-size:.82rem" onkeydown="if(event.key==='Enter')sendAdmIssMsg()">
+                <label style="font-size:.72rem;display:flex;align-items:center;gap:.2rem;color:var(--dim);white-space:nowrap"><input type="checkbox" id="adm-iss-d-int" style="accent-color:var(--acc)"> Internal</label>
+                <button class="btn-sm primary" onclick="sendAdmIssMsg()">Send</button>
+              </div>
+            </div>
+            <!-- Actions -->
+            <div id="adm-iss-d-actions" style="padding:.7rem 1.2rem;display:flex;gap:.4rem;flex-wrap:wrap"></div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1054,7 +1139,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', activity: 'Activity Monitor' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', activity: 'Activity Monitor', issues: 'Issues' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -1078,6 +1163,7 @@ function nav(el) {
   if (page === 'abuse')        loadAbuse();
   if (page === 'usernames')    loadUsernames();
   if (page === 'activity')     loadActivity();
+  if (page === 'issues')       loadAdminIssues();
 }
 
 function refreshCurrent() {
@@ -1095,6 +1181,7 @@ function refreshCurrent() {
   else if (currentPage === 'abuse')        loadAbuse();
   else if (currentPage === 'usernames')    loadUsernames();
   else if (currentPage === 'activity')     loadActivity();
+  else if (currentPage === 'issues')       loadAdminIssues();
 }
 
 // ─── STATS ────────────────────────────────────────────────────────
@@ -2643,6 +2730,243 @@ function toggleActPoll() {
       else if (actCurrentSub === 'errors') loadErrors();
     }, 5000);
   }
+}
+
+// ─── ISSUES COMMAND CENTER ──────────────────────────────────────────
+let admIssTab = 'admin_queue', admIssPage = 1, admIssActive = null;
+const ADM_PRI_CLR = { critical: '#dc2626', high: '#f59e0b', medium: '#3b82f6', low: '#94a3b8' };
+const ADM_ST_CLR  = { open:'#3b82f6', assigned:'#8b5cf6', in_progress:'#f59e0b', waiting_customer:'#6366f1', escalated_to_admin:'#dc2626', resolved:'#16a34a', closed:'#64748b', reopened:'#ef4444' };
+
+async function loadAdminIssues() {
+  await Promise.all([loadAdmIssueStats(), loadAdmIssueList()]);
+}
+
+async function loadAdmIssueStats() {
+  try {
+    const s = await api('/api/admin/issues/stats?admin_queue=true');
+    document.getElementById('adm-iss-stats').innerHTML = [
+      admIssStat('Open', s.open, '#3b82f6'),
+      admIssStat('In Progress', s.in_progress, '#f59e0b'),
+      admIssStat('Escalated', s.escalated, '#dc2626'),
+      admIssStat('SLA Breached', s.sla_breached, s.sla_breached > 0 ? '#dc2626' : '#94a3b8'),
+      admIssStat('Resolved', s.resolved, '#16a34a'),
+      admIssStat('Total', s.total, 'var(--acc)'),
+    ].join('');
+    const badge = document.getElementById('nav-issues-badge');
+    const openCount = (s.open || 0) + (s.in_progress || 0) + (s.escalated || 0);
+    if (openCount > 0) { badge.textContent = openCount; badge.style.display = ''; } else badge.style.display = 'none';
+  } catch (_) {}
+}
+
+function admIssStat(label, val, clr) {
+  return `<div style="background:#fff;border:1px solid var(--rim);border-radius:10px;padding:.65rem .8rem;box-shadow:var(--shadow-sm)">
+    <div style="font-size:.65rem;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;font-weight:600">${label}</div>
+    <div style="font-size:1.4rem;font-weight:700;color:${clr}">${val || 0}</div>
+  </div>`;
+}
+
+async function loadAdmIssueList(page) {
+  if (page) admIssPage = page;
+  const tbody = document.getElementById('adm-iss-tbody');
+  tbody.innerHTML = '<tr><td colspan="11" class="empty">Loading…</td></tr>';
+  try {
+    const qs = new URLSearchParams({ page: admIssPage, limit: 30 });
+    if (admIssTab === 'admin_queue') qs.set('admin_queue', 'true');
+    else if (admIssTab) qs.set('status', admIssTab);
+    const cat = document.getElementById('adm-iss-cat').value;
+    const pri = document.getElementById('adm-iss-pri').value;
+    const search = document.getElementById('adm-iss-search').value.trim();
+    if (cat) qs.set('category', cat);
+    if (pri) qs.set('priority', pri);
+    if (search) qs.set('search', search);
+    const r = await api('/api/admin/issues?' + qs);
+    const issues = r.issues || [];
+    if (!issues.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No issues</td></tr>'; return; }
+    tbody.innerHTML = issues.map(i => {
+      const priClr = ADM_PRI_CLR[i.priority] || '#94a3b8';
+      const stClr = ADM_ST_CLR[i.status] || '#64748b';
+      return `<tr style="cursor:pointer" onclick="openAdmIssDetail('${i._id}')">
+        <td style="font-weight:600;font-size:.8rem;white-space:nowrap">${i.issue_number}</td>
+        <td style="font-size:.78rem">${i.restaurant_id ? i.restaurant_id.toString().slice(-6) : '—'}</td>
+        <td style="font-size:.78rem">${admCatLabel(i.category)}</td>
+        <td style="font-size:.8rem">${i.customer_name || '—'}</td>
+        <td style="font-size:.78rem;color:var(--dim)">${i.order_number || '—'}</td>
+        <td><span style="color:${priClr};font-weight:600;font-size:.72rem;text-transform:uppercase">${i.priority}</span></td>
+        <td><span style="background:${stClr};color:#fff;font-size:.68rem;padding:.1rem .35rem;border-radius:4px;font-weight:600">${i.status.replace(/_/g,' ')}</span></td>
+        <td style="font-size:.72rem;color:var(--dim)">${i.routed_to || '—'}</td>
+        <td style="font-size:.72rem">${admSlaLabel(i)}</td>
+        <td style="font-size:.72rem;color:var(--dim)">${admTimeAgo(i.created_at)}</td>
+        <td><button class="btn-sm" style="font-size:.7rem;padding:.12rem .35rem" onclick="event.stopPropagation();openAdmIssDetail('${i._id}')">View</button></td>
+      </tr>`;
+    }).join('');
+    const pager = document.getElementById('adm-iss-pager');
+    if (r.pages > 1) {
+      let h = '';
+      if (r.page > 1) h += `<button class="btn-sm" onclick="loadAdmIssueList(${r.page-1})">« Prev</button>`;
+      h += `<span style="font-size:.78rem;color:var(--dim);padding:.3rem .5rem">Page ${r.page} of ${r.pages}</span>`;
+      if (r.page < r.pages) h += `<button class="btn-sm" onclick="loadAdmIssueList(${r.page+1})">Next »</button>`;
+      pager.innerHTML = h;
+    } else pager.innerHTML = '';
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="11" class="empty" style="color:var(--red)">${e.message}</td></tr>`; }
+}
+
+function admCatLabel(c) {
+  const m = { food_quality:'🍕 Food', missing_item:'📦 Missing', wrong_order:'❌ Wrong', delivery_late:'🕐 Late', delivery_not_received:'🚫 Not Recv', delivery_damaged:'💥 Damaged', rider_behavior:'🛵 Rider', wrong_charge:'💸 Charge', refund_request:'💰 Refund', payment_failed:'⚠️ Payment', coupon_issue:'🏷️ Coupon', general:'💬 General', app_issue:'📱 App', portion_size:'📏 Portion', packaging:'📦 Pkg', hygiene:'🧹 Hygiene', wrong_address:'📍 Addr' };
+  return m[c] || c;
+}
+
+function admSlaLabel(issue) {
+  if (['resolved','closed'].includes(issue.status)) return '<span style="color:#16a34a">✓</span>';
+  if (!issue.sla_deadline) return '—';
+  const rem = new Date(issue.sla_deadline).getTime() - Date.now();
+  if (rem <= 0) return '<span style="color:#dc2626;font-weight:600">🔴 Breached</span>';
+  const h = Math.floor(rem / 3600000), m = Math.floor((rem % 3600000) / 60000);
+  if (rem < 3600000) return `<span style="color:#dc2626">🟡 ${m}m</span>`;
+  if (h < 6) return `<span style="color:#f59e0b">🟡 ${h}h${m}m</span>`;
+  return `<span style="color:#16a34a">🟢 ${h}h</span>`;
+}
+
+function admTimeAgo(ts) {
+  const m = Math.round((Date.now() - new Date(ts)) / 60000);
+  if (m < 1) return 'now'; if (m < 60) return m + 'm'; if (m < 1440) return Math.round(m/60) + 'h';
+  return Math.round(m / 1440) + 'd';
+}
+
+function setAdmIssTab(f, btn) {
+  admIssTab = f; admIssPage = 1;
+  document.querySelectorAll('.adm-iss-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  loadAdmIssueList();
+}
+
+let _admIssSearchTimer;
+function debounceAdmIssSearch() {
+  clearTimeout(_admIssSearchTimer);
+  _admIssSearchTimer = setTimeout(() => { admIssPage = 1; loadAdmIssueList(); }, 400);
+}
+
+async function openAdmIssDetail(id) {
+  admIssActive = id;
+  document.getElementById('adm-iss-detail').style.display = 'flex';
+  try {
+    const i = await api('/api/admin/issues/' + id);
+    document.getElementById('adm-iss-d-num').textContent = i.issue_number;
+    document.getElementById('adm-iss-d-cat').textContent = admCatLabel(i.category);
+    const priClr = ADM_PRI_CLR[i.priority] || '#94a3b8';
+    document.getElementById('adm-iss-d-pri').style.cssText = `font-size:.72rem;font-weight:700;padding:.12rem .4rem;border-radius:4px;color:${priClr};text-transform:uppercase`;
+    document.getElementById('adm-iss-d-pri').textContent = i.priority;
+    const stClr = ADM_ST_CLR[i.status] || '#64748b';
+    document.getElementById('adm-iss-d-st').style.cssText = `font-size:.72rem;font-weight:600;padding:.12rem .4rem;border-radius:4px;color:#fff;background:${stClr}`;
+    document.getElementById('adm-iss-d-st').textContent = i.status.replace(/_/g, ' ');
+    document.getElementById('adm-iss-d-sla').innerHTML = admSlaLabel(i);
+    document.getElementById('adm-iss-d-cust').textContent = i.customer_name || 'Unknown';
+    document.getElementById('adm-iss-d-phone').textContent = i.customer_phone || '—';
+    document.getElementById('adm-iss-d-order').textContent = i.order_number || '—';
+    document.getElementById('adm-iss-d-rest').textContent = i.restaurant_id || '—';
+    document.getElementById('adm-iss-d-route').textContent = i.routed_to || '—';
+    document.getElementById('adm-iss-d-desc').textContent = i.description || '';
+
+    // Context (payment/delivery enrichment)
+    const ctx = document.getElementById('adm-iss-d-context');
+    let ctxHtml = '';
+    if (i._payment) ctxHtml += `<span style="margin-right:1rem">💳 Razorpay: <strong>${i._payment.rp_payment_id}</strong> · ₹${i._payment.amount_rs} · ${i._payment.method || ''}</span>`;
+    if (i._delivery) ctxHtml += `<span style="margin-right:1rem">🛵 ${i._delivery.provider}: ${i._delivery.provider_order_id || '—'} · ${i._delivery.status} ${i._delivery.tracking_url ? `· <a href="${i._delivery.tracking_url}" target="_blank" style="color:var(--acc)">Track</a>` : ''}</span>`;
+    if (i._order) ctxHtml += `<span>📦 Order: ${i._order.status} · ₹${i._order.total_rs}</span>`;
+    if (ctxHtml) { ctx.innerHTML = ctxHtml; ctx.style.display = 'block'; } else ctx.style.display = 'none';
+
+    // Messages
+    const msgsEl = document.getElementById('adm-iss-d-msgs');
+    msgsEl.innerHTML = (i.messages || []).map(m => {
+      if (m.sender_type === 'system') return `<div style="text-align:center;font-size:.72rem;color:var(--dim);padding:.15rem 0">${m.text}</div>`;
+      const isCust = m.sender_type === 'customer';
+      const align = isCust ? 'flex-start' : 'flex-end';
+      const bg = isCust ? 'var(--ink)' : m.internal ? 'rgba(79,70,229,.08)' : 'rgba(22,163,74,.08)';
+      const border = m.internal ? 'border:1px dashed rgba(79,70,229,.25);' : '';
+      const time = new Date(m.created_at).toLocaleString([], { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      return `<div style="align-self:${align};max-width:80%;padding:.4rem .6rem;border-radius:10px;background:${bg};${border}font-size:.82rem;line-height:1.4">
+        <div style="font-size:.65rem;font-weight:600;color:var(--dim);margin-bottom:.1rem">${m.sender_name}${m.internal ? ' (internal)' : ''}</div>
+        <div>${m.text}</div>
+        <div style="font-size:.6rem;color:var(--dim);text-align:right;margin-top:.1rem">${time}</div>
+      </div>`;
+    }).join('');
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+
+    // Actions
+    const acts = document.getElementById('adm-iss-d-actions');
+    let btns = '';
+    if (['open','escalated_to_admin','reopened'].includes(i.status)) btns += `<button class="btn-sm primary" onclick="admIssAction('in_progress')">Start Working</button>`;
+    if (!['resolved','closed'].includes(i.status)) {
+      btns += `<button class="btn-sm" style="color:#16a34a;border-color:#16a34a" onclick="admIssResolve()">Resolve</button>`;
+      if (i.order_id && i._payment) btns += `<button class="btn-sm" style="color:#dc2626;border-color:#dc2626" onclick="admIssRefund()">💰 Issue Refund</button>`;
+      btns += `<button class="btn-sm" onclick="admIssFlagSettlement()">🏷️ Flag for Settlement</button>`;
+    }
+    if (i.status === 'resolved') btns += `<button class="btn-sm" onclick="admIssAction('reopened')">Reopen</button>`;
+    if (i._delivery?.tracking_url) btns += `<a href="${i._delivery.tracking_url}" target="_blank" class="btn-sm" style="text-decoration:none">🛵 Track Delivery</a>`;
+    acts.innerHTML = btns;
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function admIssAction(status) {
+  if (!admIssActive) return;
+  try {
+    if (status === 'reopened') {
+      await api('/api/admin/issues/' + admIssActive + '/reopen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    } else {
+      await api('/api/admin/issues/' + admIssActive + '/status', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+    }
+    toast('Updated', 'ok');
+    openAdmIssDetail(admIssActive); loadAdmIssueList(); loadAdmIssueStats();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function sendAdmIssMsg() {
+  const input = document.getElementById('adm-iss-d-reply');
+  const text = input.value.trim();
+  if (!text || !admIssActive) return;
+  const internal = document.getElementById('adm-iss-d-int').checked;
+  input.disabled = true;
+  try {
+    await api('/api/admin/issues/' + admIssActive + '/message', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, internal })
+    });
+    input.value = ''; document.getElementById('adm-iss-d-int').checked = false;
+    openAdmIssDetail(admIssActive);
+  } catch (e) { toast(e.message, 'err'); }
+  finally { input.disabled = false; input.focus(); }
+}
+
+function admIssRefund() {
+  const amt = prompt('Refund amount in ₹ (full order amount will be used if blank):');
+  if (amt === null) return;
+  api('/api/admin/issues/' + admIssActive + '/refund', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount_rs: amt || undefined })
+  }).then(r => { toast('Refund of ₹' + (r.issue?.refund_amount_rs || amt) + ' processed', 'ok'); openAdmIssDetail(admIssActive); loadAdmIssueList(); })
+    .catch(e => toast(e.message, 'err'));
+}
+
+function admIssResolve() {
+  const rt = prompt('Resolution type:\nrefund_full, refund_partial, credit, replacement, redelivery, apology, explanation, no_action');
+  if (!rt) return;
+  const notes = prompt('Notes (optional):') || '';
+  api('/api/admin/issues/' + admIssActive + '/resolve', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resolution_type: rt, resolution_notes: notes })
+  }).then(() => { toast('Resolved', 'ok'); openAdmIssDetail(admIssActive); loadAdmIssueList(); loadAdmIssueStats(); })
+    .catch(e => toast(e.message, 'err'));
+}
+
+function admIssFlagSettlement() {
+  const from = prompt('Deduct from: restaurant, platform, or 3pl');
+  if (!from) return;
+  const amt = prompt('Amount ₹:');
+  if (!amt) return;
+  api('/api/admin/issues/' + admIssActive + '/flag-settlement', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ deduct_from: from, amount_rs: amt })
+  }).then(() => { toast('Flagged for settlement', 'ok'); openAdmIssDetail(admIssActive); })
+    .catch(e => toast(e.message, 'err'));
 }
 </script>
 </body>
