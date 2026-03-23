@@ -26,9 +26,11 @@ const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
 router.post('/google', express.json(), async (req, res) => {
   try {
     const { code } = req.body;
+    console.log('[Google Auth] Route hit, code present:', !!code);
     if (!code) return res.status(400).json({ error: 'Authorization code required' });
 
     // 1. Exchange auth code for tokens
+    console.log('[Google Auth] Exchanging code, client_id:', process.env.GOOGLE_CLIENT_ID?.slice(0, 20) + '...');
     const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
@@ -36,12 +38,14 @@ router.post('/google', express.json(), async (req, res) => {
       redirect_uri: 'postmessage',
       grant_type: 'authorization_code',
     });
+    console.log('[Google Auth] Token exchange successful');
 
     // 2. Fetch user profile
     const userRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${tokenRes.data.access_token}` },
     });
     const { id: googleId, name, email, picture } = userRes.data;
+    console.log('[Google Auth] User profile:', { googleId, name, email });
 
     // 3. Find or create restaurant
     let restaurant = await col('restaurants').findOne({ google_id: googleId });
@@ -82,13 +86,14 @@ router.post('/google', express.json(), async (req, res) => {
       branchIds: [],
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
+    console.log('[Google Auth] Success — restaurantId:', restaurantId, 'needsOnboarding:', needsOnboarding, 'approvalStatus:', approvalStatus);
     res.json({
       token, approvalStatus, needsOnboarding,
       onboardingStep: restaurant?.onboarding_step || 1,
       user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner },
     });
   } catch (err) {
-    console.error('[Google Auth]', err.response?.data || err.message);
+    console.error('[Google Auth] FAILED:', err.response?.data || err.message);
     res.status(500).json({ error: 'Google authentication failed' });
   }
 });
