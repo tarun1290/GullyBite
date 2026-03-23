@@ -280,7 +280,8 @@ a{color:inherit;text-decoration:none}
   <nav class="nav">
     <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
     <div class="nav-links">
-      <button class="btn-primary" onclick="showPage('pg-signin')">Sign In →</button>
+      <button class="btn-outline" onclick="showPage('pg-signin')">Sign In</button>
+      <button class="btn-primary" onclick="showPage('pg-signup')">Sign Up →</button>
     </div>
   </nav>
 
@@ -632,8 +633,21 @@ a{color:inherit;text-decoration:none}
             </div>
           </div>
         </div>
+        <div class="ob-section">
+          <div class="ob-section-title">Legal & Compliance (Optional)</div>
+          <div class="fld-row">
+            <div class="fld">
+              <label>GST Number</label>
+              <input id="ob-gst" type="text" placeholder="22AAAAA0000A1Z5" maxlength="15" style="text-transform:uppercase">
+            </div>
+            <div class="fld">
+              <label>FSSAI License Number</label>
+              <input id="ob-fssai" type="text" placeholder="12345678901234" maxlength="14">
+            </div>
+          </div>
+        </div>
         <button class="ob-submit" type="submit" id="ob-btn">Continue → Connect WhatsApp</button>
-        <p class="ob-note">You can add GST, FSSAI and other details later in your dashboard.</p>
+        <p class="ob-note">GST and FSSAI can also be updated later in your dashboard settings.</p>
       </form>
     </div>
   </div>
@@ -943,6 +957,8 @@ function prefillOnboarding(me) {
   if (me.brand_name)      document.getElementById('ob-brand').value = me.brand_name;
   if (me.city)            document.getElementById('ob-city').value  = me.city;
   if (me.restaurant_type) document.getElementById('ob-type').value  = me.restaurant_type;
+  if (me.gst_number)      document.getElementById('ob-gst').value   = me.gst_number;
+  if (me.fssai_license)   document.getElementById('ob-fssai').value = me.fssai_license;
 }
 
 /* ─── GOOGLE SIGN IN ───────────────────────────────────── */
@@ -1053,6 +1069,8 @@ async function submitBusinessDetails(e) {
       brandName:      document.getElementById('ob-brand').value.trim(),
       restaurantType: document.getElementById('ob-type').value,
       city:           document.getElementById('ob-city').value.trim(),
+      gstNumber:      document.getElementById('ob-gst').value.trim().toUpperCase() || null,
+      fssaiLicense:   document.getElementById('ob-fssai').value.trim() || null,
     }, token);
     if (d.submitted) {
       toast('Details saved! Now connect your WhatsApp.', 'ok');

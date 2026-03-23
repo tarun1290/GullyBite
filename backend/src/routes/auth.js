@@ -22,6 +22,16 @@ const docUpload = multer({
 
 const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
 
+// ── Log all OAuth redirect URIs at startup so they can be verified ──
+console.log('╔══════════════════════════════════════════════════════════════╗');
+console.log('║  OAUTH REDIRECT URIs (add these to Google/Meta consoles)    ║');
+console.log('╠══════════════════════════════════════════════════════════════╣');
+console.log('║  Google Callback:', `${process.env.BASE_URL}/auth/google/callback`);
+console.log('║  Meta OAuth Redirect:', process.env.META_OAUTH_REDIRECT_URI || '(not set)');
+console.log('║  Meta App ID:', process.env.META_APP_ID || '(not set)');
+console.log('║  Google Client ID:', process.env.GOOGLE_CLIENT_ID?.slice(0, 30) + '...' || '(not set)');
+console.log('╚══════════════════════════════════════════════════════════════╝');
+
 // ─── SIGN UP ──────────────────────────────────────────────────
 router.post('/signup', express.json(), async (req, res) => {
   try {
@@ -272,12 +282,14 @@ const JS_SDK_REDIRECT_URI = 'https://www.facebook.com/connect/login_success.html
 router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
   try {
     const { accessToken, code, sessionInfo, fromJsSdk } = req.body;
+    console.log('[connect-meta] Route hit — code:', !!code, 'accessToken:', !!accessToken, 'fromJsSdk:', !!fromJsSdk, 'sessionInfo:', JSON.stringify(sessionInfo || {}));
     if (!accessToken && !code) return res.status(400).json({ error: 'No token provided' });
 
     let longToken, expiresAt;
     if (code) {
       // JS SDK codes require JS_SDK_REDIRECT_URI; server-side OAuth codes use META_OAUTH_REDIRECT_URI
       const redirectUri = fromJsSdk ? JS_SDK_REDIRECT_URI : process.env.META_OAUTH_REDIRECT_URI;
+      console.log('[connect-meta] Exchanging code, redirect_uri:', redirectUri, 'META_APP_ID:', process.env.META_APP_ID);
       // Meta requires POST + grant_type for embedded signup code exchange
       const tokenRes = await axios.post(`${META_GRAPH_URL}/oauth/access_token`, {
         client_id: process.env.META_APP_ID,
@@ -297,8 +309,11 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
       expiresAt = longRes.data.expires_in ? new Date(Date.now() + longRes.data.expires_in * 1000) : null;
     }
 
+    console.log('[connect-meta] Token exchange successful, got long-lived token');
+
     const userRes  = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
     const metaUser = userRes.data;
+    console.log('[connect-meta] Meta user:', { id: metaUser.id, name: metaUser.name, email: metaUser.email });
 
     let wabaData = [];
     try {
@@ -306,7 +321,8 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
         params: { fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}', access_token: longToken },
       });
       wabaData = wabaRes.data?.data || [];
-    } catch (e) { console.warn('[connect-meta] Could not fetch WABAs:', e.message); }
+    } catch (e) { console.warn('[connect-meta] Could not fetch WABAs:', e.response?.data || e.message); }
+    console.log('[connect-meta] WABA data found:', wabaData.length, 'businesses');
 
     // Get current restaurant to preserve approval_status
     const currentRestaurant = await col('restaurants').findOne(
@@ -327,10 +343,12 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
 
     await _saveWabaAccounts(req.restaurantId, wabaData, longToken, sessionInfo);
+    console.log('[connect-meta] Success — restaurant', req.restaurantId, 'connected');
     res.json({ connected: true });
   } catch (err) {
-    console.error('[connect-meta]', err.response?.data || err.message);
-    res.status(500).json({ error: 'Failed to connect WhatsApp' });
+    console.error('[connect-meta] FAILED:', JSON.stringify(err.response?.data || err.message));
+    console.error('[connect-meta] Full error:', err.stack?.slice(0, 500));
+    res.status(500).json({ error: 'Failed to connect WhatsApp: ' + (err.response?.data?.error?.message || err.message) });
   }
 });
 
@@ -412,6 +430,7 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
   try {
     const {
       ownerName, phone, brandName, restaurantType, city,
+      gstNumber, fssaiLicense,
     } = req.body;
 
     if (!ownerName || !phone || !brandName)
@@ -431,6 +450,8 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
       store_slug: storeSlug, store_url: storeUrl,
       approval_status: 'pending', onboarding_step: 2, updated_at: new Date(),
     };
+    if (gstNumber) $set.gst_number = gstNumber;
+    if (fssaiLicense) $set.fssai_license = fssaiLicense;
 
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
     res.json({ submitted: true, storeUrl });
