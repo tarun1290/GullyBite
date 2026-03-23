@@ -1671,6 +1671,12 @@ async function initDash() {
     rest = await api('/auth/me');
     if (!rest) return logout();
 
+    // Guard: redirect to onboarding if restaurant details not completed
+    if ((rest.onboarding_step || 1) < 2 || !rest.brand_name) {
+      window.location.href = '/';
+      return;
+    }
+
     const nm = rest.business_name || rest.brand_name || rest.owner_name || 'Restaurant';
     document.getElementById('sb-nm').textContent     = nm;
     document.getElementById('sb-av').textContent     = nm[0].toUpperCase();

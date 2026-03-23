@@ -820,10 +820,11 @@ function routeByStatus(me) {
     showPage('pg-rejected'); return;
   }
 
-  // Step 2+ always goes to dashboard (WA connect banner shown there if needed)
-  // pg-connect is shown once by submitBusinessDetails right after onboarding — not on every login
-  if (step < 2) { prefillOnboarding(me); showPage('pg-onboard'); }
-  else window.location.href = '/dashboard';
+  // Onboarding not done — collect restaurant details first
+  if (step < 2 || !me.brand_name) { prefillOnboarding(me); showPage('pg-onboard'); return; }
+
+  // Step 2+ → dashboard (WA connect banner shown there if needed)
+  window.location.href = '/dashboard';
 }
 
 function populatePendingStatus(me) {
@@ -891,13 +892,8 @@ async function handleGoogleResponse(response) {
     const d = await post('/auth/google', { code: response.code });
     if (!d.token) { toast(d.error || 'Sign in failed', 'err'); return; }
     localStorage.setItem('zm_token', d.token);
-    if (d.approvalStatus === 'approved' && !d.needsOnboarding) {
-      window.location.href = '/dashboard';
-    } else {
-      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
-      if (d.needsOnboarding) { prefillOnboarding(me); showPage('pg-onboard'); }
-      else routeByStatus(me);
-    }
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+    routeByStatus(me);
   } catch (err) { toast(err.message, 'err'); }
   finally {
     btn.disabled = false;
