@@ -126,10 +126,13 @@ const confirmPaidOrder = async (orderId) => {
       ).catch(() => {});
     });
 
-  // Fire-and-forget POS order push (UrbanPiper / DotPe)
-  pushOrderToPOS(order).catch(err =>
-    console.error(`[POS] Order push failed for ${order.order_number}:`, err.message)
-  );
+  // Fire-and-forget POS order push (UrbanPiper / DotPe) — gated by feature flag
+  const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
+  if (POS_INTEGRATIONS_ENABLED) {
+    pushOrderToPOS(order).catch(err =>
+      console.error(`[POS] Order push failed for ${order.order_number}:`, err.message)
+    );
+  }
 
   logActivity({
     actorType: 'system', actorId: null, actorName: 'Razorpay',

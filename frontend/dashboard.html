@@ -836,7 +836,9 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           <div id="m-cat-badge" style="display:none"></div>
           <button class="btn-p" id="m-sync-btn" style="display:none" onclick="doQuickSync()">🔄 Sync to WhatsApp</button>
           <button class="btn-g btn-sm" id="m-sets-btn" style="display:none" onclick="doSyncSets()" title="Create/update category sections in WhatsApp catalog">📂 Sync Product Sets</button>
+          <button class="btn-g btn-sm" id="m-bulk-img-btn" style="display:none" disabled title="Coming soon — AWS setup pending">📷 Bulk Upload</button>
         </div>
+        <div id="img-stats-bar" style="font-size:.78rem;color:var(--dim);margin-bottom:.5rem;display:none"></div>
         <!-- ── CATEGORIES MANAGER (collapsible) ── -->
         <div class="card" id="cat-manager-card" style="margin-bottom:.8rem">
           <div class="ch" style="cursor:pointer;user-select:none" onclick="toggleCatManager()">
@@ -909,23 +911,25 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               <div class="fg span2">
                 <label>Item Image <small>(recommended 500×500px — shown in WhatsApp catalog)</small></label>
                 <div class="img-pick">
-                  <div class="img-preview" id="img-preview-box" title="Click to upload image" onclick="document.getElementById('m-img-file').click()">
+                  <div class="img-preview" id="img-preview-box" title="Upload coming soon — AWS setup pending" style="opacity:.45;cursor:not-allowed;position:relative">
                     <span id="img-preview-icon">📷</span>
                     <img id="img-preview-img" src="" style="display:none" alt="">
                     <div class="img-spin" id="img-preview-spin" style="display:none"><div class="spin"></div></div>
+                    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.75);border-radius:8px;font-size:.55rem;font-weight:700;color:var(--dim);text-align:center;line-height:1.2;padding:.2rem">Coming<br>soon</div>
                   </div>
                   <input type="file" id="m-img-file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="handleImgFile(this)">
                   <div class="img-right">
                     <div class="img-url-row">
                       <input id="m-img" placeholder="https://cdn.example.com/dish.jpg" oninput="syncImgPreview(this.value)">
-                      <button class="btn-g btn-sm" type="button" onclick="document.getElementById('m-img-file').click()">📤 Upload</button>
+                      <button class="btn-g btn-sm" type="button" disabled title="Upload coming soon — AWS setup pending">📤 Upload</button>
                     </div>
                     <div class="img-hint">
-                      Click the box or use the Upload button to pick a photo from your device.<br>
-                      Or paste any public image URL above. Max 5 MB · JPEG, PNG, WebP, GIF.
+                      Paste any public image URL above. Direct upload coming soon (AWS setup pending).<br>
+                      Max 5 MB · JPEG, PNG, WebP, GIF.
                     </div>
                   </div>
                 </div>
+                <div id="img-quality-indicator" style="font-size:.72rem;margin-top:.35rem;color:var(--red)">Add a photo (min 500x500px) for WhatsApp catalog</div>
               </div>
             </div>
               <!-- ── Advanced / Meta Catalog Fields (collapsible) ── -->
@@ -1184,8 +1188,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         <div class="notice wa" style="margin-bottom:1.3rem">
           <div class="notice-ico">🔗</div>
           <div class="notice-body">
-            <h4>Connect your existing POS or delivery platforms</h4>
-            <p>Once connected and enabled, your menu from Swiggy, Zomato or PetPooja syncs automatically into GullyBite and gets pushed to your WhatsApp Catalog — keeping everything in one place.</p>
+            <h4>POS & Platform Integrations — Coming Soon</h4>
+            <p>POS integrations (PetPooja, UrbanPiper, DotPe) are not yet active. Once enabled, your POS menu syncs automatically into GullyBite and gets pushed to your WhatsApp Catalog.</p>
           </div>
         </div>
         <div class="int-grid" id="int-grid">
@@ -1195,13 +1199,14 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           <div class="ch"><h3>Sync Log</h3></div>
           <div class="tbl">
             <table>
-              <thead><tr><th>Platform</th><th>Branch</th><th>Items</th><th>Last Synced</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Platform</th><th>Branch</th><th>Items</th><th>Variants</th><th>Last Synced</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody id="int-log-body">
-                <tr><td colspan="6"><div class="empty"><div class="ei">🔗</div><h3>No integrations connected yet</h3><p>Click a tile above to configure</p></div></td></tr>
+                <tr><td colspan="7"><div class="empty"><div class="ei">🔗</div><h3>No integrations connected yet</h3><p>Click a tile above to configure</p></div></td></tr>
               </tbody>
             </table>
           </div>
         </div>
+        <div id="int-sync-results" style="display:none"></div>
       </div>
 
       <!-- ── REFERRALS ─────────────────────────────── -->
@@ -2055,6 +2060,22 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
   </div>
 </div>
 
+<!-- ── VARIANT MAPPING MODAL ─────────────────────────── -->
+<div id="int-variant-modal" onclick="if(event.target===this)closeVariantModal()" style="position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem">
+  <div style="background:#fff;border:1px solid var(--rim);border-radius:14px;width:100%;max-width:680px;overflow:hidden;animation:riseIn .22s ease both;box-shadow:var(--shadow)">
+    <div style="padding:1.1rem 1.3rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between">
+      <span style="font-weight:700;font-size:.95rem;color:var(--tx)">Variant Mapping</span>
+      <button onclick="closeVariantModal()" style="background:none;border:none;color:var(--dim);font-size:1.1rem;cursor:pointer">&#10005;</button>
+    </div>
+    <div id="int-variant-body" style="padding:1.3rem;max-height:75vh;overflow-y:auto;font-size:.84rem">
+      <div style="text-align:center;padding:2rem;color:var(--dim)">Loading…</div>
+    </div>
+    <div style="padding:.8rem 1.3rem;border-top:1px solid var(--rim);display:flex;justify-content:flex-end">
+      <button class="btn-g" onclick="closeVariantModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── SETTLEMENT DETAIL MODAL ────────────────────────── -->
 <div id="fin-settle-modal" onclick="if(event.target===this)closeFinSettleModal()" style="position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem">
   <div style="background:#fff;border:1px solid var(--rim);border-radius:14px;width:100%;max-width:680px;overflow:hidden;animation:riseIn .22s ease both;box-shadow:var(--shadow)">
@@ -2078,6 +2099,8 @@ let token    = localStorage.getItem('zm_token');
 let rest     = null;
 let branches = [];
 let oFilter  = 'ALL';
+let _lastUploadedThumb  = null;
+let _lastUploadedS3Key  = null;
 
 /* ─────────────────────────── BOOT ──────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
@@ -3194,6 +3217,9 @@ async function loadMenu() {
   syncBtn.style.display = branch?.catalog_id ? 'inline-flex' : 'none';
   const setsBtn = document.getElementById('m-sets-btn');
   if (setsBtn) setsBtn.style.display = branch?.catalog_id ? 'inline-flex' : 'none';
+  const bulkImgBtn = document.getElementById('m-bulk-img-btn');
+  if (bulkImgBtn) bulkImgBtn.style.display = branchId ? 'inline-flex' : 'none';
+  loadImageStats();
   badge.innerHTML = branch?.catalog_id
     ? `<span class="badge bg">✅ Catalog Live</span><button class="btn-g btn-sm" onclick="doFixCatalog()" title="Re-discover catalog from Meta if sync fails" style="font-size:.7rem;padding:.25rem .55rem;margin-left:.35rem">🔧 Fix Catalog</button>`
     : `<span class="badge ba">⚠️ No catalog — <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--gold2);cursor:pointer;font-size:.72rem;text-decoration:underline">create in Branches</button></span>`;
@@ -3242,8 +3268,9 @@ async function loadMenu() {
 }
 function miRow(item, isGroupedVariant) {
   const ti    = { veg: '🟢', non_veg: '🔴', vegan: '🌱', egg: '🟡' };
-  const thumb = item.image_url
-    ? `<img class="mi-th" src="${item.image_url}" onerror="this.style.display='none'">`
+  const thumbSrc = item.thumbnail_url || item.image_url;
+  const thumb = thumbSrc
+    ? `<img class="mi-th" src="${thumbSrc}" onerror="this.style.display='none'">`
     : `<div class="mi-ph">${ti[item.food_type] || '🍽️'}</div>`;
   const variantBadge = item.item_group_id
     ? `<span class="var-badge" title="Part of a variant group">⚡ ${item.size || item.variant_value || 'Variant'}</span>`
@@ -3437,6 +3464,8 @@ async function doAddItem() {
     foodType:    document.getElementById('m-type').value,
     categoryId,
     imageUrl:    document.getElementById('m-img').value,
+    ...(_lastUploadedThumb && { thumbnailUrl: _lastUploadedThumb }),
+    ...(_lastUploadedS3Key && { imageS3Key: _lastUploadedS3Key }),
     ...(advGroupId  && { itemGroupId: advGroupId }),
     ...(advSize     && { size: advSize }),
     ...(advSalePrice && { salePriceRs: parseFloat(advSalePrice) }),
@@ -6068,11 +6097,13 @@ function syncImgPreview(url) {
     img.src = url;
     img.style.display = 'block';
     icon.style.display = 'none';
-    img.onerror = () => { img.style.display = 'none'; icon.style.display = ''; icon.textContent = '📷'; };
+    img.onerror = () => { img.style.display = 'none'; icon.style.display = ''; icon.textContent = '📷'; updateImgQuality(false); };
+    updateImgQuality(true);
   } else {
     img.style.display = 'none';
     icon.style.display = '';
     icon.textContent = '📷';
+    updateImgQuality(false);
   }
 }
 
@@ -6111,7 +6142,10 @@ async function handleImgFile(input) {
     if (!res.ok) throw new Error(data.error || 'Upload failed');
 
     urlIn.value = data.url;
+    _lastUploadedThumb = data.thumbnail_url || null;
+    _lastUploadedS3Key = data.s3_key || null;
     toast('Image uploaded!', 'ok');
+    updateImgQuality(true);
   } catch (e) {
     toast(e.message, 'err');
     // Revert preview on failure
@@ -6119,6 +6153,7 @@ async function handleImgFile(input) {
     icon.style.display = '';
     icon.textContent = '📷';
     urlIn.value = '';
+    updateImgQuality(false);
   } finally {
     spin.style.display = 'none';
     input.value = '';            // reset file input so same file can be re-selected
@@ -6133,6 +6168,21 @@ function resetImgPicker() {
   icon.style.display = '';
   icon.textContent = '📷';
   document.getElementById('m-img').value = '';
+  _lastUploadedThumb = null;
+  _lastUploadedS3Key = null;
+  updateImgQuality(false);
+}
+
+function updateImgQuality(hasImage) {
+  const el = document.getElementById('img-quality-indicator');
+  if (!el) return;
+  if (hasImage) {
+    el.style.color = 'var(--wa)';
+    el.textContent = 'Meets Meta catalog requirements';
+  } else {
+    el.style.color = 'var(--red)';
+    el.textContent = 'Add a photo (min 500x500px) for WhatsApp catalog';
+  }
 }
 
 /* ─────────────────────── INTEGRATIONS ──────────────────── */
@@ -6173,39 +6223,66 @@ const INT_DEFS = {
       { id: 'outlet_id',    label: 'Store / Outlet ID', ph: '12345',             type: 'text' },
     ],
   },
-  // ── Swiggy — coming soon (requires Swiggy Partner API approval) ──
-  // swiggy: {
-  //   name   : 'Swiggy',
-  //   emoji  : '🟠',
-  //   cls    : 'swiggy',
-  //   desc   : 'Pull your Swiggy menu automatically. Requires official Swiggy Partner API access.',
-  //   apiNote: 'Apply for Swiggy Partner API access at partner.swiggy.com.',
-  //   fields : [
-  //     { id: 'api_key',   label: 'API Key',   ph: 'sw_xxxxxxxxxxxxxxxx', type: 'text' },
-  //     { id: 'outlet_id', label: 'Outlet ID', ph: '123456',              type: 'text' },
-  //   ],
-  // },
-  // ── Zomato — coming soon (requires Zomato for Business API approval) ──
-  // zomato: {
-  //   name   : 'Zomato',
-  //   emoji  : '🔴',
-  //   cls    : 'zomato',
-  //   desc   : 'Import your Zomato menu automatically. Requires Zomato for Business API credentials.',
-  //   apiNote: 'Register at zomato.com/business to get your API Key and Restaurant ID.',
-  //   fields : [
-  //     { id: 'api_key',    label: 'API Key / Client ID',    ph: 'zm_xxxxxxxxxxxxxxxx', type: 'text' },
-  //     { id: 'api_secret', label: 'Client Secret',          ph: 'optional',            type: 'text' },
-  //     { id: 'outlet_id',  label: 'Restaurant ID (res_id)', ph: '12345',               type: 'text' },
-  //   ],
-  // },
+  /* ═══ FUTURE FEATURE: Swiggy Integration ═══
+     Requires Swiggy Partner API approval (apply at partner.swiggy.com).
+     swiggy: {
+       name   : 'Swiggy',
+       emoji  : '🟠',
+       cls    : 'swiggy',
+       desc   : 'Pull your Swiggy menu automatically. Requires official Swiggy Partner API access.',
+       apiNote: 'Apply for Swiggy Partner API access at partner.swiggy.com.',
+       fields : [
+         { id: 'api_key',   label: 'API Key',   ph: 'sw_xxxxxxxxxxxxxxxx', type: 'text' },
+         { id: 'outlet_id', label: 'Outlet ID', ph: '123456',              type: 'text' },
+       ],
+     },
+     ═══ END FUTURE FEATURE ═══ */
+  /* ═══ FUTURE FEATURE: Zomato Integration ═══
+     Requires Zomato for Business API approval (apply at zomato.com/business).
+     zomato: {
+       name   : 'Zomato',
+       emoji  : '🔴',
+       cls    : 'zomato',
+       desc   : 'Import your Zomato menu automatically. Requires Zomato for Business API credentials.',
+       apiNote: 'Register at zomato.com/business to get your API Key and Restaurant ID.',
+       fields : [
+         { id: 'api_key',    label: 'API Key / Client ID',    ph: 'zm_xxxxxxxxxxxxxxxx', type: 'text' },
+         { id: 'api_secret', label: 'Client Secret',          ph: 'optional',            type: 'text' },
+         { id: 'outlet_id',  label: 'Restaurant ID (res_id)', ph: '12345',               type: 'text' },
+       ],
+     },
+     ═══ END FUTURE FEATURE ═══ */
 };
 
 let intData       = {};  // platform -> row from DB
 let intActivePlatform = null;
 
+const POS_DISABLED = true; // POS integrations not yet active — flip when ENABLE_POS_INTEGRATIONS=true
+
 async function loadIntegrations() {
   const grid   = document.getElementById('int-grid');
-  const logTbl = document.getElementById('int-log-body');
+
+  if (POS_DISABLED) {
+    // Show greyed-out tiles with "Coming Soon" overlay
+    grid.innerHTML = Object.entries(INT_DEFS).map(([p, d]) =>
+      `<div class="int-tile" style="opacity:.5;cursor:not-allowed;pointer-events:none;position:relative">
+         <div class="int-tile-hd">
+           <div class="int-logo ${d.cls}">${d.emoji}</div>
+           <div>
+             <div class="int-tile-name">${d.name}</div>
+             <div><span class="badge bd" style="background:var(--ink4);color:var(--mute)">Coming soon</span></div>
+           </div>
+         </div>
+         <div class="int-tile-desc">${d.desc}</div>
+         <div class="int-sync-info">POS integrations coming soon</div>
+       </div>`
+    ).join('');
+    // Replace sync log with coming-soon message
+    document.getElementById('int-log-body').innerHTML =
+      '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--dim)">POS integrations are not yet active. Contact GullyBite support for early access.</td></tr>';
+    return;
+  }
+
   grid.innerHTML = Object.entries(INT_DEFS).map(([p, d]) =>
     `<div class="int-tile" id="int-tile-${p}" onclick="openIntModal('${p}')">
        <div class="int-tile-hd">
@@ -6253,7 +6330,10 @@ function refreshIntTile(platform) {
   badge.innerHTML = `<span class="badge ${cls}">${label}</span>`;
   if (tog) tog.checked = row.is_active;
   if (row.last_synced_at) {
-    if (sync) sync.textContent = `${row.item_count} items · synced ${timeAgo(row.last_synced_at)}`;
+    const lsr = row.last_sync_result
+    const variantInfo = lsr && lsr.variants_created ? ` (${lsr.variants_created} with variants)` : ''
+    const totalItems = lsr && lsr.total_items ? lsr.total_items : row.item_count
+    if (sync) sync.textContent = `${totalItems} items${variantInfo} · synced ${timeAgo(row.last_synced_at)}`
   } else {
     if (sync) sync.textContent = row.is_active ? 'Active — not synced yet' : 'Configured but disabled';
   }
@@ -6265,16 +6345,18 @@ function renderIntLog() {
   const tb = document.getElementById('int-log-body');
   const rows = Object.values(intData);
   if (!rows.length) {
-    tb.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="ei">🔗</div><h3>No integrations connected yet</h3><p>Click a tile above to configure</p></div></td></tr>`;
+    tb.innerHTML = `<tr><td colspan="7"><div class="empty"><div class="ei">🔗</div><h3>No integrations connected yet</h3><p>Click a tile above to configure</p></div></td></tr>`;
     return;
   }
   tb.innerHTML = rows.map(r => {
     const def = INT_DEFS[r.platform] || {};
     const statusCls = { idle: 'bd', syncing: 'bb', success: 'bg', error: 'br' }[r.sync_status] || 'bd';
+    const variantsCreated = r.last_sync_result?.variants_created || 0
     return `<tr>
       <td><strong>${def.emoji || ''} ${def.name || r.platform}</strong></td>
       <td style="font-size:.78rem;color:var(--dim)">${r.branch_id ? 'Branch set' : '—'}</td>
       <td>${r.item_count || 0}</td>
+      <td>${variantsCreated}</td>
       <td style="font-size:.78rem;color:var(--dim)">${r.last_synced_at ? timeAgo(r.last_synced_at) : 'Never'}</td>
       <td><span class="badge ${statusCls}">${r.sync_status}</span>${r.sync_error ? `<div style="font-size:.68rem;color:var(--red);margin-top:.2rem">${r.sync_error.substring(0,60)}</div>` : ''}</td>
       <td><button class="btn-g btn-sm" onclick="doSyncPlatform('${r.platform}')">🔄 Sync</button></td>
@@ -6325,8 +6407,24 @@ function openIntModal(platform) {
     </div>
     <div class="int-api-note">ℹ️ ${def.apiNote}</div>`;
 
-  // Show Sync Now only if already configured
-  document.getElementById('im-sync-btn').style.display = row.sync_status ? 'inline-flex' : 'none';
+  // Show Sync Now + sync mode toggle only if already configured
+  const syncBtn = document.getElementById('im-sync-btn')
+  syncBtn.style.display = row.sync_status ? 'inline-flex' : 'none'
+
+  // Remove old sync mode toggle if present
+  const oldSyncMode = document.getElementById('im-sync-mode-wrap')
+  if (oldSyncMode) oldSyncMode.remove()
+
+  if (row.sync_status) {
+    const modeDiv = document.createElement('div')
+    modeDiv.id = 'im-sync-mode-wrap'
+    modeDiv.style.cssText = 'font-size:.72rem;color:var(--dim);margin-top:.4rem;width:100%'
+    modeDiv.innerHTML = `
+      <label><input type="radio" name="im-sync-mode" value="incremental" checked> Incremental (merge changes)</label>
+      <label style="margin-left:.8rem"><input type="radio" name="im-sync-mode" value="full_replace"> Full Replace</label>`
+    syncBtn.parentElement.appendChild(modeDiv)
+  }
+
   document.getElementById('int-modal').classList.add('on');
 }
 
@@ -6362,12 +6460,18 @@ async function doSaveIntegration() {
 async function doSyncIntegration() {
   const platform = intActivePlatform;
   if (!platform) return;
+  const syncModeEl = document.querySelector('input[name="im-sync-mode"]:checked')
+  const syncMode = syncModeEl ? syncModeEl.value : 'incremental'
+  if (syncMode === 'full_replace') {
+    if (!confirm('This will deactivate all POS items and reimport from scratch. Continue?')) return
+  }
   const btn = document.getElementById('im-sync-btn');
   btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Syncing…';
   try {
-    const r = await api(`/api/restaurant/integrations/${platform}/sync`, { method: 'POST' });
-    toast(`Sync complete — ${r.added} added, ${r.updated} updated`, 'ok');
+    const r = await api(`/api/restaurant/integrations/${platform}/sync`, { method: 'POST', body: { syncMode } });
+    toast(`Sync complete — ${r.inserted || 0} inserted, ${r.updated || 0} updated`, 'ok');
     closeIntModal();
+    showSyncResults(platform, r)
     await loadIntegrations();
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; btn.innerHTML = '🔄 Sync Now'; }
@@ -6376,8 +6480,9 @@ async function doSyncIntegration() {
 async function doSyncPlatform(platform) {
   try {
     toast(`Syncing ${INT_DEFS[platform]?.name}…`, 'nfo');
-    const r = await api(`/api/restaurant/integrations/${platform}/sync`, { method: 'POST' });
-    toast(`${INT_DEFS[platform]?.name}: ${r.added} added, ${r.updated} updated`, 'ok');
+    const r = await api(`/api/restaurant/integrations/${platform}/sync`, { method: 'POST', body: { syncMode: 'incremental' } });
+    toast(`${INT_DEFS[platform]?.name}: ${r.inserted || 0} inserted, ${r.updated || 0} updated`, 'ok');
+    showSyncResults(platform, r)
     await loadIntegrations();
   } catch (e) { toast(e.message, 'err'); }
 }
@@ -6393,6 +6498,74 @@ async function doRemoveIntegration() {
     closeIntModal();
     await loadIntegrations();
   } catch (e) { toast(e.message, 'err'); }
+}
+
+function showSyncResults(platform, r) {
+  const panel = document.getElementById('int-sync-results')
+  if (!panel || !r.success) return
+  const def = INT_DEFS[platform] || {}
+  const cats = (r.tag_summary || []).map(t => `${t.tag} (${t.count})`).join(', ') || 'None'
+  panel.style.display = 'block'
+  panel.innerHTML = `
+    <div class="card" style="background:#f0fdf4;border:1px solid #bbf7d0;margin-top:1rem">
+      <div class="ch"><h3 style="color:#166534">Menu Sync Results — ${def.name || platform}</h3></div>
+      <div class="cb" style="padding:1rem 1.4rem;font-size:.84rem;line-height:1.7">
+        <div><strong>Inserted:</strong> ${r.inserted || 0} new items</div>
+        <div><strong>Updated:</strong> ${r.updated || 0} items</div>
+        <div><strong>Unchanged:</strong> ${r.unchanged || 0} items</div>
+        <div><strong>Deactivated:</strong> ${r.deactivated || 0} items</div>
+        <div><strong>Variants:</strong> ${r.variants_created || 0} items → ${r.total_items || 0} variant rows</div>
+        <div style="margin-top:.4rem"><strong>Categories:</strong> ${cats}</div>
+        <div style="margin-top:.8rem;display:flex;gap:.5rem">
+          <button class="btn-p btn-sm" onclick="openVariantModal('${platform}')">View Variant Mapping</button>
+          <button class="btn-g btn-sm" onclick="dismissSyncResults()">Dismiss</button>
+        </div>
+      </div>
+    </div>`
+}
+
+function dismissSyncResults() {
+  const panel = document.getElementById('int-sync-results')
+  if (panel) { panel.style.display = 'none'; panel.innerHTML = '' }
+}
+
+let _variantPlatform = null
+async function openVariantModal(platform) {
+  _variantPlatform = platform
+  const modal = document.getElementById('int-variant-modal')
+  const body = document.getElementById('int-variant-body')
+  modal.style.display = 'flex'
+  body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--dim)">Loading…</div>'
+  try {
+    const data = await api(`/api/restaurant/integrations/${platform}/variants`)
+    const groups = data.variant_groups || []
+    if (!groups.length) {
+      body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--dim)">No variant groups found</div>'
+      return
+    }
+    body.innerHTML = `
+      <div class="tbl">
+        <table>
+          <thead><tr><th>POS Item</th><th>Variants Found</th><th>item_group_id</th><th>Rows Created</th></tr></thead>
+          <tbody>${groups.map(g => {
+            const variantNames = (g.variants || []).map(v => v.size).join(', ')
+            return `<tr>
+              <td><strong>${g.name}</strong></td>
+              <td style="font-size:.78rem">${variantNames}</td>
+              <td style="font-size:.78rem;color:var(--dim)">${g.item_group_id}</td>
+              <td>${(g.variants || []).length}</td>
+            </tr>`
+          }).join('')}</tbody>
+        </table>
+      </div>`
+  } catch (e) {
+    body.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--red)">Failed to load variants: ${e.message}</div>`
+  }
+}
+
+function closeVariantModal() {
+  document.getElementById('int-variant-modal').style.display = 'none'
+  _variantPlatform = null
 }
 
 // snake_case → camelCase helper for field IDs
@@ -6943,6 +7116,91 @@ function toast(msg, type = 'ok') {
   _tt = setTimeout(() => el.classList.remove('on'), 3800);
 }
 
+/* ─────────────────────── IMAGE STATS & BULK UPLOAD ─────── */
+async function loadImageStats() {
+  const bar = document.getElementById('img-stats-bar');
+  if (!bar) return;
+  try {
+    const stats = await api('/api/restaurant/images/stats');
+    if (stats && typeof stats.withImages === 'number') {
+      const pct = stats.totalItems ? Math.round((stats.withImages / stats.totalItems) * 100) : 0;
+      bar.textContent = `📷 ${stats.withImages} of ${stats.totalItems} items have photos (${pct}%)`;
+      bar.style.display = 'block';
+    } else {
+      bar.style.display = 'none';
+    }
+  } catch (_) {
+    bar.style.display = 'none';
+  }
+}
+
+function openBulkImageUpload() {
+  document.getElementById('bulk-img-modal').style.display = 'flex';
+  document.getElementById('bulk-img-files').value = '';
+  document.getElementById('bulk-img-list').innerHTML = '';
+  document.getElementById('bulk-img-results').innerHTML = '';
+  document.getElementById('bulk-img-results').style.display = 'none';
+}
+function closeBulkImageUpload() {
+  document.getElementById('bulk-img-modal').style.display = 'none';
+}
+
+function updateBulkFileList() {
+  const input = document.getElementById('bulk-img-files');
+  const list = document.getElementById('bulk-img-list');
+  const files = input.files;
+  if (!files.length) { list.innerHTML = ''; return; }
+  list.innerHTML = [...files].map((f, i) => `<div style="font-size:.8rem;padding:.25rem 0;color:var(--tx)">${i + 1}. ${f.name} <span style="color:var(--dim)">(${(f.size / 1024).toFixed(0)} KB)</span></div>`).join('');
+}
+
+async function doBulkImageUpload() {
+  const input = document.getElementById('bulk-img-files');
+  const files = input.files;
+  if (!files.length) return toast('Select at least one image', 'err');
+  if (files.length > 20) return toast('Maximum 20 files at a time', 'err');
+
+  const btn = document.getElementById('bulk-img-go');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spin" style="width:16px;height:16px"></div> Uploading...';
+
+  try {
+    const form = new FormData();
+    for (const f of files) form.append('images', f);
+
+    const res = await fetch('/api/restaurant/images/bulk-upload', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Bulk upload failed');
+
+    const results = document.getElementById('bulk-img-results');
+    results.style.display = 'block';
+    let html = '';
+    if (data.matched?.length) {
+      html += `<div style="margin-bottom:.5rem"><strong style="color:var(--wa);font-size:.82rem">Matched ${data.matched.length} item(s):</strong></div>`;
+      html += data.matched.map(m => `<div style="font-size:.8rem;padding:.15rem 0">✅ ${m.fileName} → ${m.itemName}</div>`).join('');
+    }
+    if (data.unmatched?.length) {
+      html += `<div style="margin-top:.5rem;margin-bottom:.3rem"><strong style="color:var(--gold);font-size:.82rem">${data.unmatched.length} unmatched image(s):</strong></div>`;
+      html += data.unmatched.map(u => `<div style="font-size:.8rem;padding:.15rem 0;color:var(--dim)">⚠️ ${u.fileName}</div>`).join('');
+    }
+    if (!data.matched?.length && !data.unmatched?.length) {
+      html = `<div style="font-size:.82rem;color:var(--dim)">Upload complete. ${data.uploaded || 0} image(s) processed.</div>`;
+    }
+    results.innerHTML = html;
+    toast(`Bulk upload complete!`, 'ok');
+    loadMenu();
+    loadImageStats();
+  } catch (e) {
+    toast(e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Upload All';
+  }
+}
+
 /* ─────────────────────────── UTILS ─────────────────────── */
 function timeAgo(ts) {
   const m = Math.round((Date.now() - new Date(ts)) / 60000);
@@ -6952,5 +7210,23 @@ function timeAgo(ts) {
   return Math.round(m / 1440) + 'd ago';
 }
 </script>
+<!-- Bulk Image Upload Modal -->
+<div id="bulk-img-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.45);align-items:center;justify-content:center" onclick="if(event.target===this)closeBulkImageUpload()">
+  <div class="card" style="width:520px;max-width:94vw;max-height:85vh;overflow-y:auto;padding:1.5rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <h3 style="font-size:1rem">📷 Bulk Image Upload</h3>
+      <button class="btn-del" onclick="closeBulkImageUpload()" style="font-size:1rem">&times;</button>
+    </div>
+    <div style="border:2px dashed var(--rim2);border-radius:10px;padding:1.5rem;text-align:center;cursor:pointer;background:var(--ink4);transition:border-color .18s" onclick="document.getElementById('bulk-img-files').click()" ondragover="event.preventDefault();this.style.borderColor='var(--acc)'" ondragleave="this.style.borderColor='var(--rim2)'" ondrop="event.preventDefault();this.style.borderColor='var(--rim2)';document.getElementById('bulk-img-files').files=event.dataTransfer.files;updateBulkFileList()">
+      <div style="font-size:1.5rem;margin-bottom:.4rem">📁</div>
+      <div style="font-size:.85rem;color:var(--dim)">Drag & drop images here, or click to browse</div>
+      <div style="font-size:.72rem;color:var(--mute);margin-top:.3rem">Max 20 files · JPEG, PNG, WebP</div>
+    </div>
+    <input type="file" id="bulk-img-files" multiple accept="image/jpeg,image/png,image/webp" style="display:none" onchange="updateBulkFileList()">
+    <div id="bulk-img-list" style="margin-top:.7rem;max-height:180px;overflow-y:auto"></div>
+    <button class="btn-p" id="bulk-img-go" style="margin-top:.8rem;width:100%" onclick="doBulkImageUpload()">Upload All</button>
+    <div id="bulk-img-results" style="display:none;margin-top:.8rem;padding:.7rem;background:var(--ink4);border-radius:8px;max-height:200px;overflow-y:auto"></div>
+  </div>
+</div>
 </body>
 </html>

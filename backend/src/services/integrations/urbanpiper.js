@@ -1,6 +1,7 @@
 // src/services/integrations/urbanpiper.js
 // UrbanPiper aggregator integration — menu pull + order push
 // UrbanPiper connects Swiggy, Zomato, and others via a single API
+// Variant explosion: option_groups with size-like titles → separate menu_items rows
 //
 // Credentials needed:
 //   api_key      — UrbanPiper API key
@@ -8,10 +9,13 @@
 //   outlet_id    — UrbanPiper store/location ID
 
 const axios = require('axios');
-const crypto = require('crypto');
+const { POS_INTEGRATIONS_ENABLED } = require('../../config/features');
 
 const BASE = 'https://pos-api.urbanpiper.com/external/api/v1';
-const TIMEOUT = 20000;
+const TIMEOUT = 10000;
+
+// Keywords that indicate a size/portion variant (vs an add-on/modifier)
+const SIZE_KEYWORDS = ['size', 'portion', 'quantity', 'pack', 'serves', 'type', 'variant', 'piece', 'pcs'];
 
 function authHeaders(apiKey, apiSecret) {
   return {
@@ -21,8 +25,21 @@ function authHeaders(apiKey, apiSecret) {
   };
 }
 
+function slugify(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function isSizeGroup(group) {
+  const title = (group.title || group.name || '').toLowerCase();
+  return SIZE_KEYWORDS.some(k => title.includes(k));
+}
+
 // ─── MENU PULL ──────────────────────────────────────────────────
 async function fetchMenu(integration) {
+  if (!POS_INTEGRATIONS_ENABLED) {
+    console.log('[POS] UrbanPiper fetchMenu skipped — POS integrations disabled');
+    return { categories: [], items: [] };
+  }
   const { api_key, api_secret, outlet_id } = integration;
   if (!api_key || !api_secret || !outlet_id) {
     throw new Error('UrbanPiper: api_key, api_secret and outlet_id are all required');
@@ -63,24 +80,81 @@ async function fetchMenu(integration) {
     sort_order: c.sort_order ?? i,
   }));
 
-  const items = rawItems.map(item => ({
-    external_id: `up_${item.ref_id || item.id}`,
-    name: item.title || item.name,
-    description: item.description || item.title || '',
-    price: parseFloat(item.price || item.current_stock?.price || 0),
-    food_type: item.food_type === 2 ? 'non_veg' : item.food_type === 3 ? 'egg' : 'veg',
-    category: catNameById[item.category_ref_id] || 'Menu',
-    image_url: item.img_url || item.image_url || null,
-    is_available: item.available !== false && item.current_stock?.in_stock !== false,
-  }));
+  // ── Normalize items with variant explosion ─────────────
+  const now = new Date();
+  const items = [];
+  let variantCount = 0;
 
-  console.log(`[UrbanPiper] Fetched ${categories.length} categories, ${items.length} items for outlet ${outlet_id}`);
+  for (const item of rawItems) {
+    const refId = String(item.ref_id || item.id);
+    const foodType = item.food_type === 2 ? 'Non-Veg' : item.food_type === 3 ? 'Egg' : 'Veg';
+    const category = catNameById[item.category_ref_id] || 'Menu';
+    const tags = [foodType, category];
+    if (item.recommended || item.bestseller) tags.push('Bestseller');
+
+    const basePrice = parseFloat(item.price || item.current_stock?.price || 0);
+
+    const base = {
+      name         : item.title || item.name,
+      description  : item.description || '',
+      image_url    : item.img_url || item.image_url || null,
+      is_available : item.available !== false && item.current_stock?.in_stock !== false,
+      pos_item_id  : refId,
+      pos_platform : 'urbanpiper',
+      food_type    : foodType.toLowerCase().replace('-', '_'),
+      category,
+      google_product_category : 'Food, Beverages & Tobacco > Food Items',
+      fb_product_category     : 'Food & Beverages > Prepared Food',
+      product_tags : tags,
+      brand        : null,
+      sale_price_paise : null,
+      quantity_to_sell_on_facebook : null,
+      condition    : 'new',
+      pos_synced_at        : now,
+      catalog_sync_status  : 'pending',
+    };
+
+    // Find size variant group (if any)
+    const optionGroups = item.option_groups || item.options_groups || [];
+    const sizeGroup = optionGroups.find(g => isSizeGroup(g));
+    const sizeOptions = sizeGroup?.options || [];
+    const hasVariants = sizeOptions.length > 1;
+
+    if (hasVariants) {
+      const groupId = `UP-${refId}`;
+      for (const opt of sizeOptions) {
+        const size = opt.title || opt.name || 'Regular';
+        const optPrice = parseFloat(opt.price) || 0;
+        items.push({
+          ...base,
+          price_paise    : Math.round((basePrice + optPrice) * 100),
+          retailer_id    : `UP-${refId}-${slugify(size)}`,
+          item_group_id  : groupId,
+          size,
+        });
+        variantCount++;
+      }
+    } else {
+      items.push({
+        ...base,
+        price_paise    : Math.round(basePrice * 100),
+        retailer_id    : `UP-${refId}`,
+        item_group_id  : null,
+        size           : null,
+      });
+    }
+  }
+
+  console.log(`[POS-Sync] UrbanPiper: ${rawItems.length} POS items → ${items.length} menu rows (${variantCount} variant rows) for outlet ${outlet_id}`);
   return { categories, items };
 }
 
 // ─── ORDER PUSH ─────────────────────────────────────────────────
 // Push a confirmed GullyBite order to UrbanPiper for POS reconciliation
 async function pushOrder(integration, order, items) {
+  if (!POS_INTEGRATIONS_ENABLED) {
+    return { success: false, skipped: true, reason: 'POS integrations disabled' };
+  }
   const { api_key, api_secret, outlet_id } = integration;
   if (!api_key || !api_secret) {
     throw new Error('UrbanPiper: api_key and api_secret required for order push');
@@ -103,7 +177,7 @@ async function pushOrder(integration, order, items) {
         packaging_charge: parseFloat(order.packaging_rs) || 0,
       },
       items: items.map(item => ({
-        ref_id: item.external_id?.replace('up_', '') || String(item._id),
+        ref_id: item.external_id?.replace('up_', '') || item.pos_item_id || String(item._id),
         title: item.name || item.item_name,
         quantity: item.quantity || item.qty || 1,
         price: parseFloat(item.price_rs || (item.price_paise ? item.price_paise / 100 : 0)),
@@ -136,8 +210,10 @@ async function pushOrder(integration, order, items) {
 }
 
 // ─── STATUS UPDATE ──────────────────────────────────────────────
-// Sync GullyBite order status to UrbanPiper
 async function updateOrderStatus(integration, orderId, status) {
+  if (!POS_INTEGRATIONS_ENABLED) {
+    return { success: false, skipped: true };
+  }
   const { api_key, api_secret } = integration;
   const headers = authHeaders(api_key, api_secret);
 
@@ -150,7 +226,7 @@ async function updateOrderStatus(integration, orderId, status) {
   };
 
   const upStatus = statusMap[status];
-  if (!upStatus) return; // Not a mappable status
+  if (!upStatus) return;
 
   try {
     await axios.put(`${BASE}/orders/${orderId}/status/`, {

@@ -1,12 +1,11 @@
 // src/config/database.js
 // MongoDB connection — replaces PostgreSQL/pg
 
-const { MongoClient, GridFSBucket } = require('mongodb');
+const { MongoClient } = require('mongodb');
 const { v4: uuidv4 } = require('uuid');
 
 let _client = null;
 let _db = null;
-let _bucket = null;
 let _connectPromise = null;
 
 const connect = async () => {
@@ -15,7 +14,6 @@ const connect = async () => {
   _client = new MongoClient(process.env.MONGODB_URI);
   await _client.connect();
   _db = _client.db(process.env.MONGODB_DB || 'gullybite');
-  _bucket = new GridFSBucket(_db, { bucketName: 'images' });
   console.log('✅ MongoDB connected');
   return _db;
 };
@@ -77,10 +75,18 @@ const mapIds = (arr) => (arr || []).map(mapId);
 // Generate new UUID (used as _id)
 const newId = () => uuidv4();
 
-// Get the GridFS bucket for image storage
-const getBucket = () => {
-  if (!_bucket) throw new Error('MongoDB not connected yet');
-  return _bucket;
-};
+/* ═══ FUTURE FEATURE: GridFS Bucket for File Storage ═══
+   MongoDB GridFS was used for image storage before S3 migration.
+   Re-enable if GridFS-based file serving is needed (e.g., document uploads).
+   Requires: const { MongoClient, GridFSBucket } = require('mongodb');
+   Add _bucket initialization in connect(): _bucket = new GridFSBucket(_db, { bucketName: 'images' });
 
-module.exports = { col, transaction, connect, ensureConnected, mapId, mapIds, newId, getBucket };
+   let _bucket = null;
+   const getBucket = () => {
+     if (!_bucket) throw new Error('MongoDB not connected yet');
+     return _bucket;
+   };
+   // Add getBucket to module.exports
+   ═══ END FUTURE FEATURE ═══ */
+
+module.exports = { col, transaction, connect, ensureConnected, mapId, mapIds, newId };

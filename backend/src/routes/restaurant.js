@@ -6,10 +6,8 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const axios  = require('axios');
-const { col, newId, mapId, mapIds, getBucket } = require('../config/database');
-const { Readable } = require('stream');
+const { col, newId, mapId, mapIds } = require('../config/database');
 const { requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS } = require('./auth');
-const bcrypt = require('bcryptjs');
 const catalog = require('../services/catalog');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
@@ -19,11 +17,12 @@ const orderNotify = require('../services/orderNotify');
 const { logActivity: log } = require('../services/activityLog');
 const issueSvc = require('../services/issues');
 const financials = require('../services/financials');
+const imgSvc = require('../services/imageUpload');
 
-// ── Image upload via MongoDB GridFS ───────────────────────────
+// ── Image upload via S3 + CloudFront ─────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits : { fileSize: 5 * 1024 * 1024 }, // 5 MB max
+  limits : { fileSize: 10 * 1024 * 1024 }, // 10 MB max
   fileFilter(req, file, cb) {
     const ok = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.mimetype);
     cb(ok ? null : new Error('Only JPEG, PNG, WebP or GIF images are allowed'), ok);
@@ -95,37 +94,265 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ═══════════════════════════════════════════════════════════════
-// IMAGE UPLOAD
-// ═══════════════════════════════════════════════════════════════
+/* ═══ FUTURE FEATURE: GridFS Image Upload (Legacy) ═══
+   Original image upload route using MongoDB GridFS.
+   Replaced by S3 + CloudFront CDN pipeline (see imageUpload.js).
+   Keep as reference for GridFS upload patterns.
+   Requires: const { getBucket } = require('../config/database'); const { Readable } = require('stream');
 
-// POST /api/restaurant/menu/upload-image
+   router.post('/menu/upload-image', upload.single('image'), async (req, res) => {
+     if (!req.file) return res.status(400).json({ error: 'No image file received' });
+     const ext      = req.file.mimetype.split('/')[1].replace('jpeg', 'jpg');
+     const filename = `${req.restaurantId}-${Date.now()}.${ext}`;
+     try {
+       const bucket = getBucket();
+       const uploadStream = bucket.openUploadStream(filename, {
+         contentType: req.file.mimetype,
+         metadata: { restaurantId: req.restaurantId },
+       });
+       await new Promise((resolve, reject) => {
+         const readable = Readable.from(req.file.buffer);
+         readable.pipe(uploadStream);
+         uploadStream.on('finish', resolve);
+         uploadStream.on('error', reject);
+       });
+       const fileId = String(uploadStream.id);
+       const publicUrl = `${process.env.BASE_URL}/images/${fileId}`;
+       res.json({ url: publicUrl });
+     } catch (err) {
+       console.error('[ImageUpload] GridFS error:', err.message);
+       res.status(500).json({ error: 'Image upload failed: ' + err.message });
+     }
+   });
+   ═══ END FUTURE FEATURE ═══ */
+
+// ═══════════════════════════════════════════════════════════════
+// IMAGE UPLOAD — S3 + CloudFront CDN (feature-flagged)
+// ═══════════════════════════════════════════════════════════════
+const IMAGE_503 = { error: 'Image upload is temporarily disabled. AWS infrastructure setup pending.', feature: 'image_pipeline', status: 'disabled' };
+
+// POST /api/restaurant/menu/upload-image — single image upload
 router.post('/menu/upload-image', upload.single('image'), async (req, res) => {
+  if (!imgSvc.IMAGE_PIPELINE_ENABLED) return res.status(503).json(IMAGE_503);
   if (!req.file) return res.status(400).json({ error: 'No image file received' });
 
-  const ext      = req.file.mimetype.split('/')[1].replace('jpeg', 'jpg');
-  const filename = `${req.restaurantId}-${Date.now()}.${ext}`;
+  try {
+    const branchId = req.body?.branchId || req.query?.branchId || null;
+    const itemId = req.body?.itemId || req.query?.itemId || null;
+
+    const result = await imgSvc.uploadImage(req.file.buffer, {
+      restaurantId: req.restaurantId,
+      branchId,
+      itemId,
+    });
+
+    // If item_id provided, update the menu item
+    if (itemId) {
+      await col('menu_items').updateOne(
+        { _id: itemId, branch_id: branchId },
+        { $set: {
+          image_url: result.url,
+          thumbnail_url: result.thumbnail_url,
+          image_s3_key: result.s3_key,
+          thumbnail_s3_key: result.thumbnail_s3_key,
+          image_source: 'uploaded',
+          catalog_sync_status: 'pending',
+          updated_at: new Date(),
+        }}
+      );
+    }
+
+    res.json(result);
+  } catch (err) {
+    console.error('[Image] Upload error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/restaurant/images/bulk-upload — upload multiple images, auto-match to items
+router.post('/images/bulk-upload', upload.array('images', 20), async (req, res) => {
+  if (!imgSvc.IMAGE_PIPELINE_ENABLED) return res.status(503).json(IMAGE_503);
+  if (!req.files || !req.files.length) return res.status(400).json({ error: 'No image files received' });
+  const branchId = req.body?.branchId;
+  if (!branchId) return res.status(400).json({ error: 'branchId is required' });
 
   try {
-    const bucket = getBucket();
-    const uploadStream = bucket.openUploadStream(filename, {
-      contentType: req.file.mimetype,
-      metadata: { restaurantId: req.restaurantId },
-    });
+    const items = await col('menu_items').find({ branch_id: branchId }).toArray();
+    const results = [];
+    let matched = 0, unmatched = 0;
 
-    await new Promise((resolve, reject) => {
-      const readable = Readable.from(req.file.buffer);
-      readable.pipe(uploadStream);
-      uploadStream.on('finish', resolve);
-      uploadStream.on('error', reject);
-    });
+    for (const file of req.files) {
+      try {
+        const result = await imgSvc.uploadImage(file.buffer, {
+          restaurantId: req.restaurantId,
+          branchId,
+        });
 
-    const fileId = String(uploadStream.id);
-    const publicUrl = `${process.env.BASE_URL}/images/${fileId}`;
-    res.json({ url: publicUrl });
+        // Try to auto-match filename to a menu item
+        const baseName = file.originalname.replace(/\.[^.]+$/, ''); // strip extension
+        const slug = baseName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const matchItem = items.find(i =>
+          i.retailer_id === baseName ||
+          i.retailer_id === slug ||
+          (i.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') === slug
+        );
+
+        if (matchItem) {
+          await col('menu_items').updateOne(
+            { _id: matchItem._id },
+            { $set: {
+              image_url: result.url,
+              thumbnail_url: result.thumbnail_url,
+              image_s3_key: result.s3_key,
+              thumbnail_s3_key: result.thumbnail_s3_key,
+              image_source: 'uploaded',
+              catalog_sync_status: 'pending',
+              updated_at: new Date(),
+            }}
+          );
+          results.push({ filename: file.originalname, matched: true, item_name: matchItem.name, ...result });
+          matched++;
+        } else {
+          results.push({ filename: file.originalname, matched: false, ...result });
+          unmatched++;
+        }
+      } catch (err) {
+        results.push({ filename: file.originalname, error: err.message });
+      }
+    }
+
+    res.json({ uploaded: results.length, matched, unmatched, results });
   } catch (err) {
-    console.error('[ImageUpload] GridFS error:', err.message);
-    res.status(500).json({ error: `Image upload failed: ${err.message}` });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/restaurant/images/from-url — import image from external URL
+router.post('/images/from-url', async (req, res) => {
+  if (!imgSvc.IMAGE_PIPELINE_ENABLED) return res.status(503).json(IMAGE_503);
+  const { sourceUrl, itemId, branchId } = req.body;
+  if (!sourceUrl) return res.status(400).json({ error: 'sourceUrl is required' });
+
+  try {
+    const result = await imgSvc.uploadImageFromUrl(sourceUrl, {
+      restaurantId: req.restaurantId,
+      branchId,
+      itemId,
+    });
+
+    if (itemId) {
+      await col('menu_items').updateOne(
+        { _id: itemId },
+        { $set: {
+          image_url: result.url,
+          thumbnail_url: result.thumbnail_url,
+          image_s3_key: result.s3_key,
+          thumbnail_s3_key: result.thumbnail_s3_key,
+          image_source: 'uploaded',
+          catalog_sync_status: 'pending',
+          updated_at: new Date(),
+        }}
+      );
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/restaurant/images/:itemId — remove image from a menu item
+router.delete('/images/:itemId', async (req, res) => {
+  if (!imgSvc.IMAGE_PIPELINE_ENABLED) return res.status(503).json(IMAGE_503);
+  try {
+    const item = await col('menu_items').findOne({ _id: req.params.itemId });
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    // Delete from S3 (async, non-blocking)
+    imgSvc.deleteImages([item.image_s3_key, item.thumbnail_s3_key]).catch(() => {});
+
+    await col('menu_items').updateOne(
+      { _id: item._id },
+      { $set: {
+        image_url: null,
+        thumbnail_url: null,
+        image_s3_key: null,
+        thumbnail_s3_key: null,
+        image_source: null,
+        catalog_sync_status: 'pending',
+        updated_at: new Date(),
+      }}
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/restaurant/images/logo — upload restaurant logo
+router.post('/images/logo', upload.single('image'), async (req, res) => {
+  if (!imgSvc.IMAGE_PIPELINE_ENABLED) return res.status(503).json(IMAGE_503);
+  if (!req.file) return res.status(400).json({ error: 'No image file received' });
+
+  try {
+    // Delete old logo if exists
+    const rest = await col('restaurants').findOne({ _id: req.restaurantId });
+    if (rest?.logo_s3_key) imgSvc.deleteImage(rest.logo_s3_key).catch(() => {});
+
+    const result = await imgSvc.uploadLogo(req.file.buffer, req.restaurantId);
+
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { logo_url: result.url, logo_s3_key: result.s3_key, updated_at: new Date() } }
+    );
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/restaurant/images/branch-photo — upload branch/storefront photo
+router.post('/images/branch-photo', upload.single('image'), async (req, res) => {
+  if (!imgSvc.IMAGE_PIPELINE_ENABLED) return res.status(503).json(IMAGE_503);
+  if (!req.file) return res.status(400).json({ error: 'No image file received' });
+  const branchId = req.body?.branchId;
+  if (!branchId) return res.status(400).json({ error: 'branchId is required' });
+
+  try {
+    const branch = await col('branches').findOne({ _id: branchId, restaurant_id: req.restaurantId });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    if (branch.photo_s3_key) imgSvc.deleteImage(branch.photo_s3_key).catch(() => {});
+
+    const result = await imgSvc.uploadBranchPhoto(req.file.buffer, req.restaurantId, branchId);
+
+    await col('branches').updateOne(
+      { _id: branchId },
+      { $set: { photo_url: result.url, photo_s3_key: result.s3_key, updated_at: new Date() } }
+    );
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/restaurant/images/stats — image coverage stats for this restaurant
+router.get('/images/stats', async (req, res) => {
+  try {
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1 }).toArray();
+    const branchIds = branches.map(b => String(b._id));
+
+    const [total, withImage] = await Promise.all([
+      col('menu_items').countDocuments({ branch_id: { $in: branchIds }, is_available: true }),
+      col('menu_items').countDocuments({ branch_id: { $in: branchIds }, is_available: true, image_url: { $ne: null, $ne: '' } }),
+    ]);
+
+    res.json({ total, with_image: withImage, without_image: total - withImage, coverage_pct: total ? Math.round(withImage / total * 100) : 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -154,7 +381,6 @@ router.get('/whatsapp/:id/setup-status', async (req, res) => {
     const effectiveToken = sysToken || wa.access_token;
 
     const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
-    const axios = require('axios');
 
     // Fetch phone number details from Meta
     let phoneStatus = null;
@@ -2407,7 +2633,6 @@ async function notifyOrderStatus(restaurantId, pid, _token, waPhone, status, ord
 // Registers a live feed URL with Meta's Catalog API (schedule: daily at 2AM)
 router.post('/catalog/register-feed', async (req, res) => {
   try {
-    const axios = require('axios');
     const crypto = require('crypto');
     const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
 
@@ -2477,7 +2702,6 @@ router.post('/catalog/register-feed', async (req, res) => {
 // GET /api/restaurant/catalog/feed-status
 router.get('/catalog/feed-status', async (req, res) => {
   try {
-    const axios = require('axios');
     const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });

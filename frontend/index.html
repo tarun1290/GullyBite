@@ -918,33 +918,39 @@ function routeByStatus(me) {
   window.location.href = '/dashboard';
 }
 
-function populatePendingStatus(me) {
-  const waConnected = !!(me.meta_user_id || (me.waba_accounts && me.waba_accounts.length > 0));
-  const phone = me.waba_accounts?.[0]?.phone || me.meta_waba_id || '';
-  const badge = document.getElementById('wa-status-badge');
-  const warn  = document.getElementById('wa-status-warn');
-  const dot   = document.getElementById('tl-wa-dot');
-  const label = document.getElementById('tl-wa-label');
+/* ═══ FUTURE FEATURE: Pending Status + Store URL Helpers ═══
+   Utility functions for the pending-approval page.
+   populatePendingStatus: shows WhatsApp connection status badges during onboarding.
+   populateStoreUrl: auto-fills the store URL display field.
 
-  if (waConnected) {
-    badge.style.display = 'flex';
-    warn.style.display  = 'none';
-    document.getElementById('wa-status-phone').textContent = phone || 'WhatsApp Business Account';
-    dot.className = 'tl-dot done'; dot.textContent = '✓';
-    label.style.color = ''; label.textContent = 'WhatsApp Business connected';
-  } else {
-    badge.style.display = 'none';
-    warn.style.display  = 'flex';
-    dot.className = 'tl-dot wait'; dot.textContent = '○';
-    label.style.color = 'var(--dim)'; label.textContent = 'WhatsApp Business connected';
-  }
-}
+   function populatePendingStatus(me) {
+     const waConnected = !!(me.meta_user_id || (me.waba_accounts && me.waba_accounts.length > 0));
+     const phone = me.waba_accounts?.[0]?.phone || me.meta_waba_id || '';
+     const badge = document.getElementById('wa-status-badge');
+     const warn  = document.getElementById('wa-status-warn');
+     const dot   = document.getElementById('tl-wa-dot');
+     const label = document.getElementById('tl-wa-label');
 
+     if (waConnected) {
+       badge.style.display = 'flex';
+       warn.style.display  = 'none';
+       document.getElementById('wa-status-phone').textContent = phone || 'WhatsApp Business Account';
+       dot.className = 'tl-dot done'; dot.textContent = '✓';
+       label.style.color = ''; label.textContent = 'WhatsApp Business connected';
+     } else {
+       badge.style.display = 'none';
+       warn.style.display  = 'flex';
+       dot.className = 'tl-dot wait'; dot.textContent = '○';
+       label.style.color = 'var(--dim)'; label.textContent = 'WhatsApp Business connected';
+     }
+   }
 
-function populateStoreUrl(me) {
-  const el = document.getElementById('store-url-display');
-  if (el && me.store_url) el.value = me.store_url;
-}
+   function populateStoreUrl(me) {
+     const el = document.getElementById('store-url-display');
+     if (el && me.store_url) el.value = me.store_url;
+   }
+   ═══ END FUTURE FEATURE ═══ */
+
 function copyStoreUrl() {
   const val = document.getElementById('store-url-display').value;
   if (!val || val === 'Loading…') return;

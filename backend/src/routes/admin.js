@@ -1769,4 +1769,78 @@ router.get('/financials/tax', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// IMAGE CLEANUP — ORPHAN DETECTION
+// ═══════════════════════════════════════════════════════════════
+
+// POST /api/admin/images/cleanup — find (and optionally delete) orphan S3 images
+router.post('/images/cleanup', async (req, res) => {
+  const restaurantId = req.query.restaurantId;
+  const doDelete = req.query.delete === 'true';
+
+  try {
+    const imgSvc = require('../services/imageUpload');
+    const prefix = restaurantId || '';
+
+    // List all S3 keys
+    const s3Objects = await imgSvc.listS3Keys(prefix);
+    if (!s3Objects.length) return res.json({ orphans: 0, total_keys: 0, total_size_mb: 0 });
+
+    // Collect all referenced S3 keys from the database
+    const referencedKeys = new Set();
+
+    const items = await col('menu_items').find(
+      restaurantId ? { restaurant_id: restaurantId } : {},
+      { projection: { image_s3_key: 1, thumbnail_s3_key: 1 } }
+    ).toArray();
+    items.forEach(i => { if (i.image_s3_key) referencedKeys.add(i.image_s3_key); if (i.thumbnail_s3_key) referencedKeys.add(i.thumbnail_s3_key); });
+
+    const restaurants = await col('restaurants').find(
+      restaurantId ? { _id: restaurantId } : {},
+      { projection: { logo_s3_key: 1 } }
+    ).toArray();
+    restaurants.forEach(r => { if (r.logo_s3_key) referencedKeys.add(r.logo_s3_key); });
+
+    const branches = await col('branches').find(
+      restaurantId ? { restaurant_id: restaurantId } : {},
+      { projection: { photo_s3_key: 1 } }
+    ).toArray();
+    branches.forEach(b => { if (b.photo_s3_key) referencedKeys.add(b.photo_s3_key); });
+
+    // Find orphans (skip placeholders directory)
+    const orphans = s3Objects.filter(o => !o.key.startsWith('placeholders/') && !referencedKeys.has(o.key));
+    const orphanSizeMb = orphans.reduce((s, o) => s + (o.size || 0), 0) / (1024 * 1024);
+
+    if (doDelete && orphans.length > 0) {
+      await imgSvc.deleteImages(orphans.map(o => o.key));
+    }
+
+    res.json({
+      total_keys: s3Objects.length,
+      total_size_mb: parseFloat((s3Objects.reduce((s, o) => s + (o.size || 0), 0) / (1024 * 1024)).toFixed(2)),
+      orphans: orphans.length,
+      orphan_size_mb: parseFloat(orphanSizeMb.toFixed(2)),
+      deleted: doDelete ? orphans.length : 0,
+      orphan_keys: doDelete ? [] : orphans.slice(0, 100).map(o => o.key),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/images/stats — platform-wide image stats
+router.get('/images/stats', async (req, res) => {
+  try {
+    const [total, withImage, rehosted, rehostFailed] = await Promise.all([
+      col('menu_items').countDocuments({ is_available: true }),
+      col('menu_items').countDocuments({ is_available: true, image_url: { $ne: null } }),
+      col('menu_items').countDocuments({ image_source: 'pos_rehosted' }),
+      col('menu_items').countDocuments({ image_rehost_failed: true }),
+    ]);
+    res.json({
+      total, with_image: withImage, without_image: total - withImage,
+      coverage_pct: total ? Math.round(withImage / total * 100) : 0,
+      rehosted, rehost_failed: rehostFailed,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

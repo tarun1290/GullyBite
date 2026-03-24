@@ -1,6 +1,7 @@
 // src/services/integrations/dotpe.js
 // DotPe POS integration — menu pull + order push
 // DotPe is widely used by Indian restaurants for dine-in + delivery POS
+// Variant explosion: variants/customizations with size-like entries → separate menu_items rows
 //
 // Credentials needed:
 //   api_key      — DotPe partner API key
@@ -8,9 +9,17 @@
 //   outlet_id    — DotPe store/outlet ID
 
 const axios = require('axios');
+const { POS_INTEGRATIONS_ENABLED } = require('../../config/features');
 
 const BASE = 'https://api.dotpe.in/api/merchant/v2';
-const TIMEOUT = 20000;
+const TIMEOUT = 10000;
+
+// Keywords that indicate a size/portion variant (vs an add-on/modifier)
+const SIZE_KEYWORDS = ['size', 'portion', 'quantity', 'pack', 'serves', 'type', 'variant', 'piece', 'pcs'];
+
+// DotPe food type → display label
+const FOOD_TAG_MAP = { 0: 'Veg', 1: 'Non-Veg', 2: 'Egg' };
+const FOOD_TYPE_MAP = { 0: 'veg', 1: 'non_veg', 2: 'egg' };
 
 function authHeaders(apiKey, accessToken) {
   return {
@@ -20,8 +29,24 @@ function authHeaders(apiKey, accessToken) {
   };
 }
 
+function slugify(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function isSizeVariant(variant) {
+  // DotPe variants can have a group_name or just be flat name/price entries.
+  // If there's a group_name, check it. Otherwise treat as size variant by default.
+  const groupName = (variant.group_name || variant.customization_group_name || '').toLowerCase();
+  if (!groupName) return true; // flat variants without group → treat as size
+  return SIZE_KEYWORDS.some(k => groupName.includes(k));
+}
+
 // ─── MENU PULL ──────────────────────────────────────────────────
 async function fetchMenu(integration) {
+  if (!POS_INTEGRATIONS_ENABLED) {
+    console.log('[POS] DotPe fetchMenu skipped — POS integrations disabled');
+    return { categories: [], items: [] };
+  }
   const { api_key, access_token, outlet_id } = integration;
   if (!api_key || !access_token || !outlet_id) {
     throw new Error('DotPe: api_key, access_token and outlet_id are all required');
@@ -54,25 +79,87 @@ async function fetchMenu(integration) {
     sort_order: c.sort_order ?? c.position ?? i,
   }));
 
-  const FOOD_MAP = { 0: 'veg', 1: 'non_veg', 2: 'egg' };
+  // ── Normalize items with variant explosion ─────────────
+  const now = new Date();
+  const items = [];
+  let variantCount = 0;
 
-  const items = rawItems.map(item => ({
-    external_id: `dp_${item.id || item.item_id}`,
-    name: item.name || item.item_name,
-    description: item.description || item.item_description || '',
-    price: parseFloat(item.price || item.selling_price || 0),
-    food_type: FOOD_MAP[item.food_type] || FOOD_MAP[item.veg_nonveg] || 'veg',
-    category: catNameById[item.category_id] || 'Menu',
-    image_url: item.image || item.image_url || null,
-    is_available: item.in_stock !== false && item.is_available !== false,
-  }));
+  for (const item of rawItems) {
+    const itemId = String(item.id || item.item_id);
+    const rawFoodType = item.food_type ?? item.veg_nonveg ?? 0;
+    const foodTag = FOOD_TAG_MAP[rawFoodType] || 'Veg';
+    const category = catNameById[item.category_id] || 'Menu';
+    const tags = [foodTag, category];
+    if (item.bestseller || item.is_bestseller) tags.push('Bestseller');
+    if (item.is_new) tags.push('New');
+    if (item.is_spicy) tags.push('Spicy');
 
-  console.log(`[DotPe] Fetched ${categories.length} categories, ${items.length} items for outlet ${outlet_id}`);
+    const basePrice = parseFloat(item.price || item.selling_price || 0);
+
+    const base = {
+      name         : item.name || item.item_name,
+      description  : item.description || item.item_description || '',
+      image_url    : item.image || item.image_url || null,
+      is_available : item.in_stock !== false && item.is_available !== false,
+      pos_item_id  : itemId,
+      pos_platform : 'dotpe',
+      food_type    : FOOD_TYPE_MAP[rawFoodType] || 'veg',
+      category,
+      google_product_category : 'Food, Beverages & Tobacco > Food Items',
+      fb_product_category     : 'Food & Beverages > Prepared Food',
+      product_tags : tags,
+      brand        : null,
+      sale_price_paise : null,
+      quantity_to_sell_on_facebook : null,
+      condition    : 'new',
+      pos_synced_at        : now,
+      catalog_sync_status  : 'pending',
+    };
+
+    // DotPe may use "variants" or "customizations" array
+    const rawVariants = item.variants || item.customizations || [];
+    // Filter to only size-like variants
+    const sizeVariants = rawVariants.filter(v => isSizeVariant(v));
+    const hasVariants = sizeVariants.length > 1;
+
+    if (hasVariants) {
+      const groupId = `DP-${itemId}`;
+      for (const v of sizeVariants) {
+        const size = v.name || v.variant_name || 'Regular';
+        const vPrice = parseFloat(v.price || v.selling_price) || basePrice;
+        items.push({
+          ...base,
+          price_paise    : Math.round(vPrice * 100),
+          retailer_id    : `DP-${itemId}-${slugify(size)}`,
+          item_group_id  : groupId,
+          size,
+        });
+        variantCount++;
+      }
+    } else {
+      // Single item or single variant → no group
+      const price = sizeVariants.length === 1
+        ? parseFloat(sizeVariants[0].price || sizeVariants[0].selling_price) || basePrice
+        : basePrice;
+      items.push({
+        ...base,
+        price_paise    : Math.round(price * 100),
+        retailer_id    : `DP-${itemId}`,
+        item_group_id  : null,
+        size           : null,
+      });
+    }
+  }
+
+  console.log(`[POS-Sync] DotPe: ${rawItems.length} POS items → ${items.length} menu rows (${variantCount} variant rows) for outlet ${outlet_id}`);
   return { categories, items };
 }
 
 // ─── ORDER PUSH ─────────────────────────────────────────────────
 async function pushOrder(integration, order, items) {
+  if (!POS_INTEGRATIONS_ENABLED) {
+    return { success: false, skipped: true, reason: 'POS integrations disabled' };
+  }
   const { api_key, access_token, outlet_id } = integration;
   if (!api_key || !access_token) {
     throw new Error('DotPe: api_key and access_token required for order push');
@@ -92,7 +179,7 @@ async function pushOrder(integration, order, items) {
       address: order.delivery_address || '',
     },
     items: items.map(item => ({
-      item_id: item.external_id?.replace('dp_', '') || String(item._id),
+      item_id: item.external_id?.replace('dp_', '') || item.pos_item_id || String(item._id),
       name: item.name || item.item_name,
       quantity: item.quantity || item.qty || 1,
       price: parseFloat(item.price_rs || (item.price_paise ? item.price_paise / 100 : 0)),
@@ -122,6 +209,9 @@ async function pushOrder(integration, order, items) {
 
 // ─── STATUS UPDATE ──────────────────────────────────────────────
 async function updateOrderStatus(integration, orderId, status) {
+  if (!POS_INTEGRATIONS_ENABLED) {
+    return { success: false, skipped: true };
+  }
   const { api_key, access_token } = integration;
   const headers = authHeaders(api_key, access_token);
 

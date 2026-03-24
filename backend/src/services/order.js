@@ -3,7 +3,6 @@
 // customer lookup → conversation state → cart → order creation → status updates
 
 const { col, newId, mapId, mapIds, transaction } = require('../config/database');
-const { v4: uuidv4 } = require('uuid');
 const couponSvc = require('./coupon');
 const { calculateOrderCharges } = require('./charges');
 const { calculateDynamicDeliveryFee } = require('./dynamicPricing');

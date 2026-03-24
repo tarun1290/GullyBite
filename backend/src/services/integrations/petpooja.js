@@ -1,6 +1,6 @@
 // src/services/integrations/petpooja.js
-// Fetches menu from PetPooja POS and normalizes it to our schema
-// PetPooja API docs: https://api.petpooja.com
+// Fetches menu from PetPooja POS and normalizes to full Meta-ready menu_items schema.
+// Variant explosion: POS size/portion variants → separate menu_items rows with shared item_group_id.
 //
 // Credentials needed:
 //   api_key      — your app's API key from PetPooja developer account
@@ -8,19 +8,28 @@
 //   outlet_id    — PetPooja restaurantid (shown in PetPooja dashboard)
 
 const axios = require('axios');
+const { POS_INTEGRATIONS_ENABLED } = require('../../config/features');
 
 const BASE = 'https://api.petpooja.com/V1/restaurant';
-const TIMEOUT = 20000;
+const TIMEOUT = 10000;
 
-// PetPooja food type → our food_type enum
+// PetPooja food type → display label for product_tags
 const FOOD_TYPE_MAP = {
-  '1': 'veg',
-  '2': 'non_veg',
-  '3': 'egg',
-  '4': 'vegan',
+  '1': 'Veg',
+  '2': 'Non-Veg',
+  '3': 'Egg',
+  '4': 'Vegan',
 };
 
+function slugify(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
 async function fetchMenu(integration) {
+  if (!POS_INTEGRATIONS_ENABLED) {
+    console.log('[POS] PetPooja fetchMenu skipped — POS integrations disabled');
+    return { categories: [], items: [] };
+  }
   const { api_key, access_token, outlet_id } = integration;
 
   if (!api_key || !access_token || !outlet_id) {
@@ -67,19 +76,69 @@ async function fetchMenu(integration) {
     sort_order : i,
   }));
 
-  // ── Normalize items ────────────────────────────────────
-  const items = rawItems.map(item => ({
-    external_id  : `pp_${item.itemid}`,      // prefix to avoid collisions with other POS
-    name         : item.itemname,
-    description  : item.item_description || item.itemname,
-    price        : parseFloat(item.itemallowvariation === '1' ? (item.variations?.[0]?.price ?? item.price) : item.price) || 0,
-    food_type    : FOOD_TYPE_MAP[item.item_type] || 'veg',
-    category     : catNameById[item.categoryid] || 'Menu',
-    image_url    : item.item_image_url || null,
-    is_available : item.item_active === '1',
-  }));
+  // ── Normalize items with variant explosion ─────────────
+  const now = new Date();
+  const items = [];
+  let variantCount = 0;
 
-  console.log(`[PetPooja] Fetched ${categories.length} categories, ${items.length} items for outlet ${outlet_id}`);
+  for (const item of rawItems) {
+    const foodTag = FOOD_TYPE_MAP[item.item_type] || 'Veg';
+    const category = catNameById[item.categoryid] || 'Menu';
+    const tags = [foodTag, category];
+    if (item.bestseller === '1' || item.is_bestseller) tags.push('Bestseller');
+    if (item.is_new === '1') tags.push('New');
+
+    const base = {
+      name         : item.itemname,
+      description  : item.item_description || '',
+      image_url    : item.item_image_url || null,
+      is_available : item.item_active === '1',
+      pos_item_id  : String(item.itemid),
+      pos_platform : 'petpooja',
+      food_type    : foodTag.toLowerCase().replace('-', '_'),
+      category,
+      google_product_category : 'Food, Beverages & Tobacco > Food Items',
+      fb_product_category     : 'Food & Beverages > Prepared Food',
+      product_tags : tags,
+      brand        : null,
+      sale_price_paise : null,
+      quantity_to_sell_on_facebook : null,
+      condition    : 'new',
+      pos_synced_at        : now,
+      catalog_sync_status  : 'pending',
+    };
+
+    const variations = Array.isArray(item.variations) ? item.variations : [];
+    const hasVariants = item.itemallowvariation === '1' && variations.length > 1;
+
+    if (hasVariants) {
+      const groupId = `PP-${item.itemid}`;
+      for (const v of variations) {
+        const size = v.name || v.variationname || 'Regular';
+        items.push({
+          ...base,
+          price_paise    : Math.round((parseFloat(v.price) || 0) * 100),
+          retailer_id    : `PP-${item.itemid}-${slugify(size)}`,
+          item_group_id  : groupId,
+          size,
+        });
+        variantCount++;
+      }
+    } else {
+      const price = variations.length === 1
+        ? parseFloat(variations[0].price) || parseFloat(item.price) || 0
+        : parseFloat(item.price) || 0;
+      items.push({
+        ...base,
+        price_paise    : Math.round(price * 100),
+        retailer_id    : `PP-${item.itemid}`,
+        item_group_id  : null,
+        size           : null,
+      });
+    }
+  }
+
+  console.log(`[POS-Sync] PetPooja: ${rawItems.length} POS items → ${items.length} menu rows (${variantCount} variant rows) for outlet ${outlet_id}`);
 
   return { categories, items };
 }

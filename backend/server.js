@@ -13,6 +13,11 @@ const { apiLimiter, authLimiter } = require('./src/middleware/rateLimit');
 
 const app = express();
 
+// ─── FEATURE FLAGS ─────────────────────────────────────────────
+const features = require('./src/config/features');
+console.log('[Features] Image Pipeline:', features.IMAGE_PIPELINE_ENABLED ? '✅ ON' : '⚠️  OFF');
+console.log('[Features] POS Integrations:', features.POS_INTEGRATIONS_ENABLED ? '✅ ON' : '⚠️  OFF');
+
 // ─── SECURITY ─────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({
@@ -61,23 +66,28 @@ app.get('/health', (req, res) => {
 const { ensureConnected } = require('./src/config/database');
 app.use(ensureConnected);
 
-// ─── IMAGE SERVING (MongoDB GridFS — needs DB) ────────────────
-app.get('/images/:fileId', async (req, res) => {
-  try {
-    const { ObjectId } = require('mongodb');
-    const { getBucket } = require('./src/config/database');
-    const bucket = getBucket();
-    let id;
-    try { id = new ObjectId(req.params.fileId); } catch { return res.status(400).json({ error: 'Invalid image ID' }); }
-    const files = await bucket.find({ _id: id }).toArray();
-    if (!files.length) return res.status(404).json({ error: 'Image not found' });
-    res.set('Content-Type', files[0].contentType || 'image/jpeg');
-    res.set('Cache-Control', 'public, max-age=31536000');
-    bucket.openDownloadStream(id).pipe(res);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+/* ═══ FUTURE FEATURE: GridFS Image Serving ═══
+   Legacy route that served images from MongoDB GridFS.
+   Replaced by S3 + CloudFront CDN (see imageUpload.js).
+   Keep as reference for any future GridFS-based file serving needs.
+
+   app.get('/images/:fileId', async (req, res) => {
+     try {
+       const { ObjectId } = require('mongodb');
+       const { getBucket } = require('./src/config/database');
+       const bucket = getBucket();
+       let id;
+       try { id = new ObjectId(req.params.fileId); } catch { return res.status(400).json({ error: 'Invalid image ID' }); }
+       const files = await bucket.find({ _id: id }).toArray();
+       if (!files.length) return res.status(404).json({ error: 'Image not found' });
+       res.set('Content-Type', files[0].contentType || 'image/jpeg');
+       res.set('Cache-Control', 'public, max-age=31536000');
+       bucket.openDownloadStream(id).pipe(res);
+     } catch (err) {
+       res.status(500).json({ error: err.message });
+     }
+   });
+   ═══ END FUTURE FEATURE ═══ */
 
 // ─── PUBLIC STORE PAGE ────────────────────────────────────────
 app.get('/store/:slug', async (req, res) => {
