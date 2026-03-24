@@ -18,6 +18,7 @@ const notify = require('../services/notify');
 const orderNotify = require('../services/orderNotify');
 const { logActivity: log } = require('../services/activityLog');
 const issueSvc = require('../services/issues');
+const financials = require('../services/financials');
 
 // ── Image upload via MongoDB GridFS ───────────────────────────
 const upload = multer({
@@ -89,6 +90,8 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
       [{ $set: { ...$set, onboarding_step: { $max: ['$onboarding_step', 2] } } }]
     );
     res.json({ success: true });
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || req.body.businessName || 'Restaurant', action: 'settings.updated', category: 'settings', description: `Settings updated by ${req.restaurant?.business_name || 'restaurant'}`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -399,6 +402,12 @@ router.patch('/branches/:id', async (req, res) => {
       { $set }
     );
     res.json({ success: true });
+
+    if (isOpen !== undefined) {
+      log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'branch.toggled', category: 'settings', description: `Branch toggled`, restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.id, severity: 'info' });
+    } else {
+      log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'branch.updated', category: 'settings', description: `Branch updated`, restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.id, severity: 'info' });
+    }
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -589,6 +598,8 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
     if (onlyAvailability) {
       catalog.setItemAvailability(req.params.itemId, isAvailable)
         .catch(err => console.error('[Menu] Availability sync failed:', err.message));
+
+      log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_toggled', category: 'menu', description: `Toggled menu item availability`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.itemId, severity: 'info' });
       return res.json({ success: true });
     }
 
@@ -866,6 +877,8 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
       .catch(err => console.error('[Menu] Auto-sync after CSV upload failed:', err.message));
 
     res.json({ success: true, ...results, total: items.length });
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.bulk_upload', category: 'menu', description: `Bulk uploaded menu items`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1054,6 +1067,8 @@ router.post('/product-sets', requirePermission('manage_menu'), async (req, res) 
     }
 
     res.status(201).json(mapId(set));
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'product_set.created', category: 'catalog', description: `Product set created`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1103,6 +1118,8 @@ router.delete('/product-sets/:id', requirePermission('manage_menu'), async (req,
 
     await col('product_sets').deleteOne({ _id: req.params.id });
     res.json({ success: true });
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'product_set.deleted', category: 'catalog', description: `Product set deleted`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1193,6 +1210,8 @@ router.post('/collections', requirePermission('manage_menu'), async (req, res) =
     }
 
     res.status(201).json(mapId(doc));
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'collection.created', category: 'catalog', description: `Collection created`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2860,6 +2879,8 @@ router.post('/campaigns', requirePermission('manage_settings'), async (req, res)
   try {
     const campaign = await campaignSvc.createCampaign(req.restaurantId, req.body);
     res.json(mapId(campaign));
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'campaign.created', category: 'marketing', description: `Campaign created`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
@@ -2867,6 +2888,8 @@ router.post('/campaigns/:id/send', requirePermission('manage_settings'), async (
   try {
     const result = await campaignSvc.sendCampaign(req.params.id);
     res.json(result);
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'campaign.sent', category: 'marketing', description: `Campaign sent`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
@@ -3345,6 +3368,8 @@ router.post('/issues', requireAuth, requireApproved, async (req, res) => {
     } catch (_) {}
 
     res.status(201).json(issue);
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurant._id), actorName: req.restaurant.business_name, action: 'issue.created', category: 'issue', description: `Issue created by ${req.restaurant.business_name}`, restaurantId: String(req.restaurant._id), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3461,6 +3486,8 @@ router.post('/issues/:id/escalate', requireAuth, requireApproved, async (req, re
     } catch (_) {}
 
     res.json(updated);
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurant._id), actorName: req.restaurant.business_name, action: 'issue.escalated', category: 'issue', description: `Issue escalated to admin by ${req.restaurant.business_name}`, restaurantId: String(req.restaurant._id), severity: 'warning' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3496,6 +3523,8 @@ router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res
     } catch (_) {}
 
     res.json(updated);
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurant._id), actorName: req.restaurant.business_name, action: 'issue.resolved', category: 'issue', description: `Issue resolved by ${req.restaurant.business_name}`, restaurantId: String(req.restaurant._id), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3510,6 +3539,90 @@ router.post('/issues/:id/reopen', requireAuth, requireApproved, async (req, res)
       actorId: req.restaurant._id, reason: req.body.reason,
     });
     res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── FINANCIAL ENDPOINTS ────────────────────────────────────────
+
+// GET /api/restaurant/financials/summary
+router.get('/financials/summary', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { period, from, to } = req.query;
+    const summary = await financials.getFinancialSummary(req.restaurantId, period || '30d', from, to);
+    res.json(summary);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/financials/daily
+router.get('/financials/daily', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const { from, to, period } = req.query;
+    const { start, end } = financials.parsePeriod(period || '30d', from, to);
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1 }).toArray();
+    const branchIds = branches.map(b => String(b._id));
+    const days = await financials.getDailyBreakdown(branchIds, start, end);
+    res.json({ days });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/financials/settlements
+router.get('/financials/settlements', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const match = { restaurant_id: req.restaurantId };
+    const [settlements, total] = await Promise.all([
+      col('settlements').find(match).sort({ period_end: -1 }).skip(skip).limit(limit).toArray(),
+      col('settlements').countDocuments(match),
+    ]);
+    res.json({ settlements, total, page, pages: Math.ceil(total / limit) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/financials/settlements/:id
+router.get('/financials/settlements/:id', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const settlement = await col('settlements').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!settlement) return res.status(404).json({ error: 'Settlement not found' });
+    // Fetch orders for this settlement
+    const orders = await col('orders').find({ settlement_id: req.params.id }).sort({ created_at: 1 }).toArray();
+    res.json({ settlement, orders });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/financials/payments
+router.get('/financials/payments', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const skip = (page - 1) * limit;
+    const { from, to, status } = req.query;
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1 }).toArray();
+    const branchIds = branches.map(b => String(b._id));
+    // Get order IDs for this restaurant
+    const orderMatch = { branch_id: { $in: branchIds } };
+    if (from || to) {
+      orderMatch.created_at = {};
+      if (from) orderMatch.created_at.$gte = new Date(from);
+      if (to) orderMatch.created_at.$lte = new Date(to);
+    }
+    const orderIds = await col('orders').find(orderMatch).project({ _id: 1 }).toArray().then(os => os.map(o => String(o._id)));
+    const payMatch = { order_id: { $in: orderIds } };
+    if (status) payMatch.status = status;
+    const [payments, total] = await Promise.all([
+      col('payments').find(payMatch).sort({ created_at: -1 }).skip(skip).limit(limit).toArray(),
+      col('payments').countDocuments(payMatch),
+    ]);
+    res.json({ payments, total, page, pages: Math.ceil(total / limit) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/financials/tax-summary
+router.get('/financials/tax-summary', requireAuth, requireApproved, async (req, res) => {
+  try {
+    const summary = await financials.getTaxSummary(req.restaurantId, req.query.fy);
+    res.json(summary);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

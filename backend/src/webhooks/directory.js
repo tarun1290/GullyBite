@@ -8,6 +8,7 @@ const express = require('express');
 const router = express.Router();
 const directory = require('../services/directory');
 const wa = require('../services/whatsapp');
+const { logActivity } = require('../services/activityLog');
 
 const DIR_PID   = () => process.env.DIRECTORY_WA_PHONE_NUMBER_ID;
 const DIR_TOKEN = () => process.env.DIRECTORY_WA_ACCESS_TOKEN;
@@ -40,6 +41,8 @@ router.post('/', express.json(), async (req, res) => {
 
     // Mark as read
     wa.markRead(DIR_PID(), DIR_TOKEN(), msg.id).catch(() => {});
+
+    logActivity({ actorType: 'customer', actorId: from, action: 'directory.query_received', category: 'directory', description: `Directory query from ${from}`, severity: 'info' });
 
     // Route by message type
     if (msg.type === 'interactive') {
@@ -109,6 +112,7 @@ async function handleInteractive(from, interactive) {
     const restaurantId = id.replace('DIR_VIEW_', '');
     const listing = await require('../config/database').col('directory_listings').findOne({ restaurant_id: restaurantId });
     if (listing) {
+      logActivity({ actorType: 'system', action: 'directory.restaurant_shared', category: 'directory', description: `Restaurant shared with ${from}`, severity: 'info' });
       return directory.sendRestaurantCard(from, listing);
     }
     return wa.sendText(DIR_PID(), DIR_TOKEN(), from, 'Sorry, this restaurant is no longer available.');

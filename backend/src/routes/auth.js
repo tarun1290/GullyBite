@@ -9,6 +9,7 @@ const multer  = require('multer');
 const router  = express.Router();
 const { col, newId, getBucket } = require('../config/database');
 const { Readable } = require('stream');
+const { logActivity } = require('../services/activityLog');
 
 // ── Document upload config (GST / FSSAI certificates) ────────
 const docUpload = multer({
@@ -73,6 +74,7 @@ router.post('/signup', express.json(), async (req, res) => {
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    logActivity({ actorType: 'restaurant', actorId: id, action: 'restaurant.signup', category: 'auth', description: `New restaurant registered: ${req.body.ownerName || 'Unknown'}`, restaurantId: id, severity: 'info' });
     res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
   } catch (err) {
     console.error('[Signup]', err.message);
@@ -710,6 +712,7 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
         );
       }
 
+      logActivity({ actorType: 'system', action: 'restaurant.waba_provisioned', category: 'auth', description: `WABA ${waba.id} provisioned for restaurant ${restaurantId}`, restaurantId, resourceType: 'whatsapp_account', resourceId: waba.id, severity: 'info' });
       _provisionWabaCatalog(restaurantId, waba.id, longToken).catch(err =>
         console.error(`[Catalog] Auto-provision failed for WABA ${waba.id}:`, err.message)
       );
@@ -905,6 +908,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
           );
           catalogId = createRes.data.id;
           console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
+          logActivity({ actorType: 'system', action: 'restaurant.catalog_created', category: 'catalog', description: `Catalog "${catalogName}" created during onboarding for WABA ${wabaId}`, restaurantId, resourceType: 'catalog', resourceId: catalogId, severity: 'info' });
         } catch (err) {
           throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
         }

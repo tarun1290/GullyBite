@@ -34,6 +34,8 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     const event = JSON.parse(req.body);
     console.log('[Razorpay] Event:', event.event);
 
+    logActivity({ actorType: 'webhook', action: 'payment.webhook_received', category: 'payment', description: `Razorpay event: ${event.event}`, resourceType: 'webhook', severity: 'info' });
+
     logId = newId();
     await col('webhook_logs').insertOne({
       _id: logId,

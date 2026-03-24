@@ -16,6 +16,7 @@
 
 const { col, newId } = require('../config/database');
 const wa = require('./whatsapp');
+const { logActivity } = require('./activityLog');
 
 const DEFAULT_BATCH_SIZE = 500;
 const DEFAULT_BATCH_DELAY_MS = 5000;
@@ -181,6 +182,8 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
         },
       });
 
+      logActivity({ actorType: 'system', action: 'campaign.batch_sent', category: 'campaign', description: `Campaign ${campaignId} batch ${batchNum}/${totalBatches} sent (${sent} sent, ${failed} failed)`, restaurantId: campaign.restaurant_id, resourceType: 'campaign', resourceId: campaignId, severity: 'info', metadata: { batch: batchNum, sent, failed } });
+
       // [WhatsApp2026] Health check: auto-pause if failure rate too high
       if (batchFailed > 0 && batch.length > 0) {
         const batchFailRate = (batchFailed / batch.length) * 100;
@@ -193,6 +196,7 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
               pause_reason: `Auto-paused: ${batchFailRate.toFixed(1)}% failure rate in batch ${batchNum}. ${failedPacing > 0 ? `Meta pacing errors: ${failedPacing}.` : ''} Review and resume when ready.`,
             },
           });
+          logActivity({ actorType: 'system', action: 'campaign.paused', category: 'campaign', description: `Campaign ${campaignId} auto-paused: ${batchFailRate.toFixed(1)}% failure rate in batch ${batchNum}`, restaurantId: campaign.restaurant_id, resourceType: 'campaign', resourceId: campaignId, severity: 'warning', metadata: { failRate: batchFailRate, failedPacing, batch: batchNum } });
           return { sent, failed, paused: true, auto_paused: true, resume_from: i + batchSize };
         }
       }
@@ -214,6 +218,7 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
       },
     });
 
+    logActivity({ actorType: 'system', action: 'campaign.completed', category: 'campaign', description: `Campaign ${campaignId} completed (${sent} sent, ${failed} failed)`, restaurantId: campaign.restaurant_id, resourceType: 'campaign', resourceId: campaignId, severity: 'info', metadata: { sent, failed, totalRecipients } });
     return { sent, failed };
   } catch (err) {
     await col('campaigns').updateOne({ _id: campaignId }, {

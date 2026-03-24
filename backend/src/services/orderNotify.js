@@ -7,6 +7,7 @@ const { col, newId } = require('../config/database');
 const templateSvc = require('./template');
 const wa = require('./whatsapp');
 const { resolveRecipient } = require('./customerIdentity');
+const { logActivity } = require('./activityLog');
 
 // Map order status → event name used in template_mappings
 const STATUS_TO_EVENT = {
@@ -76,10 +77,12 @@ const sendOrderTemplateMessage = async (orderId, newStatus, orderContext = null)
         componentParams
       );
       sent = true;
+      logActivity({ actorType: 'system', action: 'notification.template_sent', category: 'notification', description: `Template "${mapping.template_name}" sent for order ${orderId} (${event})`, resourceType: 'order', resourceId: orderId, severity: 'info' });
     } catch (err) {
       const metaErr = err.response?.data?.error;
       console.error(`[OrderNotify] Template send failed for ${event}:`,
         metaErr?.message || err.message);
+      logActivity({ actorType: 'system', action: 'notification.template_failed', category: 'notification', description: `Template send failed for order ${orderId} (${event}): ${metaErr?.message || err.message}`, resourceType: 'order', resourceId: orderId, severity: 'error', metadata: { error: metaErr?.message || err.message } });
       // Don't record as sent — will fall back to text in caller
     }
 

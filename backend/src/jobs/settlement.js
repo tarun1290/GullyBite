@@ -7,6 +7,7 @@ const { col, newId } = require('../config/database');
 const paymentSvc = require('../services/payment');
 const { generateSettlementExcel } = require('../services/settlement-export');
 const wa = require('../services/whatsapp');
+const { calculateTDS, aggregateOrderFinancials, round2, GST_PLATFORM_FEE_PCT } = require('../services/financials');
 
 // ─── SCHEDULE THE JOB ─────────────────────────────────────────
 const scheduleSettlement = () => {
@@ -62,29 +63,51 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     return;
   }
 
-  const grossRevenue = orders.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
   const commissionRate = parseFloat(restaurant.commission_pct || 10) / 100;
-  const platformFee = orders.reduce((s, o) => s + (parseFloat(o.subtotal_rs) || 0) * commissionRate, 0);
-  const deliveryCosts = orders.reduce((s, o) => s + (parseFloat(o.delivery_fee_rs) || 0), 0);
-  const restaurantDeliveryDeduction = orders.reduce(
-    (s, o) => s + (parseFloat(o.restaurant_delivery_rs) || 0) + (parseFloat(o.restaurant_delivery_gst_rs) || 0),
-    0
-  );
 
-  // Get refunds for this period
+  // ── Aggregate all order financials ───────────────────────────
+  const agg = await aggregateOrderFinancials(branchIds, periodStart, periodEnd);
   const orderIds = orders.map(o => String(o._id));
+
+  // ── Refunds ──────────────────────────────────────────────────
   const refundPayments = await col('payments').find({
     order_id: { $in: orderIds },
     status: 'refunded',
     updated_at: { $gte: periodStart, $lt: periodEnd },
   }).toArray();
-  const refunds = refundPayments.reduce((s, p) => s + (parseFloat(p.amount_rs) || 0), 0);
+  const refundTotal = round2(refundPayments.reduce((s, p) => s + (parseFloat(p.amount_rs) || 0), 0));
 
-  const netPayout = grossRevenue - platformFee - deliveryCosts - restaurantDeliveryDeduction - refunds;
+  // ── Platform fee (commission on food subtotal) ───────────────
+  const platformFee = round2(agg.food_revenue_rs * commissionRate);
+  const platformFeeGst = round2(platformFee * GST_PLATFORM_FEE_PCT / 100);
+
+  // ── Referral fee GST ─────────────────────────────────────────
+  const referralFeeGst = round2(agg.referral_fee_rs * GST_PLATFORM_FEE_PCT / 100);
+
+  // ── Gross collections (what customer paid) ───────────────────
+  const grossRevenue = round2(
+    agg.food_revenue_rs + agg.food_gst_collected_rs +
+    agg.packaging_collected_rs + agg.packaging_gst_rs +
+    agg.delivery_fee_collected_rs + agg.delivery_fee_cust_gst_rs
+  );
+
+  // ── Pre-TDS net ──────────────────────────────────────────────
+  const preTdsNet = round2(
+    grossRevenue
+    - platformFee - platformFeeGst
+    - agg.delivery_fee_rest_share_rs - agg.delivery_fee_rest_gst_rs
+    - agg.discount_total_rs - refundTotal
+    - agg.referral_fee_rs - referralFeeGst
+  );
+
+  // ── TDS calculation ──────────────────────────────────────────
+  const tds = await calculateTDS(restaurantId, preTdsNet);
+  const netPayout = round2(preTdsNet - tds.amount);
 
   console.log(
     `  ${restaurant.business_name}: ${orders.length} orders, ` +
-    `₹${grossRevenue.toFixed(0)} gross, ₹${netPayout.toFixed(0)} payout`
+    `₹${grossRevenue.toFixed(0)} gross, ₹${netPayout.toFixed(0)} payout` +
+    (tds.applicable ? ` (TDS ₹${tds.amount.toFixed(0)})` : '')
   );
 
   const settlementId = newId();
@@ -95,15 +118,55 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     restaurant_id: restaurantId,
     period_start: periodStart,
     period_end: periodEnd,
-    gross_revenue_rs: parseFloat(grossRevenue.toFixed(2)),
-    platform_fee_rs: parseFloat(platformFee.toFixed(2)),
-    delivery_costs_rs: parseFloat((deliveryCosts + restaurantDeliveryDeduction).toFixed(2)),
-    refunds_rs: parseFloat(refunds.toFixed(2)),
-    net_payout_rs: parseFloat(netPayout.toFixed(2)),
+
+    // Revenue breakdown
+    food_revenue_rs: agg.food_revenue_rs,
+    food_gst_collected_rs: agg.food_gst_collected_rs,
+    delivery_fee_collected_rs: agg.delivery_fee_collected_rs,
+    delivery_fee_restaurant_share_rs: agg.delivery_fee_rest_share_rs,
+    delivery_fee_restaurant_gst_rs: agg.delivery_fee_rest_gst_rs,
+    delivery_fee_platform_share_rs: round2(agg.delivery_fee_collected_rs - agg.delivery_fee_rest_share_rs),
+    packaging_collected_rs: agg.packaging_collected_rs,
+    packaging_gst_rs: agg.packaging_gst_rs,
+
+    // Discounts & refunds
+    discount_total_rs: agg.discount_total_rs,
+    refund_total_rs: refundTotal,
+    refund_count: refundPayments.length,
+
+    // Platform fee
+    platform_fee_rs: platformFee,
+    platform_fee_gst_rs: platformFeeGst,
+
+    // TDS
+    tds_applicable: tds.applicable,
+    tds_rate_pct: tds.rate,
+    tds_amount_rs: tds.amount,
+    tds_section: tds.applicable ? tds.section : null,
+
+    // Referral
+    referral_fee_rs: agg.referral_fee_rs,
+    referral_fee_gst_rs: referralFeeGst,
+
+    // Totals (backward-compatible fields)
+    gross_revenue_rs: grossRevenue,
+    delivery_costs_rs: round2(agg.delivery_fee_rest_share_rs + agg.delivery_fee_rest_gst_rs),
+    refunds_rs: refundTotal,
+    net_payout_rs: netPayout,
     orders_count: orders.length,
+
+    // Payout
     payout_status: 'pending',
     rp_payout_id: null,
+    rp_transfer_id: null,
+    payout_utr: null,
+    payout_initiated_at: null,
+    payout_completed_at: null,
     payout_at: null,
+
+    // Metadata
+    generated_at: now,
+    generated_by: 'system',
     created_at: now,
   });
 

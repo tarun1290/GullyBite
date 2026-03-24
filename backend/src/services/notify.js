@@ -4,6 +4,7 @@
 
 const { col } = require('../config/database');
 const wa = require('./whatsapp');
+const { logActivity } = require('./activityLog');
 
 // ─── INTERNAL HELPER: SEND TO ALL NOTIFICATION RECIPIENTS ────
 const sendManagerNotification = async (restaurantId, branchId, message) => {
@@ -57,6 +58,7 @@ const sendManagerNotification = async (restaurantId, branchId, message) => {
       )
     );
     await Promise.allSettled(promises);
+    logActivity({ actorType: 'system', action: 'notification.manager_notified', category: 'notification', description: `Manager notified for restaurant ${restaurantId}`, restaurantId, branchId, severity: 'info' });
   } catch (err) {
     console.error('[Notify] sendManagerNotification error:', err.message);
   }

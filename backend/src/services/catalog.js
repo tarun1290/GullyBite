@@ -5,6 +5,7 @@
 const bizSdk = require('facebook-nodejs-business-sdk');
 const axios   = require('axios');
 const { col, newId } = require('../config/database');
+const { logActivity } = require('./activityLog');
 
 const Business       = bizSdk.Business;
 const ProductCatalog = bizSdk.ProductCatalog;
@@ -348,6 +349,13 @@ const syncBranchCatalog = async (branchId) => {
 
   console.log(`[Catalog] Sync complete for "${branch.name}":`, results);
 
+  if (results.failed === 0) {
+    logActivity({ actorType: 'system', action: 'catalog.sync_completed', category: 'catalog', description: `Catalog sync completed for "${branch.name}" (${results.updated} updated, ${results.deleted} deleted)`, restaurantId: branch.restaurant_id, resourceType: 'branch', resourceId: branchId, severity: 'info', metadata: { updated: results.updated, deleted: results.deleted, catalogId: branch.catalog_id } });
+  }
+  if (results.errors.length > 0) {
+    logActivity({ actorType: 'system', action: 'catalog.batch_errors', category: 'catalog', description: `Catalog batch had ${results.errors.length} error(s) for "${branch.name}"`, restaurantId: branch.restaurant_id, resourceType: 'branch', resourceId: branchId, severity: 'warning', metadata: { errors: results.errors, failed: results.failed } });
+  }
+
   return {
     success   : results.failed === 0,
     branchName: branch.name,
@@ -369,6 +377,7 @@ const syncAllBranches = async (restaurantId) => {
       const r = await syncBranchCatalog(String(branch._id));
       results.push(r);
     } catch (err) {
+      logActivity({ actorType: 'system', action: 'catalog.sync_failed', category: 'catalog', description: `Catalog sync failed for "${branch.name}": ${err.message}`, restaurantId, resourceType: 'branch', resourceId: String(branch._id), severity: 'error', metadata: { error: err.message } });
       results.push({ branchName: branch.name, success: false, error: err.message });
     }
   }

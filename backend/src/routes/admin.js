@@ -8,6 +8,7 @@ const { col, newId, mapId, mapIds } = require('../config/database');
 const { runSettlement } = require('../jobs/settlement');
 const { logActivity } = require('../services/activityLog');
 const issueSvc = require('../services/issues');
+const financials = require('../services/financials');
 
 // ─── AUTH MIDDLEWARE ──────────────────────────────────────────
 const requireAdmin = (req, res, next) => {
@@ -305,6 +306,14 @@ router.patch('/restaurants/:id', express.json(), async (req, res) => {
       { returnDocument: 'after', projection: { _id: 1, business_name: 1, status: 1 } }
     );
     if (!updated) return res.status(404).json({ error: 'Not found' });
+    if (status === 'suspended') {
+      logActivity({
+        actorType: 'admin', actorId: null, actorName: 'Admin',
+        action: 'restaurant.suspended', category: 'auth',
+        description: `Restaurant "${updated.business_name}" suspended`,
+        restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'warning',
+      });
+    }
     res.json(mapId(updated));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -862,6 +871,12 @@ router.post('/dlq/:id/retry', async (req, res) => {
       }
     );
     if (result.matchedCount === 0) return res.status(404).json({ error: 'DLQ entry not found' });
+    logActivity({
+      actorType: 'admin', actorId: null, actorName: 'Admin',
+      action: 'dlq.retried', category: 'webhook',
+      description: `DLQ entry ${req.params.id} retried`,
+      resourceType: 'webhook_log', resourceId: req.params.id, severity: 'info',
+    });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -918,6 +933,12 @@ router.post('/blocked-phones', async (req, res) => {
       },
       { upsert: true }
     );
+    logActivity({
+      actorType: 'admin', actorId: null, actorName: 'Admin',
+      action: 'blocked_phone.added', category: 'abuse',
+      description: `Phone ${wa_phone} blocked: ${reason || 'Manually blocked by admin'}`,
+      severity: 'warning', metadata: { wa_phone, reason, durationHours },
+    });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1109,6 +1130,12 @@ router.put('/templates/mappings/:event', express.json(), async (req, res) => {
     if (is_active !== undefined) updates.is_active = is_active;
     if (description !== undefined) updates.description = description;
     const result = await templateSvc.updateEventMapping(req.params.event, updates);
+    logActivity({
+      actorType: 'admin', actorId: null, actorName: 'Admin',
+      action: 'template.mapping_updated', category: 'template',
+      description: `Template mapping updated for event "${req.params.event}"`,
+      resourceType: 'template_mapping', resourceId: req.params.event, severity: 'info',
+    });
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1360,6 +1387,19 @@ router.get('/activity/errors', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// PUT /api/admin/activity/:id/resolve — mark an error/critical event as resolved
+router.put('/activity/:id/resolve', async (req, res) => {
+  try {
+    const result = await col('activity_logs').findOneAndUpdate(
+      { _id: req.params.id },
+      { $set: { resolved_at: new Date(), resolved_by: 'admin' } },
+      { returnDocument: 'after' },
+    );
+    if (!result) return res.status(404).json({ error: 'Not found' });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/webhooks/live — live webhook traffic
 router.get('/webhooks/live', async (req, res) => {
   try {
@@ -1370,17 +1410,23 @@ router.get('/webhooks/live', async (req, res) => {
     if (req.query.processed === 'false') match.processed = false;
 
     const limit = parseInt(req.query.limit) || 30;
+    const page = parseInt(req.query.page) || 1;
+    const skip = (page - 1) * limit;
     const since = req.query.since ? new Date(req.query.since) : null;
     if (since) match.received_at = { $gt: since };
 
-    const logs = await col('webhook_logs')
-      .find(match)
-      .sort({ received_at: -1 })
-      .limit(limit)
-      .project({ payload: 0 }) // exclude large payloads in list view
-      .toArray();
+    const [logs, total] = await Promise.all([
+      col('webhook_logs')
+        .find(match)
+        .sort({ received_at: -1 })
+        .skip(skip)
+        .limit(limit)
+        .project({ payload: 0 }) // exclude large payloads in list view
+        .toArray(),
+      col('webhook_logs').countDocuments(match),
+    ]);
 
-    res.json(logs);
+    res.json({ webhooks: logs, total, page, pages: Math.ceil(total / limit) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1467,6 +1513,13 @@ router.put('/issues/:id/assign', async (req, res) => {
     const updated = await issueSvc.assignIssue(req.params.id, assigned_to || issue.assigned_to, {
       actorType: 'admin', actorName: 'GullyBite Admin',
     });
+    logActivity({
+      actorType: 'admin', actorId: null, actorName: 'Admin',
+      action: 'issue.reassigned', category: 'issue',
+      description: `Issue ${req.params.id} reassigned${assigned_to ? ` to ${assigned_to}` : ''}${routed_to ? ` (routed: ${routed_to})` : ''}`,
+      resourceType: 'issue', resourceId: req.params.id, severity: 'info',
+      metadata: { assigned_to, routed_to },
+    });
     res.json(updated);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1536,6 +1589,13 @@ router.post('/issues/:id/refund', async (req, res) => {
       }
     } catch (_) {}
 
+    logActivity({
+      actorType: 'admin', actorId: null, actorName: 'Admin',
+      action: 'issue.refund_issued', category: 'issue',
+      description: `Refund of ₹${result.issue?.refund_amount_rs || amount_rs || '?'} issued for issue ${req.params.id}`,
+      resourceType: 'issue', resourceId: req.params.id, severity: 'info',
+      metadata: { amount_rs: result.issue?.refund_amount_rs || amount_rs },
+    });
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1615,6 +1675,97 @@ router.post('/issues/:id/flag-settlement', async (req, res) => {
     });
 
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── FINANCIAL ENDPOINTS ────────────────────────────────────────
+
+// GET /api/admin/financials/overview
+router.get('/financials/overview', async (req, res) => {
+  try {
+    const overview = await financials.getPlatformOverview(req.query.period, req.query.from, req.query.to);
+    res.json(overview);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/financials/restaurant/:id
+router.get('/financials/restaurant/:id', async (req, res) => {
+  try {
+    const summary = await financials.getFinancialSummary(req.params.id, req.query.period || '30d', req.query.from, req.query.to);
+    res.json(summary);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/financials/settlements
+router.get('/financials/settlements', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const skip = (page - 1) * limit;
+    const match = {};
+    if (req.query.restaurant_id) match.restaurant_id = req.query.restaurant_id;
+    if (req.query.status) match.payout_status = req.query.status;
+    const [settlements, total] = await Promise.all([
+      col('settlements').find(match).sort({ period_end: -1 }).skip(skip).limit(limit).toArray(),
+      col('settlements').countDocuments(match),
+    ]);
+    // Enrich with restaurant names
+    const restIds = [...new Set(settlements.map(s => s.restaurant_id))];
+    const restaurants = restIds.length
+      ? await col('restaurants').find({ _id: { $in: restIds } }, { projection: { business_name: 1 } }).toArray()
+      : [];
+    const rMap = Object.fromEntries(restaurants.map(r => [String(r._id), r.business_name]));
+    const enriched = settlements.map(s => ({ ...s, business_name: rMap[s.restaurant_id] || s.restaurant_id }));
+    res.json({ settlements: enriched, total, page, pages: Math.ceil(total / limit) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/financials/payments
+router.get('/financials/payments', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const skip = (page - 1) * limit;
+    const match = {};
+    if (req.query.status) match.status = req.query.status;
+    if (req.query.from || req.query.to) {
+      match.created_at = {};
+      if (req.query.from) match.created_at.$gte = new Date(req.query.from);
+      if (req.query.to) match.created_at.$lte = new Date(req.query.to);
+    }
+    const [payments, total] = await Promise.all([
+      col('payments').find(match).sort({ created_at: -1 }).skip(skip).limit(limit).toArray(),
+      col('payments').countDocuments(match),
+    ]);
+    res.json({ payments, total, page, pages: Math.ceil(total / limit) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/financials/refunds
+router.get('/financials/refunds', async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 30;
+    const skip = (page - 1) * limit;
+    const match = { status: 'refunded' };
+    if (req.query.from || req.query.to) {
+      match.updated_at = {};
+      if (req.query.from) match.updated_at.$gte = new Date(req.query.from);
+      if (req.query.to) match.updated_at.$lte = new Date(req.query.to);
+    }
+    const [refunds, total] = await Promise.all([
+      col('payments').find(match).sort({ updated_at: -1 }).skip(skip).limit(limit).toArray(),
+      col('payments').countDocuments(match),
+    ]);
+    res.json({ refunds, total, page, pages: Math.ceil(total / limit) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/financials/tax
+router.get('/financials/tax', async (req, res) => {
+  try {
+    const summary = await financials.getPlatformTaxSummary(req.query.fy);
+    res.json(summary);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

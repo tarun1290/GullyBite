@@ -79,6 +79,8 @@ nav{flex:1;padding:.6rem 0}
 .act-sub.active:hover{background:var(--acc2);border-color:var(--acc2)}
 .adm-iss-tab.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 .adm-iss-tab.active:hover{background:var(--acc2);border-color:var(--acc2)}
+.fin-sub.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+.fin-sub.active:hover{background:var(--acc2);border-color:var(--acc2)}
 
 .content{flex:1;overflow-y:auto;padding:1.25rem 1.5rem}
 
@@ -238,6 +240,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
       <div class="nav-item" data-page="usernames" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M2 17a8 8 0 0 1 8-8"/></svg>
         Usernames
+      </div>
+      <div class="nav-item" data-page="financials" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Financials
       </div>
       <div style="border-top:1px solid var(--rim);margin:.4rem .6rem"></div>
       <div class="nav-item" data-page="activity" onclick="nav(this)">
@@ -738,23 +744,32 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <div style="display:flex;gap:.4rem;margin-bottom:1rem">
           <button class="btn-sm act-sub active" data-sub="feed" onclick="actSub('feed',this)">Live Feed</button>
           <button class="btn-sm act-sub" data-sub="webhooks" onclick="actSub('webhooks',this)">Webhooks</button>
-          <button class="btn-sm act-sub" data-sub="errors" onclick="actSub('errors',this)">Errors</button>
+          <button class="btn-sm act-sub" data-sub="errors" onclick="actSub('errors',this)">Errors &amp; Alerts</button>
+          <button class="btn-sm act-sub" data-sub="drilldown" onclick="actSub('drilldown',this)">Restaurant Drilldown</button>
         </div>
 
         <!-- Filters -->
         <div id="act-filters" style="display:flex;gap:.5rem;margin-bottom:.9rem;flex-wrap:wrap">
-          <select id="act-cat-filter" onchange="loadActivityFeed()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.35rem .6rem;font-size:.82rem">
+          <select id="act-rest-filter" onchange="loadActivityFeed(1)" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.35rem .6rem;font-size:.82rem">
+            <option value="">All Restaurants</option>
+          </select>
+          <select id="act-cat-filter" onchange="loadActivityFeed(1)" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.35rem .6rem;font-size:.82rem">
             <option value="">All Categories</option>
             <option value="order">Orders</option>
             <option value="menu">Menu</option>
             <option value="catalog">Catalog</option>
             <option value="payment">Payments</option>
+            <option value="delivery">Delivery</option>
             <option value="auth">Auth</option>
             <option value="customer">Customer</option>
-            <option value="admin">Admin</option>
+            <option value="notification">Notifications</option>
+            <option value="marketing">Marketing</option>
+            <option value="settings">Settings</option>
+            <option value="issue">Issues</option>
+            <option value="directory">Directory</option>
             <option value="webhook">Webhook</option>
           </select>
-          <select id="act-sev-filter" onchange="loadActivityFeed()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.35rem .6rem;font-size:.82rem">
+          <select id="act-sev-filter" onchange="loadActivityFeed(1)" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.35rem .6rem;font-size:.82rem">
             <option value="">All Severities</option>
             <option value="info">Info</option>
             <option value="warning">Warning</option>
@@ -791,13 +806,39 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
 
         <!-- Errors area (hidden by default) -->
         <div id="act-errors-area" style="display:none">
+          <div style="display:flex;gap:.6rem;margin-bottom:.8rem;align-items:center">
+            <span style="font-size:.82rem;color:var(--dim)">Unresolved: <strong id="act-err-unresolved" style="color:var(--red)">0</strong></span>
+            <label style="display:flex;align-items:center;gap:.25rem;font-size:.8rem;color:var(--dim);cursor:pointer;margin-left:auto">
+              <input type="checkbox" id="act-err-hide-resolved" onchange="loadErrors(1)" style="accent-color:var(--acc)"> Hide resolved
+            </label>
+          </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th style="width:140px">Time</th><th>Action</th><th>Description</th><th>Actor</th><th>Restaurant</th></tr></thead>
-              <tbody id="act-err-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+              <thead><tr><th style="width:140px">Time</th><th>Action</th><th>Description</th><th>Actor</th><th>Restaurant</th><th style="width:90px">Status</th></tr></thead>
+              <tbody id="act-err-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
             </table>
           </div>
           <div id="act-err-pager" style="display:flex;justify-content:center;gap:.4rem;margin-top:.7rem"></div>
+        </div>
+
+        <!-- Restaurant Drilldown area (hidden by default) -->
+        <div id="act-drilldown-area" style="display:none">
+          <div style="display:flex;gap:.5rem;margin-bottom:1rem;align-items:center">
+            <select id="act-dd-rest" onchange="loadDrilldown()" style="flex:1;max-width:320px;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.4rem .6rem;font-size:.85rem">
+              <option value="">Select a restaurant…</option>
+            </select>
+            <select id="act-dd-cat" onchange="loadDrilldown()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.4rem .6rem;font-size:.82rem">
+              <option value="">All Categories</option>
+              <option value="order">Orders</option><option value="menu">Menu</option><option value="catalog">Catalog</option>
+              <option value="payment">Payments</option><option value="delivery">Delivery</option><option value="customer">Customer</option>
+              <option value="marketing">Marketing</option><option value="settings">Settings</option><option value="issue">Issues</option>
+            </select>
+          </div>
+          <!-- Drilldown summary -->
+          <div id="act-dd-summary" style="display:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.6rem;margin-bottom:1rem"></div>
+          <!-- Drilldown timeline -->
+          <div id="act-dd-timeline"></div>
+          <div id="act-dd-pager" style="display:flex;justify-content:center;gap:.4rem;margin-top:.7rem"></div>
         </div>
 
         <!-- Webhook detail modal -->
@@ -808,6 +849,17 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
               <button class="btn-sm" onclick="document.getElementById('act-wh-modal').style.display='none'">Close</button>
             </div>
             <pre id="act-wh-detail" style="background:var(--ink);padding:1rem;border-radius:8px;font-size:.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all"></pre>
+          </div>
+        </div>
+
+        <!-- Activity detail expand modal -->
+        <div id="act-detail-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center">
+          <div style="background:#fff;border-radius:12px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;padding:1.5rem;box-shadow:var(--shadow)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+              <h3>Activity Detail</h3>
+              <button class="btn-sm" onclick="document.getElementById('act-detail-modal').style.display='none'">Close</button>
+            </div>
+            <div id="act-detail-body" style="font-size:.85rem;line-height:1.6"></div>
           </div>
         </div>
       </div>
@@ -886,6 +938,107 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
             </div>
             <!-- Actions -->
             <div id="adm-iss-d-actions" style="padding:.7rem 1.2rem;display:flex;gap:.4rem;flex-wrap:wrap"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── PLATFORM FINANCIALS ───────────────────────────────── -->
+      <div class="page" id="page-financials">
+        <div id="fin-stats-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:.75rem;margin-bottom:1.2rem"></div>
+        <div style="display:flex;gap:.4rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center">
+          <button class="btn-sm fin-sub active" onclick="finSub('overview',this)">Overview</button>
+          <button class="btn-sm fin-sub" onclick="finSub('settlements',this)">Settlements</button>
+          <button class="btn-sm fin-sub" onclick="finSub('payments',this)">Payments</button>
+          <button class="btn-sm fin-sub" onclick="finSub('refunds',this)">Refunds</button>
+          <button class="btn-sm fin-sub" onclick="finSub('tax',this)">Tax &amp; Compliance</button>
+          <select id="fin-period" onchange="loadFinOverview()" style="margin-left:auto;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.35rem .6rem;font-size:.82rem">
+            <option value="7d">This Week</option>
+            <option value="30d" selected>This Month</option>
+            <option value="90d">Last 90 Days</option>
+            <option value="this_fy">This FY</option>
+          </select>
+        </div>
+
+        <!-- Overview sub-tab -->
+        <div id="fin-overview-area">
+          <div class="table-wrap">
+            <div class="table-head"><h2>Cash Flow Summary</h2></div>
+            <div id="fin-cashflow" style="padding:1rem;font-size:.85rem;color:var(--dim)">Loading...</div>
+          </div>
+          <div class="table-wrap">
+            <div class="table-head">
+              <h2>Settlement Tracker</h2>
+              <select id="fin-ov-rest" onchange="loadFinSettlementTracker(1)" style="margin-left:auto;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem">
+                <option value="">All Restaurants</option>
+              </select>
+              <select id="fin-ov-status" onchange="loadFinSettlementTracker(1)" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem">
+                <option value="">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="paid">Paid</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
+            <table>
+              <thead><tr><th>Restaurant</th><th>Period</th><th>Gross</th><th>Platform Fee</th><th>TDS</th><th>Net</th><th>Status</th><th>UTR</th></tr></thead>
+              <tbody id="fin-ov-tracker-tbody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+            </table>
+            <div class="pager" id="fin-ov-tracker-pager"></div>
+          </div>
+        </div>
+
+        <!-- Settlements sub-tab -->
+        <div id="fin-settlements-area" style="display:none">
+          <div class="table-wrap">
+            <div class="table-head"><h2>Settlements</h2></div>
+            <table>
+              <thead><tr><th>Restaurant</th><th>Period</th><th>Gross</th><th>Fees</th><th>TDS</th><th>Net</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody id="fin-settle-tbody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+            </table>
+            <div class="pager" id="fin-settle-pager"></div>
+          </div>
+        </div>
+
+        <!-- Payments sub-tab -->
+        <div id="fin-payments-area" style="display:none">
+          <div class="table-wrap">
+            <div class="table-head"><h2>Payments</h2></div>
+            <table>
+              <thead><tr><th>Date</th><th>Order #</th><th>Amount</th><th>Method</th><th>Razorpay ID</th><th>Status</th></tr></thead>
+              <tbody id="fin-pay-tbody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
+            </table>
+            <div class="pager" id="fin-pay-pager"></div>
+          </div>
+        </div>
+
+        <!-- Refunds sub-tab -->
+        <div id="fin-refunds-area" style="display:none">
+          <div class="table-wrap">
+            <div class="table-head"><h2>Refunds</h2></div>
+            <table>
+              <thead><tr><th>Date</th><th>Restaurant</th><th>Order #</th><th>Amount</th><th>Reason</th><th>Razorpay Refund ID</th><th>Status</th></tr></thead>
+              <tbody id="fin-ref-tbody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+            </table>
+            <div class="pager" id="fin-ref-pager"></div>
+          </div>
+        </div>
+
+        <!-- Tax & Compliance sub-tab -->
+        <div id="fin-tax-area" style="display:none">
+          <div class="table-wrap">
+            <div class="table-head"><h2>TDS Filing</h2><button class="btn-sm" onclick="downloadTdsReport()" style="margin-left:auto">Download TDS Report</button></div>
+            <div id="fin-tds-summary" style="padding:.8rem 1rem;font-size:.85rem;border-bottom:1px solid var(--rim)"></div>
+            <table>
+              <thead><tr><th>Restaurant</th><th>PAN</th><th>Gross Payouts</th><th>TDS @1%</th><th>Net Paid</th></tr></thead>
+              <tbody id="fin-tds-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+            </table>
+          </div>
+          <div class="table-wrap" style="margin-top:1rem">
+            <div class="table-head"><h2>GST Filing</h2><button class="btn-sm" onclick="downloadGstr1()" style="margin-left:auto">Download GSTR-1 Data</button></div>
+            <div id="fin-gst-summary" style="padding:.8rem 1rem;font-size:.85rem;border-bottom:1px solid var(--rim)"></div>
+            <table>
+              <thead><tr><th>Month</th><th>Platform Fees</th><th>CGST (9%)</th><th>SGST (9%)</th><th>Total GST</th></tr></thead>
+              <tbody id="fin-gst-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -1139,7 +1292,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', activity: 'Activity Monitor', issues: 'Issues' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -1162,6 +1315,7 @@ function nav(el) {
   if (page === 'templates')    loadTemplates();
   if (page === 'abuse')        loadAbuse();
   if (page === 'usernames')    loadUsernames();
+  if (page === 'financials')   loadFinPage();
   if (page === 'activity')     loadActivity();
   if (page === 'issues')       loadAdminIssues();
 }
@@ -1180,6 +1334,7 @@ function refreshCurrent() {
   else if (currentPage === 'templates')    loadTemplates();
   else if (currentPage === 'abuse')        loadAbuse();
   else if (currentPage === 'usernames')    loadUsernames();
+  else if (currentPage === 'financials')   loadFinPage();
   else if (currentPage === 'activity')     loadActivity();
   else if (currentPage === 'issues')       loadAdminIssues();
 }
@@ -2579,6 +2734,7 @@ const SEV_COLORS = { info: '#3b82f6', warning: '#f59e0b', error: '#ef4444', crit
 const SEV_BG     = { info: 'rgba(59,130,246,.08)', warning: 'rgba(245,158,11,.08)', error: 'rgba(239,68,68,.08)', critical: 'rgba(220,38,38,.12)' };
 
 async function loadActivity() {
+  ensureRestList(); // fire-and-forget — populate restaurant dropdowns
   await Promise.all([loadActivityStats(), loadActivityFeed()]);
   toggleActPoll();
 }
@@ -2614,10 +2770,12 @@ function actSub(sub, btn) {
   document.getElementById('act-feed-area').style.display = sub === 'feed' ? '' : 'none';
   document.getElementById('act-webhooks-area').style.display = sub === 'webhooks' ? '' : 'none';
   document.getElementById('act-errors-area').style.display = sub === 'errors' ? '' : 'none';
+  document.getElementById('act-drilldown-area').style.display = sub === 'drilldown' ? '' : 'none';
   document.getElementById('act-filters').style.display = sub === 'feed' ? 'flex' : 'none';
   if (sub === 'feed') loadActivityFeed();
   if (sub === 'webhooks') loadWebhooks();
   if (sub === 'errors') loadErrors();
+  if (sub === 'drilldown') initDrilldown();
 }
 
 async function loadActivityFeed(page) {
@@ -2628,9 +2786,11 @@ async function loadActivityFeed(page) {
     const qs = new URLSearchParams({ page: actPage, limit: 50 });
     const cat = document.getElementById('act-cat-filter').value;
     const sev = document.getElementById('act-sev-filter').value;
+    const rest = document.getElementById('act-rest-filter').value;
     const search = document.getElementById('act-search').value.trim();
     if (cat) qs.set('category', cat);
     if (sev) qs.set('severity', sev);
+    if (rest) qs.set('restaurant_id', rest);
     if (search) qs.set('search', search);
     const r = await api('/api/admin/activity?' + qs);
     const acts = r.activities || [];
@@ -2639,13 +2799,18 @@ async function loadActivityFeed(page) {
       const time = new Date(a.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
       const sColor = SEV_COLORS[a.severity] || '#64748b';
       const sBg = SEV_BG[a.severity] || '';
-      return `<tr style="background:${sBg}">
+      const sevIcon = a.severity === 'critical' ? '\ud83d\udd34' : a.severity === 'error' ? '\u274c' : a.severity === 'warning' ? '\u26a0\ufe0f' : '\u2139\ufe0f';
+      const restName = a.restaurant_id ? (_actRestMap[a.restaurant_id] || a.restaurant_id) : '\u2014';
+      const restCell = a.restaurant_id
+        ? `<a href="#" onclick="openDrilldown('${a.restaurant_id}');return false" style="color:var(--acc);font-weight:500;text-decoration:none">${esc(restName)}</a>`
+        : '\u2014';
+      return `<tr style="background:${sBg};cursor:pointer" onclick="showActDetail(${esc(JSON.stringify(a)).replace(/"/g,'&quot;')})">
         <td style="font-size:.78rem;color:var(--dim);white-space:nowrap">${time}</td>
-        <td style="font-size:.82rem"><span style="background:rgba(79,70,229,.08);color:var(--acc);padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600">${a.actor_type}</span> ${a.actor_name || a.actor_id || ''}</td>
-        <td style="font-size:.82rem;font-weight:500">${a.action}</td>
-        <td style="font-size:.8rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.description || '').replace(/"/g, '&quot;')}">${a.description || ''}</td>
-        <td><span style="color:${sColor};font-weight:600;font-size:.76rem;text-transform:uppercase">${a.severity}</span></td>
-        <td style="font-size:.78rem;color:var(--dim)">${a.restaurant_id || '—'}</td>
+        <td style="font-size:.82rem"><span style="background:rgba(79,70,229,.08);color:var(--acc);padding:.12rem .4rem;border-radius:4px;font-size:.72rem;font-weight:600">${a.actor_type}</span> ${esc(a.actor_name || a.actor_id || '')}</td>
+        <td style="font-size:.82rem;font-weight:500">${esc(a.action)}</td>
+        <td style="font-size:.8rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(a.description || '').replace(/"/g, '&quot;')}">${esc(a.description || '')}</td>
+        <td><span style="color:${sColor};font-weight:600;font-size:.76rem">${sevIcon} ${a.severity}</span></td>
+        <td style="font-size:.78rem" onclick="event.stopPropagation()">${restCell}</td>
       </tr>`;
     }).join('');
     renderPager('act-feed-pager', r.page, r.pages, loadActivityFeed);
@@ -2677,24 +2842,34 @@ async function loadWebhooks(page) {
 async function loadErrors(page) {
   if (page) actErrPage = page;
   const tbody = document.getElementById('act-err-tbody');
-  tbody.innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="empty">Loading…</td></tr>';
   try {
     const r = await api('/api/admin/activity/errors?page=' + actErrPage + '&limit=50');
     const errs = r.errors || [];
-    if (!errs.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No errors found</td></tr>'; return; }
-    tbody.innerHTML = errs.map(e => {
+    const hideResolved = document.getElementById('act-err-hide-resolved').checked;
+    const filtered = hideResolved ? errs.filter(e => !e.resolved_at) : errs;
+    const unresolvedCount = errs.filter(e => !e.resolved_at).length;
+    document.getElementById('act-err-unresolved').textContent = unresolvedCount;
+    if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No errors found</td></tr>'; return; }
+    tbody.innerHTML = filtered.map(e => {
       const time = new Date(e.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const sColor = e.severity === 'critical' ? '#dc2626' : '#ef4444';
-      return `<tr style="background:rgba(239,68,68,.05)">
+      const sevIcon = e.severity === 'critical' ? '\ud83d\udd34' : '\u274c';
+      const restName = e.restaurant_id ? (_actRestMap[e.restaurant_id] || e.restaurant_id) : '\u2014';
+      const resolved = e.resolved_at;
+      const statusCell = resolved
+        ? `<span style="color:var(--wa);font-size:.76rem;font-weight:600">\u2705 Resolved</span>`
+        : `<button class="btn-sm" style="font-size:.72rem;padding:.15rem .4rem" onclick="markErrorResolved('${e._id}')">Mark Resolved</button>`;
+      return `<tr style="background:${resolved ? 'rgba(22,163,74,.04)' : 'rgba(239,68,68,.05)'}">
         <td style="font-size:.78rem;color:var(--dim);white-space:nowrap">${time}</td>
-        <td style="font-size:.82rem;font-weight:500">${e.action}</td>
-        <td style="font-size:.8rem;max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(e.description || '').replace(/"/g, '&quot;')}">${e.description || ''}</td>
-        <td style="font-size:.82rem">${e.actor_name || e.actor_type || '—'}</td>
-        <td style="font-size:.78rem;color:var(--dim)">${e.restaurant_id || '—'}</td>
+        <td style="font-size:.82rem;font-weight:500">${sevIcon} ${esc(e.action)}</td>
+        <td style="font-size:.8rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(e.description || '').replace(/"/g, '&quot;')}">${esc(e.description || '')}</td>
+        <td style="font-size:.82rem">${esc(e.actor_name || e.actor_type || '\u2014')}</td>
+        <td style="font-size:.78rem">${e.restaurant_id ? `<a href="#" onclick="openDrilldown('${e.restaurant_id}');return false" style="color:var(--acc);text-decoration:none">${esc(restName)}</a>` : '\u2014'}</td>
+        <td>${statusCell}</td>
       </tr>`;
     }).join('');
     renderPager('act-err-pager', r.page, Math.ceil((r.total || 0) / (r.limit || 50)), loadErrors);
-  } catch (e) { tbody.innerHTML = `<tr><td colspan="5" class="empty" style="color:var(--red)">${e.message}</td></tr>`; }
+  } catch (e) { tbody.innerHTML = `<tr><td colspan="6" class="empty" style="color:var(--red)">${e.message}</td></tr>`; }
 }
 
 function renderPager(elId, current, total, fn) {
@@ -2729,6 +2904,160 @@ function toggleActPoll() {
       else if (actCurrentSub === 'webhooks') loadWebhooks();
       else if (actCurrentSub === 'errors') loadErrors();
     }, 5000);
+  }
+}
+
+// ─── RESTAURANT NAME MAP ───────────────────────────────────────
+let _actRestMap = {}; // id → name
+let _actRestListLoaded = false;
+async function ensureRestList() {
+  if (_actRestListLoaded) return;
+  try {
+    const d = await api('/api/admin/restaurants');
+    const sel1 = document.getElementById('act-rest-filter');
+    const sel2 = document.getElementById('act-dd-rest');
+    (d || []).forEach(r => {
+      const id = r._id || r.id;
+      const name = r.business_name || id;
+      _actRestMap[id] = name;
+      const o1 = new Option(name, id); sel1.appendChild(o1);
+      const o2 = new Option(name, id); sel2.appendChild(o2);
+    });
+    _actRestListLoaded = true;
+  } catch (_) {}
+}
+
+// ─── ACTIVITY DETAIL MODAL ────────────────────────────────────
+function showActDetail(a) {
+  const body = document.getElementById('act-detail-body');
+  const time = new Date(a.created_at).toLocaleString();
+  const restName = a.restaurant_id ? (_actRestMap[a.restaurant_id] || a.restaurant_id) : 'N/A';
+  let html = `
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:.3rem .8rem;margin-bottom:.8rem">
+      <span style="color:var(--dim)">Time:</span><span>${time}</span>
+      <span style="color:var(--dim)">Action:</span><span style="font-weight:600">${esc(a.action)}</span>
+      <span style="color:var(--dim)">Category:</span><span>${esc(a.category || '')}</span>
+      <span style="color:var(--dim)">Severity:</span><span style="color:${SEV_COLORS[a.severity] || 'inherit'};font-weight:600">${a.severity}</span>
+      <span style="color:var(--dim)">Actor:</span><span>${esc(a.actor_type)} — ${esc(a.actor_name || a.actor_id || 'N/A')}</span>
+      <span style="color:var(--dim)">Restaurant:</span><span>${esc(restName)}</span>
+      ${a.resource_type ? `<span style="color:var(--dim)">Resource:</span><span>${esc(a.resource_type)} ${a.resource_id ? '#' + a.resource_id : ''}</span>` : ''}
+    </div>
+    <div style="margin-bottom:.6rem"><strong>Description:</strong><br>${esc(a.description || 'No description')}</div>`;
+  if (a.metadata) {
+    html += `<div><strong>Metadata:</strong><pre style="background:var(--ink);padding:.75rem;border-radius:6px;font-size:.78rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin-top:.3rem">${esc(JSON.stringify(a.metadata, null, 2))}</pre></div>`;
+  }
+  body.innerHTML = html;
+  document.getElementById('act-detail-modal').style.display = 'flex';
+}
+
+// ─── MARK ERROR RESOLVED ──────────────────────────────────────
+async function markErrorResolved(id) {
+  try {
+    await api('/api/admin/activity/' + id + '/resolve', { method: 'PUT' });
+    toast('Marked resolved', 'ok');
+    loadErrors();
+    loadActivityStats();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+// ─── RESTAURANT DRILLDOWN ─────────────────────────────────────
+let actDdPage = 1, actDdRestId = null;
+
+async function initDrilldown() {
+  await ensureRestList();
+}
+
+function openDrilldown(restId) {
+  // Switch to drilldown tab
+  actCurrentSub = 'drilldown';
+  document.querySelectorAll('.act-sub').forEach(b => b.classList.remove('active'));
+  document.querySelector('.act-sub[data-sub="drilldown"]').classList.add('active');
+  document.getElementById('act-feed-area').style.display = 'none';
+  document.getElementById('act-webhooks-area').style.display = 'none';
+  document.getElementById('act-errors-area').style.display = 'none';
+  document.getElementById('act-drilldown-area').style.display = '';
+  document.getElementById('act-filters').style.display = 'none';
+  // Navigate to activity page if not there
+  if (currentPage !== 'activity') {
+    const navEl = document.querySelector('[data-page="activity"]');
+    if (navEl) nav(navEl);
+  }
+  ensureRestList().then(() => {
+    document.getElementById('act-dd-rest').value = restId;
+    loadDrilldown();
+  });
+}
+
+async function loadDrilldown(page) {
+  if (page) actDdPage = page;
+  const restId = document.getElementById('act-dd-rest').value;
+  if (!restId) {
+    document.getElementById('act-dd-summary').style.display = 'none';
+    document.getElementById('act-dd-timeline').innerHTML = '<div style="text-align:center;padding:2rem;color:var(--dim)">Select a restaurant to view its activity timeline.</div>';
+    return;
+  }
+  actDdRestId = restId;
+  const cat = document.getElementById('act-dd-cat').value;
+  const qs = new URLSearchParams({ page: actDdPage, limit: 50 });
+  if (cat) qs.set('category', cat);
+
+  // Load summary + timeline in parallel
+  try {
+    const [summary, timeline] = await Promise.all([
+      api('/api/admin/activity/restaurant/' + restId + '?limit=1').then(r => r.total),
+      api('/api/admin/activity/restaurant/' + restId + '?' + qs),
+    ]);
+
+    // Summary cards
+    const summEl = document.getElementById('act-dd-summary');
+    const restName = _actRestMap[restId] || restId;
+    summEl.style.display = 'grid';
+    summEl.innerHTML = `
+      <div style="background:#fff;border:1px solid var(--rim);border-radius:8px;padding:.8rem;grid-column:1/-1">
+        <span style="font-size:1.05rem;font-weight:700">${esc(restName)}</span>
+        <span style="color:var(--dim);font-size:.82rem;margin-left:.8rem">${summary} total events</span>
+      </div>`;
+
+    // Timeline grouped by day
+    const acts = timeline.activities || [];
+    if (!acts.length) {
+      document.getElementById('act-dd-timeline').innerHTML = '<div style="text-align:center;padding:2rem;color:var(--dim)">No activity found for this restaurant.</div>';
+      return;
+    }
+
+    const groups = {};
+    const today = new Date().toDateString();
+    const yesterday = new Date(Date.now() - 86400000).toDateString();
+    acts.forEach(a => {
+      const d = new Date(a.created_at).toDateString();
+      const label = d === today ? 'Today' : d === yesterday ? 'Yesterday' : new Date(a.created_at).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(a);
+    });
+
+    let html = '';
+    for (const [label, items] of Object.entries(groups)) {
+      html += `<div style="margin-bottom:1.2rem">
+        <div style="font-size:.78rem;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.5rem;padding-bottom:.3rem;border-bottom:1px solid var(--rim)">${label}</div>`;
+      items.forEach(a => {
+        const time = new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const sColor = SEV_COLORS[a.severity] || '#64748b';
+        const sevIcon = a.severity === 'critical' ? '\ud83d\udd34' : a.severity === 'error' ? '\u274c' : a.severity === 'warning' ? '\u26a0\ufe0f' : '\u2139\ufe0f';
+        const catBadge = `<span style="background:rgba(79,70,229,.06);color:var(--acc);padding:.1rem .35rem;border-radius:4px;font-size:.68rem;font-weight:600">${a.category || 'general'}</span>`;
+        html += `<div style="display:flex;gap:.6rem;align-items:flex-start;padding:.4rem 0;border-bottom:1px solid rgba(226,232,240,.5);cursor:pointer" onclick="showActDetail(${esc(JSON.stringify(a)).replace(/"/g,'&quot;')})">
+          <span style="font-size:.76rem;color:var(--dim);white-space:nowrap;min-width:70px">${time}</span>
+          <span style="font-size:.82rem">${sevIcon}</span>
+          ${catBadge}
+          <span style="font-size:.82rem;font-weight:500;color:${sColor}">${esc(a.action)}</span>
+          <span style="font-size:.8rem;color:var(--dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.description || '')}</span>
+        </div>`;
+      });
+      html += '</div>';
+    }
+    document.getElementById('act-dd-timeline').innerHTML = html;
+    renderPager('act-dd-pager', timeline.page, timeline.pages, loadDrilldown);
+  } catch (e) {
+    document.getElementById('act-dd-timeline').innerHTML = `<div style="color:var(--red);padding:1rem">${e.message}</div>`;
   }
 }
 
@@ -2967,6 +3296,256 @@ function admIssFlagSettlement() {
     body: JSON.stringify({ deduct_from: from, amount_rs: amt })
   }).then(() => { toast('Flagged for settlement', 'ok'); openAdmIssDetail(admIssActive); })
     .catch(e => toast(e.message, 'err'));
+}
+
+// ─── PLATFORM FINANCIALS ──────────────────────────────────────────
+let finCurrentSub = 'overview', finSettlePage = 1, finPayPage = 1, finRefPage = 1;
+
+function fmtINR(n) {
+  if (n == null || isNaN(n)) return '\u20b90';
+  return '\u20b9' + parseFloat(n).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+async function loadFinPage() {
+  // Populate restaurant dropdown for filters
+  try {
+    const rList = await api('/api/admin/restaurants');
+    const sel = document.getElementById('fin-ov-rest');
+    if (sel && sel.options.length <= 1) {
+      (rList.restaurants || rList || []).forEach(r => {
+        const o = document.createElement('option');
+        o.value = r.id || r.restaurant_id || '';
+        o.textContent = r.name || r.restaurant_name || r.id || '';
+        sel.appendChild(o);
+      });
+    }
+  } catch (_) {}
+  loadFinOverview();
+}
+
+function finSub(sub, btn) {
+  finCurrentSub = sub;
+  document.querySelectorAll('.fin-sub').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('fin-overview-area').style.display = sub === 'overview' ? '' : 'none';
+  document.getElementById('fin-settlements-area').style.display = sub === 'settlements' ? '' : 'none';
+  document.getElementById('fin-payments-area').style.display = sub === 'payments' ? '' : 'none';
+  document.getElementById('fin-refunds-area').style.display = sub === 'refunds' ? '' : 'none';
+  document.getElementById('fin-tax-area').style.display = sub === 'tax' ? '' : 'none';
+  if (sub === 'overview') loadFinOverview();
+  if (sub === 'settlements') loadFinSettlements();
+  if (sub === 'payments') loadFinPayments();
+  if (sub === 'refunds') loadFinRefunds();
+  if (sub === 'tax') loadFinTax();
+}
+
+async function loadFinOverview() {
+  const period = document.getElementById('fin-period').value;
+  try {
+    const d = await api('/api/admin/financials/overview?period=' + period);
+    document.getElementById('fin-stats-row').innerHTML = [
+      statCard('Total GMV', fmtINR(d.gmv_rs), 'var(--blue)'),
+      statCard('Platform Revenue', fmtINR(d.platform_fee_rs), 'var(--wa)'),
+      statCard('GST Liability', fmtINR(d.platform_fee_gst_rs), 'var(--gold)'),
+      statCard('Total Payouts', fmtINR(d.total_payouts_rs), 'var(--acc)'),
+      statCard('Pending Payouts', fmtINR(d.pending_payouts_rs), d.pending_payouts_count > 0 ? 'var(--red)' : 'var(--dim)'),
+      statCard('Total Refunds', fmtINR(d.total_refunds_rs), 'var(--red)'),
+      statCard('TDS Deducted', fmtINR(d.total_tds_rs), 'var(--gold)'),
+      statCard('3PL Costs', fmtINR(d.delivery_costs_rs), 'var(--dim)'),
+    ].join('');
+    // Cash flow
+    const cf = document.getElementById('fin-cashflow');
+    cf.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div><strong style="color:var(--wa)">Money In</strong><br>GMV Collected: ${fmtINR(d.gmv_rs)}</div>
+      <div><strong style="color:var(--red)">Money Out</strong><br>Restaurant Payouts: ${fmtINR(d.total_payouts_rs)}<br>Refunds: ${fmtINR(d.total_refunds_rs)}<br>3PL Costs: ${fmtINR(d.delivery_costs_rs)}<br>TDS Remitted: ${fmtINR(d.total_tds_rs)}</div>
+    </div>`;
+    loadFinSettlementTracker(1);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function loadFinSettlementTracker(page) {
+  if (!page) page = 1;
+  finSettlePage = page;
+  const period = document.getElementById('fin-period').value;
+  const rest = document.getElementById('fin-ov-rest').value;
+  const status = document.getElementById('fin-ov-status').value;
+  let url = '/api/admin/financials/settlements?period=' + period + '&page=' + page + '&limit=20';
+  if (rest) url += '&restaurant_id=' + rest;
+  if (status) url += '&status=' + status;
+  try {
+    const d = await api(url);
+    const rows = d.settlements || d.data || [];
+    const tbody = document.getElementById('fin-ov-tracker-tbody');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No settlements found</td></tr>'; return; }
+    tbody.innerHTML = rows.map(s => `<tr>
+      <td>${s.restaurant_name || s.restaurant_id || '-'}</td>
+      <td>${s.period || '-'}</td>
+      <td>${fmtINR(s.gross_rs)}</td>
+      <td>${fmtINR(s.platform_fee_rs)}</td>
+      <td>${fmtINR(s.tds_rs)}</td>
+      <td>${fmtINR(s.net_rs)}</td>
+      <td><span class="badge ${s.status === 'paid' ? 'green' : s.status === 'failed' ? 'red' : 'gold'}">${s.status || '-'}</span></td>
+      <td class="monospace">${s.utr || '-'}</td>
+    </tr>`).join('');
+    const pager = document.getElementById('fin-ov-tracker-pager');
+    const total = d.total || rows.length;
+    pager.innerHTML = `<button ${page <= 1 ? 'disabled' : ''} onclick="loadFinSettlementTracker(${page - 1})">&#8592; Prev</button>
+      <span>Page ${page}</span>
+      <button ${rows.length < 20 ? 'disabled' : ''} onclick="loadFinSettlementTracker(${page + 1})">Next &#8594;</button>
+      <span class="total">${total} total</span>`;
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function loadFinSettlements(page) {
+  if (!page) page = 1;
+  finSettlePage = page;
+  try {
+    const d = await api('/api/admin/financials/settlements?page=' + page + '&limit=20');
+    const rows = d.settlements || d.data || [];
+    const tbody = document.getElementById('fin-settle-tbody');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">No settlements</td></tr>'; return; }
+    tbody.innerHTML = rows.map(s => `<tr>
+      <td>${s.restaurant_name || s.restaurant_id || '-'}</td>
+      <td>${s.period || '-'}</td>
+      <td>${fmtINR(s.gross_rs)}</td>
+      <td>${fmtINR(s.platform_fee_rs)}</td>
+      <td>${fmtINR(s.tds_rs)}</td>
+      <td>${fmtINR(s.net_rs)}</td>
+      <td><span class="badge ${s.status === 'paid' ? 'green' : s.status === 'failed' ? 'red' : 'gold'}">${s.status || '-'}</span></td>
+      <td>
+        <button class="btn-sm" onclick="viewSettlement('${s.id}')">View</button>
+        ${s.status !== 'paid' ? `<button class="btn-sm primary" onclick="paySettlement('${s.id}')">Pay</button>` : ''}
+      </td>
+    </tr>`).join('');
+    const pager = document.getElementById('fin-settle-pager');
+    const total = d.total || rows.length;
+    pager.innerHTML = `<button ${page <= 1 ? 'disabled' : ''} onclick="loadFinSettlements(${page - 1})">&#8592; Prev</button>
+      <span>Page ${page}</span>
+      <button ${rows.length < 20 ? 'disabled' : ''} onclick="loadFinSettlements(${page + 1})">Next &#8594;</button>
+      <span class="total">${total} total</span>`;
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function viewSettlement(id) {
+  try {
+    const d = await api('/api/admin/financials/settlements/' + id);
+    alert(JSON.stringify(d, null, 2));
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function paySettlement(id) {
+  if (!confirm('Confirm payout for this settlement?')) return;
+  try {
+    await api('/api/admin/financials/settlements/' + id + '/pay', { method: 'POST' });
+    toast('Payout initiated', 'ok');
+    loadFinSettlements(finSettlePage);
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function loadFinPayments(page) {
+  if (!page) page = 1;
+  finPayPage = page;
+  try {
+    const d = await api('/api/admin/financials/payments?page=' + page + '&limit=20');
+    const rows = d.payments || d.data || [];
+    const tbody = document.getElementById('fin-pay-tbody');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No payments</td></tr>'; return; }
+    tbody.innerHTML = rows.map(p => `<tr>
+      <td>${p.date || p.created_at || '-'}</td>
+      <td class="monospace">${p.order_id || '-'}</td>
+      <td>${fmtINR(p.amount_rs)}</td>
+      <td>${p.method || '-'}</td>
+      <td class="monospace truncate">${p.razorpay_payment_id || '-'}</td>
+      <td><span class="badge ${p.status === 'captured' || p.status === 'paid' ? 'green' : p.status === 'failed' ? 'red' : 'gold'}">${p.status || '-'}</span></td>
+    </tr>`).join('');
+    const pager = document.getElementById('fin-pay-pager');
+    const total = d.total || rows.length;
+    pager.innerHTML = `<button ${page <= 1 ? 'disabled' : ''} onclick="loadFinPayments(${page - 1})">&#8592; Prev</button>
+      <span>Page ${page}</span>
+      <button ${rows.length < 20 ? 'disabled' : ''} onclick="loadFinPayments(${page + 1})">Next &#8594;</button>
+      <span class="total">${total} total</span>`;
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function loadFinRefunds(page) {
+  if (!page) page = 1;
+  finRefPage = page;
+  try {
+    const d = await api('/api/admin/financials/refunds?page=' + page + '&limit=20');
+    const rows = d.refunds || d.data || [];
+    const tbody = document.getElementById('fin-ref-tbody');
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No refunds</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td>${r.date || r.created_at || '-'}</td>
+      <td>${r.restaurant_name || '-'}</td>
+      <td class="monospace">${r.order_id || '-'}</td>
+      <td>${fmtINR(r.amount_rs)}</td>
+      <td>${r.reason || '-'}</td>
+      <td class="monospace truncate">${r.razorpay_refund_id || '-'}</td>
+      <td><span class="badge ${r.status === 'processed' ? 'green' : r.status === 'failed' ? 'red' : 'gold'}">${r.status || '-'}</span></td>
+    </tr>`).join('');
+    const pager = document.getElementById('fin-ref-pager');
+    const total = d.total || rows.length;
+    pager.innerHTML = `<button ${page <= 1 ? 'disabled' : ''} onclick="loadFinRefunds(${page - 1})">&#8592; Prev</button>
+      <span>Page ${page}</span>
+      <button ${rows.length < 20 ? 'disabled' : ''} onclick="loadFinRefunds(${page + 1})">Next &#8594;</button>
+      <span class="total">${total} total</span>`;
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function loadFinTax() {
+  const period = document.getElementById('fin-period').value;
+  try {
+    const d = await api('/api/admin/financials/tax?period=' + period);
+    // TDS summary
+    const tds = d.tds || {};
+    document.getElementById('fin-tds-summary').innerHTML = `<strong>Quarterly TDS Summary:</strong> Total Gross Payouts: ${fmtINR(tds.total_gross_rs)} | TDS Deducted (@1%): ${fmtINR(tds.total_tds_rs)} | Restaurants: ${tds.restaurant_count || 0}`;
+    const tdsRows = tds.restaurants || [];
+    document.getElementById('fin-tds-tbody').innerHTML = tdsRows.length ? tdsRows.map(r => `<tr>
+      <td>${r.restaurant_name || '-'}</td>
+      <td class="monospace">${r.pan || '-'}</td>
+      <td>${fmtINR(r.gross_rs)}</td>
+      <td>${fmtINR(r.tds_rs)}</td>
+      <td>${fmtINR(r.net_rs)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="empty">No TDS data</td></tr>';
+    // GST summary
+    const gst = d.gst || {};
+    document.getElementById('fin-gst-summary').innerHTML = `<strong>Monthly Platform Fee GST:</strong> Total Platform Fees: ${fmtINR(gst.total_fees_rs)} | CGST (9%): ${fmtINR(gst.cgst_rs)} | SGST (9%): ${fmtINR(gst.sgst_rs)} | Total GST: ${fmtINR(gst.total_gst_rs)}`;
+    const gstRows = gst.months || [];
+    document.getElementById('fin-gst-tbody').innerHTML = gstRows.length ? gstRows.map(m => `<tr>
+      <td>${m.month || '-'}</td>
+      <td>${fmtINR(m.fees_rs)}</td>
+      <td>${fmtINR(m.cgst_rs)}</td>
+      <td>${fmtINR(m.sgst_rs)}</td>
+      <td>${fmtINR(m.total_gst_rs)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="empty">No GST data</td></tr>';
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function downloadTdsReport() {
+  const period = document.getElementById('fin-period').value;
+  try {
+    const resp = await fetch('/api/admin/financials/tax/tds-report?period=' + period, { headers: { 'Authorization': 'Bearer ' + ADMIN_KEY } });
+    if (!resp.ok) throw new Error('Download failed');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'tds_report_' + period + '.csv'; a.click();
+    URL.revokeObjectURL(url);
+    toast('TDS report downloaded', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+
+async function downloadGstr1() {
+  const period = document.getElementById('fin-period').value;
+  try {
+    const resp = await fetch('/api/admin/financials/tax/gstr1?period=' + period, { headers: { 'Authorization': 'Bearer ' + ADMIN_KEY } });
+    if (!resp.ok) throw new Error('Download failed');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'gstr1_' + period + '.csv'; a.click();
+    URL.revokeObjectURL(url);
+    toast('GSTR-1 data downloaded', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
 }
 </script>
 </body>

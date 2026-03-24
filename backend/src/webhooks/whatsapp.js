@@ -106,6 +106,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     }
   } catch (err) {
     console.error('[WA Webhook] Processing error:', err.message);
+    logActivity({ actorType: 'webhook', action: 'bot.error', category: 'webhook', description: `WhatsApp bot error: ${err.message}`, severity: 'error', metadata: { error: err.message } });
     // Schedule for retry
     if (logId) {
       await col('webhook_logs').updateOne(
@@ -237,6 +238,7 @@ const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
         source: 'whatsapp',
       });
 
+      logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.issue_raised', category: 'issue', description: `Issue raised by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: restId, severity: 'info' });
       await wa.sendText(pid, token, to,
         `✅ Issue #${issue.issue_number} has been created.\n\nWe'll get back to you shortly. You'll receive updates here on WhatsApp.`
       );
@@ -244,7 +246,16 @@ const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
       return;
     }
 
-    // Capture image, audio, video, document, sticker, etc. to inbox
+    // Skip audio/video from inbox — only capture text-like and image messages
+    if (msgType === 'audio' || msgType === 'video') {
+      const to = customerIdentity.resolveRecipient(customer);
+      await wa.sendText(waAccount.phone_number_id, waAccount.access_token, to,
+        'We currently support text and image messages. Please type your query or send a photo.'
+      );
+      return;
+    }
+
+    // Capture image, document, sticker, contact, location to inbox
     await captureCustomerMessage(msg, customer, conv, waAccount);
     const to = customerIdentity.resolveRecipient(customer);
     await wa.sendText(waAccount.phone_number_id, waAccount.access_token, to,
@@ -433,6 +444,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     } catch (e) {
       if (e.code !== 11000) console.error('[Rating] save error:', e.message);
     }
+    logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.feedback_submitted', category: 'customer', description: `Rating submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: order?.restaurant_id || null, severity: 'info' });
     await orderSvc.setState(conv.id, 'GREETING', {});
     await wa.sendText(pid, token, to, comment ? 'Thanks for your feedback! We\'ll work on improving. 🙏' : 'No worries — thanks for rating! 🎉');
     return;
@@ -543,6 +555,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       source: 'whatsapp',
     });
 
+    logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.issue_raised', category: 'issue', description: `Issue raised by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: restId, severity: 'info' });
     await wa.sendText(pid, token, to,
       `✅ Issue #${issue.issue_number} has been created.\n\nWe'll get back to you shortly. You'll receive updates here on WhatsApp.\n\nType MENU to browse our menu or TRACK to check your order.`
     );
@@ -563,6 +576,8 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   const token = waAccount.access_token;
   const to = customerIdentity.resolveRecipient(customer);
   const { latitude, longitude, address, name: locName } = msg.location;
+
+  logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.location_shared', category: 'order', description: `${customer.name || customer.wa_phone || customer.bsuid} shared delivery location`, restaurantId: waAccount.restaurant_id, severity: 'info' });
 
   await wa.sendText(pid, token, to, '🔍 Finding the nearest restaurant for you...');
 
@@ -721,6 +736,8 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   const productItems = msg.order?.product_items || [];
   if (!productItems.length) return;
 
+  logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.cart_submitted', category: 'order', description: `Cart submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, branchId: branchId ? String(branchId) : null, severity: 'info' });
+
   const cart = await orderSvc.buildCartFromCatalogOrder(productItems, branchId, session.deliveryLat, session.deliveryLng, {
     deliveryAddress: session.deliveryAddress,
     customerName: customer.name,
@@ -871,7 +888,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
     } else {
       // No orders — skip to description
       await orderSvc.setState(conv.id, 'AWAITING_ISSUE_DESCRIPTION', { issue_category: category });
-      await wa.sendText(pid, token, to, 'Please describe your issue. You can also send photos or voice notes.');
+      await wa.sendText(pid, token, to, 'Please describe your issue. You can also send a photo.');
     }
     return;
   }
@@ -894,12 +911,13 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
     await orderSvc.setState(conv.id, 'AWAITING_ISSUE_DESCRIPTION', {
       ...session, issue_order_id: orderId, issue_order_number: orderNumber, issue_branch_id: branchId,
     });
-    await wa.sendText(pid, token, to, 'Please describe your issue. You can also send photos or voice notes.');
+    await wa.sendText(pid, token, to, 'Please describe your issue. You can also send a photo.');
     return;
   }
 
   switch (replyId) {
     case 'START_ORDER': {
+      logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.order_started', category: 'order', description: `${customer.name || customer.wa_phone || customer.bsuid} started ordering`, restaurantId: waAccount.restaurant_id, severity: 'info' });
       const addresses = await addressSvc.getAddresses({ customer_id: customer.id });
       if (addresses.length > 0) {
         await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
@@ -951,6 +969,8 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         );
         return;
       }
+
+      logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.order_confirmed', category: 'order', description: `Order confirmed by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, severity: 'info' });
 
       // Order creation rate limit — 5 per 10 minutes
       const orderRateCheck = waOrderLimiter.isAllowed(customerIdentity.resolveRecipient(customer));
@@ -1021,6 +1041,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         });
         if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
       }
+      logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.payment_initiated', category: 'payment', description: `Payment link sent to ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, severity: 'info' });
       break;
     }
 
@@ -1529,6 +1550,7 @@ const handleRatingReply = async (orderId, score, customer, conv, waAccount) => {
     } catch (e) {
       if (e.code !== 11000) console.error('[Rating] save error:', e.message);
     }
+    logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.feedback_submitted', category: 'customer', description: `Rating submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: order?.restaurant_id || null, severity: 'info' });
     await wa.sendText(pid, token, to, 'Thanks for your feedback! 🎉 We\'re glad you enjoyed it!');
     await orderSvc.setState(conv.id, 'GREETING', {});
   }
@@ -1954,7 +1976,7 @@ const captureCustomerMessage = async (msg, customer, conv, waAccount) => {
 
     if (messageType === 'text') {
       text = msg.text?.body || null;
-    } else if (['image', 'video', 'audio', 'document', 'sticker'].includes(messageType)) {
+    } else if (['image', 'document', 'sticker'].includes(messageType)) {
       const media = msg[messageType];
       mediaId = media?.id || null;
       mediaMime = media?.mime_type || null;

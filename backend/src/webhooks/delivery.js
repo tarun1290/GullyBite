@@ -10,6 +10,7 @@ const wa = require('../services/whatsapp');
 const notify = require('../services/notify');
 const orderNotify = require('../services/orderNotify');
 const { resolveRecipient } = require('../services/customerIdentity');
+const { logActivity } = require('../services/activityLog');
 
 // POST /webhooks/delivery — 3PL status updates
 router.post('/', express.json(), async (req, res) => {
@@ -72,6 +73,10 @@ router.post('/', express.json(), async (req, res) => {
     const customer = await col('customers').findOne({ _id: order.customer_id });
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: branch?.restaurant_id, is_active: true });
 
+    if (newStatus === 'assigned') {
+      logActivity({ actorType: 'webhook', action: 'delivery.rider_assigned', category: 'delivery', description: `Rider assigned for order`, resourceType: 'delivery', resourceId: String(delivery._id), severity: 'info' });
+    }
+
     if (newStatus === 'assigned' && $set.driver_name) {
       // Rider assigned — notify customer
       if (wa_acc && customer) {
@@ -85,6 +90,7 @@ router.post('/', express.json(), async (req, res) => {
     }
 
     if (newStatus === 'picked_up') {
+      logActivity({ actorType: 'webhook', action: 'delivery.picked_up', category: 'delivery', description: `Order picked up by rider`, resourceType: 'delivery', resourceId: String(delivery._id), severity: 'info' });
       await orderSvc.updateStatus(delivery.order_id, 'DISPATCHED');
       // Try template, fall back to plain text
       const dispatched = await orderNotify.sendOrderTemplateMessage(delivery.order_id, 'DISPATCHED').catch(() => false);
@@ -100,6 +106,7 @@ router.post('/', express.json(), async (req, res) => {
     }
 
     if (newStatus === 'delivered') {
+      logActivity({ actorType: 'webhook', action: 'delivery.delivered', category: 'delivery', description: `Order delivered successfully`, resourceType: 'delivery', resourceId: String(delivery._id), severity: 'info' });
       await orderSvc.updateStatus(delivery.order_id, 'DELIVERED');
       // Try template for delivered notification
       orderNotify.sendOrderTemplateMessage(delivery.order_id, 'DELIVERED').catch(() => {});
@@ -107,6 +114,7 @@ router.post('/', express.json(), async (req, res) => {
     }
 
     if (newStatus === 'cancelled' || newStatus === 'failed') {
+      logActivity({ actorType: 'webhook', action: 'delivery.failed', category: 'delivery', description: `Delivery failed/cancelled`, resourceType: 'delivery', resourceId: String(delivery._id), severity: 'error' });
       // 3PL cancelled/failed — notify manager, DON'T auto-cancel the order
       if (branch?.restaurant_id) {
         notify.sendManagerNotification(branch.restaurant_id, order.branch_id,
@@ -125,6 +133,7 @@ router.post('/', express.json(), async (req, res) => {
 
   } catch (err) {
     console.error('[3PL Webhook] Error processing:', err.message);
+    logActivity({ actorType: 'webhook', action: 'delivery.dispatch_failed', category: 'delivery', description: `Delivery webhook error: ${err.message}`, severity: 'error', metadata: { error: err.message } });
   }
 });
 

@@ -368,6 +368,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
     </div>
     <div class="sb-sec">
       <div class="sb-cap">Finance</div>
+      <button class="sb-btn" onclick="goTab('financials',this)"><span class="ic">₹</span>Financials</button>
       <button class="sb-btn" onclick="goTab('settlements',this)"><span class="ic">💰</span>Settlements</button>
       <button class="sb-btn" onclick="goTab('referrals',this)"><span class="ic">🔗</span>Referrals Received</button>
       <button class="sb-btn" onclick="goTab('settings',this)"><span class="ic">⚙️</span>Settings</button>
@@ -1580,6 +1581,159 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
       </div>
 
+      <!-- ── FINANCIALS ──────────────────────────── -->
+      <div class="tab" id="tab-financials">
+
+        <!-- Section A — Summary Cards + Period Selector -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.7rem;margin-bottom:1rem">
+          <div style="display:flex;gap:.35rem;flex-wrap:wrap">
+            <button class="fin-period-btn chip on" onclick="setFinPeriod('1d',this)">Today</button>
+            <button class="fin-period-btn chip" onclick="setFinPeriod('7d',this)">This Week</button>
+            <button class="fin-period-btn chip" onclick="setFinPeriod('30d',this)">This Month</button>
+            <button class="fin-period-btn chip" onclick="setFinPeriod('last_month',this)">Last Month</button>
+            <button class="fin-period-btn chip" onclick="toggleFinCustomRange()" id="fin-custom-btn">Custom Range</button>
+          </div>
+          <div id="fin-custom-range" style="display:none;align-items:center;gap:.4rem">
+            <input type="date" id="fin-date-from" style="font-size:.78rem;padding:.3rem .5rem;border:1px solid var(--rim);border-radius:6px">
+            <span style="font-size:.78rem;color:var(--dim)">to</span>
+            <input type="date" id="fin-date-to" style="font-size:.78rem;padding:.3rem .5rem;border:1px solid var(--rim);border-radius:6px">
+            <button class="btn-p btn-sm" onclick="applyFinCustomRange()">Apply</button>
+          </div>
+        </div>
+
+        <div class="stats" id="fin-stats">
+          <div class="stat"><div class="stat-l">Total Revenue</div><div class="stat-v" id="fin-revenue">—</div><div class="stat-s" id="fin-revenue-sub">&nbsp;</div></div>
+          <div class="stat"><div class="stat-l">Net Earnings</div><div class="stat-v" id="fin-net">—</div><div class="stat-s" id="fin-net-sub">&nbsp;</div></div>
+          <div class="stat"><div class="stat-l">Orders</div><div class="stat-v" id="fin-orders">—</div><div class="stat-s" id="fin-orders-sub">&nbsp;</div></div>
+          <div class="stat"><div class="stat-l">Avg Order Value</div><div class="stat-v" id="fin-aov">—</div><div class="stat-s" id="fin-aov-sub">&nbsp;</div></div>
+        </div>
+
+        <!-- Section B — Daily Chart -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>Revenue &amp; Earnings Trend</h3></div>
+          <div class="cb" style="padding:1rem 1.1rem">
+            <canvas id="fin-chart" height="280" style="width:100%;max-height:320px"></canvas>
+            <div id="fin-chart-empty" style="display:none;text-align:center;padding:2rem;color:var(--dim);font-size:.84rem">No data for the selected period</div>
+          </div>
+        </div>
+
+        <!-- Section C — Earnings Breakdown -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>Earnings Breakdown</h3></div>
+          <div class="cb" style="padding:0">
+            <div id="fin-breakdown" style="font-family:'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace;font-size:.82rem;padding:1.2rem 1.5rem;line-height:2">
+              <div style="text-align:center;padding:2rem;color:var(--dim);font-family:var(--font-body)">Select a period to view breakdown</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section D — Settlements List -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>Settlements</h3></div>
+          <div class="tbl">
+            <table>
+              <thead><tr><th>Period</th><th>Gross</th><th>Deductions</th><th>TDS</th><th>Net</th><th>Status</th><th>UTR</th><th></th></tr></thead>
+              <tbody id="fin-settle-body">
+                <tr><td colspan="8"><div class="empty"><div class="ei">💰</div><h3>No settlements yet</h3><p>Settlements appear after your first payout cycle</p></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="fin-settle-pag" style="display:none;padding:.7rem 1.2rem;border-top:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:.75rem;color:var(--dim)" id="fin-settle-info"></span>
+            <div style="display:flex;gap:.3rem">
+              <button class="btn-g btn-sm" id="fin-settle-prev" onclick="loadFinSettlements(finSettlePage-1)">← Prev</button>
+              <button class="btn-g btn-sm" id="fin-settle-next" onclick="loadFinSettlements(finSettlePage+1)">Next →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section E — Payments Log -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch">
+            <h3>Payments Log</h3>
+            <div style="display:flex;gap:.4rem;align-items:center">
+              <input type="date" id="fin-pay-from" style="font-size:.75rem;padding:.28rem .5rem;border:1px solid var(--rim);border-radius:6px">
+              <input type="date" id="fin-pay-to" style="font-size:.75rem;padding:.28rem .5rem;border:1px solid var(--rim);border-radius:6px">
+              <button class="btn-g btn-sm" onclick="loadFinPayments(1)">Filter</button>
+            </div>
+          </div>
+          <div class="tbl">
+            <table>
+              <thead><tr><th>Date</th><th>Order #</th><th>Amount</th><th>Method</th><th>Razorpay ID</th><th>Status</th></tr></thead>
+              <tbody id="fin-pay-body">
+                <tr><td colspan="6"><div class="empty"><div class="ei">💳</div><h3>No payments found</h3><p>Payments will appear as orders come in</p></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="fin-pay-pag" style="display:none;padding:.7rem 1.2rem;border-top:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between">
+            <span style="font-size:.75rem;color:var(--dim)" id="fin-pay-info"></span>
+            <div style="display:flex;gap:.3rem">
+              <button class="btn-g btn-sm" id="fin-pay-prev" onclick="loadFinPayments(finPayPage-1)">← Prev</button>
+              <button class="btn-g btn-sm" id="fin-pay-next" onclick="loadFinPayments(finPayPage+1)">Next →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section F — Tax Compliance -->
+        <div class="card">
+          <div class="ch"><h3>Tax Compliance</h3></div>
+          <div style="padding:.7rem 1.2rem;border-bottom:1px solid var(--rim);display:flex;gap:.3rem">
+            <button class="chip fin-tax-tab on" onclick="switchFinTaxTab('gst',this)">GST Summary</button>
+            <button class="chip fin-tax-tab" onclick="switchFinTaxTab('tds',this)">TDS Summary</button>
+            <button class="chip fin-tax-tab" onclick="switchFinTaxTab('info',this)">Tax Info</button>
+          </div>
+
+          <!-- GST Sub-tab -->
+          <div class="fin-tax-panel" id="fin-tax-gst">
+            <div class="tbl">
+              <table>
+                <thead><tr><th>Month</th><th>Food GST</th><th>Pkg GST</th><th>Delivery GST</th><th>Platform Fee GST</th><th>Total GST</th></tr></thead>
+                <tbody id="fin-gst-body">
+                  <tr><td colspan="6"><div class="empty" style="padding:1.5rem"><h3>Loading GST summary...</h3></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- TDS Sub-tab -->
+          <div class="fin-tax-panel" id="fin-tax-tds" style="display:none">
+            <div class="tbl">
+              <table>
+                <thead><tr><th>Settlement</th><th>Period</th><th>Gross</th><th>TDS Rate</th><th>TDS Amount</th><th>Certificate</th></tr></thead>
+                <tbody id="fin-tds-body">
+                  <tr><td colspan="6"><div class="empty" style="padding:1.5rem"><h3>Loading TDS summary...</h3></div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tax Info Sub-tab -->
+          <div class="fin-tax-panel" id="fin-tax-info" style="display:none">
+            <div class="cb">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.2rem">
+                <div style="background:var(--ink4);border:1px solid var(--rim);border-radius:8px;padding:1rem 1.2rem">
+                  <div style="font-size:.72rem;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">GSTIN on File</div>
+                  <div style="font-size:1.05rem;font-weight:700;font-family:'SF Mono',monospace;color:var(--tx)" id="fin-tax-gstin">—</div>
+                  <div style="font-size:.72rem;color:var(--dim);margin-top:.2rem" id="fin-tax-gst-status"></div>
+                </div>
+                <div style="background:var(--ink4);border:1px solid var(--rim);border-radius:8px;padding:1rem 1.2rem">
+                  <div style="font-size:.72rem;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">PAN on File</div>
+                  <div style="font-size:1.05rem;font-weight:700;font-family:'SF Mono',monospace;color:var(--tx)" id="fin-tax-pan">—</div>
+                  <div style="font-size:.72rem;color:var(--dim);margin-top:.2rem" id="fin-tax-pan-status"></div>
+                </div>
+              </div>
+              <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:1rem 1.2rem;font-size:.82rem;line-height:1.7;color:#0369a1">
+                <strong style="display:block;margin-bottom:.4rem">How taxes work on GullyBite</strong>
+                <p style="margin-bottom:.6rem"><strong>GST (5%):</strong> Goods and Services Tax is collected from customers on food orders, packaging, and delivery charges. This is included in the prices shown to customers. You are responsible for filing GST returns with the collected amounts.</p>
+                <p style="margin-bottom:.6rem"><strong>Platform Fee GST (18%):</strong> GullyBite charges GST on the platform commission. This is deducted from your settlements and GullyBite remits this to the government.</p>
+                <p><strong>TDS (1%):</strong> Tax Deducted at Source is withheld on your net payouts as per Section 194-O of the Income Tax Act. TDS certificates are available for download from the TDS Summary tab above. You can claim credit for TDS when filing your income tax returns.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
       <!-- ── SETTINGS ────────────────────────────── -->
       <div class="tab" id="tab-settings">
 
@@ -1901,6 +2055,23 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
   </div>
 </div>
 
+<!-- ── SETTLEMENT DETAIL MODAL ────────────────────────── -->
+<div id="fin-settle-modal" onclick="if(event.target===this)closeFinSettleModal()" style="position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem">
+  <div style="background:#fff;border:1px solid var(--rim);border-radius:14px;width:100%;max-width:680px;overflow:hidden;animation:riseIn .22s ease both;box-shadow:var(--shadow)">
+    <div style="padding:1.1rem 1.3rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;justify-content:space-between">
+      <span id="fin-settle-modal-title" style="font-weight:700;font-size:.95rem;color:var(--tx)">Settlement Detail</span>
+      <button onclick="closeFinSettleModal()" style="background:none;border:none;color:var(--dim);font-size:1.1rem;cursor:pointer">&#10005;</button>
+    </div>
+    <div id="fin-settle-modal-body" style="padding:1.3rem;max-height:75vh;overflow-y:auto;font-size:.84rem">
+      <div style="text-align:center;padding:2rem;color:var(--dim)">Loading...</div>
+    </div>
+    <div style="padding:.8rem 1.3rem;border-top:1px solid var(--rim);display:flex;justify-content:flex-end;gap:.5rem">
+      <button class="btn-g" onclick="closeFinSettleModal()">Close</button>
+      <button class="btn-p" id="fin-settle-dl-btn" onclick="downloadFinSettlement()" style="display:none">📥 Download Excel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ─────────────────────────── STATE ─────────────────────── */
 let token    = localStorage.getItem('zm_token');
@@ -1964,6 +2135,7 @@ const TMETA = {
   menu:       { title: 'Menu Items',         sub: 'Add and manage dishes',              fn: loadBranchSel },
   whatsapp:   { title: 'WhatsApp',           sub: 'Numbers and webhook config',         fn: loadWA },
   integrations:{ title: 'POS & Platform Integrations', sub: 'Sync menus from Swiggy, Zomato, PetPooja', fn: loadIntegrations },
+  financials:  { title: 'Financials',          sub: 'Revenue, earnings, taxes & settlements', fn: loadFinancials },
   settlements: { title: 'Settlements',        sub: 'Weekly payout history',              fn: loadSettlements },
   coupons:     { title: 'Coupons & Discounts', sub: 'Create and manage discount codes for WhatsApp orders', fn: loadCoupons },
   campaigns:   { title: 'Campaigns',          sub: 'Send product lists to customers via WhatsApp',  fn: loadCampaigns },
@@ -4164,7 +4336,7 @@ function applyPermissions(user) {
   if (!p.view_analytics && role !== 'owner') hide('.sb-btn[onclick*="analytics"]');
   if (!p.manage_settings && role !== 'owner') { hide('.sb-btn[onclick*="settings"]'); hide('.sb-btn[onclick*="integrations"]'); }
   if (!p.manage_coupons && role !== 'owner') hide('.sb-btn[onclick*="coupons"]');
-  if (!p.view_payments && role !== 'owner') hide('.sb-btn[onclick*="settlements"]');
+  if (!p.view_payments && role !== 'owner') { hide('.sb-btn[onclick*="settlements"]'); hide('.sb-btn[onclick*="financials"]'); }
   if (!p.view_menu && role !== 'owner') hide('.sb-btn[onclick*="menu"]');
   if (p.manage_users || role === 'owner') show('#sb-team-sec');
 
@@ -4363,6 +4535,372 @@ async function loadLoyalty(page) {
         .join('');
     } else { pager.innerHTML = ''; }
   } catch (e) { toast(e.message, 'err'); }
+}
+
+/* ─────────────────────────── FINANCIALS ─────────────────── */
+let finPeriod = '1d', finChartInstance = null, finSettlePage = 1, finPayPage = 1, finCurrentSettleId = null;
+
+function fmtINR(n) {
+  if (n == null) return '\u20B90.00';
+  const val = parseFloat(n);
+  return '\u20B9' + val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function loadFinancials() {
+  await Promise.all([loadFinSummary(), loadFinChart(), loadFinSettlements(1), loadFinPayments(1), loadFinTax()]);
+}
+
+function setFinPeriod(p, btn) {
+  finPeriod = p;
+  document.querySelectorAll('.fin-period-btn').forEach(b => b.classList.remove('on'));
+  if (btn) btn.classList.add('on');
+  document.getElementById('fin-custom-range').style.display = 'none';
+  loadFinSummary();
+  loadFinChart();
+}
+
+function toggleFinCustomRange() {
+  const el = document.getElementById('fin-custom-range');
+  el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+}
+
+function applyFinCustomRange() {
+  const from = document.getElementById('fin-date-from').value;
+  const to = document.getElementById('fin-date-to').value;
+  if (!from || !to) { toast('Select both dates', 'err'); return; }
+  finPeriod = 'custom&from=' + from + '&to=' + to;
+  document.querySelectorAll('.fin-period-btn').forEach(b => b.classList.remove('on'));
+  document.getElementById('fin-custom-btn').classList.add('on');
+  loadFinSummary();
+  loadFinChart();
+}
+
+async function loadFinSummary() {
+  try {
+    const d = await api('/api/restaurant/financials/summary?period=' + finPeriod);
+    if (!d) return;
+    document.getElementById('fin-revenue').textContent = fmtINR(d.total_revenue);
+    document.getElementById('fin-net').textContent = fmtINR(d.net_earnings);
+    document.getElementById('fin-orders').textContent = d.orders_count || '0';
+    document.getElementById('fin-aov').textContent = fmtINR(d.avg_order_value);
+    if (d.revenue_change != null) {
+      const el = document.getElementById('fin-revenue-sub');
+      el.textContent = (d.revenue_change >= 0 ? '+' : '') + d.revenue_change.toFixed(1) + '% vs prev period';
+      el.className = 'stat-s' + (d.revenue_change < 0 ? ' dn' : '');
+    }
+    if (d.orders_change != null) {
+      const el = document.getElementById('fin-orders-sub');
+      el.textContent = (d.orders_change >= 0 ? '+' : '') + d.orders_change.toFixed(1) + '% vs prev period';
+      el.className = 'stat-s' + (d.orders_change < 0 ? ' dn' : '');
+    }
+    // Render breakdown
+    renderFinBreakdown(d.breakdown || d);
+  } catch (e) { console.warn('loadFinSummary:', e); }
+}
+
+function renderFinBreakdown(b) {
+  const el = document.getElementById('fin-breakdown');
+  const line = (label, val, sign, tip) => {
+    const sn = sign === '+' ? '+' : sign === '-' ? '-' : ' ';
+    const color = sign === '-' ? 'var(--red)' : sign === '+' ? 'var(--wa)' : 'var(--tx)';
+    const tipHtml = tip ? ` <span title="${tip}" style="cursor:help;color:var(--mute);font-size:.72rem">&#9432;</span>` : '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.15rem 0">
+      <span style="color:var(--dim)">${label}${tipHtml}</span>
+      <span style="color:${color};font-weight:500">${sn} ${fmtINR(Math.abs(val || 0))}</span>
+    </div>`;
+  };
+  const divider = '<div style="border-top:1px solid var(--rim);margin:.5rem 0"></div>';
+  const boldLine = (label, val, color) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:.25rem 0">
+    <span style="font-weight:700;color:${color || 'var(--tx)'}">${label}</span>
+    <span style="font-weight:700;color:${color || 'var(--tx)'};font-size:.95rem">${fmtINR(val || 0)}</span>
+  </div>`;
+
+  el.innerHTML = `
+    <div style="font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:.4rem;font-family:var(--font-body)">EARNINGS SUMMARY</div>
+    ${divider}
+    ${line('Food Revenue', b.food_revenue, '', 'Revenue from food items sold')}
+    ${line('Food GST (5%)', b.food_gst, '+', 'GST collected on food orders')}
+    ${line('Packaging', b.packaging_revenue, '+', 'Packaging charges collected')}
+    ${line('Packaging GST', b.packaging_gst, '+', 'GST on packaging')}
+    ${line('Delivery Fee (Customer)', b.delivery_fee_customer, '+', 'Delivery charges paid by customers')}
+    ${divider}
+    ${boldLine('GROSS COLLECTIONS', b.gross_collections, 'var(--acc)')}
+    ${divider}
+    <div style="font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin:.5rem 0 .3rem;font-family:var(--font-body)">DEDUCTIONS</div>
+    ${line('Platform Fee', b.platform_fee, '-', 'GullyBite platform commission')}
+    ${line('Platform Fee GST (18%)', b.platform_fee_gst, '-', 'GST charged on platform fee')}
+    ${line('Delivery Cost (Restaurant)', b.delivery_cost, '-', 'Delivery partner charges borne by restaurant')}
+    ${line('Delivery GST', b.delivery_gst, '-', 'GST on delivery cost')}
+    ${line('Discounts', b.discounts, '-', 'Discount amounts funded by restaurant')}
+    ${line('Refunds', b.refunds, '-', 'Refund amounts for cancelled/returned orders')}
+    ${line('TDS (1%)', b.tds, '-', 'Tax Deducted at Source u/s 194-O')}
+    ${line('Referral Fee', b.referral_fee, '-', 'Referral commission for referred customers')}
+    ${line('Referral Fee GST', b.referral_fee_gst, '-', 'GST on referral fees')}
+    ${divider}
+    ${boldLine('TOTAL DEDUCTIONS', b.total_deductions, 'var(--red)')}
+    ${divider}
+    ${boldLine('NET PAYOUT', b.net_payout, 'var(--wa)')}
+  `;
+}
+
+async function loadFinChart() {
+  try {
+    const d = await api('/api/restaurant/financials/daily?period=' + finPeriod);
+    const canvas = document.getElementById('fin-chart');
+    const emptyEl = document.getElementById('fin-chart-empty');
+    if (!d || !d.days || !d.days.length) {
+      canvas.style.display = 'none';
+      emptyEl.style.display = 'block';
+      if (finChartInstance) { finChartInstance.destroy(); finChartInstance = null; }
+      return;
+    }
+    canvas.style.display = 'block';
+    emptyEl.style.display = 'none';
+
+    const labels = d.days.map(r => r.date);
+    const revenue = d.days.map(r => parseFloat(r.revenue || 0));
+    const net = d.days.map(r => parseFloat(r.net_earnings || 0));
+    const orders = d.days.map(r => parseInt(r.orders || 0));
+
+    if (finChartInstance) finChartInstance.destroy();
+
+    finChartInstance = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            type: 'line', label: 'Revenue', data: revenue, borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,.08)', borderWidth: 2, pointRadius: 3,
+            pointBackgroundColor: '#2563eb', tension: 0.3, fill: true, yAxisID: 'y', order: 1
+          },
+          {
+            type: 'line', label: 'Net Earnings', data: net, borderColor: '#16a34a',
+            backgroundColor: 'transparent', borderWidth: 2, pointRadius: 3,
+            pointBackgroundColor: '#16a34a', tension: 0.3, fill: false, yAxisID: 'y', order: 2
+          },
+          {
+            type: 'bar', label: 'Orders', data: orders, backgroundColor: 'rgba(148,163,184,.25)',
+            borderColor: 'rgba(148,163,184,.4)', borderWidth: 1, borderRadius: 4,
+            yAxisID: 'y1', order: 3, barPercentage: 0.5
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top', labels: { usePointStyle: true, padding: 16, font: { size: 11 } } },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                if (ctx.dataset.yAxisID === 'y1') return ctx.dataset.label + ': ' + ctx.raw;
+                return ctx.dataset.label + ': ' + fmtINR(ctx.raw);
+              }
+            }
+          }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+          y: {
+            position: 'left', grid: { color: 'rgba(0,0,0,.04)' },
+            ticks: { font: { size: 10 }, callback: v => '\u20B9' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v) }
+          },
+          y1: {
+            position: 'right', grid: { drawOnChartArea: false },
+            ticks: { font: { size: 10 }, stepSize: 1 }
+          }
+        }
+      }
+    });
+  } catch (e) { console.warn('loadFinChart:', e); }
+}
+
+async function loadFinSettlements(page) {
+  if (page < 1) return;
+  finSettlePage = page || 1;
+  const tb = document.getElementById('fin-settle-body');
+  try {
+    const d = await api('/api/restaurant/financials/settlements?page=' + finSettlePage + '&limit=10');
+    if (!d || !d.settlements || !d.settlements.length) {
+      if (finSettlePage > 1) { finSettlePage--; return; }
+      tb.innerHTML = '<tr><td colspan="8"><div class="empty"><div class="ei">\uD83D\uDCB0</div><h3>No settlements yet</h3><p>Settlements appear after your first payout cycle</p></div></td></tr>';
+      document.getElementById('fin-settle-pag').style.display = 'none';
+      return;
+    }
+    tb.innerHTML = d.settlements.map(s => {
+      const statusCls = { PAID: 'bg', PENDING: 'ba', PROCESSING: 'bb', FAILED: 'br' }[s.payout_status?.toUpperCase()] || 'bd';
+      return `<tr>
+        <td style="font-size:.8rem">${s.period_start || ''} \u2192 ${s.period_end || ''}</td>
+        <td>${fmtINR(s.gross_revenue)}</td>
+        <td style="color:var(--red)">${fmtINR(s.total_deductions)}</td>
+        <td>${fmtINR(s.tds)}</td>
+        <td><strong>${fmtINR(s.net_payout)}</strong></td>
+        <td><span class="badge ${statusCls}">${s.payout_status || 'N/A'}</span></td>
+        <td style="font-size:.72rem;color:var(--dim);font-family:monospace">${s.utr || '\u2014'}</td>
+        <td><button class="btn-g btn-sm" onclick="openSettlementDetail('${s.id}')">View</button></td>
+      </tr>`;
+    }).join('');
+    const pag = document.getElementById('fin-settle-pag');
+    pag.style.display = 'flex';
+    document.getElementById('fin-settle-info').textContent = 'Page ' + finSettlePage + (d.total_pages ? ' of ' + d.total_pages : '');
+    document.getElementById('fin-settle-prev').disabled = finSettlePage <= 1;
+    document.getElementById('fin-settle-next').disabled = !d.has_more && (!d.total_pages || finSettlePage >= d.total_pages);
+  } catch (e) { console.warn('loadFinSettlements:', e); }
+}
+
+async function openSettlementDetail(id) {
+  finCurrentSettleId = id;
+  const modal = document.getElementById('fin-settle-modal');
+  const body = document.getElementById('fin-settle-modal-body');
+  modal.style.display = 'flex';
+  body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--dim)">Loading...</div>';
+  try {
+    const d = await api('/api/restaurant/financials/settlements/' + id);
+    if (!d) { body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--red)">Failed to load</div>'; return; }
+    const statusCls = { PAID: 'bg', PENDING: 'ba', PROCESSING: 'bb', FAILED: 'br' }[d.payout_status?.toUpperCase()] || 'bd';
+
+    let html = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1rem;flex-wrap:wrap;gap:.6rem">
+        <div>
+          <div style="font-size:.72rem;color:var(--dim);margin-bottom:.2rem">Period</div>
+          <div style="font-weight:700">${d.period_start || ''} \u2192 ${d.period_end || ''}</div>
+        </div>
+        <div style="text-align:right">
+          <span class="badge ${statusCls}" style="font-size:.75rem">${d.payout_status || 'N/A'}</span>
+          ${d.utr ? '<div style="font-size:.72rem;color:var(--dim);margin-top:.2rem">UTR: <span style="font-family:monospace">' + d.utr + '</span></div>' : ''}
+          ${d.payout_date ? '<div style="font-size:.72rem;color:var(--dim)">Paid: ' + d.payout_date + '</div>' : ''}
+        </div>
+      </div>
+    `;
+
+    // Breakdown
+    html += '<div id="fin-settle-breakdown" style="font-family:\'SF Mono\',monospace;font-size:.78rem;line-height:1.9;background:var(--ink4);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1rem"></div>';
+
+    // Order list
+    if (d.orders && d.orders.length) {
+      html += `<div style="font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:.4rem">Orders in this Settlement (${d.orders.length})</div>`;
+      html += '<div style="max-height:200px;overflow-y:auto;border:1px solid var(--rim);border-radius:8px"><table><thead><tr><th>Order #</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
+      d.orders.forEach(o => {
+        html += `<tr><td style="font-family:monospace;font-size:.75rem">${o.order_number || o.id}</td><td style="font-size:.78rem">${o.date || ''}</td><td>${fmtINR(o.amount)}</td><td><span class="badge bg">${o.status || 'Delivered'}</span></td></tr>`;
+      });
+      html += '</tbody></table></div>';
+    }
+
+    body.innerHTML = html;
+
+    // Render breakdown inside the modal
+    const bk = d.breakdown || d;
+    const bdEl = document.getElementById('fin-settle-breakdown');
+    if (bdEl) {
+      const ln = (l, v, s) => `<div style="display:flex;justify-content:space-between"><span style="color:var(--dim)">${l}</span><span style="color:${s==='-'?'var(--red)':s==='+'?'var(--wa)':'var(--tx)'}">${s||''} ${fmtINR(Math.abs(v||0))}</span></div>`;
+      const dv = '<div style="border-top:1px dashed var(--rim);margin:.3rem 0"></div>';
+      const bl = (l, v, c) => `<div style="display:flex;justify-content:space-between;font-weight:700"><span style="color:${c||'var(--tx)'}">${l}</span><span style="color:${c||'var(--tx)'}">${fmtINR(v||0)}</span></div>`;
+      bdEl.innerHTML = ln('Food Revenue',bk.food_revenue,'') + ln('Food GST',bk.food_gst,'+') + ln('Packaging',bk.packaging_revenue,'+') + ln('Packaging GST',bk.packaging_gst,'+') + ln('Delivery Fee',bk.delivery_fee_customer,'+') + dv + bl('GROSS',bk.gross_collections,'var(--acc)') + dv + ln('Platform Fee',bk.platform_fee,'-') + ln('Platform Fee GST',bk.platform_fee_gst,'-') + ln('Delivery Cost',bk.delivery_cost,'-') + ln('Delivery GST',bk.delivery_gst,'-') + ln('Discounts',bk.discounts,'-') + ln('Refunds',bk.refunds,'-') + ln('TDS',bk.tds,'-') + ln('Referral Fee',bk.referral_fee,'-') + ln('Referral GST',bk.referral_fee_gst,'-') + dv + bl('NET PAYOUT',bk.net_payout,'var(--wa)');
+    }
+
+    document.getElementById('fin-settle-dl-btn').style.display = 'inline-flex';
+  } catch (e) {
+    body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--red)">Error: ' + e.message + '</div>';
+  }
+}
+
+function closeFinSettleModal() {
+  document.getElementById('fin-settle-modal').style.display = 'none';
+  finCurrentSettleId = null;
+}
+
+function downloadFinSettlement() {
+  if (!finCurrentSettleId) return;
+  const a = document.createElement('a');
+  a.href = '/api/restaurant/settlements/' + finCurrentSettleId + '/download';
+  a.download = 'settlement_' + finCurrentSettleId + '.xlsx';
+  a.click();
+}
+
+async function loadFinPayments(page) {
+  if (page < 1) return;
+  finPayPage = page || 1;
+  const tb = document.getElementById('fin-pay-body');
+  const from = document.getElementById('fin-pay-from').value;
+  const to = document.getElementById('fin-pay-to').value;
+  let qs = 'page=' + finPayPage + '&limit=15';
+  if (from) qs += '&from=' + from;
+  if (to) qs += '&to=' + to;
+  try {
+    const d = await api('/api/restaurant/financials/payments?' + qs);
+    if (!d || !d.payments || !d.payments.length) {
+      if (finPayPage > 1) { finPayPage--; return; }
+      tb.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="ei">\uD83D\uDCB3</div><h3>No payments found</h3><p>Payments will appear as orders come in</p></div></td></tr>';
+      document.getElementById('fin-pay-pag').style.display = 'none';
+      return;
+    }
+    tb.innerHTML = d.payments.map(p => {
+      const statusCls = { CAPTURED: 'bg', SUCCESS: 'bg', PENDING: 'ba', FAILED: 'br', REFUNDED: 'bv' }[p.status?.toUpperCase()] || 'bd';
+      return `<tr>
+        <td style="font-size:.78rem">${p.date || ''}</td>
+        <td style="font-family:monospace;font-size:.75rem">${p.order_number || '\u2014'}</td>
+        <td>${fmtINR(p.amount)}</td>
+        <td style="font-size:.78rem">${p.method || '\u2014'}</td>
+        <td style="font-family:monospace;font-size:.72rem;color:var(--dim)">${p.razorpay_id || '\u2014'}</td>
+        <td><span class="badge ${statusCls}">${p.status || 'N/A'}</span></td>
+      </tr>`;
+    }).join('');
+    const pag = document.getElementById('fin-pay-pag');
+    pag.style.display = 'flex';
+    document.getElementById('fin-pay-info').textContent = 'Page ' + finPayPage + (d.total_pages ? ' of ' + d.total_pages : '');
+    document.getElementById('fin-pay-prev').disabled = finPayPage <= 1;
+    document.getElementById('fin-pay-next').disabled = !d.has_more && (!d.total_pages || finPayPage >= d.total_pages);
+  } catch (e) { console.warn('loadFinPayments:', e); }
+}
+
+async function loadFinTax() {
+  try {
+    const d = await api('/api/restaurant/financials/tax-summary');
+    if (!d) return;
+
+    // GST monthly table
+    const gstBody = document.getElementById('fin-gst-body');
+    if (d.gst_monthly && d.gst_monthly.length) {
+      gstBody.innerHTML = d.gst_monthly.map(m => `<tr>
+        <td style="font-weight:600;font-size:.8rem">${m.month}</td>
+        <td>${fmtINR(m.food_gst)}</td>
+        <td>${fmtINR(m.packaging_gst)}</td>
+        <td>${fmtINR(m.delivery_gst)}</td>
+        <td>${fmtINR(m.platform_fee_gst)}</td>
+        <td><strong>${fmtINR(m.total_gst)}</strong></td>
+      </tr>`).join('');
+    } else {
+      gstBody.innerHTML = '<tr><td colspan="6"><div class="empty" style="padding:1.5rem"><h3>No GST data yet</h3><p>GST breakdown appears after your first orders</p></div></td></tr>';
+    }
+
+    // TDS table
+    const tdsBody = document.getElementById('fin-tds-body');
+    if (d.tds_records && d.tds_records.length) {
+      tdsBody.innerHTML = d.tds_records.map(t => `<tr>
+        <td style="font-family:monospace;font-size:.75rem">${t.settlement_id || '\u2014'}</td>
+        <td style="font-size:.8rem">${t.period || ''}</td>
+        <td>${fmtINR(t.gross)}</td>
+        <td>${t.tds_rate || '1%'}</td>
+        <td><strong>${fmtINR(t.tds_amount)}</strong></td>
+        <td>${t.certificate_url ? '<a href="' + t.certificate_url + '" target="_blank" class="btn-g btn-sm" style="text-decoration:none">\uD83D\uDCC4 Download</a>' : '<span style="color:var(--mute);font-size:.75rem">Pending</span>'}</td>
+      </tr>`).join('');
+    } else {
+      tdsBody.innerHTML = '<tr><td colspan="6"><div class="empty" style="padding:1.5rem"><h3>No TDS records yet</h3><p>TDS is deducted from settlements</p></div></td></tr>';
+    }
+
+    // Tax info
+    if (d.gstin) document.getElementById('fin-tax-gstin').textContent = d.gstin;
+    if (d.gstin_status) document.getElementById('fin-tax-gst-status').textContent = 'Status: ' + d.gstin_status;
+    if (d.pan) document.getElementById('fin-tax-pan').textContent = d.pan;
+    if (d.pan_status) document.getElementById('fin-tax-pan-status').textContent = 'Status: ' + d.pan_status;
+  } catch (e) { console.warn('loadFinTax:', e); }
+}
+
+function switchFinTaxTab(tab, btn) {
+  document.querySelectorAll('.fin-tax-panel').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('.fin-tax-tab').forEach(b => b.classList.remove('on'));
+  document.getElementById('fin-tax-' + tab).style.display = 'block';
+  if (btn) btn.classList.add('on');
 }
 
 /* ─────────────────────────── SETTLEMENTS ───────────────── */
@@ -5973,12 +6511,6 @@ function renderMsgBubble(m) {
     </div>`;
     if (m.caption) content += `<div>${m.caption}</div>`;
     if (mediaId) fetchMsgMediaThumb(mediaId);
-  } else if (type === 'audio') {
-    content = `<div class="msg-media-audio" data-media-id="${m.media_id}"><div style="display:flex;align-items:center;gap:.5rem;padding:.3rem 0"><span style="font-size:1.2rem">🎵</span><span style="color:var(--dim);font-size:.8rem">Voice message</span></div></div>`;
-    if (m.media_id) fetchMsgMediaAudio(m.media_id);
-  } else if (type === 'video') {
-    content = `<div style="display:flex;align-items:center;gap:.4rem"><span style="font-size:1.1rem">🎬</span><span>Video</span></div>`;
-    if (m.caption) content += `<div style="margin-top:.2rem">${m.caption}</div>`;
   } else if (type === 'document') {
     content = `<div style="display:flex;align-items:center;gap:.4rem;cursor:pointer" onclick="openMsgMedia('${m.media_id}')"><span style="font-size:1.1rem">📎</span><span>${m.caption || 'Document'}</span></div>`;
   } else if (type === 'location') {
@@ -6001,15 +6533,6 @@ async function fetchMsgMediaThumb(mediaId) {
     if (!r.url) return;
     const el = document.querySelector(`.msg-media-img[data-media-id="${mediaId}"]`);
     if (el) el.innerHTML = `<img src="${r.url}" style="max-width:200px;max-height:200px;border-radius:8px;object-fit:cover;cursor:pointer" onclick="window.open(this.src,'_blank')" onerror="this.style.display='none';this.parentElement.innerHTML='<span style=&quot;font-size:.78rem;color:var(--dim)&quot;>📷 Image unavailable</span>'">`;
-  } catch (_) {}
-}
-
-async function fetchMsgMediaAudio(mediaId) {
-  try {
-    const r = await api('/api/restaurant/messages/media/' + mediaId);
-    if (!r.url) return;
-    const el = document.querySelector(`.msg-media-audio[data-media-id="${mediaId}"]`);
-    if (el) el.innerHTML = `<audio controls preload="none" style="max-width:240px;height:32px"><source src="${r.url}" type="${r.mime_type || 'audio/ogg'}">Audio</audio>`;
   } catch (_) {}
 }
 
