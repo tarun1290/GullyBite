@@ -2106,6 +2106,105 @@ router.post('/catalog/visibility-toggle', async (req, res) => {
   }
 });
 
+// POST /api/restaurant/catalog/reverse-sync — pull items FROM Meta catalog INTO our database
+router.post('/catalog/reverse-sync', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const catalogId = restaurant?.meta_catalog_id;
+    if (!catalogId) return res.status(400).json({ error: 'No catalog connected. Link a catalog first.' });
+
+    const token = metaConfig.getCatalogToken();
+    const GRAPH = metaConfig.graphUrl;
+
+    // Fetch ALL products from Meta with pagination
+    let allProducts = [];
+    let url = `${GRAPH}/${catalogId}/products?fields=id,name,description,price,availability,image_url,retailer_id,sale_price,item_group_id,size,brand,product_tags&limit=500&access_token=${token}`;
+
+    while (url) {
+      const resp = await axios.get(url, { timeout: 30000 });
+      allProducts.push(...(resp.data?.data || []));
+      url = resp.data?.paging?.next || null;
+    }
+
+    console.log(`[Catalog] Reverse sync: fetched ${allProducts.length} products from Meta catalog ${catalogId}`);
+
+    // Determine target branch
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+    if (!branches.length) return res.status(400).json({ error: 'Create a branch first before importing.' });
+    const defaultBranch = branches[0];
+    const branchSlugMap = {};
+    for (const b of branches) {
+      const slug = b.branch_slug || slugify(b.name, 20) || String(b._id).slice(0, 8);
+      branchSlugMap[slug] = b;
+    }
+
+    function parseMetaPrice(priceStr) {
+      if (!priceStr) return 0;
+      const cleaned = String(priceStr).replace(/[^0-9.]/g, '');
+      return Math.round(parseFloat(cleaned) * 100) || 0;
+    }
+
+    const stats = { total_in_meta: allProducts.length, new_items_added: 0, existing_items_updated: 0, errors: [] };
+    const now = new Date();
+
+    for (const product of allProducts) {
+      try {
+        const retailerId = product.retailer_id || product.id;
+
+        // Determine branch from retailer_id prefix
+        let targetBranch = defaultBranch;
+        if (branches.length > 1) {
+          const slug = (retailerId || '').split('-')[0];
+          if (branchSlugMap[slug]) targetBranch = branchSlugMap[slug];
+        }
+
+        const tags = Array.isArray(product.product_tags) ? product.product_tags : [];
+
+        const doc = {
+          restaurant_id: req.restaurantId,
+          branch_id: String(targetBranch._id),
+          retailer_id: retailerId,
+          name: product.name || '',
+          description: product.description || '',
+          price_paise: parseMetaPrice(product.price),
+          sale_price_paise: product.sale_price ? parseMetaPrice(product.sale_price) : null,
+          is_available: product.availability === 'in stock',
+          image_url: product.image_url || '',
+          item_group_id: product.item_group_id || null,
+          size: product.size || null,
+          brand: product.brand || restaurant.business_name,
+          product_tags: tags,
+          food_type: (tags[0] || '').toLowerCase().includes('non') ? 'non_veg' : 'veg',
+          catalog_sync_status: 'synced',
+          catalog_synced_at: now,
+          reverse_synced: true,
+          reverse_synced_at: now,
+          updated_at: now,
+        };
+
+        const result = await col('menu_items').updateOne(
+          { retailer_id: retailerId, restaurant_id: req.restaurantId },
+          { $set: doc, $setOnInsert: { _id: newId(), is_bestseller: false, sort_order: 0, created_at: now } },
+          { upsert: true }
+        );
+
+        if (result.upsertedCount) stats.new_items_added++;
+        else stats.existing_items_updated++;
+      } catch (err) {
+        stats.errors.push(`${product.name || product.id}: ${err.message}`);
+      }
+    }
+
+    console.log(`[Catalog] Reverse sync complete:`, stats);
+    res.json({ success: true, ...stats });
+
+    log({ actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone, action: 'catalog.reverse_sync', category: 'catalog', description: `Reverse sync from Meta: ${stats.new_items_added} new, ${stats.existing_items_updated} updated`, restaurantId: req.restaurantId, severity: 'info' });
+  } catch (e) {
+    console.error('[Catalog] Reverse sync failed:', e.response?.data?.error?.message || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
 // GET /api/restaurant/catalog/products?branchId=... — list products in Meta catalog
 router.get('/catalog/products', async (req, res) => {
   try {

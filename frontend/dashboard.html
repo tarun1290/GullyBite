@@ -335,44 +335,14 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
   <aside class="sb">
     <div class="sb-logo"><div class="logo-ring">🍜</div>GullyBite</div>
     <div class="sb-sec">
-      <div class="sb-cap">Overview</div>
-      <button class="sb-btn act" onclick="goTab('overview',this)"><span class="ic">📊</span>Dashboard</button>
-      <button class="sb-btn"     onclick="goTab('orders',this)"><span class="ic">🛒</span>Orders</button>
-      <button class="sb-btn"     onclick="goTab('customers',this)"><span class="ic">👥</span>Customers</button>
+      <button class="sb-btn act" onclick="goTab('overview',this)"><span class="ic">🏠</span>Overview</button>
+      <button class="sb-btn"     onclick="goTab('orders',this)"><span class="ic">📦</span>Orders</button>
+      <button class="sb-btn"     onclick="goTab('menu',this)"><span class="ic">🍽️</span>Menu</button>
       <button class="sb-btn"     onclick="goTab('messages',this)"><span class="ic">💬</span>Messages <span id="msg-badge" style="display:none;background:var(--red);color:#fff;font-size:.6rem;padding:.1rem .35rem;border-radius:9px;margin-left:.3rem">0</span></button>
-      <button class="sb-btn"     onclick="goTab('analytics',this)"><span class="ic">📈</span>Analytics</button>
-    </div>
-    <div class="sb-sec">
-      <div class="sb-cap">Restaurant</div>
-      <button class="sb-btn" onclick="goTab('branches',this)"><span class="ic">📍</span>Branches &amp; Catalog</button>
-      <button class="sb-btn" onclick="goTab('menu',this)"><span class="ic">🍽️</span>Menu Items</button>
-      <button class="sb-btn" onclick="goTab('whatsapp',this)"><span class="ic">💬</span>WhatsApp</button>
-    </div>
-    <div class="sb-sec">
-      <div class="sb-cap">Integrations</div>
-      <button class="sb-btn" onclick="goTab('integrations',this)"><span class="ic">🔗</span>POS &amp; Platforms</button>
-    </div>
-    <div class="sb-sec">
-      <div class="sb-cap">Feedback</div>
-      <button class="sb-btn" onclick="goTab('ratings',this)"><span class="ic">⭐</span>Ratings</button>
-      <button class="sb-btn" onclick="goTab('loyalty',this)"><span class="ic">🏅</span>Loyalty</button>
-      <button class="sb-btn" onclick="goTab('issues',this)"><span class="ic">🎫</span>Issues <span id="issue-badge" style="display:none;background:var(--red);color:#fff;font-size:.6rem;padding:.1rem .35rem;border-radius:9px;margin-left:.3rem">0</span></button>
-    </div>
-    <div class="sb-sec">
-      <div class="sb-cap">Marketing</div>
-      <button class="sb-btn" onclick="goTab('coupons',this)"><span class="ic">🏷️</span>Coupons &amp; Discounts</button>
-      <button class="sb-btn" onclick="goTab('campaigns',this)"><span class="ic">📢</span>Campaigns</button>
-    </div>
-    <div class="sb-sec" id="sb-team-sec" style="display:none">
-      <div class="sb-cap">Team</div>
-      <button class="sb-btn" onclick="goTab('team',this)"><span class="ic">👥</span>Team</button>
-    </div>
-    <div class="sb-sec">
-      <div class="sb-cap">Finance</div>
-      <button class="sb-btn" onclick="goTab('financials',this)"><span class="ic">₹</span>Financials</button>
-      <button class="sb-btn" onclick="goTab('settlements',this)"><span class="ic">💰</span>Settlements</button>
-      <button class="sb-btn" onclick="goTab('referrals',this)"><span class="ic">🔗</span>Referrals Received</button>
-      <button class="sb-btn" onclick="goTab('settings',this)"><span class="ic">⚙️</span>Settings</button>
+      <button class="sb-btn"     onclick="goTab('analytics',this)"><span class="ic">📊</span>Analytics</button>
+      <button class="sb-btn"     onclick="goTab('payments',this)"><span class="ic">💰</span>Payments</button>
+      <button class="sb-btn"     onclick="goTab('restaurant',this)"><span class="ic">🏪</span>Restaurant</button>
+      <button class="sb-btn"     onclick="goTab('settings',this)"><span class="ic">⚙️</span>Settings</button>
     </div>
     <div class="sb-foot">
       <div class="sb-user">
@@ -450,6 +420,13 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           <div class="stat"><div class="stat-l">Today's Revenue</div><div class="stat-v" id="st-rev">—</div><div class="stat-s">Delivered only</div></div>
           <div class="stat"><div class="stat-l">This Week</div><div class="stat-v" id="st-wk">—</div><div class="stat-s">Total orders</div></div>
           <div class="stat"><div class="stat-l">In Progress</div><div class="stat-v" id="st-act">—</div><div class="stat-s">Active orders</div></div>
+        </div>
+        <!-- Overview Charts -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+          <div class="card"><div class="ch"><h3>📈 Revenue (7 days)</h3></div><div class="cb" style="height:200px"><canvas id="chart-revenue-7d"></canvas></div></div>
+          <div class="card"><div class="ch"><h3>📊 Orders (7 days)</h3></div><div class="cb" style="height:200px"><canvas id="chart-orders-7d"></canvas></div></div>
+          <div class="card"><div class="ch"><h3>🥧 Top Items</h3></div><div class="cb" style="height:200px"><canvas id="chart-top-items"></canvas></div></div>
+          <div class="card"><div class="ch"><h3>⏱️ Peak Hours</h3></div><div class="cb" style="height:200px"><canvas id="chart-peak-hours"></canvas></div></div>
         </div>
         <div class="card">
           <div class="ch"><h3>Recent Orders</h3><button class="btn-g btn-sm" onclick="goTab('orders',null)">View All →</button></div>
@@ -826,22 +803,74 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         <div id="branch-list">
           <div class="empty"><div class="ei">📍</div><h3>No branches yet</h3><p>Add your first branch above</p></div>
         </div>
+
+        <!-- Menu CSV Bulk Upload -->
+        <div class="card" style="margin-top:1.3rem">
+          <div class="ch">
+            <h3>📤 Bulk Upload Menu Items</h3>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn-g btn-sm" onclick="doReverseCatalogSync()" title="Pull items from your Meta catalog into GullyBite">⬇ Pull from Catalog</button>
+              <button class="btn-g btn-sm" onclick="doDownloadSample()">⬇ Sample CSV</button>
+            </div>
+          </div>
+          <div class="cb">
+            <p style="font-size:.81rem;color:var(--dim);margin-bottom:.9rem">
+              Upload a CSV or Excel file to add or update menu items in bulk.<br>
+              <strong>Required columns:</strong> name, price &nbsp;·&nbsp;
+              <strong>Optional:</strong> category, description, food_type, size, image_url &nbsp;·&nbsp;
+              Include a <strong>"branch"</strong> column for multi-outlet upload.
+            </p>
+            <div class="csv-drop" id="csv-drop"
+                 onclick="document.getElementById('csv-file').click()"
+                 ondragover="event.preventDefault();this.classList.add('drag')"
+                 ondragleave="this.classList.remove('drag')"
+                 ondrop="event.preventDefault();this.classList.remove('drag');handleCsvDrop(event)">
+              <div class="csv-ico">📄</div>
+              <div>
+                <strong>Click to choose file or drag &amp; drop here</strong>
+                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv, .xls, or .xlsx · up to 500 items · include a "branch" column for multi-outlet upload</p>
+              </div>
+              <input type="file" id="csv-file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="handleCsvFile(this)">
+            </div>
+            <div id="csv-mapper-menu" style="display:none"></div>
+            <div id="csv-preview" style="display:none">
+              <div class="sh" style="margin-top:1rem">
+                <span id="csv-count" style="font-size:.84rem;color:var(--wa);font-weight:600"></span>
+                <div style="display:flex;gap:.5rem">
+                  <button class="btn-g btn-sm" onclick="resetCsv()">✕ Clear</button>
+                  <button class="btn-p btn-sm" id="csv-upload-btn" onclick="doUploadCsv()">⬆ Upload & Sync</button>
+                </div>
+              </div>
+              <div class="tbl" style="margin-top:.65rem;max-height:230px;overflow-y:auto">
+                <table>
+                  <thead><tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>Type</th><th>⭐</th></tr></thead>
+                  <tbody id="csv-preview-body"></tbody>
+                </table>
+              </div>
+            </div>
+            <div id="csv-result" style="display:none;margin-top:.9rem"></div>
+          </div>
+        </div>
       </div>
 
       <!-- ── MENU ────────────────────────────────── -->
       <div class="tab" id="tab-menu">
         <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1.3rem;flex-wrap:wrap">
           <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto">
-            <option value="">Select branch to manage menu...</option>
+            <option value="">Select branch to view menu...</option>
           </select>
-          <div id="m-cat-badge" style="display:none"></div>
-          <button class="btn-p" id="m-sync-btn" style="display:none" onclick="doQuickSync()">🔄 Sync to WhatsApp</button>
-          <button class="btn-g btn-sm" id="m-sets-btn" style="display:none" onclick="doSyncSets()" title="Create/update category sections in WhatsApp catalog">📂 Sync Product Sets</button>
-          <button class="btn-g btn-sm" id="m-bulk-img-btn" style="display:none" disabled title="Coming soon — AWS setup pending">📷 Bulk Upload</button>
+          <span id="m-item-count" style="font-size:.82rem;color:var(--dim)"></span>
         </div>
-        <div id="img-stats-bar" style="font-size:.78rem;color:var(--dim);margin-bottom:.5rem;display:none"></div>
-        <!-- ── CATEGORIES MANAGER (collapsible) ── -->
-        <div class="card" id="cat-manager-card" style="margin-bottom:.8rem">
+        <!-- Hidden toolbar buttons — sync happens automatically on item changes -->
+        <div style="display:none">
+          <div id="m-cat-badge"></div>
+          <button id="m-sync-btn" onclick="doQuickSync()">Sync</button>
+          <button id="m-sets-btn" onclick="doSyncSets()">Sets</button>
+          <button id="m-bulk-img-btn">Bulk Upload</button>
+        </div>
+        <div id="img-stats-bar" style="display:none"></div>
+        <!-- ── CATEGORIES MANAGER (collapsed by default, minimal footprint) ── -->
+        <div class="card" id="cat-manager-card" style="margin-bottom:.8rem;display:none">
           <div class="ch" style="cursor:pointer;user-select:none" onclick="toggleCatManager()">
             <h3>🗂 Menu Categories</h3>
             <span id="cat-manager-toggle" style="font-size:.82rem;color:var(--dim)">▼ expand</span>
@@ -933,12 +962,9 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
                 <div id="img-quality-indicator" style="font-size:.72rem;margin-top:.35rem;color:var(--red)">Add a photo (min 500x500px) for WhatsApp catalog</div>
               </div>
             </div>
-              <!-- ── Advanced / Meta Catalog Fields (collapsible) ── -->
-              <div class="fg span2" style="margin-top:.4rem">
-                <div style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:.4rem;color:var(--dim);font-size:.82rem" onclick="const s=document.getElementById('m-adv-section');s.style.display=s.style.display==='none'?'block':'none';this.querySelector('span').textContent=s.style.display==='none'?'▼':'▲'">
-                  <span>▼</span> Advanced / Meta Catalog Fields
-                </div>
-                <div id="m-adv-section" style="display:none;margin-top:.65rem">
+              <!-- Advanced / Meta Catalog Fields — hidden from restaurant owners, auto-generated by backend -->
+              <div class="fg span2" style="display:none">
+                <div id="m-adv-section">
                   <div class="fgrid" style="gap:.6rem .9rem">
                     <div class="fg"><label>Item Group ID <small style="color:var(--dim)">(variants share same ID)</small></label><input id="m-group-id" placeholder="e.g. MOMO-VEG-CLASSIC"></div>
                     <div class="fg"><label>Size / Portion</label><input id="m-size" placeholder="e.g. 6 Pcs, Regular (8 oz)"></div>
@@ -952,50 +978,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <button class="btn-p" style="margin-top:.95rem" onclick="doAddItem()">+ Add Item</button>
           </div>
         </div>
-        <!-- CSV Bulk Upload -->
-        <div class="card" style="margin-bottom:1.1rem">
-          <div class="ch">
-            <h3>📤 Bulk Upload via CSV</h3>
-            <button class="btn-g btn-sm" onclick="doDownloadSample()">⬇ Sample CSV</button>
-          </div>
-          <div class="cb">
-            <p style="font-size:.81rem;color:var(--dim);margin-bottom:.9rem">
-              Upload a CSV to add or update menu items in bulk. Supports the <strong>Meta Commerce Manager template</strong> (all 29 columns) — download it from Meta or use our template below.<br>
-              <strong>Required:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">name</code> (or <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">title</code>), <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">price</code> &nbsp;·&nbsp;
-              <strong>Variants:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">item_group_id</code> + <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">size</code> &nbsp;·&nbsp;
-              <strong>Price format:</strong> <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">280</code> or <code style="background:var(--ink2);padding:.1rem .38rem;border-radius:4px">280.00 INR</code>
-            </p>
-            <div class="csv-drop" id="csv-drop"
-                 onclick="document.getElementById('csv-file').click()"
-                 ondragover="event.preventDefault();this.classList.add('drag')"
-                 ondragleave="this.classList.remove('drag')"
-                 ondrop="event.preventDefault();this.classList.remove('drag');handleCsvDrop(event)">
-              <div class="csv-ico">📄</div>
-              <div>
-                <strong>Click to choose file or drag &amp; drop here</strong>
-                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv, .xls, or .xlsx · up to 500 items · include a "branch" column for multi-outlet upload</p>
-              </div>
-              <input type="file" id="csv-file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="handleCsvFile(this)">
-            </div>
-            <div id="csv-mapper-menu" style="display:none"></div>
-            <div id="csv-preview" style="display:none">
-              <div class="sh" style="margin-top:1rem">
-                <span id="csv-count" style="font-size:.84rem;color:var(--wa);font-weight:600"></span>
-                <div style="display:flex;gap:.5rem">
-                  <button class="btn-g btn-sm" onclick="resetCsv()">✕ Clear</button>
-                  <button class="btn-p btn-sm" id="csv-upload-btn" onclick="doUploadCsv()">⬆ Upload & Sync to WhatsApp</button>
-                </div>
-              </div>
-              <div class="tbl" style="margin-top:.65rem;max-height:230px;overflow-y:auto">
-                <table>
-                  <thead><tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>Type</th><th>⭐</th></tr></thead>
-                  <tbody id="csv-preview-body"></tbody>
-                </table>
-              </div>
-            </div>
-            <div id="csv-result" style="display:none;margin-top:.9rem"></div>
-          </div>
-        </div>
+        <!-- Menu CSV upload moved to Branches & Catalog tab -->
         <div id="menu-list">
           <div class="empty"><div class="ei">🍽️</div><h3>Select a branch above</h3></div>
         </div>
@@ -2176,31 +2159,66 @@ function logout() {
 
 /* ─────────────────────────── ROUTING ───────────────────── */
 const TMETA = {
-  overview:   { title: 'Dashboard',          sub: 'Your restaurant at a glance',       fn: loadOverview },
-  orders:     { title: 'Orders',             sub: 'Manage incoming orders',             fn: () => loadOrders('ALL') },
-  customers:  { title: 'Customers',          sub: 'Order history and reorder activity', fn: loadCustomers },
-  analytics:  { title: 'Analytics',          sub: 'Sales and performance',              fn: () => loadAnalytics() },
-  branches:   { title: 'Branches & Catalog', sub: 'Locations and WhatsApp catalogs',   fn: loadBranches },
-  menu:       { title: 'Menu Items',         sub: 'Add and manage dishes',              fn: loadBranchSel },
-  whatsapp:   { title: 'WhatsApp',           sub: 'Numbers and webhook config',         fn: loadWA },
-  integrations:{ title: 'POS & Platform Integrations', sub: 'Sync menus from Swiggy, Zomato, PetPooja', fn: loadIntegrations },
-  financials:  { title: 'Financials',          sub: 'Revenue, earnings, taxes & settlements', fn: loadFinancials },
-  settlements: { title: 'Settlements',        sub: 'Weekly payout history',              fn: loadSettlements },
-  coupons:     { title: 'Coupons & Discounts', sub: 'Create and manage discount codes for WhatsApp orders', fn: loadCoupons },
-  campaigns:   { title: 'Campaigns',          sub: 'Send product lists to customers via WhatsApp',  fn: loadCampaigns },
-  ratings:     { title: 'Ratings',             sub: 'Customer ratings and feedback',      fn: loadRatings },
-  loyalty:     { title: 'Loyalty',             sub: 'Customer loyalty points and rewards', fn: loadLoyalty },
-  team:        { title: 'Team',               sub: 'Manage staff access and roles',       fn: loadTeam },
-  messages:    { title: 'Messages',            sub: 'Customer messages and replies',      fn: loadMessages },
-  issues:      { title: 'Issues',              sub: 'Customer complaints and resolutions', fn: loadIssues },
-  referrals:   { title: 'Referrals Received', sub: 'Customers referred by GullyBite admin — 7.5% fee applies', fn: loadReferrals },
-  settings:    { title: 'Settings',           sub: 'Business profile and bank account',  fn: loadProfile },
+  overview:    { title: 'Overview',           sub: 'Your restaurant at a glance',         fn: loadOverview },
+  orders:      { title: 'Orders',             sub: 'Manage incoming orders',               fn: () => loadOrders('ALL') },
+  menu:        { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); } },
+  messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: loadMessages },
+  analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); } },
+  payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); } },
+  restaurant:  { title: 'Restaurant',         sub: 'Coupons, loyalty, team, and issues',   fn: () => { loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
+  settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); } },
+  // Legacy tab IDs — redirect to new tabs for backwards compatibility
+  branches:    { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); } },
+  customers:   { title: 'Analytics',          sub: 'Sales and performance',                fn: () => { loadAnalytics(); loadCustomers(); } },
+  whatsapp:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); } },
+  integrations:{ title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadIntegrations(); } },
+  financials:  { title: 'Payments',           sub: 'Financials and settlements',           fn: () => { loadFinancials(); loadSettlements(); } },
+  settlements: { title: 'Payments',           sub: 'Financials and settlements',           fn: () => { loadFinancials(); loadSettlements(); } },
+  coupons:     { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadCoupons(); } },
+  campaigns:   { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadCoupons(); loadCampaigns(); } },
+  ratings:     { title: 'Analytics',          sub: 'Sales and ratings',                    fn: () => { loadAnalytics(); loadRatings(); } },
+  loyalty:     { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadLoyalty(); } },
+  team:        { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadTeam(); } },
+  issues:      { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadIssues(); } },
+  referrals:   { title: 'Payments',           sub: 'Financials and settlements',           fn: () => { loadFinancials(); loadReferrals(); } },
 };
+// Map old tab IDs to new combined tabs
+const TAB_REDIRECT = {
+  branches: 'menu', customers: 'analytics', whatsapp: 'settings',
+  integrations: 'settings', financials: 'payments', settlements: 'payments',
+  coupons: 'restaurant', campaigns: 'restaurant', ratings: 'analytics',
+  loyalty: 'restaurant', team: 'restaurant', issues: 'restaurant',
+  referrals: 'payments',
+};
+
 function goTab(n, el) {
+  const actual = TAB_REDIRECT[n] || n;
+
+  // Combined tabs: show multiple old tab divs together
+  const TAB_GROUPS = {
+    menu:       ['tab-branches', 'tab-menu'],
+    payments:   ['tab-financials', 'tab-settlements', 'tab-referrals'],
+    restaurant: ['tab-coupons', 'tab-loyalty', 'tab-team', 'tab-issues', 'tab-campaigns'],
+    settings:   ['tab-settings', 'tab-whatsapp', 'tab-integrations'],
+    analytics:  ['tab-analytics', 'tab-ratings', 'tab-customers'],
+  };
+
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
-  document.getElementById('tab-' + n).classList.add('on');
+  const group = TAB_GROUPS[actual];
+  if (group) {
+    group.forEach(id => { const el2 = document.getElementById(id); if (el2) el2.classList.add('on'); });
+  } else {
+    const tabEl = document.getElementById('tab-' + actual);
+    if (tabEl) tabEl.classList.add('on');
+  }
+
   document.querySelectorAll('.sb-btn').forEach(b => b.classList.remove('act'));
   if (el) el.classList.add('act');
+  else {
+    document.querySelectorAll('.sb-btn').forEach(b => {
+      if (b.getAttribute('onclick')?.includes("'" + actual + "'")) b.classList.add('act');
+    });
+  }
   const m = TMETA[n];
   if (m) {
     document.getElementById('pg-title').textContent = m.title;
@@ -2275,7 +2293,81 @@ async function loadOverview() {
     document.getElementById('st-wk').textContent  = d7?.summary?.total_orders ?? 0;
     document.getElementById('st-act').textContent = '—';
     loadRecent();
+    loadOverviewCharts();
   } catch (_) {}
+}
+
+async function loadOverviewCharts() {
+  if (typeof Chart === 'undefined') return; // Chart.js not loaded
+  try {
+    const [revenue, topItems, peakHours] = await Promise.all([
+      api('/api/restaurant/analytics/revenue?days=7').catch(() => []),
+      api('/api/restaurant/analytics/top-items?days=7&limit=5').catch(() => []),
+      api('/api/restaurant/analytics/peak-hours?days=7').catch(() => ({ hourly: [] })),
+    ]);
+
+    const chartOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
+
+    // Revenue chart
+    const revCtx = document.getElementById('chart-revenue-7d');
+    if (revCtx && revenue?.length) {
+      if (revCtx._chart) revCtx._chart.destroy();
+      revCtx._chart = new Chart(revCtx, {
+        type: 'line',
+        data: {
+          labels: revenue.map(r => r.date?.slice(5) || ''),
+          datasets: [{ data: revenue.map(r => Math.round(r.revenue_rs || 0)), borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,.1)', fill: true, tension: .3 }],
+        },
+        options: { ...chartOpts, scales: { y: { beginAtZero: true, ticks: { callback: v => '₹' + v } } } },
+      });
+    }
+
+    // Orders chart (reuse revenue data which has order_count)
+    const ordCtx = document.getElementById('chart-orders-7d');
+    if (ordCtx && revenue?.length) {
+      if (ordCtx._chart) ordCtx._chart.destroy();
+      ordCtx._chart = new Chart(ordCtx, {
+        type: 'bar',
+        data: {
+          labels: revenue.map(r => r.date?.slice(5) || ''),
+          datasets: [{ data: revenue.map(r => r.order_count || 0), backgroundColor: '#22c55e', borderRadius: 4 }],
+        },
+        options: { ...chartOpts, scales: { y: { beginAtZero: true } } },
+      });
+    }
+
+    // Top items chart
+    const topCtx = document.getElementById('chart-top-items');
+    if (topCtx && topItems?.length) {
+      if (topCtx._chart) topCtx._chart.destroy();
+      topCtx._chart = new Chart(topCtx, {
+        type: 'doughnut',
+        data: {
+          labels: topItems.map(i => i.item_name || ''),
+          datasets: [{ data: topItems.map(i => i.total_quantity || 0), backgroundColor: ['#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4'] }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } },
+      });
+    }
+
+    // Peak hours chart
+    const peakCtx = document.getElementById('chart-peak-hours');
+    const hourly = peakHours?.hourly || peakHours || [];
+    if (peakCtx && hourly?.length) {
+      if (peakCtx._chart) peakCtx._chart.destroy();
+      const hours = Array.from({ length: 24 }, (_, i) => i);
+      const hourMap = {};
+      (Array.isArray(hourly) ? hourly : []).forEach(h => { hourMap[h._id ?? h.hour] = h.order_count || h.count || 0; });
+      peakCtx._chart = new Chart(peakCtx, {
+        type: 'bar',
+        data: {
+          labels: hours.map(h => `${h}:00`),
+          datasets: [{ data: hours.map(h => hourMap[h] || 0), backgroundColor: '#f59e0b', borderRadius: 2 }],
+        },
+        options: { ...chartOpts, scales: { y: { beginAtZero: true }, x: { ticks: { maxRotation: 90, font: { size: 9 } } } } },
+      });
+    }
+  } catch (e) { console.error('[Overview] Charts failed:', e.message); }
 }
 function renderWizard() {
   const waConnected = !!(rest.whatsapp_connected || rest.meta_user_id || (rest.waba_accounts && rest.waba_accounts.length > 0));
@@ -5377,6 +5469,20 @@ async function doCatalogCreate() {
     }
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; btn.textContent = 'Create Catalog'; }
+}
+
+async function doReverseCatalogSync() {
+  if (!confirm('Import items from your Meta catalog into GullyBite?\n\nExisting items will be updated. No items will be deleted.')) return;
+  try {
+    toast('Importing items from catalog... ⏳', 'ok');
+    const r = await api('/api/restaurant/catalog/reverse-sync', { method: 'POST' });
+    if (r.success) {
+      toast(`✅ Imported ${r.total_in_meta} items (${r.new_items_added} new, ${r.existing_items_updated} updated)`, 'ok');
+      loadMenu();
+    } else {
+      toast('Import failed: ' + (r.error || 'Unknown error'), 'err');
+    }
+  } catch (e) { toast('Import failed: ' + e.message, 'err'); }
 }
 
 async function toggleCatalogAutoSync(enabled) {
