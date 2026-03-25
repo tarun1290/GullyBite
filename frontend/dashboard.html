@@ -5283,6 +5283,7 @@ async function _finishMetaConnect(code, accessToken) {
       accessToken: accessToken || null,
       fromJsSdk: !!code, // only true when code comes from FB.login() JS SDK
       sessionInfo: _embeddedSignupSessionInfo || null,
+      pageUrl: window.location.origin + window.location.pathname,
     } });
     if (d.connected || d.ok) {
       toast('WhatsApp connected!', 'ok');
@@ -6654,7 +6655,6 @@ async function loadMessages() {
   document.getElementById('msg-reply-bar').style.display = 'none';
   document.getElementById('msg-thread-body').innerHTML = '<div style="text-align:center;color:var(--dim);padding:3rem 0;font-size:.85rem">Select a conversation to view messages</div>';
   await fetchThreads();
-  startMsgPoll();
 }
 
 async function fetchThreads() {
@@ -6773,8 +6773,8 @@ async function loadMsgThread(customerId) {
     // Refresh thread list to update unread counts
     fetchThreads();
 
-    // Start 5-second thread polling
-    msgThreadPollTimer = setInterval(() => refreshActiveThread(), 5000);
+    // Start 15-second thread polling
+    msgThreadPollTimer = setInterval(() => refreshActiveThread(), 15000);
   } catch (e) {
     body.innerHTML = `<div style="padding:1rem;color:var(--red);font-size:.82rem">Error: ${e.message}</div>`;
   }
@@ -6873,10 +6873,14 @@ function startMsgPoll() {
         }
       }
       _lastUnreadCount = newCount;
-    } catch (_) {}
+    } catch (e) {
+      // Stop polling on auth errors; back off on rate limit
+      if (e.message?.includes('401') || e.message?.includes('403')) { clearInterval(msgPollTimer); return; }
+      if (e.message?.includes('429')) { clearInterval(msgPollTimer); setTimeout(() => startMsgPoll(), 60000); return; }
+    }
     // Refresh thread list if we're on the messages tab
     if (document.getElementById('tab-messages').classList.contains('on')) fetchThreads();
-  }, 10000);
+  }, 30000);
 }
 
 /* ─────────────────────────── ISSUES ──────────────────────── */

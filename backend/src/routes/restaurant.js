@@ -405,7 +405,7 @@ router.post('/whatsapp/verify-connection', async (req, res) => {
                 phone_display: phone.display_phone_number, display_name: phone.verified_name,
                 quality_rating: phone.quality_rating || 'GREEN',
                 access_token: sysToken, is_active: true, updated_at: new Date(),
-              }, $setOnInsert: { _id: require('../config/database').newId(), created_at: new Date() } },
+              }, $setOnInsert: { _id: newId(), created_at: new Date() } },
               { upsert: true }
             );
             results.discovered++;

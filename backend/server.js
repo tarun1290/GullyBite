@@ -21,8 +21,6 @@ console.log('[Features] POS Integrations:', features.POS_INTEGRATIONS_ENABLED ? 
 // ─── META CONFIG STATUS ───────────────────────────────────────
 const metaConfig = require('./src/config/meta');
 metaConfig.logStatus();
-// Fire-and-forget token verification (logs scopes and missing permissions)
-metaConfig.verifyToken().catch(() => {});
 
 // ─── SECURITY ─────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -46,7 +44,9 @@ app.use('/api/', (req, res, next) => {
   next();
 });
 // Stricter limit for auth endpoints: 5 attempts per 15 min per IP
+// Exempt GET /auth/me — it's a profile read, not a login attempt
 app.use('/auth/', (req, res, next) => {
+  if (req.method === 'GET' && req.path === '/me') return next();
   const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
   const { allowed, retryAfterMs } = authLimiter.isAllowed(ip);
   if (!allowed) {

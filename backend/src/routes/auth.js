@@ -312,9 +312,8 @@ router.get('/callback', async (req, res) => {
 });
 
 // ─── CONNECT META / WHATSAPP ───────────────────────────────────
-// When the code comes from FB.login() (JS SDK), the SDK uses its own internal
-// redirect URI — NOT the server-side OAuth redirect URI. We must match it exactly.
-const JS_SDK_REDIRECT_URI = 'https://www.facebook.com/connect/login_success.html';
+// Embedded Signup (config_id) codes: exchange WITHOUT redirect_uri per Meta docs.
+// Server-side redirect codes: exchange WITH META_OAUTH_REDIRECT_URI.
 
 router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
   try {
@@ -324,18 +323,20 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
 
     let longToken, expiresAt;
     if (code) {
-      // JS SDK codes require JS_SDK_REDIRECT_URI; server-side OAuth codes use META_OAUTH_REDIRECT_URI
-      // Meta OAuth requires GET with query params (not POST with JSON body)
-      const redirectUri = fromJsSdk ? JS_SDK_REDIRECT_URI : process.env.META_OAUTH_REDIRECT_URI;
-      console.log('[connect-meta] 1. Exchanging code, redirect_uri:', redirectUri, 'fromJsSdk:', fromJsSdk);
+      // For Embedded Signup (FB.login with config_id), Meta docs say to exchange
+      // WITHOUT redirect_uri. For server-side redirect codes, use META_OAUTH_REDIRECT_URI.
+      const exchangeParams = {
+        client_id: metaConfig.appId,
+        client_secret: metaConfig.appSecret,
+        code,
+      };
+      if (!fromJsSdk) {
+        exchangeParams.redirect_uri = process.env.META_OAUTH_REDIRECT_URI;
+      }
+      console.log('[connect-meta] 1. Exchanging code, fromJsSdk:', fromJsSdk, 'redirect_uri:', exchangeParams.redirect_uri || '(omitted for Embedded Signup)');
       console.log('[connect-meta] 1. App ID:', metaConfig.appId, 'App Secret set:', !!metaConfig.appSecret);
       const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-        params: {
-          client_id: metaConfig.appId,
-          client_secret: metaConfig.appSecret,
-          redirect_uri: redirectUri,
-          code,
-        },
+        params: exchangeParams,
       });
       longToken = tokenRes.data.access_token;
       if (!longToken) {
