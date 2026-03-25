@@ -1942,6 +1942,26 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               <button class="btn-g" id="catalog-create-btn" onclick="doCatalogCreate()">Create Catalog</button>
               <button class="btn-g" id="catalog-refresh-btn" onclick="loadCatalogStatus()">Refresh</button>
             </div>
+
+            <!-- Catalog Settings Toggles -->
+            <div id="catalog-toggles" style="margin-top:1.2rem;border-top:1px solid var(--bdr);padding-top:1rem">
+              <h4 style="font-size:.88rem;font-weight:600;margin-bottom:.7rem">Catalog Settings</h4>
+              <div style="display:flex;flex-direction:column;gap:.55rem">
+                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+                  <span style="font-size:.84rem">Catalog linked to WhatsApp</span>
+                  <input type="checkbox" id="toggle-catalog-linked" onchange="toggleCatalogLink(this.checked)" style="width:18px;height:18px">
+                </label>
+                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+                  <span style="font-size:.84rem">Cart enabled</span>
+                  <input type="checkbox" id="toggle-cart-enabled" onchange="toggleCatalogCart(this.checked)" style="width:18px;height:18px" disabled>
+                </label>
+                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+                  <span style="font-size:.84rem">Catalog visible to customers</span>
+                  <input type="checkbox" id="toggle-catalog-visible" onchange="toggleCatalogVisibility(this.checked)" style="width:18px;height:18px" disabled>
+                </label>
+              </div>
+              <p id="catalog-toggle-hint" style="font-size:.74rem;color:var(--dim);margin-top:.5rem"></p>
+            </div>
           </div>
         </div>
 
@@ -5235,11 +5255,80 @@ async function loadCatalogStatus() {
       connBox.style.display = 'none';
       notConn.style.display = 'block';
     }
+
+    // Update catalog setting toggles
+    const hasCatalog = !!(d?.mainCatalogId || catData?.active_catalog_id);
+    const hasPhone = !!d?.phone_number_id;
+    const linkedEl = document.getElementById('toggle-catalog-linked');
+    const cartEl = document.getElementById('toggle-cart-enabled');
+    const visEl = document.getElementById('toggle-catalog-visible');
+    const hintEl = document.getElementById('catalog-toggle-hint');
+
+    if (linkedEl) {
+      linkedEl.checked = d?.catalog_linked || false;
+      linkedEl.disabled = !hasCatalog || !hasPhone;
+    }
+    if (cartEl) {
+      cartEl.checked = d?.cart_enabled || false;
+      cartEl.disabled = !d?.catalog_linked;
+    }
+    if (visEl) {
+      visEl.checked = d?.catalog_visible || false;
+      visEl.disabled = !d?.catalog_linked;
+    }
+    if (hintEl) {
+      if (!hasCatalog) hintEl.textContent = 'Add menu items first — catalog is created automatically.';
+      else if (!hasPhone) hintEl.textContent = 'Connect a WhatsApp number first.';
+      else if (!d?.catalog_linked) hintEl.textContent = 'Link catalog to enable cart and visibility controls.';
+      else hintEl.textContent = '';
+    }
   } catch (e) {
     if (loadingEl) loadingEl.style.display = 'none';
-    notConn.style.display = 'block';
+    if (notConn) notConn.style.display = 'block';
     document.getElementById('catalog-branch-stats').textContent = 'Could not load status';
   }
+}
+
+async function toggleCatalogLink(checked) {
+  const el = document.getElementById('toggle-catalog-linked');
+  if (!checked) {
+    if (!confirm('⚠️ Hide menu from WhatsApp?\n\nThis will hide your catalog from WhatsApp customers.\nYour menu items and catalog are NOT deleted.\nYou can re-enable anytime.')) {
+      el.checked = true; return;
+    }
+  }
+  el.disabled = true;
+  try {
+    await api(`/api/restaurant/catalog/${checked ? 'link' : 'unlink'}`, { method: 'POST' });
+    toast(checked ? '✅ Catalog linked to WhatsApp' : '✅ Catalog hidden from WhatsApp', 'ok');
+    loadCatalogStatus();
+  } catch (e) {
+    el.checked = !checked; // revert
+    toast('❌ ' + (e.message || 'Failed'), 'err');
+  } finally { el.disabled = false; }
+}
+
+async function toggleCatalogCart(checked) {
+  const el = document.getElementById('toggle-cart-enabled');
+  el.disabled = true;
+  try {
+    await api('/api/restaurant/catalog/cart-toggle', { method: 'POST', body: { enabled: checked } });
+    toast(checked ? '✅ Cart enabled' : '✅ Cart disabled', 'ok');
+  } catch (e) {
+    el.checked = !checked;
+    toast('❌ ' + (e.message || 'Failed'), 'err');
+  } finally { el.disabled = false; }
+}
+
+async function toggleCatalogVisibility(checked) {
+  const el = document.getElementById('toggle-catalog-visible');
+  el.disabled = true;
+  try {
+    await api('/api/restaurant/catalog/visibility-toggle', { method: 'POST', body: { visible: checked } });
+    toast(checked ? '✅ Catalog visible to customers' : '✅ Catalog hidden from profile', 'ok');
+  } catch (e) {
+    el.checked = !checked;
+    toast('❌ ' + (e.message || 'Failed'), 'err');
+  } finally { el.disabled = false; }
 }
 
 async function doChangeCatalog() {

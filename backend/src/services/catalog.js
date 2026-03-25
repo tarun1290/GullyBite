@@ -151,6 +151,24 @@ const ensureMainCatalog = async (restaurantId) => {
     }
   }
 
+  // Auto-link to phone number: enable cart + visibility
+  if (wa_acc?.phone_number_id) {
+    try {
+      await axios.post(
+        `${GRAPH}/${wa_acc.phone_number_id}/whatsapp_commerce_settings`,
+        { catalog_id: catalogId, is_catalog_visible: true, is_cart_enabled: true },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+      );
+      await col('whatsapp_accounts').updateOne(
+        { restaurant_id: restaurantId, is_active: true },
+        { $set: { catalog_linked: true, catalog_linked_at: new Date(), cart_enabled: true, catalog_visible: true } }
+      );
+      console.log(`[Catalog] Auto-linked catalog ${catalogId} to phone ${wa_acc.phone_number_id} (cart + visibility ON)`);
+    } catch (err) {
+      console.warn(`[Catalog] Auto-link to phone failed (can be done manually): ${err.response?.data?.error?.message || err.message}`);
+    }
+  }
+
   return { success: true, catalogId };
 };
 
@@ -1246,11 +1264,64 @@ const fetchWabaCatalogs = async (wabaId) => {
   }
 };
 
+// ─── DELETE CATALOG (unlink first, then delete) ─────────────
+// Must unlink from phone before deleting to avoid Meta error 1798233
+const deleteCatalogSafe = async (catalogId, restaurantId) => {
+  const token = _getCatalogToken();
+  const wa = await col('whatsapp_accounts').findOne({ restaurant_id: restaurantId, is_active: true });
+
+  // Step 1: Unlink from phone
+  if (wa?.phone_number_id) {
+    try {
+      await axios.post(
+        `${GRAPH}/${wa.phone_number_id}/whatsapp_commerce_settings`,
+        { is_catalog_visible: false, is_cart_enabled: false },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+      );
+      await col('whatsapp_accounts').updateOne(
+        { _id: wa._id },
+        { $set: { catalog_linked: false, cart_enabled: false, catalog_visible: false } }
+      );
+      console.log(`[Catalog] Unlinked catalog ${catalogId} from phone ${wa.phone_number_id}`);
+      await new Promise(r => setTimeout(r, 2000)); // wait for Meta to process
+    } catch (err) {
+      console.warn('[Catalog] Unlink before delete failed:', err.response?.data?.error?.message || err.message);
+    }
+  }
+
+  // Step 2: Delete the catalog
+  try {
+    await axios.delete(`${GRAPH}/${catalogId}`, {
+      params: { access_token: token }, timeout: 15000,
+    });
+    console.log(`[Catalog] Deleted catalog ${catalogId}`);
+  } catch (err) {
+    throw new Error(`Catalog deletion failed: ${err.response?.data?.error?.message || err.message}`);
+  }
+
+  // Step 3: Clean up DB
+  await col('restaurants').updateOne(
+    { _id: restaurantId },
+    { $unset: { meta_catalog_id: '', meta_catalog_name: '', catalog_created_at: '' } }
+  );
+  await col('branches').updateMany(
+    { restaurant_id: restaurantId },
+    { $unset: { catalog_id: '' } }
+  );
+  await col('whatsapp_accounts').updateMany(
+    { restaurant_id: restaurantId },
+    { $unset: { catalog_id: '' } }
+  );
+
+  return { success: true };
+};
+
 module.exports = {
   // Main catalog architecture
   ensureMainCatalog,
   ensureBranchProductSet,
   syncRestaurantCatalog,
+  deleteCatalogSafe,
   // Branch-level (uses main catalog internally)
   createBranchCatalog,
   syncBranchCatalog,

@@ -1975,10 +1975,15 @@ router.post('/catalog/ensure', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/restaurant/catalog/status — sync status for all branches
+// GET /api/restaurant/catalog/status — sync status + link/cart/visibility from DB
 router.get('/catalog/status', async (req, res) => {
   try {
     const status = await catalog.getSyncStatus(req.restaurantId);
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    status.catalog_linked = wa?.catalog_linked || false;
+    status.cart_enabled = wa?.cart_enabled || false;
+    status.catalog_visible = wa?.catalog_visible || false;
+    status.phone_number_id = wa?.phone_number_id || null;
     res.json(status);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1999,6 +2004,106 @@ router.post('/catalog/sync', async (req, res) => {
       severity: 'info',
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── CATALOG LINK / UNLINK / CART / VISIBILITY TOGGLES ───────
+
+// POST /api/restaurant/catalog/link — link catalog + enable cart + visibility
+router.post('/catalog/link', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (!restaurant?.meta_catalog_id) return res.status(400).json({ error: 'No catalog exists yet. Add menu items first.' });
+    if (!wa?.phone_number_id) return res.status(400).json({ error: 'No WhatsApp number connected.' });
+
+    const token = metaConfig.getCatalogToken();
+    await axios.post(
+      `${metaConfig.graphUrl}/${wa.phone_number_id}/whatsapp_commerce_settings`,
+      { catalog_id: restaurant.meta_catalog_id, is_catalog_visible: true, is_cart_enabled: true },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+    );
+
+    await col('whatsapp_accounts').updateOne(
+      { _id: wa._id },
+      { $set: { catalog_linked: true, catalog_linked_at: new Date(), cart_enabled: true, catalog_visible: true, catalog_id: restaurant.meta_catalog_id } }
+    );
+    console.log(`[Catalog] Linked catalog ${restaurant.meta_catalog_id} to phone ${wa.phone_number_id}`);
+    res.json({ success: true, catalog_linked: true, cart_enabled: true, catalog_visible: true });
+  } catch (e) {
+    console.error('[Catalog] Link failed:', e.response?.data?.error?.message || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// POST /api/restaurant/catalog/unlink — hide catalog from WhatsApp (does NOT delete)
+router.post('/catalog/unlink', async (req, res) => {
+  try {
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (!wa?.phone_number_id) return res.status(400).json({ error: 'No WhatsApp number connected.' });
+
+    const token = metaConfig.getCatalogToken();
+    await axios.post(
+      `${metaConfig.graphUrl}/${wa.phone_number_id}/whatsapp_commerce_settings`,
+      { is_catalog_visible: false, is_cart_enabled: false },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+    );
+
+    await col('whatsapp_accounts').updateOne(
+      { _id: wa._id },
+      { $set: { catalog_linked: false, cart_enabled: false, catalog_visible: false } }
+    );
+    console.log(`[Catalog] Unlinked catalog from phone ${wa.phone_number_id}`);
+    res.json({ success: true, catalog_linked: false });
+  } catch (e) {
+    console.error('[Catalog] Unlink failed:', e.response?.data?.error?.message || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// POST /api/restaurant/catalog/cart-toggle — enable/disable cart
+router.post('/catalog/cart-toggle', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (!wa?.phone_number_id) return res.status(400).json({ error: 'No WhatsApp number connected.' });
+    if (!wa?.catalog_linked) return res.status(400).json({ error: 'Link catalog first.' });
+
+    const token = metaConfig.getCatalogToken();
+    await axios.post(
+      `${metaConfig.graphUrl}/${wa.phone_number_id}/whatsapp_commerce_settings`,
+      { is_cart_enabled: !!enabled },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+    );
+
+    await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { cart_enabled: !!enabled } });
+    res.json({ success: true, cart_enabled: !!enabled });
+  } catch (e) {
+    console.error('[Catalog] Cart toggle failed:', e.response?.data?.error?.message || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// POST /api/restaurant/catalog/visibility-toggle — show/hide catalog on profile
+router.post('/catalog/visibility-toggle', async (req, res) => {
+  try {
+    const { visible } = req.body;
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (!wa?.phone_number_id) return res.status(400).json({ error: 'No WhatsApp number connected.' });
+    if (!wa?.catalog_linked) return res.status(400).json({ error: 'Link catalog first.' });
+
+    const token = metaConfig.getCatalogToken();
+    await axios.post(
+      `${metaConfig.graphUrl}/${wa.phone_number_id}/whatsapp_commerce_settings`,
+      { is_catalog_visible: !!visible },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+    );
+
+    await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { catalog_visible: !!visible } });
+    res.json({ success: true, catalog_visible: !!visible });
+  } catch (e) {
+    console.error('[Catalog] Visibility toggle failed:', e.response?.data?.error?.message || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
 });
 
 // GET /api/restaurant/catalog/products?branchId=... — list products in Meta catalog
