@@ -75,17 +75,21 @@ const createBranchCatalog = async (branchId) => {
     }
   }
 
-  // STEP A: Get business ID via SDK
-  let businessId;
-  try {
-    const meRes = await axios.get(`${GRAPH}/me/businesses`, {
-      params: { access_token: token, fields: 'id,name' },
-    });
-    const businesses = meRes.data?.data || [];
-    if (!businesses.length) throw new Error('No Meta Business account found');
-    businessId = businesses[0].id;
-  } catch (err) {
-    throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
+  // STEP A: Get business ID — prefer env var, fallback to API query
+  let businessId = metaConfig.businessId;
+  if (!businessId) {
+    try {
+      console.log('[Catalog] META_BUSINESS_ID not set — querying /me/businesses...');
+      const meRes = await axios.get(`${GRAPH}/me/businesses`, {
+        params: { access_token: token, fields: 'id,name' }, timeout: 10000,
+      });
+      const businesses = meRes.data?.data || [];
+      if (!businesses.length) throw new Error('No Meta Business account found. Set META_BUSINESS_ID in environment variables.');
+      businessId = businesses[0].id;
+      console.log('[Catalog] Discovered business ID:', businessId);
+    } catch (err) {
+      throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
+    }
   }
 
   // STEP A.5: Check existing business catalogs via SDK

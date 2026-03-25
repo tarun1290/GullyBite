@@ -1882,6 +1882,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               </div>
             </div>
             <div id="wa-reconnect-wrap" style="display:none">
+              <button class="btn-g btn-sm" id="wa-verify-btn" onclick="verifyMetaConnection()" style="margin-bottom:.5rem;width:100%;justify-content:center">Verify Existing Connection</button>
               <button class="btn-p" id="wa-reconnect-btn" onclick="doReconnectMeta()">Connect / Reconnect WhatsApp Business</button>
             </div>
           </div>
@@ -5337,6 +5338,26 @@ window.addEventListener('message', async (event) => {
 
 function doBannerConnect() { _doMetaConnect(); }
 function doReconnectMeta() { _doMetaConnect(); }
+
+async function verifyMetaConnection() {
+  const btn = document.getElementById('wa-verify-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Verifying…'; }
+  try {
+    const d = await api('/api/restaurant/whatsapp/verify-connection', { method: 'POST' });
+    if (d.connected) {
+      toast(`Connection verified! ${d.verified?.length || d.discovered || 0} account(s) found.`, 'ok');
+      rest = await api('/auth/me');
+      loadProfile();
+      loadWA();
+      document.getElementById('wa-connect-banner').style.display = 'none';
+    } else {
+      toast('No WhatsApp accounts found. Try reconnecting via OAuth.', 'err');
+    }
+  } catch (e) {
+    toast(e.message || 'Verification failed', 'err');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = 'Verify Existing Connection'; }
+}
 
 function _setBtnLoading(id, loading, defaultHtml) {
   const el = document.getElementById(id);

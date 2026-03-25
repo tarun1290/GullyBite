@@ -361,6 +361,82 @@ router.get('/images/stats', async (req, res) => {
 // WHATSAPP ACCOUNTS
 // ═══════════════════════════════════════════════════════════════
 
+// POST /api/restaurant/whatsapp/verify-connection
+// Verifies Meta connection using system user token — no OAuth needed.
+// If WABA data exists in DB, validates it against Meta API.
+// If not, tries to discover WABAs using META_BUSINESS_ID.
+router.post('/whatsapp/verify-connection', async (req, res) => {
+  try {
+    const sysToken = metaConfig.systemUserToken;
+    if (!sysToken) return res.status(503).json({ error: 'System user token not configured. Please contact support.' });
+
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const waAccounts = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
+    const results = { verified: [], errors: [], discovered: 0 };
+
+    // Check existing accounts against Meta API
+    for (const wa of waAccounts) {
+      if (!wa.phone_number_id) continue;
+      try {
+        const r = await axios.get(`${metaConfig.graphUrl}/${wa.phone_number_id}`, {
+          params: { fields: 'verified_name,display_phone_number,quality_rating', access_token: sysToken },
+          timeout: 8000,
+        });
+        results.verified.push({ phone_number_id: wa.phone_number_id, name: r.data.verified_name, phone: r.data.display_phone_number });
+      } catch (e) {
+        results.errors.push({ phone_number_id: wa.phone_number_id, error: e.response?.data?.error?.message || e.message });
+      }
+    }
+
+    // If no WA accounts exist, try to discover via META_BUSINESS_ID
+    if (!waAccounts.length && metaConfig.businessId) {
+      try {
+        const wabaRes = await axios.get(`${metaConfig.graphUrl}/${metaConfig.businessId}/owned_whatsapp_business_accounts`, {
+          params: { access_token: sysToken, fields: 'id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}' },
+          timeout: 10000,
+        });
+        const wabas = wabaRes.data?.data || [];
+        for (const waba of wabas) {
+          for (const phone of (waba.phone_numbers?.data || [])) {
+            await col('whatsapp_accounts').updateOne(
+              { phone_number_id: phone.id },
+              { $set: {
+                restaurant_id: req.restaurantId, waba_id: waba.id,
+                phone_display: phone.display_phone_number, display_name: phone.verified_name,
+                quality_rating: phone.quality_rating || 'GREEN',
+                access_token: sysToken, is_active: true, updated_at: new Date(),
+              }, $setOnInsert: { _id: require('../config/database').newId(), created_at: new Date() } },
+              { upsert: true }
+            );
+            results.discovered++;
+          }
+        }
+        // Mark restaurant as connected
+        if (results.discovered > 0) {
+          await col('restaurants').updateOne({ _id: req.restaurantId }, {
+            $set: { whatsapp_connected: true, updated_at: new Date() },
+          });
+        }
+      } catch (e) {
+        results.errors.push({ discovery: e.response?.data?.error?.message || e.message });
+      }
+    }
+
+    // Ensure whatsapp_connected flag is set if we have valid accounts
+    if (results.verified.length > 0 && !restaurant?.whatsapp_connected) {
+      await col('restaurants').updateOne({ _id: req.restaurantId }, {
+        $set: { whatsapp_connected: true, updated_at: new Date() },
+      });
+    }
+
+    const connected = results.verified.length > 0 || results.discovered > 0;
+    res.json({ connected, ...results });
+  } catch (err) {
+    console.error('[verify-connection]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/whatsapp', async (req, res) => {
   try {
     const docs = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
@@ -381,7 +457,7 @@ router.get('/whatsapp/:id/setup-status', async (req, res) => {
     if (!sysToken && !wa.access_token) return res.status(400).json({ error: 'WhatsApp API token is not configured. Please contact support.' });
     const effectiveToken = sysToken || wa.access_token;
 
-    const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+    const GRAPH = metaConfig.graphUrl;
 
     // Fetch phone number details from Meta
     let phoneStatus = null;
@@ -1735,16 +1811,18 @@ router.get('/catalogs', async (req, res) => {
       catalogs = await catalog.fetchBusinessCatalogs(restaurant.meta_business_id);
     }
 
-    // If still none, try fetching business ID from Meta and then catalogs
+    // If still none, try business ID from env or Meta API
     if (!catalogs.length) {
       try {
-        const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
-        const meRes = await require('axios').get(`${GRAPH}/me/businesses`, {
-          params: { access_token: catToken, fields: 'id,name' }, timeout: 10000,
-        });
-        const businesses = meRes.data?.data || [];
-        if (businesses.length) {
-          const bizId = businesses[0].id;
+        let bizId = metaConfig.businessId;
+        if (!bizId) {
+          const meRes = await require('axios').get(`${metaConfig.graphUrl}/me/businesses`, {
+            params: { access_token: catToken, fields: 'id,name' }, timeout: 10000,
+          });
+          const businesses = meRes.data?.data || [];
+          if (businesses.length) bizId = businesses[0].id;
+        }
+        if (bizId) {
           if (!restaurant.meta_business_id) {
             await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_business_id: bizId } });
           }
@@ -2519,7 +2597,7 @@ router.get('/whatsapp/templates', requireApproved, async (req, res) => {
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
     if (!wa_acc) return res.status(404).json({ error: 'No active WhatsApp account found. Connect your account first.' });
 
-    const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+    const GRAPH = metaConfig.graphUrl;
     const sysToken = metaConfig.systemUserToken || wa_acc.access_token;
     const { data } = await axios.get(`${GRAPH}/${wa_acc.waba_id}/message_templates`, {
       params: { fields: 'name,status,category,language,components', limit: 200 },
@@ -2635,7 +2713,7 @@ async function notifyOrderStatus(restaurantId, pid, _token, waPhone, status, ord
 router.post('/catalog/register-feed', async (req, res) => {
   try {
     const crypto = require('crypto');
-    const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+    const GRAPH = metaConfig.graphUrl;
 
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
@@ -2703,7 +2781,7 @@ router.post('/catalog/register-feed', async (req, res) => {
 // GET /api/restaurant/catalog/feed-status
 router.get('/catalog/feed-status', async (req, res) => {
   try {
-    const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+    const GRAPH = metaConfig.graphUrl;
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
 
@@ -3168,7 +3246,7 @@ router.get('/messaging-status', async (req, res) => {
     const sysToken = metaConfig.systemUserToken;
     if (waAcc?.phone_number_id && sysToken) {
       try {
-        const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+        const GRAPH = metaConfig.graphUrl;
         const { data } = await require('axios').get(`${GRAPH}/${waAcc.phone_number_id}`, {
           params: { fields: 'messaging_limit_tier,quality_rating', access_token: sysToken },
           timeout: 8000,

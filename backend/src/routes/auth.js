@@ -866,18 +866,22 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
     }
 
     if (!catalogId) {
-      // Get the Meta Business ID that owns this WABA
-      let businessId;
-      try {
-        const meRes = await axios.get(`${META_GRAPH_URL}/me/businesses`, {
-          params: { access_token: catToken, fields: 'id,name' },
-          timeout: 10000,
-        });
-        const businesses = meRes.data?.data || [];
-        if (!businesses.length) throw new Error('No Meta Business account found');
-        businessId = businesses[0].id;
-      } catch (err) {
-        throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
+      // Get the Meta Business ID — prefer env var, fallback to API query
+      let businessId = metaConfig.businessId;
+      if (!businessId) {
+        try {
+          console.log('[Catalog] META_BUSINESS_ID not set — querying /me/businesses...');
+          const meRes = await axios.get(`${META_GRAPH_URL}/me/businesses`, {
+            params: { access_token: catToken, fields: 'id,name' },
+            timeout: 10000,
+          });
+          const businesses = meRes.data?.data || [];
+          if (!businesses.length) throw new Error('No Meta Business account found. Set META_BUSINESS_ID in environment variables.');
+          businessId = businesses[0].id;
+          console.log('[Catalog] Discovered business ID:', businessId);
+        } catch (err) {
+          throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
+        }
       }
 
       // Check if business already owns any catalogs before trying to create one
