@@ -8,16 +8,16 @@ const bcrypt  = require('bcryptjs');
 const router  = express.Router();
 const { col, newId } = require('../config/database');
 const { logActivity } = require('../services/activityLog');
+const metaConfig = require('../config/meta');
 
-const META_GRAPH_URL = 'https://graph.facebook.com/v25.0';
+const META_GRAPH_URL = metaConfig.graphUrl;
 
-// ── Log all OAuth redirect URIs at startup so they can be verified ──
+// ── Log OAuth redirect URIs at startup ──
 console.log('╔══════════════════════════════════════════════════════════════╗');
 console.log('║  OAUTH REDIRECT URIs (add these to Google/Meta consoles)    ║');
 console.log('╠══════════════════════════════════════════════════════════════╣');
 console.log('║  Google Callback:', `${process.env.BASE_URL}/auth/google/callback`);
 console.log('║  Meta OAuth Redirect:', process.env.META_OAUTH_REDIRECT_URI || '(not set)');
-console.log('║  Meta App ID:', process.env.META_APP_ID || '(not set)');
 console.log('║  Google Client ID:', process.env.GOOGLE_CLIENT_ID?.slice(0, 30) + '...' || '(not set)');
 console.log('╚══════════════════════════════════════════════════════════════╝');
 
@@ -279,15 +279,22 @@ router.get('/callback', async (req, res) => {
 
   try {
     // Exchange code for token using server-side redirect URI
+    // Meta OAuth requires GET with query params (not POST with JSON body)
     console.log('[Meta Callback] 2. Exchanging code, redirect_uri:', process.env.META_OAUTH_REDIRECT_URI);
-    const tokenRes = await axios.post(`${META_GRAPH_URL}/oauth/access_token`, {
-      client_id: process.env.META_APP_ID,
-      client_secret: process.env.META_APP_SECRET,
-      redirect_uri: process.env.META_OAUTH_REDIRECT_URI,
-      code,
-      grant_type: 'authorization_code',
+    console.log('[Meta Callback] 2. App ID:', metaConfig.appId, 'App Secret set:', !!metaConfig.appSecret);
+    const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
+      params: {
+        client_id: metaConfig.appId,
+        client_secret: metaConfig.appSecret,
+        redirect_uri: process.env.META_OAUTH_REDIRECT_URI,
+        code,
+      },
     });
     const longToken = tokenRes.data.access_token;
+    if (!longToken) {
+      console.error('[Meta Callback] 2. No access_token in response:', JSON.stringify(tokenRes.data));
+      return res.redirect('/?error=meta_auth_failed&reason=no_token_returned');
+    }
     console.log('[Meta Callback] 2. Token exchange successful, token length:', longToken?.length, 'expires_in:', tokenRes.data.expires_in);
 
     // Fetch Meta user profile
@@ -318,24 +325,31 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     let longToken, expiresAt;
     if (code) {
       // JS SDK codes require JS_SDK_REDIRECT_URI; server-side OAuth codes use META_OAUTH_REDIRECT_URI
+      // Meta OAuth requires GET with query params (not POST with JSON body)
       const redirectUri = fromJsSdk ? JS_SDK_REDIRECT_URI : process.env.META_OAUTH_REDIRECT_URI;
       console.log('[connect-meta] 1. Exchanging code, redirect_uri:', redirectUri, 'fromJsSdk:', fromJsSdk);
-      const tokenRes = await axios.post(`${META_GRAPH_URL}/oauth/access_token`, {
-        client_id: process.env.META_APP_ID,
-        client_secret: process.env.META_APP_SECRET,
-        redirect_uri: redirectUri,
-        code,
-        grant_type: 'authorization_code',
+      console.log('[connect-meta] 1. App ID:', metaConfig.appId, 'App Secret set:', !!metaConfig.appSecret);
+      const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
+        params: {
+          client_id: metaConfig.appId,
+          client_secret: metaConfig.appSecret,
+          redirect_uri: redirectUri,
+          code,
+        },
       });
       longToken = tokenRes.data.access_token;
+      if (!longToken) {
+        console.error('[connect-meta] 1. No access_token in response:', JSON.stringify(tokenRes.data));
+        return res.status(400).json({ error: 'Meta returned no access token — please try again' });
+      }
       expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
       console.log('[connect-meta] 1. Code exchange successful, token length:', longToken?.length);
     } else {
       // accessToken path — exchange short-lived token for long-lived
       console.log('[connect-meta] 1. Exchanging access token (fb_exchange_token), token length:', accessToken?.length);
       const longRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-        params: { grant_type: 'fb_exchange_token', client_id: process.env.META_APP_ID,
-                  client_secret: process.env.META_APP_SECRET, fb_exchange_token: accessToken },
+        params: { grant_type: 'fb_exchange_token', client_id: metaConfig.appId,
+                  client_secret: metaConfig.appSecret, fb_exchange_token: accessToken },
       });
       longToken = longRes.data.access_token;
       expiresAt = longRes.data.expires_in ? new Date(Date.now() + longRes.data.expires_in * 1000) : null;
@@ -404,7 +418,7 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     await _saveWabaAccounts(req.restaurantId, wabaData, longToken, sessionInfo);
 
     // Step 6: Auto-fetch catalog info using system token
-    const catToken = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN;
+    const catToken = metaConfig.catalogToken;
     if (catToken) {
       try {
         const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
@@ -767,9 +781,9 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
 
 // ─── SUBSCRIBE WABA TO WEBHOOKS ───────────────────────────────
 async function _subscribeWaba(wabaId) {
-  const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+  const sysToken = metaConfig.systemUserToken;
   if (!sysToken) {
-    console.warn('[subscribeWaba] META_SYSTEM_USER_TOKEN not set — skipping for', wabaId);
+    console.warn('[subscribeWaba] System user token not set — skipping for', wabaId);
     return;
   }
   try {
@@ -786,8 +800,8 @@ async function _subscribeWaba(wabaId) {
 // Resolves "Connecting phone number to [App]" in WhatsApp Business Manager.
 // Must be called once per phone number after Embedded Signup.
 async function _registerPhoneNumber(phoneNumberId, _accessToken) {
-  const sysToken = process.env.META_SYSTEM_USER_TOKEN || _accessToken;
-  if (!sysToken) { console.warn('[Register] META_SYSTEM_USER_TOKEN not configured, skipping'); return; }
+  const sysToken = metaConfig.systemUserToken || _accessToken;
+  if (!sysToken) { console.warn('[Register] System user token not configured, skipping'); return; }
   try {
     await axios.post(
       `${META_GRAPH_URL}/${phoneNumberId}/register`,
@@ -822,8 +836,8 @@ async function _registerPhoneNumber(phoneNumberId, _accessToken) {
 // Creates one Meta catalog per WABA (if missing), links it to the WABA,
 // enables the cart icon on every phone number, and propagates to branches.
 async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
-  const catToken = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN || _accessToken;
-  if (!catToken) { console.warn('[Catalog] META_CATALOG_TOKEN not configured, skipping'); return; }
+  const catToken = metaConfig.catalogToken || _accessToken;
+  if (!catToken) { console.warn('[Catalog] No catalog token available, skipping'); return; }
 
   // Check if any account for this WABA already has a catalog_id
   const existingAcc = await col('whatsapp_accounts').findOne(
@@ -927,7 +941,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
   }
 
   // Enable cart icon + catalog visibility on every phone number under this WABA
-  const sysToken = process.env.META_SYSTEM_USER_TOKEN || catToken;
+  const sysToken = metaConfig.systemUserToken || catToken;
   const phones = await col('whatsapp_accounts').find({ waba_id: wabaId }).toArray();
   for (const phone of phones) {
     await _enableCommerceSettings(phone.phone_number_id, catalogId, sysToken);
@@ -941,8 +955,8 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
 // Calls POST /{phone_number_id}/whatsapp_commerce_settings to show
 // the catalog/cart icon inside WhatsApp chats for that number.
 async function _enableCommerceSettings(phoneNumberId, catalogId, _accessToken) {
-  const sysToken = process.env.META_SYSTEM_USER_TOKEN || _accessToken;
-  if (!sysToken) { console.warn('[Commerce] META_SYSTEM_USER_TOKEN not configured, skipping'); return; }
+  const sysToken = metaConfig.systemUserToken || _accessToken;
+  if (!sysToken) { console.warn('[Commerce] System user token not configured, skipping'); return; }
   try {
     await axios.post(
       `${META_GRAPH_URL}/${phoneNumberId}/whatsapp_commerce_settings`,

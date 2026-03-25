@@ -5,11 +5,11 @@
 
 const axios = require('axios');
 const { col, newId, mapId, mapIds } = require('../config/database');
+const metaConfig = require('../config/meta');
 
-const graphUrl = (path) =>
-  `https://graph.facebook.com/${process.env.WA_API_VERSION}/${path}`;
+const graphUrl = (path) => `${metaConfig.graphUrl}/${path}`;
 
-const sysToken = () => process.env.META_SYSTEM_USER_TOKEN;
+const sysToken = () => metaConfig.systemUserToken;
 
 // ─── LIST TEMPLATES ─────────────────────────────────────────
 // Fetches all templates for a WABA, with optional status/name filters

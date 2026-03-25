@@ -18,6 +18,12 @@ const features = require('./src/config/features');
 console.log('[Features] Image Pipeline:', features.IMAGE_PIPELINE_ENABLED ? '✅ ON' : '⚠️  OFF');
 console.log('[Features] POS Integrations:', features.POS_INTEGRATIONS_ENABLED ? '✅ ON' : '⚠️  OFF');
 
+// ─── META CONFIG STATUS ───────────────────────────────────────
+const metaConfig = require('./src/config/meta');
+metaConfig.logStatus();
+// Fire-and-forget token verification (logs scopes and missing permissions)
+metaConfig.verifyToken().catch(() => {});
+
 // ─── SECURITY ─────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({

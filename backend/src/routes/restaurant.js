@@ -18,6 +18,7 @@ const { logActivity: log } = require('../services/activityLog');
 const issueSvc = require('../services/issues');
 const financials = require('../services/financials');
 const imgSvc = require('../services/imageUpload');
+const metaConfig = require('../config/meta');
 
 // ── Image upload via S3 + CloudFront ─────────────────────────
 const upload = multer({
@@ -376,8 +377,8 @@ router.get('/whatsapp/:id/setup-status', async (req, res) => {
   try {
     const wa = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!wa) return res.status(404).json({ error: 'WhatsApp account not found' });
-    const sysToken = process.env.META_SYSTEM_USER_TOKEN;
-    if (!sysToken && !wa.access_token) return res.status(400).json({ error: 'META_SYSTEM_USER_TOKEN not configured' });
+    const sysToken = metaConfig.systemUserToken;
+    if (!sysToken && !wa.access_token) return res.status(400).json({ error: 'WhatsApp API token is not configured. Please contact support.' });
     const effectiveToken = sysToken || wa.access_token;
 
     const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
@@ -395,12 +396,12 @@ router.get('/whatsapp/:id/setup-status', async (req, res) => {
     // Check WABA subscription
     let wabaSubscribed = false;
     try {
-      const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+      const sysToken = metaConfig.systemUserToken;
       if (sysToken) {
         const r = await axios.get(`${GRAPH}/${wa.waba_id}/subscribed_apps`, {
           params: { access_token: sysToken }, timeout: 8000,
         });
-        wabaSubscribed = (r.data?.data || []).some(app => app.id === process.env.META_APP_ID);
+        wabaSubscribed = (r.data?.data || []).some(app => app.id === metaConfig.appId);
       }
     } catch (_) {}
 
@@ -1719,8 +1720,8 @@ router.get('/catalogs', async (req, res) => {
       return res.status(400).json({ error: 'Meta Business not connected. Complete WhatsApp setup first.' });
     }
 
-    const catToken = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN;
-    if (!catToken) return res.status(500).json({ error: 'META_CATALOG_TOKEN not configured on the server.' });
+    const catToken = metaConfig.catalogToken;
+    if (!catToken) return res.status(500).json({ error: 'No Meta token configured. Please contact support.' });
 
     let catalogs = [];
 
@@ -2519,7 +2520,7 @@ router.get('/whatsapp/templates', requireApproved, async (req, res) => {
     if (!wa_acc) return res.status(404).json({ error: 'No active WhatsApp account found. Connect your account first.' });
 
     const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
-    const sysToken = process.env.META_SYSTEM_USER_TOKEN || wa_acc.access_token;
+    const sysToken = metaConfig.systemUserToken || wa_acc.access_token;
     const { data } = await axios.get(`${GRAPH}/${wa_acc.waba_id}/message_templates`, {
       params: { fields: 'name,status,category,language,components', limit: 200 },
       headers: { Authorization: `Bearer ${sysToken}` },
@@ -2589,7 +2590,7 @@ router.delete('/whatsapp/template-mappings/:eventName', requireApproved, async (
 
 // ─── SHARED: SEND STATUS NOTIFICATION (template → text fallback) ──────────
 async function notifyOrderStatus(restaurantId, pid, _token, waPhone, status, orderData) {
-  const token = process.env.META_SYSTEM_USER_TOKEN || _token;
+  const token = metaConfig.systemUserToken || _token;
 
   // Try new centralized template system first (orderNotify.js → template_mappings)
   if (orderData._orderId) {
@@ -2639,8 +2640,8 @@ router.post('/catalog/register-feed', async (req, res) => {
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
 
-    const catToken = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN || wa_acc?.access_token;
-    if (!catToken) return res.status(400).json({ error: 'META_CATALOG_TOKEN not configured.' });
+    const catToken = metaConfig.catalogToken || wa_acc?.access_token;
+    if (!catToken) return res.status(400).json({ error: 'No Meta token configured. Please contact support.' });
 
     // Generate or reuse feed token
     let feedToken = restaurant.catalog_feed_token;
@@ -2712,7 +2713,7 @@ router.get('/catalog/feed-status', async (req, res) => {
     let lastUpload = null;
     try {
       const r = await axios.get(`${GRAPH}/${restaurant.meta_feed_id}/uploads`, {
-        params: { access_token: process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN || wa_acc?.access_token, limit: 1, fields: 'end_time,num_detected_items,num_invalid_items,url' },
+        params: { access_token: metaConfig.catalogToken || wa_acc?.access_token, limit: 1, fields: 'end_time,num_detected_items,num_invalid_items,url' },
         timeout: 10000,
       });
       lastUpload = r.data?.data?.[0] || null;
@@ -3164,7 +3165,7 @@ router.get('/messaging-status', async (req, res) => {
     };
 
     // Try to fetch fresh data from Meta
-    const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+    const sysToken = metaConfig.systemUserToken;
     if (waAcc?.phone_number_id && sysToken) {
       try {
         const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
@@ -3232,7 +3233,7 @@ router.post('/messaging/health/check', requireAuth, requireApproved, async (req,
     const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id, is_active: true });
     if (!waAcc) return res.status(404).json({ error: 'No active WhatsApp account' });
 
-    const token = process.env.META_SYSTEM_USER_TOKEN || waAcc.access_token;
+    const token = metaConfig.systemUserToken || waAcc.access_token;
     const result = await msgTracking.checkAccountQuality(waAcc.phone_number_id, token, req.restaurant._id);
     if (!result) return res.status(502).json({ error: 'Failed to fetch quality from Meta' });
 
@@ -3441,7 +3442,7 @@ router.post('/messages/reply', requireAuth, requireApproved, async (req, res) =>
     if (!customer) return res.status(404).json({ error: 'Customer not found' });
     const to = customerIdentity.resolveRecipient(customer);
 
-    const token = process.env.META_SYSTEM_USER_TOKEN || waAcc.access_token;
+    const token = metaConfig.systemUserToken || waAcc.access_token;
 
     // Build message body with optional contextual reply
     const body = { type: 'text', text: { body: text.trim(), preview_url: false } };
@@ -3507,7 +3508,7 @@ router.get('/messages/media/:media_id', requireAuth, requireApproved, async (req
   try {
     const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id, is_active: true });
     if (!waAcc) return res.status(400).json({ error: 'No WhatsApp account' });
-    const token = process.env.META_SYSTEM_USER_TOKEN || waAcc.access_token;
+    const token = metaConfig.systemUserToken || waAcc.access_token;
     const { data } = await axios.get(
       `https://graph.facebook.com/${process.env.WA_API_VERSION}/${req.params.media_id}`,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
@@ -3584,7 +3585,7 @@ router.post('/issues', requireAuth, requireApproved, async (req, res) => {
         const wa = require('../services/whatsapp');
         const custId = require('../services/customerIdentity');
         const to = custId.resolveRecipient(customer);
-        const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+        const sysToken = metaConfig.systemUserToken;
         await wa.sendText(waAccount.phone_number_id, sysToken, to,
           `Your issue #${issue.issue_number} has been logged. Our team will look into it shortly.`
         );
@@ -3620,7 +3621,7 @@ router.put('/issues/:id/status', requireAuth, requireApproved, async (req, res) 
           const customer = await col('customers').findOne({ _id: issue.customer_id });
           if (customer) {
             const to = custId.resolveRecipient(customer);
-            const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+            const sysToken = metaConfig.systemUserToken;
             const msgs = {
               assigned: `We're looking into your issue #${issue.issue_number}. We'll update you soon.`,
               in_progress: `We're actively working on your issue #${issue.issue_number}.`,
@@ -3660,7 +3661,7 @@ router.post('/issues/:id/message', requireAuth, requireApproved, async (req, res
           const customer = await col('customers').findOne({ _id: issue.customer_id });
           if (customer) {
             const to = custId.resolveRecipient(customer);
-            const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+            const sysToken = metaConfig.systemUserToken;
             await wa.sendText(waAccount.phone_number_id, sysToken, to,
               `Re: Issue #${issue.issue_number}\n\n${text}`
             );
@@ -3701,7 +3702,7 @@ router.post('/issues/:id/escalate', requireAuth, requireApproved, async (req, re
         const customer = await col('customers').findOne({ _id: issue.customer_id });
         if (customer) {
           const to = custId.resolveRecipient(customer);
-          const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+          const sysToken = metaConfig.systemUserToken;
           await wa.sendText(waAccount.phone_number_id, sysToken, to,
             `Your issue #${issue.issue_number} has been escalated to our support team for faster resolution.`
           );
@@ -3738,7 +3739,7 @@ router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res
         const customer = await col('customers').findOne({ _id: issue.customer_id });
         if (customer) {
           const to = custId.resolveRecipient(customer);
-          const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+          const sysToken = metaConfig.systemUserToken;
           await wa.sendText(waAccount.phone_number_id, sysToken, to,
             `Your issue #${issue.issue_number} has been resolved. ${resolution_notes || ''}\n\nIf you're still unsatisfied, reply REOPEN.`
           );

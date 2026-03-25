@@ -12,6 +12,7 @@ const router = express.Router();
 const { col, newId } = require('../config/database');
 const wa = require('../services/whatsapp');
 const location = require('../services/location');
+const metaConfig = require('../config/meta');
 const orderSvc = require('../services/order');
 const paymentSvc = require('../services/payment');
 const addressSvc = require('../services/address');
@@ -142,7 +143,7 @@ const processChange = async (value) => {
   }
 
   // Use system user token for all messaging (never-expiring, set via env var)
-  waAccount.access_token = process.env.META_SYSTEM_USER_TOKEN || waAccount.access_token;
+  waAccount.access_token = metaConfig.systemUserToken || waAccount.access_token;
 
   for (const msg of value.messages || []) {
     // [BSUID] Extract both phone and BSUID from webhook payload

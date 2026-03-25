@@ -6,11 +6,12 @@ const bizSdk = require('facebook-nodejs-business-sdk');
 const axios   = require('axios');
 const { col, newId } = require('../config/database');
 const { logActivity } = require('./activityLog');
+const metaConfig = require('../config/meta');
 
 const Business       = bizSdk.Business;
 const ProductCatalog = bizSdk.ProductCatalog;
 
-const GRAPH = `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
+const GRAPH = metaConfig.graphUrl;
 
 // ── SDK init helper — always uses platform catalog token ────
 function initSdk(accessToken) {
@@ -18,11 +19,9 @@ function initSdk(accessToken) {
   return bizSdk.FacebookAdsApi.getDefaultApi();
 }
 
-// ── Get the catalog token (never-expiring system user token from env) ──
+// ── Get the catalog token via centralized metaConfig ──
 function _getCatalogToken() {
-  const token = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN;
-  if (!token) throw new Error('META_CATALOG_TOKEN not configured. Please set this environment variable.');
-  return token;
+  return metaConfig.getCatalogToken();
 }
 
 // ── Get catalog context for a restaurant (token + related docs) ──

@@ -8,6 +8,7 @@ const { col, newId, mapId, mapIds } = require('../config/database');
 const { runSettlement } = require('../jobs/settlement');
 const { logActivity } = require('../services/activityLog');
 const issueSvc = require('../services/issues');
+const metaConfig = require('../config/meta');
 const financials = require('../services/financials');
 
 // ─── AUTH MIDDLEWARE ──────────────────────────────────────────
@@ -1322,8 +1323,29 @@ router.patch('/restaurants/:id/verification', express.json(), async (req, res) =
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-const GRAPH = () => `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
-const TOKEN = () => process.env.META_SYSTEM_USER_TOKEN;
+const GRAPH = () => metaConfig.graphUrl;
+const TOKEN = () => metaConfig.systemUserToken;
+
+// ═══════════════════════════════════════════════════════════════
+// META TOKEN DEBUG
+// ═══════════════════════════════════════════════════════════════
+router.get('/meta/token-debug', async (req, res) => {
+  try {
+    const result = await metaConfig.verifyToken();
+    res.json({
+      systemUserToken: !!metaConfig.systemUserToken,
+      catalogToken: !!metaConfig.catalogToken,
+      catalogTokenSource: process.env.META_CATALOG_TOKEN ? 'META_CATALOG_TOKEN' : (metaConfig.systemUserToken ? 'META_SYSTEM_USER_TOKEN (fallback)' : 'NONE'),
+      appId: metaConfig.appId || null,
+      appSecret: !!metaConfig.appSecret,
+      businessId: metaConfig.businessId || null,
+      apiVersion: metaConfig.apiVersion,
+      ...result,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════
 // ACTIVITY MONITORING — GOD-VIEW
@@ -1548,7 +1570,7 @@ router.post('/issues/:id/message', async (req, res) => {
           const customer = await col('customers').findOne({ _id: issue.customer_id });
           if (customer) {
             const to = custId.resolveRecipient(customer);
-            const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+            const sysToken = metaConfig.systemUserToken;
             await wa.sendText(waAccount.phone_number_id, sysToken, to,
               `Re: Issue #${issue.issue_number}\n\n${text}`
             );
@@ -1580,7 +1602,7 @@ router.post('/issues/:id/refund', async (req, res) => {
         const customer = await col('customers').findOne({ _id: issue.customer_id });
         if (customer) {
           const to = custId.resolveRecipient(customer);
-          const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+          const sysToken = metaConfig.systemUserToken;
           const amt = result.issue.refund_amount_rs;
           await wa.sendText(waAccount.phone_number_id, sysToken, to,
             `Good news! A refund of ₹${amt} for order #${issue.order_number || ''} has been processed. It will reflect in 5-7 business days.\n\nRefund ref: ${result.refund?.id || ''}`
@@ -1622,7 +1644,7 @@ router.post('/issues/:id/resolve', async (req, res) => {
         const customer = await col('customers').findOne({ _id: updated.customer_id });
         if (customer) {
           const to = custId.resolveRecipient(customer);
-          const sysToken = process.env.META_SYSTEM_USER_TOKEN;
+          const sysToken = metaConfig.systemUserToken;
           await wa.sendText(waAccount.phone_number_id, sysToken, to,
             `Your issue #${updated.issue_number} has been resolved. ${resolution_notes || ''}\n\nIf you're still unsatisfied, reply REOPEN.`
           );

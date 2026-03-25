@@ -9,9 +9,10 @@
 
 const axios = require('axios');
 const { col, newId } = require('../config/database');
+const metaConfig = require('../config/meta');
 
-const GRAPH = () => `https://graph.facebook.com/${process.env.WA_API_VERSION}`;
-const TOKEN = () => process.env.META_SYSTEM_USER_TOKEN;
+const GRAPH = () => metaConfig.graphUrl;
+const TOKEN = () => metaConfig.systemUserToken;
 
 // ─── USERNAME FORMAT RULES (from Meta) ────────────────────────
 // - Lowercase letters, numbers, periods (.) and underscores (_) only
@@ -224,7 +225,7 @@ async function syncUsernameFromMeta(waAccountId) {
   if (!waAccount?.waba_id) throw new Error('No WABA ID on this account');
 
   const token = TOKEN();
-  if (!token) throw new Error('META_SYSTEM_USER_TOKEN not configured');
+  if (!token) throw new Error('WhatsApp API token is not configured. Please contact support.');
 
   let metaUsername = null;
   try {

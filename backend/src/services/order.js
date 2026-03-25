@@ -318,7 +318,8 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
       try {
         const customer = await col('customers').findOne({ _id: updated.customer_id });
         const waAcc    = await col('whatsapp_accounts').findOne({ restaurant_id: updated.restaurant_id, is_active: true });
-        const waToken = process.env.META_SYSTEM_USER_TOKEN || waAcc?.access_token;
+        const metaConfig = require('../config/meta');
+        const waToken = metaConfig.systemUserToken || waAcc?.access_token;
         // [BSUID] Use resolveRecipient — phone preferred, BSUID fallback
         const { resolveRecipient } = require('./customerIdentity');
         const toId = customer ? (customer.wa_phone || customer.bsuid) : null;
