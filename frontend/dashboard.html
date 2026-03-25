@@ -712,9 +712,11 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
       </div>
 
       <!-- ── BRANCHES & CATALOG ──────────────────── -->
-      <div class="tab" id="tab-branches">
+      <div class="tab" id="tab-branches" style="padding-bottom:0">
+        <!-- Branch form — hidden by default, shown via "+ Add → Branch" -->
+        <div id="menu-branch-form" style="display:none">
         <div class="card">
-          <div class="ch"><h3>➕ Add New Branch</h3></div>
+          <div class="ch" style="justify-content:space-between"><h3>➕ Add New Branch</h3><button class="btn-g btn-sm" onclick="toggleMenuSection(null)">✕ Close</button></div>
           <div class="cb">
             <div class="fgrid">
               <div class="fg"><label>Branch Name ★</label><input id="b-name" placeholder="Koramangala Outlet"></div>
@@ -751,7 +753,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <button class="btn-p" id="add-b-btn" style="margin-top:.95rem" onclick="doAddBranch()">+ Add Branch</button>
           </div>
         </div>
-        <!-- Outlet CSV Bulk Upload -->
+        <!-- Outlet CSV upload (inside branch form section) -->
         <div class="card" style="margin-bottom:1.1rem">
           <div class="ch">
             <h3>📋 Bulk Add Outlets via CSV</h3>
@@ -796,6 +798,10 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
 
+        </div><!-- end menu-branch-form -->
+
+        <!-- Branch list — hidden by default, shown when branch form is open -->
+        <div id="menu-branch-list-section" style="display:none">
         <div class="sh">
           <h2>Your Branches</h2>
           <button class="btn-g btn-sm" onclick="loadBranches()">🔄 Refresh</button>
@@ -803,7 +809,10 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         <div id="branch-list">
           <div class="empty"><div class="ei">📍</div><h3>No branches yet</h3><p>Add your first branch above</p></div>
         </div>
+        </div>
 
+        <!-- Upload section — hidden by default, shown via "+ Add → Upload File" -->
+        <div id="menu-upload-section" style="display:none">
         <!-- Menu CSV Bulk Upload -->
         <div class="card" style="margin-top:1.3rem">
           <div class="ch">
@@ -851,17 +860,31 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <div id="csv-result" style="display:none;margin-top:.9rem"></div>
           </div>
         </div>
+        </div><!-- end menu-upload-section -->
       </div>
 
       <!-- ── MENU ────────────────────────────────── -->
       <div class="tab" id="tab-menu">
-        <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1.3rem;flex-wrap:wrap">
-          <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto">
-            <option value="">Select branch to view menu...</option>
-          </select>
-          <span id="m-item-count" style="font-size:.82rem;color:var(--dim)"></span>
+        <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1.3rem;flex-wrap:wrap;justify-content:space-between">
+          <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap">
+            <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto">
+              <option value="">Select branch...</option>
+            </select>
+            <span id="m-item-count" style="font-size:.82rem;color:var(--dim)"></span>
+            <button class="btn-g btn-sm" onclick="toggleMenuSection('catalog')" title="Catalog settings" style="font-size:.9rem;padding:.3rem .5rem">⚙️</button>
+          </div>
+          <div style="position:relative">
+            <button class="btn-p btn-sm" onclick="toggleAddDropdown()" id="menu-add-btn">+ Add ▾</button>
+            <div id="menu-add-dropdown" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--bg);border:1px solid var(--bdr);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:50;min-width:180px;overflow:hidden">
+              <button onclick="toggleMenuSection('item');toggleAddDropdown()" style="display:flex;gap:.5rem;align-items:center;width:100%;padding:.6rem .9rem;border:none;background:none;cursor:pointer;font-size:.84rem;color:var(--fg);text-align:left" onmouseover="this.style.background='var(--ink2)'" onmouseout="this.style.background='none'">🍽️ Menu Item</button>
+              <button onclick="toggleMenuSection('branch');toggleAddDropdown()" style="display:flex;gap:.5rem;align-items:center;width:100%;padding:.6rem .9rem;border:none;background:none;cursor:pointer;font-size:.84rem;color:var(--fg);text-align:left;border-top:1px solid var(--bdr)" onmouseover="this.style.background='var(--ink2)'" onmouseout="this.style.background='none'">🏪 Branch</button>
+              <button onclick="toggleMenuSection('upload');toggleAddDropdown()" style="display:flex;gap:.5rem;align-items:center;width:100%;padding:.6rem .9rem;border:none;background:none;cursor:pointer;font-size:.84rem;color:var(--fg);text-align:left;border-top:1px solid var(--bdr)" onmouseover="this.style.background='var(--ink2)'" onmouseout="this.style.background='none'">📤 Upload File</button>
+            </div>
+          </div>
         </div>
-        <!-- Hidden toolbar buttons — sync happens automatically on item changes -->
+        <!-- Catalog settings panel — hidden by default, shown via gear icon -->
+        <div id="menu-catalog-panel" style="display:none;margin-bottom:1rem"></div>
+        <!-- Hidden toolbar buttons — sync happens automatically -->
         <div style="display:none">
           <div id="m-cat-badge"></div>
           <button id="m-sync-btn" onclick="doQuickSync()">Sync</button>
@@ -3304,13 +3327,110 @@ async function doToggle(id, field, val) {
 }
 
 /* ─────────────────────────── MENU ──────────────────────── */
+// ── Menu page section toggling ──────────────────────────
+function toggleAddDropdown() {
+  const dd = document.getElementById('menu-add-dropdown');
+  dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+  // Close on outside click
+  if (dd.style.display === 'block') {
+    setTimeout(() => document.addEventListener('click', function _close(e) {
+      if (!dd.contains(e.target) && e.target.id !== 'menu-add-btn') {
+        dd.style.display = 'none';
+        document.removeEventListener('click', _close);
+      }
+    }), 10);
+  }
+}
+
+function toggleMenuSection(section) {
+  const branchForm = document.getElementById('menu-branch-form');
+  const branchList = document.getElementById('menu-branch-list-section');
+  const uploadSec = document.getElementById('menu-upload-section');
+  const catalogPanel = document.getElementById('menu-catalog-panel');
+  const addForm = document.getElementById('m-add-form');
+
+  // Close all first
+  if (branchForm) branchForm.style.display = 'none';
+  if (branchList) branchList.style.display = 'none';
+  if (uploadSec) uploadSec.style.display = 'none';
+  if (catalogPanel) catalogPanel.style.display = 'none';
+  if (addForm && section !== 'item') addForm.style.display = 'none';
+
+  if (section === 'branch') {
+    if (branchForm) branchForm.style.display = 'block';
+    if (branchList) branchList.style.display = 'block';
+    loadBranches();
+  } else if (section === 'upload') {
+    if (uploadSec) uploadSec.style.display = 'block';
+  } else if (section === 'catalog') {
+    if (catalogPanel) {
+      const isHidden = catalogPanel.style.display === 'none';
+      catalogPanel.style.display = isHidden ? 'block' : 'none';
+      if (isHidden) {
+        // Populate catalog panel with status info
+        catalogPanel.innerHTML = '<div style="text-align:center;padding:1rem"><div class="spin"></div></div>';
+        loadCatalogPanelContent();
+      }
+    }
+  } else if (section === 'item') {
+    if (addForm) addForm.style.display = addForm.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+async function loadCatalogPanelContent() {
+  const panel = document.getElementById('menu-catalog-panel');
+  if (!panel) return;
+  try {
+    const d = await api('/api/restaurant/catalog/status');
+    const catId = d?.mainCatalogId;
+    const catName = d?.mainCatalogName || 'Menu Catalog';
+    const synced = d?.branches?.reduce((s, b) => s + (b.syncedItems || 0), 0) || 0;
+    const total = d?.branches?.reduce((s, b) => s + (b.totalItems || 0), 0) || 0;
+    const lastSync = d?.lastFullSync ? new Date(d.lastFullSync).toLocaleString() : 'Never';
+
+    panel.innerHTML = `
+      <div class="card">
+        <div class="ch" style="justify-content:space-between"><h3>⚙️ Catalog Settings</h3><button class="btn-g btn-sm" onclick="toggleMenuSection(null)">▲ Collapse</button></div>
+        <div class="cb">
+          ${catId
+            ? `<div style="margin-bottom:.7rem">
+                <strong>📦 ${catName}</strong> <span style="font-size:.75rem;color:var(--dim)">(${catId})</span><br>
+                <span style="font-size:.82rem;color:var(--dim)">Synced: ${synced}/${total} items · Last: ${lastSync}</span>
+              </div>`
+            : `<div style="margin-bottom:.7rem;color:var(--dim)">No catalog yet — it will be created automatically when you sync.</div>`
+          }
+          <div style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.7rem">
+            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+              <span style="font-size:.84rem">Catalog linked</span>
+              <input type="checkbox" id="toggle-catalog-linked" onchange="toggleCatalogLink(this.checked)" ${d?.catalog_linked ? 'checked' : ''} ${!catId ? 'disabled' : ''} style="width:18px;height:18px">
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+              <span style="font-size:.84rem">Cart enabled</span>
+              <input type="checkbox" id="toggle-cart-enabled" onchange="toggleCatalogCart(this.checked)" ${d?.cart_enabled ? 'checked' : ''} ${!d?.catalog_linked ? 'disabled' : ''} style="width:18px;height:18px">
+            </label>
+            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+              <span style="font-size:.84rem">Visible to customers</span>
+              <input type="checkbox" id="toggle-catalog-visible" onchange="toggleCatalogVisibility(this.checked)" ${d?.catalog_visible ? 'checked' : ''} ${!d?.catalog_linked ? 'disabled' : ''} style="width:18px;height:18px">
+            </label>
+          </div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn-p btn-sm" onclick="doCatalogSync()">⬆️ Sync to Catalog</button>
+            <button class="btn-g btn-sm" onclick="doReverseCatalogSync()">⬇️ Pull from Catalog</button>
+          </div>
+        </div>
+      </div>`;
+  } catch (e) {
+    panel.innerHTML = `<div class="card"><div class="cb" style="color:var(--red)">Failed to load catalog status: ${e.message}</div></div>`;
+  }
+}
+
 async function loadBranchSel() {
   const sel = document.getElementById('m-branch');
   try {
     const data = await api('/api/restaurant/branches');
     branches = data || [];
-    sel.innerHTML = '<option value="">Select branch to manage menu...</option>' +
-      branches.map(b => `<option value="${b.id}">${b.name} ${b.catalog_id ? '✅' : '⚠️ No catalog'}</option>`).join('');
+    sel.innerHTML = '<option value="">Select branch...</option>' +
+      branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
   } catch (_) {}
 }
 function doSelectBranch(id) {
