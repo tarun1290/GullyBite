@@ -699,10 +699,30 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     `Opening our menu for you...`
   );
 
-  if (branch.catalogId) {
-    await wa.sendCatalog(pid, token, to, branch.catalogId,
-      `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
-    );
+  // Send branch-filtered MPMs (Multi-Product Messages)
+  const catalogId = branch.catalogId || restaurant?.meta_catalog_id;
+  if (catalogId) {
+    try {
+      const { buildBranchMPMs } = require('../services/mpmBuilder');
+      const mpms = await buildBranchMPMs(branch.id, branch.restaurantId || waAccount.restaurant_id);
+      if (mpms.length) {
+        for (let i = 0; i < mpms.length; i++) {
+          await wa.sendMPM(pid, token, to, catalogId, mpms[i]);
+          if (i < mpms.length - 1) await new Promise(r => setTimeout(r, 500));
+        }
+        if (mpms.length > 1) {
+          await wa.sendText(pid, token, to, '👆 Browse the menus above, add items to your cart, and send it when you\'re ready!');
+        }
+      } else {
+        // No items in branch — fall back to text menu
+        await sendTextMenu(pid, token, to, branch.id);
+      }
+    } catch (mpmErr) {
+      console.error('[Bot] MPM build failed, falling back to catalog:', mpmErr.message);
+      await wa.sendCatalog(pid, token, to, catalogId,
+        `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
+      );
+    }
   } else {
     await sendTextMenu(pid, token, to, branch.id);
   }

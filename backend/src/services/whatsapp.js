@@ -90,6 +90,28 @@ const sendCatalog = (pid, token, to, catalogId, introText) =>
     },
   });
 
+// ─── MULTI-PRODUCT MESSAGE (MPM) ──────────────────────────────
+// Sends a product_list interactive message with items in category sections.
+// sections: [{ title: "🥟 Starters", product_retailer_ids: ["madhapur-momos", ...] }, ...]
+// Max 10 sections, max 30 product_retailer_ids total per MPM.
+const sendMPM = (pid, token, to, catalogId, { header, body, footer, sections }) =>
+  sendMsg(pid, token, to, {
+    type: 'interactive',
+    interactive: {
+      type: 'product_list',
+      header: { type: 'text', text: (header || '🍽️ Our Menu').substring(0, 60) },
+      body: { text: (body || 'Browse items, tap for options, and add to cart!').substring(0, 1024) },
+      footer: { text: (footer || 'Prices inclusive of taxes').substring(0, 60) },
+      action: {
+        catalog_id: catalogId,
+        sections: sections.map(s => ({
+          title: (s.title || 'Menu').substring(0, 24),
+          product_items: s.product_retailer_ids.map(id => ({ product_retailer_id: id })),
+        })),
+      },
+    },
+  });
+
 // ─── ORDER SUMMARY ────────────────────────────────────────────
 // Shows cart items + total with Confirm/Cancel/Coupon buttons
 // items: [{ name, qty, price }]
@@ -400,4 +422,4 @@ const sendDocument = async (pid, token, to, { buffer, filename, caption, mimeTyp
   });
 };
 
-module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };
+module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };

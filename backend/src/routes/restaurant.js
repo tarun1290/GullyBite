@@ -20,6 +20,36 @@ const financials = require('../services/financials');
 const imgSvc = require('../services/imageUpload');
 const metaConfig = require('../config/meta');
 
+// ── Slug helper ──────────────────────────────────────────────
+function slugify(str, maxLen = 40) {
+  return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, maxLen);
+}
+
+// Get or generate branch_slug for a branch
+async function getBranchSlug(branchId) {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch) return 'branch';
+  if (branch.branch_slug) return branch.branch_slug;
+  const slug = slugify(branch.name, 20) || branchId.slice(0, 8);
+  await col('branches').updateOne({ _id: branchId }, { $set: { branch_slug: slug } });
+  return slug;
+}
+
+// Generate branch-encoded retailer_id
+function makeRetailerId(branchSlug, name, size) {
+  const itemSlug = slugify(name, 40);
+  if (size) {
+    const sizeSlug = slugify(size, 15);
+    return `${branchSlug}-${itemSlug}-${sizeSlug}`;
+  }
+  return `${branchSlug}-${itemSlug}`;
+}
+
+// Generate item_group_id for variants (all sizes of same item share this)
+function makeItemGroupId(branchSlug, name) {
+  return `${branchSlug}-${slugify(name, 40)}`;
+}
+
 // ── Image upload via S3 + CloudFront ─────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -612,10 +642,12 @@ router.post('/branches', async (req, res) => {
 
     const branchId = newId();
     const now = new Date();
+    const branchSlug = slugify(name, 20) || branchId.slice(0, 8);
     const branch = {
       _id: branchId,
       restaurant_id: req.restaurantId,
       name,
+      branch_slug: branchSlug,
       address,
       city,
       pincode,
@@ -841,8 +873,10 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
     } = req.body;
     if (!name || !priceRs) return res.status(400).json({ error: 'name and priceRs required' });
 
-    const variantSuffix = variantValue ? `-${variantValue.toLowerCase().replace(/\s+/g, '-')}` : '';
-    const retailerId = `ZM-${req.params.branchId.slice(0, 6)}-${Date.now()}${variantSuffix}`;
+    const branchSlug = await getBranchSlug(req.params.branchId);
+    const sizeVal = size || variantValue || null;
+    const retailerId = makeRetailerId(branchSlug, name, sizeVal);
+    const autoGroupId = sizeVal ? makeItemGroupId(branchSlug, name) : null;
     const pricePaise = Math.round(parseFloat(priceRs) * 100);
     const now = new Date();
     const itemId = newId();
@@ -859,7 +893,7 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
       is_bestseller: isBestseller || false,
       is_available: true,
       sort_order: sortOrder || 0,
-      item_group_id: itemGroupId || null,
+      item_group_id: itemGroupId || autoGroupId || null,
       variant_type: variantType || null,
       variant_value: variantValue || null,
       // Meta 29-column fields
@@ -1143,8 +1177,10 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
         const isBestseller = ['true', 'yes', '1'].includes((row.is_bestseller || '').toLowerCase());
         const imageUrl = (row.image_url || row.image || '').trim() || null;
         const pricePaise = row.price_paise || Math.round(price * 100);
-        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-        const retailerId = row.retailer_id || `ZM-${branchId.slice(0, 6)}-${slug}`;
+        const csvBranchSlug = await getBranchSlug(branchId);
+        const sizeVal = row.size || null;
+        const retailerId = row.retailer_id || makeRetailerId(csvBranchSlug, name, sizeVal);
+        const autoGroupId = sizeVal ? makeItemGroupId(csvBranchSlug, name) : null;
         const now = new Date();
 
         // Build product_tags from available data
@@ -1166,8 +1202,8 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
               food_type: foodType,
               is_bestseller: isBestseller,
               // Meta 29-column fields
-              item_group_id: row.item_group_id || null,
-              size: row.size || null,
+              item_group_id: row.item_group_id || autoGroupId || null,
+              size: sizeVal,
               sale_price_paise: row.sale_price_paise || null,
               sale_price_effective_date: row.sale_price_effective_date || null,
               brand: row.brand || null,
@@ -1322,8 +1358,10 @@ router.post('/menu/csv', async (req, res) => {
           const isBestseller = ['true', 'yes', '1'].includes((row.is_bestseller || '').toLowerCase());
           const imageUrl = (row.image_url || row.image || '').trim() || null;
           const pricePaise = row.price_paise || Math.round(price * 100);
-          const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-          const retailerId = row.retailer_id || `ZM-${bid.slice(0, 6)}-${slug}`;
+          const mbBranchSlug = await getBranchSlug(bid);
+          const mbSizeVal = row.size || null;
+          const retailerId = row.retailer_id || makeRetailerId(mbBranchSlug, name, mbSizeVal);
+          const mbAutoGroupId = mbSizeVal ? makeItemGroupId(mbBranchSlug, name) : null;
           const now = new Date();
 
           const csvTags = [];
@@ -1343,8 +1381,8 @@ router.post('/menu/csv', async (req, res) => {
                 image_url: imageUrl,
                 food_type: foodType,
                 is_bestseller: isBestseller,
-                item_group_id: row.item_group_id || null,
-                size: row.size || null,
+                item_group_id: row.item_group_id || mbAutoGroupId || null,
+                size: mbSizeVal,
                 sale_price_paise: row.sale_price_paise || null,
                 sale_price_effective_date: row.sale_price_effective_date || null,
                 brand: row.brand || null,

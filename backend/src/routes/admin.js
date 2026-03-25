@@ -1914,4 +1914,66 @@ router.post('/migrate-catalogs', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/admin/migrate-catalog-architecture
+// Full migration: branch_slug, branch-encoded retailer_ids, item_group_ids, catalog promotion
+router.post('/migrate-catalog-architecture', requireAdmin, async (req, res) => {
+  try {
+    const stats = { branches_slugged: 0, items_retagged: 0, groups_set: 0, errors: [] };
+
+    function slugify(str, max = 40) {
+      return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, max);
+    }
+
+    // 1. Generate branch_slug for all branches missing one
+    const branches = await col('branches').find({ $or: [{ branch_slug: null }, { branch_slug: { $exists: false } }] }).toArray();
+    for (const b of branches) {
+      const slug = slugify(b.name, 20) || String(b._id).slice(0, 8);
+      await col('branches').updateOne({ _id: b._id }, { $set: { branch_slug: slug } });
+      stats.branches_slugged++;
+    }
+
+    // Build branch_slug lookup
+    const allBranches = await col('branches').find({}).toArray();
+    const slugMap = {}; // branchId → slug
+    for (const b of allBranches) slugMap[String(b._id)] = b.branch_slug || slugify(b.name, 20) || String(b._id).slice(0, 8);
+
+    // 2. Re-generate retailer_ids to be branch-encoded for items with old format (ZM- prefix)
+    const oldItems = await col('menu_items').find({ retailer_id: /^ZM-/ }).toArray();
+    for (const item of oldItems) {
+      const branchSlug = slugMap[item.branch_id] || 'branch';
+      const sizeVal = item.size || item.variant_value || null;
+      const itemSlug = slugify(item.name, 40);
+      const newRetailerId = sizeVal
+        ? `${branchSlug}-${itemSlug}-${slugify(sizeVal, 15)}`
+        : `${branchSlug}-${itemSlug}`;
+
+      const update = { retailer_id: newRetailerId, catalog_sync_status: 'pending' };
+
+      // Auto-generate item_group_id for variants
+      if (sizeVal && !item.item_group_id) {
+        update.item_group_id = `${branchSlug}-${itemSlug}`;
+        stats.groups_set++;
+      }
+
+      await col('menu_items').updateOne({ _id: item._id }, { $set: update });
+      stats.items_retagged++;
+    }
+
+    // 3. Generate item_group_id for items with size but no group (non-ZM items too)
+    const ungrouped = await col('menu_items').find({
+      size: { $exists: true, $ne: null, $ne: '' },
+      item_group_id: { $in: [null, undefined, ''] },
+    }).toArray();
+    for (const item of ungrouped) {
+      const branchSlug = slugMap[item.branch_id] || 'branch';
+      const groupId = `${branchSlug}-${slugify(item.name, 40)}`;
+      await col('menu_items').updateOne({ _id: item._id }, { $set: { item_group_id: groupId } });
+      stats.groups_set++;
+    }
+
+    console.log('[Migration] Catalog architecture migration complete:', stats);
+    res.json({ success: true, ...stats });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

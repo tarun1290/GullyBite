@@ -83,7 +83,7 @@ const findNearestBranch = async (customerLat, customerLng, restaurantId = null) 
       waAccountId:   wa_acc ? String(wa_acc._id) : null,
       phoneNumberId: wa_acc?.phone_number_id || null,
       accessToken:   wa_acc?.access_token || null,
-      catalogId:     branch.catalog_id,
+      catalogId:     restaurant.meta_catalog_id || branch.catalog_id,
       catalogSyncedAt: branch.catalog_synced_at,
     },
   };

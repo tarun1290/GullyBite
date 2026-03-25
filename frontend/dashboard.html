@@ -1092,6 +1092,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
         <div id="wa-list"><div style="text-align:center;padding:2rem"><div class="spin"></div></div></div>
+        <!-- ═══ HIDDEN: Webhook URL — managed by platform admins ═══ -->
+        <div style="display:none">
         <div class="card" style="margin-top:1.1rem">
           <div class="ch"><h3>📡 Webhook URL</h3></div>
           <div class="cb">
@@ -1104,7 +1106,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
 
-        <!-- ── Template Library ── -->
+        <!-- ── Template Library — managed by platform admins ── -->
         <div class="card" style="margin-top:1.1rem">
           <div class="ch" style="justify-content:space-between;align-items:center">
             <h3>📋 Message Template Library</h3>
@@ -1131,7 +1133,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
 
-        <!-- ── Event Template Mappings ── -->
+        <!-- ── Event Template Mappings — managed by platform admins ── -->
         <div class="card" style="margin-top:1.1rem">
           <div class="ch" style="justify-content:space-between;align-items:center">
             <h3>⚡ Order Event Templates</h3>
@@ -1152,7 +1154,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
 
-        <!-- ── LIVE CATALOG FEED ── -->
+        <!-- ── Live Catalog Feed — managed by platform admins ── -->
         <div class="card" id="feed-card" style="margin-top:1.2rem">
           <div class="ch"><h3>📡 Live Catalog Feed</h3></div>
           <div class="cb">
@@ -1169,6 +1171,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             </div>
           </div>
         </div>
+        </div>
+        <!-- ═══ END HIDDEN: Admin-only sections ═══ -->
 
       </div>
 
@@ -3646,9 +3650,10 @@ const MENU_FIELDS = [
   { key:'price',       label:'Price (₹)',           required:true,  aliases:['price','rate','mrp','cost','amount','selling_price','sp','rs','inr'] },
   { key:'category',    label:'Category',            required:false, aliases:['category','cat','section','group','type','menu_section','course'] },
   { key:'description', label:'Description',         required:false, aliases:['description','desc','details','about','info','note','notes'] },
-  { key:'food_type',   label:'Food Type (veg/non_veg)', required:false, aliases:['food_type','type','veg_nonveg','veg','nonveg','diet','food_category','is_veg'] },
+  { key:'food_type',   label:'Food Type (veg/non_veg)', required:false, aliases:['food_type','type','veg_nonveg','veg','nonveg','diet','food_category','is_veg','veg/non-veg'] },
   { key:'image_url',   label:'Image URL',           required:false, aliases:['image_url','image','img','photo','picture','url','photo_url','image_link'] },
   { key:'is_bestseller',label:'Bestseller (true/false)',required:false,aliases:['is_bestseller','bestseller','popular','featured','hot','recommended','best','top'] },
+  { key:'size',        label:'Size / Portion',       required:false, aliases:['size','portion','variant','option','variant_value','size_name'] },
 ];
 const OUTLET_FIELDS = [
   { key:'branch_name', label:'Branch / Outlet Name', required:true,  aliases:['branch_name','name','outlet','outlet_name','location','branch','store','store_name','shop'] },
@@ -3697,7 +3702,7 @@ function renderMapper(containerId, headers, fields, onConfirm) {
       <h4>🗂️ Map your columns — we auto-detected the best match, adjust if needed</h4>
       <div class="csv-mapper-grid">${rows}</div>
       <div style="display:flex;gap:.6rem;margin-top:.9rem;align-items:center">
-        <button class="btn-p btn-sm" onclick="confirmMapper('${containerId}',${JSON.stringify(headers).replace(/'/g,"\\'")},'${JSON.stringify(fields).replace(/'/g,"\\'")}')" >✅ Confirm Mapping & Preview</button>
+        <button class="btn-p btn-sm" onclick="confirmMapper('${containerId}')">✅ Confirm Mapping & Preview</button>
         <span style="font-size:.76rem;color:var(--dim)">★ = required field</span>
       </div>
       <div id="${containerId}-err" style="margin-top:.5rem;font-size:.78rem;color:var(--red)"></div>
@@ -3713,6 +3718,20 @@ function renderMapper(containerId, headers, fields, onConfirm) {
   container._headers = headers;
   container._fields  = fields;
   container._onConfirm = onConfirm;
+
+  // Auto-skip mapping if all required fields matched
+  const autoMapping = {};
+  headers.forEach((h, i) => {
+    const m = autoMatch(h, fields);
+    if (m !== '__skip__' && !(m in autoMapping)) autoMapping[m] = i;
+  });
+  const allRequiredMapped = fields.filter(f => f.required).every(f => f.key in autoMapping);
+  if (allRequiredMapped && Object.keys(autoMapping).length >= 2) {
+    // Auto-confirm — skip the mapping UI
+    console.log('[CSV] Auto-matched all required fields, skipping mapping UI');
+    container.style.display = 'none';
+    onConfirm(autoMapping);
+  }
 }
 
 function updateMapperSel(sel) {
@@ -3721,7 +3740,7 @@ function updateMapperSel(sel) {
   if (f?.required) sel.className = 'mapped';
 }
 
-function confirmMapper(containerId, headersJson, fieldsJson) {
+function confirmMapper(containerId) {
   const container = document.getElementById(containerId);
   const headers = container._headers;
   const fields  = container._fields;
@@ -3944,14 +3963,18 @@ async function loadWA() {
         <div class="cb">
           <div class="ipair-row">
             <div class="ipair"><label>Phone Number</label><code>${a.phone_display || '—'}</code></div>
+          </div>
+          <!-- Technical IDs hidden — visible in admin dashboard -->
+          <div class="ipair-row" style="display:none">
             <div class="ipair"><label>Phone Number ID</label><code>${a.phone_number_id}</code></div>
             <div class="ipair"><label>WABA ID</label><code>${a.waba_id || '—'}</code></div>
             <div class="ipair"><label>Catalog ID</label><code>${a.catalog_id || '—'}</code></div>
           </div>
           ${checklist}
         </div>
-        <div id="wa-username-section-${a._id || a.id}" class="cb" style="border-top:1px solid var(--rim);padding-top:.8rem"></div>
-        <div id="wa-messaging-section-${a._id || a.id}" class="cb" style="border-top:1px solid var(--rim);padding-top:.8rem"></div>
+        <!-- Username + messaging sections hidden — managed by platform admins -->
+        <div id="wa-username-section-${a._id || a.id}" style="display:none"></div>
+        <div id="wa-messaging-section-${a._id || a.id}" style="display:none"></div>
       </div>`;
     }).join('');
   } catch (_) {}
