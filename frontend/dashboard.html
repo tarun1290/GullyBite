@@ -972,7 +972,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               <div class="csv-ico">📄</div>
               <div>
                 <strong>Click to choose file or drag &amp; drop here</strong>
-                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv or .xlsx · any column format · up to 500 items per upload</p>
+                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv, .xls, or .xlsx · up to 500 items · include a "branch" column for multi-outlet upload</p>
               </div>
               <input type="file" id="csv-file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="handleCsvFile(this)">
             </div>
@@ -3765,19 +3765,33 @@ function handleCsvDrop(e) {
   const file = e.dataTransfer.files[0]; if (!file) return;
   processCsvFile(file);
 }
+let _csvMultiBranch = false; // true if branch column detected in uploaded file
+
 async function processCsvFile(file) {
-  const branchId = document.getElementById('m-branch').value;
-  if (!branchId) return toast('Select a branch first, then upload CSV', 'err');
   try {
     _csvRaw = await parseFile(file);
+    _csvMultiBranch = false;
     document.getElementById('csv-preview').style.display  = 'none';
     document.getElementById('csv-result').style.display   = 'none';
+
+    // Detect branch column in headers
+    const BRANCH_ALIASES = ['branch', 'outlet', 'location', 'branch_name', 'outlet_name', 'store', 'store_name'];
+    const hasBranchCol = _csvRaw.headers.some(h => BRANCH_ALIASES.includes((h||'').toLowerCase().trim()));
+
+    if (hasBranchCol) {
+      _csvMultiBranch = true;
+    } else {
+      const branchId = document.getElementById('m-branch').value;
+      if (!branchId) return toast('Select a branch first, or include a "branch" column in your file for multi-branch upload', 'err');
+    }
+
     renderMapper('csv-mapper-menu', _csvRaw.headers, MENU_FIELDS, mapping => {
       csvParsed = applyMapping(_csvRaw.rows, mapping);
       const missing = csvParsed.filter(r => !r.name || !r.price);
-      document.getElementById('csv-count').textContent =
-        `${csvParsed.length} items from "${file.name}"` +
-        (missing.length ? ` · ⚠️ ${missing.length} rows missing name/price will be skipped` : '');
+      let countText = `${csvParsed.length} items from "${file.name}"`;
+      if (_csvMultiBranch) countText += ' · 🏪 Branch column detected — items will be routed automatically';
+      if (missing.length) countText += ` · ⚠️ ${missing.length} rows missing name/price will be skipped`;
+      document.getElementById('csv-count').textContent = countText;
       document.getElementById('csv-preview-body').innerHTML =
         csvParsed.slice(0,8).map((r,i) => `<tr>
           <td style="color:var(--dim)">${i+1}</td>
@@ -3801,38 +3815,59 @@ function resetCsv() {
 }
 async function doUploadCsv() {
   const branchId = document.getElementById('m-branch').value;
-  if (!branchId)     return toast('Select a branch first', 'err');
+  if (!_csvMultiBranch && !branchId) return toast('Select a branch first', 'err');
   if (!csvParsed.length) return toast('No CSV data to upload', 'err');
   const btn = document.getElementById('csv-upload-btn');
   const el  = document.getElementById('csv-result');
   btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Uploading…';
   try {
-    const r = await api(`/api/restaurant/branches/${branchId}/menu/csv`, { method: 'POST', body: { items: csvParsed } });
+    let r;
+    if (_csvMultiBranch) {
+      // Multi-branch: use restaurant-level endpoint
+      r = await api('/api/restaurant/menu/csv', { method: 'POST', body: { items: csvParsed, branchId } });
+    } else {
+      // Single-branch: use branch-specific endpoint
+      r = await api(`/api/restaurant/branches/${branchId}/menu/csv`, { method: 'POST', body: { items: csvParsed } });
+    }
+
     el.style.display = 'block';
-    el.innerHTML =
-      `<div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
-        <span class="csv-result-ok">✅ <strong>${r.added}</strong> items added/updated</span>
-        ${r.skipped ? `<span class="csv-result-warn">⚠️ <strong>${r.skipped}</strong> rows skipped</span>` : ''}
-        <span id="csv-sync-status" style="font-size:.8rem;color:var(--dim);margin-left:.4rem">🔄 Syncing to WhatsApp catalog…</span>
-      </div>` +
-      (r.errors?.length ? `<div style="margin-top:.5rem;font-size:.75rem;color:var(--red)">${r.errors.slice(0, 5).join('<br>')}</div>` : '');
+
+    // Build result HTML
+    let resultHtml = `<div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+      <span class="csv-result-ok">✅ <strong>${r.added}</strong> items added/updated</span>
+      ${r.skipped ? `<span class="csv-result-warn">⚠️ <strong>${r.skipped}</strong> rows skipped</span>` : ''}
+      <span id="csv-sync-status" style="font-size:.8rem;color:var(--dim);margin-left:.4rem">🔄 Syncing to WhatsApp catalog…</span>
+    </div>`;
+
+    // Multi-branch: show per-branch breakdown
+    if (r.per_branch && r.per_branch.length > 1) {
+      resultHtml += `<div style="margin-top:.6rem;font-size:.8rem">
+        <strong>Per-branch breakdown:</strong>
+        ${r.per_branch.map(pb => `<div style="margin-top:.2rem">🏪 <strong>${pb.branchName}</strong>: ${pb.added} added${pb.skipped ? `, ${pb.skipped} skipped` : ''}</div>`).join('')}
+        ${r.unmatched_branches?.length ? `<div style="margin-top:.4rem;color:var(--red)">⚠️ Unmatched branches (items went to default): ${r.unmatched_branches.join(', ')}</div>` : ''}
+      </div>`;
+    }
+
+    if (r.errors?.length) {
+      resultHtml += `<div style="margin-top:.5rem;font-size:.75rem;color:var(--red)">${r.errors.slice(0, 5).join('<br>')}</div>`;
+    }
+
+    el.innerHTML = resultHtml;
     resetCsv();
     loadMenu();
-    // Auto-sync to Meta catalog after successful upload
-    const branch = branches.find(b => b.id === branchId);
+
+    // Auto-sync catalog
     const syncEl = document.getElementById('csv-sync-status');
-    if (branch?.catalog_id) {
-      try {
-        const s = await api(`/api/restaurant/branches/${branchId}/sync-catalog`, { method: 'POST' });
-        if (syncEl) syncEl.innerHTML = s.success
-          ? `<span style="color:var(--wa)">✅ ${s.updated} items live on WhatsApp!</span>`
-          : `<span style="color:var(--red)">⚠️ Sync failed: ${s.errors?.[0] || 'unknown error'}</span>`;
-      } catch (se) {
-        if (syncEl) syncEl.innerHTML = `<span style="color:var(--red)">⚠️ Sync failed: ${se.message}</span>`;
+    try {
+      const s = await api('/api/restaurant/catalog/sync', { method: 'POST' });
+      if (syncEl) {
+        const totalSynced = s.results?.totalSynced || s.results?.reduce?.((sum, r) => sum + (r.updated || 0), 0) || 0;
+        syncEl.innerHTML = `<span style="color:var(--wa)">✅ ${totalSynced} items live on WhatsApp!</span>`;
       }
-    } else {
-      if (syncEl) syncEl.innerHTML = `<span style="color:var(--dim)">ℹ️ Go to Branches tab → Sync Menu to push to WhatsApp</span>`;
+    } catch (se) {
+      if (syncEl) syncEl.innerHTML = `<span style="color:var(--red)">⚠️ Sync failed: ${se.message}</span>`;
     }
+
     toast(`✅ ${r.added} items uploaded!`, 'ok');
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; btn.innerHTML = '⬆ Upload & Sync'; }

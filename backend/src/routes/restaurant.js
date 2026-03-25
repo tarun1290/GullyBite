@@ -448,18 +448,38 @@ router.get('/whatsapp', async (req, res) => {
 });
 
 // GET /api/restaurant/whatsapp/:id/setup-status
-// Returns live setup checklist status from Meta for a phone number
+// Returns setup checklist status — reads from cached MongoDB data.
+// Refreshes from Meta API only if cache is older than 10 minutes or if ?refresh=true.
 router.get('/whatsapp/:id/setup-status', async (req, res) => {
   try {
     const wa = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!wa) return res.status(404).json({ error: 'WhatsApp account not found' });
+
+    const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+    const forceRefresh = req.query.refresh === 'true';
+    const cacheAge = wa.meta_status_cached_at ? Date.now() - new Date(wa.meta_status_cached_at).getTime() : Infinity;
+    const cacheValid = cacheAge < CACHE_TTL_MS && wa.meta_status_cached && !forceRefresh;
+
+    if (cacheValid) {
+      // Return cached data immediately (no Meta API calls)
+      return res.json({
+        phone_number_id : wa.phone_number_id,
+        phone_registered: wa.phone_registered || false,
+        cart_enabled    : wa.cart_enabled     || false,
+        catalog_id      : wa.catalog_id       || null,
+        waba_subscribed : wa.waba_subscribed  || false,
+        meta            : wa.meta_status_cached,
+        cached          : true,
+        cache_age_ms    : cacheAge,
+      });
+    }
+
+    // Cache expired or forced refresh — fetch live from Meta
     const sysToken = metaConfig.systemUserToken;
     if (!sysToken && !wa.access_token) return res.status(400).json({ error: 'WhatsApp API token is not configured. Please contact support.' });
     const effectiveToken = sysToken || wa.access_token;
-
     const GRAPH = metaConfig.graphUrl;
 
-    // Fetch phone number details from Meta
     let phoneStatus = null;
     try {
       const r = await axios.get(`${GRAPH}/${wa.phone_number_id}`, {
@@ -469,17 +489,29 @@ router.get('/whatsapp/:id/setup-status', async (req, res) => {
       phoneStatus = r.data;
     } catch (e) { phoneStatus = { error: e.response?.data?.error?.message || e.message }; }
 
-    // Check WABA subscription
     let wabaSubscribed = false;
     try {
-      const sysToken = metaConfig.systemUserToken;
-      if (sysToken) {
+      if (sysToken && wa.waba_id) {
         const r = await axios.get(`${GRAPH}/${wa.waba_id}/subscribed_apps`, {
           params: { access_token: sysToken }, timeout: 8000,
         });
         wabaSubscribed = (r.data?.data || []).some(app => app.id === metaConfig.appId);
       }
     } catch (_) {}
+
+    // Cache the result in MongoDB
+    await col('whatsapp_accounts').updateOne(
+      { _id: req.params.id },
+      { $set: {
+        meta_status_cached: phoneStatus,
+        meta_status_cached_at: new Date(),
+        waba_subscribed: wabaSubscribed,
+        // Also update display fields from Meta response if available
+        ...(phoneStatus?.display_phone_number ? { phone_display: phoneStatus.display_phone_number } : {}),
+        ...(phoneStatus?.verified_name ? { display_name: phoneStatus.verified_name } : {}),
+        ...(phoneStatus?.quality_rating ? { quality_rating: phoneStatus.quality_rating } : {}),
+      }}
+    ).catch(() => {}); // non-blocking cache write
 
     res.json({
       phone_number_id : wa.phone_number_id,
@@ -488,6 +520,7 @@ router.get('/whatsapp/:id/setup-status', async (req, res) => {
       catalog_id      : wa.catalog_id       || null,
       waba_subscribed : wabaSubscribed,
       meta            : phoneStatus,
+      cached          : false,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -1185,6 +1218,192 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/restaurant/menu/csv — Multi-branch bulk upload
+// Detects a branch/outlet column and routes items to matching branches automatically.
+// If no branch column found, requires branchId in body or falls back to first branch.
+const BRANCH_COLUMN_ALIASES = ['branch', 'outlet', 'location', 'branch_name', 'outlet_name', 'store', 'store_name'];
+
+router.post('/menu/csv', async (req, res) => {
+  try {
+    const { items, branchId: defaultBranchId } = req.body;
+    if (!Array.isArray(items) || !items.length) {
+      return res.status(400).json({ error: 'items array is required' });
+    }
+
+    // Detect branch column
+    const firstRow = items[0];
+    const branchCol = Object.keys(firstRow).find(k =>
+      BRANCH_COLUMN_ALIASES.includes(k.toLowerCase().trim())
+    );
+
+    // Load all branches for this restaurant
+    const allBranches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+    if (!allBranches.length) return res.status(400).json({ error: 'No branches found. Create a branch first.' });
+
+    // Build branch name→id map (case-insensitive, trimmed)
+    const branchMap = {};
+    for (const b of allBranches) {
+      branchMap[(b.name || '').toLowerCase().trim()] = String(b._id);
+    }
+
+    // Group items by branch
+    const branchGroups = {}; // branchId → items[]
+    const unmatchedBranches = new Set();
+
+    for (const row of items) {
+      let targetBranchId = defaultBranchId;
+
+      if (branchCol && row[branchCol]) {
+        const branchName = String(row[branchCol]).toLowerCase().trim();
+        const matched = branchMap[branchName];
+        if (matched) {
+          targetBranchId = matched;
+        } else {
+          // Fuzzy match: check if branch name contains or is contained by any branch
+          const fuzzy = Object.entries(branchMap).find(([name]) =>
+            name.includes(branchName) || branchName.includes(name)
+          );
+          if (fuzzy) {
+            targetBranchId = fuzzy[1];
+          } else {
+            unmatchedBranches.add(row[branchCol]);
+            targetBranchId = defaultBranchId || String(allBranches[0]._id);
+          }
+        }
+      } else if (!targetBranchId) {
+        targetBranchId = String(allBranches[0]._id);
+      }
+
+      if (!branchGroups[targetBranchId]) branchGroups[targetBranchId] = [];
+      branchGroups[targetBranchId].push(row);
+    }
+
+    // Process each branch group using the existing CSV upsert logic
+    const perBranch = [];
+    let totalAdded = 0, totalSkipped = 0;
+    const allErrors = [];
+    const categoryCache = {};
+
+    for (const [bid, branchItems] of Object.entries(branchGroups)) {
+      const branchDoc = allBranches.find(b => String(b._id) === bid);
+      const branchResult = { branchId: bid, branchName: branchDoc?.name || bid, added: 0, skipped: 0, errors: [] };
+
+      for (const [i, rawRow] of branchItems.entries()) {
+        const row = _normalizeCSVRow(rawRow);
+        const rowNum = i + 2;
+        const name = (row.name || '').trim();
+        const priceRaw = row.price_paise ? null : (row.price || row.price_rs || '').toString().replace(/[₹,\s]/g, '');
+        const price = row.price_paise ? row.price_paise / 100 : parseFloat(priceRaw);
+
+        if (!name) { branchResult.errors.push(`Row ${rowNum}: missing name`); branchResult.skipped++; continue; }
+        if (isNaN(price) || price <= 0) { branchResult.errors.push(`Row ${rowNum} "${name}": invalid price "${row.price}"`); branchResult.skipped++; continue; }
+
+        try {
+          const categoryName = (row.category || row.cat || '').trim();
+          let categoryId = null;
+          if (categoryName) {
+            const cacheKey = `${bid}:${categoryName}`;
+            if (!categoryCache[cacheKey]) {
+              const ex = await col('menu_categories').findOne({ branch_id: bid, name: categoryName });
+              if (ex) {
+                categoryCache[cacheKey] = String(ex._id);
+              } else {
+                const catId = newId();
+                await col('menu_categories').insertOne({ _id: catId, branch_id: bid, name: categoryName, sort_order: 0, created_at: new Date() });
+                categoryCache[cacheKey] = catId;
+              }
+            }
+            categoryId = categoryCache[cacheKey];
+          }
+
+          const validTypes = ['veg', 'non_veg', 'vegan', 'egg'];
+          const rawType = (row.food_type || row.type || 'veg').toLowerCase().trim();
+          const foodType = validTypes.includes(rawType) ? rawType : 'veg';
+          const isBestseller = ['true', 'yes', '1'].includes((row.is_bestseller || '').toLowerCase());
+          const imageUrl = (row.image_url || row.image || '').trim() || null;
+          const pricePaise = row.price_paise || Math.round(price * 100);
+          const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+          const retailerId = row.retailer_id || `ZM-${bid.slice(0, 6)}-${slug}`;
+          const now = new Date();
+
+          const csvTags = [];
+          if (row['product_tags[0]'] || row.product_tag_0) csvTags.push(row['product_tags[0]'] || row.product_tag_0);
+          if (row['product_tags[1]'] || row.product_tag_1) csvTags.push(row['product_tags[1]'] || row.product_tag_1);
+          if (row.product_tags && Array.isArray(row.product_tags)) csvTags.push(...row.product_tags);
+
+          await col('menu_items').updateOne(
+            { retailer_id: retailerId },
+            {
+              $set: {
+                branch_id: bid,
+                category_id: categoryId,
+                name,
+                description: (row.description || row.desc || '').trim() || null,
+                price_paise: pricePaise,
+                image_url: imageUrl,
+                food_type: foodType,
+                is_bestseller: isBestseller,
+                item_group_id: row.item_group_id || null,
+                size: row.size || null,
+                sale_price_paise: row.sale_price_paise || null,
+                sale_price_effective_date: row.sale_price_effective_date || null,
+                brand: row.brand || null,
+                google_product_category: row.google_product_category || 'Food, Beverages & Tobacco > Food Items',
+                fb_product_category: row.fb_product_category || 'Food & Beverages > Prepared Food',
+                link: row.link || null,
+                quantity_to_sell_on_facebook: row.quantity_to_sell_on_facebook || null,
+                product_tags: csvTags.length ? [...new Set(csvTags)] : [],
+                gender: row.gender || null, color: row.color || null, age_group: row.age_group || null,
+                material: row.material || null, pattern: row.pattern || null,
+                shipping: row.shipping || null, shipping_weight: row.shipping_weight || null,
+                video_url: row.video_url || row['video[0].url'] || null,
+                video_tag: row.video_tag || row['video[0].tag[0]'] || null,
+                gtin: row.gtin || null, style: row.style || row['style[0]'] || null,
+                catalog_sync_status: 'pending',
+                updated_at: now,
+              },
+              $setOnInsert: { _id: newId(), retailer_id: retailerId, is_available: true, sort_order: 0, catalog_synced_at: null, created_at: now },
+            },
+            { upsert: true }
+          );
+          branchResult.added++;
+        } catch (e) {
+          branchResult.errors.push(`Row ${rowNum} "${name}": ${e.message}`);
+          branchResult.skipped++;
+        }
+      }
+
+      totalAdded += branchResult.added;
+      totalSkipped += branchResult.skipped;
+      allErrors.push(...branchResult.errors);
+      perBranch.push(branchResult);
+
+      // Trigger catalog sync per branch (background)
+      catalog.autoCreateProductSets(bid).catch(err => console.error('[Menu] Auto-create sets:', err.message));
+      catalog.syncBranchCatalog(bid).catch(err => console.error('[Menu] Auto-sync:', err.message));
+    }
+
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      [{ $set: { onboarding_step: { $max: ['$onboarding_step', 4] } } }]
+    );
+
+    res.json({
+      success: true,
+      multi_branch: !!branchCol,
+      branch_column_detected: branchCol || null,
+      per_branch: perBranch,
+      unmatched_branches: [...unmatchedBranches],
+      added: totalAdded,
+      skipped: totalSkipped,
+      errors: allErrors,
+      total: items.length,
+    });
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.bulk_upload_multi', category: 'menu', description: `Multi-branch bulk upload: ${perBranch.length} branches, ${totalAdded} items`, restaurantId: String(req.restaurantId), severity: 'info' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/restaurant/branches/:branchId/sync-catalog
 router.post('/branches/:branchId/sync-catalog', requireApproved, async (req, res) => {
   try {
@@ -1710,6 +1929,14 @@ router.post('/branches/:branchId/create-catalog', requireApproved, async (req, r
 // CATALOG API — Meta Product Catalog management
 // ═══════════════════════════════════════════════════════════════
 
+// POST /api/restaurant/catalog/ensure — create or return the main catalog
+router.post('/catalog/ensure', async (req, res) => {
+  try {
+    const result = await catalog.ensureMainCatalog(req.restaurantId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/restaurant/catalog/status — sync status for all branches
 router.get('/catalog/status', async (req, res) => {
   try {
@@ -1718,10 +1945,10 @@ router.get('/catalog/status', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/restaurant/catalog/sync — full sync all branches
+// POST /api/restaurant/catalog/sync — full sync all branches to main catalog
 router.post('/catalog/sync', async (req, res) => {
   try {
-    const results = await catalog.syncAllBranches(req.restaurantId);
+    const results = await catalog.syncRestaurantCatalog(req.restaurantId);
     res.json({ success: true, results });
 
     log({
@@ -1786,13 +2013,32 @@ router.post('/catalog/toggle-auto-sync', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/restaurant/catalogs — List available catalogs from Meta
+// GET /api/restaurant/catalogs — Returns this restaurant's connected catalog from MongoDB.
+// Only fetches live from Meta when ?refresh=true or no cached data exists.
 router.get('/catalogs', async (req, res) => {
   try {
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
 
-    if (!restaurant?.meta_user_id && !wa_acc?.waba_id) {
+    const activeCatalogId = restaurant?.meta_catalog_id || wa_acc?.catalog_id || null;
+    const forceRefresh = req.query.refresh === 'true';
+
+    // Return cached catalog list if available and not forcing refresh
+    const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+    const cacheAge = restaurant?.catalog_fetched_at ? Date.now() - new Date(restaurant.catalog_fetched_at).getTime() : Infinity;
+
+    if (!forceRefresh && cacheAge < CACHE_TTL_MS && restaurant?.meta_available_catalogs?.length) {
+      return res.json({ active_catalog_id: activeCatalogId, catalogs: restaurant.meta_available_catalogs, cached: true });
+    }
+
+    // If we have a main catalog ID but no cached list, return just that
+    if (!forceRefresh && activeCatalogId && !restaurant?.meta_available_catalogs?.length) {
+      const single = [{ id: activeCatalogId, name: restaurant?.meta_catalog_name || 'Menu Catalog' }];
+      return res.json({ active_catalog_id: activeCatalogId, catalogs: single, cached: true });
+    }
+
+    // Live fetch from Meta (only on refresh or first load with no cache)
+    if (!wa_acc?.waba_id && !restaurant?.meta_user_id) {
       return res.status(400).json({ error: 'Meta Business not connected. Complete WhatsApp setup first.' });
     }
 
@@ -1801,39 +2047,18 @@ router.get('/catalogs', async (req, res) => {
 
     let catalogs = [];
 
-    // Try WABA catalogs first
     if (wa_acc?.waba_id) {
       catalogs = await catalog.fetchWabaCatalogs(wa_acc.waba_id);
     }
 
-    // If none found via WABA, try business catalogs
-    if (!catalogs.length && restaurant?.meta_business_id) {
-      catalogs = await catalog.fetchBusinessCatalogs(restaurant.meta_business_id);
-    }
-
-    // If still none, try business ID from env or Meta API
     if (!catalogs.length) {
-      try {
-        let bizId = metaConfig.businessId;
-        if (!bizId) {
-          const meRes = await require('axios').get(`${metaConfig.graphUrl}/me/businesses`, {
-            params: { access_token: catToken, fields: 'id,name' }, timeout: 10000,
-          });
-          const businesses = meRes.data?.data || [];
-          if (businesses.length) bizId = businesses[0].id;
-        }
-        if (bizId) {
-          if (!restaurant.meta_business_id) {
-            await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_business_id: bizId } });
-          }
-          catalogs = await catalog.fetchBusinessCatalogs(bizId);
-        }
-      } catch (e) {
-        console.warn('[Catalogs] Business lookup failed:', e.response?.data?.error?.message || e.message);
+      const bizId = restaurant?.meta_business_id || metaConfig.businessId;
+      if (bizId) {
+        catalogs = await catalog.fetchBusinessCatalogs(bizId);
       }
     }
 
-    // Update stored list
+    // Cache the result
     if (catalogs.length) {
       await col('restaurants').updateOne(
         { _id: req.restaurantId },
@@ -1841,10 +2066,7 @@ router.get('/catalogs', async (req, res) => {
       );
     }
 
-    // Determine active catalog
-    const activeCatalogId = restaurant?.meta_catalog_id || wa_acc?.catalog_id || null;
-
-    res.json({ active_catalog_id: activeCatalogId, catalogs });
+    res.json({ active_catalog_id: activeCatalogId, catalogs, cached: false });
   } catch (e) {
     console.error('[Catalogs] Failed:', e.message);
     res.status(500).json({ error: 'Failed to fetch catalogs from Meta' });
@@ -3271,7 +3493,7 @@ router.get('/messaging-status', async (req, res) => {
 router.get('/messaging/stats', requireAuth, requireApproved, async (req, res) => {
   try {
     const msgTracking = require('../services/messageTracking');
-    const stats = await msgTracking.getMessageStats(req.restaurant._id, {
+    const stats = await msgTracking.getMessageStats(req.restaurantId, {
       from: req.query.from,
       to: req.query.to,
     });
@@ -3284,8 +3506,8 @@ router.get('/messaging/costs', requireAuth, requireApproved, async (req, res) =>
   try {
     const msgTracking = require('../services/messageTracking');
     const [breakdown, trend] = await Promise.all([
-      msgTracking.getCostBreakdown(req.restaurant._id, { from: req.query.from, to: req.query.to }),
-      msgTracking.getDailyCostTrend(req.restaurant._id, parseInt(req.query.days) || 30),
+      msgTracking.getCostBreakdown(req.restaurantId, { from: req.query.from, to: req.query.to }),
+      msgTracking.getDailyCostTrend(req.restaurantId, parseInt(req.query.days) || 30),
     ]);
     res.json({ breakdown, trend });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -3297,8 +3519,8 @@ router.get('/messaging/health', requireAuth, requireApproved, async (req, res) =
   try {
     const msgTracking = require('../services/messageTracking');
     const [latest, history] = await Promise.all([
-      msgTracking.getLatestHealth(req.restaurant._id),
-      msgTracking.getHealthHistory(req.restaurant._id, 10),
+      msgTracking.getLatestHealth(req.restaurantId),
+      msgTracking.getHealthHistory(req.restaurantId, 10),
     ]);
     res.json({ latest, history });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -3308,11 +3530,11 @@ router.get('/messaging/health', requireAuth, requireApproved, async (req, res) =
 router.post('/messaging/health/check', requireAuth, requireApproved, async (req, res) => {
   try {
     const msgTracking = require('../services/messageTracking');
-    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id, is_active: true });
+    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
     if (!waAcc) return res.status(404).json({ error: 'No active WhatsApp account' });
 
     const token = metaConfig.systemUserToken || waAcc.access_token;
-    const result = await msgTracking.checkAccountQuality(waAcc.phone_number_id, token, req.restaurant._id);
+    const result = await msgTracking.checkAccountQuality(waAcc.phone_number_id, token, req.restaurantId);
     if (!result) return res.status(502).json({ error: 'Failed to fetch quality from Meta' });
 
     res.json(result);
@@ -3329,7 +3551,7 @@ const { logActivity } = require('../services/activityLog');
 // GET /api/restaurant/messages — inbox threads (grouped by customer)
 router.get('/messages', requireAuth, requireApproved, async (req, res) => {
   try {
-    const restId = req.restaurant._id;
+    const restId = req.restaurantId;
     const { status, customer_id, search, page = 1, limit = 30 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -3420,7 +3642,7 @@ router.get('/messages', requireAuth, requireApproved, async (req, res) => {
 // GET /api/restaurant/messages/thread/:customer_id — full thread
 router.get('/messages/thread/:customer_id', requireAuth, requireApproved, async (req, res) => {
   try {
-    const restId = req.restaurant._id;
+    const restId = req.restaurantId;
     const msgs = await col('customer_messages')
       .find({ restaurant_id: restId, customer_id: req.params.customer_id })
       .sort({ created_at: 1 }).toArray();
@@ -3442,7 +3664,7 @@ router.get('/messages/thread/:customer_id', requireAuth, requireApproved, async 
 router.get('/messages/unread-count', requireAuth, requireApproved, async (req, res) => {
   try {
     const count = await col('customer_messages').countDocuments({
-      restaurant_id: req.restaurant._id,
+      restaurant_id: req.restaurantId,
       direction: 'inbound',
       status: 'unread',
     });
@@ -3459,7 +3681,7 @@ router.put('/messages/:id/status', requireAuth, requireApproved, async (req, res
     if (status === 'read') { $set.read_at = new Date(); $set.read_by = req.user?.email || req.user?.phone || null; }
     if (status === 'resolved') { $set.resolved_at = new Date(); $set.resolved_by = req.user?.email || req.user?.phone || null; }
     await col('customer_messages').updateOne(
-      { _id: req.params.id, restaurant_id: req.restaurant._id },
+      { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set }
     );
     res.json({ ok: true });
@@ -3471,7 +3693,7 @@ router.put('/messages/thread/:customer_id/resolve', requireAuth, requireApproved
   try {
     const now = new Date();
     await col('customer_messages').updateMany(
-      { restaurant_id: req.restaurant._id, customer_id: req.params.customer_id, status: { $ne: 'resolved' } },
+      { restaurant_id: req.restaurantId, customer_id: req.params.customer_id, status: { $ne: 'resolved' } },
       { $set: { status: 'resolved', resolved_at: now, resolved_by: req.user?.email || req.user?.phone || null, updated_at: now } }
     );
     res.json({ ok: true });
@@ -3484,7 +3706,7 @@ router.post('/messages/reply', requireAuth, requireApproved, async (req, res) =>
     const { customer_id, text, reply_to_message_id } = req.body;
     if (!customer_id || !text?.trim()) return res.status(400).json({ error: 'customer_id and text required' });
 
-    const restId = req.restaurant._id;
+    const restId = req.restaurantId;
 
     // Check 24h window
     const lastInbound = await col('customer_messages').findOne(
@@ -3584,7 +3806,7 @@ router.post('/messages/reply', requireAuth, requireApproved, async (req, res) =>
 // GET /api/restaurant/messages/media/:media_id — resolve Meta media URL
 router.get('/messages/media/:media_id', requireAuth, requireApproved, async (req, res) => {
   try {
-    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id, is_active: true });
+    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
     if (!waAcc) return res.status(400).json({ error: 'No WhatsApp account' });
     const token = metaConfig.systemUserToken || waAcc.access_token;
     const { data } = await axios.get(
@@ -3602,7 +3824,7 @@ router.get('/issues', requireAuth, requireApproved, async (req, res) => {
   try {
     const { status, category, priority, search, page = 1, limit = 30 } = req.query;
     const result = await issueSvc.listIssues(
-      { restaurantId: req.restaurant._id, status, category, priority, search },
+      { restaurantId: req.restaurantId, status, category, priority, search },
       { page: parseInt(page), limit: parseInt(limit) }
     );
     res.json(result);
@@ -3612,7 +3834,7 @@ router.get('/issues', requireAuth, requireApproved, async (req, res) => {
 // GET /api/restaurant/issues/stats — issue stats for this restaurant
 router.get('/issues/stats', requireAuth, requireApproved, async (req, res) => {
   try {
-    const stats = await issueSvc.getIssueStats({ restaurantId: req.restaurant._id });
+    const stats = await issueSvc.getIssueStats({ restaurantId: req.restaurantId });
     res.json(stats);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3621,7 +3843,7 @@ router.get('/issues/stats', requireAuth, requireApproved, async (req, res) => {
 router.get('/issues/:id', requireAuth, requireApproved, async (req, res) => {
   try {
     const issue = await issueSvc.getIssue(req.params.id);
-    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+    if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
     res.json(issue);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3647,7 +3869,7 @@ router.post('/issues', requireAuth, requireApproved, async (req, res) => {
       customerPhone: customer.wa_phone,
       orderId: order?._id || null,
       orderNumber: order?.order_number || null,
-      restaurantId: req.restaurant._id,
+      restaurantId: req.restaurantId,
       branchId: order?.branch_id || null,
       category,
       subcategory,
@@ -3658,7 +3880,7 @@ router.post('/issues', requireAuth, requireApproved, async (req, res) => {
 
     // Send WhatsApp notification to customer
     try {
-      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
       if (waAccount) {
         const wa = require('../services/whatsapp');
         const custId = require('../services/customerIdentity');
@@ -3672,7 +3894,7 @@ router.post('/issues', requireAuth, requireApproved, async (req, res) => {
 
     res.status(201).json(issue);
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurant._id), actorName: req.restaurant.business_name, action: 'issue.created', category: 'issue', description: `Issue created by ${req.restaurant.business_name}`, restaurantId: String(req.restaurant._id), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: (req.restaurant?.business_name || 'Restaurant'), action: 'issue.created', category: 'issue', description: `Issue created by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3682,17 +3904,17 @@ router.put('/issues/:id/status', requireAuth, requireApproved, async (req, res) 
     const { status } = req.body;
     if (!status) return res.status(400).json({ error: 'status required' });
     const issue = await issueSvc.getIssue(req.params.id);
-    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+    if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
 
     const updated = await issueSvc.updateStatus(req.params.id, status, {
-      actorType: 'restaurant', actorName: req.restaurant.business_name || 'Restaurant',
-      actorId: req.restaurant._id,
+      actorType: 'restaurant', actorName: (req.restaurant?.business_name || 'Restaurant') || 'Restaurant',
+      actorId: req.restaurantId,
     });
 
     // Notify customer for key transitions
     try {
       if (['assigned', 'in_progress', 'resolved'].includes(status)) {
-        const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+        const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
         if (waAccount) {
           const wa = require('../services/whatsapp');
           const custId = require('../services/customerIdentity');
@@ -3721,18 +3943,18 @@ router.post('/issues/:id/message', requireAuth, requireApproved, async (req, res
     const { text, internal } = req.body;
     if (!text) return res.status(400).json({ error: 'text required' });
     const issue = await issueSvc.getIssue(req.params.id);
-    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+    if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
 
     const msg = await issueSvc.addMessage(req.params.id, {
       senderType: 'restaurant',
-      senderName: req.restaurant.business_name || 'Restaurant',
+      senderName: (req.restaurant?.business_name || 'Restaurant') || 'Restaurant',
       text, internal: !!internal, sentVia: 'dashboard',
     });
 
     // Send to customer via WhatsApp (unless internal)
     if (!internal) {
       try {
-        const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+        const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
         if (waAccount) {
           const wa = require('../services/whatsapp');
           const custId = require('../services/customerIdentity');
@@ -3758,7 +3980,7 @@ router.post('/issues/:id/escalate', requireAuth, requireApproved, async (req, re
     const { reason } = req.body;
     if (!reason) return res.status(400).json({ error: 'reason required' });
     const issue = await issueSvc.getIssue(req.params.id);
-    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+    if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
 
     // Determine escalation target
     let routeTo = 'admin';
@@ -3766,14 +3988,14 @@ router.post('/issues/:id/escalate', requireAuth, requireApproved, async (req, re
     if (['delivery_late', 'delivery_not_received', 'delivery_damaged', 'rider_behavior', 'wrong_address'].includes(issue.category)) routeTo = 'admin_delivery';
 
     const updated = await issueSvc.escalateToAdmin(req.params.id, {
-      escalatedBy: req.restaurant._id,
+      escalatedBy: req.restaurantId,
       reason,
       routeTo,
     });
 
     // Notify customer
     try {
-      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
       if (waAccount) {
         const wa = require('../services/whatsapp');
         const custId = require('../services/customerIdentity');
@@ -3790,7 +4012,7 @@ router.post('/issues/:id/escalate', requireAuth, requireApproved, async (req, re
 
     res.json(updated);
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurant._id), actorName: req.restaurant.business_name, action: 'issue.escalated', category: 'issue', description: `Issue escalated to admin by ${req.restaurant.business_name}`, restaurantId: String(req.restaurant._id), severity: 'warning' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: (req.restaurant?.business_name || 'Restaurant'), action: 'issue.escalated', category: 'issue', description: `Issue escalated to admin by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'warning' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3799,18 +4021,18 @@ router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res
   try {
     const { resolution_type, resolution_notes } = req.body;
     const issue = await issueSvc.getIssue(req.params.id);
-    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+    if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
 
     const updated = await issueSvc.resolveIssue(req.params.id, {
       resolutionType: resolution_type || 'no_action',
       resolutionNotes: resolution_notes || null,
-      actorType: 'restaurant', actorName: req.restaurant.business_name || 'Restaurant',
-      actorId: req.restaurant._id,
+      actorType: 'restaurant', actorName: (req.restaurant?.business_name || 'Restaurant') || 'Restaurant',
+      actorId: req.restaurantId,
     });
 
     // Notify customer
     try {
-      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurant._id });
+      const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
       if (waAccount) {
         const wa = require('../services/whatsapp');
         const custId = require('../services/customerIdentity');
@@ -3827,7 +4049,7 @@ router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res
 
     res.json(updated);
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurant._id), actorName: req.restaurant.business_name, action: 'issue.resolved', category: 'issue', description: `Issue resolved by ${req.restaurant.business_name}`, restaurantId: String(req.restaurant._id), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: (req.restaurant?.business_name || 'Restaurant'), action: 'issue.resolved', category: 'issue', description: `Issue resolved by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3835,11 +4057,11 @@ router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res
 router.post('/issues/:id/reopen', requireAuth, requireApproved, async (req, res) => {
   try {
     const issue = await issueSvc.getIssue(req.params.id);
-    if (!issue || issue.restaurant_id !== req.restaurant._id) return res.status(404).json({ error: 'Issue not found' });
+    if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
 
     const updated = await issueSvc.reopenIssue(req.params.id, {
-      actorType: 'restaurant', actorName: req.restaurant.business_name || 'Restaurant',
-      actorId: req.restaurant._id, reason: req.body.reason,
+      actorType: 'restaurant', actorName: (req.restaurant?.business_name || 'Restaurant') || 'Restaurant',
+      actorId: req.restaurantId, reason: req.body.reason,
     });
     res.json(updated);
   } catch (e) { res.status(500).json({ error: e.message }); }

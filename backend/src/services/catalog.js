@@ -1,6 +1,6 @@
 // src/services/catalog.js
-// Syncs branch-specific menu to Meta WhatsApp Catalog via facebook-nodejs-business-sdk
-// Each branch has its OWN catalog — menus stay separated by location
+// Syncs restaurant menu to Meta WhatsApp Catalog via facebook-nodejs-business-sdk
+// Architecture: ONE main catalog per restaurant, each branch is a product set within it
 
 const bizSdk = require('facebook-nodejs-business-sdk');
 const axios   = require('axios');
@@ -32,28 +32,32 @@ async function _getAccessToken(restaurantId) {
   return { token, wa_acc, restaurant };
 }
 
-// ─── AUTO-CREATE CATALOG FOR A BRANCH ────────────────────────
-const createBranchCatalog = async (branchId) => {
-  const branch = await col('branches').findOne({ _id: branchId });
-  if (!branch) throw new Error('Branch not found');
+// ─── ENSURE MAIN CATALOG FOR A RESTAURANT ───────────────────
+// Every restaurant gets ONE main catalog. All branches share it.
+// Branch separation is handled via product sets within this catalog.
+const ensureMainCatalog = async (restaurantId) => {
+  const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+  if (!restaurant) throw new Error('Restaurant not found');
 
-  if (branch.catalog_id) {
-    console.log(`[Catalog] Branch "${branch.name}" already has catalog: ${branch.catalog_id}`);
-    return { alreadyExists: true, catalogId: branch.catalog_id };
+  // Already have a main catalog
+  if (restaurant.meta_catalog_id) {
+    return { catalogId: restaurant.meta_catalog_id, alreadyExists: true };
   }
 
-  const { token, wa_acc, restaurant } = await _getAccessToken(branch.restaurant_id);
+  const { token, wa_acc } = await _getAccessToken(restaurantId);
 
-  // Reuse the WABA-level catalog if already provisioned
+  // Check WABA-level catalog first
   if (wa_acc?.catalog_id) {
-    await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: wa_acc.catalog_id } });
-    console.log(`[Catalog] Branch "${branch.name}" inherited WABA catalog ${wa_acc.catalog_id}`);
-    return { alreadyExists: false, catalogId: wa_acc.catalog_id, inherited: true };
+    await col('restaurants').updateOne({ _id: restaurantId }, {
+      $set: { meta_catalog_id: wa_acc.catalog_id, meta_catalog_name: `${restaurant.business_name} Menu`, catalog_created_at: new Date() }
+    });
+    console.log(`[Catalog] Restaurant "${restaurant.business_name}" inherited WABA catalog ${wa_acc.catalog_id}`);
+    return { catalogId: wa_acc.catalog_id, inherited: true };
   }
 
   initSdk(token);
 
-  // STEP 0: Fetch existing WABA catalog
+  // Check existing WABA catalogs via API
   if (wa_acc?.waba_id) {
     try {
       const existing = await axios.get(`${GRAPH}/${wa_acc.waba_id}/product_catalogs`, {
@@ -62,20 +66,22 @@ const createBranchCatalog = async (branchId) => {
       const catalogs = existing.data?.data || [];
       if (catalogs.length) {
         const catalogId = catalogs[0].id;
-        await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: catalogId } });
+        await col('restaurants').updateOne({ _id: restaurantId }, {
+          $set: { meta_catalog_id: catalogId, meta_catalog_name: catalogs[0].name, catalog_created_at: new Date() }
+        });
         await col('whatsapp_accounts').updateOne(
-          { restaurant_id: branch.restaurant_id, is_active: true },
+          { restaurant_id: restaurantId, is_active: true },
           { $set: { catalog_id: catalogId } }
         );
-        console.log(`[Catalog] Inherited existing WABA catalog ${catalogId} for branch "${branch.name}"`);
-        return { success: true, catalogId, inherited: true };
+        console.log(`[Catalog] Inherited existing WABA catalog ${catalogId} for "${restaurant.business_name}"`);
+        return { catalogId, inherited: true };
       }
     } catch (e) {
       console.warn('[Catalog] Could not fetch WABA catalogs:', e.response?.data?.error?.message || e.message);
     }
   }
 
-  // STEP A: Get business ID — prefer env var, fallback to API query
+  // Get business ID
   let businessId = metaConfig.businessId;
   if (!businessId) {
     try {
@@ -92,22 +98,22 @@ const createBranchCatalog = async (branchId) => {
     }
   }
 
-  // STEP A.5: Check existing business catalogs via SDK
+  // Check existing business catalogs
   let catalogId;
   try {
     const biz = new Business(businessId);
     const bizCatalogs = await biz.getOwnedProductCatalogs(['id', 'name']);
     if (bizCatalogs.length) {
       catalogId = bizCatalogs[0].id;
-      console.log(`[Catalog] Found existing business catalog ${catalogId} — inheriting`);
+      console.log(`[Catalog] Found existing business catalog ${catalogId} — using as main catalog`);
     }
   } catch (e) {
     console.warn('[Catalog] Could not read business catalogs:', e.message);
   }
 
-  // STEP B: Create catalog via SDK
+  // Create new catalog if none exist
   if (!catalogId) {
-    const catalogName = `${restaurant.business_name} - ${branch.name}`;
+    const catalogName = `${restaurant.business_name} Menu`;
     try {
       const biz = new Business(businessId);
       const created = await biz.createOwnedProductCatalog([], {
@@ -115,16 +121,19 @@ const createBranchCatalog = async (branchId) => {
         vertical: 'commerce',
       });
       catalogId = created.id;
-      console.log(`[Catalog] Created catalog "${catalogName}" with ID: ${catalogId}`);
+      console.log(`[Catalog] Created main catalog "${catalogName}" with ID: ${catalogId}`);
     } catch (err) {
       throw new Error(`Catalog creation failed: ${err.message}`);
     }
   }
 
-  // STEP C: Save catalog ID
-  await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: catalogId } });
+  // Save to restaurant
+  const catalogName = `${restaurant.business_name} Menu`;
+  await col('restaurants').updateOne({ _id: restaurantId }, {
+    $set: { meta_catalog_id: catalogId, meta_catalog_name: catalogName, catalog_created_at: new Date() }
+  });
 
-  // STEP D: Associate catalog with WhatsApp account
+  // Link to WABA
   if (wa_acc?.waba_id) {
     try {
       await axios.post(
@@ -133,16 +142,80 @@ const createBranchCatalog = async (branchId) => {
         { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
       );
       await col('whatsapp_accounts').updateOne(
-        { restaurant_id: branch.restaurant_id, is_active: true },
+        { restaurant_id: restaurantId, is_active: true },
         { $set: { catalog_id: catalogId } }
       );
-      console.log(`[Catalog] Linked catalog ${catalogId} to WABA ${wa_acc.waba_id}`);
+      console.log(`[Catalog] Linked main catalog ${catalogId} to WABA ${wa_acc.waba_id}`);
     } catch (err) {
       console.warn(`[Catalog] Could not auto-link to WABA: ${err.response?.data?.error?.message || err.message}`);
     }
   }
 
-  return { success: true, catalogId, branchId };
+  return { success: true, catalogId };
+};
+
+// ─── ENSURE BRANCH PRODUCT SET WITHIN MAIN CATALOG ──────────
+// Each branch gets a product set that filters to its items via retailer_id prefix
+const ensureBranchProductSet = async (branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch) throw new Error('Branch not found');
+
+  // Already has a product set
+  if (branch.meta_product_set_id) {
+    return { productSetId: branch.meta_product_set_id, alreadyExists: true };
+  }
+
+  // Ensure main catalog exists
+  const { catalogId } = await ensureMainCatalog(branch.restaurant_id);
+
+  // Also set catalog_id on the branch (for backwards compat with existing code)
+  if (!branch.catalog_id || branch.catalog_id !== catalogId) {
+    await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: catalogId } });
+    branch.catalog_id = catalogId;
+  }
+
+  // Build a filter: match items whose retailer_id starts with this branch's prefix
+  // We use a tag-based filter on product_tags[1] which contains the branch name
+  const setName = branch.name || `Branch ${branchId.slice(0, 6)}`;
+
+  try {
+    const filter = JSON.stringify({ 'product_tags[1]': { contains: branch.name } });
+    const res = await axios.post(
+      `${GRAPH}/${catalogId}/product_sets`,
+      { name: setName, filter },
+      { headers: { Authorization: `Bearer ${_getCatalogToken()}` }, timeout: 15000 }
+    );
+    const productSetId = res.data.id;
+    await col('branches').updateOne({ _id: branchId }, { $set: { meta_product_set_id: productSetId } });
+    console.log(`[Catalog] Created branch product set "${setName}" → ${productSetId}`);
+    return { productSetId, created: true };
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`[Catalog] ensureBranchProductSet failed for "${setName}":`, msg);
+    throw new Error(`Failed to create branch product set: ${msg}`);
+  }
+};
+
+// ─── AUTO-CREATE CATALOG FOR A BRANCH (uses main catalog) ────
+// Creates the main catalog if needed and assigns it to the branch
+const createBranchCatalog = async (branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch) throw new Error('Branch not found');
+
+  // Use main catalog
+  const { catalogId, alreadyExists } = await ensureMainCatalog(branch.restaurant_id);
+
+  // Set catalog_id on branch (for backwards compat)
+  if (branch.catalog_id !== catalogId) {
+    await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: catalogId } });
+  }
+
+  // Create branch product set in the background (non-blocking)
+  ensureBranchProductSet(branchId).catch(err =>
+    console.warn(`[Catalog] Branch product set creation deferred:`, err.message)
+  );
+
+  return { success: true, catalogId, branchId, alreadyExists };
 };
 
 // ─── MAP MENU ITEM → META COMMERCE MANAGER 29-COLUMN FORMAT ──
@@ -208,30 +281,25 @@ function _buildItemRequest(item, restaurant, branch) {
 }
 
 // ─── SYNC ONE BRANCH CATALOG ──────────────────────────────────
+// Syncs branch items to the restaurant's MAIN catalog
 const syncBranchCatalog = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!branch) throw new Error('Branch not found');
 
-  const { token, wa_acc } = await _getAccessToken(branch.restaurant_id);
+  const { token } = await _getAccessToken(branch.restaurant_id);
 
-  // Inherit catalog from WABA if branch doesn't have one
-  if (!branch.catalog_id && wa_acc?.catalog_id) {
-    await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: wa_acc.catalog_id } });
-    branch.catalog_id = wa_acc.catalog_id;
-    console.log(`[Catalog] Branch "${branch.name}" inherited catalog ${wa_acc.catalog_id} from WABA`);
-  }
-
-  if (!branch.catalog_id) {
-    try {
-      const created = await createBranchCatalog(branchId);
-      branch.catalog_id = created.catalogId;
-      console.log(`[Catalog] Auto-created catalog ${branch.catalog_id} for "${branch.name}" on first sync`);
-    } catch (createErr) {
-      throw new Error(
-        `Could not create WhatsApp catalog for "${branch.name}": ${createErr.message}. ` +
-        `If you see "Missing Permission", reconnect your Meta account.`
-      );
+  // Ensure main catalog exists and branch is linked to it
+  try {
+    const { catalogId } = await ensureMainCatalog(branch.restaurant_id);
+    if (!branch.catalog_id || branch.catalog_id !== catalogId) {
+      await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: catalogId } });
+      branch.catalog_id = catalogId;
     }
+  } catch (createErr) {
+    throw new Error(
+      `Could not create WhatsApp catalog for "${branch.name}": ${createErr.message}. ` +
+      `If you see "Missing Permission", reconnect your Meta account.`
+    );
   }
 
   const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
@@ -306,6 +374,7 @@ const syncBranchCatalog = async (branchId) => {
           console.warn(`[Catalog] Stale catalog_id "${branch.catalog_id}" — clearing and re-discovering…`);
           try {
             await col('branches').updateOne({ _id: branchId }, { $unset: { catalog_id: '' } });
+            await col('restaurants').updateOne({ _id: branch.restaurant_id }, { $unset: { meta_catalog_id: '', meta_catalog_name: '' } });
             await col('whatsapp_accounts').updateMany(
               { restaurant_id: branch.restaurant_id }, { $unset: { catalog_id: '' } }
             );
@@ -372,6 +441,38 @@ const syncBranchCatalog = async (branchId) => {
   };
 };
 
+// ─── SYNC ENTIRE RESTAURANT CATALOG ─────────────────────────
+// Syncs ALL items across ALL branches to the main catalog, then updates branch product sets
+const syncRestaurantCatalog = async (restaurantId) => {
+  const { catalogId } = await ensureMainCatalog(restaurantId);
+  const branches = await col('branches').find({ restaurant_id: restaurantId, accepts_orders: true }).toArray();
+  const results = { branches: [], totalItems: 0, totalSynced: 0, totalFailed: 0 };
+
+  for (const branch of branches) {
+    try {
+      const r = await syncBranchCatalog(String(branch._id));
+      results.branches.push(r);
+      results.totalItems += r.total || 0;
+      results.totalSynced += r.updated || 0;
+      results.totalFailed += r.failed || 0;
+    } catch (err) {
+      results.branches.push({ branchName: branch.name, success: false, error: err.message });
+      results.totalFailed++;
+    }
+  }
+
+  // Ensure each branch has a product set
+  for (const branch of branches) {
+    ensureBranchProductSet(String(branch._id)).catch(err =>
+      console.warn(`[Catalog] Branch product set for "${branch.name}":`, err.message)
+    );
+  }
+
+  await col('restaurants').updateOne({ _id: restaurantId }, { $set: { last_catalog_sync: new Date() } });
+
+  return { catalogId, ...results };
+};
+
 // ─── SYNC ALL BRANCHES OF A RESTAURANT ───────────────────────
 const syncAllBranches = async (restaurantId) => {
   const branches = await col('branches').find({ restaurant_id: restaurantId, accepts_orders: true }).toArray();
@@ -401,16 +502,27 @@ const addProduct = async (menuItemId) => {
   if (!item || !item.retailer_id) return { skipped: true };
 
   const branch = await col('branches').findOne({ _id: item.branch_id });
-  if (!branch?.catalog_id) return { skipped: true, reason: 'No catalog' };
+  if (!branch) return { skipped: true, reason: 'Branch not found' };
 
-  const { token, restaurant } = await _getAccessToken(branch.restaurant_id);
+  // Use main catalog (auto-create if needed)
+  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
+  const catalogId = restaurant?.meta_catalog_id || branch.catalog_id;
+  if (!catalogId) {
+    try {
+      const { catalogId: newCatId } = await ensureMainCatalog(branch.restaurant_id);
+      if (!newCatId) return { skipped: true, reason: 'No catalog' };
+      return addProduct(menuItemId); // retry with new catalog
+    } catch { return { skipped: true, reason: 'No catalog' }; }
+  }
+
+  const { token } = await _getAccessToken(branch.restaurant_id);
   initSdk(token);
 
   const request = _buildItemRequest(item, restaurant, branch);
   if (!request) return { skipped: true };
 
   try {
-    const catalogObj = new ProductCatalog(branch.catalog_id);
+    const catalogObj = new ProductCatalog(catalogId);
     await catalogObj.createItemsBatch([], {
       allow_upsert: true,
       item_type: 'PRODUCT_ITEM',
@@ -439,13 +551,17 @@ const updateProduct = async (menuItemId) => {
 // ─── DELETE SINGLE PRODUCT FROM CATALOG ──────────────────────
 const deleteProduct = async (menuItem, branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
-  if (!branch?.catalog_id || !menuItem?.retailer_id) return { skipped: true };
+  if (!branch || !menuItem?.retailer_id) return { skipped: true };
+
+  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
+  const catalogId = restaurant?.meta_catalog_id || branch.catalog_id;
+  if (!catalogId) return { skipped: true };
 
   const { token } = await _getAccessToken(branch.restaurant_id);
   initSdk(token);
 
   try {
-    const catalogObj = new ProductCatalog(branch.catalog_id);
+    const catalogObj = new ProductCatalog(catalogId);
     await catalogObj.createItemsBatch([], {
       allow_upsert: true,
       item_type: 'PRODUCT_ITEM',
@@ -471,9 +587,11 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
     { $set: { is_available: isAvailable, updated_at: new Date(), catalog_sync_status: 'pending' } }
   );
 
-  if (!branch?.catalog_id || !item.retailer_id) return;
+  const restaurant = await col('restaurants').findOne({ _id: branch?.restaurant_id });
+  const catalogId = restaurant?.meta_catalog_id || branch?.catalog_id;
+  if (!catalogId || !item.retailer_id) return;
 
-  const { token, restaurant } = await _getAccessToken(branch.restaurant_id);
+  const { token } = await _getAccessToken(branch.restaurant_id);
   initSdk(token);
 
   // Use the 29-column mapper — availability is encoded as "in stock" / "out of stock"
@@ -481,7 +599,7 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
   if (!request) return;
 
   try {
-    const catalogObj = new ProductCatalog(branch.catalog_id);
+    const catalogObj = new ProductCatalog(catalogId);
     await catalogObj.createItemsBatch([], {
       allow_upsert: true,
       item_type: 'PRODUCT_ITEM',
@@ -500,25 +618,29 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
 // ─── GET ALL PRODUCTS IN A CATALOG (via SDK) ─────────────────
 const getCatalogProducts = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
-  if (!branch?.catalog_id) return { products: [], catalogId: null };
+  if (!branch) return { products: [], catalogId: null };
+
+  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
+  const catalogId = restaurant?.meta_catalog_id || branch.catalog_id;
+  if (!catalogId) return { products: [], catalogId: null };
 
   const { token } = await _getAccessToken(branch.restaurant_id);
   initSdk(token);
 
   try {
-    const catalogObj = new ProductCatalog(branch.catalog_id);
+    const catalogObj = new ProductCatalog(catalogId);
     const products = await catalogObj.getProducts(
       ['id', 'retailer_id', 'name', 'description', 'price', 'currency', 'availability', 'image_url', 'url'],
       { limit: 250 }
     );
     return {
-      catalogId: branch.catalog_id,
+      catalogId,
       products: products.map(p => p._data),
       total: products.length,
     };
   } catch (err) {
     console.error('[Catalog] getProducts failed:', err._error?.error?.message || err.message);
-    return { catalogId: branch.catalog_id, products: [], error: err._error?.error?.message || err.message };
+    return { catalogId, products: [], error: err._error?.error?.message || err.message };
   }
 };
 
@@ -547,6 +669,8 @@ const getSyncStatus = async (restaurantId) => {
   }
 
   return {
+    mainCatalogId     : restaurant?.meta_catalog_id || null,
+    mainCatalogName   : restaurant?.meta_catalog_name || null,
     catalogSyncEnabled: restaurant?.catalog_sync_enabled || false,
     lastFullSync      : restaurant?.last_catalog_sync || null,
     branches          : branchStatuses,
@@ -1085,9 +1209,10 @@ const rediscoverCatalog = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!branch) throw new Error('Branch not found');
   const oldId = branch.catalog_id;
-  await col('branches').updateOne({ _id: branchId }, { $unset: { catalog_id: '' } });
+  await col('branches').updateMany({ restaurant_id: branch.restaurant_id }, { $unset: { catalog_id: '' } });
+  await col('restaurants').updateOne({ _id: branch.restaurant_id }, { $unset: { meta_catalog_id: '', meta_catalog_name: '' } });
   await col('whatsapp_accounts').updateMany({ restaurant_id: branch.restaurant_id }, { $unset: { catalog_id: '' } });
-  console.log(`[Catalog] Cleared stale catalog_id "${oldId}" for branch "${branch.name}"`);
+  console.log(`[Catalog] Cleared stale catalog_id "${oldId}" for restaurant — re-discovering main catalog`);
   return await createBranchCatalog(branchId);
 };
 
@@ -1122,6 +1247,11 @@ const fetchWabaCatalogs = async (wabaId) => {
 };
 
 module.exports = {
+  // Main catalog architecture
+  ensureMainCatalog,
+  ensureBranchProductSet,
+  syncRestaurantCatalog,
+  // Branch-level (uses main catalog internally)
   createBranchCatalog,
   syncBranchCatalog,
   syncAllBranches,

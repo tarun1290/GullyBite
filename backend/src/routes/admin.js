@@ -1865,4 +1865,53 @@ router.get('/images/stats', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// CATALOG MIGRATION — promote branch catalogs to main restaurant catalog
+// ═══════════════════════════════════════════════════════════════
+const catalog = require('../services/catalog');
+
+router.post('/migrate-catalogs', requireAdmin, async (req, res) => {
+  try {
+    const restaurants = await col('restaurants').find({ meta_catalog_id: { $in: [null, undefined, ''] } }).toArray();
+    const results = { migrated: 0, skipped: 0, errors: [] };
+
+    for (const rest of restaurants) {
+      try {
+        // Find any branch that has a catalog_id
+        const branchWithCatalog = await col('branches').findOne({
+          restaurant_id: String(rest._id),
+          catalog_id: { $exists: true, $ne: null, $ne: '' },
+        });
+
+        if (branchWithCatalog) {
+          // Promote branch catalog to restaurant main catalog
+          await col('restaurants').updateOne(
+            { _id: rest._id },
+            { $set: {
+              meta_catalog_id: branchWithCatalog.catalog_id,
+              meta_catalog_name: `${rest.business_name || rest.name} Menu`,
+              catalog_created_at: new Date(),
+            }}
+          );
+
+          // Set same catalog_id on all branches
+          await col('branches').updateMany(
+            { restaurant_id: String(rest._id) },
+            { $set: { catalog_id: branchWithCatalog.catalog_id } }
+          );
+
+          results.migrated++;
+          console.log(`[Migration] Promoted catalog ${branchWithCatalog.catalog_id} to main for "${rest.business_name}"`);
+        } else {
+          results.skipped++;
+        }
+      } catch (err) {
+        results.errors.push(`${rest.business_name}: ${err.message}`);
+      }
+    }
+
+    res.json({ success: true, ...results, total: restaurants.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;
