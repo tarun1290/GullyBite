@@ -316,6 +316,7 @@ tr:hover td{background:rgba(79,70,229,.02)}
 }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.min.js"></script>
+<script>if(typeof XLSX==='undefined'){document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"><\/script>')}</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -3588,6 +3589,7 @@ function splitCSVLine(line) {
 async function parseFile(file) {
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   if (ext === 'xlsx' || ext === 'xls') {
+    if (typeof XLSX === 'undefined') throw new Error('Excel parser failed to load. Please refresh the page or try uploading a .csv file instead.');
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = e => {
