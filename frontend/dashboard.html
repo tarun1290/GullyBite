@@ -3498,95 +3498,134 @@ async function loadBranchSel() {
     const data = await api('/api/restaurant/branches');
     branches = data || [];
     const prevVal = sel.value;
-    sel.innerHTML = '<option value="">Select branch...</option>' +
+    // "All Branches" is the default (value="__all__"), then individual branches
+    sel.innerHTML = '<option value="__all__">All Branches</option>' +
       branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
-    // Auto-select: restore previous selection, or pick the first branch
-    if (prevVal && branches.some(b => b.id === prevVal)) {
+    // Restore previous selection if valid
+    if (prevVal && (prevVal === '__all__' || branches.some(b => b.id === prevVal))) {
       sel.value = prevVal;
-    } else if (branches.length === 1) {
-      sel.value = branches[0].id;
-    } else if (branches.length > 1 && !prevVal) {
-      sel.value = branches[0].id;
+    } else {
+      sel.value = '__all__';
     }
-    // Auto-load menu if a branch is now selected
-    if (sel.value) loadMenu();
+    // Always load menu (all branches by default)
+    loadMenu();
   } catch (_) {}
 }
 function doSelectBranch(id) {
   const sel = document.getElementById('m-branch');
   if (sel) { sel.value = id; loadMenu(); }
 }
+let _allMenuData = null; // cached data for client-side filtering
+
 async function loadMenu() {
   const branchId = document.getElementById('m-branch').value;
   if (!branchId) return;
-  const cats   = await api(`/api/restaurant/branches/${branchId}/categories`).catch(() => []);
-  const catSel = document.getElementById('m-cat');
-  catSel.innerHTML = '<option value="">No category</option>' +
-    (cats || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
-    '<option value="__new__">+ New category…</option>';
-  document.getElementById('m-cat-new').style.display = 'none';
-  document.getElementById('m-cat-new').value = '';
-  if (_catManagerOpen) renderCatList();
-  const branch  = branches.find(b => b.id === branchId);
-  const badge   = document.getElementById('m-cat-badge');
+
+  const isAll = branchId === '__all__';
+
+  // Load categories for add-item dropdown (use first branch if "all")
+  if (!isAll) {
+    const cats = await api(`/api/restaurant/branches/${branchId}/categories`).catch(() => []);
+    const catSel = document.getElementById('m-cat');
+    catSel.innerHTML = '<option value="">No category</option>' +
+      (cats || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('') +
+      '<option value="__new__">+ New category…</option>';
+    document.getElementById('m-cat-new').style.display = 'none';
+    document.getElementById('m-cat-new').value = '';
+    if (_catManagerOpen) renderCatList();
+  }
+
+  const branch = branches.find(b => b.id === branchId);
+  const badge = document.getElementById('m-cat-badge');
   const syncBtn = document.getElementById('m-sync-btn');
-  badge.style.display   = 'flex';
-  syncBtn.style.display = branch?.catalog_id ? 'inline-flex' : 'none';
+  badge.style.display = isAll ? 'none' : 'flex';
+  syncBtn.style.display = (!isAll && branch?.catalog_id) ? 'inline-flex' : 'none';
   const setsBtn = document.getElementById('m-sets-btn');
-  if (setsBtn) setsBtn.style.display = branch?.catalog_id ? 'inline-flex' : 'none';
+  if (setsBtn) setsBtn.style.display = (!isAll && branch?.catalog_id) ? 'inline-flex' : 'none';
   const bulkImgBtn = document.getElementById('m-bulk-img-btn');
-  if (bulkImgBtn) bulkImgBtn.style.display = branchId ? 'inline-flex' : 'none';
-  loadImageStats();
-  badge.innerHTML = branch?.catalog_id
-    ? `<span class="badge bg">✅ Catalog Live</span><button class="btn-g btn-sm" onclick="doFixCatalog()" title="Re-discover catalog from Meta if sync fails" style="font-size:.7rem;padding:.25rem .55rem;margin-left:.35rem">🔧 Fix Catalog</button>`
-    : `<span class="badge ba">⚠️ No catalog — <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--gold2);cursor:pointer;font-size:.72rem;text-decoration:underline">create in Branches</button></span>`;
+  if (bulkImgBtn) bulkImgBtn.style.display = (!isAll && branchId) ? 'inline-flex' : 'none';
+  if (!isAll) loadImageStats();
+
+  if (!isAll) {
+    badge.innerHTML = branch?.catalog_id
+      ? `<span class="badge bg">✅ Catalog Live</span><button class="btn-g btn-sm" onclick="doFixCatalog()" title="Re-discover catalog from Meta if sync fails" style="font-size:.7rem;padding:.25rem .55rem;margin-left:.35rem">🔧 Fix Catalog</button>`
+      : `<span class="badge ba">⚠️ No catalog — <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--gold2);cursor:pointer;font-size:.72rem;text-decoration:underline">create in Branches</button></span>`;
+  }
+
   const list = document.getElementById('menu-list');
   list.innerHTML = `<div style="text-align:center;padding:2rem"><div class="spin"></div></div>`;
+
   try {
-    const grouped = await api(`/api/restaurant/branches/${branchId}/menu`);
+    const apiUrl = isAll ? '/api/restaurant/menu/all' : `/api/restaurant/branches/${branchId}/menu`;
+    const grouped = await api(apiUrl);
+    _allMenuData = isAll ? grouped : null;
+
     const totalItems = grouped?.reduce((s, g) => s + (g.items?.length || 0), 0) || 0;
     const countEl = document.getElementById('m-item-count');
-    if (countEl) countEl.textContent = totalItems ? `${totalItems} items` : '';
+    if (countEl) {
+      countEl.textContent = totalItems ? (isAll ? `Showing all ${totalItems} items` : `${totalItems} items`) : '';
+    }
+
+    // Update branch selector with item counts (only when loading all)
+    if (isAll && branches.length) {
+      const allItems = grouped?.flatMap(g => g.items || []) || [];
+      const sel = document.getElementById('m-branch');
+      sel.innerHTML = `<option value="__all__">All Branches (${allItems.length})</option>` +
+        branches.map(b => {
+          const cnt = allItems.filter(i => i.branch_id === b.id).length;
+          return `<option value="${b.id}">${b.name} (${cnt})</option>`;
+        }).join('');
+      sel.value = '__all__';
+    }
+
     if (!grouped?.length || grouped.every(g => !g.items?.length)) {
       list.innerHTML = `<div class="empty"><div class="ei">🍽️</div><h3>No menu items yet</h3><p>Add items using the "+ Add" button above</p></div>`;
       return;
     }
-    list.innerHTML = grouped.map(g => {
-      // Group items by item_group_id for variant clustering
-      const standalone = [];
-      const variantGroups = {};
-      for (const item of g.items) {
-        if (item.item_group_id) {
-          if (!variantGroups[item.item_group_id]) variantGroups[item.item_group_id] = [];
-          variantGroups[item.item_group_id].push(item);
-        } else {
-          standalone.push(item);
-        }
-      }
-      let html = standalone.map(miRow).join('');
-      for (const [gid, variants] of Object.entries(variantGroups)) {
-        const first = variants[0];
-        const safeName = first.name.replace(/'/g, "\\'");
-        html += `<div class="mi-group" style="border-left:3px solid var(--acc);margin:.3rem 0;border-radius:4px;background:rgba(79,70,229,.03)">
-          <div style="display:flex;align-items:center;gap:.5rem;padding:.45rem .8rem;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.grp-arr').textContent=this.nextElementSibling.style.display==='none'?'▶':'▼'">
-            <span class="grp-arr" style="font-size:.7rem;color:var(--dim)">▼</span>
-            <span style="font-weight:600;font-size:.85rem">${first.name}</span>
-            <span class="badge bd" style="font-size:.65rem">${variants.length} variants</span>
-            <button class="btn-g btn-sm" style="margin-left:auto;font-size:.72rem" onclick="event.stopPropagation();openVarModal('${first.id}','${safeName}','${gid}')">+ Add Variant</button>
-          </div>
-          <div>${variants.map(v => miRow(v, true)).join('')}</div>
-        </div>`;
-      }
-      return `<div class="card" style="margin-bottom:.9rem">
-        <div class="ch"><h3>${g.name}</h3><span class="badge bd">${g.items.length} items</span></div>
-        <div>${html}</div>
-      </div>`;
-    }).join('');
-  } catch (e) { toast('Failed to load menu', 'err'); }
-  loadProductSets();
-  loadCollections();
+
+    list.innerHTML = renderMenuGroups(grouped, isAll);
+  } catch (e) { toast('Failed to load menu: ' + e.message, 'err'); }
+
+  if (!isAll) {
+    loadProductSets();
+    loadCollections();
+  }
 }
-function miRow(item, isGroupedVariant) {
+
+function renderMenuGroups(grouped, showBranchBadge) {
+  return grouped.map(g => {
+    const standalone = [];
+    const variantGroups = {};
+    for (const item of g.items) {
+      if (item.item_group_id) {
+        if (!variantGroups[item.item_group_id]) variantGroups[item.item_group_id] = [];
+        variantGroups[item.item_group_id].push(item);
+      } else {
+        standalone.push(item);
+      }
+    }
+    let html = standalone.map(i => miRow(i, false, showBranchBadge)).join('');
+    for (const [gid, variants] of Object.entries(variantGroups)) {
+      const first = variants[0];
+      const safeName = first.name.replace(/'/g, "\\'");
+      html += `<div class="mi-group" style="border-left:3px solid var(--acc);margin:.3rem 0;border-radius:4px;background:rgba(79,70,229,.03)">
+        <div style="display:flex;align-items:center;gap:.5rem;padding:.45rem .8rem;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.grp-arr').textContent=this.nextElementSibling.style.display==='none'?'▶':'▼'">
+          <span class="grp-arr" style="font-size:.7rem;color:var(--dim)">▼</span>
+          <span style="font-weight:600;font-size:.85rem">${first.name}</span>
+          ${showBranchBadge && first.branch_name ? `<span style="font-size:.65rem;background:var(--ink);padding:.1rem .4rem;border-radius:10px;color:var(--dim)">${first.branch_name}</span>` : ''}
+          <span class="badge bd" style="font-size:.65rem">${variants.length} variants</span>
+          <button class="btn-g btn-sm" style="margin-left:auto;font-size:.72rem" onclick="event.stopPropagation();openVarModal('${first.id}','${safeName}','${gid}')">+ Add Variant</button>
+        </div>
+        <div>${variants.map(v => miRow(v, true, showBranchBadge)).join('')}</div>
+      </div>`;
+    }
+    return `<div class="card" style="margin-bottom:.9rem">
+      <div class="ch"><h3>${g.name}</h3><span class="badge bd">${g.items.length} items</span></div>
+      <div>${html}</div>
+    </div>`;
+  }).join('');
+}
+function miRow(item, isGroupedVariant, showBranchBadge) {
   const ti    = { veg: '🟢', non_veg: '🔴', vegan: '🌱', egg: '🟡' };
   const thumbSrc = item.thumbnail_url || item.image_url;
   const thumb = thumbSrc
@@ -3594,6 +3633,9 @@ function miRow(item, isGroupedVariant) {
     : `<div class="mi-ph">${ti[item.food_type] || '🍽️'}</div>`;
   const variantBadge = item.item_group_id
     ? `<span class="var-badge" title="Part of a variant group">⚡ ${item.size || item.variant_value || 'Variant'}</span>`
+    : '';
+  const branchBadge = (showBranchBadge && item.branch_name && !isGroupedVariant)
+    ? `<span style="font-size:.62rem;background:#e0e7ff;padding:.1rem .4rem;border-radius:10px;color:#4338ca;margin-left:.3rem">${item.branch_name}</span>`
     : '';
   const saleBadge = item.sale_price_paise
     ? `<span style="text-decoration:line-through;color:var(--mute);font-size:.75rem;margin-right:.3rem">₹${item.price_paise / 100}</span><span style="color:var(--red);font-weight:600">₹${item.sale_price_paise / 100}</span>`
@@ -3604,7 +3646,7 @@ function miRow(item, isGroupedVariant) {
   return `<div class="mi" style="${indent}">
     ${thumb}
     <div style="flex:1;min-width:0">
-      <div class="mi-name">${isGroupedVariant ? '' : item.name}${isGroupedVariant ? (item.size || item.variant_value || 'Variant') : ''}${item.is_bestseller ? '<span class="badge ba" style="margin-left:.3rem;font-size:.6rem">⭐</span>' : ''}${!isGroupedVariant ? variantBadge : ''}</div>
+      <div class="mi-name">${isGroupedVariant ? '' : item.name}${isGroupedVariant ? (item.size || item.variant_value || 'Variant') : ''}${item.is_bestseller ? '<span class="badge ba" style="margin-left:.3rem;font-size:.6rem">⭐</span>' : ''}${!isGroupedVariant ? variantBadge : ''}${branchBadge}</div>
       ${item.description && !isGroupedVariant ? `<div class="mi-desc">${item.description}</div>` : ''}
       ${item.product_tags?.length ? `<div style="display:flex;gap:.25rem;flex-wrap:wrap;margin-top:.2rem">${item.product_tags.map(t => `<span style="font-size:.62rem;background:var(--ink);padding:.1rem .4rem;border-radius:10px;color:var(--dim)">${t}</span>`).join('')}</div>` : ''}
     </div>

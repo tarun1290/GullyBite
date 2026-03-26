@@ -865,6 +865,42 @@ router.delete('/branches/:branchId/categories/:catId', async (req, res) => {
 // MENU ITEMS
 // ═══════════════════════════════════════════════════════════════
 
+// GET /api/restaurant/menu/all — ALL items across ALL branches (grouped by category)
+router.get('/menu/all', async (req, res) => {
+  try {
+    const branchDocs = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+    const branchIds = branchDocs.map(b => String(b._id));
+    if (!branchIds.length) return res.json([]);
+
+    const [cats, items] = await Promise.all([
+      col('menu_categories').find({ branch_id: { $in: branchIds } }).sort({ sort_order: 1 }).toArray(),
+      col('menu_items').find({ branch_id: { $in: branchIds } }).sort({ sort_order: 1, name: 1 }).toArray(),
+    ]);
+
+    // Build a branch name lookup
+    const branchMap = {};
+    for (const b of branchDocs) branchMap[String(b._id)] = b.name || 'Unnamed';
+
+    const mappedCats = mapIds(cats);
+    const mappedItems = mapIds(items).map(i => ({ ...i, branch_name: branchMap[i.branch_id] || 'Unknown' }));
+
+    // Deduplicate categories by name (same category name across branches → merge)
+    const catByName = {};
+    for (const c of mappedCats) {
+      const key = (c.name || 'Uncategorized').toLowerCase();
+      if (!catByName[key]) catByName[key] = { id: c.id, name: c.name, catIds: [c.id] };
+      else catByName[key].catIds.push(c.id);
+    }
+
+    const result = Object.values(catByName).map(c => ({
+      ...c,
+      items: mappedItems.filter(i => c.catIds.includes(i.category_id)),
+    }));
+    result.push({ id: null, name: 'Uncategorized', items: mappedItems.filter(i => !i.category_id) });
+    res.json(result.filter(c => c.items.length > 0));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/branches/:branchId/menu', async (req, res) => {
   try {
     const [cats, items] = await Promise.all([
