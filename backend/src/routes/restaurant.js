@@ -870,11 +870,15 @@ router.get('/menu/all', async (req, res) => {
   try {
     const branchDocs = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
     const branchIds = branchDocs.map(b => String(b._id));
-    if (!branchIds.length) return res.json([]);
+
+    // Fetch items from all branches AND unassigned items (branch_id is null or missing)
+    const itemFilter = branchIds.length
+      ? { $or: [{ branch_id: { $in: branchIds } }, { restaurant_id: req.restaurantId, branch_id: null }, { restaurant_id: req.restaurantId, branch_id: { $exists: false } }] }
+      : { restaurant_id: req.restaurantId };
 
     const [cats, items] = await Promise.all([
-      col('menu_categories').find({ branch_id: { $in: branchIds } }).sort({ sort_order: 1 }).toArray(),
-      col('menu_items').find({ branch_id: { $in: branchIds } }).sort({ sort_order: 1, name: 1 }).toArray(),
+      branchIds.length ? col('menu_categories').find({ branch_id: { $in: branchIds } }).sort({ sort_order: 1 }).toArray() : [],
+      col('menu_items').find(itemFilter).sort({ sort_order: 1, name: 1 }).toArray(),
     ]);
 
     // Build a branch name lookup
@@ -882,7 +886,11 @@ router.get('/menu/all', async (req, res) => {
     for (const b of branchDocs) branchMap[String(b._id)] = b.name || 'Unnamed';
 
     const mappedCats = mapIds(cats);
-    const mappedItems = mapIds(items).map(i => ({ ...i, branch_name: branchMap[i.branch_id] || 'Unknown' }));
+    const mappedItems = mapIds(items).map(i => ({
+      ...i,
+      branch_name: i.branch_id ? (branchMap[i.branch_id] || 'Unknown') : null,
+      _unassigned: !i.branch_id,
+    }));
 
     // Deduplicate categories by name (same category name across branches → merge)
     const catByName = {};
@@ -897,7 +905,22 @@ router.get('/menu/all', async (req, res) => {
       items: mappedItems.filter(i => c.catIds.includes(i.category_id)),
     }));
     result.push({ id: null, name: 'Uncategorized', items: mappedItems.filter(i => !i.category_id) });
-    res.json(result.filter(c => c.items.length > 0));
+
+    // Count unassigned for frontend
+    const unassignedCount = mappedItems.filter(i => i._unassigned).length;
+    const response = result.filter(c => c.items.length > 0);
+    res.json({ groups: response, unassigned_count: unassignedCount, total_count: mappedItems.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/menu/unassigned — items not assigned to any branch
+router.get('/menu/unassigned', async (req, res) => {
+  try {
+    const items = await col('menu_items').find({
+      restaurant_id: req.restaurantId,
+      $or: [{ branch_id: null }, { branch_id: { $exists: false } }],
+    }).sort({ name: 1 }).toArray();
+    res.json(mapIds(items));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2375,10 +2398,23 @@ router.post('/catalog/toggle-auto-sync', async (req, res) => {
 });
 
 // POST /api/restaurant/catalog/create-new — Create a new catalog via Meta API
+// Guard: only ONE catalog per restaurant
 router.post('/catalog/create-new', requireApproved, async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, force } = req.body;
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+
+    // Prevent duplicate — if catalog already exists, return it
+    if (restaurant?.meta_catalog_id && !force) {
+      return res.json({
+        success: true,
+        already_exists: true,
+        catalog_id: restaurant.meta_catalog_id,
+        catalog_name: restaurant.meta_catalog_name,
+        message: 'You already have a catalog. Items will be added to your existing catalog.',
+      });
+    }
+
     const catName = name || `${restaurant?.business_name || 'Restaurant'} - Menu`;
     const bizId = restaurant?.meta_business_id || metaConfig.businessId;
     if (!bizId) return res.status(400).json({ error: 'No Meta Business ID configured. Complete WhatsApp setup first.' });
@@ -2588,6 +2624,199 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
       : (metaErr?.message || e.message);
     res.status(500).json({ error: userMsg });
   }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// MULTI-BRANCH MENU MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+// POST /api/restaurant/menu/bulk-assign-branch — assign multiple items to a branch
+router.post('/menu/bulk-assign-branch', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { item_ids, branch_id } = req.body;
+    if (!item_ids?.length) return res.status(400).json({ error: 'item_ids array is required' });
+    if (!branch_id) return res.status(400).json({ error: 'branch_id is required' });
+
+    // Verify the branch belongs to this restaurant
+    const branch = await col('branches').findOne({ _id: branch_id, restaurant_id: req.restaurantId });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    const result = await col('menu_items').updateMany(
+      { _id: { $in: item_ids }, restaurant_id: req.restaurantId },
+      { $set: { branch_id, updated_at: new Date(), catalog_sync_status: 'pending' } }
+    );
+
+    console.log(`[Menu] Bulk assigned ${result.modifiedCount} items to branch ${branch.name}`);
+
+    // Trigger catalog sync for the branch in background
+    catalog.syncBranchCatalog(branch_id).catch(e => console.error('[Menu] Auto-sync after assign:', e.message));
+
+    res.json({ success: true, assigned: result.modifiedCount, branch_name: branch.name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/menu/:itemId/branch — move single item to a different branch
+router.put('/menu/:itemId/branch', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { branch_id } = req.body;
+    if (!branch_id) return res.status(400).json({ error: 'branch_id is required' });
+
+    const branch = await col('branches').findOne({ _id: branch_id, restaurant_id: req.restaurantId });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    const item = await col('menu_items').findOne({ _id: req.params.itemId });
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    const oldBranchId = item.branch_id;
+    await col('menu_items').updateOne(
+      { _id: req.params.itemId },
+      { $set: { branch_id, updated_at: new Date(), catalog_sync_status: 'pending' } }
+    );
+
+    console.log(`[Menu] Moved "${item.name}" from branch ${oldBranchId} to ${branch.name}`);
+
+    // No Meta catalog change needed — one catalog for all branches
+    // Just re-sync to update product_tags/retailer_id if branch-encoded
+    catalog.syncBranchCatalog(branch_id).catch(e => console.error('[Menu] Auto-sync after move:', e.message));
+
+    res.json({ success: true, item_name: item.name, branch_name: branch.name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/catalog/merge — merge multiple catalogs into one
+router.post('/catalog/merge', requireApproved, async (req, res) => {
+  try {
+    const { primary_catalog_id } = req.body;
+    const token = metaConfig.catalogToken;
+    if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
+
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+
+    // Fetch all catalogs from WABA and business
+    let allCatalogs = [];
+    if (wa?.waba_id) {
+      allCatalogs = await catalog.fetchWabaCatalogs(wa.waba_id);
+    }
+    if (!allCatalogs.length) {
+      const bizId = restaurant?.meta_business_id || metaConfig.businessId;
+      if (bizId) allCatalogs = await catalog.fetchBusinessCatalogs(bizId);
+    }
+
+    if (allCatalogs.length <= 1) {
+      return res.json({ success: true, message: 'Only one catalog found — no merge needed.', merged: 0 });
+    }
+
+    // Determine primary catalog
+    const primaryId = primary_catalog_id || restaurant?.meta_catalog_id || allCatalogs[0]?.id;
+    const secondaryCatalogs = allCatalogs.filter(c => c.id !== primaryId);
+
+    let totalCopied = 0, totalDuplicates = 0;
+    const results = [];
+
+    for (const secondary of secondaryCatalogs) {
+      try {
+        // Fetch items from secondary catalog
+        const items = await catalog.getCatalogProducts(secondary.id);
+        if (!items?.length) {
+          results.push({ catalog_id: secondary.id, name: secondary.name, items: 0, copied: 0 });
+          continue;
+        }
+
+        // Check for duplicates (same name + same price) in primary
+        const primaryItems = await catalog.getCatalogProducts(primaryId);
+        const primaryKeys = new Set(primaryItems?.map(i => `${(i.name||'').toLowerCase()}_${i.price}`) || []);
+
+        let copied = 0, dupes = 0;
+        for (const item of items) {
+          const key = `${(item.name||'').toLowerCase()}_${item.price}`;
+          if (primaryKeys.has(key)) { dupes++; continue; }
+          // Copy to primary catalog via batch API
+          try {
+            await axios.post(
+              `${metaConfig.graphUrl}/${primaryId}/batch`,
+              { allow_upsert: true, requests: [{ method: 'UPDATE', retailer_id: item.retailer_id || `merged-${item.id}`, data: { name: item.name, description: item.description, price: item.price, availability: item.availability, image_url: item.image_url, brand: item.brand } }] },
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            copied++;
+          } catch (_) { /* skip failed items */ }
+        }
+
+        totalCopied += copied;
+        totalDuplicates += dupes;
+        results.push({ catalog_id: secondary.id, name: secondary.name, items: items.length, copied, duplicates: dupes });
+
+        // Disconnect secondary from WABA
+        if (wa?.waba_id) {
+          try {
+            await axios.delete(`${metaConfig.graphUrl}/${wa.waba_id}/product_catalogs`, {
+              data: { catalog_id: secondary.id }, headers: { Authorization: `Bearer ${token}` },
+            });
+          } catch (_) { /* may not be linked */ }
+        }
+      } catch (e) {
+        results.push({ catalog_id: secondary.id, name: secondary.name, error: e.message });
+      }
+    }
+
+    // Update DB to point to primary catalog
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { meta_catalog_id: primaryId, updated_at: new Date() } }
+    );
+    await col('whatsapp_accounts').updateMany(
+      { restaurant_id: req.restaurantId },
+      { $set: { catalog_id: primaryId, updated_at: new Date() } }
+    );
+    await col('branches').updateMany(
+      { restaurant_id: req.restaurantId },
+      { $set: { catalog_id: primaryId, updated_at: new Date() } }
+    );
+
+    console.log(`[Catalog] Merged ${secondaryCatalogs.length} catalogs into ${primaryId}. Copied: ${totalCopied}, Dupes skipped: ${totalDuplicates}`);
+    res.json({ success: true, primary_catalog_id: primaryId, merged: secondaryCatalogs.length, total_copied: totalCopied, duplicates_skipped: totalDuplicates, details: results });
+  } catch (e) {
+    console.error('[Catalog] Merge failed:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/restaurant/catalog/detect-duplicates — find duplicate catalogs or items
+router.get('/catalog/detect-duplicates', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+
+    let allCatalogs = [];
+    if (wa?.waba_id) allCatalogs = await catalog.fetchWabaCatalogs(wa.waba_id);
+    if (!allCatalogs.length) {
+      const bizId = restaurant?.meta_business_id || metaConfig.businessId;
+      if (bizId) allCatalogs = await catalog.fetchBusinessCatalogs(bizId);
+    }
+
+    // Detect duplicate items within the main catalog (same name + price in DB)
+    const branchDocs = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+    const branchIds = branchDocs.map(b => String(b._id));
+    const items = branchIds.length
+      ? await col('menu_items').find({ branch_id: { $in: branchIds } }).toArray()
+      : [];
+
+    const dupeMap = {};
+    for (const item of items) {
+      const key = `${(item.name||'').toLowerCase().trim()}_${item.price_paise}`;
+      if (!dupeMap[key]) dupeMap[key] = [];
+      dupeMap[key].push({ id: String(item._id), name: item.name, branch_id: item.branch_id, price_paise: item.price_paise });
+    }
+    const duplicateItems = Object.values(dupeMap).filter(arr => arr.length > 1);
+
+    res.json({
+      catalogs: allCatalogs,
+      multiple_catalogs: allCatalogs.length > 1,
+      active_catalog_id: restaurant?.meta_catalog_id,
+      duplicate_items: duplicateItems,
+      duplicate_item_groups: duplicateItems.length,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/restaurant/catalogs — Returns this restaurant's connected catalog from MongoDB.

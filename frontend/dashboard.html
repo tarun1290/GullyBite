@@ -3506,16 +3506,15 @@ async function loadBranchSel() {
     const data = await api('/api/restaurant/branches');
     branches = data || [];
     const prevVal = sel.value;
-    // "All Branches" is the default (value="__all__"), then individual branches
     sel.innerHTML = '<option value="__all__">All Branches</option>' +
-      branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+      branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('') +
+      '<option value="__unassigned__">⚠️ Unassigned</option>';
     // Restore previous selection if valid
-    if (prevVal && (prevVal === '__all__' || branches.some(b => b.id === prevVal))) {
+    if (prevVal && (prevVal === '__all__' || prevVal === '__unassigned__' || branches.some(b => b.id === prevVal))) {
       sel.value = prevVal;
     } else {
       sel.value = '__all__';
     }
-    // Always load menu (all branches by default)
     loadMenu();
   } catch (_) {}
 }
@@ -3530,9 +3529,11 @@ async function loadMenu() {
   if (!branchId) return;
 
   const isAll = branchId === '__all__';
+  const isUnassigned = branchId === '__unassigned__';
+  const isSpecificBranch = !isAll && !isUnassigned;
 
-  // Load categories for add-item dropdown (use first branch if "all")
-  if (!isAll) {
+  // Load categories for add-item dropdown (specific branch only)
+  if (isSpecificBranch) {
     const cats = await api(`/api/restaurant/branches/${branchId}/categories`).catch(() => []);
     const catSel = document.getElementById('m-cat');
     catSel.innerHTML = '<option value="">No category</option>' +
@@ -3543,18 +3544,18 @@ async function loadMenu() {
     if (_catManagerOpen) renderCatList();
   }
 
-  const branch = branches.find(b => b.id === branchId);
+  const branch = isSpecificBranch ? branches.find(b => b.id === branchId) : null;
   const badge = document.getElementById('m-cat-badge');
   const syncBtn = document.getElementById('m-sync-btn');
-  badge.style.display = isAll ? 'none' : 'flex';
-  syncBtn.style.display = (!isAll && branch?.catalog_id) ? 'inline-flex' : 'none';
+  badge.style.display = isSpecificBranch ? 'flex' : 'none';
+  syncBtn.style.display = (isSpecificBranch && branch?.catalog_id) ? 'inline-flex' : 'none';
   const setsBtn = document.getElementById('m-sets-btn');
-  if (setsBtn) setsBtn.style.display = (!isAll && branch?.catalog_id) ? 'inline-flex' : 'none';
+  if (setsBtn) setsBtn.style.display = (isSpecificBranch && branch?.catalog_id) ? 'inline-flex' : 'none';
   const bulkImgBtn = document.getElementById('m-bulk-img-btn');
-  if (bulkImgBtn) bulkImgBtn.style.display = (!isAll && branchId) ? 'inline-flex' : 'none';
-  if (!isAll) loadImageStats();
+  if (bulkImgBtn) bulkImgBtn.style.display = isSpecificBranch ? 'inline-flex' : 'none';
+  if (isSpecificBranch) loadImageStats();
 
-  if (!isAll) {
+  if (isSpecificBranch) {
     badge.innerHTML = branch?.catalog_id
       ? `<span class="badge bg">✅ Catalog Live</span><button class="btn-g btn-sm" onclick="doFixCatalog()" title="Re-discover catalog from Meta if sync fails" style="font-size:.7rem;padding:.25rem .55rem;margin-left:.35rem">🔧 Fix Catalog</button>`
       : `<span class="badge ba">⚠️ No catalog — <button onclick="goTab('branches',null)" style="background:none;border:none;color:var(--gold2);cursor:pointer;font-size:.72rem;text-decoration:underline">create in Branches</button></span>`;
@@ -3564,37 +3565,72 @@ async function loadMenu() {
   list.innerHTML = `<div style="text-align:center;padding:2rem"><div class="spin"></div></div>`;
 
   try {
-    const apiUrl = isAll ? '/api/restaurant/menu/all' : `/api/restaurant/branches/${branchId}/menu`;
-    const grouped = await api(apiUrl);
+    let grouped, totalItems, unassignedCount = 0;
+
+    if (isUnassigned) {
+      // Fetch unassigned items
+      const items = await api('/api/restaurant/menu/unassigned');
+      grouped = items?.length ? [{ id: null, name: 'Unassigned Items', items }] : [];
+      totalItems = items?.length || 0;
+    } else if (isAll) {
+      const data = await api('/api/restaurant/menu/all');
+      // New response format: { groups, unassigned_count, total_count }
+      grouped = data?.groups || data; // backwards-compatible
+      totalItems = data?.total_count || grouped?.reduce((s, g) => s + (g.items?.length || 0), 0) || 0;
+      unassignedCount = data?.unassigned_count || 0;
+    } else {
+      grouped = await api(`/api/restaurant/branches/${branchId}/menu`);
+      totalItems = grouped?.reduce((s, g) => s + (g.items?.length || 0), 0) || 0;
+    }
+
     _allMenuData = isAll ? grouped : null;
 
-    const totalItems = grouped?.reduce((s, g) => s + (g.items?.length || 0), 0) || 0;
     const countEl = document.getElementById('m-item-count');
     if (countEl) {
-      countEl.textContent = totalItems ? (isAll ? `Showing all ${totalItems} items` : `${totalItems} items`) : '';
+      let txt = '';
+      if (isAll) txt = `Showing all ${totalItems} items` + (unassignedCount ? ` · ${unassignedCount} unassigned` : '');
+      else if (isUnassigned) txt = `${totalItems} unassigned items`;
+      else txt = totalItems ? `${totalItems} items` : '';
+      countEl.textContent = txt;
     }
 
     // Update branch selector with item counts (only when loading all)
     if (isAll && branches.length) {
-      const allItems = grouped?.flatMap(g => g.items || []) || [];
+      const allItems = (Array.isArray(grouped) ? grouped : []).flatMap(g => g.items || []);
       const sel = document.getElementById('m-branch');
-      sel.innerHTML = `<option value="__all__">All Branches (${allItems.length})</option>` +
+      sel.innerHTML = `<option value="__all__">All Branches (${totalItems})</option>` +
         branches.map(b => {
           const cnt = allItems.filter(i => i.branch_id === b.id).length;
           return `<option value="${b.id}">${b.name} (${cnt})</option>`;
-        }).join('');
+        }).join('') +
+        (unassignedCount ? `<option value="__unassigned__">⚠️ Unassigned (${unassignedCount})</option>` : '<option value="__unassigned__">⚠️ Unassigned</option>');
       sel.value = '__all__';
     }
 
     if (!grouped?.length || grouped.every(g => !g.items?.length)) {
-      list.innerHTML = `<div class="empty"><div class="ei">🍽️</div><h3>No menu items yet</h3><p>Add items using the "+ Add" button above</p></div>`;
+      const emptyMsg = isUnassigned
+        ? '<div class="empty"><div class="ei">✅</div><h3>No unassigned items</h3><p>All items are assigned to branches</p></div>'
+        : '<div class="empty"><div class="ei">🍽️</div><h3>No menu items yet</h3><p>Add items using the "+ Add" button above</p></div>';
+      list.innerHTML = emptyMsg;
       return;
     }
 
-    list.innerHTML = renderMenuGroups(grouped, isAll);
+    // Show bulk assign bar for unassigned view
+    const bulkAssignHtml = isUnassigned && totalItems > 0
+      ? `<div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.8rem;padding:.6rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;font-size:.82rem">
+           <span>⚠️ ${totalItems} items need branch assignment</span>
+           <select id="bulk-assign-branch" style="margin-left:auto;padding:.3rem .5rem;border-radius:6px;border:1px solid var(--rim);font-size:.8rem">
+             <option value="">Assign to...</option>
+             ${branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('')}
+           </select>
+           <button class="btn-p btn-sm" onclick="doBulkAssignAll()">Assign All</button>
+         </div>`
+      : '';
+
+    list.innerHTML = bulkAssignHtml + renderMenuGroups(grouped, isAll || isUnassigned);
   } catch (e) { toast('Failed to load menu: ' + e.message, 'err'); }
 
-  if (!isAll) {
+  if (isSpecificBranch) {
     loadProductSets();
     loadCollections();
   }
@@ -5831,6 +5867,16 @@ async function loadCatalogMgmt(refresh = false) {
       document.getElementById('cat-disconnect-btn').style.display = 'inline-flex';
       document.getElementById('cat-delete-btn').style.display = 'inline-flex';
 
+      // Warn if multiple catalogs detected
+      if (catData.catalogs.length > 1) {
+        statusEl.innerHTML += `
+          <div style="display:flex;align-items:center;gap:.5rem;padding:.6rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.6rem;font-size:.8rem">
+            <span>⚠️</span>
+            <span style="flex:1">You have ${catData.catalogs.length} catalogs. WhatsApp works best with a single catalog.</span>
+            <button class="btn-p btn-sm" onclick="doCatalogMerge()" style="font-size:.75rem;white-space:nowrap">Merge All into One</button>
+          </div>`;
+      }
+
       // Show settings panel for connected catalog
       if (settingsEl) {
         settingsEl.style.display = 'block';
@@ -5982,6 +6028,39 @@ async function doCatMgmtDeleteConfirm() {
     toast('❌ ' + (e.message || 'Failed to delete'), 'err');
     document.getElementById('cat-delete-confirm-btn').disabled = false;
   }
+}
+
+// ── Bulk assign unassigned items to a branch ─────────────
+async function doBulkAssignAll() {
+  const branchSel = document.getElementById('bulk-assign-branch');
+  const branchId = branchSel?.value;
+  if (!branchId) { toast('Select a branch to assign items to', 'err'); return; }
+
+  // Get all unassigned item IDs from the current table
+  const items = await api('/api/restaurant/menu/unassigned').catch(() => []);
+  const itemIds = (items || []).map(i => i.id || i._id);
+  if (!itemIds.length) { toast('No unassigned items to assign', 'err'); return; }
+
+  try {
+    const r = await api('/api/restaurant/menu/bulk-assign-branch', { method: 'POST', body: { item_ids: itemIds, branch_id: branchId } });
+    toast(`✅ ${r.assigned} items assigned to ${r.branch_name}`, 'ok');
+    loadMenu();
+  } catch (e) { toast('❌ ' + (e.message || 'Failed to assign'), 'err'); }
+}
+
+// ── Catalog merge (multiple catalogs → one) ─────────────
+async function doCatalogMerge() {
+  if (!confirm('Merge all catalogs into one?\n\nThis will:\n• Copy items from secondary catalogs to the primary\n• Skip duplicate items (same name + price)\n• Disconnect secondary catalogs from WhatsApp\n\nContinue?')) return;
+  try {
+    toast('Merging catalogs... this may take a moment', 'ok');
+    const r = await api('/api/restaurant/catalog/merge', { method: 'POST' });
+    if (r.merged === 0) {
+      toast('Only one catalog found — no merge needed', 'ok');
+    } else {
+      toast(`✅ Merged ${r.merged} catalogs. ${r.total_copied} items copied, ${r.duplicates_skipped} duplicates skipped`, 'ok');
+    }
+    loadCatalogMgmt(true);
+  } catch (e) { toast('❌ Merge failed: ' + (e.message || 'Unknown error'), 'err'); }
 }
 
 async function doChangePassword() {
