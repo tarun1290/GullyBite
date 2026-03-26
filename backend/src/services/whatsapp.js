@@ -3,29 +3,33 @@
 // Think of this as the "messenger" layer — just sends messages, no business logic
 
 const axios = require('axios');
+const metaConfig = require('../config/meta');
 
-// Build the messages API URL for a given phone number
+// Build the messages API URL for a given phone number — uses centralized API version
 const apiUrl = (phoneNumberId) =>
-  `https://graph.facebook.com/${process.env.WA_API_VERSION}/${phoneNumberId}/messages`;
+  `${metaConfig.graphUrl}/${phoneNumberId}/messages`;
 
 // ─── CORE SEND FUNCTION ───────────────────────────────────────
-// All functions below call this one.
-// phoneNumberId: Your Meta phone number ID (from developer console)
-// accessToken:   Restaurant's Meta access token
-// to:            Customer identifier — phone number OR BSUID (Meta accepts both)
-//                [BSUID] Use customerIdentity.resolveRecipient(customer) to get the best value
-// body:          Message payload (different per message type)
-const sendMsg = async (phoneNumberId, accessToken, to, body) => {
+// All functions below call this one. Includes 1 automatic retry on failure.
+const sendMsg = async (phoneNumberId, accessToken, to, body, _retried = false) => {
   const payload = { messaging_product: 'whatsapp', recipient_type: 'individual', to, ...body };
+  const start = Date.now();
   try {
     const { data } = await axios.post(apiUrl(phoneNumberId), payload, {
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      timeout: 10000,
+      timeout: 20000,
     });
+    console.log(`[Perf] WA send to ${to}: ${Date.now() - start}ms`);
     return data;
   } catch (err) {
     const e = err.response?.data?.error;
-    console.error(`[WA] ❌ Send failed to ${to}: code=${e?.code} msg=${e?.message}`);
+    console.error(`[WA] ❌ Send failed to ${to} (${Date.now() - start}ms): code=${e?.code} msg=${e?.message}`);
+    // Retry once on timeout or 5xx
+    if (!_retried && (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || (err.response?.status >= 500))) {
+      console.log('[WA] Retrying send after 1s...');
+      await new Promise(r => setTimeout(r, 1000));
+      return sendMsg(phoneNumberId, accessToken, to, body, true);
+    }
     throw err;
   }
 };

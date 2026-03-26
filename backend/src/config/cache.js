@@ -1,25 +1,19 @@
 // src/config/cache.js
-// Upstash Redis cache layer — graceful degradation if Redis unavailable.
-// If UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are not set,
-// all cache operations are no-ops and the app works normally (just slower).
+// MongoDB TTL-based cache layer.
+// Uses a _cache collection with TTL index — no external cache service needed.
 
-let redis = null;
+const { col } = require('./database');
 
-const CACHE_ENABLED = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+let _indexCreated = false;
 
-if (CACHE_ENABLED) {
+async function ensureIndex() {
+  if (_indexCreated) return;
   try {
-    const { Redis } = require('@upstash/redis');
-    redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-    console.log('[Cache] ✅ Upstash Redis connected');
-  } catch (e) {
-    console.warn('[Cache] ⚠️ Failed to init Redis:', e.message);
+    await col('_cache').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, background: true });
+    _indexCreated = true;
+  } catch (_) {
+    _indexCreated = true; // index may already exist
   }
-} else {
-  console.log('[Cache] ⚠️ Redis not configured — running without cache');
 }
 
 /**
@@ -30,22 +24,23 @@ if (CACHE_ENABLED) {
  * @returns {*} Cached or fresh data
  */
 async function getCached(key, fetcher, ttlSeconds = 300) {
-  if (redis) {
-    try {
-      const cached = await redis.get(key);
-      if (cached != null) {
-        return typeof cached === 'string' ? JSON.parse(cached) : cached;
-      }
-    } catch (e) {
-      console.warn('[Cache] Read failed for', key, ':', e.message);
-    }
+  try {
+    await ensureIndex();
+    const doc = await col('_cache').findOne({ _id: key, expiresAt: { $gt: new Date() } });
+    if (doc) return doc.value;
+  } catch (e) {
+    console.warn('[Cache] Read failed for', key, ':', e.message);
   }
 
   const fresh = await fetcher();
 
-  if (redis && fresh != null) {
+  if (fresh != null) {
     try {
-      await redis.set(key, JSON.stringify(fresh), { ex: ttlSeconds });
+      await col('_cache').updateOne(
+        { _id: key },
+        { $set: { value: fresh, expiresAt: new Date(Date.now() + ttlSeconds * 1000), updatedAt: new Date() } },
+        { upsert: true }
+      );
     } catch (e) {
       console.warn('[Cache] Write failed for', key, ':', e.message);
     }
@@ -55,24 +50,17 @@ async function getCached(key, fetcher, ttlSeconds = 300) {
 }
 
 /**
- * Invalidate cache keys matching a pattern.
- * @param  {...string} keys - Exact keys to delete (or patterns with *)
+ * Invalidate cache keys — exact keys or regex patterns with *.
+ * @param  {...string} keys - Exact keys or patterns (e.g., "restaurant:abc:*")
  */
 async function invalidateCache(...keys) {
-  if (!redis) return;
   try {
-    const exactKeys = keys.filter(k => !k.includes('*'));
-    const patterns = keys.filter(k => k.includes('*'));
-
-    if (exactKeys.length) await redis.del(...exactKeys);
-
-    for (const pattern of patterns) {
-      let cursor = 0;
-      do {
-        const [nextCursor, matchedKeys] = await redis.scan(cursor, { match: pattern, count: 100 });
-        cursor = nextCursor;
-        if (matchedKeys.length) await redis.del(...matchedKeys);
-      } while (cursor !== 0);
+    for (const key of keys) {
+      if (key.includes('*')) {
+        await col('_cache').deleteMany({ _id: { $regex: `^${key.replace(/\*/g, '.*')}` } });
+      } else {
+        await col('_cache').deleteOne({ _id: key });
+      }
     }
   } catch (e) {
     console.warn('[Cache] Invalidation failed:', e.message);
@@ -83,12 +71,16 @@ async function invalidateCache(...keys) {
  * Set a cache value directly.
  */
 async function setCache(key, value, ttlSeconds = 300) {
-  if (!redis) return;
   try {
-    await redis.set(key, JSON.stringify(value), { ex: ttlSeconds });
+    await ensureIndex();
+    await col('_cache').updateOne(
+      { _id: key },
+      { $set: { value, expiresAt: new Date(Date.now() + ttlSeconds * 1000), updatedAt: new Date() } },
+      { upsert: true }
+    );
   } catch (e) {
     console.warn('[Cache] Set failed:', e.message);
   }
 }
 
-module.exports = { getCached, invalidateCache, setCache, CACHE_ENABLED };
+module.exports = { getCached, invalidateCache, setCache };

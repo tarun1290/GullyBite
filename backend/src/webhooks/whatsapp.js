@@ -16,6 +16,7 @@ const metaConfig = require('../config/meta');
 const orderSvc = require('../services/order');
 const paymentSvc = require('../services/payment');
 const addressSvc = require('../services/address');
+const flowMgr = require('../services/flowManager');
 const couponSvc = require('../services/coupon');
 const etaSvc = require('../services/eta');
 const loyaltySvc = require('../services/loyalty');
@@ -132,9 +133,17 @@ const processWhatsAppWebhook = async (logId, body) => {
 };
 
 // ─── PROCESS A CHANGE OBJECT ──────────────────────────────────
+let _dedupIndexCreated = false;
 const processChange = async (value) => {
   const phoneNumberId = value.metadata?.phone_number_id;
   if (!phoneNumberId) return;
+
+  // Ensure dedup TTL index exists (lazy, once)
+  if (!_dedupIndexCreated) {
+    col('_webhook_dedup').createIndex({ createdAt: 1 }, { expireAfterSeconds: 3600, background: true }).catch(() => {});
+    col('_error_cooldown').createIndex({ t: 1 }, { expireAfterSeconds: 60, background: true }).catch(() => {});
+    _dedupIndexCreated = true;
+  }
 
   const waAccount = await col('whatsapp_accounts').findOne({ phone_number_id: phoneNumberId, is_active: true });
   if (!waAccount) {
@@ -146,6 +155,25 @@ const processChange = async (value) => {
   waAccount.access_token = metaConfig.systemUserToken || waAccount.access_token;
 
   for (const msg of value.messages || []) {
+    // Guard: skip stale messages (>2 min old — likely Meta retries)
+    if (msg.timestamp) {
+      const age = Date.now() - parseInt(msg.timestamp) * 1000;
+      if (age > 120000) { console.log(`[WA] Stale message dropped (${Math.round(age/1000)}s old):`, msg.id); continue; }
+    }
+
+    // Dedup: skip if we already processed this message (Meta retries)
+    if (msg.id) {
+      try {
+        const existing = await col('_webhook_dedup').findOne({ _id: msg.id });
+        if (existing) { console.log('[WA] Dedup: skipping already-processed message', msg.id); continue; }
+        await col('_webhook_dedup').insertOne({ _id: msg.id, createdAt: new Date() });
+      } catch (e) {
+        if (e.code === 11000) { console.log('[WA] Dedup: duplicate insert, skipping', msg.id); continue; }
+      }
+    }
+
+    const msgStart = Date.now();
+
     // [BSUID] Extract both phone and BSUID from webhook payload
     const contact = value.contacts?.find(c => c.wa_id === msg.from || c.user_id === msg.from || c.user_id === msg.user_id);
     const { bsuid, wa_phone } = customerIdentity.extractIdentifiers(msg, contact);
@@ -168,18 +196,24 @@ const processChange = async (value) => {
 
     try {
       await handleMessage(msg, { bsuid, wa_phone }, senderName, waAccount);
+      console.log(`[Perf] Message ${msg.type} from ${wa_phone || bsuid}: ${Date.now() - msgStart}ms`);
     } catch (err) {
-      console.error(`[WA] Error handling message from ${customerIdentity.displayIdentifier({ wa_phone, bsuid })}:`, err.message);
+      console.error(`[WA] Error handling message from ${customerIdentity.displayIdentifier({ wa_phone, bsuid })} (${Date.now() - msgStart}ms):`, err.message);
       logActivity({
         actorType: 'webhook', action: 'bot.error', category: 'webhook',
         description: `Error processing message: ${err.message}`,
         restaurantId: waAccount.restaurant_id, severity: 'error',
         metadata: { error: err.message, from: wa_phone || bsuid },
       });
-      await wa.sendText(
-        phoneNumberId, waAccount.access_token, replyTo,
-        '😅 Something went wrong. Type *MENU* to start over.'
-      );
+      // Send dead-end error — NO keywords that trigger the bot (no MENU, ORDER, etc.)
+      const errorCooldownKey = `err_${replyTo}`;
+      const recentErr = await col('_error_cooldown').findOne({ _id: errorCooldownKey, t: { $gt: new Date(Date.now() - 30000) } }).catch(() => null);
+      if (!recentErr) {
+        await col('_error_cooldown').updateOne({ _id: errorCooldownKey }, { $set: { t: new Date() } }, { upsert: true }).catch(() => {});
+        await wa.sendText(phoneNumberId, waAccount.access_token, replyTo,
+          'Sorry, something went wrong on our end. Please try again in a moment.'
+        ).catch(() => {});
+      }
     }
   }
 
@@ -293,13 +327,46 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     }
     // If parsing failed, ask for pin drop instead
     await wa.sendText(pid, token, to,
-      "I couldn't read that Google Maps link.\n\n📍 Could you share your location using WhatsApp's location button instead?\n\nTap the 📎 (attach) icon → Location → Send your current location."
+      "I couldn't read that Maps link. You can:\n\n" +
+      "📍 *Share your live location* — tap the + button → Location → Send your current location\n" +
+      "🔗 *Send a Google Maps link* — open Google Maps → select location → tap Share → copy link → paste here\n" +
+      "✍️ *Type your full address* — e.g., 123 Main St, Banjara Hills, Hyderabad 500034\n\n" +
+      "All options work — pick whichever is easiest!"
     );
     return;
   }
 
   if (['HI', 'HELLO', 'HEY', 'START', 'MENU', 'ORDER'].includes(text)) {
     await orderSvc.setState(conv.id, 'GREETING');
+
+    // If restaurant has a delivery Flow, use it for address selection
+    const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+    if (restaurant?.flow_id) {
+      const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
+      if (savedAddrs?.length > 0) {
+        // Returning customer — show saved addresses via Flow
+        const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
+        await wa.sendFlow(pid, token, to, {
+          body: `Welcome back${customer.name ? ', ' + customer.name : ''}! 👋\nChoose your delivery address to see our menu.`,
+          flowId: restaurant.flow_id,
+          flowCta: 'Choose Address',
+          screenId: 'SAVED_ADDRESSES',
+          flowData: { addresses: addressItems },
+        });
+      } else {
+        // New customer — show new address form via Flow
+        await wa.sendFlow(pid, token, to, {
+          body: `Hi${customer.name ? ' ' + customer.name : ''}! 👋\nSet your delivery location to browse our menu.`,
+          flowId: restaurant.flow_id,
+          flowCta: 'Set Location',
+          screenId: 'NEW_ADDRESS',
+          flowData: {},
+        });
+      }
+      return;
+    }
+
+    // Fallback: no Flow set up — use buttons
     await wa.sendButtons(pid, token, to, {
       header: `🍔 Welcome to ${waAccount.display_name || 'GullyBite'}!`,
       body: `Hi ${customer.name || 'there'}! 👋\n\nI'm your food ordering assistant.\nI'll show you our menu and help you place an order right here in WhatsApp.\n\nWant to get started?`,
@@ -482,7 +549,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     const session = conv.session_data || {};
     const branch = await col('branches').findOne({ _id: session.branchId });
     const restaurantId = branch?.restaurant_id;
-    if (!restaurantId) { await wa.sendText(pid, token, to, 'Something went wrong. Type *MENU* to start over.'); return; }
+    if (!restaurantId) { await wa.sendText(pid, token, to, 'Sorry, something went wrong. Please try again in a moment.'); return; }
 
     const bal = await loyaltySvc.getBalance(customer.id, restaurantId);
     let pointsToRedeem = text === 'ALL' ? bal.balance : parseInt(msg.text.body.trim());
@@ -726,7 +793,9 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   );
 
   // Send branch-filtered MPMs (Multi-Product Messages)
-  const catalogId = branch.catalogId || branch.catalog_id || restaurant?.meta_catalog_id;
+  // Fetch restaurant for meta_catalog_id fallback (branch object from findNearestBranch doesn't include it always)
+  const restaurantDoc = await col('restaurants').findOne({ _id: branch.restaurantId });
+  const catalogId = branch.catalogId || branch.catalog_id || restaurantDoc?.meta_catalog_id;
   console.log(`[Bot] Sending menu: branch=${branch.name}, catalogId=${catalogId}, phone=${pid}`);
 
   if (catalogId) {
@@ -1121,7 +1190,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       const session = conv.session_data || {};
       const branch = await col('branches').findOne({ _id: session.branchId });
       const restaurantId = branch?.restaurant_id;
-      if (!restaurantId) { await wa.sendText(pid, token, to, 'Could not identify restaurant. Type *MENU* to start over.'); break; }
+      if (!restaurantId) { await wa.sendText(pid, token, to, 'Sorry, something went wrong. Please try again in a moment.'); break; }
       const bal = await loyaltySvc.getBalance(customer.id, restaurantId);
       if (bal.balance < 100) {
         await wa.sendText(pid, token, to, `💰 You have *${bal.balance} points* (need at least 100 to redeem).\n\nKeep ordering to earn more! 🎉`);
@@ -1792,7 +1861,7 @@ const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
   // Instead, directly inline the order creation to avoid recursion complexity
   const session = freshConv.session_data || {};
   if (!session.cart?.length) {
-    await wa.sendText(pid, token, to, 'Your cart appears empty. Type *MENU* to start over.');
+    await wa.sendText(pid, token, to, 'Your cart appears empty. Please browse our menu and add items to your cart, then send it.');
     return;
   }
 
@@ -1885,7 +1954,13 @@ const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
     return;
   }
 
-  // ── Address form response ──
+  // ── Delivery Address Flow response (action-based) ──
+  if (responseData.action === 'select_address' || responseData.action === 'new_address') {
+    await handleDeliveryFlowResponse(responseData, customer, conv, waAccount);
+    return;
+  }
+
+  // ── Address form response (legacy structured address form) ──
   const addr = responseData.values || responseData;
   const structuredAddress = {
     name:          addr.name || null,
@@ -1957,6 +2032,170 @@ const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
 
 // ─── WHATSAPP FLOW RESPONSE HANDLER ─────────────────────────
 // [WhatsApp2026] Handles responses from WhatsApp Flows (rating/feedback forms)
+// ─── DELIVERY ADDRESS FLOW RESPONSE ──────────────────────────
+const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccount) => {
+  const pid = waAccount.phone_number_id;
+  const token = waAccount.access_token;
+  const to = customerIdentity.resolveRecipient(customer);
+  const restaurantId = waAccount.restaurant_id;
+
+  console.log('[Flow] Delivery response:', JSON.stringify(responseData));
+
+  // ── SAVED ADDRESS SELECTED ──
+  if (responseData.action === 'select_address') {
+    const addressId = responseData.selected_address_id;
+
+    // "Add New Address" was selected from NavigationList
+    if (addressId === 'new_address') {
+      const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+      if (restaurant?.flow_id) {
+        await wa.sendFlow(pid, token, to, {
+          body: 'Enter your new delivery address:',
+          flowId: restaurant.flow_id,
+          flowCta: 'Add Address',
+          screenId: 'NEW_ADDRESS',
+          flowData: {},
+        });
+      } else {
+        await wa.sendText(pid, token, to, '📍 Please share your location using the 📎 attach icon → Location.');
+      }
+      return;
+    }
+
+    // Look up saved address
+    const addresses = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
+    const addr = addresses.find(a => String(a._id) === addressId || a.id === addressId);
+    if (!addr) {
+      await wa.sendText(pid, token, to, "Sorry, that address wasn't found. Please share your location.");
+      return;
+    }
+
+    await wa.sendText(pid, token, to, `📍 Delivering to: *${addr.full_address}*\n\n🔍 Finding the nearest outlet...`);
+
+    // Find branch and send menu
+    if (addr.latitude && addr.longitude) {
+      const result = await location.findNearestBranch(addr.latitude, addr.longitude, restaurantId);
+      if (result.found) {
+        await _sendBranchMenu(pid, token, to, result.branch, conv, customer, addr);
+      } else {
+        await wa.sendText(pid, token, to, result.message);
+      }
+    } else {
+      // No GPS on saved address — use the first active branch
+      const branch = await col('branches').findOne({ restaurant_id: restaurantId, is_open: true, accepts_orders: true });
+      if (branch) {
+        const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+        const fakeResult = { id: String(branch._id), name: branch.name, restaurantId, catalogId: restaurant?.meta_catalog_id || branch.catalog_id };
+        await _sendBranchMenu(pid, token, to, fakeResult, conv, customer, addr);
+      } else {
+        await wa.sendText(pid, token, to, '😔 No outlets are currently open. Please try again later.');
+      }
+    }
+    return;
+  }
+
+  // ── NEW ADDRESS SUBMITTED ──
+  if (responseData.action === 'new_address') {
+    let parsedAddress = null;
+
+    // Try Google Maps link first
+    if (responseData.maps_link?.trim()) {
+      try {
+        const coords = await location.extractCoordsFromMapsUrl(responseData.maps_link.trim());
+        if (coords) {
+          parsedAddress = await location.reverseGeocode(coords.lat, coords.lng);
+        }
+      } catch (e) {
+        console.error('[Flow] Maps URL parse failed:', e.message);
+      }
+    }
+
+    // Fall back to manual address text
+    if (!parsedAddress && responseData.manual_address?.trim()) {
+      parsedAddress = { full_address: responseData.manual_address.trim(), source: 'manual' };
+    }
+
+    if (!parsedAddress) {
+      await wa.sendText(pid, token, to, "We couldn't read your address. Please share your Google Maps location pin or try again.");
+      return;
+    }
+
+    // Add extra details
+    const label = responseData.address_label || 'Other';
+    const landmark = responseData.address_line2 || null;
+
+    // Save to customer addresses
+    await addressSvc.saveAddress({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid }, {
+      label,
+      fullAddress: parsedAddress.address || parsedAddress.full_address,
+      landmark,
+      flatNo: landmark,
+      latitude: parsedAddress.lat || null,
+      longitude: parsedAddress.lng || null,
+      makeDefault: true,
+    });
+
+    await wa.sendText(pid, token, to, `📍 Delivering to: *${parsedAddress.address || parsedAddress.full_address}*\n\n🔍 Finding the nearest outlet...`);
+
+    // Find branch and send menu
+    if (parsedAddress.lat && parsedAddress.lng) {
+      const result = await location.findNearestBranch(parsedAddress.lat, parsedAddress.lng, restaurantId);
+      if (result.found) {
+        await _sendBranchMenu(pid, token, to, result.branch, conv, customer, parsedAddress);
+      } else {
+        await wa.sendText(pid, token, to, result.message);
+      }
+    } else {
+      // Manual address without GPS — use nearest branch
+      const branch = await col('branches').findOne({ restaurant_id: restaurantId, is_open: true, accepts_orders: true });
+      if (branch) {
+        const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+        const fakeResult = { id: String(branch._id), name: branch.name, restaurantId, catalogId: restaurant?.meta_catalog_id || branch.catalog_id };
+        await _sendBranchMenu(pid, token, to, fakeResult, conv, customer, parsedAddress);
+      } else {
+        await wa.sendText(pid, token, to, '😔 No outlets are currently open. Please try again later.');
+      }
+    }
+    return;
+  }
+};
+
+// Helper: after address is resolved and branch found, set session and send MPM catalog
+async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) {
+  const catalogId = branch.catalogId || branch.catalog_id;
+
+  await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
+    branchId: branch.id,
+    catalogId,
+    deliveryLat: address.latitude || address.lat || null,
+    deliveryLng: address.longitude || address.lng || null,
+    deliveryAddress: address.full_address || address.address || '',
+  });
+
+  if (catalogId) {
+    try {
+      const { buildBranchMPMs } = require('../services/mpmBuilder');
+      const mpms = await buildBranchMPMs(branch.id, branch.restaurantId);
+      if (mpms.length) {
+        for (let i = 0; i < mpms.length; i++) {
+          await wa.sendMPM(pid, token, to, catalogId, mpms[i]);
+          if (i < mpms.length - 1) await new Promise(r => setTimeout(r, 500));
+        }
+        if (mpms.length > 1) {
+          await wa.sendText(pid, token, to, '👆 Browse the menus above, add items to your cart, and send it when you\'re ready!');
+        }
+      } else {
+        await wa.sendCatalog(pid, token, to, catalogId, `🍽️ Here's our menu from *${branch.name}*!`);
+      }
+    } catch (e) {
+      console.error('[Flow] MPM build failed:', e.message);
+      await wa.sendCatalog(pid, token, to, catalogId, `🍽️ Here's our menu from *${branch.name}*!`);
+    }
+  } else {
+    await wa.sendText(pid, token, to, `🍽️ Welcome to *${branch.name}*! Our catalog is being set up. Please check back shortly.`);
+  }
+}
+
 const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
   const pid   = waAccount.phone_number_id;
   const token = waAccount.access_token;

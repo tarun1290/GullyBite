@@ -3495,6 +3495,8 @@ router.get('/analytics/delivery', requirePermission('view_analytics'), async (re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Flow management moved to admin routes — see admin.js
+
 // ═══════════════════════════════════════════════════════════════
 // CONVERSATION ANALYTICS
 // ═══════════════════════════════════════════════════════════════

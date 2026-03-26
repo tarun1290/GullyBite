@@ -6122,6 +6122,8 @@ async function doCatMgmtDeleteConfirm() {
   }
 }
 
+// Flow management moved to admin dashboard — restaurants get flow_id assigned by admin
+
 // ── Switch connected catalog (disconnect old, connect new) ──
 async function doCatMgmtSwitchCatalog(newCatId, newCatName) {
   const current = _catMgmtData?.active_catalog_id;

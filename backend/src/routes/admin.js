@@ -1976,4 +1976,103 @@ router.post('/migrate-catalog-architecture', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// WHATSAPP FLOW MANAGEMENT (Platform-level)
+// ═══════════════════════════════════════════════════════════════
+const flowMgr = require('../services/flowManager');
+
+// GET /api/admin/flow — get current platform Flow status
+router.get('/flow', async (req, res) => {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    const restaurantCount = await col('restaurants').countDocuments({ flow_id: { $ne: null } });
+    const totalRestaurants = await col('restaurants').countDocuments({});
+    res.json({ ...setting, assigned_restaurants: restaurantCount, total_restaurants: totalRestaurants });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/flow/create — create Flow on Meta + save to platform_settings
+router.post('/flow/create', async (req, res) => {
+  try {
+    const existing = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    if (existing?.flow_id) {
+      return res.json({ success: true, already_exists: true, flow_id: existing.flow_id });
+    }
+
+    // Use the platform WABA (from first active WA account or env)
+    const wa = await col('whatsapp_accounts').findOne({ is_active: true });
+    const wabaId = wa?.waba_id;
+    if (!wabaId) return res.status(400).json({ error: 'No active WABA found on platform.' });
+
+    const result = await flowMgr.createDeliveryFlow(wabaId);
+    if (!result.success) return res.status(400).json(result);
+
+    await col('platform_settings').updateOne(
+      { _id: 'whatsapp_flow' },
+      { $set: { flow_id: result.flowId, flow_name: 'GullyBite Delivery Address', flow_status: result.published ? 'PUBLISHED' : 'DRAFT', flow_json_version: '6.2', auto_assign_new: true, updated_at: new Date() }, $setOnInsert: { created_at: new Date() } },
+      { upsert: true }
+    );
+
+    res.json({ success: true, flow_id: result.flowId, published: result.published });
+  } catch (e) {
+    console.error('[Admin Flow] Create error:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors });
+  }
+});
+
+// GET /api/admin/flow/preview — get Flow preview URL
+router.get('/flow/preview', async (req, res) => {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    if (!setting?.flow_id) return res.status(404).json({ error: 'No Flow created yet.' });
+    const data = await flowMgr.getFlowPreview(setting.flow_id);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// POST /api/admin/flow/update — re-upload Flow JSON
+router.post('/flow/update', async (req, res) => {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    if (!setting?.flow_id) return res.status(404).json({ error: 'No Flow created yet.' });
+    const data = await flowMgr.updateFlowJson(setting.flow_id);
+    await col('platform_settings').updateOne({ _id: 'whatsapp_flow' }, { $set: { updated_at: new Date() } });
+    res.json({ success: true, ...data });
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors }); }
+});
+
+// POST /api/admin/flow/publish — publish a draft Flow
+router.post('/flow/publish', async (req, res) => {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    if (!setting?.flow_id) return res.status(404).json({ error: 'No Flow created yet.' });
+    const data = await flowMgr.publishFlow(setting.flow_id);
+    await col('platform_settings').updateOne({ _id: 'whatsapp_flow' }, { $set: { flow_status: 'PUBLISHED', updated_at: new Date() } });
+    res.json({ success: true, ...data });
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// POST /api/admin/flow/deprecate — deprecate the Flow
+router.post('/flow/deprecate', async (req, res) => {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    if (!setting?.flow_id) return res.status(404).json({ error: 'No Flow created yet.' });
+    await flowMgr.deprecateFlow(setting.flow_id);
+    await col('platform_settings').updateOne({ _id: 'whatsapp_flow' }, { $set: { flow_status: 'DEPRECATED', flow_id: null, updated_at: new Date() } });
+    // Clear flow_id from all restaurants
+    await col('restaurants').updateMany({}, { $set: { flow_id: null } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// POST /api/admin/flow/assign-all — assign platform Flow to all restaurants
+router.post('/flow/assign-all', async (req, res) => {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    if (!setting?.flow_id) return res.status(404).json({ error: 'No Flow created yet.' });
+    const result = await col('restaurants').updateMany({}, { $set: { flow_id: setting.flow_id } });
+    res.json({ success: true, assigned: result.modifiedCount });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

@@ -98,50 +98,114 @@ function isMapsUrl(text) {
 }
 
 async function extractCoordsFromMapsUrl(url) {
+  const start = Date.now();
   let resolvedUrl = url;
 
-  // Resolve short links (maps.app.goo.gl, goo.gl/maps)
+  // Resolve short links (maps.app.goo.gl, goo.gl/maps) with multiple strategies
   if (url.includes('maps.app.goo.gl') || url.includes('goo.gl/maps')) {
-    try {
-      const axios = require('axios');
-      const resp = await axios.get(url, { maxRedirects: 5, timeout: 5000, validateStatus: () => true });
-      resolvedUrl = resp.request?.res?.responseUrl || resp.headers?.location || url;
-    } catch (e) {
-      console.warn('[Location] Failed to resolve short URL:', e.message);
+    resolvedUrl = await resolveShortUrl(url) || url;
+    console.log(`[Perf] Maps URL resolve: ${Date.now() - start}ms → ${resolvedUrl.substring(0, 80)}`);
+  }
+
+  // Try extracting coordinates from multiple URL patterns
+  const patterns = [
+    /[@/](-?\d+\.\d{3,}),\s*(-?\d+\.\d{3,})/,     // @17.385,78.486 or /17.385,78.486
+    /[?&]q=(-?\d+\.\d+),\s*(-?\d+\.\d+)/,           // ?q=17.385,78.486
+    /ll=(-?\d+\.\d+),\s*(-?\d+\.\d+)/,               // ll=17.385,78.486
+    /center=(-?\d+\.\d+),\s*(-?\d+\.\d+)/,           // center=17.385,78.486
+    /!3d(-?\d+\.\d+).*!4d(-?\d+\.\d+)/,              // !3d17.385!4d78.486 (embed)
+  ];
+
+  for (const pattern of patterns) {
+    const match = resolvedUrl.match(pattern);
+    if (match) {
+      const lat = parseFloat(match[1]);
+      const lng = parseFloat(match[2]);
+      if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        console.log(`[Location] Extracted coords: ${lat}, ${lng} (${Date.now() - start}ms)`);
+        return { lat, lng };
+      }
     }
   }
 
-  let lat, lng;
-
-  // Pattern 1: @17.385,78.486 or /17.385,78.486
-  const atMatch = resolvedUrl.match(/[@/](-?\d+\.\d{3,}),(-?\d+\.\d{3,})/);
-  if (atMatch) { lat = parseFloat(atMatch[1]); lng = parseFloat(atMatch[2]); }
-
-  // Pattern 2: ?q=17.385,78.486
-  if (!lat) {
-    const qMatch = resolvedUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
-    if (qMatch) { lat = parseFloat(qMatch[1]); lng = parseFloat(qMatch[2]); }
+  // Fallback: try place name geocoding
+  const placeMatch = resolvedUrl.match(/place\/([^/@]+)/);
+  if (placeMatch) {
+    const placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+    console.log('[Location] Trying place name geocode:', placeName);
+    return await geocodePlaceName(placeName);
   }
 
-  // Pattern 3: !3d17.385!4d78.486 (embedded format)
-  if (!lat) {
-    const embMatch = resolvedUrl.match(/!3d(-?\d+\.\d+).*!4d(-?\d+\.\d+)/);
-    if (embMatch) { lat = parseFloat(embMatch[1]); lng = parseFloat(embMatch[2]); }
-  }
+  console.warn(`[Location] Could not extract coords from URL (${Date.now() - start}ms)`);
+  return null;
+}
 
-  if (!lat || !lng) {
-    // Try to extract place name as fallback
-    const placeMatch = resolvedUrl.match(/place\/([^/@]+)/);
-    if (placeMatch) {
-      console.log('[Location] Extracted place name:', decodeURIComponent(placeMatch[1]));
+// Resolve Google Maps short URLs with multiple fallback strategies
+async function resolveShortUrl(shortUrl) {
+  const axios = require('axios');
+  const BROWSER_UA = 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
+
+  // Strategy 1: HEAD request with manual redirect — fastest
+  try {
+    const resp = await axios.head(shortUrl, {
+      maxRedirects: 0,
+      timeout: 8000,
+      validateStatus: s => s >= 300 && s < 400,
+      headers: { 'User-Agent': BROWSER_UA },
+    });
+    const loc = resp.headers?.location;
+    if (loc && !loc.includes('goo.gl')) return loc;
+    // If still a short URL, follow one more hop
+    if (loc) {
+      const resp2 = await axios.head(loc, { maxRedirects: 0, timeout: 5000, validateStatus: s => s >= 300 && s < 400, headers: { 'User-Agent': BROWSER_UA } });
+      if (resp2.headers?.location) return resp2.headers.location;
     }
-    return null;
+  } catch (e) {
+    if (e.response?.headers?.location) return e.response.headers.location;
+    console.warn('[Location] Strategy 1 (HEAD) failed:', e.message);
   }
 
-  // Validate coordinates are reasonable
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  // Strategy 2: GET with auto-follow — slower but handles JS redirects
+  try {
+    const resp = await axios.get(shortUrl, {
+      maxRedirects: 5,
+      timeout: 12000,
+      validateStatus: () => true,
+      headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html' },
+    });
+    const finalUrl = resp.request?.res?.responseUrl;
+    if (finalUrl && finalUrl !== shortUrl) return finalUrl;
 
-  return { lat, lng };
+    // Check HTML body for meta refresh or JS redirect
+    const html = typeof resp.data === 'string' ? resp.data : '';
+    const metaMatch = html.match(/content=["']0;\s*url=([^"']+)/i);
+    if (metaMatch) return metaMatch[1];
+    const jsMatch = html.match(/window\.location\s*=\s*["']([^"']+)/);
+    if (jsMatch) return jsMatch[1];
+  } catch (e) {
+    console.warn('[Location] Strategy 2 (GET follow) failed:', e.message);
+  }
+
+  return null;
+}
+
+// Geocode a place name to coordinates via Google Maps API
+async function geocodePlaceName(placeName) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const axios = require('axios');
+  try {
+    const { data } = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+      params: { address: placeName, key: apiKey },
+      timeout: 8000,
+    });
+    if (data.results?.length) {
+      const r = data.results[0];
+      return { lat: r.geometry.location.lat, lng: r.geometry.location.lng };
+    }
+  } catch (e) {
+    console.warn('[Location] Place name geocode failed:', e.message);
+  }
+  return null;
 }
 
 // ─── REVERSE GEOCODING ──────────────────────────────────────
