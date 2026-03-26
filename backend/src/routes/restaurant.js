@@ -125,6 +125,28 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/restaurant/update-slug — Update store URL slug
+router.post('/update-slug', requirePermission('manage_settings'), async (req, res) => {
+  try {
+    let slug = (req.body.slug || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    if (!slug) return res.status(400).json({ error: 'Slug cannot be empty' });
+    if (slug.length < 3) return res.status(400).json({ error: 'Slug must be at least 3 characters' });
+    if (slug.length > 50) slug = slug.substring(0, 50);
+
+    // Check uniqueness (excluding current restaurant)
+    const existing = await col('restaurants').findOne({ store_slug: slug, _id: { $ne: req.restaurantId } });
+    if (existing) return res.status(409).json({ error: `Slug "${slug}" is already taken. Try another.` });
+
+    const storeUrl = `${process.env.BASE_URL}/store/${slug}`;
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { store_slug: slug, store_url: storeUrl, updated_at: new Date() } }
+    );
+    console.log(`[Store] Restaurant ${req.restaurantId} slug updated to: ${slug}`);
+    res.json({ success: true, store_slug: slug, store_url: storeUrl });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 /* ═══ FUTURE FEATURE: GridFS Image Upload (Legacy) ═══
    Original image upload route using MongoDB GridFS.
    Replaced by S3 + CloudFront CDN pipeline (see imageUpload.js).
@@ -1988,6 +2010,64 @@ router.get('/catalog/status', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/restaurant/catalog/details — fetch catalog details from Meta API
+router.get('/catalog/details', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const catalogId = restaurant?.meta_catalog_id;
+    if (!catalogId) return res.status(404).json({ error: 'No catalog connected.' });
+
+    const token = metaConfig.catalogToken;
+    if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
+
+    const response = await axios.get(
+      `https://graph.facebook.com/${metaConfig.apiVersion}/${catalogId}`,
+      { params: { fields: 'name,vertical,product_count,da_display_settings,business' }, headers: { Authorization: `Bearer ${token}` } }
+    );
+    res.json({ ...response.data, catalog_id: catalogId, catalog_name: restaurant.meta_catalog_name, created_at: restaurant.catalog_created_at });
+  } catch (e) {
+    if (e.response?.status === 404 || e.response?.data?.error?.code === 100) {
+      // Catalog no longer exists on Meta — clean up DB
+      await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_catalog_id: null, meta_catalog_name: null } });
+      return res.status(404).json({ error: 'Catalog no longer exists on Meta. It may have been deleted externally.', cleaned: true });
+    }
+    console.error('[Catalog] Details fetch failed:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// PUT /api/restaurant/catalog/settings — update catalog name/settings on Meta
+router.put('/catalog/settings', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const catalogId = restaurant?.meta_catalog_id;
+    if (!catalogId) return res.status(404).json({ error: 'No catalog connected.' });
+
+    const { name } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: 'Catalog name is required.' });
+
+    const token = metaConfig.catalogToken;
+    if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
+
+    await axios.post(
+      `https://graph.facebook.com/${metaConfig.apiVersion}/${catalogId}`,
+      { name: name.trim() },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { meta_catalog_name: name.trim(), updated_at: new Date() } }
+    );
+
+    console.log(`[Catalog] Updated catalog ${catalogId} name to: ${name.trim()}`);
+    res.json({ success: true, catalog_name: name.trim() });
+  } catch (e) {
+    console.error('[Catalog] Settings update failed:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
 // POST /api/restaurant/catalog/sync — full sync all branches to main catalog
 router.post('/catalog/sync', async (req, res) => {
   try {
@@ -2253,6 +2333,160 @@ router.post('/catalog/toggle-auto-sync', async (req, res) => {
     );
     res.json({ success: true, catalogSyncEnabled: !!enabled });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/catalog/create-new — Create a new catalog via Meta API
+router.post('/catalog/create-new', requireApproved, async (req, res) => {
+  try {
+    const { name } = req.body;
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const catName = name || `${restaurant?.business_name || 'Restaurant'} - Menu`;
+    const bizId = restaurant?.meta_business_id || metaConfig.businessId;
+    if (!bizId) return res.status(400).json({ error: 'No Meta Business ID configured. Complete WhatsApp setup first.' });
+
+    const token = metaConfig.catalogToken;
+    if (!token) return res.status(500).json({ error: 'Meta token not configured. Contact support.' });
+
+    const response = await axios.post(
+      `https://graph.facebook.com/${metaConfig.apiVersion}/${bizId}/owned_product_catalogs`,
+      { name: catName, vertical: 'commerce' },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const catalogId = response.data.id;
+    console.log(`[Catalog] Created new catalog ${catalogId} for restaurant ${req.restaurantId}`);
+
+    // Store as active catalog
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { meta_catalog_id: catalogId, meta_catalog_name: catName, catalog_created_at: new Date(), updated_at: new Date() } }
+    );
+    await col('whatsapp_accounts').updateMany(
+      { restaurant_id: req.restaurantId },
+      { $set: { catalog_id: catalogId, updated_at: new Date() } }
+    );
+    await col('branches').updateMany(
+      { restaurant_id: req.restaurantId },
+      { $set: { catalog_id: catalogId, updated_at: new Date() } }
+    );
+
+    res.json({ success: true, catalog_id: catalogId, catalog_name: catName });
+  } catch (e) {
+    console.error('[Catalog] Create failed:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// DELETE /api/restaurant/catalog/:catalogId — Delete a catalog via Meta API
+router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
+  try {
+    const token = metaConfig.catalogToken;
+    if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
+
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+
+    // Unlink from WABA first (if linked) to avoid Meta error 1798233
+    if (wa?.waba_id) {
+      try {
+        await axios.delete(
+          `https://graph.facebook.com/${metaConfig.apiVersion}/${wa.waba_id}/product_catalogs`,
+          { data: { catalog_id: req.params.catalogId }, headers: { Authorization: `Bearer ${token}` } }
+        );
+      } catch (_) { /* may not be linked — ignore */ }
+    }
+
+    // Delete the catalog
+    await axios.delete(
+      `https://graph.facebook.com/${metaConfig.apiVersion}/${req.params.catalogId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    console.log(`[Catalog] Deleted catalog ${req.params.catalogId}`);
+
+    // Clear from DB if it was the active catalog
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    if (restaurant?.meta_catalog_id === req.params.catalogId) {
+      await col('restaurants').updateOne(
+        { _id: req.restaurantId },
+        { $set: { meta_catalog_id: null, meta_catalog_name: null, meta_available_catalogs: [], updated_at: new Date() } }
+      );
+      await col('whatsapp_accounts').updateMany(
+        { restaurant_id: req.restaurantId },
+        { $set: { catalog_id: null, catalog_linked: false, cart_enabled: false, catalog_visible: false, updated_at: new Date() } }
+      );
+      await col('branches').updateMany(
+        { restaurant_id: req.restaurantId },
+        { $set: { catalog_id: null, updated_at: new Date() } }
+      );
+    }
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[Catalog] Delete failed:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// POST /api/restaurant/catalog/connect-waba — Connect catalog to WABA
+router.post('/catalog/connect-waba', async (req, res) => {
+  try {
+    const { catalog_id } = req.body;
+    if (!catalog_id) return res.status(400).json({ error: 'catalog_id is required' });
+
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (!wa?.waba_id) return res.status(400).json({ error: 'No WABA connected. Complete WhatsApp setup first.' });
+
+    const token = metaConfig.catalogToken;
+    if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
+
+    await axios.post(
+      `https://graph.facebook.com/${metaConfig.apiVersion}/${wa.waba_id}/product_catalogs`,
+      { catalog_id },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    console.log(`[Catalog] Connected catalog ${catalog_id} to WABA ${wa.waba_id}`);
+
+    // Update DB
+    await col('whatsapp_accounts').updateOne(
+      { _id: wa._id },
+      { $set: { catalog_id, catalog_linked: true, updated_at: new Date() } }
+    );
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { meta_catalog_id: catalog_id, updated_at: new Date() } }
+    );
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[Catalog] Connect WABA failed:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+// POST /api/restaurant/catalog/disconnect-waba — Disconnect catalog from WABA
+router.post('/catalog/disconnect-waba', async (req, res) => {
+  try {
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (!wa?.waba_id) return res.status(400).json({ error: 'No WABA connected.' });
+    if (!wa?.catalog_id) return res.status(400).json({ error: 'No catalog connected to WABA.' });
+
+    const token = metaConfig.catalogToken;
+    if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
+
+    await axios.delete(
+      `https://graph.facebook.com/${metaConfig.apiVersion}/${wa.waba_id}/product_catalogs`,
+      { data: { catalog_id: wa.catalog_id }, headers: { Authorization: `Bearer ${token}` } }
+    );
+    console.log(`[Catalog] Disconnected catalog ${wa.catalog_id} from WABA ${wa.waba_id}`);
+
+    await col('whatsapp_accounts').updateOne(
+      { _id: wa._id },
+      { $set: { catalog_linked: false, cart_enabled: false, catalog_visible: false, updated_at: new Date() } }
+    );
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[Catalog] Disconnect WABA failed:', e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
 });
 
 // GET /api/restaurant/catalogs — Returns this restaurant's connected catalog from MongoDB.

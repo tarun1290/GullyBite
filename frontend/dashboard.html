@@ -1098,6 +1098,71 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
         <div id="wa-list"><div style="text-align:center;padding:2rem"><div class="spin"></div></div></div>
+
+        <!-- ── Catalog Management ── -->
+        <div class="card" style="margin-top:1.1rem">
+          <div class="ch" style="justify-content:space-between;align-items:center">
+            <h3>📦 Catalog Management</h3>
+            <button class="btn-g btn-sm" onclick="loadCatalogMgmt(true)">🔄 Refresh</button>
+          </div>
+          <div class="cb">
+            <!-- Connection status -->
+            <div id="cat-mgmt-status" style="margin-bottom:1rem">
+              <div style="text-align:center;padding:1rem"><div class="spin"></div></div>
+            </div>
+
+            <!-- Actions row -->
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
+              <button class="btn-p btn-sm" id="cat-create-btn" onclick="doCatMgmtCreate()">+ Create New Catalog</button>
+              <button class="btn-g btn-sm" id="cat-connect-btn" onclick="doCatMgmtConnect()" style="display:none">🔗 Connect to WhatsApp</button>
+              <button class="btn-g btn-sm" id="cat-disconnect-btn" onclick="doCatMgmtDisconnect()" style="display:none;color:#dc2626;border-color:#dc2626">⛓️‍💥 Disconnect</button>
+              <button class="btn-g btn-sm" id="cat-delete-btn" onclick="doCatMgmtDelete()" style="display:none;color:#dc2626;border-color:#dc2626">🗑️ Delete Catalog</button>
+            </div>
+
+            <!-- Catalog selector (for connect) -->
+            <div id="cat-mgmt-selector" style="display:none;margin-bottom:.8rem">
+              <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:.3rem">Select catalog to connect:</label>
+              <div style="display:flex;gap:.5rem;align-items:center">
+                <select id="cat-mgmt-select" style="flex:1;padding:.4rem .6rem;border-radius:6px;border:1px solid var(--rim);font-size:.82rem"></select>
+                <button class="btn-p btn-sm" onclick="doCatMgmtConnectConfirm()">Connect</button>
+                <button class="btn-g btn-sm" onclick="document.getElementById('cat-mgmt-selector').style.display='none'">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Create form -->
+            <div id="cat-mgmt-create-form" style="display:none;margin-bottom:.8rem">
+              <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:.3rem">Catalog name:</label>
+              <div style="display:flex;gap:.5rem;align-items:center">
+                <input id="cat-mgmt-name" placeholder="My Restaurant Menu" style="flex:1;padding:.4rem .6rem;border-radius:6px;border:1px solid var(--rim);font-size:.82rem">
+                <button class="btn-p btn-sm" onclick="doCatMgmtCreateConfirm()">Create</button>
+                <button class="btn-g btn-sm" onclick="document.getElementById('cat-mgmt-create-form').style.display='none'">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Catalog settings (editable name, details) — shown when connected -->
+            <div id="cat-mgmt-settings" style="display:none;margin-bottom:.8rem;background:var(--ink4,#f9fafb);border:1px solid var(--rim);border-radius:8px;padding:.8rem">
+              <div style="font-size:.82rem;font-weight:600;margin-bottom:.5rem">Catalog Settings</div>
+              <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
+                <label style="font-size:.8rem;min-width:50px">Name:</label>
+                <input id="cat-settings-name" style="flex:1;padding:.35rem .6rem;border-radius:6px;border:1px solid var(--rim);font-size:.82rem">
+                <button class="btn-p btn-sm" onclick="doCatMgmtUpdateSettings()">Save</button>
+              </div>
+              <div id="cat-settings-details" style="font-size:.77rem;color:var(--dim)"></div>
+            </div>
+
+            <!-- Type-to-confirm delete modal (inline) -->
+            <div id="cat-mgmt-delete-confirm" style="display:none;margin-bottom:.8rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.8rem">
+              <div style="font-size:.84rem;font-weight:600;color:#dc2626;margin-bottom:.4rem">⚠️ Delete Catalog Permanently</div>
+              <p style="font-size:.78rem;color:#7f1d1d;margin-bottom:.5rem">This will permanently delete your catalog and all products from WhatsApp. This cannot be undone.</p>
+              <label style="font-size:.8rem;display:block;margin-bottom:.3rem">Type the catalog name to confirm:</label>
+              <div style="display:flex;gap:.5rem;align-items:center">
+                <input id="cat-delete-input" placeholder="Type catalog name here" style="flex:1;padding:.35rem .6rem;border-radius:6px;border:1px solid #fca5a5;font-size:.82rem">
+                <button class="btn-sm" id="cat-delete-confirm-btn" onclick="doCatMgmtDeleteConfirm()" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:.35rem .7rem;font-size:.8rem;cursor:pointer;opacity:.5" disabled>Delete</button>
+                <button class="btn-g btn-sm" onclick="document.getElementById('cat-mgmt-delete-confirm').style.display='none'">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
         <!-- ═══ HIDDEN: Webhook URL — managed by platform admins ═══ -->
         <div style="display:none">
         <div class="card" style="margin-top:1.1rem">
@@ -1793,10 +1858,13 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <hr class="dv" style="margin-top:1rem">
             <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.5rem">Your Store URL</p>
             <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
-              <input id="p-store-url" readonly style="flex:1;background:var(--ink4);border:1px solid var(--rim);border-radius:7px;padding:.38rem .7rem;font-size:.8rem;color:var(--tx);outline:none;font-family:monospace" placeholder="Not generated yet">
+              <span style="font-size:.8rem;color:var(--dim);font-family:monospace;white-space:nowrap" id="p-store-base"></span>
+              <input id="p-store-slug" style="flex:1;background:var(--ink4);border:1px solid var(--rim);border-radius:7px;padding:.38rem .7rem;font-size:.8rem;color:var(--tx);outline:none;font-family:monospace" placeholder="your-store-slug">
+              <button onclick="doUpdateSlug()" class="btn-g btn-sm" style="white-space:nowrap">Save</button>
               <button onclick="copyDashStoreUrl()" style="background:var(--wa);color:#fff;border:none;border-radius:7px;padding:.38rem .85rem;font-size:.77rem;font-weight:600;cursor:pointer;white-space:nowrap">Copy</button>
             </div>
-            <p style="font-size:.72rem;color:var(--dim)">Use this URL as your Privacy Policy &amp; Website URL in Meta Business Manager.</p>
+            <input id="p-store-url" type="hidden">
+            <p style="font-size:.72rem;color:var(--dim)">Editable slug — only lowercase letters, numbers, and hyphens. Use this URL as your Privacy Policy &amp; Website URL in Meta Business Manager.</p>
             <hr class="dv">
             <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Bank Account <span style="font-weight:400;font-size:.78rem">(for weekly settlements)</span></p>
             <div class="fgrid">
@@ -2189,7 +2257,7 @@ const TMETA = {
   analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); } },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); } },
   restaurant:  { title: 'Restaurant',         sub: 'Coupons, loyalty, team, and issues',   fn: () => { loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
-  settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); } },
+  settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); } },
   // Legacy tab IDs — redirect to new tabs for backwards compatibility
   branches:    { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); } },
   customers:   { title: 'Analytics',          sub: 'Sales and performance',                fn: () => { loadAnalytics(); loadCustomers(); } },
@@ -3429,8 +3497,19 @@ async function loadBranchSel() {
   try {
     const data = await api('/api/restaurant/branches');
     branches = data || [];
+    const prevVal = sel.value;
     sel.innerHTML = '<option value="">Select branch...</option>' +
       branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+    // Auto-select: restore previous selection, or pick the first branch
+    if (prevVal && branches.some(b => b.id === prevVal)) {
+      sel.value = prevVal;
+    } else if (branches.length === 1) {
+      sel.value = branches[0].id;
+    } else if (branches.length > 1 && !prevVal) {
+      sel.value = branches[0].id;
+    }
+    // Auto-load menu if a branch is now selected
+    if (sel.value) loadMenu();
   } catch (_) {}
 }
 function doSelectBranch(id) {
@@ -3465,8 +3544,11 @@ async function loadMenu() {
   list.innerHTML = `<div style="text-align:center;padding:2rem"><div class="spin"></div></div>`;
   try {
     const grouped = await api(`/api/restaurant/branches/${branchId}/menu`);
+    const totalItems = grouped?.reduce((s, g) => s + (g.items?.length || 0), 0) || 0;
+    const countEl = document.getElementById('m-item-count');
+    if (countEl) countEl.textContent = totalItems ? `${totalItems} items` : '';
     if (!grouped?.length || grouped.every(g => !g.items?.length)) {
-      list.innerHTML = `<div class="empty"><div class="ei">🍽️</div><h3>No menu items yet</h3><p>Add above, then sync to WhatsApp</p></div>`;
+      list.innerHTML = `<div class="empty"><div class="ei">🍽️</div><h3>No menu items yet</h3><p>Add items using the "+ Add" button above</p></div>`;
       return;
     }
     list.innerHTML = grouped.map(g => {
@@ -5293,9 +5375,16 @@ async function loadProfile() {
     const pkgGstEl = document.getElementById('p-pkg-gst');
     if (pkgGstEl && r.packaging_gst_pct != null) pkgGstEl.value = r.packaging_gst_pct;
 
-    // Store URL
-    const storeEl = document.getElementById('p-store-url');
-    if (storeEl && r.store_url) storeEl.value = r.store_url;
+    // Store URL — split into base + editable slug
+    const storeUrlEl = document.getElementById('p-store-url');
+    const storeBaseEl = document.getElementById('p-store-base');
+    const storeSlugEl = document.getElementById('p-store-slug');
+    if (storeUrlEl && r.store_url) storeUrlEl.value = r.store_url;
+    if (storeBaseEl) {
+      const baseUrl = (r.store_url || '').replace(/\/store\/.*$/, '/store/');
+      storeBaseEl.textContent = baseUrl || `${location.origin}/store/`;
+    }
+    if (storeSlugEl && r.store_slug) storeSlugEl.value = r.store_slug;
 
     // GST / FSSAI verification badges
     const gstBadge   = document.getElementById('gst-badge');
@@ -5337,8 +5426,24 @@ async function loadProfile() {
 }
 
 function copyDashStoreUrl() {
-  const val = document.getElementById('p-store-url')?.value;
-  if (val) navigator.clipboard.writeText(val).then(() => toast('Store URL copied!', 'ok'));
+  const base = document.getElementById('p-store-base')?.textContent || '';
+  const slug = document.getElementById('p-store-slug')?.value || '';
+  const url = base + slug;
+  if (url) navigator.clipboard.writeText(url).then(() => toast('Store URL copied!', 'ok'));
+}
+
+async function doUpdateSlug() {
+  const slugEl = document.getElementById('p-store-slug');
+  let slug = (slugEl?.value || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  if (!slug) { toast('Slug cannot be empty', 'err'); return; }
+  slugEl.value = slug; // show cleaned version
+  try {
+    const r = await api('/api/restaurant/update-slug', { method: 'POST', body: { slug } });
+    if (r?.store_url) {
+      document.getElementById('p-store-url').value = r.store_url;
+      toast('Store URL updated!', 'ok');
+    }
+  } catch (e) { toast(e.message || 'Failed to update slug', 'err'); }
 }
 
 async function doSaveProfile() {
@@ -5610,6 +5715,186 @@ async function toggleCatalogAutoSync(enabled) {
     await api('/api/restaurant/catalog/toggle-auto-sync', { method: 'POST', body: { enabled } });
     toast(enabled ? 'Auto-sync enabled' : 'Auto-sync disabled', 'ok');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+// ── Catalog Management (WhatsApp tab) ──────────────────────
+let _catMgmtData = null;
+
+async function loadCatalogMgmt(refresh = false) {
+  const statusEl = document.getElementById('cat-mgmt-status');
+  const settingsEl = document.getElementById('cat-mgmt-settings');
+  const deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
+  if (deleteConfirmEl) deleteConfirmEl.style.display = 'none';
+
+  try {
+    const catData = await api(`/api/restaurant/catalogs${refresh ? '?refresh=true' : ''}`);
+    _catMgmtData = catData;
+    const active = catData?.active_catalog_id;
+    const activeCat = catData?.catalogs?.find(c => c.id === active);
+
+    if (active && activeCat) {
+      statusEl.innerHTML = `
+        <div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:8px">
+          <span style="font-size:1.2rem">✅</span>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:.88rem">${activeCat.name || 'Menu Catalog'}</div>
+            <div style="font-size:.77rem;color:var(--dim)">ID: ${active}${activeCat.product_count != null ? ' · ' + activeCat.product_count + ' products' : ''}</div>
+          </div>
+          <span class="badge bg" style="font-size:.7rem">Connected</span>
+        </div>`;
+      document.getElementById('cat-connect-btn').style.display = 'none';
+      document.getElementById('cat-disconnect-btn').style.display = 'inline-flex';
+      document.getElementById('cat-delete-btn').style.display = 'inline-flex';
+
+      // Show settings panel for connected catalog
+      if (settingsEl) {
+        settingsEl.style.display = 'block';
+        document.getElementById('cat-settings-name').value = activeCat.name || '';
+        // Fetch live details from Meta in background
+        loadCatalogDetails();
+      }
+    } else {
+      statusEl.innerHTML = `
+        <div style="padding:.7rem .9rem;background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.15);border-radius:8px">
+          <div style="font-weight:600;font-size:.88rem;color:#dc2626">No catalog connected</div>
+          <div style="font-size:.77rem;color:var(--dim)">Create a new catalog or connect an existing one to your WhatsApp Business Account.</div>
+        </div>`;
+      document.getElementById('cat-connect-btn').style.display = 'inline-flex';
+      document.getElementById('cat-disconnect-btn').style.display = 'none';
+      document.getElementById('cat-delete-btn').style.display = catData?.catalogs?.length ? 'inline-flex' : 'none';
+      if (settingsEl) settingsEl.style.display = 'none';
+    }
+  } catch (e) {
+    statusEl.innerHTML = `<div style="color:var(--dim);font-size:.82rem">Failed to load catalog status: ${e.message}</div>`;
+    if (settingsEl) settingsEl.style.display = 'none';
+  }
+}
+
+async function loadCatalogDetails() {
+  const detailsEl = document.getElementById('cat-settings-details');
+  if (!detailsEl) return;
+  detailsEl.innerHTML = 'Loading details from Meta...';
+  try {
+    const d = await api('/api/restaurant/catalog/details');
+    const parts = [];
+    if (d.product_count != null) parts.push(`${d.product_count} products`);
+    if (d.vertical) parts.push(`Type: ${d.vertical}`);
+    if (d.created_at) parts.push(`Created: ${new Date(d.created_at).toLocaleDateString()}`);
+    detailsEl.textContent = parts.join(' · ') || 'Catalog active';
+  } catch (e) {
+    detailsEl.textContent = e.message?.includes('no longer exists') ? '⚠️ Catalog deleted externally — refresh to update' : '';
+  }
+}
+
+async function doCatMgmtUpdateSettings() {
+  const name = document.getElementById('cat-settings-name').value.trim();
+  if (!name) { toast('Catalog name cannot be empty', 'err'); return; }
+  try {
+    await api('/api/restaurant/catalog/settings', { method: 'PUT', body: { name } });
+    toast('✅ Catalog name updated', 'ok');
+    loadCatalogMgmt();
+  } catch (e) { toast('❌ ' + (e.message || 'Failed to update'), 'err'); }
+}
+
+function doCatMgmtCreate() {
+  const form = document.getElementById('cat-mgmt-create-form');
+  const nameInput = document.getElementById('cat-mgmt-name');
+  nameInput.value = (rest?.business_name || rest?.brand_name || '') + ' - Menu';
+  form.style.display = 'block';
+  document.getElementById('cat-mgmt-selector').style.display = 'none';
+}
+
+async function doCatMgmtCreateConfirm() {
+  const name = document.getElementById('cat-mgmt-name').value.trim();
+  if (!name) { toast('Enter a catalog name', 'err'); return; }
+  try {
+    toast('Creating catalog...', 'ok');
+    const r = await api('/api/restaurant/catalog/create-new', { method: 'POST', body: { name } });
+    document.getElementById('cat-mgmt-create-form').style.display = 'none';
+    toast(`✅ Catalog created: ${r.catalog_name}`, 'ok');
+    loadCatalogMgmt(true);
+    loadCatalogStatus();
+  } catch (e) { toast('❌ ' + (e.message || 'Failed to create'), 'err'); }
+}
+
+async function doCatMgmtConnect() {
+  const sel = document.getElementById('cat-mgmt-select');
+  try {
+    const catData = await api('/api/restaurant/catalogs?refresh=true');
+    if (!catData?.catalogs?.length) { toast('No catalogs found. Create one first.', 'err'); return; }
+    sel.innerHTML = catData.catalogs.map(c =>
+      `<option value="${c.id}">${c.name || c.id}${c.product_count != null ? ' (' + c.product_count + ' products)' : ''}</option>`
+    ).join('');
+    document.getElementById('cat-mgmt-selector').style.display = 'block';
+    document.getElementById('cat-mgmt-create-form').style.display = 'none';
+  } catch (e) { toast('Failed to load catalogs: ' + e.message, 'err'); }
+}
+
+async function doCatMgmtConnectConfirm() {
+  const catalogId = document.getElementById('cat-mgmt-select').value;
+  if (!catalogId) return;
+  try {
+    toast('Connecting catalog to WhatsApp...', 'ok');
+    await api('/api/restaurant/catalog/connect-waba', { method: 'POST', body: { catalog_id: catalogId } });
+    document.getElementById('cat-mgmt-selector').style.display = 'none';
+    toast('✅ Catalog connected to WhatsApp!', 'ok');
+    loadCatalogMgmt(true);
+    loadCatalogStatus();
+  } catch (e) { toast('❌ ' + (e.message || 'Failed to connect'), 'err'); }
+}
+
+async function doCatMgmtDisconnect() {
+  if (!confirm('Disconnect catalog from WhatsApp?\n\nYour catalog and menu items will NOT be deleted. You can reconnect anytime.')) return;
+  try {
+    toast('Disconnecting...', 'ok');
+    await api('/api/restaurant/catalog/disconnect-waba', { method: 'POST' });
+    toast('✅ Catalog disconnected from WhatsApp', 'ok');
+    loadCatalogMgmt(true);
+    loadCatalogStatus();
+  } catch (e) { toast('❌ ' + (e.message || 'Failed to disconnect'), 'err'); }
+}
+
+function doCatMgmtDelete() {
+  const catData = _catMgmtData;
+  const active = catData?.active_catalog_id;
+  const activeCat = catData?.catalogs?.find(c => c.id === active);
+  if (!active) { toast('No catalog to delete', 'err'); return; }
+
+  // Show type-to-confirm panel
+  const panel = document.getElementById('cat-mgmt-delete-confirm');
+  const input = document.getElementById('cat-delete-input');
+  const btn = document.getElementById('cat-delete-confirm-btn');
+  panel.style.display = 'block';
+  input.value = '';
+  btn.disabled = true;
+  btn.style.opacity = '.5';
+
+  const expectedName = (activeCat?.name || '').trim();
+  input.placeholder = expectedName ? `Type "${expectedName}" to confirm` : 'Type catalog name to confirm';
+
+  // Enable delete button only when name matches
+  input.oninput = () => {
+    const match = input.value.trim().toLowerCase() === expectedName.toLowerCase();
+    btn.disabled = !match;
+    btn.style.opacity = match ? '1' : '.5';
+  };
+}
+
+async function doCatMgmtDeleteConfirm() {
+  const active = _catMgmtData?.active_catalog_id;
+  if (!active) return;
+  try {
+    toast('Deleting catalog...', 'ok');
+    document.getElementById('cat-delete-confirm-btn').disabled = true;
+    await api(`/api/restaurant/catalog/${active}`, { method: 'DELETE' });
+    document.getElementById('cat-mgmt-delete-confirm').style.display = 'none';
+    toast('✅ Catalog deleted permanently', 'ok');
+    loadCatalogMgmt(true);
+    loadCatalogStatus();
+  } catch (e) {
+    toast('❌ ' + (e.message || 'Failed to delete'), 'err');
+    document.getElementById('cat-delete-confirm-btn').disabled = false;
+  }
 }
 
 async function doChangePassword() {
