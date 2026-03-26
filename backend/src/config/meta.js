@@ -92,7 +92,7 @@ const metaConfig = {
       return false;
     }
 
-    const tasks = ['MANAGE', 'MANAGE_AR', 'CREATE_CONTENT'];
+    const tasks = ['MANAGE', 'MANAGE_AR', 'AA_ANALYZE'];
 
     // Try 1: Get system users and assign
     try {

@@ -6132,10 +6132,10 @@ async function doCatMgmtSwitchCatalog(newCatId, newCatName) {
   try {
     // Disconnect current if connected
     if (current) {
-      await api('/api/restaurant/catalog/disconnect', { method: 'POST' }).catch(() => {});
+      await api('/api/restaurant/catalog/disconnect-waba', { method: 'POST' }).catch(() => {});
     }
     // Connect new one
-    await api('/api/restaurant/catalog/connect', { method: 'POST', body: { catalog_id: newCatId } });
+    await api('/api/restaurant/catalog/connect-waba', { method: 'POST', body: { catalog_id: newCatId } });
     // Update active catalog in DB
     await api('/api/restaurant/catalog', { method: 'PUT', body: { catalog_id: newCatId, catalog_name: newCatName } });
     toast(`✅ Connected "${newCatName}" to WhatsApp`, 'ok');
