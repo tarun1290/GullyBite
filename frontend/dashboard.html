@@ -913,8 +913,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
 
-        <div class="card">
-          <div class="ch"><h3>➕ Add Menu Item</h3></div>
+        <div class="card" id="m-add-form" style="display:none;overflow:hidden;transition:max-height .3s ease,opacity .3s ease">
+          <div class="ch" style="justify-content:space-between"><h3>➕ Add Menu Item</h3><button class="btn-g btn-sm" onclick="toggleMenuSection(null)" style="font-size:.78rem">✕ Close</button></div>
           <div class="cb">
             <div class="fgrid">
               <div class="fg span2"><label>Item Name ★</label><input id="m-name" placeholder="Butter Chicken"></div>
@@ -3792,7 +3792,7 @@ function onCatChange(sel) {
 }
 async function doAddItem() {
   const branchId = document.getElementById('m-branch').value;
-  if (!branchId) return toast('Select a branch first', 'err');
+  if (!branchId || branchId === '__all__') return toast('Select a specific branch first to add items', 'err');
   const name = document.getElementById('m-name').value.trim();
   if (!name) return toast('Item name is required', 'err');
 
@@ -3873,6 +3873,8 @@ async function doAddItem() {
     document.getElementById('m-price-row').style.display = '';
     document.getElementById('m-variant-rows').innerHTML = '';
     resetImgPicker();
+    // Collapse the add form after successful add
+    toggleMenuSection(null);
     loadMenu();
   } catch (e) { toast(e.message, 'err'); }
 }
