@@ -1099,6 +1099,13 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
         <div id="wa-list"><div style="text-align:center;padding:2rem"><div class="spin"></div></div></div>
 
+        <!-- Connected catalogs count -->
+        <div id="wa-catalog-count" style="display:flex;align-items:center;gap:.6rem;padding:.65rem 1rem;background:var(--ink4,#f9fafb);border:1px solid var(--rim,#e5e7eb);border-radius:8px;margin-bottom:1rem;font-size:.84rem">
+          <span style="font-size:1.1rem">📦</span>
+          <span id="wa-catalog-count-text" style="flex:1;color:var(--dim)">Loading catalog info...</span>
+          <button onclick="document.getElementById('cat-mgmt-status').scrollIntoView({behavior:'smooth'})" style="background:none;border:none;color:#2563eb;cursor:pointer;font-size:.82rem;font-weight:500;white-space:nowrap">Manage Catalogs →</button>
+        </div>
+
         <!-- ── Catalog Management ── -->
         <div class="card" style="margin-top:1.1rem">
           <div class="ch" style="justify-content:space-between;align-items:center">
@@ -3593,71 +3600,95 @@ async function loadMenu() {
 }
 
 function renderMenuGroups(grouped, showBranchBadge) {
-  return grouped.map(g => {
-    const standalone = [];
-    const variantGroups = {};
-    for (const item of g.items) {
-      if (item.item_group_id) {
-        if (!variantGroups[item.item_group_id]) variantGroups[item.item_group_id] = [];
-        variantGroups[item.item_group_id].push(item);
-      } else {
-        standalone.push(item);
-      }
+  // Flatten all items with category info for table display
+  const allItems = [];
+  for (const g of grouped) {
+    for (const item of (g.items || [])) {
+      allItems.push({ ...item, _categoryName: g.name || 'Uncategorized' });
     }
-    let html = standalone.map(i => miRow(i, false, showBranchBadge)).join('');
-    for (const [gid, variants] of Object.entries(variantGroups)) {
-      const first = variants[0];
-      const safeName = first.name.replace(/'/g, "\\'");
-      html += `<div class="mi-group" style="border-left:3px solid var(--acc);margin:.3rem 0;border-radius:4px;background:rgba(79,70,229,.03)">
-        <div style="display:flex;align-items:center;gap:.5rem;padding:.45rem .8rem;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.querySelector('.grp-arr').textContent=this.nextElementSibling.style.display==='none'?'▶':'▼'">
-          <span class="grp-arr" style="font-size:.7rem;color:var(--dim)">▼</span>
-          <span style="font-weight:600;font-size:.85rem">${first.name}</span>
-          ${showBranchBadge && first.branch_name ? `<span style="font-size:.65rem;background:var(--ink);padding:.1rem .4rem;border-radius:10px;color:var(--dim)">${first.branch_name}</span>` : ''}
-          <span class="badge bd" style="font-size:.65rem">${variants.length} variants</span>
-          <button class="btn-g btn-sm" style="margin-left:auto;font-size:.72rem" onclick="event.stopPropagation();openVarModal('${first.id}','${safeName}','${gid}')">+ Add Variant</button>
-        </div>
-        <div>${variants.map(v => miRow(v, true, showBranchBadge)).join('')}</div>
-      </div>`;
-    }
-    return `<div class="card" style="margin-bottom:.9rem">
-      <div class="ch"><h3>${g.name}</h3><span class="badge bd">${g.items.length} items</span></div>
-      <div>${html}</div>
-    </div>`;
+  }
+  if (!allItems.length) return '';
+
+  const ti = { veg: '🟢', non_veg: '🔴', vegan: '🌱', egg: '🟡' };
+  const branchCol = showBranchBadge ? '<th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Branch</th>' : '';
+  const branchColCount = showBranchBadge ? 1 : 0;
+
+  let rows = allItems.map((item, idx) => {
+    const safeName = item.name.replace(/'/g, "\\'");
+    const typeIcon = ti[item.food_type] || '🍽️';
+    const displayName = item.item_group_id
+      ? `${item.name} <span style="font-size:.72rem;color:var(--acc);font-weight:500">· ${item.size || item.variant_value || 'Variant'}</span>`
+      : item.name;
+    const price = item.sale_price_paise
+      ? `<span style="text-decoration:line-through;color:var(--mute);font-size:.75rem">₹${item.price_paise/100}</span> <span style="color:#dc2626;font-weight:600">₹${item.sale_price_paise/100}</span>`
+      : `₹${item.price_paise/100}`;
+    const branchTd = showBranchBadge
+      ? `<td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim)">${item.branch_name || '—'}</td>`
+      : '';
+    const rowBg = idx % 2 === 0 ? '' : 'background:var(--ink4,#f9fafb);';
+
+    return `<tr style="${rowBg}">
+      <td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim);text-align:center;width:40px">${idx + 1}</td>
+      <td style="padding:.45rem .7rem;font-size:.82rem;font-weight:500">${displayName}${item.is_bestseller ? ' <span style="font-size:.6rem;color:#f59e0b">⭐</span>' : ''}</td>
+      <td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim)">${item._categoryName}</td>
+      ${branchTd}
+      <td style="padding:.45rem .7rem;font-size:.82rem;text-align:center">${typeIcon}</td>
+      <td style="padding:.45rem .7rem;font-size:.82rem;font-weight:500;text-align:right;white-space:nowrap">${price}</td>
+      <td style="padding:.45rem .7rem;text-align:center">
+        <label class="tsl" style="margin:0"><input type="checkbox" ${item.is_available ? 'checked' : ''} onchange="doToggleItem('${item.id}',this.checked,'${safeName}')"><div class="tsl-track"></div></label>
+      </td>
+      <td style="padding:.45rem .7rem;text-align:center">
+        <button onclick="doDeleteItem('${item.id}','${safeName}')" title="Delete ${safeName}" style="background:none;border:none;cursor:pointer;font-size:.85rem;color:#9ca3af;transition:color .15s" onmouseover="this.style.color='#dc2626'" onmouseout="this.style.color='#9ca3af'">🗑️</button>
+      </td>
+    </tr>`;
   }).join('');
-}
-function miRow(item, isGroupedVariant, showBranchBadge) {
-  const ti    = { veg: '🟢', non_veg: '🔴', vegan: '🌱', egg: '🟡' };
-  const thumbSrc = item.thumbnail_url || item.image_url;
-  const thumb = thumbSrc
-    ? `<img class="mi-th" src="${thumbSrc}" onerror="this.style.display='none'">`
-    : `<div class="mi-ph">${ti[item.food_type] || '🍽️'}</div>`;
-  const variantBadge = item.item_group_id
-    ? `<span class="var-badge" title="Part of a variant group">⚡ ${item.size || item.variant_value || 'Variant'}</span>`
-    : '';
-  const branchBadge = (showBranchBadge && item.branch_name && !isGroupedVariant)
-    ? `<span style="font-size:.62rem;background:#e0e7ff;padding:.1rem .4rem;border-radius:10px;color:#4338ca;margin-left:.3rem">${item.branch_name}</span>`
-    : '';
-  const saleBadge = item.sale_price_paise
-    ? `<span style="text-decoration:line-through;color:var(--mute);font-size:.75rem;margin-right:.3rem">₹${item.price_paise / 100}</span><span style="color:var(--red);font-weight:600">₹${item.sale_price_paise / 100}</span>`
-    : `₹${item.price_paise / 100}`;
-  const syncDot = item.catalog_sync_status === 'synced' ? '🟢' : item.catalog_sync_status === 'error' ? '🔴' : '🟡';
-  const safeName = item.name.replace(/'/g, "\\'");
-  const indent = isGroupedVariant ? 'padding-left:1.8rem;' : '';
-  return `<div class="mi" style="${indent}">
-    ${thumb}
-    <div style="flex:1;min-width:0">
-      <div class="mi-name">${isGroupedVariant ? '' : item.name}${isGroupedVariant ? (item.size || item.variant_value || 'Variant') : ''}${item.is_bestseller ? '<span class="badge ba" style="margin-left:.3rem;font-size:.6rem">⭐</span>' : ''}${!isGroupedVariant ? variantBadge : ''}${branchBadge}</div>
-      ${item.description && !isGroupedVariant ? `<div class="mi-desc">${item.description}</div>` : ''}
-      ${item.product_tags?.length ? `<div style="display:flex;gap:.25rem;flex-wrap:wrap;margin-top:.2rem">${item.product_tags.map(t => `<span style="font-size:.62rem;background:var(--ink);padding:.1rem .4rem;border-radius:10px;color:var(--dim)">${t}</span>`).join('')}</div>` : ''}
-    </div>
-    <div class="mi-price">${saleBadge}</div>
-    <div class="mi-acts">
-      <span title="Sync: ${item.catalog_sync_status||'pending'}" style="font-size:.65rem">${syncDot}</span>
-      ${!isGroupedVariant ? `<button class="btn-g btn-sm" title="Add size/portion variant" onclick="openVarModal('${item.id}','${safeName}','${item.item_group_id||''}')">+ Variant</button>` : ''}
-      <label class="tsl"><input type="checkbox" ${item.is_available ? 'checked' : ''} onchange="doToggleItem('${item.id}',this.checked,'${safeName}')"><div class="tsl-track"></div></label>
-      <button class="btn-del" onclick="doDeleteItem('${item.id}','${safeName}')">🗑</button>
+
+  return `<div class="card" style="margin-bottom:.9rem;overflow:hidden">
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:.84rem;font-family:var(--font-body,'Inter',sans-serif)">
+        <thead>
+          <tr style="background:#f9fafb;border-bottom:2px solid var(--rim,#e5e7eb)">
+            <th style="padding:.55rem .7rem;text-align:center;font-size:.77rem;font-weight:600;color:var(--dim);width:40px">#</th>
+            <th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Item Name</th>
+            <th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Category</th>
+            ${branchCol}
+            <th style="padding:.55rem .7rem;text-align:center;font-size:.77rem;font-weight:600;color:var(--dim);width:60px">Type</th>
+            <th style="padding:.55rem .7rem;text-align:right;font-size:.77rem;font-weight:600;color:var(--dim);width:90px">Price</th>
+            <th style="padding:.55rem .7rem;text-align:center;font-size:.77rem;font-weight:600;color:var(--dim);width:70px">Status</th>
+            <th style="padding:.55rem .7rem;text-align:center;font-size:.77rem;font-weight:600;color:var(--dim);width:55px"></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>
   </div>`;
+}
+
+/* ═══ FUTURE FEATURE: Card-based menu item display ═══
+   The original card/row layout for menu items. Replaced by table format.
+   Kept as reference for potential mobile-optimized view.
+
+   function miRow(item, isGroupedVariant, showBranchBadge) {
+     const ti = { veg: '🟢', non_veg: '🔴', vegan: '🌱', egg: '🟡' };
+     const thumbSrc = item.thumbnail_url || item.image_url;
+     const thumb = thumbSrc
+       ? '<img class="mi-th" src="' + thumbSrc + '" onerror="this.style.display=\'none\'">'
+       : '<div class="mi-ph">' + (ti[item.food_type] || '🍽️') + '</div>';
+     const variantBadge = item.item_group_id
+       ? '<span class="var-badge" title="Part of a variant group">⚡ ' + (item.size || item.variant_value || 'Variant') + '</span>'
+       : '';
+     const branchBadge = (showBranchBadge && item.branch_name && !isGroupedVariant)
+       ? '<span style="font-size:.62rem;background:#e0e7ff;padding:.1rem .4rem;border-radius:10px;color:#4338ca;margin-left:.3rem">' + item.branch_name + '</span>'
+       : '';
+     const saleBadge = item.sale_price_paise
+       ? '<span style="text-decoration:line-through;color:var(--mute);font-size:.75rem;margin-right:.3rem">₹' + (item.price_paise / 100) + '</span><span style="color:var(--red);font-weight:600">₹' + (item.sale_price_paise / 100) + '</span>'
+       : '₹' + (item.price_paise / 100);
+     const syncDot = item.catalog_sync_status === 'synced' ? '🟢' : item.catalog_sync_status === 'error' ? '🔴' : '🟡';
+     const safeName = item.name.replace(/'/g, "\\'");
+     const indent = isGroupedVariant ? 'padding-left:1.8rem;' : '';
+     return '<div class="mi" style="' + indent + '">' + thumb + '<div style="flex:1;min-width:0"><div class="mi-name">' + (isGroupedVariant ? '' : item.name) + (isGroupedVariant ? (item.size || item.variant_value || 'Variant') : '') + '</div></div><div class="mi-price">' + saleBadge + '</div><div class="mi-acts"><label class="tsl"><input type="checkbox" ' + (item.is_available ? 'checked' : '') + ' onchange="doToggleItem(\'' + item.id + '\',this.checked,\'' + safeName + '\')"><div class="tsl-track"></div></label><button class="btn-del" onclick="doDeleteItem(\'' + item.id + '\',\'' + safeName + '\')">🗑</button></div></div>';
+   }
+   ═══ END FUTURE FEATURE ═══ */
 }
 /* ─── CATEGORIES MANAGER ──────────────────────────────── */
 let _catManagerOpen = false;
@@ -5774,6 +5805,16 @@ async function loadCatalogMgmt(refresh = false) {
     const catData = await api(`/api/restaurant/catalogs${refresh ? '?refresh=true' : ''}`);
     _catMgmtData = catData;
     const active = catData?.active_catalog_id;
+
+    // Update catalog count badge in WhatsApp section
+    const countTextEl = document.getElementById('wa-catalog-count-text');
+    if (countTextEl) {
+      const cnt = catData?.catalogs?.length || 0;
+      countTextEl.textContent = cnt
+        ? `${cnt} catalog${cnt > 1 ? 's' : ''} connected to WhatsApp`
+        : 'No catalogs connected';
+      countTextEl.style.color = cnt ? 'var(--fg)' : 'var(--dim)';
+    }
     const activeCat = catData?.catalogs?.find(c => c.id === active);
 
     if (active && activeCat) {
@@ -5811,6 +5852,8 @@ async function loadCatalogMgmt(refresh = false) {
   } catch (e) {
     statusEl.innerHTML = `<div style="color:var(--dim);font-size:.82rem">Failed to load catalog status: ${e.message}</div>`;
     if (settingsEl) settingsEl.style.display = 'none';
+    const countTextEl = document.getElementById('wa-catalog-count-text');
+    if (countTextEl) { countTextEl.textContent = 'Unable to fetch catalog info'; countTextEl.style.color = 'var(--dim)'; }
   }
 }
 
