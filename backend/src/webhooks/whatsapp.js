@@ -270,7 +270,33 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
   const to = customerIdentity.resolveRecipient(customer);
-  const text = msg.text.body.trim().toUpperCase();
+  const rawText = msg.text.body.trim();
+  const text = rawText.toUpperCase();
+
+  // ── Google Maps URL detection ─────────────────────────────
+  if (location.isMapsUrl(rawText)) {
+    console.log('[Bot] Google Maps URL detected:', rawText.substring(0, 100));
+    try {
+      const coords = await location.extractCoordsFromMapsUrl(rawText);
+      if (coords) {
+        console.log(`[Bot] Extracted coords: ${coords.lat}, ${coords.lng}`);
+        // Treat this the same as a location pin drop — delegate to location handler
+        const syntheticLocationMsg = {
+          type: 'location',
+          location: { latitude: coords.lat, longitude: coords.lng },
+        };
+        await handleLocationMessage(syntheticLocationMsg, customer, conv, waAccount);
+        return;
+      }
+    } catch (e) {
+      console.error('[Bot] Maps URL parse failed:', e.message);
+    }
+    // If parsing failed, ask for pin drop instead
+    await wa.sendText(pid, token, to,
+      "I couldn't read that Google Maps link.\n\n📍 Could you share your location using WhatsApp's location button instead?\n\nTap the 📎 (attach) icon → Location → Send your current location."
+    );
+    return;
+  }
 
   if (['HI', 'HELLO', 'HEY', 'START', 'MENU', 'ORDER'].includes(text)) {
     await orderSvc.setState(conv.id, 'GREETING');

@@ -89,4 +89,89 @@ const findNearestBranch = async (customerLat, customerLng, restaurantId = null) 
   };
 };
 
-module.exports = { findNearestBranch, haversineKm };
+// ─── GOOGLE MAPS URL PARSING ────────────────────────────────
+// Detects and extracts coordinates from Google Maps URLs shared as text
+const MAPS_URL_REGEX = /https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|maps\.google\.com|google\.com\/maps)[^\s)]+/i;
+
+function isMapsUrl(text) {
+  return MAPS_URL_REGEX.test(text);
+}
+
+async function extractCoordsFromMapsUrl(url) {
+  let resolvedUrl = url;
+
+  // Resolve short links (maps.app.goo.gl, goo.gl/maps)
+  if (url.includes('maps.app.goo.gl') || url.includes('goo.gl/maps')) {
+    try {
+      const axios = require('axios');
+      const resp = await axios.get(url, { maxRedirects: 5, timeout: 5000, validateStatus: () => true });
+      resolvedUrl = resp.request?.res?.responseUrl || resp.headers?.location || url;
+    } catch (e) {
+      console.warn('[Location] Failed to resolve short URL:', e.message);
+    }
+  }
+
+  let lat, lng;
+
+  // Pattern 1: @17.385,78.486 or /17.385,78.486
+  const atMatch = resolvedUrl.match(/[@/](-?\d+\.\d{3,}),(-?\d+\.\d{3,})/);
+  if (atMatch) { lat = parseFloat(atMatch[1]); lng = parseFloat(atMatch[2]); }
+
+  // Pattern 2: ?q=17.385,78.486
+  if (!lat) {
+    const qMatch = resolvedUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (qMatch) { lat = parseFloat(qMatch[1]); lng = parseFloat(qMatch[2]); }
+  }
+
+  // Pattern 3: !3d17.385!4d78.486 (embedded format)
+  if (!lat) {
+    const embMatch = resolvedUrl.match(/!3d(-?\d+\.\d+).*!4d(-?\d+\.\d+)/);
+    if (embMatch) { lat = parseFloat(embMatch[1]); lng = parseFloat(embMatch[2]); }
+  }
+
+  if (!lat || !lng) {
+    // Try to extract place name as fallback
+    const placeMatch = resolvedUrl.match(/place\/([^/@]+)/);
+    if (placeMatch) {
+      console.log('[Location] Extracted place name:', decodeURIComponent(placeMatch[1]));
+    }
+    return null;
+  }
+
+  // Validate coordinates are reasonable
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+
+  return { lat, lng };
+}
+
+// ─── REVERSE GEOCODING ──────────────────────────────────────
+// Uses Google Maps Geocoding API to get a full address from coordinates.
+// GOOGLE_MAPS_API_KEY is required.
+async function reverseGeocode(lat, lng) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  const axios = require('axios');
+  const { data } = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+    params: { latlng: `${lat},${lng}`, key: apiKey },
+    timeout: 5000,
+  });
+
+  if (data.results?.length) {
+    const r = data.results[0];
+    const get = (type) => r.address_components?.find(c => c.types.includes(type))?.long_name || '';
+    return {
+      lat, lng,
+      address: r.formatted_address,
+      place_id: r.place_id,
+      area: get('sublocality_level_1') || get('sublocality'),
+      city: get('locality'),
+      state: get('administrative_area_level_1'),
+      pincode: get('postal_code'),
+      source: 'geocode',
+    };
+  }
+
+  console.error('[Location] Geocoding returned no results for:', lat, lng);
+  return null;
+}
+
+module.exports = { findNearestBranch, haversineKm, isMapsUrl, extractCoordsFromMapsUrl, reverseGeocode };
