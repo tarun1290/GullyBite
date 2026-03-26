@@ -3689,7 +3689,6 @@ function renderMenuGroups(grouped, showBranchBadge) {
      return '<div class="mi" style="' + indent + '">' + thumb + '<div style="flex:1;min-width:0"><div class="mi-name">' + (isGroupedVariant ? '' : item.name) + (isGroupedVariant ? (item.size || item.variant_value || 'Variant') : '') + '</div></div><div class="mi-price">' + saleBadge + '</div><div class="mi-acts"><label class="tsl"><input type="checkbox" ' + (item.is_available ? 'checked' : '') + ' onchange="doToggleItem(\'' + item.id + '\',this.checked,\'' + safeName + '\')"><div class="tsl-track"></div></label><button class="btn-del" onclick="doDeleteItem(\'' + item.id + '\',\'' + safeName + '\')">🗑</button></div></div>';
    }
    ═══ END FUTURE FEATURE ═══ */
-}
 /* ─── CATEGORIES MANAGER ──────────────────────────────── */
 let _catManagerOpen = false;
 function toggleCatManager() {
