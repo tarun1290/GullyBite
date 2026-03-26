@@ -73,6 +73,75 @@ const metaConfig = {
     console.log('[MetaConfig] ──────────────────────────────────');
   },
 
+  // ── Catalog admin access ─────────────────────────────────────
+  // Cache: catalogId → true (assigned this session)
+  _adminCache: new Set(),
+
+  /**
+   * Ensure the system user has admin access to a catalog.
+   * Tries business_users first, then system_users.
+   * Caches per catalogId to avoid repeated calls.
+   */
+  async ensureCatalogAdminAccess(catalogId) {
+    if (this._adminCache.has(catalogId)) return true;
+
+    const token = this.getCatalogToken();
+    const bizId = this.businessId;
+    if (!bizId) {
+      console.warn('[MetaConfig] No META_BUSINESS_ID — cannot assign catalog admin');
+      return false;
+    }
+
+    const tasks = ['MANAGE', 'MANAGE_AR', 'CREATE_CONTENT'];
+
+    // Try 1: Get system users and assign
+    try {
+      const suRes = await axios.get(`${this.graphUrl}/${bizId}/system_users`, {
+        params: { access_token: token },
+        timeout: 10000,
+      });
+      const systemUsers = suRes.data?.data || [];
+      if (systemUsers.length) {
+        const userId = systemUsers[0].id;
+        console.log(`[MetaConfig] Assigning catalog ${catalogId} admin to system_user ${userId}`);
+        await axios.post(`${this.graphUrl}/${catalogId}/assigned_users`, {
+          user: userId,
+          tasks: JSON.stringify(tasks),
+        }, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 });
+        this._adminCache.add(catalogId);
+        console.log(`[MetaConfig] ✅ Admin access granted for catalog ${catalogId}`);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[MetaConfig] System user assignment failed:', e.response?.data?.error?.message || e.message);
+    }
+
+    // Try 2: Get business users and assign
+    try {
+      const buRes = await axios.get(`${this.graphUrl}/${bizId}/business_users`, {
+        params: { access_token: token },
+        timeout: 10000,
+      });
+      const bizUsers = buRes.data?.data || [];
+      if (bizUsers.length) {
+        const userId = bizUsers[0].id;
+        console.log(`[MetaConfig] Assigning catalog ${catalogId} admin to business_user ${userId}`);
+        await axios.post(`${this.graphUrl}/${catalogId}/assigned_users`, {
+          user: userId,
+          tasks: JSON.stringify(tasks),
+        }, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 });
+        this._adminCache.add(catalogId);
+        console.log(`[MetaConfig] ✅ Admin access granted for catalog ${catalogId}`);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[MetaConfig] Business user assignment failed:', e.response?.data?.error?.message || e.message);
+    }
+
+    console.error(`[MetaConfig] ❌ Could not assign admin access for catalog ${catalogId}`);
+    return false;
+  },
+
   /** Debug the current system user token — checks scopes, validity, expiry */
   async verifyToken() {
     const token = this.systemUserToken;

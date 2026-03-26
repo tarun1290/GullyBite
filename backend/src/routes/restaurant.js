@@ -2057,7 +2057,7 @@ router.get('/catalog/details', async (req, res) => {
     if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
     const response = await axios.get(
-      `https://graph.facebook.com/${metaConfig.apiVersion}/${catalogId}`,
+      `${metaConfig.graphUrl}/${catalogId}`,
       { params: { fields: 'name,vertical,product_count,da_display_settings,business' }, headers: { Authorization: `Bearer ${token}` } }
     );
     res.json({ ...response.data, catalog_id: catalogId, catalog_name: restaurant.meta_catalog_name, created_at: restaurant.catalog_created_at });
@@ -2085,8 +2085,11 @@ router.put('/catalog/settings', async (req, res) => {
     const token = metaConfig.catalogToken;
     if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
+    // Ensure admin access before updating
+    await metaConfig.ensureCatalogAdminAccess(catalogId);
+
     await axios.post(
-      `https://graph.facebook.com/${metaConfig.apiVersion}/${catalogId}`,
+      `${metaConfig.graphUrl}/${catalogId}`,
       { name: name.trim() },
       { headers: { Authorization: `Bearer ${token}` } }
     );
@@ -2414,32 +2417,67 @@ router.post('/catalog/create-new', requireApproved, async (req, res) => {
 
 // DELETE /api/restaurant/catalog/:catalogId — Delete a catalog via Meta API
 router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
-  try {
-    const token = metaConfig.catalogToken;
-    if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
+  const catalogId = req.params.catalogId;
+  const token = metaConfig.catalogToken;
+  if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
-    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+  const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+  const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+  const bizId = restaurant?.meta_business_id || metaConfig.businessId;
 
-    // Unlink from WABA first (if linked) to avoid Meta error 1798233
-    if (wa?.waba_id) {
-      try {
-        await axios.delete(
-          `https://graph.facebook.com/${metaConfig.apiVersion}/${wa.waba_id}/product_catalogs`,
-          { data: { catalog_id: req.params.catalogId }, headers: { Authorization: `Bearer ${token}` } }
-        );
-      } catch (_) { /* may not be linked — ignore */ }
+  console.log(`[Catalog] Delete requested: catalog=${catalogId}, waba=${wa?.waba_id}, biz=${bizId}`);
+
+  // Helper: attempt the actual delete with auto-retry on permission error
+  async function attemptDelete(retried = false) {
+    try {
+      // Step 1: Unlink from WABA first (if linked)
+      if (wa?.waba_id) {
+        try {
+          await axios.delete(
+            `${metaConfig.graphUrl}/${wa.waba_id}/product_catalogs`,
+            { data: { catalog_id: catalogId }, headers: { Authorization: `Bearer ${token}` } }
+          );
+          console.log(`[Catalog] Unlinked from WABA ${wa.waba_id}`);
+        } catch (unlinkErr) {
+          const code = unlinkErr.response?.data?.error?.code;
+          if (code === 3970 || code === 100) {
+            // Permission error on unlink — try assigning admin first
+            if (!retried) {
+              console.log('[Catalog] Unlink permission denied — assigning admin access...');
+              await metaConfig.ensureCatalogAdminAccess(catalogId);
+              return attemptDelete(true);
+            }
+          }
+          // Non-permission error or already retried — ignore (may not be linked)
+          console.warn('[Catalog] Unlink failed (continuing):', unlinkErr.response?.data?.error?.message || unlinkErr.message);
+        }
+      }
+
+      // Step 2: Delete the catalog
+      await axios.delete(
+        `${metaConfig.graphUrl}/${catalogId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      return true;
+    } catch (delErr) {
+      const code = delErr.response?.data?.error?.code;
+      const subcode = delErr.response?.data?.error?.error_subcode;
+      // Permission error — auto-retry after assigning admin
+      if (!retried && (code === 3970 || code === 100 || subcode === 1690087 || subcode === 2388100)) {
+        console.log('[Catalog] Delete permission denied — assigning admin access and retrying...');
+        const granted = await metaConfig.ensureCatalogAdminAccess(catalogId);
+        if (granted) return attemptDelete(true);
+      }
+      throw delErr;
     }
+  }
 
-    // Delete the catalog
-    await axios.delete(
-      `https://graph.facebook.com/${metaConfig.apiVersion}/${req.params.catalogId}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    console.log(`[Catalog] Deleted catalog ${req.params.catalogId}`);
+  try {
+    await attemptDelete();
+    console.log(`[Catalog] Deleted catalog ${catalogId}`);
 
     // Clear from DB if it was the active catalog
-    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
-    if (restaurant?.meta_catalog_id === req.params.catalogId) {
+    if (restaurant?.meta_catalog_id === catalogId) {
       await col('restaurants').updateOne(
         { _id: req.restaurantId },
         { $set: { meta_catalog_id: null, meta_catalog_name: null, meta_available_catalogs: [], updated_at: new Date() } }
@@ -2456,8 +2494,12 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
 
     res.json({ success: true });
   } catch (e) {
-    console.error('[Catalog] Delete failed:', e.response?.data || e.message);
-    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+    const metaErr = e.response?.data?.error;
+    console.error('[Catalog] Delete failed:', metaErr || e.message);
+    const userMsg = (metaErr?.code === 3970 || metaErr?.error_subcode === 1690087)
+      ? 'Could not get admin access to this catalog. Please go to Meta Business Suite → Commerce Manager → Catalog Settings and make sure your Business account has admin access, then try again.'
+      : (metaErr?.message || e.message);
+    res.status(500).json({ error: userMsg });
   }
 });
 
@@ -2499,19 +2541,38 @@ router.post('/catalog/connect-waba', async (req, res) => {
 
 // POST /api/restaurant/catalog/disconnect-waba — Disconnect catalog from WABA
 router.post('/catalog/disconnect-waba', async (req, res) => {
+  const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+  if (!wa?.waba_id) return res.status(400).json({ error: 'No WABA connected.' });
+  if (!wa?.catalog_id) return res.status(400).json({ error: 'No catalog connected to WABA.' });
+
+  const token = metaConfig.catalogToken;
+  if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
+  const catalogId = wa.catalog_id;
+
+  console.log(`[Catalog] Disconnect requested: catalog=${catalogId}, waba=${wa.waba_id}`);
+
+  async function attemptDisconnect(retried = false) {
+    try {
+      await axios.delete(
+        `${metaConfig.graphUrl}/${wa.waba_id}/product_catalogs`,
+        { data: { catalog_id: catalogId }, headers: { Authorization: `Bearer ${token}` } }
+      );
+      return true;
+    } catch (e) {
+      const code = e.response?.data?.error?.code;
+      const subcode = e.response?.data?.error?.error_subcode;
+      if (!retried && (code === 3970 || code === 100 || subcode === 1690087 || subcode === 2388100)) {
+        console.log('[Catalog] Disconnect permission denied — assigning admin access and retrying...');
+        const granted = await metaConfig.ensureCatalogAdminAccess(catalogId);
+        if (granted) return attemptDisconnect(true);
+      }
+      throw e;
+    }
+  }
+
   try {
-    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
-    if (!wa?.waba_id) return res.status(400).json({ error: 'No WABA connected.' });
-    if (!wa?.catalog_id) return res.status(400).json({ error: 'No catalog connected to WABA.' });
-
-    const token = metaConfig.catalogToken;
-    if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
-
-    await axios.delete(
-      `https://graph.facebook.com/${metaConfig.apiVersion}/${wa.waba_id}/product_catalogs`,
-      { data: { catalog_id: wa.catalog_id }, headers: { Authorization: `Bearer ${token}` } }
-    );
-    console.log(`[Catalog] Disconnected catalog ${wa.catalog_id} from WABA ${wa.waba_id}`);
+    await attemptDisconnect();
+    console.log(`[Catalog] Disconnected catalog ${catalogId} from WABA ${wa.waba_id}`);
 
     await col('whatsapp_accounts').updateOne(
       { _id: wa._id },
@@ -2520,8 +2581,12 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
 
     res.json({ success: true });
   } catch (e) {
-    console.error('[Catalog] Disconnect WABA failed:', e.response?.data || e.message);
-    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+    const metaErr = e.response?.data?.error;
+    console.error('[Catalog] Disconnect WABA failed:', metaErr || e.message);
+    const userMsg = (metaErr?.code === 3970 || metaErr?.error_subcode === 1690087)
+      ? 'Could not get admin access to this catalog. Please go to Meta Business Suite → Commerce Manager → Catalog Settings and ensure your Business account has admin access, then try again.'
+      : (metaErr?.message || e.message);
+    res.status(500).json({ error: userMsg });
   }
 });
 
