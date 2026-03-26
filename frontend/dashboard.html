@@ -64,6 +64,9 @@ a{color:inherit;text-decoration:none}
 .live-dot{display:none;align-items:center;gap:.38rem;font-size:.77rem;color:var(--wa);font-weight:500}
 .live-dot span{width:7px;height:7px;background:var(--wa);border-radius:50%;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+#cat-vis-check:checked+span{background:#2563eb}
+#cat-vis-check:checked+span+span{transform:translateX(18px)}
+#cat-vis-check:disabled+span{opacity:.5;cursor:not-allowed}
 .body{padding:1.6rem 2rem}
 .tab{display:none}
 .tab.on{display:block;animation:riseIn .22s ease both}
@@ -1189,6 +1192,19 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
                 <button class="btn-g btn-sm" onclick="document.getElementById('cat-mgmt-delete-confirm').style.display='none'">Cancel</button>
               </div>
             </div>
+
+            <!-- Catalog Visibility Toggle -->
+            <div id="cat-visibility-section" style="margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--rim,#e5e7eb)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
+                <span style="font-size:.84rem;font-weight:600">Catalog visible to customers</span>
+                <label id="cat-vis-toggle" style="position:relative;display:inline-block;width:40px;height:22px;cursor:pointer">
+                  <input type="checkbox" id="cat-vis-check" onchange="doToggleCatalogVisibility(this.checked)" style="opacity:0;width:0;height:0">
+                  <span style="position:absolute;inset:0;border-radius:11px;background:#d1d5db;transition:background .2s"></span>
+                  <span style="position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s"></span>
+                </label>
+              </div>
+              <div id="cat-vis-status" style="font-size:.77rem;color:var(--dim)">Loading...</div>
+            </div>
           </div>
         </div>
         <!-- ═══ HIDDEN: Webhook URL — managed by platform admins ═══ -->
@@ -1996,76 +2012,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
 
 
-        <!-- Meta Catalog -->
-        <div class="card" style="margin-bottom:1.2rem">
-          <div class="ch"><h3>Meta Product Catalog</h3></div>
-          <div class="cb">
-            <!-- Connected Catalog Display -->
-            <div id="catalog-connected-box" style="display:none;padding:.8rem 1rem;border-radius:8px;background:var(--surface2,#f4f4f5);margin-bottom:1rem">
-              <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.5rem">
-                <span style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>
-                <span style="font-weight:600;font-size:.88rem" id="catalog-active-name">—</span>
-              </div>
-              <div style="font-size:.78rem;color:var(--dim);margin-bottom:.4rem">
-                Catalog ID: <code id="catalog-active-id" style="background:var(--ink2);padding:.1rem .4rem;border-radius:4px;font-size:.75rem">—</code>
-              </div>
-              <div id="catalog-product-count" style="font-size:.78rem;color:var(--dim)"></div>
-            </div>
-            <div id="catalog-not-connected" style="display:none;padding:.8rem 1rem;border-radius:8px;background:#fffbeb;margin-bottom:1rem">
-              <p style="font-size:.82rem;color:#92400e;margin:0">No catalog linked yet. One will be auto-created when you add your first menu item, or click "Create Catalog" below.</p>
-            </div>
-            <div id="catalog-loading" style="font-size:.82rem;color:var(--dim);margin-bottom:1rem">Loading catalog info...</div>
-
-            <!-- Change Catalog Dropdown -->
-            <div id="catalog-change-section" style="display:none;margin-bottom:1rem">
-              <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:.4rem">Change Catalog</label>
-              <div style="display:flex;gap:.5rem;align-items:center">
-                <select id="catalog-select" style="flex:1;padding:.45rem .6rem;border:1px solid var(--bdr);border-radius:6px;font-size:.82rem;background:var(--bg);color:var(--fg)"></select>
-                <button class="btn-p btn-sm" onclick="doChangeCatalog()">Save</button>
-              </div>
-            </div>
-
-            <!-- Sync Status -->
-            <div id="catalog-status-box" style="padding:.7rem 1rem;border-radius:8px;background:var(--surface2,#f4f4f5);margin-bottom:1rem">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
-                <span style="font-weight:600;font-size:.85rem">Sync Status</span>
-                <span id="catalog-last-sync" style="font-size:.75rem;color:var(--dim)">Never synced</span>
-              </div>
-              <div id="catalog-branch-stats" style="font-size:.8rem;color:var(--dim)">Loading...</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem">
-              <label style="font-size:.84rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:.5rem">
-                <input type="checkbox" id="catalog-auto-sync" onchange="toggleCatalogAutoSync(this.checked)" style="width:16px;height:16px">
-                Auto-sync when menu changes
-              </label>
-            </div>
-            <div style="display:flex;gap:.6rem">
-              <button class="btn-p" id="catalog-sync-btn" onclick="doCatalogSync()">Sync All Items Now</button>
-              <button class="btn-g" id="catalog-create-btn" onclick="doCatalogCreate()">Create Catalog</button>
-              <button class="btn-g" id="catalog-refresh-btn" onclick="loadCatalogStatus()">Refresh</button>
-            </div>
-
-            <!-- Catalog Settings Toggles -->
-            <div id="catalog-toggles" style="margin-top:1.2rem;border-top:1px solid var(--bdr);padding-top:1rem">
-              <h4 style="font-size:.88rem;font-weight:600;margin-bottom:.7rem">Catalog Settings</h4>
-              <div style="display:flex;flex-direction:column;gap:.55rem">
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                  <span style="font-size:.84rem">Catalog linked to WhatsApp</span>
-                  <input type="checkbox" id="toggle-catalog-linked" onchange="toggleCatalogLink(this.checked)" style="width:18px;height:18px">
-                </label>
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                  <span style="font-size:.84rem">Cart enabled</span>
-                  <input type="checkbox" id="toggle-cart-enabled" onchange="toggleCatalogCart(this.checked)" style="width:18px;height:18px" disabled>
-                </label>
-                <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
-                  <span style="font-size:.84rem">Catalog visible to customers</span>
-                  <input type="checkbox" id="toggle-catalog-visible" onchange="toggleCatalogVisibility(this.checked)" style="width:18px;height:18px" disabled>
-                </label>
-              </div>
-              <p id="catalog-toggle-hint" style="font-size:.74rem;color:var(--dim);margin-top:.5rem"></p>
-            </div>
-          </div>
-        </div>
+        <!-- Catalog management is in the WhatsApp section (tab-whatsapp) — single source of truth -->
 
         <!-- Change Password -->
         <div class="card" style="margin-top:1.2rem">
@@ -2323,6 +2270,13 @@ function goTab(n, el) {
   };
 
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+
+  // Clear menu list when leaving the Menu tab — prevents stale menu data from flashing
+  if (actual !== 'menu' && actual !== 'branches') {
+    const ml = document.getElementById('menu-list');
+    if (ml) ml.innerHTML = '<div class="empty"><div class="ei">🍽️</div><h3>Select a branch above</h3></div>';
+  }
+
   const group = TAB_GROUPS[actual];
   if (group) {
     group.forEach(id => { const el2 = document.getElementById(id); if (el2) el2.classList.add('on'); });
@@ -5690,100 +5644,20 @@ async function doSaveChargeConfig() {
 
 
 /* ─── META CATALOG ─────────────────────────────────────── */
+// Note: The detailed catalog UI moved to the cat-mgmt section in tab-whatsapp.
+// This function now only fetches data for the gear-icon catalog panel on the Menu page.
 async function loadCatalogStatus() {
-  const loadingEl = document.getElementById('catalog-loading');
-  const connBox = document.getElementById('catalog-connected-box');
-  const notConn = document.getElementById('catalog-not-connected');
-  const changeSec = document.getElementById('catalog-change-section');
-
   try {
-    // Fetch sync status and catalog list in parallel
     const [d, catData] = await Promise.all([
       api('/api/restaurant/catalog/status'),
       api('/api/restaurant/catalogs').catch(() => null),
     ]);
 
-    if (loadingEl) loadingEl.style.display = 'none';
-
-    // Show sync status
-    if (d) {
-      const lastSync = d.lastFullSync ? new Date(d.lastFullSync).toLocaleString() : 'Never synced';
-      document.getElementById('catalog-last-sync').textContent = lastSync;
-      document.getElementById('catalog-auto-sync').checked = d.catalogSyncEnabled || false;
-
-      if (d.branches && d.branches.length) {
-        const html = d.branches.map(b => {
-          const syncIcon = b.catalogId ? '✓' : '—';
-          return `<div style="display:flex;justify-content:space-between;padding:.25rem 0;border-bottom:1px solid var(--rim,#e5e7eb)">
-            <span>${b.branchName}</span>
-            <span>${syncIcon} ${b.syncedItems}/${b.totalItems} synced${b.errorItems ? ` · <span style="color:var(--red,#dc2626)">${b.errorItems} errors</span>` : ''}</span>
-          </div>`;
-        }).join('');
-        document.getElementById('catalog-branch-stats').innerHTML = html;
-      } else {
-        document.getElementById('catalog-branch-stats').textContent = 'No branches found';
-      }
-    }
-
-    // Show connected catalog info
-    if (catData && catData.catalogs && catData.catalogs.length) {
-      const active = catData.catalogs.find(c => c.id === catData.active_catalog_id) || catData.catalogs[0];
-      connBox.style.display = 'block';
-      notConn.style.display = 'none';
-      document.getElementById('catalog-active-name').textContent = active.name || 'Unnamed Catalog';
-      document.getElementById('catalog-active-id').textContent = active.id;
-      const countEl = document.getElementById('catalog-product-count');
-      if (countEl) countEl.textContent = active.product_count != null ? `${active.product_count} products` : '';
-
-      // Populate change dropdown if multiple catalogs
-      if (catData.catalogs.length > 1) {
-        changeSec.style.display = 'block';
-        const select = document.getElementById('catalog-select');
-        select.innerHTML = catData.catalogs.map(c =>
-          `<option value="${c.id}" ${c.id === catData.active_catalog_id ? 'selected' : ''}>${c.name || c.id} (${c.product_count ?? 0} products)</option>`
-        ).join('');
-      } else {
-        changeSec.style.display = 'none';
-      }
-    } else if (catData && catData.error) {
-      connBox.style.display = 'none';
-      notConn.style.display = 'block';
-      notConn.querySelector('p').textContent = catData.error;
-    } else {
-      connBox.style.display = 'none';
-      notConn.style.display = 'block';
-    }
-
-    // Update catalog setting toggles
-    const hasCatalog = !!(d?.mainCatalogId || catData?.active_catalog_id);
-    const hasPhone = !!d?.phone_number_id;
-    const linkedEl = document.getElementById('toggle-catalog-linked');
-    const cartEl = document.getElementById('toggle-cart-enabled');
-    const visEl = document.getElementById('toggle-catalog-visible');
-    const hintEl = document.getElementById('catalog-toggle-hint');
-
-    if (linkedEl) {
-      linkedEl.checked = d?.catalog_linked || false;
-      linkedEl.disabled = !hasCatalog || !hasPhone;
-    }
-    if (cartEl) {
-      cartEl.checked = d?.cart_enabled || false;
-      cartEl.disabled = !d?.catalog_linked;
-    }
-    if (visEl) {
-      visEl.checked = d?.catalog_visible || false;
-      visEl.disabled = !d?.catalog_linked;
-    }
-    if (hintEl) {
-      if (!hasCatalog) hintEl.textContent = 'Add menu items first — catalog is created automatically.';
-      else if (!hasPhone) hintEl.textContent = 'Connect a WhatsApp number first.';
-      else if (!d?.catalog_linked) hintEl.textContent = 'Link catalog to enable cart and visibility controls.';
-      else hintEl.textContent = '';
-    }
+    // Store for use by catalog panel (gear icon on Menu page)
+    window._catalogStatusData = d;
+    window._catalogListData = catData;
   } catch (e) {
-    if (loadingEl) loadingEl.style.display = 'none';
-    if (notConn) notConn.style.display = 'block';
-    document.getElementById('catalog-branch-stats').textContent = 'Could not load status';
+    console.warn('[Catalog] Status fetch failed:', e.message);
   }
 }
 
@@ -5906,6 +5780,7 @@ async function loadCatalogMgmt(refresh = false) {
   const settingsEl = document.getElementById('cat-mgmt-settings');
   const deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
   if (deleteConfirmEl) deleteConfirmEl.style.display = 'none';
+  loadCatalogVisibility(); // Also load visibility toggle state
 
   try {
     const catData = await api(`/api/restaurant/catalogs${refresh ? '?refresh=true' : ''}`);
@@ -6123,6 +5998,53 @@ async function doCatMgmtDeleteConfirm() {
 }
 
 // Flow management moved to admin dashboard — restaurants get flow_id assigned by admin
+
+// ── Catalog visibility toggle ───────────────────────────────
+async function loadCatalogVisibility() {
+  const check = document.getElementById('cat-vis-check');
+  const status = document.getElementById('cat-vis-status');
+  const section = document.getElementById('cat-visibility-section');
+  if (!check || !status) return;
+
+  try {
+    const d = await api('/api/restaurant/catalog/visibility-status');
+    if (d.error) {
+      check.disabled = true;
+      status.textContent = d.error;
+      return;
+    }
+    check.checked = d.is_catalog_visible || false;
+    check.disabled = !d.has_catalog;
+    status.textContent = d.is_catalog_visible
+      ? 'Customers can browse your catalog in WhatsApp'
+      : d.has_catalog ? 'Catalog is hidden from customers' : 'Connect a catalog first';
+  } catch (e) {
+    check.disabled = true;
+    status.textContent = 'Could not check visibility status';
+  }
+}
+
+async function doToggleCatalogVisibility(visible) {
+  const check = document.getElementById('cat-vis-check');
+  const status = document.getElementById('cat-vis-status');
+  status.textContent = 'Updating...';
+  check.disabled = true;
+
+  try {
+    await api('/api/restaurant/catalog/visibility-toggle', { method: 'POST', body: { visible } });
+    status.textContent = visible
+      ? 'Customers can browse your catalog in WhatsApp'
+      : 'Catalog is hidden from customers';
+    toast(visible ? '✅ Catalog is now visible to customers' : 'Catalog hidden from customers', 'ok');
+  } catch (e) {
+    // Revert toggle on failure
+    check.checked = !visible;
+    status.textContent = 'Failed to update — please try again';
+    toast('❌ ' + (e.message || 'Failed to update visibility'), 'err');
+  } finally {
+    check.disabled = false;
+  }
+}
 
 // ── Switch connected catalog (disconnect old, connect new) ──
 async function doCatMgmtSwitchCatalog(newCatId, newCatName) {

@@ -2235,6 +2235,35 @@ router.post('/catalog/cart-toggle', async (req, res) => {
   }
 });
 
+// GET /api/restaurant/catalog/visibility-status — fetch current visibility from Meta
+router.get('/catalog/visibility-status', async (req, res) => {
+  try {
+    const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const hasCatalog = !!(restaurant?.meta_catalog_id || wa?.catalog_id);
+
+    if (!wa?.phone_number_id) {
+      return res.json({ is_catalog_visible: false, is_cart_enabled: false, has_catalog: false, error: 'No WhatsApp number connected' });
+    }
+    if (!hasCatalog) {
+      return res.json({ is_catalog_visible: false, is_cart_enabled: false, has_catalog: false, error: 'No catalog connected' });
+    }
+
+    // Fetch live status from Meta
+    try {
+      const token = metaConfig.getCatalogToken();
+      const { data } = await axios.get(`${metaConfig.graphUrl}/${wa.phone_number_id}/whatsapp_commerce_settings`, {
+        headers: { Authorization: `Bearer ${token}` }, timeout: 10000,
+      });
+      const settings = data?.data?.[0] || {};
+      res.json({ is_catalog_visible: !!settings.is_catalog_visible, is_cart_enabled: !!settings.is_cart_enabled, has_catalog: true, catalog_id: settings.id });
+    } catch (metaErr) {
+      // Fall back to DB state
+      res.json({ is_catalog_visible: !!wa.catalog_visible, is_cart_enabled: !!wa.cart_enabled, has_catalog: true, from_db: true });
+    }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/restaurant/catalog/visibility-toggle — show/hide catalog on profile
 router.post('/catalog/visibility-toggle', async (req, res) => {
   try {
