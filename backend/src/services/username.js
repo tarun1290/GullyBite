@@ -118,7 +118,7 @@ async function checkUsernameAvailability(username, excludeWaAccountId) {
   const locallyAvailable = await checkLocalAvailability(username.toLowerCase(), excludeWaAccountId);
 
   // TODO: When Meta launches username availability API, replace with actual call:
-  // GET https://graph.facebook.com/v21.0/whatsapp_username_check?username={username}
+  // GET https://graph.facebook.com/v25.0/whatsapp_username_check?username={username}
   const metaCheck = 'not_available_yet';
 
   return {

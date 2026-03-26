@@ -700,30 +700,47 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   );
 
   // Send branch-filtered MPMs (Multi-Product Messages)
-  const catalogId = branch.catalogId || restaurant?.meta_catalog_id;
+  const catalogId = branch.catalogId || branch.catalog_id || restaurant?.meta_catalog_id;
+  console.log(`[Bot] Sending menu: branch=${branch.name}, catalogId=${catalogId}, phone=${pid}`);
+
   if (catalogId) {
     try {
       const { buildBranchMPMs } = require('../services/mpmBuilder');
-      const mpms = await buildBranchMPMs(branch.id, branch.restaurantId || waAccount.restaurant_id);
+      const mpms = await buildBranchMPMs(branch.id, branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id);
+      console.log(`[Bot] Built ${mpms.length} MPM(s) with sections:`, mpms.map(m => m.sections?.map(s => `${s.title}(${s.product_retailer_ids?.length})`)));
       if (mpms.length) {
         for (let i = 0; i < mpms.length; i++) {
-          await wa.sendMPM(pid, token, to, catalogId, mpms[i]);
+          try {
+            await wa.sendMPM(pid, token, to, catalogId, mpms[i]);
+            console.log(`[Bot] MPM ${i+1}/${mpms.length} sent successfully`);
+          } catch (mpmSendErr) {
+            console.error(`[Bot] MPM ${i+1} send failed:`, mpmSendErr.response?.data || mpmSendErr.message);
+            // If first MPM fails, fall back to catalog message
+            if (i === 0) {
+              console.log('[Bot] Falling back to catalog message');
+              await wa.sendCatalog(pid, token, to, catalogId,
+                `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
+              );
+              break;
+            }
+          }
           if (i < mpms.length - 1) await new Promise(r => setTimeout(r, 500));
         }
         if (mpms.length > 1) {
           await wa.sendText(pid, token, to, '👆 Browse the menus above, add items to your cart, and send it when you\'re ready!');
         }
       } else {
-        // No items in branch — fall back to text menu
+        console.log('[Bot] No items in branch — sending text menu');
         await sendTextMenu(pid, token, to, branch.id);
       }
     } catch (mpmErr) {
-      console.error('[Bot] MPM build failed, falling back to catalog:', mpmErr.message);
+      console.error('[Bot] MPM build failed:', mpmErr.message, mpmErr.stack?.split('\n')[1]);
       await wa.sendCatalog(pid, token, to, catalogId,
         `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
       );
     }
   } else {
+    console.log('[Bot] No catalog_id found — sending text menu');
     await sendTextMenu(pid, token, to, branch.id);
   }
 
@@ -2038,6 +2055,27 @@ const captureCustomerMessage = async (msg, customer, conv, waAccount) => {
     };
 
     await col('customer_messages').insertOne(doc);
+
+    // Track conversation for analytics (active conversations count)
+    if (restaurantId && customer.wa_phone) {
+      col('conversations').updateOne(
+        { restaurant_id: restaurantId, customer_phone: customer.wa_phone },
+        {
+          $set: {
+            last_message_at: new Date(),
+            last_message_direction: 'inbound',
+            category: 'service',
+          },
+          $setOnInsert: {
+            _id: newId(),
+            restaurant_id: restaurantId,
+            customer_phone: customer.wa_phone,
+            conversation_started_at: new Date(),
+          },
+        },
+        { upsert: true }
+      ).catch(e => console.warn('[Conversations] Upsert failed:', e.message));
+    }
 
     logActivity({
       actorType: 'customer',

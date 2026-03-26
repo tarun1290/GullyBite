@@ -554,6 +554,26 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             </table>
           </div>
         </div>
+
+        <!-- WhatsApp Conversations -->
+        <div class="card">
+          <div class="ch"><h3>💬 WhatsApp Conversations</h3><button class="btn-g btn-sm" onclick="loadConversationAnalytics()">🔄</button></div>
+          <div class="cb">
+            <div class="stats" style="margin-bottom:1rem">
+              <div class="stat"><div class="stat-l">Total (30d)</div><div class="stat-v" id="an-convos-total">—</div></div>
+              <div class="stat"><div class="stat-l">Service</div><div class="stat-v" id="an-convos-service" style="color:#22c55e">—</div></div>
+              <div class="stat"><div class="stat-l">Utility</div><div class="stat-v" id="an-convos-utility" style="color:#3b82f6">—</div></div>
+              <div class="stat"><div class="stat-l">Marketing</div><div class="stat-v" id="an-convos-marketing" style="color:#a855f7">—</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite"></span>
+              <span style="font-size:.88rem;font-weight:600" id="an-active-count">0 active conversations</span>
+              <span style="font-size:.77rem;color:var(--dim)">(last 24hrs)</span>
+            </div>
+            <div id="an-active-list" style="max-height:200px;overflow-y:auto;font-size:.8rem"></div>
+            <div style="height:250px;position:relative;margin-top:1rem"><canvas id="an-convos-chart"></canvas></div>
+          </div>
+        </div>
       </div>
 
       <!-- ── CUSTOMERS ────────────────────────────── -->
@@ -2837,7 +2857,57 @@ function anSetGranularity(g, el) {
 }
 
 async function loadAnalytics() {
-  await Promise.all([anLoadOverview(), anLoadRevenue(), anLoadTopItems(), anLoadPeakHours(), anLoadCustomers(), anLoadDelivery()]);
+  await Promise.all([anLoadOverview(), anLoadRevenue(), anLoadTopItems(), anLoadPeakHours(), anLoadCustomers(), anLoadDelivery(), loadConversationAnalytics()]);
+}
+
+let _convosChart = null;
+async function loadConversationAnalytics() {
+  try {
+    const d = await api('/api/restaurant/analytics/conversations');
+
+    // Summary cards
+    const el = (id) => document.getElementById(id);
+    if (d.meta_analytics) {
+      const m = d.meta_analytics;
+      el('an-convos-total').textContent = m.total_conversations || 0;
+      el('an-convos-service').textContent = m.categories?.service || 0;
+      el('an-convos-utility').textContent = m.categories?.utility || 0;
+      el('an-convos-marketing').textContent = m.categories?.marketing || 0;
+    } else {
+      el('an-convos-total').textContent = d.total_conversations_30d || 0;
+      el('an-convos-service').textContent = '—';
+      el('an-convos-utility').textContent = '—';
+      el('an-convos-marketing').textContent = '—';
+    }
+
+    // Active conversations
+    const active = d.active_conversations || { count: 0, list: [] };
+    el('an-active-count').textContent = `${active.count} active conversation${active.count !== 1 ? 's' : ''}`;
+    el('an-active-list').innerHTML = active.list.length
+      ? active.list.map(c => `<div style="display:flex;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--bdr)"><span>${c.phone}</span><span style="color:var(--dim)">${new Date(c.last_message_at).toLocaleTimeString()}</span><span class="badge ${c.direction === 'inbound' ? 'bg' : 'ba'}" style="font-size:.65rem">${c.direction === 'inbound' ? '← In' : '→ Out'}</span></div>`).join('')
+      : '<div style="color:var(--dim);padding:.5rem 0">No active conversations</div>';
+
+    // Daily chart
+    if (d.meta_analytics?.daily?.length) {
+      const daily = d.meta_analytics.daily;
+      const canvas = el('an-convos-chart');
+      if (_convosChart) _convosChart.destroy();
+      _convosChart = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+          labels: daily.map(d => d.date.substring(5)),
+          datasets: [
+            { label: 'Service', data: daily.map(d => d.service || 0), backgroundColor: '#22c55e80', borderColor: '#22c55e', borderWidth: 1 },
+            { label: 'Utility', data: daily.map(d => d.utility || 0), backgroundColor: '#3b82f680', borderColor: '#3b82f6', borderWidth: 1 },
+            { label: 'Marketing', data: daily.map(d => d.marketing || 0), backgroundColor: '#a855f780', borderColor: '#a855f7', borderWidth: 1 },
+          ],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } }, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } } },
+      });
+    }
+  } catch (e) {
+    console.warn('[Analytics] Conversations load failed:', e.message);
+  }
 }
 
 async function anLoadOverview() {
@@ -5852,28 +5922,51 @@ async function loadCatalogMgmt(refresh = false) {
       countTextEl.style.color = cnt ? 'var(--fg)' : 'var(--dim)';
     }
     const activeCat = catData?.catalogs?.find(c => c.id === active);
+    const allCatalogs = catData?.catalogs || [];
+
+    // Render ALL catalogs with connection status
+    let catalogListHtml = '';
+    if (allCatalogs.length) {
+      catalogListHtml = allCatalogs.map(c => {
+        const isActive = c.id === active || c.connected;
+        return `
+          <div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:${isActive ? 'rgba(34,197,94,.06)' : 'var(--ink2)'};border:1px solid ${isActive ? 'rgba(34,197,94,.2)' : 'var(--bdr)'};border-radius:8px;margin-bottom:.4rem">
+            <span style="font-size:1rem">${isActive ? '✅' : '📦'}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name || 'Unnamed Catalog'}</div>
+              <div style="font-size:.73rem;color:var(--dim)">ID: ${c.id}${c.product_count != null ? ' · ' + c.product_count + ' products' : ''}</div>
+            </div>
+            ${isActive
+              ? '<span class="badge bg" style="font-size:.68rem">Connected</span>'
+              : `<button class="btn-p btn-sm" style="font-size:.72rem;white-space:nowrap" onclick="doCatMgmtSwitchCatalog('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')">Connect</button>`
+            }
+          </div>`;
+      }).join('');
+    }
 
     if (active && activeCat) {
-      statusEl.innerHTML = `
-        <div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:8px">
-          <span style="font-size:1.2rem">✅</span>
-          <div style="flex:1">
-            <div style="font-weight:600;font-size:.88rem">${activeCat.name || 'Menu Catalog'}</div>
-            <div style="font-size:.77rem;color:var(--dim)">ID: ${active}${activeCat.product_count != null ? ' · ' + activeCat.product_count + ' products' : ''}</div>
-          </div>
-          <span class="badge bg" style="font-size:.7rem">Connected</span>
-        </div>`;
+      statusEl.innerHTML = catalogListHtml;
       document.getElementById('cat-connect-btn').style.display = 'none';
       document.getElementById('cat-disconnect-btn').style.display = 'inline-flex';
       document.getElementById('cat-delete-btn').style.display = 'inline-flex';
 
-      // Warn if multiple catalogs detected
-      if (catData.catalogs.length > 1) {
+      // Commerce settings warning
+      if (!catData.commerce_enabled) {
         statusEl.innerHTML += `
-          <div style="display:flex;align-items:center;gap:.5rem;padding:.6rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.6rem;font-size:.8rem">
+          <div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.5rem;font-size:.79rem">
             <span>⚠️</span>
-            <span style="flex:1">You have ${catData.catalogs.length} catalogs. WhatsApp works best with a single catalog.</span>
-            <button class="btn-p btn-sm" onclick="doCatalogMerge()" style="font-size:.75rem;white-space:nowrap">Merge All into One</button>
+            <span style="flex:1">Catalog connected but not visible to customers on WhatsApp.</span>
+            <button class="btn-p btn-sm" onclick="doEnableCommerceSettings()" style="font-size:.72rem;white-space:nowrap">Enable</button>
+          </div>`;
+      }
+
+      // Warn if multiple catalogs
+      if (allCatalogs.length > 1) {
+        statusEl.innerHTML += `
+          <div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.4rem;font-size:.79rem">
+            <span>⚠️</span>
+            <span style="flex:1">You have ${allCatalogs.length} catalogs. WhatsApp works best with one.</span>
+            <button class="btn-p btn-sm" onclick="doCatalogMerge()" style="font-size:.72rem;white-space:nowrap">Merge</button>
           </div>`;
       }
 
@@ -5881,18 +5974,17 @@ async function loadCatalogMgmt(refresh = false) {
       if (settingsEl) {
         settingsEl.style.display = 'block';
         document.getElementById('cat-settings-name').value = activeCat.name || '';
-        // Fetch live details from Meta in background
         loadCatalogDetails();
       }
     } else {
-      statusEl.innerHTML = `
+      statusEl.innerHTML = catalogListHtml || `
         <div style="padding:.7rem .9rem;background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.15);border-radius:8px">
           <div style="font-weight:600;font-size:.88rem;color:#dc2626">No catalog connected</div>
-          <div style="font-size:.77rem;color:var(--dim)">Create a new catalog or connect an existing one to your WhatsApp Business Account.</div>
+          <div style="font-size:.77rem;color:var(--dim)">Create a new catalog or connect an existing one.</div>
         </div>`;
-      document.getElementById('cat-connect-btn').style.display = 'inline-flex';
+      document.getElementById('cat-connect-btn').style.display = allCatalogs.length ? 'none' : 'inline-flex';
       document.getElementById('cat-disconnect-btn').style.display = 'none';
-      document.getElementById('cat-delete-btn').style.display = catData?.catalogs?.length ? 'inline-flex' : 'none';
+      document.getElementById('cat-delete-btn').style.display = allCatalogs.length ? 'inline-flex' : 'none';
       if (settingsEl) settingsEl.style.display = 'none';
     }
   } catch (e) {
@@ -6028,6 +6120,34 @@ async function doCatMgmtDeleteConfirm() {
     toast('❌ ' + (e.message || 'Failed to delete'), 'err');
     document.getElementById('cat-delete-confirm-btn').disabled = false;
   }
+}
+
+// ── Switch connected catalog (disconnect old, connect new) ──
+async function doCatMgmtSwitchCatalog(newCatId, newCatName) {
+  const current = _catMgmtData?.active_catalog_id;
+  const currentName = _catMgmtData?.catalogs?.find(c => c.id === current)?.name || 'current catalog';
+  if (!confirm(`This will disconnect "${currentName}" and connect "${newCatName}" to WhatsApp.\n\nContinue?`)) return;
+  try {
+    // Disconnect current if connected
+    if (current) {
+      await api('/api/restaurant/catalog/disconnect', { method: 'POST' }).catch(() => {});
+    }
+    // Connect new one
+    await api('/api/restaurant/catalog/connect', { method: 'POST', body: { catalog_id: newCatId } });
+    // Update active catalog in DB
+    await api('/api/restaurant/catalog', { method: 'PUT', body: { catalog_id: newCatId, catalog_name: newCatName } });
+    toast(`✅ Connected "${newCatName}" to WhatsApp`, 'ok');
+    loadCatalogMgmt(true);
+  } catch (e) { toast('❌ ' + (e.message || 'Failed to switch catalog'), 'err'); }
+}
+
+// ── Enable commerce settings on phone number ──
+async function doEnableCommerceSettings() {
+  try {
+    await api('/api/restaurant/catalog/link', { method: 'POST' });
+    toast('✅ Catalog now visible to customers on WhatsApp', 'ok');
+    loadCatalogMgmt(true);
+  } catch (e) { toast('❌ ' + (e.message || 'Failed to enable'), 'err'); }
 }
 
 // ── Bulk assign unassigned items to a branch ─────────────

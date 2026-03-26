@@ -4,25 +4,46 @@
 const { MongoClient } = require('mongodb');
 const { v4: uuidv4 } = require('uuid');
 
-let _client = null;
-let _db = null;
-let _connectPromise = null;
+// Connection pool options — optimized for Vercel serverless
+const POOL_OPTIONS = {
+  maxPoolSize: 10,
+  minPoolSize: 2,
+  maxIdleTimeMS: 60000,
+  connectTimeoutMS: 5000,
+  socketTimeoutMS: 10000,
+  serverSelectionTimeoutMS: 5000,
+  retryWrites: true,
+  retryReads: true,
+};
+
+// Cache client/db at module scope — survives across warm invocations in Vercel
+let _client = global._mongoClient || null;
+let _db = global._mongoDb || null;
+let _connectPromise = global._mongoConnectPromise || null;
 
 const connect = async () => {
   if (_db) return _db;
   if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI env var is not set');
-  _client = new MongoClient(process.env.MONGODB_URI);
+  const start = Date.now();
+  _client = new MongoClient(process.env.MONGODB_URI, POOL_OPTIONS);
   await _client.connect();
   _db = _client.db(process.env.MONGODB_DB || 'gullybite');
-  console.log('✅ MongoDB connected');
+  // Cache on global for Vercel warm starts
+  global._mongoClient = _client;
+  global._mongoDb = _db;
+  console.log(`✅ MongoDB connected (${Date.now() - start}ms)`);
   return _db;
 };
 
 // Connect on startup — store rejected promise for ensureConnected to retry
-_connectPromise = connect().catch(err => {
-  console.error('❌ MongoDB connection FAILED:', err.message);
-  _connectPromise = null; // mark as failed so ensureConnected retries
-});
+if (!_connectPromise) {
+  _connectPromise = connect().catch(err => {
+    console.error('❌ MongoDB connection FAILED:', err.message);
+    _connectPromise = null;
+    global._mongoConnectPromise = null;
+  });
+  global._mongoConnectPromise = _connectPromise;
+}
 
 // Middleware: ensures DB is connected before any route runs
 const ensureConnected = async (req, res, next) => {

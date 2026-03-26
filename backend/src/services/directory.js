@@ -90,7 +90,7 @@ async function searchListings({ query, city, type, limit = 10 }) {
       { business_username: { $regex: cleanQuery, $options: 'i' } },
     ];
     // TODO: When Meta launches username search API, add verification:
-    // GET https://graph.facebook.com/v21.0/whatsapp_username_search?q={username}
+    // GET https://graph.facebook.com/v25.0/whatsapp_username_search?q={username}
     // For now, we trust the manually entered username from admin
   }
 

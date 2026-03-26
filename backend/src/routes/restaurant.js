@@ -19,6 +19,7 @@ const issueSvc = require('../services/issues');
 const financials = require('../services/financials');
 const imgSvc = require('../services/imageUpload');
 const metaConfig = require('../config/meta');
+const { getCached, invalidateCache } = require('../config/cache');
 
 // ── Slug helper ──────────────────────────────────────────────
 function slugify(str, maxLen = 40) {
@@ -71,15 +72,19 @@ router.use(requireAuth);
 // GET /api/restaurant — Get my restaurant + stats
 router.get('/', async (req, res) => {
   try {
-    const r = await col('restaurants').findOne({ _id: req.restaurantId });
-    if (!r) return res.status(404).json({ error: 'Not found' });
-    const [branch_count, wa_count] = await Promise.all([
-      col('branches').countDocuments({ restaurant_id: req.restaurantId }),
-      col('whatsapp_accounts').countDocuments({ restaurant_id: req.restaurantId, is_active: true }),
-    ]);
-    const out = mapId(r);
-    delete out.meta_access_token;
-    res.json({ ...out, branch_count, wa_count });
+    const data = await getCached(`restaurant:${req.restaurantId}:profile`, async () => {
+      const r = await col('restaurants').findOne({ _id: req.restaurantId });
+      if (!r) return null;
+      const [branch_count, wa_count] = await Promise.all([
+        col('branches').countDocuments({ restaurant_id: req.restaurantId }),
+        col('whatsapp_accounts').countDocuments({ restaurant_id: req.restaurantId, is_active: true }),
+      ]);
+      const out = mapId(r);
+      delete out.meta_access_token;
+      return { ...out, branch_count, wa_count };
+    }, 600);
+    if (!data) return res.status(404).json({ error: 'Not found' });
+    res.json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -122,6 +127,7 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
     res.json({ success: true });
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || req.body.businessName || 'Restaurant', action: 'settings.updated', category: 'settings', description: `Settings updated by ${req.restaurant?.business_name || 'restaurant'}`, restaurantId: String(req.restaurantId), severity: 'info' });
+    invalidateCache(`restaurant:${req.restaurantId}:profile`);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -652,8 +658,11 @@ router.put('/whatsapp/:id', async (req, res) => {
 
 router.get('/branches', async (req, res) => {
   try {
-    const docs = await col('branches').find({ restaurant_id: req.restaurantId }).sort({ created_at: 1 }).toArray();
-    res.json(mapIds(docs));
+    const docs = await getCached(`restaurant:${req.restaurantId}:branches`, async () => {
+      const raw = await col('branches').find({ restaurant_id: req.restaurantId }).sort({ created_at: 1 }).toArray();
+      return mapIds(raw);
+    }, 600);
+    res.json(docs);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -702,6 +711,7 @@ router.post('/branches', async (req, res) => {
       })
       .catch(err => console.error(`[Branch] Auto catalog creation failed for "${newBranch.name}":`, err.message));
 
+    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
     res.status(201).json(newBranch);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2851,18 +2861,27 @@ router.get('/catalogs', async (req, res) => {
     const catToken = metaConfig.catalogToken;
     if (!catToken) return res.status(500).json({ error: 'No Meta token configured. Please contact support.' });
 
-    let catalogs = [];
+    // Fetch ALL catalogs from business AND connected catalogs from WABA in parallel
+    let allCatalogs = [];
+    let connectedIds = new Set();
+    const bizId = restaurant?.meta_business_id || metaConfig.businessId;
 
-    if (wa_acc?.waba_id) {
-      catalogs = await catalog.fetchWabaCatalogs(wa_acc.waba_id);
-    }
+    const [wabaResult, bizResult] = await Promise.allSettled([
+      wa_acc?.waba_id ? catalog.fetchWabaCatalogs(wa_acc.waba_id) : [],
+      bizId ? catalog.fetchBusinessCatalogs(bizId) : [],
+    ]);
 
-    if (!catalogs.length) {
-      const bizId = restaurant?.meta_business_id || metaConfig.businessId;
-      if (bizId) {
-        catalogs = await catalog.fetchBusinessCatalogs(bizId);
-      }
-    }
+    const wabaCatalogs = wabaResult.status === 'fulfilled' ? wabaResult.value : [];
+    allCatalogs = bizResult.status === 'fulfilled' ? bizResult.value : [];
+
+    for (const c of wabaCatalogs) connectedIds.add(c.id);
+    if (!allCatalogs.length && wabaCatalogs.length) allCatalogs = wabaCatalogs;
+
+    // 4. Mark each catalog's connection status
+    const catalogs = allCatalogs.map(c => ({
+      ...c,
+      connected: connectedIds.has(c.id),
+    }));
 
     // Cache the result
     if (catalogs.length) {
@@ -2872,7 +2891,18 @@ router.get('/catalogs', async (req, res) => {
       );
     }
 
-    res.json({ active_catalog_id: activeCatalogId, catalogs, cached: false });
+    // Check commerce settings on phone number
+    let commerceEnabled = false;
+    if (wa_acc?.phone_number_id && activeCatalogId) {
+      try {
+        const csResp = await axios.get(`${metaConfig.graphUrl}/${wa_acc.phone_number_id}/whatsapp_commerce_settings`, {
+          headers: { Authorization: `Bearer ${metaConfig.catalogToken}` },
+        });
+        commerceEnabled = !!csResp.data?.data?.[0]?.is_catalog_visible;
+      } catch (_) { /* commerce settings may not exist yet */ }
+    }
+
+    res.json({ active_catalog_id: activeCatalogId, catalogs, cached: false, commerce_enabled: commerceEnabled });
   } catch (e) {
     console.error('[Catalogs] Failed:', e.message);
     res.status(500).json({ error: 'Failed to fetch catalogs from Meta' });
@@ -3463,6 +3493,110 @@ router.get('/analytics/delivery', requirePermission('view_analytics'), async (re
       })),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// CONVERSATION ANALYTICS
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/analytics/conversations — WABA conversation stats from Meta + active conversations from DB
+router.get('/analytics/conversations', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (!wa_acc?.waba_id) return res.json({ error: 'No WABA connected', conversations: null, active: [] });
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    const twentyFourHoursAgo = new Date(now - 24 * 60 * 60 * 1000);
+
+    // Fetch Meta conversation analytics + active convos from DB in parallel
+    const [metaResult, activeConvos, totalConvos] = await Promise.allSettled([
+      getCached(`restaurant:${req.restaurantId}:conversation-analytics`, async () => {
+        const token = metaConfig.getMessagingToken();
+        const startTs = Math.floor(thirtyDaysAgo.getTime() / 1000);
+        const endTs = Math.floor(now.getTime() / 1000);
+        try {
+          const { data } = await axios.get(`${metaConfig.graphUrl}/${wa_acc.waba_id}`, {
+            params: {
+              fields: `conversation_analytics.start(${startTs}).end(${endTs}).granularity(DAILY).phone_numbers([]).conversation_categories([])`,
+              access_token: token,
+            },
+            timeout: 10000,
+          });
+          return data?.conversation_analytics || null;
+        } catch (e) {
+          console.error('[Analytics] Meta conversation_analytics failed:', e.response?.data?.error?.message || e.message);
+          return null;
+        }
+      }, 120),
+      col('conversations').find({
+        restaurant_id: req.restaurantId,
+        last_message_at: { $gte: twentyFourHoursAgo },
+      }).sort({ last_message_at: -1 }).limit(50).toArray(),
+      col('conversations').countDocuments({
+        restaurant_id: req.restaurantId,
+        last_message_at: { $gte: thirtyDaysAgo },
+      }),
+    ]);
+
+    const metaData = metaResult.status === 'fulfilled' ? metaResult.value : null;
+    const activeList = activeConvos.status === 'fulfilled' ? activeConvos.value : [];
+    const totalCount = totalConvos.status === 'fulfilled' ? totalConvos.value : 0;
+
+    // Parse Meta analytics into category breakdown
+    let categories = { service: 0, utility: 0, marketing: 0, authentication: 0 };
+    let dailyData = [];
+    let totalMetaConvos = 0;
+
+    if (metaData?.data) {
+      for (const dp of metaData.data) {
+        if (dp.data_points) {
+          for (const pt of dp.data_points) {
+            const date = new Date(pt.start * 1000).toISOString().split('T')[0];
+            const conv = pt.conversation || 0;
+            totalMetaConvos += conv;
+            dailyData.push({ date, count: conv, category: dp.conversation_category });
+            if (categories[dp.conversation_category] !== undefined) {
+              categories[dp.conversation_category] += conv;
+            }
+          }
+        }
+      }
+    }
+
+    // Aggregate daily totals
+    const dailyMap = {};
+    for (const d of dailyData) {
+      if (!dailyMap[d.date]) dailyMap[d.date] = { date: d.date, total: 0, service: 0, utility: 0, marketing: 0, authentication: 0 };
+      dailyMap[d.date].total += d.count;
+      if (dailyMap[d.date][d.category] !== undefined) dailyMap[d.date][d.category] += d.count;
+    }
+
+    // Mask phone numbers for active conversations
+    const maskedActive = activeList.map(c => ({
+      phone: c.customer_phone ? c.customer_phone.replace(/(\+\d{2})\d{6}(\d{4})/, '$1****$2') : 'Unknown',
+      last_message_at: c.last_message_at,
+      direction: c.last_message_direction,
+      category: c.category || 'service',
+    }));
+
+    res.json({
+      meta_analytics: metaData ? {
+        total_conversations: totalMetaConvos,
+        categories,
+        daily: Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date)),
+        free_tier_remaining: Math.max(0, 1000 - categories.service),
+      } : null,
+      active_conversations: {
+        count: activeList.length,
+        list: maskedActive,
+      },
+      total_conversations_30d: totalCount,
+    });
+  } catch (e) {
+    console.error('[Analytics] Conversations failed:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
