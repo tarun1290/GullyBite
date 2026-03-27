@@ -1306,31 +1306,7 @@ const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) 
     return;
   }
 
-  const branch = result.branch;
-  await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
-    branchId       : branch.id,
-    branchName     : branch.name,
-    catalogId      : branch.catalogId,
-    deliveryLat    : addr.latitude,
-    deliveryLng    : addr.longitude,
-    deliveryAddress: addr.full_address || addr.label,
-  });
-
-  await wa.sendText(pid, token, to,
-    `✅ Delivering from:\n\n` +
-    `🏪 *${branch.businessName} — ${branch.name}*\n` +
-    `📍 ${branch.address || ''}\n` +
-    `🚴 ${branch.distanceKm} km from you\n\n` +
-    `Opening our menu...`
-  );
-
-  if (branch.catalogId) {
-    await wa.sendCatalog(pid, token, to, branch.catalogId,
-      `🍽️ Here's our menu from *${branch.name}*!`
-    );
-  } else {
-    await sendTextMenu(pid, token, to, branch.id);
-  }
+  await _sendBranchMenu(pid, token, to, result.branch, conv, customer, addr);
 };
 
 // ─── ORDER HISTORY ────────────────────────────────────────────
@@ -2097,7 +2073,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       const branch = await col('branches').findOne({ restaurant_id: restaurantId, is_open: true, accepts_orders: true });
       if (branch) {
         const restaurant = await col('restaurants').findOne({ _id: restaurantId });
-        const fakeResult = { id: String(branch._id), name: branch.name, restaurantId, catalogId: restaurant?.meta_catalog_id || branch.catalog_id };
+        const fakeResult = { id: String(branch._id), name: branch.name, address: branch.address, restaurantId, catalogId: restaurant?.meta_catalog_id || branch.catalog_id, businessName: restaurant?.business_name };
         await _sendBranchMenu(pid, token, to, fakeResult, conv, customer, addr);
       } else {
         await wa.sendText(pid, token, to, '😔 No outlets are currently open. Please try again later.');
@@ -2162,7 +2138,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       const branch = await col('branches').findOne({ restaurant_id: restaurantId, is_open: true, accepts_orders: true });
       if (branch) {
         const restaurant = await col('restaurants').findOne({ _id: restaurantId });
-        const fakeResult = { id: String(branch._id), name: branch.name, restaurantId, catalogId: restaurant?.meta_catalog_id || branch.catalog_id };
+        const fakeResult = { id: String(branch._id), name: branch.name, address: branch.address, restaurantId, catalogId: restaurant?.meta_catalog_id || branch.catalog_id, businessName: restaurant?.business_name };
         await _sendBranchMenu(pid, token, to, fakeResult, conv, customer, parsedAddress);
       } else {
         await wa.sendText(pid, token, to, '😔 No outlets are currently open. Please try again later.');
@@ -2175,33 +2151,55 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
 // Helper: after address is resolved and branch found, set session and send MPM catalog
 async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) {
   const catalogId = branch.catalogId || branch.catalog_id;
+  const restaurantId = branch.restaurantId || branch.restaurant_id;
+
+  // Branch confirmation message — show nearest branch name + distance
+  const branchLabel = branch.businessName ? `*${branch.businessName} — ${branch.name}*` : `*${branch.name}*`;
+  const distLine = branch.distanceKm ? `\n🚴 ${branch.distanceKm} km from you` : '';
+  const closedNote = (branch.is_open === false) ? `\n\n⏰ ${branch.name} is currently closed. You can browse the menu and order for when they open.` : '';
+  await wa.sendText(pid, token, to,
+    `✅ Delivering from:\n\n🏪 ${branchLabel}${branch.address ? '\n📍 ' + branch.address : ''}${distLine}\n\nOpening our menu...${closedNote}`
+  );
 
   await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
     branchId: branch.id,
+    branchName: branch.name,
     catalogId,
     deliveryLat: address.latitude || address.lat || null,
     deliveryLng: address.longitude || address.lng || null,
     deliveryAddress: address.full_address || address.address || '',
   });
 
-  if (catalogId) {
+  // Resolve catalogId from restaurant if branch doesn't have one
+  const effectiveCatalogId = catalogId || (await col('restaurants').findOne({ _id: restaurantId }))?.meta_catalog_id;
+
+  if (effectiveCatalogId) {
     try {
       const { buildBranchMPMs } = require('../services/mpmBuilder');
-      const mpms = await buildBranchMPMs(branch.id, branch.restaurantId);
+      const mpms = await buildBranchMPMs(branch.id, restaurantId);
+      console.log(`[Bot] Built ${mpms.length} MPM(s) for branch ${branch.name}`);
       if (mpms.length) {
         for (let i = 0; i < mpms.length; i++) {
-          await wa.sendMPM(pid, token, to, catalogId, mpms[i]);
-          if (i < mpms.length - 1) await new Promise(r => setTimeout(r, 500));
+          try {
+            await wa.sendMPM(pid, token, to, effectiveCatalogId, mpms[i]);
+          } catch (mpmSendErr) {
+            console.error(`[Bot] MPM ${i+1} send failed:`, mpmSendErr.response?.data || mpmSendErr.message);
+            if (i === 0) {
+              await wa.sendCatalog(pid, token, to, effectiveCatalogId, `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`);
+              break;
+            }
+          }
+          if (i < mpms.length - 1) await new Promise(r => setTimeout(r, 300));
         }
         if (mpms.length > 1) {
           await wa.sendText(pid, token, to, '👆 Browse the menus above, add items to your cart, and send it when you\'re ready!');
         }
       } else {
-        await wa.sendCatalog(pid, token, to, catalogId, `🍽️ Here's our menu from *${branch.name}*!`);
+        await sendTextMenu(pid, token, to, branch.id);
       }
     } catch (e) {
-      console.error('[Flow] MPM build failed:', e.message);
-      await wa.sendCatalog(pid, token, to, catalogId, `🍽️ Here's our menu from *${branch.name}*!`);
+      console.error('[Bot] MPM build failed:', e.message);
+      await wa.sendCatalog(pid, token, to, effectiveCatalogId, `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`);
     }
   } else {
     await wa.sendText(pid, token, to, `🍽️ Welcome to *${branch.name}*! Our catalog is being set up. Please check back shortly.`);

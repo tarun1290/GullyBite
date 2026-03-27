@@ -434,9 +434,9 @@ const syncBranchCatalog = async (branchId) => {
 
   await col('branches').updateOne({ _id: branchId }, { $set: { catalog_synced_at: new Date() } });
 
-  syncCategoryProductSets(branchId).catch(err =>
-    console.warn('[Catalog] Product set sync failed (non-fatal):', err.message)
-  );
+  syncCategoryProductSets(branchId)
+    .then(() => ensureBranchCollection(branchId))
+    .catch(err => console.warn('[Catalog] Product set / Collection sync failed (non-fatal):', err.message));
 
   console.log(`[Catalog] Sync complete for "${branch.name}":`, results);
 
@@ -479,12 +479,17 @@ const syncRestaurantCatalog = async (restaurantId) => {
     }
   }
 
-  // Ensure each branch has a product set
+  // Ensure each branch has a product set, then sync branch Collections
   for (const branch of branches) {
     ensureBranchProductSet(String(branch._id)).catch(err =>
       console.warn(`[Catalog] Branch product set for "${branch.name}":`, err.message)
     );
   }
+
+  // Sync branch-level Collections (fire-and-forget)
+  syncAllBranchCollections(restaurantId).catch(err =>
+    console.warn('[Catalog] Branch Collections sync failed (non-fatal):', err.message)
+  );
 
   await col('restaurants').updateOne({ _id: restaurantId }, { $set: { last_catalog_sync: new Date() } });
 
@@ -1222,6 +1227,104 @@ const autoCreateCollections = async (branchId) => {
   return { created, skipped };
 };
 
+// ─── BRANCH-LEVEL COLLECTION (one Collection per branch) ─────
+// Creates/updates a single master Collection per branch that contains
+// ALL of that branch's product sets. Stored as meta_collection_id on the branch doc.
+const ensureBranchCollection = async (branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch) throw new Error('Branch not found');
+  if (!branch.catalog_id) return { skipped: true, reason: 'No catalog' };
+
+  // Gather all synced product sets for this branch
+  const sets = await col('product_sets').find({
+    branch_id: branchId,
+    is_active: true,
+    meta_product_set_id: { $exists: true, $ne: null },
+  }).toArray();
+
+  const metaSetIds = sets.map(s => s.meta_product_set_id);
+
+  // Also include the branch-level product set if it exists
+  if (branch.meta_product_set_id && !metaSetIds.includes(branch.meta_product_set_id)) {
+    metaSetIds.unshift(branch.meta_product_set_id);
+  }
+
+  if (!metaSetIds.length) {
+    console.warn(`[Catalog] No synced product sets for branch "${branch.name}" — skipping Collection`);
+    return { skipped: true, reason: 'No synced product sets' };
+  }
+
+  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
+  const collectionName = `${branch.name} Menu`;
+  const description = restaurant?.business_name
+    ? `Menu items available at ${restaurant.business_name} — ${branch.name}`
+    : `Menu items available at ${branch.name}`;
+
+  try {
+    if (branch.meta_collection_id) {
+      // Update existing Collection
+      await updateCollection(branch.meta_collection_id, {
+        name: collectionName,
+        productSetIds: metaSetIds,
+        description,
+      });
+      console.log(`[Catalog] Updated branch Collection "${collectionName}" (${metaSetIds.length} sets)`);
+      return { success: true, updated: true, collectionId: branch.meta_collection_id };
+    } else {
+      // Create new Collection
+      const created = await createCollection(branch.catalog_id, collectionName, metaSetIds, description);
+      await col('branches').updateOne(
+        { _id: branchId },
+        { $set: { meta_collection_id: created.id, collection_updated_at: new Date() } }
+      );
+      console.log(`[Catalog] Created branch Collection "${collectionName}" → ${created.id} (${metaSetIds.length} sets)`);
+      return { success: true, created: true, collectionId: created.id };
+    }
+  } catch (err) {
+    console.error(`[Catalog] ensureBranchCollection failed for "${branch.name}":`, err.message);
+    return { success: false, error: err.message };
+  }
+};
+
+// Sync branch-level Collections for all branches of a restaurant
+const syncAllBranchCollections = async (restaurantId) => {
+  const branches = await col('branches').find({ restaurant_id: restaurantId }).toArray();
+  const results = { created: 0, updated: 0, skipped: 0, failed: 0 };
+
+  for (const branch of branches) {
+    try {
+      const r = await ensureBranchCollection(String(branch._id));
+      if (r.skipped) results.skipped++;
+      else if (r.created) results.created++;
+      else if (r.updated) results.updated++;
+    } catch (err) {
+      console.error(`[Catalog] syncAllBranchCollections — "${branch.name}" failed:`, err.message);
+      results.failed++;
+    }
+  }
+
+  console.log(`[Catalog] syncAllBranchCollections for restaurant ${restaurantId}:`, results);
+  return results;
+};
+
+// Delete branch Collection from Meta and clear from DB
+const deleteBranchCollection = async (branchId) => {
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch?.meta_collection_id) return { skipped: true };
+
+  try {
+    await deleteCollection(branch.meta_collection_id);
+    await col('branches').updateOne(
+      { _id: branchId },
+      { $set: { meta_collection_id: null, collection_updated_at: new Date() } }
+    );
+    return { success: true };
+  } catch (err) {
+    console.error(`[Catalog] deleteBranchCollection failed:`, err.message);
+    return { success: false, error: err.message };
+  }
+};
+
 // ─── CLEAR STALE CATALOG & RE-DISCOVER ───────────────────────
 const rediscoverCatalog = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
@@ -1349,4 +1452,8 @@ module.exports = {
   listCollections,
   syncCollections,
   autoCreateCollections,
+  // Branch-level Collections
+  ensureBranchCollection,
+  syncAllBranchCollections,
+  deleteBranchCollection,
 };

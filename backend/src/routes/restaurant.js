@@ -2051,6 +2051,39 @@ router.post('/collections/sync', requirePermission('manage_menu'), async (req, r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/restaurant/collections/branch-status — Collection status for all branches
+router.get('/collections/branch-status', async (req, res) => {
+  try {
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId })
+      .project({ name: 1, meta_collection_id: 1, collection_updated_at: 1, catalog_id: 1, meta_product_set_id: 1 })
+      .sort({ created_at: 1 }).toArray();
+
+    const status = await Promise.all(branches.map(async b => {
+      const itemCount = await col('menu_items').countDocuments({ branch_id: b._id, is_available: true });
+      const setCount = await col('product_sets').countDocuments({ branch_id: b._id, is_active: true, meta_product_set_id: { $ne: null } });
+      return {
+        id: b._id,
+        name: b.name,
+        meta_collection_id: b.meta_collection_id || null,
+        collection_updated_at: b.collection_updated_at || null,
+        product_count: itemCount,
+        product_set_count: setCount,
+        has_catalog: !!b.catalog_id,
+      };
+    }));
+
+    res.json(status);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/collections/sync-branch-collections — sync branch-level Collections for all branches
+router.post('/collections/sync-branch-collections', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const result = await catalog.syncAllBranchCollections(req.restaurantId);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ═══════════════════════════════════════════════════════════════
 // VARIANT HELPERS
 // ═══════════════════════════════════════════════════════════════

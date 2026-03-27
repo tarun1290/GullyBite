@@ -11,10 +11,11 @@ const { IMAGE_PIPELINE_ENABLED } = require('../config/features');
 const DISABLED_RESULT = { url: null, thumbnail_url: null, s3_key: null, thumbnail_s3_key: null, skipped: true, reason: 'Image pipeline not configured — set AWS env vars to enable' };
 
 // ─── LAZY-LOAD HEAVY DEPS (only when pipeline enabled) ─────────
-let s3, S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, sharp;
+let s3, S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command, getSignedUrl, sharp;
 
 if (IMAGE_PIPELINE_ENABLED) {
   ({ S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3'));
+  ({ getSignedUrl } = require('@aws-sdk/s3-request-presigner'));
   sharp = require('sharp');
 
   s3 = new S3Client({
@@ -382,8 +383,34 @@ async function rehostPosImages(items, branchId, restaurantId) {
   console.log(`[Image] POS image re-hosting complete for branch ${branchId}`);
 }
 
+// ─── PRESIGNED URL FOR DIRECT BROWSER UPLOAD ──────────────────
+// Generates a presigned PUT URL so the browser uploads directly to S3.
+// Returns both the presigned URL and the final CloudFront URL.
+async function generatePresignedUploadUrl(restaurantId, filename, contentType, folder = 'menu') {
+  if (!IMAGE_PIPELINE_ENABLED) throw new Error('Image pipeline not configured — set AWS env vars to enable');
+
+  const sanitized = filename.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9.\-_]/g, '');
+  const key = `restaurants/${restaurantId}/${folder}/${Date.now()}-${sanitized}`;
+
+  const command = new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    ContentType: contentType,
+    CacheControl: 'max-age=2592000',
+  });
+
+  const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
+
+  return {
+    presignedUrl,
+    cloudFrontUrl: cdnUrl(key),
+    s3Key: key,
+  };
+}
+
 module.exports = {
   IMAGE_PIPELINE_ENABLED,
+  generatePresignedUploadUrl,
   uploadImage,
   uploadImageFromUrl,
   deleteImage,

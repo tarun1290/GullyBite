@@ -115,6 +115,10 @@ async function buildBranchMPMs(branchId, restaurantId) {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!restaurant || !branch) throw new Error('Restaurant or branch not found');
 
+  if (branch.meta_collection_id) {
+    console.log(`[MPM] Branch "${branch.name}" has Collection ${branch.meta_collection_id}`);
+  }
+
   // Get all available items for this branch
   const items = await col('menu_items').find({
     branch_id: branchId,

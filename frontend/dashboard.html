@@ -3680,8 +3680,14 @@ async function loadCatalogPanelContent() {
             <button class="btn-p btn-sm" onclick="doCatalogSync()">⬆️ Sync to Catalog</button>
             <button class="btn-g btn-sm" onclick="doReverseCatalogSync()">⬇️ Pull from Catalog</button>
           </div>
+          <div id="collection-status" style="margin-top:1rem;border-top:1px solid var(--bdr);padding-top:.8rem">
+            <div style="font-size:.82rem;font-weight:600;margin-bottom:.5rem">Branch Collections</div>
+            <div id="collection-list" style="font-size:.82rem;color:var(--dim)">Loading...</div>
+            <button class="btn-g btn-sm" style="margin-top:.5rem" onclick="doSyncBranchCollections()">🔄 Sync Collections</button>
+          </div>
         </div>
       </div>`;
+    loadCollectionStatus();
   } catch (e) {
     panel.innerHTML = `<div class="card"><div class="cb" style="color:var(--red)">Failed to load catalog status: ${e.message}</div></div>`;
   }
@@ -5926,6 +5932,33 @@ async function doReverseCatalogSync() {
       toast('Import failed: ' + (r.error || 'Unknown error'), 'err');
     }
   } catch (e) { toast('Import failed: ' + e.message, 'err'); }
+}
+
+async function loadCollectionStatus() {
+  const el = document.getElementById('collection-list');
+  if (!el) return;
+  try {
+    const status = await api('/api/restaurant/collections/branch-status');
+    if (!status?.length) { el.textContent = 'No branches yet'; return; }
+    el.innerHTML = status.map(b =>
+      `<div style="display:flex;align-items:center;gap:.4rem;padding:.3rem 0;border-bottom:1px solid var(--bdr)">
+        <span style="flex:1">${b.name}</span>
+        <span style="font-size:.75rem;color:var(--dim)">${b.product_count} items · ${b.product_set_count} sets</span>
+        ${b.meta_collection_id
+          ? `<span style="color:var(--wa);font-size:.78rem" title="${b.meta_collection_id}">✅ Synced</span>`
+          : `<span style="color:var(--red);font-size:.78rem">❌ Missing</span>`}
+      </div>`
+    ).join('');
+  } catch (e) { el.textContent = 'Failed to load'; }
+}
+
+async function doSyncBranchCollections() {
+  try {
+    toast('Syncing branch Collections...', 'ok');
+    const r = await api('/api/restaurant/collections/sync-branch-collections', { method: 'POST' });
+    toast(`Collections synced: ${r.created} created, ${r.updated} updated`, 'ok');
+    loadCollectionStatus();
+  } catch (e) { toast('Sync failed: ' + e.message, 'err'); }
 }
 
 async function toggleCatalogAutoSync(enabled) {
