@@ -653,6 +653,94 @@ router.put('/whatsapp/:id', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// PLACES (Google Places API New — for branch address autocomplete)
+// ═══════════════════════════════════════════════════════════════
+
+router.get('/places/autocomplete', async (req, res) => {
+  try {
+    const input = (req.query.input || '').trim();
+    if (input.length < 2) return res.json({ suggestions: [] });
+
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'GOOGLE_MAPS_API_KEY not configured' });
+
+    const { data } = await axios.post(
+      'https://places.googleapis.com/v1/places:autocomplete',
+      {
+        input,
+        regionCode: 'in',
+        languageCode: 'en',
+        includedPrimaryTypes: ['establishment', 'street_address', 'sublocality', 'locality', 'point_of_interest'],
+      },
+      {
+        headers: { 'X-Goog-Api-Key': apiKey, 'Content-Type': 'application/json' },
+        timeout: 8000,
+      }
+    );
+
+    const suggestions = (data.suggestions || [])
+      .filter(s => s.placePrediction)
+      .map(s => {
+        const p = s.placePrediction;
+        return {
+          place_id: p.placeId,
+          mainText: p.structuredFormat?.mainText?.text || p.text?.text || '',
+          secondaryText: p.structuredFormat?.secondaryText?.text || '',
+          fullText: p.text?.text || '',
+        };
+      });
+
+    res.json({ suggestions });
+  } catch (e) {
+    console.error('[Places] Autocomplete error:', e.response?.data || e.message);
+    res.status(500).json({ error: 'Place search failed' });
+  }
+});
+
+router.get('/places/details', async (req, res) => {
+  try {
+    const placeId = (req.query.placeId || '').trim();
+    if (!placeId) return res.status(400).json({ error: 'placeId is required' });
+
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'GOOGLE_MAPS_API_KEY not configured' });
+
+    const { data } = await axios.get(
+      `https://places.googleapis.com/v1/places/${placeId}`,
+      {
+        headers: {
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': 'id,displayName,formattedAddress,location,addressComponents,shortFormattedAddress',
+        },
+        timeout: 8000,
+      }
+    );
+
+    const getComponent = (type) => {
+      const c = (data.addressComponents || []).find(c => c.types?.includes(type));
+      return c?.longText || '';
+    };
+
+    res.json({
+      place_id: data.id,
+      name: data.displayName?.text || '',
+      full_address: data.formattedAddress || '',
+      short_address: data.shortFormattedAddress || '',
+      lat: data.location?.latitude || null,
+      lng: data.location?.longitude || null,
+      area: getComponent('sublocality_level_1') || getComponent('sublocality'),
+      city: getComponent('locality'),
+      state: getComponent('administrative_area_level_1'),
+      pincode: getComponent('postal_code'),
+      country: getComponent('country'),
+    });
+  } catch (e) {
+    console.error('[Places] Details error:', e.response?.data || e.message);
+    res.status(500).json({ error: 'Place details fetch failed' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
 // BRANCHES
 // ═══════════════════════════════════════════════════════════════
 
@@ -668,7 +756,7 @@ router.get('/branches', async (req, res) => {
 
 router.post('/branches', async (req, res) => {
   try {
-    const { name, address, city, pincode, latitude, longitude, deliveryRadiusKm, openingTime, closingTime, managerPhone } = req.body;
+    const { name, address, city, pincode, latitude, longitude, area, state, place_id, deliveryRadiusKm, openingTime, closingTime, managerPhone } = req.body;
     if (!latitude || !longitude) return res.status(400).json({ error: 'latitude and longitude are required' });
 
     const branchId = newId();
@@ -681,7 +769,10 @@ router.post('/branches', async (req, res) => {
       branch_slug: branchSlug,
       address,
       city,
-      pincode,
+      pincode: pincode || null,
+      area: area || null,
+      state: state || null,
+      place_id: place_id || null,
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
       delivery_radius_km: deliveryRadiusKm || 5,
@@ -788,6 +879,7 @@ router.patch('/branches/:id', async (req, res) => {
     const {
       isOpen, acceptsOrders, deliveryRadiusKm, catalogId,
       basePrepTimeMin, avgItemPrepMin, managerPhone,
+      address, city, pincode, latitude, longitude, area, state, place_id,
     } = req.body;
     const $set = {};
     if (isOpen             !== undefined) $set.is_open              = isOpen;
@@ -797,6 +889,14 @@ router.patch('/branches/:id', async (req, res) => {
     if (basePrepTimeMin    !== undefined) $set.base_prep_time_min   = parseInt(basePrepTimeMin) || 15;
     if (avgItemPrepMin     !== undefined) $set.avg_item_prep_min    = parseInt(avgItemPrepMin) || 3;
     if (managerPhone       !== undefined) $set.manager_phone        = managerPhone || null;
+    if (address            !== undefined) $set.address              = address;
+    if (city               !== undefined) $set.city                 = city;
+    if (pincode            !== undefined) $set.pincode              = pincode || null;
+    if (latitude           !== undefined) $set.latitude             = parseFloat(latitude);
+    if (longitude          !== undefined) $set.longitude            = parseFloat(longitude);
+    if (area               !== undefined) $set.area                 = area || null;
+    if (state              !== undefined) $set.state                = state || null;
+    if (place_id           !== undefined) $set.place_id             = place_id || null;
     await col('branches').updateOne(
       { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set }

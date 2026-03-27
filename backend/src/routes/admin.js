@@ -2075,4 +2075,15 @@ router.post('/flow/assign-all', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.post('/flow/toggle-auto-assign', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    await col('platform_settings').updateOne(
+      { _id: 'whatsapp_flow' },
+      { $set: { auto_assign_new: !!enabled, updated_at: new Date() } }
+    );
+    res.json({ success: true, auto_assign_new: !!enabled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

@@ -669,15 +669,27 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
   const to = customerIdentity.resolveRecipient(customer);
-  const { latitude, longitude, address, name: locName } = msg.location;
+  const { latitude, longitude, address: waAddress, name: locName } = msg.location;
 
   logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.location_shared', category: 'order', description: `${customer.name || customer.wa_phone || customer.bsuid} shared delivery location`, restaurantId: waAccount.restaurant_id, severity: 'info' });
 
   await wa.sendText(pid, token, to, '🔍 Finding the nearest restaurant for you...');
 
+  // Reverse geocode to get a full formatted address from Google Maps API
+  let address = waAddress || locName || null;
+  try {
+    const geocoded = await location.reverseGeocode(latitude, longitude);
+    if (geocoded?.address) {
+      address = geocoded.address;
+      console.log('[Bot] Geocoded address:', address);
+    }
+  } catch (e) {
+    console.warn('[Bot] Reverse geocoding failed, using WhatsApp-provided address:', e.message);
+  }
+
   await col('customers').updateOne(
     { _id: customer.id },
-    { $set: { last_lat: latitude, last_lng: longitude, last_address: address || locName || null } }
+    { $set: { last_lat: latitude, last_lng: longitude, last_address: address || null } }
   );
 
   const result = await location.findNearestBranch(latitude, longitude);
@@ -699,7 +711,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     // 3PL delivery quote + charge breakdown
     const { calculateDynamicDeliveryFee } = require('../services/dynamicPricing');
     const dynamicResult = await calculateDynamicDeliveryFee(branch.id, latitude, longitude, {
-      deliveryAddress: address || locName || 'Your location',
+      deliveryAddress: address || 'Your location',
       customerName: customer.name,
       customerPhone: customer.wa_phone || customer.bsuid || '',
     });
@@ -735,7 +747,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
       catalogId      : branch.catalogId,
       deliveryLat    : latitude,
       deliveryLng    : longitude,
-      deliveryAddress: address || locName || 'Your location',
+      deliveryAddress: address || 'Your location',
       cart           : reorderCart,
       subtotalRs,
       deliveryFeeRs  : charges.customer_delivery_rs,
@@ -767,7 +779,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   // [WhatsApp2026] Preserve structured address from address form if present
   const structuredAddr = session.pendingStructuredAddress || null;
   const addrSource = session.addressSource || 'gps';
-  const displayAddress = (structuredAddr ? session.pendingFullAddress : null) || address || locName || 'Your location';
+  const displayAddress = (structuredAddr ? session.pendingFullAddress : null) || address || 'Your location';
 
   await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
     branchId: branch.id,

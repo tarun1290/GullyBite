@@ -345,6 +345,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
       <button class="sb-btn"     onclick="goTab('messages',this)"><span class="ic">💬</span>Messages <span id="msg-badge" style="display:none;background:var(--red);color:#fff;font-size:.6rem;padding:.1rem .35rem;border-radius:9px;margin-left:.3rem">0</span></button>
       <button class="sb-btn"     onclick="goTab('analytics',this)"><span class="ic">📊</span>Analytics</button>
       <button class="sb-btn"     onclick="goTab('payments',this)"><span class="ic">💰</span>Payments</button>
+      <button class="sb-btn"     onclick="goTab('loyalty',this)"><span class="ic">🎁</span>Loyalty</button>
       <button class="sb-btn"     onclick="goTab('restaurant',this)"><span class="ic">🏪</span>Restaurant</button>
       <button class="sb-btn"     onclick="goTab('settings',this)"><span class="ic">⚙️</span>Settings</button>
     </div>
@@ -747,8 +748,12 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               <div class="fg"><label>City</label><input id="b-city" placeholder="Bangalore"></div>
               <div class="fg span2" style="position:relative">
                 <label>Search Address ★ <small>type to search, select from suggestions</small></label>
-                <input id="b-addr-search" autocomplete="off" placeholder="e.g. Forum Mall, Koramangala, Bangalore" oninput="addrSearch(this.value)" onfocus="addrSearch(this.value)">
-                <div id="addr-suggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;z-index:999;max-height:220px;overflow-y:auto;margin-top:3px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
+                <div style="position:relative">
+                  <input id="b-addr-search" autocomplete="off" placeholder="e.g. Forum Mall, Koramangala, Bangalore" oninput="addrSearch(this.value)" onfocus="addrSearch(this.value)" onkeydown="_addrKeydown(event)" style="padding-right:2.2rem">
+                  <span id="addr-search-icon" style="position:absolute;right:.65rem;top:50%;transform:translateY(-50%);font-size:.85rem;pointer-events:none">🔍</span>
+                </div>
+                <div id="addr-suggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;z-index:999;max-height:260px;overflow-y:auto;margin-top:3px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
+                <div id="addr-confirm" style="display:none;font-size:.77rem;color:var(--wa);margin-top:.35rem;padding-left:.15rem"></div>
               </div>
               <div class="fg span2">
                 <label>Full Address <small style="color:var(--wa)">(auto-filled)</small></label>
@@ -2263,8 +2268,9 @@ function goTab(n, el) {
   // Combined tabs: show multiple old tab divs together
   const TAB_GROUPS = {
     menu:       ['tab-branches', 'tab-menu'],
-    payments:   ['tab-financials', 'tab-settlements', 'tab-referrals'],
-    restaurant: ['tab-coupons', 'tab-loyalty', 'tab-team', 'tab-issues', 'tab-campaigns'],
+    payments:   ['tab-financials', 'tab-settlements'],
+    loyalty:    ['tab-campaigns', 'tab-coupons', 'tab-referrals'],
+    restaurant: ['tab-loyalty', 'tab-team', 'tab-issues'],
     settings:   ['tab-settings', 'tab-whatsapp', 'tab-integrations'],
     analytics:  ['tab-analytics', 'tab-ratings', 'tab-customers'],
   };
@@ -2298,6 +2304,9 @@ function goTab(n, el) {
     document.getElementById('pg-sub').textContent   = m.sub;
     if (m.fn) m.fn();
   }
+  // Persist active tab in URL hash so refresh stays on the same page
+  if (history.replaceState) history.replaceState(null, '', '#' + actual);
+  else location.hash = actual;
 }
 
 /* ─────────────────────────── API ────────────────────────── */
@@ -2347,6 +2356,10 @@ async function initDash() {
       toast('Completing WhatsApp connection…', 'nfo');
       _finishMetaConnect(null, metaToken);
     }
+
+    // Restore active tab from URL hash (e.g. #menu, #orders, #settings)
+    const hash = location.hash.replace('#', '');
+    if (hash && TMETA[hash]) goTab(hash);
   } catch (e) { console.error(e); }
 }
 
@@ -3055,44 +3068,89 @@ function _destroyChart(key) {
   if (_anCharts[key]) { _anCharts[key].destroy(); _anCharts[key] = null; }
 }
 
-/* ─────────────── ADDRESS AUTOCOMPLETE (Nominatim) ───────── */
-let _addrTimer = null;
+/* ─────────────── ADDRESS AUTOCOMPLETE (Google Places API via backend) ───────── */
+let _addrTimer = null, _addrHighlight = -1, _addrSuggestions = [];
+
 function addrSearch(q) {
   clearTimeout(_addrTimer);
   const box = document.getElementById('addr-suggestions');
-  if (!q || q.length < 3) { box.style.display = 'none'; return; }
+  const input = document.getElementById('b-addr-search');
+  _addrHighlight = -1;
+  if (!q || q.length < 2) { box.style.display = 'none'; _addrSuggestions = []; _setAddrIcon('search'); return; }
+  _setAddrIcon('loading');
   _addrTimer = setTimeout(async () => {
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&addressdetails=1&countrycodes=in&limit=6`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
-      const results = await res.json();
-      if (!results.length) { box.style.display = 'none'; return; }
-      box.innerHTML = results.map((r, i) =>
-        `<div class="addr-item" onclick="addrPick(${i})" data-i="${i}"
+      const res = await api(`/api/restaurant/places/autocomplete?input=${encodeURIComponent(q)}`);
+      _addrSuggestions = res.suggestions || [];
+      if (!_addrSuggestions.length) { box.style.display = 'none'; _setAddrIcon('search'); return; }
+      box.innerHTML = _addrSuggestions.map((s, i) =>
+        `<div class="addr-item" data-i="${i}"
           style="padding:.65rem .9rem;cursor:pointer;font-size:.83rem;border-bottom:1px solid var(--bdr);line-height:1.4"
-          onmouseover="this.style.background='var(--ink3)'" onmouseout="this.style.background=''"
-        >${r.display_name}</div>`
+          onmouseover="_addrHover(${i})" onclick="addrPick(${i})"
+        ><div style="font-weight:600;color:var(--txt)">${_esc(s.mainText)}</div>
+         <div style="font-size:.77rem;color:var(--dim);margin-top:.15rem">${_esc(s.secondaryText)}</div></div>`
       ).join('');
-      box._results = results;
       box.style.display = 'block';
-    } catch { box.style.display = 'none'; }
-  }, 350);
+      _setAddrIcon('search');
+    } catch { box.style.display = 'none'; _setAddrIcon('search'); }
+  }, 300);
 }
-function addrPick(i) {
+
+function _addrHover(i) {
+  _addrHighlight = i;
+  _addrHighlightUpdate();
+}
+
+function _addrHighlightUpdate() {
+  const items = document.querySelectorAll('#addr-suggestions .addr-item');
+  items.forEach((el, i) => el.style.background = i === _addrHighlight ? 'var(--ink3)' : '');
+}
+
+function _addrKeydown(e) {
   const box = document.getElementById('addr-suggestions');
-  const r   = box._results[i];
-  if (!r) return;
-  const addr = r.display_name;
-  const city = r.address?.city || r.address?.town || r.address?.village || r.address?.county || '';
-  document.getElementById('b-addr-search').value = addr;
-  document.getElementById('b-addr').value = addr;
-  document.getElementById('b-city').value = city;
-  document.getElementById('b-lat').value  = parseFloat(r.lat).toFixed(6);
-  document.getElementById('b-lng').value  = parseFloat(r.lon).toFixed(6);
-  box.style.display = 'none';
+  if (box.style.display === 'none' || !_addrSuggestions.length) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); _addrHighlight = Math.min(_addrHighlight + 1, _addrSuggestions.length - 1); _addrHighlightUpdate(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _addrHighlight = Math.max(_addrHighlight - 1, 0); _addrHighlightUpdate(); }
+  else if (e.key === 'Enter' && _addrHighlight >= 0) { e.preventDefault(); addrPick(_addrHighlight); }
+  else if (e.key === 'Escape') { box.style.display = 'none'; }
 }
+
+async function addrPick(i) {
+  const box = document.getElementById('addr-suggestions');
+  const s = _addrSuggestions[i];
+  if (!s) return;
+  box.style.display = 'none';
+  _setAddrIcon('loading');
+  document.getElementById('b-addr-search').value = s.fullText;
+  try {
+    const details = await api(`/api/restaurant/places/details?placeId=${encodeURIComponent(s.place_id)}`);
+    document.getElementById('b-addr-search').value = details.full_address;
+    document.getElementById('b-addr').value   = details.full_address;
+    document.getElementById('b-city').value   = details.city || '';
+    document.getElementById('b-lat').value    = details.lat;
+    document.getElementById('b-lng').value    = details.lng;
+    // Store extra fields for saving
+    document.getElementById('b-addr-search')._placeData = details;
+    // Show confirmation line
+    const conf = document.getElementById('addr-confirm');
+    const parts = [details.area, details.city, details.pincode].filter(Boolean);
+    if (parts.length) { conf.textContent = parts.join(', '); conf.style.display = 'block'; }
+    else { conf.style.display = 'none'; }
+  } catch (e) {
+    toast('Could not fetch address details: ' + e.message, 'err');
+  }
+  _setAddrIcon('search');
+}
+
+function _setAddrIcon(type) {
+  const ico = document.getElementById('addr-search-icon');
+  if (!ico) return;
+  if (type === 'loading') ico.innerHTML = '<div class="spin" style="width:14px;height:14px;border-width:2px"></div>';
+  else ico.innerHTML = '🔍';
+}
+
+function _esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
 document.addEventListener('click', e => {
   if (!e.target.closest('#addr-suggestions') && e.target.id !== 'b-addr-search')
     document.getElementById('addr-suggestions').style.display = 'none';
@@ -3234,16 +3292,23 @@ async function doAddBranch() {
   if (!name || isNaN(lat) || isNaN(lng)) return toast('Branch name and address selection are required', 'err');
   btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Creating...';
   try {
+    const placeData = document.getElementById('b-addr-search')._placeData || {};
     await api('/api/restaurant/branches', { method: 'POST', body: {
-      name, city: document.getElementById('b-city').value,
+      name, city: document.getElementById('b-city').value || placeData.city || '',
       address: document.getElementById('b-addr').value,
       latitude: lat, longitude: lng,
+      pincode: placeData.pincode || '',
+      area: placeData.area || '',
+      state: placeData.state || '',
+      place_id: placeData.place_id || '',
       deliveryRadiusKm: parseFloat(document.getElementById('b-rad').value) || 5,
       openingTime: document.getElementById('b-open').value,
       closingTime: document.getElementById('b-close').value,
       managerPhone: document.getElementById('b-mgr').value,
     }});
     ['b-name', 'b-city', 'b-addr', 'b-addr-search', 'b-lat', 'b-lng', 'b-mgr'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('b-addr-search')._placeData = null;
+    document.getElementById('addr-confirm').style.display = 'none';
     toast(`✅ "${name}" added! Creating WhatsApp catalog...`, 'ok');
     loadBranches();
     setTimeout(loadBranches, 3500);
@@ -3329,7 +3394,7 @@ function renderBranchCard(b) {
     <div class="bcard-hd">
       <div style="flex:1;min-width:0">
         <div class="bcard-name">${b.name}</div>
-        <div class="bcard-addr">${b.address || b.city || '—'}</div>
+        <div class="bcard-addr">${b.address || b.city || '—'} <a href="#" onclick="event.preventDefault();editBranchAddr('${b.id}')" style="font-size:.72rem;color:var(--wa);margin-left:.4rem;text-decoration:none">edit</a></div>
       </div>
       <div class="bcard-badges">
         <span class="badge ${b.is_open ? 'bg' : 'br'}">${b.is_open ? '🟢 Open' : '🔴 Closed'}</span>
@@ -3422,8 +3487,106 @@ function animBar(bar, pct, from, to, dur) {
   })(performance.now());
 }
 async function doToggle(id, field, val) {
-  const body = field === 'acceptsOrders' ? { acceptsOrders: val } : { isOpen: val };
-  await api(`/api/restaurant/branches/${id}`, { method: 'PATCH', body }).catch(() => {});
+  await api(`/api/restaurant/branches/${id}`, { method: 'PATCH', body: { [field]: val } }).catch(() => {});
+}
+
+/* ── Branch address inline edit ────────────────────────── */
+function editBranchAddr(branchId) {
+  const card = document.getElementById('bc-' + branchId);
+  if (!card) return;
+  const addrEl = card.querySelector('.bcard-addr');
+  const b = branches.find(x => x.id === branchId);
+  if (!b) return;
+
+  addrEl.innerHTML = `
+    <div style="position:relative;margin-top:.35rem">
+      <input id="edit-addr-${branchId}" autocomplete="off" placeholder="Search new address..."
+        value="${_esc(b.address || '')}"
+        style="width:100%;padding:.45rem .6rem;padding-right:2rem;font-size:.82rem;border:1px solid var(--wa);border-radius:6px;background:var(--ink2);color:var(--txt)"
+        oninput="_editAddrSearch('${branchId}', this.value)"
+        onkeydown="_editAddrKeydown(event, '${branchId}')">
+      <span id="edit-addr-icon-${branchId}" style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);font-size:.8rem;pointer-events:none">🔍</span>
+      <div id="edit-addr-dd-${branchId}" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;z-index:999;max-height:220px;overflow-y:auto;margin-top:3px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
+      <div id="edit-addr-conf-${branchId}" style="display:none;font-size:.75rem;color:var(--wa);margin-top:.3rem"></div>
+      <div style="display:flex;gap:.4rem;margin-top:.4rem">
+        <button class="btn-p btn-sm" id="edit-addr-save-${branchId}" style="display:none" onclick="saveBranchAddr('${branchId}')">Save Address</button>
+        <button class="btn-g btn-sm" onclick="loadBranches()">Cancel</button>
+      </div>
+    </div>`;
+}
+
+let _editAddrTimers = {}, _editAddrSuggestions = {}, _editAddrHighlight = {}, _editAddrDetails = {};
+
+function _editAddrSearch(branchId, q) {
+  clearTimeout(_editAddrTimers[branchId]);
+  const dd = document.getElementById(`edit-addr-dd-${branchId}`);
+  _editAddrHighlight[branchId] = -1;
+  if (!q || q.length < 2) { dd.style.display = 'none'; return; }
+  _editAddrTimers[branchId] = setTimeout(async () => {
+    try {
+      const res = await api(`/api/restaurant/places/autocomplete?input=${encodeURIComponent(q)}`);
+      _editAddrSuggestions[branchId] = res.suggestions || [];
+      if (!_editAddrSuggestions[branchId].length) { dd.style.display = 'none'; return; }
+      dd.innerHTML = _editAddrSuggestions[branchId].map((s, i) =>
+        `<div class="addr-item" data-i="${i}"
+          style="padding:.55rem .8rem;cursor:pointer;font-size:.8rem;border-bottom:1px solid var(--bdr);line-height:1.4"
+          onmouseover="this.style.background='var(--ink3)'" onmouseout="this.style.background=''"
+          onclick="_editAddrPick('${branchId}',${i})"
+        ><div style="font-weight:600;color:var(--txt)">${_esc(s.mainText)}</div>
+         <div style="font-size:.74rem;color:var(--dim);margin-top:.1rem">${_esc(s.secondaryText)}</div></div>`
+      ).join('');
+      dd.style.display = 'block';
+    } catch { dd.style.display = 'none'; }
+  }, 300);
+}
+
+function _editAddrKeydown(e, branchId) {
+  const dd = document.getElementById(`edit-addr-dd-${branchId}`);
+  const sugs = _editAddrSuggestions[branchId] || [];
+  if (dd.style.display === 'none' || !sugs.length) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); _editAddrHighlight[branchId] = Math.min((_editAddrHighlight[branchId] || -1) + 1, sugs.length - 1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _editAddrHighlight[branchId] = Math.max((_editAddrHighlight[branchId] || 0) - 1, 0); }
+  else if (e.key === 'Enter' && (_editAddrHighlight[branchId] ?? -1) >= 0) { e.preventDefault(); _editAddrPick(branchId, _editAddrHighlight[branchId]); }
+  else if (e.key === 'Escape') { dd.style.display = 'none'; }
+}
+
+async function _editAddrPick(branchId, i) {
+  const dd = document.getElementById(`edit-addr-dd-${branchId}`);
+  const s = (_editAddrSuggestions[branchId] || [])[i];
+  if (!s) return;
+  dd.style.display = 'none';
+  const input = document.getElementById(`edit-addr-${branchId}`);
+  input.value = s.fullText;
+  try {
+    const details = await api(`/api/restaurant/places/details?placeId=${encodeURIComponent(s.place_id)}`);
+    input.value = details.full_address;
+    _editAddrDetails[branchId] = details;
+    const conf = document.getElementById(`edit-addr-conf-${branchId}`);
+    const parts = [details.area, details.city, details.pincode].filter(Boolean);
+    if (parts.length) { conf.textContent = parts.join(', '); conf.style.display = 'block'; }
+    document.getElementById(`edit-addr-save-${branchId}`).style.display = '';
+  } catch (e) { toast('Could not fetch details: ' + e.message, 'err'); }
+}
+
+async function saveBranchAddr(branchId) {
+  const d = _editAddrDetails[branchId];
+  if (!d || !d.lat || !d.lng) return toast('No valid address selected', 'err');
+  const btn = document.getElementById(`edit-addr-save-${branchId}`);
+  btn.disabled = true; btn.textContent = 'Saving...';
+  try {
+    await api(`/api/restaurant/branches/${branchId}`, { method: 'PATCH', body: {
+      address: d.full_address,
+      city: d.city || '',
+      pincode: d.pincode || '',
+      latitude: d.lat,
+      longitude: d.lng,
+      area: d.area || '',
+      state: d.state || '',
+      place_id: d.place_id || '',
+    }});
+    toast('Address updated!', 'ok');
+    loadBranches();
+  } catch (e) { toast(e.message, 'err'); btn.disabled = false; btn.textContent = 'Save Address'; }
 }
 
 /* ─────────────────────────── MENU ──────────────────────── */

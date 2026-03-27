@@ -213,29 +213,44 @@ async function geocodePlaceName(placeName) {
 // GOOGLE_MAPS_API_KEY is required.
 async function reverseGeocode(lat, lng) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  const axios = require('axios');
-  const { data } = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
-    params: { latlng: `${lat},${lng}`, key: apiKey },
-    timeout: 5000,
-  });
-
-  if (data.results?.length) {
-    const r = data.results[0];
-    const get = (type) => r.address_components?.find(c => c.types.includes(type))?.long_name || '';
-    return {
-      lat, lng,
-      address: r.formatted_address,
-      place_id: r.place_id,
-      area: get('sublocality_level_1') || get('sublocality'),
-      city: get('locality'),
-      state: get('administrative_area_level_1'),
-      pincode: get('postal_code'),
-      source: 'geocode',
-    };
+  if (!apiKey) {
+    console.error('[Location] GOOGLE_MAPS_API_KEY is not set — geocoding will not work');
+    return null;
   }
 
-  console.error('[Location] Geocoding returned no results for:', lat, lng);
-  return null;
+  const axios = require('axios');
+  try {
+    const { data } = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+      params: { latlng: `${lat},${lng}`, key: apiKey },
+      timeout: 8000,
+    });
+
+    if (data.status === 'REQUEST_DENIED') {
+      console.error('[Location] Geocoding API denied — check API key and ensure Geocoding API is enabled:', data.error_message);
+      return null;
+    }
+
+    if (data.results?.length) {
+      const r = data.results[0];
+      const get = (type) => r.address_components?.find(c => c.types.includes(type))?.long_name || '';
+      return {
+        lat, lng,
+        address: r.formatted_address,
+        place_id: r.place_id,
+        area: get('sublocality_level_1') || get('sublocality'),
+        city: get('locality'),
+        state: get('administrative_area_level_1'),
+        pincode: get('postal_code'),
+        source: 'geocode',
+      };
+    }
+
+    console.warn('[Location] Geocoding returned no results for:', lat, lng);
+    return null;
+  } catch (e) {
+    console.error('[Location] Geocoding request failed:', e.message);
+    return null;
+  }
 }
 
 module.exports = { findNearestBranch, haversineKm, isMapsUrl, extractCoordsFromMapsUrl, reverseGeocode };

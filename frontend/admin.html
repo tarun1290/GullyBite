@@ -75,6 +75,12 @@ nav{flex:1;padding:.6rem 0}
 .btn-sm.primary:hover{background:var(--acc2);border-color:var(--acc2)}
 .btn-sm.danger{background:var(--red);color:#fff;border-color:var(--red)}
 .btn-sm.danger:hover{background:var(--red2);border-color:var(--red2)}
+.btn-sm.outline{background:transparent;border:1px solid var(--acc);color:var(--acc);font-weight:600}
+.btn-sm.outline:hover{background:rgba(79,70,229,.06)}
+.btn-sm.outline.danger{border-color:var(--red);color:var(--red);background:transparent}
+.btn-sm.outline.danger:hover{background:rgba(220,38,38,.06)}
+.flow-toggle input:checked+span{background:var(--acc)}
+.flow-toggle input:checked~#flow-auto-knob{transform:translateX(16px)}
 .act-sub.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 .act-sub.active:hover{background:var(--acc2);border-color:var(--acc2)}
 .adm-iss-tab.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
@@ -255,6 +261,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         Issues
         <span class="badge" id="nav-issues-badge" style="display:none"></span>
+      </div>
+      <div class="nav-item" data-page="flows" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><circle cx="12" cy="17" r="3"/><line x1="12" y1="10" x2="12" y2="14"/><line x1="7" y1="17" x2="5" y2="17"/><line x1="17" y1="17" x2="19" y2="17"/></svg>
+        Flow Builder
       </div>
     </nav>
     <div class="sb-footer">
@@ -1043,6 +1053,91 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         </div>
       </div>
 
+      <!-- ── FLOW BUILDER ──────────────────────────────────────────── -->
+      <div class="page" id="page-flows">
+
+        <!-- Status Card -->
+        <div class="table-wrap" style="margin-bottom:1rem">
+          <div class="table-head">
+            <h2>WhatsApp Delivery Flow</h2>
+            <span id="flow-status-badge" style="margin-left:auto"></span>
+          </div>
+          <div id="flow-status-body" style="padding:1rem;font-size:.85rem;color:var(--dim)">Loading...</div>
+        </div>
+
+        <!-- Actions -->
+        <div class="table-wrap" style="margin-bottom:1rem">
+          <div class="table-head"><h2>Actions</h2></div>
+          <div id="flow-actions" style="padding:1rem">
+            <div style="color:var(--dim);font-size:.85rem">Loading...</div>
+          </div>
+        </div>
+
+        <!-- Create Form (hidden) -->
+        <div id="flow-create-form" style="display:none;margin-bottom:1rem">
+          <div class="table-wrap">
+            <div class="table-head"><h2>Create Delivery Flow</h2></div>
+            <div style="padding:1rem">
+              <p style="font-size:.82rem;color:var(--dim);margin-bottom:1rem">This creates a WhatsApp Flow for delivery address selection and publishes it to Meta. Uses the System User access token.</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+                <div>
+                  <label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:.3rem;font-weight:600">WABA ID</label>
+                  <input id="flow-waba-id" placeholder="e.g. 123456789012345" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
+                </div>
+                <div>
+                  <label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:.3rem;font-weight:600">Access Token</label>
+                  <input id="flow-access-token" type="password" placeholder="System User access token" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
+                  <span style="font-size:.68rem;color:var(--mute)">Use your System User access token from Meta Business Suite</span>
+                </div>
+              </div>
+              <div style="display:flex;gap:.4rem">
+                <button class="btn-sm primary" id="flow-create-btn" onclick="doCreateFlow()">Create &amp; Publish</button>
+                <button class="btn-sm" onclick="document.getElementById('flow-create-form').style.display='none'">Cancel</button>
+              </div>
+              <div id="flow-create-error" style="display:none;margin-top:.75rem;background:#fff1f2;border:1px solid #fecaca;border-radius:8px;padding:.75rem;font-size:.82rem;color:var(--red)"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Restaurant Assignment -->
+        <div id="flow-assign-section" style="display:none;margin-bottom:1rem">
+          <div class="table-wrap">
+            <div class="table-head"><h2>Restaurant Assignment</h2></div>
+            <div style="padding:1rem">
+              <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+                <span style="font-size:.85rem;color:var(--tx)" id="flow-assign-text">—</span>
+              </div>
+              <div style="background:var(--ink);border-radius:6px;height:8px;overflow:hidden;margin-bottom:1rem">
+                <div id="flow-assign-bar" style="height:100%;background:var(--acc);border-radius:6px;transition:width .3s;width:0%"></div>
+              </div>
+              <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+                <button class="btn-sm primary" id="flow-assign-btn" onclick="doAssignAll()">Assign to All Restaurants</button>
+                <div style="display:flex;align-items:center;gap:.5rem">
+                  <label class="flow-toggle" style="position:relative;display:inline-block;width:36px;height:20px">
+                    <input type="checkbox" id="flow-auto-assign" onchange="doToggleAutoAssign(this.checked)" style="opacity:0;width:0;height:0">
+                    <span style="position:absolute;cursor:pointer;inset:0;background:var(--rim2);border-radius:20px;transition:background .2s"></span>
+                    <span style="position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.15)" id="flow-auto-knob"></span>
+                  </label>
+                  <span style="font-size:.82rem;color:var(--dim)">Auto-assign to new restaurants</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Flow JSON Preview (collapsible) -->
+        <div class="table-wrap">
+          <div class="table-head" style="cursor:pointer" onclick="toggleFlowJson()">
+            <h2>Flow JSON Definition</h2>
+            <span id="flow-json-arrow" style="margin-left:auto;font-size:.75rem;color:var(--dim);transition:transform .2s">&#x25B6;</span>
+          </div>
+          <div id="flow-json-body" style="display:none;padding:0">
+            <pre id="flow-json-pre" style="margin:0;padding:1rem;background:var(--ink4);font-size:.75rem;line-height:1.5;overflow-x:auto;max-height:500px;overflow-y:auto;color:var(--tx);font-family:'SF Mono',Monaco,Consolas,monospace;border-top:1px solid var(--rim)"></pre>
+          </div>
+        </div>
+
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1285,6 +1380,12 @@ function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
   loadAll();
+  // Restore active page from URL hash (e.g. #restaurants, #orders, #flows)
+  const hash = location.hash.replace('#', '');
+  if (hash && PAGE_TITLES[hash]) {
+    const navEl = document.querySelector(`.nav-item[data-page="${hash}"]`);
+    if (navEl) nav(navEl);
+  }
 }
 
 document.getElementById('admin-key-input').addEventListener('keydown', e => {
@@ -1292,7 +1393,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -1318,6 +1419,10 @@ function nav(el) {
   if (page === 'financials')   loadFinPage();
   if (page === 'activity')     loadActivity();
   if (page === 'issues')       loadAdminIssues();
+  if (page === 'flows')        loadFlowBuilder();
+  // Persist active page in URL hash so refresh stays on the same page
+  if (history.replaceState) history.replaceState(null, '', '#' + page);
+  else location.hash = page;
 }
 
 function refreshCurrent() {
@@ -1337,6 +1442,7 @@ function refreshCurrent() {
   else if (currentPage === 'financials')   loadFinPage();
   else if (currentPage === 'activity')     loadActivity();
   else if (currentPage === 'issues')       loadAdminIssues();
+  else if (currentPage === 'flows')        loadFlowBuilder();
 }
 
 // ─── STATS ────────────────────────────────────────────────────────
@@ -3546,6 +3652,232 @@ async function downloadGstr1() {
     URL.revokeObjectURL(url);
     toast('GSTR-1 data downloaded', 'ok');
   } catch (e) { toast(e.message, 'err'); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FLOW BUILDER
+// ═══════════════════════════════════════════════════════════════
+let _flowData = null;
+
+async function loadFlowBuilder() {
+  try {
+    _flowData = await api('/api/admin/flow');
+    renderFlowStatus();
+    renderFlowActions();
+    renderFlowAssignment();
+    renderFlowJson();
+  } catch (e) {
+    document.getElementById('flow-status-body').textContent = 'Failed to load: ' + e.message;
+  }
+}
+
+function renderFlowStatus() {
+  const badge = document.getElementById('flow-status-badge');
+  const body = document.getElementById('flow-status-body');
+  const f = _flowData;
+
+  if (!f || !f.flow_id) {
+    badge.innerHTML = '<span class="badge gray">Not Created</span>';
+    body.innerHTML = '<p style="color:var(--dim)">No delivery Flow has been created yet.</p>';
+    return;
+  }
+
+  const statusMap = {
+    PUBLISHED:  { cls: 'green', label: 'Published' },
+    DRAFT:      { cls: 'gold',  label: 'Draft' },
+    DEPRECATED: { cls: 'red',   label: 'Deprecated' },
+  };
+  const s = statusMap[f.flow_status] || { cls: 'gray', label: f.flow_status || 'Unknown' };
+  badge.innerHTML = `<span class="badge ${s.cls}">${esc(s.label)}</span>`;
+
+  const created = f.created_at ? new Date(f.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const updated = f.updated_at ? new Date(f.updated_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.75rem">
+      <div>
+        <div style="font-size:.72rem;color:var(--mute);font-weight:600;margin-bottom:.2rem">FLOW ID</div>
+        <code style="font-size:.82rem;cursor:pointer;background:var(--ink4);padding:.15rem .4rem;border-radius:4px" onclick="navigator.clipboard.writeText('${esc(f.flow_id)}');toast('Flow ID copied','ok')" title="Click to copy">${esc(f.flow_id)}</code>
+      </div>
+      <div>
+        <div style="font-size:.72rem;color:var(--mute);font-weight:600;margin-bottom:.2rem">JSON VERSION</div>
+        <span style="font-size:.85rem">${esc(f.flow_json_version || '—')}</span>
+      </div>
+      <div>
+        <div style="font-size:.72rem;color:var(--mute);font-weight:600;margin-bottom:.2rem">CREATED</div>
+        <span style="font-size:.85rem">${created}</span>
+      </div>
+      <div>
+        <div style="font-size:.72rem;color:var(--mute);font-weight:600;margin-bottom:.2rem">LAST UPDATED</div>
+        <span style="font-size:.85rem">${updated}</span>
+      </div>
+    </div>`;
+}
+
+function renderFlowActions() {
+  const el = document.getElementById('flow-actions');
+  const f = _flowData;
+
+  if (!f || !f.flow_id || f.flow_status === 'DEPRECATED') {
+    const msg = f?.flow_status === 'DEPRECATED'
+      ? '<p style="font-size:.85rem;color:var(--dim);margin-bottom:.75rem">This Flow has been deprecated. Create a new one to enable delivery address selection.</p>'
+      : '';
+    el.innerHTML = `${msg}<button class="btn-sm primary" onclick="document.getElementById('flow-create-form').style.display='block'">Create Delivery Flow</button>`;
+    return;
+  }
+
+  if (f.flow_status === 'PUBLISHED') {
+    el.innerHTML = `
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn-sm outline" onclick="doPreviewFlow()">Preview Flow</button>
+        <button class="btn-sm outline danger" onclick="doDeprecateFlow()">Deprecate Flow</button>
+      </div>`;
+    return;
+  }
+
+  if (f.flow_status === 'DRAFT') {
+    el.innerHTML = `
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn-sm primary" onclick="doPublishFlow()">Publish Flow</button>
+        <button class="btn-sm outline" onclick="doUpdateFlowJson()">Update JSON</button>
+        <button class="btn-sm outline danger" onclick="doDeprecateFlow()">Deprecate Flow</button>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = '<span style="color:var(--dim);font-size:.85rem">Unknown state</span>';
+}
+
+function renderFlowAssignment() {
+  const section = document.getElementById('flow-assign-section');
+  const f = _flowData;
+  if (!f || !f.flow_id || f.flow_status !== 'PUBLISHED') {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+
+  const assigned = f.assigned_restaurants || 0;
+  const total = f.total_restaurants || 0;
+  const pct = total > 0 ? Math.round((assigned / total) * 100) : 0;
+
+  document.getElementById('flow-assign-text').innerHTML =
+    `Assigned to <strong>${assigned}</strong> of <strong>${total}</strong> restaurants`;
+  document.getElementById('flow-assign-bar').style.width = pct + '%';
+  document.getElementById('flow-auto-assign').checked = !!f.auto_assign_new;
+  // Update toggle knob position
+  document.getElementById('flow-auto-knob').style.transform = f.auto_assign_new ? 'translateX(16px)' : 'translateX(0)';
+}
+
+// Flow JSON Definition (same as server-side buildDeliveryFlowJson)
+const FLOW_JSON_DEF = {"version":"6.2","screens":[{"id":"SAVED_ADDRESSES","title":"Deliver To","terminal":false,"data":{"addresses":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"main-content":{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"},"metadata":{"type":"string"}}},"badge":{"type":"string"}}},"__example__":[{"id":"addr_1","main-content":{"title":"Home","description":"Banjara Hills","metadata":"123 Main St, Hyderabad 500034"},"badge":"Default"},{"id":"new_address","main-content":{"title":"Add New Address","description":"New location","metadata":"Enter address or Maps link"}}]}},"layout":{"type":"SingleColumnLayout","children":[{"type":"NavigationList","name":"selected_address","label":"Your saved addresses","description":"Where to deliver?","list-items":"${data.addresses}","on-click-action":{"name":"navigate","next":{"type":"screen","name":"CONFIRM_DELIVERY"},"payload":{"address_id":"${form.selected_address}"}}}]}},{"id":"CONFIRM_DELIVERY","title":"Confirm Address","terminal":true,"success":true,"data":{"address_id":{"type":"string","__example__":"addr_1"}},"layout":{"type":"SingleColumnLayout","children":[{"type":"TextHeading","text":"Deliver to this address?"},{"type":"TextBody","text":"Tap below to confirm and see the menu."},{"type":"Footer","label":"Show Menu","on-click-action":{"name":"complete","payload":{"action":"select_address","selected_address_id":"${data.address_id}"}}}]}},{"id":"NEW_ADDRESS","title":"New Address","terminal":true,"success":true,"layout":{"type":"SingleColumnLayout","children":[{"type":"TextHeading","text":"Add delivery address"},{"type":"TextBody","text":"Paste a Google Maps link or type your address"},{"type":"TextInput","label":"Google Maps link","input-type":"text","name":"maps_link","required":false,"helper-text":"e.g. maps.app.goo.gl/abc123"},{"type":"TextInput","label":"Full address","input-type":"text","name":"manual_address","required":false,"helper-text":"Street, area, city, pincode"},{"type":"TextInput","label":"Flat / Floor / Landmark","input-type":"text","name":"address_line2","required":false},{"type":"Dropdown","label":"Save as","name":"address_label","required":true,"data-source":[{"id":"Home","title":"Home"},{"id":"Office","title":"Office"},{"id":"Other","title":"Other"}]},{"type":"Footer","label":"Deliver Here","on-click-action":{"name":"complete","payload":{"action":"new_address","maps_link":"${form.maps_link}","manual_address":"${form.manual_address}","address_line2":"${form.address_line2}","address_label":"${form.address_label}"}}}]}}]};
+
+function renderFlowJson() {
+  document.getElementById('flow-json-pre').textContent = JSON.stringify(FLOW_JSON_DEF, null, 2);
+}
+
+function toggleFlowJson() {
+  const body = document.getElementById('flow-json-body');
+  const arrow = document.getElementById('flow-json-arrow');
+  if (body.style.display === 'none') {
+    body.style.display = 'block';
+    arrow.style.transform = 'rotate(90deg)';
+  } else {
+    body.style.display = 'none';
+    arrow.style.transform = 'rotate(0deg)';
+  }
+}
+
+async function doCreateFlow() {
+  const btn = document.getElementById('flow-create-btn');
+  const errEl = document.getElementById('flow-create-error');
+  errEl.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Creating...';
+  try {
+    const result = await api('/api/admin/flow/create', { method: 'POST' });
+    if (result.already_exists) toast('Flow already exists: ' + result.flow_id, 'ok');
+    else toast('Flow created' + (result.published ? ' and published!' : '!'), 'ok');
+    document.getElementById('flow-create-form').style.display = 'none';
+    loadFlowBuilder();
+  } catch (e) {
+    errEl.style.display = 'block';
+    errEl.innerHTML = `<strong>Error:</strong> ${esc(e.message)}`;
+    // If there are validation errors, try to show them
+    try {
+      const resp = await fetch(BASE + '/api/admin/flow/create', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${adminKey}`, 'Content-Type': 'application/json' },
+      });
+      const data = await resp.json();
+      if (data.validation_errors?.length) {
+        errEl.innerHTML += `<details style="margin-top:.5rem"><summary style="cursor:pointer;font-size:.78rem">Validation Errors (${data.validation_errors.length})</summary><ul style="margin-top:.3rem;padding-left:1.2rem;font-size:.78rem">${data.validation_errors.map(v => `<li>${esc(v.message || v.error || JSON.stringify(v))}${v.path ? ` — <code>${esc(v.path)}</code>` : ''}</li>`).join('')}</ul></details>`;
+      }
+    } catch {}
+  } finally {
+    btn.disabled = false; btn.textContent = 'Create & Publish';
+  }
+}
+
+async function doPreviewFlow() {
+  try {
+    toast('Getting preview URL...', 'ok');
+    const data = await api('/api/admin/flow/preview');
+    if (data.preview_url || data.preview?.preview_url) {
+      window.open(data.preview_url || data.preview?.preview_url, '_blank');
+    } else {
+      toast('No preview URL returned', 'err');
+    }
+  } catch (e) { toast('Preview failed: ' + e.message, 'err'); }
+}
+
+async function doDeprecateFlow() {
+  if (!confirm('This will deactivate the Flow for all restaurants. Customers will fall back to text-based location sharing. Are you sure?')) return;
+  try {
+    await api('/api/admin/flow/deprecate', { method: 'POST' });
+    toast('Flow deprecated', 'ok');
+    loadFlowBuilder();
+  } catch (e) { toast('Deprecate failed: ' + e.message, 'err'); }
+}
+
+async function doPublishFlow() {
+  try {
+    await api('/api/admin/flow/publish', { method: 'POST' });
+    toast('Flow published!', 'ok');
+    loadFlowBuilder();
+  } catch (e) { toast('Publish failed: ' + e.message, 'err'); }
+}
+
+async function doUpdateFlowJson() {
+  try {
+    await api('/api/admin/flow/update', { method: 'POST' });
+    toast('Flow JSON updated', 'ok');
+    loadFlowBuilder();
+  } catch (e) { toast('Update failed: ' + e.message, 'err'); }
+}
+
+async function doAssignAll() {
+  const btn = document.getElementById('flow-assign-btn');
+  btn.disabled = true; btn.textContent = 'Assigning...';
+  try {
+    const r = await api('/api/admin/flow/assign-all', { method: 'POST' });
+    toast(`Flow assigned to ${r.assigned || 'all'} restaurants`, 'ok');
+    loadFlowBuilder();
+  } catch (e) { toast('Assign failed: ' + e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Assign to All Restaurants'; }
+}
+
+async function doToggleAutoAssign(enabled) {
+  try {
+    await api('/api/admin/flow/toggle-auto-assign', { method: 'POST', body: { enabled } });
+    toast('Auto-assign ' + (enabled ? 'enabled' : 'disabled'), 'ok');
+    // Update knob position
+    document.getElementById('flow-auto-knob').style.transform = enabled ? 'translateX(16px)' : 'translateX(0)';
+  } catch (e) {
+    toast('Failed: ' + e.message, 'err');
+    // Revert toggle
+    document.getElementById('flow-auto-assign').checked = !enabled;
+    document.getElementById('flow-auto-knob').style.transform = enabled ? 'translateX(0)' : 'translateX(16px)';
+  }
 }
 </script>
 </body>
