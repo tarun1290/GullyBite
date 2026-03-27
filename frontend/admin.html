@@ -81,6 +81,8 @@ nav{flex:1;padding:.6rem 0}
 .btn-sm.outline.danger:hover{background:rgba(220,38,38,.06)}
 .flow-toggle input:checked+span{background:var(--acc)}
 .flow-toggle input:checked~#flow-auto-knob{transform:translateX(16px)}
+.an-period.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
+.an-period.active:hover{background:var(--acc2);border-color:var(--acc2)}
 .act-sub.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 .act-sub.active:hover{background:var(--acc2);border-color:var(--acc2)}
 .adm-iss-tab.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
@@ -163,6 +165,7 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
 .monospace{font-family:'SF Mono',Consolas,monospace;font-size:.78rem}
 .truncate{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -265,6 +268,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
       <div class="nav-item" data-page="flows" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><circle cx="12" cy="17" r="3"/><line x1="12" y1="10" x2="12" y2="14"/><line x1="7" y1="17" x2="5" y2="17"/><line x1="17" y1="17" x2="19" y2="17"/></svg>
         Flow Builder
+      </div>
+      <div class="nav-item" data-page="analytics" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21H4.6C4.04 21 3.76 21 3.55 20.89C3.37 20.8 3.2 20.63 3.11 20.45C3 20.24 3 19.96 3 19.4V3"/><path d="M7 14l4-4 4 4 6-6"/></svg>
+        Analytics
       </div>
     </nav>
     <div class="sb-footer">
@@ -1138,6 +1145,92 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
 
       </div>
 
+      <!-- ── ANALYTICS ──────────────────────────────────────────── -->
+      <div class="page" id="page-analytics">
+
+        <!-- Filter Bar -->
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end;margin-bottom:1.2rem;padding:.75rem 1rem;background:#fff;border:1px solid var(--rim);border-radius:8px">
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">Period</label>
+            <div style="display:flex;gap:.3rem">
+              <button class="btn-sm an-period active" onclick="anSetPeriod(7,this)">7D</button>
+              <button class="btn-sm an-period" onclick="anSetPeriod(30,this)">30D</button>
+              <button class="btn-sm an-period" onclick="anSetPeriod(90,this)">90D</button>
+              <button class="btn-sm an-period" onclick="anSetPeriod(365,this)">1Y</button>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">From</label>
+            <input type="date" id="an-from" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem" onchange="anApplyFilters()">
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">To</label>
+            <input type="date" id="an-to" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem" onchange="anApplyFilters()">
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">City</label>
+            <select id="an-city" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem" onchange="anCityChanged()"><option value="">All Cities</option></select>
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">Area</label>
+            <select id="an-area" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem" onchange="anApplyFilters()"><option value="">All Areas</option></select>
+          </div>
+          <button class="btn-sm" onclick="anResetFilters()" style="margin-left:auto">Reset</button>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="stat-grid" id="an-kpis" style="margin-bottom:1.2rem">
+          <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-val" id="an-orders">—</div><div class="stat-sub" id="an-orders-chg"></div></div>
+          <div class="stat-card green"><div class="stat-label">GMV</div><div class="stat-val" id="an-gmv">—</div><div class="stat-sub" id="an-gmv-chg"></div></div>
+          <div class="stat-card gold"><div class="stat-label">Avg Order Value</div><div class="stat-val" id="an-aov">—</div></div>
+          <div class="stat-card blue"><div class="stat-label">Customers</div><div class="stat-val" id="an-custs">—</div></div>
+          <div class="stat-card"><div class="stat-label">Restaurants</div><div class="stat-val" id="an-rests">—</div></div>
+          <div class="stat-card green"><div class="stat-label">Completion</div><div class="stat-val" id="an-comp">—</div></div>
+          <div class="stat-card"><div class="stat-label">Repeat Rate</div><div class="stat-val" id="an-repeat">—</div></div>
+          <div class="stat-card gold"><div class="stat-label">Platform Revenue</div><div class="stat-val" id="an-rev">—</div></div>
+        </div>
+
+        <!-- Charts Row 1: Timeseries + Status -->
+        <div style="display:grid;grid-template-columns:2fr 1fr;gap:1rem;margin-bottom:1.2rem">
+          <div class="table-wrap" style="padding:1rem"><h3 style="font-size:.85rem;margin-bottom:.6rem">Order Volume & GMV</h3><canvas id="an-chart-ts" height="200"></canvas></div>
+          <div class="table-wrap" style="padding:1rem"><h3 style="font-size:.85rem;margin-bottom:.6rem">Order Status</h3><canvas id="an-chart-status" height="200"></canvas></div>
+        </div>
+
+        <!-- Charts Row 2: By Hour + By Day -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.2rem">
+          <div class="table-wrap" style="padding:1rem"><h3 style="font-size:.85rem;margin-bottom:.6rem">Orders by Hour</h3><canvas id="an-chart-hour" height="180"></canvas></div>
+          <div class="table-wrap" style="padding:1rem"><h3 style="font-size:.85rem;margin-bottom:.6rem">Orders by Day</h3><canvas id="an-chart-day" height="180"></canvas></div>
+        </div>
+
+        <!-- Geographic: Cities -->
+        <div class="table-wrap" style="margin-bottom:1.2rem">
+          <div class="table-head"><h2>City Performance</h2></div>
+          <table><thead><tr><th>City</th><th>Orders</th><th>GMV</th><th>Customers</th><th>Restaurants</th><th>AOV</th></tr></thead>
+          <tbody id="an-cities-tbody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody></table>
+        </div>
+
+        <!-- Restaurant Ranking -->
+        <div class="table-wrap" style="margin-bottom:1.2rem">
+          <div class="table-head"><h2>Restaurant Ranking</h2></div>
+          <table><thead><tr><th>#</th><th>Restaurant</th><th>City</th><th>Orders</th><th>GMV</th><th>AOV</th><th>Customers</th></tr></thead>
+          <tbody id="an-rest-tbody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody></table>
+        </div>
+
+        <!-- Customer Segments + Delivery -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.2rem">
+          <div class="table-wrap" style="padding:1rem"><h3 style="font-size:.85rem;margin-bottom:.6rem">Customer Segments</h3><canvas id="an-chart-segments" height="200"></canvas></div>
+          <div class="table-wrap" style="padding:1rem"><h3 style="font-size:.85rem;margin-bottom:.6rem">Delivery Time Distribution</h3><canvas id="an-chart-delivery" height="200"></canvas></div>
+        </div>
+
+        <!-- Top Customers -->
+        <div class="table-wrap">
+          <div class="table-head"><h2>Top Customers by Spend</h2></div>
+          <table><thead><tr><th>#</th><th>Customer</th><th>Phone</th><th>Orders</th><th>Total Spent</th></tr></thead>
+          <tbody id="an-topcust-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table>
+        </div>
+
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1386,6 +1479,7 @@ function showApp() {
     const navEl = document.querySelector(`.nav-item[data-page="${hash}"]`);
     if (navEl) nav(navEl);
   }
+  connectAdminWS();
 }
 
 document.getElementById('admin-key-input').addEventListener('keydown', e => {
@@ -1393,7 +1487,7 @@ document.getElementById('admin-key-input').addEventListener('keydown', e => {
 });
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -1420,6 +1514,7 @@ function nav(el) {
   if (page === 'activity')     loadActivity();
   if (page === 'issues')       loadAdminIssues();
   if (page === 'flows')        loadFlowBuilder();
+  if (page === 'analytics')    loadAnalyticsDashboard();
   // Persist active page in URL hash so refresh stays on the same page
   if (history.replaceState) history.replaceState(null, '', '#' + page);
   else location.hash = page;
@@ -1443,6 +1538,7 @@ function refreshCurrent() {
   else if (currentPage === 'activity')     loadActivity();
   else if (currentPage === 'issues')       loadAdminIssues();
   else if (currentPage === 'flows')        loadFlowBuilder();
+  else if (currentPage === 'analytics')    loadAnalyticsDashboard();
 }
 
 // ─── STATS ────────────────────────────────────────────────────────
@@ -3005,6 +3101,7 @@ function toggleActPoll() {
   clearInterval(actPollTimer);
   if (document.getElementById('act-auto-refresh').checked && currentPage === 'activity') {
     actPollTimer = setInterval(() => {
+      if (_adminWs && _adminWs.readyState === WebSocket.OPEN) return; // WS is live, skip poll
       loadActivityStats();
       if (actCurrentSub === 'feed') loadActivityFeed();
       else if (actCurrentSub === 'webhooks') loadWebhooks();
@@ -3878,6 +3975,305 @@ async function doToggleAutoAssign(enabled) {
     document.getElementById('flow-auto-assign').checked = !enabled;
     document.getElementById('flow-auto-knob').style.transform = enabled ? 'translateX(0)' : 'translateX(16px)';
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   WEBSOCKET — real-time push from server
+   ═══════════════════════════════════════════════════════════════ */
+let _adminWs = null, _awsRetryMs = 2000;
+
+function connectAdminWS() {
+  const wsUrl = window.WEBSOCKET_URL || '';
+  if (!wsUrl || !adminKey) return;
+  try { _adminWs = new WebSocket(`${wsUrl}?token=${adminKey}&room=admin:global`); }
+  catch { return; }
+
+  _adminWs.onopen = () => { console.log('[WS] Admin connected'); _awsRetryMs = 2000; };
+  _adminWs.onclose = () => { setTimeout(() => { _awsRetryMs = Math.min(_awsRetryMs * 2, 30000); connectAdminWS(); }, _awsRetryMs); };
+  _adminWs.onerror = () => {};
+
+  _adminWs.onmessage = (evt) => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    const { event: ev, data: d } = msg;
+    if (!ev) return;
+
+    if (ev === 'activity') {
+      if (currentPage === 'activity' && actCurrentSub === 'feed') loadActivityFeed();
+      loadActivityStats().catch(() => {});
+    }
+
+    if (ev === 'webhook_received') {
+      if (currentPage === 'activity' && actCurrentSub === 'webhooks') loadWebhooks();
+      const errBadge = document.getElementById('nav-activity-badge');
+      if (d?.errorMessage && errBadge) { errBadge.style.display = ''; errBadge.textContent = (parseInt(errBadge.textContent || '0') || 0) + 1; }
+    }
+
+    if (ev === 'new_order') {
+      if (currentPage === 'orders') loadOrders();
+      if (currentPage === 'overview') loadAll();
+    }
+
+    if (ev === 'restaurant_status') {
+      if (currentPage === 'applications') loadApplications();
+      if (currentPage === 'restaurants') loadRestaurants();
+    }
+
+    if (ev === 'settlement_update') {
+      if (currentPage === 'settlements') loadSettlements();
+    }
+
+    if (ev === 'delivery_update') {
+      if (currentPage === 'orders') loadOrders();
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANALYTICS DASHBOARD
+// ═══════════════════════════════════════════════════════════════
+let _anChartInstances = {};
+let _anPeriodDays = 7;
+
+function _anQuery() {
+  const from = document.getElementById('an-from').value;
+  const to = document.getElementById('an-to').value;
+  const city = document.getElementById('an-city').value;
+  const area = document.getElementById('an-area').value;
+  const params = new URLSearchParams();
+  if (from) params.set('from', new Date(from).toISOString());
+  if (to) params.set('to', new Date(to + 'T23:59:59').toISOString());
+  if (city) params.set('city', city);
+  if (area) params.set('area', area);
+  return params.toString() ? '?' + params.toString() : '';
+}
+
+function anSetPeriod(days, btn) {
+  _anPeriodDays = days;
+  document.querySelectorAll('.an-period').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const now = new Date();
+  const from = new Date(now - days * 86400000);
+  document.getElementById('an-from').value = from.toISOString().split('T')[0];
+  document.getElementById('an-to').value = now.toISOString().split('T')[0];
+  anApplyFilters();
+}
+
+function anResetFilters() {
+  document.getElementById('an-city').value = '';
+  document.getElementById('an-area').innerHTML = '<option value="">All Areas</option>';
+  anSetPeriod(7, document.querySelector('.an-period'));
+}
+
+async function anCityChanged() {
+  const city = document.getElementById('an-city').value;
+  const sel = document.getElementById('an-area');
+  sel.innerHTML = '<option value="">All Areas</option>';
+  if (city) {
+    try {
+      const areas = await api('/api/admin/analytics/filters/areas?city=' + encodeURIComponent(city));
+      areas.forEach(a => { const o = document.createElement('option'); o.value = a; o.textContent = a; sel.appendChild(o); });
+    } catch {}
+  }
+  anApplyFilters();
+}
+
+function anApplyFilters() { loadAnalyticsDashboard(); }
+
+function _destroyChart(key) { if (_anChartInstances[key]) { _anChartInstances[key].destroy(); _anChartInstances[key] = null; } }
+
+function _fmtRs(n) {
+  const v = parseFloat(n) || 0;
+  if (v >= 10000000) return '₹' + (v / 10000000).toFixed(1) + 'Cr';
+  if (v >= 100000) return '₹' + (v / 100000).toFixed(1) + 'L';
+  if (v >= 1000) return '₹' + (v / 1000).toFixed(1) + 'K';
+  return '₹' + v.toFixed(0);
+}
+
+async function loadAnalyticsDashboard() {
+  const q = _anQuery();
+
+  // Populate city filter (once)
+  if (document.getElementById('an-city').options.length <= 1) {
+    api('/api/admin/analytics/filters/cities').then(cities => {
+      const sel = document.getElementById('an-city');
+      cities.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o); });
+    }).catch(() => {});
+  }
+
+  // Set default dates if empty
+  if (!document.getElementById('an-from').value) {
+    const now = new Date();
+    document.getElementById('an-from').value = new Date(now - _anPeriodDays * 86400000).toISOString().split('T')[0];
+    document.getElementById('an-to').value = now.toISOString().split('T')[0];
+  }
+
+  // Load all sections in parallel
+  Promise.all([
+    loadAnOverview(q),
+    loadAnTimeseries(q),
+    loadAnStatus(q),
+    loadAnByHour(q),
+    loadAnByDay(q),
+    loadAnCities(q),
+    loadAnRestaurants(q),
+    loadAnSegments(q),
+    loadAnDelivery(q),
+    loadAnTopCustomers(q),
+  ]);
+}
+
+async function loadAnOverview(q) {
+  try {
+    const d = await api('/api/admin/analytics/overview' + q);
+    document.getElementById('an-orders').textContent = d.order_count;
+    document.getElementById('an-gmv').textContent = _fmtRs(d.gmv);
+    document.getElementById('an-aov').textContent = _fmtRs(d.avg_order_value);
+    document.getElementById('an-custs').textContent = d.customer_count;
+    document.getElementById('an-rests').textContent = d.active_restaurants;
+    document.getElementById('an-comp').textContent = d.completion_rate + '%';
+    document.getElementById('an-repeat').textContent = d.repeat_rate + '%';
+    document.getElementById('an-rev').textContent = _fmtRs(d.platform_revenue);
+    const chg = d.change || {};
+    document.getElementById('an-orders-chg').innerHTML = chg.order_count ? `<span style="color:${chg.order_count>=0?'var(--wa)':'var(--red)'}"> ${chg.order_count>=0?'▲':'▼'} ${Math.abs(chg.order_count)}%</span>` : '';
+    document.getElementById('an-gmv-chg').innerHTML = chg.gmv ? `<span style="color:${chg.gmv>=0?'var(--wa)':'var(--red)'}"> ${chg.gmv>=0?'▲':'▼'} ${Math.abs(chg.gmv)}%</span>` : '';
+  } catch {}
+}
+
+async function loadAnTimeseries(q) {
+  try {
+    const data = await api('/api/admin/analytics/orders/timeseries' + q);
+    _destroyChart('ts');
+    const ctx = document.getElementById('an-chart-ts').getContext('2d');
+    _anChartInstances.ts = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.map(d => d.date),
+        datasets: [
+          { label: 'Orders', data: data.map(d => d.order_count), backgroundColor: 'rgba(79,70,229,.6)', order: 2, yAxisID: 'y' },
+          { label: 'GMV', data: data.map(d => d.gmv), borderColor: '#16a34a', type: 'line', tension: .3, pointRadius: 2, order: 1, yAxisID: 'y1' },
+        ],
+      },
+      options: { responsive: true, plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } }, scales: { y: { position: 'left', beginAtZero: true }, y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } }, x: { ticks: { font: { size: 10 }, maxTicksLimit: 15 } } } },
+    });
+  } catch {}
+}
+
+async function loadAnStatus(q) {
+  try {
+    const data = await api('/api/admin/analytics/orders/by-status' + q);
+    _destroyChart('status');
+    const colors = { DELIVERED:'#16a34a', CONFIRMED:'#3b82f6', PREPARING:'#f59e0b', PACKED:'#8b5cf6', DISPATCHED:'#06b6d4', CANCELLED:'#dc2626', PENDING_PAYMENT:'#94a3b8' };
+    const ctx = document.getElementById('an-chart-status').getContext('2d');
+    _anChartInstances.status = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: data.map(d => d.status), datasets: [{ data: data.map(d => d.count), backgroundColor: data.map(d => colors[d.status] || '#94a3b8') }] },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } } },
+    });
+  } catch {}
+}
+
+async function loadAnByHour(q) {
+  try {
+    const data = await api('/api/admin/analytics/orders/by-hour' + q);
+    _destroyChart('hour');
+    const ctx = document.getElementById('an-chart-hour').getContext('2d');
+    _anChartInstances.hour = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: data.map(d => d.hour + ':00'), datasets: [{ label: 'Orders', data: data.map(d => d.count), backgroundColor: 'rgba(79,70,229,.5)' }] },
+      options: { responsive: true, plugins: { legend: { display: false } }, scales: { x: { ticks: { font: { size: 10 } } } } },
+    });
+  } catch {}
+}
+
+async function loadAnByDay(q) {
+  try {
+    const data = await api('/api/admin/analytics/orders/by-day' + q);
+    _destroyChart('day');
+    const ctx = document.getElementById('an-chart-day').getContext('2d');
+    _anChartInstances.day = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: data.map(d => d.day), datasets: [{ label: 'Orders', data: data.map(d => d.count), backgroundColor: 'rgba(22,163,74,.5)' }] },
+      options: { responsive: true, plugins: { legend: { display: false } } },
+    });
+  } catch {}
+}
+
+async function loadAnCities(q) {
+  try {
+    const data = await api('/api/admin/analytics/geographic/cities' + q);
+    const tbody = document.getElementById('an-cities-tbody');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No data</td></tr>'; return; }
+    tbody.innerHTML = data.map(d => `<tr>
+      <td style="padding:.45rem .85rem"><a href="#" onclick="event.preventDefault();document.getElementById('an-city').value='${esc(d.city||'')}';anCityChanged()" style="color:var(--acc);font-weight:600">${esc(d.city||'—')}</a></td>
+      <td style="padding:.45rem .85rem">${d.order_count}</td>
+      <td style="padding:.45rem .85rem">${_fmtRs(d.gmv)}</td>
+      <td style="padding:.45rem .85rem">${d.customer_count}</td>
+      <td style="padding:.45rem .85rem">${d.restaurant_count}</td>
+      <td style="padding:.45rem .85rem">${_fmtRs(d.avg_order_value)}</td>
+    </tr>`).join('');
+  } catch {}
+}
+
+async function loadAnRestaurants(q) {
+  try {
+    const data = await api('/api/admin/analytics/restaurants/ranking' + q);
+    const tbody = document.getElementById('an-rest-tbody');
+    if (!data.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No data</td></tr>'; return; }
+    tbody.innerHTML = data.map((d, i) => `<tr>
+      <td style="padding:.45rem .85rem;font-weight:600">${i + 1}</td>
+      <td style="padding:.45rem .85rem;font-weight:600">${esc(d.name||'—')}</td>
+      <td style="padding:.45rem .85rem;color:var(--dim)">${esc(d.city||'—')}</td>
+      <td style="padding:.45rem .85rem">${d.order_count}</td>
+      <td style="padding:.45rem .85rem;font-weight:600;color:var(--wa)">${_fmtRs(d.gmv)}</td>
+      <td style="padding:.45rem .85rem">${_fmtRs(d.avg_order_value)}</td>
+      <td style="padding:.45rem .85rem">${d.customer_count}</td>
+    </tr>`).join('');
+  } catch {}
+}
+
+async function loadAnSegments(q) {
+  try {
+    const data = await api('/api/admin/analytics/customers/segments');
+    _destroyChart('segments');
+    const colors = { new:'#3b82f6', active:'#16a34a', at_risk:'#f59e0b', lapsed:'#f97316', lost:'#dc2626' };
+    const ctx = document.getElementById('an-chart-segments').getContext('2d');
+    _anChartInstances.segments = new Chart(ctx, {
+      type: 'doughnut',
+      data: { labels: data.map(d => d.segment), datasets: [{ data: data.map(d => d.count), backgroundColor: data.map(d => colors[d.segment] || '#94a3b8') }] },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } } },
+    });
+  } catch {}
+}
+
+async function loadAnDelivery(q) {
+  try {
+    const data = await api('/api/admin/analytics/delivery/performance' + q);
+    _destroyChart('delivery');
+    const hist = data.histogram || [];
+    const ctx = document.getElementById('an-chart-delivery').getContext('2d');
+    _anChartInstances.delivery = new Chart(ctx, {
+      type: 'bar',
+      data: { labels: hist.map(h => h.bucket), datasets: [{ label: 'Deliveries', data: hist.map(h => h.count), backgroundColor: 'rgba(6,182,212,.5)' }] },
+      options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: `Avg: ${data.avg_delivery_mins || '—'} min`, font: { size: 11 } } } },
+    });
+  } catch {}
+}
+
+async function loadAnTopCustomers(q) {
+  try {
+    const data = await api('/api/admin/analytics/customers/overview' + q);
+    const tbody = document.getElementById('an-topcust-tbody');
+    const top = data.top_by_spend || [];
+    if (!top.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No data</td></tr>'; return; }
+    tbody.innerHTML = top.map((c, i) => `<tr>
+      <td style="padding:.45rem .85rem;font-weight:600">${i + 1}</td>
+      <td style="padding:.45rem .85rem">${esc(c.name||'—')}</td>
+      <td style="padding:.45rem .85rem;font-family:monospace;font-size:.78rem;color:var(--dim)">${esc(c.phone||'—')}</td>
+      <td style="padding:.45rem .85rem">${c.order_count}</td>
+      <td style="padding:.45rem .85rem;font-weight:600;color:var(--wa)">${_fmtRs(c.total_spent)}</td>
+    </tr>`).join('');
+  } catch {}
 }
 </script>
 </body>

@@ -10,6 +10,7 @@ const { logActivity } = require('../services/activityLog');
 const issueSvc = require('../services/issues');
 const metaConfig = require('../config/meta');
 const financials = require('../services/financials');
+const ws = require('../services/websocket');
 
 // ─── AUTH MIDDLEWARE ──────────────────────────────────────────
 const requireAdmin = (req, res, next) => {
@@ -376,6 +377,8 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
     );
     if (!updated) return res.status(404).json({ error: 'Not found' });
 
+    ws.broadcastToAdmin('restaurant_status', { restaurantId: req.params.id, restaurantName: updated.business_name, status: 'approved' });
+
     // Auto-list in WhatsApp directory (fire-and-forget)
     const directory = require('../services/directory');
     directory.listRestaurant(req.params.id).catch(err =>
@@ -427,6 +430,7 @@ router.patch('/applications/:id/reject', express.json(), async (req, res) => {
       { returnDocument: 'after', projection: { _id: 1, business_name: 1, email: 1 } }
     );
     if (!updated) return res.status(404).json({ error: 'Not found' });
+    ws.broadcastToAdmin('restaurant_status', { restaurantId: req.params.id, restaurantName: updated.business_name, status: 'rejected' });
     logActivity({
       actorType: 'admin', actorId: null, actorName: 'Admin',
       action: 'restaurant.rejected', category: 'auth',
@@ -499,6 +503,36 @@ router.post('/referrals', express.json(), async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── WALLETS ─────────────────────────────────────────────────
+
+router.get('/wallets', async (req, res) => {
+  try {
+    const walletSvc = require('../services/wallet');
+    const wallets = await walletSvc.getAllWallets();
+    const enriched = await Promise.all(wallets.map(async w => {
+      const r = await col('restaurants').findOne({ _id: w.restaurant_id }, { projection: { business_name: 1 } });
+      const spend = await walletSvc.getMonthlySpend(w.restaurant_id);
+      return { ...w, restaurant_name: r?.business_name || '—', monthly_spend_rs: spend };
+    }));
+    const totalBalance = wallets.reduce((s, w) => s + (parseFloat(w.balance_rs) || 0), 0);
+    const totalMonthly = enriched.reduce((s, w) => s + w.monthly_spend_rs, 0);
+    const negativeCount = wallets.filter(w => w.balance_rs < 0).length;
+    const lowCount = wallets.filter(w => w.balance_rs > 0 && w.balance_rs < (w.low_balance_threshold_rs || 100)).length;
+    res.json({ wallets: enriched, summary: { totalBalance, totalMonthly, negativeCount, lowCount } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/wallets/refund', async (req, res) => {
+  try {
+    const { restaurantId, amount, description } = req.body;
+    if (!restaurantId || !amount) return res.status(400).json({ error: 'restaurantId and amount required' });
+    const walletSvc = require('../services/wallet');
+    const result = await walletSvc.refund(restaurantId, amount, description || 'Admin refund');
+    if (!result) return res.status(404).json({ error: 'Wallet not found' });
+    res.json({ success: true, balance: result.balance_rs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/admin/referrals/stats

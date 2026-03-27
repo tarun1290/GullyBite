@@ -12,6 +12,7 @@ const orderNotify = require('../services/orderNotify');
 const { resolveRecipient } = require('../services/customerIdentity');
 const { getNextRetryAt, retryDefaults } = require('../utils/retry');
 const { logActivity } = require('../services/activityLog');
+const ws = require('../services/websocket');
 
 // ─── POST: PAYMENT EVENTS ─────────────────────────────────────
 router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
@@ -91,48 +92,41 @@ const confirmPaidOrder = async (orderId) => {
   const order = await orderSvc.getOrderDetails(orderId);
   if (!order) return;
 
-  // Try template message first, fall back to plain text
-  const templateSent = await orderNotify.sendOrderTemplateMessage(orderId, 'PAID').catch(() => false);
-  if (!templateSent) {
-    await wa.sendStatusUpdate(
-      order.phone_number_id, order.access_token, resolveRecipient(order),
-      'CONFIRMED',
-      { orderNumber: order.order_number }
-    );
-  }
-
-  // Fire-and-forget manager notification
-  notify.notifyNewOrder(order).catch(err => console.error('[Notify] Failed:', err.message));
-
-  // Auto-dispatch to 3PL delivery partner (fire-and-forget — NEVER block payment flow)
+  // All post-payment operations run in parallel (fire-and-forget pattern)
+  const _payStart = Date.now();
   const deliveryService = require('../services/delivery');
-  deliveryService.dispatchDelivery(orderId)
-    .then(async (task) => {
+  const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
+
+  Promise.allSettled([
+    // Customer notification (template or fallback)
+    (async () => {
+      const templateSent = await orderNotify.sendOrderTemplateMessage(orderId, 'PAID').catch(() => false);
+      if (!templateSent) {
+        await wa.sendStatusUpdate(order.phone_number_id, order.access_token, resolveRecipient(order), 'CONFIRMED', { orderNumber: order.order_number });
+      }
+    })(),
+    // WebSocket broadcast
+    ws.broadcastOrder(order.restaurant_id, 'payment_received', { orderId, orderNumber: order.order_number, amountRs: order.total_rs }),
+    // Manager notification
+    notify.notifyNewOrder(order),
+    // 3PL auto-dispatch
+    deliveryService.dispatchDelivery(orderId).then(async (task) => {
       console.log(`[3PL] Dispatched order ${order.order_number}: taskId=${task.taskId}`);
-      // Send tracking link to customer via WhatsApp
       if (task.trackingUrl && order.phone_number_id && resolveRecipient(order)) {
         await wa.sendText(order.phone_number_id, order.access_token, resolveRecipient(order),
-          `🚴 Your delivery is being arranged!\n\n` +
-          `📍 Track your order live:\n${task.trackingUrl}\n\n` +
-          `Estimated delivery: ${task.estimatedMins || '25-35'} minutes`
+          `🚴 Your delivery is being arranged!\n\n📍 Track your order live:\n${task.trackingUrl}\n\nEstimated delivery: ${task.estimatedMins || '25-35'} minutes`
         );
       }
-    })
-    .catch(err => {
+    }).catch(err => {
       console.error(`[3PL] Dispatch failed for order ${order.order_number}:`, err.message);
-      // Notify manager about dispatch failure — order is PAID regardless
       notify.sendManagerNotification(order.restaurant_id || order.branch_id, order.branch_id,
         `⚠️ Auto-dispatch failed for Order #${order.order_number}: ${err.message}\nPlease dispatch manually from the dashboard.`
       ).catch(() => {});
-    });
-
-  // Fire-and-forget POS order push (UrbanPiper / DotPe) — gated by feature flag
-  const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
-  if (POS_INTEGRATIONS_ENABLED) {
-    pushOrderToPOS(order).catch(err =>
-      console.error(`[POS] Order push failed for ${order.order_number}:`, err.message)
-    );
-  }
+    }),
+    // POS push
+    POS_INTEGRATIONS_ENABLED ? pushOrderToPOS(order) : Promise.resolve(),
+  ]).then(() => console.log(`[Perf] Payment post-processing: ${Date.now() - _payStart}ms`))
+    .catch(err => console.error('[Razorpay] Post-payment tasks error:', err.message));
 
   logActivity({
     actorType: 'system', actorId: null, actorName: 'Razorpay',
@@ -171,6 +165,18 @@ const handleEvent = async (event) => {
 
     case 'order.paid':
     case 'payment.captured': {
+      // Check if this is a wallet top-up payment
+      const rpOrderId = event.payload?.order?.entity?.id || event.payload?.payment?.entity?.order_id;
+      if (rpOrderId) {
+        const walletPayment = await col('payments').findOne({ rp_order_id: rpOrderId, payment_type: 'wallet_topup' });
+        if (walletPayment && walletPayment.status !== 'paid') {
+          const walletSvc = require('../services/wallet');
+          await walletSvc.credit(walletPayment.restaurant_id, walletPayment.amount_rs, `Razorpay top-up ₹${walletPayment.amount_rs}`, rpOrderId);
+          await col('payments').updateOne({ _id: walletPayment._id }, { $set: { status: 'paid', paid_at: new Date() } });
+          logActivity({ actorType: 'restaurant', actorId: walletPayment.restaurant_id, action: 'wallet.topup', category: 'billing', description: `Wallet topped up ₹${walletPayment.amount_rs}`, restaurantId: walletPayment.restaurant_id, severity: 'info' });
+          break;
+        }
+      }
       const orderId = await paymentSvc.handleOrderPaid(event);
       if (!orderId) break;
       await confirmPaidOrder(orderId);

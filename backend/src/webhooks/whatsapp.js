@@ -26,6 +26,7 @@ const { waMessageLimiter, waOrderLimiter, abuseDetector, isPhoneBlocked, extract
 const customerIdentity = require('../services/customerIdentity');
 const issueSvc = require('../services/issues');
 const { logActivity } = require('../services/activityLog');
+const ws = require('../services/websocket');
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
 router.get('/', (req, res) => {
@@ -124,12 +125,14 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
 
 // ─── REUSABLE PROCESSOR (called by POST handler and retry job) ──
 const processWhatsAppWebhook = async (logId, body) => {
+  const tasks = [];
   for (const entry of body.entry || []) {
     for (const change of entry.changes || []) {
       if (change.field !== 'messages') continue;
-      await processChange(change.value);
+      tasks.push(processChange(change.value).catch(err => console.error('[WH] Change processing error:', err.message)));
     }
   }
+  if (tasks.length) await Promise.allSettled(tasks);
 };
 
 // ─── PROCESS A CHANGE OBJECT ──────────────────────────────────
@@ -1146,27 +1149,30 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         addressSource: session.addressSource || null,
       });
 
-      const fullOrder = await orderSvc.getOrderDetails(order.id);
+      ws.broadcastOrder(waAccount.restaurant_id, 'new_order', { orderId: order.id, orderNumber: order.order_number, customerName: customer.name, totalRs: session.totalRs, createdAt: new Date().toISOString() });
 
-      // Calculate and store ETA
+      // Parallelize: order details, ETA, delivery record, Razorpay order
+      const _orderStart = Date.now();
+      const [fullOrder, etaResult] = await Promise.all([
+        orderSvc.getOrderDetails(order.id),
+        etaSvc.calculateETA(session.branchId, session.deliveryLat, session.deliveryLng).catch(e => { console.warn('[ETA] calc error:', e.message); return null; }),
+        col('deliveries').updateOne(
+          { order_id: order.id },
+          { $setOnInsert: { _id: newId(), order_id: order.id, status: 'pending', cost_rs: session.deliveryFeeRs || 0, created_at: new Date() } },
+          { upsert: true }
+        ),
+      ]);
+
       let etaText = '';
-      try {
-        const eta = await etaSvc.calculateETA(session.branchId, session.deliveryLat, session.deliveryLng);
-        await col('orders').updateOne({ _id: order.id }, { $set: {
-          estimated_prep_min: eta.prepTimeMinutes,
-          estimated_delivery_min: eta.deliveryTimeMinutes,
-          estimated_total_min: eta.totalMinutes,
-          eta_text: eta.etaText,
-        }});
-        etaText = eta.etaText;
-      } catch (etaErr) { console.warn('[ETA] calc error:', etaErr.message); }
-
-      // Create a delivery record immediately
-      await col('deliveries').updateOne(
-        { order_id: order.id },
-        { $setOnInsert: { _id: newId(), order_id: order.id, status: 'pending', cost_rs: session.deliveryFeeRs || 0, created_at: new Date() } },
-        { upsert: true }
-      );
+      if (etaResult) {
+        etaText = etaResult.etaText;
+        col('orders').updateOne({ _id: order.id }, { $set: {
+          estimated_prep_min: etaResult.prepTimeMinutes,
+          estimated_delivery_min: etaResult.deliveryTimeMinutes,
+          estimated_total_min: etaResult.totalMinutes,
+          eta_text: etaResult.etaText,
+        }}).catch(() => {});
+      }
 
       try {
         await paymentSvc.createRazorpayOrder(fullOrder, customer);
@@ -1186,6 +1192,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         });
         if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
       }
+      console.log(`[Perf] Order post-processing: ${Date.now() - _orderStart}ms`);
       logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.payment_initiated', category: 'payment', description: `Payment link sent to ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, severity: 'info' });
       break;
     }
@@ -1879,6 +1886,8 @@ const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
     deliveryQuote: session.deliveryQuote || null,
   });
 
+  ws.broadcastOrder(waAccount.restaurant_id, 'new_order', { orderId: order.id, orderNumber: order.order_number, customerName: customer.name, totalRs: session.totalRs, createdAt: new Date().toISOString() });
+
   const fullOrder = await orderSvc.getOrderDetails(order.id);
 
   // ETA
@@ -2330,6 +2339,8 @@ const captureCustomerMessage = async (msg, customer, conv, waAccount) => {
     };
 
     await col('customer_messages').insertOne(doc);
+
+    if (restaurantId) ws.broadcastToRestaurant(restaurantId, 'new_message', { customerId: doc.customer_id, customerName: doc.customer_name, text: doc.text, messageType: doc.message_type, createdAt: doc.created_at });
 
     // Track conversation for analytics (active conversations count)
     if (restaurantId && customer.wa_phone) {

@@ -4,9 +4,11 @@
 
 const { col, newId } = require('../../config/database');
 const porter = require('./porter');
+const mock = require('./mock');
 
 const PROVIDERS = {
   porter,
+  mock,
   // dunzo,       // future
   // shadowfax,   // future
   // borzo,       // future
@@ -14,9 +16,12 @@ const PROVIDERS = {
 
 // ─── GET PROVIDER ────────────────────────────────────────────────
 function getProvider(providerName) {
-  const name = providerName || process.env.DEFAULT_DELIVERY_PROVIDER || 'porter';
+  const name = providerName || process.env.DEFAULT_DELIVERY_PROVIDER || 'mock';
   const provider = PROVIDERS[name];
-  if (!provider) throw new Error(`Unknown delivery provider: ${name}`);
+  if (!provider) {
+    console.warn(`[Delivery] Unknown provider "${name}" — falling back to mock`);
+    return PROVIDERS.mock;
+  }
   return provider;
 }
 

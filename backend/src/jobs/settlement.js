@@ -13,6 +13,10 @@ const { calculateTDS, aggregateOrderFinancials, round2, GST_PLATFORM_FEE_PCT } =
 const scheduleSettlement = () => {
   cron.schedule('0 9 * * 1', runSettlement, { timezone: 'Asia/Kolkata' });
   console.log('⏰ Settlement cron scheduled: Every Monday at 9:00 AM IST');
+
+  // Expire stale referrals daily at 3:00 AM IST
+  cron.schedule('0 3 * * *', expireReferrals, { timezone: 'Asia/Kolkata' });
+  console.log('⏰ Referral expiry cron scheduled: Daily at 3:00 AM IST');
 };
 
 // ─── MANUAL TRIGGER ───────────────────────────────────────────
@@ -31,15 +35,23 @@ const runSettlement = async () => {
   const restaurants = await col('restaurants').find({ status: 'active' }).toArray();
   console.log(`Processing ${restaurants.length} restaurants...`);
 
-  for (const restaurant of restaurants) {
-    try {
-      await settleRestaurant(restaurant, periodStart, periodEnd);
-    } catch (err) {
-      console.error(`❌ Settlement failed for ${restaurant.business_name}:`, err.message);
-    }
+  // Process restaurants in parallel batches of 5
+  const BATCH_SIZE = 5;
+  let settled = 0, failed = 0;
+  for (let i = 0; i < restaurants.length; i += BATCH_SIZE) {
+    const batch = restaurants.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(r => settleRestaurant(r, periodStart, periodEnd))
+    );
+    results.forEach((result, idx) => {
+      if (result.status === 'rejected') {
+        console.error(`❌ Settlement failed for ${batch[idx].business_name}:`, result.reason?.message || result.reason);
+        failed++;
+      } else { settled++; }
+    });
   }
 
-  console.log('✅ Settlement run complete\n');
+  console.log(`✅ Settlement run complete — ${settled} settled, ${failed} failed\n`);
 };
 
 // ─── SETTLE ONE RESTAURANT ────────────────────────────────────
@@ -91,6 +103,12 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     agg.delivery_fee_collected_rs + agg.delivery_fee_cust_gst_rs
   );
 
+  // ── Messaging charges (recover negative wallet balance) ──────
+  const walletSvc = require('../services/wallet');
+  const walletRecovery = await walletSvc.settleNegativeBalance(restaurantId);
+  const messagingChargesRs = walletRecovery.deducted || 0;
+  const messagingChargesGst = walletRecovery.gst || 0;
+
   // ── Pre-TDS net ──────────────────────────────────────────────
   const preTdsNet = round2(
     grossRevenue
@@ -98,6 +116,7 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     - agg.delivery_fee_rest_share_rs - agg.delivery_fee_rest_gst_rs
     - agg.discount_total_rs - refundTotal
     - agg.referral_fee_rs - referralFeeGst
+    - messagingChargesRs - messagingChargesGst
   );
 
   // ── TDS calculation ──────────────────────────────────────────
@@ -147,6 +166,10 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     // Referral
     referral_fee_rs: agg.referral_fee_rs,
     referral_fee_gst_rs: referralFeeGst,
+
+    // Messaging charges (recovered from negative wallet balance)
+    messaging_charges_rs: messagingChargesRs,
+    messaging_charges_gst_rs: messagingChargesGst,
 
     // Totals (backward-compatible fields)
     gross_revenue_rs: grossRevenue,
@@ -249,4 +272,20 @@ const getLastMonday = (date) => {
 
 const formatDate = (date) => date.toISOString().split('T')[0];
 
-module.exports = { scheduleSettlement, runSettlement };
+// ─── REFERRAL EXPIRY ─────────────────────────────────────────
+const expireReferrals = async () => {
+  try {
+    const now = new Date();
+    const result = await col('referrals').updateMany(
+      { status: 'active', expires_at: { $lt: now } },
+      { $set: { status: 'expired', updated_at: now } }
+    );
+    if (result.modifiedCount > 0) {
+      console.log(`[Referrals] Expired ${result.modifiedCount} stale referrals`);
+    }
+  } catch (err) {
+    console.error('[Referrals] Expiry job failed:', err.message);
+  }
+};
+
+module.exports = { scheduleSettlement, runSettlement, expireReferrals };

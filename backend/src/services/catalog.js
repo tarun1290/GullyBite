@@ -6,6 +6,7 @@ const bizSdk = require('facebook-nodejs-business-sdk');
 const axios   = require('axios');
 const { col, newId } = require('../config/database');
 const { logActivity } = require('./activityLog');
+const ws = require('./websocket');
 const metaConfig = require('../config/meta');
 
 const Business       = bizSdk.Business;
@@ -440,6 +441,8 @@ const syncBranchCatalog = async (branchId) => {
 
   console.log(`[Catalog] Sync complete for "${branch.name}":`, results);
 
+  ws.broadcastToRestaurant(branch.restaurant_id, 'catalog_sync_complete', { branchName: branch.name, itemCount: results.updated, errorCount: results.failed, syncedAt: new Date().toISOString() });
+
   if (results.failed === 0) {
     logActivity({ actorType: 'system', action: 'catalog.sync_completed', category: 'catalog', description: `Catalog sync completed for "${branch.name}" (${results.updated} updated, ${results.deleted} deleted)`, restaurantId: branch.restaurant_id, resourceType: 'branch', resourceId: branchId, severity: 'info', metadata: { updated: results.updated, deleted: results.deleted, catalogId: branch.catalog_id } });
   }
@@ -466,25 +469,29 @@ const syncRestaurantCatalog = async (restaurantId) => {
   const branches = await col('branches').find({ restaurant_id: restaurantId, accepts_orders: true }).toArray();
   const results = { branches: [], totalItems: 0, totalSynced: 0, totalFailed: 0 };
 
-  for (const branch of branches) {
-    try {
-      const r = await syncBranchCatalog(String(branch._id));
+  // Sync branches in parallel (allSettled — one failure doesn't block others)
+  const syncResults = await Promise.allSettled(
+    branches.map(branch => syncBranchCatalog(String(branch._id)))
+  );
+  syncResults.forEach((result, idx) => {
+    if (result.status === 'fulfilled') {
+      const r = result.value;
       results.branches.push(r);
       results.totalItems += r.total || 0;
       results.totalSynced += r.updated || 0;
       results.totalFailed += r.failed || 0;
-    } catch (err) {
-      results.branches.push({ branchName: branch.name, success: false, error: err.message });
+    } else {
+      results.branches.push({ branchName: branches[idx].name, success: false, error: result.reason?.message || 'Unknown error' });
       results.totalFailed++;
     }
-  }
+  });
 
-  // Ensure each branch has a product set, then sync branch Collections
-  for (const branch of branches) {
-    ensureBranchProductSet(String(branch._id)).catch(err =>
-      console.warn(`[Catalog] Branch product set for "${branch.name}":`, err.message)
-    );
-  }
+  // Ensure all branches have product sets in parallel
+  await Promise.allSettled(
+    branches.map(b => ensureBranchProductSet(String(b._id)).catch(err =>
+      console.warn(`[Catalog] Branch product set for "${b.name}":`, err.message)
+    ))
+  );
 
   // Sync branch-level Collections (fire-and-forget)
   syncAllBranchCollections(restaurantId).catch(err =>

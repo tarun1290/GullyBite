@@ -6,9 +6,14 @@
 
 const express = require('express');
 const router = express.Router();
+const { col, newId } = require('../config/database');
 const directory = require('../services/directory');
 const wa = require('../services/whatsapp');
+const location = require('../services/location');
 const { logActivity } = require('../services/activityLog');
+
+const REFERRAL_COMMISSION_PCT = parseFloat(process.env.REFERRAL_COMMISSION_PCT || '7.5');
+const REFERRAL_WINDOW_HRS = parseInt(process.env.REFERRAL_WINDOW_HRS || '8', 10);
 
 const DIR_PID   = () => process.env.DIRECTORY_WA_PHONE_NUMBER_ID;
 const DIR_TOKEN = () => process.env.DIRECTORY_WA_ACCESS_TOKEN;
@@ -47,6 +52,8 @@ router.post('/', express.json(), async (req, res) => {
     // Route by message type
     if (msg.type === 'interactive') {
       await handleInteractive(from, msg.interactive);
+    } else if (msg.type === 'location') {
+      await handleLocation(from, msg.location);
     } else if (msg.type === 'text') {
       await handleText(from, msg.text.body.trim());
     } else {
@@ -137,12 +144,16 @@ async function handleInteractive(from, interactive) {
         ? `https://wa.me/${waAccount.wa_phone_number}?text=Hi%2C%20I%27d%20like%20to%20order`
         : null;
     if (orderUrl) {
+      // Create referral record for commission tracking
+      await createDirectoryReferral(restaurantId, from);
+
       const usernameNote = (waAccount?.business_username && waAccount?.username_status === 'active')
         ? `\n💬 @${waAccount.business_username}` : '';
       return wa.sendText(DIR_PID(), DIR_TOKEN(), from,
         `Great choice! To order from *${name}*, send them a message on WhatsApp:${usernameNote}\n\n` +
         `👉 ${orderUrl}\n\n` +
-        `Just say "Hi" and they'll send you their menu!`
+        `Just say "Hi" and they'll send you their menu!\n\n` +
+        `💡 Order within the next ${REFERRAL_WINDOW_HRS} hours through this link for the best experience!`
       );
     }
 
@@ -180,11 +191,44 @@ async function handleInteractive(from, interactive) {
   return sendWelcome(from);
 }
 
+// ─── HANDLE LOCATION SHARE ──────────────────────────────────────
+async function handleLocation(from, loc) {
+  const { latitude, longitude } = loc;
+  try {
+    const listings = await col('directory_listings').aggregate([
+      { $match: { status: 'active' } },
+      { $lookup: { from: 'branches', localField: 'restaurant_id', foreignField: 'restaurant_id', as: 'branches' } },
+      { $unwind: { path: '$branches', preserveNullAndEmptyArrays: false } },
+      { $addFields: {
+        _dist: {
+          $multiply: [6371, { $acos: { $min: [1, { $add: [
+            { $multiply: [{ $sin: { $degreesToRadians: latitude } }, { $sin: { $degreesToRadians: '$branches.latitude' } }] },
+            { $multiply: [{ $cos: { $degreesToRadians: latitude } }, { $cos: { $degreesToRadians: '$branches.latitude' } }, { $cos: { $subtract: [{ $degreesToRadians: '$branches.longitude' }, { $degreesToRadians: longitude }] } }] },
+          ] }] } }],
+        },
+      } },
+      { $match: { _dist: { $lte: 10 } } },
+      { $sort: { _dist: 1 } },
+      { $group: { _id: '$restaurant_id', doc: { $first: '$$ROOT' }, dist: { $first: '$_dist' } } },
+      { $limit: 5 },
+    ]).toArray();
+
+    if (listings.length) {
+      const results = listings.map(l => ({ ...l.doc, _distKm: l.dist.toFixed(1) }));
+      return directory.sendDirectoryResults(from, results, 'Restaurants near you');
+    }
+    return wa.sendText(DIR_PID(), DIR_TOKEN(), from, 'No restaurants found within 10 km. Try typing a restaurant name instead.');
+  } catch (err) {
+    console.error('[Directory] Location search failed:', err.message);
+    return wa.sendText(DIR_PID(), DIR_TOKEN(), from, 'Could not search your area. Try typing a restaurant name.');
+  }
+}
+
 // ─── WELCOME MESSAGE ────────────────────────────────────────────
 async function sendWelcome(from) {
   return wa.sendButtons(DIR_PID(), DIR_TOKEN(), from, {
     header: 'GullyBite Directory',
-    body: 'Welcome to GullyBite! 🍽️\n\nFind restaurants near you and order food directly on WhatsApp — no app needed.\n\n*How to search:*\nJust type a restaurant name, cuisine, or city.\n\nOr tap below to browse:',
+    body: 'Welcome to GullyBite! 🍽️\n\nFind restaurants near you and order food directly on WhatsApp — no app needed.\n\n*How to search:*\nJust type a restaurant name, cuisine, or city.\n📍 Or share your location to find nearby restaurants.\n\nTap below to browse:',
     footer: 'GullyBite — Order food on WhatsApp',
     buttons: [
       { id: 'DIR_BROWSE_ALL', title: 'Browse All' },
@@ -192,6 +236,40 @@ async function sendWelcome(from) {
       { id: 'DIR_BROWSE_NONVEG', title: 'Non-Veg' },
     ],
   });
+}
+
+// ─── REFERRAL CREATION ──────────────────────────────────────────
+async function createDirectoryReferral(restaurantId, customerPhone) {
+  try {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + REFERRAL_WINDOW_HRS * 3600000);
+
+    // Expire previous active referral for same restaurant + customer (prevent double-charge)
+    await col('referrals').updateMany(
+      { restaurant_id: restaurantId, customer_wa_phone: customerPhone, status: 'active' },
+      { $set: { status: 'expired', updated_at: now } }
+    );
+
+    await col('referrals').insertOne({
+      _id: newId(),
+      source: 'directory',
+      restaurant_id: restaurantId,
+      customer_wa_phone: customerPhone,
+      customer_name: null,
+      notes: 'Auto-created from GullyBite directory',
+      status: 'active',
+      expires_at: expiresAt,
+      orders_count: 0,
+      total_order_value_rs: 0,
+      referral_fee_rs: 0,
+      created_at: now,
+      updated_at: now,
+    });
+
+    logActivity({ actorType: 'system', action: 'directory.referral_created', category: 'referral', description: `Directory referral created for restaurant ${restaurantId}`, restaurantId, severity: 'info' });
+  } catch (err) {
+    console.error('[Directory] Referral creation failed:', err.message);
+  }
 }
 
 module.exports = router;

@@ -11,6 +11,7 @@ const notify = require('../services/notify');
 const orderNotify = require('../services/orderNotify');
 const { resolveRecipient } = require('../services/customerIdentity');
 const { logActivity } = require('../services/activityLog');
+const ws = require('../services/websocket');
 
 // POST /webhooks/delivery — 3PL status updates
 router.post('/', express.json(), async (req, res) => {
@@ -64,6 +65,10 @@ router.post('/', express.json(), async (req, res) => {
     if (newStatus === 'delivered')                     $set.delivered_at = new Date();
 
     await col('deliveries').updateOne({ _id: delivery._id }, { $set });
+
+    // Broadcast delivery update
+    const restId = delivery.restaurant_id || (await col('orders').findOne({ _id: delivery.order_id }, { projection: { restaurant_id: 1 } }))?.restaurant_id;
+    if (restId) ws.broadcastOrder(restId, 'delivery_update', { orderId: String(delivery.order_id), status: newStatus, driverName: $set.driver_name, driverPhone: $set.driver_phone, trackingUrl: $set.tracking_url, estimatedMins: $set.estimated_mins });
 
     // Map 3PL status → order status and notify customer
     const order = await col('orders').findOne({ _id: delivery.order_id });

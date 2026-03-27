@@ -1296,6 +1296,55 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
 
       </div>
 
+      <!-- ── WALLET ─────────────────────────── -->
+      <div class="tab" id="tab-wallet">
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch" style="justify-content:space-between">
+            <h3>Messaging Wallet</h3>
+            <button class="btn-p btn-sm" onclick="showWalletTopup()">Top Up</button>
+          </div>
+          <div class="cb">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1rem">
+              <div>
+                <div style="font-size:.75rem;color:var(--dim);margin-bottom:.2rem">Current Balance</div>
+                <div style="font-size:1.5rem;font-weight:700" id="wlt-balance">—</div>
+              </div>
+              <div>
+                <div style="font-size:.75rem;color:var(--dim);margin-bottom:.2rem">This Month's Spend</div>
+                <div style="font-size:1.5rem;font-weight:700" id="wlt-monthly">—</div>
+              </div>
+              <div>
+                <div style="font-size:.75rem;color:var(--dim);margin-bottom:.2rem">Status</div>
+                <div style="font-size:1.1rem;font-weight:600" id="wlt-status">—</div>
+              </div>
+            </div>
+            <!-- Top-up form (hidden) -->
+            <div id="wlt-topup-form" style="display:none;padding:.8rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;margin-bottom:1rem">
+              <div style="font-size:.82rem;font-weight:600;margin-bottom:.5rem">Quick Top-Up</div>
+              <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem">
+                <button class="btn-g btn-sm" onclick="doWalletTopup(100)">₹100</button>
+                <button class="btn-g btn-sm" onclick="doWalletTopup(200)">₹200</button>
+                <button class="btn-g btn-sm" onclick="doWalletTopup(500)">₹500</button>
+                <button class="btn-p btn-sm" onclick="doWalletTopup(1000)">₹1000</button>
+              </div>
+              <div style="display:flex;gap:.4rem;align-items:center">
+                <input id="wlt-custom-amt" type="number" placeholder="Custom amount" min="100" max="10000" style="width:120px;padding:.35rem .5rem;border:1px solid var(--rim);border-radius:6px;font-size:.82rem">
+                <button class="btn-p btn-sm" onclick="doWalletTopup(parseInt(document.getElementById('wlt-custom-amt').value))">Pay</button>
+                <button class="btn-g btn-sm" onclick="document.getElementById('wlt-topup-form').style.display='none'">Cancel</button>
+              </div>
+            </div>
+            <!-- Transaction history -->
+            <div style="font-size:.82rem;font-weight:600;margin-bottom:.4rem">Recent Transactions</div>
+            <div class="tbl">
+              <table>
+                <thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Amount</th><th>Balance</th></tr></thead>
+                <tbody id="wlt-tbody"><tr><td colspan="5" style="padding:1rem;text-align:center;color:var(--dim)">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── SETTLEMENTS ─────────────────────────── -->
       <div class="tab" id="tab-settlements">
         <div class="card">
@@ -2235,7 +2284,7 @@ const TMETA = {
   menu:        { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); } },
   messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: loadMessages },
   analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); } },
-  payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); } },
+  payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
   restaurant:  { title: 'Restaurant',         sub: 'Coupons, loyalty, team, and issues',   fn: () => { loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
   settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); } },
   // Legacy tab IDs — redirect to new tabs for backwards compatibility
@@ -2268,7 +2317,7 @@ function goTab(n, el) {
   // Combined tabs: show multiple old tab divs together
   const TAB_GROUPS = {
     menu:       ['tab-branches', 'tab-menu'],
-    payments:   ['tab-financials', 'tab-settlements'],
+    payments:   ['tab-financials', 'tab-settlements', 'tab-wallet'],
     loyalty:    ['tab-campaigns', 'tab-coupons', 'tab-referrals'],
     restaurant: ['tab-loyalty', 'tab-team', 'tab-issues'],
     settings:   ['tab-settings', 'tab-whatsapp', 'tab-integrations'],
@@ -2360,6 +2409,8 @@ async function initDash() {
     // Restore active tab from URL hash (e.g. #menu, #orders, #settings)
     const hash = location.hash.replace('#', '');
     if (hash && TMETA[hash]) goTab(hash);
+
+    connectWebSocket();
   } catch (e) { console.error(e); }
 }
 
@@ -5612,6 +5663,55 @@ function switchFinTaxTab(tab, btn) {
 }
 
 /* ─────────────────────────── SETTLEMENTS ───────────────── */
+/* ─────────────────────────── WALLET ──────────────────────── */
+async function loadWallet() {
+  try {
+    const w = await api('/api/restaurant/wallet');
+    if (!w) return;
+    const bal = parseFloat(w.balance_rs) || 0;
+    document.getElementById('wlt-balance').textContent = '₹' + bal.toFixed(2);
+    document.getElementById('wlt-balance').style.color = bal > (w.low_balance_threshold_rs || 100) ? 'var(--wa)' : bal > 0 ? '#d97706' : 'var(--red)';
+    document.getElementById('wlt-monthly').textContent = '₹' + (parseFloat(w.monthly_spend_rs) || 0).toFixed(2);
+    document.getElementById('wlt-status').textContent = w.status === 'active' ? 'Active' : 'Suspended';
+    document.getElementById('wlt-status').style.color = w.status === 'active' ? 'var(--wa)' : 'var(--red)';
+
+    const txns = await api('/api/restaurant/wallet/transactions?limit=20');
+    const tbody = document.getElementById('wlt-tbody');
+    if (!txns?.length) { tbody.innerHTML = '<tr><td colspan="5" style="padding:1rem;text-align:center;color:var(--dim)">No transactions yet</td></tr>'; return; }
+    const typeIco = { topup: '✅', deduction: '📤', settlement_deduction: '📋', refund: '↩️' };
+    tbody.innerHTML = txns.map(t => `<tr style="border-bottom:1px solid var(--rim)">
+      <td style="padding:.45rem .7rem;font-size:.78rem">${new Date(t.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</td>
+      <td style="padding:.45rem .7rem;font-size:.8rem">${typeIco[t.type] || ''} ${t.type}</td>
+      <td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.description || '—'}</td>
+      <td style="padding:.45rem .7rem;font-weight:600;color:${t.amount_rs >= 0 ? 'var(--wa)' : 'var(--red)'}">${t.amount_rs >= 0 ? '+' : ''}₹${Math.abs(t.amount_rs).toFixed(2)}</td>
+      <td style="padding:.45rem .7rem;font-size:.78rem">₹${parseFloat(t.balance_after_rs).toFixed(2)}</td>
+    </tr>`).join('');
+  } catch (e) { console.error('[Wallet]', e.message); }
+}
+
+function showWalletTopup() {
+  document.getElementById('wlt-topup-form').style.display = '';
+}
+
+async function doWalletTopup(amt) {
+  if (!amt || amt < 100 || amt > 10000) return toast('Amount must be ₹100 – ₹10,000', 'err');
+  try {
+    const r = await api('/api/restaurant/wallet/topup', { method: 'POST', body: { amount_rs: amt } });
+    if (!r?.razorpay_order_id) return toast('Failed to create payment', 'err');
+    const rzp = new Razorpay({
+      key: r.key_id,
+      amount: amt * 100,
+      currency: 'INR',
+      order_id: r.razorpay_order_id,
+      name: 'GullyBite',
+      description: 'Messaging Wallet Top-Up',
+      handler: () => { toast('Payment received! Wallet will be credited shortly.', 'ok'); document.getElementById('wlt-topup-form').style.display = 'none'; setTimeout(loadWallet, 3000); },
+      theme: { color: '#25D366' },
+    });
+    rzp.open();
+  } catch (e) { toast(e.message, 'err'); }
+}
+
 async function loadSettlements() {
   const tb = document.getElementById('settle-body');
   try {
@@ -6532,9 +6632,10 @@ async function loadReferrals() {
     const d = await api('/api/restaurant/referrals'); if (!d) return;
     const s = d.summary;
     document.getElementById('rr-total').textContent       = s.total;
-    document.getElementById('rr-converted').textContent   = s.converted;
+    document.getElementById('rr-converted').textContent   = s.converted + (s.total > 0 ? ` (${Math.round(s.converted / s.total * 100)}%)` : '');
     document.getElementById('rr-order-value').textContent = '₹' + parseFloat(s.total_order_value_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 });
-    document.getElementById('rr-fee').textContent         = '₹' + parseFloat(s.total_referral_fee_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 });
+    const gst = parseFloat(s.total_referral_fee_rs) * 0.18;
+    document.getElementById('rr-fee').textContent         = '₹' + (parseFloat(s.total_referral_fee_rs) + gst).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 
     const tbody = document.getElementById('rr-tbody');
     if (!d.referrals.length) {
@@ -7924,28 +8025,30 @@ function startMsgPoll() {
   if ('Notification' in window && Notification.permission === 'default') {
     Notification.requestPermission();
   }
-  msgPollTimer = setInterval(async () => {
+  // Initial unread count fetch (WebSocket handles subsequent updates)
+  (async () => {
     try {
       const r = await api('/api/restaurant/messages/unread-count');
       const badge = document.getElementById('msg-badge');
       const newCount = r.count || 0;
       if (newCount > 0) { badge.textContent = newCount; badge.style.display = ''; }
       else { badge.style.display = 'none'; }
-      // Browser notification on new messages
-      if (newCount > _lastUnreadCount && _lastUnreadCount >= 0) {
-        const diff = newCount - _lastUnreadCount;
-        if ('Notification' in window && Notification.permission === 'granted') {
-          new Notification('New message' + (diff > 1 ? 's' : ''), { body: diff + ' new customer message' + (diff > 1 ? 's' : ''), icon: '/favicon.ico', tag: 'msg-notify' });
-        }
-      }
+      _lastUnreadCount = newCount;
+    } catch {}
+  })();
+  // Fallback poll only when WebSocket is not connected (30s interval)
+  msgPollTimer = setInterval(async () => {
+    if (_ws && _ws.readyState === WebSocket.OPEN) return; // WS is live, skip poll
+    try {
+      const r = await api('/api/restaurant/messages/unread-count');
+      const badge = document.getElementById('msg-badge');
+      const newCount = r.count || 0;
+      if (newCount > 0) { badge.textContent = newCount; badge.style.display = ''; }
+      else { badge.style.display = 'none'; }
       _lastUnreadCount = newCount;
     } catch (e) {
-      // Stop polling on auth errors; back off on rate limit
       if (e.message?.includes('401') || e.message?.includes('403')) { clearInterval(msgPollTimer); return; }
-      if (e.message?.includes('429')) { clearInterval(msgPollTimer); setTimeout(() => startMsgPoll(), 60000); return; }
     }
-    // Refresh thread list if we're on the messages tab
-    if (document.getElementById('tab-messages').classList.contains('on')) fetchThreads();
   }, 30000);
 }
 
@@ -8299,6 +8402,78 @@ function timeAgo(ts) {
   if (m < 60) return m + 'm ago';
   if (m < 1440) return Math.round(m / 60) + 'h ago';
   return Math.round(m / 1440) + 'd ago';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   WEBSOCKET — real-time push from server
+   ═══════════════════════════════════════════════════════════════ */
+let _ws = null, _wsRetryMs = 2000, _wsMaxRetry = 30000;
+
+function connectWebSocket() {
+  const wsUrl = window.WEBSOCKET_URL || '';
+  if (!wsUrl || !token || !rest?.id) return;
+  try { _ws = new WebSocket(`${wsUrl}?token=${token}&room=restaurant:${rest.id}`); }
+  catch { return; }
+
+  _ws.onopen = () => {
+    console.log('[WS] Connected');
+    _wsRetryMs = 2000;
+    const dot = document.getElementById('ws-status');
+    if (dot) { dot.style.background = 'var(--wa)'; dot.title = 'Live'; }
+  };
+
+  _ws.onclose = () => {
+    const dot = document.getElementById('ws-status');
+    if (dot) { dot.style.background = 'var(--dim)'; dot.title = 'Reconnecting...'; }
+    setTimeout(() => { _wsRetryMs = Math.min(_wsRetryMs * 2, _wsMaxRetry); connectWebSocket(); }, _wsRetryMs);
+  };
+
+  _ws.onerror = () => {};
+
+  _ws.onmessage = (evt) => {
+    let msg;
+    try { msg = JSON.parse(evt.data); } catch { return; }
+    const { event: ev, data: d } = msg;
+    if (!ev) return;
+
+    if (ev === 'new_order') {
+      toast(`New order #${d.orderNumber || ''} — ₹${d.totalRs || ''}`, 'ok');
+      if ('Notification' in window && Notification.permission === 'granted') new Notification('New Order', { body: `#${d.orderNumber} from ${d.customerName || 'Customer'}`, tag: 'order-' + d.orderId });
+      // Play beep
+      try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = 880; osc.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.15); } catch {}
+      if (document.getElementById('tab-orders')?.classList.contains('on')) loadOrders('ALL');
+    }
+
+    if (ev === 'order_status_changed') {
+      if (document.getElementById('tab-orders')?.classList.contains('on')) loadOrders('ALL');
+    }
+
+    if (ev === 'new_message') {
+      const badge = document.getElementById('msg-badge');
+      const cur = parseInt(badge?.textContent || '0') || 0;
+      badge.textContent = cur + 1; badge.style.display = '';
+      if ('Notification' in window && Notification.permission === 'granted') new Notification('New message', { body: `From ${d.customerName || 'Customer'}`, tag: 'msg-' + d.customerId });
+      if (document.getElementById('tab-messages')?.classList.contains('on')) fetchThreads();
+    }
+
+    if (ev === 'unread_count') {
+      const badge = document.getElementById('msg-badge');
+      if (d.count > 0) { badge.textContent = d.count; badge.style.display = ''; }
+      else { badge.style.display = 'none'; }
+    }
+
+    if (ev === 'payment_received') {
+      if (document.getElementById('tab-orders')?.classList.contains('on')) loadOrders('ALL');
+    }
+
+    if (ev === 'delivery_update') {
+      if (document.getElementById('tab-orders')?.classList.contains('on')) loadOrders('ALL');
+    }
+
+    if (ev === 'catalog_sync_complete') {
+      toast(`${d.itemCount || 0} items synced to catalog${d.errorCount ? ` (${d.errorCount} errors)` : ''}`, d.errorCount ? 'err' : 'ok');
+    }
+  };
 }
 </script>
 <!-- Bulk Image Upload Modal -->

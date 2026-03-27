@@ -6,6 +6,7 @@
 // Large menus get split into multiple MPMs — cart persists across them.
 
 const { col } = require('../config/database');
+const memcache = require('../config/memcache');
 
 // ── Category sort order (lower = appears first in menu) ──────
 const CATEGORY_ORDER = [
@@ -119,11 +120,16 @@ async function buildBranchMPMs(branchId, restaurantId) {
     console.log(`[MPM] Branch "${branch.name}" has Collection ${branch.meta_collection_id}`);
   }
 
-  // Get all available items for this branch
-  const items = await col('menu_items').find({
-    branch_id: branchId,
-    is_available: true,
-  }).sort({ sort_order: 1, name: 1 }).toArray();
+  // Get all available items for this branch (cached 2 min)
+  const cacheKey = `branch:${branchId}:menu`;
+  let items = memcache.get(cacheKey);
+  if (!items) {
+    items = await col('menu_items').find({
+      branch_id: branchId,
+      is_available: true,
+    }).sort({ sort_order: 1, name: 1 }).toArray();
+    if (items.length) memcache.set(cacheKey, items, 120);
+  }
 
   if (!items.length) return [];
 

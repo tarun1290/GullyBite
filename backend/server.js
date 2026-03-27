@@ -169,6 +169,7 @@ app.use('/api/restaurant', express.json(), require('./src/routes/restaurant'));
 app.use('/api/restaurant/integrations', express.json(), require('./src/routes/integrations'));
 app.use('/api/upload', express.json(), require('./src/routes/upload'));
 app.use('/api/admin', express.json(), require('./src/routes/admin'));
+app.use('/api/admin/analytics', express.json(), require('./src/routes/analytics'));
 
 // Webhooks need raw body for HMAC signature verification
 app.use('/webhooks/whatsapp', require('./src/webhooks/whatsapp'));
@@ -224,6 +225,9 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`\n🍔 GullyBite running → http://localhost:${PORT}`);
     console.log(`   WA Webhook  → ${process.env.BASE_URL}/webhooks/whatsapp`);
     console.log(`   Pay Webhook → ${process.env.BASE_URL}/webhooks/razorpay\n`);
+
+    // Ensure MongoDB indexes (fire-and-forget)
+    require('./src/config/indexes').ensureIndexes().catch(e => console.warn('[DB] Index init:', e.message));
 
     const { scheduleSettlement } = require('./src/jobs/settlement');
     scheduleSettlement();

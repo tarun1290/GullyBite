@@ -18,6 +18,8 @@ const { logActivity: log } = require('../services/activityLog');
 const issueSvc = require('../services/issues');
 const financials = require('../services/financials');
 const imgSvc = require('../services/imageUpload');
+const ws = require('../services/websocket');
+const memcache = require('../config/memcache');
 const metaConfig = require('../config/meta');
 const { getCached, invalidateCache } = require('../config/cache');
 
@@ -1114,6 +1116,7 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
       updated_at: now,
     };
     await col('menu_items').insertOne(item);
+    memcache.del(`branch:${req.body.branchId}:menu`);
 
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
@@ -1225,6 +1228,7 @@ router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res
   try {
     const item = await col('menu_items').findOne({ _id: req.params.itemId });
     await col('menu_items').deleteOne({ _id: req.params.itemId });
+    if (item?.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
 
     if (item) {
       catalog.deleteProduct(item, item.branch_id)
@@ -3187,6 +3191,8 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
 
     const order = await orderSvc.updateStatus(req.params.orderId, status);
 
+    ws.broadcastOrder(req.restaurantId, 'order_status_changed', { orderId: req.params.orderId, newStatus: status, updatedAt: new Date().toISOString() });
+
     // Recalculate ETA on status change
     let etaResult = null;
     try { etaResult = await etaSvc.updateETAOnStatusChange(req.params.orderId, status); }
@@ -3808,6 +3814,67 @@ router.post('/payout-account', requirePermission('manage_settings'), async (req,
     res.json({ success: true, fundAccountId: result.fundAccountId });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ─── WALLET ──────────────────────────────────────────────────
+
+router.get('/wallet', async (req, res) => {
+  try {
+    const walletSvc = require('../services/wallet');
+    let wallet = await walletSvc.getWallet(req.restaurantId);
+    if (!wallet) wallet = await walletSvc.ensureWallet(req.restaurantId);
+    const monthlySpend = await walletSvc.getMonthlySpend(req.restaurantId);
+    res.json({ ...wallet, monthly_spend_rs: monthlySpend });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/wallet/transactions', async (req, res) => {
+  try {
+    const walletSvc = require('../services/wallet');
+    const { limit, offset, type } = req.query;
+    const transactions = await walletSvc.getTransactions(req.restaurantId, {
+      limit: parseInt(limit) || 50,
+      offset: parseInt(offset) || 0,
+      type: type || null,
+    });
+    res.json(transactions);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/wallet/topup', requirePermission('manage_settings'), async (req, res) => {
+  try {
+    const { amount_rs } = req.body;
+    if (!amount_rs || amount_rs < 100 || amount_rs > 10000) {
+      return res.status(400).json({ error: 'Amount must be between ₹100 and ₹10,000' });
+    }
+
+    const walletSvc = require('../services/wallet');
+    await walletSvc.ensureWallet(req.restaurantId);
+
+    const paymentSvc = require('../services/payment');
+    const rzp = paymentSvc._getRzp ? paymentSvc._getRzp() : require('razorpay')({ key_id: process.env.RAZORPAY_KEY_ID, key_secret: process.env.RAZORPAY_KEY_SECRET });
+    const rzpOrder = await rzp.orders.create({
+      amount: Math.round(amount_rs * 100),
+      currency: 'INR',
+      receipt: `wallet_topup_${req.restaurantId}_${Date.now()}`,
+      notes: { type: 'wallet_topup', restaurant_id: req.restaurantId, amount_rs },
+    });
+
+    await col('payments').insertOne({
+      _id: newId(),
+      order_id: null,
+      rp_order_id: rzpOrder.id,
+      amount_rs,
+      status: 'created',
+      payment_type: 'wallet_topup',
+      restaurant_id: req.restaurantId,
+      created_at: new Date(),
+    });
+
+    res.json({ razorpay_order_id: rzpOrder.id, amount_rs, key_id: process.env.RAZORPAY_KEY_ID });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Webhook callback for wallet top-up handled in razorpay.js via receipt prefix check
 
 // ─── COUPONS ──────────────────────────────────────────────────
 
@@ -4788,6 +4855,10 @@ router.put('/messages/:id/status', requireAuth, requireApproved, async (req, res
       { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set }
     );
+    if (status === 'read') {
+      const unread = await col('customer_messages').countDocuments({ restaurant_id: req.restaurantId, status: 'unread' });
+      ws.broadcastToRestaurant(req.restaurantId, 'unread_count', { count: unread });
+    }
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

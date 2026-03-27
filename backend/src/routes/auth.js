@@ -416,6 +416,9 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     const updateResult = await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
     console.log('[connect-meta] 5. Database update result:', { matchedCount: updateResult.matchedCount, modifiedCount: updateResult.modifiedCount });
 
+    // Initialize messaging wallet (fire-and-forget)
+    require('../services/wallet').ensureWallet(req.restaurantId).catch(e => console.warn('[Wallet] Init failed:', e.message));
+
     await _saveWabaAccounts(req.restaurantId, wabaData, longToken, sessionInfo);
 
     // Step 6: Auto-fetch catalog info using system token

@@ -10,6 +10,7 @@
 'use strict';
 
 const { col, newId } = require('../config/database');
+const ws = require('./websocket');
 
 /**
  * Log a platform activity. Fire-and-forget — NEVER await this in calling code.
@@ -49,6 +50,9 @@ function logActivity(opts) {
 
     // Fire-and-forget insert — never block, never throw
     col('activity_logs').insertOne(doc).catch(() => {});
+
+    // Push to admin dashboard via WebSocket
+    ws.broadcastToAdmin('activity', { action: doc.action, category: doc.category, severity: doc.severity, description: doc.description, restaurantId: doc.restaurant_id, createdAt: doc.created_at });
   } catch (_) {
     // Silently swallow any error — logging must never break the caller
   }

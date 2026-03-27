@@ -85,6 +85,14 @@ async function trackOutgoing({ wamId, restaurantId, branchId, customerId, contex
   };
 
   await col('message_statuses').insertOne(doc);
+
+  // Deduct conversation cost from restaurant wallet (fire-and-forget)
+  if (cost > 0 && restaurantId) {
+    const wallet = require('./wallet');
+    const isOrderLifecycle = ['order_update', 'payment', 'delivery', 'order_confirmed', 'order_dispatched', 'order_delivered'].includes(context);
+    wallet.debit(restaurantId, cost, `${category} message: ${context}`, wamId, { isOrderLifecycle }).catch(() => {});
+  }
+
   return doc;
 }
 
