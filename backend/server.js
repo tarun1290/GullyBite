@@ -226,8 +226,9 @@ if (process.env.NODE_ENV !== 'production') {
     console.log(`   WA Webhook  → ${process.env.BASE_URL}/webhooks/whatsapp`);
     console.log(`   Pay Webhook → ${process.env.BASE_URL}/webhooks/razorpay\n`);
 
-    // Ensure MongoDB indexes (fire-and-forget)
-    require('./src/config/indexes').ensureIndexes().catch(e => console.warn('[DB] Index init:', e.message));
+    // Ensure MongoDB indexes after DB connects (fire-and-forget)
+    const { connect } = require('./src/config/database');
+    connect().then(() => require('./src/config/indexes').ensureIndexes()).catch(e => console.warn('[DB] Index init:', e.message));
 
     const { scheduleSettlement } = require('./src/jobs/settlement');
     scheduleSettlement();

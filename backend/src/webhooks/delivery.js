@@ -32,6 +32,7 @@ router.post('/', express.json(), async (req, res) => {
       retry_status: 'none',
       received_at: new Date(),
     });
+    ws.broadcastToAdmin('webhook_received', { source: '3pl', eventType: payload.event || payload.status || 'status_update' });
 
     // Extract task ID and status — adapt to provider's webhook format
     const taskId = payload.order_id || payload.task_id || payload.request_id;

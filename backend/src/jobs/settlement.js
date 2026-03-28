@@ -8,6 +8,7 @@ const paymentSvc = require('../services/payment');
 const { generateSettlementExcel } = require('../services/settlement-export');
 const wa = require('../services/whatsapp');
 const { calculateTDS, aggregateOrderFinancials, round2, GST_PLATFORM_FEE_PCT } = require('../services/financials');
+const ws = require('../services/websocket');
 
 // ─── SCHEDULE THE JOB ─────────────────────────────────────────
 const scheduleSettlement = () => {
@@ -198,6 +199,8 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     { _id: { $in: orderIds } },
     { $set: { settlement_id: settlementId, settled_at: now } }
   );
+
+  ws.broadcastToAdmin('settlement_update', { restaurantId, restaurantName: restaurant.business_name, status: 'created', amount: netPayout });
 
   // ── INITIATE PAYOUT via Razorpay X ───────────────────────
   if (netPayout > 0 && restaurant.razorpay_fund_acct_id) {
