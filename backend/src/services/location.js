@@ -253,4 +253,151 @@ async function reverseGeocode(lat, lng) {
   }
 }
 
-module.exports = { findNearestBranch, haversineKm, isMapsUrl, extractCoordsFromMapsUrl, reverseGeocode };
+// ─── IS BRANCH OPEN ──────────────────────────────────────────
+// Checks if a branch is currently open based on operating_hours or opening_time/closing_time.
+// If no hours are set, assumes always open (backward compatible).
+function isBranchOpen(branch) {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const ist = new Date(now.getTime() + istOffset);
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const dayName = dayNames[ist.getUTCDay()];
+  const currentTime = ist.getUTCHours() * 100 + ist.getUTCMinutes(); // HHMM format
+
+  // Per-day operating_hours (if set)
+  if (branch.operating_hours) {
+    const dayHours = branch.operating_hours[dayName];
+    if (!dayHours) return true; // Day not configured = open
+    if (dayHours.is_closed) return false;
+    const open = parseTime(dayHours.open || '00:00');
+    const close = parseTime(dayHours.close || '23:59');
+    return currentTime >= open && currentTime <= close;
+  }
+
+  // Fallback to simple opening_time / closing_time
+  if (branch.opening_time && branch.closing_time) {
+    const open = parseTime(branch.opening_time);
+    const close = parseTime(branch.closing_time);
+    return currentTime >= open && currentTime <= close;
+  }
+
+  return true; // No hours set = always open
+}
+
+function parseTime(timeStr) {
+  const [h, m] = (timeStr || '00:00').split(':').map(Number);
+  return h * 100 + (m || 0);
+}
+
+// Get next opening time for a branch (returns human-readable string)
+function getNextOpeningTime(branch) {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const ist = new Date(now.getTime() + istOffset);
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+  if (branch.operating_hours) {
+    // Check today (if we haven't passed close yet) and upcoming days
+    for (let d = 0; d < 7; d++) {
+      const checkDay = dayNames[(ist.getUTCDay() + d) % 7];
+      const dayHours = branch.operating_hours[checkDay];
+      if (!dayHours || dayHours.is_closed) continue;
+      const open = dayHours.open || '10:00';
+      if (d === 0) {
+        const openTime = parseTime(open);
+        const currentTime = ist.getUTCHours() * 100 + ist.getUTCMinutes();
+        if (currentTime < openTime) return `today at ${open}`;
+      }
+      if (d === 1) return `tomorrow at ${open}`;
+      return `${checkDay.charAt(0).toUpperCase() + checkDay.slice(1)} at ${open}`;
+    }
+  }
+
+  // Fallback to opening_time
+  if (branch.opening_time) return `tomorrow at ${branch.opening_time}`;
+  return 'soon';
+}
+
+// ─── FIND BEST AVAILABLE BRANCH ──────────────────────────────
+// Like findNearestBranch but with operating hours awareness and fallback.
+// Reimplements branch lookup (not a wrapper) because it needs ALL deliverable
+// branches sorted by distance to find fallback options when the nearest is closed.
+async function findBestAvailableBranch(customerLat, customerLng, restaurantId = null) {
+  // Get all deliverable branches sorted by distance
+  const branchFilter = { is_open: true, accepts_orders: true };
+  if (restaurantId) branchFilter.restaurant_id = restaurantId;
+
+  const branches = await col('branches').find(branchFilter).toArray();
+
+  const activeBranches = (await Promise.all(
+    branches.map(async b => {
+      const restaurant = await col('restaurants').findOne({ _id: b.restaurant_id, status: 'active' });
+      if (!restaurant) return null;
+      const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: b.restaurant_id, is_active: true });
+      return { branch: b, restaurant, wa_acc };
+    })
+  )).filter(Boolean);
+
+  if (!activeBranches.length) {
+    return { found: false, message: '😔 Sorry, no restaurants are currently available. Please try again later!' };
+  }
+
+  const withDistance = activeBranches.map(({ branch, restaurant, wa_acc }) => ({
+    branch, restaurant, wa_acc,
+    distanceKm: haversineKm(parseFloat(customerLat), parseFloat(customerLng), parseFloat(branch.latitude), parseFloat(branch.longitude)),
+  })).sort((a, b) => a.distanceKm - b.distanceKm);
+
+  const deliverable = withDistance.filter(r => r.distanceKm <= parseFloat(r.branch.delivery_radius_km));
+
+  if (!deliverable.length) {
+    const closest = withDistance[0];
+    return {
+      found: false,
+      message: `😔 Sorry, we don't deliver to your location yet.\n\nNearest outlet: *${closest.branch.name}* (${closest.distanceKm.toFixed(1)} km away)\nOur current delivery radius is ${closest.branch.delivery_radius_km} km from that outlet.\n\nWe're expanding soon! 🚀`,
+    };
+  }
+
+  const makeBranchResult = (entry, isFallback = false) => ({
+    found: true,
+    branch: {
+      id: String(entry.branch._id),
+      name: entry.branch.name,
+      address: entry.branch.address,
+      city: entry.branch.city,
+      distanceKm: entry.distanceKm.toFixed(1),
+      restaurantId: entry.branch.restaurant_id,
+      businessName: entry.restaurant.business_name,
+      waAccountId: entry.wa_acc ? String(entry.wa_acc._id) : null,
+      phoneNumberId: entry.wa_acc?.phone_number_id || null,
+      accessToken: entry.wa_acc?.access_token || null,
+      catalogId: entry.restaurant.meta_catalog_id || entry.branch.catalog_id,
+      catalogSyncedAt: entry.branch.catalog_synced_at,
+    },
+    isFallback,
+  });
+
+  // Check nearest deliverable branch
+  const nearest = deliverable[0];
+  if (isBranchOpen(nearest.branch)) {
+    return makeBranchResult(nearest, false);
+  }
+
+  // Nearest is closed — find the next open branch within range
+  const openFallback = deliverable.find(d => isBranchOpen(d.branch));
+  if (openFallback) {
+    const result = makeBranchResult(openFallback, true);
+    result.closedBranchName = nearest.branch.name;
+    result.fallbackMessage = `📍 *${nearest.branch.name}* is currently closed. Routing you to *${openFallback.branch.name}*, ${openFallback.distanceKm.toFixed(1)} km away — they're open now!`;
+    return result;
+  }
+
+  // All branches within range are closed
+  const nextOpen = getNextOpeningTime(nearest.branch);
+  return {
+    found: false,
+    allClosed: true,
+    message: `😔 All *${nearest.restaurant.business_name}* branches near you are currently closed. They open ${nextOpen}. We'll be here when they're ready!`,
+  };
+}
+
+module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractCoordsFromMapsUrl, reverseGeocode };

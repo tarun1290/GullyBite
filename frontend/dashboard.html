@@ -894,13 +894,30 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
 
       <!-- ── MENU ────────────────────────────────── -->
       <div class="tab" id="tab-menu">
+        <!-- Branch tabs (multi-branch) or hidden (single-branch) -->
+        <div id="branch-tabs" style="display:none;margin-bottom:1rem;overflow-x:auto;white-space:nowrap">
+          <div style="display:inline-flex;gap:.3rem;padding:.2rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px"></div>
+        </div>
+        <!-- Branch summary card (shown when specific branch selected) -->
+        <div id="branch-summary" style="display:none;margin-bottom:1rem;padding:.6rem .9rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;font-size:.82rem;display:none">
+          <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap">
+            <span id="bs-name" style="font-weight:600"></span>
+            <span id="bs-count" style="color:var(--dim)"></span>
+            <span id="bs-addr" style="color:var(--dim)"></span>
+            <span id="bs-status"></span>
+          </div>
+        </div>
         <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1.3rem;flex-wrap:wrap;justify-content:space-between">
           <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap">
-            <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto">
+            <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto;display:none">
               <option value="">Select branch...</option>
             </select>
             <span id="m-item-count" style="font-size:.82rem;color:var(--dim)"></span>
             <button class="btn-g btn-sm" onclick="toggleMenuSection('catalog')" title="Catalog settings" style="font-size:.9rem;padding:.3rem .5rem">⚙️</button>
+          </div>
+          <div style="display:flex;gap:.4rem;align-items:center">
+            <button class="btn-g btn-sm" id="sync-to-btn" onclick="doSyncToCatalog()" style="font-size:.78rem">⬆ Sync to Catalog</button>
+            <button class="btn-g btn-sm" id="sync-from-btn" onclick="doSyncFromCatalog()" style="font-size:.78rem">⬇ Sync from Catalog</button>
           </div>
           <div style="position:relative">
             <button class="btn-p btn-sm" onclick="toggleAddDropdown()" id="menu-add-btn">+ Add ▾</button>
@@ -911,9 +928,13 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             </div>
           </div>
         </div>
+        <!-- Sync status line -->
+        <div id="sync-status-line" style="font-size:.74rem;color:var(--dim);margin-bottom:.5rem;display:none">
+          <span id="sync-last-text"></span>
+        </div>
         <!-- Catalog settings panel — hidden by default, shown via gear icon -->
         <div id="menu-catalog-panel" style="display:none;margin-bottom:1rem"></div>
-        <!-- Hidden toolbar buttons — sync happens automatically -->
+        <!-- FUTURE FEATURE: Hidden toolbar buttons — kept for backward compatibility -->
         <div style="display:none">
           <div id="m-cat-badge"></div>
           <button id="m-sync-btn" onclick="doQuickSync()">Sync</button>
@@ -1033,6 +1054,14 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         <!-- Menu CSV upload moved to Branches & Catalog tab -->
         <div id="menu-list">
           <div class="empty"><div class="ei">🍽️</div><h3>Select a branch above</h3></div>
+        </div>
+        <!-- Bulk action bar (hidden until items selected) -->
+        <div id="bulk-bar" style="display:none;position:sticky;bottom:0;z-index:40;padding:.6rem 1rem;background:var(--ink);border-top:2px solid var(--acc);display:none;align-items:center;gap:.7rem;justify-content:space-between">
+          <span id="bulk-count" style="font-size:.85rem;font-weight:600"></span>
+          <div style="display:flex;gap:.4rem">
+            <button class="btn-g btn-sm" onclick="clearMenuSelection()">Clear</button>
+            <button class="btn-g btn-sm" style="background:#dc2626;color:#fff;border-color:#dc2626" onclick="doBulkDelete()">Delete Selected</button>
+          </div>
         </div>
 
         <!-- ── PRODUCT SETS SECTION ── -->
@@ -1293,6 +1322,19 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
         </div>
         <!-- ═══ END HIDDEN: Admin-only sections ═══ -->
+
+        <!-- Sync Logs -->
+        <div class="card" style="margin-top:1rem">
+          <div class="ch"><h3>Sync Logs</h3><button class="btn-g btn-sm" onclick="loadSyncLogs()">Refresh</button></div>
+          <div class="cb">
+            <div class="tbl">
+              <table>
+                <thead><tr><th>Time</th><th>Action</th><th>Details</th><th>Status</th></tr></thead>
+                <tbody id="sync-log-tbody"><tr><td colspan="4" style="padding:1rem;text-align:center;color:var(--dim)">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
 
       </div>
 
@@ -1720,6 +1762,23 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
 
       <!-- ── LOYALTY ──────────────────────────────── -->
       <div class="tab" id="tab-loyalty">
+        <!-- Connected WhatsApp & Catalog Info -->
+        <div id="wa-info-card" class="card" style="margin-bottom:1.2rem;padding:1rem 1.2rem">
+          <div style="display:flex;gap:1.5rem;flex-wrap:wrap;font-size:.84rem">
+            <div>
+              <span style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:.2rem">WhatsApp Number</span>
+              <span id="wa-info-phone" style="font-weight:600">—</span>
+            </div>
+            <div>
+              <span style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:.2rem">Catalog</span>
+              <span id="wa-info-catalog" style="font-weight:600">—</span>
+            </div>
+            <div>
+              <span style="font-size:.72rem;color:var(--dim);display:block;margin-bottom:.2rem">WABA ID</span>
+              <span id="wa-info-waba" style="font-weight:600;font-family:monospace;font-size:.78rem">—</span>
+            </div>
+          </div>
+        </div>
         <!-- Summary cards -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem;margin-bottom:1.5rem">
           <div class="card" style="text-align:center;padding:1.2rem">
@@ -2281,12 +2340,12 @@ function logout() {
 const TMETA = {
   overview:    { title: 'Overview',           sub: 'Your restaurant at a glance',         fn: loadOverview },
   orders:      { title: 'Orders',             sub: 'Manage incoming orders',               fn: () => loadOrders('ALL') },
-  menu:        { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); } },
+  menu:        { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); updateSyncStatus(); } },
   messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: loadMessages },
   analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); } },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
   restaurant:  { title: 'Restaurant',         sub: 'Coupons, loyalty, team, and issues',   fn: () => { loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
-  settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); } },
+  settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); loadSyncLogs(); } },
   // Legacy tab IDs — redirect to new tabs for backwards compatibility
   branches:    { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); } },
   customers:   { title: 'Analytics',          sub: 'Sales and performance',                fn: () => { loadAnalytics(); loadCustomers(); } },
@@ -2416,10 +2475,8 @@ async function initDash() {
 
 /* ─────────────────────────── OVERVIEW ──────────────────── */
 async function loadOverview() {
-  if ((rest?.onboarding_step || 1) < 5) {
-    document.getElementById('ob').style.display = 'block';
-    renderWizard();
-  }
+  // Render setup wizard — auto-hides itself when all steps complete
+  renderWizard().catch(() => {});
   try {
     const [d1, d7] = await Promise.all([
       api('/api/restaurant/analytics?days=1'),
@@ -2506,16 +2563,28 @@ async function loadOverviewCharts() {
     }
   } catch (e) { console.error('[Overview] Charts failed:', e.message); }
 }
-function renderWizard() {
+async function renderWizard() {
   const waConnected = !!(rest.whatsapp_connected || rest.meta_user_id || (rest.waba_accounts && rest.waba_accounts.length > 0));
   const profileDone = !!(rest.brand_name && rest.phone);
+  const hasBranch = branches?.length > 0 || (await api('/api/restaurant/branches').catch(() => []))?.length > 0;
+  const hasMenu = hasBranch && (await api('/api/restaurant/menu/all').catch(() => ({ total_count: 0 })))?.total_count > 0;
+  const hasCatalog = !!(rest.meta_catalog_id || rest.catalog_id);
+
   const steps = [
     { l: 'Connect with Meta',     d: 'Link your WhatsApp Business account',             done: waConnected,  fn: () => doBannerConnect() },
     { l: 'Complete your profile',  d: 'Business name, logo, bank account',               done: profileDone,  fn: () => goTab('settings', null) },
-    { l: 'Add your first branch',  d: 'GPS coordinates enable location-based ordering',  done: false,        fn: () => goTab('branches', null) },
-    { l: 'Add menu items',         d: 'Items sync to WhatsApp Catalog automatically',    done: false,        fn: () => goTab('menu', null) },
-    { l: 'Sync catalog & go live', d: 'Click "Sync" on your branch after adding items',  done: false,        fn: () => goTab('branches', null) },
+    { l: 'Add your first branch',  d: 'GPS coordinates enable location-based ordering',  done: hasBranch,    fn: () => goTab('menu', null) },
+    { l: 'Add menu items',         d: 'Items sync to WhatsApp Catalog automatically',    done: hasMenu,      fn: () => goTab('menu', null) },
+    { l: 'Sync catalog & go live', d: 'Catalog syncs automatically when you add items',  done: hasCatalog && hasMenu,   fn: () => goTab('menu', null) },
   ];
+
+  // Auto-hide if all steps complete
+  if (steps.every(s => s.done)) {
+    document.getElementById('ob').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('ob').style.display = 'block';
   document.getElementById('ob-steps').innerHTML = steps.map((s, i) => {
     const n = i + 1;
     const cls = s.done ? 'wz-done' : 'wz-cur';
@@ -3687,7 +3756,16 @@ function toggleMenuSection(section) {
       }
     }
   } else if (section === 'item') {
-    if (addForm) addForm.style.display = addForm.style.display === 'none' ? 'block' : 'none';
+    if (addForm) {
+      addForm.style.display = addForm.style.display === 'none' ? 'block' : 'none';
+      // Pre-select the active branch from tabs if one is selected
+      const activeBranch = document.getElementById('m-branch').value;
+      if (activeBranch && activeBranch !== '__all__' && activeBranch !== '__unassigned__' && branches.length === 1) {
+        // Single branch — already selected, no action needed
+      } else if (activeBranch && activeBranch !== '__all__' && activeBranch !== '__unassigned__') {
+        document.getElementById('m-branch').value = activeBranch;
+      }
+    }
   }
 }
 
@@ -3753,14 +3831,48 @@ async function loadBranchSel() {
     sel.innerHTML = '<option value="__all__">All Branches</option>' +
       branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('') +
       '<option value="__unassigned__">⚠️ Unassigned</option>';
-    // Restore previous selection if valid
     if (prevVal && (prevVal === '__all__' || prevVal === '__unassigned__' || branches.some(b => b.id === prevVal))) {
       sel.value = prevVal;
     } else {
       sel.value = '__all__';
     }
+
+    // Render branch tabs for multi-branch restaurants
+    const tabsDiv = document.getElementById('branch-tabs');
+    if (branches.length > 1) {
+      const inner = tabsDiv.querySelector('div');
+      inner.innerHTML =
+        `<button class="btn-g btn-sm branch-tab ${sel.value === '__all__' ? 'act' : ''}" onclick="selectBranchTab('__all__',this)" style="font-size:.78rem;padding:.3rem .7rem;border-radius:6px">All</button>` +
+        branches.map(b => `<button class="btn-g btn-sm branch-tab ${sel.value === b.id ? 'act' : ''}" onclick="selectBranchTab('${b.id}',this)" style="font-size:.78rem;padding:.3rem .7rem;border-radius:6px">${b.name}</button>`).join('');
+      tabsDiv.style.display = '';
+      sel.style.display = 'none';
+    } else {
+      tabsDiv.style.display = 'none';
+      sel.style.display = branches.length === 1 ? 'none' : '';
+      if (branches.length === 1) { sel.value = branches[0].id; }
+    }
+
     loadMenu();
   } catch (_) {}
+}
+
+function selectBranchTab(branchId, btn) {
+  const sel = document.getElementById('m-branch');
+  sel.value = branchId;
+  document.querySelectorAll('.branch-tab').forEach(b => b.classList.remove('act'));
+  if (btn) btn.classList.add('act');
+  // Update branch summary
+  const summary = document.getElementById('branch-summary');
+  if (branchId && branchId !== '__all__' && branchId !== '__unassigned__') {
+    const b = branches.find(x => x.id === branchId);
+    if (b) {
+      document.getElementById('bs-name').textContent = b.name;
+      document.getElementById('bs-addr').textContent = b.address || b.city || '';
+      document.getElementById('bs-status').innerHTML = b.is_open ? '<span style="color:var(--wa)">Open</span>' : '<span style="color:var(--red)">Closed</span>';
+      summary.style.display = '';
+    }
+  } else { summary.style.display = 'none'; }
+  loadMenu();
 }
 function doSelectBranch(id) {
   const sel = document.getElementById('m-branch');
@@ -3837,8 +3949,13 @@ async function loadMenu() {
       else txt = totalItems ? `${totalItems} items` : '';
       countEl.textContent = txt;
     }
+    // Update branch summary count
+    const bsCount = document.getElementById('bs-count');
+    if (bsCount && !isAll && !isUnassigned) {
+      bsCount.textContent = `${totalItems} items`;
+    }
 
-    // Update branch selector with item counts (only when loading all)
+    // Update branch selector and tabs with item counts (only when loading all)
     if (isAll && branches.length) {
       const allItems = (Array.isArray(grouped) ? grouped : []).flatMap(g => g.items || []);
       const sel = document.getElementById('m-branch');
@@ -3849,6 +3966,18 @@ async function loadMenu() {
         }).join('') +
         (unassignedCount ? `<option value="__unassigned__">⚠️ Unassigned (${unassignedCount})</option>` : '<option value="__unassigned__">⚠️ Unassigned</option>');
       sel.value = '__all__';
+      // Update tab counts
+      if (branches.length > 1) {
+        const inner = document.getElementById('branch-tabs')?.querySelector('div');
+        if (inner) {
+          inner.innerHTML =
+            `<button class="btn-g btn-sm branch-tab act" onclick="selectBranchTab('__all__',this)" style="font-size:.78rem;padding:.3rem .7rem;border-radius:6px">All (${totalItems})</button>` +
+            branches.map(b => {
+              const cnt = allItems.filter(i => i.branch_id === b.id).length;
+              return `<button class="btn-g btn-sm branch-tab" onclick="selectBranchTab('${b.id}',this)" style="font-size:.78rem;padding:.3rem .7rem;border-radius:6px">${b.name} (${cnt})</button>`;
+            }).join('');
+        }
+      }
     }
 
     if (!grouped?.length || grouped.every(g => !g.items?.length)) {
@@ -3909,6 +4038,7 @@ function renderMenuGroups(grouped, showBranchBadge) {
     const rowBg = idx % 2 === 0 ? '' : 'background:var(--ink4,#f9fafb);';
 
     return `<tr style="${rowBg}">
+      <td style="padding:.45rem .4rem;text-align:center;width:32px"><input type="checkbox" class="mi-check" data-id="${item.id}" data-name="${safeName}" onchange="updateBulkBar()"></td>
       <td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim);text-align:center;width:40px">${idx + 1}</td>
       <td style="padding:.45rem .7rem;font-size:.82rem;font-weight:500">${displayName}${item.is_bestseller ? ' <span style="font-size:.6rem;color:#f59e0b">⭐</span>' : ''}</td>
       <td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim)">${item._categoryName}</td>
@@ -3929,6 +4059,7 @@ function renderMenuGroups(grouped, showBranchBadge) {
       <table style="width:100%;border-collapse:collapse;font-size:.84rem;font-family:var(--font-body,'Inter',sans-serif)">
         <thead>
           <tr style="background:#f9fafb;border-bottom:2px solid var(--rim,#e5e7eb)">
+            <th style="padding:.55rem .4rem;text-align:center;width:32px"><input type="checkbox" onchange="toggleAllMenuItems(this.checked)"></th>
             <th style="padding:.55rem .7rem;text-align:center;font-size:.77rem;font-weight:600;color:var(--dim);width:40px">#</th>
             <th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Item Name</th>
             <th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Category</th>
@@ -4204,6 +4335,64 @@ async function doQuickSync() {
   finally { btn.disabled = false; btn.innerHTML = '🔄 Sync to WhatsApp'; }
 }
 
+/* ── SYNC TO / FROM CATALOG BUTTONS ────────────────── */
+async function doSyncToCatalog() {
+  const btn = document.getElementById('sync-to-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle"></div> Syncing...';
+  try {
+    const r = await api('/api/restaurant/catalog/sync', { method: 'POST' });
+    const synced = r.totalSynced || 0;
+    const failed = r.totalFailed || 0;
+    if (failed === 0) { btn.innerHTML = '⬆ Synced ✅'; btn.style.color = 'var(--wa)'; }
+    else { btn.innerHTML = `⬆ Synced ⚠️ (${synced}/${synced + failed})`; btn.style.color = '#d97706'; }
+    toast(`${synced} items synced to catalog${failed ? `, ${failed} failed` : ''}`, failed ? 'err' : 'ok');
+    updateSyncStatus();
+    setTimeout(() => { btn.innerHTML = '⬆ Sync to Catalog'; btn.style.color = ''; }, 4000);
+  } catch (e) {
+    btn.innerHTML = '⬆ Sync Failed ❌'; btn.style.color = 'var(--red)';
+    toast(e.message, 'err');
+    setTimeout(() => { btn.innerHTML = '⬆ Sync to Catalog'; btn.style.color = ''; }, 5000);
+  } finally { btn.disabled = false; }
+}
+
+async function doSyncFromCatalog() {
+  const btn = document.getElementById('sync-from-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin" style="width:12px;height:12px;border-width:2px;display:inline-block;vertical-align:middle"></div> Pulling...';
+  try {
+    const r = await api('/api/restaurant/catalog/reverse-sync', { method: 'POST' });
+    const total = (r.new_items_added || 0) + (r.existing_items_updated || 0);
+    btn.innerHTML = '⬇ Pulled ✅'; btn.style.color = 'var(--wa)';
+    toast(`${r.new_items_added || 0} new, ${r.existing_items_updated || 0} updated from catalog`, 'ok');
+    updateSyncStatus();
+    loadMenu();
+    setTimeout(() => { btn.innerHTML = '⬇ Sync from Catalog'; btn.style.color = ''; }, 4000);
+  } catch (e) {
+    btn.innerHTML = '⬇ Pull Failed ❌'; btn.style.color = 'var(--red)';
+    toast(e.message, 'err');
+    setTimeout(() => { btn.innerHTML = '⬇ Sync from Catalog'; btn.style.color = ''; }, 5000);
+  } finally { btn.disabled = false; }
+}
+
+function updateSyncStatus() {
+  api('/api/restaurant/catalog/sync-status').then(s => {
+    const line = document.getElementById('sync-status-line');
+    const text = document.getElementById('sync-last-text');
+    if (!s) return;
+    const parts = [];
+    if (s.lastSyncToMeta) parts.push('⬆ ' + timeAgoShort(s.lastSyncToMeta));
+    if (s.lastSyncFromMeta) parts.push('⬇ ' + timeAgoShort(s.lastSyncFromMeta));
+    if (parts.length) { text.textContent = 'Last sync: ' + parts.join(' · '); line.style.display = ''; }
+  }).catch(() => {});
+}
+
+function timeAgoShort(ts) {
+  const secs = Math.floor((Date.now() - new Date(ts)) / 1000);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+  if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+  return Math.floor(secs / 86400) + 'd ago';
+}
+
 async function doFixCatalog() {
   const sel = document.getElementById('m-branch');
   const branchId = sel?.value;
@@ -4241,6 +4430,41 @@ async function doDeleteItem(id, name) {
   if (!confirm(`Delete "${name}"?`)) return;
   try { await api(`/api/restaurant/menu/${id}`, { method: 'DELETE' }); toast(`"${name}" deleted`, 'ok'); loadMenu(); }
   catch (e) { toast(e.message, 'err'); }
+}
+
+function toggleAllMenuItems(checked) {
+  document.querySelectorAll('.mi-check').forEach(cb => { cb.checked = checked; });
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const checked = document.querySelectorAll('.mi-check:checked');
+  const bar = document.getElementById('bulk-bar');
+  if (checked.length > 0) {
+    bar.style.display = 'flex';
+    document.getElementById('bulk-count').textContent = `${checked.length} item${checked.length > 1 ? 's' : ''} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function clearMenuSelection() {
+  document.querySelectorAll('.mi-check').forEach(cb => { cb.checked = false; });
+  const selectAll = document.querySelector('#menu-list thead input[type="checkbox"]');
+  if (selectAll) selectAll.checked = false;
+  updateBulkBar();
+}
+
+async function doBulkDelete() {
+  const checked = document.querySelectorAll('.mi-check:checked');
+  const ids = Array.from(checked).map(cb => cb.dataset.id);
+  if (!ids.length) return;
+  if (!confirm(`Delete ${ids.length} item${ids.length > 1 ? 's' : ''}? This will also remove them from the WhatsApp catalog.`)) return;
+  try {
+    const r = await api('/api/restaurant/menu/bulk-delete', { method: 'POST', body: { ids } });
+    toast(`${r.deleted} items deleted`, 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+  loadMenu();
 }
 
 /* ═══════════════════════ SMART CSV MAPPER ════════════════ */
@@ -4577,6 +4801,21 @@ function doDownloadSample() {
 }
 
 /* ─────────────────────────── WHATSAPP ──────────────────── */
+async function loadSyncLogs() {
+  const tbody = document.getElementById('sync-log-tbody');
+  try {
+    const logs = await api('/api/restaurant/sync-logs');
+    if (!logs?.length) { tbody.innerHTML = '<tr><td colspan="4" style="padding:1rem;text-align:center;color:var(--dim)">No sync activity yet</td></tr>'; return; }
+    const sevIcon = { info: '✅', warning: '⚠️', error: '❌', critical: '🔴' };
+    tbody.innerHTML = logs.map(l => `<tr style="border-bottom:1px solid var(--rim)">
+      <td style="padding:.4rem .6rem;font-size:.76rem;color:var(--dim);white-space:nowrap">${new Date(l.created_at).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</td>
+      <td style="padding:.4rem .6rem;font-size:.8rem;font-weight:500">${l.action}</td>
+      <td style="padding:.4rem .6rem;font-size:.78rem;color:var(--dim);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.description || '—'}</td>
+      <td style="padding:.4rem .6rem;text-align:center">${sevIcon[l.severity] || '—'}</td>
+    </tr>`).join('');
+  } catch { tbody.innerHTML = '<tr><td colspan="4" style="padding:1rem;text-align:center;color:var(--dim)">Failed to load</td></tr>'; }
+}
+
 async function loadWA() {
   const list = document.getElementById('wa-list');
   try {
@@ -5249,6 +5488,18 @@ async function toggleUser(id, isActive, name) {
 let _lyPage = 1;
 async function loadLoyalty(page) {
   _lyPage = page || 1;
+  // Populate WhatsApp info card from restaurant data
+  if (rest) {
+    const waPhone = rest.wa_phone_number || rest.waba_accounts?.[0]?.wa_phone_number;
+    document.getElementById('wa-info-phone').innerHTML = waPhone
+      ? `<span style="color:var(--wa)">+${waPhone} ✅</span>`
+      : '<span style="color:var(--red)">Not Connected ❌</span>';
+    const catId = rest.meta_catalog_id || rest.catalog_id;
+    document.getElementById('wa-info-catalog').innerHTML = catId
+      ? `<span style="color:var(--wa)">${catId} ✅</span>`
+      : '<span style="color:var(--red)">No catalog ❌</span>';
+    document.getElementById('wa-info-waba').textContent = rest.meta_waba_id || rest.waba_accounts?.[0]?.waba_id || '—';
+  }
   try {
     // Load stats
     const stats = await api('/api/restaurant/loyalty/stats');

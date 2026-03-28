@@ -695,11 +695,16 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     { $set: { last_lat: latitude, last_lng: longitude, last_address: address || null } }
   );
 
-  const result = await location.findNearestBranch(latitude, longitude);
+  const result = await location.findBestAvailableBranch(latitude, longitude);
 
   if (!result.found) {
     await wa.sendText(pid, token, to, result.message);
     return;
+  }
+
+  // If routed to a fallback branch (nearest was closed), tell the customer
+  if (result.isFallback && result.fallbackMessage) {
+    await wa.sendText(pid, token, to, result.fallbackMessage);
   }
 
   const branch = result.branch;
@@ -1307,10 +1312,13 @@ const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) 
     `📍 Using *${addr.label}*${addr.full_address ? `: ${addr.full_address}` : ''}\n\n🔍 Finding nearest restaurant...`
   );
 
-  const result = await location.findNearestBranch(addr.latitude, addr.longitude);
+  const result = await location.findBestAvailableBranch(addr.latitude, addr.longitude);
   if (!result.found) {
     await wa.sendText(pid, token, to, result.message);
     return;
+  }
+  if (result.isFallback && result.fallbackMessage) {
+    await wa.sendText(pid, token, to, result.fallbackMessage);
   }
 
   await _sendBranchMenu(pid, token, to, result.branch, conv, customer, addr);
@@ -2071,8 +2079,9 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
 
     // Find branch and send menu
     if (addr.latitude && addr.longitude) {
-      const result = await location.findNearestBranch(addr.latitude, addr.longitude, restaurantId);
+      const result = await location.findBestAvailableBranch(addr.latitude, addr.longitude, restaurantId);
       if (result.found) {
+        if (result.isFallback && result.fallbackMessage) await wa.sendText(pid, token, to, result.fallbackMessage);
         await _sendBranchMenu(pid, token, to, result.branch, conv, customer, addr);
       } else {
         await wa.sendText(pid, token, to, result.message);
@@ -2136,8 +2145,9 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
 
     // Find branch and send menu
     if (parsedAddress.lat && parsedAddress.lng) {
-      const result = await location.findNearestBranch(parsedAddress.lat, parsedAddress.lng, restaurantId);
+      const result = await location.findBestAvailableBranch(parsedAddress.lat, parsedAddress.lng, restaurantId);
       if (result.found) {
+        if (result.isFallback && result.fallbackMessage) await wa.sendText(pid, token, to, result.fallbackMessage);
         await _sendBranchMenu(pid, token, to, result.branch, conv, customer, parsedAddress);
       } else {
         await wa.sendText(pid, token, to, result.message);

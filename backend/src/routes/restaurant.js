@@ -1078,7 +1078,7 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
       branch_id: req.params.branchId,
       category_id: categoryId || null,
       name,
-      description: description || null,
+      description: description || name, // Meta requires non-empty description
       price_paise: pricePaise,
       retailer_id: retailerId,
       image_url: imageUrl || null,
@@ -1248,6 +1248,34 @@ router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+router.post('/menu/bulk-delete', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array required' });
+
+    const items = await col('menu_items').find({ _id: { $in: ids } }).toArray();
+    if (!items.length) return res.json({ deleted: 0 });
+
+    await col('menu_items').deleteMany({ _id: { $in: ids } });
+
+    // Invalidate caches and trigger catalog sync per branch
+    const branchIds = [...new Set(items.map(i => i.branch_id).filter(Boolean))];
+    branchIds.forEach(bid => {
+      memcache.del(`branch:${bid}:menu`);
+      catalog.syncBranchCatalog(bid).catch(err => console.error('[Menu] Bulk delete sync failed:', err.message));
+    });
+
+    res.json({ deleted: items.length });
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'menu.bulk_deleted', category: 'menu',
+      description: `Bulk deleted ${items.length} menu items`,
+      restaurantId: req.restaurantId, severity: 'info',
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── META COMMERCE MANAGER CSV COLUMN ALIASES ─────────────────
 const META_COLUMN_ALIASES = {
   'id': 'retailer_id', 'title': 'name', 'description': 'description',
@@ -1317,9 +1345,9 @@ function _normalizeCSVRow(row) {
     delete normalized.availability;
   }
 
-  // Auto-generate retailer_id for variants
+  // Auto-generate retailer_id for variants using canonical slugify
   if (normalized.item_group_id && normalized.size && !normalized.retailer_id) {
-    normalized.retailer_id = `${normalized.item_group_id}-${normalized.size.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+    normalized.retailer_id = `${normalized.item_group_id}-${slugify(normalized.size, 15)}`;
   }
 
   return normalized;
@@ -1391,7 +1419,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
               branch_id: branchId,
               category_id: categoryId,
               name,
-              description: (row.description || row.desc || '').trim() || null,
+              description: (row.description || row.desc || '').trim() || name, // Meta requires non-empty description
               price_paise: pricePaise,
               image_url: imageUrl,
               food_type: foodType,
@@ -1725,7 +1753,7 @@ router.post('/menu/:itemId/variants', async (req, res) => {
     let groupId = srcItem.item_group_id;
     if (!groupId) {
       groupId = uuidv4();
-      const baseRetailerId = `${srcItem.retailer_id}-${baseLabel.toLowerCase().replace(/\s+/g, '-')}`;
+      const baseRetailerId = `${srcItem.retailer_id}-${slugify(baseLabel, 15)}`;
       await col('menu_items').updateOne(
         { _id: srcItem._id },
         { $set: { item_group_id: groupId, variant_type: variantType, variant_value: baseLabel, retailer_id: baseRetailerId, updated_at: new Date() } }
@@ -1733,8 +1761,9 @@ router.post('/menu/:itemId/variants', async (req, res) => {
     }
 
     const baseName    = srcItem.name.replace(/\s*-\s*\S+$/, '').trim() || srcItem.name;
-    const variantSlug = variantLabel.toLowerCase().replace(/\s+/g, '-');
-    const retailerId  = `${srcItem.retailer_id.replace(/-regular$|-\S+$/, '')}-${variantSlug}`;
+    const variantSlug = slugify(variantLabel, 15);
+    const baseId      = srcItem.item_group_id || srcItem.retailer_id.replace(/-[^-]+$/, '');
+    const retailerId  = `${baseId}-${variantSlug}`;
     const pricePaise  = Math.round(parseFloat(priceRs) * 100);
     const now = new Date();
 
@@ -2108,8 +2137,8 @@ router.post('/menu/variant', requirePermission('manage_menu'), async (req, res) 
       return res.status(400).json({ error: 'itemGroupId, branchId, size, priceRs required' });
     }
 
-    // Auto-generate retailer_id from group + size
-    const retailerId = `${itemGroupId}-${size.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
+    // Auto-generate retailer_id from group + size using canonical slugify
+    const retailerId = `${itemGroupId}-${slugify(size, 15)}`;
 
     // Copy shared fields from an existing variant in the same group
     const existing = await col('menu_items').findOne({ item_group_id: itemGroupId, branch_id: branchId });
@@ -2278,10 +2307,21 @@ router.put('/catalog/settings', async (req, res) => {
 });
 
 // POST /api/restaurant/catalog/sync — full sync all branches to main catalog
+router.get('/catalog/sync-status', async (req, res) => {
+  try {
+    const r = await col('restaurants').findOne({ _id: req.restaurantId }, { projection: { last_catalog_sync: 1, last_catalog_pull_at: 1, last_auto_sync_at: 1 } });
+    res.json({
+      lastSyncToMeta: r?.last_catalog_sync || null,
+      lastSyncFromMeta: r?.last_catalog_pull_at || null,
+      lastAutoSync: r?.last_auto_sync_at || null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.post('/catalog/sync', async (req, res) => {
   try {
     const results = await catalog.syncRestaurantCatalog(req.restaurantId);
-    res.json({ success: true, results });
+    res.json({ success: true, ...results });
 
     log({
       actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
@@ -2513,6 +2553,7 @@ router.post('/catalog/reverse-sync', async (req, res) => {
       }
     }
 
+    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { last_catalog_pull_at: new Date() } });
     console.log(`[Catalog] Reverse sync complete:`, stats);
     res.json({ success: true, ...stats });
 
@@ -3979,6 +4020,24 @@ router.get('/referrals', async (req, res) => {
       referrals: mappedList,
       summary: { total, converted, total_orders, total_order_value_rs, total_referral_fee_rs },
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── SYNC LOGS ───────────────────────────────────────────────
+router.get('/sync-logs', async (req, res) => {
+  try {
+    const logs = await col('activity_logs').find({
+      restaurant_id: req.restaurantId,
+      action: { $regex: /^(catalog\.|menu\.|branch\.)/ },
+    }).sort({ created_at: -1 }).limit(50).toArray();
+    res.json(logs.map(l => ({
+      id: l._id,
+      action: l.action,
+      description: l.description,
+      severity: l.severity,
+      created_at: l.created_at,
+      metadata: l.metadata || null,
+    })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

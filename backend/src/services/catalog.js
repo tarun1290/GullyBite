@@ -255,9 +255,9 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
     condition: 'new',
     price: priceFormatted,
     link: productLink,
-    // TODO: Re-enable placeholder fallback when image pipeline is active:
+    // FUTURE FEATURE: Re-enable placeholder fallback when image pipeline is active:
     // image_link: item.image_url || require('./imageUpload').getPlaceholderUrl(item) || '',
-    image_link: item.image_url || '',
+    image_link: item.image_url || process.env.DEFAULT_FOOD_IMAGE_URL || '',
     brand: brandName,
     google_product_category: item.google_product_category || 'Food, Beverages & Tobacco > Food Items',
     fb_product_category: item.fb_product_category || 'Food & Beverages > Prepared Food',

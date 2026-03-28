@@ -6,6 +6,12 @@
       "maxDuration": 30
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/catalog-sync",
+      "schedule": "*/30 * * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index" }
   ]
