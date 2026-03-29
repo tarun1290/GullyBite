@@ -3808,6 +3808,7 @@ async function loadCatalogPanelContent() {
           <div style="display:flex;gap:.5rem;flex-wrap:wrap">
             <button class="btn-p btn-sm" onclick="doCatalogSync()">⬆️ Sync to Catalog</button>
             <button class="btn-g btn-sm" onclick="doReverseCatalogSync()">⬇️ Pull from Catalog</button>
+            <button class="btn-g btn-sm" onclick="doClearAndResync()" style="color:var(--red);border-color:var(--red)" title="Delete all items from Meta catalog and re-upload">🔄 Clear & Re-sync</button>
           </div>
           <div id="collection-status" style="margin-top:1rem;border-top:1px solid var(--bdr);padding-top:.8rem">
             <div style="font-size:.82rem;font-weight:600;margin-bottom:.5rem">Branch Collections</div>
@@ -6269,6 +6270,17 @@ async function doCatalogCreate() {
     }
   } catch (e) { toast(e.message, 'err'); }
   finally { btn.disabled = false; btn.textContent = 'Create Catalog'; }
+}
+
+async function doClearAndResync() {
+  if (!confirm('⚠️ This will DELETE all items from your WhatsApp catalog and re-upload everything.\n\nCustomers won\'t see the catalog during sync (1-2 minutes).\n\nContinue?')) return;
+  toast('Clearing catalog and re-syncing...', 'ok');
+  try {
+    const r = await api('/api/restaurant/catalog/clear-and-resync', { method: 'POST' });
+    toast(`✅ Cleared ${r.deleted_from_meta} old items, synced ${r.totalSynced} fresh items`, 'ok');
+    loadMenu();
+    updateSyncStatus();
+  } catch (e) { toast('❌ ' + (e.message || 'Clear & re-sync failed'), 'err'); }
 }
 
 async function doReverseCatalogSync() {

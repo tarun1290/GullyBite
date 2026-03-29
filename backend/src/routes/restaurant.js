@@ -1292,6 +1292,9 @@ const META_COLUMN_ALIASES = {
   'shipping': 'shipping', 'shipping_weight': 'shipping_weight',
   'video[0].url': 'video_url', 'video[0].tag[0]': 'video_tag',
   'gtin': 'gtin', 'style[0]': 'style', 'condition': '_condition',
+  'custom_label_0': 'custom_label_0', 'custom_label_1': 'custom_label_1',
+  'custom_label_2': 'custom_label_2', 'custom_label_3': 'custom_label_3',
+  'custom_label_4': 'custom_label_4',
 };
 
 // Parse "199.00 INR" or "299" or 149 → paise integer
@@ -1402,7 +1405,8 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
         const pricePaise = row.price_paise || Math.round(price * 100);
         const csvBranchSlug = await getBranchSlug(branchId);
         const sizeVal = row.size || null;
-        const retailerId = row.retailer_id || makeRetailerId(csvBranchSlug, name, sizeVal);
+        const originalRetailerId = row.retailer_id || null; // preserve spreadsheet ID for reference
+        const retailerId = makeRetailerId(csvBranchSlug, name, sizeVal); // always generate branch-encoded
         const autoGroupId = sizeVal ? makeItemGroupId(csvBranchSlug, name) : null;
         const now = new Date();
 
@@ -1449,7 +1453,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
               catalog_sync_status: 'pending',
               updated_at: now,
             },
-            $setOnInsert: { _id: newId(), retailer_id: retailerId, is_available: true, sort_order: 0, catalog_synced_at: null, created_at: now },
+            $setOnInsert: { _id: newId(), retailer_id: retailerId, original_retailer_id: originalRetailerId, is_available: true, sort_order: 0, catalog_synced_at: null, created_at: now },
           },
           { upsert: true }
         );
@@ -1459,6 +1463,31 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
         results.skipped++;
       }
     }
+
+    // Post-processing: auto-detect variants by grouping items with same name at this branch
+    try {
+      const branchItems = await col('menu_items').find({ branch_id: branchId }).toArray();
+      const nameGroups = {};
+      for (const item of branchItems) {
+        const key = (item.name || '').toLowerCase().trim();
+        if (!key) continue;
+        if (!nameGroups[key]) nameGroups[key] = [];
+        nameGroups[key].push(item);
+      }
+      const bSlug = await getBranchSlug(branchId);
+      for (const [, group] of Object.entries(nameGroups)) {
+        if (group.length <= 1) continue;
+        // Multiple items with same name = variants — auto-assign item_group_id
+        const groupId = makeItemGroupId(bSlug, group[0].name);
+        const ids = group.filter(g => !g.item_group_id).map(g => g._id);
+        if (ids.length) {
+          await col('menu_items').updateMany(
+            { _id: { $in: ids } },
+            { $set: { item_group_id: groupId, catalog_sync_status: 'pending' } }
+          );
+        }
+      }
+    } catch (e) { console.warn('[CSV] Auto-group variants failed:', e.message); }
 
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
@@ -1489,20 +1518,44 @@ router.post('/menu/csv', async (req, res) => {
       return res.status(400).json({ error: 'items array is required' });
     }
 
-    // Detect branch column
+    // Detect branch column — check standard aliases, then Meta template custom_label columns
     const firstRow = items[0];
-    const branchCol = Object.keys(firstRow).find(k =>
+    let branchCol = Object.keys(firstRow).find(k =>
       BRANCH_COLUMN_ALIASES.includes(k.toLowerCase().trim())
     );
+    // Fallback: check Meta template custom_label_3 (branch slug) and custom_label_2 (branch area)
+    if (!branchCol) {
+      const cl3 = Object.keys(firstRow).find(k => k.toLowerCase().trim() === 'custom_label_3');
+      const cl2 = Object.keys(firstRow).find(k => k.toLowerCase().trim() === 'custom_label_2');
+      if (cl3 && firstRow[cl3]) branchCol = cl3;
+      else if (cl2 && firstRow[cl2]) branchCol = cl2;
+    }
 
     // Load all branches for this restaurant
-    const allBranches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+    let allBranches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+
+    // Auto-create branches from upload data if branch column detected but branches don't exist
+    if (branchCol) {
+      const uploadBranchNames = [...new Set(items.map(r => (String(r[branchCol] || '')).trim()).filter(Boolean))];
+      for (const bn of uploadBranchNames) {
+        const exists = allBranches.some(b => (b.name || '').toLowerCase().trim() === bn.toLowerCase() || (b.branch_slug || '') === slugify(bn, 20));
+        if (!exists) {
+          const bid = newId();
+          const now = new Date();
+          await col('branches').insertOne({ _id: bid, restaurant_id: req.restaurantId, name: bn, branch_slug: slugify(bn, 20), city: '', is_open: true, accepts_orders: true, delivery_radius_km: 5, opening_time: '10:00', closing_time: '22:00', created_at: now, updated_at: now });
+          console.log(`[CSV] Auto-created branch: "${bn}" (${bid})`);
+        }
+      }
+      allBranches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+    }
+
     if (!allBranches.length) return res.status(400).json({ error: 'No branches found. Create a branch first.' });
 
-    // Build branch name→id map (case-insensitive, trimmed)
+    // Build branch name→id map (case-insensitive, trimmed, also by slug)
     const branchMap = {};
     for (const b of allBranches) {
       branchMap[(b.name || '').toLowerCase().trim()] = String(b._id);
+      if (b.branch_slug) branchMap[b.branch_slug.toLowerCase()] = String(b._id);
     }
 
     // Group items by branch
@@ -1583,7 +1636,8 @@ router.post('/menu/csv', async (req, res) => {
           const pricePaise = row.price_paise || Math.round(price * 100);
           const mbBranchSlug = await getBranchSlug(bid);
           const mbSizeVal = row.size || null;
-          const retailerId = row.retailer_id || makeRetailerId(mbBranchSlug, name, mbSizeVal);
+          const mbOriginalRetailerId = row.retailer_id || null;
+          const retailerId = makeRetailerId(mbBranchSlug, name, mbSizeVal); // always generate branch-encoded
           const mbAutoGroupId = mbSizeVal ? makeItemGroupId(mbBranchSlug, name) : null;
           const now = new Date();
 
@@ -1599,7 +1653,7 @@ router.post('/menu/csv', async (req, res) => {
                 branch_id: bid,
                 category_id: categoryId,
                 name,
-                description: (row.description || row.desc || '').trim() || null,
+                description: (row.description || row.desc || '').trim() || name, // Meta requires non-empty description
                 price_paise: pricePaise,
                 image_url: imageUrl,
                 food_type: foodType,
@@ -1623,7 +1677,7 @@ router.post('/menu/csv', async (req, res) => {
                 catalog_sync_status: 'pending',
                 updated_at: now,
               },
-              $setOnInsert: { _id: newId(), retailer_id: retailerId, is_available: true, sort_order: 0, catalog_synced_at: null, created_at: now },
+              $setOnInsert: { _id: newId(), retailer_id: retailerId, original_retailer_id: mbOriginalRetailerId, is_available: true, sort_order: 0, catalog_synced_at: null, created_at: now },
             },
             { upsert: true }
           );
@@ -1633,6 +1687,27 @@ router.post('/menu/csv', async (req, res) => {
           branchResult.skipped++;
         }
       }
+
+      // Auto-detect variants: items with same name at this branch
+      try {
+        const branchItems = await col('menu_items').find({ branch_id: bid }).toArray();
+        const nameGroups = {};
+        for (const item of branchItems) {
+          const key = (item.name || '').toLowerCase().trim();
+          if (!key) continue;
+          if (!nameGroups[key]) nameGroups[key] = [];
+          nameGroups[key].push(item);
+        }
+        const bSlug = await getBranchSlug(bid);
+        for (const [, group] of Object.entries(nameGroups)) {
+          if (group.length <= 1) continue;
+          const groupId = makeItemGroupId(bSlug, group[0].name);
+          const ids = group.filter(g => !g.item_group_id).map(g => g._id);
+          if (ids.length) {
+            await col('menu_items').updateMany({ _id: { $in: ids } }, { $set: { item_group_id: groupId, catalog_sync_status: 'pending' } });
+          }
+        }
+      } catch (e) { console.warn('[CSV] Auto-group variants failed:', e.message); }
 
       totalAdded += branchResult.added;
       totalSkipped += branchResult.skipped;
@@ -2315,6 +2390,47 @@ router.get('/catalog/sync-status', async (req, res) => {
       lastSyncFromMeta: r?.last_catalog_pull_at || null,
       lastAutoSync: r?.last_auto_sync_at || null,
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/catalog/clear-and-resync', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const catalogId = restaurant?.meta_catalog_id;
+    if (!catalogId) return res.status(400).json({ error: 'No catalog connected' });
+
+    const token = metaConfig.getCatalogToken();
+    const GRAPH = metaConfig.graphUrl;
+
+    // Step 1: Fetch all existing products from Meta
+    let allProducts = [];
+    let url = `${GRAPH}/${catalogId}/products?fields=retailer_id&limit=500&access_token=${token}`;
+    while (url) {
+      const { data } = await axios.get(url, { timeout: 15000 });
+      allProducts.push(...(data.data || []));
+      url = data.paging?.next || null;
+    }
+
+    // Step 2: Delete all in batches of 4999 via items_batch
+    let deleted = 0;
+    for (let i = 0; i < allProducts.length; i += 4999) {
+      const batch = allProducts.slice(i, i + 4999).map(p => ({ method: 'DELETE', retailer_id: p.retailer_id }));
+      try {
+        await axios.post(`${GRAPH}/${catalogId}/items_batch`, {
+          access_token: token,
+          item_type: 'PRODUCT_ITEM',
+          requests: JSON.stringify(batch),
+        }, { timeout: 30000 });
+        deleted += batch.length;
+      } catch (e) { console.error('[Catalog] Batch delete failed:', e.response?.data?.error?.message || e.message); }
+    }
+
+    // Step 3: Re-sync all local items
+    const syncResult = await catalog.syncRestaurantCatalog(req.restaurantId);
+
+    log({ actorType: 'restaurant', actorId: req.user?.id, action: 'catalog.clear_and_resync', category: 'catalog', description: `Cleared ${deleted} items from Meta, re-synced ${syncResult.totalSynced}`, restaurantId: req.restaurantId, severity: 'info' });
+
+    res.json({ success: true, deleted_from_meta: deleted, ...syncResult });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
