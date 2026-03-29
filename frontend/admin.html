@@ -79,7 +79,20 @@ nav{flex:1;padding:.6rem 0}
 .btn-sm.outline:hover{background:rgba(79,70,229,.06)}
 .btn-sm.outline.danger{border-color:var(--red);color:var(--red);background:transparent}
 .btn-sm.outline.danger:hover{background:rgba(220,38,38,.06)}
-.flow-toggle input:checked+span{background:var(--acc)}
+/* Standard toggle — matches restaurant dashboard .tsl */
+.tsl{position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0}
+.tsl input{opacity:0;width:0;height:0;position:absolute}
+.tsl-track{position:absolute;inset:0;background:#d1d5db;border-radius:11px;cursor:pointer;transition:background-color .2s ease}
+.tsl-track::before{content:'';position:absolute;width:18px;height:18px;top:2px;left:2px;background:#fff;border-radius:50%;transition:transform .2s ease;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.tsl-track:hover{filter:brightness(.95);box-shadow:0 0 0 2px rgba(37,99,235,.15)}
+.tsl input:checked+.tsl-track{background:#2563eb}
+.tsl input:checked+.tsl-track::before{transform:translateX(18px)}
+.tsl input:disabled+.tsl-track{opacity:.5;cursor:not-allowed}
+/* Legacy toggle aliases */
+.toggle-sm{position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0}
+.toggle-sm input{opacity:0;width:0;height:0;position:absolute}
+.toggle-sm .tsl-track{position:absolute;inset:0;background:#d1d5db;border-radius:11px;cursor:pointer;transition:background-color .2s ease}
+.flow-toggle input:checked+span{background:#2563eb}
 .flow-toggle input:checked~#flow-auto-knob{transform:translateX(16px)}
 .an-period.active{background:var(--acc);color:#fff;border-color:var(--acc);font-weight:600}
 .an-period.active:hover{background:var(--acc2);border-color:var(--acc2)}
@@ -1120,10 +1133,9 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <button class="btn-sm primary" id="flow-assign-btn" onclick="doAssignAll()">Assign to All Restaurants</button>
                 <div style="display:flex;align-items:center;gap:.5rem">
-                  <label class="flow-toggle" style="position:relative;display:inline-block;width:36px;height:20px">
-                    <input type="checkbox" id="flow-auto-assign" onchange="doToggleAutoAssign(this.checked)" style="opacity:0;width:0;height:0">
-                    <span style="position:absolute;cursor:pointer;inset:0;background:var(--rim2);border-radius:20px;transition:background .2s"></span>
-                    <span style="position:absolute;top:2px;left:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.15)" id="flow-auto-knob"></span>
+                  <label class="tsl">
+                    <input type="checkbox" id="flow-auto-assign" onchange="doToggleAutoAssign(this.checked)">
+                    <span class="tsl-track"></span>
                   </label>
                   <span style="font-size:.82rem;color:var(--dim)">Auto-assign to new restaurants</span>
                 </div>
@@ -1991,7 +2003,7 @@ async function loadDirectory() {
       <td>${l.view_count || 0}</td>
       <td>${l.order_count || 0}</td>
       <td>${l.is_active ? '<span class="badge green">Active</span>' : '<span class="badge gray">Inactive</span>'}</td>
-      <td><label class="toggle-sm"><input type="checkbox" ${l.is_active ? 'checked' : ''} onchange="toggleDirectoryListing('${l._id}',this.checked)"></label></td>
+      <td><label class="tsl"><input type="checkbox" ${l.is_active ? 'checked' : ''} onchange="toggleDirectoryListing('${l._id}',this.checked)"><span class="tsl-track"></span></label></td>
     </tr>`).join('');
   } catch (e) { tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`; }
 }
@@ -3863,7 +3875,7 @@ function renderFlowAssignment() {
   document.getElementById('flow-assign-bar').style.width = pct + '%';
   document.getElementById('flow-auto-assign').checked = !!f.auto_assign_new;
   // Update toggle knob position
-  document.getElementById('flow-auto-knob').style.transform = f.auto_assign_new ? 'translateX(16px)' : 'translateX(0)';
+  // Toggle state handled by .tsl CSS — no manual knob positioning needed
 }
 
 // Flow JSON Definition (same as server-side buildDeliveryFlowJson)
@@ -3968,12 +3980,13 @@ async function doToggleAutoAssign(enabled) {
     await api('/api/admin/flow/toggle-auto-assign', { method: 'POST', body: { enabled } });
     toast('Auto-assign ' + (enabled ? 'enabled' : 'disabled'), 'ok');
     // Update knob position
-    document.getElementById('flow-auto-knob').style.transform = enabled ? 'translateX(16px)' : 'translateX(0)';
+    // Toggle state handled by .tsl CSS
   } catch (e) {
     toast('Failed: ' + e.message, 'err');
     // Revert toggle
     document.getElementById('flow-auto-assign').checked = !enabled;
-    document.getElementById('flow-auto-knob').style.transform = enabled ? 'translateX(0)' : 'translateX(16px)';
+    // Revert toggle on error
+    document.getElementById('flow-auto-assign').checked = !enabled;
   }
 }
 

@@ -64,9 +64,6 @@ a{color:inherit;text-decoration:none}
 .live-dot{display:none;align-items:center;gap:.38rem;font-size:.77rem;color:var(--wa);font-weight:500}
 .live-dot span{width:7px;height:7px;background:var(--wa);border-radius:50%;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-#cat-vis-check:checked+span{background:#2563eb}
-#cat-vis-check:checked+span+span{transform:translateX(18px)}
-#cat-vis-check:disabled+span{opacity:.5;cursor:not-allowed}
 .body{padding:1.6rem 2rem}
 .tab{display:none}
 .tab.on{display:block;animation:riseIn .22s ease both}
@@ -125,6 +122,7 @@ select option{background:#fff}
 .tsl-track:hover{filter:brightness(.95);box-shadow:0 0 0 2px rgba(37,99,235,.15)}
 .tsl input:checked+.tsl-track{background:#2563eb}
 .tsl input:checked+.tsl-track::before{transform:translateX(18px)}
+.tsl input:disabled+.tsl-track{opacity:.5;cursor:not-allowed}
 
 /* badges */
 .badge{display:inline-flex;align-items:center;gap:.2rem;padding:.18rem .58rem;border-radius:100px;font-size:.68rem;font-weight:600}
@@ -1231,10 +1229,9 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <div id="cat-visibility-section" style="margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--rim,#e5e7eb)">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
                 <span style="font-size:.84rem;font-weight:600">Catalog visible to customers</span>
-                <label id="cat-vis-toggle" style="position:relative;display:inline-block;width:40px;height:22px;cursor:pointer">
-                  <input type="checkbox" id="cat-vis-check" onchange="doToggleCatalogVisibility(this.checked)" style="opacity:0;width:0;height:0">
-                  <span style="position:absolute;inset:0;border-radius:11px;background:#d1d5db;transition:background .2s"></span>
-                  <span style="position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:transform .2s"></span>
+                <label class="tsl" id="cat-vis-toggle">
+                  <input type="checkbox" id="cat-vis-check" onchange="doToggleCatalogVisibility(this.checked)">
+                  <span class="tsl-track"></span>
                 </label>
               </div>
               <div id="cat-vis-status" style="font-size:.77rem;color:var(--dim)">Loading...</div>
@@ -3791,19 +3788,19 @@ async function loadCatalogPanelContent() {
               </div>`
             : `<div style="margin-bottom:.7rem;color:var(--dim)">No catalog yet — it will be created automatically when you sync.</div>`
           }
-          <div style="display:flex;flex-direction:column;gap:.45rem;margin-bottom:.7rem">
-            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+          <div style="display:flex;flex-direction:column;gap:.55rem;margin-bottom:.7rem">
+            <div style="display:flex;align-items:center;justify-content:space-between">
               <span style="font-size:.84rem">Catalog linked</span>
-              <input type="checkbox" id="toggle-catalog-linked" onchange="toggleCatalogLink(this.checked)" ${d?.catalog_linked ? 'checked' : ''} ${!catId ? 'disabled' : ''} style="width:18px;height:18px">
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+              <label class="tsl"><input type="checkbox" id="toggle-catalog-linked" onchange="toggleCatalogLink(this.checked)" ${d?.catalog_linked ? 'checked' : ''} ${!catId ? 'disabled' : ''}><span class="tsl-track"></span></label>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
               <span style="font-size:.84rem">Cart enabled</span>
-              <input type="checkbox" id="toggle-cart-enabled" onchange="toggleCatalogCart(this.checked)" ${d?.cart_enabled ? 'checked' : ''} ${!d?.catalog_linked ? 'disabled' : ''} style="width:18px;height:18px">
-            </label>
-            <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer">
+              <label class="tsl"><input type="checkbox" id="toggle-cart-enabled" onchange="toggleCatalogCart(this.checked)" ${d?.cart_enabled ? 'checked' : ''} ${!d?.catalog_linked ? 'disabled' : ''}><span class="tsl-track"></span></label>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
               <span style="font-size:.84rem">Visible to customers</span>
-              <input type="checkbox" id="toggle-catalog-visible" onchange="toggleCatalogVisibility(this.checked)" ${d?.catalog_visible ? 'checked' : ''} ${!d?.catalog_linked ? 'disabled' : ''} style="width:18px;height:18px">
-            </label>
+              <label class="tsl"><input type="checkbox" id="toggle-catalog-visible" onchange="toggleCatalogVisibility(this.checked)" ${d?.catalog_visible ? 'checked' : ''} ${!d?.catalog_linked ? 'disabled' : ''}><span class="tsl-track"></span></label>
+            </div>
           </div>
           <div style="display:flex;gap:.5rem;flex-wrap:wrap">
             <button class="btn-p btn-sm" onclick="doCatalogSync()">⬆️ Sync to Catalog</button>
