@@ -19,6 +19,7 @@ const INDEXES = [
   { collection: 'branches', index: { restaurant_id: 1 } },
   { collection: 'menu_items', index: { restaurant_id: 1, branch_id: 1 } },
   { collection: 'menu_items', index: { branch_id: 1, is_available: 1 } },
+  { collection: 'menu_items', index: { item_group_id: 1, branch_id: 1 } },
   { collection: 'customers', index: { wa_phone: 1 }, options: { unique: true, sparse: true } },
   { collection: 'referrals', index: { customer_phone: 1, restaurant_id: 1, status: 1, expires_at: 1 } },
   { collection: 'deliveries', index: { order_id: 1 }, options: { unique: true, sparse: true } },

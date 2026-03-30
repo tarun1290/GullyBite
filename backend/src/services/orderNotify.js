@@ -5,7 +5,6 @@
 
 const { col, newId } = require('../config/database');
 const templateSvc = require('./template');
-const wa = require('./whatsapp');
 const { resolveRecipient } = require('./customerIdentity');
 const { logActivity } = require('./activityLog');
 

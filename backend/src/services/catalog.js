@@ -264,7 +264,7 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
     quantity_to_sell_on_facebook: item.quantity_to_sell_on_facebook != null ? String(item.quantity_to_sell_on_facebook) : '',
     sale_price: salePriceFormatted,
     sale_price_effective_date: item.sale_price_effective_date || '',
-    item_group_id: item.item_group_id || '',
+    item_group_id: item.item_group_id || item.retailer_id || '', // standalone items use retailer_id as group
     gender: item.gender || '',
     color: item.color || '',
     size: item.size || item.variant_value || '',

@@ -19,6 +19,16 @@ router.post('/', express.json(), async (req, res) => {
   res.sendStatus(200);
 
   try {
+    // Basic auth: check webhook secret if configured (provider-specific)
+    const secret = process.env.DELIVERY_WEBHOOK_SECRET;
+    if (secret) {
+      const authHeader = req.headers['x-webhook-secret'] || req.headers['authorization'] || req.query?.secret;
+      if (authHeader !== secret && authHeader !== `Bearer ${secret}`) {
+        console.warn('[Delivery WH] Invalid webhook secret — dropping');
+        return;
+      }
+    }
+
     const payload = req.body;
 
     // Log to webhook_logs

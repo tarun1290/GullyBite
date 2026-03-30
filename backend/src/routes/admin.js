@@ -324,14 +324,16 @@ router.patch('/restaurants/:id', express.json(), async (req, res) => {
 
 // ─── POST /api/admin/run-settlement ──────────────────────────
 router.post('/run-settlement', async (req, res) => {
-  logActivity({
-    actorType: 'admin', actorId: null, actorName: 'Admin',
-    action: 'settlement.generated', category: 'settlement',
-    description: 'Settlement run triggered manually by admin',
-    resourceType: 'settlement', resourceId: null, severity: 'info',
-  });
-  res.json({ message: 'Settlement started' });
-  runSettlement().catch(console.error);
+  try {
+    logActivity({
+      actorType: 'admin', actorId: null, actorName: 'Admin',
+      action: 'settlement.generated', category: 'settlement',
+      description: 'Settlement run triggered manually by admin',
+      resourceType: 'settlement', resourceId: null, severity: 'info',
+    });
+    res.json({ message: 'Settlement started' });
+    runSettlement().catch(console.error);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── GET /api/admin/applications ─────────────────────────────

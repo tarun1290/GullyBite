@@ -149,7 +149,7 @@ async function resolveShortUrl(shortUrl) {
   try {
     const resp = await axios.head(shortUrl, {
       maxRedirects: 0,
-      timeout: 8000,
+      timeout: 3000,
       validateStatus: s => s >= 300 && s < 400,
       headers: { 'User-Agent': BROWSER_UA },
     });
@@ -157,7 +157,7 @@ async function resolveShortUrl(shortUrl) {
     if (loc && !loc.includes('goo.gl')) return loc;
     // If still a short URL, follow one more hop
     if (loc) {
-      const resp2 = await axios.head(loc, { maxRedirects: 0, timeout: 5000, validateStatus: s => s >= 300 && s < 400, headers: { 'User-Agent': BROWSER_UA } });
+      const resp2 = await axios.head(loc, { maxRedirects: 0, timeout: 3000, validateStatus: s => s >= 300 && s < 400, headers: { 'User-Agent': BROWSER_UA } });
       if (resp2.headers?.location) return resp2.headers.location;
     }
   } catch (e) {
@@ -169,7 +169,7 @@ async function resolveShortUrl(shortUrl) {
   try {
     const resp = await axios.get(shortUrl, {
       maxRedirects: 5,
-      timeout: 12000,
+      timeout: 5000,
       validateStatus: () => true,
       headers: { 'User-Agent': BROWSER_UA, Accept: 'text/html' },
     });

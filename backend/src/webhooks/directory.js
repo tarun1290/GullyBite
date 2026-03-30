@@ -30,11 +30,23 @@ router.get('/', (req, res) => {
 });
 
 // ─── INCOMING MESSAGES ──────────────────────────────────────────
-router.post('/', express.json(), async (req, res) => {
+router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   res.sendStatus(200);
 
   try {
-    const entry = req.body?.entry?.[0];
+    // Validate Meta webhook signature
+    const sig = req.headers['x-hub-signature-256']?.split('sha256=')[1];
+    if (sig && process.env.WEBHOOK_APP_SECRET) {
+      const crypto = require('crypto');
+      const expected = crypto.createHmac('sha256', process.env.WEBHOOK_APP_SECRET).update(req.body).digest('hex');
+      if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
+        console.warn('[Directory WH] Invalid signature — dropping');
+        return;
+      }
+    }
+
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString()) : req.body);
+    const entry = body?.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
     if (!value?.messages?.length) return;
