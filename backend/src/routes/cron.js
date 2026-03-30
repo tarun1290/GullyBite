@@ -1,4 +1,4 @@
-// src/routes/cron.js
+  // src/routes/cron.js
 // Cron-triggered endpoints for automated background tasks.
 // Protected by CRON_SECRET — only Vercel Cron or external cron services can call these.
 
