@@ -2122,4 +2122,113 @@ router.post('/flow/toggle-auto-assign', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── CONTACT BOOK (BSUID → Phone mapping) ───────────────────
+router.get('/waba/contact-book-status', async (req, res) => {
+  try {
+    const accounts = await col('whatsapp_accounts').find({ is_active: true }).toArray();
+    const results = accounts.map(a => ({
+      waba_id: a.waba_id,
+      restaurant_id: a.restaurant_id,
+      contact_book_enabled: !!a.contact_book_enabled,
+      contact_book_enabled_at: a.contact_book_enabled_at || null,
+    }));
+    const totalCustomers = await col('customers').countDocuments({});
+    const withBsuid = await col('customers').countDocuments({ bsuid: { $exists: true, $ne: null } });
+    const withPhone = await col('customers').countDocuments({ wa_phone: { $exists: true, $ne: null } });
+    res.json({ wabas: results, customers: { total: totalCustomers, with_bsuid: withBsuid, with_phone: withPhone, phone_only: withPhone - withBsuid } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/waba/:wabaId/enable-contact-book', async (req, res) => {
+  try {
+    const { wabaId } = req.params;
+    const token = metaConfig.getMessagingToken();
+    // Enable Contact Book via Meta API
+    const { data } = await axios.post(
+      `${metaConfig.graphUrl}/${wabaId}`,
+      { contact_book_enabled: true },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
+    );
+    await col('whatsapp_accounts').updateMany(
+      { waba_id: wabaId },
+      { $set: { contact_book_enabled: true, contact_book_enabled_at: new Date() } }
+    );
+    logActivity({ actorType: 'admin', action: 'waba.contact_book_enabled', category: 'settings', description: `Contact Book enabled for WABA ${wabaId}`, severity: 'info' });
+    res.json({ success: true, waba_id: wabaId });
+  } catch (e) {
+    console.error('[ContactBook] Enable failed:', e.response?.data?.error?.message || e.message);
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
+router.post('/waba/enable-all-contact-books', async (req, res) => {
+  try {
+    const accounts = await col('whatsapp_accounts').find({ is_active: true, contact_book_enabled: { $ne: true } }).toArray();
+    const wabaIds = [...new Set(accounts.map(a => a.waba_id).filter(Boolean))];
+    const token = metaConfig.getMessagingToken();
+    let enabled = 0, failed = 0;
+    for (const wabaId of wabaIds) {
+      try {
+        await axios.post(`${metaConfig.graphUrl}/${wabaId}`, { contact_book_enabled: true }, { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 });
+        await col('whatsapp_accounts').updateMany({ waba_id: wabaId }, { $set: { contact_book_enabled: true, contact_book_enabled_at: new Date() } });
+        enabled++;
+      } catch (e) {
+        console.error(`[ContactBook] Enable failed for WABA ${wabaId}:`, e.response?.data?.error?.message || e.message);
+        failed++;
+      }
+    }
+    logActivity({ actorType: 'admin', action: 'waba.contact_book_bulk_enabled', category: 'settings', description: `Contact Book bulk enable: ${enabled} enabled, ${failed} failed`, severity: 'info' });
+    res.json({ success: true, enabled, failed, already_enabled: accounts.length - wabaIds.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── MM LITE (Marketing Messages Lite) ──────────────────────
+router.get('/mm-lite/status', async (req, res) => {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'mm_lite' });
+    res.json({ enabled: !!setting?.enabled, updated_at: setting?.updated_at || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/mm-lite/toggle', async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    await col('platform_settings').updateOne(
+      { _id: 'mm_lite' },
+      { $set: { enabled: !!enabled, updated_at: new Date() }, $setOnInsert: { created_at: new Date() } },
+      { upsert: true }
+    );
+    res.json({ success: true, enabled: !!enabled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── FEEDBACK FLOW ──────────────────────────────────────────
+router.post('/flow/create-feedback', async (req, res) => {
+  try {
+    const existing = await col('platform_settings').findOne({ _id: 'feedback_flow' });
+    if (existing?.flow_id) return res.json({ success: true, already_exists: true, flow_id: existing.flow_id });
+
+    const wa = await col('whatsapp_accounts').findOne({ is_active: true });
+    if (!wa?.waba_id) return res.status(400).json({ error: 'No active WABA found.' });
+
+    const result = await flowMgr.createFeedbackFlow(wa.waba_id);
+    if (!result.success) return res.status(400).json(result);
+
+    await col('platform_settings').updateOne(
+      { _id: 'feedback_flow' },
+      { $set: { flow_id: result.flowId, flow_status: result.published ? 'PUBLISHED' : 'DRAFT', updated_at: new Date() }, $setOnInsert: { created_at: new Date() } },
+      { upsert: true }
+    );
+
+    res.json({ success: true, flow_id: result.flowId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/flow/feedback-status', async (req, res) => {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'feedback_flow' });
+    res.json(setting || { flow_id: null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

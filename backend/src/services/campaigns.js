@@ -24,7 +24,7 @@ const FAILURE_THRESHOLD_PCT = 10; // Auto-pause if >10% fail in a batch
 
 // ─── CREATE CAMPAIGN ────────────────────────────────────────────
 async function createCampaign(restaurantId, data) {
-  const { branchId, name, productIds, segment, headerText, bodyText, footerText, scheduleAt, batchSize } = data;
+  const { branchId, name, productIds, segment, headerText, bodyText, footerText, scheduleAt, batchSize, sendMethod } = data;
 
   if (!branchId || !productIds?.length) {
     throw new Error('branchId and at least one productId are required');
@@ -51,6 +51,7 @@ async function createCampaign(restaurantId, data) {
     current_batch: 0,
     total_batches: 0,
     resume_from_index: 0,
+    send_method: sendMethod || 'standard', // "standard" | "mm_lite"
     created_at: new Date(),
     sent_at: null,
     paused_at: null,
@@ -283,6 +284,18 @@ async function trackMessageStatus(messageId, status) {
   return true;
 }
 
+// ─── MM LITE (Marketing Messages Lite API) ──────────────────────
+// Meta's AI-optimized delivery for marketing templates.
+// When enabled, adds messaging_product delivery hint to the send call.
+// Currently applies to template messages; MPMs use standard delivery.
+// Feature flag: platform_settings.mm_lite_enabled
+async function isMMliteEnabled() {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'mm_lite' });
+    return !!setting?.enabled;
+  } catch { return false; }
+}
+
 // ─── SEND MPM MESSAGE ───────────────────────────────────────────
 async function sendMPM(pid, token, to, catalogId, products, campaign) {
   // Group into sections of 10 (Meta limit: 10 sections, 30 products total)
@@ -378,4 +391,5 @@ module.exports = {
   getCampaigns,
   getDueCampaigns,
   deleteCampaign,
+  isMMliteEnabled,
 };

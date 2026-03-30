@@ -2382,6 +2382,26 @@ router.put('/catalog/settings', async (req, res) => {
 });
 
 // POST /api/restaurant/catalog/sync — full sync all branches to main catalog
+router.get('/catalog/compliance', async (req, res) => {
+  try {
+    const branchDocs = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+    const branchIds = branchDocs.map(b => String(b._id));
+    if (!branchIds.length) return res.json({ total: 0, compliant: 0, issues: [] });
+
+    const items = await col('menu_items').find({ branch_id: { $in: branchIds } }).toArray();
+    const issues = [];
+    let compliant = 0;
+
+    for (const item of items) {
+      const v = catalog.validateItemForMeta(item);
+      if (v.valid) { compliant++; continue; }
+      issues.push({ id: String(item._id), name: item.name, retailer_id: item.retailer_id, errors: v.errors });
+    }
+
+    res.json({ total: items.length, compliant, non_compliant: issues.length, issues });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/catalog/sync-status', async (req, res) => {
   try {
     const r = await col('restaurants').findOne({ _id: req.restaurantId }, { projection: { last_catalog_sync: 1, last_catalog_pull_at: 1, last_auto_sync_at: 1 } });

@@ -247,10 +247,19 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
   const productLink = item.link || `${process.env.BASE_URL || 'https://gullybite.com'}/menu/${String(item._id)}`;
   const tags = item.product_tags || [];
 
+  // Ensure description meets Meta's 10-char minimum
+  let desc = (item.description || '').trim();
+  if (desc.length < 10) {
+    desc = `${item.name || 'Menu item'} — Fresh from ${brandName}`;
+  }
+
+  // Sanitize retailer_id: only alphanumeric, hyphens, underscores (Meta requirement)
+  const safeRetailerId = (item.retailer_id || String(item._id)).replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 100);
+
   return {
-    id: item.retailer_id || String(item._id),
-    title: (item.name || '').substring(0, 100),
-    description: (item.description || item.name || '').substring(0, 1000),
+    id: safeRetailerId,
+    title: (item.name || 'Menu Item').substring(0, 200),
+    description: desc.substring(0, 1000),
     availability: item.is_available ? 'in stock' : 'out of stock',
     condition: 'new',
     price: priceFormatted,
@@ -282,14 +291,29 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
   };
 }
 
+// ─── VALIDATE ITEM FOR META COMPLIANCE ──────────────────────
+function validateItemForMeta(item) {
+  const errors = [];
+  if (!item.retailer_id) errors.push('Missing retailer_id');
+  else if (/[^a-zA-Z0-9_-]/.test(item.retailer_id)) errors.push('retailer_id contains invalid characters');
+  else if (item.retailer_id.length > 100) errors.push('retailer_id exceeds 100 chars');
+  if (!item.name || item.name.trim().length === 0) errors.push('Missing name');
+  if (!item.price_paise || item.price_paise <= 0) errors.push('Invalid price');
+  if (typeof item.price_paise === 'number' && !Number.isInteger(item.price_paise)) errors.push('Price must be integer (paise)');
+  return { valid: errors.length === 0, errors };
+}
+
 // ─── BUILD BATCH REQUEST FOR A MENU ITEM (uses 29-column mapper) ──
 function _buildItemRequest(item, restaurant, branch) {
   if (!item.retailer_id) return null;
 
-  const retailerId = item.retailer_id;
+  const validation = validateItemForMeta(item);
+  if (!validation.valid) {
+    console.warn(`[Catalog] Item "${item.name}" (${item.retailer_id}) failed validation:`, validation.errors.join(', '));
+    // Still attempt to sync — Meta may accept with auto-fixes from mapMenuItemToMetaProduct
+  }
 
-  // For unavailable items, send UPDATE with "out of stock" instead of DELETE
-  // so Meta keeps the product but marks it unavailable
+  const retailerId = item.retailer_id;
   const data = mapMenuItemToMetaProduct(item, restaurant, branch);
 
   return {
@@ -1463,4 +1487,6 @@ module.exports = {
   ensureBranchCollection,
   syncAllBranchCollections,
   deleteBranchCollection,
+  // Compliance
+  validateItemForMeta,
 };

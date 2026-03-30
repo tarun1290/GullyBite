@@ -299,6 +299,84 @@ function formatAddressesForFlow(addresses) {
   return items;
 }
 
+// ─── FEEDBACK/RATING FLOW ────────────────────────────────────
+function buildFeedbackFlowJson() {
+  return {
+    version: '6.2',
+    screens: [
+      {
+        id: 'RATING_SCREEN',
+        title: 'Rate Your Order',
+        terminal: true,
+        success: true,
+        data: {
+          order_number: { type: 'string', __example__: '#ZM-20260328-0001' },
+          order_id: { type: 'string', __example__: 'ord_123' },
+        },
+        layout: {
+          type: 'SingleColumnLayout',
+          children: [
+            { type: 'TextHeading', text: 'How was your order?' },
+            { type: 'TextBody', text: 'Your feedback helps improve the experience for everyone.' },
+            {
+              type: 'Dropdown', label: 'Food Quality', name: 'food_rating', required: true,
+              'data-source': [
+                { id: '5', title: '⭐⭐⭐⭐⭐ Excellent' },
+                { id: '4', title: '⭐⭐⭐⭐ Great' },
+                { id: '3', title: '⭐⭐⭐ Good' },
+                { id: '2', title: '⭐⭐ Fair' },
+                { id: '1', title: '⭐ Poor' },
+              ],
+            },
+            {
+              type: 'Dropdown', label: 'Delivery Experience', name: 'delivery_rating', required: true,
+              'data-source': [
+                { id: '5', title: '⭐⭐⭐⭐⭐ Excellent' },
+                { id: '4', title: '⭐⭐⭐⭐ Great' },
+                { id: '3', title: '⭐⭐⭐ Good' },
+                { id: '2', title: '⭐⭐ Fair' },
+                { id: '1', title: '⭐ Poor' },
+              ],
+            },
+            { type: 'TextInput', label: 'Comments (optional)', 'input-type': 'text', name: 'comment', required: false, 'helper-text': 'Tell us more about your experience' },
+            {
+              type: 'Footer', label: 'Submit Rating',
+              'on-click-action': {
+                name: 'complete',
+                payload: {
+                  food_rating: '${form.food_rating}',
+                  delivery_rating: '${form.delivery_rating}',
+                  comment: '${form.comment}',
+                },
+              },
+            },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+async function createFeedbackFlow(wabaId) {
+  const token = metaConfig.getMessagingToken();
+  const flowJson = buildFeedbackFlowJson();
+
+  console.log('[Flow] Creating feedback Flow for WABA:', wabaId);
+
+  try {
+    const { data } = await axios.post(
+      `${metaConfig.graphUrl}/${wabaId}/flows`,
+      { name: 'GullyBite Order Rating', categories: ['OTHER'], flow_json: JSON.stringify(flowJson), publish: true },
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 20000 }
+    );
+    console.log('[Flow] Feedback Flow created:', data.id);
+    return { success: true, flowId: data.id, published: !data.validation_errors?.length };
+  } catch (err) {
+    console.error('[Flow] Feedback Flow creation failed:', err.response?.data || err.message);
+    return { success: false, error: err.response?.data?.error?.message || err.message, validation_errors: err.response?.data?.validation_errors };
+  }
+}
+
 module.exports = {
   buildDeliveryFlowJson,
   createDeliveryFlow,
@@ -307,4 +385,6 @@ module.exports = {
   getFlowPreview,
   deprecateFlow,
   formatAddressesForFlow,
+  buildFeedbackFlowJson,
+  createFeedbackFlow,
 };

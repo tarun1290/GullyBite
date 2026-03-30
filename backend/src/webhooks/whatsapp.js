@@ -1702,8 +1702,9 @@ const sendRatingRequest = async (orderId, pid, token, to) => {
     const existing = await col('order_ratings').findOne({ order_id: orderId });
     if (existing) return; // already rated
 
-    // Try WhatsApp Flow if RATING_FLOW_ID is configured
-    const flowId = process.env.RATING_FLOW_ID;
+    // Try WhatsApp Flow — check platform_settings first, then env var
+    const flowSetting = await col('platform_settings').findOne({ _id: 'feedback_flow' });
+    const flowId = flowSetting?.flow_id || process.env.RATING_FLOW_ID;
     if (flowId) {
       try {
         await wa.sendFlow(pid, token, to, {
