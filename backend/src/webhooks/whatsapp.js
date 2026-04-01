@@ -365,46 +365,49 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   }
 
   if (['HI', 'HELLO', 'HEY', 'START', 'MENU', 'ORDER'].includes(text)) {
-    await orderSvc.setState(conv.id, 'GREETING');
+    await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
 
-    // If restaurant has a delivery Flow, use it for address selection
     const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+    const restName = restaurant?.business_name || waAccount.display_name || 'our restaurant';
+
+    // Send warm welcome text first
+    await wa.sendText(pid, token, to,
+      `🍔 Welcome to *${restName}*!\n` +
+      `Hi${customer.name ? ' ' + customer.name : ''}! 👋\n\n` +
+      `I'll show you our menu and help you place an order right here in WhatsApp.`
+    );
+
+    // Immediately send delivery address Flow (no buttons, no waiting)
     if (restaurant?.flow_id) {
       const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
       if (savedAddrs?.length > 0) {
-        // Returning customer — show saved addresses via Flow
         const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
         await wa.sendFlow(pid, token, to, {
-          body: `Welcome back${customer.name ? ', ' + customer.name : ''}! 👋\nChoose your delivery address to see our menu.`,
+          body: 'Choose your delivery address to see our menu:',
           flowId: restaurant.flow_id,
           flowCta: 'Choose Address',
           screenId: 'SAVED_ADDRESSES',
           flowData: { addresses: addressItems },
         });
       } else {
-        // New customer — show new address form via Flow
         await wa.sendFlow(pid, token, to, {
-          body: `Hi${customer.name ? ' ' + customer.name : ''}! 👋\nSet your delivery location to browse our menu.`,
+          body: 'Set your delivery location to browse our menu:',
           flowId: restaurant.flow_id,
           flowCta: 'Set Location',
           screenId: 'NEW_ADDRESS',
           flowData: {},
         });
       }
-      return;
+    } else {
+      // Fallback: no Flow — ask for location directly (no buttons)
+      await wa.sendText(pid, token, to,
+        '📍 Share your delivery location so I can show you the menu:\n\n' +
+        '• *Share your live location* — tap + → Location\n' +
+        '• *Send a Google Maps link*\n' +
+        '• *Type your full address*'
+      );
+      await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
     }
-
-    // Fallback: no Flow set up — use buttons
-    await wa.sendButtons(pid, token, to, {
-      header: `🍔 Welcome to ${waAccount.display_name || 'GullyBite'}!`,
-      body: `Hi ${customer.name || 'there'}! 👋\n\nI'm your food ordering assistant.\nI'll show you our menu and help you place an order right here in WhatsApp.\n\nWant to get started?`,
-      footer: 'Takes less than 2 minutes to order',
-      buttons: [
-        { id: 'START_ORDER', title: '🛒 Order Now' },
-        { id: 'TRACK_ORDER', title: '📦 Track Order' },
-        { id: 'VIEW_HISTORY', title: '📜 Past Orders' },
-      ],
-    });
     return;
   }
 
@@ -1096,10 +1099,16 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
   switch (replyId) {
     case 'START_ORDER': {
       logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.order_started', category: 'order', description: `${customer.name || customer.wa_phone || customer.bsuid} started ordering`, restaurantId: waAccount.restaurant_id, severity: 'info' });
-      const addresses = await addressSvc.getAddresses({ customer_id: customer.id });
-      if (addresses.length > 0) {
-        await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
-        await wa.sendAddressList(pid, token, to, addresses);
+      await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
+      const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+      if (restaurant?.flow_id) {
+        const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
+        if (savedAddrs?.length > 0) {
+          const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
+          await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { addresses: addressItems } });
+        } else {
+          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: {} });
+        }
       } else {
         await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
         await wa.sendLocationRequest(pid, token, to);

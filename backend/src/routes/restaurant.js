@@ -1548,7 +1548,9 @@ router.post('/menu/csv', async (req, res) => {
           const bid = newId();
           const now = new Date();
           await col('branches').insertOne({ _id: bid, restaurant_id: req.restaurantId, name: bn, branch_slug: slugify(bn, 20), city: '', is_open: true, accepts_orders: true, delivery_radius_km: 5, opening_time: '10:00', closing_time: '22:00', created_at: now, updated_at: now });
-          console.log(`[CSV] Auto-created branch: "${bn}" (${bid})`);
+          console.warn(`[CSV] Auto-created branch "${bn}" (${bid}) — has no coordinates, restaurant must set location in dashboard`);
+          // Auto-create catalog for the new branch (same as POST /branches route)
+          catalog.createBranchCatalog(bid).catch(err => console.error(`[CSV] Auto catalog for "${bn}" failed:`, err.message));
         }
       }
       allBranches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
@@ -2542,7 +2544,8 @@ router.post('/catalog/cart-toggle', async (req, res) => {
     const { enabled } = req.body;
     const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
     if (!wa?.phone_number_id) return res.status(400).json({ error: 'No WhatsApp number connected.' });
-    if (!wa?.catalog_linked) return res.status(400).json({ error: 'Link catalog first.' });
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    if (!wa?.catalog_linked && !wa?.catalog_id && !restaurant?.meta_catalog_id) return res.status(400).json({ error: 'No catalog connected. Link a catalog first.' });
 
     const token = metaConfig.getCatalogToken();
     await axios.post(
@@ -2594,7 +2597,8 @@ router.post('/catalog/visibility-toggle', async (req, res) => {
     const { visible } = req.body;
     const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
     if (!wa?.phone_number_id) return res.status(400).json({ error: 'No WhatsApp number connected.' });
-    if (!wa?.catalog_linked) return res.status(400).json({ error: 'Link catalog first.' });
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    if (!wa?.catalog_linked && !wa?.catalog_id && !restaurant?.meta_catalog_id) return res.status(400).json({ error: 'No catalog connected. Link a catalog first.' });
 
     const token = metaConfig.getCatalogToken();
     await axios.post(
@@ -2935,6 +2939,21 @@ router.post('/catalog/connect-waba', async (req, res) => {
       { $set: { meta_catalog_id: catalog_id, updated_at: new Date() } }
     );
 
+    // Auto-enable commerce settings (visibility + cart) after connecting
+    if (wa.phone_number_id) {
+      try {
+        await axios.post(
+          `${metaConfig.graphUrl}/${wa.phone_number_id}/whatsapp_commerce_settings`,
+          { catalog_id, is_catalog_visible: true, is_cart_enabled: true },
+          { headers: { Authorization: `Bearer ${metaConfig.getCatalogToken()}` }, timeout: 15000 }
+        );
+        await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { catalog_visible: true, cart_enabled: true } });
+        console.log('[Catalog] Auto-enabled commerce settings after connect');
+      } catch (csErr) {
+        console.warn('[Catalog] Auto-enable commerce settings failed:', csErr.response?.data?.error?.message || csErr.message);
+      }
+    }
+
     res.json({ success: true });
   } catch (e) {
     console.error('[Catalog] Connect WABA failed:', e.response?.data || e.message);
@@ -2979,7 +2998,12 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
 
     await col('whatsapp_accounts').updateOne(
       { _id: wa._id },
-      { $set: { catalog_linked: false, cart_enabled: false, catalog_visible: false, updated_at: new Date() } }
+      { $set: { catalog_id: null, catalog_linked: false, cart_enabled: false, catalog_visible: false, updated_at: new Date() } }
+    );
+    // Clear catalog_id on branches too (WABA unlinked = catalog not active on WhatsApp)
+    await col('branches').updateMany(
+      { restaurant_id: req.restaurantId },
+      { $set: { catalog_id: null, updated_at: new Date() } }
     );
 
     res.json({ success: true });
@@ -3155,7 +3179,7 @@ router.post('/catalog/merge', requireApproved, async (req, res) => {
     );
     await col('whatsapp_accounts').updateMany(
       { restaurant_id: req.restaurantId },
-      { $set: { catalog_id: primaryId, updated_at: new Date() } }
+      { $set: { catalog_id: primaryId, catalog_linked: true, updated_at: new Date() } }
     );
     await col('branches').updateMany(
       { restaurant_id: req.restaurantId },

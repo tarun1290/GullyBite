@@ -6503,7 +6503,10 @@ async function doCatMgmtCreateConfirm() {
     toast(`✅ Catalog created: ${r.catalog_name}`, 'ok');
     loadCatalogMgmt(true);
     loadCatalogStatus();
-  } catch (e) { toast('❌ ' + (e.message || 'Failed to create'), 'err'); }
+  } catch (e) {
+    const msg = e.message || 'Failed to create';
+    toast(msg.includes('pending_approval') || msg.includes('Forbidden') ? '⚠️ Restaurant must be approved before creating catalogs' : '❌ ' + msg, 'err');
+  }
 }
 
 async function doCatMgmtConnect() {
@@ -6581,7 +6584,8 @@ async function doCatMgmtDeleteConfirm() {
     loadCatalogMgmt(true);
     loadCatalogStatus();
   } catch (e) {
-    toast('❌ ' + (e.message || 'Failed to delete'), 'err');
+    const msg = e.message || 'Failed to delete';
+    toast(msg.includes('pending_approval') || msg.includes('Forbidden') ? '⚠️ Restaurant must be approved before deleting catalogs' : '❌ ' + msg, 'err');
     document.getElementById('cat-delete-confirm-btn').disabled = false;
   }
 }
@@ -6693,7 +6697,10 @@ async function doCatalogMerge() {
       toast(`✅ Merged ${r.merged} catalogs. ${r.total_copied} items copied, ${r.duplicates_skipped} duplicates skipped`, 'ok');
     }
     loadCatalogMgmt(true);
-  } catch (e) { toast('❌ Merge failed: ' + (e.message || 'Unknown error'), 'err'); }
+  } catch (e) {
+    const msg = e.message || 'Unknown error';
+    toast(msg.includes('pending_approval') || msg.includes('Forbidden') ? '⚠️ Restaurant must be approved before merging catalogs' : '❌ Merge failed: ' + msg, 'err');
+  }
 }
 
 async function doChangePassword() {
