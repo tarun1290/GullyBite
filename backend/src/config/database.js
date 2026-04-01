@@ -1,28 +1,42 @@
 // src/config/database.js
-// MongoDB connection — replaces PostgreSQL/pg
+// MongoDB connection — optimized for Vercel serverless (cached across warm invocations)
 
 const { MongoClient } = require('mongodb');
 const { v4: uuidv4 } = require('uuid');
 
-// Connection pool options — optimized for Vercel serverless
+// Serverless-optimized pool: minimal connections, fast timeouts
 const POOL_OPTIONS = {
-  maxPoolSize: 10,
-  minPoolSize: 2,
-  maxIdleTimeMS: 60000,
-  connectTimeoutMS: 5000,
-  socketTimeoutMS: 10000,
-  serverSelectionTimeoutMS: 5000,
+  maxPoolSize: 1,           // One connection per serverless instance
+  minPoolSize: 0,           // Allow pool to shrink to zero when idle
+  maxIdleTimeMS: 10000,     // Close idle connections after 10s
+  connectTimeoutMS: 10000,  // Fail fast — don't hang for 2 minutes
+  socketTimeoutMS: 45000,   // Socket operations timeout
+  serverSelectionTimeoutMS: 10000, // Don't wait forever to find a server
   retryWrites: true,
   retryReads: true,
 };
 
-// Cache client/db at module scope — survives across warm invocations in Vercel
+// Module-level cache — survives across warm invocations in Vercel
 let _client = global._mongoClient || null;
 let _db = global._mongoDb || null;
 let _connectPromise = global._mongoConnectPromise || null;
 
+function _isAlive() {
+  try { return _client?.topology?.isConnected?.() !== false; } catch { return false; }
+}
+
 const connect = async () => {
-  if (_db) return _db;
+  // Check if existing connection is truly alive (not just cached but stale)
+  if (_db && _isAlive()) return _db;
+
+  // Stale connection — discard and reconnect
+  if (_client && !_isAlive()) {
+    console.log('[DB] Stale connection detected — reconnecting');
+    try { _client.close().catch(() => {}); } catch {}
+    _client = null; _db = null;
+    global._mongoClient = null; global._mongoDb = null;
+  }
+
   if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI env var is not set');
   const start = Date.now();
   _client = new MongoClient(process.env.MONGODB_URI, POOL_OPTIONS);
@@ -35,7 +49,7 @@ const connect = async () => {
   return _db;
 };
 
-// Connect on startup — store rejected promise for ensureConnected to retry
+// Connect on startup — non-blocking, stores promise for ensureConnected to await
 if (!_connectPromise) {
   _connectPromise = connect().catch(err => {
     console.error('❌ MongoDB connection FAILED:', err.message);
@@ -47,9 +61,8 @@ if (!_connectPromise) {
 
 // Middleware: ensures DB is connected before any route runs
 const ensureConnected = async (req, res, next) => {
-  if (_db) return next(); // already connected (warm start)
+  if (_db && _isAlive()) return next(); // already connected (warm start)
   try {
-    // If initial connect succeeded, await it; otherwise retry
     if (_connectPromise) {
       await _connectPromise;
     } else {
@@ -58,6 +71,8 @@ const ensureConnected = async (req, res, next) => {
   } catch (_) {
     // First attempt failed — retry once (handles Vercel cold-start race)
     try {
+      _connectPromise = null;
+      global._mongoConnectPromise = null;
       await connect();
     } catch (err) {
       console.error('❌ DB unavailable on retry:', err.message);
