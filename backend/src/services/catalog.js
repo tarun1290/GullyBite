@@ -187,34 +187,53 @@ const ensureBranchProductSet = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!branch) throw new Error('Branch not found');
 
-  // Already has a product set
-  if (branch.meta_product_set_id) {
-    return { productSetId: branch.meta_product_set_id, alreadyExists: true };
-  }
-
   // Ensure main catalog exists
   const { catalogId } = await ensureMainCatalog(branch.restaurant_id);
 
-  // Also set catalog_id on the branch (for backwards compat with existing code)
+  // Set catalog_id on the branch (for backwards compat)
   if (!branch.catalog_id || branch.catalog_id !== catalogId) {
     await col('branches').updateOne({ _id: branchId }, { $set: { catalog_id: catalogId } });
     branch.catalog_id = catalogId;
   }
 
-  // Build a filter: match items whose retailer_id starts with this branch's prefix
-  // We use a tag-based filter on product_tags[1] which contains the branch name
+  // Get all retailer_ids for this branch's menu items
+  const items = await col('menu_items').find(
+    { branch_id: branchId, retailer_id: { $exists: true, $ne: null } },
+    { projection: { retailer_id: 1 } }
+  ).toArray();
+  const retailerIds = items.map(i => i.retailer_id).filter(Boolean);
+
+  if (!retailerIds.length) {
+    console.warn(`[Catalog] No items with retailer_id for branch "${branch.name}" — skipping product set`);
+    return { productSetId: null, skipped: true, reason: 'no items' };
+  }
+
   const setName = branch.name || `Branch ${branchId.slice(0, 6)}`;
+  // Meta product set filter: retailer_id is_any with explicit list
+  const filter = JSON.stringify({ retailer_id: { is_any: retailerIds } });
+  const token = _getCatalogToken();
 
   try {
-    const filter = JSON.stringify({ 'product_tags[1]': { contains: branch.name } });
+    if (branch.meta_product_set_id) {
+      // UPDATE existing product set with refreshed retailer_id list
+      await axios.post(
+        `${GRAPH}/${branch.meta_product_set_id}`,
+        { name: setName, filter },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+      );
+      console.log(`[Catalog] Updated branch product set "${setName}" (${retailerIds.length} items)`);
+      return { productSetId: branch.meta_product_set_id, updated: true };
+    }
+
+    // CREATE new product set
     const res = await axios.post(
       `${GRAPH}/${catalogId}/product_sets`,
       { name: setName, filter },
-      { headers: { Authorization: `Bearer ${_getCatalogToken()}` }, timeout: 15000 }
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
     );
     const productSetId = res.data.id;
     await col('branches').updateOne({ _id: branchId }, { $set: { meta_product_set_id: productSetId } });
-    console.log(`[Catalog] Created branch product set "${setName}" → ${productSetId}`);
+    console.log(`[Catalog] Created branch product set "${setName}" → ${productSetId} (${retailerIds.length} items)`);
     return { productSetId, created: true };
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
