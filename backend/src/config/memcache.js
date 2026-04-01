@@ -26,4 +26,10 @@ function clear() {
   _store.clear();
 }
 
-module.exports = { get, set, del, clear };
+function invalidatePrefix(prefix) {
+  for (const key of _store.keys()) {
+    if (key.startsWith(prefix)) _store.delete(key);
+  }
+}
+
+module.exports = { get, set, del, clear, invalidatePrefix };

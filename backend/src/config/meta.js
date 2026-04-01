@@ -21,8 +21,14 @@ const metaConfig = {
   // Primary token — used for ALL Meta API calls (messaging + catalog + business)
   get systemUserToken() { return process.env.META_SYSTEM_USER_TOKEN; },
 
-  // Legacy: if someone set a dedicated catalog token, prefer it; else fall back to system token
-  get catalogToken() { return process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN || process.env.META_SYSTEM_USER_TOKEN; },
+  // Catalog token: META_CATALOG_TOKEN if explicitly set, otherwise same as system user token.
+  // WA_CATALOG_TOKEN is deliberately NOT checked — it was a legacy User Token that expires.
+  get catalogToken() {
+    if (process.env.META_CATALOG_TOKEN && process.env.META_CATALOG_TOKEN !== process.env.META_SYSTEM_USER_TOKEN) {
+      console.warn('[MetaConfig] META_CATALOG_TOKEN is set separately from META_SYSTEM_USER_TOKEN — ensure both are valid System User tokens');
+    }
+    return process.env.META_CATALOG_TOKEN || process.env.META_SYSTEM_USER_TOKEN;
+  },
 
   // ── App credentials (OAuth flow during Embedded Signup only) ──
   get appId()     { return process.env.META_APP_ID; },
@@ -65,12 +71,36 @@ const metaConfig = {
     console.log('[MetaConfig] META_CATALOG_TOKEN:',
       process.env.META_CATALOG_TOKEN
         ? mask(process.env.META_CATALOG_TOKEN)
-        : `not set → fallback ${this.systemUserToken ? 'META_SYSTEM_USER_TOKEN' : '⚠️  NONE'}`);
+        : `not set → using META_SYSTEM_USER_TOKEN`);
+    if (process.env.WA_CATALOG_TOKEN) {
+      console.warn('[MetaConfig] ⚠️  WA_CATALOG_TOKEN is set but IGNORED — remove it from env vars to avoid confusion');
+    }
     console.log('[MetaConfig] META_APP_ID:', mask(this.appId));
     console.log('[MetaConfig] META_APP_SECRET:', mask(this.appSecret));
     console.log('[MetaConfig] META_BUSINESS_ID:', this.businessId || '⚠️  NOT SET');
     console.log('[MetaConfig] API Version:', this.apiVersion);
     console.log('[MetaConfig] ──────────────────────────────────');
+
+    // Non-blocking startup token validation
+    this.verifyToken().then(result => {
+      if (!result.valid) {
+        console.error('[MetaConfig] ❌ TOKEN INVALID — All Meta API calls will fail!');
+        console.error('[MetaConfig]    Error:', result.error);
+        console.error('[MetaConfig]    Fix: Generate a new System User Token in Meta Business Manager');
+      }
+      if (result.type === 'USER') {
+        console.error('[MetaConfig] ⚠️⚠️⚠️  TOKEN IS A USER TOKEN — IT WILL EXPIRE!');
+        console.error('[MetaConfig]    User tokens expire when password changes or session ends.');
+        console.error('[MetaConfig]    Fix: Go to business.facebook.com → Business Settings → System Users →');
+        console.error('[MetaConfig]    Select system user → Generate Token → Select app → Select scopes:');
+        console.error('[MetaConfig]    whatsapp_business_messaging, whatsapp_business_management,');
+        console.error('[MetaConfig]    catalog_management, business_management → Generate Token');
+        console.error('[MetaConfig]    System User tokens NEVER expire.');
+      }
+      if (result.missingScopes?.length) {
+        console.error(`[MetaConfig] ❌ Missing required scopes: ${result.missingScopes.join(', ')}`);
+      }
+    }).catch(() => {}); // Network errors during startup validation are non-fatal
   },
 
   // ── Catalog admin access ─────────────────────────────────────
@@ -165,7 +195,7 @@ const metaConfig = {
       if (missing.length) console.warn('[MetaConfig] ⚠️  MISSING SCOPES:', missing.join(', '));
       else console.log('[MetaConfig] ✅ All required scopes present');
 
-      return { valid: d.is_valid, scopes: d.scopes, missingScopes: missing, expiresAt: d.expires_at };
+      return { valid: d.is_valid, type: d.type, scopes: d.scopes, missingScopes: missing, expiresAt: d.expires_at };
     } catch (err) {
       console.error('[MetaConfig] Token debug failed:', err.response?.data?.error?.message || err.message);
       return { valid: false, error: err.response?.data?.error?.message || err.message };

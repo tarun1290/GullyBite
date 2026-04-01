@@ -4772,12 +4772,19 @@ async function doUploadCsv() {
     const syncEl = document.getElementById('csv-sync-status');
     try {
       const s = await api('/api/restaurant/catalog/sync', { method: 'POST' });
+      const totalSynced = s.totalSynced || 0;
+      const totalFailed = s.totalFailed || 0;
       if (syncEl) {
-        const totalSynced = s.results?.totalSynced || s.results?.reduce?.((sum, r) => sum + (r.updated || 0), 0) || 0;
-        syncEl.innerHTML = `<span style="color:var(--wa)">✅ ${totalSynced} items live on WhatsApp!</span>`;
+        if (totalFailed > 0) {
+          syncEl.innerHTML = `<span style="color:#d97706">⚠️ ${totalSynced} synced, ${totalFailed} failed</span> <button class="btn-g btn-sm" onclick="doSyncToCatalog()" style="font-size:.7rem;padding:.15rem .4rem;margin-left:.3rem">Retry Sync</button>`;
+          toast(`Menu saved but ${totalFailed} items failed to sync to WhatsApp`, 'err');
+        } else {
+          syncEl.innerHTML = `<span style="color:var(--wa)">✅ ${totalSynced} items live on WhatsApp!</span>`;
+        }
       }
     } catch (se) {
-      if (syncEl) syncEl.innerHTML = `<span style="color:var(--red)">⚠️ Sync failed: ${se.message}</span>`;
+      if (syncEl) syncEl.innerHTML = `<span style="color:var(--red)">⚠️ Sync failed: ${se.message}</span> <button class="btn-g btn-sm" onclick="doSyncToCatalog()" style="font-size:.7rem;padding:.15rem .4rem;margin-left:.3rem">Retry Sync</button>`;
+      toast('Menu saved but WhatsApp sync failed: ' + se.message, 'err');
     }
 
     toast(`✅ ${r.added} items uploaded!`, 'ok');
@@ -6336,7 +6343,14 @@ async function loadCatalogMgmt(refresh = false) {
   const settingsEl = document.getElementById('cat-mgmt-settings');
   const deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
   if (deleteConfirmEl) deleteConfirmEl.style.display = 'none';
-  loadCatalogVisibility(); // Also load visibility toggle state
+  loadCatalogVisibility();
+
+  // Approval status warning — show before content loads
+  if (rest?.approval_status && rest.approval_status !== 'approved') {
+    statusEl.innerHTML = `<div style="padding:.6rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-bottom:.8rem;font-size:.82rem">
+      <span style="font-weight:600;color:#92400e">⚠️ Approval pending</span> — Catalog management (create, delete, merge, sync) requires restaurant approval. Status: <strong>${rest.approval_status}</strong>
+    </div>` + (statusEl.innerHTML || '');
+  }
 
   try {
     const catData = await api(`/api/restaurant/catalogs${refresh ? '?refresh=true' : ''}`);
@@ -6419,7 +6433,26 @@ async function loadCatalogMgmt(refresh = false) {
       if (settingsEl) settingsEl.style.display = 'none';
     }
   } catch (e) {
-    statusEl.innerHTML = `<div style="color:var(--dim);font-size:.82rem">Failed to load catalog status: ${e.message}</div>`;
+    // Check if approval status is blocking
+    if (e.message?.includes('pending_approval') || e.message?.includes('Forbidden')) {
+      statusEl.innerHTML = `<div style="padding:.7rem .9rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;font-size:.82rem">
+        <div style="font-weight:600;color:#92400e">⚠️ Restaurant not yet approved</div>
+        <div style="color:#92400e;margin-top:.2rem">Catalog management requires approval. Current status: <strong>${rest?.approval_status || 'unknown'}</strong></div>
+      </div>`;
+    } else if (rest?.meta_catalog_id) {
+      // API failed but we have a cached catalog ID — show fallback
+      _catMgmtData = { active_catalog_id: rest.meta_catalog_id, catalogs: [{ id: rest.meta_catalog_id, name: rest.meta_catalog_name || 'Menu Catalog', connected: true }] };
+      statusEl.innerHTML = `<div style="padding:.5rem .8rem;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:8px;font-size:.82rem">
+        <div style="font-weight:600">📦 ${rest.meta_catalog_name || 'Menu Catalog'} <span style="font-size:.72rem;color:var(--dim)">(${rest.meta_catalog_id})</span></div>
+        <div style="font-size:.74rem;color:var(--dim);margin-top:.2rem">⚠️ Live fetch failed: ${e.message} — showing cached data</div>
+      </div>`;
+      document.getElementById('cat-delete-btn').style.display = 'inline-flex';
+      document.getElementById('cat-disconnect-btn').style.display = 'inline-flex';
+    } else {
+      statusEl.innerHTML = `<div style="color:var(--dim);font-size:.82rem">Failed to load catalog status: ${e.message}</div>`;
+    }
+    // Always keep Create New accessible
+    document.getElementById('cat-connect-btn').style.display = 'inline-flex';
     if (settingsEl) settingsEl.style.display = 'none';
     const countTextEl = document.getElementById('wa-catalog-count-text');
     if (countTextEl) { countTextEl.textContent = 'Unable to fetch catalog info'; countTextEl.style.color = 'var(--dim)'; }
@@ -6512,8 +6545,8 @@ async function doCatMgmtDisconnect() {
 
 function doCatMgmtDelete() {
   const catData = _catMgmtData;
-  const active = catData?.active_catalog_id;
-  const activeCat = catData?.catalogs?.find(c => c.id === active);
+  const active = catData?.active_catalog_id || catData?.catalogs?.[0]?.id;
+  const activeCat = catData?.catalogs?.find(c => c.id === active) || catData?.catalogs?.[0];
   if (!active) { toast('No catalog to delete', 'err'); return; }
 
   // Show type-to-confirm panel
@@ -6537,7 +6570,7 @@ function doCatMgmtDelete() {
 }
 
 async function doCatMgmtDeleteConfirm() {
-  const active = _catMgmtData?.active_catalog_id;
+  const active = _catMgmtData?.active_catalog_id || _catMgmtData?.catalogs?.[0]?.id;
   if (!active) return;
   try {
     toast('Deleting catalog...', 'ok');

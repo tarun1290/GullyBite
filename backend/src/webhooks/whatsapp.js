@@ -151,7 +151,8 @@ const processChange = async (value) => {
     _dedupIndexCreated = true;
   }
 
-  const waAccount = await col('whatsapp_accounts').findOne({ phone_number_id: phoneNumberId, is_active: true });
+  const { getWaAccount } = require('../utils/cachedLookup');
+  const waAccount = await getWaAccount(phoneNumberId);
   if (!waAccount) {
     console.warn('[WA] Unknown phone_number_id:', phoneNumberId);
     return;

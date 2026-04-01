@@ -101,10 +101,9 @@ const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = n
 
   const subtotalRs = cart.reduce((s, i) => s + i.lineTotalRs, 0);
 
-  const branch = await col('branches').findOne({ _id: branchId });
-  const restaurant = branch
-    ? await col('restaurants').findOne({ _id: branch.restaurant_id })
-    : null;
+  const { getBranch, getRestaurant } = require('../utils/cachedLookup');
+  const branch = await getBranch(branchId);
+  const restaurant = branch ? await getRestaurant(branch.restaurant_id) : null;
 
   // 3PL delivery quote — gets real pricing from delivery partner
   const dynamicResult = await calculateDynamicDeliveryFee(branchId, deliveryLat, deliveryLng, orderDetails);
@@ -169,7 +168,8 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
 
   const platformFeeRs = 0;
 
-  const branch = await col('branches').findOne({ _id: branchId });
+  const { getBranch } = require('../utils/cachedLookup');
+  const branch = await getBranch(branchId);
   const restaurantId = branch?.restaurant_id;
   const referral      = await findActiveReferral(waPhone, restaurantId);
   const referralId    = referral?.id || null;
@@ -238,9 +238,9 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     );
   }
 
-  // Create order items
-  for (const item of cart) {
-    await col('order_items').insertOne({
+  // Create order items (bulk insert instead of loop)
+  if (cart.length) {
+    await col('order_items').insertMany(cart.map(item => ({
       _id: newId(),
       order_id: orderId,
       menu_item_id: item.menuItemId,
@@ -248,7 +248,7 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
       unit_price_rs: item.unitPriceRs,
       quantity: item.qty,
       line_total_rs: item.lineTotalRs,
-    });
+    })));
   }
 
   // Create delivery record (pending dispatch until payment confirmed)

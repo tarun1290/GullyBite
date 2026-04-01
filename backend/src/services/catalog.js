@@ -1,6 +1,14 @@
 // src/services/catalog.js
 // Syncs restaurant menu to Meta WhatsApp Catalog via facebook-nodejs-business-sdk
 // Architecture: ONE main catalog per restaurant, each branch is a product set within it
+//
+// TOKEN ARCHITECTURE:
+// ALL catalog operations across ALL restaurants use the platform's System User Token
+// via metaConfig.getCatalogToken(). Individual restaurant tokens from Embedded Signup
+// are NOT used here. The System User Token never expires and has access to all WABAs
+// shared with the platform's Meta Business account during Embedded Signup.
+// If catalog operations fail with permission errors, check the System User Token scopes
+// in Meta Business Manager — do NOT generate per-restaurant tokens.
 
 const bizSdk = require('facebook-nodejs-business-sdk');
 const axios   = require('axios');
@@ -670,31 +678,47 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
 };
 
 // ─── GET ALL PRODUCTS IN A CATALOG (via SDK) ─────────────────
-const getCatalogProducts = async (branchId) => {
-  const branch = await col('branches').findOne({ _id: branchId });
-  if (!branch) return { products: [], catalogId: null };
+const getCatalogProducts = async (idOrCatalogId) => {
+  // Try as branch ID first
+  const branch = await col('branches').findOne({ _id: idOrCatalogId });
 
-  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
-  const catalogId = restaurant?.meta_catalog_id || branch.catalog_id;
-  if (!catalogId) return { products: [], catalogId: null };
+  if (branch) {
+    // Found a branch — use existing SDK-based logic
+    const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
+    const catalogId = restaurant?.meta_catalog_id || branch.catalog_id;
+    if (!catalogId) return { products: [], catalogId: null };
 
-  const { token } = await _getAccessToken(branch.restaurant_id);
-  initSdk(token);
+    const { token } = await _getAccessToken(branch.restaurant_id);
+    initSdk(token);
 
+    try {
+      const catalogObj = new ProductCatalog(catalogId);
+      const products = await catalogObj.getProducts(
+        ['id', 'retailer_id', 'name', 'description', 'price', 'currency', 'availability', 'image_url', 'url'],
+        { limit: 250 }
+      );
+      return { catalogId, products: products.map(p => p._data), total: products.length };
+    } catch (err) {
+      console.error('[Catalog] getProducts (branch) failed:', err._error?.error?.message || err.message);
+      return { catalogId, products: [], error: err._error?.error?.message || err.message };
+    }
+  }
+
+  // Not a branch — treat as a Meta catalog ID and fetch via Graph API
+  const catalogId = idOrCatalogId;
+  const token = _getCatalogToken();
+  const allProducts = [];
   try {
-    const catalogObj = new ProductCatalog(catalogId);
-    const products = await catalogObj.getProducts(
-      ['id', 'retailer_id', 'name', 'description', 'price', 'currency', 'availability', 'image_url', 'url'],
-      { limit: 250 }
-    );
-    return {
-      catalogId,
-      products: products.map(p => p._data),
-      total: products.length,
-    };
+    let url = `${GRAPH}/${catalogId}/products?fields=id,retailer_id,name,description,price,availability,image_url,brand&limit=500&access_token=${token}`;
+    while (url) {
+      const { data } = await axios.get(url, { timeout: 15000 });
+      allProducts.push(...(data.data || []));
+      url = data.paging?.next || null;
+    }
+    return { catalogId, products: allProducts, total: allProducts.length };
   } catch (err) {
-    console.error('[Catalog] getProducts failed:', err._error?.error?.message || err.message);
-    return { catalogId, products: [], error: err._error?.error?.message || err.message };
+    console.error('[Catalog] getProducts (catalogId) failed:', err.response?.data?.error?.message || err.message);
+    return { catalogId, products: [], error: err.response?.data?.error?.message || err.message };
   }
 };
 

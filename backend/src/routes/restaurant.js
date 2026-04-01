@@ -130,6 +130,7 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || req.body.businessName || 'Restaurant', action: 'settings.updated', category: 'settings', description: `Settings updated by ${req.restaurant?.business_name || 'restaurant'}`, restaurantId: String(req.restaurantId), severity: 'info' });
     invalidateCache(`restaurant:${req.restaurantId}:profile`);
+    require('../config/memcache').del(`restaurant:${req.restaurantId}`);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -903,6 +904,8 @@ router.patch('/branches/:id', async (req, res) => {
       { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set }
     );
+    // Invalidate cached branch data
+    require('../config/memcache').del(`branch:${req.params.id}`);
     res.json({ success: true });
 
     if (isOpen !== undefined) {
@@ -1075,6 +1078,7 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
     const itemId = newId();
     const item = {
       _id: itemId,
+      restaurant_id: req.restaurantId,
       branch_id: req.params.branchId,
       category_id: categoryId || null,
       name,
@@ -1420,6 +1424,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
           { retailer_id: retailerId },
           {
             $set: {
+              restaurant_id: req.restaurantId,
               branch_id: branchId,
               category_id: categoryId,
               name,
@@ -1650,6 +1655,7 @@ router.post('/menu/csv', async (req, res) => {
             { retailer_id: retailerId },
             {
               $set: {
+                restaurant_id: req.restaurantId,
                 branch_id: bid,
                 category_id: categoryId,
                 name,
@@ -1853,6 +1859,7 @@ router.post('/menu/:itemId/variants', async (req, res) => {
         },
         $setOnInsert: {
           _id:          newId(),
+          restaurant_id: req.restaurantId,
           branch_id:    srcItem.branch_id,
           category_id:  srcItem.category_id,
           name:         baseName,
@@ -2457,16 +2464,20 @@ router.post('/catalog/clear-and-resync', async (req, res) => {
 router.post('/catalog/sync', async (req, res) => {
   try {
     const results = await catalog.syncRestaurantCatalog(req.restaurantId);
-    res.json({ success: true, ...results });
+    const httpStatus = (results.totalFailed > 0) ? 207 : 200;
+    if (results.totalFailed > 0) {
+      console.warn(`[Catalog] Sync partial failure: ${results.totalFailed} items failed across ${results.branches?.filter(b => !b.success || b.failed > 0).length || 0} branches`);
+    }
+    res.status(httpStatus).json({ success: results.totalFailed === 0, totalFailed: results.totalFailed || 0, errors: results.branches?.filter(b => b.error).map(b => b.error) || [], ...results });
 
     log({
       actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
       action: 'catalog.sync_triggered', category: 'catalog',
-      description: 'Full catalog sync triggered for all branches',
+      description: `Catalog sync: ${results.totalSynced || 0} synced, ${results.totalFailed || 0} failed`,
       restaurantId: req.restaurantId || req.restaurant?._id,
       branchId: null,
       resourceType: 'restaurant', resourceId: req.restaurantId,
-      severity: 'info',
+      severity: results.totalFailed > 0 ? 'warning' : 'info',
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2807,6 +2818,9 @@ router.post('/catalog/create-new', requireApproved, async (req, res) => {
 // DELETE /api/restaurant/catalog/:catalogId — Delete a catalog via Meta API
 router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
   const catalogId = req.params.catalogId;
+  if (!catalogId || catalogId === 'undefined' || catalogId === 'null') {
+    return res.status(400).json({ error: 'Invalid catalog ID' });
+  }
   const token = metaConfig.catalogToken;
   if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
@@ -2824,7 +2838,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
         try {
           await axios.delete(
             `${metaConfig.graphUrl}/${wa.waba_id}/product_catalogs`,
-            { data: { catalog_id: catalogId }, headers: { Authorization: `Bearer ${token}` } }
+            { data: { catalog_id: catalogId }, headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
           );
           console.log(`[Catalog] Unlinked from WABA ${wa.waba_id}`);
         } catch (unlinkErr) {
@@ -2845,7 +2859,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
       // Step 2: Delete the catalog
       await axios.delete(
         `${metaConfig.graphUrl}/${catalogId}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
       );
       return true;
     } catch (delErr) {
@@ -2869,7 +2883,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
     if (restaurant?.meta_catalog_id === catalogId) {
       await col('restaurants').updateOne(
         { _id: req.restaurantId },
-        { $set: { meta_catalog_id: null, meta_catalog_name: null, meta_available_catalogs: [], updated_at: new Date() } }
+        { $set: { meta_catalog_id: null, meta_catalog_name: null, meta_available_catalogs: [], catalog_fetched_at: null, updated_at: new Date() } }
       );
       await col('whatsapp_accounts').updateMany(
         { restaurant_id: req.restaurantId },
@@ -3069,30 +3083,52 @@ router.post('/catalog/merge', requireApproved, async (req, res) => {
 
     for (const secondary of secondaryCatalogs) {
       try {
-        // Fetch items from secondary catalog
-        const items = await catalog.getCatalogProducts(secondary.id);
-        if (!items?.length) {
+        // Fetch items from secondary catalog — getCatalogProducts returns { products: [...] }
+        const secResult = await catalog.getCatalogProducts(secondary.id);
+        const items = secResult?.products || [];
+        if (!items.length) {
           results.push({ catalog_id: secondary.id, name: secondary.name, items: 0, copied: 0 });
           continue;
         }
 
         // Check for duplicates (same name + same price) in primary
-        const primaryItems = await catalog.getCatalogProducts(primaryId);
-        const primaryKeys = new Set(primaryItems?.map(i => `${(i.name||'').toLowerCase()}_${i.price}`) || []);
+        const priResult = await catalog.getCatalogProducts(primaryId);
+        const primaryItems = priResult?.products || [];
+        const primaryKeys = new Set(primaryItems.map(i => `${(i.name||'').toLowerCase()}_${i.price}`));
 
         let copied = 0, dupes = 0;
         for (const item of items) {
           const key = `${(item.name||'').toLowerCase()}_${item.price}`;
           if (primaryKeys.has(key)) { dupes++; continue; }
-          // Copy to primary catalog via batch API
+          // Copy to primary catalog via items_batch API
           try {
             await axios.post(
-              `${metaConfig.graphUrl}/${primaryId}/batch`,
-              { allow_upsert: true, requests: [{ method: 'UPDATE', retailer_id: item.retailer_id || `merged-${item.id}`, data: { name: item.name, description: item.description, price: item.price, availability: item.availability, image_url: item.image_url, brand: item.brand } }] },
-              { headers: { Authorization: `Bearer ${token}` } }
+              `${metaConfig.graphUrl}/${primaryId}/items_batch`,
+              {
+                item_type: 'PRODUCT_ITEM',
+                allow_upsert: true,
+                requests: JSON.stringify([{
+                  method: 'UPDATE',
+                  retailer_id: item.retailer_id || `merged-${item.id}`,
+                  data: {
+                    title: item.name || item.title || 'Menu Item',
+                    description: item.description || item.name || 'Menu item',
+                    price: item.price || '0.00 INR',
+                    availability: item.availability || 'in stock',
+                    condition: 'new',
+                    image_link: item.image_url || '',
+                    brand: item.brand || '',
+                    link: `https://gullybite.com/menu/${item.retailer_id || item.id}`,
+                    google_product_category: 'Food, Beverages & Tobacco > Food Items',
+                  },
+                }]),
+              },
+              { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
             );
             copied++;
-          } catch (_) { /* skip failed items */ }
+          } catch (copyErr) {
+            console.warn(`[Catalog Merge] Failed to copy "${item.name}":`, copyErr.response?.data?.error?.message || copyErr.message);
+          }
         }
 
         totalCopied += copied;
