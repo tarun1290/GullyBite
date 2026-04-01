@@ -387,7 +387,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
           flowId: restaurant.flow_id,
           flowCta: 'Choose Address',
           screenId: 'SAVED_ADDRESSES',
-          flowData: { addresses: addressItems },
+          flowData: { screenData: { addresses: addressItems } },
         });
       } else {
         await wa.sendFlow(pid, token, to, {
@@ -395,7 +395,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
           flowId: restaurant.flow_id,
           flowCta: 'Set Location',
           screenId: 'NEW_ADDRESS',
-          flowData: {},
+          flowData: { screenData: {} },
         });
       }
     } else {
@@ -1105,9 +1105,9 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
         if (savedAddrs?.length > 0) {
           const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
-          await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { addresses: addressItems } });
+          await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { addresses: addressItems } } });
         } else {
-          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: {} });
+          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: {} } });
         }
       } else {
         await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
@@ -1988,15 +1988,15 @@ const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
       : nfmReply.response_json || {};
   } catch { responseData = {}; }
 
-  // ── WhatsApp Flow response (has flow_token) ──
-  if (responseData.flow_token) {
-    await handleFlowResponse(responseData, customer, conv, waAccount);
+  // ── Delivery Address Flow response (action-based — check BEFORE flow_token) ──
+  if (responseData.action === 'select_address' || responseData.action === 'new_address') {
+    await handleDeliveryFlowResponse(responseData, customer, conv, waAccount);
     return;
   }
 
-  // ── Delivery Address Flow response (action-based) ──
-  if (responseData.action === 'select_address' || responseData.action === 'new_address') {
-    await handleDeliveryFlowResponse(responseData, customer, conv, waAccount);
+  // ── WhatsApp Flow response (rating/feedback — uses flow_token) ──
+  if (responseData.flow_token) {
+    await handleFlowResponse(responseData, customer, conv, waAccount);
     return;
   }
 
@@ -2094,7 +2094,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
           flowId: restaurant.flow_id,
           flowCta: 'Add Address',
           screenId: 'NEW_ADDRESS',
-          flowData: {},
+          flowData: { screenData: {} },
         });
       } else {
         await wa.sendText(pid, token, to, '📍 Please share your location using the 📎 attach icon → Location.');

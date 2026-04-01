@@ -347,24 +347,24 @@ const markRead = (pid, token, messageId) =>
 // flowCta: button text (max 20 chars)
 // screenId: initial screen to display
 // flowData: optional data to pass to the Flow
-const sendFlow = (pid, token, to, { flowId, flowToken, flowCta, screenId, flowData }) =>
+const sendFlow = (pid, token, to, { flowId, flowToken, flowCta, screenId, flowData, body, footer }) =>
   sendMsg(pid, token, to, {
     type: 'interactive',
     interactive: {
       type: 'flow',
-      body: { text: flowData?.body || 'Please fill in the form below.' },
-      ...(flowData?.footer && { footer: { text: flowData.footer } }),
+      body: { text: body || flowData?.body || 'Please fill in the form below.' },
+      ...((footer || flowData?.footer) && { footer: { text: footer || flowData.footer } }),
       action: {
         name: 'flow',
         parameters: {
           flow_message_version: '3',
           flow_id: flowId,
-          flow_token: flowToken,
+          flow_token: flowToken || 'unused',
           flow_cta: (flowCta || 'Open Form').substring(0, 20),
           flow_action: 'navigate',
           flow_action_payload: {
             screen: screenId || 'RATING_SCREEN',
-            data: flowData?.screenData || {},
+            data: flowData?.screenData || flowData || {},
           },
         },
       },

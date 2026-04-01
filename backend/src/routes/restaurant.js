@@ -916,6 +916,80 @@ router.patch('/branches/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/restaurant/branches/:branchId/hours — operating hours for a branch
+router.get('/branches/:branchId/hours', async (req, res) => {
+  try {
+    const branch = await col('branches').findOne({ _id: req.params.branchId, restaurant_id: req.restaurantId });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    let hours = branch.operating_hours;
+
+    // Build from simple opening_time/closing_time if no per-day hours
+    if (!hours) {
+      const open = (branch.opening_time || '10:00').slice(0, 5);
+      const close = (branch.closing_time || '22:00').slice(0, 5);
+      hours = {};
+      for (const d of days) hours[d] = { open, close, is_closed: false };
+    }
+
+    // Ensure all 7 days exist with defaults
+    for (const d of days) {
+      if (!hours[d]) hours[d] = { open: '10:00', close: '22:00', is_closed: false };
+    }
+
+    res.json({ hours });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/restaurant/branches/:branchId/hours — update operating hours
+router.put('/branches/:branchId/hours', async (req, res) => {
+  try {
+    const { hours } = req.body;
+    if (!hours || typeof hours !== 'object') return res.status(400).json({ error: 'hours object required' });
+
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const timeRe = /^\d{2}:\d{2}$/;
+    const cleaned = {};
+
+    for (const d of days) {
+      const dh = hours[d];
+      if (!dh) return res.status(400).json({ error: `Missing day: ${d}` });
+      const isClosed = !!dh.is_closed;
+      const open = String(dh.open || '10:00').slice(0, 5);
+      const close = String(dh.close || '22:00').slice(0, 5);
+      if (!timeRe.test(open) || !timeRe.test(close)) return res.status(400).json({ error: `Invalid time format for ${d}` });
+      const [oh, om] = open.split(':').map(Number);
+      const [ch, cm] = close.split(':').map(Number);
+      if (oh > 23 || om > 59 || ch > 23 || cm > 59) return res.status(400).json({ error: `Time out of range for ${d}` });
+      cleaned[d] = { open, close, is_closed: isClosed };
+    }
+
+    // Derive simple opening_time/closing_time from the first open day (for backward compatibility)
+    let openingTime = '10:00', closingTime = '22:00';
+    const firstOpen = days.find(d => !cleaned[d].is_closed);
+    if (firstOpen) {
+      openingTime = cleaned[firstOpen].open;
+      closingTime = cleaned[firstOpen].close;
+    }
+
+    const branch = await col('branches').findOne({ _id: req.params.branchId, restaurant_id: req.restaurantId });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    await col('branches').updateOne(
+      { _id: req.params.branchId, restaurant_id: req.restaurantId },
+      { $set: { operating_hours: cleaned, opening_time: openingTime, closing_time: closingTime, updated_at: new Date() } }
+    );
+
+    // Invalidate cached branch data
+    require('../config/memcache').del(`branch:${req.params.branchId}`);
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'branch.hours_updated', category: 'settings', description: 'Operating hours updated', restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.branchId, severity: 'info' });
+
+    res.json({ success: true, hours: cleaned });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/restaurant/branches/:branchId/surge — current 3PL surge / delivery status
 router.get('/branches/:branchId/surge', async (req, res) => {
   try {
