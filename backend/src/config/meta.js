@@ -81,10 +81,14 @@ const metaConfig = {
     console.log('[MetaConfig] API Version:', this.apiVersion);
     console.log('[MetaConfig] ──────────────────────────────────');
 
-    // Non-blocking startup token validation
+    // Non-blocking startup token validation — informational only, never gates API calls
     this.verifyToken().then(result => {
+      if (result.unverified) {
+        console.log('[MetaConfig] Token validation skipped (timeout/network) — API calls will proceed normally');
+        return;
+      }
       if (!result.valid) {
-        console.error('[MetaConfig] ❌ TOKEN INVALID — All Meta API calls will fail!');
+        console.error('[MetaConfig] ❌ TOKEN CONFIRMED INVALID BY META — API calls will fail with 401!');
         console.error('[MetaConfig]    Error:', result.error);
         console.error('[MetaConfig]    Fix: Generate a new System User Token in Meta Business Manager');
       }
@@ -180,7 +184,7 @@ const metaConfig = {
     try {
       const res = await axios.get('https://graph.facebook.com/debug_token', {
         params: { input_token: token, access_token: token },
-        timeout: 10000,
+        timeout: 30000, // 30s for cold starts on Vercel
       });
       const d = res.data.data;
       const requiredScopes = [
@@ -197,8 +201,16 @@ const metaConfig = {
 
       return { valid: d.is_valid, type: d.type, scopes: d.scopes, missingScopes: missing, expiresAt: d.expires_at };
     } catch (err) {
-      console.error('[MetaConfig] Token debug failed:', err.response?.data?.error?.message || err.message);
-      return { valid: false, error: err.response?.data?.error?.message || err.message };
+      // Distinguish timeout/network errors from explicit auth failures
+      const metaError = err.response?.data?.error;
+      if (metaError && (err.response?.status === 401 || metaError.code === 190)) {
+        // Meta explicitly says token is invalid — this IS a real problem
+        console.error('[MetaConfig] ❌ TOKEN INVALID (Meta confirmed):', metaError.message);
+        return { valid: false, error: metaError.message };
+      }
+      // Timeout or network error — token is likely fine, just couldn't verify
+      console.warn('[MetaConfig] ⚠️ Token validation timed out or network error — proceeding with token (likely valid):', err.message);
+      return { valid: true, error: null, unverified: true };
     }
   },
 };
