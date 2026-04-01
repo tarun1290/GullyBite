@@ -1,5 +1,5 @@
 // ec2-server.js
-// Standalone Express server for EC2 deployment — handles webhooks and real-time messaging.
+// Standalone Express server for EC2 deployment — handles webhooks + WebSocket.
 // Does NOT serve dashboard, admin panel, auth pages, or static files.
 // Shares the same MongoDB, services, and config as the Vercel deployment.
 
@@ -7,10 +7,13 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
+const { WebSocketServer } = require('ws');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -63,24 +66,78 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// ─── HTTP SERVER + WEBSOCKET ────────────────────────────────
+const server = http.createServer(app);
+
+// WebSocket server on /ws path
+const wss = new WebSocketServer({ noServer: true });
+const wsManager = require('./src/services/wsManager');
+wsManager.init(wss);
+
+server.on('upgrade', (request, socket, head) => {
+  const url = new URL(request.url, `http://${request.headers.host}`);
+  if (url.pathname !== '/ws') { socket.destroy(); return; }
+
+  // Accept both ?restaurant_id=xxx and ?room=restaurant:xxx formats
+  let restaurantId = url.searchParams.get('restaurant_id');
+  const room = url.searchParams.get('room');
+  if (!restaurantId && room) restaurantId = room.replace('restaurant:', '');
+  const token = url.searchParams.get('token');
+
+  // Authenticate
+  if (!token || !process.env.JWT_SECRET) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    const room = restaurantId || 'admin';
+    wsManager.addConnection(room, ws);
+    console.log(`[WS] Connected: ${room} (total: ${wsManager.getConnectionCount()})`);
+
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+    ws.on('close', () => {
+      wsManager.removeConnection(room, ws);
+      console.log(`[WS] Disconnected: ${room} (total: ${wsManager.getConnectionCount()})`);
+    });
+  });
+});
+
+// Ping every 30s to keep connections alive through nginx/proxies
+const pingInterval = setInterval(() => {
+  wss.clients.forEach(ws => {
+    if (!ws.isAlive) { ws.terminate(); return; }
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+wss.on('close', () => clearInterval(pingInterval));
+
 // ─── START ──────────────────────────────────────────────────
 const metaConfig = require('./src/config/meta');
 metaConfig.logStatus();
 
 connect().then(() => {
-  // Ensure indexes after DB connects
   require('./src/config/indexes').ensureIndexes().catch(e => console.warn('[DB] Index init:', e.message));
 
-  // Schedule cron jobs (settlement, referral expiry)
   const { scheduleSettlement } = require('./src/jobs/settlement');
   scheduleSettlement();
 
-  // Schedule campaign sender
   try { require('./src/jobs/campaignSender'); } catch (e) { console.warn('[EC2] Campaign sender:', e.message); }
 
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`\n🚀 [EC2] GullyBite Webhook Backend running on port ${PORT}`);
     console.log(`   Webhooks:  http://localhost:${PORT}/webhooks/whatsapp`);
+    console.log(`   WebSocket: ws://localhost:${PORT}/ws`);
     console.log(`   Health:    http://localhost:${PORT}/health`);
     console.log(`   Cron:      http://localhost:${PORT}/api/cron/catalog-sync\n`);
   });

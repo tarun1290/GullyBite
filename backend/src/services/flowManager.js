@@ -73,7 +73,7 @@ function buildDeliveryFlowJson() {
       },
       {
         id: 'CONFIRM_DELIVERY',
-        title: 'Confirm Address',
+        title: 'Delivery Address',
         terminal: true,
         success: true,
         data: {
@@ -84,15 +84,15 @@ function buildDeliveryFlowJson() {
           children: [
             {
               type: 'TextHeading',
-              text: 'Deliver to this address?',
+              text: 'Continue',
             },
             {
               type: 'TextBody',
-              text: 'Tap below to confirm and see the menu.',
+              text: 'Tap below to proceed.',
             },
             {
               type: 'Footer',
-              label: 'Show Menu',
+              label: 'Continue',
               'on-click-action': {
                 name: 'complete',
                 payload: {
