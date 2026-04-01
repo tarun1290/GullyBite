@@ -81,30 +81,10 @@ const metaConfig = {
     console.log('[MetaConfig] API Version:', this.apiVersion);
     console.log('[MetaConfig] ──────────────────────────────────');
 
-    // Non-blocking startup token validation — informational only, never gates API calls
-    this.verifyToken().then(result => {
-      if (result.unverified) {
-        console.log('[MetaConfig] Token validation skipped (timeout/network) — API calls will proceed normally');
-        return;
-      }
-      if (!result.valid) {
-        console.error('[MetaConfig] ❌ TOKEN CONFIRMED INVALID BY META — API calls will fail with 401!');
-        console.error('[MetaConfig]    Error:', result.error);
-        console.error('[MetaConfig]    Fix: Generate a new System User Token in Meta Business Manager');
-      }
-      if (result.type === 'USER') {
-        console.error('[MetaConfig] ⚠️⚠️⚠️  TOKEN IS A USER TOKEN — IT WILL EXPIRE!');
-        console.error('[MetaConfig]    User tokens expire when password changes or session ends.');
-        console.error('[MetaConfig]    Fix: Go to business.facebook.com → Business Settings → System Users →');
-        console.error('[MetaConfig]    Select system user → Generate Token → Select app → Select scopes:');
-        console.error('[MetaConfig]    whatsapp_business_messaging, whatsapp_business_management,');
-        console.error('[MetaConfig]    catalog_management, business_management → Generate Token');
-        console.error('[MetaConfig]    System User tokens NEVER expire.');
-      }
-      if (result.missingScopes?.length) {
-        console.error(`[MetaConfig] ❌ Missing required scopes: ${result.missingScopes.join(', ')}`);
-      }
-    }).catch(() => {}); // Network errors during startup validation are non-fatal
+    // Token validation is LAZY — only runs when explicitly called (e.g., /api/webhook-health).
+    // It does NOT run on cold starts to avoid adding 10-30s of latency to webhook processing.
+    // If the token is invalid, Meta API calls will fail with 401 — that's sufficient feedback.
+    console.log('[MetaConfig] Token validation: lazy (call verifyToken() or hit /api/webhook-health to check)');
   },
 
   // ── Catalog admin access ─────────────────────────────────────
