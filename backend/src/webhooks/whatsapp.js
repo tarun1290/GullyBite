@@ -47,6 +47,16 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   // Must ALWAYS return 200 to Meta — even for rate-limited / blocked messages
   res.sendStatus(200);
 
+  // Entry-point diagnostic logging
+  console.log('[WEBHOOK-ENTRY]', {
+    ts: new Date().toISOString(),
+    bodyExists: !!req.body,
+    bodyType: typeof req.body,
+    bodyLen: req.body?.length || 0,
+    ct: req.headers['content-type'],
+    hasSig: !!req.headers['x-hub-signature-256'],
+  });
+
   // Heartbeat: track last webhook received (fire-and-forget, never blocks)
   try { col('platform_health').updateOne({ _id: 'webhook_heartbeat' }, { $set: { last_received: new Date() }, $inc: { count_24h: 1 } }, { upsert: true }); } catch (_) {}
 
@@ -59,12 +69,16 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       .digest('hex');
 
     if (!sig || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
-      console.warn('[WA Webhook] ⚠️ Invalid signature — ignoring');
+      console.warn('[WEBHOOK-SIGNATURE] ⚠️ FAILED — sig mismatch. Has WEBHOOK_APP_SECRET:', !!process.env.WEBHOOK_APP_SECRET);
       return;
     }
+    console.log('[WEBHOOK-SIGNATURE] ✅ passed');
 
     const body = JSON.parse(req.body);
-    if (body.object !== 'whatsapp_business_account') return;
+    if (body.object !== 'whatsapp_business_account') {
+      console.log('[WEBHOOK-ENTRY] Ignored — object:', body.object);
+      return;
+    }
 
     // [BSUID] ── ABUSE CHECK: blocked identifier (phone or BSUID) ──
     const senderIdentifier = extractSenderIdentifier(body);
@@ -142,7 +156,11 @@ const processWhatsAppWebhook = async (logId, body) => {
 let _dedupIndexCreated = false;
 const processChange = async (value) => {
   const phoneNumberId = value.metadata?.phone_number_id;
-  if (!phoneNumberId) return;
+  if (!phoneNumberId) { console.log('[WEBHOOK-PROCESS] No phone_number_id in metadata — skipping'); return; }
+
+  const msgCount = value.messages?.length || 0;
+  const statusCount = value.statuses?.length || 0;
+  console.log(`[WEBHOOK-PROCESS] phone=${phoneNumberId} messages=${msgCount} statuses=${statusCount}`);
 
   // Ensure dedup TTL index exists (lazy, once)
   if (!_dedupIndexCreated) {
@@ -154,14 +172,17 @@ const processChange = async (value) => {
   const { getWaAccount } = require('../utils/cachedLookup');
   const waAccount = await getWaAccount(phoneNumberId);
   if (!waAccount) {
-    console.warn('[WA] Unknown phone_number_id:', phoneNumberId);
+    console.warn('[WEBHOOK-PROCESS] ❌ No WA account found for phone_number_id:', phoneNumberId, '— message will NOT be processed');
     return;
   }
+  console.log(`[WEBHOOK-PROCESS] ✅ WA account matched: restaurant=${waAccount.restaurant_id}`);
 
   // Use system user token for all messaging (never-expiring, set via env var)
   waAccount.access_token = metaConfig.systemUserToken || waAccount.access_token;
 
   for (const msg of value.messages || []) {
+    console.log(`[WEBHOOK-MESSAGE] id=${msg.id} type=${msg.type} from=${msg.from || msg.user_id || '?'}`);
+
     // Guard: skip stale messages (>2 min old — likely Meta retries)
     if (msg.timestamp) {
       const age = Date.now() - parseInt(msg.timestamp) * 1000;
