@@ -173,13 +173,22 @@ app.use('/api/admin/analytics', express.json(), require('./src/routes/analytics'
 app.use('/api/cron', express.json(), require('./src/routes/cron'));
 app.use('/api/webhook-health', require('./src/routes/webhookHealth'));
 
-// Webhooks need raw body for HMAC signature verification
-app.use('/webhooks/whatsapp', require('./src/webhooks/whatsapp'));
-app.use('/webhooks/razorpay', require('./src/webhooks/razorpay'));
-app.use('/webhooks/catalog',  require('./src/webhooks/catalog'));
-app.use('/webhooks/delivery',  require('./src/webhooks/delivery'));
-app.use('/webhooks/directory', require('./src/webhooks/directory'));
-app.use('/webhooks/checkout',  require('./src/webhooks/checkout'));
+// Webhooks: either handled here (Vercel) or offloaded to EC2 backend
+if (process.env.USE_EC2_WEBHOOKS === 'true') {
+  // Webhooks handled by EC2 — return 200 to prevent Meta retries during migration
+  app.use('/webhooks', (req, res) => {
+    console.log(`[Vercel] Webhook ${req.method} ${req.path} → handled by EC2`);
+    res.status(200).json({ message: 'Webhooks handled by EC2 backend', ec2_url: process.env.EC2_BACKEND_URL });
+  });
+} else {
+  // Webhooks handled here on Vercel (default — no flag set)
+  app.use('/webhooks/whatsapp', require('./src/webhooks/whatsapp'));
+  app.use('/webhooks/razorpay', require('./src/webhooks/razorpay'));
+  app.use('/webhooks/catalog',  require('./src/webhooks/catalog'));
+  app.use('/webhooks/delivery',  require('./src/webhooks/delivery'));
+  app.use('/webhooks/directory', require('./src/webhooks/directory'));
+  app.use('/webhooks/checkout',  require('./src/webhooks/checkout'));
+}
 
 // Admin dashboard
 app.get('/admin', (_req, res) => {
