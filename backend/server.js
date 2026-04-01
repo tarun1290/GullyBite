@@ -171,6 +171,7 @@ app.use('/api/upload', express.json(), require('./src/routes/upload'));
 app.use('/api/admin', express.json(), require('./src/routes/admin'));
 app.use('/api/admin/analytics', express.json(), require('./src/routes/analytics'));
 app.use('/api/cron', express.json(), require('./src/routes/cron'));
+app.use('/api/webhook-health', require('./src/routes/webhookHealth'));
 
 // Webhooks need raw body for HMAC signature verification
 app.use('/webhooks/whatsapp', require('./src/webhooks/whatsapp'));

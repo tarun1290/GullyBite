@@ -47,6 +47,9 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   // Must ALWAYS return 200 to Meta — even for rate-limited / blocked messages
   res.sendStatus(200);
 
+  // Heartbeat: track last webhook received (fire-and-forget, never blocks)
+  try { col('platform_health').updateOne({ _id: 'webhook_heartbeat' }, { $set: { last_received: new Date() }, $inc: { count_24h: 1 } }, { upsert: true }); } catch (_) {}
+
   let logId = null;
   try {
     const sig = req.headers['x-hub-signature-256']?.split('sha256=')[1];

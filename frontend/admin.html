@@ -310,6 +310,8 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
 
       <!-- ── OVERVIEW ──────────────────────────────────────────────── -->
       <div class="page active" id="page-overview">
+        <!-- Platform Alerts -->
+        <div id="platform-alerts-area"></div>
         <div class="stat-grid" id="stat-grid">
           <div class="stat-card"><div class="stat-label">Restaurants</div><div class="stat-val" id="s-restaurants">—</div><div class="stat-sub" id="s-restaurants-sub"></div></div>
           <div class="stat-card green"><div class="stat-label">Total Orders</div><div class="stat-val" id="s-orders">—</div><div class="stat-sub" id="s-orders-sub"></div></div>
@@ -1643,6 +1645,35 @@ function loadAll() {
   loadApplicationsBadge();
   loadSettlementsBadge();
   loadReferralsBadge();
+  loadPlatformAlerts();
+}
+
+async function loadPlatformAlerts() {
+  const area = document.getElementById('platform-alerts-area');
+  if (!area) return;
+  try {
+    const alerts = await api('/api/admin/alerts');
+    if (!alerts?.length) { area.innerHTML = ''; return; }
+    area.innerHTML = alerts.map(a => {
+      const color = a.severity === 'critical' ? '#dc2626' : '#d97706';
+      const bg = a.severity === 'critical' ? '#fef2f2' : '#fffbeb';
+      const border = a.severity === 'critical' ? '#fecaca' : '#fde68a';
+      const icon = a.severity === 'critical' ? '🔴' : '⚠️';
+      return `<div style="display:flex;align-items:center;gap:.7rem;padding:.65rem 1rem;background:${bg};border:1px solid ${border};border-radius:8px;margin-bottom:.5rem;font-size:.84rem">
+        <span>${icon}</span>
+        <span style="flex:1;color:${color};font-weight:500">${esc(a.message)}</span>
+        <span style="font-size:.72rem;color:var(--dim)">${timeAgo(a.created_at)}</span>
+        <button class="btn-sm" onclick="acknowledgeAlert('${a._id}')" style="font-size:.72rem;padding:.2rem .5rem">Dismiss</button>
+      </div>`;
+    }).join('');
+  } catch { area.innerHTML = ''; }
+}
+
+async function acknowledgeAlert(id) {
+  try {
+    await api('/api/admin/alerts/' + id + '/acknowledge', { method: 'POST' });
+    loadPlatformAlerts();
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 async function loadSettlementsBadge() {

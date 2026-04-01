@@ -39,6 +39,21 @@ router.post('/auth', express.json(), (req, res) => {
 // All routes below require admin auth
 router.use(requireAdmin);
 
+// ─── PLATFORM ALERTS ────────────────────────────────────────
+router.get('/alerts', async (req, res) => {
+  try {
+    const alerts = await col('platform_alerts').find({ acknowledged: false }).sort({ created_at: -1 }).limit(20).toArray();
+    res.json(alerts);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/alerts/:id/acknowledge', async (req, res) => {
+  try {
+    await col('platform_alerts').updateOne({ _id: req.params.id }, { $set: { acknowledged: true, acknowledged_at: new Date() } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ─── GET /api/admin/stats ─────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
