@@ -857,6 +857,7 @@ async function loadCatalogMgmt(refresh = false) {
       document.getElementById('cat-connect-btn').style.display = 'none';
       document.getElementById('cat-disconnect-btn').style.display = 'inline-flex';
       document.getElementById('cat-delete-btn').style.display = 'inline-flex';
+      document.getElementById('cat-diagnostics-btn').style.display = 'inline-flex';
 
       // Commerce settings warning
       if (!catData.commerce_enabled) {
@@ -893,6 +894,7 @@ async function loadCatalogMgmt(refresh = false) {
       document.getElementById('cat-connect-btn').style.display = allCatalogs.length ? 'none' : 'inline-flex';
       document.getElementById('cat-disconnect-btn').style.display = 'none';
       document.getElementById('cat-delete-btn').style.display = allCatalogs.length ? 'inline-flex' : 'none';
+      document.getElementById('cat-diagnostics-btn').style.display = 'none';
       if (settingsEl) settingsEl.style.display = 'none';
     }
   } catch (e) {
@@ -911,6 +913,7 @@ async function loadCatalogMgmt(refresh = false) {
       </div>`;
       document.getElementById('cat-delete-btn').style.display = 'inline-flex';
       document.getElementById('cat-disconnect-btn').style.display = 'inline-flex';
+      document.getElementById('cat-diagnostics-btn').style.display = 'inline-flex';
     } else {
       statusEl.innerHTML = `<div style="color:var(--dim);font-size:.82rem">Failed to load catalog status: ${e.message}</div>`;
     }
@@ -1818,6 +1821,102 @@ async function loadFeedStatus() {
   } catch (e) {
     if (area) area.innerHTML = `<span style="color:var(--dim);font-size:.82rem">Could not load feed status</span>`;
   }
+  loadFeedList();
+}
+
+async function loadFeedList() {
+  var area = document.getElementById('feed-list-area');
+  if (!area) return;
+  try {
+    var data = await api('/api/restaurant/catalog/feeds');
+    var feeds = data.feeds || [];
+    if (!feeds.length) {
+      area.innerHTML = '<div style="font-size:.78rem;color:var(--dim)">No feeds found on this catalog.</div>';
+      return;
+    }
+    area.innerHTML = feeds.map(function(f) {
+      var schedule = f.schedule ? (f.schedule.interval || '') + (f.schedule.hour != null ? ' at ' + f.schedule.hour + ':00' : '') : '';
+      var upload = f.latest_upload || {};
+      var uploadInfo = upload.end_time
+        ? 'Last: ' + new Date(upload.end_time).toLocaleDateString('en-IN') + ' \u2014 ' + (upload.num_detected_items || 0) + ' items' + (upload.num_invalid_items ? ', ' + upload.num_invalid_items + ' invalid' : '')
+        : 'No uploads yet';
+      return '<div style="display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;margin-bottom:.4rem">'
+        + '<div style="flex:1;min-width:0">'
+        + '<div style="font-weight:600;font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (f.name || 'Unnamed Feed') + '</div>'
+        + '<div style="font-size:.72rem;color:var(--dim)">ID: ' + f.id + (schedule ? ' \u00B7 ' + schedule : '') + '</div>'
+        + '<div style="font-size:.72rem;color:var(--dim)">' + uploadInfo + '</div>'
+        + '</div>'
+        + '<button class="btn-g btn-sm" style="color:#dc2626;border-color:#dc2626;font-size:.72rem;white-space:nowrap" onclick="doDeleteFeed(\'' + f.id + '\',\'' + (f.name || '').replace(/'/g, "\\'") + '\')">\uD83D\uDDD1 Delete</button>'
+        + '</div>';
+    }).join('');
+  } catch (e) {
+    area.innerHTML = '<div style="font-size:.78rem;color:var(--dim)">Could not load feed list</div>';
+  }
+}
+
+async function doDeleteFeed(feedId, feedName) {
+  if (!confirm('Delete feed \'' + (feedName || feedId) + '\'?\n\nThis will stop Meta from syncing items through this feed. The catalog and its items are not affected.')) return;
+  try {
+    await api('/api/restaurant/catalog/feed/' + feedId, { method: 'DELETE' });
+    toast('Feed deleted', 'ok');
+    loadFeedList();
+    loadFeedStatus();
+  } catch (e) {
+    toast(e.message || 'Failed to delete feed', 'err');
+  }
+}
+
+async function loadCatalogDiagnostics() {
+  var area = document.getElementById('cat-diagnostics-area');
+  if (!area) return;
+  area.style.display = 'block';
+  area.innerHTML = '<div style="text-align:center;padding:.8rem"><div class="spin" style="margin:0 auto;width:18px;height:18px"></div></div>';
+
+  try {
+    var data = await api('/api/restaurant/catalog/diagnostics');
+    var diag = data.diagnostics || [];
+    var items = data.problematic_items || [];
+
+    if (!diag.length && !items.length) {
+      area.innerHTML = '<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.8rem;font-size:.82rem">'
+        + '<button onclick="document.getElementById(\'cat-diagnostics-area\').style.display=\'none\'" style="float:right;background:none;border:none;cursor:pointer;font-size:1rem">\u2715</button>'
+        + '\u2705 No issues found \u2014 all catalog items are healthy.</div>';
+      return;
+    }
+
+    var html = '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.8rem">';
+    html += '<button onclick="document.getElementById(\'cat-diagnostics-area\').style.display=\'none\'" style="float:right;background:none;border:none;cursor:pointer;font-size:1rem">\u2715</button>';
+
+    if (diag.length) {
+      html += '<div style="font-weight:600;font-size:.85rem;margin-bottom:.5rem">\u26A0\uFE0F Catalog Issues</div>';
+      diag.forEach(function(d) {
+        html += '<div style="font-size:.8rem;margin-bottom:.3rem">\u2022 <strong>' + (d.diagnostics_type || 'Unknown') + '</strong>: ' + (d.num_items || 0) + ' items affected</div>';
+      });
+    }
+
+    if (items.length) {
+      html += '<div style="font-weight:600;font-size:.85rem;margin:.6rem 0 .4rem">Items with issues (first ' + items.length + ')</div>';
+      html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.78rem">';
+      html += '<thead><tr style="border-bottom:1px solid var(--rim)"><th style="text-align:left;padding:.3rem .5rem">retailer_id</th><th style="text-align:left;padding:.3rem .5rem">Name</th><th style="text-align:center;padding:.3rem .5rem">Status</th><th style="text-align:left;padding:.3rem .5rem">Error</th></tr></thead><tbody>';
+      items.forEach(function(it) {
+        var errText = (it.errors || []).map(function(e) { return e.message || e.code || ''; }).join(', ') || '\u2014';
+        html += '<tr style="border-bottom:1px solid var(--rim)">';
+        html += '<td style="padding:.3rem .5rem;font-family:monospace;font-size:.72rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (it.retailer_id || it.id || '\u2014') + '</td>';
+        html += '<td style="padding:.3rem .5rem">' + (it.name || '\u2014') + '</td>';
+        html += '<td style="padding:.3rem .5rem;text-align:center"><span class="badge ba" style="font-size:.65rem">' + (it.review_status || '\u2014') + '</span></td>';
+        html += '<td style="padding:.3rem .5rem;font-size:.72rem;color:var(--red);max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + errText + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+
+    html += '</div>';
+    area.innerHTML = html;
+  } catch (e) {
+    area.innerHTML = '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.8rem;font-size:.82rem">'
+      + '<button onclick="document.getElementById(\'cat-diagnostics-area\').style.display=\'none\'" style="float:right;background:none;border:none;cursor:pointer;font-size:1rem">\u2715</button>'
+      + '\u274C Failed to load diagnostics: ' + (e.message || 'Unknown error') + '</div>';
+  }
 }
 
 async function doRegisterFeed(btn) {
@@ -1911,5 +2010,8 @@ window.doBannerConnect = doBannerConnect;
 window.renderEventMappings = renderEventMappings;
 window.doBulkAssignAll = doBulkAssignAll;
 window.doSyncBranchCollections = doSyncBranchCollections;
+window.loadFeedList = loadFeedList;
+window.doDeleteFeed = doDeleteFeed;
+window.loadCatalogDiagnostics = loadCatalogDiagnostics;
 
 })();

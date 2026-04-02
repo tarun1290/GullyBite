@@ -25,3 +25,9 @@ build/
 .vscode/settings.json
 .idea/
 backend/logs/*.log
+scripts/test-harness/chain-test-results.txt
+scripts/test-harness/FINAL-REPORT.md
+.gitignore
+scripts/test-harness/leaf-test-results.txt
+scripts/test-harness/FIX-LOG.md
+scripts/test-harness/MASTER-REPORT.md

@@ -196,21 +196,17 @@ const ensureBranchProductSet = async (branchId) => {
     branch.catalog_id = catalogId;
   }
 
-  // Get all retailer_ids for this branch's menu items
-  const items = await col('menu_items').find(
-    { branch_id: branchId, retailer_id: { $exists: true, $ne: null } },
-    { projection: { retailer_id: 1 } }
-  ).toArray();
-  const retailerIds = items.map(i => i.retailer_id).filter(Boolean);
-
-  if (!retailerIds.length) {
-    console.warn(`[Catalog] No items with retailer_id for branch "${branch.name}" — skipping product set`);
+  // Check branch has items before creating a product set
+  const itemCount = await col('menu_items').countDocuments({ branch_id: branchId, retailer_id: { $exists: true, $ne: null } });
+  if (!itemCount) {
+    console.warn(`[Catalog] No items for branch "${branch.name}" — skipping product set`);
     return { productSetId: null, skipped: true, reason: 'no items' };
   }
 
   const setName = branch.name || `Branch ${branchId.slice(0, 6)}`;
-  // Meta product set filter: retailer_id is_any with explicit list
-  const filter = JSON.stringify({ retailer_id: { is_any: retailerIds } });
+  // Dynamic filter: matches any item whose custom_label_0 equals this branch slug
+  const branchSlug = (branch.branch_slug || branch.name || '').toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  const filter = JSON.stringify({ custom_label_0: { is_any: [branchSlug] } });
   const token = _getCatalogToken();
 
   try {
@@ -221,7 +217,7 @@ const ensureBranchProductSet = async (branchId) => {
         { name: setName, filter },
         { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
       );
-      console.log(`[Catalog] Updated branch product set "${setName}" (${retailerIds.length} items)`);
+      console.log(`[Catalog] Updated branch product set "${setName}" (custom_label_0=${branchSlug}, ${itemCount} items)`);
       return { productSetId: branch.meta_product_set_id, updated: true };
     }
 
@@ -233,7 +229,7 @@ const ensureBranchProductSet = async (branchId) => {
     );
     const productSetId = res.data.id;
     await col('branches').updateOne({ _id: branchId }, { $set: { meta_product_set_id: productSetId } });
-    console.log(`[Catalog] Created branch product set "${setName}" → ${productSetId} (${retailerIds.length} items)`);
+    console.log(`[Catalog] Created branch product set "${setName}" → ${productSetId} (custom_label_0=${branchSlug}, ${itemCount} items)`);
     return { productSetId, created: true };
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
@@ -283,6 +279,30 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
   // Sanitize retailer_id: only alphanumeric, hyphens, underscores (Meta requirement)
   const safeRetailerId = (item.retailer_id || String(item._id)).replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 100);
 
+  // ── India compliance fields ──
+  const manufacturerInfo = `${restaurant?.business_name || 'Restaurant'} - ${branch?.address || branch?.name || ''}`.substring(0, 200);
+
+  // ── Category / product type ──
+  const productType = (item.product_type || tags[1] || item.category_name || 'Food').substring(0, 750);
+
+  // ── Branch identification ──
+  const branchLabel = (branch?.branch_slug || branch?.name || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').substring(0, 100);
+
+  // ── Dietary classification (from food_type field) ──
+  const dietMap = { veg: 'veg', non_veg: 'non-veg', egg: 'egg', vegan: 'vegan' };
+  const dietLabel = dietMap[item.food_type] || '';
+
+  // ── Internal label for filtering (does NOT trigger product review on update) ──
+  const internalLabels = [branchLabel, productType.toLowerCase(), dietLabel, item.is_available ? 'available' : 'unavailable']
+    .filter(Boolean)
+    .map(l => l.replace(/[^a-z0-9_-]/g, '-').substring(0, 110));
+  const internalLabel = '[' + internalLabels.map(l => "'" + l + "'").join(',') + ']';
+
+  // ── Variant attribute ──
+  const variantAttr = (item.variant_type && item.variant_value)
+    ? `${item.variant_type}:${item.variant_value}`.substring(0, 200)
+    : '';
+
   return {
     id: safeRetailerId,
     title: (item.name || 'Menu Item').substring(0, 200),
@@ -300,7 +320,7 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
     quantity_to_sell_on_facebook: item.quantity_to_sell_on_facebook != null ? String(item.quantity_to_sell_on_facebook) : '',
     sale_price: salePriceFormatted,
     sale_price_effective_date: item.sale_price_effective_date || '',
-    item_group_id: item.item_group_id || item.retailer_id || '', // standalone items use retailer_id as group
+    item_group_id: item.item_group_id || '',
     gender: item.gender || '',
     color: item.color || '',
     size: item.size || item.variant_value || '',
@@ -315,6 +335,18 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
     'product_tags[0]': tags[0] || '',
     'product_tags[1]': tags[1] || '',
     'style[0]': item.style || '',
+    // India compliance
+    origin_country: 'IN',
+    wa_compliance_category: 'COUNTRY_ORIGIN_EXEMPT',
+    manufacturer_info: manufacturerInfo,
+    // Categorization
+    product_type: productType,
+    custom_label_0: branchLabel,
+    custom_label_1: dietLabel,
+    // Filtering (no product review trigger)
+    internal_label: internalLabel,
+    // Variant enhancement
+    additional_variant_attribute: variantAttr,
   };
 }
 
@@ -1605,6 +1637,51 @@ const deleteCatalogSafe = async (catalogId, restaurantId) => {
   return { success: true };
 };
 
+// ─── FEED MANAGEMENT ─────────────────────────────────────
+const deleteFeed = async (feedId) => {
+  const token = _getCatalogToken();
+  try {
+    await axios.delete(`${GRAPH}/${feedId}`, {
+      headers: { Authorization: `Bearer ${token}` }, timeout: 15000,
+    });
+    console.log(`[Catalog] Deleted feed ${feedId}`);
+    return { success: true };
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`[Catalog] deleteFeed ${feedId} failed:`, msg);
+    throw new Error(`Feed deletion failed: ${msg}`);
+  }
+};
+
+const listFeeds = async (catalogId) => {
+  const token = _getCatalogToken();
+  try {
+    const resp = await axios.get(`${GRAPH}/${catalogId}/product_feeds`, {
+      params: { access_token: token, fields: 'id,name,schedule,latest_upload{end_time,num_detected_items,num_invalid_items}', limit: 50 },
+      timeout: 15000,
+    });
+    return resp.data?.data || [];
+  } catch (err) {
+    console.warn(`[Catalog] listFeeds for ${catalogId} failed:`, err.response?.data?.error?.message || err.message);
+    return [];
+  }
+};
+
+// ─── CATALOG DIAGNOSTICS ─────────────────────────────────
+const getCatalogDiagnostics = async (catalogId) => {
+  const token = _getCatalogToken();
+  try {
+    const resp = await axios.get(`${GRAPH}/${catalogId}/diagnostics`, {
+      params: { access_token: token, fields: 'diagnostics_type,num_items,sample_urls' },
+      timeout: 15000,
+    });
+    return resp.data?.data || [];
+  } catch (err) {
+    console.warn(`[Catalog] getCatalogDiagnostics for ${catalogId} failed:`, err.response?.data?.error?.message || err.message);
+    return [];
+  }
+};
+
 module.exports = {
   // Main catalog architecture
   ensureMainCatalog,
@@ -1647,4 +1724,9 @@ module.exports = {
   deleteBranchCollection,
   // Compliance
   validateItemForMeta,
+  // Feed management
+  deleteFeed,
+  listFeeds,
+  // Diagnostics
+  getCatalogDiagnostics,
 };

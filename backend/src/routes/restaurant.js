@@ -3269,28 +3269,39 @@ router.post('/catalog/merge', requireApproved, async (req, res) => {
         for (const item of items) {
           const key = `${(item.name||'').toLowerCase()}_${item.price}`;
           if (primaryKeys.has(key)) { dupes++; continue; }
-          // Copy to primary catalog via items_batch API
+
+          // Try to build full data from MongoDB menu_item + mapMenuItemToMetaProduct
+          let itemData;
+          const rid = item.retailer_id || `merged-${item.id}`;
+          const menuItem = await col('menu_items').findOne({ retailer_id: rid });
+          if (menuItem) {
+            const branch = await col('branches').findOne({ _id: menuItem.branch_id });
+            itemData = catalog.mapMenuItemToMetaProduct(menuItem, restaurant, branch);
+          } else {
+            // Fallback for orphan items only on Meta
+            itemData = {
+              title: item.name || item.title || 'Menu Item',
+              description: item.description || item.name || 'Menu item',
+              price: item.price || '0.00 INR',
+              availability: item.availability || 'in stock',
+              condition: 'new',
+              image_link: item.image_url || '',
+              brand: item.brand || '',
+              link: `https://gullybite.com/menu/${rid}`,
+              google_product_category: 'Food, Beverages & Tobacco > Food Items',
+              origin_country: 'IN',
+              wa_compliance_category: 'COUNTRY_ORIGIN_EXEMPT',
+              manufacturer_info: restaurant.business_name || 'Restaurant',
+            };
+          }
+
           try {
             await axios.post(
               `${metaConfig.graphUrl}/${primaryId}/items_batch`,
               {
                 item_type: 'PRODUCT_ITEM',
                 allow_upsert: true,
-                requests: JSON.stringify([{
-                  method: 'UPDATE',
-                  retailer_id: item.retailer_id || `merged-${item.id}`,
-                  data: {
-                    title: item.name || item.title || 'Menu Item',
-                    description: item.description || item.name || 'Menu item',
-                    price: item.price || '0.00 INR',
-                    availability: item.availability || 'in stock',
-                    condition: 'new',
-                    image_link: item.image_url || '',
-                    brand: item.brand || '',
-                    link: `https://gullybite.com/menu/${item.retailer_id || item.id}`,
-                    google_product_category: 'Food, Beverages & Tobacco > Food Items',
-                  },
-                }]),
+                requests: JSON.stringify([{ method: 'UPDATE', retailer_id: rid, data: itemData }]),
               },
               { headers: { Authorization: `Bearer ${token}` }, timeout: 30000 }
             );
@@ -3303,6 +3314,14 @@ router.post('/catalog/merge', requireApproved, async (req, res) => {
         totalCopied += copied;
         totalDuplicates += dupes;
         results.push({ catalog_id: secondary.id, name: secondary.name, items: items.length, copied, duplicates: dupes });
+
+        // Delete feeds on secondary catalog before disconnecting
+        try {
+          const secFeeds = await catalog.listFeeds(secondary.id);
+          for (const feed of secFeeds) {
+            try { await catalog.deleteFeed(feed.id); } catch (feedErr) { console.warn(`[Catalog Merge] Feed ${feed.id} delete failed:`, feedErr.message); }
+          }
+        } catch (_) { /* non-fatal */ }
 
         // Disconnect secondary from WABA
         if (wa?.waba_id) {
@@ -4721,6 +4740,53 @@ router.get('/catalog/feed-status', async (req, res) => {
       registeredAt: restaurant.catalog_feed_registered_at,
       lastUpload,
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/restaurant/catalog/feed/:feedId — delete a scheduled feed from Meta
+router.delete('/catalog/feed/:feedId', requireApproved, async (req, res) => {
+  try {
+    await catalog.deleteFeed(req.params.feedId);
+    await col('restaurants').updateOne({ _id: req.restaurantId }, { $unset: { meta_feed_id: '' } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/catalog/feeds — list all feeds on the restaurant's catalog
+router.get('/catalog/feeds', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const catalogId = restaurant?.meta_catalog_id;
+    if (!catalogId) {
+      const branch = await col('branches').findOne({ restaurant_id: req.restaurantId, catalog_id: { $exists: true, $ne: null } });
+      if (!branch?.catalog_id) return res.json({ feeds: [] });
+      return res.json({ feeds: await catalog.listFeeds(branch.catalog_id) });
+    }
+    res.json({ feeds: await catalog.listFeeds(catalogId) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/catalog/diagnostics — item-level errors from Meta
+router.get('/catalog/diagnostics', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const catalogId = restaurant?.meta_catalog_id;
+    if (!catalogId) return res.status(404).json({ error: 'No catalog connected' });
+
+    const diagnostics = await catalog.getCatalogDiagnostics(catalogId);
+
+    // Optional: fetch problematic items for detail
+    let problematic_items = [];
+    try {
+      const token = metaConfig.getCatalogToken();
+      const resp = await axios.get(`${metaConfig.graphUrl}/${catalogId}/products`, {
+        params: { access_token: token, fields: 'id,retailer_id,name,review_status,errors', filter: JSON.stringify({ review_status: { neq: 'approved' } }), limit: 20 },
+        timeout: 15000,
+      });
+      problematic_items = resp.data?.data || [];
+    } catch (_) { /* non-fatal enrichment */ }
+
+    res.json({ diagnostics, problematic_items });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

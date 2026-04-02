@@ -1236,7 +1236,10 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               <button class="btn-g btn-sm" id="cat-connect-btn" onclick="doCatMgmtConnect()" style="display:none">🔗 Connect to WhatsApp</button>
               <button class="btn-g btn-sm" id="cat-disconnect-btn" onclick="doCatMgmtDisconnect()" style="display:none;color:#dc2626;border-color:#dc2626">⛓️‍💥 Disconnect</button>
               <button class="btn-g btn-sm" id="cat-delete-btn" onclick="doCatMgmtDelete()" style="display:none;color:#dc2626;border-color:#dc2626">🗑️ Delete Catalog</button>
+              <button class="btn-g btn-sm" id="cat-diagnostics-btn" onclick="loadCatalogDiagnostics()" style="display:none">🔍 View Issues</button>
             </div>
+
+            <div id="cat-diagnostics-area" style="display:none;margin-bottom:.8rem"></div>
 
             <!-- Catalog selector (for connect) -->
             <div id="cat-mgmt-selector" style="display:none;margin-bottom:.8rem">
@@ -1367,6 +1370,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <div id="feed-status-area">
               <div class="spin" style="margin:1rem auto;display:block;width:20px;height:20px"></div>
             </div>
+            <div id="feed-list-area" style="margin-top:.8rem"></div>
             <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-top:1rem">
               <button class="btn-p" id="feed-register-btn" onclick="doRegisterFeed(this)">📡 Register Feed with Meta</button>
               <button class="btn-g btn-sm" onclick="loadFeedStatus()">🔄 Check Status</button>
