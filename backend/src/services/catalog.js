@@ -293,7 +293,7 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
     link: productLink,
     // FUTURE FEATURE: Re-enable placeholder fallback when image pipeline is active:
     // image_link: item.image_url || require('./imageUpload').getPlaceholderUrl(item) || '',
-    image_link: item.image_url || process.env.DEFAULT_FOOD_IMAGE_URL || '',
+    image_link: item.image_url || process.env.DEFAULT_FOOD_IMAGE_URL || 'https://gullybite.com/img/food-placeholder.png',
     brand: brandName,
     google_product_category: item.google_product_category || 'Food, Beverages & Tobacco > Food Items',
     fb_product_category: item.fb_product_category || 'Food & Beverages > Prepared Food',
@@ -394,6 +394,9 @@ const syncBranchCatalog = async (branchId) => {
   const requests = items.map(item => _buildItemRequest(item, restaurant, branch)).filter(Boolean);
 
   console.log(`[Catalog] Syncing ${requests.length} items to catalog ${branch.catalog_id} for "${branch.name}"`);
+  if (requests.length && requests[0]) {
+    console.log(`[Catalog] Sample item: retailer_id=${requests[0].retailer_id}, has_image=${!!requests[0].data?.image_link}, price=${requests[0].data?.price}`);
+  }
 
   const BATCH_SIZE = 4999;
   const results = { updated: 0, deleted: 0, failed: 0, errors: [] };
@@ -432,7 +435,9 @@ const syncBranchCatalog = async (branchId) => {
           );
         }
       } catch (err) {
-        const errMsg = err._error?.error?.message || err.message;
+        const errMsg = err._error?.error?.message || err.response?.data?.error?.message || err.message;
+        console.error(`[Catalog] Batch ${batchNum} error (attempt ${attempt + 1}):`, errMsg);
+        if (err._error?.error) console.error('[Catalog] Full Meta error:', JSON.stringify(err._error.error));
 
         const isStale = attempt === 0 && !catalogFixed && (
           errMsg.includes('does not exist') ||
