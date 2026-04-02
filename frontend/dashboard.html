@@ -2330,10 +2330,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* ─────────────────────────── ROUTING ───────────────────── */
 const TMETA = {
-  overview:    { title: 'Overview',           sub: 'Your restaurant at a glance',         fn: loadOverview },
+  overview:    { title: 'Overview',           sub: 'Your restaurant at a glance',         fn: () => loadOverview() },
   orders:      { title: 'Orders',             sub: 'Manage incoming orders',               fn: () => loadOrders('ALL') },
   menu:        { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); updateSyncStatus(); } },
-  messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: loadMessages },
+  messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: () => loadMessages() },
   analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); } },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
   restaurant:  { title: 'Restaurant',         sub: 'Coupons, loyalty, team, and issues',   fn: () => { loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
