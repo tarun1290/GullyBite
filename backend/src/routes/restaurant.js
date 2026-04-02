@@ -1372,7 +1372,7 @@ router.patch('/menu/bulk-availability', requirePermission('manage_menu'), async 
     const items = await col('menu_items').find(filter, { projection: { retailer_id: 1, is_available: 1 } }).toArray();
     const syncItems = items.filter(i => i.retailer_id).map(i => ({ retailer_id: i.retailer_id, is_available: i.is_available }));
 
-    res.json({ success: true, updated: result.modifiedCount });
+    res.json({ success: true, updated_count: result.modifiedCount, is_available: !!available, meta_sync: 'queued' });
 
     // Fire-and-forget: sync to Meta
     if (syncItems.length) {
@@ -1389,13 +1389,38 @@ router.patch('/menu/bulk-availability', requirePermission('manage_menu'), async 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/restaurant/catalog/batch-status/:handle — check items_batch processing status
-router.get('/catalog/batch-status/:handle', async (req, res) => {
+// PATCH /api/restaurant/menu/:id/availability — dedicated lightweight availability toggle
+// NOTE: Must be AFTER /menu/bulk-availability to avoid Express matching 'bulk-availability' as :id
+router.patch('/menu/:id/availability', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { available } = req.body;
+    if (typeof available !== 'boolean') return res.status(400).json({ error: 'available (true/false) required' });
+
+    const item = await col('menu_items').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!item) return res.status(404).json({ error: 'Menu item not found' });
+
+    await col('menu_items').updateOne(
+      { _id: req.params.id },
+      { $set: { is_available: available, updated_at: new Date() } }
+    );
+
+    res.json({ success: true, item_id: req.params.id, is_available: available, meta_sync: 'queued' });
+
+    // Fire-and-forget: sync to Meta AFTER response is sent
+    catalog.syncItemAvailability(req.restaurantId, { ...item, is_available: available })
+      .catch(err => console.error('[Catalog] Availability sync failed:', err.message));
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_toggled', category: 'menu', description: `Toggled ${item.name} ${available ? 'available' : 'unavailable'}`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.id, severity: 'info' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/catalog/sync-status/:handle — check items_batch processing status
+router.get('/catalog/sync-status/:handle', async (req, res) => {
   try {
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
     const catalogId = restaurant?.meta_catalog_id;
     if (!catalogId) return res.status(404).json({ error: 'No catalog found' });
-    const result = await catalog.checkBatchStatus(catalogId, req.params.handle);
+    const result = await catalog.checkSyncStatus(catalogId, req.params.handle);
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

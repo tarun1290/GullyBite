@@ -4228,16 +4228,18 @@ function renderMenuGroups(grouped, showBranchBadge) {
       : '';
     const rowBg = idx % 2 === 0 ? '' : 'background:var(--ink4,#f9fafb);';
 
-    return `<tr style="${rowBg}">
+    const dimStyle = item.is_available ? '' : 'opacity:.55;';
+
+    return `<tr id="mi-row-${item.id}" style="${rowBg}${dimStyle}">
       <td style="padding:.45rem .4rem;text-align:center;width:32px"><input type="checkbox" class="mi-check" data-id="${item.id}" data-name="${safeName}" onchange="updateBulkBar()"></td>
       <td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim);text-align:center;width:40px">${idx + 1}</td>
-      <td style="padding:.45rem .7rem;font-size:.82rem;font-weight:500">${displayName}${item.is_bestseller ? ' <span style="font-size:.6rem;color:#f59e0b">⭐</span>' : ''}</td>
+      <td style="padding:.45rem .7rem;font-size:.82rem;font-weight:500">${displayName}${item.is_bestseller ? ' <span style="font-size:.6rem;color:#f59e0b">⭐</span>' : ''}${item.is_available ? '' : ' <span style="font-size:.65rem;color:#9ca3af;font-weight:400">(unavailable)</span>'}</td>
       <td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim)">${item._categoryName}</td>
       ${branchTd}
       <td style="padding:.45rem .7rem;font-size:.82rem;text-align:center">${typeIcon}</td>
       <td style="padding:.45rem .7rem;font-size:.82rem;font-weight:500;text-align:right;white-space:nowrap">${price}</td>
       <td style="padding:.45rem .7rem;text-align:center">
-        <label class="tsl" style="margin:0"><input type="checkbox" ${item.is_available ? 'checked' : ''} onchange="doToggleItem('${item.id}',this.checked,'${safeName}')"><div class="tsl-track"></div></label>
+        <label class="tsl" style="margin:0"><input type="checkbox" id="avail-${item.id}" ${item.is_available ? 'checked' : ''} onchange="doToggleItem('${item.id}',this.checked,'${safeName}')"><div class="tsl-track"></div></label>
       </td>
       <td style="padding:.45rem .7rem;text-align:center">
         <button onclick="doDeleteItem('${item.id}','${safeName}')" title="Delete ${safeName}" style="background:none;border:none;cursor:pointer;font-size:.85rem;color:#9ca3af;transition:color .15s" onmouseover="this.style.color='#dc2626'" onmouseout="this.style.color='#9ca3af'">🗑️</button>
@@ -4614,30 +4616,45 @@ async function doFixCatalog() {
   } catch (e) { toast(e.message, 'err'); }
 }
 async function doToggleItem(id, av, name) {
+  // Optimistic UI update — dim/undim row immediately
+  const row = document.getElementById('mi-row-' + id);
+  if (row) row.style.opacity = av ? '' : '.55';
   try {
-    await api(`/api/restaurant/menu/${id}`, { method: 'PUT', body: { isAvailable: av } });
+    await api(`/api/restaurant/menu/${id}/availability`, { method: 'PATCH', body: { available: av } });
     toast(`"${name}" ${av ? 'back on menu' : 'marked unavailable'} — syncing to WhatsApp...`, 'ok');
-  } catch (e) { toast(e.message, 'err'); }
+    // Update local cache
+    const mi = (_menuItems || []).find(i => i.id === id);
+    if (mi) mi.is_available = av;
+  } catch (e) {
+    // Revert toggle and row opacity on error
+    const cb = document.getElementById('avail-' + id);
+    if (cb) cb.checked = !av;
+    if (row) row.style.opacity = !av ? '' : '.55';
+    toast(e.message, 'err');
+  }
 }
 async function doBulkAvailability() {
-  const branchId = document.getElementById('m-branch')?.value || '';
+  const rawBranch = document.getElementById('m-branch')?.value || '';
+  // Only use real branch IDs — skip __all__ and __unassigned__
+  const branchId = (rawBranch && !rawBranch.startsWith('__')) ? rawBranch : '';
+  const branchLabel = branchId ? (branches.find(b => b.id === branchId)?.name || 'this branch') : 'all branches';
   // Determine current state — check if majority of items are available
   const items = _menuItems || [];
   const branchItems = branchId ? items.filter(i => i.branch_id === branchId) : items;
   const availCount = branchItems.filter(i => i.is_available).length;
   const isClosing = availCount > 0;
   const label = isClosing
-    ? `Mark all ${branchItems.length} items as unavailable? Customers won't see your menu on WhatsApp until you reopen.`
-    : `Bring all ${branchItems.length} items back online?`;
+    ? `Mark all ${branchItems.length} items in ${branchLabel} as unavailable?\n\nCustomers won't see your menu on WhatsApp until you reopen.`
+    : `Bring all ${branchItems.length} items in ${branchLabel} back online?`;
   if (!confirm(label)) return;
   try {
     const body = { available: !isClosing };
     if (branchId) body.branch_id = branchId;
     const r = await api('/api/restaurant/menu/bulk-availability', { method: 'PATCH', body });
     toast(isClosing
-      ? `🔴 ${r.updated} items marked unavailable — syncing to WhatsApp...`
-      : `🟢 ${r.updated} items back online — syncing to WhatsApp...`, 'ok');
-    loadMenu(branchId || undefined);
+      ? `🔴 ${r.updated_count} items marked unavailable — syncing to WhatsApp...`
+      : `🟢 ${r.updated_count} items back online — syncing to WhatsApp...`, 'ok');
+    loadMenu();
     _updateBulkAvailBtn(!isClosing);
   } catch (e) { toast(e.message, 'err'); }
 }

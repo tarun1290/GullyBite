@@ -673,16 +673,24 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
   if (!catalogId || !item.retailer_id) return;
 
   // Lightweight availability-only sync to Meta
-  await syncItemAvailability(catalogId, item.retailer_id, isAvailable, menuItemId);
+  await syncItemAvailability(branch.restaurant_id, { ...item, is_available: isAvailable });
 };
 
 // ─── LIGHTWEIGHT SINGLE-ITEM AVAILABILITY SYNC ──────────────
 // Sends ONLY the availability field to Meta — much faster than full item sync.
 // Called fire-and-forget from the toggle route.
-const syncItemAvailability = async (catalogId, retailerId, isAvailable, menuItemId) => {
+const syncItemAvailability = async (restaurantId, menuItem) => {
   try {
+    const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+    const catalogId = restaurant?.meta_catalog_id;
+    if (!catalogId) {
+      console.warn('[Catalog] syncItemAvailability: no catalog for restaurant', restaurantId);
+      return null;
+    }
+    if (!menuItem?.retailer_id) return null;
+
     const token = _getCatalogToken();
-    const avail = isAvailable ? 'in stock' : 'out of stock';
+    const avail = menuItem.is_available ? 'in stock' : 'out of stock';
 
     const resp = await axios.post(
       `${GRAPH}/${catalogId}/items_batch`,
@@ -690,7 +698,7 @@ const syncItemAvailability = async (catalogId, retailerId, isAvailable, menuItem
         item_type: 'PRODUCT_ITEM',
         requests: JSON.stringify([{
           method: 'UPDATE',
-          retailer_id: retailerId,
+          retailer_id: menuItem.retailer_id,
           data: { availability: avail },
         }]),
       },
@@ -698,25 +706,25 @@ const syncItemAvailability = async (catalogId, retailerId, isAvailable, menuItem
     );
 
     const handle = resp.data?.handles?.[0] || null;
-    console.log(`[Catalog] Availability update queued for ${retailerId} → ${avail}, handle: ${handle}`);
+    console.log('[Catalog] Availability update queued for', menuItem.retailer_id, '\u2192', avail, '| handle:', handle);
 
     // Log for debugging
     col('catalog_sync_logs').insertOne({
-      _id: newId(), catalog_id: catalogId, handle, type: 'availability_update',
-      retailer_id: retailerId, new_status: avail, created_at: new Date(), status: 'pending',
+      _id: newId(), restaurant_id: restaurantId, handle, type: 'availability_update',
+      retailer_id: menuItem.retailer_id, new_status: avail, created_at: new Date(), status: 'pending',
     }).catch(() => {});
 
-    if (menuItemId) {
+    if (menuItem._id) {
       await col('menu_items').updateOne(
-        { _id: menuItemId },
+        { _id: menuItem._id },
         { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
       );
     }
     return handle;
   } catch (err) {
-    console.error('[Catalog] Availability sync failed for', retailerId, ':', err.response?.data || err.message);
-    if (menuItemId) {
-      await col('menu_items').updateOne({ _id: menuItemId }, { $set: { catalog_sync_status: 'error' } }).catch(() => {});
+    console.error('[Catalog] Availability sync failed for', menuItem.retailer_id, err.response?.data || err.message);
+    if (menuItem._id) {
+      await col('menu_items').updateOne({ _id: menuItem._id }, { $set: { catalog_sync_status: 'error' } }).catch(() => {});
     }
     return null;
   }
@@ -776,7 +784,7 @@ const syncBulkAvailability = async (restaurantId, items) => {
 };
 
 // ─── CHECK BATCH REQUEST STATUS ─────────────────────────────
-const checkBatchStatus = async (catalogId, handle) => {
+const checkSyncStatus = async (catalogId, handle) => {
   try {
     const token = _getCatalogToken();
     const resp = await axios.get(
@@ -1608,7 +1616,7 @@ module.exports = {
   setItemAvailability,
   syncItemAvailability,
   syncBulkAvailability,
-  checkBatchStatus,
+  checkSyncStatus,
   getCatalogProducts,
   getSyncStatus,
   syncCategoryProductSets,
