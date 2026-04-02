@@ -578,6 +578,59 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <div style="height:250px;position:relative;margin-top:1rem"><canvas id="an-convos-chart"></canvas></div>
           </div>
         </div>
+
+        <!-- ── DROP-OFF FUNNEL ──────────────────────── -->
+        <div class="card" style="margin-top:1.2rem">
+          <div class="ch">
+            <h3>Customer Drop-off Funnel</h3>
+            <div class="chips" id="df-period-chips">
+              <button class="chip" onclick="loadDropoffAnalytics(1,this)">Today</button>
+              <button class="chip on" onclick="loadDropoffAnalytics(7,this)">7 days</button>
+              <button class="chip" onclick="loadDropoffAnalytics(30,this)">30 days</button>
+              <button class="chip" onclick="loadDropoffAnalytics(90,this)">90 days</button>
+            </div>
+          </div>
+          <!-- Metric cards -->
+          <div class="stats" id="df-stats">
+            <div class="stat"><div class="stat-l">Completion Rate</div><div class="stat-v" id="df-completion">—</div></div>
+            <div class="stat"><div class="stat-l">Cart Abandonment</div><div class="stat-v" id="df-cart-abandon" style="color:#d97706">—</div></div>
+            <div class="stat"><div class="stat-l">Payment Failures</div><div class="stat-v" id="df-pay-fail" style="color:#dc2626">—</div></div>
+            <div class="stat"><div class="stat-l">Recoverable</div><div class="stat-v" id="df-recoverable" style="color:#2563eb">—</div></div>
+          </div>
+          <!-- Funnel bars -->
+          <div id="df-funnel" style="margin-top:1rem"></div>
+        </div>
+
+        <!-- Abandoned sessions list -->
+        <div class="card" style="margin-top:1rem">
+          <div class="ch">
+            <h3>Incomplete Orders</h3>
+            <span id="df-list-count" style="font-size:.82rem;color:var(--dim)"></span>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.84rem">
+              <thead>
+                <tr style="background:#f9fafb;border-bottom:2px solid var(--rim)">
+                  <th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Customer</th>
+                  <th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Phone</th>
+                  <th style="padding:.55rem .7rem;text-align:center;font-size:.77rem;font-weight:600;color:var(--dim)">Stage</th>
+                  <th style="padding:.55rem .7rem;text-align:right;font-size:.77rem;font-weight:600;color:var(--dim)">Cart Value</th>
+                  <th style="padding:.55rem .7rem;text-align:right;font-size:.77rem;font-weight:600;color:var(--dim)">Last Active</th>
+                  <th style="padding:.55rem .7rem;text-align:center;font-size:.77rem;font-weight:600;color:var(--dim)">Action</th>
+                </tr>
+              </thead>
+              <tbody id="df-list-body">
+                <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--dim)">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recovery stats -->
+        <div class="card" style="margin-top:1rem">
+          <div class="ch"><h3>Recovery Performance</h3></div>
+          <div id="df-recovery-stats" style="font-size:.85rem;color:var(--dim);padding:.5rem 0">Loading...</div>
+        </div>
       </div>
 
       <!-- ── CUSTOMERS ────────────────────────────── -->
@@ -2334,7 +2387,7 @@ const TMETA = {
   orders:      { title: 'Orders',             sub: 'Manage incoming orders',               fn: () => loadOrders('ALL') },
   menu:        { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); updateSyncStatus(); } },
   messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: () => loadMessages() },
-  analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); } },
+  analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); loadDropoffAnalytics(); } },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
   restaurant:  { title: 'Restaurant',         sub: 'Coupons, loyalty, team, and issues',   fn: () => { loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
   settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); loadSyncLogs(); } },
@@ -2435,7 +2488,14 @@ async function initDash() {
     if (!waConnected) document.getElementById('wa-connect-banner').style.display = 'flex';
     if (waConnected && rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
 
-    loadOverview();
+    // Restore active tab from URL hash (e.g. #menu, #orders, #settings)
+    const hash = location.hash.replace('#', '');
+    if (hash && TMETA[hash]) {
+      goTab(hash);
+    } else {
+      loadOverview();
+    }
+
     loadWA();
     loadCatalogStatus();
     startMsgPoll();
@@ -2447,10 +2507,6 @@ async function initDash() {
       toast('Completing WhatsApp connection…', 'nfo');
       _finishMetaConnect(null, metaToken);
     }
-
-    // Restore active tab from URL hash (e.g. #menu, #orders, #settings)
-    const hash = location.hash.replace('#', '');
-    if (hash && TMETA[hash]) goTab(hash);
 
     connectWebSocket();
   } catch (e) { console.error(e); }

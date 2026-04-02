@@ -148,6 +148,6 @@ window.loadOverview = loadOverview;
 window.loadOverviewCharts = loadOverviewCharts;
 window.renderWizard = renderWizard;
 window.loadRecent = loadRecent;
-window.loadCatalogStatus = loadCatalogStatus;
+// loadCatalogStatus is exposed by settings.js (where it's defined)
 
 })();

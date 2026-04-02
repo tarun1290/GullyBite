@@ -1243,6 +1243,21 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
           <tbody id="an-topcust-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody></table>
         </div>
 
+        <!-- Platform Conversion Funnel -->
+        <div class="table-wrap" style="margin-top:1.2rem">
+          <div class="table-head"><h2>Platform Conversion Funnel</h2></div>
+          <div style="padding:1rem">
+            <div id="admin-funnel" style="margin-bottom:1rem"><p class="empty">Loading...</p></div>
+            <h3 style="font-size:.88rem;margin:1.2rem 0 .6rem">Restaurant Comparison</h3>
+            <div style="overflow-x:auto">
+              <table>
+                <thead><tr><th>Restaurant</th><th>Initiated</th><th>Completed</th><th>Rate</th><th>Top Drop-off</th></tr></thead>
+                <tbody id="admin-funnel-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </div>
 
     </div><!-- /content -->
@@ -4164,6 +4179,7 @@ async function loadAnalyticsDashboard() {
     loadAnSegments(q),
     loadAnDelivery(q),
     loadAnTopCustomers(q),
+    loadAdminFunnel(),
   ]);
 }
 
@@ -4318,6 +4334,53 @@ async function loadAnTopCustomers(q) {
       <td style="padding:.45rem .85rem;font-weight:600;color:var(--wa)">${_fmtRs(c.total_spent)}</td>
     </tr>`).join('');
   } catch {}
+}
+
+// ─── PLATFORM CONVERSION FUNNEL ─────────────────────────────
+async function loadAdminFunnel() {
+  try {
+    // Platform-wide funnel
+    var data = await api('/api/admin/analytics/funnel');
+    var funnelEl = document.getElementById('admin-funnel');
+    if (data.funnel) {
+      var colors = ['#94a3b8', '#3b82f6', '#8b5cf6', '#d97706', '#0891b2', '#16a34a'];
+      var html = '';
+      for (var i = 0; i < data.funnel.length; i++) {
+        var f = data.funnel[i];
+        var pct = Math.max(f.pct, 2);
+        html += '<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.4rem">';
+        html += '<span style="width:110px;font-size:.78rem;font-weight:500;color:var(--dim);text-align:right">' + f.stage + '</span>';
+        html += '<div style="flex:1;background:#f1f5f9;border-radius:6px;overflow:hidden;height:28px;position:relative">';
+        html += '<div style="width:' + pct + '%;height:100%;background:' + (colors[i] || '#64748b') + ';border-radius:6px;transition:width .4s"></div>';
+        html += '<span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);font-size:.72rem;font-weight:600;color:' + (pct > 15 ? '#fff' : '#1e293b') + '">' + f.count + ' (' + f.pct + '%)</span>';
+        html += '</div></div>';
+      }
+      funnelEl.innerHTML = html;
+    }
+
+    // Per-restaurant comparison
+    var restData = await api('/api/admin/analytics/funnel?group_by=restaurant');
+    var tbody = document.getElementById('admin-funnel-tbody');
+    if (restData.data && restData.data.length) {
+      restData.data.sort(function(a, b) { return a.completion_rate - b.completion_rate; });
+      tbody.innerHTML = restData.data.map(function(r) {
+        // Find top dropoff stage
+        var stages = ['dropped_at_address', 'dropped_at_browsing', 'dropped_at_cart', 'dropped_at_payment'];
+        var labels = { dropped_at_address: 'Address', dropped_at_browsing: 'Menu', dropped_at_cart: 'Cart', dropped_at_payment: 'Payment' };
+        var topStage = '';
+        var topCount = 0;
+        stages.forEach(function(s) { if ((r[s] || 0) > topCount) { topCount = r[s]; topStage = labels[s] || s; } });
+        var rateColor = r.completion_rate >= 50 ? 'var(--wa)' : r.completion_rate >= 25 ? '#d97706' : '#dc2626';
+        return '<tr>'
+          + '<td style="padding:.45rem .85rem;font-weight:500">' + (r.restaurant_name || '\u2014') + '</td>'
+          + '<td style="padding:.45rem .85rem">' + (r.total_initiated || 0) + '</td>'
+          + '<td style="padding:.45rem .85rem">' + (r.completed || 0) + '</td>'
+          + '<td style="padding:.45rem .85rem;font-weight:700;color:' + rateColor + '">' + (r.completion_rate || 0) + '%</td>'
+          + '<td style="padding:.45rem .85rem;font-size:.8rem;color:var(--dim)">' + (topStage ? topStage + ' (' + topCount + ')' : '\u2014') + '</td>'
+          + '</tr>';
+      }).join('');
+    }
+  } catch (e) { console.warn('[Admin] Funnel load failed:', e.message); }
 }
 </script>
 </body>

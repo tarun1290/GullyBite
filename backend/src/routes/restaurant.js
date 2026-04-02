@@ -4045,6 +4045,130 @@ router.get('/analytics/delivery', requirePermission('view_analytics'), async (re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── DROP-OFF ANALYTICS & RECOVERY ─────────────────────────
+const dropoff = require('../services/dropoff');
+
+// GET /api/restaurant/analytics/dropoffs — funnel + abandoned session list
+router.get('/analytics/dropoffs', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : undefined;
+    const to = req.query.to ? new Date(req.query.to) : undefined;
+    const result = await dropoff.getDropoffs(req.restaurantId, {
+      from, to, stage: req.query.stage, limit: parseInt(req.query.limit) || 50, includeDetails: true,
+    });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/analytics/dropoffs/:conversationId — single abandoned session detail
+router.get('/analytics/dropoffs/:conversationId', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const detail = await dropoff.getDropoffDetails(req.params.conversationId);
+    if (!detail) return res.status(404).json({ error: 'Conversation not found' });
+    res.json(detail);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/dropoffs/:conversationId/recover — send recovery message
+router.post('/dropoffs/:conversationId/recover', requirePermission('manage_orders'), async (req, res) => {
+  try {
+    const conv = await col('conversations').findOne({ _id: req.params.conversationId });
+    if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+    // Verify belongs to this restaurant
+    const waAcc = await col('whatsapp_accounts').findOne({ _id: conv.wa_account_id, restaurant_id: req.restaurantId });
+    if (!waAcc) return res.status(403).json({ error: 'Conversation does not belong to this restaurant' });
+
+    // Must be an abandoned state (not completed)
+    const completedStates = ['AWAITING_FEEDBACK', 'SELECTING_ISSUE_CATEGORY', 'SELECTING_ISSUE_ORDER', 'AWAITING_ISSUE_DESCRIPTION'];
+    if (completedStates.includes(conv.state)) return res.status(400).json({ error: 'Conversation is not abandoned — customer completed an order' });
+
+    const customer = await col('customers').findOne({ _id: conv.customer_id });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    const session = conv.session_data || {};
+    const wa = require('../services/whatsapp');
+    const { resolveRecipient } = require('../utils/customerIdentity');
+    const to = resolveRecipient(customer);
+    const pid = waAcc.phone_number_id;
+    const token = waAcc.access_token;
+
+    // Determine message type based on stage
+    const isCart = ['ORDER_REVIEW', 'AWAITING_COUPON', 'AWAITING_POINTS_REDEEM'].includes(conv.state);
+    const isPayment = ['AWAITING_PHONE_FOR_PAYMENT', 'AWAITING_PAYMENT'].includes(conv.state);
+    let messageType = 'general_recovery';
+    let messageText = '';
+
+    const name = customer.name || 'there';
+
+    if (isCart && session.cart?.length) {
+      messageType = 'cart_recovery';
+      const items = session.cart.map(i => `${i.name} x${i.qty}`).join(', ');
+      messageText = `Hey ${name}! You left some items in your cart: ${items}.\n\nReady to complete your order? Just reply *ORDER* to pick up where you left off!`;
+    } else if (isPayment) {
+      messageType = 'payment_recovery';
+      messageText = `Hey ${name}! Your payment didn't go through. Would you like to try again?\n\nReply *PAY* to get a fresh payment link, or *MENU* to start over.`;
+    } else {
+      messageText = `Hey ${name}! We noticed you were browsing our menu. Ready to order?\n\nJust reply *MENU* to see our full selection!`;
+    }
+
+    // Check WhatsApp 24-hour window
+    const hoursSinceLastMsg = (Date.now() - new Date(conv.last_msg_at)) / 3600000;
+
+    // Send response immediately, fire-and-forget the actual message
+    res.json({ success: true, message_type: messageType, hours_since_activity: Math.round(hoursSinceLastMsg * 10) / 10 });
+
+    // Fire-and-forget: send the message
+    (async () => {
+      try {
+        if (hoursSinceLastMsg < 24) {
+          await wa.sendText(pid, token, to, messageText);
+        } else {
+          // Outside 24h window — try template, fall back to text (may fail)
+          try {
+            await wa.sendTemplate(pid, token, to, {
+              name: 'cart_reminder', language: 'en',
+              components: [{ type: 'body', parameters: [{ type: 'text', text: name }] }],
+            });
+          } catch {
+            // Template may not exist — try regular text (Meta may block it)
+            await wa.sendText(pid, token, to, messageText).catch(() => {});
+          }
+        }
+        // Log the recovery attempt
+        await col('recovery_attempts').insertOne({
+          _id: newId(), conversation_id: req.params.conversationId,
+          customer_id: conv.customer_id, restaurant_id: req.restaurantId,
+          message_type: messageType, sent_at: new Date(), status: 'sent',
+        });
+      } catch (err) {
+        console.error('[Recovery] Message send failed:', err.message);
+        await col('recovery_attempts').insertOne({
+          _id: newId(), conversation_id: req.params.conversationId,
+          customer_id: conv.customer_id, restaurant_id: req.restaurantId,
+          message_type: messageType, sent_at: new Date(), status: 'failed', error: err.message,
+        }).catch(() => {});
+      }
+    })();
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/analytics/recovery-stats — recovery message effectiveness
+router.get('/analytics/recovery-stats', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const stats = await dropoff.getRecoveryStats(req.restaurantId, req.query.from, req.query.to);
+    res.json(stats);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/dropoffs/recoverable — high-intent abandoned carts for recovery
+router.get('/dropoffs/recoverable', requirePermission('manage_orders'), async (req, res) => {
+  try {
+    const list = await dropoff.getRecoverableDropoffs(req.restaurantId);
+    res.json(list);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Flow management moved to admin routes — see admin.js
 
 // ═══════════════════════════════════════════════════════════════

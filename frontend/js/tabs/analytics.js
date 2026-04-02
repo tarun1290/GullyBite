@@ -265,6 +265,143 @@ function _destroyChart(key) {
 
 // Customers (debounceCustSearch, loadCustomers) and Ratings (loadRatings) are in restaurant.js
 
+/* ─────────────────────────── DROP-OFF FUNNEL ─────────────── */
+var _dfDays = 7;
+
+async function loadDropoffAnalytics(days, el) {
+  if (days) _dfDays = days;
+  if (el) { document.querySelectorAll('#df-period-chips .chip').forEach(function(c) { c.classList.remove('on'); }); el.classList.add('on'); }
+
+  var from = new Date(Date.now() - _dfDays * 86400000).toISOString();
+  var to = new Date().toISOString();
+
+  try {
+    var data = await api('/api/restaurant/analytics/dropoffs?from=' + from + '&to=' + to + '&limit=50');
+    renderDropoffCards(data.summary);
+    renderFunnelBars(data.funnel);
+    renderDropoffList(data.dropoffs || []);
+  } catch (e) { console.warn('[Dropoff] Load failed:', e.message); }
+
+  // Load recovery stats separately
+  try {
+    var stats = await api('/api/restaurant/analytics/recovery-stats?from=' + from + '&to=' + to);
+    renderRecoveryStats(stats);
+  } catch (_) {}
+}
+
+function renderDropoffCards(s) {
+  document.getElementById('df-completion').textContent = s.completion_rate + '%';
+  document.getElementById('df-cart-abandon').textContent = s.dropped_at_cart || '0';
+  document.getElementById('df-pay-fail').textContent = s.payment_failed || '0';
+  var recoverable = (s.dropped_at_cart || 0) + (s.dropped_at_payment || 0);
+  document.getElementById('df-recoverable').textContent = recoverable;
+}
+
+function renderFunnelBars(funnel) {
+  var el = document.getElementById('df-funnel');
+  if (!funnel || !funnel.length) { el.innerHTML = '<p style="color:var(--dim);text-align:center;padding:1rem">No data for this period</p>'; return; }
+
+  var colors = ['#94a3b8', '#3b82f6', '#8b5cf6', '#d97706', '#0891b2', '#16a34a'];
+  var html = '';
+
+  for (var i = 0; i < funnel.length; i++) {
+    var f = funnel[i];
+    var pct = Math.max(f.pct, 2); // min 2% width so label is visible
+    var color = colors[i] || '#64748b';
+
+    html += '<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.35rem">';
+    html += '<span style="width:110px;font-size:.78rem;font-weight:500;color:var(--dim);text-align:right;flex-shrink:0">' + f.stage + '</span>';
+    html += '<div style="flex:1;background:var(--ink4,#f1f5f9);border-radius:6px;overflow:hidden;height:26px;position:relative">';
+    html += '<div style="width:' + pct + '%;height:100%;background:' + color + ';border-radius:6px;transition:width .4s ease"></div>';
+    html += '<span style="position:absolute;left:.6rem;top:50%;transform:translateY(-50%);font-size:.72rem;font-weight:600;color:' + (pct > 15 ? '#fff' : 'var(--tx)') + '">' + f.count + ' (' + f.pct + '%)</span>';
+    html += '</div>';
+
+    // Drop-off indicator between stages
+    if (i < funnel.length - 1) {
+      var drop = funnel[i].count - funnel[i + 1].count;
+      var dropPct = funnel[i].count ? Math.round(drop / funnel[i].count * 100) : 0;
+      if (drop > 0) {
+        html += '</div>';
+        html += '<div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.35rem">';
+        html += '<span style="width:110px"></span>';
+        html += '<span style="font-size:.68rem;color:#dc2626;padding-left:.4rem">\u2193 -' + dropPct + '% (' + drop + ' dropped)</span>';
+      }
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function _maskPhone(phone) {
+  if (!phone) return '\u2014';
+  var s = String(phone);
+  if (s.length <= 4) return s;
+  return '\u2022\u2022\u2022\u2022' + s.slice(-4);
+}
+
+function renderDropoffList(list) {
+  var tbody = document.getElementById('df-list-body');
+  var countEl = document.getElementById('df-list-count');
+  if (countEl) countEl.textContent = list.length + ' incomplete';
+
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--dim)">No abandoned sessions in this period</td></tr>';
+    return;
+  }
+
+  var stageIcons = { initiated: '\uD83D\uDC4B', address: '\uD83D\uDCCD', browsing: '\uD83D\uDCCB', cart: '\uD83D\uDED2', payment_pending: '\uD83D\uDCB3', payment_failed: '\u274C' };
+  var stageLabels = { initiated: 'Started', address: 'Address', browsing: 'Menu', cart: 'Cart', payment_pending: 'Payment', payment_failed: 'Failed' };
+
+  tbody.innerHTML = list.map(function(d) {
+    var icon = stageIcons[d.stage] || '\u2022';
+    var label = stageLabels[d.stage] || d.stage;
+    var cartVal = d.cart_total_rs ? '\u20B9' + Math.round(d.cart_total_rs) : '\u2014';
+    var lastActive = d.hours_since_activity < 1 ? 'just now'
+      : d.hours_since_activity < 24 ? Math.round(d.hours_since_activity) + 'h ago'
+      : Math.round(d.hours_since_activity / 24) + 'd ago';
+    var canRecover = (d.stage === 'cart' || d.stage === 'payment_pending') && d.hours_since_activity <= 48;
+    var recoverBtn = canRecover
+      ? '<button class="btn-p btn-sm" onclick="sendRecovery(\'' + d.conversation_id + '\',\'' + (d.customer_name || '').replace(/'/g, "\\'") + '\')" style="font-size:.72rem;padding:.25rem .6rem">Send Recovery</button>'
+      : '<span style="color:var(--dim);font-size:.72rem">\u2014</span>';
+
+    return '<tr style="border-bottom:1px solid var(--rim)">'
+      + '<td style="padding:.5rem .7rem;font-weight:500">' + (d.customer_name || 'Unknown') + '</td>'
+      + '<td style="padding:.5rem .7rem;font-family:monospace;font-size:.78rem;color:var(--dim)">' + _maskPhone(d.customer_phone) + '</td>'
+      + '<td style="padding:.5rem .7rem;text-align:center"><span style="font-size:.72rem;padding:.2rem .5rem;border-radius:100px;background:var(--ink4)">' + icon + ' ' + label + '</span></td>'
+      + '<td style="padding:.5rem .7rem;text-align:right;font-weight:500">' + cartVal + '</td>'
+      + '<td style="padding:.5rem .7rem;text-align:right;font-size:.78rem;color:var(--dim)">' + lastActive + '</td>'
+      + '<td style="padding:.5rem .7rem;text-align:center">' + recoverBtn + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+async function sendRecovery(conversationId, customerName) {
+  if (!confirm('Send a recovery message to ' + (customerName || 'this customer') + '? This will use a WhatsApp message.')) return;
+  try {
+    var result = await api('/api/restaurant/dropoffs/' + conversationId + '/recover', { method: 'POST' });
+    if (result.success) {
+      toast('Recovery message sent!', 'ok');
+      loadDropoffAnalytics(); // refresh the list
+    }
+  } catch (err) {
+    toast(err.message || 'Failed to send recovery message', 'err');
+  }
+}
+
+function renderRecoveryStats(stats) {
+  var el = document.getElementById('df-recovery-stats');
+  if (!stats || !stats.total_sent) {
+    el.innerHTML = '<span style="color:var(--dim)">No recovery messages sent yet. Use the "Send Recovery" button above to win back abandoned carts.</span>';
+    return;
+  }
+  el.innerHTML = '<div style="display:flex;gap:2rem;flex-wrap:wrap">'
+    + '<div><span style="font-weight:700;font-size:1.1rem">' + stats.total_sent + '</span> <span style="color:var(--dim)">messages sent</span></div>'
+    + '<div><span style="font-weight:700;font-size:1.1rem;color:var(--wa)">' + stats.recovered + '</span> <span style="color:var(--dim)">orders recovered</span></div>'
+    + '<div><span style="font-weight:700;font-size:1.1rem">' + stats.recovery_rate + '%</span> <span style="color:var(--dim)">conversion rate</span></div>'
+    + '</div>';
+}
+
 // Expose to window for inline onclick handlers
 window.anSetPeriod = anSetPeriod;
 window.anSetGranularity = anSetGranularity;
@@ -275,6 +412,9 @@ window.anLoadRevenue = anLoadRevenue;
 window.anLoadTopItems = anLoadTopItems;
 window.anLoadPeakHours = anLoadPeakHours;
 window.anLoadDelivery = anLoadDelivery;
+window.anLoadCustomers = anLoadCustomers;
 window._destroyChart = _destroyChart;
+window.loadDropoffAnalytics = loadDropoffAnalytics;
+window.sendRecovery = sendRecovery;
 
 })();

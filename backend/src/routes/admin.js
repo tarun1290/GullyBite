@@ -2246,4 +2246,56 @@ router.get('/flow/feedback-status', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── DROP-OFF / FUNNEL ANALYTICS (PLATFORM-WIDE) ───────────
+const dropoff = require('../services/dropoff');
+
+// GET /api/admin/analytics/funnel — platform-wide conversion funnel
+router.get('/analytics/funnel', async (req, res) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : undefined;
+    const to = req.query.to ? new Date(req.query.to) : undefined;
+
+    if (req.query.group_by === 'restaurant') {
+      const restaurants = await col('restaurants').find({}, { projection: { business_name: 1 } }).toArray();
+      const funnels = [];
+      for (const r of restaurants) {
+        const result = await dropoff.getDropoffs(String(r._id), { from, to, includeDetails: false });
+        funnels.push({ restaurant_id: String(r._id), restaurant_name: r.business_name, ...result.summary, funnel: result.funnel });
+      }
+      return res.json({ group_by: 'restaurant', data: funnels });
+    }
+
+    const result = await dropoff.getDropoffs(null, { from, to, includeDetails: false });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/analytics/dropoffs — platform-wide dropoff list with restaurant names
+router.get('/analytics/dropoffs', async (req, res) => {
+  try {
+    const from = req.query.from ? new Date(req.query.from) : undefined;
+    const to = req.query.to ? new Date(req.query.to) : undefined;
+    const result = await dropoff.getDropoffs(null, {
+      from, to, stage: req.query.stage, limit: parseInt(req.query.limit) || 100, includeDetails: true,
+    });
+
+    if (result.dropoffs?.length) {
+      const waIds = [...new Set(result.dropoffs.map(d => d.wa_account_id).filter(Boolean))];
+      const waAccs = await col('whatsapp_accounts').find({ _id: { $in: waIds } }).toArray();
+      const waMap = {};
+      for (const w of waAccs) waMap[String(w._id)] = w;
+      const restIds = [...new Set(Object.values(waMap).map(w => w.restaurant_id))];
+      const rests = await col('restaurants').find({ _id: { $in: restIds } }).toArray();
+      const restMap = {};
+      for (const r of rests) restMap[String(r._id)] = r.business_name;
+      for (const d of result.dropoffs) {
+        const wa = waMap[d.wa_account_id];
+        d.restaurant_name = wa ? (restMap[wa.restaurant_id] || null) : null;
+        delete d.wa_account_id;
+      }
+    }
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

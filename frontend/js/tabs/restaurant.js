@@ -348,10 +348,13 @@ async function loadLoyalty(page) {
   _lyPage = page || 1;
   // Populate WhatsApp info card from restaurant data
   if (rest) {
-    const waPhone = rest.wa_phone_number || rest.waba_accounts?.[0]?.wa_phone_number;
+    const waPhone = rest.wa_phone_number || rest.waba_accounts?.[0]?.phone || rest.waba_accounts?.[0]?.wa_phone_number;
+    const waConnected = !!(waPhone || rest.whatsapp_connected || rest.meta_user_id || rest.waba_accounts?.length);
     document.getElementById('wa-info-phone').innerHTML = waPhone
-      ? `<span style="color:var(--wa)">+${waPhone} ✅</span>`
-      : '<span style="color:var(--red)">Not Connected ❌</span>';
+      ? `<span style="color:var(--wa)">${waPhone} ✅</span>`
+      : waConnected
+        ? `<span style="color:var(--wa)">Connected ✅</span>`
+        : '<span style="color:var(--red)">Not Connected ❌</span>';
     const catId = rest.meta_catalog_id || rest.catalog_id;
     document.getElementById('wa-info-catalog').innerHTML = catId
       ? `<span style="color:var(--wa)">${catId} ✅</span>`
@@ -726,5 +729,9 @@ window.sendCampaignNow = sendCampaignNow;
 window.deleteCampaignRow = deleteCampaignRow;
 window.pauseCampaignNow = pauseCampaignNow;
 window.resumeCampaignNow = resumeCampaignNow;
+window.doSaveUser = doSaveUser;
+window.editUser = editUser;
+window.resetUserPin = resetUserPin;
+window.toggleUser = toggleUser;
 
 })();
