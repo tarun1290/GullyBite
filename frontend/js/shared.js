@@ -9,14 +9,25 @@ var branches = [];
 
 /* ─────────────────────────── API ────────────────────────── */
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    ...opts,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...opts.headers },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  if (res.status === 401) { logout(); return null; }
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.statusText); }
-  return res.json();
+  var controller = new AbortController();
+  var timeoutMs = opts.timeout || 20000; // 20s default timeout
+  var timer = setTimeout(function() { controller.abort(); }, timeoutMs);
+  try {
+    var res = await fetch(path, {
+      ...opts,
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...opts.headers },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    clearTimeout(timer);
+    if (res.status === 401) { logout(); return null; }
+    if (!res.ok) { var e = await res.json().catch(function() { return {}; }); throw new Error(e.error || res.statusText); }
+    return res.json();
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') throw new Error('Request timed out');
+    throw err;
+  }
 }
 
 /* ─────────────────────────── AUTH ──────────────────────── */

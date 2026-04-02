@@ -637,7 +637,7 @@ async function doSaveChargeConfig() {
 async function loadCatalogStatus() {
   try {
     const [d, catData] = await Promise.all([
-      api('/api/restaurant/catalog/status'),
+      api('/api/restaurant/catalog/status').catch(() => null),
       api('/api/restaurant/catalogs').catch(() => null),
     ]);
 
@@ -934,7 +934,10 @@ async function loadCatalogDetails() {
     if (d.created_at) parts.push(`Created: ${new Date(d.created_at).toLocaleDateString()}`);
     detailsEl.textContent = parts.join(' · ') || 'Catalog active';
   } catch (e) {
-    detailsEl.textContent = e.message?.includes('no longer exists') ? '⚠️ Catalog deleted externally — refresh to update' : '';
+    detailsEl.textContent = e.message?.includes('no longer exists')
+      ? '⚠️ Catalog deleted externally — refresh to update'
+      : 'Could not load details';
+    detailsEl.style.color = 'var(--dim)';
   }
 }
 
