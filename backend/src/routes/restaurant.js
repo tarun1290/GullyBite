@@ -1354,6 +1354,52 @@ router.post('/menu/bulk-delete', requirePermission('manage_menu'), async (req, r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// PATCH /api/restaurant/menu/bulk-availability — toggle availability for multiple items
+router.patch('/menu/bulk-availability', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { available, branch_id, item_ids } = req.body;
+    if (available === undefined) return res.status(400).json({ error: 'available (true/false) required' });
+
+    const filter = { restaurant_id: req.restaurantId };
+    if (branch_id) filter.branch_id = branch_id;
+    if (Array.isArray(item_ids) && item_ids.length) filter._id = { $in: item_ids };
+
+    const result = await col('menu_items').updateMany(filter, {
+      $set: { is_available: !!available, updated_at: new Date(), catalog_sync_status: 'pending' },
+    });
+
+    // Fetch updated items for Meta sync payload
+    const items = await col('menu_items').find(filter, { projection: { retailer_id: 1, is_available: 1 } }).toArray();
+    const syncItems = items.filter(i => i.retailer_id).map(i => ({ retailer_id: i.retailer_id, is_available: i.is_available }));
+
+    res.json({ success: true, updated: result.modifiedCount });
+
+    // Fire-and-forget: sync to Meta
+    if (syncItems.length) {
+      catalog.syncBulkAvailability(req.restaurantId, syncItems)
+        .catch(err => console.error('[Menu] Bulk availability sync failed:', err.message));
+    }
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'menu.bulk_availability', category: 'menu',
+      description: `Bulk ${available ? 'enabled' : 'disabled'} ${result.modifiedCount} items`,
+      restaurantId: req.restaurantId, severity: 'info',
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/catalog/batch-status/:handle — check items_batch processing status
+router.get('/catalog/batch-status/:handle', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const catalogId = restaurant?.meta_catalog_id;
+    if (!catalogId) return res.status(404).json({ error: 'No catalog found' });
+    const result = await catalog.checkBatchStatus(catalogId, req.params.handle);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── META COMMERCE MANAGER CSV COLUMN ALIASES ─────────────────
 const META_COLUMN_ALIASES = {
   'id': 'retailer_id', 'title': 'name', 'description': 'description',

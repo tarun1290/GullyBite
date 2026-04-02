@@ -672,27 +672,126 @@ const setItemAvailability = async (menuItemId, isAvailable) => {
   const catalogId = restaurant?.meta_catalog_id || branch?.catalog_id;
   if (!catalogId || !item.retailer_id) return;
 
-  const { token } = await _getAccessToken(branch.restaurant_id);
-  initSdk(token);
+  // Lightweight availability-only sync to Meta
+  await syncItemAvailability(catalogId, item.retailer_id, isAvailable, menuItemId);
+};
 
-  // Use the 29-column mapper — availability is encoded as "in stock" / "out of stock"
-  const request = _buildItemRequest({ ...item, is_available: isAvailable }, restaurant, branch);
-  if (!request) return;
-
+// ─── LIGHTWEIGHT SINGLE-ITEM AVAILABILITY SYNC ──────────────
+// Sends ONLY the availability field to Meta — much faster than full item sync.
+// Called fire-and-forget from the toggle route.
+const syncItemAvailability = async (catalogId, retailerId, isAvailable, menuItemId) => {
   try {
-    const catalogObj = new ProductCatalog(catalogId);
-    await catalogObj.createItemsBatch([], {
-      allow_upsert: true,
-      item_type: 'PRODUCT_ITEM',
-      requests: [request],
-    });
-    await col('menu_items').updateOne(
-      { _id: menuItemId },
-      { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
+    const token = _getCatalogToken();
+    const avail = isAvailable ? 'in stock' : 'out of stock';
+
+    const resp = await axios.post(
+      `${GRAPH}/${catalogId}/items_batch`,
+      {
+        item_type: 'PRODUCT_ITEM',
+        requests: JSON.stringify([{
+          method: 'UPDATE',
+          retailer_id: retailerId,
+          data: { availability: avail },
+        }]),
+      },
+      { params: { access_token: token }, timeout: 15000 }
     );
+
+    const handle = resp.data?.handles?.[0] || null;
+    console.log(`[Catalog] Availability update queued for ${retailerId} → ${avail}, handle: ${handle}`);
+
+    // Log for debugging
+    col('catalog_sync_logs').insertOne({
+      _id: newId(), catalog_id: catalogId, handle, type: 'availability_update',
+      retailer_id: retailerId, new_status: avail, created_at: new Date(), status: 'pending',
+    }).catch(() => {});
+
+    if (menuItemId) {
+      await col('menu_items').updateOne(
+        { _id: menuItemId },
+        { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
+      );
+    }
+    return handle;
   } catch (err) {
-    console.error('[Catalog] Availability toggle failed:', err._error?.error?.message || err.message);
-    await col('menu_items').updateOne({ _id: menuItemId }, { $set: { catalog_sync_status: 'error' } });
+    console.error('[Catalog] Availability sync failed for', retailerId, ':', err.response?.data || err.message);
+    if (menuItemId) {
+      await col('menu_items').updateOne({ _id: menuItemId }, { $set: { catalog_sync_status: 'error' } }).catch(() => {});
+    }
+    return null;
+  }
+};
+
+// ─── BULK AVAILABILITY SYNC ─────────────────────────────────
+// Syncs availability for many items at once (e.g., restaurant closing for the day).
+// items: array of { retailer_id, is_available }
+const syncBulkAvailability = async (restaurantId, items) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+    const catalogId = restaurant?.meta_catalog_id;
+    if (!catalogId) {
+      console.warn('[Catalog] Bulk availability: no catalog for restaurant', restaurantId);
+      return [];
+    }
+    if (!items.length) return [];
+
+    const token = _getCatalogToken();
+    const BATCH_SIZE = 4999;
+    const handles = [];
+
+    for (let i = 0; i < items.length; i += BATCH_SIZE) {
+      const batch = items.slice(i, i + BATCH_SIZE);
+      const requests = batch.map(it => ({
+        method: 'UPDATE',
+        retailer_id: it.retailer_id,
+        data: { availability: it.is_available ? 'in stock' : 'out of stock' },
+      }));
+
+      try {
+        const resp = await axios.post(
+          `${GRAPH}/${catalogId}/items_batch`,
+          { item_type: 'PRODUCT_ITEM', requests: JSON.stringify(requests) },
+          { params: { access_token: token }, timeout: 30000 }
+        );
+        const handle = resp.data?.handles?.[0] || null;
+        if (handle) handles.push(handle);
+      } catch (batchErr) {
+        console.error(`[Catalog] Bulk availability batch ${Math.floor(i / BATCH_SIZE) + 1} failed:`, batchErr.response?.data || batchErr.message);
+      }
+    }
+
+    console.log(`[Catalog] Bulk availability update: ${items.length} items in ${Math.ceil(items.length / BATCH_SIZE)} batch(es), handles:`, handles);
+
+    // Log summary
+    col('catalog_sync_logs').insertOne({
+      _id: newId(), catalog_id: catalogId, handles, type: 'bulk_availability_update',
+      item_count: items.length, created_at: new Date(), status: 'pending', restaurant_id: restaurantId,
+    }).catch(() => {});
+
+    return handles;
+  } catch (err) {
+    console.error('[Catalog] Bulk availability sync error:', err.message);
+    return [];
+  }
+};
+
+// ─── CHECK BATCH REQUEST STATUS ─────────────────────────────
+const checkBatchStatus = async (catalogId, handle) => {
+  try {
+    const token = _getCatalogToken();
+    const resp = await axios.get(
+      `${GRAPH}/${catalogId}/check_batch_request_status`,
+      { params: { handle, access_token: token }, timeout: 10000 }
+    );
+    const data = resp.data?.data?.[0] || resp.data || {};
+    return {
+      status: data.status || 'unknown',
+      processed: data.num_handled || 0,
+      errors: (data.errors || []).map(e => ({ retailer_id: e.retailer_id, message: e.message })),
+    };
+  } catch (err) {
+    console.error('[Catalog] Batch status check failed:', err.response?.data || err.message);
+    return { status: 'error', processed: 0, errors: [{ message: err.message }] };
   }
 };
 
@@ -1507,6 +1606,9 @@ module.exports = {
   updateProduct,
   deleteProduct,
   setItemAvailability,
+  syncItemAvailability,
+  syncBulkAvailability,
+  checkBatchStatus,
   getCatalogProducts,
   getSyncStatus,
   syncCategoryProductSets,

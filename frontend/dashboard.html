@@ -914,6 +914,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <button class="btn-g btn-sm" onclick="toggleMenuSection('catalog')" title="Catalog settings" style="font-size:.9rem;padding:.3rem .5rem">⚙️</button>
           </div>
           <div style="display:flex;gap:.4rem;align-items:center">
+            <button class="btn-g btn-sm" id="bulk-avail-btn" onclick="doBulkAvailability()" style="font-size:.78rem">🔴 Close Menu</button>
             <button class="btn-g btn-sm" id="sync-to-btn" onclick="doSyncToCatalog()" style="font-size:.78rem">⬆ Sync to Catalog</button>
             <button class="btn-g btn-sm" id="sync-from-btn" onclick="doSyncFromCatalog()" style="font-size:.78rem">⬇ Sync from Catalog</button>
           </div>
@@ -4063,6 +4064,7 @@ function doSelectBranch(id) {
   if (sel) { sel.value = id; loadMenu(); }
 }
 let _allMenuData = null; // cached data for client-side filtering
+let _menuItems = []; // flat list of current menu items for bulk operations
 
 async function loadMenu() {
   const branchId = document.getElementById('m-branch').value;
@@ -4183,6 +4185,11 @@ async function loadMenu() {
            <button class="btn-p btn-sm" onclick="doBulkAssignAll()">Assign All</button>
          </div>`
       : '';
+
+    // Store flat items for bulk availability
+    _menuItems = (grouped || []).flatMap(g => g.items || []);
+    const availCount = _menuItems.filter(i => i.is_available).length;
+    _updateBulkAvailBtn(availCount > 0);
 
     list.innerHTML = bulkAssignHtml + renderMenuGroups(grouped, isAll || isUnassigned);
   } catch (e) { toast('Failed to load menu: ' + e.message, 'err'); }
@@ -4607,8 +4614,43 @@ async function doFixCatalog() {
   } catch (e) { toast(e.message, 'err'); }
 }
 async function doToggleItem(id, av, name) {
-  try { await api(`/api/restaurant/menu/${id}`, { method: 'PUT', body: { isAvailable: av } }); toast(`"${name}" ${av ? 'back on menu' : 'marked unavailable'} ✓`, 'ok'); }
-  catch (e) { toast(e.message, 'err'); }
+  try {
+    await api(`/api/restaurant/menu/${id}`, { method: 'PUT', body: { isAvailable: av } });
+    toast(`"${name}" ${av ? 'back on menu' : 'marked unavailable'} — syncing to WhatsApp...`, 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+}
+async function doBulkAvailability() {
+  const branchId = document.getElementById('m-branch')?.value || '';
+  // Determine current state — check if majority of items are available
+  const items = _menuItems || [];
+  const branchItems = branchId ? items.filter(i => i.branch_id === branchId) : items;
+  const availCount = branchItems.filter(i => i.is_available).length;
+  const isClosing = availCount > 0;
+  const label = isClosing
+    ? `Mark all ${branchItems.length} items as unavailable? Customers won't see your menu on WhatsApp until you reopen.`
+    : `Bring all ${branchItems.length} items back online?`;
+  if (!confirm(label)) return;
+  try {
+    const body = { available: !isClosing };
+    if (branchId) body.branch_id = branchId;
+    const r = await api('/api/restaurant/menu/bulk-availability', { method: 'PATCH', body });
+    toast(isClosing
+      ? `🔴 ${r.updated} items marked unavailable — syncing to WhatsApp...`
+      : `🟢 ${r.updated} items back online — syncing to WhatsApp...`, 'ok');
+    loadMenu(branchId || undefined);
+    _updateBulkAvailBtn(!isClosing);
+  } catch (e) { toast(e.message, 'err'); }
+}
+function _updateBulkAvailBtn(allAvailable) {
+  const btn = document.getElementById('bulk-avail-btn');
+  if (!btn) return;
+  if (allAvailable) {
+    btn.textContent = '🔴 Close Menu';
+    btn.title = 'Mark all items unavailable';
+  } else {
+    btn.textContent = '🟢 Reopen Menu';
+    btn.title = 'Bring all items back online';
+  }
 }
 async function doDeleteItem(id, name) {
   if (!confirm(`Delete "${name}"?`)) return;
