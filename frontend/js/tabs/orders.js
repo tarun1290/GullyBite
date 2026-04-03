@@ -141,7 +141,7 @@ async function openOrdModal(orderId) {
       <div style="margin-bottom:.8rem">
         <span style="font-size:.75rem;color:var(--dim)">Customer</span>
         <div style="font-weight:600">${o.customer_name||'—'} · ${o.wa_phone || o.bsuid?.slice(0,12)+'…' || ''}</div>
-        ${o.delivery_address ? `<div style="font-size:.75rem;color:var(--dim);margin-top:.2rem">${o.delivery_address}</div>` : ''}
+        ${o.delivery_address ? `<div style="font-size:.75rem;color:var(--dim);margin-top:.2rem">\uD83D\uDCCD ${o.delivery_address}</div>` : (o.delivery_lat && o.delivery_lng ? `<div style="font-size:.75rem;margin-top:.2rem"><a href="https://www.google.com/maps?q=${o.delivery_lat},${o.delivery_lng}" target="_blank" style="color:var(--acc);text-decoration:none">\uD83D\uDCCD View on Maps</a></div>` : '')}
       </div>
       <div style="margin-bottom:.8rem">
         <span style="font-size:.75rem;color:var(--dim)">Items</span>

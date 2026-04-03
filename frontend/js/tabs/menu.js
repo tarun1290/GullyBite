@@ -3,6 +3,38 @@
 
 (function() {
 
+// ─── Catalog info bar for Menu page ──────────────────────
+function renderCatalogBar() {
+  var bar = document.getElementById('menu-catalog-bar');
+  if (!bar || typeof rest === 'undefined' || !rest) return;
+  var catId = rest.meta_catalog_id;
+  var wa = (rest.waba_accounts || [])[0];
+  var phone = wa?.phone || rest.wa_phone_number || null;
+  var wabaId = wa?.waba_id || rest.meta_waba_id || null;
+
+  if (catId) {
+    bar.style.display = 'flex';
+    bar.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>'
+      + '<span style="color:var(--wa);font-weight:600">Catalog Connected</span>'
+      + '<span style="color:var(--rim)">|</span>'
+      + '<span style="color:var(--dim)">Catalog: <span style="font-family:monospace">' + catId + '</span>'
+      + ' <button onclick="navigator.clipboard.writeText(\'' + catId + '\');toast(\'Copied!\',\'ok\')" style="background:none;border:none;cursor:pointer;font-size:.65rem;color:var(--acc);padding:0">\uD83D\uDCCB</button></span>'
+      + (wabaId ? '<span style="color:var(--rim)">|</span><span style="color:var(--dim)">WABA: <span style="font-family:monospace">' + wabaId + '</span></span>' : '')
+      + (phone ? '<span style="color:var(--rim)">|</span><span style="color:var(--dim)">' + phone + '</span>' : '');
+  } else {
+    bar.style.display = 'flex';
+    bar.innerHTML = '<span style="width:8px;height:8px;border-radius:50%;background:#dc2626;flex-shrink:0"></span>'
+      + '<span style="color:var(--red);font-weight:600">No Catalog Connected</span>'
+      + '<span style="color:var(--rim)">|</span>'
+      + '<button onclick="goTab(\'settings\',null)" style="background:none;border:none;color:var(--acc);font-size:.78rem;cursor:pointer;padding:0">Connect in Settings \u2192</button>';
+    // Disable sync buttons
+    var syncTo = document.getElementById('sync-to-btn');
+    var syncFrom = document.getElementById('sync-from-btn');
+    if (syncTo) { syncTo.disabled = true; syncTo.title = 'Connect a catalog in Settings first'; }
+    if (syncFrom) { syncFrom.disabled = true; syncFrom.title = 'Connect a catalog in Settings first'; }
+  }
+}
+
 let _addrTimer = null, _addrHighlight = -1, _addrSuggestions = [];
 
 function addrSearch(q) {
@@ -853,6 +885,7 @@ async function loadBranchSel() {
       if (branches.length === 1) { sel.value = branches[0].id; }
     }
 
+    renderCatalogBar();
     loadMenu();
   } catch (_) {}
 }

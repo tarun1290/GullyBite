@@ -1251,6 +1251,38 @@ router.get('/templates/notifications', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/admin/templates/test-send — Send a test template to a phone number
+router.post('/templates/test-send', express.json(), async (req, res) => {
+  try {
+    const { template_name, language, phone, variables } = req.body;
+    if (!template_name || !phone) return res.status(400).json({ error: 'template_name and phone required' });
+
+    const wa = await col('whatsapp_accounts').findOne({ is_active: true });
+    if (!wa?.phone_number_id) return res.status(400).json({ error: 'No active WA account' });
+
+    const waService = require('../services/whatsapp');
+    const components = [];
+    if (variables?.length) {
+      components.push({ type: 'body', parameters: variables.map(v => ({ type: 'text', text: String(v) })) });
+    }
+
+    await waService.sendTemplate(wa.phone_number_id, metaConfig.getMessagingToken(), phone, {
+      name: template_name, language: language || 'en', components,
+    });
+
+    // Log the test send
+    await col('order_notifications').insertOne({
+      _id: newId(), event: 'test_send', template_name, to_phone: phone,
+      variables: variables || [], status: 'sent', sent_at: new Date(),
+    });
+
+    res.json({ success: true, message: `Template "${template_name}" sent to ${phone}` });
+  } catch (e) {
+    const msg = e.response?.data?.error?.message || e.message;
+    res.status(500).json({ error: msg });
+  }
+});
+
 // ─── BUSINESS USERNAMES ────────────────────────────────────────
 const usernameSvc = require('../services/username');
 
@@ -2171,6 +2203,111 @@ router.post('/flow/toggle-auto-assign', async (req, res) => {
       { $set: { auto_assign_new: !!enabled, updated_at: new Date() } }
     );
     res.json({ success: true, auto_assign_new: !!enabled });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/flows — List ALL Flows from Meta API for the platform WABA
+router.get('/flows', async (req, res) => {
+  try {
+    const wa = await col('whatsapp_accounts').findOne({ is_active: true });
+    if (!wa?.waba_id) return res.status(400).json({ error: 'No active WABA found' });
+    const token = metaConfig.getMessagingToken();
+    const { data } = await axios.get(`${metaConfig.graphUrl}/${wa.waba_id}/flows`, {
+      params: { access_token: token, fields: 'id,name,status,categories,validation_errors,json_version,data_api_version,updated_at', limit: 50 },
+      timeout: 15000,
+    });
+    res.json({ flows: data.data || [], waba_id: wa.waba_id });
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// GET /api/admin/flows/:flowId — Get single Flow details including JSON
+router.get('/flows/:flowId', async (req, res) => {
+  try {
+    const token = metaConfig.getMessagingToken();
+    const { data } = await axios.get(`${metaConfig.graphUrl}/${req.params.flowId}`, {
+      params: { access_token: token, fields: 'id,name,status,categories,json_version,preview,validation_errors' },
+      timeout: 15000,
+    });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// POST /api/admin/flows — Create a new Flow on Meta
+router.post('/flows', async (req, res) => {
+  try {
+    const { name, categories, flow_json } = req.body;
+    if (!name) return res.status(400).json({ error: 'Flow name is required' });
+    const wa = await col('whatsapp_accounts').findOne({ is_active: true });
+    if (!wa?.waba_id) return res.status(400).json({ error: 'No active WABA found' });
+    const token = metaConfig.getMessagingToken();
+    const body = { name, categories: categories || ['OTHER'] };
+    if (flow_json) body.flow_json = typeof flow_json === 'string' ? flow_json : JSON.stringify(flow_json);
+    const { data } = await axios.post(`${metaConfig.graphUrl}/${wa.waba_id}/flows`, body, {
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 20000,
+    });
+    res.json({ success: true, flow_id: data.id, validation_errors: data.validation_errors });
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors }); }
+});
+
+// POST /api/admin/flows/:flowId/publish — Publish a DRAFT Flow
+router.post('/flows/:flowId/publish', async (req, res) => {
+  try { await flowMgr.publishFlow(req.params.flowId); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// POST /api/admin/flows/:flowId/deprecate — Deprecate a PUBLISHED Flow
+router.post('/flows/:flowId/deprecate', async (req, res) => {
+  try { await flowMgr.deprecateFlow(req.params.flowId); res.json({ success: true }); }
+  catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// DELETE /api/admin/flows/:flowId — Delete a DRAFT Flow
+router.delete('/flows/:flowId', async (req, res) => {
+  try {
+    const token = metaConfig.getMessagingToken();
+    await axios.delete(`${metaConfig.graphUrl}/${req.params.flowId}`, { params: { access_token: token }, timeout: 15000 });
+    // Clear from platform_settings if it was assigned
+    await col('platform_settings').updateMany({ flow_id: req.params.flowId }, { $set: { flow_id: null, flow_status: null, updated_at: new Date() } });
+    await col('restaurants').updateMany({ flow_id: req.params.flowId }, { $set: { flow_id: null } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// GET /api/admin/flows/assignments — Current Flow assignments
+router.get('/flows/assignments', async (req, res) => {
+  try {
+    const delivery = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    const feedback = await col('platform_settings').findOne({ _id: 'feedback_flow' });
+    res.json({ delivery: { flow_id: delivery?.flow_id || null, flow_name: delivery?.flow_name || null, flow_status: delivery?.flow_status || null, auto_assign: delivery?.auto_assign_new || false }, feedback: { flow_id: feedback?.flow_id || null, flow_name: feedback?.flow_name || null, flow_status: feedback?.flow_status || null } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/flows/assignments — Update Flow assignments
+router.put('/flows/assignments', async (req, res) => {
+  try {
+    const { type, flow_id, flow_name } = req.body;
+    if (!type || !['delivery', 'feedback'].includes(type)) return res.status(400).json({ error: 'type must be delivery or feedback' });
+    const settingId = type === 'delivery' ? 'whatsapp_flow' : 'feedback_flow';
+    await col('platform_settings').updateOne(
+      { _id: settingId },
+      { $set: { flow_id, flow_name: flow_name || null, flow_status: 'PUBLISHED', updated_at: new Date() }, $setOnInsert: { created_at: new Date() } },
+      { upsert: true }
+    );
+    if (type === 'delivery' && flow_id) {
+      await col('restaurants').updateMany({}, { $set: { flow_id } });
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/flows/templates — Built-in Flow JSON templates
+router.get('/flows/templates', async (req, res) => {
+  try {
+    res.json({ templates: [
+      { id: 'delivery_address', name: 'Delivery Address (Full)', json: flowMgr.buildDeliveryFlowJson() },
+      { id: 'feedback_rating', name: 'Order Rating (4 Categories)', json: flowMgr.buildFeedbackFlowJson() },
+      { id: 'blank', name: 'Blank Skeleton', json: { version: '6.2', screens: [{ id: 'SCREEN_1', title: 'Screen Title', terminal: true, success: true, data: {}, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Heading' }, { type: 'TextBody', text: 'Body text' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: {} } }] } }] } },
+    ]});
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

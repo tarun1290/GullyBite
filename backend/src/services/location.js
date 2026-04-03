@@ -208,6 +208,40 @@ async function geocodePlaceName(placeName) {
   return null;
 }
 
+// ─── FORWARD GEOCODING ──────────────────────────────────────
+// Converts address text to coordinates + formatted address
+async function forwardGeocode(addressText) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) { console.error('[Location] GOOGLE_MAPS_API_KEY not set'); return null; }
+  if (!addressText?.trim()) return null;
+  try {
+    const { data } = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+      params: { address: addressText.trim(), key: apiKey, region: 'in' },
+      timeout: 8000,
+    });
+    if (data.results?.length) {
+      const r = data.results[0];
+      const comps = r.address_components || [];
+      const getComp = (type) => comps.find(c => c.types.includes(type))?.long_name || null;
+      return {
+        lat: r.geometry.location.lat,
+        lng: r.geometry.location.lng,
+        address: r.formatted_address,
+        full_address: r.formatted_address,
+        city: getComp('locality') || getComp('administrative_area_level_2'),
+        pin_code: getComp('postal_code'),
+        area: getComp('sublocality_level_1') || getComp('sublocality'),
+        source: 'forward_geocode',
+      };
+    }
+    console.warn('[Location] Forward geocode returned no results for:', addressText);
+    return null;
+  } catch (e) {
+    console.error('[Location] Forward geocode failed:', e.message);
+    return null;
+  }
+}
+
 // ─── REVERSE GEOCODING ──────────────────────────────────────
 // Uses Google Maps Geocoding API to get a full address from coordinates.
 // GOOGLE_MAPS_API_KEY is required.
@@ -217,6 +251,13 @@ async function reverseGeocode(lat, lng) {
     console.error('[Location] GOOGLE_MAPS_API_KEY is not set — geocoding will not work');
     return null;
   }
+
+  // Cache check — round to 4 decimal places (~11m precision)
+  const cacheKey = `geocode:${parseFloat(lat).toFixed(4)}:${parseFloat(lng).toFixed(4)}`;
+  try {
+    const cached = await col('_cache').findOne({ _id: cacheKey, expires_at: { $gt: new Date() } });
+    if (cached?.data) return cached.data;
+  } catch (_) {}
 
   const axios = require('axios');
   try {
@@ -233,7 +274,7 @@ async function reverseGeocode(lat, lng) {
     if (data.results?.length) {
       const r = data.results[0];
       const get = (type) => r.address_components?.find(c => c.types.includes(type))?.long_name || '';
-      return {
+      const result = {
         lat, lng,
         address: r.formatted_address,
         place_id: r.place_id,
@@ -243,6 +284,9 @@ async function reverseGeocode(lat, lng) {
         pincode: get('postal_code'),
         source: 'geocode',
       };
+      // Cache for 24 hours
+      col('_cache').updateOne({ _id: cacheKey }, { $set: { data: result, expires_at: new Date(Date.now() + 24 * 3600000) } }, { upsert: true }).catch(() => {});
+      return result;
     }
 
     console.warn('[Location] Geocoding returned no results for:', lat, lng);
@@ -400,4 +444,4 @@ async function findBestAvailableBranch(customerLat, customerLng, restaurantId = 
   };
 }
 
-module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractCoordsFromMapsUrl, reverseGeocode };
+module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractCoordsFromMapsUrl, reverseGeocode, forwardGeocode };

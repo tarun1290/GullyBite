@@ -9,6 +9,7 @@ const axios  = require('axios');
 const { col, newId, mapId, mapIds } = require('../config/database');
 const { requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS } = require('./auth');
 const catalog = require('../services/catalog');
+const { queueSync } = require('../services/catalogSyncQueue');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
 const etaSvc = require('../services/eta');
@@ -1293,8 +1294,7 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
       [{ $set: { onboarding_step: { $max: ['$onboarding_step', 4] } } }]
     );
 
-    catalog.syncBranchCatalog(req.params.branchId)
-      .catch(err => console.error('[Menu] Auto-sync after add failed:', err.message));
+    queueSync(req.restaurantId, 'branch', [req.params.branchId]);
 
     res.status(201).json(mapId(item));
 
@@ -1377,8 +1377,7 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
       { returnDocument: 'after' }
     );
     if (updated) {
-      catalog.syncBranchCatalog(updated.branch_id)
-        .catch(err => console.error('[Menu] Auto-sync after edit failed:', err.message));
+      queueSync(req.restaurantId, 'branch', [updated.branch_id]);
     }
     res.json({ success: true });
 
@@ -1428,12 +1427,10 @@ router.post('/menu/bulk-delete', requirePermission('manage_menu'), async (req, r
 
     await col('menu_items').deleteMany({ _id: { $in: ids } });
 
-    // Invalidate caches and trigger catalog sync per branch
+    // Invalidate caches and queue catalog sync
     const branchIds = [...new Set(items.map(i => i.branch_id).filter(Boolean))];
-    branchIds.forEach(bid => {
-      memcache.del(`branch:${bid}:menu`);
-      catalog.syncBranchCatalog(bid).catch(err => console.error('[Menu] Bulk delete sync failed:', err.message));
-    });
+    branchIds.forEach(bid => memcache.del(`branch:${bid}:menu`));
+    queueSync(req.restaurantId, 'branch', branchIds);
 
     res.json({ deleted: items.length });
 
@@ -1443,6 +1440,17 @@ router.post('/menu/bulk-delete', requirePermission('manage_menu'), async (req, r
       description: `Bulk deleted ${items.length} menu items`,
       restaurantId: req.restaurantId, severity: 'info',
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/menu/normalize-preview — preview column mapping for a file
+router.post('/menu/normalize-preview', async (req, res) => {
+  try {
+    const { headers, sampleRows } = req.body;
+    if (!headers || !sampleRows) return res.status(400).json({ error: 'headers and sampleRows required' });
+    const { normalizeMenuData } = require('../services/menuNormalizer');
+    const result = normalizeMenuData(headers, sampleRows);
+    res.json({ mappedColumns: result.mappedColumns, unmappedColumns: result.unmappedColumns, warnings: result.warnings, previewRows: result.normalizedRows.slice(0, 10) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1649,10 +1657,17 @@ function _normalizeCSVRow(row) {
 // Bulk upsert menu items from a parsed CSV (supports Meta Commerce Manager template)
 router.post('/branches/:branchId/menu/csv', async (req, res) => {
   try {
-    const { items } = req.body;
+    const { items, filename } = req.body;
     if (!Array.isArray(items) || !items.length) {
       return res.status(400).json({ error: 'items array is required' });
     }
+
+    // Archive raw upload
+    col('menu_uploads').insertOne({
+      _id: newId(), restaurant_id: req.restaurantId, uploaded_by: req.user?.id || null,
+      filename: filename || 'upload.csv', row_count: items.length, branch_id: req.params.branchId,
+      raw_headers: items[0] ? Object.keys(items[0]) : [], upload_status: 'processing', created_at: new Date(),
+    }).catch(() => {});
 
     const branchId = req.params.branchId;
     const results = { added: 0, skipped: 0, errors: [] };
@@ -1789,11 +1804,10 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
       [{ $set: { onboarding_step: { $max: ['$onboarding_step', 4] } } }]
     );
 
-    // Auto-create product sets from tags/categories, then sync catalog
+    // Auto-create product sets, then queue debounced catalog sync
     catalog.autoCreateProductSets(branchId)
       .catch(err => console.error('[Menu] Auto-create sets after CSV upload failed:', err.message));
-    catalog.syncBranchCatalog(branchId)
-      .catch(err => console.error('[Menu] Auto-sync after CSV upload failed:', err.message));
+    queueSync(req.restaurantId, 'branch', [branchId]);
 
     res.json({ success: true, ...results, total: items.length });
 
@@ -1808,10 +1822,17 @@ const BRANCH_COLUMN_ALIASES = ['branch', 'outlet', 'location', 'branch_name', 'o
 
 router.post('/menu/csv', async (req, res) => {
   try {
-    const { items, branchId: defaultBranchId } = req.body;
+    const { items, branchId: defaultBranchId, filename } = req.body;
     if (!Array.isArray(items) || !items.length) {
       return res.status(400).json({ error: 'items array is required' });
     }
+
+    // Archive raw upload
+    col('menu_uploads').insertOne({
+      _id: newId(), restaurant_id: req.restaurantId, uploaded_by: req.user?.id || null,
+      filename: filename || 'upload.csv', row_count: items.length, multi_branch: true,
+      raw_headers: items[0] ? Object.keys(items[0]) : [], upload_status: 'processing', created_at: new Date(),
+    }).catch(() => {});
 
     // Detect branch column — check standard aliases, then Meta template custom_label columns
     const firstRow = items[0];
@@ -2017,10 +2038,12 @@ router.post('/menu/csv', async (req, res) => {
       allErrors.push(...branchResult.errors);
       perBranch.push(branchResult);
 
-      // Trigger catalog sync per branch (background)
       catalog.autoCreateProductSets(bid).catch(err => console.error('[Menu] Auto-create sets:', err.message));
-      catalog.syncBranchCatalog(bid).catch(err => console.error('[Menu] Auto-sync:', err.message));
     }
+
+    // Queue debounced sync for all affected branches
+    const syncBranchIds = Object.keys(branchGroups);
+    queueSync(req.restaurantId, 'branch', syncBranchIds);
 
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
@@ -2174,8 +2197,7 @@ router.post('/menu/:itemId/variants', async (req, res) => {
       { upsert: true, returnDocument: 'after' }
     );
 
-    catalog.syncBranchCatalog(srcItem.branch_id)
-      .catch(err => console.error('[Variant] Auto-sync failed:', err.message));
+    queueSync(req.restaurantId, 'branch', [srcItem.branch_id]);
 
     res.status(201).json(mapId(newItem));
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2571,9 +2593,7 @@ router.post('/menu/variant', requirePermission('manage_menu'), async (req, res) 
       { upsert: true, returnDocument: 'after' }
     );
 
-    // Trigger catalog sync
-    catalog.syncBranchCatalog(branchId)
-      .catch(err => console.error('[Variant] Auto-sync after add failed:', err.message));
+    queueSync(req.restaurantId, 'branch', [branchId]);
 
     res.status(201).json(mapId(newItem));
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2589,8 +2609,7 @@ router.post('/branches/:branchId/create-catalog', requireApproved, async (req, r
     }
 
     if (result.success) {
-      catalog.syncBranchCatalog(req.params.branchId)
-        .catch(err => console.error('[Branch] Auto-sync after catalog create failed:', err.message));
+      queueSync(req.restaurantId, 'branch', [req.params.branchId]);
     }
 
     res.json(result);
@@ -3107,6 +3126,9 @@ router.post('/catalog/create-new', requireApproved, async (req, res) => {
       { $set: { catalog_id: catalogId, updated_at: new Date() } }
     );
 
+    // Auto-sync all existing menu items to the new catalog
+    queueSync(req.restaurantId, 'full', null);
+
     res.json({ success: true, catalog_id: catalogId, catalog_name: catName });
   } catch (e) {
     console.error('[Catalog] Create failed:', e.response?.data || e.message);
@@ -3242,6 +3264,10 @@ router.post('/catalog/connect-waba', async (req, res) => {
       { _id: req.restaurantId },
       { $set: { meta_catalog_id: catalog_id, updated_at: new Date() } }
     );
+    await col('branches').updateMany(
+      { restaurant_id: req.restaurantId },
+      { $set: { catalog_id, updated_at: new Date() } }
+    );
 
     // Auto-enable commerce settings (visibility + cart) after connecting
     if (wa.phone_number_id) {
@@ -3258,6 +3284,9 @@ router.post('/catalog/connect-waba', async (req, res) => {
       }
     }
 
+    // Auto-sync all menu items to the connected catalog
+    queueSync(req.restaurantId, 'full', null);
+
     res.json({ success: true });
   } catch (e) {
     console.error('[Catalog] Connect WABA failed:', e.response?.data || e.message);
@@ -3269,11 +3298,12 @@ router.post('/catalog/connect-waba', async (req, res) => {
 router.post('/catalog/disconnect-waba', async (req, res) => {
   const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
   if (!wa?.waba_id) return res.status(400).json({ error: 'No WABA connected.' });
-  if (!wa?.catalog_id) return res.status(400).json({ error: 'No catalog connected to WABA.' });
+  const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+  const catalogId = wa?.catalog_id || restaurant?.meta_catalog_id;
+  if (!catalogId) return res.status(400).json({ error: 'No catalog connected.' });
 
   const token = metaConfig.catalogToken;
   if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
-  const catalogId = wa.catalog_id;
 
   console.log(`[Catalog] Disconnect requested: catalog=${catalogId}, waba=${wa.waba_id}`);
 
@@ -3304,7 +3334,10 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
       { _id: wa._id },
       { $set: { catalog_id: null, catalog_linked: false, cart_enabled: false, catalog_visible: false, updated_at: new Date() } }
     );
-    // Clear catalog_id on branches too (WABA unlinked = catalog not active on WhatsApp)
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { meta_catalog_id: null, meta_catalog_name: null, updated_at: new Date() } }
+    );
     await col('branches').updateMany(
       { restaurant_id: req.restaurantId },
       { $set: { catalog_id: null, updated_at: new Date() } }
@@ -3327,6 +3360,7 @@ router.post('/catalog/switch', requireApproved, async (req, res) => {
   if (!catalog_id) return res.status(400).json({ error: 'catalog_id is required' });
   try {
     const result = await catalog.switchCatalog(req.restaurantId, catalog_id);
+    queueSync(req.restaurantId, 'full', null); // Auto-sync to new catalog
     res.json(result);
   } catch (e) {
     console.error('[Catalog] Switch failed:', e.message);
@@ -3356,8 +3390,7 @@ router.post('/menu/bulk-assign-branch', requirePermission('manage_menu'), async 
 
     console.log(`[Menu] Bulk assigned ${result.modifiedCount} items to branch ${branch.name}`);
 
-    // Trigger catalog sync for the branch in background
-    catalog.syncBranchCatalog(branch_id).catch(e => console.error('[Menu] Auto-sync after assign:', e.message));
+    queueSync(req.restaurantId, 'branch', [branch_id]);
 
     res.json({ success: true, assigned: result.modifiedCount, branch_name: branch.name });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -3385,7 +3418,7 @@ router.put('/menu/:itemId/branch', requirePermission('manage_menu'), async (req,
 
     // No Meta catalog change needed — one catalog for all branches
     // Just re-sync to update product_tags/retailer_id if branch-encoded
-    catalog.syncBranchCatalog(branch_id).catch(e => console.error('[Menu] Auto-sync after move:', e.message));
+    queueSync(req.restaurantId, 'branch', [branch_id, oldBranchId].filter(Boolean));
 
     res.json({ success: true, item_name: item.name, branch_name: branch.name });
   } catch (e) { res.status(500).json({ error: e.message }); }

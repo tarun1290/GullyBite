@@ -669,6 +669,7 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
           <button class="btn-sm primary" onclick="syncTemplates()">Sync from Meta</button>
           <button class="btn-sm" onclick="showCreateTemplateModal()">+ Create Template</button>
           <button class="btn-sm" onclick="seedMappings()">Seed Defaults</button>
+          <button class="btn-sm" onclick="testSendTemplate()">Test Send</button>
         </div>
 
         <!-- [BSUID] Contact Book API Reminder -->
@@ -1078,69 +1079,55 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
       <!-- ── FLOW BUILDER ──────────────────────────────────────────── -->
       <div class="page" id="page-flows">
 
-        <!-- Status Card -->
+        <!-- Flow Assignments -->
         <div class="table-wrap" style="margin-bottom:1rem">
-          <div class="table-head">
-            <h2>WhatsApp Delivery Flow</h2>
-            <span id="flow-status-badge" style="margin-left:auto"></span>
-          </div>
-          <div id="flow-status-body" style="padding:1rem;font-size:.85rem;color:var(--dim)">Loading...</div>
+          <div class="table-head"><h2>Active Flow Assignments</h2></div>
+          <div id="flow-assignments-body" style="padding:1rem;font-size:.85rem">Loading...</div>
         </div>
 
-        <!-- Actions -->
+        <!-- Flow Library -->
         <div class="table-wrap" style="margin-bottom:1rem">
-          <div class="table-head"><h2>Actions</h2></div>
-          <div id="flow-actions" style="padding:1rem">
-            <div style="color:var(--dim);font-size:.85rem">Loading...</div>
+          <div class="table-head"><h2>Flow Library</h2><button class="btn-sm" onclick="loadFlowLibrary()" style="margin-left:auto">Refresh from Meta</button></div>
+          <div id="flow-library-body" style="padding:0">
+            <div style="padding:1rem;color:var(--dim)">Loading...</div>
           </div>
         </div>
 
-        <!-- Create Form (hidden) -->
-        <div id="flow-create-form" style="display:none;margin-bottom:1rem">
-          <div class="table-wrap">
-            <div class="table-head"><h2>Create Delivery Flow</h2></div>
-            <div style="padding:1rem">
-              <p style="font-size:.82rem;color:var(--dim);margin-bottom:1rem">This creates a WhatsApp Flow for delivery address selection and publishes it to Meta. Uses the System User access token.</p>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
-                <div>
-                  <label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:.3rem;font-weight:600">WABA ID</label>
-                  <input id="flow-waba-id" placeholder="e.g. 123456789012345" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
-                </div>
-                <div>
-                  <label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:.3rem;font-weight:600">Access Token</label>
-                  <input id="flow-access-token" type="password" placeholder="System User access token" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem">
-                  <span style="font-size:.68rem;color:var(--mute)">Use your System User access token from Meta Business Suite</span>
-                </div>
-              </div>
-              <div style="display:flex;gap:.4rem">
-                <button class="btn-sm primary" id="flow-create-btn" onclick="doCreateFlow()">Create &amp; Publish</button>
-                <button class="btn-sm" onclick="document.getElementById('flow-create-form').style.display='none'">Cancel</button>
-              </div>
-              <div id="flow-create-error" style="display:none;margin-top:.75rem;background:#fff1f2;border:1px solid #fecaca;border-radius:8px;padding:.75rem;font-size:.82rem;color:var(--red)"></div>
+        <!-- Create New Flow -->
+        <div class="table-wrap" style="margin-bottom:1rem">
+          <div class="table-head" style="cursor:pointer" onclick="document.getElementById('flow-create-panel').style.display=document.getElementById('flow-create-panel').style.display==='none'?'block':'none'">
+            <h2>Create New Flow</h2><span style="margin-left:auto;font-size:.75rem;color:var(--dim)">&#x25BC;</span>
+          </div>
+          <div id="flow-create-panel" style="display:none;padding:1rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+              <div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:.3rem;font-weight:600">Flow Name</label><input id="new-flow-name" placeholder="e.g. Delivery Address v2" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem"></div>
+              <div><label style="font-size:.75rem;color:var(--dim);display:block;margin-bottom:.3rem;font-weight:600">Category</label><select id="new-flow-category" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem"><option value="OTHER">Other</option><option value="CUSTOMER_SUPPORT">Customer Support</option><option value="SURVEY">Survey</option><option value="LEAD_GENERATION">Lead Generation</option></select></div>
             </div>
+            <div style="margin-bottom:.75rem">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem">
+                <label style="font-size:.75rem;color:var(--dim);font-weight:600">Flow JSON</label>
+                <select id="new-flow-template" onchange="loadFlowTemplate(this.value)" style="font-size:.75rem;padding:.2rem .5rem;border:1px solid var(--rim);border-radius:4px"><option value="">Load Template...</option><option value="delivery_address">Delivery Address</option><option value="feedback_rating">Order Rating</option><option value="blank">Blank Skeleton</option></select>
+              </div>
+              <textarea id="new-flow-json" rows="12" style="width:100%;font-family:monospace;font-size:.75rem;background:#f8fafc;border:1px solid var(--rim);border-radius:6px;padding:.6rem;resize:vertical" placeholder='{"version":"6.2","screens":[...]}'></textarea>
+            </div>
+            <div style="display:flex;gap:.4rem">
+              <button class="btn-sm primary" onclick="doCreateNewFlow()">Create as Draft</button>
+              <button class="btn-sm" onclick="validateFlowJson()">Validate JSON</button>
+            </div>
+            <div id="new-flow-result" style="display:none;margin-top:.75rem;padding:.6rem;border-radius:6px;font-size:.82rem"></div>
           </div>
         </div>
 
-        <!-- Restaurant Assignment -->
+        <!-- Restaurant Assignment (legacy) -->
         <div id="flow-assign-section" style="display:none;margin-bottom:1rem">
           <div class="table-wrap">
             <div class="table-head"><h2>Restaurant Assignment</h2></div>
             <div style="padding:1rem">
-              <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
-                <span style="font-size:.85rem;color:var(--tx)" id="flow-assign-text">—</span>
-              </div>
-              <div style="background:var(--ink);border-radius:6px;height:8px;overflow:hidden;margin-bottom:1rem">
-                <div id="flow-assign-bar" style="height:100%;background:var(--acc);border-radius:6px;transition:width .3s;width:0%"></div>
-              </div>
+              <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem"><span style="font-size:.85rem;color:var(--tx)" id="flow-assign-text">&mdash;</span></div>
+              <div style="background:var(--ink);border-radius:6px;height:8px;overflow:hidden;margin-bottom:1rem"><div id="flow-assign-bar" style="height:100%;background:var(--acc);border-radius:6px;transition:width .3s;width:0%"></div></div>
               <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
                 <button class="btn-sm primary" id="flow-assign-btn" onclick="doAssignAll()">Assign to All Restaurants</button>
-                <div style="display:flex;align-items:center;gap:.5rem">
-                  <label class="tsl">
-                    <input type="checkbox" id="flow-auto-assign" onchange="doToggleAutoAssign(this.checked)">
-                    <span class="tsl-track"></span>
-                  </label>
-                  <span style="font-size:.82rem;color:var(--dim)">Auto-assign to new restaurants</span>
-                </div>
+                <div style="display:flex;align-items:center;gap:.5rem"><label class="tsl"><input type="checkbox" id="flow-auto-assign" onchange="doToggleAutoAssign(this.checked)"><span class="tsl-track"></span></label><span style="font-size:.82rem;color:var(--dim)">Auto-assign to new restaurants</span></div>
               </div>
             </div>
           </div>
@@ -1148,13 +1135,8 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
 
         <!-- Flow JSON Preview (collapsible) -->
         <div class="table-wrap">
-          <div class="table-head" style="cursor:pointer" onclick="toggleFlowJson()">
-            <h2>Flow JSON Definition</h2>
-            <span id="flow-json-arrow" style="margin-left:auto;font-size:.75rem;color:var(--dim);transition:transform .2s">&#x25B6;</span>
-          </div>
-          <div id="flow-json-body" style="display:none;padding:0">
-            <pre id="flow-json-pre" style="margin:0;padding:1rem;background:var(--ink4);font-size:.75rem;line-height:1.5;overflow-x:auto;max-height:500px;overflow-y:auto;color:var(--tx);font-family:'SF Mono',Monaco,Consolas,monospace;border-top:1px solid var(--rim)"></pre>
-          </div>
+          <div class="table-head" style="cursor:pointer" onclick="toggleFlowJson()"><h2>Flow JSON Definition</h2><span id="flow-json-arrow" style="margin-left:auto;font-size:.75rem;color:var(--dim)">&#x25B6;</span></div>
+          <div id="flow-json-body" style="display:none;padding:0"><pre id="flow-json-pre" style="margin:0;padding:1rem;background:var(--ink4);font-size:.75rem;line-height:1.5;overflow-x:auto;max-height:500px;overflow-y:auto;color:var(--tx);font-family:'SF Mono',Monaco,Consolas,monospace;border-top:1px solid var(--rim)"></pre></div>
         </div>
 
       </div>
@@ -2772,6 +2754,21 @@ async function doSaveMapping() {
   } catch (e) { toast(e.message, 'err'); }
 }
 
+// ─── Test Send ──────────────────────────────────────────────────
+async function testSendTemplate() {
+  var name = prompt('Template name (exactly as registered on Meta):');
+  if (!name) return;
+  var phone = prompt('Phone number to send to (with country code, e.g. 919876543210):');
+  if (!phone) return;
+  var vars = prompt('Variable values (comma-separated, e.g. Tarun,ZM-001,599):', '');
+  var variables = vars ? vars.split(',').map(function(v) { return v.trim(); }) : [];
+  try {
+    var r = await api('/api/admin/templates/test-send', { method: 'POST', body: JSON.stringify({ template_name: name, phone: phone, variables: variables }) });
+    toast(r.message || 'Test sent!', 'ok');
+    loadTemplateNotifications();
+  } catch (e) { toast('Test send failed: ' + e.message, 'err'); }
+}
+
 // ─── BOOT ─────────────────────────────────────────────────────────
 const savedKey = sessionStorage.getItem('gb_admin_key');
 if (savedKey) {
@@ -3822,8 +3819,11 @@ async function loadFlowBuilder() {
     renderFlowAssignment();
     renderFlowJson();
   } catch (e) {
-    document.getElementById('flow-status-body').textContent = 'Failed to load: ' + e.message;
+    var el = document.getElementById('flow-status-body');
+    if (el) el.textContent = 'Failed to load: ' + e.message;
   }
+  // Also load the new Flow Library + Assignments
+  loadFlowLibrary();
 }
 
 function renderFlowStatus() {
@@ -4033,6 +4033,115 @@ async function doToggleAutoAssign(enabled) {
     document.getElementById('flow-auto-assign').checked = !enabled;
     // Revert toggle on error
     document.getElementById('flow-auto-assign').checked = !enabled;
+  }
+}
+
+// ─── FLOW LIBRARY + CRUD ──────────────────────────────────────
+let _flowTemplatesCache = null;
+
+async function loadFlowLibrary() {
+  var body = document.getElementById('flow-library-body');
+  if (!body) return;
+  body.innerHTML = '<div style="padding:1rem;color:var(--dim)">Loading from Meta...</div>';
+  try {
+    var data = await api('/api/admin/flows');
+    var flows = data.flows || [];
+    if (!flows.length) { body.innerHTML = '<div style="padding:1rem;color:var(--dim)">No Flows found on this WABA.</div>'; return; }
+    var statusColors = { DRAFT: '#3b82f6', PUBLISHED: '#22c55e', DEPRECATED: '#94a3b8', BLOCKED: '#dc2626' };
+    body.innerHTML = '<table><thead><tr><th>Name</th><th>Flow ID</th><th>Status</th><th>Version</th><th>Updated</th><th>Actions</th></tr></thead><tbody>'
+      + flows.map(function(f) {
+        var clr = statusColors[f.status] || '#6b7280';
+        var badge = '<span style="display:inline-block;padding:.15rem .45rem;border-radius:99px;font-size:.68rem;font-weight:600;background:' + clr + '15;color:' + clr + ';border:1px solid ' + clr + '30">' + f.status + '</span>';
+        var actions = '';
+        if (f.status === 'DRAFT') actions = '<button class="btn-sm" onclick="doPublishFlowById(\'' + f.id + '\')">Publish</button> <button class="btn-sm" style="color:var(--red)" onclick="doDeleteFlowById(\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Delete</button>';
+        else if (f.status === 'PUBLISHED') actions = '<button class="btn-sm" onclick="doAssignFlowAs(\'delivery\',\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Assign Delivery</button> <button class="btn-sm" onclick="doAssignFlowAs(\'feedback\',\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Assign Feedback</button> <button class="btn-sm" style="color:var(--dim)" onclick="doDeprecateFlowById(\'' + f.id + '\')">Deprecate</button>';
+        else if (f.status === 'DEPRECATED') actions = '<button class="btn-sm" style="color:var(--red)" onclick="doDeleteFlowById(\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Delete</button>';
+        var updated = f.updated_at ? new Date(f.updated_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '\u2014';
+        return '<tr><td style="font-weight:500">' + (f.name || '\u2014') + '</td><td style="font-family:monospace;font-size:.75rem;color:var(--dim)">' + f.id + '</td><td>' + badge + '</td><td style="font-size:.78rem">' + (f.json_version || '\u2014') + '</td><td style="font-size:.78rem;color:var(--dim)">' + updated + '</td><td style="white-space:nowrap">' + actions + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  } catch (e) { body.innerHTML = '<div style="padding:1rem;color:var(--red)">Failed: ' + e.message + '</div>'; }
+
+  // Also load assignments
+  loadFlowAssignments();
+}
+
+async function loadFlowAssignments() {
+  var body = document.getElementById('flow-assignments-body');
+  if (!body) return;
+  try {
+    var d = await api('/api/admin/flows/assignments');
+    var row = function(label, a) {
+      var val = a.flow_id ? '<span style="font-family:monospace;font-size:.78rem">' + a.flow_id + '</span>' + (a.flow_name ? ' (' + a.flow_name + ')' : '') : '<span style="color:var(--mute);font-style:italic">Not assigned</span>';
+      var statusClr = { PUBLISHED: '#22c55e', DRAFT: '#3b82f6' }[a.flow_status] || '#6b7280';
+      var badge = a.flow_status ? ' <span style="font-size:.65rem;padding:.1rem .35rem;border-radius:99px;background:' + statusClr + '15;color:' + statusClr + '">' + a.flow_status + '</span>' : '';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 0;border-bottom:1px solid var(--rim)"><span style="font-weight:600;min-width:140px">' + label + '</span><span>' + val + badge + '</span></div>';
+    };
+    body.innerHTML = row('Delivery Address', d.delivery) + row('Order Feedback', d.feedback);
+  } catch (e) { body.innerHTML = '<div style="color:var(--red)">Failed to load assignments</div>'; }
+}
+
+async function doPublishFlowById(flowId) {
+  if (!confirm('Publish Flow ' + flowId + '? This makes it usable in conversations.')) return;
+  try { await api('/api/admin/flows/' + flowId + '/publish', { method: 'POST' }); toast('Flow published', 'ok'); loadFlowLibrary(); } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doDeprecateFlowById(flowId) {
+  if (!confirm('Deprecate Flow ' + flowId + '? It will stop working for new conversations.')) return;
+  try { await api('/api/admin/flows/' + flowId + '/deprecate', { method: 'POST' }); toast('Flow deprecated', 'ok'); loadFlowLibrary(); } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doDeleteFlowById(flowId, name) {
+  if (!confirm('Delete Flow "' + name + '" (' + flowId + ')? This is irreversible.')) return;
+  try { await api('/api/admin/flows/' + flowId, { method: 'DELETE' }); toast('Flow deleted', 'ok'); loadFlowLibrary(); } catch (e) { toast(e.message, 'err'); }
+}
+
+async function doAssignFlowAs(type, flowId, flowName) {
+  if (!confirm('Assign Flow "' + flowName + '" as the ' + type + ' Flow?' + (type === 'delivery' ? '\n\nThis will update ALL restaurants.' : ''))) return;
+  try { await api('/api/admin/flows/assignments', { method: 'PUT', body: { type: type, flow_id: flowId, flow_name: flowName } }); toast(type + ' Flow assigned', 'ok'); loadFlowAssignments(); } catch (e) { toast(e.message, 'err'); }
+}
+
+async function loadFlowTemplate(templateId) {
+  if (!templateId) return;
+  try {
+    if (!_flowTemplatesCache) { var d = await api('/api/admin/flows/templates'); _flowTemplatesCache = d.templates || []; }
+    var tmpl = _flowTemplatesCache.find(function(t) { return t.id === templateId; });
+    if (tmpl) document.getElementById('new-flow-json').value = JSON.stringify(tmpl.json, null, 2);
+  } catch (e) { toast('Failed to load template: ' + e.message, 'err'); }
+}
+
+function validateFlowJson() {
+  var el = document.getElementById('new-flow-json');
+  var result = document.getElementById('new-flow-result');
+  try {
+    var parsed = JSON.parse(el.value);
+    if (!parsed.version) throw new Error('Missing "version" field');
+    if (!parsed.screens || !parsed.screens.length) throw new Error('Missing or empty "screens" array');
+    result.style.display = 'block'; result.style.background = '#f0fdf4'; result.style.color = '#15803d';
+    result.textContent = '\u2705 Valid JSON — ' + parsed.screens.length + ' screen(s), version ' + parsed.version;
+  } catch (e) {
+    result.style.display = 'block'; result.style.background = '#fff1f2'; result.style.color = '#dc2626';
+    result.textContent = '\u274C ' + e.message;
+  }
+}
+
+async function doCreateNewFlow() {
+  var name = document.getElementById('new-flow-name').value.trim();
+  var category = document.getElementById('new-flow-category').value;
+  var jsonStr = document.getElementById('new-flow-json').value.trim();
+  var result = document.getElementById('new-flow-result');
+  if (!name) { toast('Flow name is required', 'err'); return; }
+  var body = { name: name, categories: [category] };
+  if (jsonStr) { try { JSON.parse(jsonStr); body.flow_json = jsonStr; } catch (e) { toast('Invalid JSON: ' + e.message, 'err'); return; } }
+  try {
+    var r = await api('/api/admin/flows', { method: 'POST', body: body });
+    result.style.display = 'block'; result.style.background = '#f0fdf4'; result.style.color = '#15803d';
+    result.textContent = '\u2705 Flow created: ' + r.flow_id + (r.validation_errors?.length ? ' (' + r.validation_errors.length + ' warnings)' : '');
+    document.getElementById('new-flow-name').value = '';
+    document.getElementById('new-flow-json').value = '';
+    loadFlowLibrary();
+  } catch (e) {
+    result.style.display = 'block'; result.style.background = '#fff1f2'; result.style.color = '#dc2626';
+    result.textContent = '\u274C ' + (e.message || 'Creation failed');
   }
 }
 

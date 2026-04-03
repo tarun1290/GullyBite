@@ -935,7 +935,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               <div class="csv-ico">📄</div>
               <div>
                 <strong>Click to choose file or drag &amp; drop here</strong>
-                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv, .xls, or .xlsx · up to 500 items · include a "branch" column for multi-outlet upload</p>
+                <p style="color:var(--dim);font-size:.78rem;margin-top:.28rem">.csv, .xls, or .xlsx · up to 5,000 items · include a "branch" column for multi-outlet upload</p>
               </div>
               <input type="file" id="csv-file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="handleCsvFile(this)">
             </div>
@@ -959,6 +959,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
         </div><!-- end menu-upload-section -->
+        <!-- Catalog connection info bar -->
+        <div id="menu-catalog-bar" style="display:none;margin-bottom:.8rem;padding:.5rem .9rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;font-size:.78rem;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap"></div>
         <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1.3rem;flex-wrap:wrap;justify-content:space-between">
           <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap">
             <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto;display:none">

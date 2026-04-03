@@ -666,6 +666,18 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   }
 
   if (conv.state === 'AWAITING_LOCATION') {
+    // Try forward geocoding the text as an address before re-prompting
+    if (rawText && rawText.length > 5 && !['HI','HELLO','HEY','MENU','ORDER','START'].includes(text)) {
+      try {
+        const geocoded = await location.forwardGeocode(rawText);
+        if (geocoded?.lat && geocoded?.lng) {
+          console.log('[Bot] Forward geocoded text address:', geocoded.address);
+          const syntheticMsg = { type: 'location', location: { latitude: geocoded.lat, longitude: geocoded.lng, address: geocoded.address } };
+          await handleLocationMessage(syntheticMsg, customer, conv, waAccount);
+          return;
+        }
+      } catch (e) { console.warn('[Bot] Text geocode failed:', e.message); }
+    }
     await wa.sendLocationRequest(pid, token, to);
     return;
   }
@@ -2187,9 +2199,20 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       }
     }
 
-    // Fall back to manual address text
+    // Fall back to manual address text — forward geocode to get coordinates
     if (!parsedAddress && responseData.manual_address?.trim()) {
-      parsedAddress = { full_address: responseData.manual_address.trim(), source: 'manual' };
+      try {
+        const geocoded = await location.forwardGeocode(responseData.manual_address.trim());
+        if (geocoded) {
+          parsedAddress = geocoded;
+          console.log('[Flow] Forward geocoded manual address:', geocoded.address, geocoded.lat, geocoded.lng);
+        } else {
+          parsedAddress = { full_address: responseData.manual_address.trim(), source: 'manual' };
+        }
+      } catch (e) {
+        console.warn('[Flow] Forward geocode failed, using raw text:', e.message);
+        parsedAddress = { full_address: responseData.manual_address.trim(), source: 'manual' };
+      }
     }
 
     if (!parsedAddress) {
