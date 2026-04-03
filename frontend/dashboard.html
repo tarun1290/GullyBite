@@ -2072,146 +2072,97 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
       <!-- ── SETTINGS ────────────────────────────── -->
       <div class="tab" id="tab-settings">
 
-        <!-- Business Information -->
+        <!-- Business Information (view/edit) -->
         <div class="card" style="margin-bottom:1.2rem">
-          <div class="ch"><h3>Business Information</h3></div>
+          <div class="ch"><h3>Business Information</h3><button class="btn-g btn-sm" id="sec-biz-edit-btn" onclick="toggleSettingsEdit('biz', true)">&#9998; Edit</button></div>
           <div class="cb">
-            <div class="fgrid">
-              <div class="fg"><label>Brand Name</label><input id="p-bname" placeholder="Burger Palace"></div>
-              <div class="fg"><label>Registered Business Name</label><input id="p-legalname" placeholder="Burger Palace Pvt Ltd"></div>
-              <div class="fg"><label>Owner / Contact Name</label><input id="p-owner" placeholder="Rajesh Kumar"></div>
-              <div class="fg"><label>Phone</label><input id="p-phone" placeholder="+91 98765 43210"></div>
-              <div class="fg"><label>Email</label><input id="p-email"></div>
-              <div class="fg"><label>City</label><input id="p-city" placeholder="Mumbai"></div>
-              <div class="fg">
-                <label>Restaurant Type</label>
-                <select id="p-rtype">
-                  <option value="both">Veg &amp; Non-Veg</option>
-                  <option value="veg">Pure Veg</option>
-                  <option value="non_veg">Non-Veg Only</option>
-                </select>
+            <div id="sec-biz-view"><div style="color:var(--dim);padding:.5rem">Loading...</div></div>
+            <div id="sec-biz-edit" style="display:none">
+              <div class="fgrid">
+                <div class="fg"><label>Brand Name</label><input id="p-bname" placeholder="Burger Palace"></div>
+                <div class="fg"><label>Registered Business Name</label><input id="p-legalname" placeholder="Burger Palace Pvt Ltd"></div>
+                <div class="fg"><label>Owner / Contact Name</label><input id="p-owner" placeholder="Rajesh Kumar"></div>
+                <div class="fg"><label>Phone</label><input id="p-phone" placeholder="+91 98765 43210"></div>
+                <div class="fg"><label>Email</label><input id="p-email"></div>
+                <div class="fg"><label>City</label><input id="p-city" placeholder="Mumbai"></div>
+                <div class="fg"><label>Restaurant Type</label><select id="p-rtype"><option value="both">Veg &amp; Non-Veg</option><option value="veg">Pure Veg</option><option value="non_veg">Non-Veg Only</option></select></div>
+                <div class="fg span2"><label>Logo URL</label><input id="p-logo" placeholder="https://example.com/logo.png"></div>
               </div>
-              <div class="fg span2"><label>Logo URL</label><input id="p-logo" placeholder="https://example.com/logo.png"></div>
+              <hr class="dv">
+              <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Legal &amp; Compliance</p>
+              <div class="fgrid">
+                <div class="fg"><label style="display:flex;align-items:center;gap:.4rem">GST Number <span id="gst-badge" style="display:none;font-size:.67rem;font-weight:700;padding:.15rem .5rem;border-radius:99px;background:#dcfce7;color:#15803d">&#10003; Verified</span></label><input id="p-gst" placeholder="22AAAAA0000A1Z5" style="text-transform:uppercase"></div>
+                <div class="fg"><label style="display:flex;align-items:center;gap:.4rem">FSSAI License <span id="fssai-badge" style="display:none;font-size:.67rem;font-weight:700;padding:.15rem .5rem;border-radius:99px;background:#dcfce7;color:#15803d">&#10003; Verified</span></label><input id="p-fssai" placeholder="12345678901234"></div>
+                <div class="fg"><label>FSSAI Expiry Date</label><input id="p-fssai-exp" type="date"></div>
+              </div>
+              <div id="gst-fssai-caution" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.6rem .9rem;margin-top:.7rem;font-size:.75rem;color:#92400e">GST and FSSAI details are manually verified by the GullyBite team.</div>
+              <hr class="dv">
+              <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.5rem">Store URL</p>
+              <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
+                <span style="font-size:.8rem;color:var(--dim);font-family:monospace;white-space:nowrap" id="p-store-base"></span>
+                <input id="p-store-slug" style="flex:1;background:var(--ink4);border:1px solid var(--rim);border-radius:7px;padding:.38rem .7rem;font-size:.8rem;color:var(--tx);outline:none;font-family:monospace" placeholder="restaurant-name">
+                <button onclick="doUpdateSlug()" class="btn-g btn-sm" style="white-space:nowrap">Save Slug</button>
+                <button onclick="copyDashStoreUrl()" style="background:var(--wa);color:#fff;border:none;border-radius:7px;padding:.38rem .85rem;font-size:.77rem;font-weight:600;cursor:pointer;white-space:nowrap">Copy</button>
+              </div>
+              <input id="p-store-url" type="hidden">
+              <p style="font-size:.72rem;color:var(--dim);margin-bottom:1rem">Lowercase letters, numbers, hyphens only.</p>
+              <hr class="dv">
+              <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Bank Account <span style="font-weight:400;font-size:.78rem">(for settlements)</span></p>
+              <div class="fgrid">
+                <div class="fg"><label>Bank Name</label><input id="p-bank" placeholder="HDFC Bank"></div>
+                <div class="fg"><label>Account Number</label><input id="p-accno" placeholder="12345678901234"></div>
+                <div class="fg"><label>IFSC Code</label><input id="p-ifsc" placeholder="HDFC0001234"></div>
+              </div>
+              <div style="display:flex;gap:.5rem;margin-top:1.1rem">
+                <button class="btn-p" onclick="doSaveProfileAndClose()">Save Changes</button>
+                <button class="btn-g" onclick="toggleSettingsEdit('biz', false)">Cancel</button>
+              </div>
             </div>
-            <button class="btn-p" style="margin-top:1rem" onclick="doSaveProfile()">Save Changes</button>
           </div>
         </div>
 
-        <!-- Legal & Compliance -->
+        <!-- Pricing & Charges (view/edit) -->
         <div class="card" style="margin-bottom:1.2rem">
-          <div class="ch"><h3>Legal &amp; Compliance</h3></div>
+          <div class="ch"><h3>Pricing &amp; Charges</h3><button class="btn-g btn-sm" id="sec-pricing-edit-btn" onclick="toggleSettingsEdit('pricing', true)">&#9998; Edit</button></div>
           <div class="cb">
-            <div class="fgrid">
-              <div class="fg">
-                <label style="display:flex;align-items:center;gap:.4rem">GST Number <span id="gst-badge" style="display:none;font-size:.67rem;font-weight:700;padding:.15rem .5rem;border-radius:99px;background:#dcfce7;color:#15803d">✓ Verified</span></label>
-                <input id="p-gst" placeholder="22AAAAA0000A1Z5" style="text-transform:uppercase">
+            <div id="sec-pricing-view"><div style="color:var(--dim);padding:.5rem">Loading...</div></div>
+            <div id="sec-pricing-edit" style="display:none">
+              <div class="fgrid">
+                <div class="fg span2"><label>Menu Prices — GST Mode</label><select id="p-gst-mode" onchange="toggleDashGstHint(this.value)"><option value="included">GST included in menu prices</option><option value="extra">Add 5% food GST at checkout</option></select><div id="p-gst-mode-hint" style="font-size:.75rem;color:var(--dim);margin-top:.3rem;display:none">Customers will see a "Food GST (5%)" line item.</div></div>
+                <div class="fg span2"><label>Delivery Fee — Customer Pays (%)</label><div style="display:flex;align-items:center;gap:.6rem"><input type="number" id="p-del-pct" min="0" max="100" step="1" value="100" style="width:100px" oninput="updateDashDeliveryHint(this.value)"><span style="font-size:.82rem;color:var(--dim)">% charged to customer</span></div><div id="p-del-pct-hint" style="font-size:.78rem;color:var(--dim);margin-top:.45rem;line-height:1.55;background:var(--ink4);border-radius:7px;padding:.45rem .7rem;border:1px solid var(--rim)">Customer pays <strong>100%</strong>. Restaurant absorbs <strong>0%</strong>.</div></div>
+                <div class="fg"><label>Packaging Charge (&#8377;)</label><input id="p-pkg-charge" type="number" min="0" max="500" step="5" value="0" placeholder="0 = disabled"></div>
+                <div class="fg"><label>Packaging GST %</label><select id="p-pkg-gst"><option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18" selected>18%</option></select></div>
               </div>
-              <div class="fg">
-                <label style="display:flex;align-items:center;gap:.4rem">FSSAI License Number <span id="fssai-badge" style="display:none;font-size:.67rem;font-weight:700;padding:.15rem .5rem;border-radius:99px;background:#dcfce7;color:#15803d">✓ Verified</span></label>
-                <input id="p-fssai" placeholder="12345678901234">
+              <div style="display:flex;gap:.5rem;margin-top:1.1rem">
+                <button class="btn-p" onclick="doSaveChargeConfigAndClose()">Save Charge Settings</button>
+                <button class="btn-g" onclick="toggleSettingsEdit('pricing', false)">Cancel</button>
               </div>
-              <div class="fg"><label>FSSAI Expiry Date</label><input id="p-fssai-exp" type="date"></div>
             </div>
-            <div id="gst-fssai-caution" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.6rem .9rem;margin-top:.7rem;font-size:.75rem;color:#92400e">
-              GST and FSSAI details are manually verified by the GullyBite team. You can still use the dashboard while verification is pending.
-            </div>
-            <button class="btn-p" style="margin-top:1rem" onclick="doSaveProfile()">Save Changes</button>
           </div>
         </div>
 
-        <!-- Store URL & Bank Account -->
+        <!-- Notification Settings (view/edit) -->
         <div class="card" style="margin-bottom:1.2rem">
-          <div class="ch"><h3>Store URL &amp; Bank Account</h3></div>
+          <div class="ch"><h3>&#128276; Notification Settings</h3><button class="btn-g btn-sm" id="sec-notify-edit-btn" onclick="toggleSettingsEdit('notify', true)">&#9998; Edit</button></div>
           <div class="cb">
-            <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.5rem">Your Store URL</p>
-            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
-              <span style="font-size:.8rem;color:var(--dim);font-family:monospace;white-space:nowrap" id="p-store-base"></span>
-              <input id="p-store-slug" style="flex:1;background:var(--ink4);border:1px solid var(--rim);border-radius:7px;padding:.38rem .7rem;font-size:.8rem;color:var(--tx);outline:none;font-family:monospace" placeholder="restaurant-name">
-              <button onclick="doUpdateSlug()" class="btn-g btn-sm" style="white-space:nowrap">Save</button>
-              <button onclick="copyDashStoreUrl()" style="background:var(--wa);color:#fff;border:none;border-radius:7px;padding:.38rem .85rem;font-size:.77rem;font-weight:600;cursor:pointer;white-space:nowrap">Copy</button>
-            </div>
-            <input id="p-store-url" type="hidden">
-            <p style="font-size:.72rem;color:var(--dim);margin-bottom:1rem">Editable slug — only lowercase letters, numbers, and hyphens. Use this URL as your Privacy Policy &amp; Website URL in Meta Business Manager.</p>
-            <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Bank Account <span style="font-weight:400;font-size:.78rem">(for weekly settlements)</span></p>
-            <div class="fgrid">
-              <div class="fg"><label>Bank Name</label><input id="p-bank" placeholder="HDFC Bank"></div>
-              <div class="fg"><label>Account Number</label><input id="p-accno" placeholder="12345678901234"></div>
-              <div class="fg"><label>IFSC Code</label><input id="p-ifsc" placeholder="HDFC0001234"></div>
-            </div>
-            <button class="btn-p" style="margin-top:1rem" onclick="doSaveProfile()">Save Changes</button>
-          </div>
-        </div>
-
-        <!-- Pricing & Charges -->
-        <div class="card" style="margin-bottom:1.2rem">
-          <div class="ch"><h3>Pricing &amp; Charges</h3><span style="font-size:.78rem;color:var(--dim)">Applied to all new orders</span></div>
-          <div class="cb">
-            <div class="fgrid">
-              <div class="fg span2">
-                <label>Menu Prices — GST Mode</label>
-                <select id="p-gst-mode" onchange="toggleDashGstHint(this.value)">
-                  <option value="included">GST included in menu prices (no extra line at checkout)</option>
-                  <option value="extra">Add 5% food GST on top of menu prices at checkout</option>
-                </select>
-                <div id="p-gst-mode-hint" style="font-size:.75rem;color:var(--dim);margin-top:.3rem;display:none">Customers will see a "Food GST (5%)" line item in their order summary.</div>
+            <div id="sec-notify-view"><div style="color:var(--dim);padding:.5rem">Loading...</div></div>
+            <div id="sec-notify-edit" style="display:none">
+              <div class="fgrid">
+                <div class="fg span2"><label>Owner Notification Phones</label><input id="p-notify-phones" placeholder="919876543210, 919876543211 (comma-separated)"><span style="font-size:.72rem;color:var(--dim)">With country code, no + prefix</span></div>
               </div>
-              <div class="fg span2">
-                <label>Delivery Fee — Customer Pays (%)</label>
-                <div style="display:flex;align-items:center;gap:.6rem">
-                  <input type="number" id="p-del-pct" min="0" max="100" step="1" value="100" placeholder="0–100" style="width:100px" oninput="updateDashDeliveryHint(this.value)">
-                  <span style="font-size:.82rem;color:var(--dim)">% of delivery partner's fee charged to customer</span>
-                </div>
-                <div id="p-del-pct-hint" style="font-size:.78rem;color:var(--dim);margin-top:.45rem;line-height:1.55;background:var(--ink4);border-radius:7px;padding:.45rem .7rem;border:1px solid var(--rim)">
-                  Customer pays <strong>100%</strong> of the delivery fee. Your restaurant absorbs <strong>0%</strong>.<br>
-                  <span style="color:var(--mute)">What % of the delivery partner's fee is charged to the customer. The restaurant absorbs the remainder, deducted at settlement.</span>
-                </div>
+              <hr class="dv">
+              <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.7rem">Notify me when:</p>
+              <div style="display:flex;flex-wrap:wrap;gap:1.2rem;margin-bottom:.5rem">
+                <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer"><input type="checkbox" id="p-notify-new-order" checked> New order received</label>
+                <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer"><input type="checkbox" id="p-notify-payment" checked> Payment received</label>
+                <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer"><input type="checkbox" id="p-notify-cancelled" checked> Order cancelled</label>
+                <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer"><input type="checkbox" id="p-notify-low-activity"> Low activity (no orders 2 hrs)</label>
               </div>
-              <div class="fg">
-                <label>Packaging Charge per Order (₹)</label>
-                <input id="p-pkg-charge" type="number" min="0" max="500" step="5" value="0" placeholder="0 = disabled">
-              </div>
-              <div class="fg">
-                <label>Packaging GST %</label>
-                <select id="p-pkg-gst">
-                  <option value="0">0% (exempt)</option>
-                  <option value="5">5%</option>
-                  <option value="12">12%</option>
-                  <option value="18" selected>18%</option>
-                </select>
+              <div style="display:flex;gap:.5rem;margin-top:.8rem">
+                <button class="btn-p" onclick="doSaveNotifySettingsAndClose()">Save Notification Settings</button>
+                <button class="btn-g" onclick="toggleSettingsEdit('notify', false)">Cancel</button>
               </div>
             </div>
-            <button class="btn-p" style="margin-top:1.1rem" onclick="doSaveChargeConfig()">Save Charge Settings</button>
-          </div>
-        </div>
-
-        <!-- Notification Settings -->
-        <div class="card" style="margin-bottom:1.2rem">
-          <div class="ch"><h3>🔔 Notification Settings</h3><span style="font-size:.78rem;color:var(--dim)">WhatsApp alerts to owner/manager</span></div>
-          <div class="cb">
-            <div class="fgrid">
-              <div class="fg span2">
-                <label>Owner Notification Phones</label>
-                <input id="p-notify-phones" placeholder="919876543210, 919876543211 (comma-separated, with country code)">
-                <span style="font-size:.72rem;color:var(--dim)">Enter phone numbers with country code, no + prefix. e.g., 919876543210</span>
-              </div>
-            </div>
-            <hr class="dv">
-            <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.7rem">Notify me when:</p>
-            <div style="display:flex;flex-wrap:wrap;gap:1.2rem;margin-bottom:.5rem">
-              <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
-                <input type="checkbox" id="p-notify-new-order" checked> New order received
-              </label>
-              <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
-                <input type="checkbox" id="p-notify-payment" checked> Payment received
-              </label>
-              <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
-                <input type="checkbox" id="p-notify-cancelled" checked> Order cancelled
-              </label>
-              <label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
-                <input type="checkbox" id="p-notify-low-activity"> Low activity alert (no orders in 2 hrs)
-              </label>
-            </div>
-            <button class="btn-p" style="margin-top:.8rem" onclick="doSaveNotifySettings()">Save Notification Settings</button>
           </div>
         </div>
 

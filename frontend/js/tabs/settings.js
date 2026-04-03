@@ -550,6 +550,14 @@ async function loadProfile() {
     setChk('p-notify-cancelled', ns.cancelled);
     setChk('p-notify-low-activity', ns.low_activity, false);
 
+    // Populate view-mode displays (read-only summaries)
+    var bizView = document.getElementById('sec-biz-view');
+    if (bizView) bizView.innerHTML = renderBizView(r);
+    var pricingView = document.getElementById('sec-pricing-view');
+    if (pricingView) pricingView.innerHTML = renderPricingView(r);
+    var notifyView = document.getElementById('sec-notify-view');
+    if (notifyView) notifyView.innerHTML = renderNotifyView(r);
+
     // WhatsApp connection status — check whatsapp_connected flag (derived from meta_user_id + waba_accounts on backend)
     const waAccounts = r.waba_accounts || [];
     const hasWA = !!(r.whatsapp_connected || r.meta_user_id || waAccounts.length > 0);
@@ -2033,6 +2041,83 @@ window.doBannerConnect = doBannerConnect;
 window.renderEventMappings = renderEventMappings;
 window.doBulkAssignAll = doBulkAssignAll;
 window.doSyncBranchCollections = doSyncBranchCollections;
+// ─── VIEW/EDIT MODE TOGGLE ──────────────────────────────
+function toggleSettingsEdit(section, editMode) {
+  var viewEl = document.getElementById('sec-' + section + '-view');
+  var editEl = document.getElementById('sec-' + section + '-edit');
+  var editBtn = document.getElementById('sec-' + section + '-edit-btn');
+  if (viewEl) viewEl.style.display = editMode ? 'none' : 'block';
+  if (editEl) editEl.style.display = editMode ? 'block' : 'none';
+  if (editBtn) editBtn.style.display = editMode ? 'none' : 'inline-flex';
+}
+
+function _viewRow(label, value, opts) {
+  opts = opts || {};
+  var val = value || '<span style="color:var(--mute);font-style:italic">Not set</span>';
+  var badge = opts.badge || '';
+  var mono = opts.mono ? 'font-family:monospace;' : '';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--rim,#f0f0f0)">'
+    + '<span style="color:var(--dim);font-size:.78rem;min-width:130px">' + label + '</span>'
+    + '<span style="font-weight:500;text-align:right;font-size:.84rem;' + mono + '">' + val + badge + '</span></div>';
+}
+
+function renderBizView(r) {
+  var typeLabels = { both: 'Veg & Non-Veg', veg: 'Pure Veg', non_veg: 'Non-Veg Only' };
+  var gstBadge = r.gst_verified ? ' <span style="font-size:.65rem;padding:.1rem .4rem;border-radius:99px;background:#dcfce7;color:#15803d;font-weight:700">\u2713 Verified</span>' : (r.gst_number ? ' <span style="font-size:.65rem;padding:.1rem .4rem;border-radius:99px;background:#fef3c7;color:#92400e;font-weight:600">Pending</span>' : '');
+  var fssaiBadge = r.fssai_verified ? ' <span style="font-size:.65rem;padding:.1rem .4rem;border-radius:99px;background:#dcfce7;color:#15803d;font-weight:700">\u2713 Verified</span>' : (r.fssai_license ? ' <span style="font-size:.65rem;padding:.1rem .4rem;border-radius:99px;background:#fef3c7;color:#92400e;font-weight:600">Pending</span>' : '');
+  var html = _viewRow('Brand Name', r.business_name) + _viewRow('Legal Name', r.registered_business_name) + _viewRow('Owner', r.owner_name) + _viewRow('Phone', r.phone) + _viewRow('Email', r.email) + _viewRow('City', r.city) + _viewRow('Type', typeLabels[r.restaurant_type] || r.restaurant_type);
+  if (r.logo_url) html += _viewRow('Logo', '<img src="' + r.logo_url + '" style="height:28px;border-radius:4px">');
+  html += '<p style="font-size:.82rem;font-weight:600;color:var(--dim);margin:.8rem 0 .4rem">Legal & Compliance</p>';
+  html += _viewRow('GST Number', r.gst_number, { badge: gstBadge, mono: true }) + _viewRow('FSSAI License', r.fssai_license, { badge: fssaiBadge, mono: true });
+  if (r.fssai_expiry) { var exp = new Date(r.fssai_expiry); var expStr = exp.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }); html += _viewRow('FSSAI Expiry', exp < new Date() ? '<span style="color:var(--red)">' + expStr + ' (EXPIRED)</span>' : expStr); }
+  html += '<p style="font-size:.82rem;font-weight:600;color:var(--dim);margin:.8rem 0 .4rem">Store URL</p>';
+  if (r.store_url) html += '<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem .6rem;background:var(--ink2);border-radius:6px;margin-bottom:.3rem"><a href="' + r.store_url + '" target="_blank" style="flex:1;font-family:monospace;font-size:.8rem;color:var(--acc);word-break:break-all">' + r.store_url + '</a><button onclick="navigator.clipboard.writeText(\'' + r.store_url + '\');toast(\'Copied!\',\'ok\')" style="background:var(--wa);color:#fff;border:none;border-radius:5px;padding:.25rem .6rem;font-size:.72rem;font-weight:600;cursor:pointer">Copy</button></div>';
+  else html += _viewRow('Store URL', null);
+  html += '<p style="font-size:.82rem;font-weight:600;color:var(--dim);margin:.8rem 0 .4rem">Bank Account</p>';
+  if (r.bank_name || r.bank_account_number) html += _viewRow('Bank', r.bank_name) + _viewRow('Account', r.bank_account_number ? '\u2022\u2022\u2022\u2022\u2022\u2022' + r.bank_account_number.slice(-4) : null) + _viewRow('IFSC', r.bank_ifsc, { mono: true });
+  else html += '<div style="font-size:.8rem;color:var(--mute);font-style:italic;padding:.3rem 0">No bank details \u2014 add in Edit mode</div>';
+  return html;
+}
+
+function renderPricingView(r) {
+  var gstLabel = r.menu_gst_mode === 'included' ? 'Inclusive in prices' : 'Extra 5% at checkout';
+  var delPct = r.delivery_fee_customer_pct != null ? r.delivery_fee_customer_pct : 100;
+  var pkg = r.packaging_charge_rs || 0;
+  var pkgGst = r.packaging_gst_pct != null ? r.packaging_gst_pct : 18;
+  var box = function(label, val) { return '<div style="background:var(--ink2);border-radius:8px;padding:.65rem .8rem;text-align:center"><div style="font-size:.7rem;color:var(--dim);margin-bottom:.2rem">' + label + '</div><div style="font-size:.88rem;font-weight:600">' + val + '</div></div>'; };
+  return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.8rem">'
+    + box('GST Mode', gstLabel) + box('Delivery Split', delPct + '% customer / ' + (100 - delPct) + '% restaurant')
+    + box('Packaging', pkg > 0 ? '\u20B9' + pkg + '/order' : 'Disabled') + box('Pkg GST', pkgGst + '%') + '</div>';
+}
+
+function renderNotifyView(r) {
+  var phones = r.notification_phones && r.notification_phones.length ? r.notification_phones.join(', ') : '<span style="color:var(--mute);font-style:italic">Not configured</span>';
+  var ns = r.notification_settings || {};
+  var pill = function(on, label) { return '<span style="display:inline-flex;align-items:center;gap:.2rem;font-size:.72rem;font-weight:600;padding:.2rem .5rem;border-radius:99px;background:' + (on ? '#dcfce7' : 'var(--ink2)') + ';color:' + (on ? '#15803d' : 'var(--dim)') + '">' + (on ? '\u2705 ' : '') + label + '</span>'; };
+  return _viewRow('Notification Phones', phones) + '<p style="font-size:.78rem;font-weight:600;color:var(--dim);margin:.5rem 0 .4rem">Events:</p><div style="display:flex;flex-wrap:wrap;gap:.4rem">'
+    + pill(ns.new_order !== false, 'New Orders') + pill(ns.payment !== false, 'Payments') + pill(ns.cancelled !== false, 'Cancellations') + pill(!!ns.low_activity, 'Low Activity') + '</div>';
+}
+
+async function doSaveProfileAndClose() {
+  await doSaveProfile();
+  toggleSettingsEdit('biz', false);
+  try { var r = await api('/auth/me'); if (r) { var v = document.getElementById('sec-biz-view'); if (v) v.innerHTML = renderBizView(r); } } catch(_){}
+}
+async function doSaveChargeConfigAndClose() {
+  await doSaveChargeConfig();
+  toggleSettingsEdit('pricing', false);
+  try { var r = await api('/auth/me'); if (r) { var v = document.getElementById('sec-pricing-view'); if (v) v.innerHTML = renderPricingView(r); } } catch(_){}
+}
+async function doSaveNotifySettingsAndClose() {
+  await doSaveNotifySettings();
+  toggleSettingsEdit('notify', false);
+  try { var r = await api('/auth/me'); if (r) { var v = document.getElementById('sec-notify-view'); if (v) v.innerHTML = renderNotifyView(r); } } catch(_){}
+}
+
+window.toggleSettingsEdit = toggleSettingsEdit;
+window.doSaveProfileAndClose = doSaveProfileAndClose;
+window.doSaveChargeConfigAndClose = doSaveChargeConfigAndClose;
+window.doSaveNotifySettingsAndClose = doSaveNotifySettingsAndClose;
 window.loadFeedList = loadFeedList;
 window.doDeleteFeed = doDeleteFeed;
 window.loadCatalogDiagnostics = loadCatalogDiagnostics;
