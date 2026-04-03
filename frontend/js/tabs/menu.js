@@ -1901,6 +1901,17 @@ async function doUploadCsv() {
       resultHtml += `<div style="margin-top:.5rem;font-size:.75rem;color:var(--red)">${r.errors.slice(0, 5).join('<br>')}</div>`;
     }
 
+    // Stale items notification
+    if (r.stale_items?.total > 0) {
+      resultHtml += `<div style="margin-top:.6rem;padding:.5rem .7rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.8rem;color:#92400e">
+        \u26A0\uFE0F <strong>${r.stale_items.total} item${r.stale_items.total > 1 ? 's' : ''}</strong> not in your upload ${r.stale_items.total > 1 ? 'were' : 'was'} marked unavailable:
+        ${r.stale_items.per_branch.map(function(b) { return '<div style="margin-top:.2rem;font-size:.75rem">\uD83C\uDFEA ' + b.branchName + ': ' + b.items.map(function(it) { return it.name; }).join(', ') + (b.more > 0 ? ' and ' + b.more + ' more' : '') + '</div>'; }).join('')}
+      </div>`;
+    }
+    if (r.stale_items?.warnings?.length) {
+      resultHtml += r.stale_items.warnings.map(function(w) { return '<div style="margin-top:.4rem;font-size:.75rem;color:var(--dim)">\u2139\uFE0F ' + w + '</div>'; }).join('');
+    }
+
     el.innerHTML = resultHtml;
     resetCsv();
     loadMenu();

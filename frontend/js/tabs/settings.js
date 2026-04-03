@@ -836,130 +836,129 @@ let _catMgmtData = null;
 
 async function loadCatalogMgmt(refresh = false) {
   console.log('[CatalogMgmt] loadCatalogMgmt called, refresh:', refresh);
-  const statusEl = document.getElementById('cat-mgmt-status');
-  const settingsEl = document.getElementById('cat-mgmt-settings');
-  const deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
-  if (!statusEl) { console.error('[CatalogMgmt] CRITICAL: cat-mgmt-status element NOT FOUND'); return; }
+  var statusEl = document.getElementById('cat-mgmt-status');
+  var listEl = document.getElementById('cat-mgmt-list');
+  var settingsEl = document.getElementById('cat-mgmt-settings');
+  var deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
+  if (!statusEl) { console.error('[CatalogMgmt] CRITICAL: cat-mgmt-status not found'); return; }
   if (deleteConfirmEl) deleteConfirmEl.style.display = 'none';
   loadCatalogVisibility();
 
-  // Approval status warning — show before content loads
-  if (rest?.approval_status && rest.approval_status !== 'approved') {
-    statusEl.innerHTML = `<div style="padding:.6rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-bottom:.8rem;font-size:.82rem">
-      <span style="font-weight:600;color:#92400e">⚠️ Approval pending</span> — Catalog management (create, delete, merge, sync) requires restaurant approval. Status: <strong>${rest.approval_status}</strong>
-    </div>` + (statusEl.innerHTML || '');
+  // Helper: enable/disable a button (never display:none)
+  function setBtnState(id, enabled) {
+    var btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = !enabled;
+    btn.style.opacity = enabled ? '' : '.4';
+    btn.style.cursor = enabled ? '' : 'not-allowed';
   }
 
+  // ── PHASE 1: Render immediately from cached rest data (no API call) ──
+  var cachedCatId = rest?.meta_catalog_id;
+  var cachedCatName = rest?.meta_catalog_name || 'Menu Catalog';
+  var isConnected = !!cachedCatId;
+
+  if (isConnected) {
+    statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:8px">'
+      + '<span style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>'
+      + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem">\uD83D\uDCE6 ' + cachedCatName + '</div>'
+      + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + cachedCatId + '</div></div>'
+      + '<span class="badge bg" style="font-size:.68rem">Connected</span></div>';
+  } else {
+    statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.15);border-radius:8px">'
+      + '<span style="width:10px;height:10px;border-radius:50%;background:#dc2626;flex-shrink:0"></span>'
+      + '<div><div style="font-weight:600;font-size:.85rem;color:#dc2626">No catalog connected</div>'
+      + '<div style="font-size:.77rem;color:var(--dim)">Create a new catalog or connect an existing one below.</div></div></div>';
+  }
+
+  // Approval warning
+  if (rest?.approval_status && rest.approval_status !== 'approved') {
+    statusEl.innerHTML += '<div style="padding:.5rem .7rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.5rem;font-size:.78rem;color:#92400e">\u26A0\uFE0F Approval pending \u2014 some catalog actions require restaurant approval. Status: <strong>' + rest.approval_status + '</strong></div>';
+  }
+
+  // Set initial button states from cache
+  setBtnState('cat-create-btn', true);
+  setBtnState('cat-connect-btn', false);
+  setBtnState('cat-disconnect-btn', isConnected);
+  setBtnState('cat-delete-btn', isConnected);
+  setBtnState('cat-diagnostics-btn', isConnected);
+  setBtnState('cat-sync-btn', isConnected);
+  if (settingsEl) settingsEl.style.display = isConnected ? 'block' : 'none';
+
+  // Show loading in catalog list area
+  if (listEl) listEl.innerHTML = '<div style="text-align:center;padding:.6rem;font-size:.78rem;color:var(--dim)"><div class="spin" style="margin:0 auto .3rem;width:16px;height:16px"></div>Loading catalogs from Meta...</div>';
+
+  // ── PHASE 2: Async API call to get live catalog data ──
   try {
-    console.log('[CatalogMgmt] Fetching /api/restaurant/catalogs...');
-    const catData = await api(`/api/restaurant/catalogs${refresh ? '?refresh=true' : ''}`);
-    console.log('[CatalogMgmt] Response:', JSON.stringify(catData).substring(0, 300));
+    var catData = await api('/api/restaurant/catalogs' + (refresh ? '?refresh=true' : ''));
     _catMgmtData = catData;
-    const active = catData?.active_catalog_id;
+    var active = catData?.active_catalog_id;
+    var allCatalogs = catData?.catalogs || [];
+    var activeCat = allCatalogs.find(function(c) { return c.id === active; });
 
-    // Update catalog count badge in WhatsApp section
-    const countTextEl = document.getElementById('wa-catalog-count-text');
+    // Update count badge
+    var countTextEl = document.getElementById('wa-catalog-count-text');
     if (countTextEl) {
-      const cnt = catData?.catalogs?.length || 0;
-      countTextEl.textContent = cnt
-        ? `${cnt} catalog${cnt > 1 ? 's' : ''} connected to WhatsApp`
-        : 'No catalogs connected';
-      countTextEl.style.color = cnt ? 'var(--fg)' : 'var(--dim)';
-    }
-    const activeCat = catData?.catalogs?.find(c => c.id === active);
-    const allCatalogs = catData?.catalogs || [];
-
-    // Render ALL catalogs with connection status
-    let catalogListHtml = '';
-    if (allCatalogs.length) {
-      catalogListHtml = allCatalogs.map(c => {
-        const isActive = c.id === active || c.connected;
-        return `
-          <div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:${isActive ? 'rgba(34,197,94,.06)' : 'var(--ink2)'};border:1px solid ${isActive ? 'rgba(34,197,94,.2)' : 'var(--bdr)'};border-radius:8px;margin-bottom:.4rem">
-            <span style="font-size:1rem">${isActive ? '✅' : '📦'}</span>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name || 'Unnamed Catalog'}</div>
-              <div style="font-size:.73rem;color:var(--dim)">ID: ${c.id}${c.product_count != null ? ' · ' + c.product_count + ' products' : ''}</div>
-            </div>
-            ${isActive
-              ? '<span class="badge bg" style="font-size:.68rem">Connected</span>'
-              : `<button class="btn-p btn-sm" style="font-size:.72rem;white-space:nowrap" onclick="doCatMgmtSwitchCatalog('${c.id}','${(c.name||'').replace(/'/g,"\\'")}')">Connect</button>`
-            }
-          </div>`;
-      }).join('');
+      countTextEl.textContent = allCatalogs.length ? allCatalogs.length + ' catalog' + (allCatalogs.length > 1 ? 's' : '') + ' connected' : 'No catalogs connected';
+      countTextEl.style.color = allCatalogs.length ? 'var(--fg)' : 'var(--dim)';
     }
 
+    // Render catalog list
+    if (listEl) {
+      if (allCatalogs.length) {
+        listEl.innerHTML = allCatalogs.map(function(c) {
+          var isActive = c.id === active || c.connected;
+          return '<div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:' + (isActive ? 'rgba(34,197,94,.06)' : 'var(--ink2)') + ';border:1px solid ' + (isActive ? 'rgba(34,197,94,.2)' : 'var(--bdr)') + ';border-radius:8px;margin-bottom:.4rem">'
+            + '<span style="font-size:1rem">' + (isActive ? '\u2705' : '\uD83D\uDCE6') + '</span>'
+            + '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (c.name || 'Unnamed Catalog') + '</div>'
+            + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + c.id + (c.product_count != null ? ' \u00B7 ' + c.product_count + ' products' : '') + '</div></div>'
+            + (isActive ? '<span class="badge bg" style="font-size:.68rem">Connected</span>' : '<button class="btn-p btn-sm" style="font-size:.72rem;white-space:nowrap" onclick="doCatMgmtSwitchCatalog(\'' + c.id + '\',\'' + (c.name || '').replace(/'/g, "\\'") + '\')">Connect</button>')
+            + '</div>';
+        }).join('');
+      } else {
+        listEl.innerHTML = '<div style="font-size:.78rem;color:var(--dim)">No catalogs found. Create one to get started.</div>';
+      }
+    }
+
+    // Update button states from live data
+    setBtnState('cat-connect-btn', allCatalogs.length > 0 && (!active || allCatalogs.length > 1));
+    setBtnState('cat-disconnect-btn', !!active);
+    setBtnState('cat-delete-btn', allCatalogs.length > 0);
+    setBtnState('cat-diagnostics-btn', !!active);
+    setBtnState('cat-sync-btn', !!active);
+
+    // Update status banner if live data differs from cache
     if (active && activeCat) {
-      statusEl.innerHTML = catalogListHtml;
-      document.getElementById('cat-connect-btn').style.display = 'none';
-      document.getElementById('cat-disconnect-btn').style.display = 'inline-flex';
-      document.getElementById('cat-delete-btn').style.display = 'inline-flex';
-      document.getElementById('cat-diagnostics-btn').style.display = 'inline-flex';
+      statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:8px">'
+        + '<span style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>'
+        + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem">\uD83D\uDCE6 ' + (activeCat.name || 'Menu Catalog') + '</div>'
+        + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + active + (activeCat.product_count != null ? ' \u00B7 ' + activeCat.product_count + ' products' : '') + '</div></div>'
+        + '<span class="badge bg" style="font-size:.68rem">Connected</span></div>';
+      if (settingsEl) { settingsEl.style.display = 'block'; document.getElementById('cat-settings-name').value = activeCat.name || ''; loadCatalogDetails(); }
 
-      // Commerce settings warning
       if (!catData.commerce_enabled) {
-        statusEl.innerHTML += `
-          <div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.5rem;font-size:.79rem">
-            <span>⚠️</span>
-            <span style="flex:1">Catalog connected but not visible to customers on WhatsApp.</span>
-            <button class="btn-p btn-sm" onclick="doEnableCommerceSettings()" style="font-size:.72rem;white-space:nowrap">Enable</button>
-          </div>`;
+        statusEl.innerHTML += '<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.5rem;font-size:.79rem"><span>\u26A0\uFE0F</span><span style="flex:1">Catalog connected but not visible to customers.</span><button class="btn-p btn-sm" onclick="doEnableCommerceSettings()" style="font-size:.72rem;white-space:nowrap">Enable</button></div>';
       }
-
-      // Warn if multiple catalogs
       if (allCatalogs.length > 1) {
-        statusEl.innerHTML += `
-          <div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.4rem;font-size:.79rem">
-            <span>⚠️</span>
-            <span style="flex:1">You have ${allCatalogs.length} catalogs. WhatsApp works best with one.</span>
-            <button class="btn-p btn-sm" onclick="doCatalogMerge()" style="font-size:.72rem;white-space:nowrap">Merge</button>
-          </div>`;
+        statusEl.innerHTML += '<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.4rem;font-size:.79rem"><span>\u26A0\uFE0F</span><span style="flex:1">You have ' + allCatalogs.length + ' catalogs. WhatsApp works best with one.</span><button class="btn-p btn-sm" onclick="doCatalogMerge()" style="font-size:.72rem;white-space:nowrap">Merge</button></div>';
       }
+    }
 
-      // Show settings panel for connected catalog
-      if (settingsEl) {
-        settingsEl.style.display = 'block';
-        document.getElementById('cat-settings-name').value = activeCat.name || '';
-        loadCatalogDetails();
-      }
-    } else {
-      statusEl.innerHTML = catalogListHtml || `
-        <div style="padding:.7rem .9rem;background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.15);border-radius:8px">
-          <div style="font-weight:600;font-size:.88rem;color:#dc2626">No catalog connected</div>
-          <div style="font-size:.77rem;color:var(--dim)">Create a new catalog or connect an existing one.</div>
-        </div>`;
-      document.getElementById('cat-connect-btn').style.display = allCatalogs.length ? 'none' : 'inline-flex';
-      document.getElementById('cat-disconnect-btn').style.display = 'none';
-      document.getElementById('cat-delete-btn').style.display = allCatalogs.length ? 'inline-flex' : 'none';
-      document.getElementById('cat-diagnostics-btn').style.display = 'none';
-      if (settingsEl) settingsEl.style.display = 'none';
-    }
   } catch (e) {
-    console.error('[CatalogMgmt] API error:', e.message, e);
-    // Check if approval status is blocking
-    if (e.message?.includes('pending_approval') || e.message?.includes('Forbidden')) {
-      statusEl.innerHTML = `<div style="padding:.7rem .9rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;font-size:.82rem">
-        <div style="font-weight:600;color:#92400e">⚠️ Restaurant not yet approved</div>
-        <div style="color:#92400e;margin-top:.2rem">Catalog management requires approval. Current status: <strong>${rest?.approval_status || 'unknown'}</strong></div>
-      </div>`;
-    } else if (rest?.meta_catalog_id) {
-      // API failed but we have a cached catalog ID — show fallback
-      _catMgmtData = { active_catalog_id: rest.meta_catalog_id, catalogs: [{ id: rest.meta_catalog_id, name: rest.meta_catalog_name || 'Menu Catalog', connected: true }] };
-      statusEl.innerHTML = `<div style="padding:.5rem .8rem;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:8px;font-size:.82rem">
-        <div style="font-weight:600">📦 ${rest.meta_catalog_name || 'Menu Catalog'} <span style="font-size:.72rem;color:var(--dim)">(${rest.meta_catalog_id})</span></div>
-        <div style="font-size:.74rem;color:var(--dim);margin-top:.2rem">⚠️ Live fetch failed: ${e.message} — showing cached data</div>
-      </div>`;
-      document.getElementById('cat-delete-btn').style.display = 'inline-flex';
-      document.getElementById('cat-disconnect-btn').style.display = 'inline-flex';
-      document.getElementById('cat-diagnostics-btn').style.display = 'inline-flex';
-    } else {
-      statusEl.innerHTML = `<div style="color:var(--dim);font-size:.82rem">Failed to load catalog status: ${e.message}</div>`;
+    console.error('[CatalogMgmt] API error:', e.message);
+    // Status banner stays as-is from Phase 1 (cached data) — don't blank it
+    // Show error in list area with retry
+    if (listEl) {
+      var fallbackHtml = '';
+      if (cachedCatId) {
+        fallbackHtml = '<div style="padding:.5rem .7rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;margin-bottom:.4rem;font-size:.82rem">'
+          + '\uD83D\uDCE6 <strong>' + cachedCatName + '</strong> <span style="font-size:.72rem;color:var(--dim)">(' + cachedCatId + ')</span>'
+          + ' <span style="font-size:.68rem;color:var(--dim);font-style:italic">(cached)</span></div>';
+        _catMgmtData = { active_catalog_id: cachedCatId, catalogs: [{ id: cachedCatId, name: cachedCatName, connected: true }] };
+      }
+      listEl.innerHTML = fallbackHtml + '<div style="padding:.5rem .7rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:.78rem;color:#dc2626">\u274C ' + (e.message || 'Failed to load') + ' <button class="btn-g btn-sm" onclick="loadCatalogMgmt(true)" style="font-size:.72rem;margin-left:.5rem">Retry</button></div>';
     }
-    // Always keep Create New accessible
-    document.getElementById('cat-connect-btn').style.display = 'inline-flex';
-    if (settingsEl) settingsEl.style.display = 'none';
-    const countTextEl = document.getElementById('wa-catalog-count-text');
-    if (countTextEl) { countTextEl.textContent = 'Unable to fetch catalog info'; countTextEl.style.color = 'var(--dim)'; }
+    // Buttons stay at their Phase 1 state — create always enabled, others based on cache
   }
 }
 

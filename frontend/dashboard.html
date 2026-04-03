@@ -1222,27 +1222,29 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         <!-- ── Catalog Management ── -->
         <div class="card" style="margin-top:1.1rem">
           <div class="ch" style="justify-content:space-between;align-items:center">
-            <h3>📦 Catalog Management</h3>
-            <button class="btn-g btn-sm" onclick="loadCatalogMgmt(true)">🔄 Refresh</button>
+            <h3>&#128230; Catalog Management</h3>
+            <button class="btn-g btn-sm" onclick="loadCatalogMgmt(true)">&#128260; Refresh</button>
           </div>
           <div class="cb">
-            <!-- Connection status -->
-            <div id="cat-mgmt-status" style="margin-bottom:1rem">
-              <div style="text-align:center;padding:1rem"><div class="spin"></div></div>
-            </div>
+            <!-- Section A: Connection Status Banner (always visible, shows cached data immediately) -->
+            <div id="cat-mgmt-status" style="margin-bottom:1rem"></div>
 
-            <!-- Actions row -->
+            <!-- Section B: Action Buttons (always visible, use disabled not display:none) -->
             <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
               <button class="btn-p btn-sm" id="cat-create-btn" onclick="doCatMgmtCreate()">+ Create New Catalog</button>
-              <button class="btn-g btn-sm" id="cat-connect-btn" onclick="doCatMgmtConnect()" style="display:none">🔗 Connect to WhatsApp</button>
-              <button class="btn-g btn-sm" id="cat-disconnect-btn" onclick="doCatMgmtDisconnect()" style="display:none;color:#dc2626;border-color:#dc2626">⛓️‍💥 Disconnect</button>
-              <button class="btn-g btn-sm" id="cat-delete-btn" onclick="doCatMgmtDelete()" style="display:none;color:#dc2626;border-color:#dc2626">🗑️ Delete Catalog</button>
-              <button class="btn-g btn-sm" id="cat-diagnostics-btn" onclick="loadCatalogDiagnostics()" style="display:none">🔍 View Issues</button>
+              <button class="btn-g btn-sm" id="cat-connect-btn" onclick="doCatMgmtConnect()" disabled style="opacity:.4;cursor:not-allowed">&#128279; Connect to WhatsApp</button>
+              <button class="btn-g btn-sm" id="cat-disconnect-btn" onclick="doCatMgmtDisconnect()" disabled style="opacity:.4;cursor:not-allowed;color:#dc2626;border-color:#dc2626">&#9939; Disconnect</button>
+              <button class="btn-g btn-sm" id="cat-delete-btn" onclick="doCatMgmtDelete()" disabled style="opacity:.4;cursor:not-allowed;color:#dc2626;border-color:#dc2626">&#128465; Delete Catalog</button>
+              <button class="btn-g btn-sm" id="cat-diagnostics-btn" onclick="loadCatalogDiagnostics()" disabled style="opacity:.4;cursor:not-allowed">&#128269; View Issues</button>
+              <button class="btn-g btn-sm" id="cat-sync-btn" onclick="doCatalogSync()" disabled style="opacity:.4;cursor:not-allowed">&#128260; Sync Now</button>
             </div>
+
+            <!-- Section C: Catalog List (loads async) -->
+            <div id="cat-mgmt-list" style="margin-bottom:.8rem"></div>
 
             <div id="cat-diagnostics-area" style="display:none;margin-bottom:.8rem"></div>
 
-            <!-- Catalog selector (for connect) -->
+            <!-- Inline forms (shown on button click) -->
             <div id="cat-mgmt-selector" style="display:none;margin-bottom:.8rem">
               <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:.3rem">Select catalog to connect:</label>
               <div style="display:flex;gap:.5rem;align-items:center">
@@ -1251,8 +1253,6 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
                 <button class="btn-g btn-sm" onclick="document.getElementById('cat-mgmt-selector').style.display='none'">Cancel</button>
               </div>
             </div>
-
-            <!-- Create form -->
             <div id="cat-mgmt-create-form" style="display:none;margin-bottom:.8rem">
               <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:.3rem">Catalog name:</label>
               <div style="display:flex;gap:.5rem;align-items:center">
@@ -1262,7 +1262,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               </div>
             </div>
 
-            <!-- Catalog settings (editable name, details) — shown when connected -->
+            <!-- Catalog settings (name edit + details) -->
             <div id="cat-mgmt-settings" style="display:none;margin-bottom:.8rem;background:var(--ink4,#f9fafb);border:1px solid var(--rim);border-radius:8px;padding:.8rem">
               <div style="font-size:.82rem;font-weight:600;margin-bottom:.5rem">Catalog Settings</div>
               <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem">
@@ -1273,9 +1273,9 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               <div id="cat-settings-details" style="font-size:.77rem;color:var(--dim)"></div>
             </div>
 
-            <!-- Type-to-confirm delete modal (inline) -->
+            <!-- Delete confirmation -->
             <div id="cat-mgmt-delete-confirm" style="display:none;margin-bottom:.8rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.8rem">
-              <div style="font-size:.84rem;font-weight:600;color:#dc2626;margin-bottom:.4rem">⚠️ Delete Catalog Permanently</div>
+              <div style="font-size:.84rem;font-weight:600;color:#dc2626;margin-bottom:.4rem">&#9888;&#65039; Delete Catalog Permanently</div>
               <p style="font-size:.78rem;color:#7f1d1d;margin-bottom:.5rem">This will permanently delete your catalog and all products from WhatsApp. This cannot be undone.</p>
               <label style="font-size:.8rem;display:block;margin-bottom:.3rem">Type the catalog name to confirm:</label>
               <div style="display:flex;gap:.5rem;align-items:center">
