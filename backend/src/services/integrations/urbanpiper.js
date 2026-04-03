@@ -237,4 +237,36 @@ async function updateOrderStatus(integration, orderId, status) {
   }
 }
 
-module.exports = { fetchMenu, pushOrder, updateOrderStatus };
+// ─── WEBHOOK PARSERS ─────────────────────────────────────
+function parseWebhookEvent(payload) {
+  try {
+    const eventType = (payload.event_type || payload.type || '').toLowerCase();
+    const outletId = payload.store_id || payload.outlet_id || payload.data?.store_id || null;
+    if (eventType.includes('stock') || eventType.includes('item.stock')) {
+      return { type: 'stock_update', outletId, items: parseStockUpdate(payload).items };
+    }
+    if (eventType.includes('menu')) {
+      return { type: 'menu_update', outletId };
+    }
+    return { type: 'unknown', outletId };
+  } catch (e) {
+    console.warn('[UrbanPiper] parseWebhookEvent failed:', e.message);
+    return { type: 'unknown' };
+  }
+}
+
+function parseStockUpdate(payload) {
+  try {
+    const rawItems = payload.data?.items || payload.items || [];
+    const items = rawItems.map(i => ({
+      pos_item_id: String(i.ref_id || i.item_ref_id || i.id || ''),
+      is_available: i.current_stock > 0 || i.in_stock === true || i.available === true,
+    }));
+    return { items, outletId: payload.store_id || payload.data?.store_id || null };
+  } catch (e) {
+    console.warn('[UrbanPiper] parseStockUpdate failed:', e.message);
+    return { items: [], outletId: null };
+  }
+}
+
+module.exports = { fetchMenu, pushOrder, updateOrderStatus, parseWebhookEvent, parseStockUpdate };

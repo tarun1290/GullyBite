@@ -549,10 +549,28 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
-  // ── AWAITING_FEEDBACK: capture rating comment ──
+  // ── AWAITING_FEEDBACK: capture rating comment with keyword detection ──
   if (conv.state === 'AWAITING_FEEDBACK') {
     const session = conv.session_data || {};
-    const comment = text === 'SKIP' ? null : msg.text.body.trim();
+    const rawText = msg.text.body.trim();
+    const comment = text === 'SKIP' ? null : rawText;
+    const baseScore = session.buttonScore || session.foodRating || 3;
+
+    // Detect feedback categories from keywords
+    const lower = (rawText || '').toLowerCase();
+    const feedbackTags = [];
+    let tasteScore = 3, packingScore = 3, deliveryScore = 3, valueScore = 3;
+
+    if (/taste|food|flavour|flavor|bland|cold|stale|spicy|raw/.test(lower)) { feedbackTags.push('taste'); tasteScore = baseScore; }
+    if (/pack|packing|packaging|leak|spill|messy|container/.test(lower)) { feedbackTags.push('packing'); packingScore = baseScore; }
+    if (/deliver|delivery|late|slow|rider|driver|wrong.address/.test(lower)) { feedbackTags.push('delivery'); deliveryScore = baseScore; }
+    if (/price|value|expensive|costly|overpriced|worth/.test(lower)) { feedbackTags.push('value'); valueScore = baseScore; }
+
+    // If no specific keyword detected, apply baseScore to all
+    if (!feedbackTags.length) { tasteScore = baseScore; packingScore = baseScore; deliveryScore = baseScore; valueScore = baseScore; }
+
+    const overall = Math.round(((tasteScore + packingScore + deliveryScore + valueScore) / 4) * 10) / 10;
+
     try {
       const order = await col('orders').findOne({ _id: session.ratingOrderId });
       await col('order_ratings').insertOne({
@@ -561,17 +579,23 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
         customer_id: customer.id,
         branch_id: order?.branch_id || null,
         restaurant_id: order?.restaurant_id || null,
-        food_rating: session.foodRating,
-        delivery_rating: session.foodRating,
+        taste_rating: tasteScore,
+        packing_rating: packingScore,
+        delivery_rating: deliveryScore,
+        value_rating: valueScore,
+        food_rating: tasteScore,
+        overall_rating: overall,
         comment,
+        feedback_tags: feedbackTags,
+        source: 'whatsapp_text',
         created_at: new Date(),
       });
+      logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.feedback_submitted', category: 'customer', description: `Rating submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: order?.restaurant_id || null, severity: 'info' });
     } catch (e) {
       if (e.code !== 11000) console.error('[Rating] save error:', e.message);
     }
-    logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.feedback_submitted', category: 'customer', description: `Rating submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: order?.restaurant_id || null, severity: 'info' });
     await orderSvc.setState(conv.id, 'GREETING', {});
-    await wa.sendText(pid, token, to, comment ? 'Thanks for your feedback! We\'ll work on improving. 🙏' : 'No worries — thanks for rating! 🎉');
+    await wa.sendText(pid, token, to, comment ? 'Thanks for your feedback! We\'ll work on improving. \uD83D\uDE4F' : 'No worries \u2014 thanks for rating! \uD83C\uDF89');
     return;
   }
 
@@ -1697,13 +1721,19 @@ const handleRatingReply = async (orderId, score, customer, conv, waAccount) => {
   }
 
   if (score <= 3) {
-    // Ask for feedback comment
-    await orderSvc.setState(conv.id, 'AWAITING_FEEDBACK', { ratingOrderId: orderId, foodRating: score });
+    // Ask for specific feedback
+    await orderSvc.setState(conv.id, 'AWAITING_FEEDBACK', { ratingOrderId: orderId, buttonScore: score });
     await wa.sendText(pid, token, to,
-      'Sorry to hear that. 😔 Could you tell us what went wrong?\n\nType your feedback or *SKIP* to continue.'
+      'Sorry to hear that. \uD83D\uDE14 What could we improve?\n\n' +
+      'Reply with any of these:\n' +
+      '\u2022 *taste* \u2014 if the food didn\'t taste good\n' +
+      '\u2022 *packing* \u2014 if packaging was poor\n' +
+      '\u2022 *delivery* \u2014 if delivery was late or bad\n' +
+      '\u2022 *price* \u2014 if it wasn\'t value for money\n\n' +
+      'Or just type your feedback in your own words.'
     );
   } else {
-    // Save immediately with no comment
+    // High score — save with all categories = score
     const order = await col('orders').findOne({ _id: orderId });
     try {
       await col('order_ratings').insertOne({
@@ -1712,9 +1742,15 @@ const handleRatingReply = async (orderId, score, customer, conv, waAccount) => {
         customer_id: customer.id,
         branch_id: order?.branch_id || null,
         restaurant_id: order?.restaurant_id || null,
-        food_rating: score,
+        taste_rating: score,
+        packing_rating: score,
         delivery_rating: score,
+        value_rating: score,
+        food_rating: score,
+        overall_rating: score,
         comment: null,
+        feedback_tags: [],
+        source: 'whatsapp_button',
         created_at: new Date(),
       });
     } catch (e) {
@@ -1764,9 +1800,9 @@ const sendRatingRequest = async (orderId, pid, token, to) => {
       body: `How was your order #${order.order_number}?\n\nTap a rating below:`,
       footer: 'Your feedback helps improve quality',
       buttons: [
-        { id: `RATE_${orderId}_5`, title: '⭐⭐⭐⭐⭐ Great!' },
-        { id: `RATE_${orderId}_3`, title: '⭐⭐⭐ Average' },
-        { id: `RATE_${orderId}_1`, title: '⭐ Poor' },
+        { id: `RATE_${orderId}_5`, title: '\uD83D\uDE0D Loved it!' },
+        { id: `RATE_${orderId}_3`, title: '\uD83D\uDE10 It was okay' },
+        { id: `RATE_${orderId}_1`, title: '\uD83D\uDE1E Not great' },
       ],
     });
   } catch (e) {
@@ -2272,11 +2308,15 @@ const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
   const orderId = parts.slice(1).join('_');
 
   if (flowType === 'rating' || flowType === 'feedback') {
-    const foodRating     = parseInt(responseData.food_rating) || 0;
-    const deliveryRating = parseInt(responseData.delivery_rating) || foodRating;
+    // Parse all 4 categories + backward compat with old food_rating
+    const tasteRating    = parseInt(responseData.taste_rating || responseData.food_rating) || 0;
+    const packingRating  = parseInt(responseData.packing_rating) || 0;
+    const deliveryRating = parseInt(responseData.delivery_rating) || 0;
+    const valueRating    = parseInt(responseData.value_rating) || 0;
     const comment        = responseData.comment || responseData.feedback || null;
+    const foodRating     = tasteRating; // backward compat
 
-    if (!orderId || !foodRating) {
+    if (!orderId || !tasteRating) {
       await wa.sendText(pid, token, to, 'Thanks for your feedback! 😊');
       return;
     }
@@ -2289,6 +2329,7 @@ const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
     }
 
     const order = await col('orders').findOne({ _id: orderId });
+    const overall = Math.round(((tasteRating + packingRating + deliveryRating + valueRating) / 4) * 10) / 10;
     try {
       await col('order_ratings').insertOne({
         _id: newId(),
@@ -2296,9 +2337,14 @@ const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
         customer_id: customer.id,
         branch_id: order?.branch_id || null,
         restaurant_id: order?.restaurant_id || null,
-        food_rating: foodRating,
+        taste_rating: tasteRating,
+        packing_rating: packingRating,
         delivery_rating: deliveryRating,
+        value_rating: valueRating,
+        food_rating: foodRating,
+        overall_rating: overall,
         comment,
+        feedback_tags: [],
         source: 'whatsapp_flow',
         created_at: new Date(),
       });
@@ -2306,7 +2352,7 @@ const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
       if (e.code !== 11000) console.error('[Flow Rating] save error:', e.message);
     }
 
-    const emoji = foodRating >= 4 ? '🎉' : '🙏';
+    const emoji = overall >= 4 ? '🎉' : '🙏';
     await wa.sendText(pid, token, to, `Thank you for rating! ${emoji} Your feedback helps us improve.`);
     await orderSvc.setState(conv.id, 'GREETING', {});
   }

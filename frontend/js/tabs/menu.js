@@ -1433,17 +1433,47 @@ async function doFixCatalog() {
 }
 async function doToggleItem(id, av, name) {
   // Optimistic UI update — dim/undim row immediately
-  const row = document.getElementById('mi-row-' + id);
+  var row = document.getElementById('mi-row-' + id);
   if (row) row.style.opacity = av ? '' : '.55';
+
+  var hasMultipleBranches = (branches || []).length > 1;
+  var applyAllBranches = false;
+
+  // When toggling OFF with multiple branches, check if same dish exists elsewhere
+  if (hasMultipleBranches && !av) {
+    var currentItem = (_menuItems || []).find(function(i) { return i.id === id; });
+    var currentBranch = currentItem ? currentItem.branch_id : null;
+    var sameName = (_menuItems || []).filter(function(i) {
+      return i.id !== id && i.branch_id !== currentBranch && i.name && i.name.toLowerCase() === name.toLowerCase() && i.is_available;
+    });
+    if (sameName.length > 0) {
+      var branchNames = sameName.map(function(i) { var b = (branches || []).find(function(br) { return br.id === i.branch_id; }); return b ? b.name : 'Other branch'; });
+      var uniqueBranches = branchNames.filter(function(v, i, a) { return a.indexOf(v) === i; });
+      applyAllBranches = confirm('"' + name + '" is also available at ' + uniqueBranches.join(', ') + '.\n\nMark it unavailable at ALL branches?');
+    }
+  }
+
   try {
-    await api(`/api/restaurant/menu/${id}/availability`, { method: 'PATCH', body: { available: av } });
-    toast(`"${name}" ${av ? 'back on menu' : 'marked unavailable'} — syncing to WhatsApp...`, 'ok');
-    // Update local cache
-    const mi = (_menuItems || []).find(i => i.id === id);
-    if (mi) mi.is_available = av;
+    if (applyAllBranches) {
+      var r = await api('/api/restaurant/menu/' + id + '/availability-all-branches', { method: 'PATCH', body: { available: av } });
+      toast('"' + name + '" marked unavailable at ' + r.affected_branches + ' branch' + (r.affected_branches > 1 ? 'es' : '') + ' \u2014 syncing to WhatsApp...', 'ok');
+      loadMenu();
+    } else {
+      await api('/api/restaurant/menu/' + id + '/availability', { method: 'PATCH', body: { available: av } });
+      toast('"' + name + '" ' + (av ? 'back on menu' : 'marked unavailable') + ' \u2014 syncing to WhatsApp...', 'ok');
+      var mi = (_menuItems || []).find(function(i) { return i.id === id; });
+      if (mi) mi.is_available = av;
+      // Info toast when toggling ON and same dish is off at other branches
+      if (av && hasMultipleBranches) {
+        var cur = (_menuItems || []).find(function(i) { return i.id === id; });
+        var curBr = cur ? cur.branch_id : null;
+        var sameOff = (_menuItems || []).filter(function(i) { return i.id !== id && i.branch_id !== curBr && i.name && i.name.toLowerCase() === name.toLowerCase() && !i.is_available; });
+        if (sameOff.length > 0) toast('"' + name + '" is still unavailable at ' + sameOff.length + ' other branch' + (sameOff.length > 1 ? 'es' : ''), 'nfo');
+      }
+    }
   } catch (e) {
     // Revert toggle and row opacity on error
-    const cb = document.getElementById('avail-' + id);
+    var cb = document.getElementById('avail-' + id);
     if (cb) cb.checked = !av;
     if (row) row.style.opacity = !av ? '' : '.55';
     toast(e.message, 'err');
@@ -1606,6 +1636,7 @@ const MENU_FIELDS = [
   { key:'image_url',   label:'Image URL',           required:false, aliases:['image_url','image','img','photo','picture','url','photo_url','image_link'] },
   { key:'is_bestseller',label:'Bestseller (true/false)',required:false,aliases:['is_bestseller','bestseller','popular','featured','hot','recommended','best','top'] },
   { key:'size',        label:'Size / Portion',       required:false, aliases:['size','portion','variant','option','variant_value','size_name'] },
+  { key:'branch',     label:'Branch / Outlet',       required:false, aliases:['branch','outlet','location','branch_name','outlet_name','store','store_name'] },
 ];
 const OUTLET_FIELDS = [
   { key:'branch_name', label:'Branch / Outlet Name', required:true,  aliases:['branch_name','name','outlet','outlet_name','location','branch','store','store_name','shop'] },
@@ -1765,16 +1796,28 @@ async function processCsvFile(file) {
       if (_csvMultiBranch) countText += ' · 🏪 Branch column detected — items will be routed automatically';
       if (missing.length) countText += ` · ⚠️ ${missing.length} rows missing name/price will be skipped`;
       document.getElementById('csv-count').textContent = countText;
+      // Update thead to include branch column when multi-branch
+      var headEl = document.getElementById('csv-preview-head');
+      if (headEl) {
+        headEl.innerHTML = _csvMultiBranch
+          ? '<tr><th>#</th><th>\uD83C\uDFEA</th><th>Name</th><th>Category</th><th>Price</th><th>Type</th><th>\u2B50</th></tr>'
+          : '<tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>Type</th><th>\u2B50</th></tr>';
+      }
+      var colSpan = _csvMultiBranch ? 7 : 6;
       document.getElementById('csv-preview-body').innerHTML =
-        csvParsed.slice(0,8).map((r,i) => `<tr>
-          <td style="color:var(--dim)">${i+1}</td>
-          <td>${r.name||'<span style="color:var(--red)">missing</span>'}</td>
-          <td>${r.category||'—'}</td>
-          <td>${r.price?'₹'+r.price:'<span style="color:var(--red)">missing</span>'}</td>
-          <td>${r.food_type||'veg'}</td>
-          <td>${['true','yes','1'].includes((r.is_bestseller||'').toLowerCase())?'⭐':''}</td>
-        </tr>`).join('') +
-        (csvParsed.length>8?`<tr><td colspan="6" style="text-align:center;color:var(--dim);font-size:.75rem">+ ${csvParsed.length-8} more rows…</td></tr>`:'');
+        csvParsed.slice(0,8).map(function(r,i) {
+          var branchCell = _csvMultiBranch ? '<td style="font-size:.75rem;color:var(--wa)">' + (r.branch || r.outlet || r.location || '\u2014') + '</td>' : '';
+          return '<tr>'
+            + '<td style="color:var(--dim)">' + (i+1) + '</td>'
+            + branchCell
+            + '<td>' + (r.name || '<span style="color:var(--red)">missing</span>') + '</td>'
+            + '<td>' + (r.category || '\u2014') + '</td>'
+            + '<td>' + (r.price ? '\u20B9' + r.price : '<span style="color:var(--red)">missing</span>') + '</td>'
+            + '<td>' + (r.food_type || 'veg') + '</td>'
+            + '<td>' + (['true','yes','1'].includes((r.is_bestseller||'').toLowerCase()) ? '\u2B50' : '') + '</td>'
+            + '</tr>';
+        }).join('') +
+        (csvParsed.length > 8 ? '<tr><td colspan="' + colSpan + '" style="text-align:center;color:var(--dim);font-size:.75rem">+ ' + (csvParsed.length - 8) + ' more rows\u2026</td></tr>' : '');
       document.getElementById('csv-preview').style.display = 'block';
     });
   } catch (e) { toast('Could not parse CSV: ' + e.message, 'err'); }
@@ -1829,6 +1872,14 @@ async function doUploadCsv() {
     resetCsv();
     loadMenu();
 
+    // If multi-branch upload, refresh branch list (new branches may have been auto-created)
+    if (_csvMultiBranch) {
+      try {
+        var brData = await api('/api/restaurant/branches');
+        if (brData) { branches = brData; loadBranchSel(); }
+      } catch (_) {}
+    }
+
     // Auto-sync catalog
     const syncEl = document.getElementById('csv-sync-status');
     try {
@@ -1853,16 +1904,20 @@ async function doUploadCsv() {
   finally { btn.disabled = false; btn.innerHTML = '⬆ Upload & Sync'; }
 }
 function doDownloadSample() {
-  const sample = [
-    'id,title,description,availability,condition,price,link,image_link,brand,google_product_category,fb_product_category,quantity_to_sell_on_facebook,sale_price,sale_price_effective_date,item_group_id,gender,color,size,age_group,material,pattern,shipping,shipping_weight,video[0].url,video[0].tag[0],gtin,product_tags[0],product_tags[1],style[0]',
-    ',,Grilled cottage cheese marinated in spices,in stock,new,280.00 INR,,,,Food Beverages & Tobacco > Food Items,Food & Beverages > Prepared Food,,,,,,,,,,,,,,,,Veg,Starters,',
-    ',,Juicy chicken pieces smoky and tender,in stock,new,320.00 INR,,,,Food Beverages & Tobacco > Food Items,Food & Beverages > Prepared Food,,,,TIKKA-CHICKEN,,,,,,,,,,,,Non-Veg,Starters,',
-    ',Chicken Tikka,Boneless pieces,in stock,new,320.00 INR,,,,,,,,,,,,6 Pcs,,,,,,,,,,Non-Veg,Starters,',
-    ',Chicken Tikka,Family size,in stock,new,580.00 INR,,,,,,,,,,,,12 Pcs,,,,,,,,,,Non-Veg,Starters,',
+  var sample = [
+    'name,price,category,branch,food_type,size,description,is_bestseller,image_url',
+    'Chicken Biryani,320,Biryani,Koramangala,non_veg,Full,Aromatic dum biryani with tender chicken,yes,',
+    'Chicken Biryani,180,Biryani,Koramangala,non_veg,Half,Aromatic dum biryani with tender chicken,,',
+    'Paneer Tikka,280,Starters,Koramangala,veg,,Grilled cottage cheese marinated in spices,yes,',
+    'Butter Naan,45,Breads,Koramangala,veg,,Soft and buttery tandoor naan,,',
+    'Masala Chai,40,Beverages,Koramangala,veg,,Fresh brewed spiced tea,,',
+    'Chicken Biryani,350,Biryani,Indiranagar,non_veg,Full,Aromatic dum biryani with tender chicken,yes,',
+    'Chicken Biryani,200,Biryani,Indiranagar,non_veg,Half,Aromatic dum biryani with tender chicken,,',
+    'Paneer Tikka,300,Starters,Indiranagar,veg,,Grilled cottage cheese marinated in spices,,',
   ].join('\n');
-  const a = document.createElement('a');
+  var a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([sample], { type: 'text/csv' }));
-  a.download = 'gullybite-meta-catalog-template.csv';
+  a.download = 'gullybite-menu-sample.csv';
   a.click();
 }
 

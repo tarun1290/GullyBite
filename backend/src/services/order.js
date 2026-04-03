@@ -343,7 +343,7 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
           await sendRatingRequest(orderId, waAcc.phone_number_id, waToken, toId);
         }
       } catch (e) { console.error('[Rating] delayed send error:', e.message); }
-    }, 2 * 60 * 1000);
+    }, 30 * 60 * 1000); // 30 minutes after delivery — gives customer time to eat
   }
 
   // Fire-and-forget POS status sync

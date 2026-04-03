@@ -143,4 +143,35 @@ async function fetchMenu(integration) {
   return { categories, items };
 }
 
-module.exports = { fetchMenu };
+// ─── WEBHOOK PARSERS ─────────────────────────────────────
+function parseWebhookEvent(payload) {
+  try {
+    const eventType = (payload.eventtype || payload.event_type || payload.type || '').toLowerCase();
+    const outletId = payload.restaurantid || payload.restaurant_id || payload.outlet_id || null;
+    if (eventType.includes('stock') || eventType.includes('itemstock')) {
+      return { type: 'stock_update', outletId, items: parseStockUpdate(payload).items };
+    }
+    if (eventType.includes('menu')) {
+      return { type: 'menu_update', outletId };
+    }
+    return { type: 'unknown', outletId };
+  } catch (e) {
+    console.warn('[PetPooja] parseWebhookEvent failed:', e.message);
+    return { type: 'unknown' };
+  }
+}
+
+function parseStockUpdate(payload) {
+  try {
+    const items = (payload.items || payload.data?.items || []).map(i => ({
+      pos_item_id: String(i.itemid || i.item_id || i.id || ''),
+      is_available: i.item_active === '1' || i.status === 'active' || i.in_stock === true || i.active === 1,
+    }));
+    return { items, outletId: payload.restaurantid || payload.restaurant_id || null };
+  } catch (e) {
+    console.warn('[PetPooja] parseStockUpdate failed:', e.message);
+    return { items: [], outletId: null };
+  }
+}
+
+module.exports = { fetchMenu, parseWebhookEvent, parseStockUpdate };

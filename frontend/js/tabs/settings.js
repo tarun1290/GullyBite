@@ -22,12 +22,19 @@ async function loadWA() {
   const list = document.getElementById('wa-list');
   try {
     const accounts = await api('/api/restaurant/whatsapp');
-    if (!accounts?.length) {
+    // Filter out Meta test numbers and sandbox accounts
+    const realAccounts = (accounts || []).filter(a => {
+      const phone = (a.phone_display || a.wa_phone_number || '').replace(/\s/g, '');
+      if (phone.startsWith('+1555') || phone.startsWith('1555') || phone.startsWith('+15550')) return false;
+      if (a.account_mode === 'SANDBOX') return false;
+      return true;
+    });
+    if (!realAccounts.length) {
       list.innerHTML = `<div class="empty"><div class="ei">📱</div><h3>No numbers found</h3><p>Try reconnecting your Meta account</p></div>`;
       return;
     }
     document.getElementById('live-dot').style.display = 'flex';
-    list.innerHTML = accounts.map(a => {
+    list.innerHTML = realAccounts.map(a => {
       const registered = !!a.phone_registered;
       const hasCatalog = !!a.catalog_id;
       const cartOn     = !!a.cart_enabled;
@@ -508,12 +515,30 @@ async function loadProfile() {
       storeBaseEl.textContent = baseUrl || `${location.origin}/store/`;
     }
     if (storeSlugEl && r.store_slug) storeSlugEl.value = r.store_slug;
+    // Set placeholder to a slug version of the restaurant name
+    if (storeSlugEl && !storeSlugEl.value) {
+      const suggestedSlug = (r.business_name || r.brand_name || '').toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-').substring(0, 40);
+      if (suggestedSlug) storeSlugEl.placeholder = suggestedSlug;
+    }
 
     // GST / FSSAI verification badges
     const gstBadge   = document.getElementById('gst-badge');
     const fssaiBadge = document.getElementById('fssai-badge');
     if (gstBadge)   gstBadge.style.display   = r.gst_verified   ? '' : 'none';
     if (fssaiBadge) fssaiBadge.style.display  = r.fssai_verified ? '' : 'none';
+
+    // GST/FSSAI caution — conditional on approval status
+    const gstCaution = document.getElementById('gst-fssai-caution');
+    if (gstCaution) {
+      const isApproved = rest?.approval_status === 'approved';
+      gstCaution.style.display = 'block';
+      if (isApproved) {
+        gstCaution.style.background = '#f0fdf4';
+        gstCaution.style.borderColor = '#bbf7d0';
+        gstCaution.style.color = '#15803d';
+        gstCaution.textContent = '\u2705 Restaurant approved \u2014 GST and FSSAI details verified.';
+      }
+    }
 
     // Notification settings
     const notifyPhonesEl = document.getElementById('p-notify-phones');
@@ -1114,15 +1139,8 @@ async function doCatMgmtSwitchCatalog(newCatId, newCatName) {
   const currentName = _catMgmtData?.catalogs?.find(c => c.id === current)?.name || 'current catalog';
   if (!confirm(`This will disconnect "${currentName}" and connect "${newCatName}" to WhatsApp.\n\nContinue?`)) return;
   try {
-    // Disconnect current if connected
-    if (current) {
-      await api('/api/restaurant/catalog/disconnect-waba', { method: 'POST' }).catch(() => {});
-    }
-    // Connect new one
-    await api('/api/restaurant/catalog/connect-waba', { method: 'POST', body: { catalog_id: newCatId } });
-    // Update active catalog in DB
-    await api('/api/restaurant/catalog', { method: 'PUT', body: { catalog_id: newCatId, catalog_name: newCatName } });
-    toast(`✅ Connected "${newCatName}" to WhatsApp`, 'ok');
+    await api('/api/restaurant/catalog/switch', { method: 'POST', body: { catalog_id: newCatId } });
+    toast(`✅ Switched to "${newCatName}"`, 'ok');
     loadCatalogMgmt(true);
   } catch (e) { toast('❌ ' + (e.message || 'Failed to switch catalog'), 'err'); }
 }

@@ -48,20 +48,63 @@ const ensureMainCatalog = async (restaurantId) => {
   const restaurant = await col('restaurants').findOne({ _id: restaurantId });
   if (!restaurant) throw new Error('Restaurant not found');
 
-  // Already have a main catalog
+  const { token, wa_acc } = await _getAccessToken(restaurantId);
+
+  // Already have a main catalog — verify it still exists on Meta
   if (restaurant.meta_catalog_id) {
-    return { catalogId: restaurant.meta_catalog_id, alreadyExists: true };
+    try {
+      await axios.get(`${GRAPH}/${restaurant.meta_catalog_id}`, {
+        params: { access_token: token, fields: 'id' }, timeout: 8000,
+      });
+      return { catalogId: restaurant.meta_catalog_id, alreadyExists: true };
+    } catch (checkErr) {
+      const code = checkErr.response?.status;
+      if (code === 400 || code === 404) {
+        console.warn(`[Catalog] Stored catalog ${restaurant.meta_catalog_id} no longer exists on Meta (HTTP ${code}) — clearing and rediscovering`);
+        await col('restaurants').updateOne({ _id: restaurantId }, { $unset: { meta_catalog_id: '', meta_catalog_name: '', catalog_created_at: '' } });
+        await col('branches').updateMany({ restaurant_id: restaurantId }, { $unset: { catalog_id: '' } });
+      } else {
+        // Network error or timeout — trust the stored ID
+        console.warn(`[Catalog] Could not verify catalog ${restaurant.meta_catalog_id} (${checkErr.message}) — using stored ID`);
+        return { catalogId: restaurant.meta_catalog_id, alreadyExists: true };
+      }
+    }
   }
 
-  const { token, wa_acc } = await _getAccessToken(restaurantId);
+  // Helper: pick the best catalog from a list (prefer name match, then highest product_count)
+  function _pickBestCatalog(catalogs, businessName) {
+    if (catalogs.length === 1) return catalogs[0];
+    const nameMatch = catalogs.find(c => c.name && businessName && c.name.toLowerCase().includes(businessName.toLowerCase()));
+    if (nameMatch) return nameMatch;
+    const sorted = [...catalogs].sort((a, b) => (b.product_count || 0) - (a.product_count || 0));
+    if (catalogs.length > 1) {
+      console.warn(`[Catalog] WARNING: Multiple catalogs found (${catalogs.map(c => c.id + ':' + c.name).join(', ')}). Picked ${sorted[0].id} based on product_count.`);
+    }
+    return sorted[0];
+  }
+
+  // Helper: validate a catalog ID is accessible before adopting
+  async function _validateCatalog(catId) {
+    try {
+      const check = await axios.get(`${GRAPH}/${catId}`, { params: { access_token: token, fields: 'id,name,product_count' }, timeout: 10000 });
+      console.log(`[Catalog] Validated catalog ${catId}: "${check.data.name}" (${check.data.product_count} products)`);
+      return check.data;
+    } catch (valErr) {
+      console.error(`[Catalog] Chosen catalog ${catId} is not accessible: ${valErr.response?.data?.error?.message || valErr.message}`);
+      return null;
+    }
+  }
 
   // Check WABA-level catalog first
   if (wa_acc?.catalog_id) {
-    await col('restaurants').updateOne({ _id: restaurantId }, {
-      $set: { meta_catalog_id: wa_acc.catalog_id, meta_catalog_name: `${restaurant.business_name} Menu`, catalog_created_at: new Date() }
-    });
-    console.log(`[Catalog] Restaurant "${restaurant.business_name}" inherited WABA catalog ${wa_acc.catalog_id}`);
-    return { catalogId: wa_acc.catalog_id, inherited: true };
+    const valid = await _validateCatalog(wa_acc.catalog_id);
+    if (valid) {
+      await col('restaurants').updateOne({ _id: restaurantId }, {
+        $set: { meta_catalog_id: wa_acc.catalog_id, meta_catalog_name: valid.name || `${restaurant.business_name} Menu`, catalog_created_at: new Date() }
+      });
+      console.log(`[Catalog] Restaurant "${restaurant.business_name}" inherited WABA catalog ${wa_acc.catalog_id}`);
+      return { catalogId: wa_acc.catalog_id, inherited: true };
+    }
   }
 
   initSdk(token);
@@ -70,20 +113,23 @@ const ensureMainCatalog = async (restaurantId) => {
   if (wa_acc?.waba_id) {
     try {
       const existing = await axios.get(`${GRAPH}/${wa_acc.waba_id}/product_catalogs`, {
-        params: { access_token: token, fields: 'id,name' }, timeout: 10000,
+        params: { access_token: token, fields: 'id,name,product_count' }, timeout: 10000,
       });
       const catalogs = existing.data?.data || [];
       if (catalogs.length) {
-        const catalogId = catalogs[0].id;
-        await col('restaurants').updateOne({ _id: restaurantId }, {
-          $set: { meta_catalog_id: catalogId, meta_catalog_name: catalogs[0].name, catalog_created_at: new Date() }
-        });
-        await col('whatsapp_accounts').updateOne(
-          { restaurant_id: restaurantId, is_active: true },
-          { $set: { catalog_id: catalogId } }
-        );
-        console.log(`[Catalog] Inherited existing WABA catalog ${catalogId} for "${restaurant.business_name}"`);
-        return { catalogId, inherited: true };
+        const chosen = _pickBestCatalog(catalogs, restaurant.business_name);
+        const valid = await _validateCatalog(chosen.id);
+        if (valid) {
+          await col('restaurants').updateOne({ _id: restaurantId }, {
+            $set: { meta_catalog_id: chosen.id, meta_catalog_name: valid.name, catalog_created_at: new Date() }
+          });
+          await col('whatsapp_accounts').updateOne(
+            { restaurant_id: restaurantId, is_active: true },
+            { $set: { catalog_id: chosen.id } }
+          );
+          console.log(`[Catalog] Inherited existing WABA catalog ${chosen.id} for "${restaurant.business_name}"`);
+          return { catalogId: chosen.id, inherited: true };
+        }
       }
     } catch (e) {
       console.warn('[Catalog] Could not fetch WABA catalogs:', e.response?.data?.error?.message || e.message);
@@ -111,16 +157,20 @@ const ensureMainCatalog = async (restaurantId) => {
   let catalogId;
   try {
     const biz = new Business(businessId);
-    const bizCatalogs = await biz.getOwnedProductCatalogs(['id', 'name']);
+    const bizCatalogs = await biz.getOwnedProductCatalogs(['id', 'name', 'product_count']);
     if (bizCatalogs.length) {
-      catalogId = bizCatalogs[0].id;
-      console.log(`[Catalog] Found existing business catalog ${catalogId} — using as main catalog`);
+      const chosen = _pickBestCatalog(bizCatalogs, restaurant.business_name);
+      const valid = await _validateCatalog(chosen.id);
+      if (valid) {
+        catalogId = chosen.id;
+        console.log(`[Catalog] Found existing business catalog ${catalogId} — using as main catalog`);
+      }
     }
   } catch (e) {
     console.warn('[Catalog] Could not read business catalogs:', e.message);
   }
 
-  // Create new catalog if none exist
+  // Create new catalog if none exist or none validated
   if (!catalogId) {
     const catalogName = `${restaurant.business_name} Menu`;
     try {
@@ -1610,6 +1660,20 @@ const deleteCatalogSafe = async (catalogId, restaurantId) => {
     }
   }
 
+  // Step 1.5: Delete all feeds attached to this catalog
+  try {
+    const feeds = await listFeeds(catalogId);
+    for (const feed of feeds) {
+      try { await deleteFeed(feed.id); } catch (feedErr) { console.warn(`[Catalog] Pre-delete feed ${feed.id} failed:`, feedErr.message); }
+    }
+    if (feeds.length) {
+      console.log(`[Catalog] Deleted ${feeds.length} feed(s) from catalog ${catalogId} before deletion`);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  } catch (feedListErr) {
+    console.warn('[Catalog] Could not list feeds before delete:', feedListErr.message);
+  }
+
   // Step 2: Delete the catalog
   try {
     await axios.delete(`${GRAPH}/${catalogId}`, {
@@ -1623,7 +1687,7 @@ const deleteCatalogSafe = async (catalogId, restaurantId) => {
   // Step 3: Clean up DB
   await col('restaurants').updateOne(
     { _id: restaurantId },
-    { $unset: { meta_catalog_id: '', meta_catalog_name: '', catalog_created_at: '' } }
+    { $unset: { meta_catalog_id: '', meta_catalog_name: '', catalog_created_at: '', meta_feed_id: '', catalog_feed_url: '', catalog_feed_token: '' } }
   );
   await col('branches').updateMany(
     { restaurant_id: restaurantId },
@@ -1682,6 +1746,63 @@ const getCatalogDiagnostics = async (catalogId) => {
   }
 };
 
+// ─── ATOMIC CATALOG SWITCH ───────────────────────────────
+const switchCatalog = async (restaurantId, newCatalogId) => {
+  const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+  if (!restaurant) throw new Error('Restaurant not found');
+  const wa = await col('whatsapp_accounts').findOne({ restaurant_id: restaurantId, is_active: true });
+  if (!wa?.waba_id) throw new Error('No WhatsApp account connected');
+  const token = _getCatalogToken();
+
+  // 1. Validate new catalog is accessible
+  let newCatalogName;
+  try {
+    const check = await axios.get(`${GRAPH}/${newCatalogId}`, { params: { access_token: token, fields: 'id,name,product_count' }, timeout: 10000 });
+    newCatalogName = check.data.name || 'Catalog';
+    console.log(`[Catalog] switchCatalog: validated new catalog ${newCatalogId} "${newCatalogName}" (${check.data.product_count} products)`);
+  } catch (e) {
+    throw new Error(`New catalog ${newCatalogId} is not accessible: ${e.response?.data?.error?.message || e.message}`);
+  }
+
+  const oldCatalogId = wa.catalog_id || restaurant.meta_catalog_id;
+
+  // 2. Disconnect old catalog from WABA
+  if (oldCatalogId) {
+    try {
+      await axios.delete(`${GRAPH}/${wa.waba_id}/product_catalogs`, { data: { catalog_id: oldCatalogId }, headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+      console.log(`[Catalog] switchCatalog: disconnected old catalog ${oldCatalogId} from WABA`);
+    } catch (_) { /* may already be disconnected */ }
+  }
+
+  // 3. Connect new catalog to WABA
+  try {
+    await axios.post(`${GRAPH}/${wa.waba_id}/product_catalogs`, { catalog_id: newCatalogId }, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+  } catch (connErr) {
+    // Rollback: try to reconnect old catalog
+    if (oldCatalogId) {
+      try { await axios.post(`${GRAPH}/${wa.waba_id}/product_catalogs`, { catalog_id: oldCatalogId }, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }); } catch (_) {}
+    }
+    throw new Error(`Failed to connect new catalog: ${connErr.response?.data?.error?.message || connErr.message}`);
+  }
+
+  // 4. Link to phone number (non-fatal)
+  if (wa.phone_number_id) {
+    try {
+      await axios.post(`${GRAPH}/${wa.phone_number_id}/whatsapp_commerce_settings`, { catalog_id: newCatalogId, is_catalog_visible: true, is_cart_enabled: true }, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+    } catch (phoneErr) {
+      console.warn(`[Catalog] switchCatalog: phone link failed (non-fatal):`, phoneErr.response?.data?.error?.message || phoneErr.message);
+    }
+  }
+
+  // 5. Update MongoDB atomically
+  await col('restaurants').updateOne({ _id: restaurantId }, { $set: { meta_catalog_id: newCatalogId, meta_catalog_name: newCatalogName, updated_at: new Date() } });
+  await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { catalog_id: newCatalogId, catalog_linked: true, cart_enabled: true, catalog_visible: true, updated_at: new Date() } });
+  await col('branches').updateMany({ restaurant_id: restaurantId }, { $set: { catalog_id: newCatalogId, updated_at: new Date() } });
+
+  console.log(`[Catalog] Switched restaurant "${restaurant.business_name}" from catalog ${oldCatalogId} to ${newCatalogId}`);
+  return { success: true, oldCatalogId, newCatalogId, catalogName: newCatalogName };
+};
+
 module.exports = {
   // Main catalog architecture
   ensureMainCatalog,
@@ -1729,4 +1850,6 @@ module.exports = {
   listFeeds,
   // Diagnostics
   getCatalogDiagnostics,
+  // Lifecycle
+  switchCatalog,
 };

@@ -300,7 +300,17 @@ function formatAddressesForFlow(addresses) {
 }
 
 // ─── FEEDBACK/RATING FLOW ────────────────────────────────────
+// NOTE: After changing this JSON, you must either:
+// 1. Delete the old Flow and create a new one (via admin dashboard -> Create Feedback Flow)
+// 2. Or call updateFeedbackFlow(flowId) to update the existing flow on Meta
 function buildFeedbackFlowJson() {
+  const ratingOptions = [
+    { id: '5', title: 'Excellent' },
+    { id: '4', title: 'Great' },
+    { id: '3', title: 'Good' },
+    { id: '2', title: 'Fair' },
+    { id: '1', title: 'Poor' },
+  ];
   return {
     version: '6.2',
     screens: [
@@ -317,35 +327,21 @@ function buildFeedbackFlowJson() {
           type: 'SingleColumnLayout',
           children: [
             { type: 'TextHeading', text: 'How was your order?' },
-            { type: 'TextBody', text: 'Your feedback helps improve the experience for everyone.' },
+            { type: 'TextBody', text: 'Rate each aspect to help us improve' },
+            { type: 'Dropdown', label: 'Taste & Food Quality', name: 'taste_rating', required: true, 'data-source': ratingOptions },
+            { type: 'Dropdown', label: 'Packaging', name: 'packing_rating', required: true, 'data-source': ratingOptions },
+            { type: 'Dropdown', label: 'Delivery Experience', name: 'delivery_rating', required: true, 'data-source': ratingOptions },
+            { type: 'Dropdown', label: 'Value for Money', name: 'value_rating', required: true, 'data-source': ratingOptions },
+            { type: 'TextInput', label: 'Any suggestions? (optional)', 'input-type': 'text', name: 'comment', required: false, 'helper-text': 'Tell us what we can improve' },
             {
-              type: 'Dropdown', label: 'Food Quality', name: 'food_rating', required: true,
-              'data-source': [
-                { id: '5', title: '⭐⭐⭐⭐⭐ Excellent' },
-                { id: '4', title: '⭐⭐⭐⭐ Great' },
-                { id: '3', title: '⭐⭐⭐ Good' },
-                { id: '2', title: '⭐⭐ Fair' },
-                { id: '1', title: '⭐ Poor' },
-              ],
-            },
-            {
-              type: 'Dropdown', label: 'Delivery Experience', name: 'delivery_rating', required: true,
-              'data-source': [
-                { id: '5', title: '⭐⭐⭐⭐⭐ Excellent' },
-                { id: '4', title: '⭐⭐⭐⭐ Great' },
-                { id: '3', title: '⭐⭐⭐ Good' },
-                { id: '2', title: '⭐⭐ Fair' },
-                { id: '1', title: '⭐ Poor' },
-              ],
-            },
-            { type: 'TextInput', label: 'Comments (optional)', 'input-type': 'text', name: 'comment', required: false, 'helper-text': 'Tell us more about your experience' },
-            {
-              type: 'Footer', label: 'Submit Rating',
+              type: 'Footer', label: 'Submit Feedback',
               'on-click-action': {
                 name: 'complete',
                 payload: {
-                  food_rating: '${form.food_rating}',
+                  taste_rating: '${form.taste_rating}',
+                  packing_rating: '${form.packing_rating}',
                   delivery_rating: '${form.delivery_rating}',
+                  value_rating: '${form.value_rating}',
                   comment: '${form.comment}',
                 },
               },
@@ -355,6 +351,14 @@ function buildFeedbackFlowJson() {
       },
     ],
   };
+}
+
+async function updateFeedbackFlow(flowId) {
+  const flowJson = buildFeedbackFlowJson();
+  await updateFlowJson(flowId, flowJson);
+  await publishFlow(flowId);
+  console.log('[Flow] Feedback Flow updated and published:', flowId);
+  return { success: true, flowId };
 }
 
 async function createFeedbackFlow(wabaId) {
@@ -387,4 +391,5 @@ module.exports = {
   formatAddressesForFlow,
   buildFeedbackFlowJson,
   createFeedbackFlow,
+  updateFeedbackFlow,
 };

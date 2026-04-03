@@ -9,19 +9,11 @@ const { col, newId, mapId, mapIds } = require('../config/database');
 const { requireAuth } = require('./auth');
 const { logActivity } = require('../services/activityLog');
 const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
-const petpooja   = require('../services/integrations/petpooja');
-const urbanpiper = require('../services/integrations/urbanpiper');
-const dotpe      = require('../services/integrations/dotpe');
+const { triggerSync, upsertMenu, SERVICES } = require('../services/posSync');
 
 router.use(requireAuth);
 
 const POS_503 = { error: 'POS integrations are currently disabled. Set ENABLE_POS_INTEGRATIONS=true to activate.', feature: 'pos_integrations', status: 'disabled' };
-
-const SERVICES = {
-  petpooja,
-  urbanpiper,
-  dotpe,
-};
 
 // ─── GET /api/restaurant/integrations ─────────────────────────
 // List all integrations for this restaurant (credentials masked)
@@ -185,7 +177,9 @@ router.delete('/:platform', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ─── INTERNAL: run a sync and update DB status ────────────────
+// triggerSync and upsertMenu are now in ../services/posSync.js
+// Kept as comment for reference — the actual functions are imported at the top.
+/* ── MOVED TO posSync.js ──
 async function triggerSync(platform, integrationId, restaurantId, syncMode = 'incremental') {
   await col('restaurant_integrations').updateOne(
     { _id: integrationId },
@@ -434,5 +428,6 @@ async function upsertMenu(branchId, platform, { categories, items }, syncMode) {
     tag_summary: tagSummary,
   };
 }
+── END MOVED TO posSync.js ── */
 
 module.exports = router;

@@ -188,6 +188,7 @@ if (process.env.USE_EC2_WEBHOOKS === 'true') {
   app.use('/webhooks/delivery',  require('./src/webhooks/delivery'));
   app.use('/webhooks/directory', require('./src/webhooks/directory'));
   app.use('/webhooks/checkout',  require('./src/webhooks/checkout'));
+  app.use('/webhooks/pos',      require('./src/webhooks/pos'));
 }
 
 // Admin dashboard
@@ -235,7 +236,8 @@ if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`\n🍔 GullyBite running → http://localhost:${PORT}`);
     console.log(`   WA Webhook  → ${process.env.BASE_URL}/webhooks/whatsapp`);
-    console.log(`   Pay Webhook → ${process.env.BASE_URL}/webhooks/razorpay\n`);
+    console.log(`   Pay Webhook → ${process.env.BASE_URL}/webhooks/razorpay`);
+    console.log(`   POS Webhook → ${process.env.BASE_URL}/webhooks/pos/{platform}\n`);
 
     // Ensure MongoDB indexes after DB connects (fire-and-forget)
     const { connect } = require('./src/config/database');
@@ -249,6 +251,9 @@ if (process.env.NODE_ENV !== 'production') {
 
     const { scheduleCampaignSender } = require('./src/jobs/campaign-sender');
     scheduleCampaignSender();
+
+    const { schedulePosSync } = require('./src/jobs/pos-sync');
+    schedulePosSync();
   });
 }
 

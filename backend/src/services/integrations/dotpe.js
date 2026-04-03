@@ -235,4 +235,36 @@ async function updateOrderStatus(integration, orderId, status) {
   }
 }
 
-module.exports = { fetchMenu, pushOrder, updateOrderStatus };
+// ─── WEBHOOK PARSERS ─────────────────────────────────────
+function parseWebhookEvent(payload) {
+  try {
+    const eventType = (payload.event || payload.event_type || payload.type || '').toLowerCase();
+    const outletId = payload.outlet_id || payload.store_id || payload.data?.outlet_id || null;
+    if (eventType.includes('stock')) {
+      return { type: 'stock_update', outletId, items: parseStockUpdate(payload).items };
+    }
+    if (eventType.includes('menu')) {
+      return { type: 'menu_update', outletId };
+    }
+    return { type: 'unknown', outletId };
+  } catch (e) {
+    console.warn('[DotPe] parseWebhookEvent failed:', e.message);
+    return { type: 'unknown' };
+  }
+}
+
+function parseStockUpdate(payload) {
+  try {
+    const rawItems = payload.payload?.items || payload.items || payload.data?.items || [];
+    const items = rawItems.map(i => ({
+      pos_item_id: String(i.item_id || i.id || ''),
+      is_available: i.in_stock === true || i.available === true || i.status === 'active',
+    }));
+    return { items, outletId: payload.outlet_id || null };
+  } catch (e) {
+    console.warn('[DotPe] parseStockUpdate failed:', e.message);
+    return { items: [], outletId: null };
+  }
+}
+
+module.exports = { fetchMenu, pushOrder, updateOrderStatus, parseWebhookEvent, parseStockUpdate };

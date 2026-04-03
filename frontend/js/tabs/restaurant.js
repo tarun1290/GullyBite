@@ -130,38 +130,48 @@ async function loadRatings(page) {
     const branchFilter = brSel.value;
     const qb = branchFilter ? `&branch_id=${branchFilter}` : '';
 
-    // Load summary
+    // Load summary — 6 category cards
     const sum = await api(`/api/restaurant/ratings/summary?${qb}`);
-    document.getElementById('rt-avg-food').textContent = sum.total ? `${sum.avg_food} ⭐` : '—';
-    document.getElementById('rt-avg-delivery').textContent = sum.total ? `${sum.avg_delivery} ⭐` : '—';
-    document.getElementById('rt-total').textContent = sum.total || '0';
-    const distEl = document.getElementById('rt-dist');
-    if (sum.total) {
-      distEl.innerHTML = [5,4,3,2,1].map(s => {
-        const pct = ((sum.distribution[s] || 0) / sum.total * 100).toFixed(0);
-        const clr = s >= 4 ? 'var(--wa)' : s === 3 ? 'var(--gold)' : 'var(--red)';
-        return `<div style="display:flex;align-items:center;gap:.4rem;margin:.15rem 0"><span style="width:1.5rem">${s}⭐</span><div style="flex:1;height:6px;background:var(--rim);border-radius:3px"><div style="width:${pct}%;height:100%;background:${clr};border-radius:3px"></div></div><span style="width:2rem;text-align:right">${sum.distribution[s]||0}</span></div>`;
-      }).join('');
-    } else { distEl.innerHTML = '<span style="color:var(--mute)">No ratings yet</span>'; }
+    const rClr = (v) => v >= 4 ? 'var(--wa)' : v >= 3 ? 'var(--gold)' : v > 0 ? 'var(--red)' : 'var(--dim)';
+    const el = (id) => document.getElementById(id);
+    if (el('rt-avg-overall')) { el('rt-avg-overall').textContent = sum.total ? sum.avg_overall : '\u2014'; el('rt-avg-overall').style.color = rClr(sum.avg_overall); }
+    if (el('rt-avg-taste')) { el('rt-avg-taste').textContent = sum.total ? sum.avg_taste : '\u2014'; el('rt-avg-taste').style.color = rClr(sum.avg_taste); }
+    if (el('rt-avg-packing')) { el('rt-avg-packing').textContent = sum.total ? sum.avg_packing : '\u2014'; el('rt-avg-packing').style.color = rClr(sum.avg_packing); }
+    if (el('rt-avg-delivery')) { el('rt-avg-delivery').textContent = sum.total ? sum.avg_delivery : '\u2014'; el('rt-avg-delivery').style.color = rClr(sum.avg_delivery); }
+    if (el('rt-avg-value')) { el('rt-avg-value').textContent = sum.total ? sum.avg_value : '\u2014'; el('rt-avg-value').style.color = rClr(sum.avg_value); }
+    if (el('rt-total')) el('rt-total').textContent = sum.total || '0';
+
+    // Recent comments
+    const commentsEl = el('rt-comments');
+    if (commentsEl) {
+      if (sum.recent_comments?.length) {
+        commentsEl.innerHTML = sum.recent_comments.map(c => {
+          const clr = (c.overall_rating || 0) >= 4 ? 'var(--wa)' : (c.overall_rating || 0) >= 3 ? 'var(--gold)' : 'var(--red)';
+          return '<div style="padding:.5rem 0;border-bottom:1px solid var(--rim)"><span style="font-weight:600;color:' + clr + '">' + (c.overall_rating || 0) + '\u2B50</span> <span>' + (c.comment || '') + '</span> <span style="color:var(--dim);font-size:.72rem;float:right">' + new Date(c.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short' }) + '</span></div>';
+        }).join('');
+      } else { commentsEl.innerHTML = '<span style="color:var(--mute)">No comments yet</span>'; }
+    }
 
     // Load paginated ratings
     const data = await api(`/api/restaurant/ratings?page=${_rtPage}&limit=20${qb}`);
     document.getElementById('rt-count').textContent = `${data.total} total`;
     const tb = document.getElementById('rt-tbody');
     if (!data.ratings.length) {
-      tb.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--dim)">No ratings yet. Ratings will appear here after customers rate their orders.</td></tr>';
+      tb.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--dim)">No ratings yet. Ratings will appear here after customers rate their orders.</td></tr>';
     } else {
+      const badge = (v) => { const c = v >= 4 ? 'var(--wa)' : v === 3 ? 'var(--gold)' : v > 0 ? 'var(--red)' : 'var(--dim)'; return '<span style="color:' + c + ';font-weight:600">' + (v || '\u2014') + '</span>'; };
       tb.innerHTML = data.ratings.map(r => {
-        const fc = r.food_rating >= 4 ? 'var(--wa)' : r.food_rating === 3 ? 'var(--gold)' : 'var(--red)';
-        const dc = r.delivery_rating >= 4 ? 'var(--wa)' : r.delivery_rating === 3 ? 'var(--gold)' : 'var(--red)';
         const date = new Date(r.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'2-digit' });
         return `<tr style="border-bottom:1px solid var(--rim)">
           <td style="padding:.5rem">#${r.order_number}</td>
           <td style="padding:.5rem">${r.customer_name}</td>
           <td style="padding:.5rem">${r.branch_name}</td>
-          <td style="padding:.5rem;text-align:center"><span style="color:${fc};font-weight:600">${r.food_rating}⭐</span></td>
-          <td style="padding:.5rem;text-align:center"><span style="color:${dc};font-weight:600">${r.delivery_rating}⭐</span></td>
-          <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(r.comment||'').replace(/"/g,'&quot;')}">${r.comment || '<span style="color:var(--mute)">—</span>'}</td>
+          <td style="padding:.5rem;text-align:center">${badge(r.taste_rating)}</td>
+          <td style="padding:.5rem;text-align:center">${badge(r.packing_rating)}</td>
+          <td style="padding:.5rem;text-align:center">${badge(r.delivery_rating)}</td>
+          <td style="padding:.5rem;text-align:center">${badge(r.value_rating)}</td>
+          <td style="padding:.5rem;text-align:center">${badge(r.overall_rating)}</td>
+          <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(r.comment||'').replace(/"/g,'&quot;')}">${r.comment || '<span style="color:var(--mute)">\u2014</span>'}</td>
           <td style="padding:.5rem;color:var(--dim)">${date}</td>
         </tr>`;
       }).join('');

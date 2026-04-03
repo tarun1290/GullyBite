@@ -830,22 +830,59 @@ router.get('/ratings/stats', async (req, res) => {
     const total = allRatings.length;
 
     if (!total) {
-      return res.json({ avg_food: 0, avg_delivery: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } });
+      return res.json({ avg_taste: 0, avg_packing: 0, avg_delivery: 0, avg_value: 0, avg_overall: 0, avg_food: 0, total: 0, distribution: {}, restaurant_breakdown: [], problem_areas: [], recent_negative: [] });
     }
 
-    const sumFood     = allRatings.reduce((s, r) => s + (r.food_rating || 0), 0);
-    const sumDelivery = allRatings.reduce((s, r) => s + (r.delivery_rating || 0), 0);
+    const avg = (field) => +(allRatings.reduce((s, r) => s + (r[field] || 0), 0) / total).toFixed(1);
     const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     for (const r of allRatings) {
-      const star = Math.max(1, Math.min(5, r.food_rating || 3));
+      const star = Math.max(1, Math.min(5, Math.round(r.overall_rating || r.food_rating || 3)));
       distribution[star] = (distribution[star] || 0) + 1;
     }
 
+    // Per-restaurant breakdown
+    const byRest = {};
+    for (const r of allRatings) {
+      const rid = r.restaurant_id || 'unknown';
+      if (!byRest[rid]) byRest[rid] = { ratings: [], restaurant_id: rid };
+      byRest[rid].ratings.push(r);
+    }
+    const restaurants = await col('restaurants').find({}, { projection: { business_name: 1 } }).toArray();
+    const restNames = {};
+    for (const r of restaurants) restNames[String(r._id)] = r.business_name;
+
+    const restaurant_breakdown = Object.values(byRest).map(g => {
+      const cnt = g.ratings.length;
+      const ra = (f) => +(g.ratings.reduce((s, r) => s + (r[f] || 0), 0) / cnt).toFixed(1);
+      return {
+        restaurant_id: g.restaurant_id, restaurant_name: restNames[g.restaurant_id] || 'Unknown',
+        avg_overall: ra('overall_rating'), avg_taste: ra('taste_rating'), avg_packing: ra('packing_rating'),
+        avg_delivery: ra('delivery_rating'), avg_value: ra('value_rating'), total_reviews: cnt,
+      };
+    }).sort((a, b) => a.avg_overall - b.avg_overall);
+
+    // Problem areas (categories < 3.0)
+    const categories = ['taste_rating', 'packing_rating', 'delivery_rating', 'value_rating'];
+    const catLabels = { taste_rating: 'Taste', packing_rating: 'Packing', delivery_rating: 'Delivery', value_rating: 'Value' };
+    const problem_areas = categories
+      .map(c => ({ category: catLabels[c], avg: avg(c) }))
+      .filter(c => c.avg > 0 && c.avg < 3.0);
+
+    // Recent negative feedback
+    const recent_negative = allRatings
+      .filter(r => (r.overall_rating || r.food_rating || 5) < 3 && r.comment)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 10)
+      .map(r => ({
+        order_id: r.order_id, restaurant_name: restNames[r.restaurant_id] || '',
+        overall_rating: r.overall_rating || r.food_rating, comment: r.comment, created_at: r.created_at,
+      }));
+
     res.json({
-      avg_food:     +(sumFood / total).toFixed(1),
-      avg_delivery: +(sumDelivery / total).toFixed(1),
-      total,
-      distribution,
+      avg_taste: avg('taste_rating'), avg_packing: avg('packing_rating'),
+      avg_delivery: avg('delivery_rating'), avg_value: avg('value_rating'),
+      avg_overall: avg('overall_rating'), avg_food: avg('food_rating'),
+      total, distribution, restaurant_breakdown, problem_areas, recent_negative,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

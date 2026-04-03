@@ -1369,8 +1369,16 @@ router.patch('/menu/bulk-availability', requirePermission('manage_menu'), async 
     });
 
     // Fetch updated items for Meta sync payload
-    const items = await col('menu_items').find(filter, { projection: { retailer_id: 1, is_available: 1 } }).toArray();
+    const items = await col('menu_items').find(filter, { projection: { retailer_id: 1, is_available: 1, branch_id: 1 } }).toArray();
     const syncItems = items.filter(i => i.retailer_id).map(i => ({ retailer_id: i.retailer_id, is_available: i.is_available }));
+
+    // Clear MPM cache for affected branches
+    if (branch_id) {
+      memcache.del(`branch:${branch_id}:menu`);
+    } else {
+      const affectedBranches = [...new Set(items.map(i => i.branch_id).filter(Boolean))];
+      affectedBranches.forEach(bid => memcache.del(`branch:${bid}:menu`));
+    }
 
     res.json({ success: true, updated_count: result.modifiedCount, is_available: !!available, meta_sync: 'queued' });
 
@@ -1404,6 +1412,9 @@ router.patch('/menu/:id/availability', requirePermission('manage_menu'), async (
       { $set: { is_available: available, updated_at: new Date() } }
     );
 
+    // Clear MPM cache so next customer gets fresh menu
+    if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+
     res.json({ success: true, item_id: req.params.id, is_available: available, meta_sync: 'queued' });
 
     // Fire-and-forget: sync to Meta AFTER response is sent
@@ -1411,6 +1422,43 @@ router.patch('/menu/:id/availability', requirePermission('manage_menu'), async (
       .catch(err => console.error('[Catalog] Availability sync failed:', err.message));
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_toggled', category: 'menu', description: `Toggled ${item.name} ${available ? 'available' : 'unavailable'}`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.id, severity: 'info' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/restaurant/menu/:id/availability-all-branches — toggle same dish across ALL branches
+router.patch('/menu/:id/availability-all-branches', requirePermission('manage_menu'), async (req, res) => {
+  try {
+    const { available } = req.body;
+    if (typeof available !== 'boolean') return res.status(400).json({ error: 'available (true/false) required' });
+
+    const item = await col('menu_items').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!item) return res.status(404).json({ error: 'Menu item not found' });
+
+    // Match same dish at all branches by name (case-insensitive) or original_retailer_id
+    const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const matchConditions = [{ name: { $regex: new RegExp('^' + escapeRegex(item.name) + '$', 'i') } }];
+    if (item.original_retailer_id) matchConditions.push({ original_retailer_id: item.original_retailer_id });
+    const matchQuery = { restaurant_id: req.restaurantId, $or: matchConditions };
+
+    const result = await col('menu_items').updateMany(matchQuery, {
+      $set: { is_available: available, updated_at: new Date(), catalog_sync_status: 'pending' },
+    });
+
+    // Cache invalidation for all affected branches
+    const affectedItems = await col('menu_items').find(matchQuery, { projection: { branch_id: 1, retailer_id: 1, is_available: 1 } }).toArray();
+    const affectedBranchIds = [...new Set(affectedItems.map(i => i.branch_id).filter(Boolean))];
+    affectedBranchIds.forEach(bid => memcache.del(`branch:${bid}:menu`));
+
+    res.json({ success: true, updated_count: result.modifiedCount, affected_branches: affectedBranchIds.length, is_available: available, meta_sync: 'queued' });
+
+    // Fire-and-forget: sync to Meta
+    const syncItems = affectedItems.filter(i => i.retailer_id).map(i => ({ retailer_id: i.retailer_id, is_available: i.is_available }));
+    if (syncItems.length) {
+      catalog.syncBulkAvailability(req.restaurantId, syncItems)
+        .catch(err => console.error('[Menu] Cross-branch availability sync failed:', err.message));
+    }
+
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_all_branches', category: 'menu', description: `Toggled "${item.name}" ${available ? 'available' : 'unavailable'} at ${affectedBranchIds.length} branches (${result.modifiedCount} items)`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.id, severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1564,6 +1612,11 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
         if (row['product_tags[0]'] || row.product_tag_0) csvTags.push(row['product_tags[0]'] || row.product_tag_0);
         if (row['product_tags[1]'] || row.product_tag_1) csvTags.push(row['product_tags[1]'] || row.product_tag_1);
         if (row.product_tags && Array.isArray(row.product_tags)) csvTags.push(...row.product_tags);
+        // Auto-populate product_tags from simple columns if not explicitly provided
+        if (csvTags.length < 2) {
+          if (!csvTags[0]) { const typeLabel = { veg: 'Veg', non_veg: 'Non-Veg', egg: 'Egg', vegan: 'Vegan' }; csvTags[0] = typeLabel[foodType] || 'Veg'; }
+          if (!csvTags[1] && categoryName) csvTags[1] = categoryName;
+        }
 
         await col('menu_items').updateOne(
           { retailer_id: retailerId },
@@ -1797,6 +1850,11 @@ router.post('/menu/csv', async (req, res) => {
           if (row['product_tags[0]'] || row.product_tag_0) csvTags.push(row['product_tags[0]'] || row.product_tag_0);
           if (row['product_tags[1]'] || row.product_tag_1) csvTags.push(row['product_tags[1]'] || row.product_tag_1);
           if (row.product_tags && Array.isArray(row.product_tags)) csvTags.push(...row.product_tags);
+          // Auto-populate product_tags from simple columns if not explicitly provided
+          if (csvTags.length < 2) {
+            if (!csvTags[0]) { const typeLabel = { veg: 'Veg', non_veg: 'Non-Veg', egg: 'Egg', vegan: 'Vegan' }; csvTags[0] = typeLabel[foodType] || 'Veg'; }
+            if (!csvTags[1] && categoryName) csvTags[1] = categoryName;
+          }
 
           await col('menu_items').updateOne(
             { retailer_id: retailerId },
@@ -2982,6 +3040,15 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
   // Helper: attempt the actual delete with auto-retry on permission error
   async function attemptDelete(retried = false) {
     try {
+      // Step 0: Delete all feeds first
+      try {
+        const feeds = await catalog.listFeeds(catalogId);
+        for (const feed of feeds) {
+          try { await catalog.deleteFeed(feed.id); console.log(`[Catalog] Pre-delete: removed feed ${feed.id}`); } catch (feedErr) { console.warn(`[Catalog] Pre-delete: could not remove feed ${feed.id}:`, feedErr.message); }
+        }
+        if (feeds.length) await new Promise(r => setTimeout(r, 1000));
+      } catch (feedListErr) { console.warn('[Catalog] Pre-delete: could not list feeds:', feedListErr.message); }
+
       // Step 1: Unlink from WABA first (if linked)
       if (wa?.waba_id) {
         try {
@@ -3032,7 +3099,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
     if (restaurant?.meta_catalog_id === catalogId) {
       await col('restaurants').updateOne(
         { _id: req.restaurantId },
-        { $set: { meta_catalog_id: null, meta_catalog_name: null, meta_available_catalogs: [], catalog_fetched_at: null, updated_at: new Date() } }
+        { $set: { meta_catalog_id: null, meta_catalog_name: null, meta_available_catalogs: [], catalog_fetched_at: null, meta_feed_id: null, catalog_feed_url: null, catalog_feed_token: null, updated_at: new Date() } }
       );
       await col('whatsapp_accounts').updateMany(
         { restaurant_id: req.restaurantId },
@@ -3159,6 +3226,19 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
       ? 'Could not get admin access to this catalog. Please go to Meta Business Suite → Commerce Manager → Catalog Settings and ensure your Business account has admin access, then try again.'
       : (metaErr?.message || e.message);
     res.status(500).json({ error: userMsg });
+  }
+});
+
+// POST /api/restaurant/catalog/switch — atomic catalog switch (disconnect old + connect new)
+router.post('/catalog/switch', requireApproved, async (req, res) => {
+  const { catalog_id } = req.body;
+  if (!catalog_id) return res.status(400).json({ error: 'catalog_id is required' });
+  try {
+    const result = await catalog.switchCatalog(req.restaurantId, catalog_id);
+    res.json(result);
+  } catch (e) {
+    console.error('[Catalog] Switch failed:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -4901,9 +4981,15 @@ router.get('/ratings', requireApproved, async (req, res) => {
       order_number:   orderMap[r.order_id] || r.order_id,
       customer_name:  custMap[r.customer_id]?.name || 'Unknown',
       branch_name:    branchMap[r.branch_id] || '',
-      food_rating:    r.food_rating,
-      delivery_rating:r.delivery_rating,
+      taste_rating:   r.taste_rating || r.food_rating || 0,
+      packing_rating: r.packing_rating || 0,
+      delivery_rating:r.delivery_rating || 0,
+      value_rating:   r.value_rating || 0,
+      food_rating:    r.food_rating || 0,
+      overall_rating: r.overall_rating || r.food_rating || 0,
       comment:        r.comment,
+      feedback_tags:  r.feedback_tags || [],
+      source:         r.source || 'unknown',
       created_at:     r.created_at,
     }));
 
@@ -4926,22 +5012,33 @@ router.get('/ratings/summary', requireApproved, async (req, res) => {
     const total = allRatings.length;
 
     if (!total) {
-      return res.json({ avg_food: 0, avg_delivery: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } });
+      return res.json({ avg_taste: 0, avg_packing: 0, avg_delivery: 0, avg_value: 0, avg_overall: 0, avg_food: 0, total: 0, distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, recent_comments: [] });
     }
 
-    const sumFood     = allRatings.reduce((s, r) => s + (r.food_rating || 0), 0);
-    const sumDelivery = allRatings.reduce((s, r) => s + (r.delivery_rating || 0), 0);
+    const avg = (field) => +(allRatings.reduce((s, r) => s + (r[field] || 0), 0) / total).toFixed(1);
     const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     for (const r of allRatings) {
-      const star = Math.max(1, Math.min(5, r.food_rating || 3));
+      const star = Math.max(1, Math.min(5, Math.round(r.overall_rating || r.food_rating || 3)));
       distribution[star] = (distribution[star] || 0) + 1;
     }
 
+    // Recent comments (non-null, last 5)
+    const recent_comments = allRatings
+      .filter(r => r.comment)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 5)
+      .map(r => ({ comment: r.comment, overall_rating: r.overall_rating || r.food_rating || 0, created_at: r.created_at }));
+
     res.json({
-      avg_food:     +(sumFood / total).toFixed(1),
-      avg_delivery: +(sumDelivery / total).toFixed(1),
+      avg_taste:    avg('taste_rating'),
+      avg_packing:  avg('packing_rating'),
+      avg_delivery: avg('delivery_rating'),
+      avg_value:    avg('value_rating'),
+      avg_overall:  avg('overall_rating'),
+      avg_food:     avg('food_rating'), // backward compat
       total,
       distribution,
+      recent_comments,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

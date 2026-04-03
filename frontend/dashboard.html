@@ -893,9 +893,25 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
         </div>
 
+      </div>
+
+      <!-- ── MENU ────────────────────────────────── -->
+      <div class="tab" id="tab-menu">
+        <!-- Branch tabs (multi-branch) or hidden (single-branch) -->
+        <div id="branch-tabs" style="display:none;margin-bottom:1rem;overflow-x:auto;white-space:nowrap">
+          <div style="display:inline-flex;gap:.3rem;padding:.2rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px"></div>
+        </div>
+        <!-- Branch summary card (shown when specific branch selected) -->
+        <div id="branch-summary" style="display:none;margin-bottom:1rem;padding:.6rem .9rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;font-size:.82rem;display:none">
+          <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap">
+            <span id="bs-name" style="font-weight:600"></span>
+            <span id="bs-count" style="color:var(--dim)"></span>
+            <span id="bs-addr" style="color:var(--dim)"></span>
+            <span id="bs-status"></span>
+          </div>
+        </div>
         <!-- Upload section — hidden by default, shown via "+ Add → Upload File" -->
         <div id="menu-upload-section" style="display:none">
-        <!-- Menu CSV Bulk Upload -->
         <div class="card" style="margin-top:1.3rem">
           <div class="ch">
             <h3>📤 Bulk Upload Menu Items</h3>
@@ -934,7 +950,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               </div>
               <div class="tbl" style="margin-top:.65rem;max-height:230px;overflow-y:auto">
                 <table>
-                  <thead><tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>Type</th><th>⭐</th></tr></thead>
+                  <thead id="csv-preview-head"><tr><th>#</th><th>Name</th><th>Category</th><th>Price</th><th>Type</th><th>⭐</th></tr></thead>
                   <tbody id="csv-preview-body"></tbody>
                 </table>
               </div>
@@ -943,23 +959,6 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           </div>
         </div>
         </div><!-- end menu-upload-section -->
-      </div>
-
-      <!-- ── MENU ────────────────────────────────── -->
-      <div class="tab" id="tab-menu">
-        <!-- Branch tabs (multi-branch) or hidden (single-branch) -->
-        <div id="branch-tabs" style="display:none;margin-bottom:1rem;overflow-x:auto;white-space:nowrap">
-          <div style="display:inline-flex;gap:.3rem;padding:.2rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px"></div>
-        </div>
-        <!-- Branch summary card (shown when specific branch selected) -->
-        <div id="branch-summary" style="display:none;margin-bottom:1rem;padding:.6rem .9rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;font-size:.82rem;display:none">
-          <div style="display:flex;gap:1.5rem;align-items:center;flex-wrap:wrap">
-            <span id="bs-name" style="font-weight:600"></span>
-            <span id="bs-count" style="color:var(--dim)"></span>
-            <span id="bs-addr" style="color:var(--dim)"></span>
-            <span id="bs-status"></span>
-          </div>
-        </div>
         <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1.3rem;flex-wrap:wrap;justify-content:space-between">
           <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap">
             <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto;display:none">
@@ -1624,23 +1623,31 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
 
       <!-- ── RATINGS ─────────────────────────────── -->
       <div class="tab" id="tab-ratings">
-        <!-- Summary cards -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem">
+        <!-- Summary cards — 6 categories -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin-bottom:1.5rem">
           <div class="card" style="text-align:center;padding:1.2rem">
-            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Avg Food Rating</div>
-            <div id="rt-avg-food" style="font-size:2rem;font-weight:700;color:var(--gold)">—</div>
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Overall Rating</div>
+            <div id="rt-avg-overall" style="font-size:2.2rem;font-weight:700;color:var(--acc)">—</div>
           </div>
           <div class="card" style="text-align:center;padding:1.2rem">
-            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Avg Delivery Rating</div>
-            <div id="rt-avg-delivery" style="font-size:2rem;font-weight:700;color:var(--blue)">—</div>
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Taste</div>
+            <div id="rt-avg-taste" style="font-size:1.8rem;font-weight:700;color:var(--gold)">—</div>
+          </div>
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Packaging</div>
+            <div id="rt-avg-packing" style="font-size:1.8rem;font-weight:700;color:#d97706">—</div>
+          </div>
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Delivery</div>
+            <div id="rt-avg-delivery" style="font-size:1.8rem;font-weight:700;color:#3b82f6">—</div>
+          </div>
+          <div class="card" style="text-align:center;padding:1.2rem">
+            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Value for Money</div>
+            <div id="rt-avg-value" style="font-size:1.8rem;font-weight:700;color:#8b5cf6">—</div>
           </div>
           <div class="card" style="text-align:center;padding:1.2rem">
             <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Total Reviews</div>
-            <div id="rt-total" style="font-size:2rem;font-weight:700;color:var(--acc)">—</div>
-          </div>
-          <div class="card" style="text-align:center;padding:1.2rem">
-            <div style="font-size:.78rem;color:var(--dim);margin-bottom:.3rem">Rating Distribution</div>
-            <div id="rt-dist" style="font-size:.75rem;text-align:left"></div>
+            <div id="rt-total" style="font-size:1.8rem;font-weight:700;color:var(--acc)">—</div>
           </div>
         </div>
         <!-- Branch filter -->
@@ -1659,15 +1666,23 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
                 <th style="text-align:left;padding:.5rem">Order</th>
                 <th style="text-align:left;padding:.5rem">Customer</th>
                 <th style="text-align:left;padding:.5rem">Branch</th>
-                <th style="text-align:center;padding:.5rem">Food</th>
+                <th style="text-align:center;padding:.5rem">Taste</th>
+                <th style="text-align:center;padding:.5rem">Packing</th>
                 <th style="text-align:center;padding:.5rem">Delivery</th>
+                <th style="text-align:center;padding:.5rem">Value</th>
+                <th style="text-align:center;padding:.5rem">Overall</th>
                 <th style="text-align:left;padding:.5rem">Comment</th>
                 <th style="text-align:left;padding:.5rem">Date</th>
               </tr></thead>
-              <tbody id="rt-tbody"><tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--dim)">Loading…</td></tr></tbody>
+              <tbody id="rt-tbody"><tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--dim)">Loading…</td></tr></tbody>
             </table>
           </div>
           <div id="rt-pager" style="display:flex;justify-content:center;gap:.5rem;margin-top:1rem"></div>
+        </div>
+        <!-- Recent comments -->
+        <div class="card" style="margin-top:1rem">
+          <div class="ch"><h3>Recent Comments</h3></div>
+          <div id="rt-comments" class="cb" style="font-size:.82rem;color:var(--dim)">Loading...</div>
         </div>
       </div>
 
@@ -2053,8 +2068,14 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               </div>
               <div class="fg span2"><label>Logo URL</label><input id="p-logo" placeholder="https://example.com/logo.png"></div>
             </div>
-            <hr class="dv">
-            <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Legal &amp; Compliance <span style="font-weight:400;font-size:.75rem">(submitted to admin for verification)</span></p>
+            <button class="btn-p" style="margin-top:1rem" onclick="doSaveProfile()">Save Changes</button>
+          </div>
+        </div>
+
+        <!-- Legal & Compliance -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>Legal &amp; Compliance</h3></div>
+          <div class="cb">
             <div class="fgrid">
               <div class="fg">
                 <label style="display:flex;align-items:center;gap:.4rem">GST Number <span id="gst-badge" style="display:none;font-size:.67rem;font-weight:700;padding:.15rem .5rem;border-radius:99px;background:#dcfce7;color:#15803d">✓ Verified</span></label>
@@ -2066,27 +2087,33 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               </div>
               <div class="fg"><label>FSSAI Expiry Date</label><input id="p-fssai-exp" type="date"></div>
             </div>
-            <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.6rem .9rem;margin-top:.7rem;font-size:.75rem;color:#92400e">
+            <div id="gst-fssai-caution" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.6rem .9rem;margin-top:.7rem;font-size:.75rem;color:#92400e">
               GST and FSSAI details are manually verified by the GullyBite team. You can still use the dashboard while verification is pending.
             </div>
-            <hr class="dv" style="margin-top:1rem">
+            <button class="btn-p" style="margin-top:1rem" onclick="doSaveProfile()">Save Changes</button>
+          </div>
+        </div>
+
+        <!-- Store URL & Bank Account -->
+        <div class="card" style="margin-bottom:1.2rem">
+          <div class="ch"><h3>Store URL &amp; Bank Account</h3></div>
+          <div class="cb">
             <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.5rem">Your Store URL</p>
             <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
               <span style="font-size:.8rem;color:var(--dim);font-family:monospace;white-space:nowrap" id="p-store-base"></span>
-              <input id="p-store-slug" style="flex:1;background:var(--ink4);border:1px solid var(--rim);border-radius:7px;padding:.38rem .7rem;font-size:.8rem;color:var(--tx);outline:none;font-family:monospace" placeholder="your-store-slug">
+              <input id="p-store-slug" style="flex:1;background:var(--ink4);border:1px solid var(--rim);border-radius:7px;padding:.38rem .7rem;font-size:.8rem;color:var(--tx);outline:none;font-family:monospace" placeholder="restaurant-name">
               <button onclick="doUpdateSlug()" class="btn-g btn-sm" style="white-space:nowrap">Save</button>
               <button onclick="copyDashStoreUrl()" style="background:var(--wa);color:#fff;border:none;border-radius:7px;padding:.38rem .85rem;font-size:.77rem;font-weight:600;cursor:pointer;white-space:nowrap">Copy</button>
             </div>
             <input id="p-store-url" type="hidden">
-            <p style="font-size:.72rem;color:var(--dim)">Editable slug — only lowercase letters, numbers, and hyphens. Use this URL as your Privacy Policy &amp; Website URL in Meta Business Manager.</p>
-            <hr class="dv">
+            <p style="font-size:.72rem;color:var(--dim);margin-bottom:1rem">Editable slug — only lowercase letters, numbers, and hyphens. Use this URL as your Privacy Policy &amp; Website URL in Meta Business Manager.</p>
             <p style="font-size:.84rem;font-weight:600;color:var(--dim);margin-bottom:.85rem">Bank Account <span style="font-weight:400;font-size:.78rem">(for weekly settlements)</span></p>
             <div class="fgrid">
               <div class="fg"><label>Bank Name</label><input id="p-bank" placeholder="HDFC Bank"></div>
               <div class="fg"><label>Account Number</label><input id="p-accno" placeholder="12345678901234"></div>
               <div class="fg"><label>IFSC Code</label><input id="p-ifsc" placeholder="HDFC0001234"></div>
             </div>
-            <button class="btn-p" style="margin-top:1.1rem" onclick="doSaveProfile()">Save Changes</button>
+            <button class="btn-p" style="margin-top:1rem" onclick="doSaveProfile()">Save Changes</button>
           </div>
         </div>
 
@@ -2184,7 +2211,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         <!-- Catalog management is in the WhatsApp section (tab-whatsapp) — single source of truth -->
 
         <!-- Change Password -->
-        <div class="card" style="margin-top:1.2rem">
+        <div class="card" style="margin-bottom:1.2rem">
           <div class="ch"><h3>Change Password</h3></div>
           <div class="cb">
             <div class="fld">
@@ -2204,7 +2231,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
 
         <!-- Delete Account -->
-        <div class="card" style="margin-top:1.2rem;border-color:#fecaca">
+        <div class="card" style="margin-bottom:1.2rem;border-color:var(--rim)">
           <div class="ch" style="background:#fff1f2"><h3 style="color:#dc2626">Delete Account</h3></div>
           <div class="cb">
             <p style="font-size:.84rem;color:var(--dim);margin-bottom:.8rem;line-height:1.65">
@@ -2219,6 +2246,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               </div>
             </div>
             <button class="btn-g" id="delete-account-btn" style="color:#dc2626;border-color:#fecaca" onclick="document.getElementById('delete-confirm-wrap').style.display='block';this.style.display='none'">Delete Account</button>
+            <p style="font-size:.72rem;color:var(--dim);margin-top:.5rem">This permanently deletes your restaurant, menu, and all order history. This cannot be undone.</p>
           </div>
         </div>
 
