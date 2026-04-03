@@ -67,6 +67,98 @@ const upload = multer({
 // requireApproved is applied only to routes that need WhatsApp (order flow, catalog sync)
 router.use(requireAuth);
 
+// ── DIAGNOSTIC — catalog visibility troubleshooter ──────────
+router.get('/catalog-diagnosis', async (req, res) => {
+  const diagnosis = { timestamp: new Date().toISOString(), checks: {} };
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    diagnosis.checks.restaurant = {
+      exists: !!restaurant, meta_catalog_id: restaurant?.meta_catalog_id || null,
+      meta_catalog_name: restaurant?.meta_catalog_name || null, meta_business_id: restaurant?.meta_business_id || null,
+      meta_user_id: restaurant?.meta_user_id || null, approval_status: restaurant?.approval_status || null,
+      whatsapp_connected: restaurant?.whatsapp_connected || null,
+      meta_available_catalogs: restaurant?.meta_available_catalogs?.length || 0,
+      catalog_fetched_at: restaurant?.catalog_fetched_at || null,
+    };
+
+    const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    diagnosis.checks.whatsapp_account = {
+      exists: !!wa_acc, waba_id: wa_acc?.waba_id || null, phone_number_id: wa_acc?.phone_number_id || null,
+      catalog_id: wa_acc?.catalog_id || null, cart_enabled: wa_acc?.cart_enabled || false,
+      phone_display: wa_acc?.phone_display || null,
+    };
+
+    const activeCatalogId = restaurant?.meta_catalog_id || wa_acc?.catalog_id || null;
+    diagnosis.checks.derived = {
+      activeCatalogId, has_waba_id: !!wa_acc?.waba_id, has_meta_user_id: !!restaurant?.meta_user_id,
+      would_live_fetch: !!wa_acc?.waba_id || !!restaurant?.meta_user_id,
+      env_META_BUSINESS_ID: !!process.env.META_BUSINESS_ID,
+      env_META_SYSTEM_USER_TOKEN: !!process.env.META_SYSTEM_USER_TOKEN,
+    };
+
+    try {
+      const tokenInfo = await metaConfig.verifyToken();
+      diagnosis.checks.token = { valid: tokenInfo.valid, type: tokenInfo.type, scopes: tokenInfo.scopes, missingScopes: tokenInfo.missingScopes, unverified: tokenInfo.unverified || false };
+    } catch (e) { diagnosis.checks.token = { valid: false, error: e.message }; }
+
+    if (wa_acc?.waba_id) {
+      try { const wc = await catalog.fetchWabaCatalogs(wa_acc.waba_id); diagnosis.checks.waba_catalogs = { count: wc.length, catalogs: wc.map(c => ({ id: c.id, name: c.name, product_count: c.product_count })) }; }
+      catch (e) { diagnosis.checks.waba_catalogs = { error: e.message }; }
+    } else { diagnosis.checks.waba_catalogs = { skipped: 'no waba_id' }; }
+
+    const bizId = restaurant?.meta_business_id || process.env.META_BUSINESS_ID;
+    if (bizId) {
+      try { const bc = await catalog.fetchBusinessCatalogs(bizId); diagnosis.checks.business_catalogs = { business_id: bizId, count: bc.length, catalogs: bc.map(c => ({ id: c.id, name: c.name, product_count: c.product_count })) }; }
+      catch (e) { diagnosis.checks.business_catalogs = { error: e.message }; }
+    } else { diagnosis.checks.business_catalogs = { skipped: 'no business_id' }; }
+
+    const branches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+    diagnosis.checks.branches = branches.map(b => ({ id: b._id, name: b.name, catalog_id: b.catalog_id || null }));
+
+    const issues = [];
+    if (!restaurant?.meta_catalog_id && !wa_acc?.catalog_id) issues.push('NO_ACTIVE_CATALOG_ID');
+    if (!wa_acc?.waba_id) issues.push('NO_WABA_ID');
+    if (!process.env.META_SYSTEM_USER_TOKEN) issues.push('NO_TOKEN');
+    if (!process.env.META_BUSINESS_ID && !restaurant?.meta_business_id) issues.push('NO_BUSINESS_ID');
+    if (diagnosis.checks.waba_catalogs?.count === 0 && !diagnosis.checks.waba_catalogs?.skipped) issues.push('WABA_EMPTY');
+    if (diagnosis.checks.token?.valid === false) issues.push('TOKEN_INVALID');
+    if (diagnosis.checks.token?.missingScopes?.length) issues.push('MISSING_SCOPES: ' + diagnosis.checks.token.missingScopes.join(', '));
+    diagnosis.issues = issues;
+    diagnosis.issue_count = issues.length;
+
+    res.json(diagnosis);
+  } catch (e) { res.status(500).json({ error: e.message, diagnosis }); }
+});
+
+// POST — auto-fix: link an existing catalog found on WABA/Business
+router.post('/catalog-diagnosis/fix', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (restaurant?.meta_catalog_id) return res.json({ message: 'Catalog ID already set', catalog_id: restaurant.meta_catalog_id });
+
+    // Try WABA catalogs first
+    let found = null;
+    if (wa_acc?.waba_id) {
+      const wc = await catalog.fetchWabaCatalogs(wa_acc.waba_id);
+      if (wc.length) found = wc[0];
+    }
+    // Fallback to business catalogs
+    if (!found) {
+      const bizId = restaurant?.meta_business_id || process.env.META_BUSINESS_ID;
+      if (bizId) { const bc = await catalog.fetchBusinessCatalogs(bizId); if (bc.length) found = bc[0]; }
+    }
+    if (!found) return res.status(404).json({ error: 'No catalogs found on WABA or Business — create one from the dashboard' });
+
+    await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_catalog_id: found.id, meta_catalog_name: found.name, updated_at: new Date() } });
+    if (wa_acc) await col('whatsapp_accounts').updateOne({ _id: wa_acc._id }, { $set: { catalog_id: found.id, updated_at: new Date() } });
+    await col('branches').updateMany({ restaurant_id: req.restaurantId }, { $set: { catalog_id: found.id, updated_at: new Date() } });
+
+    console.log(`[Catalog-Fix] Linked catalog ${found.id} ("${found.name}") to restaurant ${req.restaurantId}`);
+    res.json({ success: true, catalog_id: found.id, catalog_name: found.name });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ═══════════════════════════════════════════════════════════════
 // RESTAURANT PROFILE
 // ═══════════════════════════════════════════════════════════════

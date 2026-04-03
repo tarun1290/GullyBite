@@ -3,6 +3,141 @@
 
 (function() {
 
+// ─── RESTAURANT PROFILE (read-only) ─────────────────────
+async function loadRestaurantProfile() {
+  try {
+    var r = await api('/auth/me');
+    if (!r) return;
+
+    // Helper: render a label-value row
+    function rpRow(label, value, opts) {
+      opts = opts || {};
+      if (!value && !opts.showEmpty) return '';
+      var val = value || '<span style="color:var(--mute);font-style:italic">Not set</span>';
+      var copyBtn = (opts.copyable && value) ? ' <button onclick="navigator.clipboard.writeText(\'' + String(value).replace(/'/g, "\\'") + '\');toast(\'Copied!\',\'ok\')" style="background:none;border:none;cursor:pointer;font-size:.7rem;color:var(--acc);padding:0">\uD83D\uDCCB</button>' : '';
+      var badge = opts.badge || '';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:.45rem 0;border-bottom:1px solid var(--rim,#f0f0f0)">'
+        + '<span style="color:var(--dim);font-size:.78rem;min-width:120px">' + label + '</span>'
+        + '<span style="font-weight:500;text-align:right">' + val + badge + copyBtn + '</span></div>';
+    }
+    var editLink = '<div style="margin-top:.7rem;text-align:right"><button onclick="goTab(\'settings\',null)" style="background:none;border:none;color:var(--acc);font-size:.75rem;cursor:pointer">Edit in Settings \u2192</button></div>';
+
+    // ── Header ──
+    var name = r.business_name || r.brand_name || 'Restaurant';
+    var el = function(id) { return document.getElementById(id); };
+    if (el('rp-avatar')) el('rp-avatar').textContent = name[0].toUpperCase();
+    if (el('rp-name')) el('rp-name').textContent = name;
+    if (el('rp-legal-name')) { el('rp-legal-name').textContent = r.registered_business_name || ''; el('rp-legal-name').style.display = r.registered_business_name ? '' : 'none'; }
+
+    var typeLabels = { both: 'Veg & Non-Veg', veg: 'Pure Veg', non_veg: 'Non-Veg' };
+    if (el('rp-type-badge')) el('rp-type-badge').textContent = typeLabels[r.restaurant_type] || r.restaurant_type || '';
+    if (el('rp-approval-badge')) {
+      var approved = r.approval_status === 'approved';
+      el('rp-approval-badge').textContent = approved ? '\u2705 Approved' : '\u23F3 Pending Approval';
+      el('rp-approval-badge').style.background = approved ? '#dcfce7' : '#fef3c7';
+      el('rp-approval-badge').style.color = approved ? '#15803d' : '#92400e';
+    }
+    if (el('rp-city-badge')) { el('rp-city-badge').textContent = r.city || ''; el('rp-city-badge').style.display = r.city ? '' : 'none'; }
+
+    // ── Business Information ──
+    if (el('rp-business-info')) {
+      el('rp-business-info').innerHTML =
+        rpRow('Brand Name', r.business_name) +
+        rpRow('Owner', r.owner_name) +
+        rpRow('Phone', r.phone, { copyable: true }) +
+        rpRow('Email', r.email, { copyable: true }) +
+        rpRow('City', r.city) +
+        rpRow('Type', typeLabels[r.restaurant_type] || r.restaurant_type || '') +
+        editLink;
+    }
+
+    // ── Legal & Compliance ──
+    if (el('rp-legal-info')) {
+      var gstBadge = r.gst_verified ? ' <span style="font-size:.65rem;padding:.1rem .4rem;border-radius:99px;background:#dcfce7;color:#15803d;font-weight:700">\u2713 Verified</span>' : (r.gst_number ? ' <span style="font-size:.65rem;padding:.1rem .4rem;border-radius:99px;background:#fef3c7;color:#92400e;font-weight:600">Pending</span>' : '');
+      var fssaiBadge = r.fssai_verified ? ' <span style="font-size:.65rem;padding:.1rem .4rem;border-radius:99px;background:#dcfce7;color:#15803d;font-weight:700">\u2713 Verified</span>' : (r.fssai_license ? ' <span style="font-size:.65rem;padding:.1rem .4rem;border-radius:99px;background:#fef3c7;color:#92400e;font-weight:600">Pending</span>' : '');
+      var expiryStr = '';
+      if (r.fssai_expiry) {
+        var exp = new Date(r.fssai_expiry);
+        expiryStr = exp.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+        if (exp < new Date()) expiryStr = '<span style="color:var(--red)">' + expiryStr + ' (EXPIRED)</span>';
+      }
+      var footer = r.approval_status === 'approved'
+        ? '<div style="margin-top:.6rem;padding:.5rem .7rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.78rem;color:#15803d">\u2705 All compliance verified</div>'
+        : '<div style="margin-top:.6rem;padding:.5rem .7rem;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:.78rem;color:#92400e">\u23F3 Verification in progress \u2014 1-2 business days</div>';
+      el('rp-legal-info').innerHTML =
+        rpRow('GST Number', r.gst_number, { copyable: true, badge: gstBadge }) +
+        rpRow('FSSAI License', r.fssai_license, { copyable: true, badge: fssaiBadge }) +
+        rpRow('FSSAI Expiry', expiryStr, { showEmpty: true }) +
+        footer + editLink;
+    }
+
+    // ── Bank Details ──
+    if (el('rp-bank-info')) {
+      if (!r.bank_name && !r.bank_account_number && !r.bank_ifsc) {
+        el('rp-bank-info').innerHTML = '<div style="text-align:center;padding:1rem;color:var(--dim)">No bank details added yet. Add bank details in Settings for weekly settlements.</div>' + editLink;
+      } else {
+        var maskedAcct = r.bank_account_number ? ('\u2022\u2022\u2022\u2022\u2022\u2022' + r.bank_account_number.slice(-4)) : '';
+        el('rp-bank-info').innerHTML =
+          rpRow('Bank Name', r.bank_name) +
+          rpRow('Account Number', maskedAcct) +
+          rpRow('IFSC Code', r.bank_ifsc, { copyable: true }) +
+          editLink;
+      }
+    }
+
+    // ── Store URL ──
+    if (el('rp-store-info')) {
+      if (r.store_url) {
+        el('rp-store-info').innerHTML =
+          '<div style="padding:.5rem .7rem;background:var(--ink2);border-radius:8px;margin-bottom:.5rem;word-break:break-all;font-family:monospace;font-size:.78rem">'
+          + '<a href="' + r.store_url + '" target="_blank" style="color:var(--acc);text-decoration:none">' + r.store_url + '</a>'
+          + ' <button onclick="navigator.clipboard.writeText(\'' + r.store_url + '\');toast(\'Copied!\',\'ok\')" style="background:none;border:none;cursor:pointer;font-size:.7rem;color:var(--acc)">\uD83D\uDCCB</button></div>'
+          + '<div style="font-size:.72rem;color:var(--dim)">Share this URL on your social media, Google listing, and printed materials.</div>'
+          + editLink;
+      } else {
+        el('rp-store-info').innerHTML = '<div style="text-align:center;padding:1rem;color:var(--dim)">No store URL configured yet.</div>' + editLink;
+      }
+    }
+
+    // ── Pricing & Charges ──
+    if (el('rp-pricing-info')) {
+      var gstMode = r.menu_gst_mode === 'included' ? 'Inclusive in prices' : 'Extra 5% added';
+      var delPct = r.delivery_fee_customer_pct != null ? r.delivery_fee_customer_pct : 100;
+      var restPct = 100 - delPct;
+      var pkg = r.packaging_charge_rs || 0;
+      var pkgGst = r.packaging_gst_pct != null ? r.packaging_gst_pct : 18;
+      el('rp-pricing-info').innerHTML =
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem">'
+        + '<div style="background:var(--ink2);border-radius:8px;padding:.7rem;text-align:center"><div style="font-size:.72rem;color:var(--dim);margin-bottom:.2rem">GST Mode</div><div style="font-size:.95rem;font-weight:600">' + gstMode + '</div></div>'
+        + '<div style="background:var(--ink2);border-radius:8px;padding:.7rem;text-align:center"><div style="font-size:.72rem;color:var(--dim);margin-bottom:.2rem">Delivery Fee Split</div><div style="font-size:.95rem;font-weight:600">' + delPct + '% customer' + (restPct > 0 ? ' / ' + restPct + '% restaurant' : '') + '</div></div>'
+        + '<div style="background:var(--ink2);border-radius:8px;padding:.7rem;text-align:center"><div style="font-size:.72rem;color:var(--dim);margin-bottom:.2rem">Packaging</div><div style="font-size:.95rem;font-weight:600">' + (pkg > 0 ? '\u20B9' + pkg : 'Disabled') + '</div></div>'
+        + '<div style="background:var(--ink2);border-radius:8px;padding:.7rem;text-align:center"><div style="font-size:.72rem;color:var(--dim);margin-bottom:.2rem">Packaging GST</div><div style="font-size:.95rem;font-weight:600">' + pkgGst + '%</div></div>'
+        + '</div>' + editLink;
+    }
+
+    // ── Contact & Notifications ──
+    if (el('rp-contact-info')) {
+      var phones = (r.notification_phones || []).join(', ') || 'Not configured';
+      var ns = r.notification_settings || {};
+      var pill = function(label, on) { return '<span style="font-size:.72rem;padding:.15rem .45rem;border-radius:99px;font-weight:600;' + (on ? 'background:#dcfce7;color:#15803d' : 'background:var(--ink2);color:var(--dim)') + '">' + (on ? '\u2705 ' : '') + label + '</span>'; };
+      var waStatus = (r.whatsapp_connected || r.meta_user_id) ? '<span style="color:var(--wa);font-weight:600">\u2705 Connected</span>' : '<span style="color:var(--red)">Not connected</span>';
+      el('rp-contact-info').innerHTML =
+        rpRow('Notification Phones', phones) +
+        '<div style="padding:.45rem 0;border-bottom:1px solid var(--rim)"><span style="color:var(--dim);font-size:.78rem;display:block;margin-bottom:.3rem">Notifications</span><div style="display:flex;gap:.4rem;flex-wrap:wrap">'
+        + pill('New Orders', ns.new_order !== false)
+        + pill('Payments', ns.payment !== false)
+        + pill('Cancellations', ns.cancelled !== false)
+        + pill('Low Activity', ns.low_activity === true)
+        + '</div></div>'
+        + rpRow('WhatsApp', waStatus)
+        + editLink;
+    }
+
+  } catch (e) {
+    console.warn('[Profile] Load failed:', e.message);
+  }
+}
+
 let _custSearch = '';
 let _custDebounce;
 
@@ -739,6 +874,7 @@ window.sendCampaignNow = sendCampaignNow;
 window.deleteCampaignRow = deleteCampaignRow;
 window.pauseCampaignNow = pauseCampaignNow;
 window.resumeCampaignNow = resumeCampaignNow;
+window.loadRestaurantProfile = loadRestaurantProfile;
 window.doSaveUser = doSaveUser;
 window.editUser = editUser;
 window.resetUserPin = resetUserPin;

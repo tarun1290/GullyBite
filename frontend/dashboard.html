@@ -1833,6 +1833,31 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
       </div>
 
       <!-- ── LOYALTY ──────────────────────────────── -->
+      <!-- ── RESTAURANT PROFILE ────────────────────── -->
+      <div class="tab" id="tab-profile">
+        <div id="rp-header" style="display:flex;align-items:center;gap:1.2rem;margin-bottom:1.5rem;padding:1.3rem 1.5rem;background:linear-gradient(135deg,rgba(79,70,229,.04),rgba(14,165,233,.03));border:1px solid rgba(79,70,229,.1);border-radius:13px">
+          <div id="rp-avatar" style="width:64px;height:64px;border-radius:14px;background:var(--acc);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.6rem;font-weight:700;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div id="rp-name" style="font-size:1.15rem;font-weight:700;color:var(--tx)"></div>
+            <div id="rp-legal-name" style="font-size:.82rem;color:var(--dim);margin-top:.15rem"></div>
+            <div style="display:flex;gap:.5rem;margin-top:.45rem;flex-wrap:wrap">
+              <span id="rp-type-badge" style="font-size:.7rem;font-weight:600;padding:.15rem .5rem;border-radius:99px;background:var(--ink2);color:var(--dim)"></span>
+              <span id="rp-approval-badge" style="font-size:.7rem;font-weight:600;padding:.15rem .5rem;border-radius:99px"></span>
+              <span id="rp-city-badge" style="font-size:.7rem;font-weight:600;padding:.15rem .5rem;border-radius:99px;background:var(--ink2);color:var(--dim)"></span>
+            </div>
+          </div>
+          <button class="btn-g btn-sm" onclick="goTab('settings',null)" style="white-space:nowrap">&#9998; Edit Profile</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem;margin-bottom:1.5rem">
+          <div class="card"><div class="ch"><h3>&#127970; Business Information</h3></div><div class="cb" id="rp-business-info" style="font-size:.84rem"><div style="text-align:center;padding:1rem;color:var(--dim)">Loading...</div></div></div>
+          <div class="card"><div class="ch"><h3>&#128203; Legal &amp; Compliance</h3></div><div class="cb" id="rp-legal-info" style="font-size:.84rem"><div style="text-align:center;padding:1rem;color:var(--dim)">Loading...</div></div></div>
+          <div class="card"><div class="ch"><h3>&#127974; Bank Details</h3></div><div class="cb" id="rp-bank-info" style="font-size:.84rem"><div style="text-align:center;padding:1rem;color:var(--dim)">Loading...</div></div></div>
+          <div class="card"><div class="ch"><h3>&#128279; Store URL</h3></div><div class="cb" id="rp-store-info" style="font-size:.84rem"><div style="text-align:center;padding:1rem;color:var(--dim)">Loading...</div></div></div>
+        </div>
+        <div class="card" style="margin-bottom:1.5rem"><div class="ch"><h3>&#128176; Pricing &amp; Charges</h3><span style="font-size:.78rem;color:var(--dim)">Applied to all new orders</span></div><div class="cb" id="rp-pricing-info" style="font-size:.84rem"><div style="text-align:center;padding:1rem;color:var(--dim)">Loading...</div></div></div>
+        <div class="card" style="margin-bottom:1.5rem"><div class="ch"><h3>&#128222; Contact &amp; Notifications</h3></div><div class="cb" id="rp-contact-info" style="font-size:.84rem"><div style="text-align:center;padding:1rem;color:var(--dim)">Loading...</div></div></div>
+      </div>
+
       <div class="tab" id="tab-loyalty">
         <!-- Connected WhatsApp & Catalog Info -->
         <div id="wa-info-card" class="card" style="margin-bottom:1.2rem;padding:1rem 1.2rem">
@@ -2421,7 +2446,7 @@ const TMETA = {
   messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: () => loadMessages() },
   analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); loadDropoffAnalytics(); } },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
-  restaurant:  { title: 'Restaurant',         sub: 'Coupons, loyalty, team, and issues',   fn: () => { loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
+  restaurant:  { title: 'Restaurant',         sub: 'Profile, coupons, loyalty, and team',  fn: () => { loadRestaurantProfile(); loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
   settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); loadSyncLogs(); } },
   // Legacy tab IDs — redirect to new tabs for backwards compatibility
   branches:    { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); } },
@@ -2455,7 +2480,7 @@ function goTab(n, el) {
     menu:       ['tab-branches', 'tab-menu'],
     payments:   ['tab-financials', 'tab-settlements', 'tab-wallet'],
     loyalty:    ['tab-campaigns', 'tab-coupons', 'tab-referrals'],
-    restaurant: ['tab-loyalty', 'tab-team', 'tab-issues'],
+    restaurant: ['tab-profile', 'tab-loyalty', 'tab-team', 'tab-issues'],
     settings:   ['tab-settings', 'tab-whatsapp', 'tab-integrations'],
     analytics:  ['tab-analytics', 'tab-ratings', 'tab-customers'],
   };

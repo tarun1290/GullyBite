@@ -827,9 +827,11 @@ async function toggleCatalogAutoSync(enabled) {
 let _catMgmtData = null;
 
 async function loadCatalogMgmt(refresh = false) {
+  console.log('[CatalogMgmt] loadCatalogMgmt called, refresh:', refresh);
   const statusEl = document.getElementById('cat-mgmt-status');
   const settingsEl = document.getElementById('cat-mgmt-settings');
   const deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
+  if (!statusEl) { console.error('[CatalogMgmt] CRITICAL: cat-mgmt-status element NOT FOUND'); return; }
   if (deleteConfirmEl) deleteConfirmEl.style.display = 'none';
   loadCatalogVisibility();
 
@@ -841,7 +843,9 @@ async function loadCatalogMgmt(refresh = false) {
   }
 
   try {
+    console.log('[CatalogMgmt] Fetching /api/restaurant/catalogs...');
     const catData = await api(`/api/restaurant/catalogs${refresh ? '?refresh=true' : ''}`);
+    console.log('[CatalogMgmt] Response:', JSON.stringify(catData).substring(0, 300));
     _catMgmtData = catData;
     const active = catData?.active_catalog_id;
 
@@ -923,6 +927,7 @@ async function loadCatalogMgmt(refresh = false) {
       if (settingsEl) settingsEl.style.display = 'none';
     }
   } catch (e) {
+    console.error('[CatalogMgmt] API error:', e.message, e);
     // Check if approval status is blocking
     if (e.message?.includes('pending_approval') || e.message?.includes('Forbidden')) {
       statusEl.innerHTML = `<div style="padding:.7rem .9rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;font-size:.82rem">
