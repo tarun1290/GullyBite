@@ -80,19 +80,25 @@ const sendLocationRequest = (pid, token, to) =>
 // Shows the WhatsApp in-app shopping experience!
 // Customer can browse the menu, add to cart, all inside WhatsApp.
 // catalogId: the Meta Commerce Catalog ID (you create this in Meta Business Manager)
-const sendCatalog = (pid, token, to, catalogId, introText) =>
-  sendMsg(pid, token, to, {
+const sendCatalog = (pid, token, to, catalogId, introText) => {
+  // catalog_message uses the catalog connected to the WABA — catalog_id is NOT passed in parameters
+  // thumbnail_product_retailer_id is optional; omit if not available
+  const params = {};
+  // catalogId is kept for logging but not sent in payload (Meta uses WABA-connected catalog)
+  console.log(`[Catalog-DEBUG] sendCatalog: catalogId=${catalogId} to=${to}`);
+  return sendMsg(pid, token, to, {
     type: 'interactive',
     interactive: {
       type: 'catalog_message',
       body: { text: introText || '🍽️ Here is our menu! Browse and add items to your cart.' },
       footer: { text: 'Tap any item to view details and add to cart' },
       action: {
-        name      : 'catalog_message',
-        parameters: { catalog_id: catalogId, thumbnail_product_retailer_id: '' },
+        name: 'catalog_message',
+        parameters: params,
       },
     },
   });
+};
 
 // ─── MULTI-PRODUCT MESSAGE (MPM) ──────────────────────────────
 // Sends a product_list interactive message with items in category sections.

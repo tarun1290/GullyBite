@@ -991,7 +991,8 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
 
   if (!cart.cart.length) {
     await wa.sendText(pid, token, to, '⚠️ Some items are no longer available. Please browse the menu again.');
-    if (session.catalogId) await wa.sendCatalog(pid, token, to, session.catalogId);
+    const cartCatalogId = session.catalogId || (await col('restaurants').findOne({ _id: waAccount.restaurant_id }))?.meta_catalog_id;
+    if (cartCatalogId) await wa.sendCatalog(pid, token, to, String(cartCatalogId));
     return;
   }
 
@@ -2126,8 +2127,9 @@ const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
     });
 
     const branch = await col('branches').findOne({ _id: session.branchId });
-    if (branch?.catalog_id) {
-      await wa.sendCatalog(pid, token, to, branch.catalog_id, `🍽️ Here's our menu from *${branch.name}*!`);
+    const reorderCatalogId = branch?.catalog_id || branch?.catalogId || session.catalogId || (await col('restaurants').findOne({ _id: branch?.restaurant_id || session.restaurantId }))?.meta_catalog_id;
+    if (reorderCatalogId) {
+      await wa.sendCatalog(pid, token, to, String(reorderCatalogId), `🍽️ Here's our menu from *${branch?.name || 'your restaurant'}*!`);
     }
     return;
   }
@@ -2291,8 +2293,11 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
 
 // Helper: after address is resolved and branch found, set session and send MPM catalog
 async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) {
-  const catalogId = branch.catalogId || branch.catalog_id;
   const restaurantId = branch.restaurantId || branch.restaurant_id;
+
+  // Resolve catalogId — branch first, then restaurant fallback
+  let effectiveCatalogId = branch.catalogId || branch.catalog_id || (await col('restaurants').findOne({ _id: restaurantId }))?.meta_catalog_id;
+  if (effectiveCatalogId && typeof effectiveCatalogId !== 'string') effectiveCatalogId = String(effectiveCatalogId);
 
   // Branch confirmation message — show nearest branch name + distance
   const branchLabel = branch.businessName ? `*${branch.businessName} — ${branch.name}*` : `*${branch.name}*`;
@@ -2305,29 +2310,54 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
   await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
     branchId: branch.id,
     branchName: branch.name,
-    catalogId,
+    catalogId: effectiveCatalogId,
     deliveryLat: address.latitude || address.lat || null,
     deliveryLng: address.longitude || address.lng || null,
     deliveryAddress: address.full_address || address.address || '',
   });
-
-  // Resolve catalogId from restaurant if branch doesn't have one
-  let effectiveCatalogId = catalogId || (await col('restaurants').findOne({ _id: restaurantId }))?.meta_catalog_id;
-  console.log(`[MPM-DEBUG] _sendBranchMenu: catalogId=${catalogId} effectiveCatalogId=${effectiveCatalogId} (type: ${typeof effectiveCatalogId})`);
-  if (effectiveCatalogId && typeof effectiveCatalogId !== 'string') { effectiveCatalogId = String(effectiveCatalogId); }
+  console.log(`[MPM-DEBUG] _sendBranchMenu: effectiveCatalogId=${effectiveCatalogId} (type: ${typeof effectiveCatalogId})`);
+  console.log(`[MPM-DEBUG] _sendBranchMenu: branch.catalogId=${branch.catalogId} branch.catalog_id=${branch.catalog_id} restaurantId=${restaurantId}`);
 
   if (effectiveCatalogId) {
     try {
       const { buildBranchMPMs } = require('../services/mpmBuilder');
       const mpms = await buildBranchMPMs(branch.id, restaurantId);
       console.log(`[MPM-DEBUG] _sendBranchMenu: ${mpms.length} MPM(s) for "${branch.name}"`);
+      for (const [mi, mpm] of mpms.entries()) {
+        console.log(`[MPM-DEBUG] _sendBranchMenu MPM ${mi+1}: header="${mpm.header}" sections=${mpm.sections?.length} products=${mpm.sections?.reduce((s,sec) => s + (sec.product_retailer_ids?.length || 0), 0)}`);
+        if (mpm.sections) for (const sec of mpm.sections) {
+          console.log(`[MPM-DEBUG]   Section "${sec.title}": ${(sec.product_retailer_ids || []).join(', ')}`);
+        }
+      }
       if (mpms.length) {
         for (let i = 0; i < mpms.length; i++) {
+          // Validate MPM payload before sending
+          const mpm = mpms[i];
+          if (mpm.sections) {
+            mpm.sections = mpm.sections.filter(s => {
+              if (!s.title) { console.warn('[MPM-VALIDATION] _sendBranchMenu: Section with no title removed'); return false; }
+              s.product_retailer_ids = (s.product_retailer_ids || []).filter(id => {
+                if (!id || typeof id !== 'string') { console.warn(`[MPM-VALIDATION] _sendBranchMenu: Invalid retailer_id removed: ${JSON.stringify(id)}`); return false; }
+                return true;
+              });
+              if (!s.product_retailer_ids.length) { console.warn(`[MPM-VALIDATION] _sendBranchMenu: Section "${s.title}" has 0 valid products — removed`); return false; }
+              return true;
+            });
+          }
+          if (!mpm.sections?.length) {
+            console.warn('[MPM-VALIDATION] _sendBranchMenu: MPM has 0 valid sections after filtering — skipping');
+            await wa.sendText(pid, token, to, 'Our menu is being set up. Please try again shortly.');
+            break;
+          }
+          console.log('[MPM-DEBUG] _sendBranchMenu catalogId:', effectiveCatalogId, 'type:', typeof effectiveCatalogId);
+          console.log('[MPM-DEBUG] _sendBranchMenu sections:', JSON.stringify(mpm.sections.map(s => ({ title: s.title, count: s.product_retailer_ids.length, sample: s.product_retailer_ids.slice(0, 3) }))));
           try {
             await wa.sendMPM(pid, token, to, String(effectiveCatalogId), mpms[i]);
+            console.log(`[MPM-DEBUG] _sendBranchMenu MPM ${i+1}/${mpms.length} sent successfully`);
           } catch (mpmSendErr) {
             console.error(`[MPM-DEBUG] _sendBranchMenu MPM ${i+1} FAILED:`, JSON.stringify(mpmSendErr.response?.data || { message: mpmSendErr.message }));
             if (i === 0) {
+              console.log('[Bot] _sendBranchMenu falling back to catalog message');
               await wa.sendCatalog(pid, token, to, effectiveCatalogId, `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`);
               break;
             }
