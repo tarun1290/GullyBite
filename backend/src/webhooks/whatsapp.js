@@ -396,7 +396,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
           flowId: restaurant.flow_id,
           flowCta: 'Set Location',
           screenId: 'NEW_ADDRESS',
-          flowData: { screenData: {} },
+          flowData: { screenData: { init: true } },
         });
       }
     } else {
@@ -1172,7 +1172,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
           const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
           await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { addresses: addressItems } } });
         } else {
-          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: {} } });
+          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { init: true } } });
         }
       } else {
         await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
@@ -2172,7 +2172,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
           flowId: restaurant.flow_id,
           flowCta: 'Add Address',
           screenId: 'NEW_ADDRESS',
-          flowData: { screenData: {} },
+          flowData: { screenData: { init: true } },
         });
       } else {
         await wa.sendText(pid, token, to, '📍 Please share your location using the 📎 attach icon → Location.');

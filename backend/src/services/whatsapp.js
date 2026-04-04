@@ -372,7 +372,6 @@ const sendFlow = (pid, token, to, { flowId, flowToken, flowCta, screenId, flowDa
         parameters: {
           flow_message_version: '3',
           flow_id: flowId,
-          flow_token: flowToken || 'unused',
           flow_cta: (flowCta || 'Open Form').substring(0, 20),
           flow_action: 'navigate',
           flow_action_payload: {
