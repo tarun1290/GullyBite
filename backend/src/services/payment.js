@@ -137,15 +137,26 @@ const handleOrderPaid = async (event) => {
     return null;
   }
 
-  const payment = await col('payments').findOne({ rp_order_id: rzpOrderId });
+  let payment = await col('payments').findOne({ rp_order_id: rzpOrderId });
+
+  // Fallback: checkout template payments — match by reference_id (Razorpay receipt)
+  if (!payment) {
+    const receipt = event.payload?.order?.entity?.receipt
+                 || event.payload?.payment?.entity?.notes?.reference_id;
+    if (receipt) {
+      payment = await col('payments').findOne({ reference_id: receipt, payment_type: 'checkout_template' });
+      if (payment) console.log(`[Payment] Matched checkout template payment by reference_id: ${receipt}`);
+    }
+  }
+
   if (!payment) {
     console.error('[Payment] No payment record for Razorpay order:', rzpOrderId);
     return null;
   }
 
   await col('payments').updateOne(
-    { rp_order_id: rzpOrderId },
-    { $set: { status: 'paid', rp_payment_id: paymentEntity?.id, payment_method: paymentEntity?.method, paid_at: new Date() } }
+    { _id: payment._id },
+    { $set: { status: 'paid', rp_order_id: rzpOrderId, rp_payment_id: paymentEntity?.id, payment_method: paymentEntity?.method, paid_at: new Date() } }
   );
 
   return payment.order_id;
@@ -183,11 +194,23 @@ const handlePaymentFailed = async (event) => {
     return payment?.order_id || null;
   }
   if (rzpOrderId) {
-    const payment = await col('payments').findOneAndUpdate(
+    let payment = await col('payments').findOneAndUpdate(
       { rp_order_id: rzpOrderId },
       { $set: { status: 'failed' } }
     );
-    return payment?.order_id || null;
+    if (payment) return payment.order_id;
+
+    // Fallback: checkout template payments — match by reference_id
+    const receipt = event.payload?.order?.entity?.receipt
+                 || event.payload?.payment?.entity?.notes?.reference_id;
+    if (receipt) {
+      payment = await col('payments').findOneAndUpdate(
+        { reference_id: receipt, payment_type: 'checkout_template' },
+        { $set: { status: 'failed', rp_order_id: rzpOrderId } }
+      );
+      if (payment) return payment.order_id;
+    }
+    return null;
   }
   return null;
 };

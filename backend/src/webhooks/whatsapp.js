@@ -327,6 +327,134 @@ const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
   }
 };
 
+// ─── CHECKOUT TEMPLATE HELPER ─────────────────────────────────
+// Tries to send the checkout button template with in-WhatsApp payment.
+// Falls back to the text-based sendOrderSummary if the template isn't approved or fails.
+// When checkout template succeeds, creates the order so Razorpay webhook can match it.
+const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote, session, customer, waAccount }) => {
+  // Try checkout template first
+  const checkoutEnabled = process.env.CHECKOUT_TEMPLATE_NAME || (await col('platform_settings').findOne({ _id: 'checkout_template' }))?.enabled;
+  if (checkoutEnabled && session?.branchId && session?.cart?.length) {
+    try {
+      const branch = await col('branches').findOne({ _id: session.branchId });
+      const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
+
+      // Create order in PENDING_PAYMENT state so Razorpay webhook can match it
+      const order = await orderSvc.createOrder({
+        convId       : session.convId || null,
+        customerId   : customer?.id,
+        branchId     : session.branchId,
+        cart         : session.cart,
+        subtotalRs   : session.subtotalRs || Number(subtotal) || 0,
+        deliveryFeeRs: session.deliveryFeeRs || Number(deliveryFee) || 0,
+        totalRs      : session.totalRs || Number(total) || 0,
+        discountRs   : session.discountRs || 0,
+        couponId     : session.coupon?.id || null,
+        couponCode   : session.coupon?.code || null,
+        deliveryAddress: session.deliveryAddress,
+        deliveryLat  : session.deliveryLat,
+        deliveryLng  : session.deliveryLng,
+        waPhone      : customer?.wa_phone || customer?.bsuid,
+        charges      : charges || session.charges || null,
+        deliveryFeeBreakdown: session.deliveryFeeBreakdown || null,
+        deliveryQuote: session.deliveryQuote || null,
+        structuredAddress: session.structuredAddress || null,
+        addressSource: session.addressSource || null,
+      });
+
+      const toPaise = (rs) => Math.round((Number(rs) || 0) * 100);
+      const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 30;
+      const expiryTs = String(Math.floor(Date.now() / 1000) + expiryMins * 60);
+
+      // Reference ID: order_number, sanitised for Meta (max 35 chars, [a-zA-Z0-9_\-\.])
+      const refId = order.order_number.substring(0, 35).replace(/[^a-zA-Z0-9_\-\.]/g, '-');
+
+      const checkoutItems = (items || []).map(i => ({
+        name: (i.name || 'Item').substring(0, 60),
+        quantity: i.qty || 1,
+        amount: { value: toPaise(i.price), offset: 100 },
+        country_of_origin: 'IN',
+        importer_name: ((restaurant?.business_name || '') + (branch?.name ? ' - ' + branch.name : '')).substring(0, 100) || 'GullyBite',
+        importer_address: {
+          address_line1: (branch?.address || restaurant?.address || 'India').substring(0, 200),
+          city: (branch?.city || restaurant?.city || 'Hyderabad').substring(0, 60),
+          zone_code: branch?.state_code || 'TS',
+          postal_code: branch?.pincode || '500000',
+          country_code: 'IN',
+        },
+      }));
+
+      const taxRs = charges
+        ? (charges.food_gst_rs || 0) + (charges.customer_delivery_gst_rs || 0) + (charges.packaging_gst_rs || 0)
+        : 0;
+      const discountRs = discount?.amountRs || 0;
+
+      const orderDetails = {
+        reference_id: refId,
+        items: checkoutItems,
+        subtotal: { value: toPaise(charges?.subtotal_rs || subtotal), offset: 100 },
+        shipping: { value: toPaise(charges?.customer_delivery_rs || deliveryFee || 0), offset: 100 },
+        tax: { value: toPaise(taxRs), offset: 100, description: 'GST' },
+        discount: { value: toPaise(discountRs), offset: 100, description: discount?.code ? `Coupon: ${discount.code}` : 'Discount' },
+        total_amount: { value: toPaise(charges?.customer_total_rs || total), offset: 100 },
+        shipping_info: {
+          address_line1: (session.deliveryAddress || 'Delivery address').substring(0, 200),
+          city: branch?.city || 'Hyderabad',
+          zone_code: branch?.state_code || 'TS',
+          postal_code: session.structuredAddress?.in_pin_code || '500000',
+          country_code: 'IN',
+        },
+        payment_settings: [{
+          type: 'payment_gateway',
+          payment_gateway: {
+            type: 'razorpay',
+            configuration_name: process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite',
+          },
+        }],
+        expiration: { timestamp: expiryTs, description: 'Order expires if unpaid' },
+      };
+
+      await wa.sendCheckoutTemplate(pid, token, to, {
+        customerName: customer?.name || 'there',
+        restaurantName: restaurant?.business_name || branch?.name || 'our restaurant',
+        orderDetails,
+      });
+
+      // Update session with order ID and transition to AWAITING_PAYMENT
+      const conv = customer?.id ? await col('conversations').findOne({ customer_id: customer.id, 'session_data.branchId': session.branchId }) : null;
+      if (conv) {
+        await orderSvc.setState(conv._id, 'AWAITING_PAYMENT', {
+          ...session,
+          orderId: order.id,
+          orderNumber: order.order_number,
+          checkoutTemplate: true,
+        });
+      }
+
+      console.log(`[Checkout] Template sent for order ${order.order_number} (id: ${order.id})`);
+
+      // Save a payment record so the Razorpay webhook can match by reference_id
+      await col('payments').insertOne({
+        _id: newId(),
+        order_id: order.id,
+        reference_id: refId,
+        payment_type: 'checkout_template',
+        amount_rs: charges?.customer_total_rs || Number(total) || 0,
+        currency: 'INR',
+        status: 'pending',
+        created_at: new Date(),
+      }).catch(e => console.warn('[Checkout] Payment record save failed:', e.message));
+
+      return;
+    } catch (checkoutErr) {
+      console.warn('[Checkout] Template send failed, falling back to text summary:', checkoutErr.message);
+    }
+  }
+
+  // Fallback: text-based order summary with Confirm/Cancel/Coupon buttons
+  await wa.sendOrderSummary(pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote });
+};
+
 // ─── TEXT MESSAGE HANDLER ─────────────────────────────────────
 const handleTextMessage = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
@@ -498,13 +626,14 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     if (text === 'SKIP') {
       await orderSvc.setState(conv.id, 'ORDER_REVIEW');
       const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
-      await wa.sendOrderSummary(pid, token, to, {
+      await _sendOrderCheckout(pid, token, to, {
         orderNumber: tempNum,
         items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
         subtotal:    session.subtotalRs.toFixed(0),
         deliveryFee: session.deliveryFeeRs.toFixed(0),
         total:       session.totalRs.toFixed(0),
         discount:    null,
+        session, customer, waAccount,
       });
       return;
     }
@@ -538,7 +667,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
 
     await wa.sendText(pid, token, to, result.message);
     const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
-    await wa.sendOrderSummary(pid, token, to, {
+    await _sendOrderCheckout(pid, token, to, {
       orderNumber: tempNum,
       items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
       charges:     updatedCharges,
@@ -546,6 +675,8 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       deliveryFee: (updatedCharges ? updatedCharges.customer_delivery_rs : session.deliveryFeeRs).toFixed(0),
       total:       newTotal.toFixed(0),
       discount:    { code: couponData.code, amountRs: result.discountRs },
+      session: { ...session, coupon: couponData, discountRs: result.discountRs, totalRs: newTotal, charges: updatedCharges },
+      customer, waAccount,
     });
     return;
   }
@@ -654,7 +785,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
 
     await wa.sendText(pid, token, to, `✅ Redeemed *${result.pointsRedeemed} points* for ₹${result.discountRs} off!`);
     const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
-    await wa.sendOrderSummary(pid, token, to, {
+    await _sendOrderCheckout(pid, token, to, {
       orderNumber: tempNum,
       items: session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
       charges: updatedCharges,
@@ -662,6 +793,8 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       deliveryFee: (updatedCharges ? updatedCharges.customer_delivery_rs : session.deliveryFeeRs).toFixed(0),
       total: newTotal.toFixed(0),
       discount: { code: `${result.pointsRedeemed} pts`, amountRs: totalDiscount },
+      session: { ...session, discountRs: totalDiscount, totalRs: newTotal, charges: updatedCharges },
+      customer, waAccount,
     });
     return;
   }
@@ -837,7 +970,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     );
 
     const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
-    await wa.sendOrderSummary(pid, token, to, {
+    await _sendOrderCheckout(pid, token, to, {
       orderNumber: tempNum,
       items      : reorderCart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
       charges,
@@ -845,6 +978,8 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
       deliveryFee: charges.customer_delivery_rs.toFixed(0),
       total      : charges.customer_total_rs.toFixed(0),
       discount   : null,
+      session: { branchId: branch.id, deliveryAddress: address || 'Your location', deliveryLat: latitude, deliveryLng: longitude },
+      customer, waAccount,
     });
     return;
   }
@@ -1054,7 +1189,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     if (parts.length) dynamicNote = parts.join(' · ');
   }
 
-  await wa.sendOrderSummary(pid, token, to, {
+  await _sendOrderCheckout(pid, token, to, {
     orderNumber: tempOrderNum,
     items: cart.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
     charges,
@@ -1063,6 +1198,8 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     total:       finalTotalRs.toFixed(0),
     discount:    couponData ? { code: couponData.code, amountRs: discountRs } : null,
     dynamicNote,
+    session: conv.session_data || session,
+    customer, waAccount,
   });
 
   if (cart.unavailable.length > 0) {
@@ -1347,7 +1484,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       });
       const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
       await wa.sendText(pid, token, to, '🗑 Coupon removed.');
-      await wa.sendOrderSummary(pid, token, to, {
+      await _sendOrderCheckout(pid, token, to, {
         orderNumber: tempNum,
         items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
         charges:     restoredCharges,
@@ -1355,6 +1492,8 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         deliveryFee: (restoredCharges ? restoredCharges.customer_delivery_rs : session.deliveryFeeRs).toFixed(0),
         total:       updatedTotal.toFixed(0),
         discount:    null,
+        session: { ...session, coupon: null, discountRs: 0, totalRs: updatedTotal, charges: restoredCharges },
+        customer, waAccount,
       });
       break;
     }
@@ -1826,7 +1965,7 @@ const sendRatingRequest = async (orderId, pid, token, to) => {
           flowData: {
             body: `How was your order #${order.order_number}?\n\nTap below to rate your food and delivery experience.`,
             footer: 'Your feedback helps improve quality',
-            screenData: { order_number: order.order_number, order_id: orderId },
+            screenData: { order_number: order.order_number, order_id: orderId, flow_token: `rating_${orderId}` },
           },
         });
         return; // Flow sent successfully

@@ -438,4 +438,69 @@ const sendDocument = async (pid, token, to, { buffer, filename, caption, mimeTyp
   });
 };
 
-module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };
+// ─── CHECKOUT BUTTON TEMPLATE ────────────────────────────────
+// Sends the order_checkout_v1 template with Meta's native checkout button.
+// The customer sees a "Buy now" button that opens in-WhatsApp payment via Razorpay.
+//
+// orderDetails: {
+//   reference_id, items[], subtotal, shipping, tax, discount, total_amount,
+//   shipping_info, payment_settings, expiration
+// }
+// items[]: { name, quantity, amount: {value,offset}, country_of_origin, importer_name, importer_address }
+const sendCheckoutTemplate = (pid, token, to, { templateName, customerName, restaurantName, orderDetails }) => {
+  const tplName = templateName || process.env.CHECKOUT_TEMPLATE_NAME || 'order_checkout_v1';
+  console.log(`[Checkout] Sending checkout template "${tplName}" to ${to}, ref=${orderDetails.reference_id}, total=${orderDetails.total_amount?.value}`);
+
+  return sendMsg(pid, token, to, {
+    type: 'template',
+    template: {
+      name: tplName,
+      language: { code: 'en_US' },
+      components: [
+        {
+          type: 'header',
+          parameters: [],
+        },
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: (customerName || 'there').substring(0, 60) },
+            { type: 'text', text: (restaurantName || 'our restaurant').substring(0, 60) },
+          ],
+        },
+        {
+          type: 'button',
+          sub_type: 'order_details',
+          index: '0',
+          parameters: [
+            {
+              type: 'action',
+              action: {
+                name: 'review_and_pay',
+                parameters: {
+                  reference_id: orderDetails.reference_id,
+                  type: 'physical-goods',
+                  payment_settings: orderDetails.payment_settings,
+                  currency: 'INR',
+                  total_amount: orderDetails.total_amount,
+                  order: {
+                    status: 'pending',
+                    expiration: orderDetails.expiration,
+                    items: orderDetails.items,
+                    subtotal: orderDetails.subtotal,
+                    shipping: orderDetails.shipping,
+                    tax: orderDetails.tax,
+                    ...(orderDetails.discount?.value > 0 ? { discount: orderDetails.discount } : {}),
+                    shipping_info: orderDetails.shipping_info,
+                  },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+};
+
+module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendCheckoutTemplate, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };
