@@ -325,6 +325,7 @@ function isBranchOpen(branch) {
     if (dayHours.is_closed) return false;
     const open = parseTime(dayHours.open || '00:00');
     const close = parseTime(dayHours.close || '23:59');
+    if (close <= open) return currentTime >= open || currentTime <= close;
     return currentTime >= open && currentTime <= close;
   }
 
@@ -332,6 +333,7 @@ function isBranchOpen(branch) {
   if (branch.opening_time && branch.closing_time) {
     const open = parseTime(branch.opening_time);
     const close = parseTime(branch.closing_time);
+    if (close <= open) return currentTime >= open || currentTime <= close;
     return currentTime >= open && currentTime <= close;
   }
 
