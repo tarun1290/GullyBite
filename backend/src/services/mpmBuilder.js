@@ -188,6 +188,8 @@ async function buildBranchMPMs(branchId, restaurantId) {
   }
 
   // Second pass: collapse variants, pick representative per group
+  // Track retailer_ids already used in Bestsellers to avoid double-counting
+  const globalUsedIds = new Set();
   const sections = [];
   let totalProductGroups = 0;
 
@@ -197,11 +199,16 @@ async function buildBranchMPMs(branchId, restaurantId) {
   });
 
   for (const [catName, catData] of sortedCategories) {
-    const seen = new Set(); // item_group_ids already included
+    const seen = new Set(); // item_group_ids already included in THIS category
     const productIds = [];
+    const isBestsellersSection = catName === 'Bestsellers';
 
     for (const item of catData.items) {
       if (!item.retailer_id) continue;
+
+      // Skip items already in Bestsellers section (prevents double-counting)
+      if (!isBestsellersSection && globalUsedIds.has(item.retailer_id)) continue;
+      if (!isBestsellersSection && item.item_group_id && globalUsedIds.has('grp:' + item.item_group_id)) continue;
 
       if (item.item_group_id) {
         if (seen.has(item.item_group_id)) continue;
@@ -212,11 +219,13 @@ async function buildBranchMPMs(branchId, restaurantId) {
         if (group?.length > 1) {
           const rep = selectVariantRepresentative(group);
           productIds.push(rep.retailer_id);
+          if (isBestsellersSection) { globalUsedIds.add(rep.retailer_id); globalUsedIds.add('grp:' + item.item_group_id); }
           continue;
         }
       }
 
       productIds.push(item.retailer_id);
+      if (isBestsellersSection) { globalUsedIds.add(item.retailer_id); if (item.item_group_id) globalUsedIds.add('grp:' + item.item_group_id); }
     }
 
     if (productIds.length) {
@@ -235,6 +244,8 @@ async function buildBranchMPMs(branchId, restaurantId) {
   }
 
   if (!sections.length) return [];
+
+  console.log(`[MPM] Branch "${branch.name}": ${items.length} total items → ${totalProductGroups} product groups across ${sections.length} sections (bestsellers deduped: ${globalUsedIds.size})`);
 
   const restName = restaurant.business_name || restaurant.name || 'Menu';
 

@@ -11,34 +11,151 @@ const issueSvc = require('../services/issues');
 const axios = require('axios');
 const metaConfig = require('../config/meta');
 const financials = require('../services/financials');
+const wa = require('../services/whatsapp');
 const ws = require('../services/websocket');
 
-// ─── AUTH MIDDLEWARE ──────────────────────────────────────────
-const requireAdmin = (req, res, next) => {
-  const header = req.headers['authorization'] || '';
-  const key    = header.startsWith('Bearer ') ? header.slice(7) : req.headers['x-admin-key'];
-  if (!key || key !== process.env.ADMIN_KEY) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-  next();
-};
+// ─── AUTH MIDDLEWARE (RBAC) ───────────────────────────────────
+const bcrypt = require('bcryptjs');
+const { requireAdminAuth, signAdminToken } = require('../middleware/adminAuth');
 
-// ─── POST /api/admin/auth ─────────────────────────────────────
-router.post('/auth', express.json(), (req, res) => {
-  const { key } = req.body;
-  if (!key || key !== process.env.ADMIN_KEY) {
-    return res.status(403).json({ error: 'Invalid admin key' });
+// Legacy compatibility: simple requireAdmin still works for existing route-level guards
+const requireAdmin = requireAdminAuth();
+
+// ─── AUTH ENDPOINTS ─────────────────────────────────────────
+// POST /api/admin/auth — legacy ADMIN_KEY login (kept for backward compat)
+router.post('/auth', express.json(), async (req, res) => {
+  const { key, email, password } = req.body;
+
+  // Legacy ADMIN_KEY login
+  if (key && key === process.env.ADMIN_KEY) {
+    logActivity({ actorType: 'admin', actorId: null, actorName: 'Admin (Legacy Key)', action: 'admin.login', category: 'auth', description: 'Admin logged in via ADMIN_KEY', severity: 'info' });
+    return res.json({ ok: true });
   }
-  logActivity({
-    actorType: 'admin', actorId: null, actorName: 'Admin',
-    action: 'admin.login', category: 'auth',
-    description: 'Admin logged in', severity: 'info',
-  });
-  res.json({ ok: true });
+
+  // JWT-based email+password login
+  if (email && password) {
+    try {
+      const user = await col('admin_users').findOne({ email: email.toLowerCase().trim(), is_active: true });
+      if (!user) return res.status(403).json({ error: 'Invalid email or password' });
+      const valid = await bcrypt.compare(password, user.password_hash);
+      if (!valid) return res.status(403).json({ error: 'Invalid email or password' });
+
+      const token = signAdminToken(user);
+      await col('admin_users').updateOne({ _id: user._id }, { $set: { last_login: new Date() }, $inc: { login_count: 1 } });
+      logActivity({ actorType: 'admin', actorId: String(user._id), actorName: user.name, action: 'admin.login', category: 'auth', description: `Admin ${user.email} logged in`, severity: 'info' });
+
+      return res.json({ ok: true, token, user: { id: String(user._id), name: user.name, email: user.email, role: user.role, permissions: user.permissions } });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+
+  // Check if any admin users exist (for first-run setup detection)
+  if (req.body.check_setup) {
+    const count = await col('admin_users').countDocuments({});
+    return res.json({ setup_required: count === 0 });
+  }
+
+  return res.status(403).json({ error: 'Invalid credentials' });
 });
 
-// All routes below require admin auth
-router.use(requireAdmin);
+// POST /api/admin/auth/setup — first-run super admin creation (only works if no admin users exist)
+router.post('/auth/setup', express.json(), async (req, res) => {
+  try {
+    const count = await col('admin_users').countDocuments({});
+    if (count > 0) return res.status(400).json({ error: 'Setup already completed. Use login instead.' });
+    const { email, password, name } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+    const hash = await bcrypt.hash(password, 12);
+    const user = {
+      _id: newId(), email: email.toLowerCase().trim(), password_hash: hash,
+      name: name || 'Super Admin', phone: null, role: 'super_admin', permissions: {},
+      is_active: true, last_login: null, login_count: 0, created_by: 'setup', created_at: new Date(), updated_at: new Date(),
+    };
+    await col('admin_users').insertOne(user);
+    await col('admin_users').createIndex({ email: 1 }, { unique: true }).catch(() => {});
+    const token = signAdminToken(user);
+    res.json({ ok: true, token, user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: {} } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/auth/me — current admin user profile
+router.get('/auth/me', requireAdminAuth(), async (req, res) => {
+  const u = req.adminUser;
+  res.json({ id: u._id, name: u.name, email: u.email, role: u.role, permissions: u.permissions || {}, phone: u.phone });
+});
+
+// POST /api/admin/auth/change-password
+router.post('/auth/change-password', requireAdminAuth(), express.json(), async (req, res) => {
+  try {
+    const { current_password, new_password } = req.body;
+    if (!current_password || !new_password) return res.status(400).json({ error: 'Both passwords required' });
+    if (new_password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const user = await col('admin_users').findOne({ _id: req.adminUser._id });
+    if (!user?.password_hash) return res.status(400).json({ error: 'Cannot change password for legacy accounts' });
+    const valid = await bcrypt.compare(current_password, user.password_hash);
+    if (!valid) return res.status(403).json({ error: 'Current password is incorrect' });
+    const hash = await bcrypt.hash(new_password, 12);
+    await col('admin_users').updateOne({ _id: user._id }, { $set: { password_hash: hash, updated_at: new Date() } });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── ADMIN USER MANAGEMENT (super_admin only) ────────────────
+router.get('/users', requireAdminAuth('admin_users', 'manage'), async (req, res) => {
+  try {
+    const users = await col('admin_users').find({}, { projection: { password_hash: 0 } }).sort({ created_at: -1 }).toArray();
+    res.json(mapIds(users));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/users', requireAdminAuth('admin_users', 'manage'), express.json(), async (req, res) => {
+  try {
+    const { email, password, name, phone, role, permissions } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+    if (role === 'super_admin') return res.status(400).json({ error: 'Cannot create additional super admins' });
+    const hash = await bcrypt.hash(password, 12);
+    const user = {
+      _id: newId(), email: email.toLowerCase().trim(), password_hash: hash,
+      name: name || '', phone: phone || null, role: role || 'admin', permissions: permissions || {},
+      is_active: true, last_login: null, login_count: 0, created_by: req.adminUser?._id || 'admin', created_at: new Date(), updated_at: new Date(),
+    };
+    await col('admin_users').insertOne(user);
+    const { password_hash, ...safe } = user;
+    res.json(mapId(safe));
+  } catch (e) {
+    if (e.code === 11000) return res.status(400).json({ error: 'Email already in use' });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/users/:id', requireAdminAuth('admin_users', 'manage'), express.json(), async (req, res) => {
+  try {
+    const { name, phone, role, permissions, is_active } = req.body;
+    const target = await col('admin_users').findOne({ _id: req.params.id });
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.role === 'super_admin' && req.adminUser._id !== target._id) return res.status(403).json({ error: 'Cannot modify super admin' });
+    const $set = { updated_at: new Date() };
+    if (name !== undefined) $set.name = name;
+    if (phone !== undefined) $set.phone = phone;
+    if (role !== undefined && role !== 'super_admin') $set.role = role;
+    if (permissions !== undefined) $set.permissions = permissions;
+    if (is_active !== undefined) $set.is_active = is_active;
+    await col('admin_users').updateOne({ _id: req.params.id }, { $set });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/users/:id/reset-password', requireAdminAuth('admin_users', 'manage'), express.json(), async (req, res) => {
+  try {
+    const { new_password } = req.body;
+    if (!new_password || new_password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    const hash = await bcrypt.hash(new_password, 12);
+    await col('admin_users').updateOne({ _id: req.params.id }, { $set: { password_hash: hash, updated_at: new Date() } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// All routes below require admin auth (any level)
+router.use(requireAdminAuth());
 
 // ─── PLATFORM ALERTS ────────────────────────────────────────
 router.get('/alerts', async (req, res) => {
@@ -521,6 +638,123 @@ router.post('/referrals', express.json(), async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ─── REFERRAL LINKS (GBREF code-based tracking) ──────────────
+
+function _generateRefCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+  return code;
+}
+
+// GET /api/admin/referrals/links — list all referral links with stats
+router.get('/referrals/links', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.restaurant_id) filter.restaurant_id = req.query.restaurant_id;
+    if (req.query.status) filter.status = req.query.status;
+    const links = await col('referral_links').find(filter).sort({ created_at: -1 }).limit(200).toArray();
+
+    // Enrich with conversion stats
+    const enriched = await Promise.all(links.map(async link => {
+      const sessions = await col('referrals').find({ referral_code: link.code }).toArray();
+      const converted = sessions.filter(s => s.status === 'converted');
+      return {
+        ...mapId(link),
+        conversions: converted.length,
+        total_sessions: sessions.length,
+        total_commission: converted.reduce((s, c) => s + (c.referral_fee_rs || 0), 0),
+      };
+    }));
+    res.json(enriched);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/referrals/links — generate a new GBREF link
+router.post('/referrals/links', express.json(), async (req, res) => {
+  try {
+    const { restaurant_id, campaign_name } = req.body;
+    if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id is required' });
+
+    const restaurant = await col('restaurants').findOne({ _id: restaurant_id });
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+
+    const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id, is_active: true });
+    const phone = waAcc?.wa_phone_number?.replace(/[^0-9]/g, '') || '';
+    if (!phone) return res.status(400).json({ error: 'Restaurant has no WhatsApp number configured' });
+
+    // Generate unique code with retry
+    let code;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      code = _generateRefCode();
+      const exists = await col('referral_links').findOne({ code });
+      if (!exists) break;
+      if (attempt === 9) return res.status(500).json({ error: 'Could not generate unique code — try again' });
+    }
+
+    const waLink = `https://wa.me/${phone}?text=${encodeURIComponent('Hi 👋 GBREF-' + code)}`;
+    const link = {
+      _id: newId(),
+      code,
+      restaurant_id,
+      restaurant_name: restaurant.business_name || restaurant.brand_name || '',
+      restaurant_phone: phone,
+      campaign_name: campaign_name || null,
+      wa_link: waLink,
+      click_count: 0,
+      status: 'active',
+      created_by: 'admin',
+      created_at: new Date(),
+      expires_at: null,
+    };
+    await col('referral_links').insertOne(link);
+
+    console.log(`[Referral] Link created: GBREF-${code} → ${restaurant.business_name} (${phone})`);
+    res.json({ ...mapId(link), wa_link: waLink });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/referrals/links/:id — update status or campaign name
+router.put('/referrals/links/:id', express.json(), async (req, res) => {
+  try {
+    const { status, campaign_name } = req.body;
+    const $set = { updated_at: new Date() };
+    if (status) $set.status = status;
+    if (campaign_name !== undefined) $set.campaign_name = campaign_name;
+    await col('referral_links').updateOne({ _id: req.params.id }, { $set });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/admin/referrals/links/:id — soft delete (set expired)
+router.delete('/referrals/links/:id', async (req, res) => {
+  try {
+    await col('referral_links').updateOne({ _id: req.params.id }, { $set: { status: 'expired', updated_at: new Date() } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/referrals/link-stats — aggregate link stats
+router.get('/referrals/link-stats', async (req, res) => {
+  try {
+    const links = await col('referral_links').find({}).toArray();
+    const active = links.filter(l => l.status === 'active').length;
+    const totalClicks = links.reduce((s, l) => s + (l.click_count || 0), 0);
+    const sessions = await col('referrals').find({ source: 'gbref' }).toArray();
+    const converted = sessions.filter(s => s.status === 'converted');
+    const totalCommission = converted.reduce((s, c) => s + (c.referral_fee_rs || 0), 0);
+    res.json({
+      total_links: links.length,
+      active_links: active,
+      total_clicks: totalClicks,
+      total_sessions: sessions.length,
+      total_conversions: converted.length,
+      conversion_rate: sessions.length ? Math.round(converted.length / sessions.length * 1000) / 10 : 0,
+      total_commission: Math.round(totalCommission * 100) / 100,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── WALLETS ─────────────────────────────────────────────────
@@ -2361,6 +2595,160 @@ router.delete('/flows/:flowId', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
+
+// ─── ADMIN WABA MANAGEMENT ───────────────────────────────────
+
+// GET /api/admin/waba/config — get admin WABA config
+router.get('/waba/config', async (req, res) => {
+  try {
+    const config = await col('admin_waba_config').findOne({ _id: 'admin_waba' });
+    res.json(config || { _id: 'admin_waba', status: 'disconnected' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/waba/config — connect/update admin WABA
+router.put('/waba/config', express.json(), async (req, res) => {
+  try {
+    const { waba_id, business_id, referral_commission_pct, referral_gst_pct, referral_window_hours } = req.body;
+    const $set = { updated_at: new Date() };
+    if (waba_id) {
+      // Validate with Meta
+      const token = metaConfig.getMessagingToken();
+      const { data } = await axios.get(`${metaConfig.graphUrl}/${waba_id}`, {
+        params: { access_token: token, fields: 'name,currency,timezone_id,account_review_status' }, timeout: 10000,
+      });
+      $set.waba_id = waba_id;
+      $set.waba_name = data.name;
+      $set.currency = data.currency;
+      $set.timezone_id = data.timezone_id;
+      $set.account_review_status = data.account_review_status;
+      $set.status = 'connected';
+      $set.connected_at = new Date();
+    }
+    if (business_id) $set.business_id = business_id;
+    if (referral_commission_pct !== undefined) $set.referral_commission_pct = referral_commission_pct;
+    if (referral_gst_pct !== undefined) $set.referral_gst_pct = referral_gst_pct;
+    if (referral_window_hours !== undefined) $set.referral_window_hours = referral_window_hours;
+    await col('admin_waba_config').updateOne({ _id: 'admin_waba' }, { $set, $setOnInsert: { created_at: new Date() } }, { upsert: true });
+    const updated = await col('admin_waba_config').findOne({ _id: 'admin_waba' });
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// GET /api/admin/waba/numbers — list admin numbers
+router.get('/waba/numbers', async (req, res) => {
+  try {
+    const numbers = await col('admin_numbers').find({}).sort({ created_at: -1 }).toArray();
+    res.json(mapIds(numbers));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/waba/numbers — add admin number (validates with Meta)
+router.post('/waba/numbers', express.json(), async (req, res) => {
+  try {
+    const { phone_number_id, label, purpose, assigned_to } = req.body;
+    if (!phone_number_id) return res.status(400).json({ error: 'phone_number_id is required' });
+    const token = metaConfig.getMessagingToken();
+    const { data } = await axios.get(`${metaConfig.graphUrl}/${phone_number_id}`, {
+      params: { access_token: token, fields: 'display_phone_number,verified_name,quality_rating,messaging_limit,name_status,is_official_business_account,throughput' },
+      timeout: 10000,
+    });
+    const doc = {
+      _id: newId(), phone_number_id,
+      display_phone_number: data.display_phone_number || '',
+      display_name: data.verified_name || label || '',
+      verified_name: data.verified_name || '',
+      purpose: purpose || 'general', assigned_to: assigned_to || null, label: label || data.verified_name || '',
+      quality_rating: data.quality_rating || null,
+      messaging_limit_tier: data.messaging_limit?.tier || null,
+      name_status: data.name_status || null,
+      is_official_business_account: data.is_official_business_account || false,
+      throughput_level: data.throughput?.level || 'STANDARD',
+      quality_last_checked: new Date(),
+      is_active: true, webhook_registered: false,
+      messages_sent_today: 0, messages_received_today: 0,
+      created_at: new Date(), updated_at: new Date(),
+    };
+    await col('admin_numbers').insertOne(doc);
+    res.json(mapId(doc));
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// PUT /api/admin/waba/numbers/:id — update label, purpose, etc.
+router.put('/waba/numbers/:id', express.json(), async (req, res) => {
+  try {
+    const { label, purpose, assigned_to, is_active } = req.body;
+    const $set = { updated_at: new Date() };
+    if (label !== undefined) $set.label = label;
+    if (purpose !== undefined) $set.purpose = purpose;
+    if (assigned_to !== undefined) $set.assigned_to = assigned_to;
+    if (is_active !== undefined) $set.is_active = is_active;
+    await col('admin_numbers').updateOne({ _id: req.params.id }, { $set });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/waba/numbers/:id/refresh — refresh quality data from Meta
+router.post('/waba/numbers/:id/refresh', async (req, res) => {
+  try {
+    const num = await col('admin_numbers').findOne({ _id: req.params.id });
+    if (!num) return res.status(404).json({ error: 'Number not found' });
+    const token = metaConfig.getMessagingToken();
+    const { data } = await axios.get(`${metaConfig.graphUrl}/${num.phone_number_id}`, {
+      params: { access_token: token, fields: 'quality_rating,messaging_limit,name_status,is_official_business_account,throughput' },
+      timeout: 10000,
+    });
+    await col('admin_numbers').updateOne({ _id: num._id }, { $set: {
+      quality_rating: data.quality_rating, messaging_limit_tier: data.messaging_limit?.tier,
+      name_status: data.name_status, is_official_business_account: data.is_official_business_account,
+      throughput_level: data.throughput?.level, quality_last_checked: new Date(), updated_at: new Date(),
+    }});
+    res.json({ success: true, quality_rating: data.quality_rating, messaging_limit_tier: data.messaging_limit?.tier });
+  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+});
+
+// POST /api/admin/waba/send — send message from admin number
+router.post('/waba/send', express.json(), async (req, res) => {
+  try {
+    const { phone_number_id, to, type, text, template, buttons } = req.body;
+    if (!phone_number_id || !to) return res.status(400).json({ error: 'phone_number_id and to are required' });
+    const token = metaConfig.getMessagingToken();
+    let result;
+    if (type === 'template' && template) {
+      result = await wa.sendTemplate(phone_number_id, token, to, template);
+    } else if (type === 'buttons' && buttons) {
+      result = await wa.sendButtons(phone_number_id, token, to, buttons);
+    } else {
+      result = await wa.sendText(phone_number_id, token, to, text || '');
+    }
+    // Log outgoing
+    col('admin_messages').insertOne({
+      _id: newId(), admin_number_id: phone_number_id, phone_number_id,
+      customer_phone: to, direction: 'outgoing',
+      message_type: type || 'text', message_content: text || template?.name || 'message',
+      wa_message_id: result?.messages?.[0]?.id || null, timestamp: new Date(),
+    }).catch(() => {});
+    res.json({ success: true, wa_message_id: result?.messages?.[0]?.id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/waba/messages — recent admin messages
+router.get('/waba/messages', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const msgs = await col('admin_messages').find({}).sort({ timestamp: -1 }).limit(limit).toArray();
+    res.json(mapIds(msgs));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/waba/webhook-info — webhook registration info
+router.get('/waba/webhook-info', (req, res) => {
+  res.json({
+    webhook_url: `${process.env.BASE_URL}/webhooks/directory`,
+    verify_token: process.env.WEBHOOK_VERIFY_TOKEN || '(not set)',
+    instructions: 'Go to Meta Developer Console → your app → WhatsApp → Configuration → Edit webhook URL → paste the URL and verify token above',
+  });
+});
 
 // ─── CONTACT BOOK (BSUID → Phone mapping) ───────────────────
 router.get('/waba/contact-book-status', async (req, res) => {

@@ -362,9 +362,19 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
     condition: 'new',
     price: priceFormatted,
     link: productLink,
-    // FUTURE FEATURE: Re-enable placeholder fallback when image pipeline is active:
-    // image_link: item.image_url || require('./imageUpload').getPlaceholderUrl(item) || '',
-    image_link: item.image_url || process.env.DEFAULT_FOOD_IMAGE_URL || 'https://gullybite.com/img/food-placeholder.png',
+    // Use medium (600x600) for Meta catalog; fall back to original or placeholder
+    image_link: (() => {
+      const imgUrl = item.image_url;
+      if (imgUrl) {
+        const { getMediumUrl } = require('./imageUpload');
+        return getMediumUrl(imgUrl) || imgUrl;
+      }
+      const { IMAGE_PIPELINE_ENABLED, } = require('../config/features');
+      if (IMAGE_PIPELINE_ENABLED) {
+        return require('./imageUpload').getPlaceholderUrl(item) || process.env.DEFAULT_FOOD_IMAGE_URL || '';
+      }
+      return process.env.DEFAULT_FOOD_IMAGE_URL || 'https://gullybite.com/img/food-placeholder.png';
+    })(),
     brand: brandName,
     google_product_category: item.google_product_category || 'Food, Beverages & Tobacco > Food Items',
     fb_product_category: item.fb_product_category || 'Food & Beverages > Prepared Food',

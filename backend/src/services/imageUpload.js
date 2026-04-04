@@ -27,8 +27,10 @@ if (IMAGE_PIPELINE_ENABLED) {
   });
 }
 
-const BUCKET = process.env.AWS_S3_BUCKET || 'gullybite-images';
-const CDN_DOMAIN = process.env.AWS_CLOUDFRONT_DOMAIN || '';
+const BUCKET = process.env.AWS_S3_BUCKET || 'gullybite-media-prod';
+// Accept both CLOUDFRONT_URL (full URL) and AWS_CLOUDFRONT_DOMAIN (domain only)
+const _cfEnv = process.env.CLOUDFRONT_URL || process.env.AWS_CLOUDFRONT_DOMAIN || '';
+const CDN_DOMAIN = _cfEnv.replace(/^https?:\/\//, '').replace(/\/+$/, '');
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_FORMATS = ['jpeg', 'png', 'webp', 'gif', 'tiff'];
@@ -401,11 +403,26 @@ async function generatePresignedUploadUrl(restaurantId, filename, contentType, f
 
   const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
 
+  const publicUrl = cdnUrl(key);
   return {
     presignedUrl,
-    cloudFrontUrl: cdnUrl(key),
+    cloudFrontUrl: publicUrl,
+    thumbnailUrl: getThumbnailUrl(publicUrl),
+    mediumUrl: getMediumUrl(publicUrl),
     s3Key: key,
   };
+}
+
+// ─── URL HELPERS FOR RESIZED VERSIONS ───────────────────────
+// The Lambda auto-creates resized versions at /resized/thumbnail-{filename} and /resized/medium-{filename}
+function getThumbnailUrl(originalUrl) {
+  if (!originalUrl) return null;
+  return originalUrl.replace(/\/menu\/([^/]+)$/, '/menu/resized/thumbnail-$1');
+}
+
+function getMediumUrl(originalUrl) {
+  if (!originalUrl) return null;
+  return originalUrl.replace(/\/menu\/([^/]+)$/, '/menu/resized/medium-$1');
 }
 
 module.exports = {
@@ -424,4 +441,6 @@ module.exports = {
   optimizeImage,
   generateThumbnail,
   cdnUrl,
+  getThumbnailUrl,
+  getMediumUrl,
 };

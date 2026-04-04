@@ -187,11 +187,27 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
   <div class="login-card">
     <div class="login-logo"><span class="dot">🍜</span> GullyBite</div>
     <div class="login-sub">Admin Dashboard</div>
-    <div class="login-field">
-      <label>Admin Key</label>
-      <input type="password" id="admin-key-input" placeholder="Enter your ADMIN_KEY" autocomplete="off">
+    <!-- JWT Login (email + password) -->
+    <div id="login-jwt-form">
+      <div class="login-field"><label>Email</label><input type="email" id="admin-email-input" placeholder="admin@gullybite.com" autocomplete="email"></div>
+      <div class="login-field"><label>Password</label><input type="password" id="admin-pass-input" placeholder="Password" autocomplete="current-password"></div>
+      <button class="btn-login" onclick="doJwtLogin()">Sign In</button>
+      <div style="text-align:center;margin-top:.6rem"><a href="#" onclick="event.preventDefault();document.getElementById('login-jwt-form').style.display='none';document.getElementById('login-key-form').style.display='block'" style="font-size:.75rem;color:var(--dim)">Use Admin Key instead</a></div>
     </div>
-    <button class="btn-login" onclick="doLogin()">Sign In</button>
+    <!-- Legacy ADMIN_KEY Login (hidden by default) -->
+    <div id="login-key-form" style="display:none">
+      <div class="login-field"><label>Admin Key</label><input type="password" id="admin-key-input" placeholder="Enter your ADMIN_KEY" autocomplete="off"></div>
+      <button class="btn-login" onclick="doLogin()">Sign In</button>
+      <div style="text-align:center;margin-top:.6rem"><a href="#" onclick="event.preventDefault();document.getElementById('login-key-form').style.display='none';document.getElementById('login-jwt-form').style.display='block'" style="font-size:.75rem;color:var(--dim)">Use email login</a></div>
+    </div>
+    <!-- First-run setup (shown only if no admin users exist) -->
+    <div id="login-setup-form" style="display:none">
+      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:.6rem .8rem;margin-bottom:.8rem;font-size:.78rem;color:#15803d">First-time setup — create your super admin account</div>
+      <div class="login-field"><label>Email</label><input type="email" id="setup-email" placeholder="tarun@gullybite.com"></div>
+      <div class="login-field"><label>Name</label><input type="text" id="setup-name" placeholder="Your name"></div>
+      <div class="login-field"><label>Password</label><input type="password" id="setup-pass" placeholder="Min 8 characters"></div>
+      <button class="btn-login" onclick="doFirstRunSetup()">Create Account</button>
+    </div>
     <div class="login-err" id="login-err"></div>
   </div>
 </div>
@@ -1497,10 +1513,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
 // ─── CONFIG ───────────────────────────────────────────────────────
 const BASE = '';  // same origin
 let adminKey = '';
+let adminUser = null; // { name, email, role, permissions }
 
 // ─── API HELPER ───────────────────────────────────────────────────
 async function api(path, opts = {}) {
-  // Auto-stringify body if it's an object (fetch requires string)
   if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
   const res = await fetch(BASE + path, {
     ...opts,
@@ -1511,45 +1527,94 @@ async function api(path, opts = {}) {
     },
   });
   if (!res.ok) {
+    if (res.status === 401) { logout(); throw new Error('Session expired'); }
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || res.statusText);
   }
   return res.json();
 }
 
-// ─── AUTH ─────────────────────────────────────────────────────────
+// ─── PERMISSION HELPERS ──────────────────────────────────────────
+function hasPermission(module, minLevel) {
+  if (!adminUser) return false;
+  if (adminUser.role === 'super_admin') return true;
+  const p = adminUser.permissions || {};
+  if (typeof p[module] === 'boolean') return p[module];
+  const levels = { none: 0, read: 1, write: 2, process: 2, manage: 3 };
+  return (levels[p[module]] || 0) >= (levels[minLevel || 'read'] || 1);
+}
+
+// ─── AUTH — JWT LOGIN ────────────────────────────────────────────
+async function doJwtLogin() {
+  const email = document.getElementById('admin-email-input').value.trim();
+  const pass = document.getElementById('admin-pass-input').value;
+  const err = document.getElementById('login-err');
+  if (!email || !pass) { err.textContent = 'Email and password are required.'; return; }
+  try {
+    const r = await fetch(BASE + '/api/admin/auth', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass }),
+    }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error); }); return r.json(); });
+    adminKey = r.token;
+    adminUser = r.user;
+    localStorage.setItem('gb_admin_token', r.token);
+    showApp();
+  } catch (e) { err.textContent = e.message || 'Login failed'; }
+}
+
+// ─── AUTH — LEGACY ADMIN_KEY LOGIN ───────────────────────────────
 async function doLogin() {
   const key = document.getElementById('admin-key-input').value.trim();
   const err = document.getElementById('login-err');
   if (!key) { err.textContent = 'Please enter the admin key.'; return; }
   try {
     await fetch(BASE + '/api/admin/auth', {
-      method : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body   : JSON.stringify({ key }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
     }).then(r => { if (!r.ok) throw new Error('Invalid key'); return r.json(); });
     adminKey = key;
+    adminUser = { role: 'super_admin', permissions: {} };
     sessionStorage.setItem('gb_admin_key', key);
     showApp();
-  } catch {
-    err.textContent = 'Invalid admin key. Please try again.';
-  }
+  } catch { err.textContent = 'Invalid admin key.'; }
+}
+
+// ─── AUTH — FIRST-RUN SETUP ─────────────────────────────────────
+async function doFirstRunSetup() {
+  const email = document.getElementById('setup-email').value.trim();
+  const name = document.getElementById('setup-name').value.trim();
+  const pass = document.getElementById('setup-pass').value;
+  const err = document.getElementById('login-err');
+  if (!email || !pass) { err.textContent = 'Email and password required.'; return; }
+  if (pass.length < 8) { err.textContent = 'Password must be at least 8 characters.'; return; }
+  try {
+    const r = await fetch(BASE + '/api/admin/auth/setup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass, name }),
+    }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error); }); return r.json(); });
+    adminKey = r.token;
+    adminUser = r.user;
+    localStorage.setItem('gb_admin_token', r.token);
+    showApp();
+  } catch (e) { err.textContent = e.message || 'Setup failed'; }
 }
 
 function logout() {
   adminKey = '';
+  adminUser = null;
+  localStorage.removeItem('gb_admin_token');
   sessionStorage.removeItem('gb_admin_key');
   document.getElementById('app').classList.remove('visible');
   document.getElementById('login-screen').style.display = 'flex';
-  document.getElementById('admin-key-input').value = '';
   document.getElementById('login-err').textContent = '';
 }
 
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
+  // Apply sidebar visibility based on permissions
+  applySidebarPermissions();
   loadAll();
-  // Restore active page from URL hash (e.g. #restaurants, #orders, #flows)
   const hash = location.hash.replace('#', '');
   if (hash && PAGE_TITLES[hash]) {
     const navEl = document.querySelector(`.nav-item[data-page="${hash}"]`);
@@ -1558,7 +1623,60 @@ function showApp() {
   connectAdminWS();
 }
 
-document.getElementById('admin-key-input').addEventListener('keydown', e => {
+function applySidebarPermissions() {
+  // Show/hide sidebar items based on permissions
+  document.querySelectorAll('.nav-item[data-page]').forEach(el => {
+    const page = el.getAttribute('data-page');
+    const permMap = {
+      restaurants: 'restaurants', orders: 'orders', templates: 'waba_health',
+      flows: 'admin_waba', directory: 'directory', referrals: 'referrals',
+      settlements: 'settlements', analytics: 'analytics', activity: 'activity_logs',
+      abuse: 'platform_settings', financials: 'settlements',
+    };
+    const perm = permMap[page];
+    if (perm && !hasPermission(perm)) el.style.display = 'none';
+    else el.style.display = '';
+  });
+}
+
+// ─── AUTO-LOGIN ON PAGE LOAD ─────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  // Try JWT token first
+  const savedToken = localStorage.getItem('gb_admin_token');
+  if (savedToken) {
+    try {
+      adminKey = savedToken;
+      const me = await api('/api/admin/auth/me');
+      adminUser = me;
+      showApp();
+      return;
+    } catch { localStorage.removeItem('gb_admin_token'); adminKey = ''; }
+  }
+  // Try legacy session key
+  const savedKey = sessionStorage.getItem('gb_admin_key');
+  if (savedKey) {
+    adminKey = savedKey;
+    adminUser = { role: 'super_admin', permissions: {} };
+    showApp();
+    return;
+  }
+  // Check if first-run setup is needed
+  try {
+    const r = await fetch(BASE + '/api/admin/auth', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ check_setup: true }),
+    }).then(r => r.json());
+    if (r.setup_required) {
+      document.getElementById('login-jwt-form').style.display = 'none';
+      document.getElementById('login-setup-form').style.display = 'block';
+    }
+  } catch {}
+});
+
+document.getElementById('admin-pass-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') doJwtLogin();
+});
+document.getElementById('admin-key-input')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
 });
 

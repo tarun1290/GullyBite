@@ -12,18 +12,37 @@ const wa = require('../services/whatsapp');
 const location = require('../services/location');
 const { logActivity } = require('../services/activityLog');
 
+const metaConfig = require('../config/meta');
+
 const REFERRAL_COMMISSION_PCT = parseFloat(process.env.REFERRAL_COMMISSION_PCT || '7.5');
 const REFERRAL_WINDOW_HRS = parseInt(process.env.REFERRAL_WINDOW_HRS || '8', 10);
 
-const DIR_PID   = () => process.env.DIRECTORY_WA_PHONE_NUMBER_ID;
-const DIR_TOKEN = () => process.env.DIRECTORY_WA_ACCESS_TOKEN;
+// ─── ADMIN NUMBER RESOLUTION ────────────────────────────────
+// DB-first: reads admin_numbers collection. Falls back to env vars for backward compat.
+let _cachedAdminNumber = null;
+let _cacheTime = 0;
+async function getAdminNumber(phoneNumberId) {
+  if (phoneNumberId) {
+    const num = await col('admin_numbers').findOne({ phone_number_id: phoneNumberId, is_active: true });
+    if (num) return { pid: num.phone_number_id, token: metaConfig.systemUserToken, purpose: num.purpose || 'directory' };
+  }
+  // Fallback: use first active admin number or env vars
+  if (!_cachedAdminNumber || Date.now() - _cacheTime > 300000) {
+    const num = await col('admin_numbers').findOne({ purpose: 'directory', is_active: true });
+    if (num) { _cachedAdminNumber = { pid: num.phone_number_id, token: metaConfig.systemUserToken }; _cacheTime = Date.now(); }
+  }
+  if (_cachedAdminNumber) return { ...(_cachedAdminNumber), purpose: 'directory' };
+  return { pid: process.env.DIRECTORY_WA_PHONE_NUMBER_ID, token: process.env.DIRECTORY_WA_ACCESS_TOKEN || metaConfig.systemUserToken, purpose: 'directory' };
+}
+const DIR_PID   = () => _cachedAdminNumber?.pid || process.env.DIRECTORY_WA_PHONE_NUMBER_ID;
+const DIR_TOKEN = () => metaConfig.systemUserToken || process.env.DIRECTORY_WA_ACCESS_TOKEN;
 
 // ─── WEBHOOK VERIFICATION ───────────────────────────────────────
 router.get('/', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-  if (mode === 'subscribe' && token === process.env.DIRECTORY_WA_VERIFY_TOKEN) {
+  if (mode === 'subscribe' && token === (process.env.WEBHOOK_VERIFY_TOKEN || process.env.DIRECTORY_WA_VERIFY_TOKEN)) {
     return res.status(200).send(challenge);
   }
   res.sendStatus(403);
@@ -59,7 +78,20 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     // Mark as read
     wa.markRead(DIR_PID(), DIR_TOKEN(), msg.id).catch(() => {});
 
+    // Resolve which admin number received this message
+    const recvPid = value.metadata?.phone_number_id;
+    const adminNum = await getAdminNumber(recvPid);
+    _cachedAdminNumber = { pid: adminNum.pid, token: adminNum.token };
+
     logActivity({ actorType: 'customer', actorId: from, action: 'directory.query_received', category: 'directory', description: `Directory query from ${from}`, severity: 'info' });
+
+    // Log incoming message
+    col('admin_messages').insertOne({
+      _id: newId(), admin_number_id: recvPid, phone_number_id: recvPid,
+      customer_phone: from, direction: 'incoming',
+      message_type: msg.type, message_content: msg.text?.body || msg.interactive?.button_reply?.title || msg.type,
+      wa_message_id: msg.id, timestamp: new Date(),
+    }).catch(() => {});
 
     // Route by message type
     if (msg.type === 'interactive') {

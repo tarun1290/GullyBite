@@ -24,6 +24,20 @@ const INDEXES = [
   { collection: 'referrals', index: { customer_phone: 1, restaurant_id: 1, status: 1, expires_at: 1 } },
   { collection: 'deliveries', index: { order_id: 1 }, options: { unique: true, sparse: true } },
   { collection: 'deliveries', index: { provider_order_id: 1 } },
+  // Admin user (RBAC) indexes
+  { collection: 'admin_users', index: { email: 1 }, options: { unique: true } },
+  { collection: 'admin_users', index: { role: 1, is_active: 1 } },
+  { collection: 'admin_audit_log', index: { admin_id: 1, timestamp: -1 } },
+  { collection: 'admin_audit_log', index: { action: 1, timestamp: -1 } },
+  // Admin WABA indexes
+  { collection: 'admin_numbers', index: { phone_number_id: 1 }, options: { unique: true } },
+  { collection: 'admin_numbers', index: { purpose: 1, is_active: 1 } },
+  { collection: 'admin_messages', index: { timestamp: -1 } },
+  { collection: 'admin_messages', index: { customer_phone: 1, timestamp: -1 } },
+  // Referral link indexes
+  { collection: 'referral_links', index: { code: 1 }, options: { unique: true } },
+  { collection: 'referral_links', index: { restaurant_id: 1, status: 1 } },
+  { collection: 'referrals', index: { referral_code: 1 } },
   // Abandoned cart recovery indexes
   { collection: 'abandoned_carts', index: { restaurant_id: 1, recovery_status: 1, created_at: -1 } },
   { collection: 'abandoned_carts', index: { customer_phone: 1, restaurant_id: 1, created_at: -1 } },

@@ -1083,7 +1083,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               <div class="fg span2">
                 <label>Item Image <small>(recommended 500×500px — shown in WhatsApp catalog)</small></label>
                 <div class="img-pick">
-                  <div class="img-preview" id="img-preview-box" title="Upload coming soon — AWS setup pending" style="opacity:.45;cursor:not-allowed;position:relative">
+                  <div class="img-preview" id="img-preview-box" title="Click to upload image" onclick="document.getElementById('m-img-file').click()" style="position:relative">
                     <span id="img-preview-icon">📷</span>
                     <img id="img-preview-img" src="" style="display:none" alt="">
                     <div class="img-spin" id="img-preview-spin" style="display:none"><div class="spin"></div></div>
@@ -1096,7 +1096,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
                       <button class="btn-g btn-sm" type="button" disabled title="Upload coming soon — AWS setup pending">📤 Upload</button>
                     </div>
                     <div class="img-hint">
-                      Paste any public image URL above. Direct upload coming soon (AWS setup pending).<br>
+                      Paste a URL or click the camera icon to upload directly. Max 5MB, JPG/PNG/WebP.<br>
                       Max 5 MB · JPEG, PNG, WebP, GIF.
                     </div>
                   </div>

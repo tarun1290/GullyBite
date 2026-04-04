@@ -8,13 +8,9 @@ const express = require('express');
 const router = express.Router();
 const { col, mapIds } = require('../config/database');
 
-// Admin auth — same pattern as admin.js
-router.use((req, res, next) => {
-  const header = req.headers['authorization'] || '';
-  const key = header.startsWith('Bearer ') ? header.slice(7) : req.headers['x-admin-key'];
-  if (!key || key !== process.env.ADMIN_KEY) return res.status(403).json({ error: 'Forbidden' });
-  next();
-});
+// Admin auth — uses RBAC middleware with analytics read permission
+const { requireAdminAuth } = require('../middleware/adminAuth');
+router.use(requireAdminAuth('analytics', 'read'));
 
 // ─── SHARED FILTER BUILDER ──────────────────────────────────
 function buildMatchFilter(query) {

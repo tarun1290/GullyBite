@@ -447,7 +447,62 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   const pid = waAccount.phone_number_id;
   const token = waAccount.access_token;
   const to = customerIdentity.resolveRecipient(customer);
-  const rawText = msg.text.body.trim();
+  let rawText = msg.text.body.trim();
+
+  // ── GBREF code detection (referral tracking — invisible to customer) ──
+  const gbrefMatch = rawText.match(/GBREF-([a-zA-Z0-9]{4,10})/i);
+  if (gbrefMatch) {
+    const refCode = gbrefMatch[1];
+    console.log(`[Referral] GBREF detected: ${refCode} from ${customer.wa_phone || customer.bsuid}`);
+    try {
+      const refLink = await col('referral_links').findOne({ code: refCode, status: 'active' });
+      if (refLink) {
+        // Increment click count
+        col('referral_links').updateOne({ _id: refLink._id }, { $inc: { click_count: 1 } }).catch(() => {});
+
+        const custPhone = customer.wa_phone || customer.bsuid;
+        const now = new Date();
+        const windowHours = parseFloat(process.env.REFERRAL_WINDOW_HRS || '8');
+        const expiresAt = new Date(now.getTime() + windowHours * 3600000);
+
+        // Upsert referral session — refresh window if already active
+        await col('referrals').findOneAndUpdate(
+          { customer_wa_phone: custPhone, restaurant_id: refLink.restaurant_id, status: 'active', expires_at: { $gt: now } },
+          {
+            $set: { expires_at: expiresAt, referral_code: refCode, updated_at: now },
+            $setOnInsert: {
+              _id: newId(),
+              customer_wa_phone: custPhone,
+              customer_bsuid: customer.bsuid || null,
+              customer_name: customer.name || null,
+              restaurant_id: refLink.restaurant_id,
+              referral_code: refCode,
+              referral_link_id: String(refLink._id),
+              source: 'gbref',
+              status: 'active',
+              orders_count: 0,
+              total_order_value_rs: 0,
+              referral_fee_rs: 0,
+              notes: refLink.campaign_name || null,
+              created_at: now,
+            },
+          },
+          { upsert: true }
+        );
+        console.log(`[Referral] Session created/refreshed for ${custPhone} → restaurant ${refLink.restaurant_id} (code: ${refCode}, expires: ${expiresAt.toISOString()})`);
+      } else {
+        console.log(`[Referral] GBREF code "${refCode}" not found or not active — ignoring`);
+      }
+    } catch (e) {
+      console.warn('[Referral] GBREF processing error:', e.message);
+    }
+
+    // Strip the GBREF code from the message, continue with cleaned text
+    rawText = rawText.replace(/GBREF-[a-zA-Z0-9]{4,10}/gi, '').trim();
+    if (!rawText) rawText = 'Hi'; // If message was only the code, treat as greeting
+    msg.text.body = rawText;
+  }
+
   const text = rawText.toUpperCase();
 
   // ── Google Maps URL detection ─────────────────────────────

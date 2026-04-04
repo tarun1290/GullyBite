@@ -33,6 +33,8 @@ router.post('/presign', async (req, res) => {
     res.json({
       presignedUrl: result.presignedUrl,
       cloudFrontUrl: result.cloudFrontUrl,
+      thumbnailUrl: result.thumbnailUrl,
+      mediumUrl: result.mediumUrl,
       s3Key: result.s3Key,
     });
   } catch (e) {
