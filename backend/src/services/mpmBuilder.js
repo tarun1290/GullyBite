@@ -222,8 +222,11 @@ async function buildBranchMPMs(branchId, restaurantId) {
     if (productIds.length) {
       const catLower = catName.toLowerCase();
       const emoji = getCategoryEmoji(catLower);
+      // Pre-truncate: emoji (1-2 chars) + space + catName must fit 24 chars
+      const maxCatLen = 24 - emoji.length - 1; // 1 for the space
+      const truncatedCat = catName.length > maxCatLen ? catName.substring(0, maxCatLen) : catName;
       sections.push({
-        title: `${emoji} ${catName}`,
+        title: `${emoji} ${truncatedCat}`,
         product_retailer_ids: productIds,
         _catLower: catLower,
       });
@@ -243,8 +246,9 @@ async function buildBranchMPMs(branchId, restaurantId) {
     while (sorted.length > 10) {
       const a = sorted.shift();
       const b = sorted.shift();
+      const mergedTitle = `${a.title} & more`.substring(0, 24);
       const merged = {
-        title: `${a.title} & more`,
+        title: mergedTitle,
         product_retailer_ids: [...a.product_retailer_ids, ...b.product_retailer_ids],
         _catLower: a._catLower,
       };
@@ -294,34 +298,38 @@ async function buildBranchMPMs(branchId, restaurantId) {
   // Build MPMs from section buckets, respecting 30 items + 10 sections limits
   function buildMPMsFromBucket(label, secs) {
     if (!secs.length) return;
+
+    // FIRST: merge sections to respect 10-section limit
+    secs = mergeSectionsIfNeeded(secs);
     const count = secs.reduce((s, sec) => s + sec.product_retailer_ids.length, 0);
+    console.log(`[MPM] buildMPMsFromBucket "${label}": ${secs.length} sections after merge, ${count} products`);
 
     if (count <= 30) {
+      // Single MPM — sections already merged to ≤10
       mpms.push({
         header: `${label} — ${branch.name}`,
         body: 'Browse and add to cart. Your cart persists across messages!',
         footer: 'Prices inclusive of taxes',
-        sections: mergeSectionsIfNeeded(secs),
+        sections: secs,
       });
+      console.log(`[MPM] buildMPMsFromBucket "${label}": → 1 MPM`);
       return;
     }
 
-    // Split into sub-buckets of ≤30 items each
+    // Need multiple MPMs — batch by item count (≤30 items per MPM)
     let batch = [];
     let batchItems = 0;
     let part = 1;
 
     for (const sec of secs) {
-      if (batch.length >= 10 || batchItems + sec.product_retailer_ids.length > 30) {
-        if (batch.length) {
-          mpms.push({
-            header: `${label} (${part}) — ${branch.name}`,
-            body: 'Browse and add to cart. Your cart persists across messages!',
-            footer: 'Prices inclusive of taxes',
-            sections: batch,
-          });
-          part++;
-        }
+      if (batchItems + sec.product_retailer_ids.length > 30 && batch.length) {
+        mpms.push({
+          header: `${label} (${part}) — ${branch.name}`,
+          body: 'Browse and add to cart. Your cart persists across messages!',
+          footer: 'Prices inclusive of taxes',
+          sections: mergeSectionsIfNeeded(batch),
+        });
+        part++;
         batch = [];
         batchItems = 0;
       }
@@ -334,9 +342,10 @@ async function buildBranchMPMs(branchId, restaurantId) {
         header: `${label}${part > 1 ? ` (${part})` : ''} — ${branch.name}`,
         body: 'Browse and add to cart. Your cart persists across messages!',
         footer: 'Prices inclusive of taxes',
-        sections: batch,
+        sections: mergeSectionsIfNeeded(batch),
       });
     }
+    console.log(`[MPM] buildMPMsFromBucket "${label}": → ${part} MPM(s)`);
   }
 
   buildMPMsFromBucket('🍽️ Food Menu', foodSections);

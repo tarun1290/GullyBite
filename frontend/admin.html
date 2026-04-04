@@ -701,6 +701,35 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
           </table>
         </div>
 
+        <!-- Template Gallery (predefined templates) -->
+        <div class="table-wrap" style="margin-bottom:1.2rem">
+          <div class="table-head" style="cursor:pointer" onclick="var b=document.getElementById('tpl-gallery-body');b.style.display=b.style.display==='none'?'block':'none'">
+            <h2>Template Gallery</h2><span style="margin-left:auto;font-size:.75rem;color:var(--dim)">&#x25BC;</span>
+          </div>
+          <div id="tpl-gallery-body" style="display:none;padding:0">
+            <div id="tpl-gallery-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.75rem;padding:1rem">
+              <div style="padding:1rem;color:var(--dim)">Loading gallery...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Visual Template Editor (opens when editing) -->
+        <div id="template-editor-container" style="display:none">
+          <div style="display:flex;align-items:center;gap:.75rem;padding:.8rem 1rem;background:#fff;border:1px solid var(--rim);border-radius:var(--r);margin-bottom:1rem;box-shadow:var(--shadow-sm)">
+            <button class="btn-sm" onclick="closeTemplateEditor()" style="font-size:.8rem">&larr; Back</button>
+            <span id="te-title" style="font-weight:700;font-size:.95rem;flex:1">Template Editor</span>
+            <button class="btn-sm primary" onclick="teSaveTemplate()">Submit to Meta</button>
+            <button class="btn-sm danger" onclick="teDeleteTemplate()" id="te-delete-btn" style="display:none">Delete</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 320px;gap:1rem;min-height:500px">
+            <div id="te-builder" style="background:#fff;border:1px solid var(--rim);border-radius:var(--r);padding:1rem;overflow-y:auto;max-height:75vh"></div>
+            <div style="background:#fff;border:1px solid var(--rim);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column">
+              <div style="padding:.4rem .6rem;background:var(--ink4);border-bottom:1px solid var(--rim);font-size:.75rem;font-weight:600;color:var(--dim);text-align:center">WhatsApp Preview</div>
+              <div id="te-preview" style="flex:1;overflow-y:auto;padding:.8rem;background:#e5ddd5"></div>
+            </div>
+          </div>
+        </div>
+
         <!-- Recent Notifications Log -->
         <div class="table-wrap">
           <div class="table-head"><h2>Recent Notification Sends</h2></div>
@@ -1106,7 +1135,7 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
             <div style="margin-bottom:.75rem">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem">
                 <label style="font-size:.75rem;color:var(--dim);font-weight:600">Flow JSON</label>
-                <select id="new-flow-template" onchange="loadFlowTemplate(this.value)" style="font-size:.75rem;padding:.2rem .5rem;border:1px solid var(--rim);border-radius:4px"><option value="">Load Template...</option><option value="delivery_address">Delivery Address</option><option value="feedback_rating">Order Rating</option><option value="blank">Blank Skeleton</option></select>
+                <select id="new-flow-template" onchange="loadFlowTemplate(this.value)" style="font-size:.75rem;padding:.2rem .5rem;border:1px solid var(--rim);border-radius:4px"><option value="">Load Template...</option><option value="delivery_address">Delivery Address</option><option value="feedback_rating">Order Rating</option><option value="lead_capture">Lead Capture</option><option value="table_booking">Table Booking</option><option value="survey">Customer Survey</option><option value="order_preferences">Order Preferences</option><option value="blank">Blank Skeleton</option></select>
               </div>
               <textarea id="new-flow-json" rows="12" style="width:100%;font-family:monospace;font-size:.75rem;background:#f8fafc;border:1px solid var(--rim);border-radius:6px;padding:.6rem;resize:vertical" placeholder='{"version":"6.2","screens":[...]}'></textarea>
             </div>
@@ -1137,6 +1166,40 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <div class="table-wrap">
           <div class="table-head" style="cursor:pointer" onclick="toggleFlowJson()"><h2>Flow JSON Definition</h2><span id="flow-json-arrow" style="margin-left:auto;font-size:.75rem;color:var(--dim)">&#x25B6;</span></div>
           <div id="flow-json-body" style="display:none;padding:0"><pre id="flow-json-pre" style="margin:0;padding:1rem;background:var(--ink4);font-size:.75rem;line-height:1.5;overflow-x:auto;max-height:500px;overflow-y:auto;color:var(--tx);font-family:'SF Mono',Monaco,Consolas,monospace;border-top:1px solid var(--rim)"></pre></div>
+        </div>
+
+        <!-- Visual Flow Editor (opens when editing a specific flow) -->
+        <div id="flow-editor-container" style="display:none">
+          <div style="display:flex;align-items:center;gap:.75rem;padding:.8rem 1rem;background:#fff;border:1px solid var(--rim);border-radius:var(--r);margin-bottom:1rem;box-shadow:var(--shadow-sm)">
+            <button class="btn-sm" onclick="closeFlowEditor()" style="font-size:.8rem">&larr; Back</button>
+            <div style="flex:1">
+              <span id="fe-flow-name" style="font-weight:700;font-size:.95rem">Flow Editor</span>
+              <span id="fe-flow-status" style="font-size:.72rem;margin-left:.5rem;padding:.12rem .4rem;border-radius:99px;background:#3b82f615;color:#3b82f6;font-weight:600">DRAFT</span>
+            </div>
+            <button class="btn-sm" onclick="feToggleJsonMode()" id="fe-mode-btn">JSON Mode</button>
+            <button class="btn-sm" onclick="feExportJson()">Export</button>
+            <button class="btn-sm primary" onclick="feSaveFlow()">Save</button>
+            <button class="btn-sm" style="background:#22c55e;color:#fff;border-color:#22c55e" onclick="fePublishFlow()">Publish</button>
+          </div>
+
+          <!-- Three-panel layout -->
+          <div style="display:grid;grid-template-columns:200px 1fr 280px;gap:1rem;min-height:500px">
+            <!-- Left: Component Palette -->
+            <div id="fe-palette" style="background:#fff;border:1px solid var(--rim);border-radius:var(--r);padding:.6rem;font-size:.82rem;overflow-y:auto;max-height:70vh"></div>
+            <!-- Center: Screen Builder -->
+            <div style="background:#fff;border:1px solid var(--rim);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column">
+              <div id="fe-screen-tabs" style="display:flex;gap:0;border-bottom:1px solid var(--rim);overflow-x:auto;flex-shrink:0"></div>
+              <div id="fe-screen-props" style="padding:.5rem .7rem;border-bottom:1px solid var(--rim);font-size:.8rem;flex-shrink:0"></div>
+              <div id="fe-components" style="flex:1;overflow-y:auto;padding:.6rem"></div>
+              <div id="fe-json-area" style="display:none;flex:1;padding:0"><textarea id="fe-json-textarea" style="width:100%;height:100%;font-family:monospace;font-size:.75rem;border:none;resize:none;padding:.6rem;background:var(--ink4);color:var(--tx)"></textarea></div>
+              <div id="fe-nav-map" style="padding:.5rem .7rem;border-top:1px solid var(--rim);font-size:.75rem;color:var(--dim);flex-shrink:0"></div>
+            </div>
+            <!-- Right: Preview -->
+            <div style="background:#fff;border:1px solid var(--rim);border-radius:var(--r);padding:0;overflow:hidden;display:flex;flex-direction:column">
+              <div style="padding:.4rem .6rem;background:var(--ink4);border-bottom:1px solid var(--rim);font-size:.75rem;font-weight:600;color:var(--dim);text-align:center">Preview</div>
+              <div id="fe-preview" style="flex:1;overflow-y:auto;padding:.6rem;background:#e5ddd5;font-size:.82rem"></div>
+            </div>
+          </div>
         </div>
 
       </div>
@@ -2585,7 +2648,7 @@ function timeUntil(ts) {
 
 // ─── TEMPLATES ─────────────────────────────────────────────────────
 async function loadTemplates() {
-  await Promise.all([loadTemplateMappings(), loadTemplateList(), loadTemplateNotifications()]);
+  await Promise.all([loadTemplateMappings(), loadTemplateList(), loadTemplateNotifications(), loadTemplateGallery()]);
 }
 
 async function loadTemplateMappings() {
@@ -2615,16 +2678,11 @@ async function loadTemplateList() {
       const colors = { APPROVED: '#16a34a', PENDING: '#d97706', REJECTED: '#dc2626', DELETED: '#94a3b8' };
       return `<span style="color:${colors[s]||'var(--dim)'};font-weight:600;font-size:.8rem">${s}</span>`;
     };
-    tbody.innerHTML = templates.map(t => `<tr>
-      <td><strong>${t.name}</strong></td>
-      <td style="font-size:.8rem">${t.category}</td>
-      <td>${t.language}</td>
-      <td>${statusBadge(t.status)}</td>
-      <td style="font-size:.75rem">${(t.components||[]).map(c => c.type).join(', ')}</td>
-      <td>
-        <button class="btn-sm danger" style="font-size:.72rem;padding:.2rem .5rem" onclick="deleteTemplate('${t.name}')">Delete</button>
-      </td>
-    </tr>`).join('');
+    tbody.innerHTML = templates.map(t => {
+      var quality = t.quality_score ? ('<span style="font-size:.72rem;color:' + ({HIGH:'#16a34a',MEDIUM:'#d97706',LOW:'#dc2626'}[t.quality_score]||'var(--dim)') + '">' + t.quality_score + '</span>') : '';
+      var rejection = t.status === 'REJECTED' && t.rejected_reason ? '<div style="font-size:.72rem;color:#dc2626;margin-top:.2rem">' + _esc(t.rejected_reason) + '</div>' : '';
+      return '<tr><td><strong>' + t.name + '</strong>' + rejection + '</td><td style="font-size:.8rem">' + t.category + '</td><td>' + t.language + '</td><td>' + statusBadge(t.status) + ' ' + quality + '</td><td style="font-size:.75rem">' + (t.components||[]).map(function(c){return c.type}).join(', ') + '</td><td style="white-space:nowrap"><button class="btn-sm" style="font-size:.72rem;padding:.2rem .5rem" onclick="openTemplateEditor(\'' + (t.meta_id || t.id || '') + '\')">Edit</button> <button class="btn-sm danger" style="font-size:.72rem;padding:.2rem .5rem" onclick="deleteTemplate(\'' + t.name + '\')">Delete</button></td></tr>';
+    }).join('');
   } catch (e) { console.error('loadTemplateList:', e); }
 }
 
@@ -2722,6 +2780,28 @@ async function deleteTemplate(name) {
     toast('Template deleted');
     loadTemplateList();
   } catch (e) { toast(e.message, 'err'); }
+}
+
+async function loadTemplateGallery() {
+  var grid = document.getElementById('tpl-gallery-grid');
+  if (!grid) return;
+  try {
+    var templates = await api('/api/admin/templates/gallery');
+    var catColors = { UTILITY: '#3b82f6', MARKETING: '#d97706', AUTHENTICATION: '#6b7280' };
+    grid.innerHTML = templates.map(function(t) {
+      var clr = catColors[t.category] || '#6b7280';
+      var varList = (t.variables || []).map(function(v) { return '{{' + v.position + '}} ' + v.source; }).join(', ');
+      var bodyPreview = ((t.components || []).find(function(c) { return c.type === 'BODY'; }) || {}).text || '';
+      if (bodyPreview.length > 120) bodyPreview = bodyPreview.substring(0, 120) + '...';
+      return '<div style="background:#fff;border:1px solid var(--rim);border-radius:8px;padding:.8rem;display:flex;flex-direction:column;gap:.4rem">'
+        + '<div style="display:flex;align-items:center;gap:.5rem"><strong style="font-size:.88rem;flex:1">' + _esc(t.display_name) + '</strong><span style="font-size:.65rem;padding:.1rem .4rem;border-radius:99px;background:' + clr + '15;color:' + clr + ';font-weight:600">' + t.category + '</span></div>'
+        + '<div style="font-size:.78rem;color:var(--dim)">' + _esc(t.description) + '</div>'
+        + '<div style="font-size:.75rem;background:var(--ink4);border-radius:6px;padding:.4rem .6rem;color:var(--tx);line-height:1.4;min-height:40px">' + _esc(bodyPreview) + '</div>'
+        + '<div style="font-size:.68rem;color:var(--dim)">Variables: ' + _esc(varList || 'none') + '</div>'
+        + '<button class="btn-sm primary" style="font-size:.75rem;align-self:flex-start;margin-top:auto" onclick="teLoadFromGallery(\'' + t.id + '\')">Use Template</button>'
+        + '</div>';
+    }).join('');
+  } catch (e) { grid.innerHTML = '<div style="padding:1rem;color:var(--dim)">Failed to load gallery</div>'; }
 }
 
 function editMapping(m) {
@@ -4052,10 +4132,10 @@ async function loadFlowLibrary() {
       + flows.map(function(f) {
         var clr = statusColors[f.status] || '#6b7280';
         var badge = '<span style="display:inline-block;padding:.15rem .45rem;border-radius:99px;font-size:.68rem;font-weight:600;background:' + clr + '15;color:' + clr + ';border:1px solid ' + clr + '30">' + f.status + '</span>';
-        var actions = '';
-        if (f.status === 'DRAFT') actions = '<button class="btn-sm" onclick="doPublishFlowById(\'' + f.id + '\')">Publish</button> <button class="btn-sm" style="color:var(--red)" onclick="doDeleteFlowById(\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Delete</button>';
-        else if (f.status === 'PUBLISHED') actions = '<button class="btn-sm" onclick="doAssignFlowAs(\'delivery\',\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Assign Delivery</button> <button class="btn-sm" onclick="doAssignFlowAs(\'feedback\',\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Assign Feedback</button> <button class="btn-sm" style="color:var(--dim)" onclick="doDeprecateFlowById(\'' + f.id + '\')">Deprecate</button>';
-        else if (f.status === 'DEPRECATED') actions = '<button class="btn-sm" style="color:var(--red)" onclick="doDeleteFlowById(\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Delete</button>';
+        var actions = '<button class="btn-sm" onclick="openFlowEditor(\'' + f.id + '\')">Edit</button> ';
+        if (f.status === 'DRAFT') actions += '<button class="btn-sm" onclick="doPublishFlowById(\'' + f.id + '\')">Publish</button> <button class="btn-sm" style="color:var(--red)" onclick="doDeleteFlowById(\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Delete</button>';
+        else if (f.status === 'PUBLISHED') actions += '<button class="btn-sm" onclick="doAssignFlowAs(\'delivery\',\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Assign Delivery</button> <button class="btn-sm" onclick="doAssignFlowAs(\'feedback\',\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Assign Feedback</button> <button class="btn-sm" style="color:var(--dim)" onclick="doDeprecateFlowById(\'' + f.id + '\')">Deprecate</button>';
+        else if (f.status === 'DEPRECATED') actions += '<button class="btn-sm" style="color:var(--red)" onclick="doDeleteFlowById(\'' + f.id + '\',\'' + (f.name||'').replace(/'/g,"\\'") + '\')">Delete</button>';
         var updated = f.updated_at ? new Date(f.updated_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '\u2014';
         return '<tr><td style="font-weight:500">' + (f.name || '\u2014') + '</td><td style="font-family:monospace;font-size:.75rem;color:var(--dim)">' + f.id + '</td><td>' + badge + '</td><td style="font-size:.78rem">' + (f.json_version || '\u2014') + '</td><td style="font-size:.78rem;color:var(--dim)">' + updated + '</td><td style="white-space:nowrap">' + actions + '</td></tr>';
       }).join('') + '</tbody></table>';
@@ -4492,5 +4572,7 @@ async function loadAdminFunnel() {
   } catch (e) { console.warn('[Admin] Funnel load failed:', e.message); }
 }
 </script>
+<script src="/js/flow-editor.js"></script>
+<script src="/js/template-editor.js"></script>
 </body>
 </html>

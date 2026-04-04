@@ -24,6 +24,12 @@ const INDEXES = [
   { collection: 'referrals', index: { customer_phone: 1, restaurant_id: 1, status: 1, expires_at: 1 } },
   { collection: 'deliveries', index: { order_id: 1 }, options: { unique: true, sparse: true } },
   { collection: 'deliveries', index: { provider_order_id: 1 } },
+  // Abandoned cart recovery indexes
+  { collection: 'abandoned_carts', index: { restaurant_id: 1, recovery_status: 1, created_at: -1 } },
+  { collection: 'abandoned_carts', index: { customer_phone: 1, restaurant_id: 1, created_at: -1 } },
+  { collection: 'abandoned_carts', index: { recovery_status: 1, created_at: 1 } },
+  { collection: 'abandoned_carts', index: { restaurant_id: 1, created_at: -1 } },
+  { collection: 'abandoned_carts', index: { expires_at: 1 }, options: { expireAfterSeconds: 0 } },
   // Analytics indexes
   { collection: 'orders', index: { branch_id: 1, created_at: -1 } },
   { collection: 'orders', index: { status: 1, created_at: -1 } },

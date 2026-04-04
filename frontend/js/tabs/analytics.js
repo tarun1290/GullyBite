@@ -413,8 +413,48 @@ window.anLoadTopItems = anLoadTopItems;
 window.anLoadPeakHours = anLoadPeakHours;
 window.anLoadDelivery = anLoadDelivery;
 window.anLoadCustomers = anLoadCustomers;
+// ─── CART RECOVERY ANALYTICS ─────────────────────────────
+async function loadCartRecoveryStats() {
+  const period = document.getElementById('cr-period')?.value || '7d';
+  try {
+    const d = await api(`/api/restaurant/analytics/cart-recovery?period=${period}`);
+    document.getElementById('cr-abandoned').textContent = d.total_abandoned || 0;
+    document.getElementById('cr-recovered').textContent = d.total_recovered || 0;
+    document.getElementById('cr-rate').textContent = (d.recovery_rate || 0) + '%';
+    document.getElementById('cr-revenue').textContent = '₹' + (d.revenue_recovered || 0).toLocaleString('en-IN');
+
+    // Funnel by stage
+    const stages = d.by_stage || {};
+    const funnelEl = document.getElementById('cr-funnel');
+    if (funnelEl) {
+      const rows = ['address_pending', 'review_pending', 'payment_pending', 'payment_failed']
+        .map(s => {
+          const st = stages[s] || { abandoned: 0, recovered: 0 };
+          const label = { address_pending: '📍 Address', review_pending: '🛒 Review', payment_pending: '💳 Payment', payment_failed: '❌ Failed' }[s] || s;
+          const pct = st.abandoned ? Math.round(st.recovered / st.abandoned * 100) : 0;
+          return `<div style="display:flex;align-items:center;gap:.6rem;padding:.35rem 0;border-bottom:1px solid var(--bdr,#e5e7eb)"><span style="width:100px">${label}</span><span style="flex:1"><div style="height:6px;background:var(--rim,#e5e7eb);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--wa);border-radius:3px"></div></div></span><span style="width:70px;text-align:right;font-size:.76rem">${st.recovered}/${st.abandoned}</span></div>`;
+        }).join('');
+      funnelEl.innerHTML = rows || '<div style="color:var(--dim)">No data yet</div>';
+    }
+
+    // Reminders breakdown
+    const rem = d.by_reminder || {};
+    const remLines = [1, 2, 3].map(r => {
+      const rd = rem[`reminder_${r}`] || { sent: 0, recovered: 0 };
+      return rd.sent ? `R${r}: ${rd.sent} sent → ${rd.recovered} recovered` : null;
+    }).filter(Boolean);
+    if (remLines.length && funnelEl) {
+      funnelEl.innerHTML += `<div style="margin-top:.6rem;font-size:.76rem;color:var(--dim)">${remLines.join(' · ')}</div>`;
+    }
+  } catch (e) {
+    const funnelEl = document.getElementById('cr-funnel');
+    if (funnelEl) funnelEl.innerHTML = '<div style="color:var(--dim)">Failed to load cart recovery data</div>';
+  }
+}
+
 window._destroyChart = _destroyChart;
 window.loadDropoffAnalytics = loadDropoffAnalytics;
 window.sendRecovery = sendRecovery;
+window.loadCartRecoveryStats = loadCartRecoveryStats;
 
 })();

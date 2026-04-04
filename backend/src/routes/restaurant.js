@@ -152,7 +152,7 @@ router.post('/catalog-diagnosis/fix', async (req, res) => {
     if (!found) return res.status(404).json({ error: 'No catalogs found on WABA or Business — create one from the dashboard' });
 
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_catalog_id: found.id, meta_catalog_name: found.name, updated_at: new Date() } });
-    if (wa_acc) await col('whatsapp_accounts').updateOne({ _id: wa_acc._id }, { $set: { catalog_id: found.id, updated_at: new Date() } });
+    if (wa_acc) await col('whatsapp_accounts').updateOne({ _id: wa_acc._id }, { $set: { catalog_id: found.id, catalog_linked: true, catalog_linked_at: new Date(), updated_at: new Date() } });
     await col('branches').updateMany({ restaurant_id: req.restaurantId }, { $set: { catalog_id: found.id, updated_at: new Date() } });
 
     console.log(`[Catalog-Fix] Linked catalog ${found.id} ("${found.name}") to restaurant ${req.restaurantId}`);
@@ -738,7 +738,7 @@ router.put('/whatsapp/:id', async (req, res) => {
   try {
     const { catalogId, isActive } = req.body;
     const $set = {};
-    if (catalogId !== undefined) $set.catalog_id = catalogId;
+    if (catalogId !== undefined) { $set.catalog_id = catalogId; $set.catalog_linked = !!catalogId; if (catalogId) $set.catalog_linked_at = new Date(); }
     if (isActive  !== undefined) $set.is_active   = isActive;
     await col('whatsapp_accounts').updateOne(
       { _id: req.params.id, restaurant_id: req.restaurantId },
@@ -2955,7 +2955,36 @@ router.get('/catalog/visibility-status', async (req, res) => {
         headers: { Authorization: `Bearer ${token}` }, timeout: 10000,
       });
       const settings = data?.data?.[0] || {};
-      res.json({ is_catalog_visible: !!settings.is_catalog_visible, is_cart_enabled: !!settings.is_cart_enabled, has_catalog: true, catalog_id: settings.id });
+      const metaVisible = !!settings.is_catalog_visible;
+      const metaCart = !!settings.is_cart_enabled;
+      const metaCatalogId = settings.id || null;
+      const metaLinked = !!metaCatalogId;
+
+      // Auto-heal: sync MongoDB to match Meta's reality
+      const healed = [];
+      const dbLinked = !!wa.catalog_linked;
+      const dbVisible = !!wa.catalog_visible;
+      const dbCart = !!wa.cart_enabled;
+      const dbCatalogId = wa.catalog_id || null;
+
+      const healUpdate = {};
+      if (metaLinked !== dbLinked) { healUpdate.catalog_linked = metaLinked; healed.push(`catalog_linked: ${dbLinked}→${metaLinked}`); }
+      if (metaVisible !== dbVisible) { healUpdate.catalog_visible = metaVisible; healed.push(`catalog_visible: ${dbVisible}→${metaVisible}`); }
+      if (metaCart !== dbCart) { healUpdate.cart_enabled = metaCart; healed.push(`cart_enabled: ${dbCart}→${metaCart}`); }
+      if (metaCatalogId && metaCatalogId !== dbCatalogId) { healUpdate.catalog_id = metaCatalogId; healed.push(`catalog_id: ${dbCatalogId}→${metaCatalogId}`); }
+
+      if (Object.keys(healUpdate).length) {
+        healUpdate.updated_at = new Date();
+        await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: healUpdate });
+        for (const h of healed) console.log(`[Catalog] Auto-heal: ${h}`);
+        // Also heal restaurant meta_catalog_id if needed
+        if (metaCatalogId && metaCatalogId !== restaurant?.meta_catalog_id) {
+          await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_catalog_id: metaCatalogId, updated_at: new Date() } });
+          console.log(`[Catalog] Auto-heal: restaurant.meta_catalog_id: ${restaurant?.meta_catalog_id}→${metaCatalogId}`);
+        }
+      }
+
+      res.json({ is_catalog_visible: metaVisible, is_cart_enabled: metaCart, has_catalog: true, catalog_id: metaCatalogId, auto_healed: healed.length > 0, healed });
     } catch (metaErr) {
       // Fall back to DB state
       res.json({ is_catalog_visible: !!wa.catalog_visible, is_cart_enabled: !!wa.cart_enabled, has_catalog: true, from_db: true });
@@ -3177,7 +3206,7 @@ router.post('/catalog/create-new', requireApproved, async (req, res) => {
     );
     await col('whatsapp_accounts').updateMany(
       { restaurant_id: req.restaurantId },
-      { $set: { catalog_id: catalogId, updated_at: new Date() } }
+      { $set: { catalog_id: catalogId, catalog_linked: true, catalog_linked_at: new Date(), updated_at: new Date() } }
     );
     await col('branches').updateMany(
       { restaurant_id: req.restaurantId },
@@ -4439,6 +4468,16 @@ router.post('/dropoffs/:conversationId/recover', requirePermission('manage_order
 router.get('/analytics/recovery-stats', requirePermission('view_analytics'), async (req, res) => {
   try {
     const stats = await dropoff.getRecoveryStats(req.restaurantId, req.query.from, req.query.to);
+    res.json(stats);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/analytics/cart-recovery — abandoned cart recovery analytics
+router.get('/analytics/cart-recovery', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const cartRecovery = require('../services/cart-recovery');
+    const periodDays = req.query.period === '30d' ? 30 : 7;
+    const stats = await cartRecovery.getRecoveryAnalytics(req.restaurantId, periodDays);
     res.json(stats);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

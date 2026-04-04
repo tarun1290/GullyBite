@@ -84,11 +84,11 @@ function buildDeliveryFlowJson() {
           children: [
             {
               type: 'TextHeading',
-              text: 'Continue',
+              text: 'Confirm your selection',
             },
             {
               type: 'TextBody',
-              text: 'Tap below to proceed.',
+              text: 'Tap Continue to proceed with your delivery address.',
             },
             {
               type: 'Footer',
@@ -106,19 +106,43 @@ function buildDeliveryFlowJson() {
       },
       {
         id: 'NEW_ADDRESS',
-        title: 'New Address',
+        title: 'Delivery Address',
         terminal: true,
         success: true,
+        data: {
+          customer_name: { type: 'string', __example__: 'Tarun' },
+          customer_phone: { type: 'string', __example__: '7382773430' },
+        },
         layout: {
           type: 'SingleColumnLayout',
           children: [
+            // ── Receiver Details ──
             {
               type: 'TextHeading',
-              text: 'Add delivery address',
+              text: 'Who is receiving?',
             },
             {
-              type: 'TextBody',
-              text: 'Paste a Google Maps link or type your address',
+              type: 'TextInput',
+              label: 'Receiver name',
+              'input-type': 'text',
+              name: 'receiver_name',
+              required: true,
+              'init-value': '${data.customer_name}',
+              'helper-text': 'Person who will receive the order',
+            },
+            {
+              type: 'TextInput',
+              label: 'Receiver phone',
+              'input-type': 'phone',
+              name: 'receiver_phone',
+              required: true,
+              'init-value': '${data.customer_phone}',
+              'helper-text': "We'll call this number if needed",
+            },
+            // ── Location Details ──
+            {
+              type: 'TextHeading',
+              text: 'Delivery location',
             },
             {
               type: 'TextInput',
@@ -126,45 +150,104 @@ function buildDeliveryFlowJson() {
               'input-type': 'text',
               name: 'maps_link',
               required: false,
-              'helper-text': 'e.g. maps.app.goo.gl/abc123',
+              'helper-text': 'Paste a maps.app.goo.gl/... link',
             },
             {
               type: 'TextInput',
-              label: 'Full address',
+              label: 'Flat / Building / Floor',
               'input-type': 'text',
-              name: 'manual_address',
-              required: false,
-              'helper-text': 'Street, area, city, pincode',
+              name: 'building_floor',
+              required: true,
+              'helper-text': 'e.g. Flat 301, Tower B, 3rd Floor',
             },
             {
               type: 'TextInput',
-              label: 'Flat / Floor / Landmark',
+              label: 'Street / Road',
               'input-type': 'text',
-              name: 'address_line2',
+              name: 'street',
               required: false,
             },
+            {
+              type: 'TextInput',
+              label: 'Area / Locality',
+              'input-type': 'text',
+              name: 'area_locality',
+              required: true,
+              'helper-text': 'e.g. Madhapur, Banjara Hills',
+            },
+            {
+              type: 'TextInput',
+              label: 'City',
+              'input-type': 'text',
+              name: 'city',
+              required: true,
+            },
+            {
+              type: 'TextInput',
+              label: 'Pin code',
+              'input-type': 'number',
+              name: 'pincode',
+              required: true,
+              'min-chars': 6,
+              'max-chars': 6,
+              'helper-text': '6-digit postal code',
+            },
+            {
+              type: 'TextInput',
+              label: 'Landmark',
+              'input-type': 'text',
+              name: 'landmark',
+              required: false,
+              'helper-text': 'e.g. Near Inorbit Mall, Opp Metro',
+            },
+            // ── Delivery Instructions ──
+            {
+              type: 'TextInput',
+              label: 'Delivery instructions',
+              'input-type': 'text',
+              name: 'delivery_instructions',
+              required: false,
+              'helper-text': 'e.g. Ring bell twice, leave at door',
+            },
+            // ── Save Label ──
             {
               type: 'Dropdown',
-              label: 'Save as',
-              name: 'address_label',
+              label: 'Save address as',
+              name: 'address_type',
               required: true,
               'data-source': [
-                { id: 'Home', title: 'Home' },
-                { id: 'Office', title: 'Office' },
-                { id: 'Other', title: 'Other' },
+                { id: 'home', title: '\uD83C\uDFE0 Home' },
+                { id: 'office', title: '\uD83C\uDFE2 Office' },
+                { id: 'other', title: '\uD83D\uDCCD Other' },
               ],
             },
             {
+              type: 'TextInput',
+              label: 'Address nickname',
+              'input-type': 'text',
+              name: 'address_nickname',
+              required: false,
+              'helper-text': "e.g. Mom's Place, Gym (for Other type)",
+            },
+            {
               type: 'Footer',
-              label: 'Deliver Here',
+              label: 'Save & Deliver Here',
               'on-click-action': {
                 name: 'complete',
                 payload: {
                   action: 'new_address',
+                  receiver_name: '${form.receiver_name}',
+                  receiver_phone: '${form.receiver_phone}',
                   maps_link: '${form.maps_link}',
-                  manual_address: '${form.manual_address}',
-                  address_line2: '${form.address_line2}',
-                  address_label: '${form.address_label}',
+                  building_floor: '${form.building_floor}',
+                  street: '${form.street}',
+                  area_locality: '${form.area_locality}',
+                  city: '${form.city}',
+                  pincode: '${form.pincode}',
+                  landmark: '${form.landmark}',
+                  delivery_instructions: '${form.delivery_instructions}',
+                  address_type: '${form.address_type}',
+                  address_nickname: '${form.address_nickname}',
                 },
               },
             },
@@ -276,15 +359,22 @@ async function deprecateFlow(flowId) {
 // Converts saved addresses from DB format to NavigationList item format.
 // Respects NavigationList limits: title=30, description=20, metadata=80.
 function formatAddressesForFlow(addresses) {
-  const items = addresses.slice(0, 19).map(addr => ({
-    id: String(addr._id || addr.id),
-    'main-content': {
-      title: (addr.label || 'Saved').substring(0, 30),
-      description: (addr.area || addr.city || addr.full_address?.split(',')[1]?.trim() || '').substring(0, 20),
-      metadata: (addr.full_address || addr.address || '').substring(0, 80),
-    },
-    ...(addr.is_default ? { badge: 'Default' } : {}),
-  }));
+  const typeIcon = { home: '\uD83C\uDFE0', office: '\uD83C\uDFE2', other: '\uD83D\uDCCD' };
+  const items = addresses.slice(0, 19).map(addr => {
+    const icon = typeIcon[addr.type || addr.address_type] || '';
+    const label = addr.label || 'Saved';
+    const title = (icon ? icon + ' ' + label : label).substring(0, 30);
+    const area = addr.area_locality || addr.area || addr.city || addr.full_address?.split(',')[1]?.trim() || '';
+    return {
+      id: String(addr._id || addr.id),
+      'main-content': {
+        title,
+        description: area.substring(0, 20),
+        metadata: (addr.full_address || addr.address || '').substring(0, 80),
+      },
+      ...(addr.is_default ? { badge: 'Default' } : {}),
+    };
+  });
 
   // Add "New Address" as last item (max 20 total)
   items.push({

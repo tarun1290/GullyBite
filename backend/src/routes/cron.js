@@ -72,6 +72,21 @@ router.get('/catalog-sync', async (req, res) => {
   }
 });
 
+// ─── CART RECOVERY (every 5 minutes) ────────────────────────
+// Sends timed recovery reminders for abandoned carts.
+router.get('/cart-recovery', async (req, res) => {
+  res.json({ ok: true, message: 'cart-recovery started', timestamp: new Date().toISOString() });
+
+  try {
+    const cartRecovery = require('../services/cart-recovery');
+    const result = await cartRecovery.processRecoveryQueue();
+    console.log(`[Cron] Cart recovery: sent=${result.sent} expired=${result.expired}`);
+    logActivity({ actorType: 'system', action: 'cron.cart_recovery', category: 'marketing', description: `Cart recovery: ${result.sent} reminders sent, ${result.expired} expired`, severity: 'info' });
+  } catch (e) {
+    console.error('[Cron] Cart recovery error:', e.message);
+  }
+});
+
 // ─── HEALTH CHECK (every 30 minutes) ─────────────────────────
 // Checks webhook heartbeat + token validity, creates platform_alerts if issues found.
 router.get('/health-check', async (req, res) => {

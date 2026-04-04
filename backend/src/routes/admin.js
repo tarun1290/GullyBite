@@ -1238,6 +1238,12 @@ router.post('/templates/seed', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/admin/templates/gallery — predefined template library
+router.get('/templates/gallery', (req, res) => {
+  const templates = require('../config/predefined-templates');
+  res.json(templates);
+});
+
 // GET /api/admin/templates/notifications — view recent template send logs
 router.get('/templates/notifications', async (req, res) => {
   try {
@@ -2261,6 +2267,43 @@ router.post('/flows/:flowId/deprecate', async (req, res) => {
   catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
+// PUT /api/admin/flows/:flowId — Update Flow JSON (DRAFT only)
+router.put('/flows/:flowId', async (req, res) => {
+  try {
+    const { flow_json } = req.body;
+    if (!flow_json) return res.status(400).json({ error: 'flow_json is required' });
+    const token = metaConfig.getMessagingToken();
+    const jsonStr = typeof flow_json === 'string' ? flow_json : JSON.stringify(flow_json);
+    const FormData = require('form-data');
+    const form = new FormData();
+    form.append('file', Buffer.from(jsonStr), { filename: 'flow.json', contentType: 'application/json' });
+    form.append('name', 'flow.json');
+    form.append('asset_type', 'FLOW_JSON');
+    const { data } = await axios.post(`${metaConfig.graphUrl}/${req.params.flowId}/assets`, form, {
+      headers: { Authorization: `Bearer ${token}`, ...form.getHeaders() }, timeout: 20000,
+    });
+    res.json({ success: true, ...data });
+  } catch (e) {
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors });
+  }
+});
+
+// GET /api/admin/flows/:flowId/json — Download Flow JSON asset
+router.get('/flows/:flowId/json', async (req, res) => {
+  try {
+    const token = metaConfig.getMessagingToken();
+    const { data: assets } = await axios.get(`${metaConfig.graphUrl}/${req.params.flowId}/assets`, {
+      headers: { Authorization: `Bearer ${token}` }, timeout: 10000,
+    });
+    const flowAsset = (assets.data || []).find(a => a.asset_type === 'FLOW_JSON');
+    if (!flowAsset?.download_url) return res.status(404).json({ error: 'No Flow JSON asset found' });
+    const { data: flowJson } = await axios.get(flowAsset.download_url, { timeout: 10000 });
+    res.json({ flow_json: flowJson, asset_id: flowAsset.id });
+  } catch (e) {
+    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+  }
+});
+
 // DELETE /api/admin/flows/:flowId — Delete a DRAFT Flow
 router.delete('/flows/:flowId', async (req, res) => {
   try {
@@ -2307,6 +2350,10 @@ router.get('/flows/templates', async (req, res) => {
       { id: 'delivery_address', name: 'Delivery Address (Full)', json: flowMgr.buildDeliveryFlowJson() },
       { id: 'feedback_rating', name: 'Order Rating (4 Categories)', json: flowMgr.buildFeedbackFlowJson() },
       { id: 'blank', name: 'Blank Skeleton', json: { version: '6.2', screens: [{ id: 'SCREEN_1', title: 'Screen Title', terminal: true, success: true, data: {}, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Heading' }, { type: 'TextBody', text: 'Body text' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: {} } }] } }] } },
+      { id: 'lead_capture', name: 'Lead Capture / Contact Form', json: { version: '6.2', screens: [{ id: 'CONTACT', title: 'Contact Us', terminal: true, success: true, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Get in Touch' }, { type: 'TextInput', label: 'Your name', 'input-type': 'text', name: 'name', required: true }, { type: 'TextInput', label: 'Phone number', 'input-type': 'phone', name: 'phone', required: true }, { type: 'TextInput', label: 'Email', 'input-type': 'email', name: 'email', required: false }, { type: 'Dropdown', label: 'Inquiry type', name: 'inquiry_type', required: true, 'data-source': [{ id: 'general', title: 'General Inquiry' }, { id: 'partnership', title: 'Partnership' }, { id: 'catering', title: 'Catering' }, { id: 'feedback', title: 'Feedback' }] }, { type: 'TextInput', label: 'Message', 'input-type': 'text', name: 'message', required: false, 'helper-text': 'Tell us how we can help' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: { name: '${form.name}', phone: '${form.phone}', email: '${form.email}', inquiry_type: '${form.inquiry_type}', message: '${form.message}' } } }] } }] } },
+      { id: 'table_booking', name: 'Table Booking', json: { version: '6.2', screens: [{ id: 'BOOKING', title: 'Book a Table', terminal: false, data: {}, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Reserve Your Table' }, { type: 'TextInput', label: 'Guest name', 'input-type': 'text', name: 'guest_name', required: true }, { type: 'TextInput', label: 'Phone', 'input-type': 'phone', name: 'guest_phone', required: true }, { type: 'DatePicker', label: 'Date', name: 'booking_date', required: true }, { type: 'Dropdown', label: 'Time slot', name: 'time_slot', required: true, 'data-source': [{ id: '12:00', title: '12:00 PM' }, { id: '13:00', title: '1:00 PM' }, { id: '14:00', title: '2:00 PM' }, { id: '19:00', title: '7:00 PM' }, { id: '20:00', title: '8:00 PM' }, { id: '21:00', title: '9:00 PM' }] }, { type: 'Dropdown', label: 'Party size', name: 'party_size', required: true, 'data-source': [{ id: '1', title: '1 person' }, { id: '2', title: '2 people' }, { id: '3-4', title: '3-4 people' }, { id: '5-6', title: '5-6 people' }, { id: '7+', title: '7+ people' }] }, { type: 'TextInput', label: 'Special requests', 'input-type': 'text', name: 'special_requests', required: false }, { type: 'Footer', label: 'Review Booking', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'CONFIRM_BOOKING' }, payload: { guest_name: '${form.guest_name}', guest_phone: '${form.guest_phone}', booking_date: '${form.booking_date}', time_slot: '${form.time_slot}', party_size: '${form.party_size}', special_requests: '${form.special_requests}' } } }] } }, { id: 'CONFIRM_BOOKING', title: 'Confirm Booking', terminal: true, success: true, data: { guest_name: { type: 'string', __example__: 'Tarun' }, time_slot: { type: 'string', __example__: '8:00 PM' }, party_size: { type: 'string', __example__: '2 people' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Confirm Your Reservation' }, { type: 'TextBody', text: 'Please review your booking details and tap Confirm.' }, { type: 'Footer', label: 'Confirm Booking', 'on-click-action': { name: 'complete', payload: { action: 'table_booking', guest_name: '${data.guest_name}', guest_phone: '${data.guest_phone}', booking_date: '${data.booking_date}', time_slot: '${data.time_slot}', party_size: '${data.party_size}', special_requests: '${data.special_requests}' } } }] } }] } },
+      { id: 'survey', name: 'Customer Survey', json: { version: '6.2', screens: [{ id: 'Q1', title: 'Quick Survey', terminal: false, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Help us improve!' }, { type: 'RadioButtonsGroup', label: 'How did you hear about us?', name: 'source', required: true, 'data-source': [{ id: 'social_media', title: 'Social media' }, { id: 'friend', title: 'Friend/Family' }, { id: 'google', title: 'Google search' }, { id: 'walk_in', title: 'Walked by' }, { id: 'other', title: 'Other' }] }, { type: 'Footer', label: 'Next', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'Q2' }, payload: { source: '${form.source}' } } }] } }, { id: 'Q2', title: 'Your Preferences', terminal: false, data: { source: { type: 'string', __example__: 'social_media' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'What do you love?' }, { type: 'CheckboxGroup', label: 'Select all that apply', name: 'preferences', required: true, 'data-source': [{ id: 'taste', title: 'Great taste' }, { id: 'price', title: 'Good prices' }, { id: 'delivery', title: 'Fast delivery' }, { id: 'variety', title: 'Menu variety' }, { id: 'healthy', title: 'Healthy options' }] }, { type: 'Footer', label: 'Next', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'Q3' }, payload: { source: '${data.source}', preferences: '${form.preferences}' } } }] } }, { id: 'Q3', title: 'Feedback', terminal: true, success: true, data: { source: { type: 'string', __example__: 'social_media' }, preferences: { type: 'string', __example__: 'taste' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Any suggestions?' }, { type: 'TextInput', label: 'Your feedback', 'input-type': 'text', name: 'feedback', required: false, 'helper-text': 'Tell us anything — we read every response!' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: { action: 'survey_response', source: '${data.source}', preferences: '${data.preferences}', feedback: '${form.feedback}' } } }] } }] } },
+      { id: 'order_preferences', name: 'Order Preferences', json: { version: '6.2', screens: [{ id: 'PREFERENCES', title: 'Your Preferences', terminal: true, success: true, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Customize Your Order' }, { type: 'CheckboxGroup', label: 'Dietary preferences', name: 'dietary', required: false, 'data-source': [{ id: 'veg', title: 'Vegetarian' }, { id: 'vegan', title: 'Vegan' }, { id: 'jain', title: 'Jain' }, { id: 'gluten_free', title: 'Gluten-free' }, { id: 'none', title: 'No restrictions' }] }, { type: 'RadioButtonsGroup', label: 'Spice level', name: 'spice_level', required: true, 'data-source': [{ id: 'mild', title: '\uD83C\uDF36 Mild' }, { id: 'medium', title: '\uD83C\uDF36\uD83C\uDF36 Medium' }, { id: 'hot', title: '\uD83C\uDF36\uD83C\uDF36\uD83C\uDF36 Hot' }, { id: 'extra_hot', title: '\uD83D\uDD25 Extra Hot' }] }, { type: 'TextInput', label: 'Special instructions', 'input-type': 'text', name: 'instructions', required: false, 'helper-text': 'Allergies, no onion/garlic, extra sauce, etc.' }, { type: 'Footer', label: 'Save Preferences', 'on-click-action': { name: 'complete', payload: { dietary: '${form.dietary}', spice_level: '${form.spice_level}', instructions: '${form.instructions}' } } }] } }] } },
     ]});
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

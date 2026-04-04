@@ -840,8 +840,15 @@ async function loadCatalogMgmt(refresh = false) {
   var listEl = document.getElementById('cat-mgmt-list');
   var settingsEl = document.getElementById('cat-mgmt-settings');
   var deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
-  if (!statusEl) { console.error('[CatalogMgmt] CRITICAL: cat-mgmt-status not found'); return; }
+  if (!statusEl) { console.error('[CatalogMgmt] CRITICAL: cat-mgmt-status not found — tab-whatsapp may not be in DOM'); return; }
   if (deleteConfirmEl) deleteConfirmEl.style.display = 'none';
+
+  // Ensure rest is loaded — if null, fetch it now
+  if (!rest) {
+    try { rest = await api('/auth/me'); } catch (_) {}
+    if (!rest) { statusEl.innerHTML = '<div style="padding:.6rem;font-size:.82rem;color:var(--dim)">Loading restaurant data...</div>'; return; }
+  }
+
   loadCatalogVisibility();
 
   // Helper: enable/disable a button (never display:none)

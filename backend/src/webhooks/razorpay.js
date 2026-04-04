@@ -135,6 +135,22 @@ const confirmPaidOrder = async (orderId) => {
     restaurantId: order.restaurant_id, resourceType: 'order', resourceId: orderId, severity: 'info',
   });
 
+  // Update conversation state to ORDER_ACTIVE so the bot knows payment is done
+  if (order.conversation_id) {
+    orderSvc.setState(order.conversation_id, 'ORDER_ACTIVE', {
+      orderId,
+      orderNumber: order.order_number,
+      branchId: order.branch_id,
+    }).catch(() => {}); // Non-critical
+  }
+
+  // Mark any abandoned cart as recovered
+  try {
+    const cartRecovery = require('../services/cart-recovery');
+    const customerPhone = order.wa_phone || resolveRecipient(order);
+    await cartRecovery.markRecovered(customerPhone, order.restaurant_id, orderId);
+  } catch (_) {} // Non-critical
+
   console.log(`✅ Order ${order.order_number} PAID — ₹${order.total_rs}`);
 };
 
@@ -207,6 +223,22 @@ const handleEvent = async (event) => {
           ],
         }
       );
+
+      // Track as payment_failed abandoned cart
+      try {
+        const cartRecovery = require('../services/cart-recovery');
+        const customer = await col('customers').findOne({ _id: order.customer_id });
+        await cartRecovery.trackAbandonedCart({
+          restaurantId: order.restaurant_id, branchId: order.branch_id,
+          customerId: order.customer_id, customerPhone: customer?.wa_phone || resolveRecipient(order),
+          customerName: customer?.name || order.customer_name,
+          cartItems: (order.items || []).map(i => ({ product_retailer_id: i.retailer_id, quantity: i.quantity, item_price: i.unit_price_rs, currency: 'INR', item_name: i.item_name })),
+          cartTotal: order.total_rs || 0, itemCount: (order.items || []).reduce((s, i) => s + i.quantity, 0),
+          abandonmentStage: 'payment_failed', abandonmentReason: 'payment_failed',
+          deliveryAddress: order.delivery_address ? { full_address: order.delivery_address } : null,
+          lastCustomerMessageAt: new Date(),
+        });
+      } catch (e) { console.warn('[Cart Recovery] Track payment_failed:', e.message); }
 
       logActivity({
         actorType: 'system', actorId: null, actorName: 'Razorpay',

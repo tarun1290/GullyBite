@@ -631,6 +631,20 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           <div class="ch"><h3>Recovery Performance</h3></div>
           <div id="df-recovery-stats" style="font-size:.85rem;color:var(--dim);padding:.5rem 0">Loading...</div>
         </div>
+
+        <!-- Cart Recovery Analytics -->
+        <div class="card" style="margin-top:1rem">
+          <div class="ch"><h3>Cart Recovery</h3><select id="cr-period" onchange="loadCartRecoveryStats()" style="font-size:.78rem;padding:.2rem .5rem;border:1px solid var(--rim);border-radius:4px"><option value="7d">7 days</option><option value="30d">30 days</option></select></div>
+          <div class="cb">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.8rem;margin-bottom:1rem" id="cr-cards">
+              <div class="card" style="text-align:center;padding:.8rem"><div style="font-size:.72rem;color:var(--dim)">Abandoned</div><div id="cr-abandoned" style="font-size:1.5rem;font-weight:700">—</div></div>
+              <div class="card" style="text-align:center;padding:.8rem"><div style="font-size:.72rem;color:var(--dim)">Recovered</div><div id="cr-recovered" style="font-size:1.5rem;font-weight:700;color:#22c55e">—</div></div>
+              <div class="card" style="text-align:center;padding:.8rem"><div style="font-size:.72rem;color:var(--dim)">Recovery Rate</div><div id="cr-rate" style="font-size:1.5rem;font-weight:700;color:var(--wa)">—</div></div>
+              <div class="card" style="text-align:center;padding:.8rem"><div style="font-size:.72rem;color:var(--dim)">Revenue Recovered</div><div id="cr-revenue" style="font-size:1.5rem;font-weight:700;color:var(--gold,#eab308)">—</div></div>
+            </div>
+            <div id="cr-funnel" style="font-size:.82rem;color:var(--dim)">Loading...</div>
+          </div>
+        </div>
       </div>
 
       <!-- ── CUSTOMERS ────────────────────────────── -->
@@ -2398,7 +2412,7 @@ const TMETA = {
   orders:      { title: 'Orders',             sub: 'Manage incoming orders',               fn: () => loadOrders('ALL') },
   menu:        { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); updateSyncStatus(); } },
   messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: () => loadMessages() },
-  analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); loadDropoffAnalytics(); } },
+  analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); loadDropoffAnalytics(); loadCartRecoveryStats(); } },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
   restaurant:  { title: 'Restaurant',         sub: 'Profile, coupons, loyalty, and team',  fn: () => { loadRestaurantProfile(); loadOperatingHours(); loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
   settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); loadSyncLogs(); } },

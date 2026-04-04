@@ -155,7 +155,7 @@ const findActiveReferral = async (identifier, restaurantId) => {
 };
 
 // ─── CREATE ORDER ─────────────────────────────────────────────
-const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null, deliveryQuote = null, structuredAddress = null, addressSource = null }) => {
+const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null, deliveryQuote = null, structuredAddress = null, addressSource = null, receiverName = null, receiverPhone = null, deliveryInstructions = null }) => {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -198,6 +198,9 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     delivery_lng: deliveryLng,
     structured_address: structuredAddress || null,  // [WhatsApp2026] Native address form fields
     address_source: addressSource || 'gps',         // gps | address_form | saved
+    receiver_name: receiverName || null,
+    receiver_phone: receiverPhone || null,
+    delivery_instructions: deliveryInstructions || null,
     food_gst_rs:                charges?.food_gst_rs                ?? 0,
     delivery_fee_total_rs:      charges?.delivery_fee_total_rs      ?? (charges ? charges.customer_delivery_rs : deliveryFeeRs),
     customer_delivery_rs:       charges?.customer_delivery_rs       ?? deliveryFeeRs,

@@ -27,7 +27,12 @@ async function getAddresses(identifier) {
 
 // Save a new delivery address
 // [BSUID] identifier can be wa_phone string or { customer_id, wa_phone }
-async function saveAddress(identifier, { label, fullAddress, landmark, flatNo, latitude, longitude, makeDefault = false }) {
+async function saveAddress(identifier, {
+  label, fullAddress, landmark, flatNo, latitude, longitude, makeDefault = false,
+  // Enhanced fields (v2)
+  type, receiverName, receiverPhone, buildingFloor, street, areaLocality, city, pincode,
+  deliveryInstructions,
+} = {}) {
   const now = new Date();
   const filter = _customerFilter(identifier);
   if (makeDefault) {
@@ -35,15 +40,28 @@ async function saveAddress(identifier, { label, fullAddress, landmark, flatNo, l
   }
   const doc = {
     _id: newId(),
-    // Store both customer_id and wa_phone for backward compat
     customer_id: typeof identifier === 'object' ? identifier.customer_id : null,
     wa_phone: typeof identifier === 'object' ? (identifier.wa_phone || null) : identifier,
     label: label || 'Home',
+    type: type || null,                            // home | office | other
     full_address: fullAddress || null,
+    // Receiver details
+    receiver_name: receiverName || null,
+    receiver_phone: receiverPhone || null,
+    // Structured address fields
+    building_floor: buildingFloor || flatNo || null,
+    street: street || null,
+    area_locality: areaLocality || null,
+    city: city || null,
+    pincode: pincode || null,
     landmark: landmark || null,
-    flat_no: flatNo || null,
+    // Legacy compat
+    flat_no: flatNo || buildingFloor || null,
+    // GPS
     latitude: latitude || null,
     longitude: longitude || null,
+    // Delivery
+    delivery_instructions: deliveryInstructions || null,
     is_default: makeDefault,
     created_at: now,
   };

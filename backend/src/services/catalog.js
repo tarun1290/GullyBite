@@ -56,6 +56,7 @@ const ensureMainCatalog = async (restaurantId) => {
       await axios.get(`${GRAPH}/${restaurant.meta_catalog_id}`, {
         params: { access_token: token, fields: 'id' }, timeout: 8000,
       });
+      console.log(`[Catalog] ensureMainCatalog: using stored=${restaurant.meta_catalog_id} (verified on Meta)`);
       return { catalogId: restaurant.meta_catalog_id, alreadyExists: true };
     } catch (checkErr) {
       const code = checkErr.response?.status;
@@ -125,9 +126,9 @@ const ensureMainCatalog = async (restaurantId) => {
           });
           await col('whatsapp_accounts').updateOne(
             { restaurant_id: restaurantId, is_active: true },
-            { $set: { catalog_id: chosen.id } }
+            { $set: { catalog_id: chosen.id, catalog_linked: true, catalog_linked_at: new Date() } }
           );
-          console.log(`[Catalog] Inherited existing WABA catalog ${chosen.id} for "${restaurant.business_name}"`);
+          console.log(`[Catalog] ensureMainCatalog: using discovered=${chosen.id} from WABA for "${restaurant.business_name}"`);
           return { catalogId: chosen.id, inherited: true };
         }
       }
@@ -202,9 +203,9 @@ const ensureMainCatalog = async (restaurantId) => {
       );
       await col('whatsapp_accounts').updateOne(
         { restaurant_id: restaurantId, is_active: true },
-        { $set: { catalog_id: catalogId } }
+        { $set: { catalog_id: catalogId, catalog_linked: true, catalog_linked_at: new Date() } }
       );
-      console.log(`[Catalog] Linked main catalog ${catalogId} to WABA ${wa_acc.waba_id}`);
+      console.log(`[Catalog] ensureMainCatalog: using created=${catalogId}, linked to WABA ${wa_acc.waba_id}`);
     } catch (err) {
       console.warn(`[Catalog] Could not auto-link to WABA: ${err.response?.data?.error?.message || err.message}`);
     }

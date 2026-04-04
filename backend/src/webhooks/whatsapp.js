@@ -27,6 +27,7 @@ const customerIdentity = require('../services/customerIdentity');
 const issueSvc = require('../services/issues');
 const { logActivity } = require('../services/activityLog');
 const ws = require('../services/websocket');
+const memcache = require('../config/memcache');
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
 router.get('/', (req, res) => {
@@ -333,7 +334,9 @@ const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
 // When checkout template succeeds, creates the order so Razorpay webhook can match it.
 const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote, session, customer, waAccount }) => {
   // Try checkout template first
-  const checkoutEnabled = process.env.CHECKOUT_TEMPLATE_NAME || (await col('platform_settings').findOne({ _id: 'checkout_template' }))?.enabled;
+  // FUTURE FEATURE: Checkout template disabled — Meta billing eligibility issue (error 131042)
+  // Re-enable by removing `false &&` when the issue is resolved
+  const checkoutEnabled = false && (process.env.CHECKOUT_TEMPLATE_NAME || (await col('platform_settings').findOne({ _id: 'checkout_template' }))?.enabled);
   if (checkoutEnabled && session?.branchId && session?.cart?.length) {
     try {
       const branch = await col('branches').findOne({ _id: session.branchId });
@@ -453,6 +456,22 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
 
   // Fallback: text-based order summary with Confirm/Cancel/Coupon buttons
   await wa.sendOrderSummary(pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote });
+
+  // Track as review_pending abandoned cart (will be recovered when order is confirmed)
+  if (session?.branchId && customer?.id) {
+    const cartRecovery = require('../services/cart-recovery');
+    cartRecovery.trackAbandonedCart({
+      restaurantId: waAccount?.restaurant_id, branchId: session.branchId,
+      customerId: customer.id, customerPhone: customer.wa_phone || customer.bsuid,
+      customerName: customer.name,
+      cartItems: (items || []).map(i => ({ product_retailer_id: null, quantity: i.qty || 1, item_price: Number(i.price) || 0, currency: 'INR', item_name: i.name })),
+      cartTotal: Number(charges?.customer_total_rs || total) || 0,
+      itemCount: (items || []).reduce((s, i) => s + (i.qty || 1), 0),
+      abandonmentStage: 'review_pending',
+      deliveryAddress: session.deliveryAddress ? { full_address: session.deliveryAddress } : null,
+      lastCustomerMessageAt: new Date(),
+    }).catch(e => console.warn('[Cart Recovery] Track review failed:', e.message));
+  }
 };
 
 // ─── TEXT MESSAGE HANDLER ─────────────────────────────────────
@@ -493,6 +512,64 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  // ── Recovery opt-out ──
+  if (['STOP', 'UNSUBSCRIBE'].includes(text)) {
+    const cartRecovery = require('../services/cart-recovery');
+    await cartRecovery.optOut(customer.wa_phone || customer.bsuid, waAccount.restaurant_id);
+    await wa.sendText(pid, token, to, "No worries! We won't send you cart reminders. You can always message us when you're ready to order. 😊");
+    return;
+  }
+
+  // ── Recovery re-engagement: check for abandoned cart when customer says ORDER/CART/CONTINUE ──
+  if (['ORDER', 'CART', 'CONTINUE', 'COMPLETE ORDER'].includes(text) && conv.state === 'GREETING') {
+    try {
+      const cartRecovery = require('../services/cart-recovery');
+      const reEngagement = await cartRecovery.handleReEngagement(customer.wa_phone || customer.bsuid, waAccount.restaurant_id);
+      if (reEngagement?.validItems?.length) {
+        console.log(`[Cart Recovery] Re-engagement: ${reEngagement.validItems.length} items from abandoned cart`);
+        if (reEngagement.removedItems.length) {
+          await wa.sendText(pid, token, to, `⚠️ ${reEngagement.removedItems.length} item(s) from your previous cart are no longer available.`);
+        }
+        // If we have address and branch, go straight to order review
+        if (reEngagement.deliveryAddress && reEngagement.branchId) {
+          // Store cart in session and process as catalog order
+          const productItems = reEngagement.validItems.map(i => ({ product_retailer_id: i.product_retailer_id, quantity: i.quantity, item_price: String(Math.round(i.item_price * 100)), currency: 'INR' }));
+          await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
+            branchId: reEngagement.branchId,
+            deliveryAddress: reEngagement.deliveryAddress.full_address || '',
+            deliveryLat: reEngagement.deliveryAddress.lat || null,
+            deliveryLng: reEngagement.deliveryAddress.lng || null,
+          });
+          const updatedConv = await col('conversations').findOne({ _id: conv._id || conv.id });
+          await handleCatalogOrder({ order: { product_items: productItems } }, customer, updatedConv, waAccount);
+          return;
+        }
+        // No address — store as pending cart and collect address
+        await orderSvc.setState(conv.id, 'AWAITING_ADDRESS_FOR_CART', {
+          pendingCart: {
+            product_items: reEngagement.validItems.map(i => ({ product_retailer_id: i.product_retailer_id, quantity: i.quantity, item_price: i.item_price, currency: 'INR' })),
+            received_at: new Date().toISOString(),
+          },
+        });
+        await wa.sendText(pid, token, to, '🛒 Welcome back! I found your previous cart. Let me get your delivery address.');
+        // Trigger address Flow
+        const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+        if (restaurant?.flow_id) {
+          const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
+          if (savedAddrs?.length > 0) {
+            const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
+            await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { addresses: addressItems } } });
+          } else {
+            await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
+          }
+        } else {
+          await wa.sendLocationRequest(pid, token, to);
+        }
+        return;
+      }
+    } catch (e) { console.warn('[Cart Recovery] Re-engagement check failed:', e.message); }
+  }
+
   if (['HI', 'HELLO', 'HEY', 'START', 'MENU', 'ORDER'].includes(text)) {
     await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
 
@@ -524,7 +601,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
           flowId: restaurant.flow_id,
           flowCta: 'Set Location',
           screenId: 'NEW_ADDRESS',
-          flowData: { screenData: { init: true } },
+          flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
         });
       }
     } else {
@@ -799,6 +876,101 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  // ── AWAITING_PAYMENT: resend link or allow cancel ──
+  if (conv.state === 'AWAITING_PAYMENT') {
+    const session = conv.session_data || {};
+    if (['PAY', 'RETRY', 'LINK'].includes(text)) {
+      if (session.paymentLinkUrl) {
+        // Check if existing link is still valid
+        const payment = session.paymentLinkId ? await col('payments').findOne({ rp_link_id: session.paymentLinkId }) : null;
+        if (payment && payment.status === 'sent') {
+          await wa.sendPaymentLink(pid, token, to, {
+            orderNumber: session.orderNumber,
+            total: session.totalRs?.toFixed(0) || '0',
+            url: session.paymentLinkUrl,
+            expiryMins: session.paymentLinkExpiryMins || 30,
+          });
+          return;
+        }
+      }
+      // Link expired or missing — generate a new one
+      try {
+        const fullOrder = await orderSvc.getOrderDetails(session.orderId);
+        if (fullOrder) {
+          const link = await paymentSvc.createPaymentLink(fullOrder, customer);
+          await wa.sendPaymentLink(pid, token, to, {
+            orderNumber: session.orderNumber,
+            total: (fullOrder.total_rs || session.totalRs).toFixed(0),
+            url: link.url,
+            expiryMins: link.expiryMins,
+          });
+          await orderSvc.setState(conv.id, 'AWAITING_PAYMENT', {
+            ...session,
+            paymentLinkUrl: link.url,
+            paymentLinkId: link.id,
+            paymentLinkExpiryMins: link.expiryMins,
+          });
+          return;
+        }
+      } catch (e) {
+        console.error('[Payment] Retry payment link failed:', e.message);
+      }
+      await wa.sendText(pid, token, to, '⚠️ Could not generate a new payment link. Please type *MENU* to start a new order.');
+      return;
+    }
+    if (text === 'CANCEL') {
+      if (session.orderId) {
+        await orderSvc.updateStatus(session.orderId, 'CANCELLED', { cancelReason: 'Customer cancelled before payment' });
+      }
+      await orderSvc.setState(conv.id, 'GREETING', {});
+      await wa.sendText(pid, token, to, '❌ Order cancelled. Type *MENU* to start a new order anytime!');
+      return;
+    }
+    // Any other text — remind about payment
+    await wa.sendText(pid, token, to,
+      `💳 Your order #${session.orderNumber || ''} is awaiting payment.\n\n` +
+      (session.paymentLinkUrl ? `Pay here: ${session.paymentLinkUrl}\n\n` : '') +
+      'Type *PAY* to get a new payment link, or *CANCEL* to cancel your order.'
+    );
+    return;
+  }
+
+  // ── AWAITING_ADDRESS_FOR_CART: customer sent cart from direct catalog, waiting for address ──
+  if (conv.state === 'AWAITING_ADDRESS_FOR_CART') {
+    // Try forward geocoding the text as an address
+    if (rawText && rawText.length > 5 && !['HI','HELLO','HEY','MENU','ORDER','START'].includes(text)) {
+      try {
+        const geocoded = await location.forwardGeocode(rawText);
+        if (geocoded?.lat && geocoded?.lng) {
+          console.log('[Bot] Forward geocoded address for pending cart:', geocoded.address);
+          const syntheticMsg = { type: 'location', location: { latitude: geocoded.lat, longitude: geocoded.lng, address: geocoded.address } };
+          await handleLocationMessage(syntheticMsg, customer, conv, waAccount);
+          return;
+        }
+      } catch (e) { console.warn('[Bot] Text geocode failed:', e.message); }
+    }
+    // If greeting while cart is pending, re-send address prompt
+    if (['HI','HELLO','HEY','START','MENU','ORDER'].includes(text)) {
+      await wa.sendText(pid, token, to, '👋 Welcome back! You have items in your cart. Let me get your delivery address.');
+    } else {
+      await wa.sendText(pid, token, to, "I couldn't find that location. Please share your delivery address:");
+    }
+    // Re-send address Flow
+    const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+    if (restaurant?.flow_id) {
+      const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
+      if (savedAddrs?.length > 0) {
+        const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
+        await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { addresses: addressItems } } });
+      } else {
+        await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
+      }
+    } else {
+      await wa.sendLocationRequest(pid, token, to);
+    }
+    return;
+  }
+
   if (conv.state === 'AWAITING_LOCATION') {
     // Try forward geocoding the text as an address before re-prompting
     if (rawText && rawText.length > 5 && !['HI','HELLO','HEY','MENU','ORDER','START'].includes(text)) {
@@ -1021,6 +1193,53 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   // Ensure catalog_id is a string — Meta API rejects numbers
   if (catalogId && typeof catalogId !== 'string') { console.warn('[MPM-VALIDATION] catalogId was not a string, converting'); catalogId = String(catalogId); }
 
+  // ── Pre-flight check: verify catalog is linked to phone number ──
+  if (catalogId) {
+    try {
+      const cacheKey = `commerce_settings:${pid}`;
+      let commerceSettings = memcache.get(cacheKey);
+      if (!commerceSettings) {
+        const metaConfig = require('../config/meta');
+        const axios = require('axios');
+        const csRes = await axios.get(`${metaConfig.graphUrl}/${pid}/whatsapp_commerce_settings`, {
+          headers: { Authorization: `Bearer ${metaConfig.systemUserToken}` },
+          timeout: 5000,
+        });
+        commerceSettings = csRes.data?.data?.[0] || csRes.data || {};
+        memcache.set(cacheKey, commerceSettings, 300); // Cache 5 minutes
+        console.log(`[MPM-PREFLIGHT] Commerce settings for ${pid}:`, JSON.stringify(commerceSettings));
+      }
+
+      const linkedCatalog = commerceSettings.id || commerceSettings.catalog_id;
+      if (!linkedCatalog) {
+        // No catalog linked — try to auto-link
+        console.warn(`[MPM-PREFLIGHT] No catalog linked to phone ${pid} — attempting auto-link with catalog ${catalogId}`);
+        try {
+          const metaConfig = require('../config/meta');
+          const axios = require('axios');
+          await axios.post(`${metaConfig.graphUrl}/${pid}/whatsapp_commerce_settings`, {
+            is_catalog_visible: true,
+            is_cart_enabled: true,
+          }, {
+            params: { access_token: metaConfig.systemUserToken },
+            timeout: 10000,
+          });
+          memcache.del(cacheKey); // Invalidate cache
+          console.log('[MPM-PREFLIGHT] Auto-link succeeded');
+        } catch (linkErr) {
+          console.error('[MPM-PREFLIGHT] Auto-link failed:', linkErr.response?.data || linkErr.message);
+        }
+      } else if (String(linkedCatalog) !== String(catalogId)) {
+        // Different catalog linked — use Meta's catalog
+        console.warn(`[MPM-PREFLIGHT] Catalog mismatch: DB=${catalogId} Meta=${linkedCatalog} — using Meta's catalog`);
+        catalogId = String(linkedCatalog);
+      }
+    } catch (preflightErr) {
+      // Pre-flight failed — proceed anyway, existing error handling will catch 131009
+      console.warn('[MPM-PREFLIGHT] Check failed (non-blocking):', preflightErr.message);
+    }
+  }
+
   if (catalogId) {
     try {
       const { buildBranchMPMs } = require('../services/mpmBuilder');
@@ -1108,8 +1327,65 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   const branchId = session.branchId;
 
   if (!branchId) {
-    await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
-    await wa.sendLocationRequest(pid, token, to);
+    // Direct catalog cart — customer has no address/branch context yet
+    // Store the cart and trigger address collection
+    const productItems = msg.order?.product_items || [];
+    if (!productItems.length) return;
+
+    console.log(`[Bot] Direct catalog cart: ${productItems.length} items, no branch context — collecting address`);
+
+    await orderSvc.setState(conv.id, 'AWAITING_ADDRESS_FOR_CART', {
+      ...session,
+      pendingCart: {
+        catalog_id: msg.order?.catalog_id || null,
+        product_items: productItems,
+        coupon_code: msg.order?.coupon_code || null,
+        received_at: new Date().toISOString(),
+      },
+    });
+
+    // Track abandoned cart (address_pending stage)
+    const cartRecovery = require('../services/cart-recovery');
+    const enrichedItems = await cartRecovery.enrichCartItems(productItems);
+    const cartTotal = enrichedItems.reduce((s, i) => s + (i.item_price * i.quantity), 0);
+    cartRecovery.trackAbandonedCart({
+      restaurantId: waAccount.restaurant_id, branchId: null,
+      customerId: customer.id, customerPhone: customer.wa_phone || customer.bsuid,
+      customerName: customer.name, cartItems: enrichedItems, cartTotal,
+      itemCount: enrichedItems.reduce((s, i) => s + i.quantity, 0),
+      catalogId: msg.order?.catalog_id, abandonmentStage: 'address_pending',
+      lastCustomerMessageAt: new Date(),
+    }).catch(e => console.warn('[Cart Recovery] Track failed:', e.message));
+
+    await wa.sendText(pid, token, to,
+      '🎉 Great choices! Before we proceed with your order, I need your delivery address.'
+    );
+
+    // Trigger address Flow (same as greeting flow)
+    const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+    if (restaurant?.flow_id) {
+      const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
+      if (savedAddrs?.length > 0) {
+        const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
+        await wa.sendFlow(pid, token, to, {
+          body: 'Choose your delivery address:',
+          flowId: restaurant.flow_id,
+          flowCta: 'Choose Address',
+          screenId: 'SAVED_ADDRESSES',
+          flowData: { screenData: { addresses: addressItems } },
+        });
+      } else {
+        await wa.sendFlow(pid, token, to, {
+          body: 'Set your delivery location:',
+          flowId: restaurant.flow_id,
+          flowCta: 'Set Location',
+          screenId: 'NEW_ADDRESS',
+          flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
+        });
+      }
+    } else {
+      await wa.sendLocationRequest(pid, token, to);
+    }
     return;
   }
 
@@ -1309,7 +1585,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
           const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
           await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { addresses: addressItems } } });
         } else {
-          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { init: true } } });
+          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
         }
       } else {
         await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
@@ -1343,6 +1619,17 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       const session = conv.session_data || {};
       if (!session.cart?.length) {
         await wa.sendText(pid, token, to, 'Your cart is empty. Type *MENU* to browse.');
+        return;
+      }
+
+      // If already awaiting payment, resend the existing payment link
+      if (conv.state === 'AWAITING_PAYMENT' && session.paymentLinkUrl) {
+        await wa.sendPaymentLink(pid, token, to, {
+          orderNumber: session.orderNumber,
+          total: session.totalRs?.toFixed(0) || '0',
+          url: session.paymentLinkUrl,
+          expiryMins: session.paymentLinkExpiryMins || 30,
+        });
         return;
       }
 
@@ -1415,23 +1702,50 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         }}).catch(() => {});
       }
 
+      // Generate Razorpay Payment Link (primary flow)
       try {
-        await paymentSvc.createRazorpayOrder(fullOrder, customer);
-        await wa.sendPaymentRequest(pid, token, to, {
-          order: fullOrder,
-          items: fullOrder.items,
-        });
-        if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
-      } catch (waPayErr) {
-        console.warn('[WA] WhatsApp Pay failed, falling back to payment link:', waPayErr.message);
         const link = await paymentSvc.createPaymentLink(fullOrder, customer);
         await wa.sendPaymentLink(pid, token, to, {
           orderNumber: order.order_number,
-          total      : order.total_rs.toFixed(0),
+          total      : (fullOrder.total_rs || order.total_rs).toFixed(0),
           url        : link.url,
           expiryMins : link.expiryMins,
         });
+        // Store payment link in session so we can resend if customer taps Confirm again
+        await orderSvc.setState(conv.id, 'AWAITING_PAYMENT', {
+          ...session,
+          orderId: order.id,
+          orderNumber: order.order_number,
+          paymentLinkUrl: link.url,
+          paymentLinkId: link.id,
+          paymentLinkExpiryMins: link.expiryMins,
+        });
         if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
+
+        // Track as payment_pending abandoned cart
+        const cartRecovery = require('../services/cart-recovery');
+        cartRecovery.trackAbandonedCart({
+          restaurantId: waAccount.restaurant_id, branchId: session.branchId,
+          customerId: customer.id, customerPhone: customer.wa_phone || customer.bsuid,
+          customerName: customer.name,
+          cartItems: (session.cart || []).map(i => ({ product_retailer_id: i.retailerId || null, quantity: i.qty, item_price: i.unitPriceRs, currency: 'INR', item_name: i.name })),
+          cartTotal: session.totalRs || 0, itemCount: (session.cart || []).reduce((s, i) => s + i.qty, 0),
+          abandonmentStage: 'payment_pending',
+          deliveryAddress: session.deliveryAddress ? { full_address: session.deliveryAddress } : null,
+          lastCustomerMessageAt: new Date(),
+        }).catch(e => console.warn('[Cart Recovery] Track payment failed:', e.message));
+      } catch (payErr) {
+        console.error('[Payment] Payment link creation failed:', payErr.message, payErr.stack?.split('\n')[1]);
+        await wa.sendText(pid, token, to,
+          '⚠️ Sorry, we couldn\'t generate a payment link right now. Please try again in a moment by typing *PAY*.\n\n' +
+          'If the issue persists, contact support.'
+        );
+        // Keep in ORDER_REVIEW so customer can retry
+        await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
+          ...session,
+          orderId: order.id,
+          orderNumber: order.order_number,
+        });
       }
       console.log(`[Perf] Order post-processing: ${Date.now() - _orderStart}ms`);
       logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.payment_initiated', category: 'payment', description: `Payment link sent to ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, severity: 'info' });
@@ -2311,7 +2625,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
           flowId: restaurant.flow_id,
           flowCta: 'Add Address',
           screenId: 'NEW_ADDRESS',
-          flowData: { screenData: { init: true } },
+          flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
         });
       } else {
         await wa.sendText(pid, token, to, '📍 Please share your location using the 📎 attach icon → Location.');
@@ -2368,19 +2682,34 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       }
     }
 
-    // Fall back to manual address text — forward geocode to get coordinates
-    if (!parsedAddress && responseData.manual_address?.trim()) {
-      try {
-        const geocoded = await location.forwardGeocode(responseData.manual_address.trim());
-        if (geocoded) {
-          parsedAddress = geocoded;
-          console.log('[Flow] Forward geocoded manual address:', geocoded.address, geocoded.lat, geocoded.lng);
-        } else {
-          parsedAddress = { full_address: responseData.manual_address.trim(), source: 'manual' };
+    // Build full address from structured fields (v2 enhanced form)
+    const buildingFloor = responseData.building_floor?.trim() || null;
+    const street = responseData.street?.trim() || null;
+    const areaLocality = responseData.area_locality?.trim() || null;
+    const city = responseData.city?.trim() || null;
+    const pincode = responseData.pincode?.trim() || null;
+    const addressLandmark = responseData.landmark?.trim() || null;
+
+    // If no Maps link geocode, build address from structured fields or fall back to manual_address
+    if (!parsedAddress) {
+      const structuredParts = [buildingFloor, street, areaLocality, addressLandmark ? `Near ${addressLandmark}` : null, city, pincode].filter(Boolean);
+      const structuredAddr = structuredParts.length >= 2 ? structuredParts.join(', ') : null;
+      const manualAddr = responseData.manual_address?.trim() || null;
+      const addressText = structuredAddr || manualAddr;
+
+      if (addressText) {
+        try {
+          const geocoded = await location.forwardGeocode(addressText);
+          if (geocoded) {
+            parsedAddress = geocoded;
+            console.log('[Flow] Forward geocoded address:', geocoded.address, geocoded.lat, geocoded.lng);
+          } else {
+            parsedAddress = { full_address: addressText, source: 'manual' };
+          }
+        } catch (e) {
+          console.warn('[Flow] Forward geocode failed, using structured text:', e.message);
+          parsedAddress = { full_address: addressText, source: 'manual' };
         }
-      } catch (e) {
-        console.warn('[Flow] Forward geocode failed, using raw text:', e.message);
-        parsedAddress = { full_address: responseData.manual_address.trim(), source: 'manual' };
       }
     }
 
@@ -2389,22 +2718,45 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       return;
     }
 
-    // Add extra details
-    const label = responseData.address_label || 'Other';
-    const landmark = responseData.address_line2 || null;
+    // Resolve label — address_type (v2) or address_label (v1 compat)
+    const addressType = responseData.address_type || responseData.address_label || 'other';
+    const nickname = responseData.address_nickname || '';
+    let label;
+    if (addressType === 'home' || addressType === 'Home') {
+      label = nickname || 'Home';
+    } else if (addressType === 'office' || addressType === 'Office') {
+      label = nickname || 'Office';
+    } else {
+      label = nickname || areaLocality || 'Other Address';
+    }
 
-    // Save to customer addresses
+    // Build full address string from best available data
+    const fullAddr = parsedAddress.address || parsedAddress.full_address
+      || [buildingFloor, street, areaLocality, city, pincode].filter(Boolean).join(', ');
+
+    // Save to customer addresses with enhanced fields
     await addressSvc.saveAddress({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid }, {
       label,
-      fullAddress: parsedAddress.address || parsedAddress.full_address,
-      landmark,
-      flatNo: landmark,
+      type: addressType.toLowerCase(),
+      fullAddress: fullAddr,
+      receiverName: responseData.receiver_name || customer.name || null,
+      receiverPhone: responseData.receiver_phone || customer.wa_phone || null,
+      buildingFloor,
+      street,
+      areaLocality,
+      city,
+      pincode,
+      landmark: addressLandmark,
+      deliveryInstructions: responseData.delivery_instructions || null,
       latitude: parsedAddress.lat || null,
       longitude: parsedAddress.lng || null,
       makeDefault: true,
     });
 
-    await wa.sendText(pid, token, to, `📍 Delivering to: *${parsedAddress.address || parsedAddress.full_address}*\n\n🔍 Finding the nearest outlet...`);
+    // Confirmation message with receiver info if ordering for someone else
+    const receiverNote = (responseData.receiver_name && responseData.receiver_name !== customer.name)
+      ? `\n👤 Receiver: ${responseData.receiver_name}` : '';
+    await wa.sendText(pid, token, to, `📍 Delivering to: *${fullAddr}*${receiverNote}\n\n🔍 Finding the nearest outlet...`);
 
     // Find branch and send menu
     if (parsedAddress.lat && parsedAddress.lng) {
@@ -2456,6 +2808,72 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
   });
   console.log(`[MPM-DEBUG] _sendBranchMenu: effectiveCatalogId=${effectiveCatalogId} (type: ${typeof effectiveCatalogId})`);
   console.log(`[MPM-DEBUG] _sendBranchMenu: branch.catalogId=${branch.catalogId} branch.catalog_id=${branch.catalog_id} restaurantId=${restaurantId}`);
+
+  // ── Check for pending cart from direct catalog browse ──
+  const freshConv = await col('conversations').findOne({ _id: conv._id || conv.id });
+  const pendingCart = freshConv?.session_data?.pendingCart;
+  if (pendingCart?.product_items?.length) {
+    console.log(`[Bot] Resuming pending cart: ${pendingCart.product_items.length} items after address collection`);
+
+    // Verify cart items belong to this branch (lookup by retailer_id)
+    const retailerIds = pendingCart.product_items.map(i => i.product_retailer_id);
+    const menuItems = await col('menu_items').find({ retailer_id: { $in: retailerIds } }).toArray();
+    const branchItems = menuItems.filter(mi => String(mi.branch_id) === String(branch.id));
+
+    if (!branchItems.length) {
+      // Items are from a different branch — inform customer and show this branch's menu instead
+      const itemBranch = menuItems.length ? await col('branches').findOne({ _id: menuItems[0].branch_id }) : null;
+      await wa.sendText(pid, token, to,
+        `⚠️ The items in your cart are from ${itemBranch?.name || 'another branch'} which doesn't deliver to your area.\n\nBrowse the menu from *${branch.name}* below:`
+      );
+      // Clear pending cart and fall through to MPM sending
+      await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
+        branchId: branch.id, branchName: branch.name, catalogId: effectiveCatalogId,
+        deliveryLat: address.latitude || address.lat || null,
+        deliveryLng: address.longitude || address.lng || null,
+        deliveryAddress: address.full_address || address.address || '',
+      });
+    } else {
+      // Process the pending cart as if it were a normal catalog order
+      const syntheticOrder = { order: { product_items: pendingCart.product_items, catalog_id: pendingCart.catalog_id, coupon_code: pendingCart.coupon_code } };
+      // Set session with branch and address data first, then delegate to handleCatalogOrder
+      await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
+        branchId: branch.id, branchName: branch.name, catalogId: effectiveCatalogId,
+        deliveryLat: address.latitude || address.lat || null,
+        deliveryLng: address.longitude || address.lng || null,
+        deliveryAddress: address.full_address || address.address || '',
+      });
+      // Re-fetch conv with updated session
+      const updatedConv = await col('conversations').findOne({ _id: conv._id || conv.id });
+      await handleCatalogOrder(syntheticOrder, customer, updatedConv, waAccount);
+      return; // Don't send MPMs — cart is being processed
+    }
+  }
+
+  // ── Pre-flight check: verify catalog is linked to phone number ──
+  if (effectiveCatalogId) {
+    try {
+      const cacheKey = `commerce_settings:${pid}`;
+      let commerceSettings = memcache.get(cacheKey);
+      if (!commerceSettings) {
+        const axios = require('axios');
+        const csRes = await axios.get(`${metaConfig.graphUrl}/${pid}/whatsapp_commerce_settings`, {
+          headers: { Authorization: `Bearer ${metaConfig.systemUserToken}` },
+          timeout: 5000,
+        });
+        commerceSettings = csRes.data?.data?.[0] || csRes.data || {};
+        memcache.set(cacheKey, commerceSettings, 300);
+        console.log(`[MPM-PREFLIGHT] _sendBranchMenu: Commerce settings for ${pid}:`, JSON.stringify(commerceSettings));
+      }
+      const linkedCatalog = commerceSettings.id || commerceSettings.catalog_id;
+      if (linkedCatalog && String(linkedCatalog) !== String(effectiveCatalogId)) {
+        console.warn(`[MPM-PREFLIGHT] _sendBranchMenu: Catalog mismatch: DB=${effectiveCatalogId} Meta=${linkedCatalog} — using Meta's catalog`);
+        effectiveCatalogId = String(linkedCatalog);
+      }
+    } catch (preflightErr) {
+      console.warn('[MPM-PREFLIGHT] _sendBranchMenu: Check failed (non-blocking):', preflightErr.message);
+    }
+  }
 
   if (effectiveCatalogId) {
     try {
