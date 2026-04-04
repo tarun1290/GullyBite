@@ -848,42 +848,24 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   if (conv.state === 'AWAITING_PAYMENT') {
     const session = conv.session_data || {};
     if (['PAY', 'RETRY', 'LINK'].includes(text)) {
-      if (session.paymentLinkUrl) {
-        // Check if existing link is still valid
-        const payment = session.paymentLinkId ? await col('payments').findOne({ rp_link_id: session.paymentLinkId }) : null;
-        if (payment && payment.status === 'sent') {
-          await wa.sendPaymentLink(pid, token, to, {
-            orderNumber: session.orderNumber,
-            total: session.totalRs?.toFixed(0) || '0',
-            url: session.paymentLinkUrl,
-            expiryMins: session.paymentLinkExpiryMins || 30,
-          });
-          return;
-        }
-      }
-      // Link expired or missing — generate a new one
+      // Resend interactive checkout
       try {
-        const fullOrder = await orderSvc.getOrderDetails(session.orderId);
+        const fullOrder = session.orderId ? await orderSvc.getOrderDetails(session.orderId) : null;
         if (fullOrder) {
-          const link = await paymentSvc.createPaymentLink(fullOrder, customer);
-          await wa.sendPaymentLink(pid, token, to, {
-            orderNumber: session.orderNumber,
-            total: (fullOrder.total_rs || session.totalRs).toFixed(0),
-            url: link.url,
-            expiryMins: link.expiryMins,
-          });
-          await orderSvc.setState(conv.id, 'AWAITING_PAYMENT', {
-            ...session,
-            paymentLinkUrl: link.url,
-            paymentLinkId: link.id,
-            paymentLinkExpiryMins: link.expiryMins,
+          const branch = await col('branches').findOne({ _id: session.branchId });
+          const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
+          await wa.sendPaymentRequest(pid, token, to, {
+            order: fullOrder, items: fullOrder.items,
+            customerName: customer.name,
+            restaurantName: restaurant?.business_name || fullOrder.business_name,
+            deliveryAddress: session.structuredAddress || (session.deliveryAddress ? { address: session.deliveryAddress } : null),
           });
           return;
         }
       } catch (e) {
-        console.error('[Payment] Retry payment link failed:', e.message);
+        console.error('[Payment] Retry checkout failed:', e.message);
       }
-      await wa.sendText(pid, token, to, '⚠️ Could not generate a new payment link. Please type *MENU* to start a new order.');
+      await wa.sendText(pid, token, to, '⚠️ Could not resend checkout. Please type *MENU* to start a new order.');
       return;
     }
     if (text === 'CANCEL') {
@@ -1590,14 +1572,23 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         return;
       }
 
-      // If already awaiting payment, resend the existing payment link
-      if (conv.state === 'AWAITING_PAYMENT' && session.paymentLinkUrl) {
-        await wa.sendPaymentLink(pid, token, to, {
-          orderNumber: session.orderNumber,
-          total: session.totalRs?.toFixed(0) || '0',
-          url: session.paymentLinkUrl,
-          expiryMins: session.paymentLinkExpiryMins || 30,
-        });
+      // If already awaiting payment, resend the interactive checkout
+      if (conv.state === 'AWAITING_PAYMENT' && session.orderId) {
+        try {
+          const fullOrder = await orderSvc.getOrderDetails(session.orderId);
+          if (fullOrder) {
+            const branch = await col('branches').findOne({ _id: session.branchId });
+            const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
+            await wa.sendPaymentRequest(pid, token, to, {
+              order: fullOrder, items: fullOrder.items,
+              customerName: customer.name,
+              restaurantName: restaurant?.business_name || fullOrder.business_name,
+              deliveryAddress: session.structuredAddress || (session.deliveryAddress ? { address: session.deliveryAddress } : null),
+            });
+            return;
+          }
+        } catch (e) { console.warn('[Payment] Resend checkout failed:', e.message); }
+        await wa.sendText(pid, token, to, '⚠️ Could not reload your order. Please type *MENU* to start again.');
         return;
       }
 
@@ -1670,23 +1661,21 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         }}).catch(() => {});
       }
 
-      // Generate Razorpay Payment Link (primary flow)
+      // Send interactive order_details checkout (Review and Pay inside WhatsApp)
       try {
-        const link = await paymentSvc.createPaymentLink(fullOrder, customer);
-        await wa.sendPaymentLink(pid, token, to, {
-          orderNumber: order.order_number,
-          total      : (fullOrder.total_rs || order.total_rs).toFixed(0),
-          url        : link.url,
-          expiryMins : link.expiryMins,
+        const branch = await col('branches').findOne({ _id: session.branchId });
+        const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
+        await wa.sendPaymentRequest(pid, token, to, {
+          order: fullOrder,
+          items: fullOrder.items,
+          customerName: customer.name,
+          restaurantName: restaurant?.business_name || fullOrder.business_name,
+          deliveryAddress: session.structuredAddress || (session.deliveryAddress ? { address: session.deliveryAddress } : null),
         });
-        // Store payment link in session so we can resend if customer taps Confirm again
         await orderSvc.setState(conv.id, 'AWAITING_PAYMENT', {
           ...session,
           orderId: order.id,
           orderNumber: order.order_number,
-          paymentLinkUrl: link.url,
-          paymentLinkId: link.id,
-          paymentLinkExpiryMins: link.expiryMins,
         });
         if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
 
@@ -1703,17 +1692,18 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
           lastCustomerMessageAt: new Date(),
         }).catch(e => console.warn('[Cart Recovery] Track payment failed:', e.message));
       } catch (payErr) {
-        console.error('[Payment] Payment link creation failed:', payErr.message, payErr.stack?.split('\n')[1]);
-        await wa.sendText(pid, token, to,
-          '⚠️ Sorry, we couldn\'t generate a payment link right now. Please try again in a moment by typing *PAY*.\n\n' +
-          'If the issue persists, contact support.'
-        );
-        // Keep in ORDER_REVIEW so customer can retry
-        await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
-          ...session,
-          orderId: order.id,
+        console.error('[Payment] Interactive checkout failed:', payErr.message, payErr.stack?.split('\n')[1]);
+        await wa.sendOrderSummary(pid, token, to, {
           orderNumber: order.order_number,
+          items: session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+          charges: session.charges,
+          subtotal: session.subtotalRs?.toFixed(0),
+          deliveryFee: session.deliveryFeeRs?.toFixed(0),
+          total: session.totalRs?.toFixed(0),
+          discount: session.coupon ? { code: session.coupon.code, amountRs: session.discountRs } : null,
         });
+        await wa.sendText(pid, token, to, '⚠️ Payment checkout is temporarily unavailable. Tap *Confirm & Pay* to try again.');
+        await orderSvc.setState(conv.id, 'ORDER_REVIEW', { ...session, orderId: order.id, orderNumber: order.order_number });
       }
       console.log(`[Perf] Order post-processing: ${Date.now() - _orderStart}ms`);
       logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.payment_initiated', category: 'payment', description: `Payment link sent to ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, severity: 'info' });
@@ -2507,21 +2497,18 @@ const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
     { upsert: true }
   );
 
-  // Payment
+  // Payment — send interactive order_details checkout
   try {
-    await paymentSvc.createRazorpayOrder(fullOrder, customer);
-    await wa.sendPaymentRequest(pid, token, to, { order: fullOrder, items: fullOrder.items });
-    if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
-  } catch (waPayErr) {
-    console.warn('[WA] WhatsApp Pay failed, falling back to payment link:', waPayErr.message);
-    const link = await paymentSvc.createPaymentLink(fullOrder, customer);
-    await wa.sendPaymentLink(pid, token, to, {
-      orderNumber: order.order_number,
-      total      : order.total_rs.toFixed(0),
-      url        : link.url,
-      expiryMins : link.expiryMins,
+    await wa.sendPaymentRequest(pid, token, to, {
+      order: fullOrder, items: fullOrder.items,
+      customerName: customer.name,
+      restaurantName: fullOrder.business_name,
+      deliveryAddress: session.structuredAddress || (session.deliveryAddress ? { address: session.deliveryAddress } : null),
     });
     if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
+  } catch (payErr) {
+    console.error('[Payment] Interactive checkout failed:', payErr.message);
+    await wa.sendText(pid, token, to, '⚠️ Payment checkout failed. Please type *PAY* to retry.');
   }
 };
 

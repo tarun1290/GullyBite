@@ -191,51 +191,70 @@ const sendOrderSummary = (pid, token, to, { orderNumber, items, charges, subtota
 // order:  full order row from DB (id, order_number, total_rs, subtotal_rs,
 //         delivery_fee_rs, discount_rs, branch_name)
 // items:  order_items rows (item_name, unit_price_rs, quantity, line_total_rs)
-const sendPaymentRequest = (pid, token, to, { order, items }) => {
-  const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 15;
-  const expiryTs   = String(Math.floor(Date.now() / 1000) + expiryMins * 60);
+// ─── INTERACTIVE ORDER CHECKOUT (Review and Pay) ──────────────
+// Sends an interactive order_details message with native Razorpay payment inside WhatsApp.
+// Customer sees full order breakdown + "Review and Pay" button. Confirmed working format.
+const sendPaymentRequest = (pid, token, to, { order, items, customerName, restaurantName, deliveryAddress }) => {
+  const toPaise = (rs) => Math.round((rs || 0) * 100);
+  const configName = process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite';
 
-  const orderItems = items.map((i) => ({
-    retailer_id : i.retailer_id || i.menu_item_id || i.item_name,
-    name        : i.item_name,
-    amount      : { value: Math.round(i.unit_price_rs * 100), offset: 100 },
-    quantity    : i.quantity,
-    sale_amount : { value: Math.round(i.line_total_rs * 100), offset: 100 },
+  const orderItems = (items || order.items || []).map(i => ({
+    retailer_id: i.retailer_id || i.menu_item_id || i.item_name || 'item',
+    name: (i.item_name || i.name || 'Item').substring(0, 60),
+    quantity: i.quantity || 1,
+    amount: { value: toPaise(i.unit_price_rs || i.price_rs), offset: 100 },
+    country_of_origin: 'IN',
+    importer_name: (restaurantName || order.business_name || order.branch_name || 'Restaurant').substring(0, 100),
+    importer_address: { address_line1: 'India', city: 'India', zone_code: 'TS', postal_code: '500001', country_code: 'IN' },
   }));
+
+  const subtotalPaise = toPaise(order.subtotal_rs);
+  const shippingPaise = toPaise(order.customer_delivery_rs || order.delivery_fee_rs || 0);
+  const taxPaise = toPaise((order.food_gst_rs || 0) + (order.customer_delivery_gst_rs || 0) + (order.packaging_gst_rs || 0));
+  const totalPaise = toPaise(order.total_rs);
+  const discountRs = order.discount_rs || 0;
+
+  const orderPayload = {
+    status: 'pending',
+    items: orderItems,
+    subtotal: { value: subtotalPaise, offset: 100 },
+    shipping: { value: shippingPaise, offset: 100 },
+    tax: { value: taxPaise, offset: 100 },
+  };
+  if (discountRs > 0) {
+    orderPayload.discount = { value: toPaise(discountRs), offset: 100, description: order.coupon_code || 'Discount' };
+  }
+
+  // Delivery address in body text for customer confirmation
+  let addressText = '';
+  if (deliveryAddress) {
+    const parts = [deliveryAddress.address || deliveryAddress.building_floor, deliveryAddress.landmark_area || deliveryAddress.landmark, [deliveryAddress.city, deliveryAddress.pincode].filter(Boolean).join(' ')].filter(Boolean);
+    if (parts.length) addressText = '\n\n📍 ' + parts.join(', ');
+  }
+
+  const refId = (order.order_number || order.id || 'ORD-' + Date.now()).toString().substring(0, 35);
+  console.log(`[Payment] Sending order_details to ${to}, ref=${refId}, total=₹${order.total_rs}`);
 
   return sendMsg(pid, token, to, {
     type: 'interactive',
     interactive: {
-      type  : 'order_details',
-      body  : { text: `Your order from *${order.branch_name}* is ready!\nReview and pay securely inside WhatsApp.` },
-      footer: { text: 'GullyBite × Razorpay — 100% secure' },
+      type: 'order_details',
+      header: { type: 'text', text: ('Your Order from ' + (restaurantName || order.business_name || order.branch_name || 'Restaurant')).substring(0, 60) },
+      body: { text: 'Hi ' + (customerName || 'there') + '! Review your order and pay securely.' + addressText },
+      footer: { text: 'Powered by GullyBite' },
       action: {
-        name      : 'review_and_pay',
+        name: 'review_and_pay',
         parameters: {
-          reference_id    : order.order_number,
-          type            : 'digital-goods',
+          reference_id: refId,
+          type: 'digital-goods',
+          payment_configuration: configName,
+          currency: 'INR',
+          total_amount: { value: totalPaise, offset: 100 },
+          order: orderPayload,
           payment_settings: [{
-            type           : 'payment_gateway',
-            payment_gateway: {
-              type              : 'razorpay',
-              configuration_name: process.env.RAZORPAY_WA_CONFIG_NAME,
-              razorpay          : {
-                receipt: order.order_number,
-                notes  : { order_id: order.id, order_number: order.order_number },
-              },
-            },
+            type: 'payment_gateway',
+            payment_gateway: { type: 'razorpay', configuration_name: configName },
           }],
-          currency    : 'INR',
-          total_amount: { value: Math.round(order.total_rs * 100), offset: 100 },
-          order: {
-            status    : 'pending',
-            expiration: { timestamp: expiryTs, description: 'Order expires if unpaid' },
-            items     : orderItems,
-            subtotal  : { value: Math.round(order.subtotal_rs * 100),                                                                    offset: 100 },
-            shipping  : { value: Math.round((order.customer_delivery_rs || order.delivery_fee_rs || 0) * 100),                           offset: 100 },
-            discount  : { value: Math.round((order.discount_rs || 0) * 100),                                                             offset: 100 },
-            tax       : { value: Math.round(((order.food_gst_rs || 0) + (order.customer_delivery_gst_rs || 0) + (order.packaging_gst_rs || 0)) * 100), offset: 100 },
-          },
         },
       },
     },
