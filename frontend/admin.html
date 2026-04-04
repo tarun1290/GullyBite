@@ -1500,6 +1500,8 @@ let adminKey = '';
 
 // ─── API HELPER ───────────────────────────────────────────────────
 async function api(path, opts = {}) {
+  // Auto-stringify body if it's an object (fetch requires string)
+  if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
   const res = await fetch(BASE + path, {
     ...opts,
     headers: {

@@ -8,6 +8,7 @@ const { col, newId, mapId, mapIds } = require('../config/database');
 const { runSettlement } = require('../jobs/settlement');
 const { logActivity } = require('../services/activityLog');
 const issueSvc = require('../services/issues');
+const axios = require('axios');
 const metaConfig = require('../config/meta');
 const financials = require('../services/financials');
 const ws = require('../services/websocket');
@@ -2226,6 +2227,50 @@ router.get('/flows', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
+// ── Static /flows/* routes MUST come before /flows/:flowId for Express matching ──
+
+// GET /api/admin/flows/assignments — Current Flow assignments
+router.get('/flows/assignments', async (req, res) => {
+  try {
+    const delivery = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    const feedback = await col('platform_settings').findOne({ _id: 'feedback_flow' });
+    res.json({ delivery: { flow_id: delivery?.flow_id || null, flow_name: delivery?.flow_name || null, flow_status: delivery?.flow_status || null, auto_assign: delivery?.auto_assign_new || false }, feedback: { flow_id: feedback?.flow_id || null, flow_name: feedback?.flow_name || null, flow_status: feedback?.flow_status || null } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/admin/flows/assignments — Update Flow assignments
+router.put('/flows/assignments', async (req, res) => {
+  try {
+    const { type, flow_id, flow_name } = req.body;
+    if (!type || !['delivery', 'feedback'].includes(type)) return res.status(400).json({ error: 'type must be delivery or feedback' });
+    const settingId = type === 'delivery' ? 'whatsapp_flow' : 'feedback_flow';
+    await col('platform_settings').updateOne(
+      { _id: settingId },
+      { $set: { flow_id, flow_name: flow_name || null, flow_status: 'PUBLISHED', updated_at: new Date() }, $setOnInsert: { created_at: new Date() } },
+      { upsert: true }
+    );
+    if (type === 'delivery' && flow_id) {
+      await col('restaurants').updateMany({}, { $set: { flow_id } });
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/flows/templates — Built-in Flow JSON templates
+router.get('/flows/templates', async (req, res) => {
+  try {
+    res.json({ templates: [
+      { id: 'delivery_address', name: 'Delivery Address (Full)', json: flowMgr.buildDeliveryFlowJson() },
+      { id: 'feedback_rating', name: 'Order Rating (4 Categories)', json: flowMgr.buildFeedbackFlowJson() },
+      { id: 'blank', name: 'Blank Skeleton', json: { version: '6.2', screens: [{ id: 'SCREEN_1', title: 'Screen Title', terminal: true, success: true, data: {}, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Heading' }, { type: 'TextBody', text: 'Body text' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: {} } }] } }] } },
+      { id: 'lead_capture', name: 'Lead Capture / Contact Form', json: { version: '6.2', screens: [{ id: 'CONTACT', title: 'Contact Us', terminal: true, success: true, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Get in Touch' }, { type: 'TextInput', label: 'Your name', 'input-type': 'text', name: 'name', required: true }, { type: 'TextInput', label: 'Phone number', 'input-type': 'phone', name: 'phone', required: true }, { type: 'TextInput', label: 'Email', 'input-type': 'email', name: 'email', required: false }, { type: 'Dropdown', label: 'Inquiry type', name: 'inquiry_type', required: true, 'data-source': [{ id: 'general', title: 'General Inquiry' }, { id: 'partnership', title: 'Partnership' }, { id: 'catering', title: 'Catering' }, { id: 'feedback', title: 'Feedback' }] }, { type: 'TextInput', label: 'Message', 'input-type': 'text', name: 'message', required: false, 'helper-text': 'Tell us how we can help' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: { name: '${form.name}', phone: '${form.phone}', email: '${form.email}', inquiry_type: '${form.inquiry_type}', message: '${form.message}' } } }] } }] } },
+      { id: 'table_booking', name: 'Table Booking', json: { version: '6.2', screens: [{ id: 'BOOKING', title: 'Book a Table', terminal: false, data: {}, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Reserve Your Table' }, { type: 'TextInput', label: 'Guest name', 'input-type': 'text', name: 'guest_name', required: true }, { type: 'TextInput', label: 'Phone', 'input-type': 'phone', name: 'guest_phone', required: true }, { type: 'DatePicker', label: 'Date', name: 'booking_date', required: true }, { type: 'Dropdown', label: 'Time slot', name: 'time_slot', required: true, 'data-source': [{ id: '12:00', title: '12:00 PM' }, { id: '13:00', title: '1:00 PM' }, { id: '14:00', title: '2:00 PM' }, { id: '19:00', title: '7:00 PM' }, { id: '20:00', title: '8:00 PM' }, { id: '21:00', title: '9:00 PM' }] }, { type: 'Dropdown', label: 'Party size', name: 'party_size', required: true, 'data-source': [{ id: '1', title: '1 person' }, { id: '2', title: '2 people' }, { id: '3-4', title: '3-4 people' }, { id: '5-6', title: '5-6 people' }, { id: '7+', title: '7+ people' }] }, { type: 'TextInput', label: 'Special requests', 'input-type': 'text', name: 'special_requests', required: false }, { type: 'Footer', label: 'Review Booking', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'CONFIRM_BOOKING' }, payload: { guest_name: '${form.guest_name}', guest_phone: '${form.guest_phone}', booking_date: '${form.booking_date}', time_slot: '${form.time_slot}', party_size: '${form.party_size}', special_requests: '${form.special_requests}' } } }] } }, { id: 'CONFIRM_BOOKING', title: 'Confirm Booking', terminal: true, success: true, data: { guest_name: { type: 'string', __example__: 'Tarun' }, time_slot: { type: 'string', __example__: '8:00 PM' }, party_size: { type: 'string', __example__: '2 people' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Confirm Your Reservation' }, { type: 'TextBody', text: 'Please review your booking details and tap Confirm.' }, { type: 'Footer', label: 'Confirm Booking', 'on-click-action': { name: 'complete', payload: { action: 'table_booking', guest_name: '${data.guest_name}', guest_phone: '${data.guest_phone}', booking_date: '${data.booking_date}', time_slot: '${data.time_slot}', party_size: '${data.party_size}', special_requests: '${data.special_requests}' } } }] } }] } },
+      { id: 'survey', name: 'Customer Survey', json: { version: '6.2', screens: [{ id: 'Q1', title: 'Quick Survey', terminal: false, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Help us improve!' }, { type: 'RadioButtonsGroup', label: 'How did you hear about us?', name: 'source', required: true, 'data-source': [{ id: 'social_media', title: 'Social media' }, { id: 'friend', title: 'Friend/Family' }, { id: 'google', title: 'Google search' }, { id: 'walk_in', title: 'Walked by' }, { id: 'other', title: 'Other' }] }, { type: 'Footer', label: 'Next', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'Q2' }, payload: { source: '${form.source}' } } }] } }, { id: 'Q2', title: 'Your Preferences', terminal: false, data: { source: { type: 'string', __example__: 'social_media' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'What do you love?' }, { type: 'CheckboxGroup', label: 'Select all that apply', name: 'preferences', required: true, 'data-source': [{ id: 'taste', title: 'Great taste' }, { id: 'price', title: 'Good prices' }, { id: 'delivery', title: 'Fast delivery' }, { id: 'variety', title: 'Menu variety' }, { id: 'healthy', title: 'Healthy options' }] }, { type: 'Footer', label: 'Next', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'Q3' }, payload: { source: '${data.source}', preferences: '${form.preferences}' } } }] } }, { id: 'Q3', title: 'Feedback', terminal: true, success: true, data: { source: { type: 'string', __example__: 'social_media' }, preferences: { type: 'string', __example__: 'taste' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Any suggestions?' }, { type: 'TextInput', label: 'Your feedback', 'input-type': 'text', name: 'feedback', required: false, 'helper-text': 'Tell us anything — we read every response!' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: { action: 'survey_response', source: '${data.source}', preferences: '${data.preferences}', feedback: '${form.feedback}' } } }] } }] } },
+      { id: 'order_preferences', name: 'Order Preferences', json: { version: '6.2', screens: [{ id: 'PREFERENCES', title: 'Your Preferences', terminal: true, success: true, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Customize Your Order' }, { type: 'CheckboxGroup', label: 'Dietary preferences', name: 'dietary', required: false, 'data-source': [{ id: 'veg', title: 'Vegetarian' }, { id: 'vegan', title: 'Vegan' }, { id: 'jain', title: 'Jain' }, { id: 'gluten_free', title: 'Gluten-free' }, { id: 'none', title: 'No restrictions' }] }, { type: 'RadioButtonsGroup', label: 'Spice level', name: 'spice_level', required: true, 'data-source': [{ id: 'mild', title: '\uD83C\uDF36 Mild' }, { id: 'medium', title: '\uD83C\uDF36\uD83C\uDF36 Medium' }, { id: 'hot', title: '\uD83C\uDF36\uD83C\uDF36\uD83C\uDF36 Hot' }, { id: 'extra_hot', title: '\uD83D\uDD25 Extra Hot' }] }, { type: 'TextInput', label: 'Special instructions', 'input-type': 'text', name: 'instructions', required: false, 'helper-text': 'Allergies, no onion/garlic, extra sauce, etc.' }, { type: 'Footer', label: 'Save Preferences', 'on-click-action': { name: 'complete', payload: { dietary: '${form.dietary}', spice_level: '${form.spice_level}', instructions: '${form.instructions}' } } }] } }] } },
+    ]});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/flows/:flowId — Get single Flow details including JSON
 router.get('/flows/:flowId', async (req, res) => {
   try {
@@ -2316,47 +2361,6 @@ router.delete('/flows/:flowId', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
-// GET /api/admin/flows/assignments — Current Flow assignments
-router.get('/flows/assignments', async (req, res) => {
-  try {
-    const delivery = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
-    const feedback = await col('platform_settings').findOne({ _id: 'feedback_flow' });
-    res.json({ delivery: { flow_id: delivery?.flow_id || null, flow_name: delivery?.flow_name || null, flow_status: delivery?.flow_status || null, auto_assign: delivery?.auto_assign_new || false }, feedback: { flow_id: feedback?.flow_id || null, flow_name: feedback?.flow_name || null, flow_status: feedback?.flow_status || null } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// PUT /api/admin/flows/assignments — Update Flow assignments
-router.put('/flows/assignments', async (req, res) => {
-  try {
-    const { type, flow_id, flow_name } = req.body;
-    if (!type || !['delivery', 'feedback'].includes(type)) return res.status(400).json({ error: 'type must be delivery or feedback' });
-    const settingId = type === 'delivery' ? 'whatsapp_flow' : 'feedback_flow';
-    await col('platform_settings').updateOne(
-      { _id: settingId },
-      { $set: { flow_id, flow_name: flow_name || null, flow_status: 'PUBLISHED', updated_at: new Date() }, $setOnInsert: { created_at: new Date() } },
-      { upsert: true }
-    );
-    if (type === 'delivery' && flow_id) {
-      await col('restaurants').updateMany({}, { $set: { flow_id } });
-    }
-    res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// GET /api/admin/flows/templates — Built-in Flow JSON templates
-router.get('/flows/templates', async (req, res) => {
-  try {
-    res.json({ templates: [
-      { id: 'delivery_address', name: 'Delivery Address (Full)', json: flowMgr.buildDeliveryFlowJson() },
-      { id: 'feedback_rating', name: 'Order Rating (4 Categories)', json: flowMgr.buildFeedbackFlowJson() },
-      { id: 'blank', name: 'Blank Skeleton', json: { version: '6.2', screens: [{ id: 'SCREEN_1', title: 'Screen Title', terminal: true, success: true, data: {}, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Heading' }, { type: 'TextBody', text: 'Body text' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: {} } }] } }] } },
-      { id: 'lead_capture', name: 'Lead Capture / Contact Form', json: { version: '6.2', screens: [{ id: 'CONTACT', title: 'Contact Us', terminal: true, success: true, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Get in Touch' }, { type: 'TextInput', label: 'Your name', 'input-type': 'text', name: 'name', required: true }, { type: 'TextInput', label: 'Phone number', 'input-type': 'phone', name: 'phone', required: true }, { type: 'TextInput', label: 'Email', 'input-type': 'email', name: 'email', required: false }, { type: 'Dropdown', label: 'Inquiry type', name: 'inquiry_type', required: true, 'data-source': [{ id: 'general', title: 'General Inquiry' }, { id: 'partnership', title: 'Partnership' }, { id: 'catering', title: 'Catering' }, { id: 'feedback', title: 'Feedback' }] }, { type: 'TextInput', label: 'Message', 'input-type': 'text', name: 'message', required: false, 'helper-text': 'Tell us how we can help' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: { name: '${form.name}', phone: '${form.phone}', email: '${form.email}', inquiry_type: '${form.inquiry_type}', message: '${form.message}' } } }] } }] } },
-      { id: 'table_booking', name: 'Table Booking', json: { version: '6.2', screens: [{ id: 'BOOKING', title: 'Book a Table', terminal: false, data: {}, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Reserve Your Table' }, { type: 'TextInput', label: 'Guest name', 'input-type': 'text', name: 'guest_name', required: true }, { type: 'TextInput', label: 'Phone', 'input-type': 'phone', name: 'guest_phone', required: true }, { type: 'DatePicker', label: 'Date', name: 'booking_date', required: true }, { type: 'Dropdown', label: 'Time slot', name: 'time_slot', required: true, 'data-source': [{ id: '12:00', title: '12:00 PM' }, { id: '13:00', title: '1:00 PM' }, { id: '14:00', title: '2:00 PM' }, { id: '19:00', title: '7:00 PM' }, { id: '20:00', title: '8:00 PM' }, { id: '21:00', title: '9:00 PM' }] }, { type: 'Dropdown', label: 'Party size', name: 'party_size', required: true, 'data-source': [{ id: '1', title: '1 person' }, { id: '2', title: '2 people' }, { id: '3-4', title: '3-4 people' }, { id: '5-6', title: '5-6 people' }, { id: '7+', title: '7+ people' }] }, { type: 'TextInput', label: 'Special requests', 'input-type': 'text', name: 'special_requests', required: false }, { type: 'Footer', label: 'Review Booking', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'CONFIRM_BOOKING' }, payload: { guest_name: '${form.guest_name}', guest_phone: '${form.guest_phone}', booking_date: '${form.booking_date}', time_slot: '${form.time_slot}', party_size: '${form.party_size}', special_requests: '${form.special_requests}' } } }] } }, { id: 'CONFIRM_BOOKING', title: 'Confirm Booking', terminal: true, success: true, data: { guest_name: { type: 'string', __example__: 'Tarun' }, time_slot: { type: 'string', __example__: '8:00 PM' }, party_size: { type: 'string', __example__: '2 people' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Confirm Your Reservation' }, { type: 'TextBody', text: 'Please review your booking details and tap Confirm.' }, { type: 'Footer', label: 'Confirm Booking', 'on-click-action': { name: 'complete', payload: { action: 'table_booking', guest_name: '${data.guest_name}', guest_phone: '${data.guest_phone}', booking_date: '${data.booking_date}', time_slot: '${data.time_slot}', party_size: '${data.party_size}', special_requests: '${data.special_requests}' } } }] } }] } },
-      { id: 'survey', name: 'Customer Survey', json: { version: '6.2', screens: [{ id: 'Q1', title: 'Quick Survey', terminal: false, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Help us improve!' }, { type: 'RadioButtonsGroup', label: 'How did you hear about us?', name: 'source', required: true, 'data-source': [{ id: 'social_media', title: 'Social media' }, { id: 'friend', title: 'Friend/Family' }, { id: 'google', title: 'Google search' }, { id: 'walk_in', title: 'Walked by' }, { id: 'other', title: 'Other' }] }, { type: 'Footer', label: 'Next', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'Q2' }, payload: { source: '${form.source}' } } }] } }, { id: 'Q2', title: 'Your Preferences', terminal: false, data: { source: { type: 'string', __example__: 'social_media' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'What do you love?' }, { type: 'CheckboxGroup', label: 'Select all that apply', name: 'preferences', required: true, 'data-source': [{ id: 'taste', title: 'Great taste' }, { id: 'price', title: 'Good prices' }, { id: 'delivery', title: 'Fast delivery' }, { id: 'variety', title: 'Menu variety' }, { id: 'healthy', title: 'Healthy options' }] }, { type: 'Footer', label: 'Next', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'Q3' }, payload: { source: '${data.source}', preferences: '${form.preferences}' } } }] } }, { id: 'Q3', title: 'Feedback', terminal: true, success: true, data: { source: { type: 'string', __example__: 'social_media' }, preferences: { type: 'string', __example__: 'taste' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Any suggestions?' }, { type: 'TextInput', label: 'Your feedback', 'input-type': 'text', name: 'feedback', required: false, 'helper-text': 'Tell us anything — we read every response!' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: { action: 'survey_response', source: '${data.source}', preferences: '${data.preferences}', feedback: '${form.feedback}' } } }] } }] } },
-      { id: 'order_preferences', name: 'Order Preferences', json: { version: '6.2', screens: [{ id: 'PREFERENCES', title: 'Your Preferences', terminal: true, success: true, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Customize Your Order' }, { type: 'CheckboxGroup', label: 'Dietary preferences', name: 'dietary', required: false, 'data-source': [{ id: 'veg', title: 'Vegetarian' }, { id: 'vegan', title: 'Vegan' }, { id: 'jain', title: 'Jain' }, { id: 'gluten_free', title: 'Gluten-free' }, { id: 'none', title: 'No restrictions' }] }, { type: 'RadioButtonsGroup', label: 'Spice level', name: 'spice_level', required: true, 'data-source': [{ id: 'mild', title: '\uD83C\uDF36 Mild' }, { id: 'medium', title: '\uD83C\uDF36\uD83C\uDF36 Medium' }, { id: 'hot', title: '\uD83C\uDF36\uD83C\uDF36\uD83C\uDF36 Hot' }, { id: 'extra_hot', title: '\uD83D\uDD25 Extra Hot' }] }, { type: 'TextInput', label: 'Special instructions', 'input-type': 'text', name: 'instructions', required: false, 'helper-text': 'Allergies, no onion/garlic, extra sauce, etc.' }, { type: 'Footer', label: 'Save Preferences', 'on-click-action': { name: 'complete', payload: { dietary: '${form.dietary}', spice_level: '${form.spice_level}', instructions: '${form.instructions}' } } }] } }] } },
-    ]});
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
 
 // ─── CONTACT BOOK (BSUID → Phone mapping) ───────────────────
 router.get('/waba/contact-book-status', async (req, res) => {
