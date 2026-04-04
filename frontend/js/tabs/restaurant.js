@@ -739,6 +739,213 @@ async function resumeCampaignNow(id) {
 }
 
 
+// ─── OPERATING HOURS MANAGEMENT ─────────────────────────
+const _dayNames = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+const _dayLabels = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+let _hoursCache = {};
+
+function _formatHoursSummary(b) {
+  if (!b.operating_hours) return `${(b.opening_time||'10:00').slice(0,5)} – ${(b.closing_time||'22:00').slice(0,5)}`;
+  const openDays = _dayNames.filter(d => !b.operating_hours[d]?.is_closed);
+  if (!openDays.length) return 'Closed all days';
+  const first = b.operating_hours[openDays[0]];
+  const allSame = openDays.every(d => b.operating_hours[d].open === first.open && b.operating_hours[d].close === first.close);
+  const timeStr = `${first.open} – ${first.close}`;
+  if (openDays.length === 7 && allSame) return timeStr;
+  if (allSame) {
+    const closedCount = 7 - openDays.length;
+    return `${timeStr} (${closedCount} day${closedCount > 1 ? 's' : ''} closed)`;
+  }
+  return 'Custom schedule';
+}
+
+async function loadOperatingHours() {
+  const container = document.getElementById('op-hours-container');
+  if (!container) return;
+  try {
+    const brList = branches && branches.length ? branches : await api('/api/restaurant/branches');
+    if (!brList.length) {
+      container.innerHTML = '<div class="empty"><div class="ei">🏪</div><h3>No branches yet</h3><p>Add a branch from the Menu tab first.</p></div>';
+      return;
+    }
+    container.innerHTML = brList.map(b => `
+      <div class="card" style="margin-bottom:1rem;padding:1rem 1.2rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+          <div>
+            <strong style="font-size:.92rem">${b.name}</strong>
+            <span style="font-size:.78rem;color:var(--dim);margin-left:.6rem">${_formatHoursSummary(b)}</span>
+          </div>
+          <button class="btn-g btn-sm" onclick="openHoursEditor('${b.id}')">Edit Hours</button>
+        </div>
+        <div id="hours-editor-${b.id}" style="display:none;margin-top:.5rem;padding:.8rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+            <h4 style="margin:0;font-size:.88rem;color:var(--txt)">Operating Hours</h4>
+            <label style="display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--dim);cursor:pointer">
+              <input type="checkbox" id="hours-same-${b.id}" onchange="toggleSameHours('${b.id}',this.checked)" style="accent-color:var(--wa)"> Same hours every day
+            </label>
+          </div>
+          <div style="display:flex;gap:.4rem;margin-bottom:.6rem;flex-wrap:wrap">
+            <button class="btn-g btn-sm" onclick="applyHoursPreset('${b.id}','standard')">Standard (10–22)</button>
+            <button class="btn-g btn-sm" onclick="applyHoursPreset('${b.id}','weekdays')">Weekdays Only</button>
+            <button class="btn-g btn-sm" onclick="applyHoursPreset('${b.id}','late')">Late Night (18–02)</button>
+          </div>
+          <div id="hours-uniform-${b.id}" style="display:none;margin-bottom:.5rem;padding:.5rem .6rem;background:var(--bg);border:1px solid var(--bdr);border-radius:6px">
+            <div style="display:flex;align-items:center;gap:.6rem;font-size:.82rem">
+              <span style="color:var(--dim);width:50px">All days</span>
+              <input type="time" id="hours-uni-open-${b.id}" value="10:00" style="padding:.25rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem;background:var(--ink2);color:var(--txt)">
+              <span style="color:var(--dim)">to</span>
+              <input type="time" id="hours-uni-close-${b.id}" value="22:00" style="padding:.25rem .4rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem;background:var(--ink2);color:var(--txt)">
+            </div>
+          </div>
+          <div id="hours-perday-${b.id}"></div>
+          <div style="display:flex;align-items:center;gap:.6rem;margin-top:.6rem">
+            <button class="btn-p btn-sm" onclick="saveHours('${b.id}')">Save Hours</button>
+            <button class="btn-g btn-sm" onclick="document.getElementById('hours-editor-${b.id}').style.display='none'">Cancel</button>
+            <span id="hours-status-${b.id}" style="font-size:.75rem;color:var(--dim)"></span>
+          </div>
+          <div style="margin-top:.4rem;font-size:.72rem;color:var(--dim)">Changes take effect immediately. Customers will see updated hours when they message your WhatsApp.</div>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    container.innerHTML = `<div class="empty"><div class="ei">❌</div><h3>${e.message}</h3></div>`;
+  }
+}
+
+async function openHoursEditor(branchId) {
+  const editor = document.getElementById('hours-editor-' + branchId);
+  if (!editor) return;
+  editor.style.display = 'block';
+  const status = document.getElementById('hours-status-' + branchId);
+  if (status) status.textContent = 'Loading...';
+  try {
+    const res = await api(`/api/restaurant/branches/${branchId}/hours`);
+    _hoursCache[branchId] = res.hours;
+    renderHoursRows(branchId, res.hours);
+    if (status) status.textContent = '';
+    const openDays = _dayNames.filter(d => !res.hours[d]?.is_closed);
+    if (openDays.length > 1) {
+      const first = res.hours[openDays[0]];
+      const allSame = openDays.every(d => res.hours[d].open === first.open && res.hours[d].close === first.close);
+      const cb = document.getElementById('hours-same-' + branchId);
+      if (cb && allSame) { cb.checked = true; toggleSameHours(branchId, true); }
+    }
+  } catch (e) { if (status) status.textContent = 'Failed to load hours'; }
+}
+
+function renderHoursRows(branchId, hours) {
+  const container = document.getElementById('hours-perday-' + branchId);
+  if (!container) return;
+  container.innerHTML = _dayNames.map((d, i) => {
+    const dh = hours[d] || { open: '10:00', close: '22:00', is_closed: false };
+    const dis = dh.is_closed ? 'opacity:.45;pointer-events:none' : '';
+    return `<div class="hours-row" style="display:flex;align-items:center;gap:.5rem;padding:.35rem 0;font-size:.82rem;border-bottom:1px solid var(--bdr)" data-day="${d}">
+      <span style="width:80px;color:var(--dim);font-weight:500">${_dayLabels[i]}</span>
+      <label class="tsl" style="transform:scale(.8)"><input type="checkbox" ${dh.is_closed ? '' : 'checked'} onchange="toggleDayOpen('${branchId}','${d}',this.checked)"><div class="tsl-track"></div></label>
+      <span style="font-size:.72rem;color:var(--dim);width:36px">${dh.is_closed ? 'Closed' : 'Open'}</span>
+      <input type="time" id="hr-open-${branchId}-${d}" value="${dh.open}" style="padding:.2rem .35rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem;background:var(--ink2);color:var(--txt);${dis}">
+      <span style="color:var(--dim);${dis}">to</span>
+      <input type="time" id="hr-close-${branchId}-${d}" value="${dh.close}" style="padding:.2rem .35rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem;background:var(--ink2);color:var(--txt);${dis}">
+    </div>`;
+  }).join('');
+}
+
+function toggleDayOpen(branchId, day, isOpen) {
+  const openInput = document.getElementById(`hr-open-${branchId}-${day}`);
+  const closeInput = document.getElementById(`hr-close-${branchId}-${day}`);
+  const row = openInput?.closest('.hours-row');
+  const label = row?.querySelector('span:nth-child(3)');
+  if (label) label.textContent = isOpen ? 'Open' : 'Closed';
+  const dis = isOpen ? '' : 'opacity:.45;pointer-events:none';
+  if (openInput) openInput.style.cssText = `padding:.2rem .35rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem;background:var(--ink2);color:var(--txt);${dis}`;
+  if (closeInput) closeInput.style.cssText = `padding:.2rem .35rem;border:1px solid var(--rim);border-radius:4px;font-size:.78rem;background:var(--ink2);color:var(--txt);${dis}`;
+  const toSpan = closeInput?.previousElementSibling;
+  if (toSpan) toSpan.style.cssText = `color:var(--dim);${dis}`;
+}
+
+function toggleSameHours(branchId, same) {
+  const uniform = document.getElementById('hours-uniform-' + branchId);
+  const perday = document.getElementById('hours-perday-' + branchId);
+  if (same) {
+    const firstOpen = _dayNames.find(d => {
+      const row = perday?.querySelector(`.hours-row[data-day="${d}"]`);
+      return row?.querySelector('input[type="checkbox"]')?.checked;
+    });
+    if (firstOpen) {
+      const o = document.getElementById(`hr-open-${branchId}-${firstOpen}`)?.value || '10:00';
+      const c = document.getElementById(`hr-close-${branchId}-${firstOpen}`)?.value || '22:00';
+      document.getElementById(`hours-uni-open-${branchId}`).value = o;
+      document.getElementById(`hours-uni-close-${branchId}`).value = c;
+    }
+    if (uniform) uniform.style.display = 'block';
+    perday?.querySelectorAll('input[type="time"]').forEach(el => el.style.display = 'none');
+    perday?.querySelectorAll('.hours-row span:nth-child(5)').forEach(el => el.style.display = 'none');
+  } else {
+    if (uniform) uniform.style.display = 'none';
+    perday?.querySelectorAll('input[type="time"]').forEach(el => el.style.display = '');
+    perday?.querySelectorAll('.hours-row span:nth-child(5)').forEach(el => el.style.display = '');
+  }
+}
+
+function applyHoursPreset(branchId, preset) {
+  const perday = document.getElementById('hours-perday-' + branchId);
+  if (!perday) return;
+  const presets = {
+    standard: { open: '10:00', close: '22:00', closedDays: [] },
+    weekdays: { open: '10:00', close: '22:00', closedDays: ['saturday', 'sunday'] },
+    late:     { open: '18:00', close: '02:00', closedDays: [] },
+  };
+  const p = presets[preset];
+  if (!p) return;
+  _dayNames.forEach(d => {
+    const isClosed = p.closedDays.includes(d);
+    const cb = perday.querySelector(`.hours-row[data-day="${d}"] input[type="checkbox"]`);
+    if (cb && cb.checked === isClosed) { cb.checked = !isClosed; toggleDayOpen(branchId, d, !isClosed); }
+    const openEl = document.getElementById(`hr-open-${branchId}-${d}`);
+    const closeEl = document.getElementById(`hr-close-${branchId}-${d}`);
+    if (openEl) openEl.value = p.open;
+    if (closeEl) closeEl.value = p.close;
+  });
+  document.getElementById(`hours-uni-open-${branchId}`).value = p.open;
+  document.getElementById(`hours-uni-close-${branchId}`).value = p.close;
+}
+
+async function saveHours(branchId) {
+  const status = document.getElementById('hours-status-' + branchId);
+  const perday = document.getElementById('hours-perday-' + branchId);
+  const isSame = document.getElementById('hours-same-' + branchId)?.checked;
+  if (status) status.textContent = 'Saving...';
+
+  const hours = {};
+  const uniOpen = document.getElementById(`hours-uni-open-${branchId}`)?.value || '10:00';
+  const uniClose = document.getElementById(`hours-uni-close-${branchId}`)?.value || '22:00';
+
+  _dayNames.forEach(d => {
+    const row = perday?.querySelector(`.hours-row[data-day="${d}"]`);
+    const isOpen = row?.querySelector('input[type="checkbox"]')?.checked ?? true;
+    let open, close;
+    if (isSame) {
+      open = uniOpen; close = uniClose;
+    } else {
+      open = document.getElementById(`hr-open-${branchId}-${d}`)?.value || '10:00';
+      close = document.getElementById(`hr-close-${branchId}-${d}`)?.value || '22:00';
+    }
+    hours[d] = { open, close, is_closed: !isOpen };
+  });
+
+  try {
+    await api(`/api/restaurant/branches/${branchId}/hours`, { method: 'PUT', body: { hours } });
+    toast('Operating hours saved!', 'ok');
+    if (status) status.textContent = 'Saved!';
+    setTimeout(() => { if (status) status.textContent = ''; }, 2000);
+    loadOperatingHours();
+  } catch (e) {
+    toast(e.message || 'Failed to save hours', 'err');
+    if (status) status.textContent = 'Failed';
+  }
+}
+
+
 // Expose to window
 window.debounceCustSearch = debounceCustSearch;
 window.loadCustomers = loadCustomers;
@@ -768,6 +975,14 @@ window.deleteCampaignRow = deleteCampaignRow;
 window.pauseCampaignNow = pauseCampaignNow;
 window.resumeCampaignNow = resumeCampaignNow;
 window.loadRestaurantProfile = loadRestaurantProfile;
+window.loadOperatingHours = loadOperatingHours;
+window.openHoursEditor = openHoursEditor;
+window.renderHoursRows = renderHoursRows;
+window.toggleDayOpen = toggleDayOpen;
+window.toggleSameHours = toggleSameHours;
+window.applyHoursPreset = applyHoursPreset;
+window.saveHours = saveHours;
+window._formatHoursSummary = _formatHoursSummary;
 window.doSaveUser = doSaveUser;
 window.editUser = editUser;
 window.resetUserPin = resetUserPin;

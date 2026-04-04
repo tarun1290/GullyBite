@@ -1851,6 +1851,14 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           <button class="btn-g btn-sm" onclick="goTab('settings',null)" style="white-space:nowrap">&#9998; Edit Profile</button>
         </div>
         <!-- Info cards moved to Settings page (view/edit mode) -->
+
+        <!-- Operating Hours -->
+        <div class="card" style="margin-top:1.2rem">
+          <div class="ch"><h3>Operating Hours</h3><span style="font-size:.75rem;color:var(--dim)">Set open/close times per branch</span></div>
+          <div class="cb" id="op-hours-container">
+            <div class="empty"><div class="ei">⏳</div><h3>Loading…</h3></div>
+          </div>
+        </div>
       </div>
 
       <div class="tab" id="tab-loyalty">
@@ -2392,7 +2400,7 @@ const TMETA = {
   messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: () => loadMessages() },
   analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); loadDropoffAnalytics(); } },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
-  restaurant:  { title: 'Restaurant',         sub: 'Profile, coupons, loyalty, and team',  fn: () => { loadRestaurantProfile(); loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
+  restaurant:  { title: 'Restaurant',         sub: 'Profile, coupons, loyalty, and team',  fn: () => { loadRestaurantProfile(); loadOperatingHours(); loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
   settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); loadSyncLogs(); } },
   // Legacy tab IDs — redirect to new tabs for backwards compatibility
   branches:    { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); } },
