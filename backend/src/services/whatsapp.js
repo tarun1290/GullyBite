@@ -98,23 +98,30 @@ const sendCatalog = (pid, token, to, catalogId, introText) =>
 // Sends a product_list interactive message with items in category sections.
 // sections: [{ title: "🥟 Starters", product_retailer_ids: ["madhapur-momos", ...] }, ...]
 // Max 10 sections, max 30 product_retailer_ids total per MPM.
-const sendMPM = (pid, token, to, catalogId, { header, body, footer, sections }) =>
-  sendMsg(pid, token, to, {
+const sendMPM = (pid, token, to, catalogId, { header, body, footer, sections }) => {
+  const safeCatalogId = String(catalogId || '');
+  const safeSections = (sections || []).filter(s => s.product_retailer_ids?.length > 0).slice(0, 10);
+  const totalProducts = safeSections.reduce((n, s) => n + s.product_retailer_ids.length, 0);
+  console.log(`[MPM-DEBUG] sendMPM: catalog=${safeCatalogId} sections=${safeSections.length} products=${totalProducts}`);
+  if (!safeCatalogId) { console.error('[MPM-VALIDATION] No catalog_id — cannot send MPM'); return Promise.reject(new Error('Missing catalog_id')); }
+  if (!safeSections.length) { console.error('[MPM-VALIDATION] No valid sections — cannot send MPM'); return Promise.reject(new Error('No sections')); }
+  return sendMsg(pid, token, to, {
     type: 'interactive',
     interactive: {
       type: 'product_list',
-      header: { type: 'text', text: (header || '🍽️ Our Menu').substring(0, 60) },
+      header: { type: 'text', text: (header || '\uD83C\uDF7D\uFE0F Our Menu').substring(0, 60) },
       body: { text: (body || 'Browse items, tap for options, and add to cart!').substring(0, 1024) },
       footer: { text: (footer || 'Prices inclusive of taxes').substring(0, 60) },
       action: {
-        catalog_id: catalogId,
-        sections: sections.map(s => ({
+        catalog_id: safeCatalogId,
+        sections: safeSections.map(s => ({
           title: (s.title || 'Menu').substring(0, 24),
-          product_items: s.product_retailer_ids.map(id => ({ product_retailer_id: id })),
+          product_items: s.product_retailer_ids.filter(Boolean).slice(0, 30).map(id => ({ product_retailer_id: String(id) })),
         })),
       },
     },
   });
+};
 
 // ─── ORDER SUMMARY ────────────────────────────────────────────
 // Shows cart items + total with Confirm/Cancel/Coupon buttons

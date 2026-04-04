@@ -337,9 +337,10 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
 
   // ── Google Maps URL detection ─────────────────────────────
   if (location.isMapsUrl(rawText)) {
-    console.log('[Bot] Google Maps URL detected:', rawText.substring(0, 100));
+    const mapsUrl = location.extractMapsUrl(rawText) || rawText;
+    console.log('[MAPS-URL] Detected:', mapsUrl.substring(0, 100));
     try {
-      const coords = await location.extractCoordsFromMapsUrl(rawText);
+      const coords = await location.extractCoordsFromMapsUrl(mapsUrl);
       if (coords) {
         console.log(`[Bot] Extracted coords: ${coords.lat}, ${coords.lng}`);
         // Treat this the same as a location pin drop — delegate to location handler
@@ -879,21 +880,48 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   // Send branch-filtered MPMs (Multi-Product Messages)
   // Fetch restaurant for meta_catalog_id fallback (branch object from findNearestBranch doesn't include it always)
   const restaurantDoc = await col('restaurants').findOne({ _id: branch.restaurantId });
-  const catalogId = branch.catalogId || branch.catalog_id || restaurantDoc?.meta_catalog_id;
-  console.log(`[Bot] Sending menu: branch=${branch.name}, catalogId=${catalogId}, phone=${pid}`);
+  let catalogId = branch.catalogId || branch.catalog_id || restaurantDoc?.meta_catalog_id;
+  console.log(`[MPM-DEBUG] catalogId source: branch.catalogId=${branch.catalogId} branch.catalog_id=${branch.catalog_id} restaurant.meta_catalog_id=${restaurantDoc?.meta_catalog_id}`);
+  console.log(`[MPM-DEBUG] Resolved catalogId=${catalogId} (type: ${typeof catalogId})`);
+  // Ensure catalog_id is a string — Meta API rejects numbers
+  if (catalogId && typeof catalogId !== 'string') { console.warn('[MPM-VALIDATION] catalogId was not a string, converting'); catalogId = String(catalogId); }
 
   if (catalogId) {
     try {
       const { buildBranchMPMs } = require('../services/mpmBuilder');
       const mpms = await buildBranchMPMs(branch.id, branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id);
-      console.log(`[Bot] Built ${mpms.length} MPM(s) with sections:`, mpms.map(m => m.sections?.map(s => `${s.title}(${s.product_retailer_ids?.length})`)));
+      console.log(`[MPM-DEBUG] Built ${mpms.length} MPM(s) for branch "${branch.name}"`);
+      for (const [mi, mpm] of mpms.entries()) {
+        console.log(`[MPM-DEBUG] MPM ${mi+1}: header="${mpm.header}" sections=${mpm.sections?.length} products=${mpm.sections?.reduce((s,sec) => s + (sec.product_retailer_ids?.length || 0), 0)}`);
+        if (mpm.sections) for (const sec of mpm.sections) {
+          console.log(`[MPM-DEBUG]   Section "${sec.title}": ${(sec.product_retailer_ids || []).join(', ')}`);
+        }
+      }
       if (mpms.length) {
         for (let i = 0; i < mpms.length; i++) {
+          // Validate MPM payload before sending
+          const mpm = mpms[i];
+          if (mpm.sections) {
+            mpm.sections = mpm.sections.filter(s => {
+              if (!s.title) { console.warn('[MPM-VALIDATION] Section with no title removed'); return false; }
+              s.product_retailer_ids = (s.product_retailer_ids || []).filter(id => {
+                if (!id || typeof id !== 'string') { console.warn(`[MPM-VALIDATION] Invalid retailer_id removed: ${JSON.stringify(id)}`); return false; }
+                return true;
+              });
+              if (!s.product_retailer_ids.length) { console.warn(`[MPM-VALIDATION] Section "${s.title}" has 0 valid products — removed`); return false; }
+              return true;
+            });
+          }
+          if (!mpm.sections?.length) {
+            console.warn('[MPM-VALIDATION] MPM has 0 valid sections after filtering — skipping');
+            await wa.sendText(pid, token, to, 'Our menu is being set up. Please try again shortly.');
+            break;
+          }
           try {
-            await wa.sendMPM(pid, token, to, catalogId, mpms[i]);
-            console.log(`[Bot] MPM ${i+1}/${mpms.length} sent successfully`);
+            await wa.sendMPM(pid, token, to, String(catalogId), mpms[i]);
+            console.log(`[MPM-DEBUG] MPM ${i+1}/${mpms.length} sent successfully`);
           } catch (mpmSendErr) {
-            console.error(`[Bot] MPM ${i+1} send failed:`, mpmSendErr.response?.data || mpmSendErr.message);
+            console.error(`[MPM-DEBUG] MPM ${i+1} FAILED:`, JSON.stringify(mpmSendErr.response?.data || { message: mpmSendErr.message }));
             // If first MPM fails, fall back to catalog message
             if (i === 0) {
               console.log('[Bot] Falling back to catalog message');
@@ -2284,19 +2312,21 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
   });
 
   // Resolve catalogId from restaurant if branch doesn't have one
-  const effectiveCatalogId = catalogId || (await col('restaurants').findOne({ _id: restaurantId }))?.meta_catalog_id;
+  let effectiveCatalogId = catalogId || (await col('restaurants').findOne({ _id: restaurantId }))?.meta_catalog_id;
+  console.log(`[MPM-DEBUG] _sendBranchMenu: catalogId=${catalogId} effectiveCatalogId=${effectiveCatalogId} (type: ${typeof effectiveCatalogId})`);
+  if (effectiveCatalogId && typeof effectiveCatalogId !== 'string') { effectiveCatalogId = String(effectiveCatalogId); }
 
   if (effectiveCatalogId) {
     try {
       const { buildBranchMPMs } = require('../services/mpmBuilder');
       const mpms = await buildBranchMPMs(branch.id, restaurantId);
-      console.log(`[Bot] Built ${mpms.length} MPM(s) for branch ${branch.name}`);
+      console.log(`[MPM-DEBUG] _sendBranchMenu: ${mpms.length} MPM(s) for "${branch.name}"`);
       if (mpms.length) {
         for (let i = 0; i < mpms.length; i++) {
           try {
-            await wa.sendMPM(pid, token, to, effectiveCatalogId, mpms[i]);
+            await wa.sendMPM(pid, token, to, String(effectiveCatalogId), mpms[i]);
           } catch (mpmSendErr) {
-            console.error(`[Bot] MPM ${i+1} send failed:`, mpmSendErr.response?.data || mpmSendErr.message);
+            console.error(`[MPM-DEBUG] _sendBranchMenu MPM ${i+1} FAILED:`, JSON.stringify(mpmSendErr.response?.data || { message: mpmSendErr.message }));
             if (i === 0) {
               await wa.sendCatalog(pid, token, to, effectiveCatalogId, `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`);
               break;

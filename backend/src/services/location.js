@@ -91,10 +91,20 @@ const findNearestBranch = async (customerLat, customerLng, restaurantId = null) 
 
 // ─── GOOGLE MAPS URL PARSING ────────────────────────────────
 // Detects and extracts coordinates from Google Maps URLs shared as text
-const MAPS_URL_REGEX = /https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|maps\.google\.com|google\.com\/maps)[^\s)]+/i;
+const MAPS_URL_REGEX = /(?:https?:\/\/)?(maps\.app\.goo\.gl|goo\.gl\/maps|(?:www\.)?google\.(?:com|co\.\w+)\/maps|maps\.google\.(?:com|co\.\w+))[^\s)]+/i;
 
 function isMapsUrl(text) {
   return MAPS_URL_REGEX.test(text);
+}
+
+// Extract just the URL from message text (message may contain surrounding text)
+function extractMapsUrl(text) {
+  const match = text.match(MAPS_URL_REGEX);
+  if (!match) return null;
+  let url = match[0];
+  // Ensure https:// prefix for HTTP calls
+  if (!url.startsWith('http')) url = 'https://' + url;
+  return url;
 }
 
 async function extractCoordsFromMapsUrl(url) {
@@ -444,4 +454,4 @@ async function findBestAvailableBranch(customerLat, customerLng, restaurantId = 
   };
 }
 
-module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractCoordsFromMapsUrl, reverseGeocode, forwardGeocode };
+module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractMapsUrl, extractCoordsFromMapsUrl, reverseGeocode, forwardGeocode };
