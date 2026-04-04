@@ -438,69 +438,92 @@ const sendDocument = async (pid, token, to, { buffer, filename, caption, mimeTyp
   });
 };
 
-// ─── CHECKOUT BUTTON TEMPLATE ────────────────────────────────
-// Sends the order_checkout_v1 template with Meta's native checkout button.
-// The customer sees a "Buy now" button that opens in-WhatsApp payment via Razorpay.
-//
-// orderDetails: {
-//   reference_id, items[], subtotal, shipping, tax, discount, total_amount,
-//   shipping_info, payment_settings, expiration
-// }
-// items[]: { name, quantity, amount: {value,offset}, country_of_origin, importer_name, importer_address }
-const sendCheckoutTemplate = (pid, token, to, { templateName, customerName, restaurantName, orderDetails }) => {
-  const tplName = templateName || process.env.CHECKOUT_TEMPLATE_NAME || 'order_checkout_v1';
-  console.log(`[Checkout] Sending checkout template "${tplName}" to ${to}, ref=${orderDetails.reference_id}, total=${orderDetails.total_amount?.value}`);
+// ─── CHECKOUT ORDER (Interactive order_details) ─────────────
+// Sends an interactive order_details message with native Razorpay payment.
+// Customer sees full order breakdown + "Review and Pay" button inside WhatsApp.
+// This uses the interactive format (NOT template) — confirmed working.
+const sendCheckoutOrder = (pid, token, to, {
+  referenceId, restaurantName, customerName,
+  items,          // [{ retailer_id, name, quantity, price_rs }]
+  subtotal_rs, delivery_fee_rs, tax_rs, discount_rs, total_rs,
+  discountDescription, branchAddress,
+}) => {
+  const toPaise = (rs) => Math.round((rs || 0) * 100);
+  const configName = process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite';
+
+  console.log(`[Checkout] Sending order_details to ${to}, ref=${referenceId}, total=₹${total_rs}`);
+
+  const orderItems = (items || []).map(item => ({
+    retailer_id: item.retailer_id || 'item-' + Date.now(),
+    name: (item.name || 'Item').substring(0, 60),
+    quantity: item.quantity || 1,
+    amount: { value: toPaise(item.price_rs), offset: 100 },
+    country_of_origin: 'IN',
+    importer_name: (restaurantName || 'Restaurant').substring(0, 100),
+    importer_address: {
+      address_line1: (branchAddress?.address_line1 || 'India').substring(0, 200),
+      city: (branchAddress?.city || 'City').substring(0, 60),
+      zone_code: branchAddress?.zone_code || 'TS',
+      postal_code: branchAddress?.postal_code || '500001',
+      country_code: 'IN',
+    },
+  }));
+
+  const orderPayload = {
+    status: 'pending',
+    items: orderItems,
+    subtotal: { value: toPaise(subtotal_rs), offset: 100 },
+    shipping: { value: toPaise(delivery_fee_rs), offset: 100 },
+    tax: { value: toPaise(tax_rs), offset: 100 },
+  };
+  if (discount_rs && discount_rs > 0) {
+    orderPayload.discount = { value: toPaise(discount_rs), offset: 100, description: discountDescription || 'Discount' };
+  }
 
   return sendMsg(pid, token, to, {
-    type: 'template',
-    template: {
-      name: tplName,
-      language: { code: 'en_US' },
-      components: [
-        {
-          type: 'header',
-          parameters: [],
+    type: 'interactive',
+    interactive: {
+      type: 'order_details',
+      header: { type: 'text', text: ('Your Order from ' + (restaurantName || 'Restaurant')).substring(0, 60) },
+      body: { text: 'Hi ' + (customerName || 'there') + '! Review your order and pay securely below.' },
+      footer: { text: 'Powered by GullyBite' },
+      action: {
+        name: 'review_and_pay',
+        parameters: {
+          reference_id: (referenceId || 'ORD-' + Date.now()).substring(0, 35),
+          type: 'physical-goods',
+          payment_configuration: configName,
+          currency: 'INR',
+          total_amount: { value: toPaise(total_rs), offset: 100 },
+          order: orderPayload,
+          payment_settings: [{
+            type: 'payment_gateway',
+            payment_gateway: { type: 'razorpay', configuration_name: configName },
+          }],
         },
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: (customerName || 'there').substring(0, 60) },
-            { type: 'text', text: (restaurantName || 'our restaurant').substring(0, 60) },
-          ],
-        },
-        {
-          type: 'button',
-          sub_type: 'order_details',
-          index: '0',
-          parameters: [
-            {
-              type: 'action',
-              action: {
-                name: 'review_and_pay',
-                parameters: {
-                  reference_id: orderDetails.reference_id,
-                  type: 'physical-goods',
-                  payment_settings: orderDetails.payment_settings,
-                  currency: 'INR',
-                  total_amount: orderDetails.total_amount,
-                  order: {
-                    status: 'pending',
-                    expiration: orderDetails.expiration,
-                    items: orderDetails.items,
-                    subtotal: orderDetails.subtotal,
-                    shipping: orderDetails.shipping,
-                    tax: orderDetails.tax,
-                    ...(orderDetails.discount?.value > 0 ? { discount: orderDetails.discount } : {}),
-                    shipping_info: orderDetails.shipping_info,
-                  },
-                },
-              },
-            },
-          ],
-        },
-      ],
+      },
     },
   });
 };
 
-module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendCheckoutTemplate, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };
+// Legacy wrapper — redirects to the working interactive approach
+const sendCheckoutTemplate = (pid, token, to, opts) => {
+  console.log('[WA] sendCheckoutTemplate redirecting to sendCheckoutOrder (interactive)');
+  // Map legacy format to new format
+  const od = opts.orderDetails || {};
+  return sendCheckoutOrder(pid, token, to, {
+    referenceId: od.reference_id,
+    restaurantName: opts.restaurantName,
+    customerName: opts.customerName,
+    items: (od.items || []).map(i => ({ retailer_id: i.retailer_id, name: i.name, quantity: i.quantity, price_rs: i.amount?.value ? i.amount.value / (i.amount.offset || 100) : 0 })),
+    subtotal_rs: od.subtotal?.value ? od.subtotal.value / (od.subtotal.offset || 100) : 0,
+    delivery_fee_rs: od.shipping?.value ? od.shipping.value / (od.shipping.offset || 100) : 0,
+    tax_rs: od.tax?.value ? od.tax.value / (od.tax.offset || 100) : 0,
+    discount_rs: od.discount?.value ? od.discount.value / (od.discount.offset || 100) : 0,
+    discountDescription: od.discount?.description,
+    total_rs: od.total_amount?.value ? od.total_amount.value / (od.total_amount.offset || 100) : 0,
+    branchAddress: od.shipping_info,
+  });
+};
+
+module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendCheckoutTemplate, sendCheckoutOrder, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };

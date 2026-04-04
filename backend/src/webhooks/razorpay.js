@@ -307,3 +307,4 @@ const handleEvent = async (event) => {
 
 module.exports = router;
 module.exports.processRazorpayWebhook = processRazorpayWebhook;
+module.exports.confirmPaidOrder = confirmPaidOrder;

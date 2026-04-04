@@ -333,10 +333,8 @@ const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
 // Falls back to the text-based sendOrderSummary if the template isn't approved or fails.
 // When checkout template succeeds, creates the order so Razorpay webhook can match it.
 const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote, session, customer, waAccount }) => {
-  // Try checkout template first
-  // FUTURE FEATURE: Checkout template disabled — Meta billing eligibility issue (error 131042)
-  // Re-enable by removing `false &&` when the issue is resolved
-  const checkoutEnabled = false && (process.env.CHECKOUT_TEMPLATE_NAME || (await col('platform_settings').findOne({ _id: 'checkout_template' }))?.enabled);
+  // Try interactive order_details checkout (Razorpay in-WhatsApp payment)
+  const checkoutEnabled = !!(process.env.RAZORPAY_WA_CONFIG_NAME || (await col('platform_settings').findOne({ _id: 'checkout_order' }))?.enabled);
   if (checkoutEnabled && session?.branchId && session?.cart?.length) {
     try {
       const branch = await col('branches').findOne({ _id: session.branchId });
@@ -365,62 +363,32 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         addressSource: session.addressSource || null,
       });
 
-      const toPaise = (rs) => Math.round((Number(rs) || 0) * 100);
-      const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 30;
-      const expiryTs = String(Math.floor(Date.now() / 1000) + expiryMins * 60);
-
-      // Reference ID: order_number, sanitised for Meta (max 35 chars, [a-zA-Z0-9_\-\.])
       const refId = order.order_number.substring(0, 35).replace(/[^a-zA-Z0-9_\-\.]/g, '-');
-
-      const checkoutItems = (items || []).map(i => ({
-        name: (i.name || 'Item').substring(0, 60),
-        quantity: i.qty || 1,
-        amount: { value: toPaise(i.price), offset: 100 },
-        country_of_origin: 'IN',
-        importer_name: ((restaurant?.business_name || '') + (branch?.name ? ' - ' + branch.name : '')).substring(0, 100) || 'GullyBite',
-        importer_address: {
-          address_line1: (branch?.address || restaurant?.address || 'India').substring(0, 200),
-          city: (branch?.city || restaurant?.city || 'Hyderabad').substring(0, 60),
-          zone_code: branch?.state_code || 'TS',
-          postal_code: branch?.pincode || '500000',
-          country_code: 'IN',
-        },
-      }));
-
-      const taxRs = charges
-        ? (charges.food_gst_rs || 0) + (charges.customer_delivery_gst_rs || 0) + (charges.packaging_gst_rs || 0)
-        : 0;
+      const taxRs = charges ? (charges.food_gst_rs || 0) + (charges.customer_delivery_gst_rs || 0) + (charges.packaging_gst_rs || 0) : 0;
       const discountRs = discount?.amountRs || 0;
 
-      const orderDetails = {
-        reference_id: refId,
-        items: checkoutItems,
-        subtotal: { value: toPaise(charges?.subtotal_rs || subtotal), offset: 100 },
-        shipping: { value: toPaise(charges?.customer_delivery_rs || deliveryFee || 0), offset: 100 },
-        tax: { value: toPaise(taxRs), offset: 100, description: 'GST' },
-        discount: { value: toPaise(discountRs), offset: 100, description: discount?.code ? `Coupon: ${discount.code}` : 'Discount' },
-        total_amount: { value: toPaise(charges?.customer_total_rs || total), offset: 100 },
-        shipping_info: {
-          address_line1: (session.deliveryAddress || 'Delivery address').substring(0, 200),
+      await wa.sendCheckoutOrder(pid, token, to, {
+        referenceId: refId,
+        restaurantName: restaurant?.business_name || branch?.name || 'Restaurant',
+        customerName: customer?.name || 'there',
+        items: (items || []).map(i => ({
+          retailer_id: i.retailer_id || i.name,
+          name: i.name,
+          quantity: i.qty || 1,
+          price_rs: Number(i.price) || 0,
+        })),
+        subtotal_rs: charges?.subtotal_rs || Number(subtotal) || 0,
+        delivery_fee_rs: charges?.customer_delivery_rs || Number(deliveryFee) || 0,
+        tax_rs: taxRs,
+        discount_rs: discountRs,
+        discountDescription: discount?.code ? `Coupon: ${discount.code}` : 'Discount',
+        total_rs: charges?.customer_total_rs || Number(total) || 0,
+        branchAddress: {
+          address_line1: branch?.address || 'India',
           city: branch?.city || 'Hyderabad',
           zone_code: branch?.state_code || 'TS',
-          postal_code: session.structuredAddress?.in_pin_code || '500000',
-          country_code: 'IN',
+          postal_code: branch?.pincode || '500000',
         },
-        payment_settings: [{
-          type: 'payment_gateway',
-          payment_gateway: {
-            type: 'razorpay',
-            configuration_name: process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite',
-          },
-        }],
-        expiration: { timestamp: expiryTs, description: 'Order expires if unpaid' },
-      };
-
-      await wa.sendCheckoutTemplate(pid, token, to, {
-        customerName: customer?.name || 'there',
-        restaurantName: restaurant?.business_name || branch?.name || 'our restaurant',
-        orderDetails,
       });
 
       // Update session with order ID and transition to AWAITING_PAYMENT
@@ -430,18 +398,18 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
           ...session,
           orderId: order.id,
           orderNumber: order.order_number,
-          checkoutTemplate: true,
+          checkoutOrder: true,
         });
       }
 
-      console.log(`[Checkout] Template sent for order ${order.order_number} (id: ${order.id})`);
+      console.log(`[Checkout] order_details sent for ${order.order_number} (id: ${order.id})`);
 
       // Save a payment record so the Razorpay webhook can match by reference_id
       await col('payments').insertOne({
         _id: newId(),
         order_id: order.id,
         reference_id: refId,
-        payment_type: 'checkout_template',
+        payment_type: 'checkout_order',
         amount_rs: charges?.customer_total_rs || Number(total) || 0,
         currency: 'INR',
         status: 'pending',
@@ -450,7 +418,7 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
 
       return;
     } catch (checkoutErr) {
-      console.warn('[Checkout] Template send failed, falling back to text summary:', checkoutErr.message);
+      console.warn('[Checkout] order_details send failed, falling back to text summary:', checkoutErr.message);
     }
   }
 
@@ -2312,6 +2280,62 @@ const handleStatus = async (status) => {
       error: status.errors?.[0]?.title,
       code: status.errors?.[0]?.code,
     });
+  }
+
+  // ── Payment status from interactive order_details (Razorpay in-WhatsApp) ──
+  if (status.payment) {
+    const payment = status.payment;
+    const refId = payment.reference_id;
+    const txn = payment.transaction || {};
+    console.log(`[Payment-WA] Payment status: ref=${refId} txn=${txn.id} status=${txn.status} amount=${payment.amount?.value}`);
+
+    if (txn.status === 'success' && refId) {
+      try {
+        // Find the order by reference_id (stored in payments collection)
+        const paymentRec = await col('payments').findOne({ reference_id: refId, payment_type: 'checkout_order' });
+        if (paymentRec?.order_id) {
+          // Mark payment as paid
+          await col('payments').updateOne(
+            { _id: paymentRec._id },
+            { $set: { status: 'paid', rp_payment_id: txn.id, payment_method: txn.type, paid_at: new Date() } }
+          );
+          // Confirm the order via existing flow
+          const { confirmPaidOrder } = require('./razorpay');
+          if (confirmPaidOrder) {
+            await confirmPaidOrder(paymentRec.order_id);
+            console.log(`[Payment-WA] Order ${paymentRec.order_id} confirmed via WA payment status`);
+          }
+        } else {
+          console.warn(`[Payment-WA] No payment record for reference_id: ${refId}`);
+        }
+      } catch (e) {
+        console.error('[Payment-WA] Payment processing error:', e.message);
+      }
+    } else if (txn.status === 'failed' && refId) {
+      try {
+        const paymentRec = await col('payments').findOne({ reference_id: refId, payment_type: 'checkout_order' });
+        if (paymentRec) {
+          await col('payments').updateOne({ _id: paymentRec._id }, { $set: { status: 'failed' } });
+          // Send failure message
+          const order = paymentRec.order_id ? await col('orders').findOne({ _id: paymentRec.order_id }) : null;
+          if (order && status.recipient_id) {
+            const waAcc = await col('whatsapp_accounts').findOne({ restaurant_id: order.restaurant_id, is_active: true });
+            if (waAcc) {
+              await wa.sendButtons(waAcc.phone_number_id, metaConfig.systemUserToken, status.recipient_id, {
+                body: `❌ Payment failed for order #${order.order_number}.\n\nWould you like to try again?`,
+                buttons: [
+                  { id: 'CONFIRM_ORDER', title: '🔄 Retry Payment' },
+                  { id: 'CANCEL_ORDER', title: '❌ Cancel Order' },
+                ],
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[Payment-WA] Payment failure handling error:', e.message);
+      }
+    }
+    return; // Don't process payment statuses as regular message statuses
   }
 
   // [WhatsApp2026] Track message status in message_statuses collection
