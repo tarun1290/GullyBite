@@ -1671,132 +1671,127 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
 
     const branchId = req.params.branchId;
     const results = { added: 0, skipped: 0, errors: [] };
+
+    // ── Pre-fetch branch slug ONCE (not per row) ──
+    const csvBranchSlug = await getBranchSlug(branchId);
+    const now = new Date();
+
+    // ── Batch category lookup + creation ──
+    const catNames = [...new Set(items.map(r => { const n = _normalizeCSVRow(r); return (n.category || n.cat || '').trim(); }).filter(Boolean))];
     const categoryCache = {};
+    if (catNames.length) {
+      const existingCats = await col('menu_categories').find({ branch_id: branchId, name: { $in: catNames } }).toArray();
+      for (const c of existingCats) categoryCache[c.name] = String(c._id);
+      const newCatNames = catNames.filter(n => !categoryCache[n]);
+      if (newCatNames.length) {
+        const newCatDocs = newCatNames.map(n => ({ _id: newId(), branch_id: branchId, name: n, sort_order: 0, created_at: now }));
+        await col('menu_categories').insertMany(newCatDocs).catch(() => {});
+        for (const d of newCatDocs) categoryCache[d.name] = String(d._id);
+      }
+    }
+
+    // ── Build bulkWrite operations + track variant names ──
+    const bulkOps = [];
+    const nameTracker = {}; // lowercase name → [{ retailerId, hasGroupId }]
 
     for (const [i, rawRow] of items.entries()) {
       const row = _normalizeCSVRow(rawRow);
       const rowNum = i + 2;
       const name = (row.name || '').trim();
-      // Support Meta "199.00 INR" format or plain number
       const priceRaw = row.price_paise ? null : (row.price || row.price_rs || '').toString().replace(/[₹,\s]/g, '');
       const price = row.price_paise ? row.price_paise / 100 : parseFloat(priceRaw);
 
       if (!name) { results.errors.push(`Row ${rowNum}: missing name`); results.skipped++; continue; }
       if (isNaN(price) || price <= 0) { results.errors.push(`Row ${rowNum} "${name}": invalid price "${row.price}"`); results.skipped++; continue; }
 
-      try {
-        const categoryName = (row.category || row.cat || '').trim();
-        let categoryId = null;
-        if (categoryName) {
-          if (!categoryCache[categoryName]) {
-            const ex = await col('menu_categories').findOne({ branch_id: branchId, name: categoryName });
-            if (ex) {
-              categoryCache[categoryName] = String(ex._id);
-            } else {
-              const catId = newId();
-              await col('menu_categories').insertOne({ _id: catId, branch_id: branchId, name: categoryName, sort_order: 0, created_at: new Date() });
-              categoryCache[categoryName] = catId;
-            }
-          }
-          categoryId = categoryCache[categoryName];
-        }
+      const categoryName = (row.category || row.cat || '').trim();
+      const categoryId = categoryName ? (categoryCache[categoryName] || null) : null;
+      const validTypes = ['veg', 'non_veg', 'vegan', 'egg'];
+      const rawType = (row.food_type || row.type || 'veg').toLowerCase().trim();
+      const foodType = validTypes.includes(rawType) ? rawType : 'veg';
+      const isBestseller = ['true', 'yes', '1'].includes((row.is_bestseller || '').toLowerCase());
+      const imageUrl = (row.image_url || row.image || '').trim() || null;
+      const pricePaise = row.price_paise || Math.round(price * 100);
+      const sizeVal = row.size || null;
+      const originalRetailerId = row.retailer_id || null;
+      const retailerId = makeRetailerId(csvBranchSlug, name, sizeVal);
+      const autoGroupId = sizeVal ? makeItemGroupId(csvBranchSlug, name) : null;
 
-        const validTypes = ['veg', 'non_veg', 'vegan', 'egg'];
-        const rawType = (row.food_type || row.type || 'veg').toLowerCase().trim();
-        const foodType = validTypes.includes(rawType) ? rawType : 'veg';
-        const isBestseller = ['true', 'yes', '1'].includes((row.is_bestseller || '').toLowerCase());
-        const imageUrl = (row.image_url || row.image || '').trim() || null;
-        const pricePaise = row.price_paise || Math.round(price * 100);
-        const csvBranchSlug = await getBranchSlug(branchId);
-        const sizeVal = row.size || null;
-        const originalRetailerId = row.retailer_id || null; // preserve spreadsheet ID for reference
-        const retailerId = makeRetailerId(csvBranchSlug, name, sizeVal); // always generate branch-encoded
-        const autoGroupId = sizeVal ? makeItemGroupId(csvBranchSlug, name) : null;
-        const now = new Date();
+      const csvTags = [];
+      if (row['product_tags[0]'] || row.product_tag_0) csvTags.push(row['product_tags[0]'] || row.product_tag_0);
+      if (row['product_tags[1]'] || row.product_tag_1) csvTags.push(row['product_tags[1]'] || row.product_tag_1);
+      if (row.product_tags && Array.isArray(row.product_tags)) csvTags.push(...row.product_tags);
+      if (csvTags.length < 2) {
+        if (!csvTags[0]) { const typeLabel = { veg: 'Veg', non_veg: 'Non-Veg', egg: 'Egg', vegan: 'Vegan' }; csvTags[0] = typeLabel[foodType] || 'Veg'; }
+        if (!csvTags[1] && categoryName) csvTags[1] = categoryName;
+      }
 
-        // Build product_tags from available data
-        const csvTags = [];
-        if (row['product_tags[0]'] || row.product_tag_0) csvTags.push(row['product_tags[0]'] || row.product_tag_0);
-        if (row['product_tags[1]'] || row.product_tag_1) csvTags.push(row['product_tags[1]'] || row.product_tag_1);
-        if (row.product_tags && Array.isArray(row.product_tags)) csvTags.push(...row.product_tags);
-        // Auto-populate product_tags from simple columns if not explicitly provided
-        if (csvTags.length < 2) {
-          if (!csvTags[0]) { const typeLabel = { veg: 'Veg', non_veg: 'Non-Veg', egg: 'Egg', vegan: 'Vegan' }; csvTags[0] = typeLabel[foodType] || 'Veg'; }
-          if (!csvTags[1] && categoryName) csvTags[1] = categoryName;
-        }
-
-        await col('menu_items').updateOne(
-          { retailer_id: retailerId },
-          {
+      bulkOps.push({
+        updateOne: {
+          filter: { retailer_id: retailerId },
+          update: {
             $set: {
-              restaurant_id: req.restaurantId,
-              branch_id: branchId,
-              category_id: categoryId,
-              name,
-              description: (row.description || row.desc || '').trim() || name, // Meta requires non-empty description
-              price_paise: pricePaise,
-              image_url: imageUrl,
-              food_type: foodType,
-              is_bestseller: isBestseller,
-              // Meta 29-column fields
-              item_group_id: row.item_group_id || autoGroupId || null,
-              size: sizeVal,
-              sale_price_paise: row.sale_price_paise || null,
-              sale_price_effective_date: row.sale_price_effective_date || null,
+              restaurant_id: req.restaurantId, branch_id: branchId, category_id: categoryId,
+              name, description: (row.description || row.desc || '').trim() || name,
+              price_paise: pricePaise, image_url: imageUrl, food_type: foodType, is_bestseller: isBestseller,
+              item_group_id: row.item_group_id || autoGroupId || null, size: sizeVal,
+              sale_price_paise: row.sale_price_paise || null, sale_price_effective_date: row.sale_price_effective_date || null,
               brand: row.brand || null,
               google_product_category: row.google_product_category || 'Food, Beverages & Tobacco > Food Items',
               fb_product_category: row.fb_product_category || 'Food & Beverages > Prepared Food',
-              link: row.link || null,
-              quantity_to_sell_on_facebook: row.quantity_to_sell_on_facebook || null,
+              link: row.link || null, quantity_to_sell_on_facebook: row.quantity_to_sell_on_facebook || null,
               product_tags: csvTags.length ? [...new Set(csvTags)] : [],
-              gender: row.gender || null,
-              color: row.color || null,
-              age_group: row.age_group || null,
-              material: row.material || null,
-              pattern: row.pattern || null,
-              shipping: row.shipping || null,
-              shipping_weight: row.shipping_weight || null,
+              gender: row.gender || null, color: row.color || null, age_group: row.age_group || null,
+              material: row.material || null, pattern: row.pattern || null,
+              shipping: row.shipping || null, shipping_weight: row.shipping_weight || null,
               video_url: row.video_url || row['video[0].url'] || null,
               video_tag: row.video_tag || row['video[0].tag[0]'] || null,
-              gtin: row.gtin || null,
-              style: row.style || row['style[0]'] || null,
-              catalog_sync_status: 'pending',
-              updated_at: now,
+              gtin: row.gtin || null, style: row.style || row['style[0]'] || null,
+              catalog_sync_status: 'pending', updated_at: now,
             },
             $setOnInsert: { _id: newId(), retailer_id: retailerId, original_retailer_id: originalRetailerId, is_available: true, sort_order: 0, catalog_synced_at: null, created_at: now },
           },
-          { upsert: true }
-        );
-        results.added++;
-      } catch (e) {
-        results.errors.push(`Row ${rowNum} "${name}": ${e.message}`);
-        results.skipped++;
+          upsert: true,
+        },
+      });
+
+      // Track names for variant auto-detection (no extra DB read)
+      const nameKey = name.toLowerCase().trim();
+      if (!nameTracker[nameKey]) nameTracker[nameKey] = [];
+      nameTracker[nameKey].push({ retailerId, hasGroupId: !!(row.item_group_id || autoGroupId) });
+    }
+
+    // ── Execute bulkWrite in chunks of 500 ──
+    const CHUNK = 500;
+    for (let c = 0; c < bulkOps.length; c += CHUNK) {
+      try {
+        const chunk = bulkOps.slice(c, c + CHUNK);
+        const bwResult = await col('menu_items').bulkWrite(chunk, { ordered: false });
+        results.added += (bwResult.upsertedCount || 0) + (bwResult.modifiedCount || 0);
+      } catch (bwErr) {
+        if (bwErr.result) results.added += (bwErr.result.nUpserted || 0) + (bwErr.result.nModified || 0);
+        const writeErrors = bwErr.writeErrors || [];
+        for (const we of writeErrors) {
+          results.errors.push(`Bulk write error at index ${we.index}: ${we.errmsg || we.message}`);
+          results.skipped++;
+        }
       }
     }
 
-    // Post-processing: auto-detect variants by grouping items with same name at this branch
+    // ── Auto-detect variants from tracked names (no extra DB read) ──
     try {
-      const branchItems = await col('menu_items').find({ branch_id: branchId }).toArray();
-      const nameGroups = {};
-      for (const item of branchItems) {
-        const key = (item.name || '').toLowerCase().trim();
-        if (!key) continue;
-        if (!nameGroups[key]) nameGroups[key] = [];
-        nameGroups[key].push(item);
+      const variantOps = [];
+      for (const [, trackedItems] of Object.entries(nameTracker)) {
+        if (trackedItems.length <= 1) continue;
+        const needsGroupId = trackedItems.filter(it => !it.hasGroupId);
+        if (!needsGroupId.length) continue;
+        const sampleRetailerId = trackedItems[0].retailerId;
+        const itemSlug = sampleRetailerId.replace(new RegExp('^' + csvBranchSlug + '-'), '').replace(/-[^-]+$/, '');
+        const groupId = `${csvBranchSlug}-${itemSlug}`;
+        const rids = needsGroupId.map(it => it.retailerId);
+        variantOps.push({ updateMany: { filter: { retailer_id: { $in: rids } }, update: { $set: { item_group_id: groupId, catalog_sync_status: 'pending' } } } });
       }
-      const bSlug = await getBranchSlug(branchId);
-      for (const [, group] of Object.entries(nameGroups)) {
-        if (group.length <= 1) continue;
-        // Multiple items with same name = variants — auto-assign item_group_id
-        const groupId = makeItemGroupId(bSlug, group[0].name);
-        const ids = group.filter(g => !g.item_group_id).map(g => g._id);
-        if (ids.length) {
-          await col('menu_items').updateMany(
-            { _id: { $in: ids } },
-            { $set: { item_group_id: groupId, catalog_sync_status: 'pending' } }
-          );
-        }
-      }
+      if (variantOps.length) await col('menu_items').bulkWrite(variantOps, { ordered: false });
     } catch (e) { console.warn('[CSV] Auto-group variants failed:', e.message); }
 
     await col('restaurants').updateOne(
@@ -1850,21 +1845,30 @@ router.post('/menu/csv', async (req, res) => {
     // Load all branches for this restaurant
     let allBranches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
 
-    // Auto-create branches from upload data if branch column detected but branches don't exist
+    // Auto-create branches from upload data if branch column detected — BATCH via insertMany
     if (branchCol) {
       const uploadBranchNames = [...new Set(items.map(r => (String(r[branchCol] || '')).trim()).filter(Boolean))];
+      const newBranchDocs = [];
       for (const bn of uploadBranchNames) {
         const exists = allBranches.some(b => (b.name || '').toLowerCase().trim() === bn.toLowerCase() || (b.branch_slug || '') === slugify(bn, 20));
         if (!exists) {
-          const bid = newId();
           const now = new Date();
-          await col('branches').insertOne({ _id: bid, restaurant_id: req.restaurantId, name: bn, branch_slug: slugify(bn, 20), city: '', is_open: true, accepts_orders: true, delivery_radius_km: 5, opening_time: '10:00', closing_time: '22:00', created_at: now, updated_at: now });
-          console.warn(`[CSV] Auto-created branch "${bn}" (${bid}) — has no coordinates, restaurant must set location in dashboard`);
-          // Auto-create catalog for the new branch (same as POST /branches route)
-          catalog.createBranchCatalog(bid).catch(err => console.error(`[CSV] Auto catalog for "${bn}" failed:`, err.message));
+          newBranchDocs.push({
+            _id: newId(), restaurant_id: req.restaurantId, name: bn, branch_slug: slugify(bn, 20),
+            city: '', is_open: true, accepts_orders: true, delivery_radius_km: 5,
+            opening_time: '10:00', closing_time: '22:00', created_at: now, updated_at: now,
+          });
         }
       }
-      allBranches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
+      if (newBranchDocs.length) {
+        await col('branches').insertMany(newBranchDocs).catch(() => {});
+        console.warn(`[CSV] Auto-created ${newBranchDocs.length} branch(es) — they need coordinates set in dashboard`);
+        // Fire-and-forget catalog creation for new branches
+        for (const b of newBranchDocs) {
+          catalog.createBranchCatalog(b._id).catch(err => console.error(`[CSV] Auto catalog for "${b.name}" failed:`, err.message));
+        }
+        allBranches = [...allBranches, ...newBranchDocs];
+      }
     }
 
     if (!allBranches.length) return res.status(400).json({ error: 'No branches found. Create a branch first.' });
@@ -5157,7 +5161,7 @@ router.get('/customers/:customerId/orders', async (req, res) => {
         total_rs    : o.total_rs,
         branch_name : branchMap[o.branch_id] || '',
         created_at  : o.created_at,
-        items       : items.map(i => ({ name: i.name, qty: i.quantity || i.qty || 1, price: i.unit_price_rs })),
+        items       : items.map(i => ({ name: i.item_name || i.name || 'Item', qty: i.quantity || i.qty || 1, price: i.unit_price_rs })),
       };
     }));
 

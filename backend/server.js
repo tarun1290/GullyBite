@@ -165,7 +165,7 @@ app.get('/feed/:feedToken', async (req, res) => {
 // ─── ROUTES ───────────────────────────────────────────────────
 const { router: authRouter } = require('./src/routes/auth');
 app.use('/auth', express.json(), authRouter);
-app.use('/api/restaurant', express.json(), require('./src/routes/restaurant'));
+app.use('/api/restaurant', express.json({ limit: '10mb' }), require('./src/routes/restaurant'));
 app.use('/api/restaurant/integrations', express.json(), require('./src/routes/integrations'));
 app.use('/api/upload', express.json(), require('./src/routes/upload'));
 app.use('/api/admin', express.json(), require('./src/routes/admin'));

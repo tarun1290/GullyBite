@@ -889,13 +889,26 @@ function renderMenuGroups(grouped, showBranchBadge) {
   }
   if (!allItems.length) return '';
 
-  const ti = { veg: '🟢', non_veg: '🔴', vegan: '🌱', egg: '🟡' };
+  // FSSAI-style food type indicator — bordered square with filled dot inside
+  function foodTypeIndicator(foodType) {
+    const cfg = {
+      veg:     { border: '#22C55E', dot: '#22C55E', label: 'Veg',     inner: null },
+      non_veg: { border: '#DC2626', dot: '#DC2626', label: 'Non-Veg', inner: null },
+      egg:     { border: '#EAB308', dot: '#EAB308', label: 'Egg',     inner: null },
+      vegan:   { border: '#16A34A', dot: '#16A34A', label: 'Vegan',   inner: 'V' },
+    };
+    const c = cfg[foodType] || { border: '#9CA3AF', dot: '#9CA3AF', label: 'Not set', inner: null };
+    const innerEl = c.inner
+      ? `<span style="color:${c.dot};font-size:8px;font-weight:800;line-height:1">${c.inner}</span>`
+      : `<span style="width:7px;height:7px;border-radius:50%;background:${c.dot};display:block"></span>`;
+    return `<span title="${c.label}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:2px solid ${c.border};border-radius:2px;box-sizing:border-box;vertical-align:middle">${innerEl}</span>`;
+  }
   const branchCol = showBranchBadge ? '<th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Branch</th>' : '';
   const branchColCount = showBranchBadge ? 1 : 0;
 
   let rows = allItems.map((item, idx) => {
     const safeName = item.name.replace(/'/g, "\\'");
-    const typeIcon = ti[item.food_type] || '🍽️';
+    const typeIcon = foodTypeIndicator(item.food_type);
     const displayName = item.item_group_id
       ? `${item.name} <span style="font-size:.72rem;color:var(--acc);font-weight:500">· ${item.size || item.variant_value || 'Variant'}</span>`
       : item.name;
