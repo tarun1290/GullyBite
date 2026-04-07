@@ -611,33 +611,38 @@ router.post('/referrals', express.json(), async (req, res) => {
     if (!restaurantId || !customerWaPhone)
       return res.status(400).json({ error: 'restaurantId and customerWaPhone are required' });
 
-    const now = new Date();
-    // Expire old active referrals for same restaurant+customer
-    await col('referrals').updateMany(
-      { restaurant_id: restaurantId, customer_wa_phone: customerWaPhone, status: 'active' },
-      { $set: { status: 'expired', updated_at: now } }
-    );
-
-    const expiresAt = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-    const referral = {
-      _id: newId(),
-      restaurant_id: restaurantId,
-      customer_wa_phone: customerWaPhone.trim(),
-      customer_name: customerName || null,
+    const refAttr = require('../services/referralAttribution');
+    const referral = await refAttr.createReferral({
+      restaurantId,
+      customerPhone: customerWaPhone.trim(),
+      customerName: customerName || null,
+      source: 'admin',
       notes: notes || null,
-      status: 'active',
-      expires_at: expiresAt,
-      orders_count: 0,
-      total_order_value_rs: 0,
-      referral_fee_rs: 0,
-      created_at: now,
-      updated_at: now,
-    };
-    await col('referrals').insertOne(referral);
+    });
     res.json(mapId(referral));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/admin/referrals/commission-report — payout/commission reporting
+router.get('/referrals/commission-report', async (req, res) => {
+  try {
+    const refAttr = require('../services/referralAttribution');
+    const report = await refAttr.getCommissionReport({
+      from: req.query.from, to: req.query.to, restaurantId: req.query.restaurant_id,
+    });
+    res.json(report);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/referrals/conflict-audit/:phone — attribution conflict audit
+router.get('/referrals/conflict-audit/:phone', async (req, res) => {
+  try {
+    const refAttr = require('../services/referralAttribution');
+    const audit = await refAttr.getConflictAudit(req.params.phone, req.query.restaurant_id);
+    res.json(audit);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── REFERRAL LINKS (GBREF code-based tracking) ──────────────
@@ -798,7 +803,9 @@ router.get('/referrals/stats', async (req, res) => {
     const total_orders          = all.reduce((s, r) => s + (r.orders_count || 0), 0);
     const total_order_value_rs  = all.reduce((s, r) => s + (parseFloat(r.total_order_value_rs) || 0), 0);
     const total_referral_fee_rs = all.reduce((s, r) => s + (parseFloat(r.referral_fee_rs) || 0), 0);
-    res.json({ total, active, converted, expired, total_orders, total_order_value_rs, total_referral_fee_rs });
+    const lateNight = all.filter(r => r.is_late_night_referral).length;
+    const avg_window = total > 0 ? Math.round(all.reduce((s, r) => s + (r.attribution_window_hours || 8), 0) / total * 10) / 10 : 0;
+    res.json({ total, active, converted, expired, late_night_referrals: lateNight, avg_attribution_window_hours: avg_window, total_orders, total_order_value_rs, total_referral_fee_rs });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2748,6 +2755,97 @@ router.get('/waba/webhook-info', (req, res) => {
     verify_token: process.env.WEBHOOK_VERIFY_TOKEN || '(not set)',
     instructions: 'Go to Meta Developer Console → your app → WhatsApp → Configuration → Edit webhook URL → paste the URL and verify token above',
   });
+});
+
+// ─── FINANCE CONFIG ──────────────────────────────────────────
+const financeConfig = require('../config/financeConfig');
+
+// GET /api/admin/finance/config — current finance configuration
+router.get('/finance/config', (req, res) => {
+  res.json({
+    ...financeConfig.FINANCE_CONFIG,
+    computed: {
+      currentFY: require('../services/financials').getCurrentFYLabel ? require('../services/financials').getCurrentFYLabel() : null,
+    },
+  });
+});
+
+// GET /api/admin/finance/restaurant-status/:restaurantId — restaurant billing status
+router.get('/finance/restaurant-status/:restaurantId', async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne({ _id: req.params.restaurantId });
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+    res.json({
+      restaurantId: req.params.restaurantId,
+      businessName: restaurant.business_name,
+      commissionRatePct: financeConfig.getPlatformFeePercent(restaurant),
+      isFirstBillingMonth: financeConfig.isFirstBillingMonth(restaurant),
+      platformFeeWaived: !financeConfig.shouldDeductPlatformFee(restaurant),
+      platformFeeGstWaived: !financeConfig.shouldDeductPlatformFeeGst(restaurant),
+      billingStartDate: restaurant.billing_start_date || restaurant.approved_at || restaurant.created_at,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── CATALOG COMPRESSION ENGINE ──────────────────────────────
+const compression = require('../services/catalogCompression');
+
+// POST /api/admin/compression/rebuild/:restaurantId — full rebuild
+router.post('/compression/rebuild/:restaurantId', async (req, res) => {
+  try {
+    const { dryRun, includeMedia } = req.body || {};
+    const result = await compression.rebuildCompressedCatalog(req.params.restaurantId, { dryRun: !!dryRun, includeMedia: !!includeMedia });
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/compression/summary/:restaurantId — compression stats
+router.get('/compression/summary/:restaurantId', async (req, res) => {
+  try {
+    const summary = await compression.getCompressionSummary(req.params.restaurantId);
+    res.json(summary);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/compression/branch-preview/:restaurantId/:branchId — branch mapping preview
+router.get('/compression/branch-preview/:restaurantId/:branchId', async (req, res) => {
+  try {
+    const preview = await compression.getBranchMappingPreview(req.params.restaurantId, req.params.branchId);
+    res.json(preview);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/compression/runs/:restaurantId — compression run history
+router.get('/compression/runs/:restaurantId', async (req, res) => {
+  try {
+    const runs = await col('catalog_compression_runs').find({ restaurantId: req.params.restaurantId }).sort({ startedAt: -1 }).limit(20).toArray();
+    res.json(runs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── MPM STRATEGY ────────────────────────────────────────────
+const mpmStrategy = require('../services/mpmStrategy');
+
+// GET /api/admin/mpm-preview/:restaurantId/:branchId — preview MPM strategy output
+router.get('/mpm-preview/:restaurantId/:branchId', async (req, res) => {
+  try {
+    const preview = await mpmStrategy.getMPMPreview(req.params.branchId, req.params.restaurantId);
+    res.json(preview);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── REORDER INTELLIGENCE ────────────────────────────────────
+const reorderIntel = require('../services/reorderIntelligence');
+
+// GET /api/admin/reorder-preview/:restaurantId/:branchId/:customerId
+router.get('/reorder-preview/:restaurantId/:branchId/:customerId', async (req, res) => {
+  try {
+    const { restaurantId, branchId, customerId } = req.params;
+    // Get available items for the branch (same source as MPM strategy)
+    const items = await col('menu_items').find({ branch_id: branchId, is_available: true }).toArray();
+    const preview = await reorderIntel.getReorderPreview(customerId, branchId, restaurantId, items);
+    res.json(preview);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ─── CONTACT BOOK (BSUID → Phone mapping) ───────────────────

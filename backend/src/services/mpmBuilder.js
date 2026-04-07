@@ -10,6 +10,7 @@ const memcache = require('../config/memcache');
 
 // ── Category sort order (lower = appears first in menu) ──────
 const CATEGORY_ORDER = [
+  'your usuals', 'reorder picks',
   'bestsellers', 'popular', 'recommended',
   'starters', 'appetizer', 'appetizers', 'snacks', 'snack',
   'momos', 'dumplings',
@@ -29,6 +30,7 @@ const CATEGORY_ORDER = [
 
 // ── Food vs Drink category classification ────────────────────
 const FOOD_CATS = new Set([
+  'your usuals', 'reorder picks',
   'bestsellers', 'popular', 'recommended',
   'starters', 'appetizer', 'appetizers', 'snacks', 'snack',
   'momos', 'dumplings', 'soups', 'soup', 'salads', 'salad',
@@ -50,6 +52,7 @@ const DRINK_CATS = new Set([
 
 // ── Category emoji mapping ───────────────────────────────────
 const CATEGORY_EMOJI = {
+  'your usuals': '⭐', 'reorder picks': '⭐',
   bestsellers: '🔥', popular: '🔥', recommended: '🔥',
   starters: '🥟', appetizer: '🥟', appetizers: '🥟', snacks: '🍿', snack: '🍿',
   momos: '🥟', dumplings: '🥟',
@@ -365,4 +368,9 @@ async function buildBranchMPMs(branchId, restaurantId) {
   return mpms;
 }
 
-module.exports = { buildBranchMPMs };
+module.exports = {
+  buildBranchMPMs,
+  // Exported for reuse by mpmStrategy engine (do not remove)
+  getCategoryOrder, getCategoryEmoji, isFoodCategory, isDrinkCategory,
+  selectVariantRepresentative,
+};

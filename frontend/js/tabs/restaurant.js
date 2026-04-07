@@ -471,6 +471,7 @@ async function loadReferrals() {
         </td>
         <td style="padding:.6rem 1rem">
           <span style="color:${statusColor[r.status]||'#6b7280'};font-weight:600;text-transform:capitalize;font-size:.8rem">${r.status}</span>
+          ${r.attribution_window_hours ? `<span style="font-size:.65rem;color:var(--dim);margin-left:.3rem">${r.attribution_window_hours}h window</span>` : ''}
         </td>
         <td style="padding:.6rem 1rem">${r.orders_count}</td>
         <td style="padding:.6rem 1rem">₹${parseFloat(r.total_order_value_rs).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>

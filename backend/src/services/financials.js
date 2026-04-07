@@ -6,15 +6,16 @@
 
 const { col } = require('../config/database');
 
-// ─── TAX CONSTANTS ────────────────────────────────────────────────
-const GST_FOOD_PCT        = 5;
-const GST_PACKAGING_PCT   = 18;
-const GST_DELIVERY_PCT    = 18;
-const GST_PLATFORM_FEE_PCT = 18;
-const TDS_RATE_WITH_PAN   = 1;   // Section 194O
-const TDS_RATE_NO_PAN     = 5;
-const TDS_THRESHOLD_RS    = 500000; // ₹5 lakh annual threshold
-const TDS_SECTION         = '194O';
+// ─── TAX CONSTANTS (from centralized finance config) ──────────────
+const { FINANCE_CONFIG } = require('../config/financeConfig');
+const GST_FOOD_PCT        = FINANCE_CONFIG.gstFoodPct;
+const GST_PACKAGING_PCT   = FINANCE_CONFIG.gstPackagingPct;
+const GST_DELIVERY_PCT    = FINANCE_CONFIG.gstDeliveryPct;
+const GST_PLATFORM_FEE_PCT = FINANCE_CONFIG.gstPlatformFeePct;
+const TDS_RATE_WITH_PAN   = FINANCE_CONFIG.tdsRateWithPan;
+const TDS_RATE_NO_PAN     = FINANCE_CONFIG.tdsRateNoPan;
+const TDS_THRESHOLD_RS    = FINANCE_CONFIG.tdsThresholdRs;
+const TDS_SECTION         = FINANCE_CONFIG.tdsSection;
 
 const round2 = n => Math.round((n || 0) * 100) / 100;
 

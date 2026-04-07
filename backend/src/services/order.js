@@ -306,6 +306,14 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
     { returnDocument: 'after' }
   );
 
+  // Reverse referral commission on cancellation
+  if (newStatus === 'CANCELLED' && updated?.referral_id) {
+    try {
+      const refAttr = require('./referralAttribution');
+      await refAttr.reverseCommission(orderId, extra.cancelReason || 'order_cancelled');
+    } catch (e) { console.warn('[Referral] Commission reversal failed:', e.message); }
+  }
+
   // Update customer stats on delivery
   if (newStatus === 'DELIVERED' && updated) {
     await col('customers').updateOne(

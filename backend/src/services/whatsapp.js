@@ -129,54 +129,8 @@ const sendMPM = (pid, token, to, catalogId, { header, body, footer, sections }) 
   });
 };
 
-// ─── ORDER SUMMARY ────────────────────────────────────────────
-// Shows cart items + total with Confirm/Cancel/Coupon buttons
-// items: [{ name, qty, price }]
-// charges: optional full breakdown from calculateOrderCharges()
-// discount: optional { code, amountRs }
-const sendOrderSummary = (pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote }) => {
-  const lines = items.map((i) => `• ${i.name} ×${i.qty} — ₹${i.price}`).join('\n');
-
-  let financials;
-  if (charges) {
-    // Full breakdown with GST lines
-    const { formatChargeBreakdown } = require('./charges');
-    financials = formatChargeBreakdown(
-      charges,
-      charges.food_gst_rs > 0 ? 'extra' : 'included'
-    );
-    if (discount && discount.amountRs > 0) {
-      // coupon line already included inside formatChargeBreakdown via charges.discount_rs
-    }
-  } else {
-    // Legacy simple breakdown
-    financials = `Subtotal: ₹${subtotal}\n`;
-    if (discount && discount.amountRs > 0) {
-      financials += `🎟 Coupon (${discount.code}): -₹${parseFloat(discount.amountRs).toFixed(0)}\n`;
-    }
-    financials += `Delivery: ₹${deliveryFee}\n*Total: ₹${total}*`;
-  }
-
-  // Dynamic pricing note (distance, surge info)
-  if (dynamicNote) {
-    financials += `\n${dynamicNote}`;
-  }
-
-  const buttons = [{ id: 'CONFIRM_ORDER', title: '✅ Confirm & Pay' }];
-  if (discount && discount.amountRs > 0) {
-    buttons.push({ id: 'REMOVE_COUPON', title: '🗑 Remove Coupon' });
-  } else {
-    buttons.push({ id: 'APPLY_COUPON',  title: '🎟 Apply Coupon' });
-  }
-  buttons.push({ id: 'CANCEL_ORDER', title: '❌ Cancel' });
-
-  return sendButtons(pid, token, to, {
-    header: `🛒 Order #${orderNumber}`,
-    body: `*Your Order:*\n${lines}\n\n${financials}\n\nReady to pay? Tap Confirm to pay securely inside WhatsApp.`,
-    footer: 'UPI • WhatsApp Pay • Cards',
-    buttons,
-  });
-};
+// DEPRECATED: sendOrderSummary removed — replaced by sendPaymentRequest (interactive order_details checkout)
+// The old text-based order summary with Confirm/Cancel/Coupon buttons is no longer used.
 
 // ─── WHATSAPP PAY — NATIVE PAYMENT REQUEST ────────────────────
 // Sends an interactive order_details message — Meta's native payment UI.
@@ -228,8 +182,12 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
   // Delivery address in body text for customer confirmation
   let addressText = '';
   if (deliveryAddress) {
-    const parts = [deliveryAddress.address || deliveryAddress.building_floor, deliveryAddress.landmark_area || deliveryAddress.landmark, [deliveryAddress.city, deliveryAddress.pincode].filter(Boolean).join(' ')].filter(Boolean);
-    if (parts.length) addressText = '\n\n📍 ' + parts.join(', ');
+    if (typeof deliveryAddress === 'string') {
+      addressText = '\n\n📍 Delivering to:\n' + deliveryAddress;
+    } else {
+      const addrStr = deliveryAddress.full_address || deliveryAddress.address || [deliveryAddress.building_floor, deliveryAddress.street, deliveryAddress.area_locality, deliveryAddress.landmark ? 'Near ' + deliveryAddress.landmark : '', [deliveryAddress.city, deliveryAddress.pincode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      if (addrStr) addressText = '\n\n📍 Delivering to:\n' + addrStr;
+    }
   }
 
   const refId = (order.order_number || order.id || 'ORD-' + Date.now()).toString().substring(0, 35);
@@ -261,17 +219,7 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
   });
 };
 
-// ─── PAYMENT LINK (fallback) ───────────────────────────────────
-// Used when WhatsApp Pay is not available / not yet enabled.
-// Sends a plain Razorpay short URL the customer opens in a browser.
-const sendPaymentLink = (pid, token, to, { orderNumber, total, url, expiryMins }) =>
-  sendText(pid, token, to,
-    `💳 *Payment Link — Order #${orderNumber}*\n\n` +
-    `Amount: *₹${total}*\n\n` +
-    `Pay securely:\n${url}\n\n` +
-    `⏱ Expires in ${expiryMins} minutes\n` +
-    `_Powered by Razorpay_`
-  );
+// DEPRECATED: sendPaymentLink removed — only interactive checkout is used
 
 // ─── ORDER STATUS UPDATES ─────────────────────────────────────
 // Sent to customers at each stage of their order
@@ -457,92 +405,6 @@ const sendDocument = async (pid, token, to, { buffer, filename, caption, mimeTyp
   });
 };
 
-// ─── CHECKOUT ORDER (Interactive order_details) ─────────────
-// Sends an interactive order_details message with native Razorpay payment.
-// Customer sees full order breakdown + "Review and Pay" button inside WhatsApp.
-// This uses the interactive format (NOT template) — confirmed working.
-const sendCheckoutOrder = (pid, token, to, {
-  referenceId, restaurantName, customerName,
-  items,          // [{ retailer_id, name, quantity, price_rs }]
-  subtotal_rs, delivery_fee_rs, tax_rs, discount_rs, total_rs,
-  discountDescription, branchAddress,
-}) => {
-  const toPaise = (rs) => Math.round((rs || 0) * 100);
-  const configName = process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite';
+// DEPRECATED: sendCheckoutOrder and sendCheckoutTemplate removed — sendPaymentRequest is the single checkout function
 
-  console.log(`[Checkout] Sending order_details to ${to}, ref=${referenceId}, total=₹${total_rs}`);
-
-  const orderItems = (items || []).map(item => ({
-    retailer_id: item.retailer_id || 'item-' + Date.now(),
-    name: (item.name || 'Item').substring(0, 60),
-    quantity: item.quantity || 1,
-    amount: { value: toPaise(item.price_rs), offset: 100 },
-    country_of_origin: 'IN',
-    importer_name: (restaurantName || 'Restaurant').substring(0, 100),
-    importer_address: {
-      address_line1: (branchAddress?.address_line1 || 'India').substring(0, 200),
-      city: (branchAddress?.city || 'City').substring(0, 60),
-      zone_code: branchAddress?.zone_code || 'TS',
-      postal_code: branchAddress?.postal_code || '500001',
-      country_code: 'IN',
-    },
-  }));
-
-  const orderPayload = {
-    status: 'pending',
-    items: orderItems,
-    subtotal: { value: toPaise(subtotal_rs), offset: 100 },
-    shipping: { value: toPaise(delivery_fee_rs), offset: 100 },
-    tax: { value: toPaise(tax_rs), offset: 100 },
-  };
-  if (discount_rs && discount_rs > 0) {
-    orderPayload.discount = { value: toPaise(discount_rs), offset: 100, description: discountDescription || 'Discount' };
-  }
-
-  return sendMsg(pid, token, to, {
-    type: 'interactive',
-    interactive: {
-      type: 'order_details',
-      header: { type: 'text', text: ('Your Order from ' + (restaurantName || 'Restaurant')).substring(0, 60) },
-      body: { text: 'Hi ' + (customerName || 'there') + '! Review your order and pay securely below.' },
-      footer: { text: 'Powered by GullyBite' },
-      action: {
-        name: 'review_and_pay',
-        parameters: {
-          reference_id: (referenceId || 'ORD-' + Date.now()).substring(0, 35),
-          type: 'physical-goods',
-          payment_configuration: configName,
-          currency: 'INR',
-          total_amount: { value: toPaise(total_rs), offset: 100 },
-          order: orderPayload,
-          payment_settings: [{
-            type: 'payment_gateway',
-            payment_gateway: { type: 'razorpay', configuration_name: configName },
-          }],
-        },
-      },
-    },
-  });
-};
-
-// Legacy wrapper — redirects to the working interactive approach
-const sendCheckoutTemplate = (pid, token, to, opts) => {
-  console.log('[WA] sendCheckoutTemplate redirecting to sendCheckoutOrder (interactive)');
-  // Map legacy format to new format
-  const od = opts.orderDetails || {};
-  return sendCheckoutOrder(pid, token, to, {
-    referenceId: od.reference_id,
-    restaurantName: opts.restaurantName,
-    customerName: opts.customerName,
-    items: (od.items || []).map(i => ({ retailer_id: i.retailer_id, name: i.name, quantity: i.quantity, price_rs: i.amount?.value ? i.amount.value / (i.amount.offset || 100) : 0 })),
-    subtotal_rs: od.subtotal?.value ? od.subtotal.value / (od.subtotal.offset || 100) : 0,
-    delivery_fee_rs: od.shipping?.value ? od.shipping.value / (od.shipping.offset || 100) : 0,
-    tax_rs: od.tax?.value ? od.tax.value / (od.tax.offset || 100) : 0,
-    discount_rs: od.discount?.value ? od.discount.value / (od.discount.offset || 100) : 0,
-    discountDescription: od.discount?.description,
-    total_rs: od.total_amount?.value ? od.total_amount.value / (od.total_amount.offset || 100) : 0,
-    branchAddress: od.shipping_info,
-  });
-};
-
-module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendOrderSummary, sendPaymentRequest, sendPaymentLink, sendCheckoutTemplate, sendCheckoutOrder, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };
+module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };

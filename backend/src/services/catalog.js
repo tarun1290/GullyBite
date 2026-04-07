@@ -321,8 +321,8 @@ function mapMenuItemToMetaProduct(item, restaurant, branch) {
   const productLink = item.link || `${process.env.BASE_URL || 'https://gullybite.com'}/menu/${String(item._id)}`;
   const tags = item.product_tags || [];
 
-  // Ensure description meets Meta's 10-char minimum
-  let desc = (item.description || '').trim();
+  // Use trust-enriched meta description if available, else fallback to base description
+  let desc = (item.meta_description_generated || item.description || '').trim();
   if (desc.length < 10) {
     desc = `${item.name || 'Menu item'} — Fresh from ${brandName}`;
   }
@@ -1814,11 +1814,119 @@ const switchCatalog = async (restaurantId, newCatalogId) => {
   return { success: true, oldCatalogId, newCatalogId, catalogName: newCatalogName };
 };
 
+// ─── SYNC COMPRESSED CATALOG ────────────────────────────────
+// Syncs the compressed catalog layer to Meta instead of raw menu items.
+// Flow: compressed SKUs → mapMenuItemToMetaProduct() → Meta batch upload
+// Falls back to raw branch-by-branch sync if compression fails.
+const syncCompressedCatalog = async (restaurantId) => {
+  const compression = require('./catalogCompression');
+  const startTime = Date.now();
+
+  console.log(`[Catalog] Starting compressed sync for restaurant ${restaurantId}`);
+
+  // 1. Rebuild compression (ensures it's fresh)
+  let rebuildResult;
+  try {
+    rebuildResult = await compression.rebuildCompressedCatalog(restaurantId);
+  } catch (e) {
+    console.error(`[Catalog] Compression rebuild failed, falling back to raw sync:`, e.message);
+    return syncRestaurantCatalog(restaurantId); // FALLBACK: raw sync
+  }
+
+  if (!rebuildResult.totalCompressedSkusCreated) {
+    console.log('[Catalog] No compressed SKUs created — nothing to sync');
+    return { success: true, compressed: true, skus: 0 };
+  }
+
+  // 2. Ensure catalog exists
+  let catalogId;
+  try {
+    const result = await ensureMainCatalog(restaurantId);
+    catalogId = result.catalogId;
+  } catch (e) {
+    throw new Error(`Catalog setup failed: ${e.message}`);
+  }
+
+  const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+  const { token } = await _getAccessToken(restaurantId);
+  initSdk(token);
+
+  // 3. Get compressed items shaped for the existing pipeline
+  const compressedItems = await compression.getCompressedItemsForMetaSync(restaurantId);
+
+  if (!compressedItems.length) {
+    return { success: true, compressed: true, skus: 0 };
+  }
+
+  // 4. Get a representative branch for compliance fields (manufacturer_info)
+  const branch = await col('branches').findOne({ restaurant_id: restaurantId, accepts_orders: true });
+  if (!branch) {
+    console.warn('[Catalog] No active branch for compliance fields');
+    return { success: false, error: 'No active branch found' };
+  }
+
+  // Ensure branch has catalog_id
+  if (!branch.catalog_id || branch.catalog_id !== catalogId) {
+    await col('branches').updateOne({ _id: branch._id }, { $set: { catalog_id: catalogId } });
+    branch.catalog_id = catalogId;
+  }
+
+  // 5. Build Meta requests using the EXISTING mapMenuItemToMetaProduct pipeline
+  const requests = compressedItems.map(item => _buildItemRequest(item, restaurant, branch)).filter(Boolean);
+
+  console.log(`[Catalog] Compressed sync: ${compressedItems.length} SKUs → ${requests.length} requests for catalog ${catalogId}`);
+
+  // 6. Batch upload using EXISTING batch logic
+  const BATCH_SIZE = 4999;
+  const results = { updated: 0, failed: 0, errors: [] };
+
+  for (let i = 0; i < requests.length; i += BATCH_SIZE) {
+    const batch = requests.slice(i, i + BATCH_SIZE);
+    try {
+      const catalogObj = new ProductCatalog(catalogId);
+      await catalogObj.createItemsBatch([], {
+        allow_upsert: true,
+        item_type: 'PRODUCT_ITEM',
+        requests: batch,
+      });
+      results.updated += batch.length;
+    } catch (err) {
+      const errMsg = err._error?.error?.message || err.message;
+      console.error(`[Catalog] Compressed batch error:`, errMsg);
+      results.failed += batch.length;
+      results.errors.push(errMsg);
+    }
+  }
+
+  // 7. Update sync state on compressed SKUs
+  const syncedAt = new Date();
+  await col('catalog_compressed_skus').updateMany(
+    { restaurantId, active: true },
+    { $set: { syncState: results.failed ? 'partial' : 'synced', lastSyncedAt: syncedAt, updated_at: syncedAt } }
+  );
+  await col('restaurants').updateOne({ _id: restaurantId }, { $set: { last_catalog_sync: syncedAt, last_compressed_sync: syncedAt } });
+
+  const elapsed = Date.now() - startTime;
+  console.log(`[Catalog] Compressed sync complete: ${results.updated} synced, ${results.failed} failed (${elapsed}ms)`);
+
+  return {
+    success: results.failed === 0,
+    compressed: true,
+    totalCompressedSkus: compressedItems.length,
+    synced: results.updated,
+    failed: results.failed,
+    compressionRatio: rebuildResult.compressionRatio,
+    elapsed,
+    errors: results.errors,
+  };
+};
+
 module.exports = {
   // Main catalog architecture
   ensureMainCatalog,
   ensureBranchProductSet,
   syncRestaurantCatalog,
+  syncCompressedCatalog,
   deleteCatalogSafe,
   // Branch-level (uses main catalog internally)
   createBranchCatalog,

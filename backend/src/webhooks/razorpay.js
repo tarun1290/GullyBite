@@ -151,6 +151,12 @@ const confirmPaidOrder = async (orderId) => {
     await cartRecovery.markRecovered(customerPhone, order.restaurant_id, orderId);
   } catch (_) {} // Non-critical
 
+  // Confirm referral commission after payment
+  try {
+    const refAttr = require('../services/referralAttribution');
+    await refAttr.confirmCommission(orderId);
+  } catch (_) {} // Non-critical
+
   console.log(`✅ Order ${order.order_number} PAID — ₹${order.total_rs}`);
 };
 

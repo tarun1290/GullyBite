@@ -1378,6 +1378,16 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
     );
     if (updated) {
       queueSync(req.restaurantId, 'branch', [updated.branch_id]);
+
+      // Mark compressed catalog as stale if commerce-identity fields changed
+      const commerceFields = ['name', 'price_paise', 'size', 'variant_type', 'variant_value', 'food_type', 'image_url', 'product_tags'];
+      const hasCommerceChange = commerceFields.some(f => $set[f] !== undefined);
+      if (hasCommerceChange) {
+        col('catalog_compressed_skus').updateMany(
+          { restaurantId: req.restaurantId, active: true },
+          { $set: { syncState: 'stale', updated_at: new Date() } }
+        ).catch(() => {}); // fire-and-forget
+      }
     }
     res.json({ success: true });
 
@@ -2701,6 +2711,13 @@ router.get('/catalog/status', async (req, res) => {
     status.cart_enabled = wa?.cart_enabled || false;
     status.catalog_visible = wa?.catalog_visible || false;
     status.phone_number_id = wa?.phone_number_id || null;
+
+    // Augment with compression stats (non-blocking)
+    try {
+      const compression = require('../services/catalogCompression');
+      status.compression = await compression.getCompressionSummary(req.restaurantId);
+    } catch { status.compression = null; }
+
     res.json(status);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

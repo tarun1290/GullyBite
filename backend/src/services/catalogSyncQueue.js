@@ -61,38 +61,42 @@ async function executeSync(restaurantId) {
   try {
     const catalog = require('./catalog');
 
-    if (pending.type === 'full') {
-      // Sync all branches
-      const branches = await col('branches').find({ restaurant_id: restaurantId }).toArray();
-      for (const branch of branches) {
-        try {
-          await catalog.syncBranchCatalog(String(branch._id));
-        } catch (e) {
-          console.error(`[SyncQueue] Branch ${branch.name} sync failed:`, e.message);
+    // Use compressed catalog sync — routes through compression engine first,
+    // then through the existing mapMenuItemToMetaProduct pipeline.
+    // Falls back to raw branch-by-branch sync if compression fails.
+    try {
+      const result = await catalog.syncCompressedCatalog(restaurantId);
+      console.log(`[SyncQueue] Compressed sync complete for restaurant ${restaurantId}: ${result.synced || 0} SKUs synced (ratio: ${result.compressionRatio || 0}%)`);
+    } catch (compErr) {
+      console.error(`[SyncQueue] Compressed sync failed, falling back to raw branch sync:`, compErr.message);
+
+      // FALLBACK: original branch-by-branch sync (preserves existing behavior)
+      if (pending.type === 'full') {
+        const branches = await col('branches').find({ restaurant_id: restaurantId }).toArray();
+        for (const branch of branches) {
+          try { await catalog.syncBranchCatalog(String(branch._id)); }
+          catch (e) { console.error(`[SyncQueue] Branch ${branch.name} sync failed:`, e.message); }
         }
-      }
-      console.log(`[SyncQueue] Full sync complete for restaurant ${restaurantId} (${branches.length} branches)`);
-    } else if (pending.branchIds?.length) {
-      // Sync specific branches
-      for (const branchId of pending.branchIds) {
-        try {
-          await catalog.syncBranchCatalog(branchId);
-        } catch (e) {
-          console.error(`[SyncQueue] Branch ${branchId} sync failed:`, e.message);
+        console.log(`[SyncQueue] Fallback full sync complete for restaurant ${restaurantId}`);
+      } else if (pending.branchIds?.length) {
+        for (const branchId of pending.branchIds) {
+          try { await catalog.syncBranchCatalog(branchId); }
+          catch (e) { console.error(`[SyncQueue] Branch ${branchId} sync failed:`, e.message); }
         }
+        console.log(`[SyncQueue] Fallback branch sync complete for restaurant ${restaurantId}`);
       }
-      console.log(`[SyncQueue] Branch sync complete for restaurant ${restaurantId} (${pending.branchIds.length} branches)`);
     }
   } catch (err) {
     console.error(`[SyncQueue] Sync failed for restaurant ${restaurantId}:`, err.message);
     // Retry once after delay
     setTimeout(() => {
       const catalog = require('./catalog');
-      if (pending.type === 'full') {
+      catalog.syncCompressedCatalog(restaurantId).catch(() => {
+        // If compressed fails on retry too, try raw
         col('branches').find({ restaurant_id: restaurantId }).toArray()
           .then(branches => Promise.all(branches.map(b => catalog.syncBranchCatalog(String(b._id)).catch(() => {}))))
           .catch(() => {});
-      }
+      });
     }, RETRY_DELAY_MS);
   } finally {
     activeSyncs.delete(restaurantId);

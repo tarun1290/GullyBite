@@ -8,6 +8,7 @@ const paymentSvc = require('../services/payment');
 const { generateSettlementExcel } = require('../services/settlement-export');
 const wa = require('../services/whatsapp');
 const { calculateTDS, aggregateOrderFinancials, round2, GST_PLATFORM_FEE_PCT } = require('../services/financials');
+const { FINANCE_CONFIG, getPlatformFeePercent, shouldDeductPlatformFee, shouldDeductPlatformFeeGst, isFirstBillingMonth } = require('../config/financeConfig');
 const ws = require('../services/websocket');
 
 // ─── SCHEDULE THE JOB ─────────────────────────────────────────
@@ -76,7 +77,8 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     return;
   }
 
-  const commissionRate = parseFloat(restaurant.commission_pct || 10) / 100;
+  const commissionRate = getPlatformFeePercent(restaurant) / 100;
+  const firstMonth = isFirstBillingMonth(restaurant);
 
   // ── Aggregate all order financials ───────────────────────────
   const agg = await aggregateOrderFinancials(branchIds, periodStart, periodEnd);
@@ -91,11 +93,18 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
   const refundTotal = round2(refundPayments.reduce((s, p) => s + (parseFloat(p.amount_rs) || 0), 0));
 
   // ── Platform fee (commission on food subtotal) ───────────────
-  const platformFee = round2(agg.food_revenue_rs * commissionRate);
-  const platformFeeGst = round2(platformFee * GST_PLATFORM_FEE_PCT / 100);
+  // First-month exception: platform fee already collected in advance
+  const platformFeeCalculated = round2(agg.food_revenue_rs * commissionRate);
+  const platformFeeGstCalculated = round2(platformFeeCalculated * FINANCE_CONFIG.gstPlatformFeePct / 100);
+  const platformFee = shouldDeductPlatformFee(restaurant) ? platformFeeCalculated : 0;
+  const platformFeeGst = shouldDeductPlatformFeeGst(restaurant) ? platformFeeGstCalculated : 0;
 
-  // ── Referral fee GST ─────────────────────────────────────────
-  const referralFeeGst = round2(agg.referral_fee_rs * GST_PLATFORM_FEE_PCT / 100);
+  if (firstMonth) {
+    console.log(`  [First-Month] ${restaurant.business_name}: platform fee ₹${platformFeeCalculated} + GST ₹${platformFeeGstCalculated} NOT deducted (advance collected)`);
+  }
+
+  // ── Referral fee GST (always applies, even in first month) ──
+  const referralFeeGst = round2(agg.referral_fee_rs * FINANCE_CONFIG.gstReferralFeePct / 100);
 
   // ── Gross collections (what customer paid) ───────────────────
   const grossRevenue = round2(
@@ -157,6 +166,11 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     // Platform fee
     platform_fee_rs: platformFee,
     platform_fee_gst_rs: platformFeeGst,
+    platform_fee_calculated_rs: platformFeeCalculated,      // what WOULD have been charged
+    platform_fee_gst_calculated_rs: platformFeeGstCalculated,
+    platform_fee_waived_first_month: firstMonth && !shouldDeductPlatformFee(restaurant),
+    is_first_billing_month: firstMonth,
+    commission_rate_pct: commissionRate * 100,
 
     // TDS
     tds_applicable: tds.applicable,

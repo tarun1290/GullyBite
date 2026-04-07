@@ -285,29 +285,12 @@ async function sendWelcome(from) {
 // ─── REFERRAL CREATION ──────────────────────────────────────────
 async function createDirectoryReferral(restaurantId, customerPhone) {
   try {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + REFERRAL_WINDOW_HRS * 3600000);
-
-    // Expire previous active referral for same restaurant + customer (prevent double-charge)
-    await col('referrals').updateMany(
-      { restaurant_id: restaurantId, customer_wa_phone: customerPhone, status: 'active' },
-      { $set: { status: 'expired', updated_at: now } }
-    );
-
-    await col('referrals').insertOne({
-      _id: newId(),
+    const refAttr = require('../services/referralAttribution');
+    await refAttr.createReferral({
+      restaurantId,
+      customerPhone,
       source: 'directory',
-      restaurant_id: restaurantId,
-      customer_wa_phone: customerPhone,
-      customer_name: null,
       notes: 'Auto-created from GullyBite directory',
-      status: 'active',
-      expires_at: expiresAt,
-      orders_count: 0,
-      total_order_value_rs: 0,
-      referral_fee_rs: 0,
-      created_at: now,
-      updated_at: now,
     });
 
     logActivity({ actorType: 'system', action: 'directory.referral_created', category: 'referral', description: `Directory referral created for restaurant ${restaurantId}`, restaurantId, severity: 'info' });

@@ -367,28 +367,27 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
       const taxRs = charges ? (charges.food_gst_rs || 0) + (charges.customer_delivery_gst_rs || 0) + (charges.packaging_gst_rs || 0) : 0;
       const discountRs = discount?.amountRs || 0;
 
-      await wa.sendCheckoutOrder(pid, token, to, {
-        referenceId: refId,
-        restaurantName: restaurant?.business_name || branch?.name || 'Restaurant',
-        customerName: customer?.name || 'there',
-        items: (items || []).map(i => ({
-          retailer_id: i.retailer_id || i.name,
-          name: i.name,
-          quantity: i.qty || 1,
-          price_rs: Number(i.price) || 0,
-        })),
+      // Build a fake fullOrder for sendPaymentRequest (same shape as getOrderDetails returns)
+      const checkoutOrder = {
+        order_number: order.order_number, id: order.id,
         subtotal_rs: charges?.subtotal_rs || Number(subtotal) || 0,
+        customer_delivery_rs: charges?.customer_delivery_rs || Number(deliveryFee) || 0,
         delivery_fee_rs: charges?.customer_delivery_rs || Number(deliveryFee) || 0,
-        tax_rs: taxRs,
+        food_gst_rs: charges?.food_gst_rs || 0,
+        customer_delivery_gst_rs: charges?.customer_delivery_gst_rs || 0,
+        packaging_gst_rs: charges?.packaging_gst_rs || 0,
         discount_rs: discountRs,
-        discountDescription: discount?.code ? `Coupon: ${discount.code}` : 'Discount',
+        coupon_code: discount?.code || null,
         total_rs: charges?.customer_total_rs || Number(total) || 0,
-        branchAddress: {
-          address_line1: branch?.address || 'India',
-          city: branch?.city || 'Hyderabad',
-          zone_code: branch?.state_code || 'TS',
-          postal_code: branch?.pincode || '500000',
-        },
+        business_name: restaurant?.business_name || branch?.name || 'Restaurant',
+        items: (items || []).map(i => ({ item_name: i.name, quantity: i.qty || 1, unit_price_rs: Number(i.price) || 0, retailer_id: i.retailer_id || i.name })),
+      };
+      await wa.sendPaymentRequest(pid, token, to, {
+        order: checkoutOrder,
+        items: checkoutOrder.items,
+        customerName: customer?.name || 'there',
+        restaurantName: restaurant?.business_name || branch?.name,
+        deliveryAddress: session.deliveryAddress || null,
       });
 
       // Update session with order ID and transition to AWAITING_PAYMENT
@@ -422,8 +421,8 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
     }
   }
 
-  // Fallback: text-based order summary with Confirm/Cancel/Coupon buttons
-  await wa.sendOrderSummary(pid, token, to, { orderNumber, items, charges, subtotal, deliveryFee, total, discount, dynamicNote });
+  // Fallback: if interactive checkout is disabled or failed, send simple retry text
+  await wa.sendText(pid, token, to, '⚠️ We had trouble loading your checkout. Please send your cart again to retry.');
 
   // Track as review_pending abandoned cart (will be recovered when order is confirmed)
   if (session?.branchId && customer?.id) {
@@ -457,39 +456,18 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     try {
       const refLink = await col('referral_links').findOne({ code: refCode, status: 'active' });
       if (refLink) {
-        // Increment click count
         col('referral_links').updateOne({ _id: refLink._id }, { $inc: { click_count: 1 } }).catch(() => {});
-
-        const custPhone = customer.wa_phone || customer.bsuid;
-        const now = new Date();
-        const windowHours = parseFloat(process.env.REFERRAL_WINDOW_HRS || '8');
-        const expiresAt = new Date(now.getTime() + windowHours * 3600000);
-
-        // Upsert referral session — refresh window if already active
-        await col('referrals').findOneAndUpdate(
-          { customer_wa_phone: custPhone, restaurant_id: refLink.restaurant_id, status: 'active', expires_at: { $gt: now } },
-          {
-            $set: { expires_at: expiresAt, referral_code: refCode, updated_at: now },
-            $setOnInsert: {
-              _id: newId(),
-              customer_wa_phone: custPhone,
-              customer_bsuid: customer.bsuid || null,
-              customer_name: customer.name || null,
-              restaurant_id: refLink.restaurant_id,
-              referral_code: refCode,
-              referral_link_id: String(refLink._id),
-              source: 'gbref',
-              status: 'active',
-              orders_count: 0,
-              total_order_value_rs: 0,
-              referral_fee_rs: 0,
-              notes: refLink.campaign_name || null,
-              created_at: now,
-            },
-          },
-          { upsert: true }
-        );
-        console.log(`[Referral] Session created/refreshed for ${custPhone} → restaurant ${refLink.restaurant_id} (code: ${refCode}, expires: ${expiresAt.toISOString()})`);
+        const refAttr = require('../services/referralAttribution');
+        await refAttr.refreshOrCreateReferral({
+          restaurantId: refLink.restaurant_id,
+          customerPhone: customer.wa_phone || customer.bsuid,
+          customerBsuid: customer.bsuid,
+          customerName: customer.name,
+          source: 'gbref',
+          referralCode: refCode,
+          referralLinkId: String(refLink._id),
+          notes: refLink.campaign_name,
+        });
       } else {
         console.log(`[Referral] GBREF code "${refCode}" not found or not active — ignoring`);
       }
@@ -1189,8 +1167,14 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     `Opening our menu for you...`
   );
 
+  // Send pre-menu trust message (non-blocking — don't let it delay MPM)
+  try {
+    const itemTrust = require('../services/itemTrust');
+    const trustMsg = await itemTrust.buildPreMenuTrustMessage(branch.restaurantId || waAccount.restaurant_id, branch.id);
+    if (trustMsg) await wa.sendText(pid, token, to, trustMsg);
+  } catch (e) { console.warn('[Trust] Pre-menu message failed (non-fatal):', e.message); }
+
   // Send branch-filtered MPMs (Multi-Product Messages)
-  // Fetch restaurant for meta_catalog_id fallback (branch object from findNearestBranch doesn't include it always)
   const restaurantDoc = await col('restaurants').findOne({ _id: branch.restaurantId });
   let catalogId = branch.catalogId || branch.catalog_id || restaurantDoc?.meta_catalog_id;
   console.log(`[MPM-DEBUG] catalogId source: branch.catalogId=${branch.catalogId} branch.catalog_id=${branch.catalog_id} restaurant.meta_catalog_id=${restaurantDoc?.meta_catalog_id}`);
@@ -1247,8 +1231,15 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
 
   if (catalogId) {
     try {
-      const { buildBranchMPMs } = require('../services/mpmBuilder');
-      const mpms = await buildBranchMPMs(branch.id, branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id);
+      let mpms;
+      try {
+        const { buildStrategyMPMs } = require('../services/mpmStrategy');
+        mpms = await buildStrategyMPMs(branch.id, branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id, { customerId: customer?.id });
+      } catch (strategyErr) {
+        console.warn('[MPM] Strategy engine failed, falling back to legacy builder:', strategyErr.message);
+        const { buildBranchMPMs } = require('../services/mpmBuilder');
+        mpms = await buildBranchMPMs(branch.id, branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id);
+      }
       console.log(`[MPM-DEBUG] Built ${mpms.length} MPM(s) for branch "${branch.name}"`);
       for (const [mi, mpm] of mpms.entries()) {
         console.log(`[MPM-DEBUG] MPM ${mi+1}: header="${mpm.header}" sections=${mpm.sections?.length} products=${mpm.sections?.reduce((s,sec) => s + (sec.product_retailer_ids?.length || 0), 0)}`);
@@ -1748,16 +1739,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         }).catch(e => console.warn('[Cart Recovery] Track payment failed:', e.message));
       } catch (payErr) {
         console.error('[Payment] Interactive checkout failed:', payErr.message, payErr.stack?.split('\n')[1]);
-        await wa.sendOrderSummary(pid, token, to, {
-          orderNumber: order.order_number,
-          items: session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
-          charges: session.charges,
-          subtotal: session.subtotalRs?.toFixed(0),
-          deliveryFee: session.deliveryFeeRs?.toFixed(0),
-          total: session.totalRs?.toFixed(0),
-          discount: session.coupon ? { code: session.coupon.code, amountRs: session.discountRs } : null,
-        });
-        await wa.sendText(pid, token, to, '⚠️ Payment checkout is temporarily unavailable. Tap *Confirm & Pay* to try again.');
+        await wa.sendText(pid, token, to, '⚠️ We had trouble loading your checkout. Please type *PAY* to try again.');
         await orderSvc.setState(conv.id, 'ORDER_REVIEW', { ...session, orderId: order.id, orderNumber: order.order_number });
       }
       console.log(`[Perf] Order post-processing: ${Date.now() - _orderStart}ms`);
@@ -2943,8 +2925,15 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
 
   if (effectiveCatalogId) {
     try {
-      const { buildBranchMPMs } = require('../services/mpmBuilder');
-      const mpms = await buildBranchMPMs(branch.id, restaurantId);
+      let mpms;
+      try {
+        const { buildStrategyMPMs } = require('../services/mpmStrategy');
+        mpms = await buildStrategyMPMs(branch.id, restaurantId, { customerId: customer?.id });
+      } catch (strategyErr) {
+        console.warn('[MPM] Strategy engine failed, falling back to legacy builder:', strategyErr.message);
+        const { buildBranchMPMs } = require('../services/mpmBuilder');
+        mpms = await buildBranchMPMs(branch.id, restaurantId);
+      }
       console.log(`[MPM-DEBUG] _sendBranchMenu: ${mpms.length} MPM(s) for "${branch.name}"`);
       for (const [mi, mpm] of mpms.entries()) {
         console.log(`[MPM-DEBUG] _sendBranchMenu MPM ${mi+1}: header="${mpm.header}" sections=${mpm.sections?.length} products=${mpm.sections?.reduce((s,sec) => s + (sec.product_retailer_ids?.length || 0), 0)}`);

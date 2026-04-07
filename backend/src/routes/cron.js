@@ -72,6 +72,31 @@ router.get('/catalog-sync', async (req, res) => {
   }
 });
 
+// ─── TRUST METRICS REFRESH (every 6-12 hours) ───────────────
+// Recalculates item trust scores, tags, and meta descriptions for all active restaurants.
+router.get('/trust-refresh', async (req, res) => {
+  res.json({ ok: true, message: 'trust-refresh started', timestamp: new Date().toISOString() });
+
+  try {
+    const itemTrust = require('../services/itemTrust');
+    const restaurants = await col('restaurants').find({ status: 'active' }).toArray();
+    let processed = 0, failed = 0;
+    for (const r of restaurants) {
+      try {
+        await itemTrust.refreshTrustMetrics(String(r._id));
+        processed++;
+      } catch (e) {
+        console.error(`[Cron] Trust refresh failed for ${r.business_name}:`, e.message);
+        failed++;
+      }
+    }
+    console.log(`[Cron] Trust refresh complete: ${processed} restaurants processed, ${failed} failed`);
+    logActivity({ actorType: 'system', action: 'cron.trust_refresh', category: 'trust', description: `Trust refresh: ${processed} restaurants, ${failed} failed`, severity: failed > 0 ? 'warning' : 'info' });
+  } catch (e) {
+    console.error('[Cron] Trust refresh error:', e.message);
+  }
+});
+
 // ─── CART RECOVERY (every 5 minutes) ────────────────────────
 // Sends timed recovery reminders for abandoned carts.
 router.get('/cart-recovery', async (req, res) => {
