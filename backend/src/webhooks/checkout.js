@@ -315,7 +315,7 @@ async function handleOrder(value) {
     ...charges,
     total_rs: charges.customer_total_rs,
     item_count: orderItems.reduce((s, i) => s + i.quantity, 0),
-    status: 'PENDING',
+    status: data.payment_status === 'paid' ? 'PAID' : 'PENDING_PAYMENT',
     payment_status: data.payment_status === 'paid' ? 'paid' : 'pending',
     settlement_id: null,
     created_at: new Date(),

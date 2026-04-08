@@ -190,6 +190,7 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
   const order = {
     _id: orderId,
     order_number: orderNumber,
+    restaurant_id: restaurantId || null,
     customer_id: customerId,
     branch_id: branchId,
     conversation_id: convId,

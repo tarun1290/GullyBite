@@ -835,18 +835,21 @@ async function toggleCatalogAutoSync(enabled) {
 let _catMgmtData = null;
 
 async function loadCatalogMgmt(refresh = false) {
-  console.log('[CatalogMgmt] loadCatalogMgmt called, refresh:', refresh);
   var statusEl = document.getElementById('cat-mgmt-status');
   var listEl = document.getElementById('cat-mgmt-list');
   var settingsEl = document.getElementById('cat-mgmt-settings');
   var deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
-  if (!statusEl) { console.error('[CatalogMgmt] CRITICAL: cat-mgmt-status not found — tab-whatsapp may not be in DOM'); return; }
+  if (!statusEl) { toast('Catalog section not available — try refreshing the page', 'err'); return; }
   if (deleteConfirmEl) deleteConfirmEl.style.display = 'none';
 
   // Ensure rest is loaded — if null, fetch it now
   if (!rest) {
     try { rest = await api('/auth/me'); } catch (_) {}
-    if (!rest) { statusEl.innerHTML = '<div style="padding:.6rem;font-size:.82rem;color:var(--dim)">Loading restaurant data...</div>'; return; }
+    if (!rest) {
+      statusEl.innerHTML = '<div style="padding:.8rem;font-size:.82rem;color:var(--red);background:#fef2f2;border:1px solid #fecaca;border-radius:8px">'
+        + 'Could not load restaurant data. <button class="btn-g btn-sm" style="font-size:.72rem;margin-left:.5rem" onclick="loadCatalogMgmt()">Retry</button></div>';
+      return;
+    }
   }
 
   loadCatalogVisibility();

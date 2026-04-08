@@ -694,11 +694,15 @@ async function loadBranchSel() {
     sel.innerHTML = '<option value="__all__">All Branches</option>' +
       branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('') +
       '<option value="__unassigned__">⚠️ Unassigned</option>';
-    if (prevVal && (prevVal === '__all__' || prevVal === '__unassigned__' || branches.some(b => b.id === prevVal))) {
-      sel.value = prevVal;
+    // Restore persisted branch selection, or default to __all__
+    const savedBranch = localStorage.getItem('gb_selected_branch');
+    const effectivePrev = prevVal || savedBranch;
+    if (effectivePrev && (effectivePrev === '__all__' || effectivePrev === '__unassigned__' || branches.some(b => b.id === effectivePrev))) {
+      sel.value = effectivePrev;
     } else {
       sel.value = '__all__';
     }
+    localStorage.setItem('gb_selected_branch', sel.value);
 
     // Render branch tabs for multi-branch restaurants
     const tabsDiv = document.getElementById('branch-tabs');
@@ -723,6 +727,7 @@ async function loadBranchSel() {
 function selectBranchTab(branchId, btn) {
   const sel = document.getElementById('m-branch');
   sel.value = branchId;
+  localStorage.setItem('gb_selected_branch', branchId);
   document.querySelectorAll('.branch-tab').forEach(b => b.classList.remove('act'));
   if (btn) btn.classList.add('act');
   // Update branch summary

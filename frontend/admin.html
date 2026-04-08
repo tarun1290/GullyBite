@@ -4491,7 +4491,7 @@ async function loadAnStatus(q) {
   try {
     const data = await api('/api/admin/analytics/orders/by-status' + q);
     _destroyChart('status');
-    const colors = { DELIVERED:'#16a34a', CONFIRMED:'#3b82f6', PREPARING:'#f59e0b', PACKED:'#8b5cf6', DISPATCHED:'#06b6d4', CANCELLED:'#dc2626', PENDING_PAYMENT:'#94a3b8' };
+    const colors = { DELIVERED:'#16a34a', CONFIRMED:'#3b82f6', PREPARING:'#f59e0b', PACKED:'#8b5cf6', DISPATCHED:'#06b6d4', CANCELLED:'#dc2626', PENDING_PAYMENT:'#94a3b8', PAYMENT_FAILED:'#ef4444', EXPIRED:'#78716c', PAID:'#22c55e' };
     const ctx = document.getElementById('an-chart-status').getContext('2d');
     _anChartInstances.status = new Chart(ctx, {
       type: 'doughnut',

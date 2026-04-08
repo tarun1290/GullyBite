@@ -61,10 +61,12 @@ const getRzp = () => {
 const createRazorpayOrder = async (order, customer) => {
   const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 15;
 
+  const expireByUnix = Math.floor(Date.now() / 1000) + expiryMins * 60;
   const rzpOrder = await getRzp().orders.create({
     amount  : Math.round(order.total_rs * 100),
     currency: 'INR',
     receipt : order.order_number,
+    expire_by: expireByUnix,
     notes: {
       order_id    : order.id,
       order_number: order.order_number,

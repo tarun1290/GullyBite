@@ -454,6 +454,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
           <button class="chip" onclick="doFilterOrders('PREPARING',this)">👨‍🍳 Preparing</button>
           <button class="chip" onclick="doFilterOrders('PACKED',this)">📦 Packed</button>
           <button class="chip" onclick="doFilterOrders('DELIVERED',this)">🎉 Delivered</button>
+          <button class="chip" onclick="doFilterOrders('PAYMENT_FAILED',this)">❌ Failed</button>
+          <button class="chip" onclick="doFilterOrders('EXPIRED',this)">⏱ Expired</button>
         </div>
         <div class="card">
           <div class="tbl">
@@ -983,8 +985,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         <div id="menu-catalog-bar" style="display:none;margin-bottom:.8rem;padding:.5rem .9rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;font-size:.78rem;display:flex;align-items:center;gap:.8rem;flex-wrap:wrap"></div>
         <div style="display:flex;gap:.7rem;align-items:center;margin-bottom:1.3rem;flex-wrap:wrap;justify-content:space-between">
           <div style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap">
-            <select id="m-branch" onchange="loadMenu()" style="min-width:220px;width:auto;display:none">
-              <option value="">Select branch...</option>
+            <select id="m-branch" onchange="localStorage.setItem('gb_selected_branch',this.value);loadMenu()" style="min-width:220px;width:auto;display:none">
+              <option value="__all__">All Branches</option>
             </select>
             <span id="m-item-count" style="font-size:.82rem;color:var(--dim)"></span>
             <button class="btn-g btn-sm" onclick="toggleMenuSection('catalog')" title="Catalog settings" style="font-size:.9rem;padding:.3rem .5rem">⚙️</button>
@@ -1128,7 +1130,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
         </div>
         <!-- Menu CSV upload moved to Branches & Catalog tab -->
         <div id="menu-list">
-          <div class="empty"><div class="ei">🍽️</div><h3>Select a branch above</h3></div>
+          <div class="empty"><div class="ei">🍽️</div><h3>Loading menu...</h3></div>
         </div>
         <!-- Bulk action bar (hidden until items selected) -->
         <div id="bulk-bar" style="display:none;position:sticky;bottom:0;z-index:40;padding:.6rem 1rem;background:var(--ink);border-top:2px solid var(--acc);display:none;align-items:center;gap:.7rem;justify-content:space-between">
@@ -2427,7 +2429,7 @@ const TMETA = {
   analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); loadDropoffAnalytics(); loadCartRecoveryStats(); } },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
   restaurant:  { title: 'Restaurant',         sub: 'Profile, coupons, loyalty, and team',  fn: () => { loadRestaurantProfile(); loadOperatingHours(); loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
-  settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: () => { loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); loadSyncLogs(); } },
+  settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: async () => { await loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); loadSyncLogs(); } },
   // Legacy tab IDs — redirect to new tabs for backwards compatibility
   branches:    { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); } },
   customers:   { title: 'Analytics',          sub: 'Sales and performance',                fn: () => { loadAnalytics(); loadCustomers(); } },
@@ -2470,7 +2472,7 @@ function goTab(n, el) {
   // Clear menu list when leaving the Menu tab — prevents stale menu data from flashing
   if (actual !== 'menu' && actual !== 'branches') {
     const ml = document.getElementById('menu-list');
-    if (ml) ml.innerHTML = '<div class="empty"><div class="ei">🍽️</div><h3>Select a branch above</h3></div>';
+    if (ml) ml.innerHTML = '';
   }
 
   const group = TAB_GROUPS[actual];

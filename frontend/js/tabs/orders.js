@@ -33,6 +33,8 @@ function doFilterOrders(s, el) {
 function sbadge(s) {
   const m = {
     PENDING_PAYMENT: ['ba', 'Pending Payment'],
+    PAYMENT_FAILED : ['br', 'Payment Failed'],
+    EXPIRED        : ['bd', 'Expired'],
     PAID           : ['bb', 'Paid'],
     CONFIRMED      : ['bg', 'Confirmed'],
     PREPARING      : ['ba', 'Preparing'],

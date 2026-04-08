@@ -7,6 +7,7 @@
 const express = require('express');
 const router = express.Router();
 const { col, mapIds } = require('../config/database');
+const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
 
 // Admin auth — uses RBAC middleware with analytics read permission
 const { requireAdminAuth } = require('../middleware/adminAuth');
@@ -52,26 +53,44 @@ router.get('/overview', async (req, res) => {
     const match = buildMatchFilter(req.query);
     const cityArea = cityAreaPipeline(req.query);
 
+    // Confirmed orders only (PAID, CONFIRMED, PREPARING, ... DELIVERED)
+    const confirmedMatch = { ...match, status: { $in: CONFIRMED_ORDER_STATES } };
+
     const pipeline = [
       ...cityArea,
-      { $match: match },
+      { $match: match }, // All orders for funnel/segmentation
       { $facet: {
-        totals: [{ $group: {
+        // Confirmed order metrics — excludes pending/failed/expired
+        confirmed: [
+          { $match: { status: { $in: CONFIRMED_ORDER_STATES } } },
+          { $group: {
+            _id: null,
+            order_count: { $sum: 1 },
+            gmv: { $sum: { $toDouble: '$total_rs' } },
+            platform_fees: { $sum: { $toDouble: { $ifNull: ['$platform_fee_rs', 0] } } },
+            customers: { $addToSet: '$customer_id' },
+            restaurants: { $addToSet: '$restaurant_id' },
+            delivered: { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, 1, 0] } },
+          }},
+        ],
+        // Funnel metrics — all statuses for conversion tracking
+        funnel: [{ $group: {
           _id: null,
-          order_count: { $sum: 1 },
-          gmv: { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, { $toDouble: '$total_rs' }, 0] } },
-          total_rs_sum: { $sum: { $toDouble: '$total_rs' } },
-          platform_fees: { $sum: { $toDouble: { $ifNull: ['$platform_fee_rs', 0] } } },
-          customers: { $addToSet: '$customer_id' },
-          restaurants: { $addToSet: '$restaurant_id' },
-          delivered: { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, 1, 0] } },
+          total_checkouts: { $sum: 1 },
+          pending: { $sum: { $cond: [{ $eq: ['$status', 'PENDING_PAYMENT'] }, 1, 0] } },
+          payment_failed: { $sum: { $cond: [{ $eq: ['$status', 'PAYMENT_FAILED'] }, 1, 0] } },
+          expired: { $sum: { $cond: [{ $eq: ['$status', 'EXPIRED'] }, 1, 0] } },
+          cancelled: { $sum: { $cond: [{ $eq: ['$status', 'CANCELLED'] }, 1, 0] } },
         }}],
+        // Customer analytics — only from confirmed orders
         newCustomers: [
+          { $match: { status: { $in: CONFIRMED_ORDER_STATES } } },
           { $group: { _id: '$customer_id', first: { $min: '$created_at' } } },
           { $match: { first: match.created_at || {} } },
           { $count: 'count' },
         ],
         repeatCustomers: [
+          { $match: { status: { $in: CONFIRMED_ORDER_STATES } } },
           { $group: { _id: '$customer_id', cnt: { $sum: 1 } } },
           { $match: { cnt: { $gt: 1 } } },
           { $count: 'count' },
@@ -80,17 +99,18 @@ router.get('/overview', async (req, res) => {
     ];
 
     const [result] = await col('orders').aggregate(pipeline).toArray();
-    const t = result.totals[0] || { order_count: 0, gmv: 0, total_rs_sum: 0, platform_fees: 0, customers: [], restaurants: [], delivered: 0 };
+    const t = result.confirmed[0] || { order_count: 0, gmv: 0, platform_fees: 0, customers: [], restaurants: [], delivered: 0 };
+    const f = result.funnel[0] || { total_checkouts: 0, pending: 0, payment_failed: 0, expired: 0, cancelled: 0 };
     const customerCount = t.customers.length;
     const newCustomerCount = result.newCustomers[0]?.count || 0;
     const repeatCount = result.repeatCustomers[0]?.count || 0;
 
-    // Previous period comparison
+    // Previous period comparison — confirmed orders only
     const periodMs = (match.created_at?.$lte || new Date()).getTime() - (match.created_at?.$gte || new Date(Date.now() - 30 * 86400000)).getTime();
-    const prevMatch = { ...match, created_at: { $gte: new Date((match.created_at?.$gte || new Date(Date.now() - 30 * 86400000)).getTime() - periodMs), $lt: match.created_at?.$gte || new Date(Date.now() - 30 * 86400000) } };
+    const prevMatch = { ...match, status: { $in: CONFIRMED_ORDER_STATES }, created_at: { $gte: new Date((match.created_at?.$gte || new Date(Date.now() - 30 * 86400000)).getTime() - periodMs), $lt: match.created_at?.$gte || new Date(Date.now() - 30 * 86400000) } };
     const [prevResult] = await col('orders').aggregate([
       ...cityArea, { $match: prevMatch },
-      { $group: { _id: null, order_count: { $sum: 1 }, gmv: { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, { $toDouble: '$total_rs' }, 0] } } } },
+      { $group: { _id: null, order_count: { $sum: 1 }, gmv: { $sum: { $toDouble: '$total_rs' } } } },
     ]).toArray();
     const prev = prevResult || { order_count: 0, gmv: 0 };
     const pctChange = (cur, prv) => prv > 0 ? parseFloat(((cur - prv) / prv * 100).toFixed(1)) : cur > 0 ? 100 : 0;
@@ -98,7 +118,7 @@ router.get('/overview', async (req, res) => {
     res.json({
       order_count: t.order_count,
       gmv: parseFloat(t.gmv.toFixed(2)),
-      avg_order_value: t.order_count > 0 ? parseFloat((t.gmv / t.delivered || 0).toFixed(2)) : 0,
+      avg_order_value: t.delivered > 0 ? parseFloat((t.gmv / t.delivered).toFixed(2)) : 0,
       customer_count: customerCount,
       new_customers: newCustomerCount,
       repeat_customers: repeatCount,
@@ -107,6 +127,13 @@ router.get('/overview', async (req, res) => {
       avg_orders_per_restaurant: t.restaurants.length > 0 ? parseFloat((t.order_count / t.restaurants.length).toFixed(1)) : 0,
       platform_revenue: parseFloat(t.platform_fees.toFixed(2)),
       completion_rate: t.order_count > 0 ? parseFloat((t.delivered / t.order_count * 100).toFixed(1)) : 0,
+      // Missed-sale / funnel breakdown
+      missed_sales: f.expired,
+      payment_failures: f.payment_failed,
+      pending_checkouts: f.pending,
+      cancelled: f.cancelled,
+      total_checkouts: f.total_checkouts,
+      conversion_rate: f.total_checkouts > 0 ? parseFloat((t.order_count / f.total_checkouts * 100).toFixed(1)) : 0,
       change: {
         order_count: pctChange(t.order_count, prev.order_count),
         gmv: pctChange(t.gmv, prev.gmv),
@@ -122,11 +149,11 @@ router.get('/orders/timeseries', async (req, res) => {
     const granularity = req.query.granularity || 'daily';
     const data = await col('orders').aggregate([
       ...cityAreaPipeline(req.query),
-      { $match: match },
+      { $match: { ...match, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: {
         _id: dateGroupExpr(granularity),
         order_count: { $sum: 1 },
-        gmv: { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, { $toDouble: '$total_rs' }, 0] } },
+        gmv: { $sum: { $toDouble: '$total_rs' } },
       }},
       { $sort: { _id: 1 } },
       { $project: { _id: 0, date: '$_id', order_count: 1, gmv: { $round: ['$gmv', 2] }, avg_order_value: { $round: [{ $cond: [{ $gt: ['$order_count', 0] }, { $divide: ['$gmv', '$order_count'] }, 0] }, 2] } } },
@@ -155,7 +182,7 @@ router.get('/orders/by-hour', async (req, res) => {
     const match = buildMatchFilter(req.query);
     const data = await col('orders').aggregate([
       ...cityAreaPipeline(req.query),
-      { $match: match },
+      { $match: { ...match, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: { _id: { $hour: { date: '$created_at', timezone: 'Asia/Kolkata' } }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]).toArray();
@@ -169,7 +196,7 @@ router.get('/orders/by-day', async (req, res) => {
     const match = buildMatchFilter(req.query);
     const data = await col('orders').aggregate([
       ...cityAreaPipeline(req.query),
-      { $match: match },
+      { $match: { ...match, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: { _id: { $dayOfWeek: { date: '$created_at', timezone: 'Asia/Kolkata' } }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]).toArray();
@@ -183,7 +210,7 @@ router.get('/geographic/cities', async (req, res) => {
   try {
     const match = buildMatchFilter(req.query);
     const data = await col('orders').aggregate([
-      { $match: match },
+      { $match: { ...match, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $lookup: { from: 'branches', localField: 'branch_id', foreignField: '_id', as: '_b' } },
       { $unwind: '$_b' },
       { $group: {
@@ -206,7 +233,7 @@ router.get('/geographic/areas', async (req, res) => {
     if (!req.query.city) return res.status(400).json({ error: 'city filter required' });
     const match = buildMatchFilter(req.query);
     const data = await col('orders').aggregate([
-      { $match: match },
+      { $match: { ...match, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $lookup: { from: 'branches', localField: 'branch_id', foreignField: '_id', as: '_b' } },
       { $unwind: '$_b' },
       // Sanitize city input to prevent regex injection (escape special regex chars)
@@ -235,11 +262,11 @@ router.get('/restaurants/ranking', async (req, res) => {
 
     const data = await col('orders').aggregate([
       ...cityAreaPipeline(req.query),
-      { $match: match },
+      { $match: { ...match, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: {
         _id: '$restaurant_id',
         order_count: { $sum: 1 },
-        gmv: { $sum: { $cond: [{ $eq: ['$status', 'DELIVERED'] }, { $toDouble: '$total_rs' }, 0] } },
+        gmv: { $sum: { $toDouble: '$total_rs' } },
         customers: { $addToSet: '$customer_id' },
       }},
       { $lookup: { from: 'restaurants', localField: '_id', foreignField: '_id', as: '_r' } },
@@ -268,28 +295,29 @@ router.get('/restaurants/:id/detail', async (req, res) => {
     const rid = req.params.id;
     const match = { ...buildMatchFilter(req.query), restaurant_id: rid };
 
+    const confirmedMatch = { ...match, status: { $in: CONFIRMED_ORDER_STATES } };
     const [timeseries, topItems, customerGrowth, statusDist] = await Promise.all([
       col('orders').aggregate([
-        { $match: match },
+        { $match: confirmedMatch },
         { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$created_at', timezone: 'Asia/Kolkata' } }, order_count: { $sum: 1 }, gmv: { $sum: { $toDouble: '$total_rs' } } } },
         { $sort: { _id: 1 } },
       ]).toArray(),
       col('order_items').aggregate([
         { $lookup: { from: 'orders', localField: 'order_id', foreignField: '_id', as: '_o' } },
         { $unwind: '$_o' },
-        { $match: { '_o.restaurant_id': rid, '_o.created_at': match.created_at } },
+        { $match: { '_o.restaurant_id': rid, '_o.created_at': match.created_at, '_o.status': { $in: CONFIRMED_ORDER_STATES } } },
         { $group: { _id: '$name', qty: { $sum: '$qty' }, revenue: { $sum: { $multiply: ['$qty', { $toDouble: '$unit_price_rs' }] } } } },
         { $sort: { qty: -1 } },
         { $limit: 10 },
       ]).toArray(),
       col('orders').aggregate([
-        { $match: match },
+        { $match: confirmedMatch },
         { $group: { _id: '$customer_id', first: { $min: '$created_at' } } },
         { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$first', timezone: 'Asia/Kolkata' } }, count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]).toArray(),
       col('orders').aggregate([
-        { $match: match },
+        { $match: match }, // Status distribution shows ALL statuses (intentional — for the breakdown chart)
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]).toArray(),
     ]);
@@ -308,11 +336,12 @@ router.get('/customers/overview', async (req, res) => {
   try {
     const match = buildMatchFilter(req.query);
 
+    const confirmedMatch = { ...match, status: { $in: CONFIRMED_ORDER_STATES } };
     const [totalCustomers, topBySpend, distribution] = await Promise.all([
       col('customers').countDocuments({}),
       col('orders').aggregate([
         ...cityAreaPipeline(req.query),
-        { $match: match },
+        { $match: confirmedMatch },
         { $group: { _id: '$customer_id', total_spent: { $sum: { $toDouble: '$total_rs' } }, order_count: { $sum: 1 } } },
         { $sort: { total_spent: -1 } },
         { $limit: 20 },
@@ -322,7 +351,7 @@ router.get('/customers/overview', async (req, res) => {
       ]).toArray(),
       col('orders').aggregate([
         ...cityAreaPipeline(req.query),
-        { $match: match },
+        { $match: confirmedMatch },
         { $group: { _id: '$customer_id', cnt: { $sum: 1 } } },
         { $bucket: { groupBy: '$cnt', boundaries: [1, 2, 6, 11, 100000], default: 'other', output: { count: { $sum: 1 } } } },
       ]).toArray(),
@@ -346,6 +375,7 @@ router.get('/customers/segments', async (req, res) => {
     const d90 = new Date(now - 90 * 86400000);
 
     const data = await col('orders').aggregate([
+      { $match: { status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: { _id: '$customer_id', first_order: { $min: '$created_at' }, last_order: { $max: '$created_at' }, total_spent: { $sum: { $toDouble: '$total_rs' } }, cnt: { $sum: 1 } } },
       { $addFields: {
         segment: { $switch: { branches: [

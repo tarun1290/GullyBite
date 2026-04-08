@@ -10,8 +10,20 @@ const { col, newId } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'orderState' });
 
 // ─── VALID STATES ───────────────────────────────────────────
+// Commerce lifecycle:
+//   PENDING_PAYMENT → (payment succeeds) → PAID → CONFIRMED → PREPARING → ...
+//   PENDING_PAYMENT → (payment fails)    → PAYMENT_FAILED (retryable)
+//   PENDING_PAYMENT → (1h expiry / Razorpay order.expired) → EXPIRED (missed sale)
+//   PAYMENT_FAILED  → (retry succeeds)   → PAID
+//   PAYMENT_FAILED  → (1h expiry)        → EXPIRED
+//   Any active      → (user/system)      → CANCELLED
+//
+// EXPIRED is a DISTINCT terminal state for missed-sale analytics.
+// It is NOT the same as CANCELLED (which is an explicit user/admin action).
 const ORDER_STATES = [
   'PENDING_PAYMENT',
+  'PAYMENT_FAILED',
+  'EXPIRED',
   'PAID',
   'CONFIRMED',
   'PREPARING',
@@ -21,22 +33,30 @@ const ORDER_STATES = [
   'CANCELLED',
 ];
 
+// ─── CONFIRMED ORDER STATES ────────────────────────────────
+// Only these count as "real orders" in analytics/revenue.
+// PENDING_PAYMENT, PAYMENT_FAILED, and EXPIRED are checkout attempts, not orders.
+const CONFIRMED_ORDER_STATES = ['PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED'];
+
 // ─── ALLOWED TRANSITIONS ────────────────────────────────────
 // Map of currentState → Set of allowed nextStates.
-// CANCELLED is reachable from most states (customer/system can cancel).
 const TRANSITIONS = {
-  PENDING_PAYMENT: new Set(['PAID', 'CANCELLED']),
+  PENDING_PAYMENT: new Set(['PAID', 'PAYMENT_FAILED', 'EXPIRED', 'CANCELLED']),
+  PAYMENT_FAILED:  new Set(['PAID', 'EXPIRED', 'CANCELLED']),  // Retry allowed → PAID
+  EXPIRED:         new Set([]),  // Terminal — missed sale, no further transitions
   PAID:            new Set(['CONFIRMED', 'CANCELLED']),
   CONFIRMED:       new Set(['PREPARING', 'CANCELLED']),
   PREPARING:       new Set(['PACKED', 'CANCELLED']),
   PACKED:          new Set(['DISPATCHED', 'CANCELLED']),
   DISPATCHED:      new Set(['DELIVERED', 'CANCELLED']),
-  DELIVERED:       new Set([]),  // Terminal state — no further transitions
-  CANCELLED:       new Set([]),  // Terminal state — no further transitions
+  DELIVERED:       new Set([]),  // Terminal state
+  CANCELLED:       new Set([]),  // Terminal state
 };
 
 // ─── TIMESTAMP FIELDS PER STATE ─────────────────────────────
 const STATE_TIMESTAMP = {
+  PAYMENT_FAILED: 'payment_failed_at',
+  EXPIRED:    'expired_at',
   PAID:       'paid_at',
   CONFIRMED:  'confirmed_at',
   PREPARING:  'preparing_at',
@@ -115,6 +135,8 @@ async function transitionOrder(orderId, nextState, opts = {}) {
   const tsField = STATE_TIMESTAMP[nextState];
   if (tsField) $set[tsField] = now;
   if (nextState === 'CANCELLED' && cancelReason) $set.cancel_reason = cancelReason;
+  if (nextState === 'EXPIRED') $set.missed_sale_reason = cancelReason || 'payment_timeout';
+  if (nextState === 'PAYMENT_FAILED') $set.payment_failure_reason = cancelReason || 'payment_failed';
 
   // 5. Atomic update with state guard (prevents race conditions)
   // Only update if current state still matches — protects against concurrent transitions
@@ -156,6 +178,7 @@ async function transitionOrder(orderId, nextState, opts = {}) {
 
 module.exports = {
   ORDER_STATES,
+  CONFIRMED_ORDER_STATES,
   TRANSITIONS,
   STATE_TIMESTAMP,
   isValidTransition,

@@ -209,4 +209,59 @@ router.get('/health-check', async (req, res) => {
   }
 });
 
+// ─── STALE ORDER CLEANUP (every 15 minutes) ─────────────────
+// Expires PENDING_PAYMENT and PAYMENT_FAILED orders older than ORDER_EXPIRY_MINUTES (default 60).
+// These become EXPIRED (missed sales) — distinct from CANCELLED for analytics.
+router.get('/order-cleanup', async (req, res) => {
+  res.json({ ok: true, message: 'order-cleanup started', timestamp: new Date().toISOString() });
+
+  try {
+    const orderSvc = require('../services/order');
+    const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
+    const expiryMinutes = parseInt(process.env.ORDER_EXPIRY_MINUTES || '60');
+    const cutoff = new Date(Date.now() - expiryMinutes * 60 * 1000);
+
+    // Find stale unpaid orders
+    const staleOrders = await col('orders').find({
+      status: { $in: ['PENDING_PAYMENT', 'PAYMENT_FAILED'] },
+      created_at: { $lt: cutoff },
+    }, { projection: { _id: 1, order_number: 1, status: 1, restaurant_id: 1, total_rs: 1 } }).toArray();
+
+    let expired = 0, failed = 0;
+    for (const order of staleOrders) {
+      try {
+        await orderSvc.updateStatus(String(order._id), 'EXPIRED', {
+          cancelReason: `Unpaid for ${expiryMinutes}+ minutes (was ${order.status})`,
+          metadata: { previous_status: order.status, expiry_minutes: expiryMinutes },
+        });
+
+        // Also expire the associated payment record
+        await col('payments').updateMany(
+          { order_id: String(order._id), status: { $in: ['sent', 'pending'] } },
+          { $set: { status: 'expired', updated_at: new Date() },
+            $push: { status_history: { from_status: 'sent', to_status: 'expired', actor: 'system:order-cleanup', changed_at: new Date() } } }
+        );
+
+        expired++;
+      } catch (e) {
+        // May fail if order was already transitioned — non-fatal
+        log.warn({ err: e, orderId: String(order._id) }, 'Order cleanup transition failed');
+        failed++;
+      }
+    }
+
+    if (expired > 0 || failed > 0) {
+      log.info({ expired, failed, cutoffMinutes: expiryMinutes }, 'Order cleanup complete');
+      logActivity({
+        actorType: 'system', action: 'cron.order_cleanup', category: 'order',
+        description: `Order cleanup: ${expired} expired (missed sales), ${failed} failed`,
+        severity: expired > 0 ? 'info' : 'warning',
+        metadata: { expired, failed, expiryMinutes },
+      });
+    }
+  } catch (e) {
+    log.error({ err: e }, 'Order cleanup error');
+  }
+});
+
 module.exports = router;

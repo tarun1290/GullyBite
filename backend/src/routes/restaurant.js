@@ -23,6 +23,7 @@ const ws = require('../services/websocket');
 const memcache = require('../config/memcache');
 const metaConfig = require('../config/meta');
 const { getCached, invalidateCache } = require('../config/cache');
+const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
 const logger = require('../utils/logger').child({ component: 'restaurant' });
 
 // ── Slug helper ──────────────────────────────────────────────
@@ -4176,11 +4177,11 @@ router.get('/analytics/overview', requirePermission('view_analytics'), async (re
 
     const [current, previous, statusCounts, uniqueCust] = await Promise.all([
       col('orders').aggregate([
-        { $match: { ...baseMatch, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $match: { ...baseMatch, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
         { $group: { _id: null, total: { $sum: 1 }, revenue: { $sum: { $toDouble: '$total_rs' } } } },
       ]).toArray(),
       col('orders').aggregate([
-        { $match: { ...baseMatch, created_at: { $gte: prevSince, $lt: since }, status: { $ne: 'CANCELLED' } } },
+        { $match: { ...baseMatch, created_at: { $gte: prevSince, $lt: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
         { $group: { _id: null, total: { $sum: 1 }, revenue: { $sum: { $toDouble: '$total_rs' } } } },
       ]).toArray(),
       col('orders').aggregate([
@@ -4188,7 +4189,7 @@ router.get('/analytics/overview', requirePermission('view_analytics'), async (re
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]).toArray(),
       col('orders').aggregate([
-        { $match: { ...baseMatch, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $match: { ...baseMatch, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
         { $group: { _id: '$customer_id' } },
         { $count: 'total' },
       ]).toArray(),
@@ -4225,7 +4226,7 @@ router.get('/analytics/revenue', requirePermission('view_analytics'), async (req
     else dateExpr = { $dateToString: { format: '%Y-%m-%d', date: '$created_at' } };
 
     const data = await col('orders').aggregate([
-      { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+      { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: { _id: dateExpr, revenue_rs: { $sum: { $toDouble: '$total_rs' } }, order_count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
       { $project: { _id: 0, date: '$_id', revenue_rs: { $round: ['$revenue_rs', 2] }, order_count: 1 } },
@@ -4243,7 +4244,7 @@ router.get('/analytics/top-items', requirePermission('view_analytics'), async (r
 
     // Get order IDs in range
     const orderIds = await col('orders').distinct('_id', {
-      branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' },
+      branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES },
     });
 
     const data = await col('order_items').aggregate([
@@ -4270,13 +4271,13 @@ router.get('/analytics/peak-hours', requirePermission('view_analytics'), async (
 
     const [hourly, daily] = await Promise.all([
       col('orders').aggregate([
-        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
         { $group: { _id: { $hour: '$created_at' }, order_count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
         { $project: { _id: 0, hour: '$_id', order_count: 1 } },
       ]).toArray(),
       col('orders').aggregate([
-        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
         { $group: { _id: { $dayOfWeek: '$created_at' }, order_count: { $sum: 1 } } },
         { $sort: { _id: 1 } },
       ]).toArray(),
@@ -4298,7 +4299,7 @@ router.get('/analytics/peak-hours', requirePermission('view_analytics'), async (
 router.get('/analytics/customers', requirePermission('view_analytics'), async (req, res) => {
   try {
     const { branchIds, since } = await _analyticsContext(req);
-    const baseMatch = { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } };
+    const baseMatch = { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } };
 
     const [custOrders, topCust] = await Promise.all([
       col('orders').aggregate([
@@ -4353,7 +4354,7 @@ router.get('/analytics/delivery', requirePermission('view_analytics'), async (re
         { $group: { _id: null, avg_delivery: { $avg: '$delivery_min' }, avg_prep: { $avg: '$prep_min' }, count: { $sum: 1 } } },
       ]).toArray(),
       col('orders').aggregate([
-        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $ne: 'CANCELLED' } } },
+        { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
         { $group: {
           _id: '$branch_id',
           order_count: { $sum: 1 },

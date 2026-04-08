@@ -15,12 +15,21 @@ describe('Order State Engine — States', () => {
     expect(ORDER_STATES).toContain('DISPATCHED');
     expect(ORDER_STATES).toContain('DELIVERED');
     expect(ORDER_STATES).toContain('CANCELLED');
-    expect(ORDER_STATES).toHaveLength(8);
+    expect(ORDER_STATES).toContain('PAYMENT_FAILED');
+    expect(ORDER_STATES).toContain('EXPIRED');
+    expect(ORDER_STATES).toHaveLength(10);
   });
 
-  test('DELIVERED and CANCELLED are terminal', () => {
+  test('DELIVERED, CANCELLED, and EXPIRED are terminal', () => {
     expect(TRANSITIONS.DELIVERED.size).toBe(0);
     expect(TRANSITIONS.CANCELLED.size).toBe(0);
+    expect(TRANSITIONS.EXPIRED.size).toBe(0);
+  });
+
+  test('PAYMENT_FAILED allows retry to PAID or expiry to EXPIRED', () => {
+    expect(TRANSITIONS.PAYMENT_FAILED.has('PAID')).toBe(true);
+    expect(TRANSITIONS.PAYMENT_FAILED.has('EXPIRED')).toBe(true);
+    expect(TRANSITIONS.PAYMENT_FAILED.has('CANCELLED')).toBe(true);
   });
 });
 

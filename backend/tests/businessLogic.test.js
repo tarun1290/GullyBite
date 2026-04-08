@@ -412,7 +412,7 @@ describe('Order Transition — Happy Path Chain', () => {
 });
 
 describe('Order Transition — Cancellation from Every State', () => {
-  const CANCELLABLE = ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED'];
+  const CANCELLABLE = ['PENDING_PAYMENT', 'PAYMENT_FAILED', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED'];
 
   test.each(CANCELLABLE)('%s → CANCELLED is valid', (state) => {
     expect(isValidTransition(state, 'CANCELLED').valid).toBe(true);
@@ -501,7 +501,7 @@ describe('Order States — Completeness', () => {
     for (const [state, targets] of Object.entries(TRANSITIONS)) {
       if (targets.has('CANCELLED')) count++;
     }
-    expect(count).toBe(6); // all except DELIVERED and CANCELLED itself
+    expect(count).toBe(7); // all except DELIVERED, CANCELLED, and EXPIRED
   });
 });
 

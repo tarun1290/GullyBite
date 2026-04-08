@@ -33,3 +33,14 @@ scripts/test-harness/FINAL-REPORT.md
 scripts/test-harness/leaf-test-results.txt
 scripts/test-harness/FIX-LOG.md
 scripts/test-harness/MASTER-REPORT.md
+AUDIT_COMMERCE_AND_DASHBOARD.md
+BACKEND_COMMERCE_FIX_SUMMARY.md
+FRONTEND_DASHBOARD_FIX_SUMMARY.md
+ANALYTICS_CORRECTION_SUMMARY.md
+ADMIN_META_BUILDERS_SUMMARY.md
+PLATFORM_BUSINESS_LOGIC_AUDIT.md
+GULLYBITE_ANALYTICS_BLUEPRINT.md
+backend/tests/businessLogic.test.js
+backend/tests/orderStateEngine.test.js
+ANALYTICS_IMPLEMENTATION_SPEC.md
+FRONTEND_DASHBOARD_BUILD_SPEC.md

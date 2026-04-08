@@ -13,6 +13,7 @@ const metaConfig = require('../config/meta');
 const financials = require('../services/financials');
 const wa = require('../services/whatsapp');
 const ws = require('../services/websocket');
+const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
 const log = require('../utils/logger').child({ component: 'admin' });
 
 // ─── AUTH MIDDLEWARE (RBAC) ───────────────────────────────────
@@ -188,14 +189,14 @@ router.get('/stats', async (req, res) => {
     ] = await Promise.all([
       col('restaurants').countDocuments({}),
       col('restaurants').countDocuments({ status: 'active' }),
-      col('orders').countDocuments({}),
+      col('orders').countDocuments({ status: { $in: CONFIRMED_ORDER_STATES } }),
       col('orders').countDocuments({ status: 'DELIVERED' }),
-      col('orders').countDocuments({ status: 'PENDING' }),
+      col('orders').countDocuments({ status: { $in: ['PENDING_PAYMENT', 'PAYMENT_FAILED'] } }),
       col('orders').countDocuments({ status: 'CANCELLED' }),
-      col('orders').countDocuments({ created_at: { $gt: yesterday } }),
-      col('orders').find({ status: { $ne: 'CANCELLED' } }).project({ total_rs: 1 }).toArray(),
-      col('orders').find({ status: { $ne: 'CANCELLED' }, created_at: { $gt: yesterday } }).project({ total_rs: 1 }).toArray(),
-      col('orders').find({ status: { $ne: 'CANCELLED' }, created_at: { $gt: lastWeek } }).project({ total_rs: 1 }).toArray(),
+      col('orders').countDocuments({ status: { $in: CONFIRMED_ORDER_STATES }, created_at: { $gt: yesterday } }),
+      col('orders').find({ status: { $in: CONFIRMED_ORDER_STATES } }).project({ total_rs: 1 }).toArray(),
+      col('orders').find({ status: { $in: CONFIRMED_ORDER_STATES }, created_at: { $gt: yesterday } }).project({ total_rs: 1 }).toArray(),
+      col('orders').find({ status: { $in: CONFIRMED_ORDER_STATES }, created_at: { $gt: lastWeek } }).project({ total_rs: 1 }).toArray(),
       col('customers').countDocuments({}),
       col('customers').countDocuments({ created_at: { $gt: yesterday } }),
       col('webhook_logs').countDocuments({}),
@@ -205,11 +206,18 @@ router.get('/stats', async (req, res) => {
 
     const sumRs = (arr) => arr.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
 
+    // Fetch missed-sale count separately (non-blocking)
+    const [expiredCount, paymentFailedCount] = await Promise.all([
+      col('orders').countDocuments({ status: 'EXPIRED' }),
+      col('orders').countDocuments({ status: 'PAYMENT_FAILED' }),
+    ]);
+
     res.json({
       restaurants: { total: totalRestaurants, active: activeRestaurants },
       orders     : { total: totalOrders, delivered: deliveredOrders, pending: pendingOrders, cancelled: cancelledOrders, today: todayOrders },
       revenue    : { total_rs: sumRs(allNonCancelledOrders), today_rs: sumRs(todayOrders2), week_rs: sumRs(weekOrders) },
       customers  : { total: totalCustomers, today: todayCustomers },
+      missed_sales: { expired: expiredCount, payment_failed: paymentFailedCount, total: expiredCount + paymentFailedCount },
       logs       : { total: totalLogs, unprocessed: unprocessedLogs, errors: errorLogs },
     });
   } catch (err) {
@@ -294,7 +302,7 @@ router.get('/branches', async (req, res) => {
       const restaurant = await col('restaurants').findOne({ _id: b.restaurant_id }, { projection: { business_name: 1 } });
       const [menuCount, orderCount] = await Promise.all([
         col('menu_items').countDocuments({ branch_id: bid }),
-        col('orders').countDocuments({ branch_id: bid }),
+        col('orders').countDocuments({ branch_id: bid, status: { $in: CONFIRMED_ORDER_STATES } }),
       ]);
       return { ...mapId(b), business_name: restaurant?.business_name, menu_item_count: menuCount, order_count: orderCount };
     }));
@@ -419,8 +427,9 @@ router.get('/customers', async (req, res) => {
 
     const enriched = await Promise.all(customers.map(async c => {
       const orders = await col('orders').find({ customer_id: String(c._id) }).project({ total_rs: 1, status: 1 }).toArray();
-      const lifetime_rs = orders.filter(o => o.status !== 'CANCELLED').reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
-      return { ...mapId(c), order_count: orders.length, lifetime_rs };
+      const confirmedOrders = orders.filter(o => CONFIRMED_ORDER_STATES.includes(o.status));
+      const lifetime_rs = confirmedOrders.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
+      return { ...mapId(c), order_count: confirmedOrders.length, lifetime_rs };
     }));
 
     res.json(enriched);
@@ -973,7 +982,7 @@ router.delete('/restaurants/:id', async (req, res) => {
     // Gather summary stats for the archive
     const [orderCount, revenue, waAccounts] = await Promise.all([
       col('orders').countDocuments({ restaurant_id: id }),
-      col('orders').find({ restaurant_id: id, status: { $ne: 'CANCELLED' } }).project({ total_rs: 1 }).toArray(),
+      col('orders').find({ restaurant_id: id, status: { $in: CONFIRMED_ORDER_STATES } }).project({ total_rs: 1 }).toArray(),
       col('whatsapp_accounts').find({ restaurant_id: id }).toArray(),
     ]);
     const totalRevenue = revenue.reduce((s, o) => s + (parseFloat(o.total_rs) || 0), 0);
@@ -3455,7 +3464,7 @@ router.get('/analytics/overview', async (req, res) => {
 
     const [orders, restaurants, customers] = await Promise.all([
       col('orders').aggregate([
-        { $match: { created_at: { $gte: since } } },
+        { $match: { created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
         { $group: { _id: null, count: { $sum: 1 }, revenue: { $sum: '$total_rs' }, avgOrder: { $avg: '$total_rs' } } },
       ]).toArray(),
       col('restaurants').countDocuments({ status: 'active' }),
@@ -3474,13 +3483,13 @@ router.get('/analytics/overview', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Orders timeseries
+// Orders timeseries — confirmed orders only
 router.get('/analytics/orders/timeseries', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 7;
     const since = new Date(Date.now() - days * 86400000);
     const result = await col('orders').aggregate([
-      { $match: { created_at: { $gte: since } } },
+      { $match: { created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$created_at' } }, orders: { $sum: 1 }, revenue: { $sum: '$total_rs' } } },
       { $sort: { _id: 1 } },
     ]).toArray();
@@ -3488,7 +3497,7 @@ router.get('/analytics/orders/timeseries', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Orders by status
+// Orders by status — intentionally shows ALL statuses for the breakdown chart
 router.get('/analytics/orders/by-status', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 30;
@@ -3502,13 +3511,13 @@ router.get('/analytics/orders/by-status', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Orders by hour
+// Orders by hour — confirmed orders only
 router.get('/analytics/orders/by-hour', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 7;
     const since = new Date(Date.now() - days * 86400000);
     const result = await col('orders').aggregate([
-      { $match: { created_at: { $gte: since } } },
+      { $match: { created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: { _id: { $hour: '$created_at' }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]).toArray();
@@ -3516,13 +3525,13 @@ router.get('/analytics/orders/by-hour', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Orders by day of week
+// Orders by day — confirmed orders only
 router.get('/analytics/orders/by-day', async (req, res) => {
   try {
     const days = parseInt(req.query.days) || 30;
     const since = new Date(Date.now() - days * 86400000);
     const result = await col('orders').aggregate([
-      { $match: { created_at: { $gte: since } } },
+      { $match: { created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: { _id: { $dayOfWeek: '$created_at' }, count: { $sum: 1 }, revenue: { $sum: '$total_rs' } } },
       { $sort: { _id: 1 } },
     ]).toArray();
@@ -3563,7 +3572,7 @@ router.get('/analytics/customers/overview', async (req, res) => {
     const [newCust, returning] = await Promise.all([
       col('customers').countDocuments({ created_at: { $gte: since } }),
       col('orders').aggregate([
-        { $match: { created_at: { $gte: since } } },
+        { $match: { created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
         { $group: { _id: '$customer_id', orders: { $sum: 1 } } },
         { $match: { orders: { $gte: 2 } } },
         { $count: 'count' },
@@ -3579,7 +3588,7 @@ router.get('/analytics/restaurants/ranking', async (req, res) => {
     const days = parseInt(req.query.days) || 30;
     const since = new Date(Date.now() - days * 86400000);
     const result = await col('orders').aggregate([
-      { $match: { created_at: { $gte: since }, status: { $nin: ['CANCELLED'] } } },
+      { $match: { created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
       { $group: { _id: '$restaurant_id', orders: { $sum: 1 }, revenue: { $sum: '$total_rs' } } },
       { $sort: { revenue: -1 } },
       { $limit: 20 },

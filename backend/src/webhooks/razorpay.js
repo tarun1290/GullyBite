@@ -79,14 +79,83 @@ const processRazorpayWebhook = async (logId, event) => {
   await handleEvent(event);
 };
 
+// ─── REVALIDATE ORDER BEFORE PAYMENT CONFIRMATION ────────────
+// Checks that items, branch, and prices are still valid for delayed payments.
+// Returns { valid: true } or { valid: false, reason: '...' }
+const revalidateOrderForPayment = async (orderId) => {
+  const order = await col('orders').findOne({ _id: orderId });
+  if (!order) return { valid: false, reason: 'Order not found' };
+
+  // 1. Check if order is in a state that can accept payment
+  const payableStates = ['PENDING_PAYMENT', 'PAYMENT_FAILED'];
+  if (!payableStates.includes(order.status)) {
+    if (order.status === 'EXPIRED') return { valid: false, reason: 'Order expired (missed sale)' };
+    if (order.status === 'CANCELLED') return { valid: false, reason: 'Order was cancelled' };
+    // Already PAID or further — idempotent success
+    if (['PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED'].includes(order.status)) {
+      return { valid: true, alreadyPaid: true };
+    }
+    return { valid: false, reason: `Order in unexpected state: ${order.status}` };
+  }
+
+  // 2. Check branch exists and is active
+  const branch = await col('branches').findOne({ _id: order.branch_id });
+  if (!branch) return { valid: false, reason: 'Outlet no longer exists' };
+  if (branch.is_active === false) return { valid: false, reason: 'Outlet is no longer active' };
+
+  // 3. Check order age — if older than 1 hour, reject and expire
+  const ageMs = Date.now() - new Date(order.created_at).getTime();
+  const ORDER_EXPIRY_MS = parseInt(process.env.ORDER_EXPIRY_MINUTES || '60') * 60 * 1000;
+  if (ageMs > ORDER_EXPIRY_MS) {
+    return { valid: false, reason: 'Order too old — checkout expired', shouldExpire: true };
+  }
+
+  // 4. Check each item is still available and price hasn't changed materially
+  const orderItems = await col('order_items').find({ order_id: String(order._id) }).toArray();
+  for (const item of orderItems) {
+    const menuItem = await col('menu_items').findOne({ _id: item.menu_item_id });
+    if (!menuItem) return { valid: false, reason: `Item "${item.item_name}" no longer exists` };
+    if (!menuItem.is_available) return { valid: false, reason: `Item "${item.item_name}" is no longer available` };
+
+    // Price tolerance: allow up to ₹1 variance (rounding) but catch real changes
+    const currentPriceRs = (menuItem.price_paise || 0) / 100;
+    if (Math.abs(currentPriceRs - item.unit_price_rs) > 1) {
+      return { valid: false, reason: `Price changed for "${item.item_name}" (was ₹${item.unit_price_rs}, now ₹${currentPriceRs})` };
+    }
+  }
+
+  return { valid: true };
+};
+
 // ─── SHARED: CONFIRM PAID ORDER ───────────────────────────────
 // Guard against double-fire: Razorpay sends both order.paid and payment.captured
+// Now includes revalidation for delayed payments.
 const confirmPaidOrder = async (orderId) => {
-  const current = await col('orders').findOne({ _id: orderId }, { projection: { payment_status: 1 } });
+  const current = await col('orders').findOne({ _id: orderId }, { projection: { status: 1, payment_status: 1 } });
   if (current?.payment_status === 'paid') {
     log.info({ orderId }, 'Order already confirmed — skipping duplicate event');
     return;
   }
+
+  // Revalidate before confirming — catches stale/expired orders
+  const validation = await revalidateOrderForPayment(orderId);
+  if (!validation.valid) {
+    log.warn({ orderId, reason: validation.reason }, 'Payment revalidation failed');
+    if (validation.shouldExpire) {
+      // Transition to EXPIRED (missed sale) instead of confirming
+      try { await orderSvc.updateStatus(orderId, 'EXPIRED', { cancelReason: validation.reason }); } catch (_) {}
+    }
+    logActivity({
+      actorType: 'system', actorId: null, actorName: 'Razorpay',
+      action: 'payment.revalidation_failed', category: 'payment',
+      description: `Payment arrived but revalidation failed: ${validation.reason}`,
+      resourceType: 'order', resourceId: orderId, severity: 'warning',
+      metadata: { reason: validation.reason },
+    });
+    // Payment succeeded at Razorpay but order can't be fulfilled — will need manual refund
+    return;
+  }
+  if (validation.alreadyPaid) return; // Idempotent — already processed
 
   await orderSvc.updateStatus(orderId, 'PAID');
 
@@ -228,6 +297,17 @@ const handleEvent = async (event) => {
       const orderId = await paymentSvc.handlePaymentFailed(event);
       if (!orderId) break;
 
+      // Transition order to PAYMENT_FAILED (retryable state)
+      try {
+        await orderSvc.updateStatus(orderId, 'PAYMENT_FAILED', {
+          cancelReason: 'Payment failed via Razorpay',
+          metadata: { razorpay_event: event.event, entity_id: entityId },
+        });
+      } catch (stateErr) {
+        // May fail if already in EXPIRED or CANCELLED — non-fatal
+        log.warn({ err: stateErr, orderId }, 'Could not transition to PAYMENT_FAILED');
+      }
+
       const order = await orderSvc.getOrderDetails(orderId);
       if (!order) break;
 
@@ -277,7 +357,12 @@ const handleEvent = async (event) => {
       const orderId = await paymentSvc.handleLinkExpired(event);
       if (!orderId) break;
 
-      await orderSvc.updateStatus(orderId, 'CANCELLED', { cancelReason: 'Payment link expired' });
+      // Transition to EXPIRED (missed sale) — NOT CANCELLED
+      try {
+        await orderSvc.updateStatus(orderId, 'EXPIRED', { cancelReason: 'Payment link expired' });
+      } catch (stateErr) {
+        log.warn({ err: stateErr, orderId }, 'Could not transition to EXPIRED on link expiry');
+      }
 
       const order = await orderSvc.getOrderDetails(orderId);
       if (!order) break;
@@ -286,6 +371,36 @@ const handleEvent = async (event) => {
         order.phone_number_id, order.access_token, resolveRecipient(order),
         `⏱️ Payment for order #${order.order_number} expired.\n\nType *MENU* to start a new order anytime!`
       );
+      break;
+    }
+
+    case 'order.expired': {
+      // Razorpay order expired (default 30min) — mark as missed sale
+      const rpOrderId = event.payload?.order?.entity?.id;
+      if (!rpOrderId) break;
+
+      const payment = await col('payments').findOne({ rp_order_id: rpOrderId });
+      if (!payment?.order_id) break;
+
+      await paymentSvc.updatePaymentWithAudit(
+        { _id: payment._id, status: { $nin: ['paid', 'refunded'] } },
+        { status: 'expired' },
+        'razorpay:order.expired'
+      );
+
+      try {
+        await orderSvc.updateStatus(payment.order_id, 'EXPIRED', { cancelReason: 'Razorpay order expired' });
+      } catch (stateErr) {
+        log.warn({ err: stateErr, orderId: payment.order_id }, 'Could not transition to EXPIRED on order expiry');
+      }
+
+      log.info({ orderId: payment.order_id, rpOrderId }, 'Order expired — missed sale');
+      logActivity({
+        actorType: 'system', actorId: null, actorName: 'Razorpay',
+        action: 'order.expired', category: 'payment',
+        description: `Order expired (missed sale) — Razorpay order ${rpOrderId}`,
+        resourceType: 'order', resourceId: payment.order_id, severity: 'warning',
+      });
       break;
     }
 

@@ -27,12 +27,15 @@ var COMP_DEFAULTS = {
   OptIn:             function(){ return { type:'OptIn', label:'I agree', name:'optin_1', required:false }; },
   Footer:            function(){ return { type:'Footer', label:'Submit', 'on-click-action':{name:'complete',payload:{}} }; },
   NavigationList:    function(){ return { type:'NavigationList', label:'Items', name:'nav_1', 'list-items':'${data.items}', 'on-click-action':{name:'navigate',next:{type:'screen',name:''},payload:{}} }; },
+  // Logic gate: conditional routing based on form field values
+  If:                function(){ return { type:'If', name:'condition_1', _gb_logic:true, condition:{field:'',operator:'equals',value:''}, then_action:{name:'navigate',next:{type:'screen',name:''},payload:{}}, else_action:{name:'navigate',next:{type:'screen',name:''},payload:{}} }; },
 };
 
 var PALETTE = [
   { cat:'Text',       items:['TextHeading','TextSubheading','TextBody','TextCaption'] },
   { cat:'Input',      items:['TextInput','Dropdown','RadioButtonsGroup','CheckboxGroup','OptIn'] },
   { cat:'Navigation', items:['Footer','NavigationList'] },
+  { cat:'Logic',      items:['If'] },
 ];
 
 /* ─── HELPERS ────────────────────────────────────────────────────── */
@@ -132,10 +135,37 @@ function renderScreenProps(){
   h += '<input value="' + esc(s.title||'') + '" onchange="feUpdateScreenProp(\'title\',this.value)" style="width:150px;background:var(--ink4);border:1px solid var(--rim);border-radius:5px;padding:.2rem .5rem;font-size:.78rem">';
   h += '<label style="font-size:.72rem;color:var(--dim);font-weight:600;margin-left:.5rem">Terminal</label>';
   h += '<input type="checkbox" ' + (s.terminal?'checked':'') + ' onchange="feUpdateScreenProp(\'terminal\',this.checked)">';
+  h += '<label style="font-size:.72rem;color:var(--dim);font-weight:600;margin-left:.5rem">Success</label>';
+  h += '<input type="checkbox" ' + (s.success?'checked':'') + ' onchange="feUpdateScreenProp(\'success\',this.checked)">';
   if (_feJson.screens.length > 1) {
     h += '<button class="btn-sm outline danger" style="margin-left:auto;font-size:.7rem;padding:.15rem .5rem" onclick="feRemoveScreen(' + _feScreenIdx + ')">Remove Screen</button>';
   }
   h += '</div>';
+
+  // Screen data schema editor (input variables this screen expects)
+  var data = s.data || {};
+  var dataKeys = Object.keys(data);
+  h += '<div style="margin-top:.5rem;padding:.4rem;background:var(--ink4);border:1px solid var(--rim);border-radius:5px">';
+  h += '<div style="display:flex;align-items:center;margin-bottom:.25rem"><span style="font-size:.7rem;font-weight:600;color:var(--dim)">Screen Data (input variables)</span>';
+  h += '<button class="btn-sm" style="margin-left:auto;padding:.06rem .35rem;font-size:.62rem" onclick="feAddScreenDataField()">+ Add</button></div>';
+  if (dataKeys.length === 0) {
+    h += '<div style="font-size:.68rem;color:var(--mute);font-style:italic">No data fields. Add one if this screen needs input from a previous screen.</div>';
+  }
+  dataKeys.forEach(function(k){
+    var v = data[k];
+    var typeVal = typeof v === 'object' ? (v.type || 'string') : 'string';
+    h += '<div style="display:flex;gap:.25rem;align-items:center;margin-bottom:.15rem">';
+    h += '<input value="' + esc(k) + '" placeholder="key" style="width:80px;background:#fff;border:1px solid var(--rim);border-radius:4px;padding:.12rem .25rem;font-size:.7rem;font-family:monospace" onchange="feRenameScreenDataField(\'' + esc(k) + '\',this.value)">';
+    h += '<select onchange="feUpdateScreenDataType(\'' + esc(k) + '\',this.value)" style="background:#fff;border:1px solid var(--rim);border-radius:4px;padding:.12rem .25rem;font-size:.7rem">';
+    ['string','number','boolean','array','object'].forEach(function(t){
+      h += '<option value="' + t + '"' + (typeVal===t?' selected':'') + '>' + t + '</option>';
+    });
+    h += '</select>';
+    h += '<button style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.75rem;padding:0 .15rem" onclick="feRemoveScreenDataField(\'' + esc(k) + '\')">&times;</button>';
+    h += '</div>';
+  });
+  h += '</div>';
+
   $('fe-screen-props').innerHTML = h;
 }
 
@@ -209,6 +239,11 @@ function renderComponentProps(c, idx){
     h += renderActionEditor(c, idx);
   }
 
+  // Conditional / logic gate editor
+  if (c._gb_logic) {
+    h += renderConditionEditor(c, idx);
+  }
+
   h += '</div>';
   return h;
 }
@@ -274,12 +309,99 @@ function renderActionEditor(c, idx){
   return h;
 }
 
+/* ─── CONDITIONAL / LOGIC GATE EDITOR ───────────────────────────── */
+function renderConditionEditor(c, idx){
+  var cond = c.condition || {};
+  var screens = _feJson.screens || [];
+  var thenAct = c.then_action || {};
+  var elseAct = c.else_action || {};
+
+  // Collect all form field names from current screen's input components
+  var formFields = [];
+  (curLayout() || []).forEach(function(comp, ci){
+    if (ci === idx) return; // skip self
+    if (comp.name && (comp.type === 'TextInput' || comp.type === 'Dropdown' || comp.type === 'RadioButtonsGroup' || comp.type === 'CheckboxGroup')) {
+      formFields.push(comp.name);
+    }
+  });
+
+  var h = '<div style="margin-top:.35rem;padding:.5rem;background:linear-gradient(135deg,#fef3c710,#dbeafe15);border:1px solid #fde68a;border-radius:6px">';
+  h += '<div style="font-size:.72rem;font-weight:700;color:#92400e;margin-bottom:.35rem">CONDITION</div>';
+
+  // Field selector
+  h += '<div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem">';
+  h += '<label style="font-size:.68rem;color:var(--dim);min-width:35px">IF</label>';
+  h += '<select onchange="feUpdateCondition(' + idx + ',\'field\',this.value)" style="background:#fff;border:1px solid var(--rim);border-radius:4px;padding:.15rem .3rem;font-size:.72rem">';
+  h += '<option value="">-- field --</option>';
+  formFields.forEach(function(f){
+    h += '<option value="' + esc(f) + '"' + (cond.field===f?' selected':'') + '>${form.' + esc(f) + '}</option>';
+  });
+  h += '</select>';
+
+  // Operator
+  h += '<select onchange="feUpdateCondition(' + idx + ',\'operator\',this.value)" style="background:#fff;border:1px solid var(--rim);border-radius:4px;padding:.15rem .3rem;font-size:.72rem">';
+  ['equals','not_equals','contains','is_empty','is_not_empty'].forEach(function(op){
+    h += '<option value="' + op + '"' + (cond.operator===op?' selected':'') + '>' + op.replace(/_/g,' ') + '</option>';
+  });
+  h += '</select>';
+
+  // Value (hidden for is_empty/is_not_empty)
+  if (cond.operator !== 'is_empty' && cond.operator !== 'is_not_empty') {
+    h += '<input value="' + esc(cond.value||'') + '" placeholder="value" onchange="feUpdateCondition(' + idx + ',\'value\',this.value)" style="width:80px;background:#fff;border:1px solid var(--rim);border-radius:4px;padding:.15rem .3rem;font-size:.72rem">';
+  }
+  h += '</div>';
+
+  // THEN: navigate to
+  h += '<div style="display:flex;gap:.3rem;align-items:center;margin-bottom:.25rem">';
+  h += '<label style="font-size:.68rem;color:#16a34a;font-weight:600;min-width:35px">THEN</label>';
+  h += '<select onchange="feUpdateBranchAction(' + idx + ',\'then_action\',this.value)" style="background:#fff;border:1px solid var(--rim);border-radius:4px;padding:.15rem .3rem;font-size:.72rem">';
+  h += '<option value="">-- go to screen --</option>';
+  screens.forEach(function(s){
+    h += '<option value="' + esc(s.id) + '"' + ((thenAct.next && thenAct.next.name===s.id)?' selected':'') + '>' + esc(s.id) + '</option>';
+  });
+  h += '</select></div>';
+
+  // ELSE: navigate to
+  h += '<div style="display:flex;gap:.3rem;align-items:center">';
+  h += '<label style="font-size:.68rem;color:#dc2626;font-weight:600;min-width:35px">ELSE</label>';
+  h += '<select onchange="feUpdateBranchAction(' + idx + ',\'else_action\',this.value)" style="background:#fff;border:1px solid var(--rim);border-radius:4px;padding:.15rem .3rem;font-size:.72rem">';
+  h += '<option value="">-- go to screen --</option>';
+  screens.forEach(function(s){
+    h += '<option value="' + esc(s.id) + '"' + ((elseAct.next && elseAct.next.name===s.id)?' selected':'') + '>' + esc(s.id) + '</option>';
+  });
+  h += '</select></div>';
+
+  h += '</div>';
+  return h;
+}
+
+window.feUpdateCondition = function(compIdx, prop, value){
+  var children = curLayout();
+  if (!children || !children[compIdx]) return;
+  if (!children[compIdx].condition) children[compIdx].condition = {};
+  children[compIdx].condition[prop] = value;
+  renderComponents();
+  renderNavMap();
+};
+
+window.feUpdateBranchAction = function(compIdx, actionKey, screenId){
+  var children = curLayout();
+  if (!children || !children[compIdx]) return;
+  children[compIdx][actionKey] = {
+    name: 'navigate',
+    next: { type: 'screen', name: screenId },
+    payload: children[compIdx][actionKey]?.payload || {},
+  };
+  renderComponents();
+  renderNavMap();
+};
+
 /* ─── NAVIGATION MAP ─────────────────────────────────────────────── */
 function renderNavMap(){
   var screens = _feJson.screens || [];
   if (screens.length === 0) { $('fe-nav-map').innerHTML = ''; return; }
 
-  // Build adjacency from on-click-actions
+  // Build adjacency from on-click-actions and conditional logic
   var edges = {};
   screens.forEach(function(s){
     edges[s.id] = [];
@@ -287,6 +409,11 @@ function renderNavMap(){
       var act = c['on-click-action'];
       if (act && act.name === 'navigate' && act.next && act.next.name) {
         edges[s.id].push(act.next.name);
+      }
+      // Conditional branches
+      if (c._gb_logic) {
+        if (c.then_action?.next?.name) edges[s.id].push('IF\u2192' + c.then_action.next.name);
+        if (c.else_action?.next?.name) edges[s.id].push('ELSE\u2192' + c.else_action.next.name);
       }
     });
   });
@@ -369,6 +496,14 @@ function previewComponent(c){
       h += '<div style="padding:.25rem .5rem;font-size:.68rem;color:#888">Dynamic list items</div>';
       h += '</div>';
       break;
+    case 'If':
+      var cond = c.condition || {};
+      h = '<div style="margin:.35rem 0;border:1px dashed #fde68a;border-radius:6px;padding:.4rem;background:#fefce8">';
+      h += '<div style="font-size:.68rem;font-weight:700;color:#92400e;margin-bottom:.2rem">IF ' + esc(cond.field ? '${form.' + cond.field + '}' : '?') + ' ' + esc((cond.operator||'').replace(/_/g,' ')) + ' ' + esc(cond.value||'') + '</div>';
+      h += '<div style="font-size:.65rem;color:#16a34a">THEN \u2192 ' + esc(c.then_action?.next?.name || '?') + '</div>';
+      h += '<div style="font-size:.65rem;color:#dc2626">ELSE \u2192 ' + esc(c.else_action?.next?.name || '?') + '</div>';
+      h += '</div>';
+      break;
     default:
       h = '<div style="margin:.2rem 0;font-size:.72rem;color:#999;font-style:italic">[' + esc(c.type) + ']</div>';
   }
@@ -401,6 +536,43 @@ window.feRemoveScreen = function(idx){
   _feJson.screens.splice(idx, 1);
   if (_feScreenIdx >= _feJson.screens.length) _feScreenIdx = Math.max(0, _feJson.screens.length - 1);
   feRenderAll();
+};
+
+/* ─── SCREEN DATA FIELD ACTIONS ──────────────────────────────────── */
+window.feAddScreenDataField = function(){
+  var s = curScreen();
+  if (!s) return;
+  if (!s.data) s.data = {};
+  var num = Object.keys(s.data).length + 1;
+  var key = 'field_' + num;
+  while (s.data[key]) { num++; key = 'field_' + num; }
+  s.data[key] = { type: 'string', '__example__': '' };
+  renderScreenProps();
+};
+
+window.feRenameScreenDataField = function(oldKey, newKey){
+  var s = curScreen();
+  if (!s || !s.data || !newKey) return;
+  if (oldKey === newKey) return;
+  s.data[newKey] = s.data[oldKey];
+  delete s.data[oldKey];
+  renderScreenProps();
+};
+
+window.feUpdateScreenDataType = function(key, type){
+  var s = curScreen();
+  if (!s || !s.data || !s.data[key]) return;
+  if (typeof s.data[key] === 'object') { s.data[key].type = type; }
+  else { s.data[key] = { type: type, '__example__': '' }; }
+  renderScreenProps();
+};
+
+window.feRemoveScreenDataField = function(key){
+  var s = curScreen();
+  if (!s || !s.data) return;
+  delete s.data[key];
+  if (Object.keys(s.data).length === 0) delete s.data;
+  renderScreenProps();
 };
 
 /* ─── COMPONENT ACTIONS ──────────────────────────────────────────── */
