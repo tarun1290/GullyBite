@@ -9,6 +9,7 @@
 
 const axios = require('axios');
 const { POS_INTEGRATIONS_ENABLED } = require('../../config/features');
+const log = require('../../utils/logger').child({ component: 'PetPooja' });
 
 const BASE = 'https://api.petpooja.com/V1/restaurant';
 const TIMEOUT = 10000;
@@ -27,7 +28,7 @@ function slugify(str) {
 
 async function fetchMenu(integration) {
   if (!POS_INTEGRATIONS_ENABLED) {
-    console.log('[POS] PetPooja fetchMenu skipped — POS integrations disabled');
+    log.info('fetchMenu skipped — POS integrations disabled');
     return { categories: [], items: [] };
   }
   const { api_key, access_token, outlet_id } = integration;
@@ -138,7 +139,7 @@ async function fetchMenu(integration) {
     }
   }
 
-  console.log(`[POS-Sync] PetPooja: ${rawItems.length} POS items → ${items.length} menu rows (${variantCount} variant rows) for outlet ${outlet_id}`);
+  log.info({ posItems: rawItems.length, menuRows: items.length, variantRows: variantCount, outletId: outlet_id }, 'Menu fetched');
 
   return { categories, items };
 }
@@ -156,7 +157,7 @@ function parseWebhookEvent(payload) {
     }
     return { type: 'unknown', outletId };
   } catch (e) {
-    console.warn('[PetPooja] parseWebhookEvent failed:', e.message);
+    log.warn({ err: e }, 'parseWebhookEvent failed');
     return { type: 'unknown' };
   }
 }
@@ -169,7 +170,7 @@ function parseStockUpdate(payload) {
     }));
     return { items, outletId: payload.restaurantid || payload.restaurant_id || null };
   } catch (e) {
-    console.warn('[PetPooja] parseStockUpdate failed:', e.message);
+    log.warn({ err: e }, 'parseStockUpdate failed');
     return { items: [], outletId: null };
   }
 }

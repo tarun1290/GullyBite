@@ -7,6 +7,7 @@
 
 const axios = require('axios');
 const { IMAGE_PIPELINE_ENABLED } = require('../config/features');
+const log = require('../utils/logger').child({ component: 'Image' });
 
 const DISABLED_RESULT = { url: null, thumbnail_url: null, s3_key: null, thumbnail_s3_key: null, skipped: true, reason: 'Image pipeline not configured — set AWS env vars to enable' };
 
@@ -166,7 +167,7 @@ async function uploadImage(buffer, opts = {}) {
     putS3(thumbKey, thumb.buffer),
   ]);
 
-  console.log(`[Image] Uploaded ${mainKey} (${optimized.width}x${optimized.height}, ${(optimized.sizeBytes / 1024).toFixed(0)} KB)`);
+  log.info({ s3Key: mainKey, width: optimized.width, height: optimized.height, sizeKB: Math.round(optimized.sizeBytes / 1024) }, 'Uploaded image');
 
   return {
     url,
@@ -206,9 +207,9 @@ async function deleteImage(s3Key) {
   if (!IMAGE_PIPELINE_ENABLED || !s3Key) return;
   try {
     await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: s3Key }));
-    console.log(`[Image] Deleted ${s3Key}`);
+    log.info({ s3Key }, 'Deleted image');
   } catch (err) {
-    console.error(`[Image] Delete failed for ${s3Key}:`, err.message);
+    log.error({ err, s3Key }, 'Delete failed');
   }
 }
 
@@ -232,7 +233,7 @@ async function uploadLogo(buffer, restaurantId) {
   const s3Key = `${restaurantId}/logo-${ts}.jpg`;
   const url = await putS3(s3Key, optimized.data);
 
-  console.log(`[Image] Logo uploaded ${s3Key}`);
+  log.info({ s3Key }, 'Logo uploaded');
   return { url, s3_key: s3Key, width: optimized.info.width, height: optimized.info.height };
 }
 
@@ -246,7 +247,7 @@ async function uploadBranchPhoto(buffer, restaurantId, branchId) {
   const s3Key = `${restaurantId}/${branchId}/branch-photo-${ts}.jpg`;
   const url = await putS3(s3Key, optimized.buffer);
 
-  console.log(`[Image] Branch photo uploaded ${s3Key}`);
+  log.info({ s3Key }, 'Branch photo uploaded');
   return { url, s3_key: s3Key, width: optimized.width, height: optimized.height };
 }
 
@@ -333,7 +334,7 @@ async function listS3Keys(prefix) {
 // Re-hosts POS images to S3 in batches of 5. Non-blocking, fire-and-forget.
 async function rehostPosImages(items, branchId, restaurantId) {
   if (!IMAGE_PIPELINE_ENABLED) {
-    console.log('[Image] POS image re-hosting skipped — image pipeline disabled. Using POS URLs as-is.');
+    log.info('POS image re-hosting skipped — image pipeline disabled');
     return;
   }
   const toRehost = items.filter(i =>
@@ -343,7 +344,7 @@ async function rehostPosImages(items, branchId, restaurantId) {
   );
   if (!toRehost.length) return;
 
-  console.log(`[Image] Re-hosting ${toRehost.length} POS images for branch ${branchId}`);
+  log.info({ branchId, count: toRehost.length }, 'Re-hosting POS images');
   const { col } = require('../config/database');
   const BATCH = 5;
 
@@ -370,7 +371,7 @@ async function rehostPosImages(items, branchId, restaurantId) {
             }}
           );
         } catch (err) {
-          console.warn(`[Image] Re-host failed for item ${item._id}: ${err.message}`);
+          log.warn({ err, itemId: item._id }, 'Re-host failed for item');
           await col('menu_items').updateOne(
             { _id: item._id },
             { $set: { image_rehost_failed: true } }
@@ -379,10 +380,10 @@ async function rehostPosImages(items, branchId, restaurantId) {
       })
     );
     const succeeded = results.filter(r => r.status === 'fulfilled').length;
-    if (succeeded > 0) console.log(`[Image] Re-hosted batch ${Math.floor(i / BATCH) + 1}: ${succeeded}/${batch.length}`);
+    if (succeeded > 0) log.info({ batch: Math.floor(i / BATCH) + 1, succeeded, total: batch.length }, 'Re-hosted batch');
   }
 
-  console.log(`[Image] POS image re-hosting complete for branch ${branchId}`);
+  log.info({ branchId }, 'POS image re-hosting complete');
 }
 
 // ─── PRESIGNED URL FOR DIRECT BROWSER UPLOAD ──────────────────

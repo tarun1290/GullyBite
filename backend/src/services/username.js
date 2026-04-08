@@ -10,6 +10,7 @@
 const axios = require('axios');
 const { col, newId } = require('../config/database');
 const metaConfig = require('../config/meta');
+const log = require('../utils/logger').child({ component: 'Username' });
 
 const GRAPH = () => metaConfig.graphUrl;
 const TOKEN = () => metaConfig.systemUserToken;
@@ -239,7 +240,7 @@ async function syncUsernameFromMeta(waAccountId) {
   } catch (err) {
     const code = err.response?.status;
     const msg = err.response?.data?.error?.message || err.message;
-    console.warn(`[WhatsApp2026] Username sync for WABA ${waAccount.waba_id}: ${code} — ${msg}`);
+    log.warn({ wabaId: waAccount.waba_id, statusCode: code, errorMsg: msg }, 'Username sync failed');
     // If the field doesn't exist yet, that's expected
     if (code === 400 || code === 404) {
       return { synced: false, reason: 'Meta username API not available yet', manual_entry_required: true };
@@ -284,7 +285,7 @@ async function syncAllUsernames() {
       else results.not_available++;
     } catch (err) {
       results.failed++;
-      console.error(`[WhatsApp2026] Sync failed for ${acc._id}:`, err.message);
+      log.error({ err, accountId: acc._id }, 'Username sync failed for account');
     }
   }
 
@@ -390,7 +391,7 @@ async function ensureIndexes() {
       { unique: true, sparse: true, name: 'idx_business_username' }
     );
   } catch (err) {
-    console.warn('[WhatsApp2026] Username index may already exist:', err.message);
+    log.warn({ err }, 'Username index may already exist');
   }
 }
 

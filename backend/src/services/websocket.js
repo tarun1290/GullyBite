@@ -6,6 +6,7 @@
 'use strict';
 
 const wsManager = require('./wsManager');
+const log = require('../utils/logger').child({ component: 'WSBroadcast' });
 
 const BROADCAST_URL = process.env.BROADCAST_LAMBDA_URL || '';
 const BROADCAST_KEY = process.env.BROADCAST_API_KEY || '';
@@ -38,7 +39,7 @@ async function _remoteBroadcast(body) {
     });
     clearTimeout(timeout);
   } catch (err) {
-    if (err.name !== 'AbortError') console.warn('[WS] Remote broadcast failed:', err.message);
+    if (err.name !== 'AbortError') log.warn({ err }, 'Remote broadcast failed');
   }
 }
 

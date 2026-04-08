@@ -7,6 +7,7 @@ const express = require('express');
 const crypto  = require('crypto');
 const router  = express.Router();
 const { col } = require('../config/database');
+const log = require('../utils/logger').child({ component: 'catalog' });
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
 // Meta calls this once when you configure the webhook URL.
@@ -16,7 +17,7 @@ router.get('/', (req, res) => {
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
-    console.log('[Catalog Webhook] Verified');
+    req.log.info('Webhook verified');
     return res.status(200).send(challenge);
   }
   res.sendStatus(403);
@@ -36,28 +37,35 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       .digest('hex');
 
     if (!sig || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
-      console.warn('[Catalog Webhook] Invalid signature — ignoring');
+      req.log.warn('Invalid signature — ignoring');
       return;
     }
 
     const body = JSON.parse(req.body.toString());
+
+    const { once } = require('../utils/idempotency');
 
     for (const entry of body.entry || []) {
       for (const change of entry.changes || []) {
         const field = change.field;
         const value = change.value;
 
+        // Deduplicate by catalog + field + event_type/feed_id
+        const dedupKey = `${entry.id}:${field}:${value.event_type || ''}:${value.feed_id || ''}:${value.status || ''}`;
+        const isNew = await once('catalog', dedupKey);
+        if (!isNew) continue;
+
         if (field === 'items_batch') {
           await handleItemsBatch(entry.id, value);
         } else if (field === 'product_feed') {
           await handleProductFeed(entry.id, value);
         } else {
-          console.log(`[Catalog Webhook] Unhandled field: ${field}`);
+          log.info({ field }, 'Unhandled field');
         }
       }
     }
   } catch (err) {
-    console.error('[Catalog Webhook] Error:', err.message);
+    log.error({ err }, 'Webhook error');
   }
 });
 
@@ -66,7 +74,7 @@ const handleItemsBatch = async (catalogId, value) => {
   const { event_type, errors = [] } = value;
 
   if (errors.length > 0) {
-    console.warn(`[Catalog] Batch errors for catalog ${catalogId}:`, JSON.stringify(errors));
+    log.warn({ catalogId, errors }, 'Batch errors');
     await col('branches').updateOne(
       { catalog_id: catalogId },
       { $set: {
@@ -75,7 +83,7 @@ const handleItemsBatch = async (catalogId, value) => {
       }}
     ).catch(() => {});
   } else {
-    console.log(`[Catalog] Batch ${event_type} completed for catalog ${catalogId}`);
+    log.info({ catalogId, eventType: event_type }, 'Batch completed');
     await col('branches').updateOne(
       { catalog_id: catalogId },
       { $set: { catalog_synced_at: new Date(), catalog_sync_error: null } }
@@ -87,10 +95,10 @@ const handleItemsBatch = async (catalogId, value) => {
 const handleProductFeed = async (catalogId, value) => {
   const { feed_id, event_type, status, errors = [] } = value;
 
-  console.log(`[Catalog] Feed ${feed_id} event="${event_type}" status="${status}" catalog=${catalogId}`);
+  log.info({ feedId: feed_id, eventType: event_type, status, catalogId }, 'Feed event');
 
   if (errors.length > 0) {
-    console.warn(`[Catalog] Feed errors:`, JSON.stringify(errors));
+    log.warn({ errors }, 'Feed errors');
   }
 
   if (status === 'complete' || status === 'completed') {

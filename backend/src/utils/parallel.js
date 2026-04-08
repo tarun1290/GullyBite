@@ -3,6 +3,8 @@
 
 'use strict';
 
+const log = require('./logger').child({ component: 'parallel' });
+
 /**
  * Run async tasks concurrently, return all results. Throws if any fail.
  */
@@ -44,7 +46,7 @@ async function parallelBatch(items, processFn, concurrency = 10) {
  */
 function fireAndForget(fn, label = 'unknown') {
   Promise.resolve().then(fn).catch(err => {
-    console.error(`[F&F:${label}]`, err.message || err);
+    log.error({ err, label }, 'Fire-and-forget task failed');
   });
 }
 

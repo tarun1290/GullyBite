@@ -9,10 +9,11 @@ const router = express.Router();
 const { col, newId } = require('../config/database');
 const catalog = require('../services/catalog');
 const { logActivity } = require('../services/activityLog');
+const log = require('../utils/logger').child({ component: 'cron' });
 
 // Auth: verify cron secret (accepts Bearer token or Vercel's internal header)
 router.use((req, res, next) => {
-  console.log(`[Cron] Request received: ${req.method} ${req.originalUrl} ${req.path}`);
+  log.info({ method: req.method, url: req.originalUrl, path: req.path }, 'Request received');
   const auth = req.headers['authorization'];
   const secret = process.env.CRON_SECRET;
   if (secret && auth !== `Bearer ${secret}`) {
@@ -39,7 +40,7 @@ router.get('/catalog-sync', async (req, res) => {
       ],
     }).toArray();
 
-    console.log(`[Cron] Auto-sync: ${restaurants.length} restaurants with catalogs`);
+    log.info({ count: restaurants.length }, 'Auto-sync: restaurants with catalogs');
 
     let synced = 0, failed = 0;
     const BATCH = 3;
@@ -52,7 +53,7 @@ router.get('/catalog-sync', async (req, res) => {
             await col('restaurants').updateOne({ _id: r._id }, { $set: { last_auto_sync_at: new Date() } });
             return { id: r._id, ok: true };
           } catch (err) {
-            console.error(`[Cron] Sync failed for ${r.business_name}:`, err.message);
+            log.error({ err, restaurantName: r.business_name }, 'Sync failed for restaurant');
             return { id: r._id, ok: false, error: err.message };
           }
         })
@@ -64,11 +65,11 @@ router.get('/catalog-sync', async (req, res) => {
     }
 
     const duration = Date.now() - start;
-    console.log(`[Cron] Auto-sync complete: ${synced} synced, ${failed} failed (${duration}ms)`);
+    log.info({ synced, failed, durationMs: duration }, 'Auto-sync complete');
 
     logActivity({ actorType: 'system', action: 'cron.catalog_sync', category: 'catalog', description: `Auto-sync: ${synced} restaurants synced, ${failed} failed (${duration}ms)`, severity: failed > 0 ? 'warning' : 'info' });
   } catch (e) {
-    console.error('[Cron] Auto-sync error:', e.message);
+    log.error({ err: e }, 'Auto-sync error');
   }
 });
 
@@ -78,6 +79,12 @@ router.get('/trust-refresh', async (req, res) => {
   res.json({ ok: true, message: 'trust-refresh started', timestamp: new Date().toISOString() });
 
   try {
+    const { SMART_MODULES } = require('../config/features');
+    if (!SMART_MODULES.ITEM_TRUST) {
+      log.info('Item Trust disabled by feature flag — skipping');
+      logActivity({ actorType: 'system', action: 'cron.trust_refresh', category: 'trust', description: 'Skipped — ITEM_TRUST disabled', severity: 'info' });
+      return;
+    }
     const itemTrust = require('../services/itemTrust');
     const restaurants = await col('restaurants').find({ status: 'active' }).toArray();
     let processed = 0, failed = 0;
@@ -86,14 +93,14 @@ router.get('/trust-refresh', async (req, res) => {
         await itemTrust.refreshTrustMetrics(String(r._id));
         processed++;
       } catch (e) {
-        console.error(`[Cron] Trust refresh failed for ${r.business_name}:`, e.message);
+        log.error({ err: e, restaurantName: r.business_name }, 'Trust refresh failed for restaurant');
         failed++;
       }
     }
-    console.log(`[Cron] Trust refresh complete: ${processed} restaurants processed, ${failed} failed`);
+    log.info({ processed, failed }, 'Trust refresh complete');
     logActivity({ actorType: 'system', action: 'cron.trust_refresh', category: 'trust', description: `Trust refresh: ${processed} restaurants, ${failed} failed`, severity: failed > 0 ? 'warning' : 'info' });
   } catch (e) {
-    console.error('[Cron] Trust refresh error:', e.message);
+    log.error({ err: e }, 'Trust refresh error');
   }
 });
 
@@ -102,13 +109,18 @@ router.get('/trust-refresh', async (req, res) => {
 router.get('/cart-recovery', async (req, res) => {
   res.json({ ok: true, message: 'cart-recovery started', timestamp: new Date().toISOString() });
 
+  const { SMART_MODULES } = require('../config/features');
+  if (!SMART_MODULES.CART_RECOVERY) {
+    log.info('Cart Recovery disabled by feature flag — skipping');
+    return;
+  }
   try {
     const cartRecovery = require('../services/cart-recovery');
     const result = await cartRecovery.processRecoveryQueue();
-    console.log(`[Cron] Cart recovery: sent=${result.sent} expired=${result.expired}`);
+    log.info({ sent: result.sent, expired: result.expired }, 'Cart recovery complete');
     logActivity({ actorType: 'system', action: 'cron.cart_recovery', category: 'marketing', description: `Cart recovery: ${result.sent} reminders sent, ${result.expired} expired`, severity: 'info' });
   } catch (e) {
-    console.error('[Cron] Cart recovery error:', e.message);
+    log.error({ err: e }, 'Cart recovery error');
   }
 });
 
@@ -171,7 +183,7 @@ router.get('/health-check', async (req, res) => {
         }
       }
     } catch (e) {
-      console.warn('[HealthCheck] Token check failed:', e.message);
+      log.warn({ err: e }, 'Token check failed');
     }
 
     // Store alerts
@@ -181,7 +193,7 @@ router.get('/health-check', async (req, res) => {
         const recent = await col('platform_alerts').findOne({ type: alert.type, created_at: { $gte: new Date(now - 2 * 3600000) }, acknowledged: false });
         if (!recent) {
           await col('platform_alerts').insertOne(alert);
-          console.log(`[HealthCheck] Alert created: ${alert.severity} — ${alert.message}`);
+          log.info({ severity: alert.severity, alertMessage: alert.message }, 'Alert created');
         }
       }
     }
@@ -193,7 +205,7 @@ router.get('/health-check', async (req, res) => {
 
     logActivity({ actorType: 'system', action: 'cron.health_check', category: 'platform', description: `Health check: ${alerts.length} alerts`, severity: alerts.length ? 'warning' : 'info' });
   } catch (e) {
-    console.error('[HealthCheck] Error:', e.message);
+    log.error({ err: e }, 'Health check error');
   }
 });
 

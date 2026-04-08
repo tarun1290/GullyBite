@@ -2376,13 +2376,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('wh-url');
   if (el) el.textContent = location.origin + '/webhooks/whatsapp';
 
-  // Handle OAuth redirect from Meta (server-side redirect flow)
+  // Handle OAuth redirect from Meta (secure server-side token flow)
   const params = new URLSearchParams(location.search);
-  const metaAccessToken = params.get('meta_access_token');
-  if (metaAccessToken) {
+  const metaConnectId = params.get('meta_connect_id');
+  if (metaConnectId) {
     history.replaceState({}, '', '/dashboard.html');
-    // Store the token — it will be picked up after initDash() completes
-    window._pendingMetaAccessToken = metaAccessToken;
+    // Token is stored server-side — will be resolved after auth via /auth/resolve-meta-connect
+    window._pendingMetaConnectId = metaConnectId;
+  }
+  // Legacy meta_access_token URL flow REMOVED — only meta_connect_id is supported.
+  // If a stale redirect arrives with the old param, strip it and warn the user.
+  if (params.get('meta_access_token')) {
+    history.replaceState({}, '', '/dashboard.html');
+    setTimeout(() => toast('Please reconnect WhatsApp — the connection link has expired', 'err'), 500);
   }
   if (params.get('error')) {
     setTimeout(() => toast('Meta connection failed — please try again', 'err'), 500);
@@ -2531,13 +2537,18 @@ async function initDash() {
     loadCatalogStatus();
     startMsgPoll();
 
-    // If we arrived from Meta OAuth redirect, complete the connection now
-    if (window._pendingMetaAccessToken) {
-      const metaToken = window._pendingMetaAccessToken;
-      delete window._pendingMetaAccessToken;
+    // If we arrived from Meta OAuth redirect, resolve the secure connect ID
+    if (window._pendingMetaConnectId) {
+      const connectId = window._pendingMetaConnectId;
+      delete window._pendingMetaConnectId;
       toast('Completing WhatsApp connection…', 'nfo');
-      _finishMetaConnect(null, metaToken);
+      try {
+        const resolved = await api('/auth/resolve-meta-connect?id=' + encodeURIComponent(connectId));
+        if (resolved.accessToken) _finishMetaConnect(null, resolved.accessToken);
+        else toast('Meta connection failed — token not found', 'err');
+      } catch (e) { toast('Meta connection failed: ' + e.message, 'err'); }
     }
+    // Legacy meta_access_token flow REMOVED — only meta_connect_id is supported.
 
     connectWebSocket();
   } catch (e) { console.error(e); }

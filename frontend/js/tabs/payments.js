@@ -257,7 +257,7 @@ async function openSettlementDetail(id) {
 
     document.getElementById('fin-settle-dl-btn').style.display = 'inline-flex';
   } catch (e) {
-    body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--red)">Error: ' + e.message + '</div>';
+    body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--red)">Error: ' + _esc(e.message) + '</div>';
   }
 }
 
@@ -378,7 +378,7 @@ async function loadWallet() {
     tbody.innerHTML = txns.map(function(t) { return '<tr style="border-bottom:1px solid var(--rim)">' +
       '<td style="padding:.45rem .7rem;font-size:.78rem">' + new Date(t.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) + '</td>' +
       '<td style="padding:.45rem .7rem;font-size:.8rem">' + (typeIco[t.type] || '') + ' ' + t.type + '</td>' +
-      '<td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (t.description || '\u2014') + '</td>' +
+      '<td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _esc(t.description || '\u2014') + '</td>' +
       '<td style="padding:.45rem .7rem;font-weight:600;color:' + (t.amount_rs >= 0 ? 'var(--wa)' : 'var(--red)') + '">' + (t.amount_rs >= 0 ? '+' : '') + '\u20B9' + Math.abs(t.amount_rs).toFixed(2) + '</td>' +
       '<td style="padding:.45rem .7rem;font-size:.78rem">\u20B9' + parseFloat(t.balance_after_rs).toFixed(2) + '</td>' +
     '</tr>'; }).join('');

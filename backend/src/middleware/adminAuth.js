@@ -1,13 +1,23 @@
 // src/middleware/adminAuth.js
 // Admin RBAC middleware — JWT-based auth with modular permissions.
-// Replaces the old ADMIN_KEY check. ADMIN_KEY kept as super admin fallback.
+// No fallback secrets. ADMIN_JWT_SECRET must be set in production.
 
 'use strict';
 
 const jwt = require('jsonwebtoken');
 const { col } = require('../config/database');
+const log = require('../utils/logger').child({ component: 'adminAuth' });
 
-const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET || 'admin-jwt-fallback-secret';
+// ── STRICT SECRET VALIDATION ────────────────────────────────
+// ADMIN_JWT_SECRET is required. No fallback — crash early if missing.
+const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET;
+if (!ADMIN_JWT_SECRET) {
+  const msg = 'FATAL: ADMIN_JWT_SECRET (or JWT_SECRET) environment variable is not set. Admin auth cannot function.';
+  log.error(msg);
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(msg); // Crash in production — don't start with insecure auth
+  }
+}
 
 // Permission level hierarchy (higher number = more access)
 const LEVEL_VALUES = { none: 0, read: 1, write: 2, process: 2, manage: 3 };
@@ -25,28 +35,20 @@ function requireAdminAuth(permission, minLevel) {
     try {
       const header = req.headers['authorization'] || '';
       const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-      const legacyKey = req.headers['x-admin-key'];
 
-      // ── ADMIN_KEY fallback (super admin access during transition) ──
-      if (!token && legacyKey && legacyKey === process.env.ADMIN_KEY) {
-        req.adminUser = { role: 'super_admin', email: 'admin@gullybite.com', name: 'Admin (Legacy Key)', permissions: {} };
-        req.canSeeFullPhones = true;
-        return next();
+      // JWT is the ONLY auth method — no ADMIN_KEY bypass
+      if (!token) {
+        log.warn({ ip: req.ip, path: req.path }, 'Auth failed: no token provided');
+        return res.status(401).json({ error: 'Authentication required' });
       }
-      if (token && token === process.env.ADMIN_KEY) {
-        // Old frontend sends ADMIN_KEY as Bearer token
-        req.adminUser = { role: 'super_admin', email: 'admin@gullybite.com', name: 'Admin (Legacy Key)', permissions: {} };
-        req.canSeeFullPhones = true;
-        return next();
-      }
-
-      if (!token) return res.status(401).json({ error: 'Authentication required' });
 
       // ── JWT auth ──
       let decoded;
       try {
         decoded = jwt.verify(token, ADMIN_JWT_SECRET);
       } catch (e) {
+        // Log failed attempt without exposing the token
+        log.warn({ ip: req.ip, path: req.path, reason: e.message }, 'Auth failed: invalid token');
         return res.status(401).json({ error: 'Invalid or expired token' });
       }
 
@@ -86,7 +88,7 @@ function requireAdminAuth(permission, minLevel) {
 
       next();
     } catch (e) {
-      console.error('[AdminAuth] Middleware error:', e.message);
+      log.error({ err: e }, 'Middleware error');
       res.status(500).json({ error: 'Authentication error' });
     }
   };

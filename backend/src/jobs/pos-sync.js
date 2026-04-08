@@ -5,6 +5,7 @@
 const { col } = require('../config/database');
 const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
 const { triggerSync } = require('../services/posSync');
+const log = require('../utils/logger').child({ component: 'pos-sync' });
 
 const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const RECENT_THRESHOLD_MS = 25 * 60 * 1000; // skip if synced within 25 min
@@ -41,7 +42,7 @@ async function runPosSync() {
         await triggerSync(int.platform, String(int._id), int.restaurant_id, 'incremental');
         synced++;
       } catch (err) {
-        console.error(`[POS-Cron] ${int.platform} sync failed for integration ${int._id}:`, err.message);
+        log.error({ err, platform: int.platform, integrationId: String(int._id) }, 'POS cron sync failed');
       }
 
       // Rate limit: 3-second delay between syncs
@@ -49,19 +50,19 @@ async function runPosSync() {
     }
 
     if (synced > 0 || skipped > 0) {
-      console.log(`[POS-Cron] Synced ${synced} integrations, ${skipped} skipped (recently synced or disabled)`);
+      log.info({ synced, skipped }, 'POS cron sync complete');
     }
   } catch (err) {
-    console.error('[POS-Cron] Error:', err.message);
+    log.error({ err }, 'POS cron error');
   }
 }
 
 function schedulePosSync() {
   if (!POS_INTEGRATIONS_ENABLED) {
-    console.log('[POS-Cron] POS integrations disabled — cron not started');
+    log.info('POS integrations disabled — cron not started');
     return;
   }
-  console.log('[POS-Cron] Scheduled every 30 minutes');
+  log.info('POS sync scheduled every 30 minutes');
   _timer = setInterval(runPosSync, INTERVAL_MS);
   // Run first sync 60 seconds after server start
   setTimeout(runPosSync, 60000);

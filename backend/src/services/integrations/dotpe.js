@@ -10,6 +10,7 @@
 
 const axios = require('axios');
 const { POS_INTEGRATIONS_ENABLED } = require('../../config/features');
+const log = require('../../utils/logger').child({ component: 'DotPe' });
 
 const BASE = 'https://api.dotpe.in/api/merchant/v2';
 const TIMEOUT = 10000;
@@ -44,7 +45,7 @@ function isSizeVariant(variant) {
 // ─── MENU PULL ──────────────────────────────────────────────────
 async function fetchMenu(integration) {
   if (!POS_INTEGRATIONS_ENABLED) {
-    console.log('[POS] DotPe fetchMenu skipped — POS integrations disabled');
+    log.info('fetchMenu skipped — POS integrations disabled');
     return { categories: [], items: [] };
   }
   const { api_key, access_token, outlet_id } = integration;
@@ -151,7 +152,7 @@ async function fetchMenu(integration) {
     }
   }
 
-  console.log(`[POS-Sync] DotPe: ${rawItems.length} POS items → ${items.length} menu rows (${variantCount} variant rows) for outlet ${outlet_id}`);
+  log.info({ posItems: rawItems.length, menuRows: items.length, variantRows: variantCount, outletId: outlet_id }, 'Menu fetched');
   return { categories, items };
 }
 
@@ -198,11 +199,11 @@ async function pushOrder(integration, order, items) {
     const res = await axios.post(`${BASE}/orders/external`, payload, {
       headers, timeout: TIMEOUT,
     });
-    console.log(`[DotPe] Order ${order._id} pushed successfully`);
+    log.info({ orderId: order._id }, 'Order pushed successfully');
     return { success: true, externalOrderId: res.data?.order_id || res.data?.data?.id };
   } catch (err) {
     const msg = err.response?.data?.message || err.message;
-    console.error(`[DotPe] Order push failed: ${msg}`);
+    log.error({ errorMsg: msg }, 'Order push failed');
     throw new Error(`DotPe order push failed: ${msg}`);
   }
 }
@@ -231,7 +232,7 @@ async function updateOrderStatus(integration, orderId, status) {
       status: dpStatus,
     }, { headers, timeout: TIMEOUT });
   } catch (err) {
-    console.error(`[DotPe] Status update failed for ${orderId}: ${err.message}`);
+    log.error({ err, orderId }, 'Status update failed');
   }
 }
 
@@ -248,7 +249,7 @@ function parseWebhookEvent(payload) {
     }
     return { type: 'unknown', outletId };
   } catch (e) {
-    console.warn('[DotPe] parseWebhookEvent failed:', e.message);
+    log.warn({ err: e }, 'parseWebhookEvent failed');
     return { type: 'unknown' };
   }
 }
@@ -262,7 +263,7 @@ function parseStockUpdate(payload) {
     }));
     return { items, outletId: payload.outlet_id || null };
   } catch (e) {
-    console.warn('[DotPe] parseStockUpdate failed:', e.message);
+    log.warn({ err: e }, 'parseStockUpdate failed');
     return { items: [], outletId: null };
   }
 }

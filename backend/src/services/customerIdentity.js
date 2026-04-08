@@ -4,6 +4,7 @@
 // This is the SINGLE SOURCE OF TRUTH for customer lookup/creation
 
 const { col, newId, mapId } = require('../config/database');
+const log = require('../utils/logger').child({ component: 'CustomerIdentity' });
 
 // ─── BSUID DETECTION ────────────────────────────────────────
 // BSUIDs start with 'w', are 20+ chars alphanumeric
@@ -66,7 +67,7 @@ const getOrCreateCustomer = async ({ bsuid, wa_phone, profile_name }) => {
         updates.wa_phone = wa_phone;
         updates.identifier_type = 'both';
         updates.phone_shared_at = now;
-        console.log(`[BSUID] Phone linked to BSUID customer: ${bsuid.slice(0, 10)}… → ${wa_phone}`);
+        log.info({ bsuid: bsuid.slice(0, 10), phone: wa_phone?.slice(-4) }, 'Phone linked to BSUID customer');
       }
       // Update name if changed
       if (profile_name && byBsuid.name !== profile_name) {
@@ -90,7 +91,7 @@ const getOrCreateCustomer = async ({ bsuid, wa_phone, profile_name }) => {
         updates.bsuid = bsuid;
         updates.identifier_type = 'both';
         updates.bsuid_first_seen_at = now;
-        console.log(`[BSUID] BSUID linked to phone customer: ${wa_phone} → ${bsuid.slice(0, 10)}…`);
+        log.info({ phone: wa_phone?.slice(-4), bsuid: bsuid.slice(0, 10) }, 'BSUID linked to phone customer');
       }
       if (profile_name && byPhone.name !== profile_name) {
         updates.name = profile_name;
@@ -119,7 +120,7 @@ const getOrCreateCustomer = async ({ bsuid, wa_phone, profile_name }) => {
     created_at: now,
   };
   await col('customers').insertOne(customer);
-  console.log(`[BSUID] New customer created: type=${identifierType}, phone=${wa_phone || 'none'}, bsuid=${bsuid ? bsuid.slice(0, 10) + '…' : 'none'}`);
+  log.info({ identifierType, phone: wa_phone?.slice(-4) || 'none', bsuid: bsuid ? bsuid.slice(0, 10) : 'none' }, 'New customer created');
   return mapId(customer);
 };
 
@@ -135,11 +136,11 @@ const ensureIndexes = async () => {
       { wa_phone: 1 },
       { unique: true, sparse: true, name: 'idx_wa_phone_unique' }
     );
-    console.log('[BSUID] Customer indexes ensured');
+    log.info('Customer indexes ensured');
   } catch (e) {
     // Index may already exist — that's fine
     if (e.code !== 85 && e.code !== 86) {
-      console.error('[BSUID] Index creation error:', e.message);
+      log.error({ err: e }, 'Index creation error');
     }
   }
 };

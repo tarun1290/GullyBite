@@ -5,6 +5,7 @@
 const cron = require('node-cron');
 const { col } = require('../config/database');
 const { getNextRetryAt, MAX_RETRIES } = require('../utils/retry');
+const log = require('../utils/logger').child({ component: 'webhook-retry' });
 
 // Lazy-load processors to avoid circular dependency issues at startup
 let _processWA = null;
@@ -30,13 +31,13 @@ async function processRetryQueue() {
 
   if (!pending.length) return;
 
-  console.log(`[Retry] Processing ${pending.length} pending webhook(s)`);
+  log.info({ count: pending.length }, 'processing pending webhooks');
   const { processWA, processRP } = getProcessors();
 
-  for (const log of pending) {
+  for (const webhookLog of pending) {
     // Atomic lock: mark as retrying to prevent concurrent processing
     const lockResult = await col('webhook_logs').updateOne(
-      { _id: log._id, retry_status: 'pending' },
+      { _id: webhookLog._id, retry_status: 'pending' },
       { $set: { retry_status: 'retrying' } }
     );
     // If someone else already grabbed it, skip
@@ -44,29 +45,29 @@ async function processRetryQueue() {
 
     try {
       // Route to correct processor based on source
-      if (log.source === 'whatsapp' && processWA) {
-        await processWA(log._id, log.payload);
-      } else if (log.source === 'razorpay' && processRP) {
-        await processRP(log._id, log.payload);
+      if (webhookLog.source === 'whatsapp' && processWA) {
+        await processWA(webhookLog._id, webhookLog.payload);
+      } else if (webhookLog.source === 'razorpay' && processRP) {
+        await processRP(webhookLog._id, webhookLog.payload);
       } else {
-        throw new Error(`Unknown webhook source: ${log.source}`);
+        throw new Error(`Unknown webhook source: ${webhookLog.source}`);
       }
 
       // Success
       await col('webhook_logs').updateOne(
-        { _id: log._id },
+        { _id: webhookLog._id },
         { $set: { processed: true, retry_status: 'success', processed_at: new Date(), error_message: null } }
       );
-      console.log(`[Retry] ✅ ${log.source}/${log.event_type} (${log._id}) succeeded on retry ${(log.retry_count || 0) + 1}`);
+      log.info({ source: webhookLog.source, eventType: webhookLog.event_type, webhookId: webhookLog._id, retryNum: (webhookLog.retry_count || 0) + 1 }, 'webhook retry succeeded');
 
     } catch (err) {
-      const newCount = (log.retry_count || 0) + 1;
+      const newCount = (webhookLog.retry_count || 0) + 1;
       const errorEntry = { error: err.message, attempted_at: new Date() };
 
       if (newCount >= MAX_RETRIES) {
         // Move to DLQ — exhausted all retries
         await col('webhook_logs').updateOne(
-          { _id: log._id },
+          { _id: webhookLog._id },
           {
             $set: {
               retry_status: 'exhausted',
@@ -78,11 +79,11 @@ async function processRetryQueue() {
             $push: { error_history: errorEntry },
           }
         );
-        console.error(`[Retry] ❌ ${log.source}/${log.event_type} (${log._id}) moved to DLQ after ${newCount} retries: ${err.message}`);
+        log.error({ err, source: webhookLog.source, eventType: webhookLog.event_type, webhookId: webhookLog._id, retryNum: newCount }, 'webhook moved to DLQ after max retries');
       } else {
         // Schedule next retry with exponential backoff
         await col('webhook_logs').updateOne(
-          { _id: log._id },
+          { _id: webhookLog._id },
           {
             $set: {
               retry_status: 'pending',
@@ -93,7 +94,7 @@ async function processRetryQueue() {
             $push: { error_history: errorEntry },
           }
         );
-        console.warn(`[Retry] ⏳ ${log.source}/${log.event_type} (${log._id}) retry ${newCount}/${MAX_RETRIES} scheduled: ${err.message}`);
+        log.warn({ source: webhookLog.source, eventType: webhookLog.event_type, webhookId: webhookLog._id, retryNum: newCount, maxRetries: MAX_RETRIES, errMsg: err.message }, 'webhook retry scheduled');
       }
     }
   }
@@ -104,10 +105,10 @@ function scheduleWebhookRetry() {
   // Run every minute
   cron.schedule('* * * * *', () => {
     processRetryQueue().catch(err =>
-      console.error('[Retry] Queue processing error:', err.message)
+      log.error({ err }, 'queue processing error')
     );
   }, { timezone: 'Asia/Kolkata' });
-  console.log('⏰ Webhook retry cron scheduled: every 60 seconds');
+  log.info('webhook retry cron scheduled: every 60 seconds');
 }
 
 module.exports = { scheduleWebhookRetry, processRetryQueue };

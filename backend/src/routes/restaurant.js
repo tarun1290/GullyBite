@@ -23,6 +23,7 @@ const ws = require('../services/websocket');
 const memcache = require('../config/memcache');
 const metaConfig = require('../config/meta');
 const { getCached, invalidateCache } = require('../config/cache');
+const logger = require('../utils/logger').child({ component: 'restaurant' });
 
 // ── Slug helper ──────────────────────────────────────────────
 function slugify(str, maxLen = 40) {
@@ -155,7 +156,7 @@ router.post('/catalog-diagnosis/fix', async (req, res) => {
     if (wa_acc) await col('whatsapp_accounts').updateOne({ _id: wa_acc._id }, { $set: { catalog_id: found.id, catalog_linked: true, catalog_linked_at: new Date(), updated_at: new Date() } });
     await col('branches').updateMany({ restaurant_id: req.restaurantId }, { $set: { catalog_id: found.id, updated_at: new Date() } });
 
-    console.log(`[Catalog-Fix] Linked catalog ${found.id} ("${found.name}") to restaurant ${req.restaurantId}`);
+    req.log.info({ catalogId: found.id, catalogName: found.name, restaurantId: req.restaurantId }, 'Linked catalog to restaurant');
     res.json({ success: true, catalog_id: found.id, catalog_name: found.name });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -244,7 +245,7 @@ router.post('/update-slug', requirePermission('manage_settings'), async (req, re
       { _id: req.restaurantId },
       { $set: { store_slug: slug, store_url: storeUrl, updated_at: new Date() } }
     );
-    console.log(`[Store] Restaurant ${req.restaurantId} slug updated to: ${slug}`);
+    req.log.info({ restaurantId: req.restaurantId, slug }, 'Store slug updated');
     res.json({ success: true, store_slug: slug, store_url: storeUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -319,7 +320,7 @@ router.post('/menu/upload-image', upload.single('image'), async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    console.error('[Image] Upload error:', err.message);
+    req.log.error({ err }, 'Image upload failed');
     res.status(500).json({ error: err.message });
   }
 });
@@ -586,7 +587,7 @@ router.post('/whatsapp/verify-connection', async (req, res) => {
     const connected = results.verified.length > 0 || results.discovered > 0;
     res.json({ connected, ...results });
   } catch (err) {
-    console.error('[verify-connection]', err.message);
+    req.log.error({ err }, 'WhatsApp verify-connection failed');
     res.status(500).json({ error: err.message });
   }
 });
@@ -788,7 +789,7 @@ router.get('/places/autocomplete', async (req, res) => {
 
     res.json({ suggestions });
   } catch (e) {
-    console.error('[Places] Autocomplete error:', e.response?.data || e.message);
+    req.log.error({ err: e, metaResponse: e.response?.data }, 'Places autocomplete failed');
     res.status(500).json({ error: 'Place search failed' });
   }
 });
@@ -831,7 +832,7 @@ router.get('/places/details', async (req, res) => {
       country: getComponent('country'),
     });
   } catch (e) {
-    console.error('[Places] Details error:', e.response?.data || e.message);
+    req.log.error({ err: e, metaResponse: e.response?.data }, 'Place details fetch failed');
     res.status(500).json({ error: 'Place details fetch failed' });
   }
 });
@@ -894,9 +895,9 @@ router.post('/branches', async (req, res) => {
     // AUTO-CREATE WHATSAPP CATALOG FOR THIS BRANCH (background)
     catalog.createBranchCatalog(newBranch.id)
       .then(result => {
-        if (result.success) console.log(`[Branch] Auto-created catalog for "${newBranch.name}": ${result.catalogId}`);
+        if (result.success) logger.info({ branchName: newBranch.name, catalogId: result.catalogId }, 'Auto-created catalog for branch');
       })
-      .catch(err => console.error(`[Branch] Auto catalog creation failed for "${newBranch.name}":`, err.message));
+      .catch(err => logger.error({ err, branchName: newBranch.name }, 'Auto catalog creation failed for branch'));
 
     invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
     res.status(201).json(newBranch);
@@ -952,8 +953,8 @@ router.post('/branches/csv', async (req, res) => {
 
         // Auto-create WhatsApp catalog (background)
         catalog.createBranchCatalog(newBranch.id)
-          .then(r => { if (r.success) console.log(`[Branch CSV] Catalog created for "${name}": ${r.catalogId}`); })
-          .catch(e => console.error(`[Branch CSV] Catalog creation failed for "${name}":`, e.message));
+          .then(r => { if (r.success) logger.info({ branchName: name, catalogId: r.catalogId }, 'CSV branch catalog created'); })
+          .catch(e => logger.error({ err: e, branchName: name }, 'CSV branch catalog creation failed'));
       } catch (rowErr) {
         errors.push({ row, reason: rowErr.message });
       }
@@ -1331,7 +1332,7 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
 
     if (onlyAvailability) {
       catalog.setItemAvailability(req.params.itemId, isAvailable)
-        .catch(err => console.error('[Menu] Availability sync failed:', err.message));
+        .catch(err => logger.error({ err, itemId: req.params.itemId }, 'Menu availability sync failed'));
 
       log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_toggled', category: 'menu', description: `Toggled menu item availability`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.itemId, severity: 'info' });
       return res.json({ success: true });
@@ -1411,7 +1412,7 @@ router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res
 
     if (item) {
       catalog.deleteProduct(item, item.branch_id)
-        .catch(err => console.error('[Menu] Delete sync failed:', err.message));
+        .catch(err => logger.error({ err, itemId: req.params.itemId }, 'Menu delete sync failed'));
     }
     res.json({ success: true });
 
@@ -1495,7 +1496,7 @@ router.patch('/menu/bulk-availability', requirePermission('manage_menu'), async 
     // Fire-and-forget: sync to Meta
     if (syncItems.length) {
       catalog.syncBulkAvailability(req.restaurantId, syncItems)
-        .catch(err => console.error('[Menu] Bulk availability sync failed:', err.message));
+        .catch(err => logger.error({ err, restaurantId: req.restaurantId }, 'Bulk availability sync failed'));
     }
 
     log({
@@ -1529,7 +1530,7 @@ router.patch('/menu/:id/availability', requirePermission('manage_menu'), async (
 
     // Fire-and-forget: sync to Meta AFTER response is sent
     catalog.syncItemAvailability(req.restaurantId, { ...item, is_available: available })
-      .catch(err => console.error('[Catalog] Availability sync failed:', err.message));
+      .catch(err => logger.error({ err, itemId: req.params.id }, 'Catalog availability sync failed'));
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_toggled', category: 'menu', description: `Toggled ${item.name} ${available ? 'available' : 'unavailable'}`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.id, severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1565,7 +1566,7 @@ router.patch('/menu/:id/availability-all-branches', requirePermission('manage_me
     const syncItems = affectedItems.filter(i => i.retailer_id).map(i => ({ retailer_id: i.retailer_id, is_available: i.is_available }));
     if (syncItems.length) {
       catalog.syncBulkAvailability(req.restaurantId, syncItems)
-        .catch(err => console.error('[Menu] Cross-branch availability sync failed:', err.message));
+        .catch(err => logger.error({ err, restaurantId: req.restaurantId }, 'Cross-branch availability sync failed'));
     }
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_all_branches', category: 'menu', description: `Toggled "${item.name}" ${available ? 'available' : 'unavailable'} at ${affectedBranchIds.length} branches (${result.modifiedCount} items)`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.id, severity: 'info' });
@@ -1802,7 +1803,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
         variantOps.push({ updateMany: { filter: { retailer_id: { $in: rids } }, update: { $set: { item_group_id: groupId, catalog_sync_status: 'pending' } } } });
       }
       if (variantOps.length) await col('menu_items').bulkWrite(variantOps, { ordered: false });
-    } catch (e) { console.warn('[CSV] Auto-group variants failed:', e.message); }
+    } catch (e) { logger.warn({ err: e, branchId }, 'CSV auto-group variants failed'); }
 
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
@@ -1811,7 +1812,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
 
     // Auto-create product sets, then queue debounced catalog sync
     catalog.autoCreateProductSets(branchId)
-      .catch(err => console.error('[Menu] Auto-create sets after CSV upload failed:', err.message));
+      .catch(err => logger.error({ err, branchId }, 'Auto-create product sets after CSV upload failed'));
     queueSync(req.restaurantId, 'branch', [branchId]);
 
     res.json({ success: true, ...results, total: items.length });
@@ -1872,10 +1873,10 @@ router.post('/menu/csv', async (req, res) => {
       }
       if (newBranchDocs.length) {
         await col('branches').insertMany(newBranchDocs).catch(() => {});
-        console.warn(`[CSV] Auto-created ${newBranchDocs.length} branch(es) — they need coordinates set in dashboard`);
+        logger.warn({ branchCount: newBranchDocs.length }, 'Auto-created branches from CSV — coordinates need to be set in dashboard');
         // Fire-and-forget catalog creation for new branches
         for (const b of newBranchDocs) {
-          catalog.createBranchCatalog(b._id).catch(err => console.error(`[CSV] Auto catalog for "${b.name}" failed:`, err.message));
+          catalog.createBranchCatalog(b._id).catch(err => logger.error({ err, branchName: b.name }, 'CSV auto catalog creation failed'));
         }
         allBranches = [...allBranches, ...newBranchDocs];
       }
@@ -2068,7 +2069,7 @@ router.post('/menu/csv', async (req, res) => {
           variantOps.push({ updateMany: { filter: { retailer_id: { $in: rids } }, update: { $set: { item_group_id: groupId, catalog_sync_status: 'pending' } } } });
         }
         if (variantOps.length) await col('menu_items').bulkWrite(variantOps, { ordered: false });
-      } catch (e) { console.warn('[CSV] Auto-group variants failed:', e.message); }
+      } catch (e) { logger.warn({ err: e, branchId: bid }, 'CSV auto-group variants failed'); }
 
       totalAdded += branchResult.added;
       totalSkipped += branchResult.skipped;
@@ -2076,7 +2077,7 @@ router.post('/menu/csv', async (req, res) => {
       branchResult._touchedIds = touchedRetailerIds; // carry forward for stale detection
       perBranch.push(branchResult);
 
-      catalog.autoCreateProductSets(bid).catch(err => console.error('[Menu] Auto-create sets:', err.message));
+      catalog.autoCreateProductSets(bid).catch(err => logger.error({ err, branchId: bid }, 'Auto-create product sets failed'));
     }
 
     // ── Stale item detection: mark items not in upload as unavailable ──
@@ -2106,7 +2107,7 @@ router.post('/menu/csv', async (req, res) => {
         const itemList = staleItems.slice(0, 20).map(s => ({ name: s.name, retailer_id: s.retailer_id }));
         staleResult.per_branch.push({ branchId: br.branchId, branchName: br.branchName, count: staleItems.length, items: itemList, more: staleItems.length > 20 ? staleItems.length - 20 : 0 });
         staleResult.total += staleItems.length;
-        console.log(`[CSV] Marked ${staleItems.length} stale items as unavailable for branch "${br.branchName}"`);
+        logger.info({ staleCount: staleItems.length, branchName: br.branchName, branchId: br.branchId }, 'Marked stale items as unavailable');
       }
 
       delete br._touchedIds; // clean up internal field before response
@@ -2320,7 +2321,7 @@ router.post('/product-sets', requirePermission('manage_menu'), async (req, res) 
     // Push to Meta immediately if catalog exists
     if (branch.catalog_id) {
       catalog.syncProductSets(branchId)
-        .catch(err => console.error('[ProductSets] Sync after create failed:', err.message));
+        .catch(err => logger.error({ err, branchId }, 'Product sets sync after create failed'));
     }
 
     res.status(201).json(mapId(set));
@@ -2351,7 +2352,7 @@ router.put('/product-sets/:id', requirePermission('manage_menu'), async (req, re
     // Re-sync to Meta
     if (updated.branch_id) {
       catalog.syncProductSets(updated.branch_id)
-        .catch(err => console.error('[ProductSets] Sync after update failed:', err.message));
+        .catch(err => logger.error({ err, branchId: updated.branch_id }, 'Product sets sync after update failed'));
     }
 
     res.json(mapId(updated));
@@ -2369,7 +2370,7 @@ router.delete('/product-sets/:id', requirePermission('manage_menu'), async (req,
       try {
         await catalog.deleteProductSet(set.meta_product_set_id);
       } catch (err) {
-        console.warn(`[ProductSets] Meta delete failed (continuing): ${err.message}`);
+        logger.warn({ err, productSetId: set.meta_product_set_id }, 'Meta product set delete failed, continuing');
       }
     }
 
@@ -2463,7 +2464,7 @@ router.post('/collections', requirePermission('manage_menu'), async (req, res) =
     // Sync to Meta
     if (branch.catalog_id) {
       catalog.syncCollections(branchId)
-        .catch(err => console.error('[Collections] Sync after create failed:', err.message));
+        .catch(err => logger.error({ err, branchId }, 'Collections sync after create failed'));
     }
 
     res.status(201).json(mapId(doc));
@@ -2494,7 +2495,7 @@ router.put('/collections/:id', requirePermission('manage_menu'), async (req, res
     // Re-sync to Meta
     if (updated.branch_id) {
       catalog.syncCollections(updated.branch_id)
-        .catch(err => console.error('[Collections] Sync after update failed:', err.message));
+        .catch(err => logger.error({ err, branchId: updated.branch_id }, 'Collections sync after update failed'));
     }
 
     res.json(mapId(updated));
@@ -2512,7 +2513,7 @@ router.delete('/collections/:id', requirePermission('manage_menu'), async (req, 
       try {
         await catalog.deleteCollection(coll.meta_collection_id);
       } catch (err) {
-        console.warn(`[Collections] Meta delete failed (continuing): ${err.message}`);
+        logger.warn({ err, collectionId: coll.meta_collection_id }, 'Meta collection delete failed, continuing');
       }
     }
 
@@ -2743,7 +2744,7 @@ router.get('/catalog/details', async (req, res) => {
       await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_catalog_id: null, meta_catalog_name: null } });
       return res.status(404).json({ error: 'Catalog no longer exists on Meta. It may have been deleted externally.', cleaned: true });
     }
-    console.error('[Catalog] Details fetch failed:', e.response?.data || e.message);
+    req.log.error({ err: e, metaResponse: e.response?.data }, 'Catalog details fetch failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -2775,10 +2776,10 @@ router.put('/catalog/settings', async (req, res) => {
       { $set: { meta_catalog_name: name.trim(), updated_at: new Date() } }
     );
 
-    console.log(`[Catalog] Updated catalog ${catalogId} name to: ${name.trim()}`);
+    req.log.info({ catalogId, catalogName: name.trim() }, 'Catalog name updated');
     res.json({ success: true, catalog_name: name.trim() });
   } catch (e) {
-    console.error('[Catalog] Settings update failed:', e.response?.data || e.message);
+    req.log.error({ err: e, metaResponse: e.response?.data }, 'Catalog settings update failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -2844,7 +2845,7 @@ router.post('/catalog/clear-and-resync', async (req, res) => {
           requests: JSON.stringify(batch),
         }, { timeout: 30000 });
         deleted += batch.length;
-      } catch (e) { console.error('[Catalog] Batch delete failed:', e.response?.data?.error?.message || e.message); }
+      } catch (e) { req.log.error({ err: e }, 'Catalog batch delete failed'); }
     }
 
     // Step 3: Re-sync all local items
@@ -2861,7 +2862,7 @@ router.post('/catalog/sync', async (req, res) => {
     const results = await catalog.syncRestaurantCatalog(req.restaurantId);
     const httpStatus = (results.totalFailed > 0) ? 207 : 200;
     if (results.totalFailed > 0) {
-      console.warn(`[Catalog] Sync partial failure: ${results.totalFailed} items failed across ${results.branches?.filter(b => !b.success || b.failed > 0).length || 0} branches`);
+      req.log.warn({ totalFailed: results.totalFailed, failedBranches: results.branches?.filter(b => !b.success || b.failed > 0).length || 0 }, 'Catalog sync partial failure');
     }
     res.status(httpStatus).json({ success: results.totalFailed === 0, totalFailed: results.totalFailed || 0, errors: results.branches?.filter(b => b.error).map(b => b.error) || [], ...results });
 
@@ -2898,10 +2899,10 @@ router.post('/catalog/link', async (req, res) => {
       { _id: wa._id },
       { $set: { catalog_linked: true, catalog_linked_at: new Date(), cart_enabled: true, catalog_visible: true, catalog_id: restaurant.meta_catalog_id } }
     );
-    console.log(`[Catalog] Linked catalog ${restaurant.meta_catalog_id} to phone ${wa.phone_number_id}`);
+    req.log.info({ catalogId: restaurant.meta_catalog_id, phoneNumberId: wa.phone_number_id }, 'Catalog linked to phone');
     res.json({ success: true, catalog_linked: true, cart_enabled: true, catalog_visible: true });
   } catch (e) {
-    console.error('[Catalog] Link failed:', e.response?.data?.error?.message || e.message);
+    req.log.error({ err: e }, 'Catalog link failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -2923,10 +2924,10 @@ router.post('/catalog/unlink', async (req, res) => {
       { _id: wa._id },
       { $set: { catalog_linked: false, cart_enabled: false, catalog_visible: false } }
     );
-    console.log(`[Catalog] Unlinked catalog from phone ${wa.phone_number_id}`);
+    req.log.info({ phoneNumberId: wa.phone_number_id }, 'Catalog unlinked from phone');
     res.json({ success: true, catalog_linked: false });
   } catch (e) {
-    console.error('[Catalog] Unlink failed:', e.response?.data?.error?.message || e.message);
+    req.log.error({ err: e }, 'Catalog unlink failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -2950,7 +2951,7 @@ router.post('/catalog/cart-toggle', async (req, res) => {
     await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { cart_enabled: !!enabled } });
     res.json({ success: true, cart_enabled: !!enabled });
   } catch (e) {
-    console.error('[Catalog] Cart toggle failed:', e.response?.data?.error?.message || e.message);
+    req.log.error({ err: e }, 'Catalog cart toggle failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -2997,11 +2998,11 @@ router.get('/catalog/visibility-status', async (req, res) => {
       if (Object.keys(healUpdate).length) {
         healUpdate.updated_at = new Date();
         await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: healUpdate });
-        for (const h of healed) console.log(`[Catalog] Auto-heal: ${h}`);
+        for (const h of healed) logger.info({ heal: h }, 'Catalog auto-heal applied');
         // Also heal restaurant meta_catalog_id if needed
         if (metaCatalogId && metaCatalogId !== restaurant?.meta_catalog_id) {
           await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_catalog_id: metaCatalogId, updated_at: new Date() } });
-          console.log(`[Catalog] Auto-heal: restaurant.meta_catalog_id: ${restaurant?.meta_catalog_id}→${metaCatalogId}`);
+          logger.info({ oldCatalogId: restaurant?.meta_catalog_id, newCatalogId: metaCatalogId }, 'Auto-heal restaurant meta_catalog_id');
         }
       }
 
@@ -3032,7 +3033,7 @@ router.post('/catalog/visibility-toggle', async (req, res) => {
     await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { catalog_visible: !!visible } });
     res.json({ success: true, catalog_visible: !!visible });
   } catch (e) {
-    console.error('[Catalog] Visibility toggle failed:', e.response?.data?.error?.message || e.message);
+    req.log.error({ err: e }, 'Catalog visibility toggle failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -3057,7 +3058,7 @@ router.post('/catalog/reverse-sync', async (req, res) => {
       url = resp.data?.paging?.next || null;
     }
 
-    console.log(`[Catalog] Reverse sync: fetched ${allProducts.length} products from Meta catalog ${catalogId}`);
+    req.log.info({ productCount: allProducts.length, catalogId }, 'Reverse sync fetched products from Meta');
 
     // Determine target branch
     const branches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
@@ -3127,12 +3128,12 @@ router.post('/catalog/reverse-sync', async (req, res) => {
     }
 
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { last_catalog_pull_at: new Date() } });
-    console.log(`[Catalog] Reverse sync complete:`, stats);
+    req.log.info({ stats }, 'Reverse sync complete');
     res.json({ success: true, ...stats });
 
     log({ actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone, action: 'catalog.reverse_sync', category: 'catalog', description: `Reverse sync from Meta: ${stats.new_items_added} new, ${stats.existing_items_updated} updated`, restaurantId: req.restaurantId, severity: 'info' });
   } catch (e) {
-    console.error('[Catalog] Reverse sync failed:', e.response?.data?.error?.message || e.message);
+    req.log.error({ err: e, metaResponse: e.response?.data }, 'Catalog reverse sync failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -3218,7 +3219,7 @@ router.post('/catalog/create-new', requireApproved, async (req, res) => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const catalogId = response.data.id;
-    console.log(`[Catalog] Created new catalog ${catalogId} for restaurant ${req.restaurantId}`);
+    req.log.info({ catalogId, restaurantId: req.restaurantId }, 'Created new catalog');
 
     // Store as active catalog
     await col('restaurants').updateOne(
@@ -3239,7 +3240,7 @@ router.post('/catalog/create-new', requireApproved, async (req, res) => {
 
     res.json({ success: true, catalog_id: catalogId, catalog_name: catName });
   } catch (e) {
-    console.error('[Catalog] Create failed:', e.response?.data || e.message);
+    req.log.error({ err: e, metaResponse: e.response?.data }, 'Catalog create failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -3257,7 +3258,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
   const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
   const bizId = restaurant?.meta_business_id || metaConfig.businessId;
 
-  console.log(`[Catalog] Delete requested: catalog=${catalogId}, waba=${wa?.waba_id}, biz=${bizId}`);
+  logger.info({ catalogId, wabaId: wa?.waba_id, bizId }, 'Catalog delete requested');
 
   // Helper: attempt the actual delete with auto-retry on permission error
   async function attemptDelete(retried = false) {
@@ -3266,10 +3267,10 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
       try {
         const feeds = await catalog.listFeeds(catalogId);
         for (const feed of feeds) {
-          try { await catalog.deleteFeed(feed.id); console.log(`[Catalog] Pre-delete: removed feed ${feed.id}`); } catch (feedErr) { console.warn(`[Catalog] Pre-delete: could not remove feed ${feed.id}:`, feedErr.message); }
+          try { await catalog.deleteFeed(feed.id); logger.info({ feedId: feed.id }, 'Pre-delete: removed feed'); } catch (feedErr) { logger.warn({ err: feedErr, feedId: feed.id }, 'Pre-delete: could not remove feed'); }
         }
         if (feeds.length) await new Promise(r => setTimeout(r, 1000));
-      } catch (feedListErr) { console.warn('[Catalog] Pre-delete: could not list feeds:', feedListErr.message); }
+      } catch (feedListErr) { logger.warn({ err: feedListErr }, 'Pre-delete: could not list feeds'); }
 
       // Step 1: Unlink from WABA first (if linked)
       if (wa?.waba_id) {
@@ -3278,19 +3279,19 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
             `${metaConfig.graphUrl}/${wa.waba_id}/product_catalogs`,
             { data: { catalog_id: catalogId }, headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
           );
-          console.log(`[Catalog] Unlinked from WABA ${wa.waba_id}`);
+          logger.info({ wabaId: wa.waba_id }, 'Catalog unlinked from WABA');
         } catch (unlinkErr) {
           const code = unlinkErr.response?.data?.error?.code;
           if (code === 3970 || code === 100) {
             // Permission error on unlink — try assigning admin first
             if (!retried) {
-              console.log('[Catalog] Unlink permission denied — assigning admin access...');
+              logger.info({ catalogId }, 'Unlink permission denied, assigning admin access');
               await metaConfig.ensureCatalogAdminAccess(catalogId);
               return attemptDelete(true);
             }
           }
           // Non-permission error or already retried — ignore (may not be linked)
-          console.warn('[Catalog] Unlink failed (continuing):', unlinkErr.response?.data?.error?.message || unlinkErr.message);
+          logger.warn({ err: unlinkErr }, 'Catalog unlink failed, continuing');
         }
       }
 
@@ -3305,7 +3306,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
       const subcode = delErr.response?.data?.error?.error_subcode;
       // Permission error — auto-retry after assigning admin
       if (!retried && (code === 3970 || code === 100 || subcode === 1690087 || subcode === 2388100)) {
-        console.log('[Catalog] Delete permission denied — assigning admin access and retrying...');
+        logger.info({ catalogId }, 'Delete permission denied, assigning admin access and retrying');
         const granted = await metaConfig.ensureCatalogAdminAccess(catalogId);
         if (granted) return attemptDelete(true);
       }
@@ -3315,7 +3316,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
 
   try {
     await attemptDelete();
-    console.log(`[Catalog] Deleted catalog ${catalogId}`);
+    logger.info({ catalogId }, 'Catalog deleted');
 
     // Clear from DB if it was the active catalog
     if (restaurant?.meta_catalog_id === catalogId) {
@@ -3336,7 +3337,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     const metaErr = e.response?.data?.error;
-    console.error('[Catalog] Delete failed:', metaErr || e.message);
+    logger.error({ err: e, metaErr }, 'Catalog delete failed');
     const userMsg = (metaErr?.code === 3970 || metaErr?.error_subcode === 1690087)
       ? 'Could not get admin access to this catalog. Please go to Meta Business Suite → Commerce Manager → Catalog Settings and make sure your Business account has admin access, then try again.'
       : (metaErr?.message || e.message);
@@ -3361,7 +3362,7 @@ router.post('/catalog/connect-waba', async (req, res) => {
       { catalog_id },
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    console.log(`[Catalog] Connected catalog ${catalog_id} to WABA ${wa.waba_id}`);
+    req.log.info({ catalogId: catalog_id, wabaId: wa.waba_id }, 'Catalog connected to WABA');
 
     // Update DB
     await col('whatsapp_accounts').updateOne(
@@ -3386,9 +3387,9 @@ router.post('/catalog/connect-waba', async (req, res) => {
           { headers: { Authorization: `Bearer ${metaConfig.getCatalogToken()}` }, timeout: 15000 }
         );
         await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { catalog_visible: true, cart_enabled: true } });
-        console.log('[Catalog] Auto-enabled commerce settings after connect');
+        logger.info('Auto-enabled commerce settings after connect');
       } catch (csErr) {
-        console.warn('[Catalog] Auto-enable commerce settings failed:', csErr.response?.data?.error?.message || csErr.message);
+        logger.warn({ err: csErr }, 'Auto-enable commerce settings failed after connect');
       }
     }
 
@@ -3397,7 +3398,7 @@ router.post('/catalog/connect-waba', async (req, res) => {
 
     res.json({ success: true });
   } catch (e) {
-    console.error('[Catalog] Connect WABA failed:', e.response?.data || e.message);
+    req.log.error({ err: e, metaResponse: e.response?.data }, 'Catalog connect WABA failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -3413,7 +3414,7 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
   const token = metaConfig.catalogToken;
   if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
-  console.log(`[Catalog] Disconnect requested: catalog=${catalogId}, waba=${wa.waba_id}`);
+  logger.info({ catalogId, wabaId: wa.waba_id }, 'Catalog disconnect requested');
 
   async function attemptDisconnect(retried = false) {
     try {
@@ -3426,7 +3427,7 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
       const code = e.response?.data?.error?.code;
       const subcode = e.response?.data?.error?.error_subcode;
       if (!retried && (code === 3970 || code === 100 || subcode === 1690087 || subcode === 2388100)) {
-        console.log('[Catalog] Disconnect permission denied — assigning admin access and retrying...');
+        logger.info({ catalogId }, 'Disconnect permission denied, assigning admin access and retrying');
         const granted = await metaConfig.ensureCatalogAdminAccess(catalogId);
         if (granted) return attemptDisconnect(true);
       }
@@ -3436,7 +3437,7 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
 
   try {
     await attemptDisconnect();
-    console.log(`[Catalog] Disconnected catalog ${catalogId} from WABA ${wa.waba_id}`);
+    logger.info({ catalogId, wabaId: wa.waba_id }, 'Catalog disconnected from WABA');
 
     await col('whatsapp_accounts').updateOne(
       { _id: wa._id },
@@ -3454,7 +3455,7 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     const metaErr = e.response?.data?.error;
-    console.error('[Catalog] Disconnect WABA failed:', metaErr || e.message);
+    logger.error({ err: e, metaErr }, 'Catalog disconnect WABA failed');
     const userMsg = (metaErr?.code === 3970 || metaErr?.error_subcode === 1690087)
       ? 'Could not get admin access to this catalog. Please go to Meta Business Suite → Commerce Manager → Catalog Settings and ensure your Business account has admin access, then try again.'
       : (metaErr?.message || e.message);
@@ -3471,7 +3472,7 @@ router.post('/catalog/switch', requireApproved, async (req, res) => {
     queueSync(req.restaurantId, 'full', null); // Auto-sync to new catalog
     res.json(result);
   } catch (e) {
-    console.error('[Catalog] Switch failed:', e.message);
+    req.log.error({ err: e }, 'Catalog switch failed');
     res.status(500).json({ error: e.message });
   }
 });
@@ -3496,7 +3497,7 @@ router.post('/menu/bulk-assign-branch', requirePermission('manage_menu'), async 
       { $set: { branch_id, updated_at: new Date(), catalog_sync_status: 'pending' } }
     );
 
-    console.log(`[Menu] Bulk assigned ${result.modifiedCount} items to branch ${branch.name}`);
+    req.log.info({ assignedCount: result.modifiedCount, branchName: branch.name, branchId: branch_id }, 'Bulk assigned items to branch');
 
     queueSync(req.restaurantId, 'branch', [branch_id]);
 
@@ -3522,7 +3523,7 @@ router.put('/menu/:itemId/branch', requirePermission('manage_menu'), async (req,
       { $set: { branch_id, updated_at: new Date(), catalog_sync_status: 'pending' } }
     );
 
-    console.log(`[Menu] Moved "${item.name}" from branch ${oldBranchId} to ${branch.name}`);
+    req.log.info({ itemName: item.name, oldBranchId, newBranchName: branch.name, newBranchId: branch_id }, 'Moved item to different branch');
 
     // No Meta catalog change needed — one catalog for all branches
     // Just re-sync to update product_tags/retailer_id if branch-encoded
@@ -3620,7 +3621,7 @@ router.post('/catalog/merge', requireApproved, async (req, res) => {
             );
             copied++;
           } catch (copyErr) {
-            console.warn(`[Catalog Merge] Failed to copy "${item.name}":`, copyErr.response?.data?.error?.message || copyErr.message);
+            logger.warn({ err: copyErr, itemName: item.name }, 'Catalog merge failed to copy item');
           }
         }
 
@@ -3632,7 +3633,7 @@ router.post('/catalog/merge', requireApproved, async (req, res) => {
         try {
           const secFeeds = await catalog.listFeeds(secondary.id);
           for (const feed of secFeeds) {
-            try { await catalog.deleteFeed(feed.id); } catch (feedErr) { console.warn(`[Catalog Merge] Feed ${feed.id} delete failed:`, feedErr.message); }
+            try { await catalog.deleteFeed(feed.id); } catch (feedErr) { logger.warn({ err: feedErr, feedId: feed.id }, 'Catalog merge feed delete failed'); }
           }
         } catch (_) { /* non-fatal */ }
 
@@ -3663,10 +3664,10 @@ router.post('/catalog/merge', requireApproved, async (req, res) => {
       { $set: { catalog_id: primaryId, updated_at: new Date() } }
     );
 
-    console.log(`[Catalog] Merged ${secondaryCatalogs.length} catalogs into ${primaryId}. Copied: ${totalCopied}, Dupes skipped: ${totalDuplicates}`);
+    req.log.info({ primaryId, mergedCount: secondaryCatalogs.length, totalCopied, totalDuplicates }, 'Catalog merge complete');
     res.json({ success: true, primary_catalog_id: primaryId, merged: secondaryCatalogs.length, total_copied: totalCopied, duplicates_skipped: totalDuplicates, details: results });
   } catch (e) {
-    console.error('[Catalog] Merge failed:', e.message);
+    req.log.error({ err: e }, 'Catalog merge failed');
     res.status(500).json({ error: e.message });
   }
 });
@@ -3784,7 +3785,7 @@ router.get('/catalogs', async (req, res) => {
 
     res.json({ active_catalog_id: activeCatalogId, catalogs, cached: false, commerce_enabled: commerceEnabled });
   } catch (e) {
-    console.error('[Catalogs] Failed:', e.message);
+    req.log.error({ err: e }, 'Failed to fetch catalogs from Meta');
     res.status(500).json({ error: 'Failed to fetch catalogs from Meta' });
   }
 });
@@ -3813,10 +3814,10 @@ router.put('/catalog', async (req, res) => {
       { $set: { catalog_id: catalog_id, updated_at: new Date() } }
     );
 
-    console.log(`[Catalog] Restaurant ${req.restaurantId} switched to catalog ${catalog_id}`);
+    req.log.info({ restaurantId: req.restaurantId, catalogId: catalog_id }, 'Switched to catalog');
     res.json({ success: true, catalog_id });
   } catch (e) {
-    console.error('[Catalog] Switch failed:', e.message);
+    req.log.error({ err: e }, 'Catalog switch failed');
     res.status(500).json({ error: 'Failed to update catalog' });
   }
 });
@@ -3910,7 +3911,7 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
     // Recalculate ETA on status change
     let etaResult = null;
     try { etaResult = await etaSvc.updateETAOnStatusChange(req.params.orderId, status); }
-    catch (e) { console.warn('[ETA] update error:', e.message); }
+    catch (e) { req.log.warn({ err: e, orderId: req.params.orderId }, 'ETA update failed'); }
 
     if (order) {
       const fullOrder = await orderSvc.getOrderDetails(order.id);
@@ -3937,7 +3938,7 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
       const fullOrderForNotify = await orderSvc.getOrderDetails(order.id);
       if (fullOrderForNotify) {
         notify.notifyOrderStatusChange(fullOrderForNotify, req.body._oldStatus || '', status)
-          .catch(err => console.error('[Notify]', err.message));
+          .catch(err => logger.error({ err, orderId: order.id }, 'Order status notification failed'));
       }
     }
 
@@ -4420,7 +4421,7 @@ router.post('/dropoffs/:conversationId/recover', requirePermission('manage_order
 
     const session = conv.session_data || {};
     const wa = require('../services/whatsapp');
-    const { resolveRecipient } = require('../utils/customerIdentity');
+    const { resolveRecipient } = require('../services/customerIdentity');
     const to = resolveRecipient(customer);
     const pid = waAcc.phone_number_id;
     const token = waAcc.access_token;
@@ -4474,7 +4475,7 @@ router.post('/dropoffs/:conversationId/recover', requirePermission('manage_order
           message_type: messageType, sent_at: new Date(), status: 'sent',
         });
       } catch (err) {
-        console.error('[Recovery] Message send failed:', err.message);
+        logger.error({ err, conversationId: req.params.conversationId }, 'Recovery message send failed');
         await col('recovery_attempts').insertOne({
           _id: newId(), conversation_id: req.params.conversationId,
           customer_id: conv.customer_id, restaurant_id: req.restaurantId,
@@ -4543,7 +4544,7 @@ router.get('/analytics/conversations', requirePermission('view_analytics'), asyn
           });
           return data?.conversation_analytics || null;
         } catch (e) {
-          console.error('[Analytics] Meta conversation_analytics failed:', e.response?.data?.error?.message || e.message);
+          logger.error({ err: e }, 'Meta conversation analytics fetch failed');
           return null;
         }
       }, 120),
@@ -4612,7 +4613,7 @@ router.get('/analytics/conversations', requirePermission('view_analytics'), asyn
       total_conversations_30d: totalCount,
     });
   } catch (e) {
-    console.error('[Analytics] Conversations failed:', e.message);
+    req.log.error({ err: e }, 'Analytics conversations failed');
     res.status(500).json({ error: e.message });
   }
 });
@@ -4735,16 +4736,17 @@ router.get('/coupons', async (req, res) => {
 
 router.post('/coupons', requirePermission('manage_coupons'), express.json(), async (req, res) => {
   try {
-    const { code, description, discountType, discountValue, minOrderRs, maxDiscountRs, usageLimit, validFrom, validUntil } = req.body;
-    if (!code || !discountType || !discountValue)
+    const { code, description, discountType, discountValue, minOrderRs, maxDiscountRs,
+            usageLimit, perUserLimit, validFrom, validUntil,
+            firstOrderOnly, branchIds, campaignId } = req.body;
+    if (!code || !discountType || discountValue == null)
       return res.status(400).json({ error: 'code, discountType and discountValue are required' });
-    if (!['percent', 'flat'].includes(discountType))
-      return res.status(400).json({ error: 'discountType must be percent or flat' });
+    if (!['percent', 'flat', 'free_delivery'].includes(discountType))
+      return res.status(400).json({ error: 'discountType must be percent, flat, or free_delivery' });
     if (discountType === 'percent' && parseFloat(discountValue) > 100)
       return res.status(400).json({ error: 'Percent discount cannot exceed 100' });
 
     const couponCode = code.trim().toUpperCase();
-    // Check uniqueness
     const existing = await col('coupons').findOne({ restaurant_id: req.restaurantId, code: couponCode });
     if (existing) return res.status(409).json({ error: 'Coupon code already exists' });
 
@@ -4755,13 +4757,17 @@ router.post('/coupons', requirePermission('manage_coupons'), express.json(), asy
       code: couponCode,
       description: description || null,
       discount_type: discountType,
-      discount_value: parseFloat(discountValue),
+      discount_value: parseFloat(discountValue) || 0,
       min_order_rs: minOrderRs || 0,
       max_discount_rs: maxDiscountRs || null,
       usage_limit: usageLimit || null,
+      per_user_limit: perUserLimit || null,
       usage_count: 0,
       valid_from: validFrom ? new Date(validFrom) : null,
       valid_until: validUntil ? new Date(validUntil) : null,
+      first_order_only: !!firstOrderOnly,
+      branch_ids: branchIds?.length ? branchIds : null,
+      campaign_id: campaignId || null,
       is_active: true,
       created_at: now,
       updated_at: now,
@@ -4798,6 +4804,91 @@ router.delete('/coupons/:id', requirePermission('manage_coupons'), async (req, r
     const result = await col('coupons').deleteOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!result.deletedCount) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── OFFERS: RESOLVE BEST + LIST ELIGIBLE ────────────────────
+// POST /api/restaurant/offers/resolve
+// Called by checkout to auto-apply the best offer.
+// Body: { subtotalRs, deliveryFeeRs, branchId, customerId }
+router.post('/offers/resolve', express.json(), async (req, res) => {
+  try {
+    const couponSvc = require('../services/coupon');
+    const { subtotalRs, deliveryFeeRs, branchId, customerId } = req.body;
+    if (!subtotalRs) return res.status(400).json({ error: 'subtotalRs is required' });
+
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    const restaurantConfig = {
+      delivery_fee_customer_pct: restaurant?.delivery_fee_customer_pct ?? 100,
+      menu_gst_mode: restaurant?.menu_gst_mode ?? 'included',
+      menu_gst_pct: restaurant?.menu_gst_pct ?? 5,
+      packaging_charge_rs: restaurant?.packaging_charge_rs ?? 0,
+      packaging_gst_pct: restaurant?.packaging_gst_pct ?? 18,
+    };
+
+    const isFirstOrder = customerId
+      ? await couponSvc.isCustomerFirstOrder(customerId, req.restaurantId)
+      : true;
+
+    const result = await couponSvc.resolveBestOffer(
+      req.restaurantId,
+      parseFloat(subtotalRs),
+      parseFloat(deliveryFeeRs) || 0,
+      restaurantConfig,
+      { customerId, branchId, isFirstOrder }
+    );
+
+    res.json({
+      bestOffer: result.bestCoupon ? {
+        code: result.bestCoupon.coupon.code,
+        couponId: result.bestCoupon.coupon.id,
+        discountRs: result.bestCoupon.discountRs,
+        freeDelivery: result.bestCoupon.freeDelivery,
+        label: result.bestCoupon.label,
+        finalTotal: result.bestCoupon.finalTotal,
+      } : null,
+      allOffers: result.allEligible.map(e => ({
+        code: e.coupon.code,
+        couponId: e.coupon.id,
+        description: e.coupon.description,
+        discountRs: e.discountRs,
+        freeDelivery: e.freeDelivery,
+        label: e.label,
+        finalTotal: e.finalTotal,
+        minOrderRs: e.coupon.min_order_rs || 0,
+      })),
+      isFirstOrder,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/offers/apply
+// Validate and apply a specific coupon code to the current cart.
+// Body: { code, subtotalRs, branchId, customerId }
+router.post('/offers/apply', express.json(), async (req, res) => {
+  try {
+    const couponSvc = require('../services/coupon');
+    const { code, subtotalRs, branchId, customerId } = req.body;
+    if (!code || !subtotalRs) return res.status(400).json({ error: 'code and subtotalRs required' });
+
+    const isFirstOrder = customerId
+      ? await couponSvc.isCustomerFirstOrder(customerId, req.restaurantId)
+      : true;
+
+    const result = await couponSvc.validateCoupon(
+      code, req.restaurantId, parseFloat(subtotalRs),
+      { customerId, branchId, isFirstOrder }
+    );
+
+    if (!result.valid) return res.status(400).json({ valid: false, message: result.message, reason: result.reason });
+    res.json({
+      valid: true,
+      code: result.coupon.code,
+      couponId: result.coupon.id,
+      discountRs: result.discountRs,
+      freeDelivery: result.freeDelivery || false,
+      message: result.message,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -4935,7 +5026,7 @@ async function notifyOrderStatus(restaurantId, pid, _token, waPhone, status, ord
       const sent = await orderNotify.sendOrderTemplateMessage(orderData._orderId, status);
       if (sent) return; // Template sent successfully
     } catch (e) {
-      console.error(`[WA] orderNotify failed for ${status}, trying legacy:`, e.message);
+      logger.error({ err: e, status, orderId: orderData._orderId }, 'orderNotify failed, trying legacy');
     }
   }
 
@@ -4955,7 +5046,7 @@ async function notifyOrderStatus(restaurantId, pid, _token, waPhone, status, ord
       await wa.sendTemplate(pid, token, waPhone, { name: template_name, language: template_language || 'en', components });
       return;
     } catch (e) {
-      console.error(`[WA] Template send failed for ${status} (${template_name}), falling back to text:`, e.message);
+      logger.error({ err: e, status, templateName: template_name }, 'WA template send failed, falling back to text');
     }
   }
 
@@ -5009,7 +5100,7 @@ router.post('/catalog/register-feed', async (req, res) => {
         return res.json({ success: true, feedId: restaurant.meta_feed_id, feedUrl, updated: true });
       } catch (e) {
         // Feed no longer exists on Meta — fall through to create new
-        console.warn('[Feed] Existing feed update failed, creating new:', e.response?.data?.error?.message || e.message);
+        req.log.warn({ err: e }, 'Existing feed update failed, creating new');
         await col('restaurants').updateOne({ _id: req.restaurantId }, { $unset: { meta_feed_id: '' } });
       }
     }
@@ -5032,7 +5123,7 @@ router.post('/catalog/register-feed', async (req, res) => {
 
     res.json({ success: true, feedId, feedUrl });
   } catch (e) {
-    console.error('[Feed] Register failed:', e.response?.data || e.message);
+    req.log.error({ err: e, metaResponse: e.response?.data }, 'Feed register failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -5581,7 +5672,7 @@ router.get('/messaging-status', async (req, res) => {
           $set: { messaging_limit_tier: data.messaging_limit_tier, quality_rating: data.quality_rating },
         });
       } catch (err) {
-        console.warn(`[WhatsApp2026] Messaging status fetch:`, err.response?.data?.error?.message || err.message);
+        logger.warn({ err }, 'WhatsApp messaging status fetch failed');
       }
     }
 

@@ -6,6 +6,7 @@ const { col, newId, mapId, mapIds, transaction } = require('../config/database')
 const couponSvc = require('./coupon');
 const { calculateOrderCharges } = require('./charges');
 const { calculateDynamicDeliveryFee } = require('./dynamicPricing');
+const log = require('../utils/logger').child({ component: 'Order' });
 
 // ─── GET OR CREATE CUSTOMER ───────────────────────────────────
 // [BSUID] Delegates to customerIdentity.js for universal identity resolution
@@ -106,7 +107,14 @@ const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = n
   const restaurant = branch ? await getRestaurant(branch.restaurant_id) : null;
 
   // 3PL delivery quote — gets real pricing from delivery partner
-  const dynamicResult = await calculateDynamicDeliveryFee(branchId, deliveryLat, deliveryLng, orderDetails);
+  const { guard } = require('../utils/smartModule');
+  const defaultFee = parseFloat(process.env.DEFAULT_DELIVERY_FEE) || 40;
+  const dynamicResult = await guard('DYNAMIC_PRICING', {
+    fn: () => calculateDynamicDeliveryFee(branchId, deliveryLat, deliveryLng, orderDetails),
+    fallback: { deliveryFeeRs: defaultFee, dynamic: false, breakdown: { totalFeeRs: defaultFee } },
+    label: 'calculateDynamicDeliveryFee',
+    context: { branchId },
+  });
   const deliveryFeeRs = dynamicResult.deliveryFeeRs;
 
   const restaurantConfig = {
@@ -137,7 +145,8 @@ const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = n
   };
 };
 
-const REFERRAL_FEE_PCT = 0.075; // 7.5%
+// Referral commission calculated via centralized financial engine
+const { calculateReferralCommission } = require('../core/financialEngine');
 
 // ─── CHECK ACTIVE REFERRAL ────────────────────────────────────
 // [BSUID] Accept phone or BSUID identifier for referral lookup
@@ -173,7 +182,7 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
   const restaurantId = branch?.restaurant_id;
   const referral      = await findActiveReferral(waPhone, restaurantId);
   const referralId    = referral?.id || null;
-  const referralFeeRs = referral ? parseFloat((subtotalRs * REFERRAL_FEE_PCT).toFixed(2)) : 0;
+  const referralFeeRs = referral ? calculateReferralCommission(subtotalRs).commission_amount : 0;
 
   const effectiveTotal = charges ? charges.customer_total_rs : totalRs;
 
@@ -225,9 +234,10 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
 
   await col('orders').insertOne(order);
 
-  // Coupon usage
+  // Coupon usage tracking
   if (couponId) {
     await couponSvc.incrementUsage(couponId);
+    await couponSvc.recordRedemption(couponId, customerId, String(order._id));
   }
 
   // Update referral totals
@@ -286,32 +296,26 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
 
 // ─── UPDATE ORDER STATUS ──────────────────────────────────────
 const updateStatus = async (orderId, newStatus, extra = {}) => {
-  const tsField = {
-    PAID:       'paid_at',
-    CONFIRMED:  'confirmed_at',
-    PREPARING:  'preparing_at',
-    PACKED:     'packed_at',
-    DISPATCHED: 'dispatched_at',
-    DELIVERED:  'delivered_at',
-    CANCELLED:  'cancelled_at',
-  }[newStatus];
-
-  const $set = { status: newStatus, updated_at: new Date() };
-  if (tsField) $set[tsField] = new Date();
-  if (extra.cancelReason) $set.cancel_reason = extra.cancelReason;
-
-  const updated = await col('orders').findOneAndUpdate(
-    { _id: orderId },
-    { $set },
-    { returnDocument: 'after' }
-  );
+  // Route through the strict state engine — validates transitions, prevents races, logs audit
+  const { transitionOrder } = require('../core/orderStateEngine');
+  const updated = await transitionOrder(orderId, newStatus, {
+    actor: extra.actor || 'system',
+    actorType: extra.actorType || 'system',
+    cancelReason: extra.cancelReason,
+  });
 
   // Reverse referral commission on cancellation
   if (newStatus === 'CANCELLED' && updated?.referral_id) {
-    try {
-      const refAttr = require('./referralAttribution');
-      await refAttr.reverseCommission(orderId, extra.cancelReason || 'order_cancelled');
-    } catch (e) { console.warn('[Referral] Commission reversal failed:', e.message); }
+    const { guard: guardRef } = require('../utils/smartModule');
+    await guardRef('REFERRAL_ATTRIBUTION', {
+      fn: () => {
+        const refAttr = require('./referralAttribution');
+        return refAttr.reverseCommission(orderId, extra.cancelReason || 'order_cancelled');
+      },
+      fallback: undefined,
+      label: 'reverseCommission',
+      context: { orderId },
+    });
   }
 
   // Update customer stats on delivery
@@ -347,13 +351,13 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
               }
               await wa.sendText(waAcc.phone_number_id, waToken, toId, msg);
             }
-          } catch (e) { console.error('[Loyalty] earn error:', e.message); }
+          } catch (e) { log.error({ err: e }, 'Loyalty earn error'); }
 
           // Rating request (after loyalty msg)
           const { sendRatingRequest } = require('../webhooks/whatsapp');
           await sendRatingRequest(orderId, waAcc.phone_number_id, waToken, toId);
         }
-      } catch (e) { console.error('[Rating] delayed send error:', e.message); }
+      } catch (e) { log.error({ err: e }, 'Rating delayed send error'); }
     }, 30 * 60 * 1000); // 30 minutes after delivery — gives customer time to eat
   }
 

@@ -5,6 +5,7 @@
 const { col } = require('../config/database');
 const wa = require('./whatsapp');
 const { logActivity } = require('./activityLog');
+const log = require('../utils/logger').child({ component: 'Notify' });
 
 // ─── INTERNAL HELPER: SEND TO ALL NOTIFICATION RECIPIENTS ────
 const sendManagerNotification = async (restaurantId, branchId, message) => {
@@ -15,7 +16,7 @@ const sendManagerNotification = async (restaurantId, branchId, message) => {
       is_active: true,
     });
     if (!waAccount?.phone_number_id || !waAccount?.access_token) {
-      console.warn('[Notify] No active WA account for restaurant', restaurantId);
+      log.warn({ restaurantId }, 'No active WA account for restaurant');
       return;
     }
 
@@ -54,13 +55,13 @@ const sendManagerNotification = async (restaurantId, branchId, message) => {
     // Send to each recipient — all independent, don't let one failure stop others
     const promises = [...phones].map(phone =>
       wa.sendText(pid, token, phone, message).catch(err =>
-        console.error(`[Notify] Failed to send to ${phone}:`, err.message)
+        log.error({ err, phone: phone?.slice(-4) }, 'Failed to send notification')
       )
     );
     await Promise.allSettled(promises);
     logActivity({ actorType: 'system', action: 'notification.manager_notified', category: 'notification', description: `Manager notified for restaurant ${restaurantId}`, restaurantId, branchId, severity: 'info' });
   } catch (err) {
-    console.error('[Notify] sendManagerNotification error:', err.message);
+    log.error({ err }, 'sendManagerNotification error');
   }
 };
 
@@ -103,7 +104,7 @@ const notifyNewOrder = async (order) => {
 
     await sendManagerNotification(restaurantId, order.branch_id, message);
   } catch (err) {
-    console.error('[Notify] notifyNewOrder error:', err.message);
+    log.error({ err }, 'notifyNewOrder error');
   }
 };
 
@@ -153,7 +154,7 @@ const notifyOrderStatusChange = async (order, oldStatus, newStatus) => {
       await sendManagerNotification(restaurantId, order.branch_id, message);
     }
   } catch (err) {
-    console.error('[Notify] notifyOrderStatusChange error:', err.message);
+    log.error({ err }, 'notifyOrderStatusChange error');
   }
 };
 
@@ -184,7 +185,7 @@ const notifyLowActivity = async (branchId) => {
 
     await sendManagerNotification(restaurantId, branchId, message);
   } catch (err) {
-    console.error('[Notify] notifyLowActivity error:', err.message);
+    log.error({ err }, 'notifyLowActivity error');
   }
 };
 

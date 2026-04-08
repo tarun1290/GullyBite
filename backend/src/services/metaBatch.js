@@ -6,6 +6,7 @@
 
 const axios = require('axios');
 const metaConfig = require('../config/meta');
+const log = require('../utils/logger').child({ component: 'MetaBatch' });
 
 const BATCH_LIMIT = 50;
 
@@ -45,7 +46,7 @@ async function batchExecute(requests, accessToken) {
         results.push({ code: item.code, body, headers: item.headers });
       }
     } catch (err) {
-      console.error('[MetaBatch] Batch call failed:', err.response?.data?.error?.message || err.message);
+      log.error({ err }, 'Batch call failed');
       chunk.forEach(() => results.push({ code: 500, body: { error: err.message }, headers: {} }));
     }
   }
@@ -78,7 +79,7 @@ async function batchSendMessages(messages, phoneNumberId, accessToken) {
     if (r.code === 200 || r.code === 201) {
       return { success: true, messageId: r.body?.messages?.[0]?.id };
     }
-    console.error(`[MetaBatch] Message ${i} failed:`, r.body?.error?.message || r.code);
+    log.error({ messageIndex: i, errorMsg: r.body?.error?.message, code: r.code }, 'Batch message failed');
     return { success: false, error: r.body?.error?.message || `HTTP ${r.code}` };
   });
 }

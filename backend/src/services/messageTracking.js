@@ -19,6 +19,7 @@
 'use strict';
 
 const { col, newId } = require('../config/database');
+const log = require('../utils/logger').child({ component: 'MessageTracking' });
 
 // ─── INDIA 2026 MESSAGING RATES (₹ per message) ─────────────
 // Source: Meta WhatsApp Business pricing (India market)
@@ -219,7 +220,7 @@ async function checkAccountQuality(phoneNumberId, accessToken, restaurantId) {
     if (['LOW', 'FLAGGED'].includes(data.quality_rating)) {
       logEntry.alert_sent = true;
       await col('waba_health_log').updateOne({ _id: logEntry._id }, { $set: { alert_sent: true } });
-      console.warn(`[WABA Health] ⚠️ Quality degraded for ${phoneNumberId}: ${data.quality_rating}`);
+      log.warn({ phoneNumberId, qualityRating: data.quality_rating }, 'WABA quality degraded');
     }
 
     return {
@@ -229,7 +230,7 @@ async function checkAccountQuality(phoneNumberId, accessToken, restaurantId) {
       phone_status: data.status,
     };
   } catch (err) {
-    console.error(`[WABA Health] Failed to check quality for ${phoneNumberId}:`, err.message);
+    log.error({ err, phoneNumberId }, 'Failed to check WABA quality');
     return null;
   }
 }

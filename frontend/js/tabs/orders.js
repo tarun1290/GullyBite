@@ -15,8 +15,8 @@ async function loadOrders(s) {
     if (!o?.length) { tb.innerHTML = `<tr><td colspan="8"><div class="empty"><div class="ei">📋</div><h3>No orders found</h3></div></td></tr>`; return; }
     tb.innerHTML = o.map(r => `<tr>
       <td><span class="mono">${r.order_number}</span></td>
-      <td><div>${r.customer_name || '—'}</div><div style="font-size:.72rem;color:var(--dim)">${r.wa_phone || r.bsuid?.slice(0,12)+'…' || ''}</div></td>
-      <td>${r.branch_name}</td>
+      <td><div>${_esc(r.customer_name || '—')}</div><div style="font-size:.72rem;color:var(--dim)">${_esc(r.wa_phone || r.bsuid?.slice(0,12)+'…' || '')}</div></td>
+      <td>${_esc(r.branch_name || '')}</td>
       <td>₹${r.total_rs}</td>
       <td>${sbadge(r.status)}</td>
       <td style="font-size:.73rem">${fmtEta(r)}</td>
@@ -140,8 +140,8 @@ async function openOrdModal(orderId) {
     body.innerHTML = `
       <div style="margin-bottom:.8rem">
         <span style="font-size:.75rem;color:var(--dim)">Customer</span>
-        <div style="font-weight:600">${o.customer_name||'—'} · ${o.wa_phone || o.bsuid?.slice(0,12)+'…' || ''}</div>
-        ${o.delivery_address ? `<div style="font-size:.75rem;color:var(--dim);margin-top:.2rem">\uD83D\uDCCD ${o.delivery_address}</div>` : (o.delivery_lat && o.delivery_lng ? `<div style="font-size:.75rem;margin-top:.2rem"><a href="https://www.google.com/maps?q=${o.delivery_lat},${o.delivery_lng}" target="_blank" style="color:var(--acc);text-decoration:none">\uD83D\uDCCD View on Maps</a></div>` : '')}
+        <div style="font-weight:600">${_esc(o.customer_name||'—')} · ${_esc(o.wa_phone || o.bsuid?.slice(0,12)+'…' || '')}</div>
+        ${o.delivery_address ? `<div style="font-size:.75rem;color:var(--dim);margin-top:.2rem">\uD83D\uDCCD ${_esc(o.delivery_address)}</div>` : (o.delivery_lat && o.delivery_lng ? `<div style="font-size:.75rem;margin-top:.2rem"><a href="https://www.google.com/maps?q=${o.delivery_lat},${o.delivery_lng}" target="_blank" style="color:var(--acc);text-decoration:none">\uD83D\uDCCD View on Maps</a></div>` : '')}
       </div>
       <div style="margin-bottom:.8rem">
         <span style="font-size:.75rem;color:var(--dim)">Items</span>
@@ -157,7 +157,7 @@ async function openOrdModal(orderId) {
 
     // Load delivery info
     try {
-      const dRes = await api('/api/restaurant/orders/' + id + '/delivery');
+      const dRes = await api('/api/restaurant/orders/' + orderId + '/delivery');
       const d = dRes.delivery;
       if (d) {
         const statusColors = { delivered: '#16a34a', picked_up: '#2563eb', assigned: '#d97706', pending: '#6b7280', failed: '#dc2626', cancelled: '#dc2626' };
@@ -175,9 +175,9 @@ async function openOrdModal(orderId) {
             </div>
             <div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap">
               ${d.tracking_url ? `<a href="${d.tracking_url}" target="_blank" class="btn-p btn-sm" style="text-decoration:none;font-size:.75rem">📍 Track Delivery</a>` : ''}
-              ${(d.status === 'failed' || d.status === 'cancelled') ? `<button class="btn-g btn-sm" style="font-size:.75rem" onclick="doDispatch('${id}')">🔄 Re-dispatch</button>` : ''}
-              ${(d.status === 'assigned' || d.status === 'picked_up') ? `<button class="btn-sm" style="font-size:.75rem;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;border-radius:4px;cursor:pointer" onclick="doCancelDelivery('${id}')">❌ Cancel Delivery</button>` : ''}
-              ${d.status === 'pending' ? `<button class="btn-p btn-sm" style="font-size:.75rem" onclick="doDispatch('${id}')">🚴 Dispatch Now</button>` : ''}
+              ${(d.status === 'failed' || d.status === 'cancelled') ? `<button class="btn-g btn-sm" style="font-size:.75rem" onclick="doDispatch('${orderId}')">🔄 Re-dispatch</button>` : ''}
+              ${(d.status === 'assigned' || d.status === 'picked_up') ? `<button class="btn-sm" style="font-size:.75rem;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;border-radius:4px;cursor:pointer" onclick="doCancelDelivery('${orderId}')">❌ Cancel Delivery</button>` : ''}
+              ${d.status === 'pending' ? `<button class="btn-p btn-sm" style="font-size:.75rem" onclick="doDispatch('${orderId}')">🚴 Dispatch Now</button>` : ''}
             </div>
           </div>`;
         body.innerHTML += deliveryHtml;

@@ -17,6 +17,7 @@
 const { col, newId } = require('../config/database');
 const wa = require('./whatsapp');
 const { logActivity } = require('./activityLog');
+const log = require('../utils/logger').child({ component: 'Campaign' });
 
 const DEFAULT_BATCH_SIZE = 500;
 const DEFAULT_BATCH_DELAY_MS = 5000;
@@ -24,7 +25,7 @@ const FAILURE_THRESHOLD_PCT = 10; // Auto-pause if >10% fail in a batch
 
 // ─── CREATE CAMPAIGN ────────────────────────────────────────────
 async function createCampaign(restaurantId, data) {
-  const { branchId, name, productIds, segment, headerText, bodyText, footerText, scheduleAt, batchSize, sendMethod } = data;
+  const { branchId, name, productIds, segment, headerText, bodyText, footerText, scheduleAt, batchSize, sendMethod, couponId } = data;
 
   if (!branchId || !productIds?.length) {
     throw new Error('branchId and at least one productId are required');
@@ -52,6 +53,7 @@ async function createCampaign(restaurantId, data) {
     total_batches: 0,
     resume_from_index: 0,
     send_method: sendMethod || 'standard', // "standard" | "mm_lite"
+    coupon_id: couponId || null,
     created_at: new Date(),
     sent_at: null,
     paused_at: null,
@@ -122,7 +124,7 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
       // Check if campaign was paused by admin between batches
       const freshCampaign = await col('campaigns').findOne({ _id: campaignId });
       if (freshCampaign.status === 'paused') {
-        console.log(`[Campaign] ${campaignId} paused by admin at index ${i}`);
+        log.info({ campaignId, pausedAtIndex: i }, 'Campaign paused by admin');
         return { sent, failed, paused: true, resume_from: i };
       }
 
@@ -162,7 +164,7 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
           const errCode = err.response?.data?.error?.code;
           if (errCode === 131049) failedPacing++;   // Pacing limit
           if (errCode === 131026) failed24h++;       // Outside 24h window
-          console.error(`[Campaign] Batch ${batchNum}: Failed to send to ${customer.wa_phone || customer.bsuid}: code=${errCode} msg=${err.response?.data?.error?.message || err.message}`);
+          log.error({ campaignId, batch: batchNum, errorCode: errCode, errorMsg: err.response?.data?.error?.message || err.message }, 'Failed to send campaign message');
         }
 
         // Rate limit within batch: ~20 msgs/sec
@@ -189,7 +191,7 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
       if (batchFailed > 0 && batch.length > 0) {
         const batchFailRate = (batchFailed / batch.length) * 100;
         if (batchFailRate > FAILURE_THRESHOLD_PCT) {
-          console.warn(`[Campaign] ${campaignId} auto-paused: ${batchFailRate.toFixed(1)}% failure rate in batch ${batchNum}`);
+          log.warn({ campaignId, failRate: batchFailRate, batch: batchNum, failedPacing }, 'Campaign auto-paused due to high failure rate');
           await col('campaigns').updateOne({ _id: campaignId }, {
             $set: {
               status: 'paused',
@@ -251,7 +253,7 @@ async function resumeCampaign(campaignId, restaurantId) {
 
   // Resume sending in background
   sendCampaign(campaignId, { resuming: true }).catch(err => {
-    console.error(`[Campaign] Resume failed for ${campaignId}:`, err.message);
+    log.error({ err, campaignId }, 'Campaign resume failed');
   });
   return { ok: true, resuming_from: campaign.resume_from_index };
 }
@@ -373,13 +375,24 @@ async function getDueCampaigns() {
   }).toArray();
 }
 
-// ─── DELETE CAMPAIGN ────────────────────────────────────────────
+// ─── DELETE CAMPAIGN (with cascade) ─────────────────────────────
 async function deleteCampaign(campaignId, restaurantId) {
   const campaign = await col('campaigns').findOne({ _id: campaignId });
   if (!campaign) throw new Error('Campaign not found');
   if (campaign.restaurant_id !== restaurantId) throw new Error('Not your campaign');
   if (campaign.status === 'sending') throw new Error('Cannot delete while sending');
+
+  // Cascade: remove message tracking records
+  await col('campaign_messages').deleteMany({ campaign_id: campaignId }).catch(() => {});
+
+  // Unlink any coupons tied to this campaign (don't delete — just unlink)
+  await col('coupons').updateMany(
+    { campaign_id: campaignId },
+    { $set: { campaign_id: null, updated_at: new Date() } }
+  ).catch(() => {});
+
   await col('campaigns').deleteOne({ _id: campaignId });
+  log.info({ campaignId }, 'Campaign deleted with cascade cleanup');
 }
 
 module.exports = {

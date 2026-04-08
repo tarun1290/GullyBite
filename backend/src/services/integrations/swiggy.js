@@ -10,6 +10,7 @@
 // Swiggy pushes order webhooks; we pull menu via REST.
 
 const axios = require('axios');
+const log = require('../../utils/logger').child({ component: 'Swiggy' });
 
 const BASE    = 'https://partner.swiggy.com/api/v1';
 const TIMEOUT = 20000;
@@ -64,7 +65,7 @@ async function fetchMenu(integration) {
     });
   });
 
-  console.log(`[Swiggy] Fetched ${categories.length} categories, ${items.length} items for outlet ${outlet_id}`);
+  log.info({ categories: categories.length, items: items.length, outletId: outlet_id }, 'Menu fetched');
 
   return { categories, items };
 }

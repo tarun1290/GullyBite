@@ -963,7 +963,7 @@ async function loadCatalogMgmt(refresh = false) {
           + ' <span style="font-size:.68rem;color:var(--dim);font-style:italic">(cached)</span></div>';
         _catMgmtData = { active_catalog_id: cachedCatId, catalogs: [{ id: cachedCatId, name: cachedCatName, connected: true }] };
       }
-      listEl.innerHTML = fallbackHtml + '<div style="padding:.5rem .7rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:.78rem;color:#dc2626">\u274C ' + (e.message || 'Failed to load') + ' <button class="btn-g btn-sm" onclick="loadCatalogMgmt(true)" style="font-size:.72rem;margin-left:.5rem">Retry</button></div>';
+      listEl.innerHTML = fallbackHtml + '<div style="padding:.5rem .7rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:.78rem;color:#dc2626">\u274C ' + _esc(e.message || 'Failed to load') + ' <button class="btn-g btn-sm" onclick="loadCatalogMgmt(true)" style="font-size:.72rem;margin-left:.5rem">Retry</button></div>';
     }
     // Buttons stay at their Phase 1 state — create always enabled, others based on cache
   }
@@ -1806,7 +1806,7 @@ async function openVariantModal(platform) {
         </table>
       </div>`
   } catch (e) {
-    body.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--red)">Failed to load variants: ${e.message}</div>`
+    body.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--red)">Failed to load variants: ${_esc(e.message)}</div>`
   }
 }
 

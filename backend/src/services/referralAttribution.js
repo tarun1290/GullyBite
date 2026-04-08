@@ -7,6 +7,7 @@
 
 const { col, newId, mapId, mapIds } = require('../config/database');
 const { calculateAttributionWindow } = require('../utils/referralWindow');
+const log = require('../utils/logger').child({ component: 'Referral' });
 
 const COMMISSION_PCT = 7.5;
 
@@ -41,7 +42,7 @@ async function createReferral({ restaurantId, customerPhone, customerBsuid, cust
     { $set: { status: 'superseded', superseded_at: now, superseded_by_source: source, updated_at: now } }
   );
   if (superseded.modifiedCount > 0) {
-    console.log(`[Referral] Superseded ${superseded.modifiedCount} active referral(s) for ${customerPhone} at restaurant ${restaurantId}`);
+    log.info({ superseded: superseded.modifiedCount, phone: customerPhone?.slice(-4), restaurantId }, 'Superseded active referrals');
   }
 
   const referral = {
@@ -79,7 +80,7 @@ async function createReferral({ restaurantId, customerPhone, customerBsuid, cust
   };
 
   await col('referrals').insertOne(referral);
-  console.log(`[Referral] Created: ${source} → ${customerPhone} at restaurant ${restaurantId} (window: ${windowHours}h, expires: ${expiresAt.toISOString()})`);
+  log.info({ source, phone: customerPhone?.slice(-4), restaurantId, windowHours, expiresAt: expiresAt.toISOString() }, 'Referral created');
   return referral;
 }
 
@@ -107,7 +108,7 @@ async function refreshOrCreateReferral(params) {
   );
 
   if (existing) {
-    console.log(`[Referral] Refreshed window for ${customerPhone} at ${restaurantId} (${windowHours}h)`);
+    log.info({ phone: customerPhone?.slice(-4), restaurantId, windowHours }, 'Refreshed referral window');
     return existing;
   }
 
@@ -141,7 +142,7 @@ async function attributeOrder(orderId, orderSubtotal, referralId) {
       },
     }
   );
-  console.log(`[Referral] Attributed order ${orderId}: subtotal=₹${orderSubtotal}, commission=₹${commissionAmount}`);
+  log.info({ orderId, subtotalRs: orderSubtotal, commissionRs: commissionAmount }, 'Order attributed');
 }
 
 // ─── CONFIRM COMMISSION (after payment) ─────────────────────
@@ -174,7 +175,7 @@ async function reverseCommission(orderId, reason = 'order_cancelled') {
       },
     }
   );
-  console.log(`[Referral] Commission reversed for order ${orderId}: ₹${reverseAmount} (${reason})`);
+  log.info({ orderId, reversedRs: reverseAmount, reason }, 'Commission reversed');
 
   // Also update the order's referral_fee_rs to 0
   await col('orders').updateOne(

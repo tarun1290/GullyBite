@@ -56,8 +56,8 @@ async function loadCustomers() {
     el.innerHTML = custs.map(c => `
       <div class="order-row" style="cursor:pointer" onclick="toggleCustHistory('${c.id}',this)">
         <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
-          <div style="font-weight:600">${c.name || 'Unknown'}</div>
-          <div style="color:var(--dim);font-size:.85rem">${c.wa_phone ? '+'+c.wa_phone : c.bsuid?.slice(0,12)+'…' || '—'}</div>
+          <div style="font-weight:600">${_esc(c.name || 'Unknown')}</div>
+          <div style="color:var(--dim);font-size:.85rem">${c.wa_phone ? '+'+_esc(c.wa_phone) : _esc(c.bsuid?.slice(0,12)+'…') || '—'}</div>
           <div style="margin-left:auto;display:flex;gap:1rem;font-size:.85rem">
             <span title="Total orders">🛒 ${c.total_orders}</span>
             <span title="Total spent">💰 ₹${(c.total_spent||0).toFixed(0)}</span>
@@ -175,7 +175,7 @@ async function loadRatings(page) {
       if (sum.recent_comments?.length) {
         commentsEl.innerHTML = sum.recent_comments.map(c => {
           const clr = (c.overall_rating || 0) >= 4 ? 'var(--wa)' : (c.overall_rating || 0) >= 3 ? 'var(--gold)' : 'var(--red)';
-          return '<div style="padding:.5rem 0;border-bottom:1px solid var(--rim)"><span style="font-weight:600;color:' + clr + '">' + (c.overall_rating || 0) + '\u2B50</span> <span>' + (c.comment || '') + '</span> <span style="color:var(--dim);font-size:.72rem;float:right">' + new Date(c.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short' }) + '</span></div>';
+          return '<div style="padding:.5rem 0;border-bottom:1px solid var(--rim)"><span style="font-weight:600;color:' + clr + '">' + (c.overall_rating || 0) + '\u2B50</span> <span>' + _esc(c.comment || '') + '</span> <span style="color:var(--dim);font-size:.72rem;float:right">' + new Date(c.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short' }) + '</span></div>';
         }).join('');
       } else { commentsEl.innerHTML = '<span style="color:var(--mute)">No comments yet</span>'; }
     }
@@ -192,7 +192,7 @@ async function loadRatings(page) {
         const date = new Date(r.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'2-digit' });
         return `<tr style="border-bottom:1px solid var(--rim)">
           <td style="padding:.5rem">#${r.order_number}</td>
-          <td style="padding:.5rem">${r.customer_name}</td>
+          <td style="padding:.5rem">${_esc(r.customer_name || '')}</td>
           <td style="padding:.5rem">${r.branch_name}</td>
           <td style="padding:.5rem;text-align:center">${badge(r.taste_rating)}</td>
           <td style="padding:.5rem;text-align:center">${badge(r.packing_rating)}</td>
@@ -427,7 +427,7 @@ async function loadLoyalty(page) {
       };
       tb.innerHTML = data.customers.map(c => `<tr style="border-bottom:1px solid var(--rim)">
         <td style="padding:.5rem">${c.customer_name}</td>
-        <td style="padding:.5rem;font-size:.75rem;color:var(--dim)">${c.wa_phone || c.bsuid?.slice(0,12)+'…' || '—'}</td>
+        <td style="padding:.5rem;font-size:.75rem;color:var(--dim)">${_esc(c.wa_phone || c.bsuid?.slice(0,12)+'…' || '—')}</td>
         <td style="padding:.5rem;text-align:center;font-weight:600">${c.points_balance}</td>
         <td style="padding:.5rem;text-align:center;color:var(--dim)">${c.lifetime_points}</td>
         <td style="padding:.5rem;text-align:center">${tierBadge(c.tier)}</td>
@@ -466,8 +466,8 @@ async function loadReferrals() {
     tbody.innerHTML = d.referrals.map(r => `
       <tr style="border-bottom:1px solid var(--rim)">
         <td style="padding:.6rem 1rem">
-          <div style="font-family:monospace;font-size:.8rem">${r.customer_wa_phone || r.customer_bsuid?.slice(0,12)+'…' || '—'}</div>
-          ${r.customer_name ? `<div style="font-size:.74rem;color:var(--dim)">${r.customer_name}</div>` : ''}
+          <div style="font-family:monospace;font-size:.8rem">${_esc(r.customer_wa_phone || r.customer_bsuid?.slice(0,12)+'…' || '—')}</div>
+          ${r.customer_name ? `<div style="font-size:.74rem;color:var(--dim)">${_esc(r.customer_name)}</div>` : ''}
         </td>
         <td style="padding:.6rem 1rem">
           <span style="color:${statusColor[r.status]||'#6b7280'};font-weight:600;text-transform:capitalize;font-size:.8rem">${r.status}</span>

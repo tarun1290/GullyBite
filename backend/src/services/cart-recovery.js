@@ -11,6 +11,7 @@
 
 const { col, newId } = require('../config/database');
 const config = require('../config/cart-recovery-config');
+const log = require('../utils/logger').child({ component: 'CartRecovery' });
 
 // ─── TRACK ABANDONED CART ────────────────────────────────
 // Called at each abandonment point (address pending, review pending, payment pending/failed).
@@ -21,7 +22,7 @@ async function trackAbandonedCart({
   abandonmentStage, abandonmentReason, deliveryAddress, lastCustomerMessageAt,
 }) {
   if ((cartTotal || 0) < config.min_cart_value_rs) {
-    console.log(`[Cart Recovery] Skipping — cart total ₹${cartTotal} below minimum ₹${config.min_cart_value_rs}`);
+    log.info({ cartTotal, minCartValue: config.min_cart_value_rs }, 'Skipping — cart below minimum');
     return null;
   }
 
@@ -67,7 +68,7 @@ async function trackAbandonedCart({
     { upsert: true, returnDocument: 'after' }
   );
 
-  console.log(`[Cart Recovery] Tracked: stage=${abandonmentStage} customer=${customerPhone} total=₹${cartTotal} items=${itemCount}`);
+  log.info({ abandonmentStage, phone: customerPhone?.slice(-4), cartTotal, itemCount }, 'Cart tracked');
   return result;
 }
 
@@ -115,7 +116,7 @@ async function markRecovered(customerPhone, restaurantId, orderId) {
   );
 
   if (cart?.reminders_sent?.length > 0) {
-    console.log(`[Cart Recovery] Recovered! customer=${customerPhone} after ${cart.reminders_sent.length} reminder(s)`);
+    log.info({ phone: customerPhone?.slice(-4), reminders: cart.reminders_sent.length }, 'Cart recovered');
     // Mark last reminder as clicked
     const lastIdx = cart.reminders_sent.length - 1;
     await col('abandoned_carts').updateOne(
@@ -252,10 +253,10 @@ async function sendRecoveryReminder(abandonedCartId, reminderNumber) {
       }
     );
 
-    console.log(`[Cart Recovery] Sent reminder ${reminderNumber} to ${to} (${messageType}) for cart ${cart._id}`);
+    log.info({ reminderNumber, phone: to?.slice(-4), messageType, cartId: cart._id }, 'Sent recovery reminder');
     return { sent: true, reminderNumber, messageType, waMessageId };
   } catch (err) {
-    console.error(`[Cart Recovery] Reminder ${reminderNumber} failed for ${to}:`, err.message);
+    log.error({ err, reminderNumber, phone: to?.slice(-4) }, 'Reminder send failed');
     return { sent: false, reason: 'send_failed', error: err.message };
   }
 }
@@ -311,7 +312,7 @@ async function optOut(customerPhone, restaurantId) {
     { wa_phone: customerPhone },
     { $set: { recovery_opted_out: true } }
   );
-  console.log(`[Cart Recovery] Customer ${customerPhone} opted out`);
+  log.info({ phone: customerPhone?.slice(-4) }, 'Customer opted out of recovery');
 }
 
 // ─── CRON: PROCESS PENDING REMINDERS ────────────────────
@@ -381,7 +382,7 @@ async function processRecoveryQueue() {
     { $set: { recovery_status: 'expired', updated_at: now } }
   );
 
-  console.log(`[Cart Recovery] Cron: sent=${sent} expired=${expired.modifiedCount || 0}`);
+  log.info({ sent, expired: expired.modifiedCount || 0 }, 'Cron recovery run complete');
   return { sent, expired: expired.modifiedCount || 0 };
 }
 

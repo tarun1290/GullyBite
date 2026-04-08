@@ -10,16 +10,31 @@ const { col, newId } = require('../config/database');
 const { logActivity } = require('../services/activityLog');
 const metaConfig = require('../config/meta');
 
+const crypto = require('crypto');
+const log = require('../utils/logger').child({ component: 'auth' });
+
 const META_GRAPH_URL = metaConfig.graphUrl;
 
+// ── SECURE META TOKEN STORE ────────────────────────────────
+// Short-lived, one-time-use store for Meta access tokens during OAuth callback.
+// Prevents token exposure in URL query params.
+const _metaConnectStore = new Map(); // connectId → { token, metaUser, createdAt }
+const META_CONNECT_EXPIRY_MS = 3 * 60 * 1000; // 3 minutes
+
+// Cleanup expired entries every minute
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, entry] of _metaConnectStore) {
+    if (now - entry.createdAt > META_CONNECT_EXPIRY_MS) _metaConnectStore.delete(id);
+  }
+}, 60000);
+
 // ── Log OAuth redirect URIs at startup ──
-console.log('╔══════════════════════════════════════════════════════════════╗');
-console.log('║  OAUTH REDIRECT URIs (add these to Google/Meta consoles)    ║');
-console.log('╠══════════════════════════════════════════════════════════════╣');
-console.log('║  Google Callback:', `${process.env.BASE_URL}/auth/google/callback`);
-console.log('║  Meta OAuth Redirect:', process.env.META_OAUTH_REDIRECT_URI || '(not set)');
-console.log('║  Google Client ID:', process.env.GOOGLE_CLIENT_ID?.slice(0, 30) + '...' || '(not set)');
-console.log('╚══════════════════════════════════════════════════════════════╝');
+log.info({
+  googleCallback: `${process.env.BASE_URL}/auth/google/callback`,
+  metaOAuthRedirect: process.env.META_OAUTH_REDIRECT_URI || '(not set)',
+  googleClientId: process.env.GOOGLE_CLIENT_ID?.slice(0, 30) + '...' || '(not set)',
+}, 'OAuth redirect URIs configured');
 
 // ─── SIGN UP ──────────────────────────────────────────────────
 router.post('/signup', express.json(), async (req, res) => {
@@ -65,7 +80,7 @@ router.post('/signup', express.json(), async (req, res) => {
     logActivity({ actorType: 'restaurant', actorId: id, action: 'restaurant.signup', category: 'auth', description: `New restaurant registered: ${req.body.ownerName || 'Unknown'}`, restaurantId: id, severity: 'info' });
     res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
   } catch (err) {
-    console.error('[Signup]', err.message);
+    req.log.error({ err }, 'Signup failed');
     res.status(500).json({ error: err.message });
   }
 });
@@ -102,7 +117,7 @@ router.post('/signin', express.json(), async (req, res) => {
       user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner },
     });
   } catch (err) {
-    console.error('[Signin]', err.message);
+    req.log.error({ err }, 'Signin failed');
     res.status(500).json({ error: 'Sign in failed' });
   }
 });
@@ -111,11 +126,11 @@ router.post('/signin', express.json(), async (req, res) => {
 router.post('/google', express.json(), async (req, res) => {
   try {
     const { code } = req.body;
-    console.log('[Google Auth] Route hit, code present:', !!code);
+    req.log.info({ codePresent: !!code }, 'Route hit');
     if (!code) return res.status(400).json({ error: 'Authorization code required' });
 
     // 1. Exchange auth code for tokens
-    console.log('[Google Auth] Exchanging code, client_id:', process.env.GOOGLE_CLIENT_ID?.slice(0, 20) + '...');
+    req.log.info({ clientId: process.env.GOOGLE_CLIENT_ID?.slice(0, 20) + '...' }, 'Exchanging code');
     const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID,
@@ -123,14 +138,14 @@ router.post('/google', express.json(), async (req, res) => {
       redirect_uri: 'postmessage',
       grant_type: 'authorization_code',
     });
-    console.log('[Google Auth] Token exchange successful');
+    req.log.info('Token exchange successful');
 
     // 2. Fetch user profile
     const userRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${tokenRes.data.access_token}` },
     });
     const { id: googleId, name, email, picture } = userRes.data;
-    console.log('[Google Auth] User profile:', { googleId, name, email });
+    req.log.info({ googleId, name, email }, 'User profile fetched');
 
     // 3. Find or create restaurant
     let restaurant = await col('restaurants').findOne({ google_id: googleId });
@@ -174,14 +189,14 @@ router.post('/google', express.json(), async (req, res) => {
       branchIds: [],
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
-    console.log('[Google Auth] Success — restaurantId:', restaurantId, 'needsOnboarding:', needsOnboarding, 'approvalStatus:', approvalStatus);
+    req.log.info({ restaurantId, needsOnboarding, approvalStatus }, 'Google auth success');
     res.json({
       token, approvalStatus, needsOnboarding,
       onboardingStep: restaurant?.onboarding_step || 1,
       user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner },
     });
   } catch (err) {
-    console.error('[Google Auth] FAILED:', err.response?.data || err.message);
+    req.log.error({ err, responseData: err.response?.data }, 'Google auth failed');
     res.status(500).json({ error: 'Google authentication failed' });
   }
 });
@@ -190,7 +205,7 @@ router.post('/google', express.json(), async (req, res) => {
 // Google redirects here after user consents (redirect mode)
 router.get('/google/callback', async (req, res) => {
   const { code, error } = req.query;
-  console.log('[Google Callback] Hit, code present:', !!code, 'error:', error || 'none');
+  req.log.info({ codePresent: !!code, error: error || 'none' }, 'Google callback hit');
 
   if (error || !code) {
     return res.redirect('/?error=google_auth_failed');
@@ -199,7 +214,7 @@ router.get('/google/callback', async (req, res) => {
   try {
     // Use BASE_URL to ensure https — req.protocol returns 'http' behind Vercel's proxy
     const redirectUri = `${process.env.BASE_URL}/auth/google/callback`;
-    console.log('[Google Callback] Using redirect_uri:', redirectUri);
+    req.log.info({ redirectUri }, 'Using redirect_uri');
 
     // 1. Exchange code for tokens
     const tokenRes = await axios.post('https://oauth2.googleapis.com/token', {
@@ -209,14 +224,14 @@ router.get('/google/callback', async (req, res) => {
       redirect_uri: redirectUri,
       grant_type: 'authorization_code',
     });
-    console.log('[Google Callback] Token exchange successful');
+    req.log.info('Token exchange successful');
 
     // 2. Fetch user profile
     const userRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${tokenRes.data.access_token}` },
     });
     const { id: googleId, name, email, picture } = userRes.data;
-    console.log('[Google Callback] User:', { googleId, name, email });
+    req.log.info({ googleId, name, email }, 'User profile fetched');
 
     // 3. Find or create restaurant
     let restaurant = await col('restaurants').findOne({ google_id: googleId });
@@ -255,11 +270,11 @@ router.get('/google/callback', async (req, res) => {
       branchIds: [],
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
-    console.log('[Google Callback] Success, redirecting with token');
+    req.log.info('Success, redirecting with token');
     // Redirect to frontend with token in URL — frontend will pick it up
     res.redirect(`/?google_token=${jwtToken}`);
   } catch (err) {
-    console.error('[Google Callback] FAILED:', err.response?.data || err.message);
+    req.log.error({ err, responseData: err.response?.data }, 'Google callback failed');
     res.redirect('/?error=google_auth_failed');
   }
 });
@@ -270,18 +285,17 @@ router.get('/google/callback', async (req, res) => {
 // META_OAUTH_REDIRECT_URI in .env must point to {BASE_URL}/auth/callback
 router.get('/callback', async (req, res) => {
   const { code, error, error_reason } = req.query;
-  console.log('[Meta Callback] 1. Hit — code:', !!code, 'error:', error || 'none', 'reason:', error_reason || 'none');
+  req.log.info({ codePresent: !!code, error: error || 'none', reason: error_reason || 'none' }, 'Meta callback hit');
 
   if (error || !code) {
-    console.error('[Meta Callback] No code or error present');
+    req.log.error({ error, error_reason }, 'No code or error present');
     return res.redirect('/?error=meta_auth_failed&reason=' + encodeURIComponent(error_reason || error || 'no_code'));
   }
 
   try {
     // Exchange code for token using server-side redirect URI
     // Meta OAuth requires GET with query params (not POST with JSON body)
-    console.log('[Meta Callback] 2. Exchanging code, redirect_uri:', process.env.META_OAUTH_REDIRECT_URI);
-    console.log('[Meta Callback] 2. App ID:', metaConfig.appId, 'App Secret set:', !!metaConfig.appSecret);
+    req.log.info({ redirectUri: process.env.META_OAUTH_REDIRECT_URI, appId: metaConfig.appId, appSecretSet: !!metaConfig.appSecret }, 'Exchanging code');
     const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
       params: {
         client_id: metaConfig.appId,
@@ -292,24 +306,57 @@ router.get('/callback', async (req, res) => {
     });
     const longToken = tokenRes.data.access_token;
     if (!longToken) {
-      console.error('[Meta Callback] 2. No access_token in response:', JSON.stringify(tokenRes.data));
+      req.log.error({ responseData: tokenRes.data }, 'No access_token in response');
       return res.redirect('/?error=meta_auth_failed&reason=no_token_returned');
     }
-    console.log('[Meta Callback] 2. Token exchange successful, token length:', longToken?.length, 'expires_in:', tokenRes.data.expires_in);
+    req.log.info({ tokenLength: longToken?.length, expiresIn: tokenRes.data.expires_in }, 'Token exchange successful');
 
     // Fetch Meta user profile
     const userRes = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
     const metaUser = userRes.data;
-    console.log('[Meta Callback] 3. Meta user:', { id: metaUser.id, name: metaUser.name });
+    req.log.info({ metaUserId: metaUser.id, name: metaUser.name }, 'Meta user fetched');
 
-    // Redirect to frontend — the dashboard will call POST /connect-meta with the user's JWT + this token
-    console.log('[Meta Callback] 4. Redirecting to dashboard with meta_access_token');
-    res.redirect(`/dashboard.html?meta_access_token=${encodeURIComponent(longToken)}`);
+    // Store token server-side with a short-lived reference ID (never expose token in URL)
+    const connectId = crypto.randomBytes(24).toString('hex');
+    _metaConnectStore.set(connectId, { token: longToken, metaUser, createdAt: Date.now() });
+    req.log.info('Redirecting to dashboard with secure meta_connect_id');
+    res.redirect(`/dashboard.html?meta_connect_id=${connectId}`);
   } catch (err) {
-    console.error('[Meta Callback] FAILED:', JSON.stringify(err.response?.data || err.message));
+    req.log.error({ err, responseData: err.response?.data }, 'Meta callback failed');
     res.redirect('/?error=meta_auth_failed&reason=' + encodeURIComponent(err.response?.data?.error?.message || err.message));
   }
 });
+
+// ─── RESOLVE META CONNECT (secure token retrieval) ───────────
+// Frontend calls this with meta_connect_id from URL to retrieve the access token securely.
+// One-time use — token is deleted after retrieval. Expires after 3 minutes.
+router.get('/resolve-meta-connect', requireAuth, async (req, res) => {
+  const connectId = req.query.id;
+  if (!connectId) return res.status(400).json({ error: 'meta_connect_id is required' });
+
+  const entry = _metaConnectStore.get(connectId);
+  if (!entry) {
+    req.log.warn('Invalid or expired meta_connect_id');
+    return res.status(410).json({ error: 'Meta connection token expired or already used. Please reconnect.' });
+  }
+
+  // Check expiry
+  if (Date.now() - entry.createdAt > META_CONNECT_EXPIRY_MS) {
+    _metaConnectStore.delete(connectId);
+    return res.status(410).json({ error: 'Meta connection token expired. Please reconnect.' });
+  }
+
+  // One-time use — delete immediately
+  _metaConnectStore.delete(connectId);
+
+  req.log.info({ connectIdPrefix: connectId.substring(0, 8) }, 'Token resolved securely');
+
+  // Return the token to the authenticated frontend (it will call POST /connect-meta with it)
+  res.json({ success: true, accessToken: entry.token, metaUser: entry.metaUser });
+});
+
+// ─── BACKWARD COMPAT: Warn if old meta_access_token flow is used ──
+// This will be removed after migration period.
 
 // ─── CONNECT META / WHATSAPP ───────────────────────────────────
 // Embedded Signup (config_id) codes: exchange WITHOUT redirect_uri per Meta docs.
@@ -318,7 +365,7 @@ router.get('/callback', async (req, res) => {
 router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
   try {
     const { accessToken, code, sessionInfo, fromJsSdk } = req.body;
-    console.log('[connect-meta] Route hit — code:', !!code, 'accessToken:', !!accessToken, 'fromJsSdk:', !!fromJsSdk, 'sessionInfo:', JSON.stringify(sessionInfo || {}));
+    req.log.info({ codePresent: !!code, accessTokenPresent: !!accessToken, fromJsSdk: !!fromJsSdk, sessionInfo: sessionInfo || {} }, 'Route hit');
     if (!accessToken && !code) return res.status(400).json({ error: 'No token provided' });
 
     let longToken, expiresAt;
@@ -333,73 +380,72 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
       if (!fromJsSdk) {
         exchangeParams.redirect_uri = process.env.META_OAUTH_REDIRECT_URI;
       }
-      console.log('[connect-meta] 1. Exchanging code, fromJsSdk:', fromJsSdk, 'redirect_uri:', exchangeParams.redirect_uri || '(omitted for Embedded Signup)');
-      console.log('[connect-meta] 1. App ID:', metaConfig.appId, 'App Secret set:', !!metaConfig.appSecret);
+      req.log.info({ fromJsSdk, redirectUri: exchangeParams.redirect_uri || '(omitted for Embedded Signup)', appId: metaConfig.appId, appSecretSet: !!metaConfig.appSecret }, 'Exchanging code');
       const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
         params: exchangeParams,
       });
       longToken = tokenRes.data.access_token;
       if (!longToken) {
-        console.error('[connect-meta] 1. No access_token in response:', JSON.stringify(tokenRes.data));
+        req.log.error({ responseData: tokenRes.data }, 'No access_token in response');
         return res.status(400).json({ error: 'Meta returned no access token — please try again' });
       }
       expiresAt = tokenRes.data.expires_in ? new Date(Date.now() + tokenRes.data.expires_in * 1000) : null;
-      console.log('[connect-meta] 1. Code exchange successful, token length:', longToken?.length);
+      req.log.info({ tokenLength: longToken?.length }, 'Code exchange successful');
     } else {
       // accessToken path — exchange short-lived token for long-lived
-      console.log('[connect-meta] 1. Exchanging access token (fb_exchange_token), token length:', accessToken?.length);
+      req.log.info({ tokenLength: accessToken?.length }, 'Exchanging access token via fb_exchange_token');
       const longRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
         params: { grant_type: 'fb_exchange_token', client_id: metaConfig.appId,
                   client_secret: metaConfig.appSecret, fb_exchange_token: accessToken },
       });
       longToken = longRes.data.access_token;
       expiresAt = longRes.data.expires_in ? new Date(Date.now() + longRes.data.expires_in * 1000) : null;
-      console.log('[connect-meta] 1. Token exchange successful, new token length:', longToken?.length);
+      req.log.info({ tokenLength: longToken?.length }, 'Token exchange successful');
     }
 
-    console.log('[connect-meta] 2. Fetching Meta user profile...');
+    req.log.info('Fetching Meta user profile');
 
     const userRes  = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
     const metaUser = userRes.data;
-    console.log('[connect-meta] Meta user:', { id: metaUser.id, name: metaUser.name, email: metaUser.email });
+    req.log.info({ metaUserId: metaUser.id, name: metaUser.name, email: metaUser.email }, 'Meta user fetched');
 
     // Step 3: Fetch WABA data from businesses endpoint
     let wabaData = [];
     try {
-      console.log('[connect-meta] 3. Fetching WABAs via /me/businesses...');
+      req.log.info('Fetching WABAs via /me/businesses');
       const wabaRes = await axios.get(`${META_GRAPH_URL}/${metaUser.id}/businesses`, {
         params: { fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}', access_token: longToken },
       });
       wabaData = wabaRes.data?.data || [];
-      console.log('[connect-meta] 3. WABA data from businesses:', wabaData.length, 'businesses found');
+      req.log.info({ businessCount: wabaData.length }, 'WABA data from businesses');
     } catch (e) {
-      console.warn('[connect-meta] 3. Could not fetch WABAs via businesses:', e.response?.data?.error?.message || e.message);
+      req.log.warn({ err: e }, 'Could not fetch WABAs via businesses');
     }
 
     // Step 3b: If businesses endpoint returned nothing, try shared WABAs endpoint
     if (!wabaData.length) {
       try {
-        console.log('[connect-meta] 3b. Trying /me/whatsapp_business_accounts fallback...');
+        req.log.info('Trying /me/whatsapp_business_accounts fallback');
         const directRes = await axios.get(`${META_GRAPH_URL}/me/whatsapp_business_accounts`, {
           params: { fields: 'id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}', access_token: longToken },
         });
         const directWabas = directRes.data?.data || [];
         if (directWabas.length) {
-          console.log('[connect-meta] 3b. Found', directWabas.length, 'WABAs via direct endpoint');
+          req.log.info({ wabaCount: directWabas.length }, 'Found WABAs via direct endpoint');
           // Wrap in businesses format for _saveWabaAccounts
           wabaData = [{ id: 'direct', name: 'Direct', whatsapp_business_accounts: { data: directWabas } }];
         }
       } catch (e) {
-        console.warn('[connect-meta] 3b. Direct WABA fetch also failed:', e.response?.data?.error?.message || e.message);
+        req.log.warn({ err: e }, 'Direct WABA fetch also failed');
       }
     }
 
     // Step 4: Save to database
-    console.log('[connect-meta] 4. Saving to database for restaurant:', req.restaurantId);
+    req.log.info({ restaurantId: req.restaurantId }, 'Saving to database');
     const currentRestaurant = await col('restaurants').findOne(
       { _id: req.restaurantId }, { projection: { approval_status: 1, submitted_at: 1 } }
     );
-    console.log('[connect-meta] 4. Current restaurant state:', { approval_status: currentRestaurant?.approval_status, has_submitted_at: !!currentRestaurant?.submitted_at });
+    req.log.info({ approvalStatus: currentRestaurant?.approval_status, hasSubmittedAt: !!currentRestaurant?.submitted_at }, 'Current restaurant state');
 
     const $set = {
       meta_user_id: metaUser.id, meta_access_token: longToken, meta_token_expires_at: expiresAt,
@@ -414,10 +460,10 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     if (sessionInfo?.phone_number_id) $set.meta_phone_number_id = sessionInfo.phone_number_id;
     if (sessionInfo?.waba_id) $set.meta_waba_id = sessionInfo.waba_id;
     const updateResult = await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
-    console.log('[connect-meta] 5. Database update result:', { matchedCount: updateResult.matchedCount, modifiedCount: updateResult.modifiedCount });
+    req.log.info({ matchedCount: updateResult.matchedCount, modifiedCount: updateResult.modifiedCount }, 'Database update result');
 
     // Initialize messaging wallet (fire-and-forget)
-    require('../services/wallet').ensureWallet(req.restaurantId).catch(e => console.warn('[Wallet] Init failed:', e.message));
+    require('../services/wallet').ensureWallet(req.restaurantId).catch(e => log.warn({ err: e, restaurantId: req.restaurantId }, 'Wallet init failed'));
 
     await _saveWabaAccounts(req.restaurantId, wabaData, longToken, sessionInfo);
 
@@ -427,7 +473,7 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
       try {
         const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
         if (wa_acc?.waba_id) {
-          console.log('[connect-meta] 6. Auto-fetching catalogs for WABA', wa_acc.waba_id);
+          req.log.info({ wabaId: wa_acc.waba_id }, 'Auto-fetching catalogs for WABA');
           const wabaCatRes = await axios.get(`${META_GRAPH_URL}/${wa_acc.waba_id}/product_catalogs`, {
             params: { fields: 'id,name,product_count', access_token: catToken }, timeout: 10000,
           });
@@ -441,24 +487,22 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
               catalog_auto_fetched: true,
               catalog_fetched_at: new Date(),
             }});
-            console.log(`[connect-meta] 6. Auto-linked catalog "${primaryCatalog.name}" (${primaryCatalog.id})`);
+            req.log.info({ catalogName: primaryCatalog.name, catalogId: primaryCatalog.id }, 'Auto-linked catalog');
           } else {
-            console.log('[connect-meta] 6. No existing catalogs found — will be created on first menu item');
+            req.log.info('No existing catalogs found — will be created on first menu item');
           }
         }
       } catch (e) {
-        console.warn('[connect-meta] 6. Catalog auto-fetch failed (non-fatal):', e.response?.data?.error?.message || e.message);
+        req.log.warn({ err: e }, 'Catalog auto-fetch failed (non-fatal)');
       }
     }
 
     // Step 7: Verify what was saved
     const waAccountCount = await col('whatsapp_accounts').countDocuments({ restaurant_id: req.restaurantId });
-    console.log('[connect-meta] 7. WhatsApp accounts in DB after save:', waAccountCount);
-    console.log('[connect-meta] 7. Success — restaurant', req.restaurantId, 'connected. Fields saved: meta_user_id=' + metaUser.id + ', whatsapp_connected=true, waba_accounts=' + waAccountCount);
+    req.log.info({ restaurantId: req.restaurantId, metaUserId: metaUser.id, waAccountCount }, 'Meta connected successfully');
     res.json({ connected: true });
   } catch (err) {
-    console.error('[connect-meta] FAILED:', JSON.stringify(err.response?.data || err.message));
-    console.error('[connect-meta] Full error:', err.stack?.slice(0, 500));
+    req.log.error({ err, responseData: err.response?.data }, 'Connect-meta failed');
     res.status(500).json({ error: 'Failed to connect WhatsApp: ' + (err.response?.data?.error?.message || err.message) });
   }
 });
@@ -487,7 +531,7 @@ router.post('/change-password', requireAuth, express.json(), async (req, res) =>
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
     res.json({ ok: true });
   } catch (err) {
-    console.error('[change-password]', err.message);
+    req.log.error({ err }, 'Password change failed');
     res.status(500).json({ error: 'Password update failed' });
   }
 });
@@ -515,10 +559,10 @@ router.delete('/delete-account', requireAuth, async (req, res) => {
       col('referrals').deleteMany({ restaurant_id: id }),
     ]);
 
-    console.log(`[delete-account] Deleted restaurant ${id} and all associated data`);
+    req.log.info({ restaurantId: id }, 'Deleted restaurant and all associated data');
     res.json({ ok: true });
   } catch (err) {
-    console.error('[delete-account]', err.message);
+    req.log.error({ err }, 'Delete account failed');
     res.status(500).json({ error: 'Failed to delete account' });
   }
 });
@@ -567,7 +611,7 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
     res.json({ submitted: true, storeUrl });
   } catch (err) {
-    console.error('[Onboarding]', err.message);
+    req.log.error({ err }, 'Onboarding failed');
     res.status(500).json({ error: 'Failed to save details' });
   }
 });
@@ -678,16 +722,16 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // ─── WABA ACCOUNTS HELPER ─────────────────────────────────────
 async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo = null) {
-  console.log('[saveWabaAccounts] Starting — businesses:', wabaData.length, 'sessionInfo:', JSON.stringify(sessionInfo || {}));
+  log.info({ businessCount: wabaData.length, sessionInfo: sessionInfo || {} }, 'Saving WABA accounts');
   let savedCount = 0;
   for (const biz of wabaData) {
     const wabas = biz.whatsapp_business_accounts?.data || [];
-    console.log('[saveWabaAccounts] Business', biz.id, '→', wabas.length, 'WABAs');
+    log.info({ businessId: biz.id, wabaCount: wabas.length }, 'Processing business WABAs');
     for (const waba of wabas) {
       await _subscribeWaba(waba.id);
 
       const phones = waba.phone_numbers?.data || [];
-      console.log('[saveWabaAccounts] WABA', waba.id, '→', phones.length, 'phone numbers');
+      log.info({ wabaId: waba.id, phoneCount: phones.length }, 'Processing WABA phone numbers');
       for (const phone of phones) {
         await col('whatsapp_accounts').updateOne(
           { phone_number_id: phone.id },
@@ -707,16 +751,16 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
           { upsert: true }
         );
         savedCount++;
-        console.log('[saveWabaAccounts] Saved phone', phone.id, '(' + phone.display_phone_number + ')');
+        log.info({ phoneId: phone.id, phoneDisplay: phone.display_phone_number?.slice(-4) }, 'Saved phone');
 
         _registerPhoneNumber(phone.id, longToken).catch(err =>
-          console.error(`[Register] Phone ${phone.id} registration failed:`, err.message)
+          log.error({ err, phoneId: phone.id }, 'Phone registration failed')
         );
       }
 
       logActivity({ actorType: 'system', action: 'restaurant.waba_provisioned', category: 'auth', description: `WABA ${waba.id} provisioned for restaurant ${restaurantId}`, restaurantId, resourceType: 'whatsapp_account', resourceId: waba.id, severity: 'info' });
       _provisionWabaCatalog(restaurantId, waba.id, longToken).catch(err =>
-        console.error(`[Catalog] Auto-provision failed for WABA ${waba.id}:`, err.message)
+        log.error({ err, wabaId: waba.id }, 'Catalog auto-provision failed')
       );
     }
   }
@@ -724,7 +768,7 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
   // Fallback: if the businesses API returned nothing but embedded signup gave us a waba_id,
   // query that WABA's phone numbers directly — embedded signup tokens are scoped to the WABA
   if (!wabaData.length && sessionInfo?.waba_id) {
-    console.log(`[saveWabaAccounts] Falling back to direct WABA query for ${sessionInfo.waba_id}`);
+    log.info({ wabaId: sessionInfo.waba_id }, 'Falling back to direct WABA query');
     try {
       const phoneRes = await axios.get(`${META_GRAPH_URL}/${sessionInfo.waba_id}/phone_numbers`, {
         params: { fields: 'id,display_phone_number,verified_name,quality_rating', access_token: longToken },
@@ -759,27 +803,25 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
           { upsert: true }
         );
         _registerPhoneNumber(phone.id, longToken).catch(err =>
-          console.error(`[Register] Phone ${phone.id} registration failed:`, err.message)
+          log.error({ err, phoneId: phone.id }, 'Phone registration failed')
         );
       }
 
       _provisionWabaCatalog(restaurantId, sessionInfo.waba_id, longToken).catch(err =>
-        console.error(`[Catalog] Auto-provision failed for WABA ${sessionInfo.waba_id}:`, err.message)
+        log.error({ err, wabaId: sessionInfo.waba_id }, 'Catalog auto-provision failed')
       );
       savedCount += phones.length;
     } catch (e) {
-      console.warn('[saveWabaAccounts] Direct WABA fallback failed:', e.response?.data?.error?.message || e.message);
+      log.warn({ err: e }, 'Direct WABA fallback failed');
     }
   }
 
   // If no WABA accounts were saved at all but we know Meta auth succeeded,
   // log a warning — the whatsapp_connected flag on the restaurant doc will still show green
   if (savedCount === 0) {
-    console.warn('[saveWabaAccounts] WARNING: Zero whatsapp_accounts saved for restaurant', restaurantId,
-      '— businesses:', wabaData.length, 'sessionInfo.waba_id:', sessionInfo?.waba_id || 'none',
-      '. The whatsapp_connected flag is still set on the restaurant document.');
+    log.warn({ restaurantId, businessCount: wabaData.length, sessionWabaId: sessionInfo?.waba_id || 'none' }, 'Zero whatsapp_accounts saved — whatsapp_connected flag is still set');
   } else {
-    console.log('[saveWabaAccounts] Done — saved', savedCount, 'phone records for restaurant', restaurantId);
+    log.info({ restaurantId, savedCount }, 'WABA accounts saved');
   }
 }
 
@@ -787,16 +829,16 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
 async function _subscribeWaba(wabaId) {
   const sysToken = metaConfig.systemUserToken;
   if (!sysToken) {
-    console.warn('[subscribeWaba] System user token not set — skipping for', wabaId);
+    log.warn({ wabaId }, 'System user token not set — skipping subscription');
     return;
   }
   try {
     await axios.post(`${META_GRAPH_URL}/${wabaId}/subscribed_apps`, {}, {
       params: { access_token: sysToken },
     });
-    console.log(`[subscribeWaba] Subscribed WABA ${wabaId} to app webhooks`);
+    log.info({ wabaId }, 'Subscribed WABA to app webhooks');
   } catch (err) {
-    console.error(`[subscribeWaba] Failed for WABA ${wabaId}:`, err.response?.data || err.message);
+    log.error({ err, wabaId, responseData: err.response?.data }, 'Failed to subscribe WABA');
   }
 }
 
@@ -805,7 +847,7 @@ async function _subscribeWaba(wabaId) {
 // Must be called once per phone number after Embedded Signup.
 async function _registerPhoneNumber(phoneNumberId, _accessToken) {
   const sysToken = metaConfig.systemUserToken || _accessToken;
-  if (!sysToken) { console.warn('[Register] System user token not configured, skipping'); return; }
+  if (!sysToken) { log.warn('System user token not configured, skipping registration'); return; }
   try {
     await axios.post(
       `${META_GRAPH_URL}/${phoneNumberId}/register`,
@@ -819,7 +861,7 @@ async function _registerPhoneNumber(phoneNumberId, _accessToken) {
       { phone_number_id: phoneNumberId },
       { $set: { phone_registered: true, updated_at: new Date() } }
     );
-    console.log(`[Register] Phone ${phoneNumberId} registered with Cloud API`);
+    log.info({ phoneNumberId }, 'Phone registered with Cloud API');
   } catch (err) {
     const apiErr = err.response?.data?.error;
     // Code 80007 = already registered — treat as success
@@ -828,10 +870,10 @@ async function _registerPhoneNumber(phoneNumberId, _accessToken) {
         { phone_number_id: phoneNumberId },
         { $set: { phone_registered: true, updated_at: new Date() } }
       );
-      console.log(`[Register] Phone ${phoneNumberId} was already registered`);
+      log.info({ phoneNumberId }, 'Phone was already registered');
       return;
     }
-    console.error(`[Register] Failed for phone ${phoneNumberId}:`, apiErr?.message || err.message);
+    log.error({ err, phoneNumberId }, 'Phone registration failed');
     throw err;
   }
 }
@@ -841,7 +883,7 @@ async function _registerPhoneNumber(phoneNumberId, _accessToken) {
 // enables the cart icon on every phone number, and propagates to branches.
 async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
   const catToken = metaConfig.catalogToken || _accessToken;
-  if (!catToken) { console.warn('[Catalog] No catalog token available, skipping'); return; }
+  if (!catToken) { log.warn('No catalog token available, skipping'); return; }
 
   // Check if any account for this WABA already has a catalog_id
   const existingAcc = await col('whatsapp_accounts').findOne(
@@ -863,10 +905,10 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
       const existing = wabaRes.data?.data || [];
       if (existing.length) {
         catalogId = existing[0].id;
-        console.log(`[Catalog] Found existing WABA catalog ${catalogId} for WABA ${wabaId}`);
+        log.info({ catalogId, wabaId }, 'Found existing WABA catalog');
       }
     } catch (e) {
-      console.warn(`[Catalog] Could not fetch WABA catalogs for ${wabaId}:`, e.response?.data?.error?.message || e.message);
+      log.warn({ err: e, wabaId }, 'Could not fetch WABA catalogs');
     }
 
     if (!catalogId) {
@@ -874,7 +916,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
       let businessId = metaConfig.businessId;
       if (!businessId) {
         try {
-          console.log('[Catalog] META_BUSINESS_ID not set — querying /me/businesses...');
+          log.info('META_BUSINESS_ID not set — querying /me/businesses');
           const meRes = await axios.get(`${META_GRAPH_URL}/me/businesses`, {
             params: { access_token: catToken, fields: 'id,name' },
             timeout: 10000,
@@ -882,7 +924,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
           const businesses = meRes.data?.data || [];
           if (!businesses.length) throw new Error('No Meta Business account found. Set META_BUSINESS_ID in environment variables.');
           businessId = businesses[0].id;
-          console.log('[Catalog] Discovered business ID:', businessId);
+          log.info({ businessId }, 'Discovered business ID');
         } catch (err) {
           throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
         }
@@ -897,10 +939,10 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
         const bizCatalogs = bizCatRes.data?.data || [];
         if (bizCatalogs.length) {
           catalogId = bizCatalogs[0].id;
-          console.log(`[Catalog] Found existing business catalog ${catalogId} for WABA ${wabaId} — inheriting`);
+          log.info({ catalogId, wabaId }, 'Found existing business catalog — inheriting');
         }
       } catch (e) {
-        console.warn(`[Catalog] Could not read business catalogs:`, e.response?.data?.error?.message || e.message);
+        log.warn({ err: e }, 'Could not read business catalogs');
       }
 
       if (!catalogId) {
@@ -913,7 +955,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
             { headers: { Authorization: `Bearer ${catToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
           );
           catalogId = createRes.data.id;
-          console.log(`[Catalog] Created catalog "${catalogName}" (${catalogId}) for WABA ${wabaId}`);
+          log.info({ catalogName, catalogId, wabaId }, 'Created catalog');
           logActivity({ actorType: 'system', action: 'restaurant.catalog_created', category: 'catalog', description: `Catalog "${catalogName}" created during onboarding for WABA ${wabaId}`, restaurantId, resourceType: 'catalog', resourceId: catalogId, severity: 'info' });
         } catch (err) {
           throw new Error(`Catalog creation failed: ${err.response?.data?.error?.message || err.message}`);
@@ -928,9 +970,9 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
         { catalog_id: catalogId },
         { headers: { Authorization: `Bearer ${catToken}`, 'Content-Type': 'application/json' }, timeout: 10000 }
       );
-      console.log(`[Catalog] Linked catalog ${catalogId} to WABA ${wabaId}`);
+      log.info({ catalogId, wabaId }, 'Linked catalog to WABA');
     } catch (err) {
-      console.warn(`[Catalog] Could not link catalog to WABA: ${err.response?.data?.error?.message || err.message}`);
+      log.warn({ err, catalogId, wabaId }, 'Could not link catalog to WABA');
     }
 
     // Save catalog_id on all whatsapp_accounts for this WABA
@@ -964,7 +1006,7 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
 // the catalog/cart icon inside WhatsApp chats for that number.
 async function _enableCommerceSettings(phoneNumberId, catalogId, _accessToken) {
   const sysToken = metaConfig.systemUserToken || _accessToken;
-  if (!sysToken) { console.warn('[Commerce] System user token not configured, skipping'); return; }
+  if (!sysToken) { log.warn('System user token not configured, skipping commerce settings'); return; }
   try {
     await axios.post(
       `${META_GRAPH_URL}/${phoneNumberId}/whatsapp_commerce_settings`,
@@ -982,9 +1024,9 @@ async function _enableCommerceSettings(phoneNumberId, catalogId, _accessToken) {
       { phone_number_id: phoneNumberId },
       { $set: { cart_enabled: true, catalog_id: catalogId, updated_at: new Date() } }
     );
-    console.log(`[Commerce] Cart + catalog icon enabled on phone ${phoneNumberId}`);
+    log.info({ phoneNumberId }, 'Cart + catalog icon enabled on phone');
   } catch (err) {
-    console.error(`[Commerce] Failed to enable cart on ${phoneNumberId}:`, err.response?.data?.error?.message || err.message);
+    log.error({ err, phoneNumberId }, 'Failed to enable cart on phone');
   }
 }
 
@@ -996,7 +1038,7 @@ async function _linkCatalogToBranches(restaurantId, catalogId) {
     { $set: { catalog_id: catalogId, updated_at: new Date() } }
   );
   if (result.modifiedCount > 0) {
-    console.log(`[Catalog] Linked catalog ${catalogId} to ${result.modifiedCount} branch(es)`);
+    log.info({ catalogId, branchCount: result.modifiedCount }, 'Linked catalog to branches');
   }
 }
 
@@ -1064,7 +1106,7 @@ router.post('/pin-login', express.json(), async (req, res) => {
       user: { id: String(user._id), name: user.name, role: user.role, permissions: user.permissions, branchIds: user.branch_ids },
     });
   } catch (err) {
-    console.error('[PIN Login]', err.message);
+    req.log.error({ err }, 'PIN login failed');
     res.status(500).json({ error: 'Login failed' });
   }
 });
@@ -1112,7 +1154,7 @@ async function requireApproved(req, res, next) {
     }
     next();
   } catch (err) {
-    console.error('[requireApproved]', err.message);
+    log.error({ err }, 'requireApproved check failed');
     res.status(500).json({ error: 'Internal server error' });
   }
 }

@@ -16,6 +16,33 @@
 const Razorpay = require('razorpay');
 const crypto  = require('crypto');
 const { col, newId } = require('../config/database');
+const log = require('../utils/logger').child({ component: 'Payment' });
+
+// ─── PAYMENT AUDIT HELPER ────────────────────────────────────
+// Every payment status change appends to an embedded status_history array.
+// This preserves the full trail without a separate collection.
+// Two-step: read previous state, then update with history entry.
+const updatePaymentWithAudit = async (filter, $set, actor = 'system') => {
+  const prev = await col('payments').findOne(filter, { projection: { status: 1, order_id: 1 } });
+  if (!prev) return null;
+
+  const historyEntry = {
+    from_status: prev.status,
+    to_status: $set.status,
+    actor,
+    changed_at: new Date(),
+    fields_changed: Object.keys($set).filter(k => k !== 'status'),
+  };
+
+  const updated = await col('payments').findOneAndUpdate(
+    filter,
+    { $set, $push: { status_history: historyEntry } },
+    { returnDocument: 'after' }
+  );
+
+  log.info({ orderId: prev.order_id, from: prev.status, to: $set.status, actor }, 'Payment status changed');
+  return updated;
+};
 
 // Lazy init — avoid crashing on startup if env vars aren't set yet
 let _rzp = null;
@@ -133,7 +160,7 @@ const handleOrderPaid = async (event) => {
   const paymentEntity = event.payload?.payment?.entity;
 
   if (!rzpOrderId) {
-    console.warn('[Payment] handleOrderPaid: no order ID in event');
+    log.warn('handleOrderPaid: no order ID in event');
     return null;
   }
 
@@ -145,18 +172,19 @@ const handleOrderPaid = async (event) => {
                  || event.payload?.payment?.entity?.notes?.reference_id;
     if (receipt) {
       payment = await col('payments').findOne({ reference_id: receipt, payment_type: 'checkout_template' });
-      if (payment) console.log(`[Payment] Matched checkout template payment by reference_id: ${receipt}`);
+      if (payment) log.info({ referenceId: receipt }, 'Matched checkout template payment by reference_id');
     }
   }
 
   if (!payment) {
-    console.error('[Payment] No payment record for Razorpay order:', rzpOrderId);
+    log.error({ rzpOrderId }, 'No payment record for Razorpay order');
     return null;
   }
 
-  await col('payments').updateOne(
+  await updatePaymentWithAudit(
     { _id: payment._id },
-    { $set: { status: 'paid', rp_order_id: rzpOrderId, rp_payment_id: paymentEntity?.id, payment_method: paymentEntity?.method, paid_at: new Date() } }
+    { status: 'paid', rp_order_id: rzpOrderId, rp_payment_id: paymentEntity?.id, payment_method: paymentEntity?.method, paid_at: new Date() },
+    'razorpay:order.paid'
   );
 
   return payment.order_id;
@@ -169,13 +197,14 @@ const handlePaymentSuccess = async (event) => {
 
   const payment = await col('payments').findOne({ rp_link_id: linkId });
   if (!payment) {
-    console.error('[Payment] No payment record for link:', linkId);
+    log.error({ linkId }, 'No payment record for link');
     return null;
   }
 
-  await col('payments').updateOne(
+  await updatePaymentWithAudit(
     { rp_link_id: linkId },
-    { $set: { status: 'paid', rp_payment_id: paymentEntity?.id, rp_order_id: paymentEntity?.order_id, payment_method: paymentEntity?.method, paid_at: new Date() } }
+    { status: 'paid', rp_payment_id: paymentEntity?.id, rp_order_id: paymentEntity?.order_id, payment_method: paymentEntity?.method, paid_at: new Date() },
+    'razorpay:payment_link.paid'
   );
 
   return payment.order_id;
@@ -187,16 +216,18 @@ const handlePaymentFailed = async (event) => {
   const rzpOrderId = event.payload?.payment?.entity?.order_id;
 
   if (linkId) {
-    const payment = await col('payments').findOneAndUpdate(
+    const payment = await updatePaymentWithAudit(
       { rp_link_id: linkId },
-      { $set: { status: 'failed' } }
+      { status: 'failed' },
+      'razorpay:payment.failed'
     );
     return payment?.order_id || null;
   }
   if (rzpOrderId) {
-    let payment = await col('payments').findOneAndUpdate(
+    let payment = await updatePaymentWithAudit(
       { rp_order_id: rzpOrderId },
-      { $set: { status: 'failed' } }
+      { status: 'failed' },
+      'razorpay:payment.failed'
     );
     if (payment) return payment.order_id;
 
@@ -204,9 +235,10 @@ const handlePaymentFailed = async (event) => {
     const receipt = event.payload?.order?.entity?.receipt
                  || event.payload?.payment?.entity?.notes?.reference_id;
     if (receipt) {
-      payment = await col('payments').findOneAndUpdate(
+      payment = await updatePaymentWithAudit(
         { reference_id: receipt, payment_type: 'checkout_template' },
-        { $set: { status: 'failed', rp_order_id: rzpOrderId } }
+        { status: 'failed', rp_order_id: rzpOrderId },
+        'razorpay:payment.failed'
       );
       if (payment) return payment.order_id;
     }
@@ -220,9 +252,10 @@ const handleLinkExpired = async (event) => {
   const linkId = event.payload?.payment_link?.entity?.id;
   if (!linkId) return null;
 
-  const payment = await col('payments').findOneAndUpdate(
+  const payment = await updatePaymentWithAudit(
     { rp_link_id: linkId, status: { $ne: 'paid' } },
-    { $set: { status: 'expired' } }
+    { status: 'expired' },
+    'razorpay:payment_link.expired'
   );
 
   return payment?.order_id || null;
@@ -238,7 +271,11 @@ const issueRefund = async (orderId, reason = 'Order cancelled') => {
     notes : { reason, order_id: orderId },
   });
 
-  await col('payments').updateOne({ _id: payment._id }, { $set: { status: 'refunded' } });
+  await updatePaymentWithAudit(
+    { _id: payment._id },
+    { status: 'refunded', refunded_at: new Date() },
+    `system:refund:${reason}`
+  );
   return refund;
 };
 
@@ -277,7 +314,7 @@ const registerPayoutAccount = async (restaurantId) => {
     { $set: { razorpay_fund_acct_id: fundAccount.id } }
   );
 
-  console.log(`[Payment] Registered payout account for "${restaurant.business_name}": ${fundAccount.id}`);
+  log.info({ businessName: restaurant.business_name, fundAccountId: fundAccount.id }, 'Registered payout account');
   return { fundAccountId: fundAccount.id };
 };
 
@@ -308,4 +345,5 @@ module.exports = {
   issueRefund,
   registerPayoutAccount,
   createPayout,
+  updatePaymentWithAudit,
 };

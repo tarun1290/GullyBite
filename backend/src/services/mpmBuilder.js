@@ -7,6 +7,7 @@
 
 const { col } = require('../config/database');
 const memcache = require('../config/memcache');
+const log = require('../utils/logger').child({ component: 'MPMBuilder' });
 
 // ── Category sort order (lower = appears first in menu) ──────
 const CATEGORY_ORDER = [
@@ -120,7 +121,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
   if (!restaurant || !branch) throw new Error('Restaurant or branch not found');
 
   if (branch.meta_collection_id) {
-    console.log(`[MPM] Branch "${branch.name}" has Collection ${branch.meta_collection_id}`);
+    log.info({ branchName: branch.name, collectionId: branch.meta_collection_id }, 'Branch has Collection');
   }
 
   // Get all available items for this branch (cached 2 min)
@@ -248,7 +249,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
 
   if (!sections.length) return [];
 
-  console.log(`[MPM] Branch "${branch.name}": ${items.length} total items → ${totalProductGroups} product groups across ${sections.length} sections (bestsellers deduped: ${globalUsedIds.size})`);
+  log.info({ branchName: branch.name, totalItems: items.length, productGroups: totalProductGroups, sections: sections.length, deduped: globalUsedIds.size }, 'MPM sections built');
 
   const restName = restaurant.business_name || restaurant.name || 'Menu';
 
@@ -316,7 +317,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
     // FIRST: merge sections to respect 10-section limit
     secs = mergeSectionsIfNeeded(secs);
     const count = secs.reduce((s, sec) => s + sec.product_retailer_ids.length, 0);
-    console.log(`[MPM] buildMPMsFromBucket "${label}": ${secs.length} sections after merge, ${count} products`);
+    log.info({ label, sections: secs.length, products: count }, 'Building MPMs from bucket');
 
     if (count <= 30) {
       // Single MPM — sections already merged to ≤10
@@ -326,7 +327,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
         footer: 'Prices inclusive of taxes',
         sections: secs,
       });
-      console.log(`[MPM] buildMPMsFromBucket "${label}": → 1 MPM`);
+      log.info({ label, mpmCount: 1 }, 'Single MPM built from bucket');
       return;
     }
 
@@ -359,7 +360,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
         sections: mergeSectionsIfNeeded(batch),
       });
     }
-    console.log(`[MPM] buildMPMsFromBucket "${label}": → ${part} MPM(s)`);
+    log.info({ label, mpmCount: part }, 'MPMs built from bucket');
   }
 
   buildMPMsFromBucket('🍽️ Food Menu', foodSections);

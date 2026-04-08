@@ -13,6 +13,7 @@ const metaConfig = require('../config/meta');
 const financials = require('../services/financials');
 const wa = require('../services/whatsapp');
 const ws = require('../services/websocket');
+const log = require('../utils/logger').child({ component: 'admin' });
 
 // ─── AUTH MIDDLEWARE (RBAC) ───────────────────────────────────
 const bcrypt = require('bcryptjs');
@@ -22,14 +23,14 @@ const { requireAdminAuth, signAdminToken } = require('../middleware/adminAuth');
 const requireAdmin = requireAdminAuth();
 
 // ─── AUTH ENDPOINTS ─────────────────────────────────────────
-// POST /api/admin/auth — legacy ADMIN_KEY login (kept for backward compat)
+// POST /api/admin/auth — JWT-based admin login (email + password)
 router.post('/auth', express.json(), async (req, res) => {
   const { key, email, password } = req.body;
 
-  // Legacy ADMIN_KEY login
-  if (key && key === process.env.ADMIN_KEY) {
-    logActivity({ actorType: 'admin', actorId: null, actorName: 'Admin (Legacy Key)', action: 'admin.login', category: 'auth', description: 'Admin logged in via ADMIN_KEY', severity: 'info' });
-    return res.json({ ok: true });
+  // ADMIN_KEY login removed — log warning if attempted
+  if (key) {
+    req.log.warn({ ip: req.ip }, 'ADMIN_KEY login attempted (deprecated, rejected)');
+    return res.status(403).json({ error: 'ADMIN_KEY login is no longer supported. Use email + password.' });
   }
 
   // JWT-based email+password login
@@ -212,7 +213,7 @@ router.get('/stats', async (req, res) => {
       logs       : { total: totalLogs, unprocessed: unprocessedLogs, errors: errorLogs },
     });
   } catch (err) {
-    console.error('[Admin] stats error:', err.message);
+    req.log.error({ err }, 'Stats error');
     res.status(500).json({ error: err.message });
   }
 });
@@ -465,7 +466,7 @@ router.post('/run-settlement', async (req, res) => {
       resourceType: 'settlement', resourceId: null, severity: 'info',
     });
     res.json({ message: 'Settlement started' });
-    runSettlement().catch(console.error);
+    runSettlement().catch(err => log.error({ err }, 'Settlement run failed'));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -517,7 +518,7 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
     // Auto-list in WhatsApp directory (fire-and-forget)
     const directory = require('../services/directory');
     directory.listRestaurant(req.params.id).catch(err =>
-      console.error('[Directory] Auto-list failed:', err.message)
+      log.error({ err }, 'Directory auto-list failed')
     );
 
     // [WhatsApp2026] Auto-generate username suggestions on approval (fire-and-forget)
@@ -538,7 +539,7 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
             });
           }
         }
-      } catch (e) { console.error('[WhatsApp2026] Auto-suggest failed:', e.message); }
+      } catch (e) { log.error({ err: e }, 'Auto-suggest failed'); }
     })();
 
     logActivity({
@@ -716,7 +717,7 @@ router.post('/referrals/links', express.json(), async (req, res) => {
     };
     await col('referral_links').insertOne(link);
 
-    console.log(`[Referral] Link created: GBREF-${code} → ${restaurant.business_name} (${phone})`);
+    req.log.info({ code, restaurantName: restaurant.business_name, phone: phone?.slice(-4) }, 'Referral link created');
     res.json({ ...mapId(link), wa_link: waLink });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -926,11 +927,11 @@ router.post('/directory/sync-all', async (req, res) => {
     const restaurants = await col('restaurants').find({ approval_status: 'approved', status: 'active' }).toArray();
     for (const r of restaurants) {
       await directory.listRestaurant(String(r._id)).catch(e =>
-        console.error(`[Directory] Sync failed for ${r.business_name}:`, e.message)
+        log.error({ err: e, restaurantName: r.business_name }, 'Directory sync failed for restaurant')
       );
     }
-    console.log(`[Directory] Synced ${restaurants.length} listings`);
-  } catch (err) { console.error('[Directory] Sync-all error:', err.message); }
+    log.info({ count: restaurants.length }, 'Directory synced all listings');
+  } catch (err) { log.error({ err }, 'Directory sync-all error'); }
 });
 
 // ─── CHECKOUT CONFIG ─────────────────────────────────────────
@@ -1005,10 +1006,10 @@ router.delete('/restaurants/:id', async (req, res) => {
       col('referrals').deleteMany({ restaurant_id: id }),
     ]);
 
-    console.log(`[Admin] Deleted restaurant "${restaurant.business_name}" (${id}) — archived as internal record`);
+    req.log.info({ restaurantId: id, restaurantName: restaurant.business_name }, 'Deleted restaurant — archived as internal record');
     res.json({ ok: true, archived: true, business_name: restaurant.business_name });
   } catch (err) {
-    console.error('[Admin] Delete restaurant error:', err.message);
+    req.log.error({ err }, 'Delete restaurant error');
     res.status(500).json({ error: err.message });
   }
 });
@@ -1649,7 +1650,7 @@ router.get('/restaurants/:id/verification', async (req, res) => {
           }
         }
       } catch (err) {
-        console.warn(`[WhatsApp2026] Verification status fetch failed:`, err.response?.data?.error?.message || err.message);
+        log.warn({ err, restaurantId: req.params.id }, 'Verification status fetch failed');
       }
     }
 
@@ -1669,7 +1670,7 @@ router.get('/restaurants/:id/verification', async (req, res) => {
           $set: { messaging_limit_tier: data.messaging_limit_tier, quality_rating: data.quality_rating, updated_at: new Date() },
         });
       } catch (err) {
-        console.warn(`[WhatsApp2026] Messaging limit fetch failed:`, err.response?.data?.error?.message || err.message);
+        log.warn({ err, restaurantId: req.params.id }, 'Messaging limit fetch failed');
       }
     }
 
@@ -2269,7 +2270,7 @@ router.post('/migrate-catalogs', requireAdmin, async (req, res) => {
           );
 
           results.migrated++;
-          console.log(`[Migration] Promoted catalog ${branchWithCatalog.catalog_id} to main for "${rest.business_name}"`);
+          log.info({ catalogId: branchWithCatalog.catalog_id, restaurantName: rest.business_name }, 'Promoted catalog to main');
         } else {
           results.skipped++;
         }
@@ -2339,7 +2340,7 @@ router.post('/migrate-catalog-architecture', requireAdmin, async (req, res) => {
       stats.groups_set++;
     }
 
-    console.log('[Migration] Catalog architecture migration complete:', stats);
+    log.info(stats, 'Catalog architecture migration complete');
     res.json({ success: true, ...stats });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2383,7 +2384,7 @@ router.post('/flow/create', async (req, res) => {
 
     res.json({ success: true, flow_id: result.flowId, published: result.published });
   } catch (e) {
-    console.error('[Admin Flow] Create error:', e.response?.data || e.message);
+    log.error({ err: e }, 'Flow create error');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors });
   }
 });
@@ -2882,7 +2883,7 @@ router.post('/waba/:wabaId/enable-contact-book', async (req, res) => {
     logActivity({ actorType: 'admin', action: 'waba.contact_book_enabled', category: 'settings', description: `Contact Book enabled for WABA ${wabaId}`, severity: 'info' });
     res.json({ success: true, waba_id: wabaId });
   } catch (e) {
-    console.error('[ContactBook] Enable failed:', e.response?.data?.error?.message || e.message);
+    req.log.error({ err: e, wabaId }, 'contact book enable failed');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
 });
@@ -2899,7 +2900,7 @@ router.post('/waba/enable-all-contact-books', async (req, res) => {
         await col('whatsapp_accounts').updateMany({ waba_id: wabaId }, { $set: { contact_book_enabled: true, contact_book_enabled_at: new Date() } });
         enabled++;
       } catch (e) {
-        console.error(`[ContactBook] Enable failed for WABA ${wabaId}:`, e.response?.data?.error?.message || e.message);
+        req.log.error({ err: e, wabaId }, 'contact book enable failed for WABA');
         failed++;
       }
     }
@@ -3006,6 +3007,734 @@ router.get('/analytics/dropoffs', async (req, res) => {
       }
     }
     res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// RECONCILIATION TOOLS
+// Internal debug tools for payment/order and settlement/payout mismatches.
+// ═══════════════════════════════════════════════════════════════
+
+// ─── PAYMENT ↔ ORDER RECONCILIATION ──────────────────────────
+// Finds mismatches between the orders and payments collections:
+//   - Orders marked PAID but no payment record exists
+//   - Orders marked PAID but payment record says failed/expired
+//   - Payment records marked paid but order status isn't PAID/CONFIRMED/etc.
+//   - Orphan payments with no matching order
+//   - Orders stuck in PENDING_PAYMENT beyond expiry
+//
+// GET /api/admin/reconciliation/payments?days=7&restaurantId=xxx
+router.get('/reconciliation/payments', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 7;
+    const since = new Date(Date.now() - days * 86400000);
+    const restaurantFilter = req.query.restaurantId ? { restaurant_id: req.query.restaurantId } : {};
+
+    // 1. All recent orders
+    const orders = await col('orders').find({
+      created_at: { $gte: since },
+      ...restaurantFilter,
+    }, { projection: {
+      _id: 1, order_number: 1, status: 1, payment_status: 1,
+      total_rs: 1, restaurant_id: 1, created_at: 1, settlement_id: 1,
+    }}).toArray();
+
+    const orderIds = orders.map(o => String(o._id));
+
+    // 2. All payments for those orders
+    const payments = await col('payments').find({
+      order_id: { $in: orderIds },
+    }, { projection: {
+      _id: 1, order_id: 1, status: 1, amount_rs: 1, payment_type: 1,
+      rp_order_id: 1, rp_payment_id: 1, created_at: 1, paid_at: 1,
+    }}).toArray();
+
+    const paymentsByOrderId = {};
+    for (const p of payments) {
+      if (!paymentsByOrderId[p.order_id]) paymentsByOrderId[p.order_id] = [];
+      paymentsByOrderId[p.order_id].push(p);
+    }
+
+    // 3. Detect anomalies
+    const anomalies = [];
+    const paidStatuses = new Set(['PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED']);
+
+    for (const order of orders) {
+      const oid = String(order._id);
+      const orderPayments = paymentsByOrderId[oid] || [];
+
+      // A: Order is in a paid/post-paid state but no payment record
+      if (paidStatuses.has(order.status) && orderPayments.length === 0) {
+        anomalies.push({
+          type: 'ORDER_PAID_NO_PAYMENT',
+          severity: 'critical',
+          order_id: oid,
+          order_number: order.order_number,
+          order_status: order.status,
+          total_rs: order.total_rs,
+          description: `Order ${order.order_number} is ${order.status} but has no payment record`,
+        });
+      }
+
+      // B: Order paid, but payment record says failed/expired
+      if (paidStatuses.has(order.status) && orderPayments.length > 0) {
+        const hasPaid = orderPayments.some(p => p.status === 'paid');
+        if (!hasPaid) {
+          anomalies.push({
+            type: 'ORDER_PAID_PAYMENT_MISMATCH',
+            severity: 'critical',
+            order_id: oid,
+            order_number: order.order_number,
+            order_status: order.status,
+            payment_statuses: orderPayments.map(p => p.status),
+            total_rs: order.total_rs,
+            description: `Order ${order.order_number} is ${order.status} but payment(s) show: ${orderPayments.map(p => p.status).join(', ')}`,
+          });
+        }
+      }
+
+      // C: Order stuck in PENDING_PAYMENT for >30 min
+      if (order.status === 'PENDING_PAYMENT') {
+        const ageMs = Date.now() - new Date(order.created_at).getTime();
+        if (ageMs > 30 * 60000) {
+          anomalies.push({
+            type: 'ORDER_STUCK_PENDING',
+            severity: 'warning',
+            order_id: oid,
+            order_number: order.order_number,
+            age_minutes: Math.round(ageMs / 60000),
+            total_rs: order.total_rs,
+            description: `Order ${order.order_number} stuck in PENDING_PAYMENT for ${Math.round(ageMs / 60000)} minutes`,
+          });
+        }
+      }
+
+      // D: Amount mismatch — order total doesn't match payment amount
+      if (orderPayments.length > 0) {
+        for (const p of orderPayments) {
+          if (p.status === 'paid' && Math.abs(p.amount_rs - order.total_rs) > 0.01) {
+            anomalies.push({
+              type: 'AMOUNT_MISMATCH',
+              severity: 'critical',
+              order_id: oid,
+              order_number: order.order_number,
+              order_total_rs: order.total_rs,
+              payment_amount_rs: p.amount_rs,
+              diff_rs: Math.abs(p.amount_rs - order.total_rs),
+              description: `Order ${order.order_number}: order total ₹${order.total_rs} ≠ payment ₹${p.amount_rs}`,
+            });
+          }
+        }
+      }
+    }
+
+    // E: Orphan payments — paid but no matching order found
+    const allPayments = await col('payments').find({
+      created_at: { $gte: since },
+      status: 'paid',
+    }, { projection: { _id: 1, order_id: 1, amount_rs: 1, rp_payment_id: 1, paid_at: 1 }}).toArray();
+
+    const orderIdSet = new Set(orderIds);
+    for (const p of allPayments) {
+      if (!p.order_id || !orderIdSet.has(p.order_id)) {
+        // Verify the order actually doesn't exist (not just filtered by date/restaurant)
+        const orderExists = await col('orders').findOne({ _id: p.order_id }, { projection: { _id: 1 } });
+        if (!orderExists) {
+          anomalies.push({
+            type: 'ORPHAN_PAYMENT',
+            severity: 'warning',
+            payment_id: String(p._id),
+            order_id: p.order_id,
+            amount_rs: p.amount_rs,
+            rp_payment_id: p.rp_payment_id,
+            description: `Payment ₹${p.amount_rs} (${p.rp_payment_id}) has no matching order`,
+          });
+        }
+      }
+    }
+
+    // Sort: critical first, then warning
+    anomalies.sort((a, b) => (a.severity === 'critical' ? 0 : 1) - (b.severity === 'critical' ? 0 : 1));
+
+    const summary = {
+      period_days: days,
+      total_orders: orders.length,
+      total_payments: payments.length,
+      anomaly_count: anomalies.length,
+      critical: anomalies.filter(a => a.severity === 'critical').length,
+      warnings: anomalies.filter(a => a.severity === 'warning').length,
+      by_type: {},
+    };
+    for (const a of anomalies) {
+      summary.by_type[a.type] = (summary.by_type[a.type] || 0) + 1;
+    }
+
+    res.json({ summary, anomalies });
+  } catch (e) { req.log.error({ err: e }, 'Payment reconciliation failed'); res.status(500).json({ error: e.message }); }
+});
+
+// ─── SETTLEMENT ↔ PAYOUT RECONCILIATION ─────────────────────
+// Finds mismatches between settlements and payouts:
+//   - Settlements stuck in 'pending' beyond 48h
+//   - Settlements marked 'processing' with no payout ID
+//   - Settlements where order counts don't match actual settled orders
+//   - Payout amount vs settlement net_payout mismatch
+//   - Orders marked as settled but settlement doesn't exist
+//
+// GET /api/admin/reconciliation/settlements?days=30&restaurantId=xxx
+router.get('/reconciliation/settlements', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const since = new Date(Date.now() - days * 86400000);
+    const restaurantFilter = req.query.restaurantId ? { restaurant_id: req.query.restaurantId } : {};
+
+    // 1. All recent settlements
+    const settlements = await col('settlements').find({
+      created_at: { $gte: since },
+      ...restaurantFilter,
+    }).toArray();
+
+    // 2. Get restaurant names for context
+    const restIds = [...new Set(settlements.map(s => s.restaurant_id))];
+    const restaurants = await col('restaurants').find(
+      { _id: { $in: restIds } },
+      { projection: { _id: 1, business_name: 1 } }
+    ).toArray();
+    const restNames = {};
+    for (const r of restaurants) restNames[String(r._id)] = r.business_name;
+
+    const anomalies = [];
+
+    for (const s of settlements) {
+      const sid = String(s._id);
+      const name = restNames[s.restaurant_id] || s.restaurant_id;
+
+      // A: Settlement stuck in 'pending' beyond 48h
+      if (s.payout_status === 'pending') {
+        const ageMs = Date.now() - new Date(s.created_at).getTime();
+        if (ageMs > 48 * 3600000) {
+          anomalies.push({
+            type: 'SETTLEMENT_STUCK_PENDING',
+            severity: 'warning',
+            settlement_id: sid,
+            restaurant: name,
+            restaurant_id: s.restaurant_id,
+            net_payout_rs: s.net_payout_rs,
+            age_hours: Math.round(ageMs / 3600000),
+            period: `${s.period_start?.toISOString?.()?.slice(0,10) || '?'} → ${s.period_end?.toISOString?.()?.slice(0,10) || '?'}`,
+            description: `Settlement for ${name} stuck pending for ${Math.round(ageMs / 3600000)}h — ₹${s.net_payout_rs}`,
+          });
+        }
+      }
+
+      // B: Settlement 'processing' but no Razorpay payout ID
+      if (s.payout_status === 'processing' && !s.rp_payout_id) {
+        anomalies.push({
+          type: 'PROCESSING_NO_PAYOUT_ID',
+          severity: 'critical',
+          settlement_id: sid,
+          restaurant: name,
+          restaurant_id: s.restaurant_id,
+          net_payout_rs: s.net_payout_rs,
+          description: `Settlement for ${name} is 'processing' but has no Razorpay payout ID`,
+        });
+      }
+
+      // C: Payout failed — needs attention
+      if (s.payout_status === 'failed') {
+        anomalies.push({
+          type: 'PAYOUT_FAILED',
+          severity: 'critical',
+          settlement_id: sid,
+          restaurant: name,
+          restaurant_id: s.restaurant_id,
+          net_payout_rs: s.net_payout_rs,
+          rp_payout_id: s.rp_payout_id,
+          description: `Payout failed for ${name} — ₹${s.net_payout_rs} not transferred`,
+        });
+      }
+
+      // D: Order count validation — verify settled order count matches
+      const settledOrders = await col('orders').countDocuments({ settlement_id: sid });
+      if (settledOrders !== s.orders_count) {
+        anomalies.push({
+          type: 'ORDER_COUNT_MISMATCH',
+          severity: 'warning',
+          settlement_id: sid,
+          restaurant: name,
+          expected_count: s.orders_count,
+          actual_count: settledOrders,
+          description: `Settlement for ${name} claims ${s.orders_count} orders but ${settledOrders} are actually linked`,
+        });
+      }
+
+      // E: Negative net payout (restaurant owes money)
+      if (s.net_payout_rs < 0) {
+        anomalies.push({
+          type: 'NEGATIVE_PAYOUT',
+          severity: 'warning',
+          settlement_id: sid,
+          restaurant: name,
+          net_payout_rs: s.net_payout_rs,
+          description: `Settlement for ${name} has negative payout ₹${s.net_payout_rs} — deductions exceed revenue`,
+        });
+      }
+
+      // F: Financial sanity — gross must be >= net
+      if (s.gross_revenue_rs > 0 && s.net_payout_rs > s.gross_revenue_rs) {
+        anomalies.push({
+          type: 'NET_EXCEEDS_GROSS',
+          severity: 'critical',
+          settlement_id: sid,
+          restaurant: name,
+          gross_rs: s.gross_revenue_rs,
+          net_rs: s.net_payout_rs,
+          description: `Settlement for ${name}: net ₹${s.net_payout_rs} exceeds gross ₹${s.gross_revenue_rs}`,
+        });
+      }
+    }
+
+    // G: Orphan settled orders — orders with settlement_id that doesn't exist
+    const allSettlementIds = settlements.map(s => String(s._id));
+    const orphanOrders = await col('orders').find({
+      settlement_id: { $ne: null, $nin: allSettlementIds },
+      created_at: { $gte: since },
+      ...restaurantFilter,
+    }, { projection: { _id: 1, order_number: 1, settlement_id: 1, total_rs: 1 }}).limit(50).toArray();
+
+    for (const o of orphanOrders) {
+      // Verify the settlement truly doesn't exist
+      const exists = await col('settlements').findOne({ _id: o.settlement_id }, { projection: { _id: 1 } });
+      if (!exists) {
+        anomalies.push({
+          type: 'ORPHAN_SETTLED_ORDER',
+          severity: 'warning',
+          order_id: String(o._id),
+          order_number: o.order_number,
+          settlement_id: o.settlement_id,
+          total_rs: o.total_rs,
+          description: `Order ${o.order_number} references settlement ${o.settlement_id} which does not exist`,
+        });
+      }
+    }
+
+    anomalies.sort((a, b) => (a.severity === 'critical' ? 0 : 1) - (b.severity === 'critical' ? 0 : 1));
+
+    const summary = {
+      period_days: days,
+      total_settlements: settlements.length,
+      total_payout_rs: settlements.reduce((s, x) => s + (x.net_payout_rs || 0), 0),
+      completed: settlements.filter(s => s.payout_status === 'completed').length,
+      pending: settlements.filter(s => s.payout_status === 'pending').length,
+      processing: settlements.filter(s => s.payout_status === 'processing').length,
+      failed: settlements.filter(s => s.payout_status === 'failed').length,
+      anomaly_count: anomalies.length,
+      critical: anomalies.filter(a => a.severity === 'critical').length,
+      warnings: anomalies.filter(a => a.severity === 'warning').length,
+      by_type: {},
+    };
+    for (const a of anomalies) {
+      summary.by_type[a.type] = (summary.by_type[a.type] || 0) + 1;
+    }
+
+    res.json({ summary, anomalies });
+  } catch (e) { req.log.error({ err: e }, 'Settlement reconciliation failed'); res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN CAMPAIGNS
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/admin/campaigns — list all campaigns across restaurants
+router.get('/campaigns', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.restaurantId) filter.restaurant_id = req.query.restaurantId;
+    if (req.query.status) filter.status = req.query.status;
+
+    const campaigns = await col('campaigns').find(filter).sort({ created_at: -1 }).limit(100).toArray();
+
+    // Enrich with restaurant names
+    const restIds = [...new Set(campaigns.map(c => c.restaurant_id))];
+    const restaurants = await col('restaurants').find({ _id: { $in: restIds } }, { projection: { _id: 1, business_name: 1 } }).toArray();
+    const restMap = {};
+    for (const r of restaurants) restMap[String(r._id)] = r.business_name;
+
+    const enriched = campaigns.map(c => ({
+      ...c, id: String(c._id),
+      restaurant_name: restMap[c.restaurant_id] || 'Unknown',
+    }));
+
+    res.json(enriched);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PATCH /api/admin/campaigns/:id — admin can enable/disable campaigns
+router.patch('/campaigns/:id', express.json(), async (req, res) => {
+  try {
+    const { status, is_active } = req.body;
+    const $set = { updated_at: new Date() };
+    if (status) $set.status = status;
+    if (is_active !== undefined) $set.is_active = is_active;
+
+    const updated = await col('campaigns').findOneAndUpdate(
+      { _id: req.params.id },
+      { $set },
+      { returnDocument: 'after' }
+    );
+    if (!updated) return res.status(404).json({ error: 'Campaign not found' });
+    res.json(updated);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN PLATFORM COUPONS
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/admin/coupons — list platform-wide coupons
+router.get('/coupons', async (req, res) => {
+  try {
+    const filter = req.query.restaurantId
+      ? { restaurant_id: req.query.restaurantId }
+      : {};
+    const coupons = await col('coupons').find(filter).sort({ created_at: -1 }).limit(200).toArray();
+    res.json(coupons.map(c => ({ ...c, id: String(c._id) })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/coupons — create platform-wide coupon (restaurant_id = null)
+router.post('/coupons', express.json(), async (req, res) => {
+  try {
+    const { code, description, discountType, discountValue, minOrderRs, maxDiscountRs,
+            usageLimit, perUserLimit, validFrom, validUntil, firstOrderOnly,
+            restaurantId, branchIds, campaignId } = req.body;
+    if (!code || !discountType) return res.status(400).json({ error: 'code and discountType required' });
+
+    const couponCode = code.trim().toUpperCase();
+    const scope = restaurantId || null; // null = platform-wide
+
+    const existing = await col('coupons').findOne({ restaurant_id: scope, code: couponCode });
+    if (existing) return res.status(409).json({ error: 'Coupon code already exists' });
+
+    const now = new Date();
+    const coupon = {
+      _id: newId(),
+      restaurant_id: scope,
+      code: couponCode,
+      description: description || null,
+      discount_type: discountType,
+      discount_value: parseFloat(discountValue) || 0,
+      min_order_rs: minOrderRs || 0,
+      max_discount_rs: maxDiscountRs || null,
+      usage_limit: usageLimit || null,
+      per_user_limit: perUserLimit || null,
+      usage_count: 0,
+      valid_from: validFrom ? new Date(validFrom) : null,
+      valid_until: validUntil ? new Date(validUntil) : null,
+      first_order_only: !!firstOrderOnly,
+      branch_ids: branchIds?.length ? branchIds : null,
+      campaign_id: campaignId || null,
+      is_active: true,
+      created_at: now,
+      updated_at: now,
+    };
+    await col('coupons').insertOne(coupon);
+    res.json({ ...coupon, id: String(coupon._id) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN ANALYTICS (stub endpoints to prevent 404s)
+// ═══════════════════════════════════════════════════════════════
+
+// Overview — aggregated platform stats
+router.get('/analytics/overview', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 7;
+    const since = new Date(Date.now() - days * 86400000);
+
+    const [orders, restaurants, customers] = await Promise.all([
+      col('orders').aggregate([
+        { $match: { created_at: { $gte: since } } },
+        { $group: { _id: null, count: { $sum: 1 }, revenue: { $sum: '$total_rs' }, avgOrder: { $avg: '$total_rs' } } },
+      ]).toArray(),
+      col('restaurants').countDocuments({ status: 'active' }),
+      col('customers').countDocuments({ created_at: { $gte: since } }),
+    ]);
+
+    const agg = orders[0] || { count: 0, revenue: 0, avgOrder: 0 };
+    res.json({
+      period_days: days,
+      total_orders: agg.count,
+      total_revenue_rs: Math.round(agg.revenue || 0),
+      avg_order_value_rs: Math.round(agg.avgOrder || 0),
+      active_restaurants: restaurants,
+      new_customers: customers,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Orders timeseries
+router.get('/analytics/orders/timeseries', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 7;
+    const since = new Date(Date.now() - days * 86400000);
+    const result = await col('orders').aggregate([
+      { $match: { created_at: { $gte: since } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$created_at' } }, orders: { $sum: 1 }, revenue: { $sum: '$total_rs' } } },
+      { $sort: { _id: 1 } },
+    ]).toArray();
+    res.json(result.map(r => ({ date: r._id, orders: r.orders, revenue_rs: Math.round(r.revenue) })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Orders by status
+router.get('/analytics/orders/by-status', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const since = new Date(Date.now() - days * 86400000);
+    const result = await col('orders').aggregate([
+      { $match: { created_at: { $gte: since } } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]).toArray();
+    res.json(result.map(r => ({ status: r._id, count: r.count })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Orders by hour
+router.get('/analytics/orders/by-hour', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 7;
+    const since = new Date(Date.now() - days * 86400000);
+    const result = await col('orders').aggregate([
+      { $match: { created_at: { $gte: since } } },
+      { $group: { _id: { $hour: '$created_at' }, count: { $sum: 1 } } },
+      { $sort: { _id: 1 } },
+    ]).toArray();
+    res.json(result.map(r => ({ hour: r._id, count: r.count })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Orders by day of week
+router.get('/analytics/orders/by-day', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const since = new Date(Date.now() - days * 86400000);
+    const result = await col('orders').aggregate([
+      { $match: { created_at: { $gte: since } } },
+      { $group: { _id: { $dayOfWeek: '$created_at' }, count: { $sum: 1 }, revenue: { $sum: '$total_rs' } } },
+      { $sort: { _id: 1 } },
+    ]).toArray();
+    const dayNames = ['', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    res.json(result.map(r => ({ day: dayNames[r._id] || r._id, count: r.count, revenue_rs: Math.round(r.revenue) })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Customer segments
+router.get('/analytics/customers/segments', async (req, res) => {
+  try {
+    const now = new Date();
+    const d30 = new Date(now - 30 * 86400000);
+    const d90 = new Date(now - 90 * 86400000);
+
+    const [total, active30, active90, newLast30] = await Promise.all([
+      col('customers').countDocuments({}),
+      col('customers').countDocuments({ last_order_at: { $gte: d30 } }),
+      col('customers').countDocuments({ last_order_at: { $gte: d90 } }),
+      col('customers').countDocuments({ created_at: { $gte: d30 } }),
+    ]);
+
+    res.json({
+      total,
+      active_30d: active30,
+      active_90d: active90,
+      new_last_30d: newLast30,
+      inactive: total - active90,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Customer overview
+router.get('/analytics/customers/overview', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const since = new Date(Date.now() - days * 86400000);
+    const [newCust, returning] = await Promise.all([
+      col('customers').countDocuments({ created_at: { $gte: since } }),
+      col('orders').aggregate([
+        { $match: { created_at: { $gte: since } } },
+        { $group: { _id: '$customer_id', orders: { $sum: 1 } } },
+        { $match: { orders: { $gte: 2 } } },
+        { $count: 'count' },
+      ]).toArray(),
+    ]);
+    res.json({ new_customers: newCust, returning_customers: returning[0]?.count || 0, period_days: days });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Restaurant ranking
+router.get('/analytics/restaurants/ranking', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const since = new Date(Date.now() - days * 86400000);
+    const result = await col('orders').aggregate([
+      { $match: { created_at: { $gte: since }, status: { $nin: ['CANCELLED'] } } },
+      { $group: { _id: '$restaurant_id', orders: { $sum: 1 }, revenue: { $sum: '$total_rs' } } },
+      { $sort: { revenue: -1 } },
+      { $limit: 20 },
+    ]).toArray();
+
+    const restIds = result.map(r => r._id);
+    const restaurants = await col('restaurants').find({ _id: { $in: restIds } }, { projection: { _id: 1, business_name: 1 } }).toArray();
+    const nameMap = {};
+    for (const r of restaurants) nameMap[String(r._id)] = r.business_name;
+
+    res.json(result.map(r => ({
+      restaurant_id: r._id,
+      name: nameMap[r._id] || 'Unknown',
+      orders: r.orders,
+      revenue_rs: Math.round(r.revenue),
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delivery performance
+router.get('/analytics/delivery/performance', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 7;
+    const since = new Date(Date.now() - days * 86400000);
+    const result = await col('deliveries').aggregate([
+      { $match: { created_at: { $gte: since } } },
+      { $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+        avg_cost: { $avg: '$cost_rs' },
+      }},
+    ]).toArray();
+    res.json(result.map(r => ({ status: r._id, count: r.count, avg_cost_rs: Math.round(r.avg_cost || 0) })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Geographic analytics (cities)
+router.get('/analytics/geographic/cities', async (req, res) => {
+  try {
+    const result = await col('restaurants').aggregate([
+      { $match: { status: 'active', city: { $exists: true, $ne: null } } },
+      { $group: { _id: '$city', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+    ]).toArray();
+    res.json(result.map(r => ({ city: r._id, restaurant_count: r.count })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Analytics filter helpers
+router.get('/analytics/filters/cities', async (_req, res) => {
+  try {
+    const cities = await col('restaurants').distinct('city', { status: 'active', city: { $ne: null } });
+    res.json(cities.sort());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.get('/analytics/filters/areas', async (req, res) => {
+  try {
+    const filter = { status: 'active', area: { $ne: null } };
+    if (req.query.city) filter.city = req.query.city;
+    const areas = await col('restaurants').distinct('area', filter);
+    res.json(areas.sort());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN TAX REPORTS
+// ═══════════════════════════════════════════════════════════════
+
+// TDS Report — CSV download
+router.get('/financials/tax/tds-report', async (req, res) => {
+  try {
+    const period = req.query.period || 'current-fy';
+    const now = new Date();
+    const fyStart = now.getMonth() >= 3
+      ? new Date(now.getFullYear(), 3, 1)
+      : new Date(now.getFullYear() - 1, 3, 1);
+
+    const settlements = await col('settlements').find({
+      tds_applicable: true,
+      period_end: { $gte: fyStart },
+    }).sort({ period_start: 1 }).toArray();
+
+    // Enrich with restaurant names
+    const restIds = [...new Set(settlements.map(s => s.restaurant_id))];
+    const restaurants = await col('restaurants').find({ _id: { $in: restIds } }, { projection: { _id: 1, business_name: 1, pan: 1, gstin: 1 } }).toArray();
+    const restMap = {};
+    for (const r of restaurants) restMap[String(r._id)] = r;
+
+    const header = 'Restaurant,PAN,GSTIN,Period Start,Period End,Gross Payout,TDS Rate %,TDS Amount,Net Payout,Settlement ID';
+    const rows = settlements.map(s => {
+      const r = restMap[s.restaurant_id] || {};
+      return [
+        `"${r.business_name || 'Unknown'}"`,
+        r.pan || '',
+        r.gstin || '',
+        s.period_start?.toISOString().slice(0, 10) || '',
+        s.period_end?.toISOString().slice(0, 10) || '',
+        (s.net_payout_rs + (s.tds_amount_rs || 0)).toFixed(2),
+        s.tds_rate_pct || 0,
+        (s.tds_amount_rs || 0).toFixed(2),
+        s.net_payout_rs.toFixed(2),
+        String(s._id),
+      ].join(',');
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="tds_report_${period}.csv"`);
+    res.send([header, ...rows].join('\n'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GSTR-1 Export — CSV download
+router.get('/financials/tax/gstr1', async (req, res) => {
+  try {
+    const period = req.query.period || 'current-fy';
+    const now = new Date();
+    const fyStart = now.getMonth() >= 3
+      ? new Date(now.getFullYear(), 3, 1)
+      : new Date(now.getFullYear() - 1, 3, 1);
+
+    const settlements = await col('settlements').find({
+      period_end: { $gte: fyStart },
+    }).sort({ period_start: 1 }).toArray();
+
+    const restIds = [...new Set(settlements.map(s => s.restaurant_id))];
+    const restaurants = await col('restaurants').find({ _id: { $in: restIds } }, { projection: { _id: 1, business_name: 1, gstin: 1 } }).toArray();
+    const restMap = {};
+    for (const r of restaurants) restMap[String(r._id)] = r;
+
+    const header = 'Restaurant,GSTIN,Period,Food Revenue,Food GST (5%),Platform Fee,Platform Fee GST (18%),Packaging,Packaging GST (18%),Delivery Fee,Delivery GST (18%),Referral Fee,Referral GST (18%),Total GST Collected';
+    const rows = settlements.map(s => {
+      const r = restMap[s.restaurant_id] || {};
+      const totalGst = (s.food_gst_collected_rs || 0) + (s.platform_fee_gst_rs || 0) + (s.packaging_gst_rs || 0) + (s.delivery_fee_restaurant_gst_rs || 0) + (s.referral_fee_gst_rs || 0);
+      return [
+        `"${r.business_name || 'Unknown'}"`,
+        r.gstin || '',
+        `${s.period_start?.toISOString().slice(0, 10) || ''} to ${s.period_end?.toISOString().slice(0, 10) || ''}`,
+        (s.food_revenue_rs || 0).toFixed(2),
+        (s.food_gst_collected_rs || 0).toFixed(2),
+        (s.platform_fee_rs || 0).toFixed(2),
+        (s.platform_fee_gst_rs || 0).toFixed(2),
+        (s.packaging_collected_rs || 0).toFixed(2),
+        (s.packaging_gst_rs || 0).toFixed(2),
+        (s.delivery_fee_collected_rs || 0).toFixed(2),
+        (s.delivery_fee_restaurant_gst_rs || 0).toFixed(2),
+        (s.referral_fee_rs || 0).toFixed(2),
+        (s.referral_fee_gst_rs || 0).toFixed(2),
+        totalGst.toFixed(2),
+      ].join(',');
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="gstr1_${period}.csv"`);
+    res.send([header, ...rows].join('\n'));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

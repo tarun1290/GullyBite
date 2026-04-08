@@ -235,7 +235,7 @@ async function anLoadCustomers() {
     const tbody = document.getElementById('an-top-cust');
     if (data.top_customers?.length) {
       tbody.innerHTML = data.top_customers.map(c =>
-        `<tr><td>${c.name || '\u2014'}</td><td>${c.wa_phone || c.bsuid?.slice(0,12)+'\u2026' || '\u2014'}</td><td>${c.order_count}</td><td>\u20B9${Math.round(c.total_spent_rs).toLocaleString('en-IN')}</td></tr>`
+        `<tr><td>${_esc(c.name || '\u2014')}</td><td>${_esc(c.wa_phone || c.bsuid?.slice(0,12)+'\u2026' || '\u2014')}</td><td>${c.order_count}</td><td>\u20B9${Math.round(c.total_spent_rs).toLocaleString('en-IN')}</td></tr>`
       ).join('');
     } else { tbody.innerHTML = '<tr><td colspan="4" style="color:var(--dim);text-align:center">No data yet</td></tr>'; }
   } catch (_) {}

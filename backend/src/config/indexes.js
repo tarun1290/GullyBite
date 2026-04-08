@@ -4,6 +4,7 @@
 'use strict';
 
 const { col } = require('./database');
+const log = require('../utils/logger').child({ component: 'indexes' });
 
 const INDEXES = [
   { collection: 'orders', index: { restaurant_id: 1, status: 1, created_at: -1 } },
@@ -23,6 +24,8 @@ const INDEXES = [
   { collection: 'menu_items', index: { restaurant_id: 1, is_available: 1, 'trust_metrics.trust_tag': 1 } },
   { collection: 'menu_items', index: { restaurant_id: 1, 'trust_metrics.average_rating': -1 } },
   { collection: 'order_ratings', index: { order_id: 1 } },
+  { collection: 'order_state_log', index: { order_id: 1, timestamp: -1 } },
+  { collection: 'order_state_log', index: { timestamp: -1 } },
   // Catalog compression indexes
   { collection: 'catalog_master_products', index: { restaurantId: 1 } },
   { collection: 'catalog_master_products', index: { restaurantId: 1, masterSignature: 1 }, options: { unique: true } },
@@ -64,6 +67,17 @@ const INDEXES = [
   { collection: 'orders', index: { status: 1, created_at: -1 } },
   { collection: 'orders', index: { created_at: -1, status: 1 } },
   { collection: 'order_items', index: { order_id: 1, name: 1 } },
+  // Coupon + redemption indexes
+  { collection: 'coupons', index: { restaurant_id: 1, is_active: 1, code: 1 } },
+  { collection: 'coupons', index: { campaign_id: 1 }, options: { sparse: true } },
+  { collection: 'coupon_redemptions', index: { coupon_id: 1, customer_id: 1 } },
+  { collection: 'coupon_redemptions', index: { order_id: 1 } },
+  // Campaign message tracking
+  { collection: 'campaign_messages', index: { campaign_id: 1, status: 1 } },
+  { collection: 'campaign_messages', index: { message_id: 1 }, options: { unique: true, sparse: true } },
+  // Idempotency — processed_events with 24h TTL auto-cleanup
+  { collection: 'processed_events', index: { processed_at: 1 }, options: { expireAfterSeconds: 86400 } },
+  { collection: 'processed_events', index: { source: 1, processed_at: -1 } },
 ];
 
 async function ensureIndexes() {
@@ -75,11 +89,11 @@ async function ensureIndexes() {
     } catch (err) {
       // Index may already exist with different options — not fatal
       if (!err.message.includes('already exists')) {
-        console.warn(`[DB] Index on ${spec.collection} failed:`, err.message);
+        log.warn({ err, collection: spec.collection }, 'Index creation failed');
       }
     }
   }
-  console.log(`[DB] Ensured ${created}/${INDEXES.length} indexes`);
+  log.info({ created, total: INDEXES.length }, `Ensured ${created}/${INDEXES.length} indexes`);
 }
 
 module.exports = { ensureIndexes };

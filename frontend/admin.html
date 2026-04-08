@@ -192,14 +192,9 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
       <div class="login-field"><label>Email</label><input type="email" id="admin-email-input" placeholder="admin@gullybite.com" autocomplete="email"></div>
       <div class="login-field"><label>Password</label><input type="password" id="admin-pass-input" placeholder="Password" autocomplete="current-password"></div>
       <button class="btn-login" onclick="doJwtLogin()">Sign In</button>
-      <div style="text-align:center;margin-top:.6rem"><a href="#" onclick="event.preventDefault();document.getElementById('login-jwt-form').style.display='none';document.getElementById('login-key-form').style.display='block'" style="font-size:.75rem;color:var(--dim)">Use Admin Key instead</a></div>
+      <!-- Admin Key login removed — JWT only -->
     </div>
-    <!-- Legacy ADMIN_KEY Login (hidden by default) -->
-    <div id="login-key-form" style="display:none">
-      <div class="login-field"><label>Admin Key</label><input type="password" id="admin-key-input" placeholder="Enter your ADMIN_KEY" autocomplete="off"></div>
-      <button class="btn-login" onclick="doLogin()">Sign In</button>
-      <div style="text-align:center;margin-top:.6rem"><a href="#" onclick="event.preventDefault();document.getElementById('login-key-form').style.display='none';document.getElementById('login-jwt-form').style.display='block'" style="font-size:.75rem;color:var(--dim)">Use email login</a></div>
-    </div>
+    <!-- ADMIN_KEY login removed — JWT email/password is the only login method -->
     <!-- First-run setup (shown only if no admin users exist) -->
     <div id="login-setup-form" style="display:none">
       <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:.6rem .8rem;margin-bottom:.8rem;font-size:.78rem;color:#15803d">First-time setup — create your super admin account</div>
@@ -1562,22 +1557,7 @@ async function doJwtLogin() {
   } catch (e) { err.textContent = e.message || 'Login failed'; }
 }
 
-// ─── AUTH — LEGACY ADMIN_KEY LOGIN ───────────────────────────────
-async function doLogin() {
-  const key = document.getElementById('admin-key-input').value.trim();
-  const err = document.getElementById('login-err');
-  if (!key) { err.textContent = 'Please enter the admin key.'; return; }
-  try {
-    await fetch(BASE + '/api/admin/auth', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    }).then(r => { if (!r.ok) throw new Error('Invalid key'); return r.json(); });
-    adminKey = key;
-    adminUser = { role: 'super_admin', permissions: {} };
-    sessionStorage.setItem('gb_admin_key', key);
-    showApp();
-  } catch { err.textContent = 'Invalid admin key.'; }
-}
+// ADMIN_KEY login removed — JWT email/password is the only login method
 
 // ─── AUTH — FIRST-RUN SETUP ─────────────────────────────────────
 async function doFirstRunSetup() {
@@ -1603,7 +1583,7 @@ function logout() {
   adminKey = '';
   adminUser = null;
   localStorage.removeItem('gb_admin_token');
-  sessionStorage.removeItem('gb_admin_key');
+  // gb_admin_key removed — JWT only
   document.getElementById('app').classList.remove('visible');
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('login-err').textContent = '';
@@ -1652,14 +1632,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     } catch { localStorage.removeItem('gb_admin_token'); adminKey = ''; }
   }
-  // Try legacy session key
-  const savedKey = sessionStorage.getItem('gb_admin_key');
-  if (savedKey) {
-    adminKey = savedKey;
-    adminUser = { role: 'super_admin', permissions: {} };
-    showApp();
-    return;
-  }
+  // Legacy ADMIN_KEY session removed — JWT is the only auth method
   // Check if first-run setup is needed
   try {
     const r = await fetch(BASE + '/api/admin/auth', {
@@ -1676,9 +1649,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 document.getElementById('admin-pass-input')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') doJwtLogin();
 });
-document.getElementById('admin-key-input')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') doLogin();
-});
+// admin-key-input removed — JWT only
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
 const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics' };
@@ -2549,7 +2520,7 @@ function stlPage(dir) {
 
 async function downloadSettlement(id) {
   try {
-    const resp = await fetch(`/api/admin/settlements/${id}/download`, { headers: { 'x-admin-key': ADMIN_KEY } });
+    const resp = await fetch(`/api/admin/settlements/${id}/download`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') } });
     if (!resp.ok) throw new Error('Download failed');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
@@ -2970,19 +2941,7 @@ async function testSendTemplate() {
 }
 
 // ─── BOOT ─────────────────────────────────────────────────────────
-const savedKey = sessionStorage.getItem('gb_admin_key');
-if (savedKey) {
-  adminKey = savedKey;
-  // verify it's still valid
-  fetch(BASE + '/api/admin/auth', {
-    method : 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body   : JSON.stringify({ key: savedKey }),
-  }).then(r => {
-    if (r.ok) showApp();
-    else { sessionStorage.removeItem('gb_admin_key'); adminKey = ''; }
-  }).catch(() => {});
-}
+// Legacy ADMIN_KEY boot removed — JWT auto-login handled in DOMContentLoaded above
 
 /* ──────────────────── BUSINESS USERNAMES ────────────────────── */
 let _unData = [];
@@ -3983,7 +3942,7 @@ async function loadFinTax() {
 async function downloadTdsReport() {
   const period = document.getElementById('fin-period').value;
   try {
-    const resp = await fetch('/api/admin/financials/tax/tds-report?period=' + period, { headers: { 'Authorization': 'Bearer ' + ADMIN_KEY } });
+    const resp = await fetch('/api/admin/financials/tax/tds-report?period=' + period, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') } });
     if (!resp.ok) throw new Error('Download failed');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
@@ -3996,7 +3955,7 @@ async function downloadTdsReport() {
 async function downloadGstr1() {
   const period = document.getElementById('fin-period').value;
   try {
-    const resp = await fetch('/api/admin/financials/tax/gstr1?period=' + period, { headers: { 'Authorization': 'Bearer ' + ADMIN_KEY } });
+    const resp = await fetch('/api/admin/financials/tax/gstr1?period=' + period, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') } });
     if (!resp.ok) throw new Error('Download failed');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);

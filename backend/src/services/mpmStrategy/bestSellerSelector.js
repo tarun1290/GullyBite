@@ -5,6 +5,7 @@
 'use strict';
 
 const { col } = require('../../config/database');
+const log = require('../../utils/logger').child({ component: 'BestSeller' });
 
 /**
  * Select best-seller items from a set of menu items.
@@ -60,7 +61,7 @@ async function selectBestSellers(items, opts = {}) {
       }
     }
   } catch (e) {
-    console.warn('[BestSeller] Order history query failed:', e.message);
+    log.warn({ err: e }, 'Order history query failed');
   }
 
   // ── Strategy 3: Fallback heuristic ──

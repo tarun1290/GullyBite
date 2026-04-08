@@ -2,6 +2,7 @@
 // Debounced catalog sync queue — batches changes per restaurant, syncs after 3s quiet period
 
 const { col } = require('../config/database');
+const log = require('../utils/logger').child({ component: 'SyncQueue' });
 
 const pendingSyncs = new Map(); // restaurantId → { type, branchIds, timer }
 const activeSyncs = new Set();  // restaurantId set — prevents concurrent syncs
@@ -63,31 +64,37 @@ async function executeSync(restaurantId) {
 
     // Use compressed catalog sync — routes through compression engine first,
     // then through the existing mapMenuItemToMetaProduct pipeline.
-    // Falls back to raw branch-by-branch sync if compression fails.
-    try {
-      const result = await catalog.syncCompressedCatalog(restaurantId);
-      console.log(`[SyncQueue] Compressed sync complete for restaurant ${restaurantId}: ${result.synced || 0} SKUs synced (ratio: ${result.compressionRatio || 0}%)`);
-    } catch (compErr) {
-      console.error(`[SyncQueue] Compressed sync failed, falling back to raw branch sync:`, compErr.message);
+    // Falls back to raw branch-by-branch sync if compression fails or is disabled.
+    const { guard } = require('../utils/smartModule');
+    const compResult = await guard('CATALOG_COMPRESSION', {
+      fn: () => catalog.syncCompressedCatalog(restaurantId),
+      fallback: null, // null signals fallback to raw sync
+      label: 'syncCompressedCatalog',
+      context: { restaurantId },
+    });
 
-      // FALLBACK: original branch-by-branch sync (preserves existing behavior)
+    if (compResult) {
+      log.info({ restaurantId, synced: compResult.synced || 0, compressionRatio: compResult.compressionRatio || 0 }, 'Compressed sync complete');
+    } else {
+      // FALLBACK: original branch-by-branch sync (compression disabled or failed)
+      log.info({ restaurantId }, 'Using raw branch sync (compression unavailable)');
       if (pending.type === 'full') {
         const branches = await col('branches').find({ restaurant_id: restaurantId }).toArray();
         for (const branch of branches) {
           try { await catalog.syncBranchCatalog(String(branch._id)); }
-          catch (e) { console.error(`[SyncQueue] Branch ${branch.name} sync failed:`, e.message); }
+          catch (e) { log.error({ err: e, branchName: branch.name }, 'Branch sync failed'); }
         }
-        console.log(`[SyncQueue] Fallback full sync complete for restaurant ${restaurantId}`);
+        log.info({ restaurantId }, 'Fallback full sync complete');
       } else if (pending.branchIds?.length) {
         for (const branchId of pending.branchIds) {
           try { await catalog.syncBranchCatalog(branchId); }
-          catch (e) { console.error(`[SyncQueue] Branch ${branchId} sync failed:`, e.message); }
+          catch (e) { log.error({ err: e, branchId }, 'Branch sync failed'); }
         }
-        console.log(`[SyncQueue] Fallback branch sync complete for restaurant ${restaurantId}`);
+        log.info({ restaurantId }, 'Fallback branch sync complete');
       }
     }
   } catch (err) {
-    console.error(`[SyncQueue] Sync failed for restaurant ${restaurantId}:`, err.message);
+    log.error({ err, restaurantId }, 'Sync failed');
     // Retry once after delay
     setTimeout(() => {
       const catalog = require('./catalog');
@@ -107,7 +114,7 @@ function retryFailedSyncs() {
   // Called on server startup — no-op for now since we don't persist sync state
   // The debounce model means pending syncs are lost on restart
   // A full sync is triggered when the restaurant next visits the dashboard anyway
-  console.log('[SyncQueue] Ready');
+  log.info('Ready');
 }
 
 module.exports = { queueSync, retryFailedSyncs };

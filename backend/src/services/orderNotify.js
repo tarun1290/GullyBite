@@ -7,6 +7,7 @@ const { col, newId } = require('../config/database');
 const templateSvc = require('./template');
 const { resolveRecipient } = require('./customerIdentity');
 const { logActivity } = require('./activityLog');
+const log = require('../utils/logger').child({ component: 'OrderNotify' });
 
 // Map order status → event name used in template_mappings
 const STATUS_TO_EVENT = {
@@ -25,7 +26,7 @@ const STATUS_TO_EVENT = {
 const sendOrderTemplateMessage = async (orderId, newStatus, orderContext = null) => {
   const event = STATUS_TO_EVENT[newStatus];
   if (!event) {
-    console.warn(`[OrderNotify] No event mapping for status: ${newStatus}`);
+    log.warn({ status: newStatus }, 'No event mapping for status');
     return false;
   }
 
@@ -37,28 +38,28 @@ const sendOrderTemplateMessage = async (orderId, newStatus, orderContext = null)
       status: 'sent',
     });
     if (existing) {
-      console.log(`[OrderNotify] Already sent ${event} for order ${orderId}, skipping`);
+      log.info({ event, orderId }, 'Already sent, skipping');
       return false;
     }
 
     // Build context if not provided
     const context = orderContext || await buildOrderContext(orderId);
     if (!context) {
-      console.warn(`[OrderNotify] Could not build context for order ${orderId}`);
+      log.warn({ orderId }, 'Could not build context');
       return false;
     }
 
     // [BSUID] Need phone_number_id and a reachable identifier to send
     const toIdentifier = context.order.wa_phone || context.order.bsuid;
     if (!context.order.phone_number_id || !toIdentifier) {
-      console.warn(`[OrderNotify] Missing WA details for order ${orderId}`);
+      log.warn({ orderId }, 'Missing WA details');
       return false;
     }
 
     // Get the template mapping for this event
     const mapping = await templateSvc.getMappingForEvent(event);
     if (!mapping || !mapping.is_active) {
-      console.log(`[OrderNotify] No active mapping for event ${event}, skipping template`);
+      log.info({ event }, 'No active mapping, skipping template');
       return false;
     }
 
@@ -79,8 +80,7 @@ const sendOrderTemplateMessage = async (orderId, newStatus, orderContext = null)
       logActivity({ actorType: 'system', action: 'notification.template_sent', category: 'notification', description: `Template "${mapping.template_name}" sent for order ${orderId} (${event})`, resourceType: 'order', resourceId: orderId, severity: 'info' });
     } catch (err) {
       const metaErr = err.response?.data?.error;
-      console.error(`[OrderNotify] Template send failed for ${event}:`,
-        metaErr?.message || err.message);
+      log.error({ err, event, orderId }, 'Template send failed');
       logActivity({ actorType: 'system', action: 'notification.template_failed', category: 'notification', description: `Template send failed for order ${orderId} (${event}): ${metaErr?.message || err.message}`, resourceType: 'order', resourceId: orderId, severity: 'error', metadata: { error: metaErr?.message || err.message } });
       // Don't record as sent — will fall back to text in caller
     }
@@ -98,7 +98,7 @@ const sendOrderTemplateMessage = async (orderId, newStatus, orderContext = null)
 
     return sent;
   } catch (err) {
-    console.error(`[OrderNotify] Error for ${event} on order ${orderId}:`, err.message);
+    log.error({ err, event, orderId }, 'Order notification error');
     return false;
   }
 };

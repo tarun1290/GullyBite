@@ -3,6 +3,7 @@
 
 const { col } = require('../config/database');
 const deliveryService = require('./delivery');
+const log = require('../utils/logger').child({ component: 'ETA' });
 
 // ─── CALCULATE ETA ───────────────────────────────────────────────
 // Uses 3PL quote for delivery time, adds kitchen prep on top
@@ -32,7 +33,7 @@ const calculateETA = async (branchId, deliveryLat, deliveryLng) => {
       deliveryTimeMinutes = quote.estimatedMins || 25;
       distanceKm = quote.distanceKm || null;
     } catch (err) {
-      console.error(`[ETA] 3PL quote failed, using default:`, err.message);
+      log.error({ err }, '3PL quote failed, using default');
       // Fall back to 25 min default
     }
   }
@@ -64,7 +65,7 @@ const updateETAOnStatusChange = async (orderId, newStatus) => {
       if (status.estimatedMins) liveDeliveryMins = status.estimatedMins;
     }
   } catch (err) {
-    console.error(`[ETA] Live status fetch failed for order ${orderId}:`, err.message);
+    log.error({ err, orderId }, 'Live status fetch failed');
   }
 
   const deliveryTimeMinutes = liveDeliveryMins || order.estimated_delivery_min || 25;

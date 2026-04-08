@@ -6,6 +6,7 @@
 'use strict';
 
 const { v4: uuidv4 } = require('uuid');
+const log = require('../../utils/logger').child({ component: 'MockDelivery' });
 
 // In-memory task store (resets on server restart)
 const _tasks = new Map();
@@ -61,11 +62,11 @@ async function createTask(pickup, drop, orderDetails = {}, quoteId = null) {
   _tasks.set(taskId, task);
 
   // Simulate status progression (for testing)
-  setTimeout(() => { if (_tasks.get(taskId)?.status === 'assigned') { _tasks.get(taskId).status = 'picked_up'; console.log(`[Mock 3PL] Task ${taskId} → picked_up`); } }, 30000);
-  setTimeout(() => { if (_tasks.get(taskId)?.status === 'picked_up') { _tasks.get(taskId).status = 'in_transit'; console.log(`[Mock 3PL] Task ${taskId} → in_transit`); } }, 90000);
-  setTimeout(() => { if (_tasks.get(taskId)?.status === 'in_transit') { _tasks.get(taskId).status = 'delivered'; _tasks.get(taskId).deliveredAt = new Date(); console.log(`[Mock 3PL] Task ${taskId} → delivered`); } }, 180000);
+  setTimeout(() => { if (_tasks.get(taskId)?.status === 'assigned') { _tasks.get(taskId).status = 'picked_up'; log.info({ taskId }, 'Task picked_up'); } }, 30000);
+  setTimeout(() => { if (_tasks.get(taskId)?.status === 'picked_up') { _tasks.get(taskId).status = 'in_transit'; log.info({ taskId }, 'Task in_transit'); } }, 90000);
+  setTimeout(() => { if (_tasks.get(taskId)?.status === 'in_transit') { _tasks.get(taskId).status = 'delivered'; _tasks.get(taskId).deliveredAt = new Date(); log.info({ taskId }, 'Task delivered'); } }, 180000);
 
-  console.log(`[Mock 3PL] Task created: ${taskId} (tracking: ${trackingUrl})`);
+  log.info({ taskId, trackingUrl }, 'Task created');
   return task;
 }
 
@@ -74,7 +75,7 @@ async function cancelTask(taskId) {
   const task = _tasks.get(taskId);
   if (task) {
     task.status = 'cancelled';
-    console.log(`[Mock 3PL] Task ${taskId} → cancelled`);
+    log.info({ taskId }, 'Task cancelled');
     return { success: true, refundable: true };
   }
   return { success: false, refundable: false };

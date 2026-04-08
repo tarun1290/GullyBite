@@ -16,6 +16,7 @@ const { col, newId } = require('../config/database');
 const { logActivity } = require('./activityLog');
 const ws = require('./websocket');
 const metaConfig = require('../config/meta');
+const log = require('../utils/logger').child({ component: 'catalog' });
 
 const Business       = bizSdk.Business;
 const ProductCatalog = bizSdk.ProductCatalog;
@@ -56,17 +57,17 @@ const ensureMainCatalog = async (restaurantId) => {
       await axios.get(`${GRAPH}/${restaurant.meta_catalog_id}`, {
         params: { access_token: token, fields: 'id' }, timeout: 8000,
       });
-      console.log(`[Catalog] ensureMainCatalog: using stored=${restaurant.meta_catalog_id} (verified on Meta)`);
+      log.info({ catalogId: restaurant.meta_catalog_id }, 'ensureMainCatalog: using stored catalog (verified on Meta)');
       return { catalogId: restaurant.meta_catalog_id, alreadyExists: true };
     } catch (checkErr) {
       const code = checkErr.response?.status;
       if (code === 400 || code === 404) {
-        console.warn(`[Catalog] Stored catalog ${restaurant.meta_catalog_id} no longer exists on Meta (HTTP ${code}) — clearing and rediscovering`);
+        log.warn({ catalogId: restaurant.meta_catalog_id, httpStatus: code }, 'Stored catalog no longer exists on Meta — clearing and rediscovering');
         await col('restaurants').updateOne({ _id: restaurantId }, { $unset: { meta_catalog_id: '', meta_catalog_name: '', catalog_created_at: '' } });
         await col('branches').updateMany({ restaurant_id: restaurantId }, { $unset: { catalog_id: '' } });
       } else {
         // Network error or timeout — trust the stored ID
-        console.warn(`[Catalog] Could not verify catalog ${restaurant.meta_catalog_id} (${checkErr.message}) — using stored ID`);
+        log.warn({ err: checkErr, catalogId: restaurant.meta_catalog_id }, 'Could not verify catalog — using stored ID');
         return { catalogId: restaurant.meta_catalog_id, alreadyExists: true };
       }
     }
@@ -79,7 +80,7 @@ const ensureMainCatalog = async (restaurantId) => {
     if (nameMatch) return nameMatch;
     const sorted = [...catalogs].sort((a, b) => (b.product_count || 0) - (a.product_count || 0));
     if (catalogs.length > 1) {
-      console.warn(`[Catalog] WARNING: Multiple catalogs found (${catalogs.map(c => c.id + ':' + c.name).join(', ')}). Picked ${sorted[0].id} based on product_count.`);
+      log.warn({ catalogCount: catalogs.length, pickedId: sorted[0].id }, 'Multiple catalogs found — picked based on product_count');
     }
     return sorted[0];
   }
@@ -88,10 +89,10 @@ const ensureMainCatalog = async (restaurantId) => {
   async function _validateCatalog(catId) {
     try {
       const check = await axios.get(`${GRAPH}/${catId}`, { params: { access_token: token, fields: 'id,name,product_count' }, timeout: 10000 });
-      console.log(`[Catalog] Validated catalog ${catId}: "${check.data.name}" (${check.data.product_count} products)`);
+      log.info({ catalogId: catId, name: check.data.name, productCount: check.data.product_count }, 'Validated catalog');
       return check.data;
     } catch (valErr) {
-      console.error(`[Catalog] Chosen catalog ${catId} is not accessible: ${valErr.response?.data?.error?.message || valErr.message}`);
+      log.error({ err: valErr, catalogId: catId }, 'Chosen catalog is not accessible');
       return null;
     }
   }
@@ -103,7 +104,7 @@ const ensureMainCatalog = async (restaurantId) => {
       await col('restaurants').updateOne({ _id: restaurantId }, {
         $set: { meta_catalog_id: wa_acc.catalog_id, meta_catalog_name: valid.name || `${restaurant.business_name} Menu`, catalog_created_at: new Date() }
       });
-      console.log(`[Catalog] Restaurant "${restaurant.business_name}" inherited WABA catalog ${wa_acc.catalog_id}`);
+      log.info({ businessName: restaurant.business_name, catalogId: wa_acc.catalog_id }, 'Restaurant inherited WABA catalog');
       return { catalogId: wa_acc.catalog_id, inherited: true };
     }
   }
@@ -128,12 +129,12 @@ const ensureMainCatalog = async (restaurantId) => {
             { restaurant_id: restaurantId, is_active: true },
             { $set: { catalog_id: chosen.id, catalog_linked: true, catalog_linked_at: new Date() } }
           );
-          console.log(`[Catalog] ensureMainCatalog: using discovered=${chosen.id} from WABA for "${restaurant.business_name}"`);
+          log.info({ catalogId: chosen.id, businessName: restaurant.business_name }, 'ensureMainCatalog: using discovered catalog from WABA');
           return { catalogId: chosen.id, inherited: true };
         }
       }
     } catch (e) {
-      console.warn('[Catalog] Could not fetch WABA catalogs:', e.response?.data?.error?.message || e.message);
+      log.warn({ err: e }, 'Could not fetch WABA catalogs');
     }
   }
 
@@ -141,14 +142,14 @@ const ensureMainCatalog = async (restaurantId) => {
   let businessId = metaConfig.businessId;
   if (!businessId) {
     try {
-      console.log('[Catalog] META_BUSINESS_ID not set — querying /me/businesses...');
+      log.info('META_BUSINESS_ID not set — querying /me/businesses');
       const meRes = await axios.get(`${GRAPH}/me/businesses`, {
         params: { access_token: token, fields: 'id,name' }, timeout: 10000,
       });
       const businesses = meRes.data?.data || [];
       if (!businesses.length) throw new Error('No Meta Business account found. Set META_BUSINESS_ID in environment variables.');
       businessId = businesses[0].id;
-      console.log('[Catalog] Discovered business ID:', businessId);
+      log.info({ businessId }, 'Discovered business ID');
     } catch (err) {
       throw new Error(`Could not fetch business account: ${err.response?.data?.error?.message || err.message}`);
     }
@@ -164,11 +165,11 @@ const ensureMainCatalog = async (restaurantId) => {
       const valid = await _validateCatalog(chosen.id);
       if (valid) {
         catalogId = chosen.id;
-        console.log(`[Catalog] Found existing business catalog ${catalogId} — using as main catalog`);
+        log.info({ catalogId }, 'Found existing business catalog — using as main catalog');
       }
     }
   } catch (e) {
-    console.warn('[Catalog] Could not read business catalogs:', e.message);
+    log.warn({ err: e }, 'Could not read business catalogs');
   }
 
   // Create new catalog if none exist or none validated
@@ -181,7 +182,7 @@ const ensureMainCatalog = async (restaurantId) => {
         vertical: 'commerce',
       });
       catalogId = created.id;
-      console.log(`[Catalog] Created main catalog "${catalogName}" with ID: ${catalogId}`);
+      log.info({ catalogId, catalogName }, 'Created main catalog');
     } catch (err) {
       throw new Error(`Catalog creation failed: ${err.message}`);
     }
@@ -205,9 +206,9 @@ const ensureMainCatalog = async (restaurantId) => {
         { restaurant_id: restaurantId, is_active: true },
         { $set: { catalog_id: catalogId, catalog_linked: true, catalog_linked_at: new Date() } }
       );
-      console.log(`[Catalog] ensureMainCatalog: using created=${catalogId}, linked to WABA ${wa_acc.waba_id}`);
+      log.info({ catalogId, wabaId: wa_acc.waba_id }, 'ensureMainCatalog: created and linked to WABA');
     } catch (err) {
-      console.warn(`[Catalog] Could not auto-link to WABA: ${err.response?.data?.error?.message || err.message}`);
+      log.warn({ err }, 'Could not auto-link to WABA');
     }
   }
 
@@ -223,9 +224,9 @@ const ensureMainCatalog = async (restaurantId) => {
         { restaurant_id: restaurantId, is_active: true },
         { $set: { catalog_linked: true, catalog_linked_at: new Date(), cart_enabled: true, catalog_visible: true } }
       );
-      console.log(`[Catalog] Auto-linked catalog ${catalogId} to phone ${wa_acc.phone_number_id} (cart + visibility ON)`);
+      log.info({ catalogId, phoneNumberId: wa_acc.phone_number_id }, 'Auto-linked catalog to phone (cart + visibility ON)');
     } catch (err) {
-      console.warn(`[Catalog] Auto-link to phone failed (can be done manually): ${err.response?.data?.error?.message || err.message}`);
+      log.warn({ err }, 'Auto-link to phone failed (can be done manually)');
     }
   }
 
@@ -250,7 +251,7 @@ const ensureBranchProductSet = async (branchId) => {
   // Check branch has items before creating a product set
   const itemCount = await col('menu_items').countDocuments({ branch_id: branchId, retailer_id: { $exists: true, $ne: null } });
   if (!itemCount) {
-    console.warn(`[Catalog] No items for branch "${branch.name}" — skipping product set`);
+    log.warn({ branchId, branchName: branch.name }, 'No items for branch — skipping product set');
     return { productSetId: null, skipped: true, reason: 'no items' };
   }
 
@@ -268,7 +269,7 @@ const ensureBranchProductSet = async (branchId) => {
         { name: setName, filter },
         { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
       );
-      console.log(`[Catalog] Updated branch product set "${setName}" (custom_label_0=${branchSlug}, ${itemCount} items)`);
+      log.info({ setName, branchSlug, itemCount }, 'Updated branch product set');
       return { productSetId: branch.meta_product_set_id, updated: true };
     }
 
@@ -280,11 +281,11 @@ const ensureBranchProductSet = async (branchId) => {
     );
     const productSetId = res.data.id;
     await col('branches').updateOne({ _id: branchId }, { $set: { meta_product_set_id: productSetId } });
-    console.log(`[Catalog] Created branch product set "${setName}" → ${productSetId} (custom_label_0=${branchSlug}, ${itemCount} items)`);
+    log.info({ setName, productSetId, branchSlug, itemCount }, 'Created branch product set');
     return { productSetId, created: true };
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    console.error(`[Catalog] ensureBranchProductSet failed for "${setName}":`, msg);
+    log.error({ err, setName }, 'ensureBranchProductSet failed');
     throw new Error(`Failed to create branch product set: ${msg}`);
   }
 };
@@ -305,7 +306,7 @@ const createBranchCatalog = async (branchId) => {
 
   // Create branch product set in the background (non-blocking)
   ensureBranchProductSet(branchId).catch(err =>
-    console.warn(`[Catalog] Branch product set creation deferred:`, err.message)
+    log.warn({ err }, 'Branch product set creation deferred')
   );
 
   return { success: true, catalogId, branchId, alreadyExists };
@@ -429,7 +430,7 @@ function _buildItemRequest(item, restaurant, branch) {
 
   const validation = validateItemForMeta(item);
   if (!validation.valid) {
-    console.warn(`[Catalog] Item "${item.name}" (${item.retailer_id}) failed validation:`, validation.errors.join(', '));
+    log.warn({ itemName: item.name, retailerId: item.retailer_id, errors: validation.errors }, 'Item failed validation');
     // Still attempt to sync — Meta may accept with auto-fixes from mapMenuItemToMetaProduct
   }
 
@@ -486,9 +487,9 @@ const syncBranchCatalog = async (branchId) => {
 
   const requests = items.map(item => _buildItemRequest(item, restaurant, branch)).filter(Boolean);
 
-  console.log(`[Catalog] Syncing ${requests.length} items to catalog ${branch.catalog_id} for "${branch.name}"`);
+  log.info({ itemCount: requests.length, catalogId: branch.catalog_id, branchName: branch.name }, 'Syncing items to catalog');
   if (requests.length && requests[0]) {
-    console.log(`[Catalog] Sample item: retailer_id=${requests[0].retailer_id}, has_image=${!!requests[0].data?.image_link}, price=${requests[0].data?.price}`);
+    log.info({ retailerId: requests[0].retailer_id, hasImage: !!requests[0].data?.image_link, price: requests[0].data?.price }, 'Sample item');
   }
 
   const BATCH_SIZE = 4999;
@@ -500,7 +501,7 @@ const syncBranchCatalog = async (branchId) => {
     const batchNum   = Math.floor(i / BATCH_SIZE) + 1;
     const totalBatches = Math.ceil(requests.length / BATCH_SIZE);
 
-    console.log(`[Catalog] Branch "${branch.name}" — batch ${batchNum}/${totalBatches} (${batch.length} items)`);
+    log.info({ branchName: branch.name, batchNum, totalBatches, batchSize: batch.length }, 'Processing batch');
 
     let batchDone = false;
     for (let attempt = 0; attempt < 2 && !batchDone; attempt++) {
@@ -529,8 +530,8 @@ const syncBranchCatalog = async (branchId) => {
         }
       } catch (err) {
         const errMsg = err._error?.error?.message || err.response?.data?.error?.message || err.message;
-        console.error(`[Catalog] Batch ${batchNum} error (attempt ${attempt + 1}):`, errMsg);
-        if (err._error?.error) console.error('[Catalog] Full Meta error:', JSON.stringify(err._error.error));
+        log.error({ err, batchNum, attempt: attempt + 1 }, 'Batch error');
+        if (err._error?.error) log.error({ metaError: err._error.error }, 'Full Meta error');
 
         const isStale = attempt === 0 && !catalogFixed && (
           errMsg.includes('does not exist') ||
@@ -539,7 +540,7 @@ const syncBranchCatalog = async (branchId) => {
         );
 
         if (isStale) {
-          console.warn(`[Catalog] Stale catalog_id "${branch.catalog_id}" — clearing and re-discovering…`);
+          log.warn({ catalogId: branch.catalog_id }, 'Stale catalog_id — clearing and re-discovering');
           try {
             await col('branches').updateOne({ _id: branchId }, { $unset: { catalog_id: '' } });
             await col('restaurants').updateOne({ _id: branch.restaurant_id }, { $unset: { meta_catalog_id: '', meta_catalog_name: '' } });
@@ -550,15 +551,15 @@ const syncBranchCatalog = async (branchId) => {
             const rediscovered = await createBranchCatalog(branchId);
             branch.catalog_id = rediscovered.catalogId;
             catalogFixed = true;
-            console.log(`[Catalog] Re-discovered catalog: ${branch.catalog_id} — retrying batch ${batchNum}…`);
+            log.info({ catalogId: branch.catalog_id, batchNum }, 'Re-discovered catalog — retrying batch');
           } catch (fixErr) {
-            console.error(`[Catalog] Re-discovery failed:`, fixErr.message);
+            log.error({ err: fixErr }, 'Re-discovery failed');
             results.failed += batch.length;
             results.errors.push(`Batch ${batchNum}: catalog re-discovery failed — ${fixErr.message}`);
             batchDone = true;
           }
         } else {
-          console.error(`[Catalog] Batch ${batchNum} failed:`, errMsg);
+          log.error({ batchNum, errMsg }, 'Batch failed');
           results.failed += batch.length;
           results.errors.push(`Batch ${batchNum}: ${errMsg}`);
 
@@ -586,9 +587,9 @@ const syncBranchCatalog = async (branchId) => {
 
   syncCategoryProductSets(branchId)
     .then(() => ensureBranchCollection(branchId))
-    .catch(err => console.warn('[Catalog] Product set / Collection sync failed (non-fatal):', err.message));
+    .catch(err => log.warn({ err }, 'Product set / Collection sync failed (non-fatal)'));
 
-  console.log(`[Catalog] Sync complete for "${branch.name}":`, results);
+  log.info({ branchName: branch.name, updated: results.updated, deleted: results.deleted, failed: results.failed }, 'Sync complete');
 
   ws.broadcastToRestaurant(branch.restaurant_id, 'catalog_sync_complete', { branchName: branch.name, itemCount: results.updated, errorCount: results.failed, syncedAt: new Date().toISOString() });
 
@@ -638,13 +639,13 @@ const syncRestaurantCatalog = async (restaurantId) => {
   // Ensure all branches have product sets in parallel
   await Promise.allSettled(
     branches.map(b => ensureBranchProductSet(String(b._id)).catch(err =>
-      console.warn(`[Catalog] Branch product set for "${b.name}":`, err.message)
+      log.warn({ err, branchName: b.name }, 'Branch product set sync failed')
     ))
   );
 
   // Sync branch-level Collections (fire-and-forget)
   syncAllBranchCollections(restaurantId).catch(err =>
-    console.warn('[Catalog] Branch Collections sync failed (non-fatal):', err.message)
+    log.warn({ err }, 'Branch Collections sync failed (non-fatal)')
   );
 
   await col('restaurants').updateOne({ _id: restaurantId }, { $set: { last_catalog_sync: new Date() } });
@@ -711,11 +712,11 @@ const addProduct = async (menuItemId) => {
       { _id: menuItemId },
       { $set: { catalog_sync_status: 'synced', catalog_synced_at: new Date() } }
     );
-    console.log(`[Catalog] addProduct synced: ${item.retailer_id}`);
+    log.info({ retailerId: item.retailer_id }, 'addProduct synced');
     return { success: true, retailer_id: item.retailer_id };
   } catch (err) {
     const errMsg = err._error?.error?.message || err.message;
-    console.error('[Catalog] addProduct failed:', errMsg);
+    log.error({ err }, 'addProduct failed');
     await col('menu_items').updateOne({ _id: menuItemId }, { $set: { catalog_sync_status: 'error' } });
     return { success: false, error: errMsg };
   }
@@ -749,7 +750,7 @@ const deleteProduct = async (menuItem, branchId) => {
     return { success: true, retailer_id: menuItem.retailer_id };
   } catch (err) {
     const errMsg = err._error?.error?.message || err.message;
-    console.error('[Catalog] deleteProduct failed:', errMsg);
+    log.error({ err }, 'deleteProduct failed');
     return { success: false, error: errMsg };
   }
 };
@@ -782,7 +783,7 @@ const syncItemAvailability = async (restaurantId, menuItem) => {
     const restaurant = await col('restaurants').findOne({ _id: restaurantId });
     const catalogId = restaurant?.meta_catalog_id;
     if (!catalogId) {
-      console.warn('[Catalog] syncItemAvailability: no catalog for restaurant', restaurantId);
+      log.warn({ restaurantId }, 'syncItemAvailability: no catalog for restaurant');
       return null;
     }
     if (!menuItem?.retailer_id) return null;
@@ -804,7 +805,7 @@ const syncItemAvailability = async (restaurantId, menuItem) => {
     );
 
     const handle = resp.data?.handles?.[0] || null;
-    console.log('[Catalog] Availability update queued for', menuItem.retailer_id, '\u2192', avail, '| handle:', handle);
+    log.info({ retailerId: menuItem.retailer_id, availability: avail, handle }, 'Availability update queued');
 
     // Log for debugging
     col('catalog_sync_logs').insertOne({
@@ -820,7 +821,7 @@ const syncItemAvailability = async (restaurantId, menuItem) => {
     }
     return handle;
   } catch (err) {
-    console.error('[Catalog] Availability sync failed for', menuItem.retailer_id, err.response?.data || err.message);
+    log.error({ err, retailerId: menuItem.retailer_id }, 'Availability sync failed');
     if (menuItem._id) {
       await col('menu_items').updateOne({ _id: menuItem._id }, { $set: { catalog_sync_status: 'error' } }).catch(() => {});
     }
@@ -836,7 +837,7 @@ const syncBulkAvailability = async (restaurantId, items) => {
     const restaurant = await col('restaurants').findOne({ _id: restaurantId });
     const catalogId = restaurant?.meta_catalog_id;
     if (!catalogId) {
-      console.warn('[Catalog] Bulk availability: no catalog for restaurant', restaurantId);
+      log.warn({ restaurantId }, 'Bulk availability: no catalog for restaurant');
       return [];
     }
     if (!items.length) return [];
@@ -862,11 +863,11 @@ const syncBulkAvailability = async (restaurantId, items) => {
         const handle = resp.data?.handles?.[0] || null;
         if (handle) handles.push(handle);
       } catch (batchErr) {
-        console.error(`[Catalog] Bulk availability batch ${Math.floor(i / BATCH_SIZE) + 1} failed:`, batchErr.response?.data || batchErr.message);
+        log.error({ err: batchErr, batchNum: Math.floor(i / BATCH_SIZE) + 1 }, 'Bulk availability batch failed');
       }
     }
 
-    console.log(`[Catalog] Bulk availability update: ${items.length} items in ${Math.ceil(items.length / BATCH_SIZE)} batch(es), handles:`, handles);
+    log.info({ itemCount: items.length, batchCount: Math.ceil(items.length / BATCH_SIZE), handles }, 'Bulk availability update complete');
 
     // Log summary
     col('catalog_sync_logs').insertOne({
@@ -876,7 +877,7 @@ const syncBulkAvailability = async (restaurantId, items) => {
 
     return handles;
   } catch (err) {
-    console.error('[Catalog] Bulk availability sync error:', err.message);
+    log.error({ err }, 'Bulk availability sync error');
     return [];
   }
 };
@@ -896,7 +897,7 @@ const checkSyncStatus = async (catalogId, handle) => {
       errors: (data.errors || []).map(e => ({ retailer_id: e.retailer_id, message: e.message })),
     };
   } catch (err) {
-    console.error('[Catalog] Batch status check failed:', err.response?.data || err.message);
+    log.error({ err, catalogId, handle }, 'Batch status check failed');
     return { status: 'error', processed: 0, errors: [{ message: err.message }] };
   }
 };
@@ -923,7 +924,7 @@ const getCatalogProducts = async (idOrCatalogId) => {
       );
       return { catalogId, products: products.map(p => p._data), total: products.length };
     } catch (err) {
-      console.error('[Catalog] getProducts (branch) failed:', err._error?.error?.message || err.message);
+      log.error({ err, catalogId }, 'getProducts (branch) failed');
       return { catalogId, products: [], error: err._error?.error?.message || err.message };
     }
   }
@@ -941,7 +942,7 @@ const getCatalogProducts = async (idOrCatalogId) => {
     }
     return { catalogId, products: allProducts, total: allProducts.length };
   } catch (err) {
-    console.error('[Catalog] getProducts (catalogId) failed:', err.response?.data?.error?.message || err.message);
+    log.error({ err, catalogId }, 'getProducts (catalogId) failed');
     return { catalogId, products: [], error: err.response?.data?.error?.message || err.message };
   }
 };
@@ -1005,11 +1006,11 @@ const createProductSet = async (catalogId, name, filter) => {
       { name, filter },
       { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
     );
-    console.log(`[Catalog] Created product set "${name}" → ${res.data.id}`);
+    log.info({ name, productSetId: res.data.id }, 'Created product set');
     return res.data;
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    console.error(`[Catalog] createProductSet "${name}" failed:`, msg);
+    log.error({ err, name }, 'createProductSet failed');
     throw new Error(msg);
   }
 };
@@ -1023,11 +1024,11 @@ const updateProductSet = async (metaProductSetId, name, filter) => {
       { name, filter },
       { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
     );
-    console.log(`[Catalog] Updated product set "${name}" (${metaProductSetId})`);
+    log.info({ name, metaProductSetId }, 'Updated product set');
     return { success: true };
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    console.error(`[Catalog] updateProductSet "${name}" failed:`, msg);
+    log.error({ err, name, metaProductSetId }, 'updateProductSet failed');
     throw new Error(msg);
   }
 };
@@ -1040,11 +1041,11 @@ const deleteProductSet = async (metaProductSetId) => {
       params: { access_token: token },
       timeout: 15000,
     });
-    console.log(`[Catalog] Deleted product set ${metaProductSetId}`);
+    log.info({ metaProductSetId }, 'Deleted product set');
     return { success: true };
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    console.error(`[Catalog] deleteProductSet failed:`, msg);
+    log.error({ err, metaProductSetId }, 'deleteProductSet failed');
     throw new Error(msg);
   }
 };
@@ -1079,16 +1080,16 @@ const syncProductSets = async (branchId) => {
         results.created++;
       }
     } catch (err) {
-      console.error(`[Catalog] Product set "${set.name}" sync failed:`, err.message);
+      log.error({ err, setName: set.name }, 'Product set sync failed');
       results.failed++;
     }
   }
 
-  console.log(`[Catalog] syncProductSets for "${branch.name}": created=${results.created}, updated=${results.updated}, failed=${results.failed}`);
+  log.info({ branchName: branch.name, created: results.created, updated: results.updated, failed: results.failed }, 'syncProductSets complete');
 
   // Chain: sync collections after product sets
   await syncCollections(branchId).catch(err =>
-    console.error('[Catalog] Collection sync failed:', err.message)
+    log.error({ err }, 'Collection sync failed')
   );
 
   return { success: results.failed === 0, ...results };
@@ -1133,7 +1134,7 @@ const autoCreateProductSets = async (branchId) => {
       updated_at: now,
     });
     created++;
-    console.log(`[Catalog] Auto-created product set "${tagVal}" for branch "${branch.name}"`);
+    log.info({ setName: tagVal, branchName: branch.name }, 'Auto-created product set');
   }
 
   // 2. Also create sets from menu_categories if no tag-based sets exist for them
@@ -1160,7 +1161,7 @@ const autoCreateProductSets = async (branchId) => {
         updated_at: now,
       });
       created++;
-      console.log(`[Catalog] Auto-created product set from category "${cat.name}" for branch "${branch.name}"`);
+      log.info({ categoryName: cat.name, branchName: branch.name }, 'Auto-created product set from category');
     }
   }
 
@@ -1185,7 +1186,7 @@ const autoCreateProductSets = async (branchId) => {
         updated_at: now,
       });
       created++;
-      console.log(`[Catalog] Auto-created "Bestsellers" set (${bestsellers.length} items) for branch "${branch.name}"`);
+      log.info({ itemCount: bestsellers.length, branchName: branch.name }, 'Auto-created Bestsellers set');
     } else {
       // Update existing Bestsellers set with current bestseller items
       await col('product_sets').updateOne(
@@ -1203,10 +1204,10 @@ const autoCreateProductSets = async (branchId) => {
 
   // 5. Auto-create collections from the new product sets
   await autoCreateCollections(branchId).catch(err =>
-    console.warn('[Catalog] Auto-create collections after sets failed:', err.message)
+    log.warn({ err }, 'Auto-create collections after sets failed')
   );
 
-  console.log(`[Catalog] autoCreateProductSets for "${branch.name}": created=${created}, skipped=${skipped}`);
+  log.info({ branchName: branch.name, created, skipped }, 'autoCreateProductSets complete');
   return { created, skipped };
 };
 
@@ -1231,11 +1232,11 @@ const createCollection = async (catalogId, name, productSetIds, description, cov
       body,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
     );
-    console.log(`[Catalog] Created collection "${name}" → ${res.data.id}`);
+    log.info({ name, collectionId: res.data.id }, 'Created collection');
     return res.data;
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    console.error(`[Catalog] createCollection "${name}" failed:`, msg);
+    log.error({ err, name }, 'createCollection failed');
     throw new Error(msg);
   }
 };
@@ -1254,11 +1255,11 @@ const updateCollection = async (metaCollectionId, updates) => {
       body,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
     );
-    console.log(`[Catalog] Updated collection ${metaCollectionId}`);
+    log.info({ metaCollectionId }, 'Updated collection');
     return { success: true };
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    console.error(`[Catalog] updateCollection failed:`, msg);
+    log.error({ err, metaCollectionId }, 'updateCollection failed');
     throw new Error(msg);
   }
 };
@@ -1271,11 +1272,11 @@ const deleteCollection = async (metaCollectionId) => {
       params: { access_token: token },
       timeout: 15000,
     });
-    console.log(`[Catalog] Deleted collection ${metaCollectionId}`);
+    log.info({ metaCollectionId }, 'Deleted collection');
     return { success: true };
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    console.error(`[Catalog] deleteCollection failed:`, msg);
+    log.error({ err, metaCollectionId }, 'deleteCollection failed');
     throw new Error(msg);
   }
 };
@@ -1291,7 +1292,7 @@ const listCollections = async (catalogId) => {
     return res.data?.data || [];
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    console.error(`[Catalog] listCollections failed:`, msg);
+    log.error({ err, catalogId }, 'listCollections failed');
     return [];
   }
 };
@@ -1321,7 +1322,7 @@ const syncCollections = async (branchId) => {
     const metaSetIds = sets.map(s => s.meta_product_set_id);
 
     if (!metaSetIds.length) {
-      console.warn(`[Catalog] Collection "${coll.name}" has zero synced product sets — skipping`);
+      log.warn({ collectionName: coll.name }, 'Collection has zero synced product sets — skipping');
       results.skipped++;
       continue;
     }
@@ -1350,12 +1351,12 @@ const syncCollections = async (branchId) => {
         results.created++;
       }
     } catch (err) {
-      console.error(`[Catalog] Collection "${coll.name}" sync failed:`, err.message);
+      log.error({ err, collectionName: coll.name }, 'Collection sync failed');
       results.failed++;
     }
   }
 
-  console.log(`[Catalog] syncCollections for "${branch.name}": created=${results.created}, updated=${results.updated}, failed=${results.failed}, skipped=${results.skipped}`);
+  log.info({ branchName: branch.name, created: results.created, updated: results.updated, failed: results.failed, skipped: results.skipped }, 'syncCollections complete');
   return { success: results.failed === 0, ...results };
 };
 
@@ -1481,7 +1482,7 @@ const autoCreateCollections = async (branchId) => {
       updated_at: now,
     });
     created++;
-    console.log(`[Catalog] Auto-created collection "${name}" (${setIds.length} sets) for branch "${branch.name}"`);
+    log.info({ collectionName: name, setCount: setIds.length, branchName: branch.name }, 'Auto-created collection');
   }
 
   // 1. Bestsellers at sort_order 0
@@ -1502,7 +1503,7 @@ const autoCreateCollections = async (branchId) => {
     await syncCollections(branchId);
   }
 
-  console.log(`[Catalog] autoCreateCollections for "${branch.name}": created=${created}, skipped=${skipped}`);
+  log.info({ branchName: branch.name, created, skipped }, 'autoCreateCollections complete');
   return { created, skipped };
 };
 
@@ -1529,7 +1530,7 @@ const ensureBranchCollection = async (branchId) => {
   }
 
   if (!metaSetIds.length) {
-    console.warn(`[Catalog] No synced product sets for branch "${branch.name}" — skipping Collection`);
+    log.warn({ branchName: branch.name }, 'No synced product sets for branch — skipping Collection');
     return { skipped: true, reason: 'No synced product sets' };
   }
 
@@ -1547,7 +1548,7 @@ const ensureBranchCollection = async (branchId) => {
         productSetIds: metaSetIds,
         description,
       });
-      console.log(`[Catalog] Updated branch Collection "${collectionName}" (${metaSetIds.length} sets)`);
+      log.info({ collectionName, setCount: metaSetIds.length }, 'Updated branch Collection');
       return { success: true, updated: true, collectionId: branch.meta_collection_id };
     } else {
       // Create new Collection
@@ -1556,11 +1557,11 @@ const ensureBranchCollection = async (branchId) => {
         { _id: branchId },
         { $set: { meta_collection_id: created.id, collection_updated_at: new Date() } }
       );
-      console.log(`[Catalog] Created branch Collection "${collectionName}" → ${created.id} (${metaSetIds.length} sets)`);
+      log.info({ collectionName, collectionId: created.id, setCount: metaSetIds.length }, 'Created branch Collection');
       return { success: true, created: true, collectionId: created.id };
     }
   } catch (err) {
-    console.error(`[Catalog] ensureBranchCollection failed for "${branch.name}":`, err.message);
+    log.error({ err, branchName: branch.name }, 'ensureBranchCollection failed');
     return { success: false, error: err.message };
   }
 };
@@ -1577,12 +1578,12 @@ const syncAllBranchCollections = async (restaurantId) => {
       else if (r.created) results.created++;
       else if (r.updated) results.updated++;
     } catch (err) {
-      console.error(`[Catalog] syncAllBranchCollections — "${branch.name}" failed:`, err.message);
+      log.error({ err, branchName: branch.name }, 'syncAllBranchCollections failed for branch');
       results.failed++;
     }
   }
 
-  console.log(`[Catalog] syncAllBranchCollections for restaurant ${restaurantId}:`, results);
+  log.info({ restaurantId, created: results.created, updated: results.updated, skipped: results.skipped, failed: results.failed }, 'syncAllBranchCollections complete');
   return results;
 };
 
@@ -1599,7 +1600,7 @@ const deleteBranchCollection = async (branchId) => {
     );
     return { success: true };
   } catch (err) {
-    console.error(`[Catalog] deleteBranchCollection failed:`, err.message);
+    log.error({ err, branchId }, 'deleteBranchCollection failed');
     return { success: false, error: err.message };
   }
 };
@@ -1612,7 +1613,7 @@ const rediscoverCatalog = async (branchId) => {
   await col('branches').updateMany({ restaurant_id: branch.restaurant_id }, { $unset: { catalog_id: '' } });
   await col('restaurants').updateOne({ _id: branch.restaurant_id }, { $unset: { meta_catalog_id: '', meta_catalog_name: '' } });
   await col('whatsapp_accounts').updateMany({ restaurant_id: branch.restaurant_id }, { $unset: { catalog_id: '' } });
-  console.log(`[Catalog] Cleared stale catalog_id "${oldId}" for restaurant — re-discovering main catalog`);
+  log.info({ oldCatalogId: oldId, restaurantId: branch.restaurant_id }, 'Cleared stale catalog_id — re-discovering main catalog');
   return await createBranchCatalog(branchId);
 };
 
@@ -1624,10 +1625,10 @@ const fetchBusinessCatalogs = async (businessId) => {
       params: { fields: 'id,name,product_count,vertical', access_token: token },
       timeout: 10000,
     });
-    console.log(`[Catalog] Found ${res.data.data?.length || 0} catalogs for business ${businessId}`);
+    log.info({ businessId, catalogCount: res.data.data?.length || 0 }, 'Found business catalogs');
     return res.data.data || [];
   } catch (err) {
-    console.error('[Catalog] Failed to fetch business catalogs:', err.response?.data?.error?.message || err.message);
+    log.error({ err, businessId }, 'Failed to fetch business catalogs');
     return [];
   }
 };
@@ -1641,7 +1642,7 @@ const fetchWabaCatalogs = async (wabaId) => {
     });
     return res.data.data || [];
   } catch (err) {
-    console.error('[Catalog] Failed to fetch WABA catalogs:', err.response?.data?.error?.message || err.message);
+    log.error({ err, wabaId }, 'Failed to fetch WABA catalogs');
     return [];
   }
 };
@@ -1664,10 +1665,10 @@ const deleteCatalogSafe = async (catalogId, restaurantId) => {
         { _id: wa._id },
         { $set: { catalog_linked: false, cart_enabled: false, catalog_visible: false } }
       );
-      console.log(`[Catalog] Unlinked catalog ${catalogId} from phone ${wa.phone_number_id}`);
+      log.info({ catalogId, phoneNumberId: wa.phone_number_id }, 'Unlinked catalog from phone');
       await new Promise(r => setTimeout(r, 2000)); // wait for Meta to process
     } catch (err) {
-      console.warn('[Catalog] Unlink before delete failed:', err.response?.data?.error?.message || err.message);
+      log.warn({ err, catalogId }, 'Unlink before delete failed');
     }
   }
 
@@ -1675,14 +1676,14 @@ const deleteCatalogSafe = async (catalogId, restaurantId) => {
   try {
     const feeds = await listFeeds(catalogId);
     for (const feed of feeds) {
-      try { await deleteFeed(feed.id); } catch (feedErr) { console.warn(`[Catalog] Pre-delete feed ${feed.id} failed:`, feedErr.message); }
+      try { await deleteFeed(feed.id); } catch (feedErr) { log.warn({ err: feedErr, feedId: feed.id }, 'Pre-delete feed failed'); }
     }
     if (feeds.length) {
-      console.log(`[Catalog] Deleted ${feeds.length} feed(s) from catalog ${catalogId} before deletion`);
+      log.info({ feedCount: feeds.length, catalogId }, 'Deleted feeds from catalog before deletion');
       await new Promise(r => setTimeout(r, 1000));
     }
   } catch (feedListErr) {
-    console.warn('[Catalog] Could not list feeds before delete:', feedListErr.message);
+    log.warn({ err: feedListErr, catalogId }, 'Could not list feeds before delete');
   }
 
   // Step 2: Delete the catalog
@@ -1690,7 +1691,7 @@ const deleteCatalogSafe = async (catalogId, restaurantId) => {
     await axios.delete(`${GRAPH}/${catalogId}`, {
       params: { access_token: token }, timeout: 15000,
     });
-    console.log(`[Catalog] Deleted catalog ${catalogId}`);
+    log.info({ catalogId }, 'Deleted catalog');
   } catch (err) {
     throw new Error(`Catalog deletion failed: ${err.response?.data?.error?.message || err.message}`);
   }
@@ -1719,11 +1720,11 @@ const deleteFeed = async (feedId) => {
     await axios.delete(`${GRAPH}/${feedId}`, {
       headers: { Authorization: `Bearer ${token}` }, timeout: 15000,
     });
-    console.log(`[Catalog] Deleted feed ${feedId}`);
+    log.info({ feedId }, 'Deleted feed');
     return { success: true };
   } catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    console.error(`[Catalog] deleteFeed ${feedId} failed:`, msg);
+    log.error({ err, feedId }, 'deleteFeed failed');
     throw new Error(`Feed deletion failed: ${msg}`);
   }
 };
@@ -1737,7 +1738,7 @@ const listFeeds = async (catalogId) => {
     });
     return resp.data?.data || [];
   } catch (err) {
-    console.warn(`[Catalog] listFeeds for ${catalogId} failed:`, err.response?.data?.error?.message || err.message);
+    log.warn({ err, catalogId }, 'listFeeds failed');
     return [];
   }
 };
@@ -1752,7 +1753,7 @@ const getCatalogDiagnostics = async (catalogId) => {
     });
     return resp.data?.data || [];
   } catch (err) {
-    console.warn(`[Catalog] getCatalogDiagnostics for ${catalogId} failed:`, err.response?.data?.error?.message || err.message);
+    log.warn({ err, catalogId }, 'getCatalogDiagnostics failed');
     return [];
   }
 };
@@ -1770,7 +1771,7 @@ const switchCatalog = async (restaurantId, newCatalogId) => {
   try {
     const check = await axios.get(`${GRAPH}/${newCatalogId}`, { params: { access_token: token, fields: 'id,name,product_count' }, timeout: 10000 });
     newCatalogName = check.data.name || 'Catalog';
-    console.log(`[Catalog] switchCatalog: validated new catalog ${newCatalogId} "${newCatalogName}" (${check.data.product_count} products)`);
+    log.info({ newCatalogId, newCatalogName, productCount: check.data.product_count }, 'switchCatalog: validated new catalog');
   } catch (e) {
     throw new Error(`New catalog ${newCatalogId} is not accessible: ${e.response?.data?.error?.message || e.message}`);
   }
@@ -1781,7 +1782,7 @@ const switchCatalog = async (restaurantId, newCatalogId) => {
   if (oldCatalogId) {
     try {
       await axios.delete(`${GRAPH}/${wa.waba_id}/product_catalogs`, { data: { catalog_id: oldCatalogId }, headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
-      console.log(`[Catalog] switchCatalog: disconnected old catalog ${oldCatalogId} from WABA`);
+      log.info({ oldCatalogId }, 'switchCatalog: disconnected old catalog from WABA');
     } catch (_) { /* may already be disconnected */ }
   }
 
@@ -1801,7 +1802,7 @@ const switchCatalog = async (restaurantId, newCatalogId) => {
     try {
       await axios.post(`${GRAPH}/${wa.phone_number_id}/whatsapp_commerce_settings`, { catalog_id: newCatalogId, is_catalog_visible: true, is_cart_enabled: true }, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
     } catch (phoneErr) {
-      console.warn(`[Catalog] switchCatalog: phone link failed (non-fatal):`, phoneErr.response?.data?.error?.message || phoneErr.message);
+      log.warn({ err: phoneErr }, 'switchCatalog: phone link failed (non-fatal)');
     }
   }
 
@@ -1810,7 +1811,7 @@ const switchCatalog = async (restaurantId, newCatalogId) => {
   await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { catalog_id: newCatalogId, catalog_linked: true, cart_enabled: true, catalog_visible: true, updated_at: new Date() } });
   await col('branches').updateMany({ restaurant_id: restaurantId }, { $set: { catalog_id: newCatalogId, updated_at: new Date() } });
 
-  console.log(`[Catalog] Switched restaurant "${restaurant.business_name}" from catalog ${oldCatalogId} to ${newCatalogId}`);
+  log.info({ businessName: restaurant.business_name, oldCatalogId, newCatalogId }, 'Switched restaurant catalog');
   return { success: true, oldCatalogId, newCatalogId, catalogName: newCatalogName };
 };
 
@@ -1822,19 +1823,23 @@ const syncCompressedCatalog = async (restaurantId) => {
   const compression = require('./catalogCompression');
   const startTime = Date.now();
 
-  console.log(`[Catalog] Starting compressed sync for restaurant ${restaurantId}`);
+  log.info({ restaurantId }, 'Starting compressed sync');
 
   // 1. Rebuild compression (ensures it's fresh)
-  let rebuildResult;
-  try {
-    rebuildResult = await compression.rebuildCompressedCatalog(restaurantId);
-  } catch (e) {
-    console.error(`[Catalog] Compression rebuild failed, falling back to raw sync:`, e.message);
-    return syncRestaurantCatalog(restaurantId); // FALLBACK: raw sync
+  const { guard } = require('../utils/smartModule');
+  const rebuildResult = await guard('CATALOG_COMPRESSION', {
+    fn: () => compression.rebuildCompressedCatalog(restaurantId),
+    fallbackFn: () => null, // null signals fallback below
+    label: 'rebuildCompressedCatalog',
+    context: { restaurantId },
+  });
+  if (!rebuildResult) {
+    log.warn({ restaurantId }, 'Compression disabled or failed, falling back to raw sync');
+    return syncRestaurantCatalog(restaurantId);
   }
 
   if (!rebuildResult.totalCompressedSkusCreated) {
-    console.log('[Catalog] No compressed SKUs created — nothing to sync');
+    log.info('No compressed SKUs created — nothing to sync');
     return { success: true, compressed: true, skus: 0 };
   }
 
@@ -1861,7 +1866,7 @@ const syncCompressedCatalog = async (restaurantId) => {
   // 4. Get a representative branch for compliance fields (manufacturer_info)
   const branch = await col('branches').findOne({ restaurant_id: restaurantId, accepts_orders: true });
   if (!branch) {
-    console.warn('[Catalog] No active branch for compliance fields');
+    log.warn({ restaurantId }, 'No active branch for compliance fields');
     return { success: false, error: 'No active branch found' };
   }
 
@@ -1874,7 +1879,7 @@ const syncCompressedCatalog = async (restaurantId) => {
   // 5. Build Meta requests using the EXISTING mapMenuItemToMetaProduct pipeline
   const requests = compressedItems.map(item => _buildItemRequest(item, restaurant, branch)).filter(Boolean);
 
-  console.log(`[Catalog] Compressed sync: ${compressedItems.length} SKUs → ${requests.length} requests for catalog ${catalogId}`);
+  log.info({ skuCount: compressedItems.length, requestCount: requests.length, catalogId }, 'Compressed sync: building requests');
 
   // 6. Batch upload using EXISTING batch logic
   const BATCH_SIZE = 4999;
@@ -1892,7 +1897,7 @@ const syncCompressedCatalog = async (restaurantId) => {
       results.updated += batch.length;
     } catch (err) {
       const errMsg = err._error?.error?.message || err.message;
-      console.error(`[Catalog] Compressed batch error:`, errMsg);
+      log.error({ err, catalogId }, 'Compressed batch error');
       results.failed += batch.length;
       results.errors.push(errMsg);
     }
@@ -1907,7 +1912,7 @@ const syncCompressedCatalog = async (restaurantId) => {
   await col('restaurants').updateOne({ _id: restaurantId }, { $set: { last_catalog_sync: syncedAt, last_compressed_sync: syncedAt } });
 
   const elapsed = Date.now() - startTime;
-  console.log(`[Catalog] Compressed sync complete: ${results.updated} synced, ${results.failed} failed (${elapsed}ms)`);
+  log.info({ synced: results.updated, failed: results.failed, elapsedMs: elapsed }, 'Compressed sync complete');
 
   return {
     success: results.failed === 0,

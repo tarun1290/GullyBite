@@ -3,6 +3,7 @@
 // Uses the Haversine formula (standard spherical distance calculation)
 
 const { col } = require('../config/database');
+const log = require('../utils/logger').child({ component: 'Location' });
 
 // ─── HAVERSINE FORMULA ────────────────────────────────────────
 const haversineKm = (lat1, lng1, lat2, lng2) => {
@@ -114,7 +115,7 @@ async function extractCoordsFromMapsUrl(url) {
   // Resolve short links (maps.app.goo.gl, goo.gl/maps) with multiple strategies
   if (url.includes('maps.app.goo.gl') || url.includes('goo.gl/maps')) {
     resolvedUrl = await resolveShortUrl(url) || url;
-    console.log(`[Perf] Maps URL resolve: ${Date.now() - start}ms → ${resolvedUrl.substring(0, 80)}`);
+    log.info({ resolveMs: Date.now() - start }, 'Maps URL resolved');
   }
 
   // Try extracting coordinates from multiple URL patterns
@@ -132,7 +133,7 @@ async function extractCoordsFromMapsUrl(url) {
       const lat = parseFloat(match[1]);
       const lng = parseFloat(match[2]);
       if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-        console.log(`[Location] Extracted coords: ${lat}, ${lng} (${Date.now() - start}ms)`);
+        log.info({ lat, lng, extractMs: Date.now() - start }, 'Extracted coords from URL');
         return { lat, lng };
       }
     }
@@ -142,11 +143,11 @@ async function extractCoordsFromMapsUrl(url) {
   const placeMatch = resolvedUrl.match(/place\/([^/@]+)/);
   if (placeMatch) {
     const placeName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
-    console.log('[Location] Trying place name geocode:', placeName);
+    log.info({ placeName }, 'Trying place name geocode');
     return await geocodePlaceName(placeName);
   }
 
-  console.warn(`[Location] Could not extract coords from URL (${Date.now() - start}ms)`);
+  log.warn({ extractMs: Date.now() - start }, 'Could not extract coords from URL');
   return null;
 }
 
@@ -172,7 +173,7 @@ async function resolveShortUrl(shortUrl) {
     }
   } catch (e) {
     if (e.response?.headers?.location) return e.response.headers.location;
-    console.warn('[Location] Strategy 1 (HEAD) failed:', e.message);
+    log.warn({ err: e }, 'Strategy 1 (HEAD) failed');
   }
 
   // Strategy 2: GET with auto-follow — slower but handles JS redirects
@@ -193,7 +194,7 @@ async function resolveShortUrl(shortUrl) {
     const jsMatch = html.match(/window\.location\s*=\s*["']([^"']+)/);
     if (jsMatch) return jsMatch[1];
   } catch (e) {
-    console.warn('[Location] Strategy 2 (GET follow) failed:', e.message);
+    log.warn({ err: e }, 'Strategy 2 (GET follow) failed');
   }
 
   return null;
@@ -213,7 +214,7 @@ async function geocodePlaceName(placeName) {
       return { lat: r.geometry.location.lat, lng: r.geometry.location.lng };
     }
   } catch (e) {
-    console.warn('[Location] Place name geocode failed:', e.message);
+    log.warn({ err: e }, 'Place name geocode failed');
   }
   return null;
 }
@@ -222,7 +223,7 @@ async function geocodePlaceName(placeName) {
 // Converts address text to coordinates + formatted address
 async function forwardGeocode(addressText) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) { console.error('[Location] GOOGLE_MAPS_API_KEY not set'); return null; }
+  if (!apiKey) { log.error('GOOGLE_MAPS_API_KEY not set'); return null; }
   if (!addressText?.trim()) return null;
   try {
     const { data } = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
@@ -244,10 +245,10 @@ async function forwardGeocode(addressText) {
         source: 'forward_geocode',
       };
     }
-    console.warn('[Location] Forward geocode returned no results for:', addressText);
+    log.warn({ addressText }, 'Forward geocode returned no results');
     return null;
   } catch (e) {
-    console.error('[Location] Forward geocode failed:', e.message);
+    log.error({ err: e }, 'Forward geocode failed');
     return null;
   }
 }
@@ -258,7 +259,7 @@ async function forwardGeocode(addressText) {
 async function reverseGeocode(lat, lng) {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
-    console.error('[Location] GOOGLE_MAPS_API_KEY is not set — geocoding will not work');
+    log.error('GOOGLE_MAPS_API_KEY is not set — geocoding will not work');
     return null;
   }
 
@@ -277,7 +278,7 @@ async function reverseGeocode(lat, lng) {
     });
 
     if (data.status === 'REQUEST_DENIED') {
-      console.error('[Location] Geocoding API denied — check API key and ensure Geocoding API is enabled:', data.error_message);
+      log.error({ errorMessage: data.error_message }, 'Geocoding API denied — check API key and ensure Geocoding API is enabled');
       return null;
     }
 
@@ -299,10 +300,10 @@ async function reverseGeocode(lat, lng) {
       return result;
     }
 
-    console.warn('[Location] Geocoding returned no results for:', lat, lng);
+    log.warn({ lat, lng }, 'Geocoding returned no results');
     return null;
   } catch (e) {
-    console.error('[Location] Geocoding request failed:', e.message);
+    log.error({ err: e }, 'Geocoding request failed');
     return null;
   }
 }

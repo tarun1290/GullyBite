@@ -12,6 +12,7 @@ const { decryptCheckoutPayload, verifyCheckoutSignature } = require('../services
 const { calculateOrderCharges } = require('../services/charges');
 const orderSvc = require('../services/order');
 const customerIdentity = require('../services/customerIdentity');
+const log = require('../utils/logger').child({ component: 'checkout' });
 
 // ─── WEBHOOK VERIFICATION ───────────────────────────────────────
 router.get('/', (req, res) => {
@@ -31,7 +32,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     const sig = req.headers['x-hub-signature-256']?.replace('sha256=', '');
     if (process.env.WA_CHECKOUT_WEBHOOK_SECRET && sig) {
       if (!verifyCheckoutSignature(req.body, sig)) {
-        console.error('[Checkout] Invalid signature');
+        req.log.error('Invalid signature');
         return res.sendStatus(401);
       }
     }
@@ -53,15 +54,15 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       case 'order':
         res.sendStatus(200); // Respond immediately
         await handleOrder(value).catch(err =>
-          console.error('[Checkout] Order processing failed:', err.message)
+          log.error({ err }, 'Order processing failed')
         );
         return;
       default:
-        console.log('[Checkout] Unknown event type:', eventType);
+        req.log.info({ eventType }, 'Unknown event type');
         return res.sendStatus(200);
     }
   } catch (err) {
-    console.error('[Checkout] Webhook error:', err.message);
+    req.log.error({ err }, 'Webhook error');
     res.sendStatus(500);
   }
 });
@@ -86,21 +87,24 @@ async function handleShipping(value, res) {
     if (!restaurant) return res.json({ shipping_options: [] });
 
     // Calculate delivery fee
+    const { guard } = require('../utils/smartModule');
+    const defaultFee = parseFloat(process.env.DEFAULT_DELIVERY_FEE) || 40;
     let deliveryFeeRs = 0;
-    try {
+    const branches = await col('branches').find({ restaurant_id: waAccount.restaurant_id }).toArray();
+    if (branches[0] && address?.latitude && address?.longitude) {
       const { calculateDynamicDeliveryFee } = require('../services/dynamicPricing');
-      const branches = await col('branches').find({ restaurant_id: waAccount.restaurant_id }).toArray();
-      if (branches[0] && address?.latitude && address?.longitude) {
-        const quote = await calculateDynamicDeliveryFee(
+      const quote = await guard('DYNAMIC_PRICING', {
+        fn: () => calculateDynamicDeliveryFee(
           String(branches[0]._id),
           parseFloat(address.latitude),
           parseFloat(address.longitude),
           { customerName: address.name, customerPhone: data.customer_phone }
-        );
-        deliveryFeeRs = quote.deliveryFeeRs || 0;
-      }
-    } catch (e) {
-      deliveryFeeRs = parseFloat(process.env.DEFAULT_DELIVERY_FEE || 40);
+        ),
+        fallback: { deliveryFeeRs: defaultFee },
+        label: 'checkoutDeliveryQuote',
+        context: { branchId: String(branches[0]._id) },
+      });
+      deliveryFeeRs = quote.deliveryFeeRs || 0;
     }
 
     const deliveryFeePaise = Math.round(deliveryFeeRs * 100);
@@ -122,7 +126,7 @@ async function handleShipping(value, res) {
       ],
     });
   } catch (err) {
-    console.error('[Checkout] Shipping error:', err.message);
+    log.error({ err }, 'Shipping error');
     res.json({ shipping_options: [] });
   }
 }
@@ -189,7 +193,7 @@ async function handleCoupon(value, res) {
       },
     });
   } catch (err) {
-    console.error('[Checkout] Coupon error:', err.message);
+    log.error({ err }, 'Coupon error');
     res.json({ valid: false, error: 'Could not validate coupon' });
   }
 }
@@ -200,6 +204,20 @@ async function handleOrder(value) {
   const data = value.encrypted_payload
     ? decryptCheckoutPayload(value)
     : value;
+
+  // Idempotency: prevent duplicate order creation from Meta retries.
+  // Key = catalog + customer + sorted item fingerprint (same cart = same key).
+  const { once } = require('../utils/idempotency');
+  const itemFingerprint = (data.product_items || data.items || [])
+    .map(i => `${i.product_retailer_id || i.retailer_id}:${i.quantity || 1}`)
+    .sort()
+    .join('|');
+  const checkoutKey = `${data.catalog_id}:${data.customer_phone || data.phone || 'anon'}:${itemFingerprint}`;
+  const isNew = await once('checkout_order', checkoutKey, { catalogId: data.catalog_id });
+  if (!isNew) {
+    log.info({ checkoutKey }, 'Duplicate checkout order — skipping');
+    return;
+  }
 
   const catalogId = data.catalog_id;
   const waAccount = await col('whatsapp_accounts').findOne({ catalog_id: catalogId });
@@ -315,7 +333,7 @@ async function handleOrder(value) {
     });
   }
 
-  console.log(`[Checkout] Order ${orderNumber} created — ₹${charges.customer_total_rs} (${orderItems.length} items)`);
+  log.info({ orderNumber, totalRs: charges.customer_total_rs, itemCount: orderItems.length }, 'Order created');
 
   // If already paid, confirm the order
   if (data.payment_status === 'paid') {
@@ -337,7 +355,7 @@ async function handleOrder(value) {
     if (!isPickup) {
       const deliveryService = require('../services/delivery');
       deliveryService.dispatchDelivery(orderId).catch(err =>
-        console.error(`[Checkout] Dispatch failed for ${orderNumber}:`, err.message)
+        log.error({ err, orderNumber }, 'Dispatch failed')
       );
     }
   }

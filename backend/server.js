@@ -6,17 +6,39 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
+// ── STARTUP SECRET VALIDATION ────────────────────────────────
+// Required secrets must be set. Crash early with clear error in production.
+const REQUIRED_SECRETS = ['JWT_SECRET'];
+const REQUIRED_IN_PROD = ['ADMIN_JWT_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'MONGODB_URI'];
+const missing = REQUIRED_SECRETS.filter(k => !process.env[k]);
+if (missing.length) {
+  console.error(`FATAL: Required environment variable(s) missing: ${missing.join(', ')}`); // console.error OK — logger not loaded yet
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+}
+if (process.env.NODE_ENV === 'production') {
+  const missingProd = REQUIRED_IN_PROD.filter(k => !process.env[k]);
+  if (missingProd.length) {
+    console.error(`FATAL: Production-required env var(s) missing: ${missingProd.join(', ')}`); // console.error OK — logger not loaded yet
+    process.exit(1);
+  }
+}
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const log = require('./src/utils/logger');
+const requestId = require('./src/middleware/requestId');
 const { apiLimiter, authLimiter } = require('./src/middleware/rateLimit');
 
 const app = express();
 
+// ─── REQUEST ID ──────────────────────────────────────────────
+app.use(requestId);
+
 // ─── FEATURE FLAGS ─────────────────────────────────────────────
 const features = require('./src/config/features');
-console.log('[Features] Image Pipeline:', features.IMAGE_PIPELINE_ENABLED ? '✅ ON' : '⚠️  OFF');
-console.log('[Features] POS Integrations:', features.POS_INTEGRATIONS_ENABLED ? '✅ ON' : '⚠️  OFF');
+log.info({ component: 'features' }, `Image Pipeline: ${features.IMAGE_PIPELINE_ENABLED ? 'ON' : 'OFF'}`);
+log.info({ component: 'features' }, `POS Integrations: ${features.POS_INTEGRATIONS_ENABLED ? 'ON' : 'OFF'}`);
 
 // ─── META CONFIG STATUS ───────────────────────────────────────
 const metaConfig = require('./src/config/meta');
@@ -157,7 +179,7 @@ app.get('/feed/:feedToken', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=3600');
     res.send([header, ...rows].join('\n'));
   } catch (err) {
-    console.error('[Feed]', err.message);
+    log.error({ component: 'feed', err }, 'Feed generation failed');
     res.status(500).type('text/plain').send('Error generating feed');
   }
 });
@@ -177,7 +199,7 @@ app.use('/api/webhook-health', require('./src/routes/webhookHealth'));
 if (process.env.USE_EC2_WEBHOOKS === 'true') {
   // Webhooks handled by EC2 — return 200 to prevent Meta retries during migration
   app.use('/webhooks', (req, res) => {
-    console.log(`[Vercel] Webhook ${req.method} ${req.path} → handled by EC2`);
+    req.log.info({ component: 'webhook' }, 'Webhook forwarded to EC2');
     res.status(200).json({ message: 'Webhooks handled by EC2 backend', ec2_url: process.env.EC2_BACKEND_URL });
   });
 } else {
@@ -223,7 +245,7 @@ app.get('*', (req, res) => {
 
 // ─── ERROR HANDLER ────────────────────────────────────────────
 app.use((err, req, res, next) => {
-  console.error('Server error:', err.message);
+  log.error({ component: 'server', err, requestId: req?.id }, 'Unhandled route error');
   res.status(500).json({
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
   });
@@ -234,14 +256,14 @@ app.use((err, req, res, next) => {
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
-    console.log(`\n🍔 GullyBite running → http://localhost:${PORT}`);
-    console.log(`   WA Webhook  → ${process.env.BASE_URL}/webhooks/whatsapp`);
-    console.log(`   Pay Webhook → ${process.env.BASE_URL}/webhooks/razorpay`);
-    console.log(`   POS Webhook → ${process.env.BASE_URL}/webhooks/pos/{platform}\n`);
+    log.info({ component: 'server', port: PORT }, `GullyBite running on http://localhost:${PORT}`);
+    log.info({ component: 'server' }, `WA Webhook  → ${process.env.BASE_URL}/webhooks/whatsapp`);
+    log.info({ component: 'server' }, `Pay Webhook → ${process.env.BASE_URL}/webhooks/razorpay`);
+    log.info({ component: 'server' }, `POS Webhook → ${process.env.BASE_URL}/webhooks/pos/{platform}`);
 
     // Ensure MongoDB indexes after DB connects (fire-and-forget)
     const { connect } = require('./src/config/database');
-    connect().then(() => require('./src/config/indexes').ensureIndexes()).catch(e => console.warn('[DB] Index init:', e.message));
+    connect().then(() => require('./src/config/indexes').ensureIndexes()).catch(e => log.warn({ component: 'db', err: e }, 'Index init failed'));
 
     const { scheduleSettlement } = require('./src/jobs/settlement');
     scheduleSettlement();

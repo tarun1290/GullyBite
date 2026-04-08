@@ -13,6 +13,7 @@ const { resolveRecipient } = require('../services/customerIdentity');
 const { getNextRetryAt, retryDefaults } = require('../utils/retry');
 const { logActivity } = require('../services/activityLog');
 const ws = require('../services/websocket');
+const log = require('../utils/logger').child({ component: 'razorpay' });
 
 // ─── POST: PAYMENT EVENTS ─────────────────────────────────────
 router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
@@ -22,7 +23,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   try {
     const signature = req.headers['x-razorpay-signature'];
     if (!paymentSvc.verifyWebhookSignature(req.body, signature)) {
-      console.error('[Razorpay] ⚠️ Invalid signature — ignoring webhook');
+      req.log.error('Invalid signature — ignoring webhook');
       logActivity({
         actorType: 'system', actorId: null, actorName: 'Razorpay Webhook',
         action: 'payment.signature_invalid', category: 'payment',
@@ -33,7 +34,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     }
 
     const event = JSON.parse(req.body);
-    console.log('[Razorpay] Event:', event.event);
+    req.log.info({ event: event.event }, 'Webhook event received');
 
     logActivity({ actorType: 'webhook', action: 'payment.webhook_received', category: 'payment', description: `Razorpay event: ${event.event}`, resourceType: 'webhook', severity: 'info' });
 
@@ -59,7 +60,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       { $set: { processed: true, processed_at: new Date(), retry_status: 'success' } }
     ).catch(() => {});
   } catch (err) {
-    console.error('[Razorpay] Webhook error:', err.message);
+    req.log.error({ err }, 'Webhook error');
     // Schedule for retry
     if (logId) {
       await col('webhook_logs').updateOne(
@@ -83,7 +84,7 @@ const processRazorpayWebhook = async (logId, event) => {
 const confirmPaidOrder = async (orderId) => {
   const current = await col('orders').findOne({ _id: orderId }, { projection: { payment_status: 1 } });
   if (current?.payment_status === 'paid') {
-    console.log(`[Razorpay] Order ${orderId} already confirmed — skipping duplicate event`);
+    log.info({ orderId }, 'Order already confirmed — skipping duplicate event');
     return;
   }
 
@@ -111,22 +112,22 @@ const confirmPaidOrder = async (orderId) => {
     notify.notifyNewOrder(order),
     // 3PL auto-dispatch
     deliveryService.dispatchDelivery(orderId).then(async (task) => {
-      console.log(`[3PL] Dispatched order ${order.order_number}: taskId=${task.taskId}`);
+      log.info({ orderNumber: order.order_number, taskId: task.taskId }, 'Dispatched order');
       if (task.trackingUrl && order.phone_number_id && resolveRecipient(order)) {
         await wa.sendText(order.phone_number_id, order.access_token, resolveRecipient(order),
           `🚴 Your delivery is being arranged!\n\n📍 Track your order live:\n${task.trackingUrl}\n\nEstimated delivery: ${task.estimatedMins || '25-35'} minutes`
         );
       }
     }).catch(err => {
-      console.error(`[3PL] Dispatch failed for order ${order.order_number}:`, err.message);
+      log.error({ err, orderNumber: order.order_number }, 'Dispatch failed for order');
       notify.sendManagerNotification(order.restaurant_id || order.branch_id, order.branch_id,
         `⚠️ Auto-dispatch failed for Order #${order.order_number}: ${err.message}\nPlease dispatch manually from the dashboard.`
       ).catch(() => {});
     }),
     // POS push
     POS_INTEGRATIONS_ENABLED ? pushOrderToPOS(order) : Promise.resolve(),
-  ]).then(() => console.log(`[Perf] Payment post-processing: ${Date.now() - _payStart}ms`))
-    .catch(err => console.error('[Razorpay] Post-payment tasks error:', err.message));
+  ]).then(() => log.info({ durationMs: Date.now() - _payStart }, 'Payment post-processing complete'))
+    .catch(err => log.error({ err }, 'Post-payment tasks error'));
 
   logActivity({
     actorType: 'system', actorId: null, actorName: 'Razorpay',
@@ -157,7 +158,7 @@ const confirmPaidOrder = async (orderId) => {
     await refAttr.confirmCommission(orderId);
   } catch (_) {} // Non-critical
 
-  console.log(`✅ Order ${order.order_number} PAID — ₹${order.total_rs}`);
+  log.info({ orderNumber: order.order_number, totalRs: order.total_rs }, 'Order PAID');
 };
 
 async function pushOrderToPOS(order) {
@@ -183,6 +184,17 @@ async function pushOrderToPOS(order) {
 
 // ─── EVENT ROUTER ─────────────────────────────────────────────
 const handleEvent = async (event) => {
+  // Idempotency guard — deduplicate by Razorpay event ID or entity ID
+  const { once } = require('../utils/idempotency');
+  const entityId = event.payload?.payment?.entity?.id
+    || event.payload?.order?.entity?.id
+    || event.payload?.refund?.entity?.id
+    || event.payload?.payout?.entity?.id
+    || event.account_id;
+  const eventKey = `${event.event}:${entityId || Date.now()}`;
+  const isNew = await once('razorpay', eventKey, { eventType: event.event });
+  if (!isNew) return;
+
   switch (event.event) {
 
     case 'order.paid':
@@ -194,7 +206,7 @@ const handleEvent = async (event) => {
         if (walletPayment && walletPayment.status !== 'paid') {
           const walletSvc = require('../services/wallet');
           await walletSvc.credit(walletPayment.restaurant_id, walletPayment.amount_rs, `Razorpay top-up ₹${walletPayment.amount_rs}`, rpOrderId);
-          await col('payments').updateOne({ _id: walletPayment._id }, { $set: { status: 'paid', paid_at: new Date() } });
+          await paymentSvc.updatePaymentWithAudit({ _id: walletPayment._id }, { status: 'paid', paid_at: new Date() }, 'razorpay:wallet_topup');
           logActivity({ actorType: 'restaurant', actorId: walletPayment.restaurant_id, action: 'wallet.topup', category: 'billing', description: `Wallet topped up ₹${walletPayment.amount_rs}`, restaurantId: walletPayment.restaurant_id, severity: 'info' });
           break;
         }
@@ -231,20 +243,26 @@ const handleEvent = async (event) => {
       );
 
       // Track as payment_failed abandoned cart
-      try {
-        const cartRecovery = require('../services/cart-recovery');
-        const customer = await col('customers').findOne({ _id: order.customer_id });
-        await cartRecovery.trackAbandonedCart({
-          restaurantId: order.restaurant_id, branchId: order.branch_id,
-          customerId: order.customer_id, customerPhone: customer?.wa_phone || resolveRecipient(order),
-          customerName: customer?.name || order.customer_name,
-          cartItems: (order.items || []).map(i => ({ product_retailer_id: i.retailer_id, quantity: i.quantity, item_price: i.unit_price_rs, currency: 'INR', item_name: i.item_name })),
-          cartTotal: order.total_rs || 0, itemCount: (order.items || []).reduce((s, i) => s + i.quantity, 0),
-          abandonmentStage: 'payment_failed', abandonmentReason: 'payment_failed',
-          deliveryAddress: order.delivery_address ? { full_address: order.delivery_address } : null,
-          lastCustomerMessageAt: new Date(),
-        });
-      } catch (e) { console.warn('[Cart Recovery] Track payment_failed:', e.message); }
+      const { guard } = require('../utils/smartModule');
+      await guard('CART_RECOVERY', {
+        fn: async () => {
+          const cartRecovery = require('../services/cart-recovery');
+          const customer = await col('customers').findOne({ _id: order.customer_id });
+          return cartRecovery.trackAbandonedCart({
+            restaurantId: order.restaurant_id, branchId: order.branch_id,
+            customerId: order.customer_id, customerPhone: customer?.wa_phone || resolveRecipient(order),
+            customerName: customer?.name || order.customer_name,
+            cartItems: (order.items || []).map(i => ({ product_retailer_id: i.retailer_id, quantity: i.quantity, item_price: i.unit_price_rs, currency: 'INR', item_name: i.item_name })),
+            cartTotal: order.total_rs || 0, itemCount: (order.items || []).reduce((s, i) => s + i.quantity, 0),
+            abandonmentStage: 'payment_failed', abandonmentReason: 'payment_failed',
+            deliveryAddress: order.delivery_address ? { full_address: order.delivery_address } : null,
+            lastCustomerMessageAt: new Date(),
+          });
+        },
+        fallback: undefined,
+        label: 'trackAbandonedCart:paymentFailed',
+        context: { orderId },
+      });
 
       logActivity({
         actorType: 'system', actorId: null, actorName: 'Razorpay',
@@ -280,34 +298,54 @@ const handleEvent = async (event) => {
         description: `Refund ${refund.id} processed: ₹${refund.amount / 100}`,
         resourceType: 'refund', resourceId: refund.id, severity: 'info',
       });
-      console.log(`✅ Refund ${refund.id} processed: ₹${refund.amount / 100}`);
+      log.info({ refundId: refund.id, amountRs: refund.amount / 100 }, 'Refund processed');
       break;
     }
 
     case 'payout.processed': {
       const payout = event.payload?.payout?.entity;
       if (!payout) break;
-      await col('settlements').updateOne(
+      const settleDoc = await col('settlements').findOneAndUpdate(
         { rp_payout_id: payout.id },
-        { $set: { payout_status: 'completed', payout_at: new Date() } }
+        { $set: { payout_status: 'completed', payout_completed_at: new Date() } },
+        { returnDocument: 'after' }
       );
-      console.log(`✅ Payout ${payout.id} processed: ₹${payout.amount / 100}`);
+      log.info({ payoutId: payout.id, amountRs: payout.amount / 100 }, 'Payout processed');
+      if (settleDoc) {
+        logActivity({
+          actorType: 'system', actorId: null, actorName: 'Razorpay',
+          action: 'settlement.payout_completed', category: 'billing',
+          description: `Payout ₹${payout.amount / 100} completed (${payout.id})`,
+          restaurantId: settleDoc.restaurant_id, resourceType: 'settlement', resourceId: String(settleDoc._id), severity: 'info',
+          metadata: { payout_id: payout.id, amount_rs: payout.amount / 100, utr: payout.utr },
+        });
+      }
       break;
     }
 
     case 'payout.failed': {
       const payout = event.payload?.payout?.entity;
       if (!payout) break;
-      await col('settlements').updateOne(
+      const settleDoc2 = await col('settlements').findOneAndUpdate(
         { rp_payout_id: payout.id },
-        { $set: { payout_status: 'failed' } }
+        { $set: { payout_status: 'failed' } },
+        { returnDocument: 'after' }
       );
-      console.error(`❌ Payout ${payout.id} failed:`, payout.failure_reason);
+      log.error({ payoutId: payout.id, failureReason: payout.failure_reason }, 'Payout failed');
+      if (settleDoc2) {
+        logActivity({
+          actorType: 'system', actorId: null, actorName: 'Razorpay',
+          action: 'settlement.payout_failed', category: 'billing',
+          description: `Payout failed for settlement: ${payout.failure_reason || 'unknown'}`,
+          restaurantId: settleDoc2.restaurant_id, resourceType: 'settlement', resourceId: String(settleDoc2._id), severity: 'error',
+          metadata: { payout_id: payout.id, failure_reason: payout.failure_reason },
+        });
+      }
       break;
     }
 
     default:
-      console.log('[Razorpay] Unhandled event:', event.event);
+      log.info({ event: event.event }, 'Unhandled event');
   }
 };
 

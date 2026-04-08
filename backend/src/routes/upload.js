@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const { requireAuth } = require('./auth');
 const { generatePresignedUploadUrl, IMAGE_PIPELINE_ENABLED } = require('../services/imageUpload');
+const log = require('../utils/logger').child({ component: 'upload' });
 
 router.use(requireAuth);
 
@@ -38,7 +39,7 @@ router.post('/presign', async (req, res) => {
       s3Key: result.s3Key,
     });
   } catch (e) {
-    console.error('[Upload] Presign error:', e.message);
+    req.log.error({ err: e }, 'Presign error');
     res.status(500).json({ error: e.message });
   }
 });

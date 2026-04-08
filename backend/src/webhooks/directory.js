@@ -11,6 +11,7 @@ const directory = require('../services/directory');
 const wa = require('../services/whatsapp');
 const location = require('../services/location');
 const { logActivity } = require('../services/activityLog');
+const log = require('../utils/logger').child({ component: 'directory' });
 
 const metaConfig = require('../config/meta');
 
@@ -59,7 +60,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       const crypto = require('crypto');
       const expected = crypto.createHmac('sha256', process.env.WEBHOOK_APP_SECRET).update(req.body).digest('hex');
       if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
-        console.warn('[Directory WH] Invalid signature — dropping');
+        req.log.warn('Invalid signature — dropping');
         return;
       }
     }
@@ -104,7 +105,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       await sendWelcome(from);
     }
   } catch (err) {
-    console.error('[Directory WH] Error:', err.message);
+    log.error({ err }, 'Webhook error');
   }
 });
 
@@ -263,7 +264,7 @@ async function handleLocation(from, loc) {
     }
     return wa.sendText(DIR_PID(), DIR_TOKEN(), from, 'No restaurants found within 10 km. Try typing a restaurant name instead.');
   } catch (err) {
-    console.error('[Directory] Location search failed:', err.message);
+    log.error({ err }, 'Location search failed');
     return wa.sendText(DIR_PID(), DIR_TOKEN(), from, 'Could not search your area. Try typing a restaurant name.');
   }
 }
@@ -295,7 +296,7 @@ async function createDirectoryReferral(restaurantId, customerPhone) {
 
     logActivity({ actorType: 'system', action: 'directory.referral_created', category: 'referral', description: `Directory referral created for restaurant ${restaurantId}`, restaurantId, severity: 'info' });
   } catch (err) {
-    console.error('[Directory] Referral creation failed:', err.message);
+    log.error({ err, restaurantId }, 'Referral creation failed');
   }
 }
 

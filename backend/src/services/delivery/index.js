@@ -5,6 +5,7 @@
 const { col, newId } = require('../../config/database');
 const porter = require('./porter');
 const mock = require('./mock');
+const log = require('../../utils/logger').child({ component: 'Delivery' });
 
 const PROVIDERS = {
   porter,
@@ -19,7 +20,7 @@ function getProvider(providerName) {
   const name = providerName || process.env.DEFAULT_DELIVERY_PROVIDER || 'mock';
   const provider = PROVIDERS[name];
   if (!provider) {
-    console.warn(`[Delivery] Unknown provider "${name}" — falling back to mock`);
+    log.warn({ providerName: name }, 'Unknown provider — falling back to mock');
     return PROVIDERS.mock;
   }
   return provider;
@@ -130,7 +131,7 @@ async function dispatchDelivery(orderId) {
     { upsert: true }
   );
 
-  console.log(`[3PL] Dispatched order ${order.order_number}: taskId=${task.taskId}`);
+  log.info({ orderNumber: order.order_number, taskId: task.taskId }, 'Order dispatched');
   return task;
 }
 
@@ -173,7 +174,7 @@ async function getDeliveryStatus(orderId) {
       await col('deliveries').updateOne({ _id: delivery._id }, { $set });
       return { ...delivery, ...live };
     } catch (err) {
-      console.error(`[3PL] Failed to fetch live status for ${delivery.provider_order_id}:`, err.message);
+      log.error({ err, providerOrderId: delivery.provider_order_id }, 'Failed to fetch live status');
     }
   }
 

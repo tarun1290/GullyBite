@@ -7,23 +7,26 @@ const { col, newId } = require('../config/database');
 const paymentSvc = require('../services/payment');
 const { generateSettlementExcel } = require('../services/settlement-export');
 const wa = require('../services/whatsapp');
-const { calculateTDS, aggregateOrderFinancials, round2, GST_PLATFORM_FEE_PCT } = require('../services/financials');
-const { FINANCE_CONFIG, getPlatformFeePercent, shouldDeductPlatformFee, shouldDeductPlatformFeeGst, isFirstBillingMonth } = require('../config/financeConfig');
+const { calculateTDS, aggregateOrderFinancials } = require('../services/financials');
+const { calculateSettlement: calcSettlement, round2 } = require('../core/financialEngine');
+const { getPlatformFeePercent, isFirstBillingMonth, shouldDeductPlatformFee } = require('../config/financeConfig');
 const ws = require('../services/websocket');
+const { logActivity } = require('../services/activityLog');
+const log = require('../utils/logger').child({ component: 'settlement' });
 
 // ─── SCHEDULE THE JOB ─────────────────────────────────────────
 const scheduleSettlement = () => {
   cron.schedule('0 9 * * 1', runSettlement, { timezone: 'Asia/Kolkata' });
-  console.log('⏰ Settlement cron scheduled: Every Monday at 9:00 AM IST');
+  log.info('settlement cron scheduled: every Monday at 9:00 AM IST');
 
   // Expire stale referrals daily at 3:00 AM IST
   cron.schedule('0 3 * * *', expireReferrals, { timezone: 'Asia/Kolkata' });
-  console.log('⏰ Referral expiry cron scheduled: Daily at 3:00 AM IST');
+  log.info('referral expiry cron scheduled: daily at 3:00 AM IST');
 };
 
 // ─── MANUAL TRIGGER ───────────────────────────────────────────
 const runSettlement = async () => {
-  console.log('\n💰 ===== RUNNING WEEKLY SETTLEMENT =====');
+  log.info('running weekly settlement');
 
   const now = new Date();
   const thisMonday = getLastMonday(now);
@@ -32,10 +35,10 @@ const runSettlement = async () => {
 
   const periodStart = lastMonday;
   const periodEnd   = thisMonday;
-  console.log(`Period: ${formatDate(periodStart)} → ${formatDate(periodEnd)}`);
+  log.info({ periodStart: formatDate(periodStart), periodEnd: formatDate(periodEnd) }, 'settlement period');
 
   const restaurants = await col('restaurants').find({ status: 'active' }).toArray();
-  console.log(`Processing ${restaurants.length} restaurants...`);
+  log.info({ count: restaurants.length }, 'processing restaurants');
 
   // Process restaurants in parallel batches of 5
   const BATCH_SIZE = 5;
@@ -47,13 +50,13 @@ const runSettlement = async () => {
     );
     results.forEach((result, idx) => {
       if (result.status === 'rejected') {
-        console.error(`❌ Settlement failed for ${batch[idx].business_name}:`, result.reason?.message || result.reason);
+        log.error({ err: result.reason, restaurant: batch[idx].business_name }, 'settlement failed for restaurant');
         failed++;
       } else { settled++; }
     });
   }
 
-  console.log(`✅ Settlement run complete — ${settled} settled, ${failed} failed\n`);
+  log.info({ settled, failed }, 'settlement run complete');
 };
 
 // ─── SETTLE ONE RESTAURANT ────────────────────────────────────
@@ -73,12 +76,9 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
   }).toArray();
 
   if (!orders.length) {
-    console.log(`  ${restaurant.business_name}: No orders to settle`);
+    log.info({ restaurant: restaurant.business_name }, 'no orders to settle');
     return;
   }
-
-  const commissionRate = getPlatformFeePercent(restaurant) / 100;
-  const firstMonth = isFirstBillingMonth(restaurant);
 
   // ── Aggregate all order financials ───────────────────────────
   const agg = await aggregateOrderFinancials(branchIds, periodStart, periodEnd);
@@ -92,52 +92,38 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
   }).toArray();
   const refundTotal = round2(refundPayments.reduce((s, p) => s + (parseFloat(p.amount_rs) || 0), 0));
 
-  // ── Platform fee (commission on food subtotal) ───────────────
-  // First-month exception: platform fee already collected in advance
-  const platformFeeCalculated = round2(agg.food_revenue_rs * commissionRate);
-  const platformFeeGstCalculated = round2(platformFeeCalculated * FINANCE_CONFIG.gstPlatformFeePct / 100);
-  const platformFee = shouldDeductPlatformFee(restaurant) ? platformFeeCalculated : 0;
-  const platformFeeGst = shouldDeductPlatformFeeGst(restaurant) ? platformFeeGstCalculated : 0;
-
-  if (firstMonth) {
-    console.log(`  [First-Month] ${restaurant.business_name}: platform fee ₹${platformFeeCalculated} + GST ₹${platformFeeGstCalculated} NOT deducted (advance collected)`);
-  }
-
-  // ── Referral fee GST (always applies, even in first month) ──
-  const referralFeeGst = round2(agg.referral_fee_rs * FINANCE_CONFIG.gstReferralFeePct / 100);
-
-  // ── Gross collections (what customer paid) ───────────────────
-  const grossRevenue = round2(
-    agg.food_revenue_rs + agg.food_gst_collected_rs +
-    agg.packaging_collected_rs + agg.packaging_gst_rs +
-    agg.delivery_fee_collected_rs + agg.delivery_fee_cust_gst_rs
-  );
-
   // ── Messaging charges (recover negative wallet balance) ──────
   const walletSvc = require('../services/wallet');
   const walletRecovery = await walletSvc.settleNegativeBalance(restaurantId);
   const messagingChargesRs = walletRecovery.deducted || 0;
   const messagingChargesGst = walletRecovery.gst || 0;
 
-  // ── Pre-TDS net ──────────────────────────────────────────────
-  const preTdsNet = round2(
-    grossRevenue
-    - platformFee - platformFeeGst
-    - agg.delivery_fee_rest_share_rs - agg.delivery_fee_rest_gst_rs
-    - agg.discount_total_rs - refundTotal
-    - agg.referral_fee_rs - referralFeeGst
-    - messagingChargesRs - messagingChargesGst
-  );
+  // ── CENTRALIZED SETTLEMENT CALCULATION ───────────────────────
+  // All financial math delegated to core/financialEngine.js
+  // Two-pass: first calculate pre-TDS net, then use it for TDS, then finalize.
+  const settlementPass1 = calcSettlement(restaurant, agg, refundTotal, messagingChargesRs, messagingChargesGst, 0);
+  const tds = await calculateTDS(restaurantId, settlementPass1.pre_tds_net_rs);
+  const finalCalc = calcSettlement(restaurant, agg, refundTotal, messagingChargesRs, messagingChargesGst, tds.amount);
 
-  // ── TDS calculation ──────────────────────────────────────────
-  const tds = await calculateTDS(restaurantId, preTdsNet);
-  const netPayout = round2(preTdsNet - tds.amount);
+  const platformFee = finalCalc.platform_fee_rs;
+  const platformFeeGst = finalCalc.platform_fee_gst_rs;
+  const platformFeeCalculated = finalCalc.platform_fee_calculated_rs;
+  const platformFeeGstCalculated = finalCalc.platform_fee_gst_calculated_rs;
+  const referralFeeGst = finalCalc.referral_fee_gst_rs;
+  const grossRevenue = finalCalc.gross_revenue_rs;
+  const preTdsNet = finalCalc.pre_tds_net_rs;
+  const netPayout = finalCalc.net_payout_rs;
+  const firstMonth = finalCalc.is_first_billing_month;
 
-  console.log(
-    `  ${restaurant.business_name}: ${orders.length} orders, ` +
-    `₹${grossRevenue.toFixed(0)} gross, ₹${netPayout.toFixed(0)} payout` +
-    (tds.applicable ? ` (TDS ₹${tds.amount.toFixed(0)})` : '')
-  );
+  if (firstMonth && finalCalc.platform_fee_waived_first_month) {
+    log.info({ restaurant: restaurant.business_name, platformFeeCalculated, platformFeeGstCalculated }, 'first-month: platform fee not deducted (advance collected)');
+  }
+
+  log.info({
+    restaurant: restaurant.business_name, orderCount: orders.length,
+    grossRevenue: grossRevenue.toFixed(0), netPayout: netPayout.toFixed(0),
+    tdsApplicable: tds.applicable, tdsAmount: tds.applicable ? tds.amount.toFixed(0) : undefined,
+  }, 'restaurant settlement calculated');
 
   const settlementId = newId();
   const now = new Date();
@@ -170,7 +156,7 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     platform_fee_gst_calculated_rs: platformFeeGstCalculated,
     platform_fee_waived_first_month: firstMonth && !shouldDeductPlatformFee(restaurant),
     is_first_billing_month: firstMonth,
-    commission_rate_pct: commissionRate * 100,
+    commission_rate_pct: finalCalc.commission_rate_pct,
 
     // TDS
     tds_applicable: tds.applicable,
@@ -214,6 +200,25 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     { $set: { settlement_id: settlementId, settled_at: now } }
   );
 
+  // Audit: settlement created
+  logActivity({
+    actorType: 'system', actorId: null, actorName: 'Settlement Job',
+    action: 'settlement.created', category: 'billing',
+    description: `Settlement created for ${restaurant.business_name}: ${orders.length} orders, gross ₹${grossRevenue.toFixed(0)}, net ₹${netPayout.toFixed(0)}`,
+    restaurantId, resourceType: 'settlement', resourceId: settlementId, severity: 'info',
+    metadata: {
+      period_start: formatDate(periodStart),
+      period_end: formatDate(periodEnd),
+      order_count: orders.length,
+      gross_revenue_rs: grossRevenue,
+      net_payout_rs: netPayout,
+      platform_fee_rs: platformFee,
+      tds_amount_rs: tds.amount,
+      refund_total_rs: refundTotal,
+      is_first_billing_month: firstMonth,
+    },
+  });
+
   ws.broadcastToAdmin('settlement_update', { restaurantId, restaurantName: restaurant.business_name, status: 'created', amount: netPayout });
 
   // ── INITIATE PAYOUT via Razorpay X ───────────────────────
@@ -228,20 +233,34 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
         { _id: settlementId },
         { $set: { rp_payout_id: payout.id, payout_status: 'processing', payout_at: new Date() } }
       );
-      console.log(`  → ₹${netPayout.toFixed(0)} payout initiated for ${restaurant.business_name}: ${payout.id}`);
+      log.info({ restaurant: restaurant.business_name, netPayout: netPayout.toFixed(0), payoutId: payout.id }, 'payout initiated');
+      logActivity({
+        actorType: 'system', actorId: null, actorName: 'Settlement Job',
+        action: 'settlement.payout_initiated', category: 'billing',
+        description: `Payout ₹${netPayout.toFixed(0)} initiated for ${restaurant.business_name} (${payout.id})`,
+        restaurantId, resourceType: 'settlement', resourceId: settlementId, severity: 'info',
+        metadata: { payout_id: payout.id, amount_rs: netPayout, fund_account_id: restaurant.razorpay_fund_acct_id },
+      });
     } catch (payoutErr) {
-      console.error(`  ❌ Payout failed for ${restaurant.business_name}:`, payoutErr.message);
+      log.error({ err: payoutErr, restaurant: restaurant.business_name }, 'payout failed');
       await col('settlements').updateOne({ _id: settlementId }, { $set: { payout_status: 'failed' } });
+      logActivity({
+        actorType: 'system', actorId: null, actorName: 'Settlement Job',
+        action: 'settlement.payout_failed', category: 'billing',
+        description: `Payout failed for ${restaurant.business_name}: ${payoutErr.message}`,
+        restaurantId, resourceType: 'settlement', resourceId: settlementId, severity: 'error',
+        metadata: { error: payoutErr.message, amount_rs: netPayout },
+      });
     }
   } else if (netPayout <= 0) {
-    console.log(`  ⚠️  ${restaurant.business_name}: Net payout ₹0 — skipping`);
+    log.warn({ restaurant: restaurant.business_name }, 'net payout is zero — skipping');
   } else {
-    console.log(`  ⚠️  ${restaurant.business_name}: No payout account — call POST /api/restaurant/payout-account first`);
+    log.warn({ restaurant: restaurant.business_name }, 'no payout account configured');
   }
 
   // ── SEND SETTLEMENT EXCEL VIA WHATSAPP (fire-and-forget) ────
   sendSettlementWhatsApp(restaurant, settlementId, netPayout, orders.length, periodStart, periodEnd).catch(err =>
-    console.error(`  ⚠️  WhatsApp settlement report failed for ${restaurant.business_name}:`, err.message)
+    log.error({ err, restaurant: restaurant.business_name }, 'WhatsApp settlement report failed')
   );
 
   return { id: settlementId };
@@ -298,10 +317,10 @@ const expireReferrals = async () => {
       { $set: { status: 'expired', updated_at: now } }
     );
     if (result.modifiedCount > 0) {
-      console.log(`[Referrals] Expired ${result.modifiedCount} stale referrals`);
+      log.info({ count: result.modifiedCount }, 'expired stale referrals');
     }
   } catch (err) {
-    console.error('[Referrals] Expiry job failed:', err.message);
+    log.error({ err }, 'referral expiry job failed');
   }
 };
 

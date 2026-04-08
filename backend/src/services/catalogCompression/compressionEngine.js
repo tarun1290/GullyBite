@@ -13,6 +13,7 @@
 
 const { col, newId } = require('../../config/database');
 const { generateSkuSignature, generateMasterProductSignature, normalizeName, normalizeFoodType, normalizeCategory } = require('./skuSignature');
+const log = require('../../utils/logger').child({ component: 'Compression' });
 
 // ─── FULL REBUILD ───────────────────────────────────────────
 /**
@@ -28,7 +29,7 @@ async function rebuildCompressedCatalog(restaurantId, opts = {}) {
   const startedAt = new Date();
   const { includeMedia = false, dryRun = false } = opts;
 
-  console.log(`[Compression] Starting full rebuild for restaurant ${restaurantId}${dryRun ? ' (DRY RUN)' : ''}`);
+  log.info({ restaurantId, dryRun }, 'Starting full rebuild');
 
   // 1. Load all raw menu items for this restaurant
   const rawItems = await col('menu_items').find({
@@ -37,7 +38,7 @@ async function rebuildCompressedCatalog(restaurantId, opts = {}) {
   }).toArray();
 
   if (!rawItems.length) {
-    console.log('[Compression] No available menu items found');
+    log.info({ restaurantId }, 'No available menu items found');
     return _buildRunSummary(restaurantId, 'full_rebuild', startedAt, 0, 0, 0, []);
   }
 
@@ -266,7 +267,7 @@ async function rebuildCompressedCatalog(restaurantId, opts = {}) {
 
   } catch (e) {
     errors.push(`Write error: ${e.message}`);
-    console.error('[Compression] Write error:', e.message);
+    log.error({ err: e }, 'Write error');
   }
 
   // 5. Record the run
@@ -279,10 +280,10 @@ async function rebuildCompressedCatalog(restaurantId, opts = {}) {
       completedAt: new Date(),
     });
   } catch (e) {
-    console.warn('[Compression] Failed to record run:', e.message);
+    log.warn({ err: e }, 'Failed to record run');
   }
 
-  console.log(`[Compression] Rebuild complete: ${rawItems.length} raw → ${totalCreated} compressed SKUs (${totalReused} reused across branches)`);
+  log.info({ rawItems: rawItems.length, compressed: totalCreated, reused: totalReused }, 'Rebuild complete');
   return summary;
 }
 

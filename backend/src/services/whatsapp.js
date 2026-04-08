@@ -4,6 +4,7 @@
 
 const axios = require('axios');
 const metaConfig = require('../config/meta');
+const log = require('../utils/logger').child({ component: 'WhatsApp' });
 
 // Build the messages API URL for a given phone number — uses centralized API version
 const apiUrl = (phoneNumberId) =>
@@ -19,14 +20,14 @@ const sendMsg = async (phoneNumberId, accessToken, to, body, _retried = false) =
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
       timeout: 20000,
     });
-    console.log(`[Perf] WA send to ${to}: ${Date.now() - start}ms`);
+    log.info({ to: to?.slice(-4), sendMs: Date.now() - start }, 'WA message sent');
     return data;
   } catch (err) {
     const e = err.response?.data?.error;
-    console.error(`[WA] ❌ Send failed to ${to} (${Date.now() - start}ms): code=${e?.code} msg=${e?.message}`);
+    log.error({ to: to?.slice(-4), sendMs: Date.now() - start, errorCode: e?.code, errorMsg: e?.message }, 'Send failed');
     // Retry once on timeout or 5xx
     if (!_retried && (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT' || (err.response?.status >= 500))) {
-      console.log('[WA] Retrying send after 1s...');
+      log.info({ to: to?.slice(-4) }, 'Retrying send after 1s');
       await new Promise(r => setTimeout(r, 1000));
       return sendMsg(phoneNumberId, accessToken, to, body, true);
     }
@@ -85,7 +86,7 @@ const sendCatalog = (pid, token, to, catalogId, introText) => {
   // thumbnail_product_retailer_id is optional; omit if not available
   const params = {};
   // catalogId is kept for logging but not sent in payload (Meta uses WABA-connected catalog)
-  console.log(`[Catalog-DEBUG] sendCatalog: catalogId=${catalogId} to=${to}`);
+  log.info({ catalogId, to: to?.slice(-4) }, 'Sending catalog message');
   return sendMsg(pid, token, to, {
     type: 'interactive',
     interactive: {
@@ -108,9 +109,9 @@ const sendMPM = (pid, token, to, catalogId, { header, body, footer, sections }) 
   const safeCatalogId = String(catalogId || '');
   const safeSections = (sections || []).filter(s => s.product_retailer_ids?.length > 0).slice(0, 10);
   const totalProducts = safeSections.reduce((n, s) => n + s.product_retailer_ids.length, 0);
-  console.log(`[MPM-DEBUG] sendMPM: catalog=${safeCatalogId} sections=${safeSections.length} products=${totalProducts}`);
-  if (!safeCatalogId) { console.error('[MPM-VALIDATION] No catalog_id — cannot send MPM'); return Promise.reject(new Error('Missing catalog_id')); }
-  if (!safeSections.length) { console.error('[MPM-VALIDATION] No valid sections — cannot send MPM'); return Promise.reject(new Error('No sections')); }
+  log.info({ catalogId: safeCatalogId, sections: safeSections.length, products: totalProducts }, 'Sending MPM');
+  if (!safeCatalogId) { log.error('No catalog_id — cannot send MPM'); return Promise.reject(new Error('Missing catalog_id')); }
+  if (!safeSections.length) { log.error('No valid sections — cannot send MPM'); return Promise.reject(new Error('No sections')); }
   return sendMsg(pid, token, to, {
     type: 'interactive',
     interactive: {
@@ -157,13 +158,32 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
     name: (i.item_name || i.name || 'Item').substring(0, 60),
     quantity: i.quantity || 1,
     amount: { value: toPaise(i.unit_price_rs || i.price_rs), offset: 100 },
-    country_of_origin: 'IN',
-    importer_name: (restaurantName || order.business_name || order.branch_name || 'Restaurant').substring(0, 100),
-    importer_address: { address_line1: 'India', city: 'India', zone_code: 'TS', postal_code: '500001', country_code: 'IN' },
   }));
 
-  const subtotalPaise = toPaise(order.subtotal_rs);
-  const shippingPaise = toPaise(order.customer_delivery_rs || order.delivery_fee_rs || 0);
+  // Add delivery fee as a line item (instead of shipping) to avoid Meta showing address selection
+  const deliveryRs = parseFloat(order.customer_delivery_rs || order.delivery_fee_rs || 0);
+  if (deliveryRs > 0) {
+    orderItems.push({
+      retailer_id: 'delivery-fee',
+      name: 'Delivery Fee',
+      quantity: 1,
+      amount: { value: toPaise(deliveryRs), offset: 100 },
+    });
+  }
+
+  // Add packaging as a line item
+  const packagingRs = parseFloat(order.packaging_rs || 0);
+  if (packagingRs > 0) {
+    orderItems.push({
+      retailer_id: 'packaging',
+      name: 'Packaging',
+      quantity: 1,
+      amount: { value: toPaise(packagingRs), offset: 100 },
+    });
+  }
+
+  // Subtotal = sum of all line item amounts (food + delivery + packaging)
+  const subtotalPaise = orderItems.reduce((sum, i) => sum + i.amount.value * (i.quantity || 1), 0);
   const taxPaise = toPaise((order.food_gst_rs || 0) + (order.customer_delivery_gst_rs || 0) + (order.packaging_gst_rs || 0));
   const totalPaise = toPaise(order.total_rs);
   const discountRs = order.discount_rs || 0;
@@ -172,7 +192,6 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
     status: 'pending',
     items: orderItems,
     subtotal: { value: subtotalPaise, offset: 100 },
-    shipping: { value: shippingPaise, offset: 100 },
     tax: { value: taxPaise, offset: 100 },
   };
   if (discountRs > 0) {
@@ -191,9 +210,9 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
   }
 
   const refId = (order.order_number || order.id || 'ORD-' + Date.now()).toString().substring(0, 35);
-  console.log(`[Payment] Sending order_details to ${to}, ref=${refId}, total=₹${order.total_rs}`);
+  log.info({ to: to?.slice(-4), refId, totalRs: order.total_rs }, 'Sending order_details payment request');
 
-  return sendMsg(pid, token, to, {
+  const msgPayload = {
     type: 'interactive',
     interactive: {
       type: 'order_details',
@@ -209,14 +228,14 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
           currency: 'INR',
           total_amount: { value: totalPaise, offset: 100 },
           order: orderPayload,
-          payment_settings: [{
-            type: 'payment_gateway',
-            payment_gateway: { type: 'razorpay', configuration_name: configName },
-          }],
         },
       },
     },
-  });
+  };
+
+  log.info({ refId, payload: JSON.stringify(msgPayload.interactive.action.parameters) }, 'order_details payload');
+
+  return sendMsg(pid, token, to, msgPayload);
 };
 
 // DEPRECATED: sendPaymentLink removed — only interactive checkout is used

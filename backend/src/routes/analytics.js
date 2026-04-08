@@ -209,7 +209,8 @@ router.get('/geographic/areas', async (req, res) => {
       { $match: match },
       { $lookup: { from: 'branches', localField: 'branch_id', foreignField: '_id', as: '_b' } },
       { $unwind: '$_b' },
-      { $match: { '_b.city': { $regex: new RegExp(req.query.city, 'i') } } },
+      // Sanitize city input to prevent regex injection (escape special regex chars)
+      { $match: { '_b.city': { $regex: new RegExp(req.query.city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') } } },
       { $group: {
         _id: '$_b.area',
         order_count: { $sum: 1 },
@@ -404,7 +405,8 @@ router.get('/filters/cities', async (req, res) => {
 router.get('/filters/areas', async (req, res) => {
   try {
     const filter = {};
-    if (req.query.city) filter.city = { $regex: new RegExp(req.query.city, 'i') };
+    // Sanitize city input to prevent regex injection
+    if (req.query.city) filter.city = { $regex: new RegExp(req.query.city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') };
     const areas = await col('branches').distinct('area', filter);
     res.json(areas.filter(Boolean).sort());
   } catch (e) { res.status(500).json({ error: e.message }); }

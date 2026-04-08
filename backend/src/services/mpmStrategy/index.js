@@ -8,6 +8,7 @@
 
 const { col } = require('../../config/database');
 const memcache = require('../../config/memcache');
+const log = require('../../utils/logger').child({ component: 'MPMStrategy' });
 const { getStrategyConfig } = require('./config');
 const { selectBestSellers } = require('./bestSellerSelector');
 const { applyAllFuturePrioritizers } = require('./futurePrioritizers');
@@ -75,29 +76,34 @@ async function buildStrategyMPMs(branchId, restaurantId, context = {}) {
   const reorderConfig = await getReorderConfig();
 
   if (reorderConfig.enableYourUsualsGroup && context.customerId) {
-    try {
-      let reorderCandidates = await getReorderCandidates(context.customerId, branchId, restaurantId, items);
-      reorderCandidates = await applyAllFutureReorderModules(reorderCandidates, reorderConfig);
+    const { guard } = require('../../utils/smartModule');
+    const reorderCandidates = await guard('REORDER_INTELLIGENCE', {
+      fn: async () => {
+        let candidates = await getReorderCandidates(context.customerId, branchId, restaurantId, items);
+        candidates = await applyAllFutureReorderModules(candidates, reorderConfig);
+        return candidates;
+      },
+      fallback: [],
+      label: 'getReorderCandidates',
+      context: { customerId: context.customerId, branchId },
+    });
 
-      if (reorderCandidates.length >= 2) {
-        const reorderGroup = { items: reorderCandidates, variantGroups: new Map() };
-        for (const item of reorderCandidates) {
-          if (item.item_group_id) {
-            if (!reorderGroup.variantGroups.has(item.item_group_id)) reorderGroup.variantGroups.set(item.item_group_id, []);
-            reorderGroup.variantGroups.get(item.item_group_id).push(item);
-          }
+    if (reorderCandidates.length >= 2) {
+      const reorderGroup = { items: reorderCandidates, variantGroups: new Map() };
+      for (const item of reorderCandidates) {
+        if (item.item_group_id) {
+          if (!reorderGroup.variantGroups.has(item.item_group_id)) reorderGroup.variantGroups.set(item.item_group_id, []);
+          reorderGroup.variantGroups.get(item.item_group_id).push(item);
         }
-        // Insert "Your Usuals" at the very top (before all categories and bestsellers)
-        const newMap = new Map();
-        newMap.set('Your Usuals', reorderGroup);
-        for (const [k, v] of categoryMap) newMap.set(k, v);
-        categoryMap.clear();
-        for (const [k, v] of newMap) categoryMap.set(k, v);
-
-        console.log(`[MPM-Strategy] Reorder: ${reorderCandidates.length} "Your Usuals" items for customer ${context.customerId}`);
       }
-    } catch (reorderErr) {
-      console.warn('[MPM-Strategy] Reorder intelligence failed (non-fatal):', reorderErr.message);
+      // Insert "Your Usuals" at the very top (before all categories and bestsellers)
+      const newMap = new Map();
+      newMap.set('Your Usuals', reorderGroup);
+      for (const [k, v] of categoryMap) newMap.set(k, v);
+      categoryMap.clear();
+      for (const [k, v] of newMap) categoryMap.set(k, v);
+
+      log.info({ count: reorderCandidates.length, customerId: context.customerId }, 'Reorder "Your Usuals" items added');
     }
   }
 
@@ -175,7 +181,7 @@ async function buildStrategyMPMs(branchId, restaurantId, context = {}) {
 
   const restName = restaurant.business_name || restaurant.name || 'Menu';
 
-  console.log(`[MPM-Strategy] Branch "${branch.name}": ${items.length} items → ${totalProductGroups} groups across ${sections.length} sections`);
+  log.info({ branchName: branch.name, totalItems: items.length, productGroups: totalProductGroups, sections: sections.length }, 'Strategy MPM sections built');
 
   // ── 7. Build MPMs with intelligent sequencing ───────────────
   return _buildSequencedMPMs(sections, totalProductGroups, restName, branch.name, config);

@@ -6,6 +6,7 @@
 
 const { col } = require('../../config/database');
 const { getReorderConfig } = require('./config');
+const log = require('../../utils/logger').child({ component: 'ReorderEngine' });
 
 /**
  * Get reorder candidates for a customer at a specific branch.
@@ -156,37 +157,37 @@ async function getReorderPreview(customerId, branchId, restaurantId, availableIt
 
 async function applyTimeOfDayReorder(candidates, config) {
   if (!config.enableTimeOfDayReorder) return candidates;
-  console.log('[Reorder-Future] Time-of-day reorder: enabled but not yet implemented');
+  log.info('Time-of-day reorder: enabled but not yet implemented');
   return candidates;
 }
 
 async function applyDayOfWeekReorder(candidates, config) {
   if (!config.enableDayOfWeekReorder) return candidates;
-  console.log('[Reorder-Future] Day-of-week reorder: enabled but not yet implemented');
+  log.info('Day-of-week reorder: enabled but not yet implemented');
   return candidates;
 }
 
 async function applyComboAffinity(candidates, config) {
   if (!config.enableComboAffinity) return candidates;
-  console.log('[Reorder-Future] Combo affinity: enabled but not yet implemented');
+  log.info('Combo affinity: enabled but not yet implemented');
   return candidates;
 }
 
 async function applyBeveragePairing(candidates, config) {
   if (!config.enableBeveragePairing) return candidates;
-  console.log('[Reorder-Future] Beverage pairing: enabled but not yet implemented');
+  log.info('Beverage pairing: enabled but not yet implemented');
   return candidates;
 }
 
 async function applyReactivationNudges(candidates, config) {
   if (!config.enableReactivationNudges) return candidates;
-  console.log('[Reorder-Future] Reactivation nudges: enabled but not yet implemented');
+  log.info('Reactivation nudges: enabled but not yet implemented');
   return candidates;
 }
 
 async function applyRoutineMealPatterns(candidates, config) {
   if (!config.enableRoutineMealPatterns) return candidates;
-  console.log('[Reorder-Future] Routine meal patterns: enabled but not yet implemented');
+  log.info('Routine meal patterns: enabled but not yet implemented');
   return candidates;
 }
 

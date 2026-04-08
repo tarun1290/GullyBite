@@ -10,6 +10,7 @@ const { requireAuth } = require('./auth');
 const { logActivity } = require('../services/activityLog');
 const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
 const { triggerSync, upsertMenu, SERVICES } = require('../services/posSync');
+const log = require('../utils/logger').child({ component: 'integrations' });
 
 router.use(requireAuth);
 
@@ -192,7 +193,7 @@ async function triggerSync(platform, integrationId, restaurantId, syncMode = 'in
     if (!svc) throw new Error('No service handler for: ' + platform);
     const branchId = integration.branch_id;
 
-    console.log(`[POS-Sync] Starting ${syncMode} sync for ${platform} → branch ${branchId}`);
+    log.info({ syncMode, platform, branchId }, 'starting POS sync');
 
     const pulled = await svc.fetchMenu(integration);
     const result = await upsertMenu(branchId, platform, pulled, syncMode);
@@ -232,7 +233,7 @@ async function triggerSync(platform, integrationId, restaurantId, syncMode = 'in
       branch_id: branchId, pos_platform: platform, image_url: { $ne: null },
     }).toArray();
     imgSvc.rehostPosImages(posItems, branchId, restaurantId).catch(err =>
-      console.error('[POS-Sync] Image re-hosting error:', err.message)
+      log.error({ err }, 'image re-hosting error')
     );
 
     // Fire-and-forget catalog chain: catalog push → product sets → collections
@@ -242,12 +243,12 @@ async function triggerSync(platform, integrationId, restaurantId, syncMode = 'in
     catalog.syncBranchCatalog(branchId)
       .then(async () => {
         if (isFirstSync) {
-          console.log(`[POS-Sync] First sync detected — auto-creating product sets & collections`);
+          log.info({ branchId }, 'first sync detected — auto-creating product sets & collections');
           await catalog.autoCreateProductSets(branchId);
           await catalog.autoCreateCollections(branchId);
         }
       })
-      .catch(err => console.error('[POS-Sync] Catalog sync failed after POS pull:', err.message));
+      .catch(err => log.error({ err }, 'catalog sync failed after POS pull'));
 
     return { success: true, platform, ...result, catalog_synced: true };
 
@@ -256,7 +257,7 @@ async function triggerSync(platform, integrationId, restaurantId, syncMode = 'in
       { _id: integrationId },
       { $set: { sync_status: 'error', sync_error: err.message, updated_at: new Date() } }
     );
-    console.error(`[POS-Sync] ${platform} sync failed:`, err.message);
+    log.error({ err, platform }, 'POS sync failed');
     throw err;
   }
 }
@@ -406,7 +407,7 @@ async function upsertMenu(branchId, platform, { categories, items }, syncMode) {
         { $set: { is_available: false, updated_at: now, catalog_sync_status: 'pending' } }
       );
       deactivated = staleItems.length;
-      console.log(`[POS-Sync] Deactivated ${deactivated} stale items from ${platform}`);
+      log.info({ deactivated, platform }, 'deactivated stale POS items');
     }
   }
 
@@ -415,7 +416,7 @@ async function upsertMenu(branchId, platform, { categories, items }, syncMode) {
     .sort((a, b) => b[1] - a[1])
     .map(([tag, count]) => ({ tag, count }));
 
-  console.log(`[POS-Sync] ${platform}: inserted=${inserted}, updated=${updated}, unchanged=${unchanged}, deactivated=${deactivated}, variants=${variantsCreated}`);
+  log.info({ platform, inserted, updated, unchanged, deactivated, variants: variantsCreated }, 'POS sync complete');
 
   return {
     inserted,

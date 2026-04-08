@@ -3,6 +3,7 @@
 // Uses a _cache collection with TTL index — no external cache service needed.
 
 const { col } = require('./database');
+const log = require('../utils/logger').child({ component: 'cache' });
 
 let _indexCreated = false;
 
@@ -29,7 +30,7 @@ async function getCached(key, fetcher, ttlSeconds = 300) {
     const doc = await col('_cache').findOne({ _id: key, expiresAt: { $gt: new Date() } });
     if (doc) return doc.value;
   } catch (e) {
-    console.warn('[Cache] Read failed for', key, ':', e.message);
+    log.warn({ err: e, key }, 'Cache read failed');
   }
 
   const fresh = await fetcher();
@@ -42,7 +43,7 @@ async function getCached(key, fetcher, ttlSeconds = 300) {
         { upsert: true }
       );
     } catch (e) {
-      console.warn('[Cache] Write failed for', key, ':', e.message);
+      log.warn({ err: e, key }, 'Cache write failed');
     }
   }
 
@@ -63,7 +64,7 @@ async function invalidateCache(...keys) {
       }
     }
   } catch (e) {
-    console.warn('[Cache] Invalidation failed:', e.message);
+    log.warn({ err: e }, 'Cache invalidation failed');
   }
 }
 
@@ -79,7 +80,7 @@ async function setCache(key, value, ttlSeconds = 300) {
       { upsert: true }
     );
   } catch (e) {
-    console.warn('[Cache] Set failed:', e.message);
+    log.warn({ err: e }, 'Cache set failed');
   }
 }
 

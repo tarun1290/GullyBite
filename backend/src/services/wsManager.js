@@ -5,13 +5,15 @@
 
 'use strict';
 
+const log = require('../utils/logger').child({ component: 'WS' });
+
 const connections = new Map(); // restaurantId → Set<ws>
 const adminConnections = new Set();
 let _wss = null; // Set by ec2-server.js after WebSocket server is created
 
 function init(wss) {
   _wss = wss;
-  console.log('[WS] Manager initialized');
+  log.info('Manager initialized');
 }
 
 function addConnection(restaurantId, ws) {
@@ -41,7 +43,7 @@ function getConnectionCount() {
 function _send(ws, data) {
   try {
     if (ws.readyState === 1) ws.send(JSON.stringify(data)); // 1 = OPEN
-  } catch (e) { console.warn('[WS] Send failed:', e.message); }
+  } catch (e) { log.warn({ err: e }, 'Send failed'); }
 }
 
 function broadcastToRestaurant(restaurantId, event) {

@@ -10,6 +10,7 @@
 
 const { col, newId } = require('../config/database');
 const wa = require('./whatsapp');
+const log = require('../utils/logger').child({ component: 'Directory' });
 
 const DIR_PID    = () => process.env.DIRECTORY_WA_PHONE_NUMBER_ID;
 const DIR_TOKEN  = () => process.env.DIRECTORY_WA_ACCESS_TOKEN;
@@ -128,7 +129,7 @@ async function sendDirectoryResults(to, listings, headerText) {
   const pid = DIR_PID();
   const token = DIR_TOKEN();
   if (!pid || !token) {
-    console.error('[Directory] DIRECTORY_WA_PHONE_NUMBER_ID or DIRECTORY_WA_ACCESS_TOKEN not configured');
+    log.error('DIRECTORY_WA_PHONE_NUMBER_ID or DIRECTORY_WA_ACCESS_TOKEN not configured');
     return;
   }
 

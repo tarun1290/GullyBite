@@ -11,6 +11,7 @@
 // Authentication: Bearer token obtained from client credentials exchange.
 
 const axios = require('axios');
+const log = require('../../utils/logger').child({ component: 'Zomato' });
 
 const BASE    = 'https://api.zomato.com/v2.1';
 const TIMEOUT = 20000;
@@ -41,7 +42,7 @@ async function fetchMenu(integration) {
       authHeader = `Bearer ${tokenRes.data.access_token}`;
     } catch (err) {
       // Fall back to using api_key directly as bearer token
-      console.warn('[Zomato] Token exchange failed, using api_key as bearer:', err.message);
+      log.warn({ err }, 'Token exchange failed, using api_key as bearer');
     }
   }
 
@@ -84,7 +85,7 @@ async function fetchMenu(integration) {
     });
   });
 
-  console.log(`[Zomato] Fetched ${categories.length} categories, ${items.length} items for res_id ${outlet_id}`);
+  log.info({ categories: categories.length, items: items.length, outletId: outlet_id }, 'Menu fetched');
 
   return { categories, items };
 }

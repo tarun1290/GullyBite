@@ -33,10 +33,10 @@ async function fetchThreads() {
       const preview = lastMsg.length > 60 ? lastMsg.slice(0, 60) + '…' : lastMsg;
       return `<div onclick="loadMsgThread('${t.customer_id}')" style="padding:.6rem .7rem;border-radius:8px;cursor:pointer;border:1px solid ${active ? 'var(--wa)' : 'transparent'};background:${active ? 'rgba(37,211,102,.08)' : 'transparent'};transition:all .15s" onmouseover="this.style.background='var(--ink3)'" onmouseout="this.style.background='${active ? 'rgba(37,211,102,.08)' : 'transparent'}'">
         <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="font-weight:${unread ? '700' : '500'};font-size:.84rem">${t.customer_name || t.customer_phone || 'Unknown'}</span>
+          <span style="font-weight:${unread ? '700' : '500'};font-size:.84rem">${_esc(t.customer_name || t.customer_phone || 'Unknown')}</span>
           <span style="font-size:.68rem;color:var(--dim)">${t.last_message_at ? timeAgo(t.last_message_at) : ''}</span>
         </div>
-        <div style="font-size:.76rem;color:var(--dim);margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${preview}</div>
+        <div style="font-size:.76rem;color:var(--dim);margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_esc(preview)}</div>
         ${unread ? `<span style="display:inline-block;margin-top:.25rem;background:var(--wa);color:#fff;font-size:.6rem;padding:.1rem .4rem;border-radius:9px;font-weight:600">${unread} new</span>` : ''}
         ${t.has_active_order ? '<span style="display:inline-block;margin-top:.25rem;margin-left:.3rem;font-size:.6rem;padding:.1rem .4rem;border-radius:9px;background:var(--gold);color:#000;font-weight:600">Active Order</span>' : ''}
       </div>`;
@@ -373,7 +373,7 @@ async function openIssDetail(id) {
     const mediaEl = document.getElementById('iss-d-media');
     mediaEl.innerHTML = (i.media || []).map(m => {
       if (m.media_type === 'image') return `<div style="width:80px;height:80px;background:var(--ink3);border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer" onclick="openMsgMedia('${m.media_id}')">📷</div>`;
-      return `<span style="font-size:.78rem;color:var(--dim)">${m.media_type}: ${m.media_id}</span>`;
+      return `<span style="font-size:.78rem;color:var(--dim)">${_esc(m.media_type)}: ${_esc(m.media_id)}</span>`;
     }).join('');
 
     // Messages thread
@@ -381,14 +381,14 @@ async function openIssDetail(id) {
     msgsEl.innerHTML = (i.messages || []).map(m => {
       const isCust = m.sender_type === 'customer';
       const isSys = m.sender_type === 'system';
-      if (isSys) return `<div style="text-align:center;font-size:.72rem;color:var(--dim);padding:.2rem 0">${m.text}</div>`;
+      if (isSys) return `<div style="text-align:center;font-size:.72rem;color:var(--dim);padding:.2rem 0">${_esc(m.text)}</div>`;
       const align = isCust ? 'flex-start' : 'flex-end';
       const bg = isCust ? 'var(--ink3)' : m.internal ? 'rgba(139,92,246,.1)' : 'rgba(37,211,102,.12)';
       const border = m.internal ? 'border:1px dashed rgba(139,92,246,.3);' : '';
       const time = new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       return `<div style="align-self:${align};max-width:80%;padding:.4rem .6rem;border-radius:10px;background:${bg};${border}font-size:.82rem;line-height:1.4">
-        <div style="font-size:.65rem;font-weight:600;color:var(--dim);margin-bottom:.15rem">${m.sender_name}${m.internal ? ' (internal)' : ''}</div>
-        <div>${m.text}</div>
+        <div style="font-size:.65rem;font-weight:600;color:var(--dim);margin-bottom:.15rem">${_esc(m.sender_name)}${m.internal ? ' (internal)' : ''}</div>
+        <div>${_esc(m.text)}</div>
         <div style="font-size:.6rem;color:var(--dim);text-align:right;margin-top:.15rem">${time}</div>
       </div>`;
     }).join('');

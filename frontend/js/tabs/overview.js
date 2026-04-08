@@ -133,7 +133,7 @@ async function loadRecent() {
       <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
       <tbody>${o.map(r => `<tr>
         <td><span class="mono">${r.order_number}</span></td>
-        <td>${r.customer_name || r.wa_phone || r.bsuid?.slice(0,12)+'…' || '—'}</td>
+        <td>${_esc(r.customer_name || r.wa_phone || r.bsuid?.slice(0,12)+'…' || '—')}</td>
         <td>₹${r.total_rs}</td>
         <td>${sbadge(r.status)}</td>
         <td>${oaction(r)}</td>

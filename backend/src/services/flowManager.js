@@ -6,6 +6,7 @@ const axios = require('axios');
 const metaConfig = require('../config/meta');
 const { col } = require('../config/database');
 const FormData = require('form-data');
+const log = require('../utils/logger').child({ component: 'Flow' });
 
 // ─── FLOW JSON DEFINITION ────────────────────────────────────
 // Version 6.2 for NavigationList support.
@@ -263,7 +264,7 @@ async function createDeliveryFlow(wabaId) {
   const token = metaConfig.getMessagingToken();
   const flowJson = buildDeliveryFlowJson();
 
-  console.log('[Flow] Creating delivery address Flow for WABA:', wabaId);
+  log.info({ wabaId }, 'Creating delivery address Flow');
 
   const { data } = await axios.post(`${metaConfig.graphUrl}/${wabaId}/flows`, {
     name: 'GullyBite Delivery Address',
@@ -275,17 +276,17 @@ async function createDeliveryFlow(wabaId) {
   });
 
   if (data.error) {
-    console.error('[Flow] Creation failed:', JSON.stringify(data.error));
+    log.error({ error: data.error }, 'Flow creation failed');
     if (data.validation_errors?.length) {
       for (const err of data.validation_errors) {
-        console.error(`[Flow Validation] ${err.error}: ${err.message} at ${err.pointers?.[0]?.path || 'unknown'}`);
+        log.error({ validationError: err.error, path: err.pointers?.[0]?.path }, err.message);
       }
     }
     return { success: false, error: data.error, validation_errors: data.validation_errors };
   }
 
   const flowId = data.id;
-  console.log('[Flow] Created with ID:', flowId);
+  log.info({ flowId }, 'Flow created');
 
   // Publish the Flow
   try {
@@ -293,9 +294,9 @@ async function createDeliveryFlow(wabaId) {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 10000,
     });
-    console.log('[Flow] Published successfully');
+    log.info({ flowId }, 'Flow published successfully');
   } catch (pubErr) {
-    console.error('[Flow] Publish failed (Flow created as draft):', pubErr.response?.data || pubErr.message);
+    log.error({ err: pubErr, flowId }, 'Publish failed (Flow created as draft)');
     return { success: true, flowId, published: false, error: pubErr.response?.data };
   }
 
@@ -320,7 +321,7 @@ async function updateFlowJson(flowId) {
     timeout: 15000,
   });
 
-  console.log('[Flow] Updated JSON for Flow:', flowId);
+  log.info({ flowId }, 'Updated Flow JSON');
   return data;
 }
 
@@ -447,7 +448,7 @@ async function updateFeedbackFlow(flowId) {
   const flowJson = buildFeedbackFlowJson();
   await updateFlowJson(flowId, flowJson);
   await publishFlow(flowId);
-  console.log('[Flow] Feedback Flow updated and published:', flowId);
+  log.info({ flowId }, 'Feedback Flow updated and published');
   return { success: true, flowId };
 }
 
@@ -455,7 +456,7 @@ async function createFeedbackFlow(wabaId) {
   const token = metaConfig.getMessagingToken();
   const flowJson = buildFeedbackFlowJson();
 
-  console.log('[Flow] Creating feedback Flow for WABA:', wabaId);
+  log.info({ wabaId }, 'Creating feedback Flow');
 
   try {
     const { data } = await axios.post(
@@ -463,10 +464,10 @@ async function createFeedbackFlow(wabaId) {
       { name: 'GullyBite Order Rating', categories: ['OTHER'], flow_json: JSON.stringify(flowJson), publish: true },
       { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 20000 }
     );
-    console.log('[Flow] Feedback Flow created:', data.id);
+    log.info({ flowId: data.id }, 'Feedback Flow created');
     return { success: true, flowId: data.id, published: !data.validation_errors?.length };
   } catch (err) {
-    console.error('[Flow] Feedback Flow creation failed:', err.response?.data || err.message);
+    log.error({ err }, 'Feedback Flow creation failed');
     return { success: false, error: err.response?.data?.error?.message || err.message, validation_errors: err.response?.data?.validation_errors };
   }
 }

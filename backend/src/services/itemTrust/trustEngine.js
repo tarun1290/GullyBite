@@ -6,6 +6,7 @@
 'use strict';
 
 const { col, newId } = require('../../config/database');
+const log = require('../../utils/logger').child({ component: 'Trust' });
 
 // ─── TRUST TAG PRIORITY RULES ───────────────────────────────
 const TRUST_RULES = [
@@ -167,7 +168,7 @@ function generateMetaDescription(metrics, item, maxLen = 280) {
 // ─── FULL TRUST REFRESH FOR A RESTAURANT ────────────────────
 async function refreshTrustMetrics(restaurantId) {
   const startTime = Date.now();
-  console.log(`[Trust] Refreshing trust metrics for restaurant ${restaurantId}`);
+  log.info({ restaurantId }, 'Refreshing trust metrics');
 
   const items = await col('menu_items').find({ restaurant_id: restaurantId, is_available: true }).toArray();
   if (!items.length) return { processed: 0 };
@@ -179,7 +180,7 @@ async function refreshTrustMetrics(restaurantId) {
       const metrics = await calculateItemTrustMetrics(String(item._id), restaurantId);
       if (metrics) allMetrics.push({ ...metrics, _item: item });
     } catch (e) {
-      console.warn(`[Trust] Metrics calc failed for ${item.name}:`, e.message);
+      log.warn({ err: e, itemName: item.name }, 'Metrics calc failed');
     }
   }
 
@@ -225,7 +226,7 @@ async function refreshTrustMetrics(restaurantId) {
   }
 
   const elapsed = Date.now() - startTime;
-  console.log(`[Trust] Refreshed ${allMetrics.length} items for restaurant ${restaurantId} (${elapsed}ms)`);
+  log.info({ restaurantId, items: allMetrics.length, elapsedMs: elapsed }, 'Trust metrics refreshed');
 
   return { processed: allMetrics.length, elapsed };
 }

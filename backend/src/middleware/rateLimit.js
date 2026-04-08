@@ -4,6 +4,7 @@
 // blocked_phones collection in MongoDB persists across restarts
 
 const { col, newId } = require('../config/database');
+const log = require('../utils/logger').child({ component: 'rateLimit' });
 
 // ─── RATE LIMITER CLASS ──────────────────────────────────────────
 class RateLimiter {
@@ -119,10 +120,10 @@ class AbuseDetector {
           { upsert: true }
         );
         this.violations.delete(waPhone);
-        console.warn(`[Abuse] Auto-blocked ${waPhone} for 24h (${hits.length} violations)`);
+        log.warn({ phone: waPhone.slice(-4), violations: hits.length }, 'Auto-blocked phone for 24h');
         return { autoBlocked: true };
       } catch (err) {
-        console.error('[Abuse] Failed to auto-block:', err.message);
+        log.error({ err }, 'Failed to auto-block phone');
       }
     }
     return { autoBlocked: false };

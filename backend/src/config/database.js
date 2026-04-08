@@ -3,6 +3,7 @@
 
 const { MongoClient } = require('mongodb');
 const { v4: uuidv4 } = require('uuid');
+const log = require('../utils/logger').child({ component: 'database' });
 
 // Serverless-optimized pool: minimal connections, aggressive timeouts
 // NOTE: If using mongodb+srv://, DNS SRV resolution adds 5-15s BEFORE these timeouts apply.
@@ -33,7 +34,7 @@ const connect = async () => {
 
   // Stale connection — discard and reconnect
   if (_client && !_isAlive()) {
-    console.log('[DB] Stale connection detected — reconnecting');
+    log.info('Stale connection detected — reconnecting');
     try { _client.close().catch(() => {}); } catch {}
     _client = null; _db = null;
     global._mongoClient = null; global._mongoDb = null;
@@ -42,21 +43,21 @@ const connect = async () => {
   if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI env var is not set');
   const isSrv = process.env.MONGODB_URI.startsWith('mongodb+srv://');
   const start = Date.now();
-  console.log(`[DB] Connecting to MongoDB...${isSrv ? ' (mongodb+srv:// — DNS SRV adds latency on cold start)' : ''}`);
+  log.info({ isSrv }, 'Connecting to MongoDB');
   _client = new MongoClient(process.env.MONGODB_URI, POOL_OPTIONS);
   await _client.connect();
   _db = _client.db(process.env.MONGODB_DB || 'gullybite');
   global._mongoClient = _client;
   global._mongoDb = _db;
   const elapsed = Date.now() - start;
-  console.log(`[DB] ✅ MongoDB connected (${elapsed}ms)${elapsed > 5000 ? ' ⚠️ SLOW — consider standard mongodb:// connection string' : ''}`);
+  log.info({ elapsedMs: elapsed, slow: elapsed > 5000 }, `MongoDB connected (${elapsed}ms)`);
   return _db;
 };
 
 // Connect on startup — non-blocking, stores promise for ensureConnected to await
 if (!_connectPromise) {
   _connectPromise = connect().catch(err => {
-    console.error('❌ MongoDB connection FAILED:', err.message);
+    log.error({ err }, 'MongoDB connection FAILED');
     _connectPromise = null;
     global._mongoConnectPromise = null;
   });
@@ -79,7 +80,7 @@ const ensureConnected = async (req, res, next) => {
       global._mongoConnectPromise = null;
       await connect();
     } catch (err) {
-      console.error('❌ DB unavailable on retry:', err.message);
+      log.error({ err }, 'DB unavailable on retry');
       return res.status(503).json({ error: 'Database unavailable — ' + err.message });
     }
   }

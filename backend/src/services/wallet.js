@@ -6,6 +6,7 @@
 
 const { col, newId } = require('../config/database');
 const { logActivity } = require('./activityLog');
+const log = require('../utils/logger').child({ component: 'Wallet' });
 
 const GST_RATE = 0.18;
 
@@ -181,7 +182,7 @@ async function sendLowBalanceAlert(restaurantId, balanceRs) {
     );
     logActivity({ actorType: 'system', action: 'wallet.low_balance_alert', category: 'billing', description: `Low balance alert sent (₹${balanceRs.toFixed(2)})`, restaurantId, severity: 'warning' });
   } catch (err) {
-    console.error('[Wallet] Low balance alert failed:', err.message);
+    log.error({ err }, 'Low balance alert failed');
   }
 }
 

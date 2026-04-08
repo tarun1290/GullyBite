@@ -12,6 +12,7 @@ const orderNotify = require('../services/orderNotify');
 const { resolveRecipient } = require('../services/customerIdentity');
 const { logActivity } = require('../services/activityLog');
 const ws = require('../services/websocket');
+const log = require('../utils/logger').child({ component: 'delivery' });
 
 // POST /webhooks/delivery — 3PL status updates
 router.post('/', express.json(), async (req, res) => {
@@ -24,7 +25,7 @@ router.post('/', express.json(), async (req, res) => {
     if (secret) {
       const authHeader = req.headers['x-webhook-secret'] || req.headers['authorization'] || req.query?.secret;
       if (authHeader !== secret && authHeader !== `Bearer ${secret}`) {
-        console.warn('[Delivery WH] Invalid webhook secret — dropping');
+        req.log.warn('Invalid webhook secret — dropping');
         return;
       }
     }
@@ -49,14 +50,19 @@ router.post('/', express.json(), async (req, res) => {
     const newStatus = normalizeStatus(payload.status || payload.event_type);
 
     if (!taskId) {
-      console.warn('[3PL Webhook] No task ID in payload');
+      req.log.warn('No task ID in payload');
       return;
     }
+
+    // Idempotency: deduplicate by taskId + normalized status
+    const { once } = require('../utils/idempotency');
+    const isNew = await once('delivery', `${taskId}:${newStatus}`, { taskId, status: newStatus });
+    if (!isNew) return;
 
     // Find the delivery record
     const delivery = await col('deliveries').findOne({ provider_order_id: taskId });
     if (!delivery) {
-      console.warn(`[3PL Webhook] No delivery found for task: ${taskId}`);
+      req.log.warn({ taskId }, 'No delivery found for task');
       return;
     }
 
@@ -148,7 +154,7 @@ router.post('/', express.json(), async (req, res) => {
     );
 
   } catch (err) {
-    console.error('[3PL Webhook] Error processing:', err.message);
+    req.log.error({ err }, 'Error processing delivery webhook');
     logActivity({ actorType: 'webhook', action: 'delivery.dispatch_failed', category: 'delivery', description: `Delivery webhook error: ${err.message}`, severity: 'error', metadata: { error: err.message } });
   }
 });

@@ -28,6 +28,7 @@ const issueSvc = require('../services/issues');
 const { logActivity } = require('../services/activityLog');
 const ws = require('../services/websocket');
 const memcache = require('../config/memcache');
+const log = require('../utils/logger').child({ component: 'whatsapp' });
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
 router.get('/', (req, res) => {
@@ -36,10 +37,10 @@ router.get('/', (req, res) => {
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
-    console.log('✅ Meta webhook verified!');
+    req.log.info('Meta webhook verified');
     return res.status(200).send(challenge);
   }
-  console.error('❌ Webhook verification failed. Check WEBHOOK_VERIFY_TOKEN in .env');
+  req.log.error('Webhook verification failed. Check WEBHOOK_VERIFY_TOKEN in .env');
   res.sendStatus(403);
 });
 
@@ -49,14 +50,13 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
   res.sendStatus(200);
 
   // Entry-point diagnostic logging
-  console.log('[WEBHOOK-ENTRY]', {
-    ts: new Date().toISOString(),
+  req.log.info({
     bodyExists: !!req.body,
     bodyType: typeof req.body,
     bodyLen: req.body?.length || 0,
     ct: req.headers['content-type'],
     hasSig: !!req.headers['x-hub-signature-256'],
-  });
+  }, 'Webhook entry');
 
   // Heartbeat: track last webhook received (fire-and-forget, never blocks)
   try { col('platform_health').updateOne({ _id: 'webhook_heartbeat' }, { $set: { last_received: new Date() }, $inc: { count_24h: 1 } }, { upsert: true }); } catch (_) {}
@@ -70,14 +70,14 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       .digest('hex');
 
     if (!sig || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(sig))) {
-      console.warn('[WEBHOOK-SIGNATURE] ⚠️ FAILED — sig mismatch. Has WEBHOOK_APP_SECRET:', !!process.env.WEBHOOK_APP_SECRET);
+      req.log.warn({ hasAppSecret: !!process.env.WEBHOOK_APP_SECRET }, 'Signature mismatch');
       return;
     }
-    console.log('[WEBHOOK-SIGNATURE] ✅ passed');
+    req.log.info('Signature passed');
 
     const body = JSON.parse(req.body);
     if (body.object !== 'whatsapp_business_account') {
-      console.log('[WEBHOOK-ENTRY] Ignored — object:', body.object);
+      req.log.info({ object: body.object }, 'Ignored — not whatsapp_business_account');
       return;
     }
 
@@ -86,14 +86,14 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     if (senderIdentifier) {
       const blocked = await isPhoneBlocked(senderIdentifier);
       if (blocked) {
-        console.warn(`[WA Webhook] Blocked identifier dropped: ${senderIdentifier}`);
+        req.log.warn({ senderIdentifier }, 'Blocked identifier dropped');
         return; // silently drop — already returned 200
       }
 
       // ── RATE LIMIT CHECK ──
       const { allowed } = waMessageLimiter.isAllowed(senderIdentifier);
       if (!allowed) {
-        console.warn(`[RateLimit] WhatsApp message rate limited: ${senderIdentifier}`);
+        req.log.warn({ senderIdentifier }, 'Message rate limited');
         // Record violation for abuse detection
         abuseDetector.recordViolation(senderIdentifier).catch(() => {});
         // Log rate-limited event
@@ -126,7 +126,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       ).catch(() => {});
     }
   } catch (err) {
-    console.error('[WA Webhook] Processing error:', err.message);
+    req.log.error({ err }, 'Processing error');
     logActivity({ actorType: 'webhook', action: 'bot.error', category: 'webhook', description: `WhatsApp bot error: ${err.message}`, severity: 'error', metadata: { error: err.message } });
     // Schedule for retry
     if (logId) {
@@ -147,7 +147,7 @@ const processWhatsAppWebhook = async (logId, body) => {
   for (const entry of body.entry || []) {
     for (const change of entry.changes || []) {
       if (change.field !== 'messages') continue;
-      tasks.push(processChange(change.value).catch(err => console.error('[WH] Change processing error:', err.message)));
+      tasks.push(processChange(change.value).catch(err => log.error({ err }, 'Change processing error')));
     }
   }
   if (tasks.length) await Promise.allSettled(tasks);
@@ -157,11 +157,11 @@ const processWhatsAppWebhook = async (logId, body) => {
 let _dedupIndexCreated = false;
 const processChange = async (value) => {
   const phoneNumberId = value.metadata?.phone_number_id;
-  if (!phoneNumberId) { console.log('[WEBHOOK-PROCESS] No phone_number_id in metadata — skipping'); return; }
+  if (!phoneNumberId) { log.info('No phone_number_id in metadata — skipping'); return; }
 
   const msgCount = value.messages?.length || 0;
   const statusCount = value.statuses?.length || 0;
-  console.log(`[WEBHOOK-PROCESS] phone=${phoneNumberId} messages=${msgCount} statuses=${statusCount}`);
+  log.info({ phoneNumberId, msgCount, statusCount }, 'Processing change');
 
   // Ensure dedup TTL index exists (lazy, once)
   if (!_dedupIndexCreated) {
@@ -173,31 +173,31 @@ const processChange = async (value) => {
   const { getWaAccount } = require('../utils/cachedLookup');
   const waAccount = await getWaAccount(phoneNumberId);
   if (!waAccount) {
-    console.warn('[WEBHOOK-PROCESS] ❌ No WA account found for phone_number_id:', phoneNumberId, '— message will NOT be processed');
+    log.warn({ phoneNumberId }, 'No WA account found — message will NOT be processed');
     return;
   }
-  console.log(`[WEBHOOK-PROCESS] ✅ WA account matched: restaurant=${waAccount.restaurant_id}`);
+  log.info({ restaurantId: waAccount.restaurant_id }, 'WA account matched');
 
   // Use system user token for all messaging (never-expiring, set via env var)
   waAccount.access_token = metaConfig.systemUserToken || waAccount.access_token;
 
   for (const msg of value.messages || []) {
-    console.log(`[WEBHOOK-MESSAGE] id=${msg.id} type=${msg.type} from=${msg.from || msg.user_id || '?'}`);
+    log.info({ msgId: msg.id, type: msg.type, from: msg.from || msg.user_id || '?' }, 'Processing message');
 
     // Guard: skip stale messages (>2 min old — likely Meta retries)
     if (msg.timestamp) {
       const age = Date.now() - parseInt(msg.timestamp) * 1000;
-      if (age > 120000) { console.log(`[WA] Stale message dropped (${Math.round(age/1000)}s old):`, msg.id); continue; }
+      if (age > 120000) { log.info({ msgId: msg.id, ageSec: Math.round(age/1000) }, 'Stale message dropped'); continue; }
     }
 
     // Dedup: skip if we already processed this message (Meta retries)
     if (msg.id) {
       try {
         const existing = await col('_webhook_dedup').findOne({ _id: msg.id });
-        if (existing) { console.log('[WA] Dedup: skipping already-processed message', msg.id); continue; }
+        if (existing) { log.info({ msgId: msg.id }, 'Dedup: skipping already-processed message'); continue; }
         await col('_webhook_dedup').insertOne({ _id: msg.id, createdAt: new Date() });
       } catch (e) {
-        if (e.code === 11000) { console.log('[WA] Dedup: duplicate insert, skipping', msg.id); continue; }
+        if (e.code === 11000) { log.info({ msgId: msg.id }, 'Dedup: duplicate insert, skipping'); continue; }
       }
     }
 
@@ -225,9 +225,9 @@ const processChange = async (value) => {
 
     try {
       await handleMessage(msg, { bsuid, wa_phone }, senderName, waAccount);
-      console.log(`[Perf] Message ${msg.type} from ${wa_phone || bsuid}: ${Date.now() - msgStart}ms`);
+      log.info({ messageType: msg.type, phone: wa_phone?.slice(-4), durationMs: Date.now() - msgStart }, 'Message processed');
     } catch (err) {
-      console.error(`[WA] Error handling message from ${customerIdentity.displayIdentifier({ wa_phone, bsuid })} (${Date.now() - msgStart}ms):`, err.message);
+      log.error({ err, phone: wa_phone?.slice(-4), durationMs: Date.now() - msgStart }, 'Error handling message');
       logActivity({
         actorType: 'webhook', action: 'bot.error', category: 'webhook',
         description: `Error processing message: ${err.message}`,
@@ -401,7 +401,7 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         });
       }
 
-      console.log(`[Checkout] order_details sent for ${order.order_number} (id: ${order.id})`);
+      log.info({ orderNumber: order.order_number, orderId: order.id }, 'order_details sent');
 
       // Save a payment record so the Razorpay webhook can match by reference_id
       await col('payments').insertOne({
@@ -413,11 +413,11 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         currency: 'INR',
         status: 'pending',
         created_at: new Date(),
-      }).catch(e => console.warn('[Checkout] Payment record save failed:', e.message));
+      }).catch(e => log.warn({ err: e }, 'Payment record save failed'));
 
       return;
     } catch (checkoutErr) {
-      console.warn('[Checkout] order_details send failed, falling back to text summary:', checkoutErr.message);
+      log.warn({ err: checkoutErr }, 'order_details send failed, falling back to text summary');
     }
   }
 
@@ -426,18 +426,26 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
 
   // Track as review_pending abandoned cart (will be recovered when order is confirmed)
   if (session?.branchId && customer?.id) {
-    const cartRecovery = require('../services/cart-recovery');
-    cartRecovery.trackAbandonedCart({
-      restaurantId: waAccount?.restaurant_id, branchId: session.branchId,
-      customerId: customer.id, customerPhone: customer.wa_phone || customer.bsuid,
-      customerName: customer.name,
-      cartItems: (items || []).map(i => ({ product_retailer_id: null, quantity: i.qty || 1, item_price: Number(i.price) || 0, currency: 'INR', item_name: i.name })),
-      cartTotal: Number(charges?.customer_total_rs || total) || 0,
-      itemCount: (items || []).reduce((s, i) => s + (i.qty || 1), 0),
-      abandonmentStage: 'review_pending',
-      deliveryAddress: session.deliveryAddress ? { full_address: session.deliveryAddress } : null,
-      lastCustomerMessageAt: new Date(),
-    }).catch(e => console.warn('[Cart Recovery] Track review failed:', e.message));
+    const { guard: guardCR } = require('../utils/smartModule');
+    guardCR('CART_RECOVERY', {
+      fn: () => {
+        const cartRecovery = require('../services/cart-recovery');
+        return cartRecovery.trackAbandonedCart({
+          restaurantId: waAccount?.restaurant_id, branchId: session.branchId,
+          customerId: customer.id, customerPhone: customer.wa_phone || customer.bsuid,
+          customerName: customer.name,
+          cartItems: (items || []).map(i => ({ product_retailer_id: null, quantity: i.qty || 1, item_price: Number(i.price) || 0, currency: 'INR', item_name: i.name })),
+          cartTotal: Number(charges?.customer_total_rs || total) || 0,
+          itemCount: (items || []).reduce((s, i) => s + (i.qty || 1), 0),
+          abandonmentStage: 'review_pending',
+          deliveryAddress: session.deliveryAddress ? { full_address: session.deliveryAddress } : null,
+          lastCustomerMessageAt: new Date(),
+        });
+      },
+      fallback: undefined,
+      label: 'trackAbandonedCart:review',
+      context: { customerId: customer.id },
+    }); // fire-and-forget — no await needed
   }
 };
 
@@ -452,7 +460,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   const gbrefMatch = rawText.match(/GBREF-([a-zA-Z0-9]{4,10})/i);
   if (gbrefMatch) {
     const refCode = gbrefMatch[1];
-    console.log(`[Referral] GBREF detected: ${refCode} from ${customer.wa_phone || customer.bsuid}`);
+    log.info({ refCode, phone: (customer.wa_phone || customer.bsuid)?.slice(-4) }, 'GBREF detected');
     try {
       const refLink = await col('referral_links').findOne({ code: refCode, status: 'active' });
       if (refLink) {
@@ -469,10 +477,10 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
           notes: refLink.campaign_name,
         });
       } else {
-        console.log(`[Referral] GBREF code "${refCode}" not found or not active — ignoring`);
+        log.info({ refCode }, 'GBREF code not found or not active — ignoring');
       }
     } catch (e) {
-      console.warn('[Referral] GBREF processing error:', e.message);
+      log.warn({ err: e }, 'GBREF processing error');
     }
 
     // Strip the GBREF code from the message, continue with cleaned text
@@ -486,11 +494,11 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   // ── Google Maps URL detection ─────────────────────────────
   if (location.isMapsUrl(rawText)) {
     const mapsUrl = location.extractMapsUrl(rawText) || rawText;
-    console.log('[MAPS-URL] Detected:', mapsUrl.substring(0, 100));
+    log.info({ mapsUrl: mapsUrl.substring(0, 100) }, 'Maps URL detected');
     try {
       const coords = await location.extractCoordsFromMapsUrl(mapsUrl);
       if (coords) {
-        console.log(`[Bot] Extracted coords: ${coords.lat}, ${coords.lng}`);
+        log.info({ lat: coords.lat, lng: coords.lng }, 'Extracted coords from Maps URL');
         // Treat this the same as a location pin drop — delegate to location handler
         const syntheticLocationMsg = {
           type: 'location',
@@ -500,7 +508,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
         return;
       }
     } catch (e) {
-      console.error('[Bot] Maps URL parse failed:', e.message);
+      log.error({ err: e }, 'Maps URL parse failed');
     }
     // If parsing failed, ask for pin drop instead
     await wa.sendText(pid, token, to,
@@ -527,7 +535,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       const cartRecovery = require('../services/cart-recovery');
       const reEngagement = await cartRecovery.handleReEngagement(customer.wa_phone || customer.bsuid, waAccount.restaurant_id);
       if (reEngagement?.validItems?.length) {
-        console.log(`[Cart Recovery] Re-engagement: ${reEngagement.validItems.length} items from abandoned cart`);
+        log.info({ validItemCount: reEngagement.validItems.length }, 'Cart recovery re-engagement');
         if (reEngagement.removedItems.length) {
           await wa.sendText(pid, token, to, `⚠️ ${reEngagement.removedItems.length} item(s) from your previous cart are no longer available.`);
         }
@@ -568,7 +576,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
         }
         return;
       }
-    } catch (e) { console.warn('[Cart Recovery] Re-engagement check failed:', e.message); }
+    } catch (e) { log.warn({ err: e }, 'Cart recovery re-engagement check failed'); }
   }
 
   if (['HI', 'HELLO', 'HEY', 'START', 'MENU', 'ORDER'].includes(text)) {
@@ -729,12 +737,13 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     let updatedCharges = session.charges || null;
     if (updatedCharges) {
       const { calculateOrderCharges } = require('../services/charges');
+      const restDoc = await col('restaurants').findOne({ _id: restaurantId });
       updatedCharges = calculateOrderCharges(
-        { delivery_fee_customer_pct: Math.round((updatedCharges.customer_delivery_rs / updatedCharges.delivery_fee_total_rs) * 100) || 100,
-          menu_gst_mode: updatedCharges.food_gst_rs > 0 ? 'extra' : 'included',
-          menu_gst_pct: updatedCharges.food_gst_rs > 0 ? (updatedCharges.food_gst_rs / updatedCharges.subtotal_rs * 100) : 5,
-          packaging_charge_rs: updatedCharges.packaging_rs,
-          packaging_gst_pct: updatedCharges.packaging_rs > 0 ? (updatedCharges.packaging_gst_rs / updatedCharges.packaging_rs * 100) : 18 },
+        { delivery_fee_customer_pct: restDoc?.delivery_fee_customer_pct ?? 100,
+          menu_gst_mode: restDoc?.menu_gst_mode ?? 'included',
+          menu_gst_pct: restDoc?.menu_gst_pct ?? 5,
+          packaging_charge_rs: restDoc?.packaging_charge_rs ?? 0,
+          packaging_gst_pct: restDoc?.packaging_gst_pct ?? 18 },
         session.subtotalRs, updatedCharges.delivery_fee_total_rs, result.discountRs
       );
     }
@@ -802,7 +811,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       });
       logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.feedback_submitted', category: 'customer', description: `Rating submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: order?.restaurant_id || null, severity: 'info' });
     } catch (e) {
-      if (e.code !== 11000) console.error('[Rating] save error:', e.message);
+      if (e.code !== 11000) log.error({ err: e }, 'Rating save error');
     }
     await orderSvc.setState(conv.id, 'GREETING', {});
     await wa.sendText(pid, token, to, comment ? 'Thanks for your feedback! We\'ll work on improving. \uD83D\uDE4F' : 'No worries \u2014 thanks for rating! \uD83C\uDF89');
@@ -896,7 +905,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
           return;
         }
       } catch (e) {
-        console.error('[Payment] Retry checkout failed:', e.message);
+        log.error({ err: e }, 'Payment retry checkout failed');
       }
       await wa.sendText(pid, token, to, '⚠️ Could not resend checkout. Please type *MENU* to start a new order.');
       return;
@@ -925,12 +934,12 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       try {
         const geocoded = await location.forwardGeocode(rawText);
         if (geocoded?.lat && geocoded?.lng) {
-          console.log('[Bot] Forward geocoded address for pending cart:', geocoded.address);
+          log.info({ address: geocoded.address }, 'Forward geocoded address for pending cart');
           const syntheticMsg = { type: 'location', location: { latitude: geocoded.lat, longitude: geocoded.lng, address: geocoded.address } };
           await handleLocationMessage(syntheticMsg, customer, conv, waAccount);
           return;
         }
-      } catch (e) { console.warn('[Bot] Text geocode failed:', e.message); }
+      } catch (e) { log.warn({ err: e }, 'Text geocode failed'); }
     }
     // If greeting while cart is pending, re-send address prompt
     if (['HI','HELLO','HEY','START','MENU','ORDER'].includes(text)) {
@@ -960,12 +969,12 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       try {
         const geocoded = await location.forwardGeocode(rawText);
         if (geocoded?.lat && geocoded?.lng) {
-          console.log('[Bot] Forward geocoded text address:', geocoded.address);
+          log.info({ address: geocoded.address }, 'Forward geocoded text address');
           const syntheticMsg = { type: 'location', location: { latitude: geocoded.lat, longitude: geocoded.lng, address: geocoded.address } };
           await handleLocationMessage(syntheticMsg, customer, conv, waAccount);
           return;
         }
-      } catch (e) { console.warn('[Bot] Text geocode failed:', e.message); }
+      } catch (e) { log.warn({ err: e }, 'Text geocode failed'); }
     }
     await wa.sendLocationRequest(pid, token, to);
     return;
@@ -1037,10 +1046,10 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     const geocoded = await location.reverseGeocode(latitude, longitude);
     if (geocoded?.address) {
       address = geocoded.address;
-      console.log('[Bot] Geocoded address:', address);
+      log.info({ address }, 'Geocoded address');
     }
   } catch (e) {
-    console.warn('[Bot] Reverse geocoding failed, using WhatsApp-provided address:', e.message);
+    log.warn({ err: e }, 'Reverse geocoding failed, using WhatsApp-provided address');
   }
 
   await col('customers').updateOne(
@@ -1071,10 +1080,17 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
 
     // 3PL delivery quote + charge breakdown
     const { calculateDynamicDeliveryFee } = require('../services/dynamicPricing');
-    const dynamicResult = await calculateDynamicDeliveryFee(branch.id, latitude, longitude, {
-      deliveryAddress: address || 'Your location',
-      customerName: customer.name,
-      customerPhone: customer.wa_phone || customer.bsuid || '',
+    const { guard: guardDP } = require('../utils/smartModule');
+    const _defaultFee = parseFloat(process.env.DEFAULT_DELIVERY_FEE) || 40;
+    const dynamicResult = await guardDP('DYNAMIC_PRICING', {
+      fn: () => calculateDynamicDeliveryFee(branch.id, latitude, longitude, {
+        deliveryAddress: address || 'Your location',
+        customerName: customer.name,
+        customerPhone: customer.wa_phone || customer.bsuid || '',
+      }),
+      fallback: { deliveryFeeRs: _defaultFee, dynamic: false, breakdown: { totalFeeRs: _defaultFee } },
+      label: 'reorderDeliveryQuote',
+      context: { branchId: branch.id },
     });
 
     const branchDoc    = await col('branches').findOne({ _id: branch.id });
@@ -1172,15 +1188,15 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     const itemTrust = require('../services/itemTrust');
     const trustMsg = await itemTrust.buildPreMenuTrustMessage(branch.restaurantId || waAccount.restaurant_id, branch.id);
     if (trustMsg) await wa.sendText(pid, token, to, trustMsg);
-  } catch (e) { console.warn('[Trust] Pre-menu message failed (non-fatal):', e.message); }
+  } catch (e) { log.warn({ err: e }, 'Pre-menu trust message failed (non-fatal)'); }
 
   // Send branch-filtered MPMs (Multi-Product Messages)
   const restaurantDoc = await col('restaurants').findOne({ _id: branch.restaurantId });
   let catalogId = branch.catalogId || branch.catalog_id || restaurantDoc?.meta_catalog_id;
-  console.log(`[MPM-DEBUG] catalogId source: branch.catalogId=${branch.catalogId} branch.catalog_id=${branch.catalog_id} restaurant.meta_catalog_id=${restaurantDoc?.meta_catalog_id}`);
-  console.log(`[MPM-DEBUG] Resolved catalogId=${catalogId} (type: ${typeof catalogId})`);
+  log.info({ branchCatalogId: branch.catalogId, branchCatalog_id: branch.catalog_id, restaurantMetaCatalogId: restaurantDoc?.meta_catalog_id }, 'MPM catalogId source');
+  log.info({ catalogId, catalogIdType: typeof catalogId }, 'Resolved catalogId');
   // Ensure catalog_id is a string — Meta API rejects numbers
-  if (catalogId && typeof catalogId !== 'string') { console.warn('[MPM-VALIDATION] catalogId was not a string, converting'); catalogId = String(catalogId); }
+  if (catalogId && typeof catalogId !== 'string') { log.warn('catalogId was not a string, converting'); catalogId = String(catalogId); }
 
   // ── Pre-flight check: verify catalog is linked to phone number ──
   if (catalogId) {
@@ -1196,13 +1212,13 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
         });
         commerceSettings = csRes.data?.data?.[0] || csRes.data || {};
         memcache.set(cacheKey, commerceSettings, 300); // Cache 5 minutes
-        console.log(`[MPM-PREFLIGHT] Commerce settings for ${pid}:`, JSON.stringify(commerceSettings));
+        log.info({ phoneNumberId: pid, commerceSettings }, 'Commerce settings fetched');
       }
 
       const linkedCatalog = commerceSettings.id || commerceSettings.catalog_id;
       if (!linkedCatalog) {
         // No catalog linked — try to auto-link
-        console.warn(`[MPM-PREFLIGHT] No catalog linked to phone ${pid} — attempting auto-link with catalog ${catalogId}`);
+        log.warn({ phoneNumberId: pid, catalogId }, 'No catalog linked — attempting auto-link');
         try {
           const metaConfig = require('../config/meta');
           const axios = require('axios');
@@ -1214,37 +1230,42 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
             timeout: 10000,
           });
           memcache.del(cacheKey); // Invalidate cache
-          console.log('[MPM-PREFLIGHT] Auto-link succeeded');
+          log.info('Auto-link succeeded');
         } catch (linkErr) {
-          console.error('[MPM-PREFLIGHT] Auto-link failed:', linkErr.response?.data || linkErr.message);
+          log.error({ err: linkErr, responseData: linkErr.response?.data }, 'Auto-link failed');
         }
       } else if (String(linkedCatalog) !== String(catalogId)) {
         // Different catalog linked — use Meta's catalog
-        console.warn(`[MPM-PREFLIGHT] Catalog mismatch: DB=${catalogId} Meta=${linkedCatalog} — using Meta's catalog`);
+        log.warn({ dbCatalogId: catalogId, metaCatalogId: linkedCatalog }, 'Catalog mismatch — using Meta catalog');
         catalogId = String(linkedCatalog);
       }
     } catch (preflightErr) {
       // Pre-flight failed — proceed anyway, existing error handling will catch 131009
-      console.warn('[MPM-PREFLIGHT] Check failed (non-blocking):', preflightErr.message);
+      log.warn({ err: preflightErr }, 'Preflight check failed (non-blocking)');
     }
   }
 
   if (catalogId) {
     try {
-      let mpms;
-      try {
-        const { buildStrategyMPMs } = require('../services/mpmStrategy');
-        mpms = await buildStrategyMPMs(branch.id, branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id, { customerId: customer?.id });
-      } catch (strategyErr) {
-        console.warn('[MPM] Strategy engine failed, falling back to legacy builder:', strategyErr.message);
-        const { buildBranchMPMs } = require('../services/mpmBuilder');
-        mpms = await buildBranchMPMs(branch.id, branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id);
-      }
-      console.log(`[MPM-DEBUG] Built ${mpms.length} MPM(s) for branch "${branch.name}"`);
+      const { guard } = require('../utils/smartModule');
+      const rid = branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id;
+      const mpms = await guard('MPM_STRATEGY', {
+        fn: () => {
+          const { buildStrategyMPMs } = require('../services/mpmStrategy');
+          return buildStrategyMPMs(branch.id, rid, { customerId: customer?.id });
+        },
+        fallbackFn: () => {
+          const { buildBranchMPMs } = require('../services/mpmBuilder');
+          return buildBranchMPMs(branch.id, rid);
+        },
+        label: 'buildStrategyMPMs',
+        context: { branchId: branch.id },
+      });
+      log.info({ mpmCount: mpms.length, branchName: branch.name }, 'Built MPMs for branch');
       for (const [mi, mpm] of mpms.entries()) {
-        console.log(`[MPM-DEBUG] MPM ${mi+1}: header="${mpm.header}" sections=${mpm.sections?.length} products=${mpm.sections?.reduce((s,sec) => s + (sec.product_retailer_ids?.length || 0), 0)}`);
+        log.info({ mpmIndex: mi + 1, header: mpm.header, sectionCount: mpm.sections?.length, productCount: mpm.sections?.reduce((s,sec) => s + (sec.product_retailer_ids?.length || 0), 0) }, 'MPM detail');
         if (mpm.sections) for (const sec of mpm.sections) {
-          console.log(`[MPM-DEBUG]   Section "${sec.title}": ${(sec.product_retailer_ids || []).join(', ')}`);
+          log.info({ sectionTitle: sec.title, retailerIds: (sec.product_retailer_ids || []).join(', ') }, 'MPM section');
         }
       }
       if (mpms.length) {
@@ -1253,28 +1274,28 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
           const mpm = mpms[i];
           if (mpm.sections) {
             mpm.sections = mpm.sections.filter(s => {
-              if (!s.title) { console.warn('[MPM-VALIDATION] Section with no title removed'); return false; }
+              if (!s.title) { log.warn('Section with no title removed'); return false; }
               s.product_retailer_ids = (s.product_retailer_ids || []).filter(id => {
-                if (!id || typeof id !== 'string') { console.warn(`[MPM-VALIDATION] Invalid retailer_id removed: ${JSON.stringify(id)}`); return false; }
+                if (!id || typeof id !== 'string') { log.warn({ retailerId: JSON.stringify(id) }, 'Invalid retailer_id removed'); return false; }
                 return true;
               });
-              if (!s.product_retailer_ids.length) { console.warn(`[MPM-VALIDATION] Section "${s.title}" has 0 valid products — removed`); return false; }
+              if (!s.product_retailer_ids.length) { log.warn({ sectionTitle: s.title }, 'Section has 0 valid products — removed'); return false; }
               return true;
             });
           }
           if (!mpm.sections?.length) {
-            console.warn('[MPM-VALIDATION] MPM has 0 valid sections after filtering — skipping');
+            log.warn('MPM has 0 valid sections after filtering — skipping');
             await wa.sendText(pid, token, to, 'Our menu is being set up. Please try again shortly.');
             break;
           }
           try {
             await wa.sendMPM(pid, token, to, String(catalogId), mpms[i]);
-            console.log(`[MPM-DEBUG] MPM ${i+1}/${mpms.length} sent successfully`);
+            log.info({ mpmIndex: i + 1, mpmTotal: mpms.length }, 'MPM sent successfully');
           } catch (mpmSendErr) {
-            console.error(`[MPM-DEBUG] MPM ${i+1} FAILED:`, JSON.stringify(mpmSendErr.response?.data || { message: mpmSendErr.message }));
+            log.error({ err: mpmSendErr, mpmIndex: i + 1, responseData: mpmSendErr.response?.data }, 'MPM send failed');
             // If first MPM fails, fall back to catalog message
             if (i === 0) {
-              console.log('[Bot] Falling back to catalog message');
+              log.info('Falling back to catalog message');
               await wa.sendCatalog(pid, token, to, catalogId,
                 `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
               );
@@ -1287,17 +1308,17 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
           await wa.sendText(pid, token, to, '👆 Browse the menus above, add items to your cart, and send it when you\'re ready!');
         }
       } else {
-        console.log('[Bot] No items in branch — sending text menu');
+        log.info('No items in branch — sending text menu');
         await sendTextMenu(pid, token, to, branch.id);
       }
     } catch (mpmErr) {
-      console.error('[Bot] MPM build failed:', mpmErr.message, mpmErr.stack?.split('\n')[1]);
+      log.error({ err: mpmErr }, 'MPM build failed');
       await wa.sendCatalog(pid, token, to, catalogId,
         `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`
       );
     }
   } else {
-    console.log('[Bot] No catalog_id found — sending text menu');
+    log.info('No catalog_id found — sending text menu');
     await sendTextMenu(pid, token, to, branch.id);
   }
 
@@ -1328,7 +1349,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     const productItems = msg.order?.product_items || [];
     if (!productItems.length) return;
 
-    console.log(`[Bot] Direct catalog cart: ${productItems.length} items, no branch context — collecting address`);
+    log.info({ itemCount: productItems.length }, 'Direct catalog cart — no branch context, collecting address');
 
     await orderSvc.setState(conv.id, 'AWAITING_ADDRESS_FOR_CART', {
       ...session,
@@ -1341,17 +1362,25 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     });
 
     // Track abandoned cart (address_pending stage)
-    const cartRecovery = require('../services/cart-recovery');
-    const enrichedItems = await cartRecovery.enrichCartItems(productItems);
-    const cartTotal = enrichedItems.reduce((s, i) => s + (i.item_price * i.quantity), 0);
-    cartRecovery.trackAbandonedCart({
-      restaurantId: waAccount.restaurant_id, branchId: null,
-      customerId: customer.id, customerPhone: customer.wa_phone || customer.bsuid,
-      customerName: customer.name, cartItems: enrichedItems, cartTotal,
-      itemCount: enrichedItems.reduce((s, i) => s + i.quantity, 0),
-      catalogId: msg.order?.catalog_id, abandonmentStage: 'address_pending',
-      lastCustomerMessageAt: new Date(),
-    }).catch(e => console.warn('[Cart Recovery] Track failed:', e.message));
+    const { guard: guardCR2 } = require('../utils/smartModule');
+    guardCR2('CART_RECOVERY', {
+      fn: async () => {
+        const cartRecovery = require('../services/cart-recovery');
+        const enrichedItems = await cartRecovery.enrichCartItems(productItems);
+        const cartTotal = enrichedItems.reduce((s, i) => s + (i.item_price * i.quantity), 0);
+        return cartRecovery.trackAbandonedCart({
+          restaurantId: waAccount.restaurant_id, branchId: null,
+          customerId: customer.id, customerPhone: customer.wa_phone || customer.bsuid,
+          customerName: customer.name, cartItems: enrichedItems, cartTotal,
+          itemCount: enrichedItems.reduce((s, i) => s + i.quantity, 0),
+          catalogId: msg.order?.catalog_id, abandonmentStage: 'address_pending',
+          lastCustomerMessageAt: new Date(),
+        });
+      },
+      fallback: undefined,
+      label: 'trackAbandonedCart:address',
+      context: { customerId: customer.id },
+    }); // fire-and-forget
 
     await wa.sendText(pid, token, to,
       '🎉 Great choices! Before we proceed with your order, I need your delivery address.'
@@ -1405,31 +1434,56 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
 
   const metaCouponCode = msg.order?.coupon_code;
   let couponData = session.coupon || null;
+
+  const branch = await col('branches').findOne({ _id: branchId });
+  const restaurantId = branch?.restaurant_id;
+  const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
+  const restConfig = {
+    delivery_fee_customer_pct: restaurant?.delivery_fee_customer_pct ?? 100,
+    menu_gst_mode: restaurant?.menu_gst_mode ?? 'included',
+    menu_gst_pct: restaurant?.menu_gst_pct ?? 5,
+    packaging_charge_rs: restaurant?.packaging_charge_rs ?? 0,
+    packaging_gst_pct: restaurant?.packaging_gst_pct ?? 18,
+  };
+
+  // Try Meta coupon code first, then auto-resolve best offer
   if (metaCouponCode && !couponData) {
-    const branch = await col('branches').findOne({ _id: branchId });
-    const restaurantId = branch?.restaurant_id;
-    const result = await couponSvc.validateCoupon(metaCouponCode, restaurantId, cart.subtotalRs);
+    const result = await couponSvc.validateCoupon(metaCouponCode, restaurantId, cart.subtotalRs,
+      { customerId: customer?.id, branchId, isFirstOrder: await couponSvc.isCustomerFirstOrder(customer?.id, restaurantId) });
     if (result.valid) {
-      couponData = { id: result.coupon.id, code: result.coupon.code, discountRs: result.discountRs };
+      couponData = { id: result.coupon.id, code: result.coupon.code, discountRs: result.discountRs, freeDelivery: result.freeDelivery, autoApplied: false };
       await wa.sendText(pid, token, to, result.message);
     }
+  }
+
+  // Auto-apply best offer if no coupon yet
+  if (!couponData) {
+    try {
+      const isFirstOrder = await couponSvc.isCustomerFirstOrder(customer?.id, restaurantId);
+      const deliveryFee = cart.charges?.delivery_fee_total_rs || cart.deliveryFeeRs || 0;
+      const resolved = await couponSvc.resolveBestOffer(restaurantId, cart.subtotalRs, deliveryFee, restConfig,
+        { customerId: customer?.id, branchId, isFirstOrder });
+      if (resolved.bestCoupon) {
+        couponData = {
+          id: resolved.bestCoupon.coupon.id,
+          code: resolved.bestCoupon.coupon.code,
+          discountRs: resolved.bestCoupon.discountRs,
+          freeDelivery: resolved.bestCoupon.freeDelivery,
+          autoApplied: true,
+        };
+        await wa.sendText(pid, token, to,
+          `🎉 *Best offer auto-applied!*\n${resolved.bestCoupon.label} — *${couponData.code}*\nYou save ₹${couponData.discountRs.toFixed(0)}${resolved.allEligible.length > 1 ? `\n\n_${resolved.allEligible.length} offers available — reply COUPON to change_` : ''}`);
+      }
+    } catch (e) { log.warn({ err: e }, 'Auto-offer resolution failed (non-blocking)'); }
   }
 
   const discountRs = couponData?.discountRs || 0;
 
   let charges = cart.charges;
-  if (discountRs > 0 && charges) {
-    const branch = await col('branches').findOne({ _id: branchId });
-    const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
+  if ((discountRs > 0 || couponData?.freeDelivery) && charges) {
     const { calculateOrderCharges } = require('../services/charges');
-    charges = calculateOrderCharges(
-      { delivery_fee_customer_pct: restaurant?.delivery_fee_customer_pct ?? 100,
-        menu_gst_mode: restaurant?.menu_gst_mode ?? 'included',
-        menu_gst_pct: restaurant?.menu_gst_pct ?? 5,
-        packaging_charge_rs: restaurant?.packaging_charge_rs ?? 0,
-        packaging_gst_pct: restaurant?.packaging_gst_pct ?? 18 },
-      cart.subtotalRs, charges.delivery_fee_total_rs, discountRs
-    );
+    const effectiveDelivery = couponData?.freeDelivery ? 0 : charges.delivery_fee_total_rs;
+    charges = calculateOrderCharges(restConfig, cart.subtotalRs, effectiveDelivery, discountRs);
   }
   const finalTotalRs = charges ? charges.customer_total_rs : (cart.subtotalRs + cart.deliveryFeeRs - discountRs);
 
@@ -1633,7 +1687,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
             });
             return;
           }
-        } catch (e) { console.warn('[Payment] Resend checkout failed:', e.message); }
+        } catch (e) { log.warn({ err: e }, 'Payment resend checkout failed'); }
         await wa.sendText(pid, token, to, '⚠️ Could not reload your order. Please type *MENU* to start again.');
         return;
       }
@@ -1688,7 +1742,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       const _orderStart = Date.now();
       const [fullOrder, etaResult] = await Promise.all([
         orderSvc.getOrderDetails(order.id),
-        etaSvc.calculateETA(session.branchId, session.deliveryLat, session.deliveryLng).catch(e => { console.warn('[ETA] calc error:', e.message); return null; }),
+        etaSvc.calculateETA(session.branchId, session.deliveryLat, session.deliveryLng).catch(e => { log.warn({ err: e }, 'ETA calc error'); return null; }),
         col('deliveries').updateOne(
           { order_id: order.id },
           { $setOnInsert: { _id: newId(), order_id: order.id, status: 'pending', cost_rs: session.deliveryFeeRs || 0, created_at: new Date() } },
@@ -1726,23 +1780,31 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
 
         // Track as payment_pending abandoned cart
-        const cartRecovery = require('../services/cart-recovery');
-        cartRecovery.trackAbandonedCart({
-          restaurantId: waAccount.restaurant_id, branchId: session.branchId,
-          customerId: customer.id, customerPhone: customer.wa_phone || customer.bsuid,
-          customerName: customer.name,
-          cartItems: (session.cart || []).map(i => ({ product_retailer_id: i.retailerId || null, quantity: i.qty, item_price: i.unitPriceRs, currency: 'INR', item_name: i.name })),
-          cartTotal: session.totalRs || 0, itemCount: (session.cart || []).reduce((s, i) => s + i.qty, 0),
-          abandonmentStage: 'payment_pending',
-          deliveryAddress: session.deliveryAddress ? { full_address: session.deliveryAddress } : null,
-          lastCustomerMessageAt: new Date(),
-        }).catch(e => console.warn('[Cart Recovery] Track payment failed:', e.message));
+        const { guard: guardCR3 } = require('../utils/smartModule');
+        guardCR3('CART_RECOVERY', {
+          fn: () => {
+            const cartRecovery = require('../services/cart-recovery');
+            return cartRecovery.trackAbandonedCart({
+              restaurantId: waAccount.restaurant_id, branchId: session.branchId,
+              customerId: customer.id, customerPhone: customer.wa_phone || customer.bsuid,
+              customerName: customer.name,
+              cartItems: (session.cart || []).map(i => ({ product_retailer_id: i.retailerId || null, quantity: i.qty, item_price: i.unitPriceRs, currency: 'INR', item_name: i.name })),
+              cartTotal: session.totalRs || 0, itemCount: (session.cart || []).reduce((s, i) => s + i.qty, 0),
+              abandonmentStage: 'payment_pending',
+              deliveryAddress: session.deliveryAddress ? { full_address: session.deliveryAddress } : null,
+              lastCustomerMessageAt: new Date(),
+            });
+          },
+          fallback: undefined,
+          label: 'trackAbandonedCart:payment',
+          context: { customerId: customer.id },
+        }); // fire-and-forget
       } catch (payErr) {
-        console.error('[Payment] Interactive checkout failed:', payErr.message, payErr.stack?.split('\n')[1]);
+        log.error({ err: payErr }, 'Interactive checkout failed');
         await wa.sendText(pid, token, to, '⚠️ We had trouble loading your checkout. Please type *PAY* to try again.');
         await orderSvc.setState(conv.id, 'ORDER_REVIEW', { ...session, orderId: order.id, orderNumber: order.order_number });
       }
-      console.log(`[Perf] Order post-processing: ${Date.now() - _orderStart}ms`);
+      log.info({ durationMs: Date.now() - _orderStart }, 'Order post-processing complete');
       logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.payment_initiated', category: 'payment', description: `Payment link sent to ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, severity: 'info' });
       break;
     }
@@ -1778,12 +1840,14 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       let restoredCharges = session.charges || null;
       if (restoredCharges) {
         const { calculateOrderCharges } = require('../services/charges');
+        const _branch = await col('branches').findOne({ _id: session.branchId });
+        const _restDoc = _branch ? await col('restaurants').findOne({ _id: _branch.restaurant_id }) : null;
         restoredCharges = calculateOrderCharges(
-          { delivery_fee_customer_pct: Math.round((restoredCharges.customer_delivery_rs / restoredCharges.delivery_fee_total_rs) * 100) || 100,
-            menu_gst_mode: restoredCharges.food_gst_rs > 0 ? 'extra' : 'included',
-            menu_gst_pct: restoredCharges.food_gst_rs > 0 ? (restoredCharges.food_gst_rs / restoredCharges.subtotal_rs * 100) : 5,
-            packaging_charge_rs: restoredCharges.packaging_rs,
-            packaging_gst_pct: restoredCharges.packaging_rs > 0 ? (restoredCharges.packaging_gst_rs / restoredCharges.packaging_rs * 100) : 18 },
+          { delivery_fee_customer_pct: _restDoc?.delivery_fee_customer_pct ?? 100,
+            menu_gst_mode: _restDoc?.menu_gst_mode ?? 'included',
+            menu_gst_pct: _restDoc?.menu_gst_pct ?? 5,
+            packaging_charge_rs: _restDoc?.packaging_charge_rs ?? 0,
+            packaging_gst_pct: _restDoc?.packaging_gst_pct ?? 18 },
           session.subtotalRs, restoredCharges.delivery_fee_total_rs, 0
         );
       }
@@ -2110,7 +2174,7 @@ const handleCancelRequest = async (customer, conv, waAccount) => {
 
   if (order.status === 'PAID') {
     await paymentSvc.issueRefund(String(order._id)).catch(e =>
-      console.error('[Refund] Failed:', e.message)
+      log.error({ err: e }, 'Refund failed')
     );
   }
 
@@ -2243,7 +2307,7 @@ const handleRatingReply = async (orderId, score, customer, conv, waAccount) => {
         created_at: new Date(),
       });
     } catch (e) {
-      if (e.code !== 11000) console.error('[Rating] save error:', e.message);
+      if (e.code !== 11000) log.error({ err: e }, 'Rating save error');
     }
     logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.feedback_submitted', category: 'customer', description: `Rating submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: order?.restaurant_id || null, severity: 'info' });
     await wa.sendText(pid, token, to, 'Thanks for your feedback! 🎉 We\'re glad you enjoyed it!');
@@ -2279,7 +2343,7 @@ const sendRatingRequest = async (orderId, pid, token, to) => {
         });
         return; // Flow sent successfully
       } catch (flowErr) {
-        console.warn('[Rating] Flow send failed, falling back to buttons:', flowErr.message);
+        log.warn({ err: flowErr }, 'Rating Flow send failed, falling back to buttons');
       }
     }
 
@@ -2295,18 +2359,24 @@ const sendRatingRequest = async (orderId, pid, token, to) => {
       ],
     });
   } catch (e) {
-    console.error('[Rating] sendRatingRequest error:', e.message);
+    log.error({ err: e }, 'sendRatingRequest error');
   }
 };
 
 // ─── STATUS UPDATE HANDLER ────────────────────────────────────
 const handleStatus = async (status) => {
+  // Idempotency: deduplicate status updates by status.id + status type
+  if (status.id) {
+    const { once } = require('../utils/idempotency');
+    const statusKey = status.payment
+      ? `payment:${status.payment?.reference_id || status.id}:${status.payment?.transaction?.status || status.status}`
+      : `${status.id}:${status.status}`;
+    const isNew = await once('wa_status', statusKey);
+    if (!isNew) return;
+  }
+
   if (status.status === 'failed') {
-    console.error('[WA] Message delivery failed:', {
-      recipient: status.recipient_id,
-      error: status.errors?.[0]?.title,
-      code: status.errors?.[0]?.code,
-    });
+    log.error({ recipient: status.recipient_id, error: status.errors?.[0]?.title, code: status.errors?.[0]?.code }, 'Message delivery failed');
   }
 
   // ── Payment status from interactive order_details (Razorpay in-WhatsApp) ──
@@ -2314,7 +2384,7 @@ const handleStatus = async (status) => {
     const payment = status.payment;
     const refId = payment.reference_id;
     const txn = payment.transaction || {};
-    console.log(`[Payment-WA] Payment status: ref=${refId} txn=${txn.id} status=${txn.status} amount=${payment.amount?.value}`);
+    log.info({ referenceId: refId, txnId: txn.id, txnStatus: txn.status, amount: payment.amount?.value }, 'WA payment status received');
 
     if (txn.status === 'success' && refId) {
       try {
@@ -2330,13 +2400,13 @@ const handleStatus = async (status) => {
           const { confirmPaidOrder } = require('./razorpay');
           if (confirmPaidOrder) {
             await confirmPaidOrder(paymentRec.order_id);
-            console.log(`[Payment-WA] Order ${paymentRec.order_id} confirmed via WA payment status`);
+            log.info({ orderId: paymentRec.order_id }, 'Order confirmed via WA payment status');
           }
         } else {
-          console.warn(`[Payment-WA] No payment record for reference_id: ${refId}`);
+          log.warn({ referenceId: refId }, 'No payment record for reference_id');
         }
       } catch (e) {
-        console.error('[Payment-WA] Payment processing error:', e.message);
+        log.error({ err: e }, 'WA payment processing error');
       }
     } else if (txn.status === 'failed' && refId) {
       try {
@@ -2359,7 +2429,7 @@ const handleStatus = async (status) => {
           }
         }
       } catch (e) {
-        console.error('[Payment-WA] Payment failure handling error:', e.message);
+        log.error({ err: e }, 'WA payment failure handling error');
       }
     }
     return; // Don't process payment statuses as regular message statuses
@@ -2430,7 +2500,7 @@ const handlePhoneShared = async (msg, customer, conv, waAccount) => {
     const phone = '91' + phoneMatch[1];
     await linkPhoneAndResumeOrder(phone, customer, conv, waAccount);
   } catch (err) {
-    console.error('[BSUID] handlePhoneShared error:', err.message);
+    log.error({ err }, 'handlePhoneShared error');
     await wa.sendText(pid, token, to,
       '⚠️ Something went wrong. Please type your 10-digit phone number to continue.'
     );
@@ -2525,7 +2595,7 @@ const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
       eta_text: eta.etaText,
     }});
     etaText = eta.etaText;
-  } catch (etaErr) { console.warn('[ETA] calc error:', etaErr.message); }
+  } catch (etaErr) { log.warn({ err: etaErr }, 'ETA calc error'); }
 
   // Delivery record
   await col('deliveries').updateOne(
@@ -2544,7 +2614,7 @@ const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
     });
     if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
   } catch (payErr) {
-    console.error('[Payment] Interactive checkout failed:', payErr.message);
+    log.error({ err: payErr }, 'Interactive checkout failed');
     await wa.sendText(pid, token, to, '⚠️ Payment checkout failed. Please type *PAY* to retry.');
   }
 };
@@ -2658,7 +2728,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
   const to = customerIdentity.resolveRecipient(customer);
   const restaurantId = waAccount.restaurant_id;
 
-  console.log('[Flow] Delivery response:', JSON.stringify(responseData));
+  log.info({ responseData }, 'Flow delivery response');
 
   // ── SAVED ADDRESS SELECTED ──
   if (responseData.action === 'select_address') {
@@ -2726,7 +2796,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
           parsedAddress = await location.reverseGeocode(coords.lat, coords.lng);
         }
       } catch (e) {
-        console.error('[Flow] Maps URL parse failed:', e.message);
+        log.error({ err: e }, 'Flow Maps URL parse failed');
       }
     }
 
@@ -2750,12 +2820,12 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
           const geocoded = await location.forwardGeocode(addressText);
           if (geocoded) {
             parsedAddress = geocoded;
-            console.log('[Flow] Forward geocoded address:', geocoded.address, geocoded.lat, geocoded.lng);
+            log.info({ address: geocoded.address, lat: geocoded.lat, lng: geocoded.lng }, 'Flow forward geocoded address');
           } else {
             parsedAddress = { full_address: addressText, source: 'manual' };
           }
         } catch (e) {
-          console.warn('[Flow] Forward geocode failed, using structured text:', e.message);
+          log.warn({ err: e }, 'Flow forward geocode failed, using structured text');
           parsedAddress = { full_address: addressText, source: 'manual' };
         }
       }
@@ -2854,14 +2924,14 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
     deliveryLng: address.longitude || address.lng || null,
     deliveryAddress: address.full_address || address.address || '',
   });
-  console.log(`[MPM-DEBUG] _sendBranchMenu: effectiveCatalogId=${effectiveCatalogId} (type: ${typeof effectiveCatalogId})`);
-  console.log(`[MPM-DEBUG] _sendBranchMenu: branch.catalogId=${branch.catalogId} branch.catalog_id=${branch.catalog_id} restaurantId=${restaurantId}`);
+  log.info({ effectiveCatalogId, catalogIdType: typeof effectiveCatalogId }, '_sendBranchMenu: resolved catalogId');
+  log.info({ branchCatalogId: branch.catalogId, branchCatalog_id: branch.catalog_id, restaurantId }, '_sendBranchMenu: source ids');
 
   // ── Check for pending cart from direct catalog browse ──
   const freshConv = await col('conversations').findOne({ _id: conv._id || conv.id });
   const pendingCart = freshConv?.session_data?.pendingCart;
   if (pendingCart?.product_items?.length) {
-    console.log(`[Bot] Resuming pending cart: ${pendingCart.product_items.length} items after address collection`);
+    log.info({ itemCount: pendingCart.product_items.length }, 'Resuming pending cart after address collection');
 
     // Verify cart items belong to this branch (lookup by retailer_id)
     const retailerIds = pendingCart.product_items.map(i => i.product_retailer_id);
@@ -2911,34 +2981,38 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
         });
         commerceSettings = csRes.data?.data?.[0] || csRes.data || {};
         memcache.set(cacheKey, commerceSettings, 300);
-        console.log(`[MPM-PREFLIGHT] _sendBranchMenu: Commerce settings for ${pid}:`, JSON.stringify(commerceSettings));
+        log.info({ phoneNumberId: pid, commerceSettings }, '_sendBranchMenu: Commerce settings fetched');
       }
       const linkedCatalog = commerceSettings.id || commerceSettings.catalog_id;
       if (linkedCatalog && String(linkedCatalog) !== String(effectiveCatalogId)) {
-        console.warn(`[MPM-PREFLIGHT] _sendBranchMenu: Catalog mismatch: DB=${effectiveCatalogId} Meta=${linkedCatalog} — using Meta's catalog`);
+        log.warn({ dbCatalogId: effectiveCatalogId, metaCatalogId: linkedCatalog }, '_sendBranchMenu: Catalog mismatch — using Meta catalog');
         effectiveCatalogId = String(linkedCatalog);
       }
     } catch (preflightErr) {
-      console.warn('[MPM-PREFLIGHT] _sendBranchMenu: Check failed (non-blocking):', preflightErr.message);
+      log.warn({ err: preflightErr }, '_sendBranchMenu: Preflight check failed (non-blocking)');
     }
   }
 
   if (effectiveCatalogId) {
     try {
-      let mpms;
-      try {
-        const { buildStrategyMPMs } = require('../services/mpmStrategy');
-        mpms = await buildStrategyMPMs(branch.id, restaurantId, { customerId: customer?.id });
-      } catch (strategyErr) {
-        console.warn('[MPM] Strategy engine failed, falling back to legacy builder:', strategyErr.message);
-        const { buildBranchMPMs } = require('../services/mpmBuilder');
-        mpms = await buildBranchMPMs(branch.id, restaurantId);
-      }
-      console.log(`[MPM-DEBUG] _sendBranchMenu: ${mpms.length} MPM(s) for "${branch.name}"`);
+      const { guard } = require('../utils/smartModule');
+      const mpms = await guard('MPM_STRATEGY', {
+        fn: () => {
+          const { buildStrategyMPMs } = require('../services/mpmStrategy');
+          return buildStrategyMPMs(branch.id, restaurantId, { customerId: customer?.id });
+        },
+        fallbackFn: () => {
+          const { buildBranchMPMs } = require('../services/mpmBuilder');
+          return buildBranchMPMs(branch.id, restaurantId);
+        },
+        label: 'buildStrategyMPMs',
+        context: { branchId: branch.id },
+      });
+      log.info({ mpmCount: mpms.length, branchName: branch.name }, '_sendBranchMenu: Built MPMs');
       for (const [mi, mpm] of mpms.entries()) {
-        console.log(`[MPM-DEBUG] _sendBranchMenu MPM ${mi+1}: header="${mpm.header}" sections=${mpm.sections?.length} products=${mpm.sections?.reduce((s,sec) => s + (sec.product_retailer_ids?.length || 0), 0)}`);
+        log.info({ mpmIndex: mi + 1, header: mpm.header, sectionCount: mpm.sections?.length, productCount: mpm.sections?.reduce((s,sec) => s + (sec.product_retailer_ids?.length || 0), 0) }, '_sendBranchMenu MPM detail');
         if (mpm.sections) for (const sec of mpm.sections) {
-          console.log(`[MPM-DEBUG]   Section "${sec.title}": ${(sec.product_retailer_ids || []).join(', ')}`);
+          log.info({ sectionTitle: sec.title, retailerIds: (sec.product_retailer_ids || []).join(', ') }, '_sendBranchMenu MPM section');
         }
       }
       if (mpms.length) {
@@ -2947,29 +3021,29 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
           const mpm = mpms[i];
           if (mpm.sections) {
             mpm.sections = mpm.sections.filter(s => {
-              if (!s.title) { console.warn('[MPM-VALIDATION] _sendBranchMenu: Section with no title removed'); return false; }
+              if (!s.title) { log.warn('_sendBranchMenu: Section with no title removed'); return false; }
               s.product_retailer_ids = (s.product_retailer_ids || []).filter(id => {
-                if (!id || typeof id !== 'string') { console.warn(`[MPM-VALIDATION] _sendBranchMenu: Invalid retailer_id removed: ${JSON.stringify(id)}`); return false; }
+                if (!id || typeof id !== 'string') { log.warn({ retailerId: JSON.stringify(id) }, '_sendBranchMenu: Invalid retailer_id removed'); return false; }
                 return true;
               });
-              if (!s.product_retailer_ids.length) { console.warn(`[MPM-VALIDATION] _sendBranchMenu: Section "${s.title}" has 0 valid products — removed`); return false; }
+              if (!s.product_retailer_ids.length) { log.warn({ sectionTitle: s.title }, '_sendBranchMenu: Section has 0 valid products — removed'); return false; }
               return true;
             });
           }
           if (!mpm.sections?.length) {
-            console.warn('[MPM-VALIDATION] _sendBranchMenu: MPM has 0 valid sections after filtering — skipping');
+            log.warn('_sendBranchMenu: MPM has 0 valid sections after filtering — skipping');
             await wa.sendText(pid, token, to, 'Our menu is being set up. Please try again shortly.');
             break;
           }
-          console.log('[MPM-DEBUG] _sendBranchMenu catalogId:', effectiveCatalogId, 'type:', typeof effectiveCatalogId);
-          console.log('[MPM-DEBUG] _sendBranchMenu sections:', JSON.stringify(mpm.sections.map(s => ({ title: s.title, count: s.product_retailer_ids.length, sample: s.product_retailer_ids.slice(0, 3) }))));
+          log.info({ catalogId: effectiveCatalogId, catalogIdType: typeof effectiveCatalogId }, '_sendBranchMenu: sending MPM');
+          log.info({ sections: mpm.sections.map(s => ({ title: s.title, count: s.product_retailer_ids.length, sample: s.product_retailer_ids.slice(0, 3) })) }, '_sendBranchMenu: MPM sections');
           try {
             await wa.sendMPM(pid, token, to, String(effectiveCatalogId), mpms[i]);
-            console.log(`[MPM-DEBUG] _sendBranchMenu MPM ${i+1}/${mpms.length} sent successfully`);
+            log.info({ mpmIndex: i + 1, mpmTotal: mpms.length }, '_sendBranchMenu: MPM sent successfully');
           } catch (mpmSendErr) {
-            console.error(`[MPM-DEBUG] _sendBranchMenu MPM ${i+1} FAILED:`, JSON.stringify(mpmSendErr.response?.data || { message: mpmSendErr.message }));
+            log.error({ err: mpmSendErr, mpmIndex: i + 1, responseData: mpmSendErr.response?.data }, '_sendBranchMenu: MPM send failed');
             if (i === 0) {
-              console.log('[Bot] _sendBranchMenu falling back to catalog message');
+              log.info('_sendBranchMenu: falling back to catalog message');
               await wa.sendCatalog(pid, token, to, effectiveCatalogId, `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`);
               break;
             }
@@ -2983,7 +3057,7 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
         await sendTextMenu(pid, token, to, branch.id);
       }
     } catch (e) {
-      console.error('[Bot] MPM build failed:', e.message);
+      log.error({ err: e }, '_sendBranchMenu: MPM build failed');
       await wa.sendCatalog(pid, token, to, effectiveCatalogId, `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`);
     }
   } else {
@@ -3044,7 +3118,7 @@ const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
         created_at: new Date(),
       });
     } catch (e) {
-      if (e.code !== 11000) console.error('[Flow Rating] save error:', e.message);
+      if (e.code !== 11000) log.error({ err: e }, 'Flow rating save error');
     }
 
     const emoji = overall >= 4 ? '🎉' : '🙏';
@@ -3146,7 +3220,7 @@ const captureCustomerMessage = async (msg, customer, conv, waAccount) => {
           },
         },
         { upsert: true }
-      ).catch(e => console.warn('[Conversations] Upsert failed:', e.message));
+      ).catch(e => log.warn({ err: e }, 'Conversations upsert failed'));
     }
 
     logActivity({
@@ -3163,7 +3237,7 @@ const captureCustomerMessage = async (msg, customer, conv, waAccount) => {
       severity: 'warning',
     });
   } catch (err) {
-    console.error('[Inbox] Failed to capture message:', err.message);
+    log.error({ err }, 'Failed to capture message to inbox');
   }
 };
 

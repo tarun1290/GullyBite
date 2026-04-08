@@ -5,6 +5,8 @@
 
 'use strict';
 
+const log = require('../../utils/logger').child({ component: 'MPMFuture' });
+
 /**
  * Time-of-day prioritizer — boost breakfast/lunch/dinner items based on current hour.
  * When enabled, items tagged with matching meal period get a score boost.
@@ -13,7 +15,7 @@ async function applyTimeOfDayPriority(items, config) {
   if (!config.enableTimeOfDayPrioritization) return items;
   // Future: check current IST hour, boost items tagged with matching meal period
   // e.g., breakfast items boosted 6am-11am, lunch 11am-3pm, dinner 6pm-11pm
-  console.log('[MPM-Future] Time-of-day prioritization: enabled but not yet implemented');
+  log.info('Time-of-day prioritization: enabled but not yet implemented');
   return items;
 }
 
@@ -24,7 +26,7 @@ async function applyTimeOfDayPriority(items, config) {
 async function applyStockAwareSuppression(items, config) {
   if (!config.enableStockAwareSuppression) return items;
   // Future: check stock levels, demote items with quantity < threshold
-  console.log('[MPM-Future] Stock-aware suppression: enabled but not yet implemented');
+  log.info('Stock-aware suppression: enabled but not yet implemented');
   return items;
 }
 
@@ -35,7 +37,7 @@ async function applyStockAwareSuppression(items, config) {
 async function applyCampaignPriority(items, config) {
   if (!config.enableCampaignPriority) return items;
   // Future: check active campaigns, boost matching items
-  console.log('[MPM-Future] Campaign priority: enabled but not yet implemented');
+  log.info('Campaign priority: enabled but not yet implemented');
   return items;
 }
 
@@ -46,7 +48,7 @@ async function applyCampaignPriority(items, config) {
 async function applySeasonalBoosting(items, config) {
   if (!config.enableSeasonalBoosting) return items;
   // Future: check seasonal tags, date ranges, festival calendar
-  console.log('[MPM-Future] Seasonal boosting: enabled but not yet implemented');
+  log.info('Seasonal boosting: enabled but not yet implemented');
   return items;
 }
 
@@ -57,7 +59,7 @@ async function applySeasonalBoosting(items, config) {
 async function applyNewLaunchBoost(items, config) {
   if (!config.enableNewLaunchBoost) return items;
   // Future: check created_at, boost items < 7 days old
-  console.log('[MPM-Future] New-launch boost: enabled but not yet implemented');
+  log.info('New-launch boost: enabled but not yet implemented');
   return items;
 }
 
@@ -68,7 +70,7 @@ async function applyNewLaunchBoost(items, config) {
 async function applyReorderPriority(items, config, context = {}) {
   if (!config.enableReorderPriority) return items;
   // Future: check customer's order history, boost previously ordered items
-  console.log('[MPM-Future] Reorder priority: enabled but not yet implemented');
+  log.info('Reorder priority: enabled but not yet implemented');
   return items;
 }
 

@@ -7,6 +7,7 @@
 
 const { col } = require('../config/database');
 const deliveryService = require('./delivery');
+const log = require('../utils/logger').child({ component: 'DynamicPricing' });
 
 // ─── CALCULATE DYNAMIC DELIVERY FEE ─────────────────────────────
 // Returns the 3PL-based delivery fee. totalFeeRs goes into calculateOrderCharges().
@@ -57,7 +58,7 @@ const calculateDynamicDeliveryFee = async (branchId, deliveryLat, deliveryLng, o
     };
   } catch (err) {
     // 3PL API error — fall back to safe default
-    console.error(`[DynamicPricing] 3PL quote failed for branch ${branchId}:`, err.message);
+    log.error({ err, branchId }, '3PL quote failed');
     const fallback = parseFloat(process.env.DEFAULT_DELIVERY_FEE) || 40;
     return {
       deliveryFeeRs: fallback,

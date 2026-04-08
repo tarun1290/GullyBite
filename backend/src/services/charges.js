@@ -30,73 +30,11 @@ const DELIVERY_GST_PCT = 18;
  *
  * @returns {object} Full charge breakdown
  */
+// Delegates to the centralized financial engine — single source of truth for all calculations.
+// This wrapper preserves the existing function signature for backward compatibility.
 function calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs = 0, discountRs = 0) {
-  const {
-    delivery_fee_customer_pct = 100,
-    menu_gst_mode             = 'included',
-    menu_gst_pct              = 5,
-    packaging_charge_rs       = 0,
-    packaging_gst_pct         = 18,
-  } = restaurantConfig;
-
-  const round2 = (n) => Math.round(n * 100) / 100;
-
-  // ── Food GST ──────────────────────────────────────────────────
-  // 'included': GST is baked into menu prices; no extra line shown.
-  // 'extra'   : GST is added on top and shown separately at checkout.
-  const foodGstRs = menu_gst_mode === 'extra'
-    ? round2(subtotalRs * (menu_gst_pct / 100))
-    : 0;
-
-  // ── Delivery fee split ────────────────────────────────────────
-  const deliveryTotal      = round2(deliveryFeeRs);
-  const customerDeliveryRs = round2(deliveryTotal * (delivery_fee_customer_pct / 100));
-  const restaurantDeliveryRs = round2(deliveryTotal - customerDeliveryRs);
-
-  const customerDeliveryGstRs  = round2(customerDeliveryRs  * (DELIVERY_GST_PCT / 100));
-  const restaurantDeliveryGstRs = round2(restaurantDeliveryRs * (DELIVERY_GST_PCT / 100));
-
-  // ── Packaging ─────────────────────────────────────────────────
-  const packagingRs    = round2(Number(packaging_charge_rs) || 0);
-  const packagingGstRs = round2(packagingRs * (packaging_gst_pct / 100));
-
-  // ── Customer total ────────────────────────────────────────────
-  const discount  = round2(Number(discountRs) || 0);
-  const customerTotal = round2(
-    subtotalRs
-    + foodGstRs
-    + customerDeliveryRs + customerDeliveryGstRs
-    + packagingRs        + packagingGstRs
-    - discount
-  );
-
-  // ── Restaurant deduction at settlement ────────────────────────
-  // Restaurant absorbs their delivery share + GST on that share.
-  const restaurantDeductionRs = round2(restaurantDeliveryRs + restaurantDeliveryGstRs);
-
-  return {
-    // Inputs (normalised)
-    subtotal_rs:                   round2(subtotalRs),
-    discount_rs:                   discount,
-    delivery_fee_total_rs:         deliveryTotal,
-
-    // Food GST
-    food_gst_rs:                   foodGstRs,
-
-    // Delivery split
-    customer_delivery_rs:          customerDeliveryRs,
-    customer_delivery_gst_rs:      customerDeliveryGstRs,
-    restaurant_delivery_rs:        restaurantDeliveryRs,
-    restaurant_delivery_gst_rs:    restaurantDeliveryGstRs,
-
-    // Packaging
-    packaging_rs:                  packagingRs,
-    packaging_gst_rs:              packagingGstRs,
-
-    // Totals
-    customer_total_rs:             customerTotal,
-    restaurant_delivery_deduction_rs: restaurantDeductionRs,
-  };
+  const { calculateCheckout } = require('../core/financialEngine');
+  return calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs, discountRs);
 }
 
 /**
