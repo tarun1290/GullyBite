@@ -622,7 +622,7 @@ a{color:inherit;text-decoration:none}
           </div>
           <div class="fld">
             <label>Restaurant Name <span class="req">*</span> <span style="font-weight:400;color:var(--mute)">(as customers will see it)</span></label>
-            <input id="ob-brand" type="text" placeholder="Spice Route Kitchen" required>
+            <input id="ob-brand" type="text" placeholder="Spice Route Kitchen" oninput="_onObBrandInput(event)" required>
           </div>
           <div class="fld-row">
             <div class="fld"><label>City <span class="req">*</span></label><input id="ob-city" type="text" placeholder="Bengaluru" required></div>
@@ -857,13 +857,97 @@ function showPage(id) {
  * redirects to Meta via /auth/meta/start. See dashboard.html and shared.js
  * for the rationale (popup blockers, Vercel multi-instance state, CSRF). */
 function _loadFbSdk() { /* deprecated no-op kept to avoid breaking call sites */ }
+
+/* ─── STORE URL DERIVATION ──────────────────────────────────
+ * The Connect WhatsApp page shows the restaurant's store URL so they can paste
+ * it into Meta Business Manager. The URL is `{base}/store/{slug}` where slug
+ * is derived from the brand name.
+ *
+ * Resolution priority (matches backend /auth/me + /auth/onboarding):
+ *   1. Saved real slug from /auth/me (Beyond Snacks → "beyond-snacks")
+ *   2. Live preview from the brand-name input on the previous step
+ *   3. Live preview from rest.brand_name / rest.business_name returned by /auth/me
+ *   4. Friendly placeholder telling the user to enter their business name first
+ *
+ * The slug rules MUST stay in sync with backend slugifyName() in routes/auth.js.
+ */
+function _slugify(name) {
+  if (!name || typeof name !== 'string') return null;
+  var slug = name.toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, 40);
+  return slug && /[a-z0-9]/.test(slug) ? slug : null;
+}
+function _isPlaceholderSlug(slug) {
+  return !slug || slug === 'my-restaurant' || /^my-restaurant(-\d+)?$/.test(slug);
+}
+// In-memory cache of the brand name as the user types it on pg-onboard.
+// Read by _fetchStoreUrl() when no saved slug exists yet. We deliberately
+// avoid touching localStorage here — onboarding is short-lived and shouldn't
+// leave artifacts on the device.
+var _onboardingBrandName = null;
+function _onObBrandInput(ev) {
+  _onboardingBrandName = (ev?.target?.value || '').trim() || null;
+  // If the user is currently on pg-connect (rare — they typed in pg-onboard
+  // then navigated back/forward), refresh the preview live.
+  var pgConnect = document.getElementById('pg-connect');
+  if (pgConnect && !pgConnect.classList.contains('hidden')) {
+    _fetchStoreUrl().catch(function(){});
+  }
+}
+
 async function _fetchStoreUrl() {
-  const token = localStorage.getItem('zm_token');
-  if (!token) return;
-  try {
-    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
-    if (me.store_url) document.getElementById('store-url-display').value = me.store_url;
-  } catch (_) {}
+  var inputEl = document.getElementById('store-url-display');
+  if (!inputEl) return;
+  var jwtToken = localStorage.getItem('zm_token');
+  // Resolve the canonical base URL the backend will save into store_url.
+  // We default to location.origin so previews always show the host the user
+  // is browsing now; /auth/me overrides with store_base_url when present.
+  var baseUrl = location.origin;
+  var savedSlug = null;
+  var savedUrl = null;
+  var brandNameFromBackend = null;
+
+  if (jwtToken) {
+    try {
+      var me = await fetch('/auth/me', { headers: { Authorization: 'Bearer ' + jwtToken } }).then(function(r){ return r.json(); });
+      if (me) {
+        if (me.store_base_url) baseUrl = me.store_base_url;
+        savedSlug = me.store_slug || null;
+        savedUrl  = me.store_url || null;
+        brandNameFromBackend = me.brand_name || me.business_name || null;
+      }
+    } catch (_) { /* network error — fall through to client-side preview */ }
+  }
+
+  // Priority 1: real saved slug + URL → use as-is
+  if (savedUrl && savedSlug && !_isPlaceholderSlug(savedSlug)) {
+    inputEl.value = savedUrl;
+    inputEl.dataset.gbReal = '1';
+    return;
+  }
+
+  // Priority 2: brand name from form input (most up-to-date if user is mid-onboard)
+  // Priority 3: brand name from /auth/me (already saved server-side but slug missing/stale)
+  var nameSource = _onboardingBrandName
+    || (document.getElementById('ob-brand') && document.getElementById('ob-brand').value.trim())
+    || brandNameFromBackend
+    || null;
+  var previewSlug = _slugify(nameSource);
+
+  if (previewSlug) {
+    inputEl.value = baseUrl + '/store/' + previewSlug;
+    inputEl.dataset.gbReal = savedSlug && savedSlug === previewSlug ? '1' : '0';
+    return;
+  }
+
+  // Priority 4: friendly placeholder — never silently fall back to "my-restaurant"
+  inputEl.value = 'Enter your business name on the previous step to generate your URL';
+  inputEl.dataset.gbReal = '0';
 }
 
 /* ─── BOOT ─────────────────────────────────────────────── */
@@ -951,9 +1035,19 @@ function routeByStatus(me) {
    ═══ END FUTURE FEATURE ═══ */
 
 function copyStoreUrl() {
-  const val = document.getElementById('store-url-display').value;
-  if (!val || val === 'Loading…') return;
-  navigator.clipboard.writeText(val).then(() => toast('Store URL copied!', 'ok'));
+  const el = document.getElementById('store-url-display');
+  if (!el) return;
+  const val = el.value || '';
+  // Refuse to copy placeholders / loading state — Meta would reject those
+  // and the user would have a frustrating debug session.
+  if (!val || val === 'Loading…' || val.indexOf('/store/') === -1 || !/^https?:\/\//.test(val)) {
+    toast('Enter your business name first to generate the URL', 'err');
+    return;
+  }
+  navigator.clipboard.writeText(val).then(
+    () => toast('Store URL copied!', 'ok'),
+    () => toast('Could not copy — please copy manually', 'err')
+  );
 }
 
 function prefillOnboarding(me) {

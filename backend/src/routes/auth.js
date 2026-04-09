@@ -813,16 +813,46 @@ router.delete('/delete-account', requireAuth, async (req, res) => {
 });
 
 // ─── SLUG HELPER ───────────────────────────────────────────────
-async function generateUniqueSlug(brandName) {
-  const base = brandName.toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '').trim()
-    .replace(/\s+/g, '-').replace(/-+/g, '-').substring(0, 40);
+// Slugifies a brand/business name into a URL-safe slug. Returns null if the
+// resulting slug would be empty or unusable (e.g., name was only special chars).
+// This is the SINGLE source of truth for slug generation — the frontend has a
+// matching `_slugify()` helper in index.html that MUST stay in sync with the
+// regex/length rules below.
+function slugifyName(name) {
+  if (!name || typeof name !== 'string') return null;
+  const slug = name.toLowerCase()
+    .replace(/&/g, ' and ')           // "Biryani & Co" → "biryani and co"
+    .replace(/[^a-z0-9\s-]/g, '')     // strip punctuation
+    .replace(/\s+/g, '-')             // spaces → hyphens
+    .replace(/-+/g, '-')              // collapse repeats
+    .replace(/^-+|-+$/g, '')          // trim leading/trailing hyphens
+    .substring(0, 40);
+  return slug && /[a-z0-9]/.test(slug) ? slug : null;
+}
+
+// Returns a unique store_slug derived from brandName. Pass `excludeId` to
+// allow the same restaurant to keep (or rebuild) its own slug without
+// triggering a self-collision suffix.
+async function generateUniqueSlug(brandName, excludeId = null) {
+  const base = slugifyName(brandName);
+  if (!base) return null;
   let slug = base;
   let n = 1;
-  while (await col('restaurants').findOne({ store_slug: slug })) {
+  // Build the conflict filter — exclude self when renaming.
+  const conflictFilter = (s) => excludeId
+    ? { store_slug: s, _id: { $ne: excludeId } }
+    : { store_slug: s };
+  while (await col('restaurants').findOne(conflictFilter(slug))) {
     slug = `${base}-${n++}`;
   }
   return slug;
+}
+
+// Detects placeholder/legacy slugs that should be regenerated when a real
+// brand name becomes available. Used by /auth/me lazy-heal and /auth/onboarding.
+function isPlaceholderSlug(slug) {
+  if (!slug) return true;
+  return slug === 'my-restaurant' || /^my-restaurant(-\d+)?$/.test(slug);
 }
 
 // ─── ONBOARDING ────────────────────────────────────────────────
@@ -836,11 +866,21 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
     if (!ownerName || !phone || !brandName)
       return res.status(400).json({ error: 'Name, phone and restaurant name are required' });
 
-    // Generate unique store slug (only if not already set)
-    const existing = await col('restaurants').findOne({ _id: req.restaurantId }, { projection: { store_slug: 1 } });
+    // Resolve store slug with this priority:
+    //   1. Keep existing real slug (e.g., "beyond-snacks") — never break a live URL
+    //   2. Regenerate if missing OR if previous slug was a "my-restaurant" placeholder
+    //      that was auto-created by /auth/me before onboarding completed
+    //   3. Fall back to a placeholder only if slugifyName(brandName) returns null
+    //      (e.g., name was purely special characters)
+    const existing = await col('restaurants').findOne(
+      { _id: req.restaurantId },
+      { projection: { store_slug: 1, brand_name: 1 } }
+    );
     let storeSlug = existing?.store_slug;
-    if (!storeSlug) {
-      storeSlug = await generateUniqueSlug(brandName);
+    if (!storeSlug || isPlaceholderSlug(storeSlug)) {
+      const fresh = await generateUniqueSlug(brandName, req.restaurantId);
+      if (fresh) storeSlug = fresh;
+      else if (!storeSlug) storeSlug = 'my-restaurant'; // last-resort fallback
     }
     const storeUrl = `${process.env.BASE_URL}/store/${storeSlug}`;
 
@@ -944,16 +984,28 @@ router.get('/me', requireAuth, async (req, res) => {
   let restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
   if (!restaurant) return res.status(404).json({ error: 'Not found' });
 
-  // Auto-generate store slug/url for restaurants that don't have one yet
-  if (!restaurant.store_url) {
-    const name = restaurant.brand_name || restaurant.business_name || 'my-restaurant';
-    const slug = await generateUniqueSlug(name);
-    const storeUrl = `${process.env.BASE_URL}/store/${slug}`;
-    await col('restaurants').updateOne(
-      { _id: req.restaurantId },
-      { $set: { store_slug: slug, store_url: storeUrl } }
-    );
-    restaurant = { ...restaurant, store_slug: slug, store_url: storeUrl };
+  // ── STORE URL RESOLUTION ────────────────────────────────────
+  // Three cases:
+  //   (a) restaurant has a real brand name AND no slug → generate from name
+  //   (b) restaurant has a "my-restaurant" placeholder slug AND now has a real
+  //       brand name → heal it to the real slug (safe because the placeholder
+  //       was never useful in Meta and no public traffic relies on it)
+  //   (c) restaurant has no brand name yet → DO NOTHING. Returning a real
+  //       slug-less response lets the frontend show a live preview computed
+  //       from the brand-name input, instead of locking in "my-restaurant"
+  //       before the user has typed anything.
+  const realName = restaurant.brand_name || restaurant.business_name;
+  const baseUrl = process.env.BASE_URL || '';
+  if (realName && (!restaurant.store_slug || isPlaceholderSlug(restaurant.store_slug))) {
+    const fresh = await generateUniqueSlug(realName, req.restaurantId);
+    if (fresh) {
+      const storeUrl = `${baseUrl}/store/${fresh}`;
+      await col('restaurants').updateOne(
+        { _id: req.restaurantId },
+        { $set: { store_slug: fresh, store_url: storeUrl } }
+      );
+      restaurant = { ...restaurant, store_slug: fresh, store_url: storeUrl };
+    }
   }
 
   const waAccounts = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
@@ -962,7 +1014,10 @@ router.get('/me', requireAuth, async (req, res) => {
   const { meta_access_token, password_hash, ...safe } = restaurant;
   // Derive whatsapp_connected from actual data if not explicitly set
   const whatsapp_connected = !!(restaurant.whatsapp_connected || restaurant.meta_user_id || waba_accounts.length > 0);
-  res.json({ ...safe, id: String(restaurant._id), waba_accounts, whatsapp_connected });
+  // store_base_url lets the frontend build a preview that exactly matches the
+  // canonical host the backend will save to (vs. location.origin which can
+  // differ on Vercel preview deployments).
+  res.json({ ...safe, id: String(restaurant._id), waba_accounts, whatsapp_connected, store_base_url: baseUrl });
 });
 
 // ─── WABA ACCOUNTS HELPER ─────────────────────────────────────

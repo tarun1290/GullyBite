@@ -2011,7 +2011,11 @@ window.onEventTemplateChange = onEventTemplateChange;
 window.clearEventTemplate = clearEventTemplate;
 window.saveTemplateMappings = saveTemplateMappings;
 window.loadProfile = loadProfile;
-window.saveProfile = saveProfile;
+// window.saveProfile = saveProfile; — REMOVED. Function was renamed to
+// doSaveProfile (exported below at the doSaveProfile line). The dangling
+// reference here threw a ReferenceError that aborted the IIFE before any
+// later window.X = X export ran — including doBannerConnect / doReconnectMeta.
+// That is what broke the "Connect WhatsApp Business" buttons.
 window.toggleDashGstHint = toggleDashGstHint;
 window.updateDashDeliveryHint = updateDashDeliveryHint;
 window.loadCatalogMgmt = loadCatalogMgmt;
@@ -2022,7 +2026,10 @@ window.loadSyncLogs = loadSyncLogs;
 window._setConnectBtns = _setConnectBtns;
 window._showDashFallback = _showDashFallback;
 window._doMetaConnect = _doMetaConnect;
-window._finishMetaConnect = _finishMetaConnect;
+// window._finishMetaConnect = _finishMetaConnect; — REMOVED. The function
+// was deleted in the redirect-only OAuth refactor (see auth flow rewrite).
+// The dangling export was the second time-bomb that would have aborted the
+// IIFE if the saveProfile reference above were ever fixed in isolation.
 window.loadIntegrations = loadIntegrations;
 window.refreshIntTile = refreshIntTile;
 window.renderIntLog = renderIntLog;

@@ -2451,7 +2451,10 @@ window.doSaveColl = doSaveColl;
 window.doDeleteColl = doDeleteColl;
 window.doAutoCreateCollections = doAutoCreateCollections;
 window.doSyncAllCollections = doSyncAllCollections;
-window.doSyncBranchCollections = doSyncBranchCollections;
+// window.doSyncBranchCollections — REMOVED. The function is defined and
+// exported by settings.js (where it actually lives). The dangling reference
+// here threw a ReferenceError that aborted menu.js's IIFE before later
+// exports (openVarModal, loadImageStats, doBulkImageUpload, etc.) ran.
 window.openVarModal = openVarModal;
 window.closeVarModal = closeVarModal;
 window.doAddVariant = doAddVariant;
