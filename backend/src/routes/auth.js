@@ -317,6 +317,13 @@ router.post('/meta/start', requireAuth, express.json(), async (req, res) => {
       return res.status(500).json({ error: 'Meta App credentials are not configured. Please contact support.' });
     }
 
+    // Auth strategy: redirect (default, guaranteed) OR popup (optional enhancement
+    // when the frontend detects a popup-friendly browser). The callback reads
+    // this field to decide whether to render a postMessage HTML page (popup) or
+    // do a 302 to /dashboard.html (redirect).
+    const requestedMode = req.body?.mode;
+    const mode = requestedMode === 'popup' ? 'popup' : 'redirect';
+
     const state = crypto.randomBytes(32).toString('hex');
     const now = new Date();
     await col('meta_oauth_states').insertOne({
@@ -325,6 +332,7 @@ router.post('/meta/start', requireAuth, express.json(), async (req, res) => {
       created_at: now,
       expires_at: new Date(now.getTime() + META_STATE_TTL_MS),
       used: false,
+      mode,
       // Where to send the user after the dashboard finishes processing — useful
       // for resuming flows like settings vs onboarding.
       return_to: typeof req.body?.return_to === 'string' ? req.body.return_to : null,
@@ -350,8 +358,8 @@ router.post('/meta/start', requireAuth, express.json(), async (req, res) => {
     }
 
     const authUrl = `https://www.facebook.com/${metaConfig.apiVersion}/dialog/oauth?${params.toString()}`;
-    req.log.info({ statePrefix: state.slice(0, 8), restaurantId: req.restaurantId, hasConfigId: !!metaConfig.loginConfigId }, 'Meta OAuth start');
-    res.json({ authUrl, state });
+    req.log.info({ statePrefix: state.slice(0, 8), restaurantId: req.restaurantId, mode, hasConfigId: !!metaConfig.loginConfigId }, 'Meta OAuth start');
+    res.json({ authUrl, state, mode });
   } catch (err) {
     req.log.error({ err }, 'Meta OAuth start failed');
     res.status(500).json({ error: 'Could not start Meta connection. Please try again.' });
@@ -370,8 +378,14 @@ router.get('/callback', async (req, res) => {
   const { code, state, error, error_reason, error_description } = req.query;
   req.log.info({ codePresent: !!code, statePresent: !!state, error: error || 'none', reason: error_reason || 'none' }, 'Meta callback hit');
 
-  // Helper: persist the result row and redirect the browser to the dashboard.
-  // The dashboard reads it via /auth/meta/result?id=...
+  // Mode is read from the state row (set at /auth/meta/start time). We capture
+  // it in this closure variable so finishWithResult below knows whether to
+  // render the popup HTML page or do a redirect. Default to 'redirect' so an
+  // unknown/missing state still falls through the safe path.
+  let resolvedMode = 'redirect';
+
+  // Helper: persist the result row and either redirect (default) or render
+  // a popup-callback HTML page that postMessages window.opener and closes.
   const finishWithResult = async (restaurantId, payload) => {
     const resultId = crypto.randomBytes(24).toString('hex');
     const now = new Date();
@@ -387,6 +401,71 @@ router.get('/callback', async (req, res) => {
     } catch (e) {
       req.log.error({ err: e }, 'Could not persist meta_connect_result');
     }
+
+    if (resolvedMode === 'popup') {
+      // Render a tiny self-contained HTML page that:
+      //   1. postMessages the result to window.opener (origin-locked)
+      //   2. closes the popup
+      //   3. Falls back to a top-level navigation if window.opener is gone
+      //      (covers the rare case where the user navigated the original tab
+      //      away while the popup was running)
+      const target = restaurantId ? '/dashboard.html' : '/';
+      const fallbackUrl = `${target}?meta_connect_id=${resultId}`;
+      const baseUrl = process.env.BASE_URL || '';
+      // Inject only the minimal data the opener needs — the resultId. The
+      // opener will fetch /auth/meta/result?id=... to get the authoritative
+      // payload (and mark the row consumed).
+      const safeJson = (s) => JSON.stringify(s).replace(/</g, '\\u003c');
+      const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Connecting WhatsApp Business…</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; text-align: center; padding: 40px 20px; color: #1f2937; background: #f8fafc; }
+    .spin { width: 38px; height: 38px; margin: 0 auto 20px; border: 3px solid #e5e7eb; border-top-color: #4f46e5; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    a { color: #4f46e5; }
+  </style>
+</head>
+<body>
+  <div class="spin"></div>
+  <p>Finishing your WhatsApp Business connection…</p>
+  <p style="font-size:.85rem;color:#64748b">If this window does not close automatically, <a id="gb-fallback" href="${fallbackUrl}">click here</a>.</p>
+  <script>
+  (function () {
+    var msg = { type: 'gb-meta-connect-result', resultId: ${safeJson(resultId)} };
+    var origin = ${safeJson(baseUrl)} || window.location.origin;
+    var sent = false;
+    try {
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(msg, origin);
+        sent = true;
+      }
+    } catch (e) { /* opener cross-origin or gone */ }
+    if (sent) {
+      // Give the opener a tick to receive the message before we close.
+      setTimeout(function () { try { window.close(); } catch (e) {} }, 150);
+      // If close() fails (popup-blocker rules in some browsers), fall back to
+      // navigating this window to the dashboard so the user is not stranded.
+      setTimeout(function () { window.location.replace(${safeJson(fallbackUrl)}); }, 1500);
+    } else {
+      // No usable opener — bounce this window itself to the dashboard.
+      window.location.replace(${safeJson(fallbackUrl)});
+    }
+  })();
+  </script>
+</body>
+</html>`;
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      res.set('Cache-Control', 'no-store');
+      // X-Frame-Options DENY: callback should never render in an iframe.
+      res.set('X-Frame-Options', 'DENY');
+      return res.send(html);
+    }
+
+    // Default redirect path — same behavior as before.
     const target = restaurantId ? '/dashboard.html' : '/';
     return res.redirect(`${target}?meta_connect_id=${resultId}`);
   };
@@ -403,6 +482,9 @@ router.get('/callback', async (req, res) => {
     req.log.warn({ statePrefix: String(state).slice(0, 8) }, 'Meta callback: state not found or already used');
     return finishWithResult(null, { ok: false, error: 'invalid_state', message: 'Security state expired or already used. Please retry the connection from the dashboard.' });
   }
+  // Resolve mode from the state row so finishWithResult knows whether to
+  // render popup HTML or do a redirect. Default to redirect on missing/unknown.
+  if (stateRow.mode === 'popup') resolvedMode = 'popup';
   if (stateRow.expires_at && new Date(stateRow.expires_at) < new Date()) {
     req.log.warn({ statePrefix: String(state).slice(0, 8) }, 'Meta callback: state expired');
     return finishWithResult(stateRow.restaurant_id, { ok: false, error: 'state_expired', message: 'Connection link expired. Please reconnect from the dashboard.' });

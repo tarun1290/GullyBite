@@ -78,46 +78,264 @@ function waConnectBtnHTML(reconnect) {
   return WA_CONNECT_ICON_14 + ' ' + (reconnect ? WA_CONNECT_LABEL_RECONNECT : WA_CONNECT_LABEL_DEFAULT);
 }
 
-/* ─────────── META OAUTH START — REDIRECT ONLY ──────────────────
- * Single entry point for "Connect WhatsApp Business". Calls the backend to
- * mint a CSRF state row + auth URL, then full-page navigates to Meta. There
- * is NO popup, NO FB.login, NO postMessage handoff. The Vercel Lambda that
- * receives the callback will fully link the WABA before redirecting back to
- * /dashboard.html?meta_connect_id=...
+/* ─────────── META OAUTH — DUAL STRATEGY (POPUP + REDIRECT) ──────
  *
- * This function is called from:
- *   - dashboard banner (doBannerConnect)
- *   - settings card    (doReconnectMeta / _doMetaConnect)
- *   - onboarding page  (doConnectMeta in index.html)
+ * Connect WhatsApp Business uses a dual-strategy auth flow:
  *
- * Reentrancy guard prevents a double-click from minting two state rows.
+ *   PRIMARY  : redirect (full-page navigation to Meta's OAuth dialog)
+ *              — guaranteed to work in every browser environment, no popup
+ *              blocker risk, no postMessage handoff. This is the SAFE path
+ *              and is the default if anything goes wrong.
+ *
+ *   ENHANCED : popup (window.open + postMessage handoff)
+ *              — better UX when the browser supports it (no full-page reload,
+ *              user keeps their dashboard tab). Only attempted on desktop
+ *              non-Safari browsers because Safari's ITP, mobile webviews, and
+ *              in-app browsers all break the popup→opener postMessage path.
+ *
+ * Decision tree:
+ *
+ *   gbConnectMetaBusiness()  ── always called from button onclick
+ *     │
+ *     ├── _gbCanUsePopup()?  ── returns false on mobile, Safari, webviews
+ *     │     │
+ *     │     YES → _gbTryPopup()
+ *     │              │
+ *     │              ├── window.open(about:blank) succeeds?
+ *     │              │     │
+ *     │              │     YES → fetch /auth/meta/start { mode:'popup' }
+ *     │              │              → popup.location.href = authUrl
+ *     │              │              → wait for postMessage('gb-meta-connect-result')
+ *     │              │              → on result: gbHandleMetaConnectResult()
+ *     │              │
+ *     │              NO  → fall through to redirect
+ *     │
+ *     NO  → _gbDoRedirect()
+ *              → fetch /auth/meta/start { mode:'redirect' }
+ *              → window.location.href = authUrl
+ *              → callback redirects to /dashboard.html?meta_connect_id=...
+ *              → initDash() reads meta_connect_id and calls gbHandleMetaConnectResult()
+ *
+ * Both paths converge on gbHandleMetaConnectResult({ resultId }), which calls
+ * /auth/meta/result to fetch the authoritative outcome and refresh the UI.
  */
+
+/** Detect whether the current browser is suitable for popup auth.
+ *  Returns false (→ redirect) for mobile, Safari, and known webviews.
+ *  Conservative on purpose: false positives just mean we use the safe path. */
+function _gbCanUsePopup() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  var ua = navigator.userAgent || '';
+  // Common in-app browsers and webviews — these break window.opener / postMessage.
+  if (/FBAN|FBAV|FB_IAB|Instagram|Twitter|Line\/|MicroMessenger|MQQBrowser|WhatsApp|Snapchat|LinkedInApp|Pinterest/i.test(ua)) return false;
+  // Any mobile device — popups are unreliable, full-page redirect is the standard pattern.
+  if (/Mobile|Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry/i.test(ua)) return false;
+  // Safari (any platform) — Intelligent Tracking Prevention disrupts the
+  // popup→opener postMessage path across same-origin navigations. Note that
+  // Chrome/Firefox/Edge on iOS all report "Safari" in their UA but include
+  // their own marker (CriOS, FxiOS, EdgiOS), so we exclude those.
+  var isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS|OPR|Opera/i.test(ua);
+  if (isSafari) return false;
+  return true;
+}
+
 var _gbMetaConnectInProgress = false;
-async function gbConnectMetaRedirect(opts) {
+var _gbMetaConnectPopup = null;
+var _gbMetaConnectPopupPoll = null;
+
+/** Public entry point. Call from any "Connect WhatsApp Business" button. */
+async function gbConnectMetaBusiness(opts) {
   if (_gbMetaConnectInProgress) return;
   _gbMetaConnectInProgress = true;
-  var returnTo = (opts && opts.returnTo) || (typeof location !== 'undefined' ? location.pathname + location.hash : null);
+  opts = opts || {};
+  var preferPopup = opts.preferPopup !== false && _gbCanUsePopup();
+
+  if (preferPopup) {
+    var popupHandled = await _gbTryPopup(opts);
+    if (popupHandled) return; // popup flow took over (or failed loudly)
+    // Otherwise fall through to redirect.
+  }
+  await _gbDoRedirect(opts);
+}
+
+/** Backward-compat alias — forces redirect path. */
+function gbConnectMetaRedirect(opts) {
+  return gbConnectMetaBusiness(Object.assign({}, opts || {}, { preferPopup: false }));
+}
+
+/** Try the popup flow. Returns true if the popup was opened (success or handled
+ *  failure), false if the popup was blocked and the caller should try redirect. */
+async function _gbTryPopup(opts) {
+  // CRITICAL: window.open MUST be called synchronously inside the click handler,
+  // before any await. We open about:blank and navigate it later.
+  var w = 600, h = 720;
+  var screenW = (window.screen && window.screen.width) || 1280;
+  var screenH = (window.screen && window.screen.height) || 800;
+  var left = Math.max(0, Math.round((screenW - w) / 2));
+  var top  = Math.max(0, Math.round((screenH - h) / 2));
+  var features = 'width=' + w + ',height=' + h + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes,status=no,toolbar=no,menubar=no,location=no';
+  var popup;
   try {
+    popup = window.open('about:blank', 'gb-meta-connect', features);
+  } catch (e) { popup = null; }
+  if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+    // Blocked by the browser. Caller will fall back to redirect.
+    return false;
+  }
+  _gbMetaConnectPopup = popup;
+
+  // Show a friendly loading screen in the popup while we mint the auth URL.
+  // Some browsers reject document.write on about:blank — that's fine, the
+  // popup just stays blank for ~200ms until popup.location.href is set.
+  try {
+    popup.document.open();
+    popup.document.write('<!doctype html><html><head><title>Connecting…</title></head><body style="font-family:system-ui;text-align:center;padding:60px 20px;color:#1f2937"><p>Loading Meta authorization…</p></body></html>');
+    popup.document.close();
+  } catch (e) {}
+
+  try {
+    var jwt = (typeof token !== 'undefined' && token) || localStorage.getItem('zm_token') || '';
     var res = await fetch('/auth/meta/start', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (token || localStorage.getItem('zm_token') || '') },
-      body: JSON.stringify({ return_to: returnTo }),
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
+      body: JSON.stringify({
+        mode: 'popup',
+        return_to: opts.returnTo || (location.pathname + (location.hash || '')),
+      }),
+    });
+    var data = await res.json().catch(function(){ return {}; });
+    if (!res.ok || !data.authUrl) {
+      try { popup.close(); } catch (e) {}
+      _gbMetaConnectInProgress = false;
+      _gbMetaConnectPopup = null;
+      var msg = data.error || ('Could not start Meta connection (HTTP ' + res.status + ')');
+      if (typeof toast === 'function') toast(msg, 'err'); else alert(msg);
+      _gbResetMetaConnectButtons();
+      return true; // we surfaced an error — don't fall back to redirect
+    }
+    popup.location.href = data.authUrl;
+    _gbStartPopupCancelPoll(popup);
+    return true;
+  } catch (e) {
+    try { popup.close(); } catch (_) {}
+    _gbMetaConnectInProgress = false;
+    _gbMetaConnectPopup = null;
+    // Network error during /auth/meta/start — try the redirect path so the
+    // user still gets a working connection attempt.
+    return false;
+  }
+}
+
+/** Poll for popup-closed-without-result so we can show a "cancelled" toast. */
+function _gbStartPopupCancelPoll(popup) {
+  if (_gbMetaConnectPopupPoll) clearInterval(_gbMetaConnectPopupPoll);
+  _gbMetaConnectPopupPoll = setInterval(function () {
+    if (!popup || popup.closed) {
+      clearInterval(_gbMetaConnectPopupPoll);
+      _gbMetaConnectPopupPoll = null;
+      // If a result was already received, _gbMetaConnectInProgress is false.
+      // If still true, the user closed the popup without finishing.
+      if (_gbMetaConnectInProgress) {
+        _gbMetaConnectInProgress = false;
+        _gbMetaConnectPopup = null;
+        _gbResetMetaConnectButtons();
+        if (typeof toast === 'function') toast('Connection cancelled', 'nfo');
+      }
+    }
+  }, 500);
+}
+
+/** Redirect path — full-page navigation. Always works. */
+async function _gbDoRedirect(opts) {
+  opts = opts || {};
+  try {
+    var jwt = (typeof token !== 'undefined' && token) || localStorage.getItem('zm_token') || '';
+    var res = await fetch('/auth/meta/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
+      body: JSON.stringify({
+        mode: 'redirect',
+        return_to: opts.returnTo || (location.pathname + (location.hash || '')),
+      }),
     });
     var data = await res.json().catch(function(){ return {}; });
     if (!res.ok || !data.authUrl) {
       _gbMetaConnectInProgress = false;
       var msg = data.error || ('Could not start Meta connection (HTTP ' + res.status + ')');
-      if (typeof toast === 'function') toast(msg, 'err');
-      else alert(msg);
+      if (typeof toast === 'function') toast(msg, 'err'); else alert(msg);
+      _gbResetMetaConnectButtons();
       return;
     }
-    // Full-page redirect — leaves _gbMetaConnectInProgress=true on purpose,
-    // because the navigation aborts any further JS in this page anyway.
+    // Full-page navigation. _gbMetaConnectInProgress stays true on purpose
+    // because the page is unloading anyway.
     window.location.href = data.authUrl;
   } catch (e) {
     _gbMetaConnectInProgress = false;
     var emsg = (e && e.message) || 'Network error starting Meta connection';
-    if (typeof toast === 'function') toast(emsg, 'err');
-    else alert(emsg);
+    if (typeof toast === 'function') toast(emsg, 'err'); else alert(emsg);
+    _gbResetMetaConnectButtons();
   }
+}
+
+/** Listen for the popup → opener postMessage. Strict origin check. */
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('message', function (ev) {
+    if (!ev || ev.origin !== window.location.origin) return;
+    var d = ev.data;
+    if (!d || d.type !== 'gb-meta-connect-result' || !d.resultId) return;
+    // Stop the cancel-poll, we have a real result.
+    if (_gbMetaConnectPopupPoll) {
+      clearInterval(_gbMetaConnectPopupPoll);
+      _gbMetaConnectPopupPoll = null;
+    }
+    _gbMetaConnectInProgress = false;
+    _gbMetaConnectPopup = null;
+    gbHandleMetaConnectResult(d.resultId).catch(function(){});
+  });
+}
+
+/** Shared result handler — called by both popup (via postMessage) and redirect
+ *  (via dashboard initDash). Fetches the authoritative result and refreshes UI. */
+async function gbHandleMetaConnectResult(resultId) {
+  if (!resultId) return;
+  _gbResetMetaConnectButtons();
+  try {
+    var result = await api('/auth/meta/result?id=' + encodeURIComponent(resultId));
+    if (result && result.ok) {
+      if (typeof toast === 'function') toast('WhatsApp connected!', 'ok');
+      try {
+        rest = await api('/auth/me');
+        var banner = document.getElementById('wa-connect-banner');
+        if (banner) banner.style.display = 'none';
+        if (rest && rest.approval_status !== 'approved') {
+          var pb = document.getElementById('pending-banner');
+          if (pb) pb.style.display = 'flex';
+        }
+        if (typeof loadProfile === 'function') loadProfile();
+        if (typeof loadWA === 'function') loadWA();
+        if (typeof renderWizard === 'function') renderWizard();
+      } catch (e) { /* refresh failure is non-fatal */ }
+    } else {
+      var msg = (result && result.message) || (result && result.error) || 'Meta connection failed — please try again';
+      if (typeof toast === 'function') toast(msg, 'err');
+    }
+  } catch (e) {
+    var emsg = (e && e.message) || 'Meta connection failed';
+    if (typeof toast === 'function') toast('Meta connection failed: ' + emsg, 'err');
+  }
+}
+
+/** Reset both Connect buttons (banner + settings card) to their default state.
+ *  Lives in shared.js so the popup-cancel + result paths can call it without
+ *  depending on settings.js being loaded. */
+function _gbResetMetaConnectButtons() {
+  // settings.js exposes _resetConnectBtns when loaded; defer to it if present.
+  if (typeof _resetConnectBtns === 'function') {
+    try { _resetConnectBtns(); return; } catch (e) {}
+  }
+  // Best-effort fallback for pages that don't load settings.js.
+  ['banner-connect-btn', 'wa-reconnect-btn', 'connect-btn'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
 }

@@ -2558,30 +2558,12 @@ async function initDash() {
     // If we arrived from Meta OAuth redirect, resolve the connect-result row.
     // The actual WABA linking already happened server-side inside /auth/callback,
     // so the dashboard's only job is to refresh state and show the outcome.
+    // Both the redirect path (this) and the popup path (postMessage listener
+    // in shared.js) converge on gbHandleMetaConnectResult(resultId).
     if (window._pendingMetaConnectId) {
       const connectId = window._pendingMetaConnectId;
       delete window._pendingMetaConnectId;
-      try {
-        const result = await api('/auth/meta/result?id=' + encodeURIComponent(connectId));
-        if (result.ok) {
-          toast('WhatsApp connected!', 'ok');
-          // Refresh restaurant + WABA state — the callback already wrote it,
-          // we just need the dashboard to re-read.
-          rest = await api('/auth/me');
-          const banner = document.getElementById('wa-connect-banner'); if (banner) banner.style.display = 'none';
-          if (rest.approval_status !== 'approved') {
-            const pb = document.getElementById('pending-banner'); if (pb) pb.style.display = 'flex';
-          }
-          if (typeof loadProfile === 'function') loadProfile();
-          if (typeof loadWA === 'function') loadWA();
-          if (typeof renderWizard === 'function') renderWizard();
-        } else {
-          toast(result.message || 'Meta connection failed — please try again', 'err');
-        }
-      } catch (e) {
-        const msg = (e && e.message) ? e.message : 'Meta connection failed';
-        toast('Meta connection failed: ' + msg, 'err');
-      }
+      gbHandleMetaConnectResult(connectId).catch(() => {});
     }
 
     connectWebSocket();

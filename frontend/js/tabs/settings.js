@@ -1452,15 +1452,16 @@ function _showDashFallback() {
   if (el) el.style.display = 'inline';
 }
 
-// Redirect-only Meta connect entry point. Disables both buttons (banner +
-// settings card), then delegates to gbConnectMetaRedirect() in shared.js.
-// The function returns immediately because window.location.href aborts the
-// page — there is no callback to wait for.
+// Dual-strategy Meta connect entry point. Disables both buttons (banner +
+// settings card), then delegates to gbConnectMetaBusiness() in shared.js,
+// which tries the popup flow on supported browsers and falls back to a
+// full-page redirect everywhere else (Safari, mobile, in-app webviews, or
+// when window.open is blocked).
 function _doMetaConnect() {
   _setBtnLoading('banner-connect-btn', true);
   _setBtnLoading('wa-reconnect-btn', true);
   // returnTo carries the current tab/hash so the user lands back on Settings.
-  gbConnectMetaRedirect({ returnTo: location.pathname + (location.hash || '#settings') });
+  gbConnectMetaBusiness({ returnTo: location.pathname + (location.hash || '#settings') });
 }
 
 

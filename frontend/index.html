@@ -1287,8 +1287,31 @@ function _resetConnectBtn() {
 
 let _connectInProgress = false;
 
-// Redirect-only Meta connect for the standalone onboarding page (index.html).
-// This page does NOT load shared.js, so the helper is inlined below.
+// Browser-detect popup capability — same heuristic as shared.js (kept inline
+// because index.html does NOT load shared.js).
+function _ibCanUsePopup() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/FBAN|FBAV|FB_IAB|Instagram|Twitter|Line\/|MicroMessenger|MQQBrowser|WhatsApp|Snapchat|LinkedInApp|Pinterest/i.test(ua)) return false;
+  if (/Mobile|Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry/i.test(ua)) return false;
+  const isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS|OPR|Opera/i.test(ua);
+  if (isSafari) return false;
+  return true;
+}
+
+// Listen for popup → opener postMessage. After a successful popup auth, the
+// callback HTML postMessages the resultId here; we then redirect to the
+// dashboard which will fetch /auth/meta/result and show the outcome.
+window.addEventListener('message', function (ev) {
+  if (!ev || ev.origin !== window.location.origin) return;
+  const d = ev.data;
+  if (!d || d.type !== 'gb-meta-connect-result' || !d.resultId) return;
+  // The dashboard's initDash already knows how to consume meta_connect_id.
+  window.location.href = '/dashboard.html?meta_connect_id=' + encodeURIComponent(d.resultId);
+});
+
+// Dual-strategy Meta connect for the standalone onboarding page (index.html).
+// Tries popup on supported browsers, falls back to redirect everywhere else.
 async function doConnectMeta() {
   if (_connectInProgress) return;
   _connectInProgress = true;
@@ -1297,30 +1320,79 @@ async function doConnectMeta() {
     btn.disabled = true;
     btn.innerHTML = '<div class="spin" style="border-top-color:#fff;border-color:rgba(255,255,255,.25)"></div> Connecting…';
   }
-  try {
-    const jwtToken = localStorage.getItem('zm_token');
-    if (!jwtToken) {
-      toast('Please sign in first', 'err');
-      _connectInProgress = false;
-      _resetConnectBtn();
-      return;
+
+  const jwtToken = localStorage.getItem('zm_token');
+  if (!jwtToken) {
+    _connectInProgress = false;
+    _resetConnectBtn();
+    toast('Please sign in first', 'err');
+    return;
+  }
+
+  // ── Try popup path on supported browsers. window.open MUST run synchronously
+  //    inside the click handler — before any await — or popup blockers will
+  //    refuse to open it. We open about:blank, then navigate it after fetching
+  //    the auth URL.
+  let popup = null;
+  if (_ibCanUsePopup()) {
+    try {
+      const w = 600, h = 720;
+      const left = Math.max(0, Math.round((window.screen.width - w) / 2));
+      const top  = Math.max(0, Math.round((window.screen.height - h) / 2));
+      popup = window.open('about:blank', 'gb-meta-connect',
+        'width=' + w + ',height=' + h + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes');
+    } catch (e) { popup = null; }
+    if (popup && !popup.closed) {
+      try {
+        popup.document.open();
+        popup.document.write('<!doctype html><title>Connecting…</title><p style="font-family:system-ui;text-align:center;padding:60px 20px">Loading Meta authorization…</p>');
+        popup.document.close();
+      } catch (e) {}
+    } else {
+      popup = null; // blocked
     }
+  }
+
+  try {
     const res = await fetch('/auth/meta/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwtToken },
-      body: JSON.stringify({ return_to: '/dashboard' }),
+      body: JSON.stringify({
+        mode: popup ? 'popup' : 'redirect',
+        return_to: '/dashboard',
+      }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.authUrl) {
+      if (popup) try { popup.close(); } catch (e) {}
       _connectInProgress = false;
       _resetConnectBtn();
       toast(data.error || ('Could not start Meta connection (HTTP ' + res.status + ')'), 'err');
       return;
     }
-    // Full-page navigation to Meta. _connectInProgress stays true on purpose
-    // because the navigation aborts any further JS in this page.
+
+    if (popup) {
+      // Popup path — navigate the popup; the postMessage listener above will
+      // catch the result. Poll for popup-closed-without-result to detect cancel.
+      popup.location.href = data.authUrl;
+      const poll = setInterval(function () {
+        if (popup.closed) {
+          clearInterval(poll);
+          if (_connectInProgress) {
+            _connectInProgress = false;
+            _resetConnectBtn();
+            toast('Connection cancelled', 'nfo');
+          }
+        }
+      }, 500);
+      return;
+    }
+
+    // Redirect path — full-page navigation to Meta. _connectInProgress stays
+    // true on purpose because the navigation aborts any further JS.
     window.location.href = data.authUrl;
   } catch (err) {
+    if (popup) try { popup.close(); } catch (e) {}
     _connectInProgress = false;
     _resetConnectBtn();
     toast((err && err.message) || 'Network error starting Meta connection', 'err');

@@ -70,6 +70,74 @@ const upload = multer({
 // requireApproved is applied only to routes that need WhatsApp (order flow, catalog sync)
 router.use(requireAuth);
 
+// ─── TENANT-OWNERSHIP HELPERS ────────────────────────────────
+// These helpers are the SINGLE source of truth for "does this resource
+// belong to the caller's restaurant?". Always 404 (never 403) on mismatch
+// so attackers cannot probe whether an ID exists in another tenant.
+//
+// Pattern: at the top of any route that takes an ID from req.params or
+// req.body, call the appropriate assertX helper. The helper returns the
+// resource document on success or null on failure. Never trust an ID from
+// the request body without one of these.
+//
+// See backend/tests/tenantIsolation.test.js for the regression suite that
+// exercises every protected route.
+
+/** Returns the branch doc IF it belongs to the restaurant, else null. */
+async function _assertBranchOwnedBy(branchId, restaurantId) {
+  if (!branchId || !restaurantId) return null;
+  return col('branches').findOne({ _id: branchId, restaurant_id: restaurantId });
+}
+
+/** Returns the menu_item doc IF its branch belongs to the restaurant, else null.
+ *  menu_items have BOTH restaurant_id AND branch_id fields, so we can filter
+ *  in a single query — no join needed. */
+async function _assertMenuItemOwnedBy(itemId, restaurantId) {
+  if (!itemId || !restaurantId) return null;
+  // Prefer the direct restaurant_id filter (faster, indexed). Fall back to
+  // branch join for legacy menu_items rows that pre-date the restaurant_id
+  // backfill — those exist if older onboarding flows didn't write the field.
+  const direct = await col('menu_items').findOne({ _id: itemId, restaurant_id: restaurantId });
+  if (direct) return direct;
+  const item = await col('menu_items').findOne({ _id: itemId });
+  if (!item || !item.branch_id) return null;
+  const branch = await col('branches').findOne(
+    { _id: item.branch_id, restaurant_id: restaurantId },
+    { projection: { _id: 1 } }
+  );
+  return branch ? item : null;
+}
+
+/** Returns the menu_category doc IF its branch belongs to the restaurant, else null.
+ *  menu_categories only have branch_id, so we always join through branches. */
+async function _assertMenuCategoryOwnedBy(catId, restaurantId) {
+  if (!catId || !restaurantId) return null;
+  const cat = await col('menu_categories').findOne({ _id: catId });
+  if (!cat || !cat.branch_id) return null;
+  const branch = await _assertBranchOwnedBy(cat.branch_id, restaurantId);
+  return branch ? cat : null;
+}
+
+/** Returns the whatsapp_account doc IF it belongs to the restaurant, else null.
+ *  Critical: never return another tenant's WhatsApp account because the doc
+ *  contains the access_token field. */
+async function _assertWhatsappAccountOwnedBy(waAccountId, restaurantId) {
+  if (!waAccountId || !restaurantId) return null;
+  return col('whatsapp_accounts').findOne({ _id: waAccountId, restaurant_id: restaurantId });
+}
+
+/** Returns the catalog_collection doc IF it belongs to the restaurant, else null. */
+async function _assertCollectionOwnedBy(collectionId, restaurantId) {
+  if (!collectionId || !restaurantId) return null;
+  return col('catalog_collections').findOne({ _id: collectionId, restaurant_id: restaurantId });
+}
+
+/** Returns the restaurant_user doc IF it belongs to the restaurant, else null. */
+async function _assertRestaurantUserOwnedBy(userId, restaurantId) {
+  if (!userId || !restaurantId) return null;
+  return col('restaurant_users').findOne({ _id: userId, restaurant_id: restaurantId });
+}
+
 // ── DIAGNOSTIC — catalog visibility troubleshooter ──────────
 router.get('/catalog-diagnosis', async (req, res) => {
   const diagnosis = { timestamp: new Date().toISOString(), checks: {} };
@@ -297,16 +365,32 @@ router.post('/menu/upload-image', upload.single('image'), async (req, res) => {
     const branchId = req.body?.branchId || req.query?.branchId || null;
     const itemId = req.body?.itemId || req.query?.itemId || null;
 
+    // [TENANT] Verify branch + item ownership BEFORE we touch S3 or the DB.
+    // Without this an attacker could upload an image with a victim's
+    // branchId/itemId and overwrite the victim's menu item's image_url.
+    if (branchId) {
+      const branch = await _assertBranchOwnedBy(branchId, req.restaurantId);
+      if (!branch) return res.status(404).json({ error: 'Branch not found' });
+    }
+    let item = null;
+    if (itemId) {
+      item = await _assertMenuItemOwnedBy(itemId, req.restaurantId);
+      if (!item) return res.status(404).json({ error: 'Menu item not found' });
+      // Defence: if both were supplied, the item must belong to the supplied branch.
+      if (branchId && item.branch_id !== branchId) {
+        return res.status(404).json({ error: 'Menu item not found' });
+      }
+    }
+
     const result = await imgSvc.uploadImage(req.file.buffer, {
       restaurantId: req.restaurantId,
       branchId,
       itemId,
     });
 
-    // If item_id provided, update the menu item
-    if (itemId) {
+    if (item) {
       await col('menu_items').updateOne(
-        { _id: itemId, branch_id: branchId },
+        { _id: item._id },
         { $set: {
           image_url: result.url,
           thumbnail_url: result.thumbnail_url,
@@ -334,6 +418,12 @@ router.post('/images/bulk-upload', upload.array('images', 20), async (req, res) 
   if (!branchId) return res.status(400).json({ error: 'branchId is required' });
 
   try {
+    // [TENANT] Verify branch ownership BEFORE listing menu items. Without this
+    // an attacker could pass any branchId, list its items, and overwrite all
+    // images on another restaurant's branch.
+    const branch = await _assertBranchOwnedBy(branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
     const items = await col('menu_items').find({ branch_id: branchId }).toArray();
     const results = [];
     let matched = 0, unmatched = 0;
@@ -391,15 +481,31 @@ router.post('/images/from-url', async (req, res) => {
   if (!sourceUrl) return res.status(400).json({ error: 'sourceUrl is required' });
 
   try {
+    // [TENANT] Verify branch + item ownership BEFORE fetching the URL or
+    // touching S3, otherwise an attacker could overwrite another restaurant's
+    // menu item image_url with a remote URL of their choice.
+    if (branchId) {
+      const branch = await _assertBranchOwnedBy(branchId, req.restaurantId);
+      if (!branch) return res.status(404).json({ error: 'Branch not found' });
+    }
+    let item = null;
+    if (itemId) {
+      item = await _assertMenuItemOwnedBy(itemId, req.restaurantId);
+      if (!item) return res.status(404).json({ error: 'Menu item not found' });
+      if (branchId && item.branch_id !== branchId) {
+        return res.status(404).json({ error: 'Menu item not found' });
+      }
+    }
+
     const result = await imgSvc.uploadImageFromUrl(sourceUrl, {
       restaurantId: req.restaurantId,
       branchId,
       itemId,
     });
 
-    if (itemId) {
+    if (item) {
       await col('menu_items').updateOne(
-        { _id: itemId },
+        { _id: item._id },
         { $set: {
           image_url: result.url,
           thumbnail_url: result.thumbnail_url,
@@ -422,7 +528,9 @@ router.post('/images/from-url', async (req, res) => {
 router.delete('/images/:itemId', async (req, res) => {
   if (!imgSvc.IMAGE_PIPELINE_ENABLED) return res.status(503).json(IMAGE_503);
   try {
-    const item = await col('menu_items').findOne({ _id: req.params.itemId });
+    // [TENANT] Without this check any restaurant could delete any other
+    // restaurant's S3 images by guessing item IDs.
+    const item = await _assertMenuItemOwnedBy(req.params.itemId, req.restaurantId);
     if (!item) return res.status(404).json({ error: 'Item not found' });
 
     // Delete from S3 (async, non-blocking)
@@ -656,8 +764,10 @@ router.get('/whatsapp/:id/setup-status', async (req, res) => {
     } catch (_) {}
 
     // Cache the result in MongoDB
+    // [TENANT] Defence in depth: pin restaurant_id even though the route was
+    // gated at the top via the wa.findOne check.
     await col('whatsapp_accounts').updateOne(
-      { _id: req.params.id },
+      { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set: {
         meta_status_cached: phoneStatus,
         meta_status_cached_at: new Date(),
@@ -701,8 +811,10 @@ router.post('/whatsapp/:id/complete-setup', async (req, res) => {
     } catch (e) { results.catalog = e.message; }
 
     try {
-      const updated = await col('whatsapp_accounts').findOne({ _id: req.params.id });
-      if (updated.catalog_id) {
+      // [TENANT] Defence in depth: re-fetch with restaurant_id pinned, even
+      // though the top-of-handler check already gated us.
+      const updated = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+      if (updated && updated.catalog_id) {
         await _enableCommerceSettings(wa.phone_number_id, updated.catalog_id);
         results.cart = 'ok';
       } else {
@@ -710,7 +822,9 @@ router.post('/whatsapp/:id/complete-setup', async (req, res) => {
       }
     } catch (e) { results.cart = e.message; }
 
-    const final = await col('whatsapp_accounts').findOne({ _id: req.params.id });
+    // [TENANT] Same — pin restaurant_id on the final read.
+    const final = await col('whatsapp_accounts').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!final) return res.status(404).json({ error: 'WhatsApp account not found' });
     res.json({
       success        : results.register === 'ok',
       phone_registered: final.phone_registered || false,
@@ -1102,6 +1216,9 @@ router.get('/branches/:branchId/surge', async (req, res) => {
 
 router.get('/branches/:branchId/categories', async (req, res) => {
   try {
+    // [TENANT] Verify the branch belongs to this restaurant before listing.
+    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
     const docs = await col('menu_categories').find({ branch_id: req.params.branchId }).sort({ sort_order: 1 }).toArray();
     res.json(mapIds(docs));
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1109,6 +1226,10 @@ router.get('/branches/:branchId/categories', async (req, res) => {
 
 router.post('/branches/:branchId/categories', async (req, res) => {
   try {
+    // [TENANT] Verify branch ownership before inserting a category that would
+    // appear in another restaurant's menu.
+    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
     const { name, description, sortOrder } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'Category name is required' });
     const catId = newId();
@@ -1121,6 +1242,10 @@ router.post('/branches/:branchId/categories', async (req, res) => {
 
 router.put('/branches/:branchId/categories/:catId', async (req, res) => {
   try {
+    // [TENANT] Verify branch ownership; the catId+branchId combo would
+    // otherwise let an attacker rename another restaurant's category.
+    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
     const { name, sortOrder } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'Category name is required' });
     const result = await col('menu_categories').findOneAndUpdate(
@@ -1135,6 +1260,9 @@ router.put('/branches/:branchId/categories/:catId', async (req, res) => {
 
 router.delete('/branches/:branchId/categories/:catId', async (req, res) => {
   try {
+    // [TENANT] Verify branch ownership before deletion + bulk uncategorize.
+    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
     await col('menu_categories').deleteOne({ _id: req.params.catId, branch_id: req.params.branchId });
     // Unlink items from this category (don't delete items, just uncategorize)
     await col('menu_items').updateMany(
@@ -1210,6 +1338,12 @@ router.get('/menu/unassigned', async (req, res) => {
 
 router.get('/branches/:branchId/menu', async (req, res) => {
   try {
+    // [TENANT] Verify branch ownership before listing — without this check
+    // any restaurant could read another restaurant's full menu (with prices,
+    // descriptions, internal availability state) by guessing branchId.
+    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
     const [cats, items] = await Promise.all([
       col('menu_categories').find({ branch_id: req.params.branchId }).sort({ sort_order: 1 }).toArray(),
       col('menu_items').find({ branch_id: req.params.branchId }).sort({ sort_order: 1, name: 1 }).toArray(),
@@ -1224,6 +1358,14 @@ router.get('/branches/:branchId/menu', async (req, res) => {
 
 router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async (req, res) => {
   try {
+    // [TENANT] Verify branch ownership BEFORE inserting — otherwise an attacker
+    // could create menu items inside another restaurant's branch (the inserted
+    // doc would carry the attacker's restaurant_id but the victim's branch_id,
+    // and the victim's menu listing — which filters by branch_id — would show
+    // the phantom item).
+    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
     const {
       name, description, priceRs, categoryId, foodType, imageUrl,
       isBestseller, sortOrder,
@@ -1314,6 +1456,12 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
 
 router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) => {
   try {
+    // [TENANT] Verify item ownership BEFORE accepting any update. Without
+    // this check any restaurant could rename / re-price / change availability
+    // on any other restaurant's menu items by guessing item IDs.
+    const ownedItem = await _assertMenuItemOwnedBy(req.params.itemId, req.restaurantId);
+    if (!ownedItem) return res.status(404).json({ error: 'Menu item not found' });
+
     const { name, description, priceRs, imageUrl, isAvailable, isBestseller,
             itemGroupId, variantType, variantValue,
             // New Meta 29-column fields
@@ -1373,8 +1521,11 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
 
     if (Object.keys($set).length === 1) return res.json({ success: true }); // only updated_at
 
+    // [TENANT] Defence in depth: pin branch_id from the verified item so the
+    // update can NEVER touch a doc outside this restaurant, even if the
+    // top-of-handler check is removed by a future refactor.
     const updated = await col('menu_items').findOneAndUpdate(
-      { _id: req.params.itemId },
+      { _id: req.params.itemId, branch_id: ownedItem.branch_id },
       { $set },
       { returnDocument: 'after' }
     );
@@ -1407,14 +1558,16 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
 
 router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res) => {
   try {
-    const item = await col('menu_items').findOne({ _id: req.params.itemId });
-    await col('menu_items').deleteOne({ _id: req.params.itemId });
-    if (item?.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+    // [TENANT] Verify the item belongs to this restaurant. 404 (not 403) so
+    // attackers cannot probe whether an ID exists in another tenant.
+    const item = await _assertMenuItemOwnedBy(req.params.itemId, req.restaurantId);
+    if (!item) return res.status(404).json({ error: 'Menu item not found' });
 
-    if (item) {
-      catalog.deleteProduct(item, item.branch_id)
-        .catch(err => logger.error({ err, itemId: req.params.itemId }, 'Menu delete sync failed'));
-    }
+    await col('menu_items').deleteOne({ _id: item._id });
+    if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+
+    catalog.deleteProduct(item, item.branch_id)
+      .catch(err => logger.error({ err, itemId: req.params.itemId }, 'Menu delete sync failed'));
     res.json({ success: true });
 
     log({
@@ -2178,6 +2331,10 @@ router.post('/branches/:branchId/fix-catalog', async (req, res) => {
 // GET /api/restaurant/branches/:branchId/item-groups
 router.get('/branches/:branchId/item-groups', async (req, res) => {
   try {
+    // [TENANT] Verify branch ownership before reading variant data.
+    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
     const items = await col('menu_items').find({
       branch_id: req.params.branchId,
       item_group_id: { $ne: null },
@@ -2518,7 +2675,8 @@ router.delete('/collections/:id', requirePermission('manage_menu'), async (req, 
       }
     }
 
-    await col('catalog_collections').deleteOne({ _id: req.params.id });
+    // [TENANT] Defence in depth: re-pin restaurant_id on the destructive op.
+    await col('catalog_collections').deleteOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2528,6 +2686,10 @@ router.post('/collections/auto-create', requirePermission('manage_menu'), async 
   try {
     const { branchId } = req.body;
     if (!branchId) return res.status(400).json({ error: 'branchId required' });
+    // [TENANT] catalog.autoCreateCollections writes catalog_collections rows
+    // and pushes to Meta — verify the branch belongs to this restaurant first.
+    const branch = await _assertBranchOwnedBy(branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
     const result = await catalog.autoCreateCollections(branchId);
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2599,7 +2761,13 @@ router.post('/collections/sync-branch-collections', requirePermission('manage_me
 // GET /api/restaurant/menu/variants/:itemGroupId — get all variants in a group
 router.get('/menu/variants/:itemGroupId', async (req, res) => {
   try {
-    const items = await col('menu_items').find({ item_group_id: req.params.itemGroupId }).sort({ sort_order: 1, price_paise: 1 }).toArray();
+    // [TENANT] Pin restaurant_id directly in the filter — item_group_id is a
+    // string label and could collide across tenants. Without this, an attacker
+    // could read another restaurant's variant lineup if they shared a label.
+    const items = await col('menu_items').find({
+      item_group_id: req.params.itemGroupId,
+      restaurant_id: req.restaurantId,
+    }).sort({ sort_order: 1, price_paise: 1 }).toArray();
     res.json(mapIds(items));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3312,7 +3480,10 @@ router.put('/catalog/product/:id', requirePermission('manage_menu'), async (req,
 // DELETE /api/restaurant/catalog/product/:id — remove item from catalog
 router.delete('/catalog/product/:id', requirePermission('manage_menu'), async (req, res) => {
   try {
-    const item = await col('menu_items').findOne({ _id: req.params.id });
+    // [TENANT] catalog.deleteProduct propagates to Meta's catalog API — must
+    // verify ownership BEFORE calling it, otherwise an attacker could delete
+    // any restaurant's items from Meta's catalog by guessing item IDs.
+    const item = await _assertMenuItemOwnedBy(req.params.id, req.restaurantId);
     if (!item) return res.status(404).json({ error: 'Item not found' });
     const result = await catalog.deleteProduct(item, item.branch_id);
     res.json(result);
@@ -5675,7 +5846,14 @@ router.put('/users/:id', requirePermission('manage_users'), express.json(), asyn
       $set.permissions = { ...(ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.delivery) };
     }
 
-    await col('restaurant_users').updateOne({ _id: req.params.id }, { $set });
+    // [TENANT] Defence in depth: re-pin the restaurant_id on the update too,
+    // even though the early findOne above already gated this. If a future
+    // refactor removes that early check, this filter still prevents
+    // cross-tenant role escalation.
+    await col('restaurant_users').updateOne(
+      { _id: req.params.id, restaurant_id: req.restaurantId },
+      { $set }
+    );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

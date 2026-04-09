@@ -48,3 +48,4 @@ SETTLEMENT_PAYOUT_V2_SUMMARY.md
 CATALOG_MANAGEMENT_FIX_SUMMARY.md
 backend/tests/payoutEngine.test.js
 FLOW_BUILDER_FIX_SUMMARY.md
+backend/tests/tenantIsolation.test.js
