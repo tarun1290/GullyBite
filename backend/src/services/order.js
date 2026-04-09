@@ -329,6 +329,24 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
       }
     );
 
+    // ─── PER-ORDER SETTLEMENT TRIGGER (v2) ───────────────────
+    // Create a per-order settlement record. Idempotent — unique constraint on order_id.
+    // Fire-and-forget to avoid blocking the delivery flow. Failures are logged.
+    setTimeout(async () => {
+      try {
+        const payoutEngine = require('./payoutEngine');
+        const settlement = await payoutEngine.createSettlementForOrder(orderId);
+        if (settlement && settlement.status === 'eligible') {
+          // Auto-process payout if enabled
+          if (process.env.AUTO_PAYOUT_ON_DELIVERY === 'true') {
+            await payoutEngine.processSettlement(String(settlement._id));
+          }
+        }
+      } catch (e) {
+        log.error({ err: e, orderId }, 'Per-order settlement creation failed');
+      }
+    }, 100);
+
     // Award loyalty points + send notification
     setTimeout(async () => {
       try {

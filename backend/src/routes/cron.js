@@ -264,4 +264,26 @@ router.get('/order-cleanup', async (req, res) => {
   }
 });
 
+// ─── PAYOUT RETRY (every 30 minutes) ─────────────────────────
+// Retries v2 order_settlements that are in FAILED state.
+// Stops after MAX_RETRY_COUNT attempts per settlement.
+router.get('/payout-retry', async (req, res) => {
+  res.json({ ok: true, message: 'payout-retry started', timestamp: new Date().toISOString() });
+  try {
+    const payoutEngine = require('../services/payoutEngine');
+    const result = await payoutEngine.retryAllFailedSettlements();
+    log.info(result, 'Payout retry batch complete');
+    if (result.total > 0) {
+      logActivity({
+        actorType: 'system', action: 'cron.payout_retry', category: 'billing',
+        description: `Payout retry: ${result.succeeded} succeeded, ${result.skipped} skipped, ${result.errored} errored`,
+        severity: result.errored > 0 ? 'warning' : 'info',
+        metadata: result,
+      });
+    }
+  } catch (e) {
+    log.error({ err: e }, 'Payout retry error');
+  }
+});
+
 module.exports = router;

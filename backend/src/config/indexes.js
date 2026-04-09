@@ -78,6 +78,24 @@ const INDEXES = [
   // Idempotency — processed_events with 24h TTL auto-cleanup
   { collection: 'processed_events', index: { processed_at: 1 }, options: { expireAfterSeconds: 86400 } },
   { collection: 'processed_events', index: { source: 1, processed_at: -1 } },
+
+  // ─── PER-ORDER SETTLEMENT SYSTEM (v2) ─────────────────────
+  // Order settlements — one row per order, unique constraint prevents duplicates
+  { collection: 'order_settlements', index: { order_id: 1 }, options: { unique: true } },
+  { collection: 'order_settlements', index: { restaurant_id: 1, status: 1, created_at: -1 } },
+  { collection: 'order_settlements', index: { status: 1, created_at: -1 } },
+  { collection: 'order_settlements', index: { payout_id: 1 }, options: { sparse: true } },
+
+  // Payouts — one row per payout attempt
+  { collection: 'payouts', index: { settlement_id: 1 } },
+  { collection: 'payouts', index: { restaurant_id: 1, status: 1, created_at: -1 } },
+  { collection: 'payouts', index: { razorpay_payout_id: 1 }, options: { unique: true, sparse: true } },
+  { collection: 'payouts', index: { idempotency_key: 1 }, options: { unique: true, sparse: true } },
+
+  // Webhook events — Razorpay event deduplication
+  { collection: 'razorpay_webhook_events', index: { event_id: 1 }, options: { unique: true, sparse: true } },
+  { collection: 'razorpay_webhook_events', index: { type: 1, created_at: -1 } },
+  { collection: 'razorpay_webhook_events', index: { processed: 1, created_at: 1 } },
 ];
 
 async function ensureIndexes() {

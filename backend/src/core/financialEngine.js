@@ -239,11 +239,86 @@ function calculateRefundImpact(orderTotalRs, orderSubtotalRs, hadReferral = fals
   };
 }
 
+// ════════════════════════════════════════════════════════════════
+// 6. PER-ORDER SETTLEMENT (deterministic, idempotent)
+// ════════════════════════════════════════════════════════════════
+// Computes the merchant payout for a SINGLE delivered order.
+// This is the v2 settlement model — one settlement record per order
+// with a unique constraint on order_id for idempotency.
+//
+// Pure function: same input always produces same output. No DB calls.
+//
+// FORMULA:
+//   gross         = total_rs (what customer paid)
+//   platform_fee  = food_revenue × commission_pct
+//   gateway_fee   = total_rs × gateway_fee_pct (default 2%)
+//   net_payout    = gross - platform_fee - platform_fee_gst - gateway_fee
+//                   - delivery_rest_share - delivery_rest_gst
+//                   - referral_fee - referral_fee_gst
+
+function computeSettlement(order, restaurant, opts = {}) {
+  if (!order) throw new Error('computeSettlement: order is required');
+  if (!restaurant) throw new Error('computeSettlement: restaurant is required');
+
+  const gatewayFeePct = parseFloat(opts.gatewayFeePct ?? process.env.GATEWAY_FEE_PCT ?? '2');
+  const commissionRate = getPlatformFeePercent(restaurant) / 100;
+  const firstMonth = isFirstBillingMonth(restaurant);
+
+  // Order amounts (paid by customer)
+  const grossAmount = round2(parseFloat(order.total_rs) || 0);
+  const subtotalRs = round2(parseFloat(order.subtotal_rs) || 0);
+
+  // Platform fee on food subtotal (waived in first month if configured)
+  const platformFeeCalculated = round2(subtotalRs * commissionRate);
+  const platformFeeGstCalculated = round2(platformFeeCalculated * FINANCE_CONFIG.gstPlatformFeePct / 100);
+  const platformFee = shouldDeductPlatformFee(restaurant) ? platformFeeCalculated : 0;
+  const platformFeeGst = shouldDeductPlatformFeeGst(restaurant) ? platformFeeGstCalculated : 0;
+
+  // Gateway fee on total (Razorpay charges ~2% per transaction)
+  const gatewayFee = round2(grossAmount * (gatewayFeePct / 100));
+
+  // Restaurant's share of delivery cost (already deducted at checkout split)
+  const restDeliveryRs = round2(parseFloat(order.restaurant_delivery_rs) || 0);
+  const restDeliveryGst = round2(parseFloat(order.restaurant_delivery_gst_rs) || 0);
+
+  // Referral fee (if order had a referral)
+  const referralFee = round2(parseFloat(order.referral_fee_rs) || 0);
+  const referralFeeGst = round2(referralFee * FINANCE_CONFIG.gstReferralFeePct / 100);
+
+  // Net payout to merchant
+  const netAmount = round2(
+    grossAmount
+    - platformFee - platformFeeGst
+    - gatewayFee
+    - restDeliveryRs - restDeliveryGst
+    - referralFee - referralFeeGst
+  );
+
+  return {
+    grossAmount,
+    platformFee,
+    platformFeeGst,
+    platformFeeCalculated,
+    platformFeeGstCalculated,
+    platformFeeWaived: firstMonth && !shouldDeductPlatformFee(restaurant),
+    gatewayFee,
+    gatewayFeePct,
+    restDeliveryRs,
+    restDeliveryGst,
+    referralFee,
+    referralFeeGst,
+    netAmount,
+    commissionRatePct: commissionRate * 100,
+    isFirstBillingMonth: firstMonth,
+  };
+}
+
 module.exports = {
   // Core calculations
   calculateCheckout,
   calculateReferralCommission,
   calculateSettlement,
+  computeSettlement,         // v2: per-order settlement
   calculatePlatformRevenue,
   calculateRefundImpact,
   // Utility

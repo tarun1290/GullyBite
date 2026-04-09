@@ -320,7 +320,7 @@ const registerPayoutAccount = async (restaurantId) => {
   return { fundAccountId: fundAccount.id };
 };
 
-// ─── CREATE PAYOUT (used by weekly settlement job) ────────────
+// ─── CREATE PAYOUT (used by weekly settlement job — legacy) ─
 const createPayout = async (restaurant, amountRs, settlementId) => {
   const payout = await getRzp().payouts.create({
     account_number   : process.env.RAZORPAY_ACCOUNT_NUMBER,
@@ -336,6 +336,30 @@ const createPayout = async (restaurant, amountRs, settlementId) => {
   return payout;
 };
 
+// ─── CREATE PAYOUT V2 — with idempotency key (per-order) ────
+// Uses an idempotency key to prevent duplicate payouts on retry.
+// Razorpay supports the X-Payout-Idempotency header on payout creation.
+const createPayoutV2 = async ({ fundAccountId, amountRs, idempotencyKey, referenceId, narration, mode = 'IMPS' }) => {
+  if (!fundAccountId) throw new Error('fundAccountId required');
+  if (!amountRs || amountRs <= 0) throw new Error('amountRs must be positive');
+  if (!idempotencyKey) throw new Error('idempotencyKey required');
+  if (!process.env.RAZORPAY_ACCOUNT_NUMBER) throw new Error('RAZORPAY_ACCOUNT_NUMBER env var missing');
+
+  const payout = await getRzp().payouts.create({
+    account_number      : process.env.RAZORPAY_ACCOUNT_NUMBER,
+    fund_account_id     : fundAccountId,
+    amount              : Math.round(amountRs * 100),
+    currency            : 'INR',
+    mode,
+    purpose             : 'payout',
+    queue_if_low_balance: true,
+    reference_id        : referenceId,
+    narration           : narration?.substring(0, 30) || 'GullyBite Payout',
+  }, { 'X-Payout-Idempotency': idempotencyKey });
+
+  return payout;
+};
+
 module.exports = {
   createRazorpayOrder,
   createPaymentLink,
@@ -347,5 +371,6 @@ module.exports = {
   issueRefund,
   registerPayoutAccount,
   createPayout,
+  createPayoutV2,
   updatePaymentWithAudit,
 };

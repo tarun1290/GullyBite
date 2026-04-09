@@ -41,11 +41,76 @@ var PALETTE = [
 /* ─── HELPERS ────────────────────────────────────────────────────── */
 function $(id){ return document.getElementById(id); }
 function esc(s){ return typeof _esc==='function'? _esc(String(s||'')) : String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function curScreen(){ return _feJson && _feJson.screens && _feJson.screens[_feScreenIdx] || null; }
-function curLayout(){ var s=curScreen(); return s && s.layout && s.layout.children || []; }
+function curScreen(){ return (_feJson && _feJson.screens && _feJson.screens[_feScreenIdx]) || null; }
+
+// curLayout MUST mutate the underlying _feJson — never return a throwaway array.
+// If the screen is missing layout/children, normalize them in place so push() works.
+function curLayout(){
+  var s = curScreen();
+  if (!s) return null;
+  if (!s.layout) s.layout = { type:'SingleColumnLayout', children:[] };
+  if (!Array.isArray(s.layout.children)) s.layout.children = [];
+  return s.layout.children;
+}
 
 function blankFlow(){
   return { version:'6.2', screens:[{ id:'SCREEN_1', title:'Screen 1', terminal:true, layout:{ type:'SingleColumnLayout', children:[] } }] };
+}
+
+// Normalize any incoming flow JSON shape into the editor's internal model.
+// Handles: malformed JSON, missing screens, missing layout, wrong child types, etc.
+function normalizeFlow(input) {
+  // Unwrap common wrapper shapes returned by APIs
+  var raw = input;
+  if (raw && typeof raw === 'object') {
+    if (raw.flow_json && typeof raw.flow_json === 'object') raw = raw.flow_json;
+    else if (raw.json && typeof raw.json === 'object') raw = raw.json;
+  }
+  if (!raw || typeof raw !== 'object') return blankFlow();
+
+  var out = {
+    version: raw.version || '6.2',
+    screens: [],
+  };
+  // Preserve any other top-level fields (data_api_version, routing_model, etc.)
+  Object.keys(raw).forEach(function(k){
+    if (k !== 'version' && k !== 'screens') out[k] = raw[k];
+  });
+
+  var screens = Array.isArray(raw.screens) ? raw.screens : [];
+  if (screens.length === 0) {
+    out.screens = blankFlow().screens;
+    return out;
+  }
+
+  out.screens = screens.map(function(s, i){
+    if (!s || typeof s !== 'object') s = {};
+    var screen = {
+      id: s.id || ('SCREEN_' + (i + 1)),
+      title: s.title || ('Screen ' + (i + 1)),
+      terminal: !!s.terminal,
+    };
+    if (s.success !== undefined) screen.success = !!s.success;
+    if (s.data && typeof s.data === 'object') screen.data = s.data;
+
+    // Normalize layout
+    var layout = s.layout || {};
+    screen.layout = {
+      type: layout.type || 'SingleColumnLayout',
+      children: Array.isArray(layout.children) ? layout.children : [],
+    };
+
+    // Carry forward any other screen-level fields
+    Object.keys(s).forEach(function(k){
+      if (['id','title','terminal','success','data','layout'].indexOf(k) === -1) {
+        screen[k] = s[k];
+      }
+    });
+
+    return screen;
+  });
+
+  return out;
 }
 
 /* ─── OPEN / CLOSE ───────────────────────────────────────────────── */
@@ -60,9 +125,11 @@ window.openFlowEditor = async function(flowId){
   if (_feFlowId) {
     try {
       var data = await api('/api/admin/flows/' + _feFlowId + '/json');
-      _feJson = (data && data.json) ? data.json : (data || blankFlow());
-      $('fe-flow-name').textContent = data.name || ('Flow ' + _feFlowId);
-      $('fe-flow-status').textContent = data.status || 'DRAFT';
+      // Backend returns { flow_json, asset_id, name?, status? }.
+      // normalizeFlow() handles all wrapper shapes (flow_json, json, or raw).
+      _feJson = normalizeFlow(data);
+      $('fe-flow-name').textContent = (data && data.name) || ('Flow ' + _feFlowId);
+      $('fe-flow-status').textContent = (data && data.status) || 'DRAFT';
     } catch(e) {
       toast('Failed to load flow: ' + e.message, 'err');
       _feJson = blankFlow();
@@ -73,11 +140,12 @@ window.openFlowEditor = async function(flowId){
     $('fe-flow-status').textContent = 'DRAFT';
   }
 
-  // Ensure screens have layout.children
-  (_feJson.screens || []).forEach(function(s){
-    if (!s.layout) s.layout = { type:'SingleColumnLayout', children:[] };
-    if (!s.layout.children) s.layout.children = [];
-  });
+  // Defensive: if normalizeFlow somehow returned an empty screen list, fall back to blank
+  if (!_feJson || !Array.isArray(_feJson.screens) || _feJson.screens.length === 0) {
+    _feJson = blankFlow();
+  }
+  // Reset screen index if it's now out of range
+  if (_feScreenIdx >= _feJson.screens.length) _feScreenIdx = 0;
 
   $('flow-editor-container').style.display = '';
   feRenderAll();
@@ -577,18 +645,37 @@ window.feRemoveScreenDataField = function(key){
 
 /* ─── COMPONENT ACTIONS ──────────────────────────────────────────── */
 window.feAddComponent = function(type){
-  var children = curLayout();
-  if (!children) return;
+  // Defensive: if no flow loaded yet, refuse politely
+  if (!_feJson) { toast('No flow loaded', 'err'); return; }
+
+  // Defensive: if no screen exists, auto-create one
+  if (!_feJson.screens || _feJson.screens.length === 0) {
+    _feJson.screens = [{ id:'SCREEN_1', title:'Screen 1', terminal:true, layout:{ type:'SingleColumnLayout', children:[] } }];
+    _feScreenIdx = 0;
+    renderScreenTabs();
+    renderScreenProps();
+  }
+  // Defensive: if current screen index is out of range, reset
+  if (_feScreenIdx >= _feJson.screens.length) _feScreenIdx = 0;
+
+  var children = curLayout(); // now guaranteed to mutate _feJson directly
+  if (!children) {
+    toast('No screen selected', 'err');
+    return;
+  }
+
   var factory = COMP_DEFAULTS[type];
   if (!factory) { toast('Unknown component: ' + type, 'err'); return; }
   var comp = factory();
-  // Make names unique
+
+  // Make names unique within the current screen
   if (comp.name) {
     var base = comp.name.replace(/_\d+$/, '');
     var count = children.filter(function(c){ return c.name && c.name.indexOf(base) === 0; }).length;
     if (count > 0) comp.name = base + '_' + (count + 1);
   }
   children.push(comp);
+
   renderComponents();
   renderNavMap();
   renderPreview();
@@ -718,11 +805,15 @@ window.feSaveFlow = async function(){
   // Sync from JSON mode if active
   if (_feJsonMode) {
     try {
-      _feJson = JSON.parse($('fe-json-textarea').value);
+      _feJson = normalizeFlow(JSON.parse($('fe-json-textarea').value));
     } catch(e) {
       toast('Invalid JSON: ' + e.message, 'err');
       return;
     }
+  }
+  if (!_feJson || !Array.isArray(_feJson.screens) || _feJson.screens.length === 0) {
+    toast('Cannot save empty flow', 'err');
+    return;
   }
   try {
     await api('/api/admin/flows/' + _feFlowId, { method:'PUT', body: _feJson });
@@ -754,14 +845,10 @@ window.feToggleJsonMode = function(){
     $('fe-json-area').style.display = '';
     $('fe-mode-btn').textContent = 'Visual Mode';
   } else {
-    // Switch back to visual - parse JSON
+    // Switch back to visual - parse JSON and normalize
     try {
-      _feJson = JSON.parse($('fe-json-textarea').value);
-      // Re-ensure layout structure
-      (_feJson.screens || []).forEach(function(s){
-        if (!s.layout) s.layout = { type:'SingleColumnLayout', children:[] };
-        if (!s.layout.children) s.layout.children = [];
-      });
+      var parsed = JSON.parse($('fe-json-textarea').value);
+      _feJson = normalizeFlow(parsed);
     } catch(e) {
       toast('Invalid JSON: ' + e.message, 'err');
       _feJsonMode = true;

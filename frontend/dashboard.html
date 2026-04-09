@@ -1248,12 +1248,17 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <button class="btn-g btn-sm" onclick="loadCatalogMgmt(true)">&#128260; Refresh</button>
           </div>
           <div class="cb">
-            <!-- Section A: Connection Status Banner (always visible, shows cached data immediately) -->
-            <div id="cat-mgmt-status" style="margin-bottom:1rem"></div>
+            <!-- Section A: Connection Status Banner — populated by renderCatalogState() -->
+            <div id="cat-mgmt-status" style="margin-bottom:1rem">
+              <div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:var(--ink4,#f3f4f6);border:1px solid var(--rim,#e5e7eb);border-radius:8px">
+                <div class="spin" style="width:14px;height:14px;flex-shrink:0"></div>
+                <div style="font-size:.82rem;color:var(--dim)">Loading catalog state…</div>
+              </div>
+            </div>
 
             <!-- Section B: Action Buttons (always visible, use disabled not display:none) -->
             <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
-              <button class="btn-p btn-sm" id="cat-create-btn" onclick="doCatMgmtCreate()">+ Create New Catalog</button>
+              <button class="btn-p btn-sm" id="cat-create-btn" onclick="doCatMgmtCreate()" disabled style="opacity:.4;cursor:not-allowed">+ Create New Catalog</button>
               <button class="btn-g btn-sm" id="cat-connect-btn" onclick="doCatMgmtConnect()" disabled style="opacity:.4;cursor:not-allowed">&#128279; Connect to WhatsApp</button>
               <button class="btn-g btn-sm" id="cat-disconnect-btn" onclick="doCatMgmtDisconnect()" disabled style="opacity:.4;cursor:not-allowed;color:#dc2626;border-color:#dc2626">&#9939; Disconnect</button>
               <button class="btn-g btn-sm" id="cat-delete-btn" onclick="doCatMgmtDelete()" disabled style="opacity:.4;cursor:not-allowed;color:#dc2626;border-color:#dc2626">&#128465; Delete Catalog</button>
@@ -1307,8 +1312,8 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
               </div>
             </div>
 
-            <!-- Catalog Visibility Toggle -->
-            <div id="cat-visibility-section" style="margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--rim,#e5e7eb)">
+            <!-- Catalog Visibility Toggle — hidden until state machine determines catalog is linked -->
+            <div id="cat-visibility-section" style="display:none;margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--rim,#e5e7eb)">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.3rem">
                 <span style="font-size:.84rem;font-weight:600">Catalog visible to customers</span>
                 <label class="tsl" id="cat-vis-toggle">
@@ -1316,7 +1321,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
                   <span class="tsl-track"></span>
                 </label>
               </div>
-              <div id="cat-vis-status" style="font-size:.77rem;color:var(--dim)">Loading...</div>
+              <div id="cat-vis-status" style="font-size:.77rem;color:var(--dim)">—</div>
             </div>
           </div>
         </div>
@@ -1410,7 +1415,7 @@ window.fbAsyncInit=function(){FB.init({appId:'1670288721053166',cookie:true,xfbm
             <div class="tbl">
               <table>
                 <thead><tr><th>Time</th><th>Action</th><th>Details</th><th>Status</th></tr></thead>
-                <tbody id="sync-log-tbody"><tr><td colspan="4" style="padding:1rem;text-align:center;color:var(--dim)">Loading...</td></tr></tbody>
+                <tbody id="sync-log-tbody"><tr><td colspan="4" style="padding:1.2rem;text-align:center;color:var(--dim)">Click Refresh to load sync activity.</td></tr></tbody>
               </table>
             </div>
           </div>

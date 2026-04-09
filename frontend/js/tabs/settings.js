@@ -5,17 +5,32 @@
 
 async function loadSyncLogs() {
   const tbody = document.getElementById('sync-log-tbody');
+  if (!tbody) return;
+  // Show explicit loading skeleton (replaces stale "Loading..." default)
+  tbody.innerHTML = '<tr><td colspan="4" style="padding:1.2rem;text-align:center;color:var(--dim)">'
+    + '<div class="spin" style="margin:0 auto .4rem;width:16px;height:16px"></div>'
+    + 'Loading sync activity…</td></tr>';
   try {
     const logs = await api('/api/restaurant/sync-logs');
-    if (!logs?.length) { tbody.innerHTML = '<tr><td colspan="4" style="padding:1rem;text-align:center;color:var(--dim)">No sync activity yet</td></tr>'; return; }
+    if (!Array.isArray(logs) || !logs.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="padding:1.2rem;text-align:center;color:var(--dim)">'
+        + '<div style="font-size:1.4rem;margin-bottom:.3rem">📋</div>'
+        + 'No sync activity yet</td></tr>';
+      return;
+    }
     const sevIcon = { info: '✅', warning: '⚠️', error: '❌', critical: '🔴' };
     tbody.innerHTML = logs.map(l => `<tr style="border-bottom:1px solid var(--rim)">
       <td style="padding:.4rem .6rem;font-size:.76rem;color:var(--dim);white-space:nowrap">${new Date(l.created_at).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</td>
-      <td style="padding:.4rem .6rem;font-size:.8rem;font-weight:500">${l.action}</td>
-      <td style="padding:.4rem .6rem;font-size:.78rem;color:var(--dim);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.description || '—'}</td>
+      <td style="padding:.4rem .6rem;font-size:.8rem;font-weight:500">${_esc(l.action)}</td>
+      <td style="padding:.4rem .6rem;font-size:.78rem;color:var(--dim);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(l.description || '—')}</td>
       <td style="padding:.4rem .6rem;text-align:center">${sevIcon[l.severity] || '—'}</td>
     </tr>`).join('');
-  } catch { tbody.innerHTML = '<tr><td colspan="4" style="padding:1rem;text-align:center;color:var(--dim)">Failed to load</td></tr>'; }
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:1rem;text-align:center;color:var(--red)">'
+      + '❌ Failed to load sync activity'
+      + ' <button class="btn-g btn-sm" style="font-size:.7rem;margin-left:.5rem" onclick="loadSyncLogs()">Retry</button>'
+      + '</td></tr>';
+  }
 }
 
 async function loadWA() {
@@ -831,144 +846,248 @@ async function toggleCatalogAutoSync(enabled) {
   } catch (e) { toast(e.message, 'err'); }
 }
 
-// ── Catalog Management (WhatsApp tab) ──────────────────────
+// ════════════════════════════════════════════════════════════════
+// CATALOG MANAGEMENT — STATE MACHINE (v2)
+// ════════════════════════════════════════════════════════════════
+// Single source of truth: /api/restaurant/catalog/full-state
+// All UI rendering flows through renderCatalogState(state)
+// No more parallel race conditions, no more contradictory button states.
+//
+// Possible states:
+//   STATE_NONE        — no Meta connection
+//   STATE_NO_CATALOG  — Meta connected, no catalog exists
+//   STATE_UNLINKED    — catalog exists but not linked to WhatsApp
+//   STATE_LINKED      — catalog linked, sync available
+//   STATE_DEGRADED    — linked but with issues
 let _catMgmtData = null;
+let _catState = null;
 
-async function loadCatalogMgmt(refresh = false) {
+function _catComputeUiState(state) {
+  // Returns one of: 'NONE', 'NO_CATALOG', 'UNLINKED', 'LINKED', 'DEGRADED'
+  if (!state) return 'NONE';
+  if (!state.metaConnected) return 'NONE';
+  if (!state.catalogExists) return 'NO_CATALOG';
+  if (state.catalogExists && !state.catalogLinkedToWhatsapp) return 'UNLINKED';
+  if (state.catalogLinkedToWhatsapp && state.issueCount > 0) return 'DEGRADED';
+  if (state.catalogLinkedToWhatsapp) return 'LINKED';
+  return 'NO_CATALOG';
+}
+
+function _catSetBtnState(id, enabled) {
+  var btn = document.getElementById(id);
+  if (!btn) return;
+  btn.disabled = !enabled;
+  btn.style.opacity = enabled ? '' : '.4';
+  btn.style.cursor = enabled ? '' : 'not-allowed';
+}
+
+function _catSetSectionVisibility(id, visible) {
+  var el = document.getElementById(id);
+  if (el) el.style.display = visible ? '' : 'none';
+}
+
+// Renders the entire catalog management UI from a single normalized state object.
+// This is the ONLY function that touches DOM for catalog management.
+function renderCatalogState(state) {
+  _catState = state;
   var statusEl = document.getElementById('cat-mgmt-status');
   var listEl = document.getElementById('cat-mgmt-list');
   var settingsEl = document.getElementById('cat-mgmt-settings');
   var deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
-  if (!statusEl) { toast('Catalog section not available — try refreshing the page', 'err'); return; }
+  var visSection = document.getElementById('cat-visibility-section');
+  var visStatusEl = document.getElementById('cat-vis-status');
+  var visCheckEl = document.getElementById('cat-vis-check');
+  if (!statusEl) return;
+
   if (deleteConfirmEl) deleteConfirmEl.style.display = 'none';
 
-  // Ensure rest is loaded — if null, fetch it now
-  if (!rest) {
-    try { rest = await api('/auth/me'); } catch (_) {}
-    if (!rest) {
-      statusEl.innerHTML = '<div style="padding:.8rem;font-size:.82rem;color:var(--red);background:#fef2f2;border:1px solid #fecaca;border-radius:8px">'
-        + 'Could not load restaurant data. <button class="btn-g btn-sm" style="font-size:.72rem;margin-left:.5rem" onclick="loadCatalogMgmt()">Retry</button></div>';
-      return;
-    }
-  }
+  var ui = _catComputeUiState(state);
 
-  loadCatalogVisibility();
-
-  // Helper: enable/disable a button (never display:none)
-  function setBtnState(id, enabled) {
-    var btn = document.getElementById(id);
-    if (!btn) return;
-    btn.disabled = !enabled;
-    btn.style.opacity = enabled ? '' : '.4';
-    btn.style.cursor = enabled ? '' : 'not-allowed';
-  }
-
-  // ── PHASE 1: Render immediately from cached rest data (no API call) ──
-  var cachedCatId = rest?.meta_catalog_id;
-  var cachedCatName = rest?.meta_catalog_name || 'Menu Catalog';
-  var isConnected = !!cachedCatId;
-
-  if (isConnected) {
-    statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:8px">'
-      + '<span style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>'
-      + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem">\uD83D\uDCE6 ' + cachedCatName + '</div>'
-      + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + cachedCatId + '</div></div>'
-      + '<span class="badge bg" style="font-size:.68rem">Connected</span></div>';
-  } else {
-    statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.15);border-radius:8px">'
+  // ─── STATUS BANNER ──────────────────────────────────────
+  var bannerHtml = '';
+  if (ui === 'NONE') {
+    bannerHtml = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.15);border-radius:8px">'
       + '<span style="width:10px;height:10px;border-radius:50%;background:#dc2626;flex-shrink:0"></span>'
-      + '<div><div style="font-weight:600;font-size:.85rem;color:#dc2626">No catalog connected</div>'
-      + '<div style="font-size:.77rem;color:var(--dim)">Create a new catalog or connect an existing one below.</div></div></div>';
+      + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem;color:#dc2626">Meta not connected</div>'
+      + '<div style="font-size:.77rem;color:var(--dim)">Connect your Meta account in Settings → WhatsApp before managing catalogs.</div></div>'
+      + '<span class="badge br" style="font-size:.68rem">Disconnected</span></div>';
+  } else if (ui === 'NO_CATALOG') {
+    bannerHtml = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px">'
+      + '<span style="width:10px;height:10px;border-radius:50%;background:#d97706;flex-shrink:0"></span>'
+      + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem;color:#92400e">No catalog yet</div>'
+      + '<div style="font-size:.77rem;color:var(--dim)">Create a new catalog to start selling on WhatsApp.</div></div>'
+      + '<span class="badge ba" style="font-size:.68rem">Draft</span></div>';
+  } else if (ui === 'UNLINKED') {
+    bannerHtml = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px">'
+      + '<span style="width:10px;height:10px;border-radius:50%;background:#d97706;flex-shrink:0"></span>'
+      + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem;color:#92400e">📦 ' + _esc(state.catalogName || 'Catalog') + '</div>'
+      + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + _esc(state.catalogId || '') + ' · Not linked to WhatsApp</div></div>'
+      + '<span class="badge ba" style="font-size:.68rem">Not Linked</span></div>';
+  } else if (ui === 'DEGRADED') {
+    bannerHtml = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px">'
+      + '<span style="width:10px;height:10px;border-radius:50%;background:#ea580c;flex-shrink:0"></span>'
+      + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem;color:#9a3412">📦 ' + _esc(state.catalogName || 'Catalog') + '</div>'
+      + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + _esc(state.catalogId || '') + ' · ' + state.issueCount + ' issue' + (state.issueCount === 1 ? '' : 's') + ' detected</div></div>'
+      + '<span class="badge ba" style="font-size:.68rem">Issues</span></div>';
+  } else { // LINKED
+    bannerHtml = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:8px">'
+      + '<span style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>'
+      + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem">📦 ' + _esc(state.catalogName || 'Catalog') + '</div>'
+      + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + _esc(state.catalogId || '') + (state.whatsappNumber ? ' · ' + _esc(state.whatsappNumber) : '') + '</div></div>'
+      + '<span class="badge bg" style="font-size:.68rem">Connected</span></div>';
   }
 
   // Approval warning
-  if (rest?.approval_status && rest.approval_status !== 'approved') {
-    statusEl.innerHTML += '<div style="padding:.5rem .7rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.5rem;font-size:.78rem;color:#92400e">\u26A0\uFE0F Approval pending \u2014 some catalog actions require restaurant approval. Status: <strong>' + rest.approval_status + '</strong></div>';
+  if (state.approvalStatus && state.approvalStatus !== 'approved') {
+    bannerHtml += '<div style="padding:.5rem .7rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.5rem;font-size:.78rem;color:#92400e">⚠️ Approval ' + _esc(state.approvalStatus) + ' — some actions require approval.</div>';
   }
 
-  // Set initial button states from cache
-  setBtnState('cat-create-btn', true);
-  setBtnState('cat-connect-btn', false);
-  setBtnState('cat-disconnect-btn', isConnected);
-  setBtnState('cat-delete-btn', isConnected);
-  setBtnState('cat-diagnostics-btn', isConnected);
-  setBtnState('cat-sync-btn', isConnected);
-  if (settingsEl) settingsEl.style.display = isConnected ? 'block' : 'none';
+  // Other warnings (linked-but-not-visible, multiple catalogs, etc.)
+  for (var i = 0; i < (state.warnings || []).length; i++) {
+    var w = state.warnings[i];
+    // Skip warnings already represented in the main banner
+    if (w.indexOf('Approval') === 0) continue;
+    bannerHtml += '<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.4rem;font-size:.79rem">'
+      + '<span>⚠️</span><span style="flex:1">' + _esc(w) + '</span></div>';
+  }
 
-  // Show loading in catalog list area
-  if (listEl) listEl.innerHTML = '<div style="text-align:center;padding:.6rem;font-size:.78rem;color:var(--dim)"><div class="spin" style="margin:0 auto .3rem;width:16px;height:16px"></div>Loading catalogs from Meta...</div>';
+  // Errors (only show if loading itself failed)
+  for (var j = 0; j < (state.errors || []).length; j++) {
+    bannerHtml += '<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;margin-top:.4rem;font-size:.79rem;color:#dc2626">'
+      + '<span>❌</span><span style="flex:1">' + _esc(state.errors[j]) + '</span></div>';
+  }
 
-  // ── PHASE 2: Async API call to get live catalog data ──
-  try {
-    var catData = await api('/api/restaurant/catalogs' + (refresh ? '?refresh=true' : ''));
-    _catMgmtData = catData;
-    var active = catData?.active_catalog_id;
-    var allCatalogs = catData?.catalogs || [];
-    var activeCat = allCatalogs.find(function(c) { return c.id === active; });
+  statusEl.innerHTML = bannerHtml;
 
-    // Update count badge
-    var countTextEl = document.getElementById('wa-catalog-count-text');
-    if (countTextEl) {
-      countTextEl.textContent = allCatalogs.length ? allCatalogs.length + ' catalog' + (allCatalogs.length > 1 ? 's' : '') + ' connected' : 'No catalogs connected';
-      countTextEl.style.color = allCatalogs.length ? 'var(--fg)' : 'var(--dim)';
-    }
+  // ─── BUTTON GATING ──────────────────────────────────────
+  // Each button is enabled ONLY when its specific preconditions are met.
+  var canCreate    = state.metaConnected && state.approvalStatus === 'approved';
+  var canConnect   = state.metaConnected && state.whatsappNumberConnected && state.catalogExists && !state.catalogLinkedToWhatsapp;
+  var canDisconnect= state.catalogLinkedToWhatsapp;
+  var canDelete    = state.catalogExists && state.approvalStatus === 'approved';
+  var canViewIssues= state.catalogExists; // Always show diagnostics if catalog exists
+  var canSync      = state.syncAvailable;
 
-    // Render catalog list
-    if (listEl) {
-      if (allCatalogs.length) {
-        listEl.innerHTML = allCatalogs.map(function(c) {
-          var isActive = c.id === active || c.connected;
-          return '<div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:' + (isActive ? 'rgba(34,197,94,.06)' : 'var(--ink2)') + ';border:1px solid ' + (isActive ? 'rgba(34,197,94,.2)' : 'var(--bdr)') + ';border-radius:8px;margin-bottom:.4rem">'
-            + '<span style="font-size:1rem">' + (isActive ? '\u2705' : '\uD83D\uDCE6') + '</span>'
-            + '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (c.name || 'Unnamed Catalog') + '</div>'
-            + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + c.id + (c.product_count != null ? ' \u00B7 ' + c.product_count + ' products' : '') + '</div></div>'
-            + (isActive ? '<span class="badge bg" style="font-size:.68rem">Connected</span>' : '<button class="btn-p btn-sm" style="font-size:.72rem;white-space:nowrap" onclick="doCatMgmtSwitchCatalog(\'' + c.id + '\',\'' + (c.name || '').replace(/'/g, "\\'") + '\')">Connect</button>')
-            + '</div>';
-        }).join('');
+  _catSetBtnState('cat-create-btn', canCreate);
+  _catSetBtnState('cat-connect-btn', canConnect);
+  _catSetBtnState('cat-disconnect-btn', canDisconnect);
+  _catSetBtnState('cat-delete-btn', canDelete);
+  _catSetBtnState('cat-diagnostics-btn', canViewIssues);
+  _catSetBtnState('cat-sync-btn', canSync);
+
+  // ─── CATALOG LIST ──────────────────────────────────────
+  if (listEl) {
+    if (state.availableCatalogs.length === 0) {
+      if (ui === 'NONE') {
+        listEl.innerHTML = '<div style="padding:.6rem .8rem;font-size:.78rem;color:var(--dim);text-align:center">Connect Meta first to see your catalogs.</div>';
       } else {
-        listEl.innerHTML = '<div style="font-size:.78rem;color:var(--dim)">No catalogs found. Create one to get started.</div>';
+        listEl.innerHTML = '<div style="padding:.6rem .8rem;font-size:.78rem;color:var(--dim);text-align:center">No catalogs found. Create one to get started.</div>';
+      }
+    } else {
+      listEl.innerHTML = state.availableCatalogs.map(function(c) {
+        var isActive = !!c.connected;
+        return '<div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:' + (isActive ? 'rgba(34,197,94,.06)' : 'var(--ink2)') + ';border:1px solid ' + (isActive ? 'rgba(34,197,94,.2)' : 'var(--rim)') + ';border-radius:8px;margin-bottom:.4rem">'
+          + '<span style="font-size:1rem">' + (isActive ? '✅' : '📦') + '</span>'
+          + '<div style="flex:1;min-width:0"><div style="font-weight:600;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _esc(c.name || 'Unnamed Catalog') + '</div>'
+          + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + _esc(c.id) + (c.product_count != null ? ' · ' + c.product_count + ' products' : '') + '</div></div>'
+          + (isActive ? '<span class="badge bg" style="font-size:.68rem">Connected</span>'
+                       : '<button class="btn-p btn-sm" style="font-size:.72rem;white-space:nowrap" onclick="doCatMgmtSwitchCatalog(\'' + _esc(c.id) + '\',\'' + _esc((c.name || '').replace(/\x27/g, "")) + '\')">Connect</button>')
+          + '</div>';
+      }).join('');
+    }
+  }
+
+  // ─── CATALOG SETTINGS PANEL ─────────────────────────────
+  if (settingsEl) {
+    if (state.catalogExists && state.catalogLinkedToWhatsapp) {
+      settingsEl.style.display = 'block';
+      var nameInput = document.getElementById('cat-settings-name');
+      if (nameInput && state.catalogName) nameInput.value = state.catalogName;
+      // Async fetch details (non-blocking)
+      loadCatalogDetails();
+    } else {
+      settingsEl.style.display = 'none';
+    }
+  }
+
+  // ─── VISIBILITY TOGGLE ──────────────────────────────────
+  // Only show toggle when catalog is valid AND linked
+  if (visSection) {
+    if (state.catalogExists && state.catalogLinkedToWhatsapp) {
+      visSection.style.display = 'block';
+      if (visCheckEl) {
+        visCheckEl.checked = !!state.catalogVisible;
+        visCheckEl.disabled = false;
+      }
+      if (visStatusEl) {
+        visStatusEl.textContent = state.catalogVisible
+          ? 'Customers can browse your catalog in WhatsApp'
+          : 'Catalog is hidden from customers';
+        visStatusEl.style.color = '';
+      }
+    } else {
+      visSection.style.display = 'none';
+    }
+  }
+
+  // ─── COUNT BADGE (sidebar/header) ───────────────────────
+  var countTextEl = document.getElementById('wa-catalog-count-text');
+  if (countTextEl) {
+    var n = state.availableCatalogs.length;
+    countTextEl.textContent = n ? n + ' catalog' + (n > 1 ? 's' : '') + ' available' : 'No catalogs';
+    countTextEl.style.color = n ? 'var(--fg)' : 'var(--dim)';
+  }
+}
+
+// Loader: fetches state once, renders once. Has loading + error states.
+async function loadCatalogMgmt(refresh) {
+  var statusEl = document.getElementById('cat-mgmt-status');
+  if (!statusEl) { toast('Catalog section not available — try refreshing the page', 'err'); return; }
+
+  // Show loading skeleton
+  statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:var(--ink4);border:1px solid var(--rim);border-radius:8px">'
+    + '<div class="spin" style="width:14px;height:14px;flex-shrink:0"></div>'
+    + '<div style="font-size:.82rem;color:var(--dim)">Loading catalog state…</div></div>';
+
+  // Disable all buttons during load
+  _catSetBtnState('cat-create-btn', false);
+  _catSetBtnState('cat-connect-btn', false);
+  _catSetBtnState('cat-disconnect-btn', false);
+  _catSetBtnState('cat-delete-btn', false);
+  _catSetBtnState('cat-diagnostics-btn', false);
+  _catSetBtnState('cat-sync-btn', false);
+
+  try {
+    var state = await api('/api/restaurant/catalog/full-state');
+    // Backend always returns 200 with the normalized shape, even on partial errors
+    _catMgmtData = {
+      active_catalog_id: state.catalogId,
+      catalogs: state.availableCatalogs,
+    };
+    renderCatalogState(state);
+
+    // Optionally trigger a background refresh of the catalog list from Meta
+    // (only if the user explicitly clicked Refresh)
+    if (refresh) {
+      try {
+        await api('/api/restaurant/catalogs?refresh=true');
+        // Re-fetch full state to pick up the refreshed catalog list
+        var newState = await api('/api/restaurant/catalog/full-state');
+        renderCatalogState(newState);
+      } catch (refreshErr) {
+        // Non-fatal — keep current state
+        console.warn('[CatalogMgmt] Background refresh failed:', refreshErr.message);
       }
     }
-
-    // Update button states from live data
-    setBtnState('cat-connect-btn', allCatalogs.length > 0 && (!active || allCatalogs.length > 1));
-    setBtnState('cat-disconnect-btn', !!active);
-    setBtnState('cat-delete-btn', allCatalogs.length > 0);
-    setBtnState('cat-diagnostics-btn', !!active);
-    setBtnState('cat-sync-btn', !!active);
-
-    // Update status banner if live data differs from cache
-    if (active && activeCat) {
-      statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .8rem;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:8px">'
-        + '<span style="width:10px;height:10px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>'
-        + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem">\uD83D\uDCE6 ' + (activeCat.name || 'Menu Catalog') + '</div>'
-        + '<div style="font-size:.73rem;color:var(--dim)">ID: ' + active + (activeCat.product_count != null ? ' \u00B7 ' + activeCat.product_count + ' products' : '') + '</div></div>'
-        + '<span class="badge bg" style="font-size:.68rem">Connected</span></div>';
-      if (settingsEl) { settingsEl.style.display = 'block'; document.getElementById('cat-settings-name').value = activeCat.name || ''; loadCatalogDetails(); }
-
-      if (!catData.commerce_enabled) {
-        statusEl.innerHTML += '<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.5rem;font-size:.79rem"><span>\u26A0\uFE0F</span><span style="flex:1">Catalog connected but not visible to customers.</span><button class="btn-p btn-sm" onclick="doEnableCommerceSettings()" style="font-size:.72rem;white-space:nowrap">Enable</button></div>';
-      }
-      if (allCatalogs.length > 1) {
-        statusEl.innerHTML += '<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .8rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;margin-top:.4rem;font-size:.79rem"><span>\u26A0\uFE0F</span><span style="flex:1">You have ' + allCatalogs.length + ' catalogs. WhatsApp works best with one.</span><button class="btn-p btn-sm" onclick="doCatalogMerge()" style="font-size:.72rem;white-space:nowrap">Merge</button></div>';
-      }
-    }
-
   } catch (e) {
-    console.error('[CatalogMgmt] API error:', e.message);
-    // Status banner stays as-is from Phase 1 (cached data) — don't blank it
-    // Show error in list area with retry
-    if (listEl) {
-      var fallbackHtml = '';
-      if (cachedCatId) {
-        fallbackHtml = '<div style="padding:.5rem .7rem;background:var(--ink2);border:1px solid var(--bdr);border-radius:8px;margin-bottom:.4rem;font-size:.82rem">'
-          + '\uD83D\uDCE6 <strong>' + cachedCatName + '</strong> <span style="font-size:.72rem;color:var(--dim)">(' + cachedCatId + ')</span>'
-          + ' <span style="font-size:.68rem;color:var(--dim);font-style:italic">(cached)</span></div>';
-        _catMgmtData = { active_catalog_id: cachedCatId, catalogs: [{ id: cachedCatId, name: cachedCatName, connected: true }] };
-      }
-      listEl.innerHTML = fallbackHtml + '<div style="padding:.5rem .7rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:.78rem;color:#dc2626">\u274C ' + _esc(e.message || 'Failed to load') + ' <button class="btn-g btn-sm" onclick="loadCatalogMgmt(true)" style="font-size:.72rem;margin-left:.5rem">Retry</button></div>';
-    }
-    // Buttons stay at their Phase 1 state — create always enabled, others based on cache
+    // Hard failure — show error state with retry
+    statusEl.innerHTML = '<div style="padding:.8rem;font-size:.82rem;color:var(--red);background:#fef2f2;border:1px solid #fecaca;border-radius:8px">'
+      + '❌ Could not load catalog state: ' + _esc(e.message || 'Unknown error')
+      + ' <button class="btn-g btn-sm" style="font-size:.72rem;margin-left:.5rem" onclick="loadCatalogMgmt(true)">Retry</button></div>';
+    var listEl = document.getElementById('cat-mgmt-list');
+    if (listEl) listEl.innerHTML = '';
+    var visSection = document.getElementById('cat-visibility-section');
+    if (visSection) visSection.style.display = 'none';
   }
 }
 
@@ -1108,34 +1227,29 @@ async function doCatMgmtDeleteConfirm() {
 
 // Flow management moved to admin dashboard — restaurants get flow_id assigned by admin
 
-// ── Catalog visibility toggle ───────────────────────────────
+// ── Catalog visibility — DEPRECATED standalone fetch ──────────
+// Visibility state now comes from /api/restaurant/catalog/full-state
+// via renderCatalogState(). This function is kept as a no-op for
+// backwards compatibility (callers that still invoke it directly).
 async function loadCatalogVisibility() {
-  const check = document.getElementById('cat-vis-check');
-  const status = document.getElementById('cat-vis-status');
-  const section = document.getElementById('cat-visibility-section');
-  if (!check || !status) return;
-
-  try {
-    const d = await api('/api/restaurant/catalog/visibility-status');
-    if (d.error) {
-      check.disabled = true;
-      status.textContent = d.error;
-      return;
-    }
-    check.checked = d.is_catalog_visible || false;
-    check.disabled = !d.has_catalog;
-    status.textContent = d.is_catalog_visible
-      ? 'Customers can browse your catalog in WhatsApp'
-      : d.has_catalog ? 'Catalog is hidden from customers' : 'Connect a catalog first';
-  } catch (e) {
-    check.disabled = true;
-    status.textContent = 'Could not check visibility status';
-  }
+  // No-op — visibility is rendered by renderCatalogState() from the
+  // single source of truth. To force a refresh, call loadCatalogMgmt().
 }
 
 async function doToggleCatalogVisibility(visible) {
   const check = document.getElementById('cat-vis-check');
   const status = document.getElementById('cat-vis-status');
+  if (!check || !status) return;
+
+  // Safety: only allow toggle if catalog is actually linked
+  if (!_catState || !_catState.catalogExists || !_catState.catalogLinkedToWhatsapp) {
+    toast('Catalog not linked — cannot toggle visibility', 'err');
+    check.checked = !visible; // revert
+    return;
+  }
+
+  // Optimistic update
+  const previousState = !visible;
   status.textContent = 'Updating...';
   check.disabled = true;
 
@@ -1145,10 +1259,14 @@ async function doToggleCatalogVisibility(visible) {
       ? 'Customers can browse your catalog in WhatsApp'
       : 'Catalog is hidden from customers';
     toast(visible ? '✅ Catalog is now visible to customers' : 'Catalog hidden from customers', 'ok');
+    // Update local state so re-render reflects new visibility
+    if (_catState) _catState.catalogVisible = visible;
   } catch (e) {
-    // Revert toggle on failure
-    check.checked = !visible;
-    status.textContent = 'Failed to update — please try again';
+    // Rollback optimistic update on failure
+    check.checked = previousState;
+    status.textContent = previousState
+      ? 'Customers can browse your catalog in WhatsApp'
+      : 'Catalog is hidden from customers';
     toast('❌ ' + (e.message || 'Failed to update visibility'), 'err');
   } finally {
     check.disabled = false;

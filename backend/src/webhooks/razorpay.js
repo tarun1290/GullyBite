@@ -417,43 +417,66 @@ const handleEvent = async (event) => {
       break;
     }
 
-    case 'payout.processed': {
-      const payout = event.payload?.payout?.entity;
-      if (!payout) break;
-      const settleDoc = await col('settlements').findOneAndUpdate(
-        { rp_payout_id: payout.id },
-        { $set: { payout_status: 'completed', payout_completed_at: new Date() } },
-        { returnDocument: 'after' }
-      );
-      log.info({ payoutId: payout.id, amountRs: payout.amount / 100 }, 'Payout processed');
-      if (settleDoc) {
-        logActivity({
-          actorType: 'system', actorId: null, actorName: 'Razorpay',
-          action: 'settlement.payout_completed', category: 'billing',
-          description: `Payout ₹${payout.amount / 100} completed (${payout.id})`,
-          restaurantId: settleDoc.restaurant_id, resourceType: 'settlement', resourceId: String(settleDoc._id), severity: 'info',
-          metadata: { payout_id: payout.id, amount_rs: payout.amount / 100, utr: payout.utr },
-        });
-      }
-      break;
-    }
+    case 'payout.processed':
+    case 'payout.failed':
+    case 'payout.reversed': {
+      const payoutEntity = event.payload?.payout?.entity;
+      if (!payoutEntity) break;
 
-    case 'payout.failed': {
-      const payout = event.payload?.payout?.entity;
-      if (!payout) break;
-      const settleDoc2 = await col('settlements').findOneAndUpdate(
-        { rp_payout_id: payout.id },
-        { $set: { payout_status: 'failed' } },
-        { returnDocument: 'after' }
-      );
-      log.error({ payoutId: payout.id, failureReason: payout.failure_reason }, 'Payout failed');
-      if (settleDoc2) {
+      // ─── v2 (per-order settlement) ─────────────────────────
+      // The new payout engine handles per-order settlements with full idempotency.
+      const payoutEngine = require('../services/payoutEngine');
+      const v2Result = await payoutEngine.handlePayoutWebhook(eventKey, event.event, payoutEntity);
+
+      // If v2 handled it (not a legacy payout), we're done.
+      if (v2Result.success || v2Result.duplicate) {
+        log.info({ rpPayoutId: payoutEntity.id, eventType: event.event, ...v2Result }, 'v2 payout webhook handled');
+        break;
+      }
+
+      // ─── v1 (legacy weekly settlements) ─────────────────────
+      // Fall through to legacy handler for backward compatibility.
+      if (event.event === 'payout.processed') {
+        const settleDoc = await col('settlements').findOneAndUpdate(
+          { rp_payout_id: payoutEntity.id },
+          { $set: { payout_status: 'completed', payout_completed_at: new Date() } },
+          { returnDocument: 'after' }
+        );
+        log.info({ payoutId: payoutEntity.id, amountRs: payoutEntity.amount / 100 }, 'Legacy payout processed');
+        if (settleDoc) {
+          logActivity({
+            actorType: 'system', actorId: null, actorName: 'Razorpay',
+            action: 'settlement.payout_completed', category: 'billing',
+            description: `Legacy payout ₹${payoutEntity.amount / 100} completed (${payoutEntity.id})`,
+            restaurantId: settleDoc.restaurant_id, resourceType: 'settlement', resourceId: String(settleDoc._id), severity: 'info',
+            metadata: { payout_id: payoutEntity.id, amount_rs: payoutEntity.amount / 100, utr: payoutEntity.utr },
+          });
+        }
+      } else if (event.event === 'payout.failed') {
+        const settleDoc2 = await col('settlements').findOneAndUpdate(
+          { rp_payout_id: payoutEntity.id },
+          { $set: { payout_status: 'failed' } },
+          { returnDocument: 'after' }
+        );
+        log.error({ payoutId: payoutEntity.id, failureReason: payoutEntity.failure_reason }, 'Legacy payout failed');
+        if (settleDoc2) {
+          logActivity({
+            actorType: 'system', actorId: null, actorName: 'Razorpay',
+            action: 'settlement.payout_failed', category: 'billing',
+            description: `Legacy payout failed: ${payoutEntity.failure_reason || 'unknown'}`,
+            restaurantId: settleDoc2.restaurant_id, resourceType: 'settlement', resourceId: String(settleDoc2._id), severity: 'error',
+            metadata: { payout_id: payoutEntity.id, failure_reason: payoutEntity.failure_reason },
+          });
+        }
+      } else if (event.event === 'payout.reversed') {
+        // Legacy doesn't have a reversal handler — log for manual review
+        log.error({ payoutId: payoutEntity.id }, 'Legacy payout reversed — needs manual review');
         logActivity({
-          actorType: 'system', actorId: null, actorName: 'Razorpay',
-          action: 'settlement.payout_failed', category: 'billing',
-          description: `Payout failed for settlement: ${payout.failure_reason || 'unknown'}`,
-          restaurantId: settleDoc2.restaurant_id, resourceType: 'settlement', resourceId: String(settleDoc2._id), severity: 'error',
-          metadata: { payout_id: payout.id, failure_reason: payout.failure_reason },
+          actorType: 'system', actorName: 'Razorpay',
+          action: 'settlement.payout_reversed', category: 'billing',
+          description: `Legacy payout reversed: ${payoutEntity.id} — REQUIRES MANUAL REVIEW`,
+          severity: 'critical',
+          metadata: { payout_id: payoutEntity.id, amount_rs: payoutEntity.amount / 100 },
         });
       }
       break;

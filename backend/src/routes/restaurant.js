@@ -2704,6 +2704,148 @@ router.post('/catalog/ensure', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/restaurant/catalog/full-state — SINGLE SOURCE OF TRUTH for the
+// Catalog Management UI. Returns a stable normalized object the frontend can
+// use directly without coordinating multiple parallel calls.
+//
+// Response shape (always returns 200 with this exact shape, even on partial errors):
+// {
+//   metaConnected:           boolean,
+//   whatsappNumberConnected: boolean,
+//   whatsappNumber:          string | null,
+//   catalogExists:           boolean,
+//   catalogId:               string | null,
+//   catalogName:             string | null,
+//   catalogLinkedToWhatsapp: boolean,
+//   catalogVisible:          boolean,
+//   syncAvailable:           boolean,
+//   issueCount:              number,
+//   lastSyncStatus:          'never' | 'success' | 'failed',
+//   approvalStatus:          string,
+//   availableCatalogs:       [{ id, name, product_count, connected }],
+//   warnings:                [string],
+//   errors:                  [string]
+// }
+router.get('/catalog/full-state', async (req, res) => {
+  // Always return 200 with a stable shape — never let one failure break the page
+  const state = {
+    metaConnected: false,
+    whatsappNumberConnected: false,
+    whatsappNumber: null,
+    catalogExists: false,
+    catalogId: null,
+    catalogName: null,
+    catalogLinkedToWhatsapp: false,
+    catalogVisible: false,
+    syncAvailable: false,
+    issueCount: 0,
+    lastSyncStatus: 'never',
+    approvalStatus: 'pending',
+    availableCatalogs: [],
+    warnings: [],
+    errors: [],
+  };
+
+  try {
+    // 1. Restaurant + WABA (always read from DB — no Meta API calls in this endpoint)
+    const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
+    if (!restaurant) {
+      state.errors.push('Restaurant not found');
+      return res.json(state);
+    }
+
+    state.approvalStatus = restaurant.approval_status || 'pending';
+
+    // Meta connection signals
+    state.metaConnected = !!(restaurant.meta_user_id || restaurant.meta_business_id);
+
+    // 2. WABA connection
+    const waba = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    if (waba) {
+      state.whatsappNumberConnected = !!waba.phone_number_id;
+      state.whatsappNumber = waba.phone_display || waba.wa_phone_number || null;
+      // If we have a WABA, Meta is definitely connected
+      if (state.whatsappNumberConnected) state.metaConnected = true;
+    }
+
+    // 3. Catalog state — derived from BOTH restaurant AND waba (whichever has it)
+    const catalogId = restaurant.meta_catalog_id || waba?.catalog_id || null;
+    state.catalogId = catalogId;
+    state.catalogExists = !!catalogId;
+    state.catalogName = restaurant.meta_catalog_name || (catalogId ? 'Menu Catalog' : null);
+
+    // 4. Catalog linked to WhatsApp (commerce settings + waba.catalog_linked)
+    state.catalogLinkedToWhatsapp = !!(waba?.catalog_linked && waba?.catalog_id);
+    state.catalogVisible = !!(waba?.catalog_visible);
+
+    // 5. Sync available — only if catalog exists AND linked
+    state.syncAvailable = state.catalogExists && state.catalogLinkedToWhatsapp;
+
+    // 6. Available catalogs (from DB cache only — never call Meta in this endpoint)
+    const cachedCatalogs = restaurant.meta_available_catalogs || [];
+    state.availableCatalogs = cachedCatalogs.map(c => ({
+      id: c.id,
+      name: c.name || 'Unnamed Catalog',
+      product_count: c.product_count != null ? c.product_count : null,
+      connected: c.id === catalogId,
+    }));
+
+    // If we have a catalog ID but it's not in the cache, add it
+    if (catalogId && !state.availableCatalogs.some(c => c.id === catalogId)) {
+      state.availableCatalogs.unshift({
+        id: catalogId,
+        name: state.catalogName,
+        product_count: null,
+        connected: true,
+      });
+    }
+
+    // 7. Last sync status (from activity_logs)
+    try {
+      const lastSync = await col('activity_logs').findOne(
+        { restaurant_id: req.restaurantId, action: { $regex: /^catalog\.(sync|sync_completed|sync_failed)/ } },
+        { sort: { created_at: -1 } }
+      );
+      if (lastSync) {
+        if (lastSync.action.includes('failed')) state.lastSyncStatus = 'failed';
+        else if (lastSync.severity === 'error') state.lastSyncStatus = 'failed';
+        else state.lastSyncStatus = 'success';
+      }
+    } catch (_) { /* non-blocking */ }
+
+    // 8. Issue count (catalog diagnostic issues from last 7 days)
+    try {
+      const since = new Date(Date.now() - 7 * 86400000);
+      state.issueCount = await col('activity_logs').countDocuments({
+        restaurant_id: req.restaurantId,
+        category: 'catalog',
+        severity: { $in: ['warning', 'error', 'critical'] },
+        created_at: { $gte: since },
+      });
+    } catch (_) { /* non-blocking */ }
+
+    // 9. Warnings
+    if (state.approvalStatus !== 'approved') {
+      state.warnings.push(`Approval ${state.approvalStatus} — some catalog actions are restricted until approval`);
+    }
+    if (state.catalogExists && state.whatsappNumberConnected && !state.catalogLinkedToWhatsapp) {
+      state.warnings.push('Catalog exists but is not linked to WhatsApp');
+    }
+    if (state.catalogLinkedToWhatsapp && !state.catalogVisible) {
+      state.warnings.push('Catalog linked but not visible to customers');
+    }
+    if (state.availableCatalogs.length > 1) {
+      state.warnings.push(`You have ${state.availableCatalogs.length} catalogs — WhatsApp works best with one`);
+    }
+
+    res.json(state);
+  } catch (e) {
+    req.log.error({ err: e }, 'catalog/full-state failed');
+    state.errors.push(e.message || 'Failed to load catalog state');
+    res.json(state);
+  }
+});
+
 // GET /api/restaurant/catalog/status — sync status + link/cart/visibility from DB
 router.get('/catalog/status', async (req, res) => {
   try {
@@ -6345,6 +6487,101 @@ router.get('/financials/tax-summary', requireAuth, requireApproved, async (req, 
   try {
     const summary = await financials.getTaxSummary(req.restaurantId, req.query.fy);
     res.json(summary);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PER-ORDER SETTLEMENTS V2 — Restaurant endpoints (scoped)
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/order-settlements — list current restaurant's settlements
+router.get('/order-settlements', async (req, res) => {
+  try {
+    // CRITICAL: always scope by req.restaurantId from JWT, never query params
+    const filter = { restaurant_id: req.restaurantId };
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.from || req.query.to) {
+      filter.created_at = {};
+      if (req.query.from) filter.created_at.$gte = new Date(req.query.from);
+      if (req.query.to) filter.created_at.$lte = new Date(req.query.to);
+    }
+
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const skip = parseInt(req.query.skip) || 0;
+
+    const [settlements, total, summary] = await Promise.all([
+      col('order_settlements').find(filter).sort({ created_at: -1 }).skip(skip).limit(limit).toArray(),
+      col('order_settlements').countDocuments(filter),
+      col('order_settlements').aggregate([
+        { $match: filter },
+        { $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          total_net: { $sum: '$net_amount' },
+        }},
+      ]).toArray(),
+    ]);
+
+    const summaryByStatus = {};
+    for (const s of summary) summaryByStatus[s._id] = { count: s.count, total: s.total_net };
+
+    res.json({
+      total,
+      summary: summaryByStatus,
+      settlements: settlements.map(s => ({
+        id: String(s._id),
+        order_id: s.order_id,
+        order_number: s.order_number,
+        gross_amount: s.gross_amount,
+        platform_fee: s.platform_fee,
+        gateway_fee: s.gateway_fee,
+        net_amount: s.net_amount,
+        status: s.status,
+        created_at: s.created_at,
+        updated_at: s.updated_at,
+        // Don't expose payout_id or razorpay_payout_id to restaurants
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/order-settlements/:id — single settlement detail (own only)
+router.get('/order-settlements/:id', async (req, res) => {
+  try {
+    const settlement = await col('order_settlements').findOne({
+      _id: req.params.id,
+      restaurant_id: req.restaurantId,   // Enforce ownership at query level
+    });
+    if (!settlement) return res.status(404).json({ error: 'Settlement not found' });
+
+    // Optionally include payout status (without exposing internal IDs)
+    let payoutStatus = null;
+    if (settlement.payout_id) {
+      const payout = await col('payouts').findOne(
+        { _id: settlement.payout_id, restaurant_id: req.restaurantId },
+        { projection: { status: 1, utr: 1, failure_reason: 1 } }
+      );
+      if (payout) payoutStatus = { status: payout.status, utr: payout.utr || null, failure_reason: payout.failure_reason || null };
+    }
+
+    res.json({
+      id: String(settlement._id),
+      order_id: settlement.order_id,
+      order_number: settlement.order_number,
+      gross_amount: settlement.gross_amount,
+      platform_fee: settlement.platform_fee,
+      platform_fee_gst: settlement.platform_fee_gst,
+      gateway_fee: settlement.gateway_fee,
+      rest_delivery_rs: settlement.rest_delivery_rs,
+      rest_delivery_gst: settlement.rest_delivery_gst,
+      referral_fee: settlement.referral_fee,
+      referral_fee_gst: settlement.referral_fee_gst,
+      net_amount: settlement.net_amount,
+      status: settlement.status,
+      payout: payoutStatus,
+      created_at: settlement.created_at,
+      updated_at: settlement.updated_at,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

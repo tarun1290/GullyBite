@@ -2585,16 +2585,39 @@ router.put('/flows/:flowId', async (req, res) => {
 });
 
 // GET /api/admin/flows/:flowId/json — Download Flow JSON asset
+// Returns: { flow_json, asset_id, name, status }
+// The frontend's normalizeFlow() unwraps flow_json automatically.
 router.get('/flows/:flowId/json', async (req, res) => {
   try {
     const token = metaConfig.getMessagingToken();
-    const { data: assets } = await axios.get(`${metaConfig.graphUrl}/${req.params.flowId}/assets`, {
-      headers: { Authorization: `Bearer ${token}` }, timeout: 10000,
-    });
+    // Fetch flow metadata and assets in parallel for the editor header
+    const [metaResult, assetsResult] = await Promise.allSettled([
+      axios.get(`${metaConfig.graphUrl}/${req.params.flowId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { fields: 'id,name,status,categories,json_version' },
+        timeout: 10000,
+      }),
+      axios.get(`${metaConfig.graphUrl}/${req.params.flowId}/assets`, {
+        headers: { Authorization: `Bearer ${token}` }, timeout: 10000,
+      }),
+    ]);
+
+    if (assetsResult.status !== 'fulfilled') {
+      throw assetsResult.reason;
+    }
+    const assets = assetsResult.value.data;
     const flowAsset = (assets.data || []).find(a => a.asset_type === 'FLOW_JSON');
     if (!flowAsset?.download_url) return res.status(404).json({ error: 'No Flow JSON asset found' });
+
     const { data: flowJson } = await axios.get(flowAsset.download_url, { timeout: 10000 });
-    res.json({ flow_json: flowJson, asset_id: flowAsset.id });
+
+    const meta = metaResult.status === 'fulfilled' ? metaResult.value.data : {};
+    res.json({
+      flow_json: flowJson,
+      asset_id: flowAsset.id,
+      name: meta.name || null,
+      status: meta.status || null,
+    });
   } catch (e) {
     res.status(500).json({ error: e.response?.data?.error?.message || e.message });
   }
@@ -3744,6 +3767,96 @@ router.get('/financials/tax/gstr1', async (req, res) => {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="gstr1_${period}.csv"`);
     res.send([header, ...rows].join('\n'));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PER-ORDER SETTLEMENTS V2 — Admin endpoints
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/admin/order-settlements — list all v2 settlements
+router.get('/order-settlements', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.restaurantId) filter.restaurant_id = req.query.restaurantId;
+    if (req.query.orderId) filter.order_id = req.query.orderId;
+
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const skip = parseInt(req.query.skip) || 0;
+
+    const [settlements, total] = await Promise.all([
+      col('order_settlements').find(filter).sort({ created_at: -1 }).skip(skip).limit(limit).toArray(),
+      col('order_settlements').countDocuments(filter),
+    ]);
+
+    // Enrich with restaurant names
+    const restIds = [...new Set(settlements.map(s => s.restaurant_id))];
+    const restaurants = await col('restaurants').find({ _id: { $in: restIds } }, { projection: { _id: 1, business_name: 1 } }).toArray();
+    const restMap = {};
+    for (const r of restaurants) restMap[String(r._id)] = r.business_name;
+
+    res.json({
+      total,
+      settlements: settlements.map(s => ({
+        ...s,
+        id: String(s._id),
+        restaurant_name: restMap[s.restaurant_id] || 'Unknown',
+      })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/order-settlements/:id — single settlement detail with payout
+router.get('/order-settlements/:id', async (req, res) => {
+  try {
+    const settlement = await col('order_settlements').findOne({ _id: req.params.id });
+    if (!settlement) return res.status(404).json({ error: 'Settlement not found' });
+
+    const payout = settlement.payout_id ? await col('payouts').findOne({ _id: settlement.payout_id }) : null;
+    const order = await col('orders').findOne({ _id: settlement.order_id }, { projection: { order_number: 1, total_rs: 1, status: 1, delivered_at: 1 } });
+    const restaurant = await col('restaurants').findOne({ _id: settlement.restaurant_id }, { projection: { business_name: 1, razorpay_fund_acct_id: 1 } });
+
+    res.json({ settlement, payout, order, restaurant });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/order-settlements/:id/retry — retry a failed payout
+router.post('/order-settlements/:id/retry', express.json(), async (req, res) => {
+  try {
+    const payoutEngine = require('../services/payoutEngine');
+    const result = await payoutEngine.retryFailedSettlement(req.params.id);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/order-settlements/retry-all — retry all failed payouts
+router.post('/order-settlements/retry-all', express.json(), async (req, res) => {
+  try {
+    const payoutEngine = require('../services/payoutEngine');
+    const result = await payoutEngine.retryAllFailedSettlements();
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/order-settlements/:id/process — manually trigger payout for an eligible settlement
+router.post('/order-settlements/:id/process', express.json(), async (req, res) => {
+  try {
+    const payoutEngine = require('../services/payoutEngine');
+    const result = await payoutEngine.processSettlement(req.params.id);
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/payouts — list all v2 payouts
+router.get('/payouts', async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.status) filter.status = req.query.status;
+    if (req.query.restaurantId) filter.restaurant_id = req.query.restaurantId;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const payouts = await col('payouts').find(filter).sort({ created_at: -1 }).limit(limit).toArray();
+    res.json(payouts);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

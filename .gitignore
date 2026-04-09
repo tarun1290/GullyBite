@@ -44,3 +44,7 @@ backend/tests/businessLogic.test.js
 backend/tests/orderStateEngine.test.js
 ANALYTICS_IMPLEMENTATION_SPEC.md
 FRONTEND_DASHBOARD_BUILD_SPEC.md
+SETTLEMENT_PAYOUT_V2_SUMMARY.md
+CATALOG_MANAGEMENT_FIX_SUMMARY.md
+backend/tests/payoutEngine.test.js
+FLOW_BUILDER_FIX_SUMMARY.md
