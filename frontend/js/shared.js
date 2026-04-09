@@ -77,3 +77,47 @@ const WA_CONNECT_LABEL_RECONNECT = 'Reconnect WhatsApp Business';
 function waConnectBtnHTML(reconnect) {
   return WA_CONNECT_ICON_14 + ' ' + (reconnect ? WA_CONNECT_LABEL_RECONNECT : WA_CONNECT_LABEL_DEFAULT);
 }
+
+/* ─────────── META OAUTH START — REDIRECT ONLY ──────────────────
+ * Single entry point for "Connect WhatsApp Business". Calls the backend to
+ * mint a CSRF state row + auth URL, then full-page navigates to Meta. There
+ * is NO popup, NO FB.login, NO postMessage handoff. The Vercel Lambda that
+ * receives the callback will fully link the WABA before redirecting back to
+ * /dashboard.html?meta_connect_id=...
+ *
+ * This function is called from:
+ *   - dashboard banner (doBannerConnect)
+ *   - settings card    (doReconnectMeta / _doMetaConnect)
+ *   - onboarding page  (doConnectMeta in index.html)
+ *
+ * Reentrancy guard prevents a double-click from minting two state rows.
+ */
+var _gbMetaConnectInProgress = false;
+async function gbConnectMetaRedirect(opts) {
+  if (_gbMetaConnectInProgress) return;
+  _gbMetaConnectInProgress = true;
+  var returnTo = (opts && opts.returnTo) || (typeof location !== 'undefined' ? location.pathname + location.hash : null);
+  try {
+    var res = await fetch('/auth/meta/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (token || localStorage.getItem('zm_token') || '') },
+      body: JSON.stringify({ return_to: returnTo }),
+    });
+    var data = await res.json().catch(function(){ return {}; });
+    if (!res.ok || !data.authUrl) {
+      _gbMetaConnectInProgress = false;
+      var msg = data.error || ('Could not start Meta connection (HTTP ' + res.status + ')');
+      if (typeof toast === 'function') toast(msg, 'err');
+      else alert(msg);
+      return;
+    }
+    // Full-page redirect — leaves _gbMetaConnectInProgress=true on purpose,
+    // because the navigation aborts any further JS in this page anyway.
+    window.location.href = data.authUrl;
+  } catch (e) {
+    _gbMetaConnectInProgress = false;
+    var emsg = (e && e.message) || 'Network error starting Meta connection';
+    if (typeof toast === 'function') toast(emsg, 'err');
+    else alert(emsg);
+  }
+}

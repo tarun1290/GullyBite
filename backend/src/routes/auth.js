@@ -15,19 +15,19 @@ const log = require('../utils/logger').child({ component: 'auth' });
 
 const META_GRAPH_URL = metaConfig.graphUrl;
 
-// ── SECURE META TOKEN STORE ────────────────────────────────
-// Short-lived, one-time-use store for Meta access tokens during OAuth callback.
-// Prevents token exposure in URL query params.
-const _metaConnectStore = new Map(); // connectId → { token, metaUser, createdAt }
-const META_CONNECT_EXPIRY_MS = 3 * 60 * 1000; // 3 minutes
-
-// Cleanup expired entries every minute
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, entry] of _metaConnectStore) {
-    if (now - entry.createdAt > META_CONNECT_EXPIRY_MS) _metaConnectStore.delete(id);
-  }
-}, 60000);
+// ── META OAUTH STATE / RESULT STORAGE ────────────────────────
+// Persisted in MongoDB so the flow survives across Lambda instances on Vercel.
+// Two collections (with TTL indexes — see config/indexes.js):
+//
+//   meta_oauth_states     — CSRF state, restaurant binding, single-use
+//   meta_connect_results  — callback outcome handed off to the dashboard
+//
+// The previous in-memory `_metaConnectStore = new Map()` was the root cause of
+// the "authentication error" users were seeing: on Vercel, the Lambda that ran
+// the callback was usually a different instance from the one serving the
+// dashboard's resolve request, so the entry was always missing.
+const META_STATE_TTL_MS  = 10 * 60 * 1000; // 10 minutes — covers slow Meta consent + 2FA
+const META_RESULT_TTL_MS = 10 * 60 * 1000;
 
 // ── Log OAuth redirect URIs at startup ──
 log.info({
@@ -297,80 +297,307 @@ router.get('/google/callback', async (req, res) => {
   }
 });
 
-// ─── META OAUTH REDIRECT CALLBACK ────────────────────────────────
-// Meta redirects here after user completes Embedded Signup or OAuth consent.
-// This is the server-side fallback when FB.login() popup is blocked or unavailable.
-// META_OAUTH_REDIRECT_URI in .env must point to {BASE_URL}/auth/callback
-router.get('/callback', async (req, res) => {
-  const { code, error, error_reason } = req.query;
-  req.log.info({ codePresent: !!code, error: error || 'none', reason: error_reason || 'none' }, 'Meta callback hit');
-
-  if (error || !code) {
-    req.log.error({ error, error_reason }, 'No code or error present');
-    return res.redirect('/?error=meta_auth_failed&reason=' + encodeURIComponent(error_reason || error || 'no_code'));
-  }
-
+// ─── META OAUTH START (redirect-only) ─────────────────────────
+// Authenticated. Generates a CSRF state row in MongoDB, builds the canonical
+// Meta OAuth URL, and returns it to the frontend. The frontend then does
+// `window.location.href = url` — NO popup, NO FB.login.
+//
+// The state row carries the restaurant_id binding, so the unauthenticated
+// callback can link the WABA to the correct tenant without needing to read
+// any cookie or Bearer header.
+router.post('/meta/start', requireAuth, express.json(), async (req, res) => {
   try {
-    // Exchange code for token using server-side redirect URI
-    // Meta OAuth requires GET with query params (not POST with JSON body)
-    req.log.info({ redirectUri: process.env.META_OAUTH_REDIRECT_URI, appId: metaConfig.appId, appSecretSet: !!metaConfig.appSecret }, 'Exchanging code');
-    const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
-      params: {
-        client_id: metaConfig.appId,
-        client_secret: metaConfig.appSecret,
-        redirect_uri: process.env.META_OAUTH_REDIRECT_URI,
-        code,
-      },
-    });
-    const longToken = tokenRes.data.access_token;
-    if (!longToken) {
-      req.log.error({ responseData: tokenRes.data }, 'No access_token in response');
-      return res.redirect('/?error=meta_auth_failed&reason=no_token_returned');
+    const redirectUri = process.env.META_OAUTH_REDIRECT_URI;
+    if (!redirectUri) {
+      req.log.error('META_OAUTH_REDIRECT_URI not configured');
+      return res.status(500).json({ error: 'Meta OAuth is not configured. Please contact support.' });
     }
-    req.log.info({ tokenLength: longToken?.length, expiresIn: tokenRes.data.expires_in }, 'Token exchange successful');
+    if (!metaConfig.appId || !metaConfig.appSecret) {
+      req.log.error({ appId: !!metaConfig.appId, appSecret: !!metaConfig.appSecret }, 'Meta app credentials missing');
+      return res.status(500).json({ error: 'Meta App credentials are not configured. Please contact support.' });
+    }
 
-    // Fetch Meta user profile
-    const userRes = await axios.get(`${META_GRAPH_URL}/me`, { params: { fields: 'id,name,email', access_token: longToken } });
-    const metaUser = userRes.data;
-    req.log.info({ metaUserId: metaUser.id, name: metaUser.name }, 'Meta user fetched');
+    const state = crypto.randomBytes(32).toString('hex');
+    const now = new Date();
+    await col('meta_oauth_states').insertOne({
+      _id: state,
+      restaurant_id: req.restaurantId,
+      created_at: now,
+      expires_at: new Date(now.getTime() + META_STATE_TTL_MS),
+      used: false,
+      // Where to send the user after the dashboard finishes processing — useful
+      // for resuming flows like settings vs onboarding.
+      return_to: typeof req.body?.return_to === 'string' ? req.body.return_to : null,
+    });
 
-    // Store token server-side with a short-lived reference ID (never expose token in URL)
-    const connectId = crypto.randomBytes(24).toString('hex');
-    _metaConnectStore.set(connectId, { token: longToken, metaUser, createdAt: Date.now() });
-    req.log.info('Redirecting to dashboard with secure meta_connect_id');
-    res.redirect(`/dashboard.html?meta_connect_id=${connectId}`);
+    // Standard Meta scopes for WhatsApp Business onboarding.
+    const scope = 'business_management,whatsapp_business_management,whatsapp_business_messaging';
+
+    const params = new URLSearchParams({
+      client_id:    metaConfig.appId,
+      redirect_uri: redirectUri,
+      state,
+      scope,
+      response_type: 'code',
+    });
+
+    // If a Meta Embedded Signup config_id is configured, include it so the user
+    // sees the streamlined WABA signup UI instead of the generic OAuth dialog.
+    // Both flows return a `code` we can exchange — the difference is purely UX.
+    if (metaConfig.loginConfigId) {
+      params.set('config_id', metaConfig.loginConfigId);
+      params.set('override_default_response_type', 'true');
+    }
+
+    const authUrl = `https://www.facebook.com/${metaConfig.apiVersion}/dialog/oauth?${params.toString()}`;
+    req.log.info({ statePrefix: state.slice(0, 8), restaurantId: req.restaurantId, hasConfigId: !!metaConfig.loginConfigId }, 'Meta OAuth start');
+    res.json({ authUrl, state });
   } catch (err) {
-    req.log.error({ err, responseData: err.response?.data }, 'Meta callback failed');
-    res.redirect('/?error=meta_auth_failed&reason=' + encodeURIComponent(err.response?.data?.error?.message || err.message));
+    req.log.error({ err }, 'Meta OAuth start failed');
+    res.status(500).json({ error: 'Could not start Meta connection. Please try again.' });
   }
 });
 
-// ─── RESOLVE META CONNECT (secure token retrieval) ───────────
-// Frontend calls this with meta_connect_id from URL to retrieve the access token securely.
-// One-time use — token is deleted after retrieval. Expires after 3 minutes.
-router.get('/resolve-meta-connect', requireAuth, async (req, res) => {
-  const connectId = req.query.id;
-  if (!connectId) return res.status(400).json({ error: 'meta_connect_id is required' });
+// ─── META OAUTH REDIRECT CALLBACK ────────────────────────────────
+// Meta redirects here after the user authorizes our app. UNAUTHENTICATED —
+// identity is supplied by the `state` row in MongoDB, NOT by any cookie/Bearer.
+//
+// This handler does the entire link end-to-end (token exchange + WABA discovery
+// + DB persistence) so the dashboard does not need to do any further work. It
+// then redirects to /dashboard.html?meta_connect_id=<resultId>, where the
+// dashboard reads a small status row to show success or failure.
+router.get('/callback', async (req, res) => {
+  const { code, state, error, error_reason, error_description } = req.query;
+  req.log.info({ codePresent: !!code, statePresent: !!state, error: error || 'none', reason: error_reason || 'none' }, 'Meta callback hit');
 
-  const entry = _metaConnectStore.get(connectId);
-  if (!entry) {
-    req.log.warn('Invalid or expired meta_connect_id');
-    return res.status(410).json({ error: 'Meta connection token expired or already used. Please reconnect.' });
+  // Helper: persist the result row and redirect the browser to the dashboard.
+  // The dashboard reads it via /auth/meta/result?id=...
+  const finishWithResult = async (restaurantId, payload) => {
+    const resultId = crypto.randomBytes(24).toString('hex');
+    const now = new Date();
+    try {
+      await col('meta_connect_results').insertOne({
+        _id: resultId,
+        restaurant_id: restaurantId || null,
+        created_at: now,
+        expires_at: new Date(now.getTime() + META_RESULT_TTL_MS),
+        consumed: false,
+        ...payload,
+      });
+    } catch (e) {
+      req.log.error({ err: e }, 'Could not persist meta_connect_result');
+    }
+    const target = restaurantId ? '/dashboard.html' : '/';
+    return res.redirect(`${target}?meta_connect_id=${resultId}`);
+  };
+
+  // 1. Validate state — atomically claim it so it cannot be replayed.
+  if (!state || typeof state !== 'string') {
+    req.log.warn('Meta callback missing state');
+    return finishWithResult(null, { ok: false, error: 'invalid_state', message: 'Missing security state. Please retry the connection from the dashboard.' });
+  }
+  const stateDoc = await col('meta_oauth_states').findOneAndDelete({ _id: state });
+  // findOneAndDelete returns the doc directly in some driver versions, or { value: doc } in others.
+  const stateRow = stateDoc?.value || stateDoc;
+  if (!stateRow || !stateRow.restaurant_id) {
+    req.log.warn({ statePrefix: String(state).slice(0, 8) }, 'Meta callback: state not found or already used');
+    return finishWithResult(null, { ok: false, error: 'invalid_state', message: 'Security state expired or already used. Please retry the connection from the dashboard.' });
+  }
+  if (stateRow.expires_at && new Date(stateRow.expires_at) < new Date()) {
+    req.log.warn({ statePrefix: String(state).slice(0, 8) }, 'Meta callback: state expired');
+    return finishWithResult(stateRow.restaurant_id, { ok: false, error: 'state_expired', message: 'Connection link expired. Please reconnect from the dashboard.' });
+  }
+  const restaurantId = stateRow.restaurant_id;
+
+  // 2. Surface user-cancel and Meta errors verbatim.
+  if (error || !code) {
+    req.log.warn({ error, error_reason, error_description }, 'Meta callback: no code (user cancelled or Meta error)');
+    return finishWithResult(restaurantId, {
+      ok: false,
+      error: error || 'no_code',
+      message: error_description || error_reason || 'Meta did not return an authorization code. Please try again.',
+    });
   }
 
-  // Check expiry
-  if (Date.now() - entry.createdAt > META_CONNECT_EXPIRY_MS) {
-    _metaConnectStore.delete(connectId);
-    return res.status(410).json({ error: 'Meta connection token expired. Please reconnect.' });
+  try {
+    // 3. Exchange code → long-lived access token.
+    req.log.info({ restaurantId, redirectUri: process.env.META_OAUTH_REDIRECT_URI, appId: metaConfig.appId }, 'Exchanging code');
+    const tokenRes = await axios.get(`${META_GRAPH_URL}/oauth/access_token`, {
+      params: {
+        client_id:     metaConfig.appId,
+        client_secret: metaConfig.appSecret,
+        redirect_uri:  process.env.META_OAUTH_REDIRECT_URI,
+        code,
+      },
+      timeout: 15000,
+    });
+    const longToken = tokenRes.data?.access_token;
+    const expiresIn = tokenRes.data?.expires_in;
+    if (!longToken) {
+      req.log.error({ responseData: tokenRes.data }, 'Token exchange returned no access_token');
+      return finishWithResult(restaurantId, { ok: false, error: 'no_token', message: 'Meta did not return an access token. Please try again.' });
+    }
+    const expiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : null;
+    req.log.info({ restaurantId, tokenLength: longToken.length, expiresIn }, 'Code exchange successful');
+
+    // 4. Fetch Meta user profile.
+    const userRes = await axios.get(`${META_GRAPH_URL}/me`, {
+      params: { fields: 'id,name,email', access_token: longToken },
+      timeout: 10000,
+    });
+    const metaUser = userRes.data;
+    req.log.info({ restaurantId, metaUserId: metaUser.id }, 'Meta user fetched');
+
+    // 5. Discover WABAs via /me/businesses → /me/whatsapp_business_accounts fallback.
+    let wabaData = [];
+    try {
+      const wabaRes = await axios.get(`${META_GRAPH_URL}/${metaUser.id}/businesses`, {
+        params: {
+          fields: 'id,name,whatsapp_business_accounts{id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}}',
+          access_token: longToken,
+        },
+        timeout: 15000,
+      });
+      wabaData = wabaRes.data?.data || [];
+    } catch (e) {
+      req.log.warn({ err: e?.response?.data || e?.message }, 'WABA discovery via /me/businesses failed');
+    }
+    if (!wabaData.length) {
+      try {
+        const directRes = await axios.get(`${META_GRAPH_URL}/me/whatsapp_business_accounts`, {
+          params: { fields: 'id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}', access_token: longToken },
+          timeout: 15000,
+        });
+        const directWabas = directRes.data?.data || [];
+        if (directWabas.length) {
+          wabaData = [{ id: 'direct', name: 'Direct', whatsapp_business_accounts: { data: directWabas } }];
+        }
+      } catch (e) {
+        req.log.warn({ err: e?.response?.data || e?.message }, 'Direct WABA fallback failed');
+      }
+    }
+
+    // 6. Persist on the restaurant doc + whatsapp_accounts.
+    const currentRestaurant = await col('restaurants').findOne(
+      { _id: restaurantId }, { projection: { approval_status: 1, submitted_at: 1 } }
+    );
+    if (!currentRestaurant) {
+      req.log.error({ restaurantId }, 'Callback: restaurant not found for state');
+      return finishWithResult(restaurantId, { ok: false, error: 'tenant_missing', message: 'Your account could not be located. Please sign in and retry.' });
+    }
+    const $set = {
+      meta_user_id: metaUser.id,
+      meta_access_token: longToken,
+      meta_token_expires_at: expiresAt,
+      whatsapp_connected: true,
+      onboarding_step: 5,
+      updated_at: new Date(),
+    };
+    if (!currentRestaurant.approval_status || currentRestaurant.approval_status === 'pending') {
+      $set.approval_status = 'pending';
+      $set.submitted_at = currentRestaurant.submitted_at || new Date();
+    }
+    await col('restaurants').updateOne({ _id: restaurantId }, { $set });
+
+    // Initialize messaging wallet (fire-and-forget — never blocks the redirect)
+    require('../services/wallet').ensureWallet(restaurantId).catch(e => log.warn({ err: e, restaurantId }, 'Wallet init failed'));
+
+    await _saveWabaAccounts(restaurantId, wabaData, longToken, null);
+
+    // Auto-fetch catalog info using system token (best-effort)
+    try {
+      const catToken = metaConfig.catalogToken;
+      if (catToken) {
+        const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: restaurantId, is_active: true });
+        if (wa_acc?.waba_id) {
+          const wabaCatRes = await axios.get(`${META_GRAPH_URL}/${wa_acc.waba_id}/product_catalogs`, {
+            params: { fields: 'id,name,product_count', access_token: catToken },
+            timeout: 10000,
+          });
+          const catalogs = wabaCatRes.data?.data || [];
+          if (catalogs.length) {
+            const primary = catalogs[0];
+            await col('restaurants').updateOne({ _id: restaurantId }, { $set: {
+              meta_catalog_id: primary.id,
+              meta_catalog_name: primary.name,
+              meta_available_catalogs: catalogs.map(c => ({ id: c.id, name: c.name, product_count: c.product_count })),
+              catalog_auto_fetched: true,
+              catalog_fetched_at: new Date(),
+            }});
+          }
+        }
+      }
+    } catch (e) {
+      req.log.warn({ err: e?.response?.data || e?.message }, 'Catalog auto-fetch failed (non-fatal)');
+    }
+
+    const waAccountCount = await col('whatsapp_accounts').countDocuments({ restaurant_id: restaurantId });
+    req.log.info({ restaurantId, metaUserId: metaUser.id, waAccountCount }, 'Meta connected successfully (callback)');
+
+    return finishWithResult(restaurantId, {
+      ok: true,
+      meta_user_id: metaUser.id,
+      meta_user_name: metaUser.name || null,
+      waba_count: waAccountCount,
+      return_to: stateRow.return_to || null,
+    });
+  } catch (err) {
+    const metaErrMsg = err.response?.data?.error?.message || err.message;
+    req.log.error({ err, responseData: err.response?.data, restaurantId }, 'Meta callback failed during exchange/link');
+    return finishWithResult(restaurantId, {
+      ok: false,
+      error: 'exchange_failed',
+      message: metaErrMsg || 'Could not link your WhatsApp account. Please try again.',
+    });
   }
+});
 
-  // One-time use — delete immediately
-  _metaConnectStore.delete(connectId);
+// ─── META OAUTH RESULT (dashboard handoff) ─────────────────────
+// Authenticated. Reads the meta_connect_result row written by the callback,
+// strictly enforces tenant isolation (the row's restaurant_id must match the
+// caller's), and marks it consumed so it cannot be re-read.
+router.get('/meta/result', requireAuth, async (req, res) => {
+  const id = req.query.id;
+  if (!id || typeof id !== 'string') return res.status(400).json({ error: 'meta_connect_id is required' });
 
-  req.log.info({ connectIdPrefix: connectId.substring(0, 8) }, 'Token resolved securely');
+  try {
+    const row = await col('meta_connect_results').findOne({ _id: id });
+    if (!row) {
+      return res.status(410).json({ error: 'Connection result expired or already consumed. Please reconnect.' });
+    }
+    // Tenant isolation — refuse to leak another restaurant's outcome.
+    if (row.restaurant_id && row.restaurant_id !== req.restaurantId) {
+      req.log.warn({ id: id.slice(0, 8), expected: req.restaurantId, actual: row.restaurant_id }, 'Tenant mismatch on meta_connect_result');
+      return res.status(403).json({ error: 'This connection result belongs to a different account.' });
+    }
+    if (row.expires_at && new Date(row.expires_at) < new Date()) {
+      await col('meta_connect_results').deleteOne({ _id: id });
+      return res.status(410).json({ error: 'Connection result expired. Please reconnect.' });
+    }
+    if (row.consumed) {
+      return res.status(410).json({ error: 'Connection result already consumed. Please reconnect.' });
+    }
+    // Mark consumed (atomic) — but still return the payload to the caller.
+    await col('meta_connect_results').updateOne({ _id: id }, { $set: { consumed: true, consumed_at: new Date() } });
+    res.json({
+      ok: !!row.ok,
+      error: row.error || null,
+      message: row.message || null,
+      meta_user_id: row.meta_user_id || null,
+      meta_user_name: row.meta_user_name || null,
+      waba_count: row.waba_count || 0,
+      return_to: row.return_to || null,
+    });
+  } catch (e) {
+    req.log.error({ err: e }, 'Meta result lookup failed');
+    res.status(500).json({ error: 'Could not load connection result.' });
+  }
+});
 
-  // Return the token to the authenticated frontend (it will call POST /connect-meta with it)
-  res.json({ success: true, accessToken: entry.token, metaUser: entry.metaUser });
+// ─── DEPRECATED: /resolve-meta-connect (popup-era) ─────────────
+// Kept as a stub so old in-flight clients get a clear error instead of a 404.
+router.get('/resolve-meta-connect', requireAuth, (req, res) => {
+  res.status(410).json({ error: 'This endpoint is no longer used. Please refresh and reconnect.' });
 });
 
 // ─── BACKWARD COMPAT: Warn if old meta_access_token flow is used ──

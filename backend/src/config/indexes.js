@@ -96,6 +96,15 @@ const INDEXES = [
   { collection: 'razorpay_webhook_events', index: { event_id: 1 }, options: { unique: true, sparse: true } },
   { collection: 'razorpay_webhook_events', index: { type: 1, created_at: -1 } },
   { collection: 'razorpay_webhook_events', index: { processed: 1, created_at: 1 } },
+
+  // ─── META OAUTH (redirect-only flow) ───────────────────────
+  // CSRF state, persisted across Lambda instances. TTL auto-cleans expired states.
+  { collection: 'meta_oauth_states', index: { expires_at: 1 }, options: { expireAfterSeconds: 0 } },
+  { collection: 'meta_oauth_states', index: { restaurant_id: 1, created_at: -1 } },
+  // Callback results (success/error) handed off to the dashboard via meta_connect_id.
+  // TTL = 10 min so a stale connect_id can never resurface.
+  { collection: 'meta_connect_results', index: { expires_at: 1 }, options: { expireAfterSeconds: 0 } },
+  { collection: 'meta_connect_results', index: { restaurant_id: 1 } },
 ];
 
 async function ensureIndexes() {

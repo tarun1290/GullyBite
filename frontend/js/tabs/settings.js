@@ -1389,66 +1389,11 @@ async function doDeleteAccount() {
   }
 }
 
-async function _finishMetaConnect(code, accessToken) {
-  try {
-    const d = await api('/auth/connect-meta', { method: 'POST', body: {
-      code: code || null,
-      accessToken: accessToken || null,
-      fromJsSdk: !!code, // only true when code comes from FB.login() JS SDK
-      sessionInfo: _embeddedSignupSessionInfo || null,
-      pageUrl: window.location.origin + window.location.pathname,
-    } });
-    if (d.connected || d.ok) {
-      toast('WhatsApp connected!', 'ok');
-      rest = await api('/auth/me');
-      // Hide banners and update all status indicators
-      document.getElementById('wa-connect-banner').style.display  = 'none';
-      if (rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
-      loadProfile();
-      renderWizard();
-    } else {
-      toast(d.error || 'Connection failed', 'err');
-    }
-  } catch (e) { toast(e.message || 'Connection failed', 'err'); }
-  _setConnectBtns(false);
-}
-
-// Capture session info (phone_number_id + waba_id) from Meta Embedded Signup popup
-let _embeddedSignupSessionInfo = null;
-window.addEventListener('message', (event) => {
-  if (event.origin !== 'https://www.facebook.com' && event.origin !== 'https://web.facebook.com') return;
-  try {
-    const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-    if (data?.type === 'WA_EMBEDDED_SIGNUP') {
-      if (data.event === 'FINISH') {
-        _embeddedSignupSessionInfo = data.data || null;
-        console.log('[GullyBite] Embedded signup session info captured:', _embeddedSignupSessionInfo);
-      } else if (data.event === 'CANCEL' || data.event === 'ERROR') {
-        _embeddedSignupSessionInfo = null;
-      }
-    }
-  } catch (_) {}
-});
-
-// Listen for postMessage from popup window (OAuth redirect inside popup)
-window.addEventListener('message', async (event) => {
-  if (event.origin !== window.location.origin) return;
-  if (event.data?.type !== 'GULLYBITE_OAUTH') return;
-  const { meta_token, code, error } = event.data;
-  if (error) { toast('Connection failed: ' + error, 'err'); _setConnectBtns(false); return; }
-  if (meta_token) {
-    localStorage.setItem('zm_token', meta_token);
-    token = meta_token;
-    toast('WhatsApp connected!', 'ok');
-    rest = await api('/auth/me');
-    document.getElementById('wa-connect-banner').style.display = 'none';
-    if (rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
-    loadProfile();
-    _setConnectBtns(false);
-  } else if (code) {
-    await _finishMetaConnect(code, null);
-  }
-});
+// _finishMetaConnect / _embeddedSignupSessionInfo / GULLYBITE_OAUTH postMessage
+// listeners were REMOVED. The legacy popup → postMessage → /auth/connect-meta
+// flow is gone. The new redirect-only flow does the entire link inside
+// /auth/callback on the backend, then bounces back to /dashboard.html?meta_connect_id=...
+// where initDash() reads /auth/meta/result. See shared.js → gbConnectMetaRedirect.
 
 function doBannerConnect() { _doMetaConnect(); }
 function doReconnectMeta() { _doMetaConnect(); }
@@ -1507,85 +1452,15 @@ function _showDashFallback() {
   if (el) el.style.display = 'inline';
 }
 
+// Redirect-only Meta connect entry point. Disables both buttons (banner +
+// settings card), then delegates to gbConnectMetaRedirect() in shared.js.
+// The function returns immediately because window.location.href aborts the
+// page — there is no callback to wait for.
 function _doMetaConnect() {
   _setBtnLoading('banner-connect-btn', true);
   _setBtnLoading('wa-reconnect-btn', true);
-
-  // Public Meta config (appId, loginConfigId, apiVersion) is fetched on
-  // dashboard load — see dashboard.html bootstrap. Bail out if it hasn't
-  // arrived yet so we don't fire FB.login() with an undefined config_id.
-  const cfg = window._gbMetaConfig;
-  if (!cfg || !cfg.loginConfigId || !cfg.appId) {
-    toast('Loading Meta config… please retry in a moment.', 'nfo');
-    _resetConnectBtns();
-    return;
-  }
-
-  if (typeof FB === 'undefined' || typeof FB.login !== 'function') {
-    toast('Facebook SDK not loaded. Redirecting to Meta login…', 'nfo');
-    _resetConnectBtns();
-    window.location.href = `https://www.facebook.com/${cfg.apiVersion}/dialog/oauth?client_id=${cfg.appId}&redirect_uri=${encodeURIComponent(location.origin + '/auth/callback')}&scope=business_management,whatsapp_business_management,whatsapp_business_messaging`;
-    return;
-  }
-
-  // Safety timeout — if popup blocked, show redirect fallback
-  let callbackFired = false;
-  setTimeout(() => {
-    if (!callbackFired) {
-      _resetConnectBtns();
-      _showDashFallback();
-      toast('Popup may have been blocked. Use the redirect link or allow popups.', 'err');
-    }
-  }, 8000);
-
-  // Override window.open to force proper popup dimensions for Meta Embedded Signup
-  const _origOpen = window.open;
-  window.open = function(url, name, features) {
-    const w = 580, h = 680;
-    const left = Math.round(window.screenX + (window.outerWidth  - w) / 2);
-    const top  = Math.round(window.screenY + (window.outerHeight - h) / 2);
-    return _origOpen.call(window, url, name,
-      `width=${w},height=${h},left=${left},top=${top},scrollbars=yes,resizable=yes`);
-  };
-
-  try {
-    FB.login(async resp => {
-      window.open = _origOpen; // restore after popup closes
-      callbackFired = true;
-      console.log('[GullyBite] FB.login response:', JSON.stringify(resp));
-      if (resp.authResponse?.code) {
-        await _finishMetaConnect(resp.authResponse.code, null);
-        return;
-      }
-      // authResponse null — popup closed or navigated away
-      toast('Verifying connection…', 'nfo');
-      await new Promise(r => setTimeout(r, 2000));
-      const fresh = await api('/auth/me').catch(() => null);
-      if (fresh?.whatsapp_connected || fresh?.meta_user_id) {
-        toast('WhatsApp connected!', 'ok');
-        rest = fresh;
-        document.getElementById('wa-connect-banner').style.display = 'none';
-        if (rest.approval_status !== 'approved') document.getElementById('pending-banner').style.display = 'flex';
-        loadProfile();
-        renderWizard();
-      } else {
-        toast('Connection cancelled — please try again.', 'err');
-        _showDashFallback();
-      }
-      _resetConnectBtns();
-    }, {
-      config_id: cfg.loginConfigId,
-      response_type: 'code',
-      override_default_response_type: true,
-      extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
-    });
-  } catch (err) {
-    window.open = _origOpen; // restore on error
-    console.error('[GullyBite] FB.login error:', err);
-    toast('Redirecting to Meta login…', 'nfo');
-    _resetConnectBtns();
-    window.location.href = `https://www.facebook.com/${cfg.apiVersion}/dialog/oauth?client_id=${cfg.appId}&redirect_uri=${encodeURIComponent(location.origin + '/auth/callback')}&scope=business_management,whatsapp_business_management,whatsapp_business_messaging`;
-  }
+  // returnTo carries the current tab/hash so the user lands back on Settings.
+  gbConnectMetaRedirect({ returnTo: location.pathname + (location.hash || '#settings') });
 }
 
 

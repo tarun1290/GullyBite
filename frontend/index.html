@@ -786,7 +786,7 @@ End of document upload block ═════════════════
           Connect WhatsApp Business
         </button>
         <p id="connect-fallback" style="display:none;margin-top:.6rem;font-size:.78rem">
-          Popup not opening? <a href="#" id="connect-redirect-link" style="color:#4f46e5;font-weight:600;text-decoration:underline">Click here to connect via redirect</a>
+          Connection didn't go through? <a href="#" id="connect-redirect-link" onclick="event.preventDefault();doConnectMeta();return false;" style="color:#4f46e5;font-weight:600;text-decoration:underline">Try again</a>
         </p>
         <p style="margin-top:.6rem;font-size:.72rem;color:var(--dim)">Takes about 2 minutes. You'll be redirected back automatically.</p>
         <div style="margin-top:1rem;padding-top:.9rem;border-top:1px solid #f1f5f9">
@@ -852,32 +852,11 @@ function showPage(id) {
   if (id === 'pg-connect') { _fetchStoreUrl(); _loadFbSdk(); }
 }
 
-/* ─── LAZY FB SDK (for WhatsApp Embedded Signup only) ───── */
-// Bootstraps the public Meta config (appId, loginConfigId, apiVersion) from
-// the backend on first call, then loads the FB SDK with those values. The
-// promise is cached on window._gbMetaConfigReady so doConnectMeta() can await
-// it before invoking FB.login().
-let _fbSdkLoaded = false;
-function _loadFbSdk() {
-  if (_fbSdkLoaded) return window._gbMetaConfigReady;
-  _fbSdkLoaded = true;
-  window._gbMetaConfigReady = fetch('/auth/meta-config')
-    .then(r => r.json())
-    .then(cfg => {
-      window._gbMetaConfig = cfg;
-      window.fbAsyncInit = function() {
-        FB.init({ appId: cfg.appId, cookie: true, xfbml: true, version: cfg.apiVersion });
-        console.log('[GullyBite] FB SDK ready');
-      };
-      const s = document.createElement('script');
-      s.src = 'https://connect.facebook.net/en_US/sdk.js';
-      s.async = true; s.defer = true;
-      document.body.appendChild(s);
-      return cfg;
-    })
-    .catch(e => { console.error('[GullyBite] Failed to load Meta config:', e); return null; });
-  return window._gbMetaConfigReady;
-}
+/* ─── META CONNECT — REDIRECT ONLY ────────────────────────
+ * The Facebook JS SDK is no longer loaded. doConnectMeta() now full-page
+ * redirects to Meta via /auth/meta/start. See dashboard.html and shared.js
+ * for the rationale (popup blockers, Vercel multi-instance state, CSRF). */
+function _loadFbSdk() { /* deprecated no-op kept to avoid breaking call sites */ }
 async function _fetchStoreUrl() {
   const token = localStorage.getItem('zm_token');
   if (!token) return;
@@ -1203,166 +1182,54 @@ async function submitDocuments(e) {
 // Shared "Connect WhatsApp Business" inner HTML — matches the .btn-wa-connect CTA used across the dashboard
 const META_BTN_HTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg> Connect WhatsApp Business';
 
-// Listen for messages — both from Meta's embedded signup popup AND from our own popup window
-let _metaSessionInfo = {};
-window.addEventListener('message', async (event) => {
-  // ── Our own popup posted back after OAuth redirect ──
-  if (event.origin === window.location.origin && event.data?.type === 'GULLYBITE_OAUTH') {
-    const { meta_token, code, error } = event.data;
-    const jwtToken = localStorage.getItem('zm_token');
-
-    if (meta_token) {
-      // Always update the token — server linked the account
-      localStorage.setItem('zm_token', meta_token);
-    }
-    // The FB.login callback's fallback check will pick this up via /auth/me
-    // (it waits 2s then checks backend — by then the token is updated in localStorage)
-    // Only handle here if FB.login is NOT in progress (e.g. page redirect without popup)
-    if (!_connectInProgress) {
-      if (error) { toast('Connection failed: ' + error, 'err'); return; }
-      const activeToken = meta_token || jwtToken;
-      if (meta_token) {
-        toast('WhatsApp connected!', 'ok');
-        fetch('/auth/me', { headers: { Authorization: `Bearer ${meta_token}` } })
-          .then(r => r.json()).then(routeByStatus);
-      } else if (code && activeToken) {
-        toast('Linking WhatsApp…', 'nfo');
-        post('/auth/connect-meta', { code, sessionInfo: _metaSessionInfo, fromJsSdk: true }, activeToken)
-          .then(d => {
-            if (d.connected) { toast('WhatsApp connected!', 'ok'); window.location.href = '/dashboard'; }
-            else toast(d.error || 'Connection failed', 'err');
-          }).catch(() => toast('Connection failed', 'err'));
-      }
-    }
-    return;
-  }
-
-  // ── Meta embedded signup session info ──
-  if (!['https://www.facebook.com','https://web.facebook.com'].includes(event.origin)) return;
-  try {
-    const data = JSON.parse(event.data);
-    if (data.type === 'WA_EMBEDDED_SIGNUP') {
-      if (data.event === 'FINISH') _metaSessionInfo = data.data || {};
-      else if (data.event === 'CANCEL') console.log('[EmbeddedSignup] Cancelled at step:', data.data?.current_step);
-      else if (data.event === 'ERROR') console.error('[EmbeddedSignup] Error:', data.data);
-    }
-  } catch {}
-});
+// Popup-era postMessage listeners and _showRedirectFallback() were REMOVED.
+// All Meta auth is now redirect-only — see doConnectMeta() below and
+// /auth/meta/start on the backend.
 
 function _resetConnectBtn() {
   const btn = document.getElementById('connect-btn');
   if (btn) { btn.disabled = false; btn.innerHTML = META_BTN_HTML; }
 }
 
-function _showRedirectFallback() {
-  const el = document.getElementById('connect-fallback');
-  const link = document.getElementById('connect-redirect-link');
-  if (el) el.style.display = 'block';
-  if (link) {
-    const cfg = window._gbMetaConfig || {};
-    link.href = `https://www.facebook.com/${cfg.apiVersion || 'v25.0'}/dialog/oauth?client_id=${cfg.appId || ''}&redirect_uri=${encodeURIComponent(location.origin + '/auth/callback')}&scope=business_management,whatsapp_business_management,whatsapp_business_messaging`;
-  }
-}
-
 let _connectInProgress = false;
 
-function doConnectMeta() {
-  const btn = document.getElementById('connect-btn');
-  btn.disabled = true;
-  btn.innerHTML = '<div class="spin" style="border-top-color:#fff;border-color:rgba(255,255,255,.25)"></div> Connecting…';
-  _metaSessionInfo = {};
+// Redirect-only Meta connect for the standalone onboarding page (index.html).
+// This page does NOT load shared.js, so the helper is inlined below.
+async function doConnectMeta() {
+  if (_connectInProgress) return;
   _connectInProgress = true;
-
-  // Bail if the public Meta config hasn't bootstrapped yet (rare —
-  // _loadFbSdk() runs on showPage('pg-connect')). Without loginConfigId
-  // FB.login() would silently render an empty signup dialog.
-  if (!window._gbMetaConfig || !window._gbMetaConfig.loginConfigId) {
-    toast('Loading Meta config… please retry in a moment.', 'nfo');
-    _loadFbSdk();
-    _connectInProgress = false;
-    _resetConnectBtn();
-    return;
+  const btn = document.getElementById('connect-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spin" style="border-top-color:#fff;border-color:rgba(255,255,255,.25)"></div> Connecting…';
   }
-
-  // Check if FB SDK loaded
-  if (typeof FB === 'undefined' || typeof FB.login !== 'function') {
-    toast('Facebook SDK not loaded. Using redirect method…', 'nfo');
-    _connectInProgress = false;
-    _resetConnectBtn();
-    _showRedirectFallback();
-    // Redirect directly to Meta OAuth
-    toast('Please enable popups and try again', 'err');
-    return;
-  }
-
-  // Safety timeout — if popup blocked, show redirect fallback
-  let callbackFired = false;
-  setTimeout(() => {
-    if (!callbackFired) {
-      _connectInProgress = false;
-      _resetConnectBtn();
-      _showRedirectFallback();
-      toast('Popup was blocked. Use the redirect link below or allow popups for this site.', 'err');
-    }
-  }, 8000);
-
   try {
-    FB.login(async r => {
-      callbackFired = true;
-      const token = localStorage.getItem('zm_token');
-      console.log('[GullyBite] FB.login response:', JSON.stringify(r));
-
-      if (r.authResponse?.code) {
-        toast('Linking WhatsApp…', 'nfo');
-        try {
-          const d = await post('/auth/connect-meta', {
-            code: r.authResponse.code,
-            sessionInfo: _metaSessionInfo,
-            fromJsSdk: true,
-          }, token);
-          if (d.connected) { toast('WhatsApp connected!', 'ok'); window.location.href = '/dashboard'; return; }
-          else toast(d.error || 'Connection failed', 'err');
-        } catch { toast('Connection failed', 'err'); }
-        _connectInProgress = false;
-        _resetConnectBtn();
-        return;
-      }
-
-      // authResponse null — popup closed or navigated away
-      toast('Verifying connection…', 'nfo');
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
-      try {
-        const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
-        if (me.meta_user_id) {
-          const updatedToken = localStorage.getItem('zm_token');
-          const latest = await fetch('/auth/me', { headers: { Authorization: `Bearer ${updatedToken}` } }).then(r => r.json());
-          toast('WhatsApp connected!', 'ok');
-          routeByStatus(latest);
-        } else {
-          toast('Cancelled — please try again', 'err');
-          _showRedirectFallback();
-        }
-      } catch {
-        toast('Cancelled — please try again', 'err');
-        _showRedirectFallback();
-      }
-
+    const jwtToken = localStorage.getItem('zm_token');
+    if (!jwtToken) {
+      toast('Please sign in first', 'err');
       _connectInProgress = false;
       _resetConnectBtn();
-    }, {
-      config_id: window._gbMetaConfig.loginConfigId,
-      response_type: 'code',
-      override_default_response_type: true,
-      extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },
+      return;
+    }
+    const res = await fetch('/auth/meta/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwtToken },
+      body: JSON.stringify({ return_to: '/dashboard' }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.authUrl) {
+      _connectInProgress = false;
+      _resetConnectBtn();
+      toast(data.error || ('Could not start Meta connection (HTTP ' + res.status + ')'), 'err');
+      return;
+    }
+    // Full-page navigation to Meta. _connectInProgress stays true on purpose
+    // because the navigation aborts any further JS in this page.
+    window.location.href = data.authUrl;
   } catch (err) {
-    console.error('[GullyBite] FB.login error:', err);
-    toast('Could not open Meta login. Using redirect…', 'nfo');
     _connectInProgress = false;
     _resetConnectBtn();
-    _showRedirectFallback();
-    toast('Please enable popups and try again', 'err');
+    toast((err && err.message) || 'Network error starting Meta connection', 'err');
   }
 }
 
