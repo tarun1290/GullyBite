@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/wa-connect.css">
 <style>
 :root{
   --bg   :#f1f5f9; --bg2  :#ffffff;
@@ -42,6 +43,7 @@ a{color:inherit;text-decoration:none}
 .btn-primary{display:inline-flex;align-items:center;gap:.4rem;background:var(--acc);color:#fff;font-weight:700;font-size:.85rem;padding:.55rem 1.3rem;border-radius:8px;border:none;transition:all .15s;cursor:pointer}
 .btn-primary:hover{background:var(--acc2);box-shadow:0 3px 12px rgba(79,70,229,.25)}
 .btn-primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+/* .btn-wa-connect lives in /css/wa-connect.css (loaded above) */
 
 /* ── LANDING PAGE ──────────────────────────────────────── */
 
@@ -778,9 +780,10 @@ End of document upload block ═════════════════
       <!-- Connect button -->
       <div style="background:#fff;border:1px solid var(--rim,#e2e8f0);border-radius:10px;padding:1.2rem;text-align:center">
         <p style="font-size:.8rem;color:#64748b;margin-bottom:.9rem">Done with the steps above? Connect now.</p>
-        <button class="btn-meta" id="connect-btn" onclick="doConnectMeta()">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-          Connect with Meta / Facebook
+        <button class="btn-wa-connect btn-lg" id="connect-btn" onclick="doConnectMeta()">
+          <!-- icon + label set by JS via META_BTN_HTML on reset; defaults match -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Connect WhatsApp Business
         </button>
         <p id="connect-fallback" style="display:none;margin-top:.6rem;font-size:.78rem">
           Popup not opening? <a href="#" id="connect-redirect-link" style="color:#4f46e5;font-weight:600;text-decoration:underline">Click here to connect via redirect</a>
@@ -850,13 +853,30 @@ function showPage(id) {
 }
 
 /* ─── LAZY FB SDK (for WhatsApp Embedded Signup only) ───── */
+// Bootstraps the public Meta config (appId, loginConfigId, apiVersion) from
+// the backend on first call, then loads the FB SDK with those values. The
+// promise is cached on window._gbMetaConfigReady so doConnectMeta() can await
+// it before invoking FB.login().
 let _fbSdkLoaded = false;
 function _loadFbSdk() {
-  if (_fbSdkLoaded) return;
+  if (_fbSdkLoaded) return window._gbMetaConfigReady;
   _fbSdkLoaded = true;
-  window.fbAsyncInit = function() { FB.init({ appId:'1670288721053166', cookie:true, xfbml:true, version:'v25.0' }); console.log('[GullyBite] FB SDK ready'); };
-  const s = document.createElement('script'); s.src = 'https://connect.facebook.net/en_US/sdk.js'; s.async = true; s.defer = true;
-  document.body.appendChild(s);
+  window._gbMetaConfigReady = fetch('/auth/meta-config')
+    .then(r => r.json())
+    .then(cfg => {
+      window._gbMetaConfig = cfg;
+      window.fbAsyncInit = function() {
+        FB.init({ appId: cfg.appId, cookie: true, xfbml: true, version: cfg.apiVersion });
+        console.log('[GullyBite] FB SDK ready');
+      };
+      const s = document.createElement('script');
+      s.src = 'https://connect.facebook.net/en_US/sdk.js';
+      s.async = true; s.defer = true;
+      document.body.appendChild(s);
+      return cfg;
+    })
+    .catch(e => { console.error('[GullyBite] Failed to load Meta config:', e); return null; });
+  return window._gbMetaConfigReady;
 }
 async function _fetchStoreUrl() {
   const token = localStorage.getItem('zm_token');
@@ -1180,7 +1200,8 @@ async function submitDocuments(e) {
    End of document upload JS ─────────────────────────────── */
 
 /* ─── CONNECT WHATSAPP ──────────────────────────────────── */
-const META_BTN_HTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Connect with Meta / Facebook';
+// Shared "Connect WhatsApp Business" inner HTML — matches the .btn-wa-connect CTA used across the dashboard
+const META_BTN_HTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg> Connect WhatsApp Business';
 
 // Listen for messages — both from Meta's embedded signup popup AND from our own popup window
 let _metaSessionInfo = {};
@@ -1237,7 +1258,10 @@ function _showRedirectFallback() {
   const el = document.getElementById('connect-fallback');
   const link = document.getElementById('connect-redirect-link');
   if (el) el.style.display = 'block';
-  if (link) link.href = `https://www.facebook.com/v25.0/dialog/oauth?client_id=1670288721053166&redirect_uri=${encodeURIComponent(location.origin + '/auth/callback')}&scope=business_management,whatsapp_business_management,whatsapp_business_messaging`;
+  if (link) {
+    const cfg = window._gbMetaConfig || {};
+    link.href = `https://www.facebook.com/${cfg.apiVersion || 'v25.0'}/dialog/oauth?client_id=${cfg.appId || ''}&redirect_uri=${encodeURIComponent(location.origin + '/auth/callback')}&scope=business_management,whatsapp_business_management,whatsapp_business_messaging`;
+  }
 }
 
 let _connectInProgress = false;
@@ -1248,6 +1272,17 @@ function doConnectMeta() {
   btn.innerHTML = '<div class="spin" style="border-top-color:#fff;border-color:rgba(255,255,255,.25)"></div> Connecting…';
   _metaSessionInfo = {};
   _connectInProgress = true;
+
+  // Bail if the public Meta config hasn't bootstrapped yet (rare —
+  // _loadFbSdk() runs on showPage('pg-connect')). Without loginConfigId
+  // FB.login() would silently render an empty signup dialog.
+  if (!window._gbMetaConfig || !window._gbMetaConfig.loginConfigId) {
+    toast('Loading Meta config… please retry in a moment.', 'nfo');
+    _loadFbSdk();
+    _connectInProgress = false;
+    _resetConnectBtn();
+    return;
+  }
 
   // Check if FB SDK loaded
   if (typeof FB === 'undefined' || typeof FB.login !== 'function') {
@@ -1316,7 +1351,7 @@ function doConnectMeta() {
       _connectInProgress = false;
       _resetConnectBtn();
     }, {
-      config_id: '967221625965151',
+      config_id: window._gbMetaConfig.loginConfigId,
       response_type: 'code',
       override_default_response_type: true,
       extras: { setup: {}, featureType: '', sessionInfoVersion: '3' },

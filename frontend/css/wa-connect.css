@@ -1,0 +1,63 @@
+/* frontend/css/wa-connect.css
+ * Shared "Connect WhatsApp Business" CTA — single source of truth.
+ *
+ * Used by:
+ *   - dashboard.html (banner + Settings card + wizard checklist)
+ *   - index.html     (standalone onboarding connect page)
+ *
+ * The CSS variables --wa and --wa2 are defined in dashboard.html.
+ * For pages that don't define those variables (e.g., index.html), this
+ * file falls back to the literal hex values (#16a34a / #15803d).
+ */
+
+.btn-wa-connect {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  background: var(--wa, #16a34a);
+  color: #fff;
+  font-weight: 600;
+  font-size: .85rem;
+  padding: .6rem 1.1rem;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background .15s, box-shadow .15s, transform .1s;
+  box-shadow: 0 1px 3px rgba(22, 163, 74, .2);
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.btn-wa-connect:hover:not(:disabled) {
+  background: var(--wa2, #15803d);
+  box-shadow: 0 3px 10px rgba(22, 163, 74, .32);
+}
+
+.btn-wa-connect:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn-wa-connect:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-wa-connect.btn-sm {
+  padding: .42rem .85rem;
+  font-size: .78rem;
+}
+
+/* Larger variant for the standalone onboarding page (index.html). */
+.btn-wa-connect.btn-lg {
+  padding: .78rem 1.6rem;
+  font-size: .92rem;
+  border-radius: 9px;
+  gap: .55rem;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, .22);
+}
+
+.btn-wa-connect.btn-lg:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(22, 163, 74, .32);
+}

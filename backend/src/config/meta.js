@@ -35,6 +35,11 @@ const metaConfig = {
   get appId()     { return process.env.META_APP_ID; },
   get appSecret() { return process.env.META_APP_SECRET; },
 
+  // Meta Embedded Signup config ID — created in Meta App Dashboard
+  // → WhatsApp → Configuration → Login Configuration. Frontend uses it
+  // as `config_id` in FB.login() to launch the WABA signup flow.
+  get loginConfigId() { return process.env.META_LOGIN_CONFIG_ID; },
+
   // ── Business / API ──────────────────────────────────────────
   get businessId()  { return process.env.META_BUSINESS_ID; },
   get apiVersion()  { return process.env.WA_API_VERSION || 'v25.0'; },
@@ -74,6 +79,7 @@ const metaConfig = {
         : 'not set → using META_SYSTEM_USER_TOKEN',
       appId: mask(this.appId),
       appSecret: mask(this.appSecret),
+      loginConfigId: this.loginConfigId || 'NOT SET',
       businessId: this.businessId || 'NOT SET',
       apiVersion: this.apiVersion,
     }, 'Meta config status');

@@ -67,8 +67,9 @@ app.use('/api/', (req, res, next) => {
 });
 // Stricter limit for auth endpoints: 5 attempts per 15 min per IP
 // Exempt GET /auth/me — it's a profile read, not a login attempt
+// Exempt GET /auth/meta-config — public, cacheable, called on page load
 app.use('/auth/', (req, res, next) => {
-  if (req.method === 'GET' && req.path === '/me') return next();
+  if (req.method === 'GET' && (req.path === '/me' || req.path === '/meta-config')) return next();
   const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
   const { allowed, retryAfterMs } = authLimiter.isAllowed(ip);
   if (!allowed) {

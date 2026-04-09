@@ -36,6 +36,24 @@ log.info({
   googleClientId: process.env.GOOGLE_CLIENT_ID?.slice(0, 30) + '...' || '(not set)',
 }, 'OAuth redirect URIs configured');
 
+// ─── PUBLIC META CONFIG ───────────────────────────────────────
+// Returns the *public* Meta App identifiers needed by the frontend
+// to launch FB SDK + Embedded Signup. These values are intentionally
+// public (they appear in the OAuth dialog URL anyway). Secrets like
+// META_APP_SECRET and META_SYSTEM_USER_TOKEN are NEVER returned.
+//
+// Single source of truth: backend env vars (META_APP_ID,
+// META_LOGIN_CONFIG_ID, WA_API_VERSION). The frontend bootstraps
+// this once on page load — see dashboard.html / index.html.
+router.get('/meta-config', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=300'); // 5 min — values rarely change
+  res.json({
+    appId: metaConfig.appId || null,
+    loginConfigId: metaConfig.loginConfigId || null,
+    apiVersion: metaConfig.apiVersion,
+  });
+});
+
 // ─── SIGN UP ──────────────────────────────────────────────────
 router.post('/signup', express.json(), async (req, res) => {
   try {

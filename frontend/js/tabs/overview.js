@@ -100,7 +100,9 @@ async function renderWizard() {
   const hasCatalog = !!(rest.meta_catalog_id || rest.catalog_id);
 
   const steps = [
-    { l: 'Connect with Meta',     d: 'Link your WhatsApp Business account',             done: waConnected,  fn: () => doBannerConnect() },
+    // First step uses the canonical "Connect WhatsApp Business" CTA — same label, route, and style
+    // as the homepage banner and Settings page. Label sourced from shared.js (WA_CONNECT_LABEL_DEFAULT).
+    { l: WA_CONNECT_LABEL_DEFAULT, d: 'Link your WhatsApp Business account via Meta', done: waConnected,  fn: () => doBannerConnect(), cta: 'wa-connect' },
     { l: 'Complete your profile',  d: 'Business name, logo, bank account',               done: profileDone,  fn: () => goTab('settings', null) },
     { l: 'Add your first branch',  d: 'GPS coordinates enable location-based ordering',  done: hasBranch,    fn: () => goTab('menu', null) },
     { l: 'Add menu items',         d: 'Items sync to WhatsApp Catalog automatically',    done: hasMenu,      fn: () => goTab('menu', null) },
@@ -117,10 +119,19 @@ async function renderWizard() {
   document.getElementById('ob-steps').innerHTML = steps.map((s, i) => {
     const n = i + 1;
     const cls = s.done ? 'wz-done' : 'wz-cur';
+    let actionBtn = '';
+    if (s.fn && !s.done) {
+      if (s.cta === 'wa-connect') {
+        // Use the shared .btn-wa-connect class + canonical label from shared.js
+        actionBtn = `<button class="btn-wa-connect btn-sm" style="flex-shrink:0" onclick="(${s.fn.toString()})()">${WA_CONNECT_LABEL_DEFAULT}</button>`;
+      } else {
+        actionBtn = `<button class="btn-g btn-sm" style="flex-shrink:0" onclick="(${s.fn.toString()})()">Go →</button>`;
+      }
+    }
     return `<div class="wz">
       <div class="wz-n ${cls}">${s.done ? '✓' : n}</div>
       <div style="flex:1"><b>${s.l}</b><p>${s.d}</p></div>
-      ${s.fn && !s.done ? `<button class="btn-g btn-sm" style="flex-shrink:0" onclick="(${s.fn.toString()})()">Go →</button>` : ''}
+      ${actionBtn}
     </div>`;
   }).join('');
 }
