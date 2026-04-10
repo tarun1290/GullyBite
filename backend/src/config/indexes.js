@@ -105,6 +105,20 @@ const INDEXES = [
   // TTL = 10 min so a stale connect_id can never resurface.
   { collection: 'meta_connect_results', index: { expires_at: 1 }, options: { expireAfterSeconds: 0 } },
   { collection: 'meta_connect_results', index: { restaurant_id: 1 } },
+
+  // ─── WABA-BIND-FIX: structural cross-tenant collision protection ────
+  // A phone_number_id is GLOBALLY unique on Meta's side. We mirror that
+  // here as a sparse-unique index so two restaurant rows can never claim
+  // the same phone_number_id, even if a future code path forgets the
+  // composite filter. Sparse so legacy rows without phone_number_id don't
+  // collide with each other.
+  { collection: 'whatsapp_accounts', index: { phone_number_id: 1 }, options: { unique: true, sparse: true } },
+  // Tenant + linked-record lookup
+  { collection: 'whatsapp_accounts', index: { restaurant_id: 1, is_active: 1 } },
+  { collection: 'whatsapp_accounts', index: { restaurant_id: 1, account_type: 1 } },
+  // Restaurant linkage source of truth — fast lookup of "which WABA is the
+  // primary for this restaurant?"
+  { collection: 'restaurants', index: { linked_phone_number_id: 1 }, options: { sparse: true } },
 ];
 
 async function ensureIndexes() {

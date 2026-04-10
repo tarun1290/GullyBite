@@ -3,15 +3,19 @@
 
 (function() {
 
+// Sync logs loader. Always resolves into one of: loading → success / empty / error.
+// Uses an explicit 12s timeout so a slow cold-start backend can't leave the
+// section stuck on "Loading..." indefinitely (which was the original symptom).
 async function loadSyncLogs() {
   const tbody = document.getElementById('sync-log-tbody');
   if (!tbody) return;
-  // Show explicit loading skeleton (replaces stale "Loading..." default)
+  // Loading skeleton
   tbody.innerHTML = '<tr><td colspan="4" style="padding:1.2rem;text-align:center;color:var(--dim)">'
     + '<div class="spin" style="margin:0 auto .4rem;width:16px;height:16px"></div>'
     + 'Loading sync activity…</td></tr>';
   try {
-    const logs = await api('/api/restaurant/sync-logs');
+    // 12s timeout — sync logs is a small DB read, anything longer is a hung connection
+    const logs = await api('/api/restaurant/sync-logs', { timeout: 12000 });
     if (!Array.isArray(logs) || !logs.length) {
       tbody.innerHTML = '<tr><td colspan="4" style="padding:1.2rem;text-align:center;color:var(--dim)">'
         + '<div style="font-size:1.4rem;margin-bottom:.3rem">📋</div>'
@@ -19,15 +23,29 @@ async function loadSyncLogs() {
       return;
     }
     const sevIcon = { info: '✅', warning: '⚠️', error: '❌', critical: '🔴' };
-    tbody.innerHTML = logs.map(l => `<tr style="border-bottom:1px solid var(--rim)">
-      <td style="padding:.4rem .6rem;font-size:.76rem;color:var(--dim);white-space:nowrap">${new Date(l.created_at).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</td>
-      <td style="padding:.4rem .6rem;font-size:.8rem;font-weight:500">${_esc(l.action)}</td>
-      <td style="padding:.4rem .6rem;font-size:.78rem;color:var(--dim);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(l.description || '—')}</td>
-      <td style="padding:.4rem .6rem;text-align:center">${sevIcon[l.severity] || '—'}</td>
-    </tr>`).join('');
+    tbody.innerHTML = logs.map(l => {
+      let when = '—';
+      if (l && l.created_at) {
+        const d = new Date(l.created_at);
+        if (!isNaN(d.getTime())) {
+          when = d.toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+        }
+      }
+      const action = _esc((l && l.action) || '—');
+      const desc   = _esc((l && l.description) || '—');
+      const sev    = sevIcon[l && l.severity] || '—';
+      return `<tr style="border-bottom:1px solid var(--rim)">
+        <td style="padding:.4rem .6rem;font-size:.76rem;color:var(--dim);white-space:nowrap">${when}</td>
+        <td style="padding:.4rem .6rem;font-size:.8rem;font-weight:500">${action}</td>
+        <td style="padding:.4rem .6rem;font-size:.78rem;color:var(--dim);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${desc}</td>
+        <td style="padding:.4rem .6rem;text-align:center">${sev}</td>
+      </tr>`;
+    }).join('');
   } catch (e) {
+    const isTimeout = e && /timed out/i.test(e.message || '');
+    const label = isTimeout ? 'Sync activity took too long to load' : 'Failed to load sync activity';
     tbody.innerHTML = '<tr><td colspan="4" style="padding:1rem;text-align:center;color:var(--red)">'
-      + '❌ Failed to load sync activity'
+      + '❌ ' + label
       + ' <button class="btn-g btn-sm" style="font-size:.7rem;margin-left:.5rem" onclick="loadSyncLogs()">Retry</button>'
       + '</td></tr>';
   }
@@ -35,8 +53,26 @@ async function loadSyncLogs() {
 
 async function loadWA() {
   const list = document.getElementById('wa-list');
+  if (!list) return;
+  // Loading skeleton (replaces any stale content)
+  list.innerHTML = '<div style="text-align:center;padding:2rem"><div class="spin"></div></div>';
+  let accounts;
   try {
-    const accounts = await api('/api/restaurant/whatsapp');
+    accounts = await api('/api/restaurant/whatsapp', { timeout: 12000 });
+  } catch (err) {
+    // Surface the failure instead of swallowing it. Distinguishes timeout
+    // (transient — retryable) from a real error (config/auth — actionable).
+    const isTimeout = err && /timed out/i.test(err.message || '');
+    const label = isTimeout ? 'WhatsApp account list took too long to load' : 'Could not load WhatsApp accounts';
+    list.innerHTML = `<div class="empty">
+      <div class="ei">⚠️</div>
+      <h3>${label}</h3>
+      <p style="color:var(--dim);font-size:.82rem;margin:.4rem 0 .8rem">${_esc(err && err.message || '')}</p>
+      <button class="btn-g btn-sm" onclick="loadWA()">Retry</button>
+    </div>`;
+    return;
+  }
+  try {
     // Filter out Meta test numbers and sandbox accounts
     const realAccounts = (accounts || []).filter(a => {
       const phone = (a.phone_display || a.wa_phone_number || '').replace(/\s/g, '');
@@ -45,7 +81,9 @@ async function loadWA() {
       return true;
     });
     if (!realAccounts.length) {
-      list.innerHTML = `<div class="empty"><div class="ei">📱</div><h3>No numbers found</h3><p>Try reconnecting your Meta account</p></div>`;
+      list.innerHTML = `<div class="empty"><div class="ei">📱</div><h3>No numbers found</h3><p>Try reconnecting your Meta account</p>
+        <button class="btn-g btn-sm" style="margin-top:.6rem" onclick="doReconnectMeta()">Reconnect Meta</button>
+      </div>`;
       return;
     }
     document.getElementById('live-dot').style.display = 'flex';
@@ -109,7 +147,17 @@ async function loadWA() {
         <div id="wa-messaging-section-${a._id || a.id}" style="display:none"></div>
       </div>`;
     }).join('');
-  } catch (_) {}
+  } catch (renderErr) {
+    // Render-time error (e.g., malformed account doc) — surface it instead
+    // of leaving the spinner spinning forever.
+    list.innerHTML = `<div class="empty">
+      <div class="ei">⚠️</div>
+      <h3>Could not display WhatsApp accounts</h3>
+      <p style="color:var(--dim);font-size:.82rem;margin:.4rem 0 .8rem">${_esc(renderErr && renderErr.message || 'Unexpected error')}</p>
+      <button class="btn-g btn-sm" onclick="loadWA()">Retry</button>
+    </div>`;
+  }
+  // Always run dependent loaders even if the WA list failed — they're independent.
   loadTemplateMappings();
   loadFeedStatus();
   loadUsernameStatus();
@@ -575,8 +623,10 @@ async function loadProfile() {
 
     // WhatsApp connection status — three states:
     //   1. Fully connected: whatsapp_connected = true (or has waba_accounts)
-    //   2. Broken connection: meta_user_id exists but whatsapp_connected = false → show "Reconnect"
-    //   3. Not connected: nothing → show "Connect"
+    //      → show "Change" + "Disconnect" buttons in #wa-manage-wrap
+    //   2. Broken connection: meta_user_id exists but whatsapp_connected = false
+    //      → show "Reconnect" button in #wa-reconnect-wrap
+    //   3. Not connected: nothing → show "Connect" button in #wa-reconnect-wrap
     const waAccounts = r.waba_accounts || [];
     const fullyConnected = !!r.whatsapp_connected || waAccounts.length > 0;
     const brokenConnection = !fullyConnected && !!r.meta_user_id;
@@ -584,20 +634,36 @@ async function loadProfile() {
     const lbl   = document.getElementById('wa-status-label');
     const sub   = document.getElementById('wa-status-sub');
     const wrap  = document.getElementById('wa-reconnect-wrap');
+    const manageWrap = document.getElementById('wa-manage-wrap');
+    const disconnectConfirm = document.getElementById('wa-disconnect-confirm');
     const btn   = document.getElementById('wa-reconnect-btn');
+
+    // Always close the disconnect confirmation panel on every loadProfile call.
+    // Otherwise it would stay open across tab switches and confuse the user.
+    if (disconnectConfirm) disconnectConfirm.style.display = 'none';
+
     if (fullyConnected) {
       dot.style.background  = '#22c55e';
       lbl.textContent       = 'Connected';
-      sub.textContent       = waAccounts.length
-        ? waAccounts.map(a => a.name || a.waba_id).join(', ')
-        : 'WhatsApp Business account linked';
+      // Prefer the linked phone number from waba_accounts (set by /auth/me from
+      // the linked_phone_number_id source of truth) — falls back to WABA name.
+      const primary = waAccounts.find(a => a.is_linked) || waAccounts[0];
+      if (primary && (primary.phone || primary.phone_display)) {
+        sub.textContent = primary.phone || primary.phone_display;
+      } else if (waAccounts.length) {
+        sub.textContent = waAccounts.map(a => a.name || a.waba_id).join(', ');
+      } else {
+        sub.textContent = 'WhatsApp Business account linked';
+      }
       wrap.style.display    = 'none';
+      if (manageWrap) manageWrap.style.display = 'flex';
       _waCardIsReconnect    = false;
     } else if (brokenConnection) {
       dot.style.background  = '#f59e0b';
       lbl.textContent       = 'Connection needs repair';
       sub.textContent       = 'Your previous WhatsApp Business connection is no longer active. Click below to reconnect.';
       wrap.style.display    = 'block';
+      if (manageWrap) manageWrap.style.display = 'none';
       _waCardIsReconnect    = true;
       if (btn) btn.innerHTML = waConnectBtnHTML(true);
     } else {
@@ -605,6 +671,7 @@ async function loadProfile() {
       lbl.textContent       = 'Not connected';
       sub.textContent       = 'Connect your WhatsApp Business account to start receiving orders';
       wrap.style.display    = 'block';
+      if (manageWrap) manageWrap.style.display = 'none';
       _waCardIsReconnect    = false;
       if (btn) btn.innerHTML = waConnectBtnHTML(false);
     }
@@ -873,19 +940,36 @@ async function toggleCatalogAutoSync(enabled) {
 // All UI rendering flows through renderCatalogState(state)
 // No more parallel race conditions, no more contradictory button states.
 //
-// Possible states:
-//   STATE_NONE        — no Meta connection
-//   STATE_NO_CATALOG  — Meta connected, no catalog exists
-//   STATE_UNLINKED    — catalog exists but not linked to WhatsApp
-//   STATE_LINKED      — catalog linked, sync available
-//   STATE_DEGRADED    — linked but with issues
+// Possible UI states (computed in _catComputeUiState):
+//   NONE        — no Meta connection
+//   NO_WABA     — Meta connected but no WhatsApp number connected (rare —
+//                 means OAuth succeeded but no WABA was discovered)
+//   NO_CATALOG  — Meta + WABA connected, no catalog exists
+//   UNLINKED    — catalog exists but not linked to WhatsApp
+//   LINKED      — catalog linked, sync available
+//   DEGRADED    — linked but with issues
+//
+// Render lifecycle:
+//   1. loadCatalogMgmt() is called → _catResetUiToLoading() puts EVERY UI region
+//      into a known clean state (loading skeleton, all buttons disabled, count
+//      badge dimmed, visibility section hidden, list cleared)
+//   2. /api/restaurant/catalog/full-state fetched
+//   3. On success → renderCatalogState(state) populates everything
+//   4. On error → _catResetUiToError(message) shows a retry banner AND clears
+//      every dependent region (count badge, list, visibility section)
+//
+// A monotonic _catLoadSeq counter prevents stale renders: if the user clicks
+// Refresh while a previous load is still in flight, the older response is
+// dropped and only the newest one renders.
+
 let _catMgmtData = null;
 let _catState = null;
+let _catLoadSeq = 0;
 
 function _catComputeUiState(state) {
-  // Returns one of: 'NONE', 'NO_CATALOG', 'UNLINKED', 'LINKED', 'DEGRADED'
   if (!state) return 'NONE';
   if (!state.metaConnected) return 'NONE';
+  if (!state.whatsappNumberConnected) return 'NO_WABA';
   if (!state.catalogExists) return 'NO_CATALOG';
   if (state.catalogExists && !state.catalogLinkedToWhatsapp) return 'UNLINKED';
   if (state.catalogLinkedToWhatsapp && state.issueCount > 0) return 'DEGRADED';
@@ -906,9 +990,95 @@ function _catSetSectionVisibility(id, visible) {
   if (el) el.style.display = visible ? '' : 'none';
 }
 
+// ─── CATALOG MGMT — UI RESET HELPERS ─────────────────────────
+// These are the ONLY safe ways to put the catalog mgmt UI into a known state.
+// loadCatalogMgmt() calls _catResetUiToLoading() at the start of every fetch
+// so the page never shows stale data from a previous render while a new one
+// is pending. The catch block calls _catResetUiToError() so a failed load
+// can never leave the UI half-rendered.
+
+function _catResetUiToLoading() {
+  // 1. Status banner — loading skeleton
+  var statusEl = document.getElementById('cat-mgmt-status');
+  if (statusEl) {
+    statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:var(--ink4,#f3f4f6);border:1px solid var(--rim,#e5e7eb);border-radius:8px">'
+      + '<div class="spin" style="width:14px;height:14px;flex-shrink:0"></div>'
+      + '<div style="font-size:.82rem;color:var(--dim)">Loading catalog state…</div></div>';
+  }
+  // 2. ALL action buttons disabled
+  ['cat-create-btn','cat-connect-btn','cat-disconnect-btn','cat-delete-btn','cat-diagnostics-btn','cat-sync-btn']
+    .forEach(function (id) { _catSetBtnState(id, false); });
+  // 3. Catalog list — clear (no stale rows)
+  var listEl = document.getElementById('cat-mgmt-list');
+  if (listEl) listEl.innerHTML = '';
+  // 4. Settings panel — hide
+  var settingsEl = document.getElementById('cat-mgmt-settings');
+  if (settingsEl) settingsEl.style.display = 'none';
+  // 5. Delete confirm panel — hide
+  var deleteConfirmEl = document.getElementById('cat-mgmt-delete-confirm');
+  if (deleteConfirmEl) deleteConfirmEl.style.display = 'none';
+  // 6. Visibility toggle section — HIDE during load (this fixes the
+  //    "toggle visible while state unresolved" symptom)
+  var visSection = document.getElementById('cat-visibility-section');
+  if (visSection) visSection.style.display = 'none';
+  // 7. Diagnostics area — hide
+  var diagEl = document.getElementById('cat-diagnostics-area');
+  if (diagEl) diagEl.style.display = 'none';
+  // 8. Header count badge — show loading state instead of stale text
+  var countTextEl = document.getElementById('wa-catalog-count-text');
+  if (countTextEl) {
+    countTextEl.textContent = 'Loading catalog info…';
+    countTextEl.style.color = 'var(--dim)';
+  }
+}
+
+function _catResetUiToError(message, allowRetry) {
+  var statusEl = document.getElementById('cat-mgmt-status');
+  if (statusEl) {
+    var retryBtn = allowRetry !== false
+      ? ' <button class="btn-g btn-sm" style="font-size:.72rem;margin-left:.5rem" onclick="loadCatalogMgmt(true)">Retry</button>'
+      : '';
+    statusEl.innerHTML = '<div style="display:flex;align-items:flex-start;gap:.6rem;padding:.8rem;font-size:.82rem;color:var(--red);background:#fef2f2;border:1px solid #fecaca;border-radius:8px">'
+      + '<span>❌</span><span style="flex:1">' + _esc(message || 'Could not load catalog state') + retryBtn + '</span></div>';
+  }
+  // Disable every action button — we don't know the real state
+  ['cat-create-btn','cat-connect-btn','cat-disconnect-btn','cat-delete-btn','cat-diagnostics-btn','cat-sync-btn']
+    .forEach(function (id) { _catSetBtnState(id, false); });
+  // Clear the catalog list
+  var listEl = document.getElementById('cat-mgmt-list');
+  if (listEl) listEl.innerHTML = '';
+  // Hide settings + delete + visibility — they would be misleading
+  ['cat-mgmt-settings','cat-mgmt-delete-confirm','cat-visibility-section','cat-diagnostics-area']
+    .forEach(function (id) { var el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  // Show error in the count badge too
+  var countTextEl = document.getElementById('wa-catalog-count-text');
+  if (countTextEl) {
+    countTextEl.textContent = 'Catalog state unavailable';
+    countTextEl.style.color = 'var(--red)';
+  }
+  // Drop cached state so any consumer re-checks
+  _catState = null;
+  _catMgmtData = null;
+}
+
 // Renders the entire catalog management UI from a single normalized state object.
 // This is the ONLY function that touches DOM for catalog management.
 function renderCatalogState(state) {
+  // Defence: backend always returns the full shape, but if a network/proxy
+  // strips fields we normalize defaults here so the renderer never throws.
+  state = state || {};
+  state.availableCatalogs = Array.isArray(state.availableCatalogs) ? state.availableCatalogs : [];
+  state.warnings = Array.isArray(state.warnings) ? state.warnings : [];
+  state.errors = Array.isArray(state.errors) ? state.errors : [];
+  state.metaConnected = !!state.metaConnected;
+  state.whatsappNumberConnected = !!state.whatsappNumberConnected;
+  state.catalogExists = !!state.catalogExists;
+  state.catalogLinkedToWhatsapp = !!state.catalogLinkedToWhatsapp;
+  state.catalogVisible = !!state.catalogVisible;
+  state.syncAvailable = !!state.syncAvailable;
+  state.issueCount = Number(state.issueCount) || 0;
+  state.approvalStatus = state.approvalStatus || 'pending';
+
   _catState = state;
   var statusEl = document.getElementById('cat-mgmt-status');
   var listEl = document.getElementById('cat-mgmt-list');
@@ -931,6 +1101,15 @@ function renderCatalogState(state) {
       + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem;color:#dc2626">Meta not connected</div>'
       + '<div style="font-size:.77rem;color:var(--dim)">Connect your Meta account in Settings → WhatsApp before managing catalogs.</div></div>'
       + '<span class="badge br" style="font-size:.68rem">Disconnected</span></div>';
+  } else if (ui === 'NO_WABA') {
+    // Meta OAuth succeeded but no WABA was discovered/saved. Tell the user
+    // exactly what to do — don't leave them staring at "Meta connected" while
+    // also seeing "No numbers found" with no action.
+    bannerHtml = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px">'
+      + '<span style="width:10px;height:10px;border-radius:50%;background:#d97706;flex-shrink:0"></span>'
+      + '<div style="flex:1"><div style="font-weight:600;font-size:.85rem;color:#92400e">No WhatsApp number linked</div>'
+      + '<div style="font-size:.77rem;color:var(--dim)">Your Meta account is connected, but we could not find a WhatsApp Business phone number on it. Reconnect Meta and pick a WABA + phone number during the consent dialog.</div></div>'
+      + '<button class="btn-g btn-sm" style="font-size:.72rem;white-space:nowrap" onclick="doReconnectMeta()">Reconnect Meta</button></div>';
   } else if (ui === 'NO_CATALOG') {
     bannerHtml = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:#fef3c7;border:1px solid #fde68a;border-radius:8px">'
       + '<span style="width:10px;height:10px;border-radius:50%;background:#d97706;flex-shrink:0"></span>'
@@ -1059,55 +1238,56 @@ function renderCatalogState(state) {
   }
 }
 
-// Loader: fetches state once, renders once. Has loading + error states.
+// Loader: fetches state once, renders once. Has loading + success + error states.
+//
+// Sequencing: every call increments _catLoadSeq. If a newer call starts while
+// this one is still in flight, the older response is dropped. This prevents a
+// stale "successful" render from overwriting the user's most recent action.
 async function loadCatalogMgmt(refresh) {
   var statusEl = document.getElementById('cat-mgmt-status');
-  if (!statusEl) { toast('Catalog section not available — try refreshing the page', 'err'); return; }
+  if (!statusEl) {
+    // Element not in DOM yet (settings tab not rendered) — silent no-op,
+    // not an error worth toasting at the user.
+    return;
+  }
 
-  // Show loading skeleton
-  statusEl.innerHTML = '<div style="display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;background:var(--ink4);border:1px solid var(--rim);border-radius:8px">'
-    + '<div class="spin" style="width:14px;height:14px;flex-shrink:0"></div>'
-    + '<div style="font-size:.82rem;color:var(--dim)">Loading catalog state…</div></div>';
+  var mySeq = ++_catLoadSeq;
 
-  // Disable all buttons during load
-  _catSetBtnState('cat-create-btn', false);
-  _catSetBtnState('cat-connect-btn', false);
-  _catSetBtnState('cat-disconnect-btn', false);
-  _catSetBtnState('cat-delete-btn', false);
-  _catSetBtnState('cat-diagnostics-btn', false);
-  _catSetBtnState('cat-sync-btn', false);
+  // 1. Reset the entire catalog mgmt UI to a known clean loading state. This
+  //    fixes the symptoms where stale buttons / visibility toggle / count
+  //    badge persist across loads.
+  _catResetUiToLoading();
 
   try {
     var state = await api('/api/restaurant/catalog/full-state');
-    // Backend always returns 200 with the normalized shape, even on partial errors
+    // Drop stale response if a newer load started while we were waiting
+    if (mySeq !== _catLoadSeq) return;
+
     _catMgmtData = {
-      active_catalog_id: state.catalogId,
-      catalogs: state.availableCatalogs,
+      active_catalog_id: state && state.catalogId || null,
+      catalogs: (state && state.availableCatalogs) || [],
     };
     renderCatalogState(state);
 
     // Optionally trigger a background refresh of the catalog list from Meta
-    // (only if the user explicitly clicked Refresh)
+    // (only if the user explicitly clicked Refresh). Failures here are
+    // non-fatal — we keep the cached state.
     if (refresh) {
       try {
         await api('/api/restaurant/catalogs?refresh=true');
-        // Re-fetch full state to pick up the refreshed catalog list
+        if (mySeq !== _catLoadSeq) return;
         var newState = await api('/api/restaurant/catalog/full-state');
+        if (mySeq !== _catLoadSeq) return;
         renderCatalogState(newState);
       } catch (refreshErr) {
-        // Non-fatal — keep current state
-        console.warn('[CatalogMgmt] Background refresh failed:', refreshErr.message);
+        if (mySeq !== _catLoadSeq) return;
+        console.warn('[CatalogMgmt] Background refresh failed:', refreshErr && refreshErr.message);
       }
     }
   } catch (e) {
-    // Hard failure — show error state with retry
-    statusEl.innerHTML = '<div style="padding:.8rem;font-size:.82rem;color:var(--red);background:#fef2f2;border:1px solid #fecaca;border-radius:8px">'
-      + '❌ Could not load catalog state: ' + _esc(e.message || 'Unknown error')
-      + ' <button class="btn-g btn-sm" style="font-size:.72rem;margin-left:.5rem" onclick="loadCatalogMgmt(true)">Retry</button></div>';
-    var listEl = document.getElementById('cat-mgmt-list');
-    if (listEl) listEl.innerHTML = '';
-    var visSection = document.getElementById('cat-visibility-section');
-    if (visSection) visSection.style.display = 'none';
+    if (mySeq !== _catLoadSeq) return;
+    // Hard failure — put the entire UI into a coherent error state with retry.
+    _catResetUiToError(e && e.message ? 'Could not load catalog state: ' + e.message : 'Could not load catalog state', true);
   }
 }
 
@@ -1461,6 +1641,64 @@ function _doMetaConnect() {
   _setBtnLoading('banner-connect-btn', true);
   _setBtnLoading('wa-reconnect-btn', true);
   // returnTo carries the current tab/hash so the user lands back on Settings.
+  gbConnectMetaBusiness({ returnTo: location.pathname + (location.hash || '#settings') });
+}
+
+// ─── DISCONNECT WHATSAPP ──────────────────────────────────────
+// Two-step UX: doDisconnectWhatsappConfirm() opens the inline confirmation
+// panel; the user clicks "Yes, disconnect" → doDisconnectWhatsapp() makes
+// the actual API call and refreshes the UI.
+function doDisconnectWhatsappConfirm() {
+  var panel = document.getElementById('wa-disconnect-confirm');
+  if (panel) panel.style.display = 'block';
+}
+
+async function doDisconnectWhatsapp() {
+  var goBtn = document.getElementById('wa-disconnect-go-btn');
+  var changeBtn = document.getElementById('wa-change-btn');
+  if (goBtn) { goBtn.disabled = true; goBtn.textContent = 'Disconnecting…'; }
+  if (changeBtn) changeBtn.disabled = true;
+  try {
+    const r = await api('/api/restaurant/whatsapp/disconnect', { method: 'POST' });
+    if (r && r.success) {
+      toast('WhatsApp Business disconnected', 'ok');
+      // Refresh the source of truth then re-render the WhatsApp section.
+      try { rest = await api('/auth/me'); } catch (_) {}
+      // Hide the confirm panel
+      var panel = document.getElementById('wa-disconnect-confirm');
+      if (panel) panel.style.display = 'none';
+      // Re-render the profile section (toggles wa-manage-wrap → wa-reconnect-wrap)
+      if (typeof loadProfile === 'function') await loadProfile();
+      // Refresh the WhatsApp accounts list (will become empty)
+      if (typeof loadWA === 'function') loadWA();
+      // Refresh catalog management state — disconnect invalidates the linked WABA
+      if (typeof loadCatalogMgmt === 'function') loadCatalogMgmt();
+      // Show the connect banner if the dashboard has one
+      var banner = document.getElementById('wa-connect-banner');
+      if (banner) banner.style.display = 'flex';
+    } else {
+      toast(r && r.error ? r.error : 'Disconnect failed', 'err');
+    }
+  } catch (e) {
+    toast((e && e.message) || 'Disconnect failed', 'err');
+  } finally {
+    if (goBtn) { goBtn.disabled = false; goBtn.textContent = 'Yes, disconnect'; }
+    if (changeBtn) changeBtn.disabled = false;
+  }
+}
+
+// ─── CHANGE WHATSAPP ACCOUNT ──────────────────────────────────
+// Reuses the existing gbConnectMetaBusiness() entry point — Meta's Embedded
+// Signup will let the user pick a different WABA / phone number, and the
+// /auth/callback handler will replace the existing linkage cleanly thanks
+// to the WABA-bind fix (linked_waba_id / linked_phone_number_id are
+// overwritten via $set, and the composite (phone_number_id, restaurant_id)
+// upsert filter prevents cross-tenant collisions).
+function doChangeWhatsappAccount() {
+  if (!confirm('Connect a different WhatsApp Business number?\n\nYou will be redirected to Meta to pick the new number. Your menu, catalog, and customer history are preserved.\n\nThe currently connected number will be replaced.')) return;
+  // Same flow as the initial connect — Meta will let the user pick a new
+  // WABA + phone in the signup wizard. The callback handler replaces the
+  // linkage atomically via $set on linked_waba_id / linked_phone_number_id.
   gbConnectMetaBusiness({ returnTo: location.pathname + (location.hash || '#settings') });
 }
 
@@ -2083,6 +2321,9 @@ window.checkAccountHealth = checkAccountHealth;
 window.verifyMetaConnection = verifyMetaConnection;
 window.doReconnectMeta = doReconnectMeta;
 window.doBannerConnect = doBannerConnect;
+window.doDisconnectWhatsapp = doDisconnectWhatsapp;
+window.doDisconnectWhatsappConfirm = doDisconnectWhatsappConfirm;
+window.doChangeWhatsappAccount = doChangeWhatsappAccount;
 window.renderEventMappings = renderEventMappings;
 window.doBulkAssignAll = doBulkAssignAll;
 window.doSyncBranchCollections = doSyncBranchCollections;

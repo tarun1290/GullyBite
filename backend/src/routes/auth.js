@@ -9,6 +9,11 @@ const router  = express.Router();
 const { col, newId } = require('../config/database');
 const { logActivity } = require('../services/activityLog');
 const metaConfig = require('../config/meta');
+// memcache is the in-memory cache used by webhooks/whatsapp.js → cachedLookup.getWaAccount.
+// Required so _saveWabaAccounts can invalidate stale entries when a restaurant
+// changes their connected WABA — without this, webhook routing for the OLD
+// phone_number_id would continue for up to the cache TTL (5 minutes).
+const memcache = require('../config/memcache');
 
 const crypto = require('crypto');
 const log = require('../utils/logger').child({ component: 'auth' });
@@ -584,13 +589,32 @@ router.get('/callback', async (req, res) => {
     // Initialize messaging wallet (fire-and-forget — never blocks the redirect)
     require('../services/wallet').ensureWallet(restaurantId).catch(e => log.warn({ err: e, restaurantId }, 'Wallet init failed'));
 
-    await _saveWabaAccounts(restaurantId, wabaData, longToken, null);
+    // [WABA-BIND-FIX] Read the granular_scopes from the user's token to learn
+    // EXACTLY which WABAs they selected during Embedded Signup. _saveWabaAccounts
+    // will refuse to bind any WABA that's not in this set, which prevents the
+    // platform/admin WABAs (or any other WABA the user happens to have access
+    // to) from leaking into this restaurant's account.
+    const allowedWabaIds = await _fetchGranularScopeWabaIds(longToken);
+    await _saveWabaAccounts(restaurantId, wabaData, longToken, null, allowedWabaIds);
 
     // Auto-fetch catalog info using system token (best-effort)
     try {
       const catToken = metaConfig.catalogToken;
       if (catToken) {
-        const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: restaurantId, is_active: true });
+        // [WABA-BIND-FIX] Use the EXPLICIT linked_waba_id we recorded during
+        // _saveWabaAccounts, not "the first WABA in the collection". This is
+        // the linkage source of truth.
+        const linkedRestaurant = await col('restaurants').findOne(
+          { _id: restaurantId },
+          { projection: { linked_waba_id: 1, linked_phone_number_id: 1 } }
+        );
+        const wa_acc = linkedRestaurant?.linked_phone_number_id
+          ? await col('whatsapp_accounts').findOne({
+              phone_number_id: linkedRestaurant.linked_phone_number_id,
+              restaurant_id: restaurantId,
+              is_active: true,
+            })
+          : null;
         if (wa_acc?.waba_id) {
           const wabaCatRes = await axios.get(`${META_GRAPH_URL}/${wa_acc.waba_id}/product_catalogs`, {
             params: { fields: 'id,name,product_count', access_token: catToken },
@@ -792,13 +816,37 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     // Initialize messaging wallet (fire-and-forget)
     require('../services/wallet').ensureWallet(req.restaurantId).catch(e => log.warn({ err: e, restaurantId: req.restaurantId }, 'Wallet init failed'));
 
-    await _saveWabaAccounts(req.restaurantId, wabaData, longToken, sessionInfo);
+    // [WABA-BIND-FIX] Read granular_scopes to scope WABA discovery to ONLY
+    // the WABAs the user explicitly selected during Embedded Signup. Plus,
+    // if Embedded Signup gave us an explicit (waba_id, phone_number_id) in
+    // sessionInfo, build a single-element allowed-set so we never even
+    // attempt to save other WABAs the user has access to.
+    let allowedWabaIds = await _fetchGranularScopeWabaIds(longToken);
+    if (sessionInfo?.waba_id) {
+      // sessionInfo is the most authoritative source — it carries the exact
+      // WABA the user picked in the Embedded Signup wizard. Trust it.
+      allowedWabaIds = new Set([String(sessionInfo.waba_id)]);
+    }
+    await _saveWabaAccounts(req.restaurantId, wabaData, longToken, sessionInfo, allowedWabaIds);
 
     // Step 6: Auto-fetch catalog info using system token
+    // [WABA-BIND-FIX] Read the catalog for the EXPLICITLY linked WABA, not
+    // "the first wa_account row found". The linkage was recorded by
+    // _saveWabaAccounts as restaurants.linked_phone_number_id.
     const catToken = metaConfig.catalogToken;
     if (catToken) {
       try {
-        const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+        const linkedRest = await col('restaurants').findOne(
+          { _id: req.restaurantId },
+          { projection: { linked_phone_number_id: 1, linked_waba_id: 1 } }
+        );
+        const wa_acc = linkedRest?.linked_phone_number_id
+          ? await col('whatsapp_accounts').findOne({
+              phone_number_id: linkedRest.linked_phone_number_id,
+              restaurant_id: req.restaurantId,
+              is_active: true,
+            })
+          : null;
         if (wa_acc?.waba_id) {
           req.log.info({ wabaId: wa_acc.waba_id }, 'Auto-fetching catalogs for WABA');
           const wabaCatRes = await axios.get(`${META_GRAPH_URL}/${wa_acc.waba_id}/product_catalogs`, {
@@ -1103,41 +1151,198 @@ router.get('/me', requireAuth, async (req, res) => {
 });
 
 // ─── WABA ACCOUNTS HELPER ─────────────────────────────────────
-async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo = null) {
-  log.info({ businessCount: wabaData.length, sessionInfo: sessionInfo || {} }, 'Saving WABA accounts');
+// ─── META TOKEN GRANULAR SCOPE EXTRACTION ────────────────────
+// When the user completes Meta Embedded Signup with a config_id, the
+// resulting access token has GRANULAR scopes — meaning it can ONLY access
+// the specific WABA(s) the user picked in the signup wizard. We use this
+// to scope the discovery loop so we never save WABAs the user didn't
+// explicitly choose (e.g., the platform's own WABAs that the user might
+// happen to have access to as a colleague on the platform's BM).
+//
+// Returns: Set of WABA IDs the token has explicit access to, or null if
+// the token doesn't have granular scopes (older Meta config / fallback path).
+async function _fetchGranularScopeWabaIds(token) {
+  if (!token) return null;
+  try {
+    const res = await axios.get(`${META_GRAPH_URL}/debug_token`, {
+      params: { input_token: token, access_token: token },
+      timeout: 10000,
+    });
+    const granular = res.data?.data?.granular_scopes;
+    if (!Array.isArray(granular) || !granular.length) {
+      log.warn('debug_token returned no granular_scopes — falling back to discovery (broader)');
+      return null;
+    }
+    // Pull WABA target_ids from any whatsapp_business_* scope
+    const wabaIds = new Set();
+    for (const g of granular) {
+      const isWhatsapp = typeof g.scope === 'string' && g.scope.startsWith('whatsapp_business_');
+      if (!isWhatsapp) continue;
+      for (const id of (g.target_ids || [])) wabaIds.add(String(id));
+    }
+    log.info({ wabaCount: wabaIds.size, wabaIds: [...wabaIds].map(s => s.slice(0, 8)) }, 'Granular scope WABA target_ids');
+    return wabaIds;
+  } catch (e) {
+    log.warn({ err: e?.response?.data || e?.message }, 'Failed to fetch granular_scopes — falling back to discovery');
+    return null;
+  }
+}
+
+// Returns true if a phone_number_id is registered as a platform admin/directory
+// number (NOT a restaurant number). Used to refuse cross-tenant binding of
+// platform-owned phone numbers to restaurant accounts.
+async function _isPlatformAdminPhoneNumber(phoneNumberId) {
+  if (!phoneNumberId) return false;
+  try {
+    const row = await col('admin_numbers').findOne({ phone_number_id: phoneNumberId });
+    return !!row;
+  } catch (_) { return false; }
+}
+
+async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo = null, allowedWabaIds = null) {
+  log.info({
+    businessCount: wabaData.length,
+    sessionInfo: sessionInfo || {},
+    granularWabaCount: allowedWabaIds ? allowedWabaIds.size : 'none'
+  }, 'Saving WABA accounts');
+
+  // ─── WABA CHANGE DETECTION ────────────────────────────────────
+  // [CHANGE-WABA] Read the existing linked phone BEFORE any new rows are
+  // saved. We use this at the END of this function to:
+  //   1. Deactivate every other active row for this restaurant (one-WABA rule)
+  //   2. Disconnect the catalog from each deactivated phone at Meta
+  //   3. Invalidate the webhook routing cache for each deactivated phone
+  //
+  // We capture this up front so the deactivation step can compute "rows that
+  // are not the new one" using the post-save state, while still knowing
+  // whether this is a fresh connect (oldPhoneId === null) or a change
+  // (oldPhoneId is set and !== newPhoneId).
+  let priorLinkedPhoneId = null;
+  try {
+    const priorRest = await col('restaurants').findOne(
+      { _id: restaurantId },
+      { projection: { linked_phone_number_id: 1 } }
+    );
+    priorLinkedPhoneId = priorRest?.linked_phone_number_id || null;
+  } catch (_) { /* non-fatal — treat as fresh connect */ }
+
+  // Helper: write a single (waba, phone) pair into whatsapp_accounts under
+  // the calling restaurant_id, with all the safety checks centralized.
+  // Returns true on success, false if skipped/refused.
+  const savePhone = async (waba, phone) => {
+    // 1. Granular scope filter — if the token has explicit scope, the WABA
+    //    must be in the allowed set, otherwise the user did NOT select it.
+    if (allowedWabaIds && allowedWabaIds.size > 0 && !allowedWabaIds.has(String(waba.id))) {
+      log.warn({ wabaId: waba.id, restaurantId }, 'Skipping WABA: not in granular_scopes target_ids');
+      return false;
+    }
+
+    // 2. Platform admin/directory blocklist — never assign a phone number
+    //    that is registered as a platform admin/directory number.
+    if (await _isPlatformAdminPhoneNumber(phone.id)) {
+      log.error({ phoneId: phone.id, wabaId: waba.id, restaurantId }, 'CRITICAL: Refusing to bind platform admin phone_number_id to restaurant');
+      logActivity({
+        actorType: 'system',
+        action: 'restaurant.waba_bind_blocked',
+        category: 'auth',
+        description: `Refused to bind platform admin phone ${phone.id} to restaurant ${restaurantId}`,
+        restaurantId,
+        resourceType: 'whatsapp_account',
+        resourceId: phone.id,
+        severity: 'critical',
+      });
+      return false;
+    }
+
+    // 3. Cross-tenant collision check — if this phone_number_id is already
+    //    linked to a DIFFERENT restaurant, refuse to overwrite. (Composite
+    //    upsert filter below ALSO prevents this; the check here logs the
+    //    attempt loudly so we notice.)
+    const existing = await col('whatsapp_accounts').findOne({ phone_number_id: phone.id });
+    if (existing && existing.restaurant_id && existing.restaurant_id !== restaurantId) {
+      log.error({
+        phoneId: phone.id,
+        wabaId: waba.id,
+        existingRestaurantId: existing.restaurant_id,
+        attemptedRestaurantId: restaurantId,
+      }, 'CRITICAL: phone_number_id already linked to a different restaurant — refusing to reassign');
+      logActivity({
+        actorType: 'system',
+        action: 'restaurant.waba_bind_collision',
+        category: 'auth',
+        description: `phone_number_id ${phone.id} is already linked to a different restaurant`,
+        restaurantId,
+        resourceType: 'whatsapp_account',
+        resourceId: phone.id,
+        severity: 'critical',
+      });
+      return false;
+    }
+
+    // 4. Composite upsert filter — phone_number_id AND restaurant_id. This
+    //    means cross-tenant reassignment is structurally impossible: if the
+    //    phone is unowned the upsert inserts under this restaurant; if it's
+    //    already owned by THIS restaurant the existing row is updated; if
+    //    it's owned by a DIFFERENT restaurant the upsert filter never
+    //    matches and would try to insert a duplicate (caught by step 3).
+    await col('whatsapp_accounts').updateOne(
+      { phone_number_id: phone.id, restaurant_id: restaurantId },
+      {
+        $set: {
+          restaurant_id : restaurantId,
+          waba_id       : waba.id,
+          phone_display : phone.display_phone_number,
+          display_name  : phone.verified_name,
+          quality_rating: phone.quality_rating?.display_value || phone.quality_rating || 'GREEN',
+          access_token  : longToken,
+          is_active     : true,
+          // Tag rows so the Settings read path can exclude any future
+          // platform/admin/directory rows that might be added under the
+          // same collection.
+          account_type  : 'restaurant',
+          updated_at    : new Date(),
+        },
+        $setOnInsert: { _id: newId(), created_at: new Date() },
+      },
+      { upsert: true }
+    );
+    log.info({ phoneId: phone.id, phoneDisplay: phone.display_phone_number?.slice(-4), restaurantId }, 'Saved phone');
+    _registerPhoneNumber(phone.id, longToken).catch(err =>
+      log.error({ err, phoneId: phone.id }, 'Phone registration failed')
+    );
+    return true;
+  };
+
   let savedCount = 0;
+  // Track the FIRST successfully saved (waba, phone) pair so we can record
+  // it as the restaurant's explicit linked connection. The Settings read
+  // path uses linked_phone_number_id / linked_waba_id as the source of
+  // truth for "which WABA is this restaurant's primary?".
+  let firstSavedWabaId = null;
+  let firstSavedPhoneId = null;
+
   for (const biz of wabaData) {
     const wabas = biz.whatsapp_business_accounts?.data || [];
     log.info({ businessId: biz.id, wabaCount: wabas.length }, 'Processing business WABAs');
     for (const waba of wabas) {
+      // Skip the WABA entirely if it's not in the granular scopes.
+      if (allowedWabaIds && allowedWabaIds.size > 0 && !allowedWabaIds.has(String(waba.id))) {
+        log.info({ wabaId: waba.id }, 'Skipping WABA (not in granular_scopes)');
+        continue;
+      }
       await _subscribeWaba(waba.id);
 
       const phones = waba.phone_numbers?.data || [];
       log.info({ wabaId: waba.id, phoneCount: phones.length }, 'Processing WABA phone numbers');
       for (const phone of phones) {
-        await col('whatsapp_accounts').updateOne(
-          { phone_number_id: phone.id },
-          {
-            $set: {
-              restaurant_id : restaurantId,
-              waba_id       : waba.id,
-              phone_display : phone.display_phone_number,
-              display_name  : phone.verified_name,
-              quality_rating: phone.quality_rating?.display_value || 'GREEN',
-              access_token  : longToken,
-              is_active     : true,
-              updated_at    : new Date(),
-            },
-            $setOnInsert: { _id: newId(), created_at: new Date() },
-          },
-          { upsert: true }
-        );
-        savedCount++;
-        log.info({ phoneId: phone.id, phoneDisplay: phone.display_phone_number?.slice(-4) }, 'Saved phone');
-
-        _registerPhoneNumber(phone.id, longToken).catch(err =>
-          log.error({ err, phoneId: phone.id }, 'Phone registration failed')
-        );
+        const ok = await savePhone(waba, phone);
+        if (ok) {
+          savedCount++;
+          if (!firstSavedWabaId) {
+            firstSavedWabaId = waba.id;
+            firstSavedPhoneId = phone.id;
+          }
+        }
       }
 
       logActivity({ actorType: 'system', action: 'restaurant.waba_provisioned', category: 'auth', description: `WABA ${waba.id} provisioned for restaurant ${restaurantId}`, restaurantId, resourceType: 'whatsapp_account', resourceId: waba.id, severity: 'info' });
@@ -1149,7 +1354,7 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
 
   // Fallback: if the businesses API returned nothing but embedded signup gave us a waba_id,
   // query that WABA's phone numbers directly — embedded signup tokens are scoped to the WABA
-  if (!wabaData.length && sessionInfo?.waba_id) {
+  if (!savedCount && sessionInfo?.waba_id) {
     log.info({ wabaId: sessionInfo.waba_id }, 'Falling back to direct WABA query');
     try {
       const phoneRes = await axios.get(`${META_GRAPH_URL}/${sessionInfo.waba_id}/phone_numbers`, {
@@ -1167,43 +1372,181 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
       await _subscribeWaba(sessionInfo.waba_id);
 
       for (const phone of phones) {
-        await col('whatsapp_accounts').updateOne(
-          { phone_number_id: phone.id },
-          {
-            $set: {
-              restaurant_id : restaurantId,
-              waba_id       : sessionInfo.waba_id,
-              phone_display : phone.display_phone_number,
-              display_name  : phone.verified_name,
-              quality_rating: phone.quality_rating?.display_value || 'GREEN',
-              access_token  : longToken,
-              is_active     : true,
-              updated_at    : new Date(),
-            },
-            $setOnInsert: { _id: newId(), created_at: new Date() },
-          },
-          { upsert: true }
-        );
-        _registerPhoneNumber(phone.id, longToken).catch(err =>
-          log.error({ err, phoneId: phone.id }, 'Phone registration failed')
-        );
+        const ok = await savePhone({ id: sessionInfo.waba_id }, phone);
+        if (ok) {
+          savedCount++;
+          if (!firstSavedWabaId) {
+            firstSavedWabaId = sessionInfo.waba_id;
+            firstSavedPhoneId = phone.id;
+          }
+        }
       }
 
       _provisionWabaCatalog(restaurantId, sessionInfo.waba_id, longToken).catch(err =>
         log.error({ err, wabaId: sessionInfo.waba_id }, 'Catalog auto-provision failed')
       );
-      savedCount += phones.length;
     } catch (e) {
       log.warn({ err: e }, 'Direct WABA fallback failed');
     }
   }
 
-  // If no WABA accounts were saved at all but we know Meta auth succeeded,
-  // log a warning — the whatsapp_connected flag on the restaurant doc will still show green
+  // Record the explicit linkage on the restaurant doc. Settings read path
+  // uses these as the source of truth for "which WABA is the primary?".
+  if (firstSavedWabaId && firstSavedPhoneId) {
+    await col('restaurants').updateOne(
+      { _id: restaurantId },
+      {
+        $set: {
+          linked_waba_id: firstSavedWabaId,
+          linked_phone_number_id: firstSavedPhoneId,
+          linked_at: new Date(),
+          updated_at: new Date(),
+          whatsapp_connected: true,
+        },
+        // [DISCONNECT-FIX] Clear the disconnected_at timestamp on reconnect
+        // so the restaurant doc reflects the current connected state
+        // accurately. Without this, a reconnect after a disconnect would
+        // leave a stale disconnected_at field that could mislead UI / audit
+        // queries.
+        $unset: { disconnected_at: '' },
+      }
+    ).catch(err => log.error({ err, restaurantId }, 'Failed to record linked WABA on restaurant doc'));
+
+    // ─── [CHANGE-WABA] DEACTIVATE OLD ROWS + RECONNECT CATALOG ──
+    // After the new row is saved and the linkage is recorded, ensure the
+    // strict one-WABA-per-restaurant invariant by deactivating every OTHER
+    // active row for this restaurant. This is the surgical "change account"
+    // step that converts a connect-to-additional flow into a true REPLACE.
+    //
+    // The condition that triggers reconnect-catalog work is:
+    //   priorLinkedPhoneId && priorLinkedPhoneId !== firstSavedPhoneId
+    // i.e. there was previously a linked phone AND it differs from the new one.
+    //
+    // For fresh connects (priorLinkedPhoneId === null) the deactivation
+    // pass is still safe — it filters by `phone_number_id !== firstSavedPhoneId`
+    // so a fresh connect is a no-op.
+    try {
+      // 1. Find every OTHER active row for this restaurant
+      const oldRows = await col('whatsapp_accounts').find({
+        restaurant_id: restaurantId,
+        is_active: true,
+        phone_number_id: { $ne: firstSavedPhoneId },
+        $or: [{ account_type: 'restaurant' }, { account_type: { $exists: false } }],
+      }).toArray();
+
+      if (oldRows.length) {
+        log.info({
+          restaurantId,
+          oldPhoneIds: oldRows.map(r => r.phone_number_id),
+          newPhoneId: firstSavedPhoneId,
+          isChange: priorLinkedPhoneId && priorLinkedPhoneId !== firstSavedPhoneId,
+        }, '[CHANGE-WABA] Deactivating old WABA rows');
+
+        // 2. Disconnect catalog from each old phone at Meta. We do this
+        //    BEFORE deactivating the row so the row still has the
+        //    phone_number_id available for the API call. Errors are
+        //    swallowed by _disconnectCatalogFromPhone — onboarding cannot
+        //    fail because of a stale catalog binding on a phone we no
+        //    longer own.
+        for (const old of oldRows) {
+          if (old.phone_number_id) {
+            await _disconnectCatalogFromPhone(old.phone_number_id);
+          }
+        }
+
+        // 3. Deactivate the rows in our DB. Tokens are preserved (we use
+        //    $set with is_active: false, not deleteOne) so the user could
+        //    reconnect to the same number later without re-running the
+        //    full OAuth flow.
+        await col('whatsapp_accounts').updateMany(
+          {
+            restaurant_id: restaurantId,
+            is_active: true,
+            phone_number_id: { $ne: firstSavedPhoneId },
+            $or: [{ account_type: 'restaurant' }, { account_type: { $exists: false } }],
+          },
+          {
+            $set: {
+              is_active: false,
+              disconnected_at: new Date(),
+              disconnect_reason: 'replaced_by_change_account',
+              updated_at: new Date(),
+            },
+          }
+        );
+
+        // 4. Invalidate the webhook-routing cache for each deactivated
+        //    phone. CRITICAL: without this, getWaAccount() in
+        //    cachedLookup.js would return the stale `is_active: true` row
+        //    for up to 5 minutes, and the webhook handler would keep
+        //    routing messages to the old WABA after the change.
+        for (const old of oldRows) {
+          if (old.phone_number_id) {
+            memcache.del(`wa_account:${old.phone_number_id}`);
+          }
+        }
+
+        // 5. Audit log so support can trace WABA changes after the fact.
+        logActivity({
+          actorType: 'system',
+          action: 'restaurant.waba_replaced',
+          category: 'auth',
+          description: `WABA changed: deactivated ${oldRows.length} previous WABA row(s)`,
+          restaurantId,
+          resourceType: 'whatsapp_account',
+          resourceId: firstSavedPhoneId,
+          severity: 'info',
+          metadata: {
+            new_phone_number_id: firstSavedPhoneId,
+            new_waba_id: firstSavedWabaId,
+            previous_phone_number_id: priorLinkedPhoneId,
+            deactivated_phone_number_ids: oldRows.map(r => r.phone_number_id).filter(Boolean),
+            deactivated_count: oldRows.length,
+          },
+        });
+      } else if (priorLinkedPhoneId === firstSavedPhoneId) {
+        log.info({ restaurantId, phoneId: firstSavedPhoneId }, '[CHANGE-WABA] Same phone — no deactivation needed (reconnect to same number)');
+      } else {
+        log.info({ restaurantId, phoneId: firstSavedPhoneId }, '[CHANGE-WABA] Fresh connect — no old rows to deactivate');
+      }
+
+      // 6. Reconnect the catalog to the NEW phone. We read the catalog
+      //    that was just provisioned for the NEW WABA via
+      //    _provisionWabaCatalog (which fired earlier in this function).
+      //    If a catalog exists, enable commerce settings on the new phone
+      //    so cart icon + visibility are turned on.
+      const newRow = await col('whatsapp_accounts').findOne({
+        phone_number_id: firstSavedPhoneId,
+        restaurant_id: restaurantId,
+      });
+      if (newRow?.catalog_id) {
+        await _enableCommerceSettings(firstSavedPhoneId, newRow.catalog_id, longToken);
+      } else {
+        // The catalog may not be provisioned yet on the new WABA — this is
+        // common for fresh WABAs that have no catalog assets. The async
+        // _provisionWabaCatalog call (fired earlier) will eventually create
+        // one and call _enableCommerceSettings itself. We log so support
+        // knows the catalog reconnect was deferred to the async path.
+        log.info({ restaurantId, newPhoneId: firstSavedPhoneId }, '[CHANGE-WABA] No catalog yet on new WABA — catalog enablement deferred to async _provisionWabaCatalog');
+      }
+    } catch (changeErr) {
+      // The change-WABA cleanup is best-effort. If it fails, the new row
+      // is still saved correctly and the restaurant linkage is updated —
+      // we just log the error and continue. A subsequent reconnect or
+      // manual support intervention can clean up any drift.
+      log.error({ err: changeErr, restaurantId, newPhoneId: firstSavedPhoneId }, '[CHANGE-WABA] Cleanup of old WABA rows failed (non-fatal)');
+    }
+  }
+
   if (savedCount === 0) {
-    log.warn({ restaurantId, businessCount: wabaData.length, sessionWabaId: sessionInfo?.waba_id || 'none' }, 'Zero whatsapp_accounts saved — whatsapp_connected flag is still set');
+    log.warn({
+      restaurantId,
+      businessCount: wabaData.length,
+      sessionWabaId: sessionInfo?.waba_id || 'none',
+      granularWabaCount: allowedWabaIds ? allowedWabaIds.size : 'none',
+    }, 'Zero whatsapp_accounts saved — whatsapp_connected flag is still set');
   } else {
-    log.info({ restaurantId, savedCount }, 'WABA accounts saved');
+    log.info({ restaurantId, savedCount, firstSavedWabaId, firstSavedPhoneId }, 'WABA accounts saved');
   }
 }
 
@@ -1410,6 +1753,59 @@ async function _enableCommerceSettings(phoneNumberId, catalogId, _accessToken) {
   } catch (err) {
     log.error({ err, phoneNumberId }, 'Failed to enable cart on phone');
   }
+}
+
+// ─── DISCONNECT CATALOG FROM A PHONE NUMBER ────────────────────
+// Hides the catalog cart icon and disables visibility on a specific phone
+// number. Used during a WABA change to release the OLD phone before binding
+// the catalog to the NEW phone.
+//
+// Safe to call when:
+//   • the phone has no catalog linked (Meta returns 200 — idempotent on Meta's side)
+//   • the phone no longer exists at Meta (we catch and log the error)
+//   • the catalog was deleted externally (same — caught + logged)
+//
+// NEVER throws — errors are logged but onboarding must not fail because of
+// a stale catalog binding on a phone the user no longer owns.
+async function _disconnectCatalogFromPhone(phoneNumberId) {
+  const sysToken = metaConfig.systemUserToken;
+  if (!phoneNumberId || !sysToken) return;
+  try {
+    await axios.post(
+      `${META_GRAPH_URL}/${phoneNumberId}/whatsapp_commerce_settings`,
+      {
+        is_catalog_visible: false,
+        is_cart_enabled   : false,
+      },
+      {
+        headers: { Authorization: `Bearer ${sysToken}`, 'Content-Type': 'application/json' },
+        timeout: 10000,
+      }
+    );
+    log.info({ phoneNumberId }, 'Catalog disconnected from old phone (commerce settings disabled at Meta)');
+  } catch (err) {
+    // Common cases that are NOT actual problems:
+    //   • Phone no longer registered with our app (user removed it from Meta)
+    //   • Phone never had commerce settings to disable
+    // In all cases, we still mark the row inactive in our DB below — Meta's
+    // side may be drifted but our side is the source of truth for routing.
+    log.warn({
+      err: err?.response?.data || err?.message,
+      phoneNumberId,
+    }, 'Could not disconnect catalog from old phone (non-fatal)');
+  }
+  // Always mirror the change in our DB regardless of the Meta API result.
+  try {
+    await col('whatsapp_accounts').updateOne(
+      { phone_number_id: phoneNumberId },
+      { $set: {
+        catalog_linked: false,
+        cart_enabled: false,
+        catalog_visible: false,
+        updated_at: new Date(),
+      }}
+    );
+  } catch (_) { /* non-fatal */ }
 }
 
 // ─── LINK CATALOG TO BRANCHES ────────────────────────────────

@@ -118,12 +118,18 @@ async function _assertMenuCategoryOwnedBy(catId, restaurantId) {
   return branch ? cat : null;
 }
 
-/** Returns the whatsapp_account doc IF it belongs to the restaurant, else null.
+/** Returns the whatsapp_account doc IF it belongs to the restaurant AND is a
+ *  restaurant row (not a platform admin/directory row), else null.
  *  Critical: never return another tenant's WhatsApp account because the doc
- *  contains the access_token field. */
+ *  contains the access_token field. Also never return a platform admin row
+ *  even if a future code path accidentally writes one with restaurant_id set. */
 async function _assertWhatsappAccountOwnedBy(waAccountId, restaurantId) {
   if (!waAccountId || !restaurantId) return null;
-  return col('whatsapp_accounts').findOne({ _id: waAccountId, restaurant_id: restaurantId });
+  return col('whatsapp_accounts').findOne({
+    _id: waAccountId,
+    restaurant_id: restaurantId,
+    $or: [{ account_type: 'restaurant' }, { account_type: { $exists: false } }],
+  });
 }
 
 /** Returns the catalog_collection doc IF it belongs to the restaurant, else null. */
@@ -629,13 +635,28 @@ router.get('/images/stats', async (req, res) => {
 // Verifies Meta connection using system user token — no OAuth needed.
 // If WABA data exists in DB, validates it against Meta API.
 // If not, tries to discover WABAs using META_BUSINESS_ID.
+// [WABA-BIND-FIX] verify-connection NEVER discovers WABAs from the platform
+// Meta Business account. The previous implementation called
+// /<META_BUSINESS_ID>/owned_whatsapp_business_accounts and bound EVERY platform
+// WABA to whichever restaurant clicked "Verify". That was a critical
+// cross-tenant + platform-leak bug. This route is now read-only health-check:
+// it pings each existing whatsapp_accounts row for THIS restaurant against
+// Meta's Graph API and reports the result. It does NOT auto-create or
+// auto-bind any WABAs. To connect a new WABA, the user must run the OAuth
+// flow at /auth/meta/start.
 router.post('/whatsapp/verify-connection', async (req, res) => {
   try {
     const sysToken = metaConfig.systemUserToken;
     if (!sysToken) return res.status(503).json({ error: 'System user token not configured. Please contact support.' });
 
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
-    const waAccounts = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
+    // Filter to restaurant-owned rows. account_type defaults to undefined for
+    // legacy rows, which we treat as restaurant rows. Platform admin rows live
+    // in admin_numbers and are never returned here.
+    const waAccounts = await col('whatsapp_accounts').find({
+      restaurant_id: req.restaurantId,
+      $or: [{ account_type: 'restaurant' }, { account_type: { $exists: false } }],
+    }).toArray();
     const results = { verified: [], errors: [], discovered: 0 };
 
     // Check existing accounts against Meta API
@@ -652,38 +673,17 @@ router.post('/whatsapp/verify-connection', async (req, res) => {
       }
     }
 
-    // If no WA accounts exist, try to discover via META_BUSINESS_ID
-    if (!waAccounts.length && metaConfig.businessId) {
-      try {
-        const wabaRes = await axios.get(`${metaConfig.graphUrl}/${metaConfig.businessId}/owned_whatsapp_business_accounts`, {
-          params: { access_token: sysToken, fields: 'id,name,phone_numbers{id,display_phone_number,verified_name,quality_rating}' },
-          timeout: 10000,
-        });
-        const wabas = wabaRes.data?.data || [];
-        for (const waba of wabas) {
-          for (const phone of (waba.phone_numbers?.data || [])) {
-            await col('whatsapp_accounts').updateOne(
-              { phone_number_id: phone.id },
-              { $set: {
-                restaurant_id: req.restaurantId, waba_id: waba.id,
-                phone_display: phone.display_phone_number, display_name: phone.verified_name,
-                quality_rating: phone.quality_rating || 'GREEN',
-                access_token: sysToken, is_active: true, updated_at: new Date(),
-              }, $setOnInsert: { _id: newId(), created_at: new Date() } },
-              { upsert: true }
-            );
-            results.discovered++;
-          }
-        }
-        // Mark restaurant as connected
-        if (results.discovered > 0) {
-          await col('restaurants').updateOne({ _id: req.restaurantId }, {
-            $set: { whatsapp_connected: true, updated_at: new Date() },
-          });
-        }
-      } catch (e) {
-        results.errors.push({ discovery: e.response?.data?.error?.message || e.message });
-      }
+    // [WABA-BIND-FIX] If no WA accounts exist for this restaurant, do NOT
+    // auto-discover from the platform's Meta Business account. That was the
+    // bug. Tell the user to run the connect flow instead.
+    if (!waAccounts.length) {
+      return res.json({
+        connected: false,
+        verified: [],
+        errors: [],
+        discovered: 0,
+        message: 'No WhatsApp account linked yet. Click "Connect WhatsApp Business" to link one via Meta.',
+      });
     }
 
     // Ensure whatsapp_connected flag is set if we have valid accounts
@@ -693,7 +693,7 @@ router.post('/whatsapp/verify-connection', async (req, res) => {
       });
     }
 
-    const connected = results.verified.length > 0 || results.discovered > 0;
+    const connected = results.verified.length > 0;
     res.json({ connected, ...results });
   } catch (err) {
     req.log.error({ err }, 'WhatsApp verify-connection failed');
@@ -701,11 +701,185 @@ router.post('/whatsapp/verify-connection', async (req, res) => {
   }
 });
 
+// POST /api/restaurant/whatsapp/disconnect
+// Disconnects this restaurant's WhatsApp Business connection.
+//
+// Behavior:
+//   1. Verify the restaurant owns the linked WABA row before touching anything.
+//   2. Mark the whatsapp_accounts row inactive (is_active = false). Tokens are
+//      preserved so the user can later "Verify Existing Connection" without
+//      re-running the full OAuth flow if they reconnect the same number.
+//   3. Clear the restaurant's linked_* fields and whatsapp_connected flag.
+//   4. Invalidate the cachedLookup memcache so webhook routing stops within
+//      one event loop tick (without waiting for the 5-min TTL).
+//
+// After this returns successfully:
+//   • GET /whatsapp returns an empty array (filtered by is_active is_required
+//     in cachedLookup; the GET /whatsapp route also drops inactive rows below).
+//   • Webhook handler (`processChange` in webhooks/whatsapp.js) calls
+//     getWaAccount(phone_number_id) which now returns null → message dropped.
+//   • Settings page renders the "Connect WhatsApp Business" CTA.
+//
+// To reconnect: the user runs the existing /auth/meta/start flow which will
+// re-bind under the (now-empty) linkage fields.
+router.post('/whatsapp/disconnect', requirePermission('manage_users'), async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne(
+      { _id: req.restaurantId },
+      { projection: { linked_phone_number_id: 1, linked_waba_id: 1, whatsapp_connected: 1 } }
+    );
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+
+    // Find the WABA row(s) we're disconnecting. We use the EXPLICIT linkage
+    // first (restaurants.linked_phone_number_id), but as a safety net we
+    // also deactivate any other rows for this restaurant — there should
+    // never be more than one active row per restaurant after the WABA-bind
+    // fix, but legacy data may still have orphans.
+    const filter = {
+      restaurant_id: req.restaurantId,
+      $or: [{ account_type: 'restaurant' }, { account_type: { $exists: false } }],
+      is_active: true,
+    };
+    const activeRows = await col('whatsapp_accounts').find(filter).toArray();
+
+    // Deactivate the WhatsApp account row(s). Tokens are preserved so an
+    // operator clicking Verify after reconnect can recover without a full
+    // re-OAuth. The is_active flip is what stops webhook routing.
+    if (activeRows.length) {
+      await col('whatsapp_accounts').updateMany(
+        filter,
+        { $set: { is_active: false, disconnected_at: new Date(), updated_at: new Date() } }
+      );
+    }
+
+    // Invalidate the cachedLookup memcache so webhooks stop processing for
+    // this number within milliseconds (vs 5-min TTL). Each row's
+    // phone_number_id keys an entry under wa_account:<phone_number_id>.
+    for (const row of activeRows) {
+      if (row.phone_number_id) memcache.del(`wa_account:${row.phone_number_id}`);
+    }
+
+    // Clear the restaurant-level linkage source of truth.
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      {
+        $set: {
+          whatsapp_connected: false,
+          updated_at: new Date(),
+          disconnected_at: new Date(),
+        },
+        // Unset the explicit linkage fields so the read paths know there is
+        // nothing connected. We do NOT touch meta_user_id / meta_access_token
+        // because the user might want to reconnect to the SAME WABA without
+        // re-running the OAuth dialog — keeping these means the existing
+        // /auth/me-cached info stays available.
+        $unset: {
+          linked_waba_id: '',
+          linked_phone_number_id: '',
+          linked_at: '',
+          // meta_phone_number_id / meta_waba_id are legacy duplicates of
+          // linked_*; clear them too so no read path picks up stale data.
+          meta_phone_number_id: '',
+          meta_waba_id: '',
+        },
+      }
+    );
+
+    logActivity({
+      actorType: 'restaurant',
+      actorId: req.user?.id || null,
+      actorName: req.user?.email || req.user?.phone || null,
+      action: 'whatsapp.disconnected',
+      category: 'auth',
+      description: `WhatsApp Business connection disconnected (${activeRows.length} row(s) deactivated)`,
+      restaurantId: req.restaurantId,
+      resourceType: 'whatsapp_account',
+      resourceId: restaurant.linked_phone_number_id || null,
+      severity: 'info',
+      metadata: {
+        deactivated_phone_number_ids: activeRows.map(r => r.phone_number_id).filter(Boolean),
+        previously_linked_phone_number_id: restaurant.linked_phone_number_id || null,
+        previously_linked_waba_id: restaurant.linked_waba_id || null,
+      },
+    });
+
+    req.log.info({
+      restaurantId: req.restaurantId,
+      deactivated: activeRows.length,
+    }, 'WhatsApp disconnected');
+
+    res.json({
+      success: true,
+      deactivated: activeRows.length,
+      whatsapp_connected: false,
+    });
+  } catch (e) {
+    req.log.error({ err: e }, 'WhatsApp disconnect failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// [WABA-BIND-FIX] Settings page reads its WhatsApp section from this route.
+// Three guarantees:
+//   1. Tenant filter — restaurant_id MUST match the caller (already in place)
+//   2. Account-type filter — exclude platform admin/directory rows. We do this
+//      by checking the admin_numbers collection: if a row's phone_number_id is
+//      registered there, we drop it (defence in depth on top of the
+//      _isPlatformAdminPhoneNumber check inside _saveWabaAccounts)
+//   3. Linked-first ordering — the row matching restaurants.linked_phone_number_id
+//      is returned FIRST, so the Settings UI's "first row" rendering shows the
+//      explicitly linked WABA, not "whichever row sorted alphabetically first"
+//   4. Inactive rows are dropped — disconnected accounts (is_active=false)
+//      should never appear in the Settings UI
 router.get('/whatsapp', async (req, res) => {
   try {
-    const docs = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
-    res.json(mapIds(docs).map(d => {
+    const docs = await col('whatsapp_accounts').find({
+      restaurant_id: req.restaurantId,
+      // [DISCONNECT] Only return active rows. Disconnected rows are kept in
+      // the DB with is_active=false so we can recover their tokens on
+      // reconnect, but they must NEVER show up in the Settings UI.
+      is_active: true,
+      $or: [{ account_type: 'restaurant' }, { account_type: { $exists: false } }],
+    }).toArray();
+
+    // Defence in depth: drop any row whose phone_number_id is in admin_numbers
+    let safeDocs = docs;
+    if (docs.length) {
+      const phoneIds = docs.map(d => d.phone_number_id).filter(Boolean);
+      const adminRows = phoneIds.length
+        ? await col('admin_numbers').find(
+            { phone_number_id: { $in: phoneIds } },
+            { projection: { phone_number_id: 1 } }
+          ).toArray()
+        : [];
+      const adminSet = new Set(adminRows.map(a => a.phone_number_id));
+      safeDocs = docs.filter(d => !adminSet.has(d.phone_number_id));
+      if (safeDocs.length !== docs.length) {
+        req.log.warn({
+          restaurantId: req.restaurantId,
+          dropped: docs.length - safeDocs.length,
+        }, 'Dropped platform admin rows from /whatsapp response (defence in depth)');
+      }
+    }
+
+    // Linked-first ordering — read the explicit link from the restaurant doc
+    const restaurant = await col('restaurants').findOne(
+      { _id: req.restaurantId },
+      { projection: { linked_phone_number_id: 1 } }
+    );
+    const linkedId = restaurant?.linked_phone_number_id || null;
+    if (linkedId) {
+      safeDocs.sort((a, b) => {
+        if (a.phone_number_id === linkedId) return -1;
+        if (b.phone_number_id === linkedId) return 1;
+        return 0;
+      });
+    }
+
+    res.json(mapIds(safeDocs).map(d => {
       const { _id, access_token, meta_access_token, ...rest } = d;
+      // Mark the linked row so the frontend can render a "Primary" badge.
+      if (linkedId && d.phone_number_id === linkedId) rest.is_linked = true;
       return rest;
     }));
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2927,8 +3101,25 @@ router.get('/catalog/full-state', async (req, res) => {
     // Meta connection signals
     state.metaConnected = !!(restaurant.meta_user_id || restaurant.meta_business_id);
 
-    // 2. WABA connection
-    const waba = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
+    // 2. WABA connection — read the EXPLICITLY linked phone first, then fall
+    // back to "first restaurant-typed row" only if no linkage was recorded
+    // (legacy onboardings before the WABA-BIND-FIX). Platform admin rows
+    // (account_type !== 'restaurant') are excluded.
+    const restaurantWabaFilter = {
+      restaurant_id: req.restaurantId,
+      is_active: true,
+      $or: [{ account_type: 'restaurant' }, { account_type: { $exists: false } }],
+    };
+    let waba = null;
+    if (restaurant.linked_phone_number_id) {
+      waba = await col('whatsapp_accounts').findOne({
+        ...restaurantWabaFilter,
+        phone_number_id: restaurant.linked_phone_number_id,
+      });
+    }
+    if (!waba) {
+      waba = await col('whatsapp_accounts').findOne(restaurantWabaFilter);
+    }
     if (waba) {
       state.whatsappNumberConnected = !!waba.phone_number_id;
       state.whatsappNumber = waba.phone_display || waba.wa_phone_number || null;

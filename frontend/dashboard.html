@@ -2221,6 +2221,34 @@ tbody tr{transition:background .1s ease}
               </button>
               <button class="btn-g btn-sm" id="wa-verify-btn" onclick="verifyMetaConnection()" style="width:100%;justify-content:center">Verify Existing Connection</button>
             </div>
+
+            <!-- [DISCONNECT] WhatsApp connection management — only visible when connected.
+                 The two buttons here are mutually exclusive with the reconnect button above:
+                   - Connected   → show Change + Disconnect, hide Connect
+                   - Disconnected → show Connect (in #wa-reconnect-wrap), hide Change + Disconnect
+                 Visibility is controlled by loadProfile() in tabs/settings.js. -->
+            <div id="wa-manage-wrap" style="display:none;display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
+              <button class="btn-g btn-sm" id="wa-change-btn" onclick="doChangeWhatsappAccount()" style="flex:1;min-width:140px;justify-content:center">
+                &#128260; Change WhatsApp Account
+              </button>
+              <button class="btn-g btn-sm" id="wa-disconnect-btn" onclick="doDisconnectWhatsappConfirm()" style="flex:1;min-width:140px;justify-content:center;color:#dc2626;border-color:#dc2626">
+                &#9939; Disconnect
+              </button>
+            </div>
+
+            <!-- Disconnect confirmation modal — inline so it scrolls with the card. -->
+            <div id="wa-disconnect-confirm" style="display:none;margin-top:.7rem;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.85rem">
+              <div style="font-size:.85rem;font-weight:600;color:#dc2626;margin-bottom:.4rem">&#9888;&#65039; Disconnect WhatsApp Business?</div>
+              <p style="font-size:.78rem;color:#7f1d1d;margin-bottom:.6rem;line-height:1.45">
+                Customers will <strong>stop being able to message your business</strong>. Incoming WhatsApp messages will be ignored and no new orders will be received until you reconnect.
+                <br><br>
+                Your menu, catalog, and customer history are preserved. You can reconnect to the same number or a different one anytime.
+              </p>
+              <div style="display:flex;gap:.5rem;justify-content:flex-end">
+                <button class="btn-g btn-sm" onclick="document.getElementById('wa-disconnect-confirm').style.display='none'">Cancel</button>
+                <button class="btn-sm" id="wa-disconnect-go-btn" onclick="doDisconnectWhatsapp()" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:.4rem .9rem;font-size:.8rem;font-weight:600;cursor:pointer">Yes, disconnect</button>
+              </div>
+            </div>
           </div>
         </div>
 
