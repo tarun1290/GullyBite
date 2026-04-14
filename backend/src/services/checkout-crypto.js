@@ -89,9 +89,43 @@ function verifyCheckoutSignature(rawBody, signature) {
   return crypto.timingSafeEqual(Buffer.from(signature || ''), Buffer.from(expected));
 }
 
+// ─── DECRYPT + RETURN AES KEY ───────────────────────────────────
+// Same as decryptCheckoutPayload but also returns the raw AES key so the
+// caller can encrypt its response under the same key (Meta Checkout
+// endpoint spec — response reuses the request's AES key + flipped IV).
+function decryptWithKey({ encrypted_aes_key, encrypted_payload, iv, tag }) {
+  const privateKey = getPrivateKey();
+  const encAesKey = Buffer.from(encrypted_aes_key, 'base64');
+  const aesKey = crypto.privateDecrypt(
+    { key: privateKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+    encAesKey,
+  );
+  const ivBuf = Buffer.from(iv, 'base64');
+  const tagBuf = Buffer.from(tag, 'base64');
+  const encPayload = Buffer.from(encrypted_payload, 'base64');
+  const decipher = crypto.createDecipheriv('aes-128-gcm', aesKey, ivBuf);
+  decipher.setAuthTag(tagBuf);
+  const decrypted = Buffer.concat([decipher.update(encPayload), decipher.final()]);
+  return { data: JSON.parse(decrypted.toString('utf8')), aesKey, requestIv: ivBuf };
+}
+
+// ─── ENCRYPT RESPONSE WITH FLIPPED IV ───────────────────────────
+// Meta Checkout endpoint requires the response to be AES-128-GCM
+// encrypted under the REQUEST's AES key, with each byte of the request
+// IV inverted. Returns a single base64 string (ciphertext || tag).
+function encryptWithFlippedIv(data, aesKey, requestIv) {
+  const flippedIv = Buffer.from(requestIv.map(b => b ^ 0xff));
+  const cipher = crypto.createCipheriv('aes-128-gcm', aesKey, flippedIv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(data), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([encrypted, tag]).toString('base64');
+}
+
 module.exports = {
   decryptCheckoutPayload,
+  decryptWithKey,
   encryptResponse,
+  encryptWithFlippedIv,
   generateKeyPair,
   verifyCheckoutSignature,
 };

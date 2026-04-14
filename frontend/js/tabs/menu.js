@@ -2274,7 +2274,7 @@ async function handleImgFile(input) {
     const form = new FormData();
     form.append('image', file);
 
-    const res = await fetch('/api/restaurant/menu/upload-image', {
+    const res = await fetch('https://gullybite.duckdns.org/api/restaurant/menu/upload-image', {
       method : 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body   : form,
@@ -2377,7 +2377,7 @@ async function doBulkImageUpload() {
     const form = new FormData();
     for (const f of files) form.append('images', f);
 
-    const res = await fetch('/api/restaurant/images/bulk-upload', {
+    const res = await fetch('https://gullybite.duckdns.org/api/restaurant/images/bulk-upload', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -2641,7 +2641,7 @@ async function doMenuImportUpload() {
     const fd = new FormData();
     fd.append('file', f);
     const token = localStorage.getItem('rest_token') || localStorage.getItem('token') || '';
-    const r = await fetch('/api/restaurant/menu/upload', {
+    const r = await fetch('https://gullybite.duckdns.org/api/restaurant/menu/upload', {
       method: 'POST',
       headers: token ? { 'Authorization': 'Bearer ' + token } : {},
       body: fd,

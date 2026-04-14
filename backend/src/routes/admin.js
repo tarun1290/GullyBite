@@ -674,6 +674,105 @@ router.post('/settlements/:id/retry', requireAdmin, express.json(), async (req, 
   }
 });
 
+// ─── COUPON CODES (promo coupons for checkout endpoint) ─────
+// Distinct from /coupon-templates (Meta marketing templates with a
+// copy_code button) — these are the actual discount rules applied by
+// services/coupon.js and the WhatsApp Checkout endpoint.
+router.get('/coupons', requireAdmin, async (req, res) => {
+  try {
+    const { restaurant_id } = req.query;
+    if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id required' });
+    const rows = await col('coupons')
+      .find({ restaurant_id: String(restaurant_id) })
+      .sort({ created_at: -1 })
+      .toArray();
+    res.json({ items: rows.map(r => ({ ...r, id: String(r._id) })), count: rows.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/coupons', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const couponSvc = require('../services/coupon');
+    const doc = await couponSvc.createCoupon(req.body || {});
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
+      action: 'coupon.created', category: 'billing',
+      description: `Coupon ${doc.code} created for restaurant ${doc.restaurant_id}`,
+      restaurantId: doc.restaurant_id, resourceType: 'coupon', resourceId: doc.id, severity: 'info',
+    });
+    res.json(doc);
+  } catch (e) {
+    const status = /required|must|>/.test(e.message) ? 400 : 500;
+    res.status(status).json({ error: e.message });
+  }
+});
+
+router.patch('/coupons/:id', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const allowed = ['is_active', 'description', 'valid_from', 'valid_until', 'usage_limit', 'per_user_limit'];
+    const set = {};
+    for (const k of allowed) if (k in req.body) {
+      set[k] = k.startsWith('valid_') && req.body[k] ? new Date(req.body[k]) : req.body[k];
+    }
+    if (!Object.keys(set).length) return res.status(400).json({ error: 'no updatable fields' });
+    set.updated_at = new Date();
+    const r = await col('coupons').findOneAndUpdate(
+      { _id: req.params.id },
+      { $set: set },
+      { returnDocument: 'after' },
+    );
+    if (!r) return res.status(404).json({ error: 'not found' });
+    res.json({ ...r, id: String(r._id) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── COUPON TEMPLATES ────────────────────────────────────────
+// Marketing templates with a copy_code button, managed per restaurant WABA.
+// Thin wrappers over services/couponTemplate.service.js.
+router.post('/coupon-templates', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const { restaurant_id, name, header_text, body_text, example_code } = req.body || {};
+    if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id required' });
+    if (!name)          return res.status(400).json({ error: 'name required' });
+    if (!body_text)     return res.status(400).json({ error: 'body_text required' });
+    if (!example_code)  return res.status(400).json({ error: 'example_code required' });
+
+    const svc = require('../services/couponTemplate.service');
+    const result = await svc.createCouponTemplate({
+      restaurantId: String(restaurant_id),
+      name: String(name),
+      headerText: header_text || null,
+      bodyText: String(body_text),
+      exampleCode: String(example_code),
+    });
+
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
+      action: 'coupon_template.created', category: 'template',
+      description: `Coupon template "${name}" submitted for restaurant ${restaurant_id}`,
+      restaurantId: String(restaurant_id), resourceType: 'template',
+      resourceId: result.template_id, severity: 'info', metadata: result,
+    });
+
+    res.json(result);
+  } catch (e) {
+    const status = /required|must be/i.test(e.message) ? 400 : 500;
+    res.status(status).json({ error: e.message, meta: e.meta || undefined });
+  }
+});
+
+router.get('/coupon-templates', requireAdmin, async (req, res) => {
+  try {
+    const { restaurant_id } = req.query;
+    if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id required' });
+    const svc = require('../services/couponTemplate.service');
+    const items = await svc.listCouponTemplates(String(restaurant_id));
+    res.json({ items, count: items.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── POST /api/admin/settlements/confirm ─────────────────────
 // Phase 5.1 — Ops confirms a manual (or stuck auto) payout landed at
 // the bank. Flips ledger pending→completed and settlement→completed,

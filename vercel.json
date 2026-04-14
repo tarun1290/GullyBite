@@ -1,12 +1,18 @@
 {
-  "regions": ["bom1"],
-  "functions": {
-    "api/index.js": {
-      "includeFiles": "{frontend,backend}/**",
-      "maxDuration": 30
+  "outputDirectory": "frontend",
+  "cleanUrls": true,
+  "headers": [
+    {
+      "source": "/(.*\\.html)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=60, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/(css|js|public)/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600, must-revalidate" }
+      ]
     }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
   ]
 }

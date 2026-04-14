@@ -748,6 +748,67 @@ const menu_uploads = {
   ],
 };
 
+// ─── COUPONS ─────────────────────────────────────────────────
+// Restaurant-scoped promo codes. Amounts stored in PAISE for the
+// checkout-endpoint path (min_order_paise / max_discount_paise) so Meta
+// Checkout responses don't need rupee→paise conversion at the edge.
+// Rupee columns (min_order_rs / max_discount_rs) remain for the legacy
+// conversational coupon flow — services/coupon.js reads either shape.
+const coupons = {
+  collection: 'coupons',
+  description: 'Restaurant promo codes. Evaluated by services/coupon.js for the conversational flow and by the WhatsApp Checkout endpoint (apply_coupon sub_action).',
+  fields: {
+    _id:                 { type: 'uuid', required: true },
+    restaurant_id:       { type: 'uuid' }, // null = platform-wide
+    code:                { type: 'string', required: true }, // uppercase, ≤20 chars
+    coupon_id:           { type: 'string' },                 // internal slug shown to customer
+    description:         { type: 'string' },
+    discount_type:       { type: 'string', enum: ['flat', 'percent', 'free_delivery'] },
+    discount_value:      { type: 'number' },                 // rupees (flat) or % (percent)
+    min_order_paise:     { type: 'number' },                 // Phase: checkout-endpoint
+    max_discount_paise:  { type: 'number' },                 // Phase: checkout-endpoint (percent cap)
+    min_order_rs:        { type: 'number' },                 // Legacy conversational
+    max_discount_rs:     { type: 'number' },                 // Legacy conversational
+    valid_from:          { type: 'date' },
+    valid_until:         { type: 'date' },
+    is_active:           { type: 'boolean', required: true },
+    usage_limit:         { type: 'number' },
+    usage_count:         { type: 'number' },
+    per_user_limit:      { type: 'number' },
+    first_order_only:    { type: 'boolean' },
+    branch_ids:          { type: 'array' },
+    campaign_id:         { type: 'uuid' },
+    created_at:          { type: 'date', required: true },
+    updated_at:          { type: 'date' },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, code: 1 }, unique: true, partialFilterExpression: { restaurant_id: { $exists: true } } },
+    { key: { restaurant_id: 1, is_active: 1 } },
+  ],
+};
+
+// ─── CHECKOUT_REFS ──────────────────────────────────────────
+// Short reference_id → restaurant_id mapping for the WhatsApp Checkout
+// endpoint. UUIDs don't fit in the 35-char reference_id limit, so the
+// button template send stores a short random id here and the endpoint
+// decodes it on apply_coupon / get_coupons. TTL index auto-cleans.
+const checkout_refs = {
+  collection: 'checkout_refs',
+  description: 'Short-lived mapping of WhatsApp Checkout reference_id → restaurant_id/order metadata. TTL index expires old rows.',
+  fields: {
+    _id:            { type: 'string', required: true }, // the reference_id itself
+    restaurant_id:  { type: 'uuid', required: true },
+    customer_phone: { type: 'string' },
+    template_name:  { type: 'string' },
+    created_at:     { type: 'date', required: true },
+    expires_at:     { type: 'date', required: true },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, created_at: -1 } },
+    { key: { expires_at: 1 }, expireAfterSeconds: 0 },
+  ],
+};
+
 // ═══════════════════════════════════════════════════════════════
 // EXPORT ALL SCHEMAS
 // ═══════════════════════════════════════════════════════════════
@@ -757,7 +818,7 @@ const ALL_SCHEMAS = {
   customers, customer_profiles, customer_addresses, cart_sessions, order_counters,
   conversations, payments, restaurant_ledger, settlements,
   whatsapp_accounts, referrals, menu_uploads, sync_logs, sync_summary, alerts,
-  brands, messages, catalog, catalog_sync_schedule,
+  brands, messages, catalog, catalog_sync_schedule, coupons, checkout_refs,
 };
 
 module.exports = { ALL_SCHEMAS, ...ALL_SCHEMAS };

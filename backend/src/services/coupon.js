@@ -234,6 +234,147 @@ const recordRedemption = async (couponId, customerId, orderId, session = null) =
   }, opts).catch(e => log.warn({ err: e }, 'Redemption tracking failed'));
 };
 
+// ─── PAISE-NATIVE CHECKOUT-ENDPOINT HELPERS ──────────────────
+// These back the WhatsApp Checkout endpoint (routes/checkout-endpoint.js).
+// They operate in paise so the Meta Checkout response can be built
+// without rupee→paise rounding at the edge.
+
+const CODE_RE = /^[A-Z0-9_-]{1,20}$/;
+
+// Create a coupon document. Accepts paise-denominated fields (preferred)
+// and/or rupee-denominated fields for back-compat with the conversational
+// flow. Both shapes are persisted so either reader keeps working.
+async function createCoupon(input) {
+  const {
+    restaurant_id, code, coupon_id, description,
+    discount_type, discount_value,
+    min_order_paise, max_discount_paise,
+    min_order_rs, max_discount_rs,
+    valid_from, valid_until,
+    is_active = true, usage_limit,
+    per_user_limit, first_order_only = false, branch_ids,
+  } = input || {};
+
+  const normCode = String(code || '').toUpperCase().trim();
+  if (!CODE_RE.test(normCode)) throw new Error('code must be uppercase alphanumeric (A-Z, 0-9, _, -), ≤20 chars');
+  if (!['flat', 'percent', 'free_delivery'].includes(discount_type)) throw new Error('discount_type must be flat|percent|free_delivery');
+  if (discount_type !== 'free_delivery' && !(Number(discount_value) > 0)) throw new Error('discount_value must be > 0');
+
+  // Normalize both shapes so the conversational flow + checkout endpoint
+  // both read the right amount regardless of which form the admin gave.
+  const minRs = min_order_paise != null ? Number(min_order_paise) / 100 : (min_order_rs != null ? Number(min_order_rs) : null);
+  const minPaise = minRs != null ? Math.round(minRs * 100) : null;
+  const maxRs = max_discount_paise != null ? Number(max_discount_paise) / 100 : (max_discount_rs != null ? Number(max_discount_rs) : null);
+  const maxPaise = maxRs != null ? Math.round(maxRs * 100) : null;
+
+  const doc = {
+    _id: newId(),
+    restaurant_id: restaurant_id ? String(restaurant_id) : null,
+    code: normCode,
+    coupon_id: coupon_id || normCode.toLowerCase(),
+    description: description || '',
+    discount_type,
+    discount_value: Number(discount_value) || 0,
+    min_order_paise: minPaise,
+    max_discount_paise: maxPaise,
+    min_order_rs: minRs,
+    max_discount_rs: maxRs,
+    valid_from: valid_from ? new Date(valid_from) : null,
+    valid_until: valid_until ? new Date(valid_until) : null,
+    is_active: !!is_active,
+    usage_limit: usage_limit != null ? Number(usage_limit) : null,
+    usage_count: 0,
+    per_user_limit: per_user_limit != null ? Number(per_user_limit) : null,
+    first_order_only: !!first_order_only,
+    branch_ids: Array.isArray(branch_ids) ? branch_ids.map(String) : null,
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
+
+  await col('coupons').insertOne(doc);
+  return { ...doc, id: String(doc._id) };
+}
+
+// Active coupons for a restaurant, respecting validity window. Used by
+// the get_coupons sub_action to populate the WhatsApp coupon picker.
+async function getActiveCouponsForRestaurant(restaurantId) {
+  if (!restaurantId) return [];
+  const now = new Date();
+  const rows = await col('coupons').find({
+    restaurant_id: String(restaurantId),
+    is_active: true,
+    $or: [{ valid_from: null }, { valid_from: { $lte: now } }],
+    $and: [{ $or: [{ valid_until: null }, { valid_until: { $gte: now } }] }],
+  }).toArray();
+  return rows.filter(c => c.usage_limit == null || (c.usage_count || 0) < c.usage_limit);
+}
+
+async function getCouponByCode(restaurantId, code) {
+  if (!restaurantId || !code) return null;
+  return col('coupons').findOne({
+    restaurant_id: String(restaurantId),
+    code: String(code).toUpperCase().trim(),
+  });
+}
+
+// Validate and compute discount in PAISE against a paise subtotal.
+// Returns { valid, coupon, discountPaise, description, error? }.
+// Does NOT mutate usage_count — that's incrementUsage() on successful payment.
+async function applyCoupon({ restaurantId, code, subtotalPaise, customerId = null, branchId = null }) {
+  if (!restaurantId) return { valid: false, error: 'restaurant required' };
+  if (!code)         return { valid: false, error: 'code required' };
+  if (!(subtotalPaise > 0)) return { valid: false, error: 'subtotal required' };
+
+  const coupon = await getCouponByCode(restaurantId, code);
+  if (!coupon || !coupon.is_active) return { valid: false, error: 'Invalid or inactive coupon' };
+
+  const now = new Date();
+  if (coupon.valid_from  && now < new Date(coupon.valid_from))  return { valid: false, error: 'Coupon not yet active' };
+  if (coupon.valid_until && now > new Date(coupon.valid_until)) return { valid: false, error: 'Coupon has expired' };
+  if (coupon.usage_limit != null && (coupon.usage_count || 0) >= coupon.usage_limit) {
+    return { valid: false, error: 'Coupon usage limit reached' };
+  }
+
+  // Per-user limit (optional — only enforced when caller supplies customerId).
+  if (customerId && coupon.per_user_limit != null && coupon.per_user_limit > 0) {
+    const uses = await col('coupon_redemptions').countDocuments({ coupon_id: String(coupon._id), customer_id: customerId });
+    if (uses >= coupon.per_user_limit) return { valid: false, error: 'You have already used this coupon' };
+  }
+
+  if (coupon.branch_ids?.length && branchId && !coupon.branch_ids.includes(String(branchId))) {
+    return { valid: false, error: 'Coupon not valid for this outlet' };
+  }
+
+  const minPaise = coupon.min_order_paise != null
+    ? coupon.min_order_paise
+    : (coupon.min_order_rs != null ? Math.round(Number(coupon.min_order_rs) * 100) : 0);
+  if (subtotalPaise < minPaise) {
+    return { valid: false, error: `Minimum order ₹${(minPaise / 100).toFixed(0)} required` };
+  }
+
+  let discountPaise;
+  if (coupon.discount_type === 'percent') {
+    discountPaise = Math.round(subtotalPaise * (Number(coupon.discount_value) / 100));
+    const capPaise = coupon.max_discount_paise != null
+      ? coupon.max_discount_paise
+      : (coupon.max_discount_rs != null ? Math.round(Number(coupon.max_discount_rs) * 100) : null);
+    if (capPaise != null) discountPaise = Math.min(discountPaise, capPaise);
+  } else if (coupon.discount_type === 'flat') {
+    discountPaise = Math.round(Number(coupon.discount_value) * 100);
+  } else {
+    // free_delivery: no line-item discount; delivery is zeroed at the order layer.
+    discountPaise = 0;
+  }
+  discountPaise = Math.min(discountPaise, subtotalPaise);
+
+  return {
+    valid: true,
+    coupon: { ...coupon, id: String(coupon._id) },
+    discountPaise,
+    description: coupon.description || coupon.code,
+  };
+}
+
 module.exports = {
   validateCoupon,
   calculateDiscount,
@@ -241,4 +382,9 @@ module.exports = {
   isCustomerFirstOrder,
   incrementUsage,
   recordRedemption,
+  // Checkout-endpoint additions:
+  createCoupon,
+  getActiveCouponsForRestaurant,
+  getCouponByCode,
+  applyCoupon,
 };

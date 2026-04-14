@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GullyBite — Admin Dashboard</title>
+<script src="/js/api-base.js"></script>
 <style>
 :root{
   --ink :#f1f5f9; --ink2:#ffffff; --ink3:#ffffff; --ink4:#f8fafc;
@@ -264,6 +265,14 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
       <div class="nav-item" data-page="templates" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         Templates
+      </div>
+      <div class="nav-item" data-page="coupons" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v5a2 2 0 0 1 0 4v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1a2 2 0 0 1 0-4z"/><line x1="9" y1="9" x2="9" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/></svg>
+        Coupon Templates
+      </div>
+      <div class="nav-item" data-page="coupon-codes" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5v3a2.5 2.5 0 0 1-2.5 2.5H5.5A2.5 2.5 0 0 1 3 14.5v-3"/><path d="M21 11.5a2.5 2.5 0 0 0-2.5-2.5H5.5A2.5 2.5 0 0 0 3 11.5"/><path d="M8 14h.01M12 14h.01M16 14h.01"/></svg>
+        Coupons
       </div>
       <div class="nav-item" data-page="abuse" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -752,6 +761,129 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
             <thead><tr><th>Order ID</th><th>Event</th><th>Template</th><th>Status</th><th>Sent At</th></tr></thead>
             <tbody id="tpl-notif-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- ── COUPON TEMPLATES ──────────────────────────────────────────── -->
+      <div class="page" id="page-coupons">
+        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+          <label style="font-size:.8rem;color:var(--dim)">Restaurant:</label>
+          <select id="cpn-restaurant" onchange="loadCouponTemplates()" style="flex:1;max-width:340px;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.4rem .7rem;font-size:.85rem">
+            <option value="">— Select restaurant —</option>
+          </select>
+          <button class="btn-sm" onclick="loadCouponTemplates(true)">Refresh</button>
+        </div>
+
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem .95rem;margin-bottom:1rem;font-size:.8rem;line-height:1.5;color:#1e40af">
+          <strong>How coupon templates work:</strong> Meta treats these as <em>marketing</em> templates with a <code style="background:#dbeafe;padding:.05rem .3rem;border-radius:3px">copy_code</code> button. <code style="background:#dbeafe;padding:.05rem .3rem;border-radius:3px">&#123;&#123;1&#125;&#125;</code> is the coupon code, <code style="background:#dbeafe;padding:.05rem .3rem;border-radius:3px">&#123;&#123;2&#125;&#125;</code> (optional) is the discount amount. Approval by Meta usually takes a few minutes.
+        </div>
+
+        <div class="table-wrap" style="margin-bottom:1.2rem">
+          <div class="table-head"><h2>Existing Coupon Templates</h2></div>
+          <table>
+            <thead><tr><th>Name</th><th>Status</th><th>Language</th><th>Body Preview</th></tr></thead>
+            <tbody id="cpn-list-tbody"><tr><td colspan="4" class="empty">Select a restaurant to view templates</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="table-wrap">
+          <div class="table-head"><h2>Create New Coupon Template</h2></div>
+          <div style="padding:1rem;display:grid;grid-template-columns:1fr 1fr;gap:.85rem">
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Template Name <span style="color:var(--red)">*</span></label>
+              <input id="cpn-name" placeholder="e.g. festive_coupon_2026" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+              <div style="font-size:.7rem;color:var(--dim);margin-top:.25rem">Lowercase, numbers, underscores only</div>
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Example Coupon Code <span style="color:var(--red)">*</span></label>
+              <input id="cpn-example" placeholder="e.g. SAVE20" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+              <div style="font-size:.7rem;color:var(--dim);margin-top:.25rem">Shown to Meta as a sample; not the actual code you'll send</div>
+            </div>
+            <div style="grid-column:1/-1">
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Header Text (optional)</label>
+              <input id="cpn-header" placeholder="e.g. Your Special Offer!" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+            </div>
+            <div style="grid-column:1/-1">
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Body Text <span style="color:var(--red)">*</span></label>
+              <textarea id="cpn-body" rows="4" placeholder="Use code {{1}} to get {{2}} off your next order." style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem;font-family:inherit;resize:vertical"></textarea>
+              <div style="font-size:.7rem;color:var(--dim);margin-top:.25rem">&#123;&#123;1&#125;&#125; = coupon code · &#123;&#123;2&#125;&#125; = discount amount (optional)</div>
+            </div>
+            <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:.5rem">
+              <button class="btn-sm" onclick="resetCouponForm()">Reset</button>
+              <button class="btn-sm primary" onclick="submitCouponTemplate()">Submit to Meta</button>
+            </div>
+            <div id="cpn-msg" style="grid-column:1/-1;font-size:.8rem"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── COUPON CODES (promo discounts) ────────────────────────────── -->
+      <div class="page" id="page-coupon-codes">
+        <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-wrap:wrap">
+          <label style="font-size:.8rem;color:var(--dim)">Restaurant:</label>
+          <select id="cc-restaurant" onchange="loadCouponCodes()" style="flex:1;max-width:340px;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.4rem .7rem;font-size:.85rem">
+            <option value="">— Select restaurant —</option>
+          </select>
+          <button class="btn-sm" onclick="loadCouponCodes()">Refresh</button>
+        </div>
+
+        <div class="table-wrap" style="margin-bottom:1.2rem">
+          <div class="table-head"><h2>Coupons</h2></div>
+          <table>
+            <thead><tr><th>Code</th><th>Description</th><th>Discount</th><th>Validity</th><th>Uses</th><th>Active</th><th></th></tr></thead>
+            <tbody id="cc-list-tbody"><tr><td colspan="7" class="empty">Select a restaurant to view coupons</td></tr></tbody>
+          </table>
+        </div>
+
+        <div class="table-wrap">
+          <div class="table-head"><h2>Create Coupon</h2></div>
+          <div style="padding:1rem;display:grid;grid-template-columns:repeat(3,1fr);gap:.85rem">
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Code <span style="color:var(--red)">*</span></label>
+              <input id="cc-code" maxlength="20" placeholder="SAVE20" style="width:100%;text-transform:uppercase;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Discount Type <span style="color:var(--red)">*</span></label>
+              <select id="cc-type" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+                <option value="flat">Flat (₹)</option>
+                <option value="percent">Percent (%)</option>
+                <option value="free_delivery">Free Delivery</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Value <span style="color:var(--red)">*</span></label>
+              <input id="cc-value" type="number" min="0" step="1" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+            </div>
+            <div style="grid-column:1/-1">
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Description (shown to customer)</label>
+              <input id="cc-desc" placeholder="₹50 off on orders above ₹299" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Min Order (₹)</label>
+              <input id="cc-min" type="number" min="0" step="1" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Max Discount Cap (₹, percent only)</label>
+              <input id="cc-cap" type="number" min="0" step="1" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Usage Limit</label>
+              <input id="cc-limit" type="number" min="0" step="1" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Valid From</label>
+              <input id="cc-from" type="date" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+            </div>
+            <div>
+              <label style="font-size:.75rem;color:var(--dim);font-weight:600">Valid Until</label>
+              <input id="cc-until" type="date" style="width:100%;background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;margin-top:.25rem">
+            </div>
+            <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:.5rem">
+              <button class="btn-sm" onclick="resetCouponCodeForm()">Reset</button>
+              <button class="btn-sm primary" onclick="submitCouponCode()">Create Coupon</button>
+            </div>
+            <div id="cc-msg" style="grid-column:1/-1;font-size:.8rem"></div>
+          </div>
         </div>
       </div>
 
@@ -1714,7 +1846,7 @@ document.getElementById('admin-pass-input')?.addEventListener('keydown', e => {
 // admin-key-input removed — JWT only
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics', 'sync-logs': 'Catalog Sync Logs' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', coupons: 'Coupon Templates', 'coupon-codes': 'Coupons', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics', 'sync-logs': 'Catalog Sync Logs' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -1735,6 +1867,8 @@ function nav(el) {
   if (page === 'referrals')    loadReferrals();
   if (page === 'directory')    loadDirectory();
   if (page === 'templates')    loadTemplates();
+  if (page === 'coupons')      loadCouponsPage();
+  if (page === 'coupon-codes') loadCouponCodesPage();
   if (page === 'abuse')        loadAbuse();
   if (page === 'usernames')    loadUsernames();
   if (page === 'financials')   loadFinPage();
@@ -2584,7 +2718,7 @@ function stlPage(dir) {
 
 async function downloadSettlement(id) {
   try {
-    const resp = await fetch(`/api/admin/settlements/${id}/download`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') } });
+    const resp = await fetch(`https://gullybite.duckdns.org/api/admin/settlements/${id}/download`, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') } });
     if (!resp.ok) throw new Error('Download failed');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
@@ -4006,7 +4140,7 @@ async function loadFinTax() {
 async function downloadTdsReport() {
   const period = document.getElementById('fin-period').value;
   try {
-    const resp = await fetch('/api/admin/financials/tax/tds-report?period=' + period, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') } });
+    const resp = await fetch('https://gullybite.duckdns.org/api/admin/financials/tax/tds-report?period=' + period, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') } });
     if (!resp.ok) throw new Error('Download failed');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
@@ -4019,7 +4153,7 @@ async function downloadTdsReport() {
 async function downloadGstr1() {
   const period = document.getElementById('fin-period').value;
   try {
-    const resp = await fetch('/api/admin/financials/tax/gstr1?period=' + period, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') } });
+    const resp = await fetch('https://gullybite.duckdns.org/api/admin/financials/tax/gstr1?period=' + period, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_token') } });
     if (!resp.ok) throw new Error('Download failed');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
@@ -4853,6 +4987,230 @@ async function slResolveAlert(id) {
 window.loadMetaAlerts = loadMetaAlerts;
 window.slResolveAlert = slResolveAlert;
 window.loadSyncLogs = loadSyncLogs;
+
+// ─── COUPON TEMPLATES ────────────────────────────────────────
+let _cpnRestaurantsLoaded = false;
+async function loadCouponsPage() {
+  const sel = document.getElementById('cpn-restaurant');
+  if (!sel) return;
+  if (!_cpnRestaurantsLoaded) {
+    try {
+      const list = await api('/api/admin/restaurants');
+      const items = Array.isArray(list) ? list : (list.items || list.restaurants || []);
+      const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const opts = items
+        .map(r => ({ id: r.id || r._id, name: r.business_name || r.name || r.id || r._id }))
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+        .map(r => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+      sel.insertAdjacentHTML('beforeend', opts);
+      _cpnRestaurantsLoaded = true;
+    } catch (e) {
+      const msg = document.getElementById('cpn-msg');
+      if (msg) { msg.style.color = 'var(--red)'; msg.textContent = 'Failed to load restaurants: ' + e.message; }
+    }
+  }
+}
+
+async function loadCouponTemplates(forceRefresh) {
+  const sel = document.getElementById('cpn-restaurant');
+  const tbody = document.getElementById('cpn-list-tbody');
+  if (!sel || !tbody) return;
+  const rid = sel.value;
+  if (!rid) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">Select a restaurant to view templates</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '<tr><td colspan="4" class="empty">Loading…</td></tr>';
+  try {
+    const qs = forceRefresh ? '&_=' + Date.now() : '';
+    const res = await api('/api/admin/coupon-templates?restaurant_id=' + encodeURIComponent(rid) + qs);
+    const items = res.items || [];
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">No coupon templates yet</td></tr>';
+      return;
+    }
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const badge = (s) => {
+      const color = s === 'APPROVED' ? '#059669' : s === 'PENDING' ? '#d97706' : s === 'REJECTED' ? '#dc2626' : 'var(--dim)';
+      const bg    = s === 'APPROVED' ? '#d1fae5' : s === 'PENDING' ? '#fef3c7' : s === 'REJECTED' ? '#fee2e2' : 'var(--ink4)';
+      return `<span style="background:${bg};color:${color};padding:.15rem .55rem;border-radius:10px;font-size:.7rem;font-weight:600">${esc(s || '—')}</span>`;
+    };
+    const bodyOf = (t) => {
+      const b = (t.components || []).find(c => c.type === 'BODY');
+      return b?.text || '';
+    };
+    tbody.innerHTML = items.map(t => `
+      <tr>
+        <td style="padding:.5rem .85rem;font-weight:600;font-size:.85rem">${esc(t.name)}</td>
+        <td style="padding:.5rem .85rem">${badge(t.status)}</td>
+        <td style="padding:.5rem .85rem;font-size:.8rem;color:var(--dim)">${esc(t.language)}</td>
+        <td style="padding:.5rem .85rem;font-size:.8rem;max-width:420px">${esc(bodyOf(t)).slice(0, 140)}</td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" class="empty">Failed: ${(e && e.message) || e}</td></tr>`;
+  }
+}
+
+function resetCouponForm() {
+  ['cpn-name','cpn-header','cpn-body','cpn-example'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const m = document.getElementById('cpn-msg'); if (m) m.textContent = '';
+}
+
+async function submitCouponTemplate() {
+  const rid   = document.getElementById('cpn-restaurant').value;
+  const name  = document.getElementById('cpn-name').value.trim();
+  const head  = document.getElementById('cpn-header').value.trim();
+  const body  = document.getElementById('cpn-body').value;
+  const ex    = document.getElementById('cpn-example').value.trim();
+  const msg   = document.getElementById('cpn-msg');
+  msg.style.color = 'var(--dim)';
+  msg.textContent = '';
+  if (!rid)  { msg.style.color = 'var(--red)'; msg.textContent = 'Select a restaurant first'; return; }
+  if (!name) { msg.style.color = 'var(--red)'; msg.textContent = 'Name is required'; return; }
+  if (!/^[a-z0-9_]+$/.test(name)) { msg.style.color = 'var(--red)'; msg.textContent = 'Name must be lowercase alphanumeric with underscores only'; return; }
+  if (!body) { msg.style.color = 'var(--red)'; msg.textContent = 'Body text is required'; return; }
+  if (!ex)   { msg.style.color = 'var(--red)'; msg.textContent = 'Example coupon code is required'; return; }
+
+  msg.textContent = 'Submitting to Meta…';
+  try {
+    const r = await api('/api/admin/coupon-templates', {
+      method: 'POST',
+      body: JSON.stringify({ restaurant_id: rid, name, header_text: head || undefined, body_text: body, example_code: ex }),
+    });
+    msg.style.color = '#059669';
+    msg.textContent = `Submitted. Template ID ${r.template_id} · status ${r.status}`;
+    resetCouponForm();
+    loadCouponTemplates(true);
+  } catch (e) {
+    msg.style.color = 'var(--red)';
+    msg.textContent = 'Failed: ' + e.message;
+  }
+}
+
+window.loadCouponsPage = loadCouponsPage;
+window.loadCouponTemplates = loadCouponTemplates;
+window.resetCouponForm = resetCouponForm;
+window.submitCouponTemplate = submitCouponTemplate;
+
+// ─── COUPON CODES (promo discounts) ──────────────────────────
+let _ccRestaurantsLoaded = false;
+async function loadCouponCodesPage() {
+  const sel = document.getElementById('cc-restaurant');
+  if (!sel || _ccRestaurantsLoaded) return;
+  try {
+    const list = await api('/api/admin/restaurants');
+    const items = Array.isArray(list) ? list : (list.items || list.restaurants || []);
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const opts = items
+      .map(r => ({ id: r.id || r._id, name: r.business_name || r.name || r.id || r._id }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+      .map(r => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('');
+    sel.insertAdjacentHTML('beforeend', opts);
+    _ccRestaurantsLoaded = true;
+  } catch (e) {
+    const m = document.getElementById('cc-msg');
+    if (m) { m.style.color = 'var(--red)'; m.textContent = 'Failed to load restaurants: ' + e.message; }
+  }
+}
+
+async function loadCouponCodes() {
+  const sel = document.getElementById('cc-restaurant');
+  const tbody = document.getElementById('cc-list-tbody');
+  if (!sel || !tbody) return;
+  const rid = sel.value;
+  if (!rid) { tbody.innerHTML = '<tr><td colspan="7" class="empty">Select a restaurant to view coupons</td></tr>'; return; }
+  tbody.innerHTML = '<tr><td colspan="7" class="empty">Loading…</td></tr>';
+  try {
+    const res = await api('/api/admin/coupons?restaurant_id=' + encodeURIComponent(rid));
+    const items = res.items || [];
+    if (!items.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No coupons yet</td></tr>'; return; }
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmtDate = (d) => d ? new Date(d).toISOString().slice(0, 10) : '—';
+    const discLabel = (c) => c.discount_type === 'percent'
+      ? `${c.discount_value}%${c.max_discount_rs ? ` (up to ₹${c.max_discount_rs})` : ''}`
+      : c.discount_type === 'free_delivery' ? 'Free delivery' : `₹${c.discount_value}`;
+    tbody.innerHTML = items.map(c => `
+      <tr>
+        <td style="padding:.5rem .85rem;font-family:monospace;font-weight:600;font-size:.85rem">${esc(c.code)}</td>
+        <td style="padding:.5rem .85rem;font-size:.8rem">${esc(c.description || '—')}</td>
+        <td style="padding:.5rem .85rem;font-size:.8rem">${esc(discLabel(c))}</td>
+        <td style="padding:.5rem .85rem;font-size:.75rem;color:var(--dim)">${esc(fmtDate(c.valid_from))} → ${esc(fmtDate(c.valid_until))}</td>
+        <td style="padding:.5rem .85rem;font-size:.8rem">${c.usage_count || 0}${c.usage_limit ? ' / ' + c.usage_limit : ''}</td>
+        <td style="padding:.5rem .85rem;font-size:.75rem">
+          <span style="display:inline-block;padding:.15rem .55rem;border-radius:10px;font-weight:600;background:${c.is_active ? '#d1fae5' : '#fee2e2'};color:${c.is_active ? '#059669' : '#dc2626'}">${c.is_active ? 'ACTIVE' : 'INACTIVE'}</span>
+        </td>
+        <td style="padding:.5rem .85rem">
+          <button class="btn-sm" onclick="toggleCouponCode('${esc(c.id)}', ${!c.is_active})">${c.is_active ? 'Deactivate' : 'Activate'}</button>
+        </td>
+      </tr>`).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">Failed: ${(e && e.message) || e}</td></tr>`;
+  }
+}
+
+async function toggleCouponCode(id, active) {
+  try { await api('/api/admin/coupons/' + id, { method: 'PATCH', body: JSON.stringify({ is_active: active }) }); }
+  catch (e) { alert('Failed: ' + e.message); return; }
+  loadCouponCodes();
+}
+
+function resetCouponCodeForm() {
+  ['cc-code','cc-desc','cc-value','cc-min','cc-cap','cc-limit','cc-from','cc-until'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const t = document.getElementById('cc-type'); if (t) t.value = 'flat';
+  const m = document.getElementById('cc-msg'); if (m) m.textContent = '';
+}
+
+async function submitCouponCode() {
+  const rid   = document.getElementById('cc-restaurant').value;
+  const code  = document.getElementById('cc-code').value.trim().toUpperCase();
+  const type  = document.getElementById('cc-type').value;
+  const value = parseFloat(document.getElementById('cc-value').value);
+  const desc  = document.getElementById('cc-desc').value.trim();
+  const min   = parseFloat(document.getElementById('cc-min').value);
+  const cap   = parseFloat(document.getElementById('cc-cap').value);
+  const limit = parseInt(document.getElementById('cc-limit').value, 10);
+  const from  = document.getElementById('cc-from').value;
+  const until = document.getElementById('cc-until').value;
+  const msg   = document.getElementById('cc-msg');
+  msg.style.color = 'var(--dim)'; msg.textContent = '';
+  if (!rid)  { msg.style.color = 'var(--red)'; msg.textContent = 'Select a restaurant first'; return; }
+  if (!code) { msg.style.color = 'var(--red)'; msg.textContent = 'Code required'; return; }
+  if (type !== 'free_delivery' && !(value > 0)) { msg.style.color = 'var(--red)'; msg.textContent = 'Value must be > 0'; return; }
+
+  const body = {
+    restaurant_id: rid,
+    code,
+    description: desc,
+    discount_type: type,
+    discount_value: type === 'free_delivery' ? 0 : value,
+    min_order_rs:    isNaN(min) ? null : min,
+    max_discount_rs: isNaN(cap) ? null : cap,
+    usage_limit:     isNaN(limit) ? null : limit,
+    valid_from:  from  || null,
+    valid_until: until || null,
+    is_active: true,
+  };
+  msg.textContent = 'Creating…';
+  try {
+    await api('/api/admin/coupons', { method: 'POST', body: JSON.stringify(body) });
+    msg.style.color = '#059669'; msg.textContent = 'Created.';
+    resetCouponCodeForm();
+    loadCouponCodes();
+  } catch (e) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'Failed: ' + e.message;
+  }
+}
+
+window.loadCouponCodesPage = loadCouponCodesPage;
+window.loadCouponCodes = loadCouponCodes;
+window.toggleCouponCode = toggleCouponCode;
+window.resetCouponCodeForm = resetCouponCodeForm;
+window.submitCouponCode = submitCouponCode;
 </script>
 <script src="/js/flow-editor.js"></script>
 <script src="/js/template-editor.js"></script>

@@ -232,6 +232,9 @@ app.use('/api/customer', express.json(), require('./src/routes/customer'));
 app.use('/api/admin/analytics', express.json(), require('./src/routes/analytics'));
 app.use('/api/cron', express.json(), require('./src/routes/cron'));
 app.use('/api/webhook-health', require('./src/routes/webhookHealth'));
+// Meta WhatsApp Checkout endpoint (beta, ECDH + AES-GCM). Route owns its
+// own json parser — mounted bare so request body is untouched before decrypt.
+app.use('/api/checkout-endpoint', require('./src/routes/checkout-endpoint'));
 
 // Webhooks: either handled here (Vercel) or offloaded to EC2 backend
 if (process.env.USE_EC2_WEBHOOKS === 'true') {

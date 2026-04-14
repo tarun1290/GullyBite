@@ -1,0 +1,5 @@
+backend/
+node_modules/
+*.md
+frontend/*.backup
+frontend/MODULARIZATION_PLAN.md

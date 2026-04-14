@@ -2318,7 +2318,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Load current user info and apply permissions
-  fetch('/api/restaurant/me', { headers: { Authorization: `Bearer ${token}` } })
+  fetch('https://gullybite.duckdns.org/api/restaurant/me', { headers: { Authorization: `Bearer ${token}` } })
     .then(r => r.ok ? r.json() : null)
     .then(user => { if (user) applyPermissions(user); })
     .catch(() => {});
@@ -5604,7 +5604,7 @@ async function doPinLogin() {
   const pin   = document.getElementById('pin-code').value.trim();
   if (!rid || !phone || !pin) { toast('All fields required', 'err'); return; }
   try {
-    const res = await fetch('/auth/pin-login', {
+    const res = await fetch('https://gullybite.duckdns.org/auth/pin-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ restaurantId: rid, phone, pin }),
@@ -6232,7 +6232,7 @@ async function loadSettlements() {
 
 async function downloadSettlement(id) {
   try {
-    const resp = await fetch(`/api/restaurant/settlements/${id}/download`, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+    const resp = await fetch(`https://gullybite.duckdns.org/api/restaurant/settlements/${id}/download`, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
     if (!resp.ok) throw new Error('Download failed');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
@@ -7867,7 +7867,7 @@ async function handleImgFile(input) {
     const form = new FormData();
     form.append('image', file);
 
-    const res = await fetch('/api/restaurant/menu/upload-image', {
+    const res = await fetch('https://gullybite.duckdns.org/api/restaurant/menu/upload-image', {
       method : 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body   : form,
@@ -8906,7 +8906,7 @@ async function doBulkImageUpload() {
     const form = new FormData();
     for (const f of files) form.append('images', f);
 
-    const res = await fetch('/api/restaurant/images/bulk-upload', {
+    const res = await fetch('https://gullybite.duckdns.org/api/restaurant/images/bulk-upload', {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,

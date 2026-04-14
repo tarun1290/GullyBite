@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GullyBite — Dashboard</title>
+<script src="/js/api-base.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -2457,7 +2458,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Load current user info and apply permissions
-  fetch('/api/restaurant/me', { headers: { Authorization: `Bearer ${token}` } })
+  fetch('https://gullybite.duckdns.org/api/restaurant/me', { headers: { Authorization: `Bearer ${token}` } })
     .then(r => r.ok ? r.json() : null)
     .then(user => { if (user) applyPermissions(user); })
     .catch(() => {});

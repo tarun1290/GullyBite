@@ -2,10 +2,8 @@
   "name": "gullybite",
   "version": "1.0.0",
   "description": "WhatsApp Restaurant Ordering Platform",
-  "main": "api/index.js",
+  "private": true,
   "scripts": {
-    "start": "node backend/server.js",
-    "dev": "cd backend && nodemon server.js",
     "db:setup": "cd backend && node -e \"require('./src/config/database').connect()\""
   },
   "dependencies": {

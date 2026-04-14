@@ -427,7 +427,7 @@ async function loadSettlements() {
 
 async function downloadSettlement(id) {
   try {
-    var resp = await fetch('/api/restaurant/settlements/' + id + '/download', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+    var resp = await fetch('https://gullybite.duckdns.org/api/restaurant/settlements/' + id + '/download', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
     if (!resp.ok) throw new Error('Download failed');
     var blob = await resp.blob();
     var url = URL.createObjectURL(blob);

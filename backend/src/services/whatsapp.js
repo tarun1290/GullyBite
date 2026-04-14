@@ -387,6 +387,151 @@ const sendTemplate = (pid, token, to, { name, language, components = [] }) =>
     },
   });
 
+// ─── CHECKOUT BUTTON TEMPLATE SEND (Meta beta) ───────────────
+// Sends an order_details-button TEMPLATE message used by Meta's
+// Checkout endpoint beta. This is a SEPARATE path from sendPaymentRequest
+// (the interactive order_details flow) — both coexist; this one is only
+// used when Meta has linked a checkout endpoint to the WABA and the
+// admin wants coupon sub-actions.
+//
+// Always digital-goods — delivery fee is modelled as a line item per
+// GullyBite architecture. The reference_id is a short opaque id; restaurant_id is
+// stored in checkout_refs so the endpoint can resolve it on get_coupons
+// / apply_coupon without exceeding Meta's 35-char reference_id limit.
+const sendCheckoutButtonTemplate = async (phoneNumberId, to, {
+  restaurantId, templateName, language = 'en',
+  items, subtotalPaise, taxPaise, deliveryFeePaise,
+  paymentConfigName, importer,
+  referenceId: providedRef,
+}) => {
+  if (!phoneNumberId) throw new Error('phoneNumberId required');
+  if (!restaurantId)  throw new Error('restaurantId required');
+  if (!templateName)  throw new Error('templateName required');
+  if (!Array.isArray(items) || !items.length) throw new Error('items required');
+
+  const { col, newId } = require('../config/database');
+  const metaConfig = require('../config/meta');
+
+  // Compose reference_id — short opaque id + mapping row so the checkout
+  // endpoint can resolve restaurant_id on sub-action callbacks. Capped
+  // at 35 chars per Meta spec.
+  const refId = (providedRef || `gb_${newId().replace(/-/g, '').slice(0, 24)}`).slice(0, 35);
+  try {
+    await col('checkout_refs').updateOne(
+      { _id: refId },
+      {
+        $set: {
+          restaurant_id: String(restaurantId),
+          customer_phone: String(to || ''),
+          template_name: templateName,
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+        $setOnInsert: { created_at: new Date() },
+      },
+      { upsert: true },
+    );
+  } catch (err) {
+    log.warn({ err, refId }, 'checkout_refs write failed (continuing)');
+  }
+
+  // Build item lines + add delivery as a line item (digital-goods only).
+  const lineItems = items.map(i => ({
+    retailer_id: String(i.retailer_id || i.id || 'item').slice(0, 60),
+    name: String(i.name || 'Item').slice(0, 60),
+    quantity: Number(i.quantity) || 1,
+    amount: { value: Number(i.amount_paise ?? i.price_paise ?? 0), offset: 100 },
+    ...(i.sale_amount_paise != null && { sale_amount: { value: Number(i.sale_amount_paise), offset: 100 } }),
+  }));
+  if (deliveryFeePaise && Number(deliveryFeePaise) > 0) {
+    lineItems.push({
+      retailer_id: 'delivery-fee',
+      name: 'Delivery Fee',
+      quantity: 1,
+      amount: { value: Number(deliveryFeePaise), offset: 100 },
+    });
+  }
+
+  const totalPaise = Number(subtotalPaise || 0) + Number(taxPaise || 0) + Number(deliveryFeePaise || 0);
+
+  const orderPayload = {
+    status: 'pending',
+    catalog_id: undefined, // intentional omit — digital-goods
+    items: lineItems,
+    subtotal: { value: Number(subtotalPaise || 0), offset: 100 },
+    tax:      { value: Number(taxPaise || 0),       offset: 100 },
+  };
+
+  const componentButton = {
+    type: 'button',
+    sub_type: 'order_details',
+    index: '0',
+    parameters: [{
+      type: 'action',
+      action: {
+        order_details: {
+          reference_id: refId,
+          type: 'digital-goods',
+          payment_settings: [{
+            type: 'payment_gateway',
+            payment_gateway: {
+              type: 'razorpay',
+              configuration_name: paymentConfigName || process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite',
+            },
+          }],
+          currency: 'INR',
+          total_amount: { value: totalPaise, offset: 100 },
+          order: orderPayload,
+          ...(importer && {
+            importer: {
+              name: String(importer.name || '').slice(0, 200),
+              address: String(importer.address || '').slice(0, 400),
+            },
+          }),
+        },
+      },
+    }],
+  };
+
+  return sendTemplate(phoneNumberId, metaConfig.systemUserToken, to, {
+    name: templateName,
+    language,
+    components: [componentButton],
+  });
+};
+
+// ─── COUPON TEMPLATE SEND ────────────────────────────────────
+// Sends a pre-approved MARKETING coupon template (one with a copy_code
+// button). {{1}} is always the coupon code; {{2}} is an optional
+// discount label. The copy_code button's "coupon_code" parameter is
+// what the user tapping "Copy code" actually copies — it must match
+// the code in the body.
+// wabaId is accepted for logging / future routing; the actual send
+// only needs phoneNumberId + token.
+const sendCouponTemplate = (wabaId, phoneNumberId, to, { templateName, couponCode, discountText, language = 'en' }) => {
+  if (!templateName) throw new Error('sendCouponTemplate: templateName required');
+  if (!couponCode)   throw new Error('sendCouponTemplate: couponCode required');
+
+  const bodyParams = [{ type: 'text', text: String(couponCode) }];
+  if (discountText) bodyParams.push({ type: 'text', text: String(discountText) });
+
+  const components = [
+    { type: 'body', parameters: bodyParams },
+    {
+      type: 'button',
+      sub_type: 'copy_code',
+      index: '0',
+      parameters: [{ type: 'coupon_code', coupon_code: String(couponCode) }],
+    },
+  ];
+
+  const metaConfig = require('../config/meta');
+  return sendTemplate(phoneNumberId, metaConfig.systemUserToken, to, {
+    name: templateName,
+    language,
+    components,
+  });
+};
+
 // ─── INTERACTIVE LIST ────────────────────────────────────────
 // Shows a tappable list (max 10 rows). Used for order history, etc.
 // sections: [{ title: 'Section', rows: [{ id, title, description }] }]
@@ -600,4 +745,4 @@ const sendMessage = async ({ brand_id, business_id, phone_number_id, access_toke
 
 // DEPRECATED: sendCheckoutOrder and sendCheckoutTemplate removed — sendPaymentRequest is the single checkout function
 
-module.exports = { sendMsg, sendMessage, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };
+module.exports = { sendMsg, sendMessage, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendCouponTemplate, sendCheckoutButtonTemplate, sendFlow, sendDocument, markRead, showTyping };

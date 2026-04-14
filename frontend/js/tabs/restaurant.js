@@ -250,7 +250,7 @@ async function doPinLogin() {
   const pin   = document.getElementById('pin-code').value.trim();
   if (!rid || !phone || !pin) { toast('All fields required', 'err'); return; }
   try {
-    const res = await fetch('/auth/pin-login', {
+    const res = await fetch('https://gullybite.duckdns.org/auth/pin-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ restaurantId: rid, phone, pin }),
