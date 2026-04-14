@@ -209,24 +209,29 @@ const isCustomerFirstOrder = async (customerId, restaurantId) => {
 
 // ─── INCREMENT USAGE ──────────────────────────────────────────
 // Called inside createOrder when a coupon is used.
-const incrementUsage = async (couponId) => {
+// session (optional) — when called from a multi-doc transaction, pass the
+// session so the usage bump rolls back with the parent txn on failure.
+const incrementUsage = async (couponId, session = null) => {
+  const opts = session ? { session } : {};
   await col('coupons').updateOne(
     { _id: couponId },
-    { $inc: { usage_count: 1 }, $set: { updated_at: new Date() } }
+    { $inc: { usage_count: 1 }, $set: { updated_at: new Date() } },
+    opts
   );
 };
 
 // ─── RECORD REDEMPTION ───────────────────────────────────────
 // Tracks per-user coupon usage for per_user_limit enforcement.
-const recordRedemption = async (couponId, customerId, orderId) => {
+const recordRedemption = async (couponId, customerId, orderId, session = null) => {
   if (!couponId || !customerId) return;
+  const opts = session ? { session } : {};
   await col('coupon_redemptions').insertOne({
     _id: newId(),
     coupon_id: couponId,
     customer_id: customerId,
     order_id: orderId,
     redeemed_at: new Date(),
-  }).catch(e => log.warn({ err: e }, 'Redemption tracking failed'));
+  }, opts).catch(e => log.warn({ err: e }, 'Redemption tracking failed'));
 };
 
 module.exports = {

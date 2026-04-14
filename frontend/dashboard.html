@@ -853,6 +853,8 @@ tbody tr{transition:background .1s ease}
               <div class="fg"><label>Opening Time</label><input id="b-open" type="time" value="10:00"></div>
               <div class="fg"><label>Closing Time</label><input id="b-close" type="time" value="22:00"></div>
               <div class="fg"><label>Manager Phone</label><input id="b-mgr" placeholder="+91 98765 43210"></div>
+              <div class="fg"><label>FSSAI License ★ <small style="color:var(--dim)">14-digit, required for WhatsApp catalog sync</small></label><input id="b-fssai" placeholder="12345678901234" maxlength="14" inputmode="numeric"></div>
+              <div class="fg"><label>GST Number <small style="color:var(--dim)">optional, 15-char GSTIN</small></label><input id="b-gst" placeholder="22AAAAA0000A1Z5" style="text-transform:uppercase" maxlength="15"></div>
             </div>
             <div class="notice wa">
               <div class="notice-ico">⚡</div>
@@ -1000,6 +1002,8 @@ tbody tr{transition:background .1s ease}
           </div>
           <div style="display:flex;gap:.4rem;align-items:center">
             <button class="btn-g btn-sm" id="bulk-avail-btn" onclick="doBulkAvailability()" style="font-size:.78rem">🔴 Close Menu</button>
+            <button class="btn-g btn-sm" onclick="openMenuImportModal()" style="font-size:.78rem" title="Import menu from .xlsx file">📥 Import XLSX</button>
+            <button class="btn-g btn-sm" id="bs-suggest-btn" onclick="openBranchSuggestions()" style="font-size:.78rem" title="Smart bulk branch mapping">✨ Suggest Branches</button>
             <button class="btn-g btn-sm" id="sync-to-btn" onclick="doSyncToCatalog()" style="font-size:.78rem">⬆ Sync to Catalog</button>
             <button class="btn-g btn-sm" id="sync-from-btn" onclick="doSyncFromCatalog()" style="font-size:.78rem">⬇ Sync from Catalog</button>
           </div>
@@ -2712,6 +2716,102 @@ function connectWebSocket() {
     <div id="bulk-img-list" style="margin-top:.7rem;max-height:180px;overflow-y:auto"></div>
     <button class="btn-p" id="bulk-img-go" style="margin-top:.8rem;width:100%" onclick="doBulkImageUpload()">Upload All</button>
     <div id="bulk-img-results" style="display:none;margin-top:.8rem;padding:.7rem;background:var(--ink4);border-radius:8px;max-height:200px;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- ─── XLSX MENU IMPORT MODAL ─────────────────────────────── -->
+<div id="menu-import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);z-index:600;align-items:center;justify-content:center" onclick="if(event.target===this)closeMenuImportModal()">
+  <div style="background:var(--ink2,#fff);border:1px solid var(--bdr,#e5e7eb);border-radius:12px;padding:1.4rem;width:min(720px,94vw);max-height:88vh;overflow:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem">
+      <h3 style="margin:0;font-size:1.05rem">📥 Import menu (XLSX)</h3>
+      <button onclick="closeMenuImportModal()" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--dim)">✕</button>
+    </div>
+    <div id="mi-step-upload">
+      <p style="font-size:.83rem;color:var(--dim);margin-bottom:.7rem">Upload a single .xlsx file. Columns are auto-detected; you can override before saving.</p>
+      <input type="file" id="mi-file" accept=".xlsx" style="display:block;margin-bottom:.8rem">
+      <button class="btn-p btn-sm" id="mi-upload-btn" onclick="doMenuImportUpload()">Upload &amp; preview</button>
+    </div>
+    <div id="mi-step-map" style="display:none">
+      <h4 style="margin:.4rem 0 .5rem;font-size:.92rem">Detected mapping</h4>
+      <p style="font-size:.78rem;color:var(--dim);margin-bottom:.6rem">Edit any dropdown to override the auto-detected column.</p>
+      <div id="mi-map-rows" style="display:grid;grid-template-columns:140px 1fr;gap:.4rem .8rem;margin-bottom:.9rem"></div>
+      <h4 style="margin:.6rem 0 .4rem;font-size:.92rem">Preview (first 10 rows)</h4>
+      <div style="overflow:auto;max-height:240px;border:1px solid var(--rim,#e5e7eb);border-radius:6px">
+        <table style="width:100%;border-collapse:collapse;font-size:.78rem"><thead id="mi-prev-head"></thead><tbody id="mi-prev-body"></tbody></table>
+      </div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+        <button class="btn-g btn-sm" onclick="closeMenuImportModal()">Cancel</button>
+        <button class="btn-p btn-sm" id="mi-import-btn" onclick="doMenuImportConfirm()">Import products</button>
+      </div>
+    </div>
+    <div id="mi-step-done" style="display:none">
+      <div id="mi-done-summary" style="font-size:.9rem;line-height:1.5"></div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+        <button class="btn-p btn-sm" onclick="closeMenuImportModal();loadMenu()">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── BRANCH SUGGESTIONS MODAL ───────────────────────────── -->
+<div id="branch-suggest-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);z-index:600;align-items:center;justify-content:center" onclick="if(event.target===this)closeBranchSuggestions()">
+  <div style="background:var(--ink2,#fff);border:1px solid var(--bdr,#e5e7eb);border-radius:12px;padding:1.4rem;width:min(820px,96vw);max-height:88vh;overflow:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.7rem">
+      <h3 style="margin:0;font-size:1.05rem">✨ Suggested branch mapping</h3>
+      <button onclick="closeBranchSuggestions()" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--dim)">✕</button>
+    </div>
+    <p id="bs-banner" style="font-size:.83rem;color:var(--dim);margin-bottom:.7rem">Loading suggestions…</p>
+    <div id="bs-list" style="max-height:50vh;overflow:auto;border:1px solid var(--rim,#e5e7eb);border-radius:6px"></div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn-g btn-sm" onclick="closeBranchSuggestions()">Cancel</button>
+      <button class="btn-g btn-sm" id="bs-accept-all" onclick="bsAcceptAll()">Accept all</button>
+      <button class="btn-p btn-sm" id="bs-apply-btn" onclick="bsApply()">Apply selected</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── ASSIGN-TO-BRANCH MODAL ─────────────────────────────── -->
+<div id="assign-branch-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);z-index:600;align-items:center;justify-content:center" onclick="if(event.target===this)closeAssignBranchModal()">
+  <div style="background:var(--ink2,#fff);border:1px solid var(--bdr,#e5e7eb);border-radius:12px;padding:1.4rem;width:min(420px,92vw);box-shadow:0 12px 40px rgba(0,0,0,.35)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem">
+      <h3 style="margin:0;font-size:1.05rem">Assign to Branch</h3>
+      <button onclick="closeAssignBranchModal()" style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--dim)">✕</button>
+    </div>
+    <div style="font-size:.78rem;color:var(--dim);margin-bottom:.85rem" id="ab-product-name">—</div>
+    <div class="fg" style="margin-bottom:.7rem"><label>Branch</label>
+      <select id="ab-branch"><option value="">Select branch…</option></select>
+    </div>
+    <div class="fgrid" style="grid-template-columns:1fr 1fr;gap:.7rem;margin-bottom:.7rem">
+      <div class="fg"><label>Price (₹) ★</label><input id="ab-price" type="number" min="0" step="0.01" placeholder="250"></div>
+      <div class="fg"><label>Tax %</label><input id="ab-tax" type="number" min="0" max="100" step="0.01" placeholder="5"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1rem">
+      <label class="tsl" style="margin:0"><input type="checkbox" id="ab-avail" checked><div class="tsl-track"></div></label>
+      <span style="font-size:.82rem">Available immediately</span>
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn-g btn-sm" onclick="closeAssignBranchModal()">Cancel</button>
+      <button class="btn-p btn-sm" id="ab-go-btn" onclick="doAssignBranch()">Assign</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── SYNC PRE-FLIGHT WARNING MODAL ──────────────────────── -->
+<div id="sync-warn-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);z-index:600;align-items:center;justify-content:center" onclick="if(event.target===this)closeSyncWarnModal()">
+  <div style="background:var(--ink2,#fff);border:1px solid var(--bdr,#e5e7eb);border-radius:12px;padding:1.4rem;width:min(440px,92vw)">
+    <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:.7rem">
+      <div style="font-size:1.3rem">⚠️</div>
+      <h3 style="margin:0;font-size:1.05rem">Some products will be skipped</h3>
+    </div>
+    <p style="font-size:.85rem;color:var(--dim);margin:.3rem 0 1rem">
+      <span id="sync-warn-count">0</span> product(s) are not assigned to any branch.
+      They will not be synced to WhatsApp until you assign them.
+    </p>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn-g btn-sm" onclick="closeSyncWarnModal()">Cancel</button>
+      <button class="btn-g btn-sm" onclick="closeSyncWarnModal();goTab('menu',null);doSelectBranch('__unassigned__')">Review unassigned</button>
+      <button class="btn-p btn-sm" id="sync-warn-go" onclick="closeSyncWarnModal();_syncWarnProceed && _syncWarnProceed()">Sync anyway</button>
+    </div>
   </div>
 </div>
 </body>

@@ -127,13 +127,105 @@ const revalidateOrderForPayment = async (orderId) => {
   return { valid: true };
 };
 
+// ─── SHARED: PAYMENT EVENT VALIDATION ─────────────────────────
+// Defense-in-depth: before we flip an order to PAID, confirm the
+// Razorpay event we received actually corresponds to this order.
+// paymentSvc.handleOrderPaid already resolves event → orderId via our
+// `payments` mapping, but the mapping table itself can drift (manual
+// edits, restored backups, shared test/live Razorpay accounts hitting
+// the same webhook). Three checks:
+//
+//   1. The event's rp_order_id matches the `payments` row keyed by our
+//      order_id. Guards against events routed to the wrong order.
+//   2. The event's amount matches orders.total_rs (paise → rupees,
+//      ₹1 rounding tolerance matches revalidateOrderForPayment).
+//   3. The payment entity's status === 'captured' for capture/order
+//      events, or 'paid' for payment_link events. Guards against
+//      authorized-but-not-captured and failure-replayed-as-success.
+//
+// Returns { valid: true } OR { valid: false, reason }. The caller is
+// responsible for logging + early-exiting when invalid.
+const validatePaymentEvent = async (orderId, event) => {
+  if (!event) return { valid: true, skipped: 'no_event' };  // backwards-compat — callers may pass undefined
+
+  const paymentEntity = event.payload?.payment?.entity || null;
+  const orderEntity   = event.payload?.order?.entity || null;
+  const linkEntity    = event.payload?.payment_link?.entity || null;
+
+  // 1. Event → order mapping check.
+  const eventRpOrderId = orderEntity?.id || paymentEntity?.order_id || null;
+  if (eventRpOrderId) {
+    const paymentRow = await col('payments').findOne(
+      { order_id: String(orderId), rp_order_id: String(eventRpOrderId) },
+      { projection: { _id: 1 } }
+    );
+    if (!paymentRow) {
+      return { valid: false, reason: `rp_order_id mismatch: event=${eventRpOrderId} does not map to order=${orderId}` };
+    }
+  }
+
+  // 2. Amount check (in paise on the event; rupees on our row).
+  const order = await col('orders').findOne({ _id: String(orderId) }, { projection: { total_rs: 1 } });
+  if (!order) return { valid: false, reason: 'order_not_found_during_validation' };
+  const eventAmountPaise = paymentEntity?.amount ?? orderEntity?.amount ?? linkEntity?.amount_paid ?? null;
+  if (eventAmountPaise != null) {
+    const eventAmountRs = Number(eventAmountPaise) / 100;
+    const expectedRs = Number(order.total_rs) || 0;
+    if (Math.abs(eventAmountRs - expectedRs) > 1) {
+      return { valid: false, reason: `amount mismatch: event=₹${eventAmountRs} vs order=₹${expectedRs}` };
+    }
+  }
+
+  // 3. Status check. payment.captured / order.paid carry a payment
+  // entity with status 'captured'. payment_link.paid carries a
+  // payment_link entity with status 'paid'. Anything else is rejected.
+  if (paymentEntity) {
+    if (paymentEntity.status !== 'captured') {
+      return { valid: false, reason: `payment.status=${paymentEntity.status} (not captured)` };
+    }
+  } else if (linkEntity) {
+    if (linkEntity.status !== 'paid') {
+      return { valid: false, reason: `payment_link.status=${linkEntity.status} (not paid)` };
+    }
+  } else {
+    // No payment/link entity at all — we cannot prove capture. Reject.
+    return { valid: false, reason: 'event_missing_payment_or_link_entity' };
+  }
+
+  return { valid: true };
+};
+
 // ─── SHARED: CONFIRM PAID ORDER ───────────────────────────────
 // Guard against double-fire: Razorpay sends both order.paid and payment.captured
 // Now includes revalidation for delayed payments.
-const confirmPaidOrder = async (orderId) => {
+// When called from the event router, pass the original event so the
+// validator can reject mis-routed / uncaptured / amount-mismatch events
+// BEFORE the order is flipped to PAID.
+const confirmPaidOrder = async (orderId, event) => {
+  // Phase 3: duplicate-payment guard. `payment_status === 'paid'` is the
+  // authoritative "already processed" signal — written atomically below
+  // after validation. Any replay (Razorpay retries, webhook resends,
+  // manual re-trigger) short-circuits here BEFORE any side effects run.
   const current = await col('orders').findOne({ _id: orderId }, { projection: { status: 1, payment_status: 1 } });
   if (current?.payment_status === 'paid') {
     log.info({ orderId }, 'Order already confirmed — skipping duplicate event');
+    return;
+  }
+
+  // Phase 2 fix: validate the Razorpay event itself before trusting it.
+  // If the event mapping, amount, or capture status doesn't line up,
+  // reject and do NOT flip the order to PAID. The event is logged and
+  // an activity row is written for ops follow-up (manual refund).
+  const eventValidation = await validatePaymentEvent(orderId, event);
+  if (!eventValidation.valid) {
+    log.warn({ orderId, reason: eventValidation.reason }, 'Payment event validation failed — order NOT marked paid');
+    logActivity({
+      actorType: 'system', actorId: null, actorName: 'Razorpay',
+      action: 'payment.event_validation_failed', category: 'payment',
+      description: `Payment event rejected for order ${orderId}: ${eventValidation.reason}`,
+      resourceType: 'order', resourceId: orderId, severity: 'warning',
+      metadata: { reason: eventValidation.reason, event_type: event?.event || null },
+    });
     return;
   }
 
@@ -159,44 +251,103 @@ const confirmPaidOrder = async (orderId) => {
 
   await orderSvc.updateStatus(orderId, 'PAID');
 
+  // Phase 3.1: atomic "flip + credit". The orders row is the lock — we
+  // only credit the ledger when THIS process is the one that flips
+  // payment_status from not-paid to 'paid'. Any concurrent webhook
+  // delivery that races us gets matchedCount=0 and bails out. Mongo
+  // multi-document transactions aren't used here (single-node fallback
+  // friendly); the conditional update is the serialization point.
+  const paymentEntity = event?.payload?.payment?.entity || null;
+  let _flippedByUs = false;
+  try {
+    const flip = await col('orders').updateOne(
+      { _id: orderId, payment_status: { $ne: 'paid' } },
+      { $set: { payment_status: 'paid', updated_at: new Date() } }
+    );
+    _flippedByUs = flip.matchedCount === 1;
+  } catch (_) { /* best-effort — never fail confirmation on a denorm write */ }
+
+  if (!_flippedByUs) {
+    log.info({ orderId }, 'payment_status already paid — skipping ledger credit (race lost)');
+    return;
+  }
+
+  // Phase 3: capture Razorpay fee breakdown on the payments row and
+  // credit the NET amount to the restaurant's ledger.
+  // Phase 3.1: net = amount - fee - tax (per updated spec). If Razorpay
+  // stops rolling tax into fee in future, this stays correct.
+  try {
+    if (paymentEntity) {
+      const amountPaise = Number(paymentEntity.amount) || 0;
+      const feePaise    = Number(paymentEntity.fee) || 0;
+      const taxPaise    = Number(paymentEntity.tax) || 0;
+      const netPaise    = Math.max(0, amountPaise - feePaise - taxPaise);
+      await col('payments').updateOne(
+        { order_id: String(orderId), rp_payment_id: String(paymentEntity.id) },
+        { $set: {
+            fee_paise: feePaise,
+            tax_paise: taxPaise,
+            net_paise: netPaise,
+            method: paymentEntity.method || null,
+            updated_at: new Date(),
+          } }
+      );
+
+      // Credit ledger keyed by rp_payment_id (Phase 3.1 convention).
+      try {
+        const ledger = require('../services/ledger.service');
+        const ord = await col('orders').findOne({ _id: String(orderId) }, { projection: { restaurant_id: 1 } });
+        if (ord?.restaurant_id && netPaise > 0) {
+          await ledger.credit({
+            restaurantId: ord.restaurant_id,
+            amountPaise: netPaise,
+            refType: 'payment',
+            refId: String(paymentEntity.id),  // rp_payment_id
+            status: 'completed',
+            notes: `Razorpay payment ${paymentEntity.id} (gross ${amountPaise}p − fee ${feePaise}p − tax ${taxPaise}p)`,
+          });
+        }
+      } catch (ledgerErr) {
+        log.warn({ err: ledgerErr, orderId }, 'ledger credit failed — payment still marked paid');
+      }
+    }
+  } catch (feeErr) {
+    log.warn({ err: feeErr, orderId }, 'fee capture failed — non-fatal');
+  }
+
+  // Phase 1 flow hook. Fire-and-forget; onPaymentConfirmed is a no-op
+  // for conversations not currently in AWAIT_PAYMENT (legacy flow
+  // customers won't be bothered). Gated by the same flag that gates
+  // the flow handler inside the WhatsApp webhook.
+  if (process.env.PHASE1_FLOW_ENABLED === 'true') {
+    try {
+      const phase1Flow = require('../whatsapp/flowHandler');
+      phase1Flow.onPaymentConfirmed({ orderId }).catch((err) =>
+        log.warn({ err, orderId }, 'phase1 onPaymentConfirmed failed')
+      );
+    } catch (err) {
+      log.warn({ err, orderId }, 'phase1 onPaymentConfirmed dispatch failed');
+    }
+  }
+
   const order = await orderSvc.getOrderDetails(orderId);
   if (!order) return;
 
-  // All post-payment operations run in parallel (fire-and-forget pattern)
-  const _payStart = Date.now();
-  const deliveryService = require('../services/delivery');
-  const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
-
-  Promise.allSettled([
-    // Customer notification (template or fallback)
-    (async () => {
-      const templateSent = await orderNotify.sendOrderTemplateMessage(orderId, 'PAID').catch(() => false);
-      if (!templateSent) {
-        await wa.sendStatusUpdate(order.phone_number_id, order.access_token, resolveRecipient(order), 'CONFIRMED', { orderNumber: order.order_number });
-      }
-    })(),
-    // WebSocket broadcast
-    ws.broadcastOrder(order.restaurant_id, 'payment_received', { orderId, orderNumber: order.order_number, amountRs: order.total_rs }),
-    // Manager notification
-    notify.notifyNewOrder(order),
-    // 3PL auto-dispatch
-    deliveryService.dispatchDelivery(orderId).then(async (task) => {
-      log.info({ orderNumber: order.order_number, taskId: task.taskId }, 'Dispatched order');
-      if (task.trackingUrl && order.phone_number_id && resolveRecipient(order)) {
-        await wa.sendText(order.phone_number_id, order.access_token, resolveRecipient(order),
-          `🚴 Your delivery is being arranged!\n\n📍 Track your order live:\n${task.trackingUrl}\n\nEstimated delivery: ${task.estimatedMins || '25-35'} minutes`
-        );
-      }
-    }).catch(err => {
-      log.error({ err, orderNumber: order.order_number }, 'Dispatch failed for order');
-      notify.sendManagerNotification(order.restaurant_id || order.branch_id, order.branch_id,
-        `⚠️ Auto-dispatch failed for Order #${order.order_number}: ${err.message}\nPlease dispatch manually from the dashboard.`
-      ).catch(() => {});
-    }),
-    // POS push
-    POS_INTEGRATIONS_ENABLED ? pushOrderToPOS(order) : Promise.resolve(),
-  ]).then(() => log.info({ durationMs: Date.now() - _payStart }, 'Payment post-processing complete'))
-    .catch(err => log.error({ err }, 'Post-payment tasks error'));
+  // Phase 3: replace fire-and-forget Promise.allSettled with durable
+  // queue jobs. Each side effect (customer notification, 3PL dispatch,
+  // POS push) gets its own retry budget and survives process restarts.
+  // Handlers live in src/queue/postPaymentJobs.js.
+  try {
+    const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
+    const postPayment = require('../queue/postPaymentJobs');
+    await postPayment.enqueueForOrder({
+      orderId,
+      restaurantId: order.restaurant_id,
+      posEnabled: !!POS_INTEGRATIONS_ENABLED,
+    });
+  } catch (enqueueErr) {
+    log.error({ err: enqueueErr, orderId }, 'failed to enqueue post-payment jobs');
+  }
 
   logActivity({
     actorType: 'system', actorId: null, actorName: 'Razorpay',
@@ -230,6 +381,13 @@ const confirmPaidOrder = async (orderId) => {
   log.info({ orderNumber: order.order_number, totalRs: order.total_rs }, 'Order PAID');
 };
 
+// @deprecated Phase 3 — POS sync moved into queue/postPaymentJobs.js
+// (POS_SYNC job). This function is no longer called from the webhook
+// path; kept only as a reference for the migrated logic. Do NOT call
+// from new code.
+// FUTURE FEATURE: may be removed once postPaymentJobs POS_SYNC handler
+// is in production and confirmed stable across all tenants.
+// eslint-disable-next-line no-unused-vars
 async function pushOrderToPOS(order) {
   const integration = await col('restaurant_integrations').findOne({
     restaurant_id: order.restaurant_id,
@@ -282,20 +440,32 @@ const handleEvent = async (event) => {
       }
       const orderId = await paymentSvc.handleOrderPaid(event);
       if (!orderId) break;
-      await confirmPaidOrder(orderId);
+      await confirmPaidOrder(orderId, event);
       break;
     }
 
     case 'payment_link.paid': {
       const orderId = await paymentSvc.handlePaymentSuccess(event);
       if (!orderId) break;
-      await confirmPaidOrder(orderId);
+      await confirmPaidOrder(orderId, event);
+      // Trust: +10 for a completed payment. Best-effort.
+      try {
+        const ord = await col('orders').findOne({ _id: orderId }, { projection: { customer_id: 1 } });
+        if (ord?.customer_id) require('../services/trustScore').recordEvent(String(ord.customer_id), 'payment_success').catch(() => {});
+      } catch (_) {}
       break;
     }
 
     case 'payment.failed': {
       const orderId = await paymentSvc.handlePaymentFailed(event);
       if (!orderId) break;
+      // Trust: -5 for a failed payment. A single miss won't shift tiers;
+      // the impact compounds when a card-tester retries in a loop, which
+      // is exactly the signal we want the trust system to pick up on.
+      try {
+        const ord = await col('orders').findOne({ _id: orderId }, { projection: { customer_id: 1 } });
+        if (ord?.customer_id) require('../services/trustScore').recordEvent(String(ord.customer_id), 'payment_failed').catch(() => {});
+      } catch (_) {}
 
       // Transition order to PAYMENT_FAILED (retryable state)
       try {
@@ -414,6 +584,49 @@ const handleEvent = async (event) => {
         resourceType: 'refund', resourceId: refund.id, severity: 'info',
       });
       log.info({ refundId: refund.id, amountRs: refund.amount / 100 }, 'Refund processed');
+
+      // Phase 3.1: refund accounting is two-phase. issueRefund() writes
+      // a 'pending' debit keyed by rp_refund_id at the moment we call
+      // Razorpay. This webhook promotes that entry to 'completed'. If
+      // we never saw the 'pending' row (e.g., Razorpay dashboard-issued
+      // refund with no issueRefund call), we insert a fresh 'completed'
+      // debit.
+      try {
+        const rpPaymentId = refund.payment_id;
+        const rpRefundId  = String(refund.id);
+        if (rpPaymentId) {
+          const paymentRow = await col('payments').findOne(
+            { rp_payment_id: String(rpPaymentId) },
+            { projection: { order_id: 1 } }
+          );
+          if (paymentRow?.order_id) {
+            const ord = await col('orders').findOne(
+              { _id: String(paymentRow.order_id) },
+              { projection: { restaurant_id: 1 } }
+            );
+            if (ord?.restaurant_id) {
+              const ledger = require('../services/ledger.service');
+              const promoted = await ledger.markCompleted({
+                restaurantId: ord.restaurant_id,
+                refType: 'refund',
+                refId: rpRefundId,
+              });
+              if (!promoted) {
+                await ledger.debit({
+                  restaurantId: ord.restaurant_id,
+                  amountPaise: Number(refund.amount) || 0,
+                  refType: 'refund',
+                  refId: rpRefundId,
+                  status: 'completed',
+                  notes: `Razorpay refund ${rpRefundId} for payment ${rpPaymentId} (webhook-only)`,
+                });
+              }
+            }
+          }
+        }
+      } catch (ledgerErr) {
+        log.warn({ err: ledgerErr, refundId: refund.id }, 'refund ledger debit failed');
+      }
       break;
     }
 

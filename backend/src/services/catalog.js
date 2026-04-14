@@ -16,7 +16,67 @@ const { col, newId } = require('../config/database');
 const { logActivity } = require('./activityLog');
 const ws = require('./websocket');
 const metaConfig = require('../config/meta');
+const catalogGuard = require('./catalog.service');
+const features = require('../config/features');
+const alertsSvc = require('./alerts');
 const log = require('../utils/logger').child({ component: 'catalog' });
+
+// Maps the catalog.service guard's internal reason codes onto the
+// user-facing codes the spec requires for skipped sync entries.
+const SYNC_SKIP_CODE = {
+  product_unassigned:                 'UNASSIGNED_PRODUCT',
+  product_not_assigned_to_this_branch:'UNASSIGNED_PRODUCT',
+  branch_not_found:                   'BRANCH_INACTIVE',
+  branch_inactive:                    'BRANCH_INACTIVE',
+  branch_missing_fssai:               'FSSAI_MISSING',
+  no_price_configured:                'PRICE_MISSING',
+  meta_incomplete:                    'META_INCOMPLETE',
+};
+
+// Per-product audit row writer. Fire-and-forget — never blocks the
+// sync. Used for both eligible (status=synced) and skipped products
+// so the admin "Sync Logs" page has a complete attempt history.
+// Per-product audit row writer for `sync_logs`. Delegates to the
+// canonical model-layer function so the schema lives in one place.
+function _writeSyncLog(restaurantId, branchId, productId, status, reason) {
+  return catalogGuard.writeSyncLog({
+    restaurantId, branchId, productId, status, reason,
+  });
+}
+
+// Per-sync aggregate writer for `sync_summary`. One row per
+// syncBranchCatalog invocation — coarse rollup over sync_logs.
+// Fire-and-forget; errors here must never break the sync response.
+async function _writeSyncSummary({ restaurantId, branchId, total, synced, skipped, successRate, mode }) {
+  const failureRate = total > 0 ? (Number(skipped) || 0) / total : 0;
+  try {
+    await col('sync_summary').insertOne({
+      _id: newId(),
+      restaurant_id: String(restaurantId),
+      branch_id:     branchId ? String(branchId) : null,
+      total:         Number(total) || 0,
+      synced:        Number(synced) || 0,
+      skipped:       Number(skipped) || 0,
+      success_rate:  Number.isFinite(successRate) ? successRate : 0,
+      failure_rate:  failureRate,
+      mode:          mode || null,
+      timestamp:     new Date(),
+    });
+  } catch (_) { /* audit only */ }
+
+  // Fire-and-forget alert check. Runs AFTER the summary is persisted
+  // so the alert row references the same numbers the rollup stores.
+  // Never awaited by the sync path — alerting must not slow syncs.
+  alertsSvc.maybeAlertFromSummary({
+    restaurant_id: restaurantId,
+    branch_id:     branchId,
+    total:         Number(total) || 0,
+    synced:        Number(synced) || 0,
+    skipped:       Number(skipped) || 0,
+    failure_rate:  failureRate,
+    mode:          mode || null,
+  }).catch(() => { /* alerts are best-effort */ });
+}
 
 const Business       = bizSdk.Business;
 const ProductCatalog = bizSdk.ProductCatalog;
@@ -470,19 +530,106 @@ const syncBranchCatalog = async (branchId) => {
 
   initSdk(token);
 
-  // Get all menu items for this branch
-  const items = await col('menu_items').find({ branch_id: branchId }).toArray();
+  // Get all menu items for this branch — include both legacy scalar
+  // (branch_id) AND the new branch_ids[] membership, so branch-first
+  // products are picked up without breaking pre-migration rows.
+  const items = await col('menu_items').find({
+    $or: [{ branch_id: branchId }, { branch_ids: branchId }],
+  }).toArray();
 
-  if (!items.length) {
-    return { success: false, message: 'No menu items found for this branch' };
+  const totalProducts = items.length;
+  if (!totalProducts) {
+    return { success: false, message: 'No menu items found for this branch',
+             total_products: 0, synced_count: 0, skipped_count: 0, skipped_reasons: [],
+             success_rate: 0 };
+  }
+
+  // ── META VALIDATION (LOG-ONLY AUDIT PASS) ──
+  // Independent observability pass — runs on every sync regardless of
+  // mode so we always have a structured verdict log per product.
+  try {
+    await catalogGuard.logValidateForMeta(branchId, items);
+  } catch (e) {
+    log.warn({ err: e.message, branchId }, 'meta validation wrapper failed (non-fatal)');
+  }
+
+  // ── MODE-GATED VALIDATION WRAPPER ──
+  // strict    → filterForSync drops invalid products; only eligible ones go to Meta.
+  // log_only  → filterForSync still runs so we can write accurate audit rows,
+  //             BUT the eligible set is expanded back to ALL products — every
+  //             item is still forwarded to Meta, matching the existing
+  //             non-blocking behaviour.
+  // disabled  → skip the guard entirely; every product is forwarded.
+  const strictMode = features.ENABLE_META_VALIDATION
+                  && features.META_VALIDATION_MODE === 'strict';
+  const runValidation = features.ENABLE_META_VALIDATION;
+
+  let eligible = [], skipped = [];
+  if (runValidation) {
+    ({ eligible, skipped } = await catalogGuard.filterForSync(branchId, items));
+  } else {
+    eligible = items.map(p => ({ product: p }));
+  }
+
+  const skippedReasonsOut = skipped.map(s => {
+    const code = SYNC_SKIP_CODE[s.reason] || s.reason;
+    const auditStatus = strictMode ? 'skipped' : 'synced'; // log_only still sends, but flag it
+    log.warn({
+      product_id: s.product_id, branch_id: branchId,
+      status: auditStatus, reason: code, mode: features.META_VALIDATION_MODE,
+    }, strictMode ? 'catalog sync: product skipped (strict)' : 'catalog sync: product flagged (log_only, still sent)');
+    _writeSyncLog(branch.restaurant_id, branchId, s.product_id,
+      strictMode ? 'skipped' : 'synced', code);
+    return { product_id: s.product_id, branch_id: branchId, reason: code };
+  });
+
+  // In log_only (or disabled) mode, keep the full item list so every
+  // product still reaches Meta. In strict mode, only eligible IDs survive.
+  const eligibleIds = new Set(eligible.map(e => String(e.product._id)));
+  const syncItems   = strictMode
+    ? items.filter(it => eligibleIds.has(String(it._id)))
+    : items.slice();
+
+  if (!syncItems.length) {
+    log.warn({ branchId, total_products: totalProducts, skipped_count: skipped.length },
+             'catalog sync: nothing eligible after validation');
+    _writeSyncSummary({
+      restaurantId: branch.restaurant_id, branchId,
+      total: totalProducts, synced: 0, skipped: skipped.length,
+      successRate: 0,
+      mode: features.ENABLE_META_VALIDATION ? features.META_VALIDATION_MODE : 'disabled',
+    });
+    return {
+      success: true, branchName: branch.name, catalogId: branch.catalog_id,
+      total_products: totalProducts, synced_count: 0,
+      skipped_count: skipped.length, skipped_reasons: skippedReasonsOut,
+      total: 0, updated: 0, deleted: 0, failed: 0, errors: [],
+      success_rate: 0,
+    };
   }
 
   // Sort: group variants together
-  items.sort((a, b) => {
+  syncItems.sort((a, b) => {
     const ga = a.item_group_id || String(a._id);
     const gb = b.item_group_id || String(b._id);
     if (ga !== gb) return ga < gb ? -1 : 1;
     return (a.sort_order || 0) - (b.sort_order || 0);
+  });
+
+  // Reassign so the rest of this function (which references `items`)
+  // operates on the eligible-only set.
+  items.length = 0;
+  items.push(...syncItems);
+
+  // Avoid double-writing audit rows: in log_only mode, invalid products
+  // were already logged above as status='synced' with a reason code.
+  // Only write the clean 'synced' row for items that weren't already
+  // audited by the skipped-reasons loop.
+  const alreadyLogged = new Set(skippedReasonsOut.map(r => String(r.product_id)));
+  syncItems.forEach(it => {
+    if (alreadyLogged.has(String(it._id))) return;
+    log.info({ product_id: it._id, branch_id: branchId, status: 'synced' }, 'catalog sync entry');
+    _writeSyncLog(branch.restaurant_id, branchId, it._id, 'synced', null);
   });
 
   const requests = items.map(item => _buildItemRequest(item, restaurant, branch)).filter(Boolean);
@@ -600,15 +747,37 @@ const syncBranchCatalog = async (branchId) => {
     logActivity({ actorType: 'system', action: 'catalog.batch_errors', category: 'catalog', description: `Catalog batch had ${results.errors.length} error(s) for "${branch.name}"`, restaurantId: branch.restaurant_id, resourceType: 'branch', resourceId: branchId, severity: 'warning', metadata: { errors: results.errors, failed: results.failed } });
   }
 
+  // ── SYNC METRICS ROLLUP ──
+  // Persist a coarse per-sync summary + return success_rate alongside
+  // the existing shape. Fire-and-forget — never blocks the response.
+  const syncedCount  = results.updated;
+  const skippedCount = skippedReasonsOut.length;
+  const successRate  = totalProducts > 0 ? syncedCount / totalProducts : 0;
+  _writeSyncSummary({
+    restaurantId: branch.restaurant_id,
+    branchId,
+    total: totalProducts,
+    synced: syncedCount,
+    skipped: skippedCount,
+    successRate,
+    mode: features.ENABLE_META_VALIDATION ? features.META_VALIDATION_MODE : 'disabled',
+  });
+
   return {
-    success   : results.failed === 0,
-    branchName: branch.name,
-    catalogId : branch.catalog_id,
-    total     : items.length,
-    updated   : results.updated,
-    deleted   : results.deleted,
-    failed    : results.failed,
-    errors    : results.errors,
+    success         : results.failed === 0,
+    branchName      : branch.name,
+    catalogId       : branch.catalog_id,
+    total           : items.length,
+    updated         : results.updated,
+    deleted         : results.deleted,
+    failed          : results.failed,
+    errors          : results.errors,
+    // Spec-mandated branch-validation summary
+    total_products  : totalProducts,
+    synced_count    : syncedCount,
+    skipped_count   : skippedCount,
+    skipped_reasons : skippedReasonsOut,
+    success_rate    : successRate,
   };
 };
 

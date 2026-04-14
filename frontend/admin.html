@@ -297,6 +297,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21H4.6C4.04 21 3.76 21 3.55 20.89C3.37 20.8 3.2 20.63 3.11 20.45C3 20.24 3 19.96 3 19.4V3"/><path d="M7 14l4-4 4 4 6-6"/></svg>
         Analytics
       </div>
+      <div class="nav-item" data-page="sync-logs" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        Sync Logs
+      </div>
     </nav>
     <div class="sb-footer">
       <div class="sb-user">
@@ -1316,6 +1320,64 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
 
       </div>
 
+      <!-- ── SYNC LOGS ─────────────────────────────────────────── -->
+      <div class="page" id="page-sync-logs">
+
+        <!-- Alerts Panel (active Meta sync failure alerts) -->
+        <div class="table-wrap" style="margin-bottom:1rem">
+          <div class="table-head">
+            <h2>⚠ Active Alerts</h2>
+            <span class="subtitle" id="sl-alerts-summary" style="margin-left:.6rem"></span>
+            <button class="btn-sm" style="margin-left:auto" onclick="loadMetaAlerts()">Refresh</button>
+          </div>
+          <table>
+            <thead><tr><th>Restaurant</th><th>Message</th><th>Failure Rate</th><th>Time</th><th style="width:110px">Action</th></tr></thead>
+            <tbody id="sl-alerts-tbody"><tr><td colspan="5" class="empty">Loading alerts…</td></tr></tbody>
+          </table>
+        </div>
+
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end;margin-bottom:1rem;padding:.75rem 1rem;background:#fff;border:1px solid var(--rim);border-radius:8px">
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">Restaurant</label>
+            <select id="sl-restaurant" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem;min-width:180px" onchange="loadSyncLogs()"><option value="">All restaurants</option></select>
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">Status</label>
+            <select id="sl-status" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem" onchange="loadSyncLogs()">
+              <option value="">All</option><option value="synced">Synced</option><option value="skipped">Skipped</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">Reason</label>
+            <select id="sl-reason" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem" onchange="loadSyncLogs()">
+              <option value="">Any</option>
+              <option value="UNASSIGNED_PRODUCT">Unassigned product</option>
+              <option value="META_INCOMPLETE">Meta incomplete</option>
+              <option value="FSSAI_MISSING">FSSAI missing</option>
+              <option value="PRICE_MISSING">Price missing</option>
+              <option value="BRANCH_INACTIVE">Branch inactive</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">From</label>
+            <input type="date" id="sl-from" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem" onchange="loadSyncLogs()">
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">To</label>
+            <input type="date" id="sl-to" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem" onchange="loadSyncLogs()">
+          </div>
+          <button class="btn-sm" onclick="document.getElementById('sl-restaurant').value='';document.getElementById('sl-status').value='';document.getElementById('sl-reason').value='';document.getElementById('sl-from').value='';document.getElementById('sl-to').value='';loadSyncLogs()">Reset</button>
+          <button class="btn-sm primary" onclick="loadSyncLogs()" style="margin-left:auto">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <div class="table-head"><h2>Catalog Sync Audit</h2><span class="subtitle" id="sl-summary"></span></div>
+          <table>
+            <thead><tr><th>Restaurant</th><th>Product</th><th>Branch</th><th>Status</th><th>Reason</th><th>Time</th><th style="width:120px">Action</th></tr></thead>
+            <tbody id="sl-tbody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1652,7 +1714,7 @@ document.getElementById('admin-pass-input')?.addEventListener('keydown', e => {
 // admin-key-input removed — JWT only
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics', 'sync-logs': 'Catalog Sync Logs' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -1680,6 +1742,7 @@ function nav(el) {
   if (page === 'issues')       loadAdminIssues();
   if (page === 'flows')        loadFlowBuilder();
   if (page === 'analytics')    loadAnalyticsDashboard();
+  if (page === 'sync-logs')    { loadSyncLogs(true); loadMetaAlerts(); }
   // Persist active page in URL hash so refresh stays on the same page
   if (history.replaceState) history.replaceState(null, '', '#' + page);
   else location.hash = page;
@@ -1704,6 +1767,7 @@ function refreshCurrent() {
   else if (currentPage === 'issues')       loadAdminIssues();
   else if (currentPage === 'flows')        loadFlowBuilder();
   else if (currentPage === 'analytics')    loadAnalyticsDashboard();
+  else if (currentPage === 'sync-logs')    { loadSyncLogs(); loadMetaAlerts(); }
 }
 
 // ─── STATS ────────────────────────────────────────────────────────
@@ -4650,6 +4714,145 @@ async function loadAdminFunnel() {
     }
   } catch (e) { console.warn('[Admin] Funnel load failed:', e.message); }
 }
+
+// ─── SYNC LOGS ─────────────────────────────────────────────
+let _slRestaurantsLoaded = false;
+async function _slEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function _slPopulateRestaurants() {
+  if (_slRestaurantsLoaded) return;
+  try {
+    const list = await api('/api/admin/restaurants').catch(() => []);
+    const sel = document.getElementById('sl-restaurant');
+    if (!sel) return;
+    const items = Array.isArray(list) ? list : (list.restaurants || list.items || []);
+    sel.innerHTML = '<option value="">All restaurants</option>'
+      + items.map(r => `<option value="${r._id || r.id}">${(r.name || r.business_name || r._id || r.id).toString().replace(/[<>]/g,'')}</option>`).join('');
+    _slRestaurantsLoaded = true;
+  } catch (_) { /* leave default */ }
+}
+async function loadSyncLogs(initialLoad) {
+  if (initialLoad) _slPopulateRestaurants();
+  const tbody = document.getElementById('sl-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="6" class="empty">Loading...</td></tr>';
+  const params = new URLSearchParams();
+  const r = document.getElementById('sl-restaurant').value;
+  const s = document.getElementById('sl-status').value;
+  const rsn = document.getElementById('sl-reason') ? document.getElementById('sl-reason').value : '';
+  const f = document.getElementById('sl-from').value;
+  const t = document.getElementById('sl-to').value;
+  if (r) params.set('restaurant_id', r);
+  if (s) params.set('status', s);
+  if (rsn) params.set('reason', rsn);
+  if (f) params.set('from', f);
+  if (t) params.set('to', t);
+  params.set('limit', '200');
+  try {
+    const res = await api('/api/admin/sync-logs?' + params.toString());
+    const rows = (res && (res.logs || res.items)) || res || [];
+    document.getElementById('sl-summary').textContent = `${rows.length} entr${rows.length === 1 ? 'y' : 'ies'}`;
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">No sync logs match the filters</td></tr>';
+      return;
+    }
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    tbody.innerHTML = rows.map(row => {
+      const t = row.timestamp ? new Date(row.timestamp).toLocaleString() : '—';
+      const statusColor = row.status === 'synced' ? '#047857' : '#b91c1c';
+      const statusBg    = row.status === 'synced' ? '#d1fae5' : '#fee2e2';
+      const actionHtml  = _slActionButton(row);
+      return `<tr>
+        <td style="padding:.45rem .85rem;font-size:.8rem">${esc(row.restaurant_name || row.restaurant_id || '—')}</td>
+        <td style="padding:.45rem .85rem;font-size:.8rem">${esc(row.product_name || row.product_id || '—')}</td>
+        <td style="padding:.45rem .85rem;font-size:.8rem">${esc(row.branch_name || row.branch_id || '—')}</td>
+        <td style="padding:.45rem .85rem;font-size:.75rem"><span style="background:${statusBg};color:${statusColor};padding:.1rem .5rem;border-radius:99px;font-weight:600">${esc(row.status)}</span></td>
+        <td style="padding:.45rem .85rem;font-size:.78rem;color:var(--dim)">
+          ${esc(row.reason || '')}
+          ${row.suggestion ? `<div style="margin-top:.2rem;font-size:.7rem;color:#4f46e5">💡 ${esc(row.suggestion)}</div>` : ''}
+        </td>
+        <td style="padding:.45rem .85rem;font-size:.75rem;color:var(--dim);white-space:nowrap">${esc(t)}</td>
+        <td style="padding:.45rem .85rem;font-size:.72rem">${actionHtml}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">Failed to load: ${(e && e.message) || e}</td></tr>`;
+  }
+}
+
+// ─── Action buttons for failed products (reason → fix action) ──
+function _slActionButton(row) {
+  if (row.status !== 'skipped') return '';
+  const rid = row.restaurant_id ? String(row.restaurant_id).replace(/"/g, '') : '';
+  const reason = row.reason || '';
+  // Map reason → button label + handler. All handlers just route
+  // operators to the existing Restaurants page, filtered to this
+  // restaurant, where branch/product fixes already exist.
+  const actions = {
+    UNASSIGNED_PRODUCT: { label: 'Assign Branch', fn: 'slGotoRestaurant' },
+    PRICE_MISSING:      { label: 'Assign Branch', fn: 'slGotoRestaurant' },
+    META_INCOMPLETE:    { label: 'Edit Product',  fn: 'slGotoRestaurant' },
+    FSSAI_MISSING:      { label: 'Add FSSAI',     fn: 'slGotoRestaurant' },
+    BRANCH_INACTIVE:    { label: 'Activate Branch', fn: 'slGotoRestaurant' },
+  };
+  const a = actions[reason];
+  if (!a) return '';
+  return `<button class="btn-sm" onclick="${a.fn}('${rid}')">${a.label}</button>`;
+}
+function slGotoRestaurant(restaurantId) {
+  const navEl = document.querySelector('.nav-item[data-page="restaurants"]');
+  if (navEl) nav(navEl);
+  // Best-effort: if the Restaurants page has a filter/search input, focus it
+  // with the restaurant id so the operator can drill in. Falls back silently.
+  setTimeout(() => {
+    const search = document.querySelector('#page-restaurants input[type="search"], #page-restaurants input[placeholder*="earch"]');
+    if (search) { search.value = restaurantId; search.dispatchEvent(new Event('input', { bubbles: true })); }
+  }, 120);
+}
+window.slGotoRestaurant = slGotoRestaurant;
+
+// ─── Alerts Panel ───────────────────────────────────────────────
+async function loadMetaAlerts() {
+  const tbody = document.getElementById('sl-alerts-tbody');
+  const sum   = document.getElementById('sl-alerts-summary');
+  if (!tbody) return;
+  tbody.innerHTML = '<tr><td colspan="5" class="empty">Loading alerts…</td></tr>';
+  try {
+    const params = new URLSearchParams();
+    params.set('status', 'active');
+    params.set('type', 'META_SYNC_FAILURE');
+    params.set('limit', '50');
+    const res = await api('/api/admin/meta-alerts?' + params.toString());
+    const rows = (res && res.alerts) || [];
+    if (sum) sum.textContent = rows.length ? `${rows.length} active` : 'all clear';
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">No active alerts</td></tr>';
+      return;
+    }
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    tbody.innerHTML = rows.map(a => {
+      const pct = a.failure_rate != null ? Math.round(a.failure_rate * 100) + '%' : '—';
+      const t   = a.timestamp ? new Date(a.timestamp).toLocaleString() : '—';
+      return `<tr style="background:#fef2f2">
+        <td style="padding:.5rem .85rem;font-size:.82rem;font-weight:600;color:#991b1b">${esc(a.restaurant_name || a.restaurant_id || '—')}</td>
+        <td style="padding:.5rem .85rem;font-size:.8rem;color:#7f1d1d">${esc(a.message)}</td>
+        <td style="padding:.5rem .85rem;font-size:.8rem;color:#b91c1c;font-weight:600">${pct}</td>
+        <td style="padding:.5rem .85rem;font-size:.75rem;color:var(--dim);white-space:nowrap">${esc(t)}</td>
+        <td style="padding:.5rem .85rem"><button class="btn-sm" onclick="slResolveAlert('${a.id}')">Resolve</button></td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty">Failed: ${(e && e.message) || e}</td></tr>`;
+  }
+}
+async function slResolveAlert(id) {
+  try {
+    await api(`/api/admin/meta-alerts/${id}/resolve`, { method: 'POST' });
+    loadMetaAlerts();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+window.loadMetaAlerts = loadMetaAlerts;
+window.slResolveAlert = slResolveAlert;
+window.loadSyncLogs = loadSyncLogs;
 </script>
 <script src="/js/flow-editor.js"></script>
 <script src="/js/template-editor.js"></script>

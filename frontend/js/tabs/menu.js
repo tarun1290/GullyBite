@@ -255,7 +255,15 @@ async function doAddBranch() {
   const name = document.getElementById('b-name').value.trim();
   const lat  = parseFloat(document.getElementById('b-lat').value);
   const lng  = parseFloat(document.getElementById('b-lng').value);
+  const fssai = (document.getElementById('b-fssai')?.value || '').trim();
+  const gst   = (document.getElementById('b-gst')?.value || '').trim().toUpperCase();
   if (!name || isNaN(lat) || isNaN(lng)) return toast('Branch name and address selection are required', 'err');
+  // FSSAI is required by the backend branch-first guard. Surface client-side
+  // to avoid a round-trip 400. GST is optional but if present must be 15-char.
+  if (!/^\d{14}$/.test(fssai)) return toast('FSSAI license must be exactly 14 digits', 'err');
+  if (gst && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(gst)) {
+    return toast('GST number is not a valid 15-character GSTIN', 'err');
+  }
   btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Creating...';
   try {
     const placeData = document.getElementById('b-addr-search')._placeData || {};
@@ -271,8 +279,10 @@ async function doAddBranch() {
       openingTime: document.getElementById('b-open').value,
       closingTime: document.getElementById('b-close').value,
       managerPhone: document.getElementById('b-mgr').value,
+      fssai_number: fssai,
+      gst_number: gst || undefined,
     }});
-    ['b-name', 'b-city', 'b-addr', 'b-addr-search', 'b-lat', 'b-lng', 'b-mgr'].forEach(id => document.getElementById(id).value = '');
+    ['b-name', 'b-city', 'b-addr', 'b-addr-search', 'b-lat', 'b-lng', 'b-mgr', 'b-fssai', 'b-gst'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('b-addr-search')._placeData = null;
     document.getElementById('addr-confirm').style.display = 'none';
     toast(`✅ "${name}" added! Creating WhatsApp catalog...`, 'ok');
@@ -378,8 +388,11 @@ function renderBranchCard(b) {
         <div class="bcard-addr">${b.address || b.city || '—'} <a href="#" onclick="event.preventDefault();editBranchAddr('${b.id}')" style="font-size:.72rem;color:var(--wa);margin-left:.4rem;text-decoration:none">edit</a></div>
       </div>
       <div class="bcard-badges">
+        <span class="badge ${b.is_active === false ? 'br' : 'bg'}" title="Branch active flag — controls visibility on customer menu and catalog sync">${b.is_active === false ? '⏸ Inactive' : '✅ Active'}</span>
         <span class="badge ${b.is_open ? 'bg' : 'br'}">${b.is_open ? '🟢 Open' : '🔴 Closed'}</span>
         <span class="badge ${b.accepts_orders ? 'bg' : 'ba'}">${b.accepts_orders ? 'Taking Orders' : 'Paused'}</span>
+        ${b.fssai_number ? `<span class="badge bg" title="FSSAI on file">FSSAI ✓</span>` : `<span class="badge ba" title="FSSAI missing — sync will be blocked">FSSAI ✗</span>`}
+        ${b.gst_number ? `<span class="badge bg" title="${b.gst_number}">GST ✓</span>` : ''}
       </div>
     </div>
     <div class="bcard-body">
@@ -400,6 +413,10 @@ function renderBranchCard(b) {
         <div class="tog">
           <label class="tsl"><input type="checkbox" ${b.is_open ? 'checked' : ''} onchange="doToggle('${b.id}','isOpen',this.checked)"><div class="tsl-track"></div></label>
           <span>Branch open</span>
+        </div>
+        <div class="tog">
+          <label class="tsl"><input type="checkbox" ${b.is_active === false ? '' : 'checked'} onchange="doToggle('${b.id}','isActive',this.checked)"><div class="tsl-track"></div></label>
+          <span>Active <small style="color:var(--dim)">(controls customer visibility)</small></span>
         </div>
       </div>
       <!-- Delivery Info -->
@@ -756,7 +773,8 @@ async function loadMenu() {
 
   const isAll = branchId === '__all__';
   const isUnassigned = branchId === '__unassigned__';
-  const isSpecificBranch = !isAll && !isUnassigned;
+  const isAssignedOnly = branchId === '__assigned__';
+  const isSpecificBranch = !isAll && !isUnassigned && !isAssignedOnly;
 
   // Load categories for add-item dropdown (specific branch only)
   if (isSpecificBranch) {
@@ -798,11 +816,23 @@ async function loadMenu() {
       const items = await api('/api/restaurant/menu/unassigned');
       grouped = items?.length ? [{ id: null, name: 'Unassigned Items', items }] : [];
       totalItems = items?.length || 0;
-    } else if (isAll) {
+    } else if (isAll || isAssignedOnly) {
       const data = await api('/api/restaurant/menu/all');
       // New response format: { groups, unassigned_count, total_count }
       grouped = data?.groups || data; // backwards-compatible
-      totalItems = data?.total_count || grouped?.reduce((s, g) => s + (g.items?.length || 0), 0) || 0;
+      if (isAssignedOnly) {
+        // Client-side filter: drop products with no branch assignment.
+        grouped = (grouped || []).map(g => ({
+          ...g,
+          items: (g.items || []).filter(it => {
+            const ids = Array.isArray(it.branch_ids) ? it.branch_ids : [];
+            return it.is_unassigned !== true && (ids.length > 0 || it.branch_id);
+          }),
+        })).filter(g => (g.items || []).length);
+      }
+      totalItems = (isAssignedOnly
+        ? grouped.reduce((s, g) => s + (g.items?.length || 0), 0)
+        : (data?.total_count || grouped?.reduce((s, g) => s + (g.items?.length || 0), 0) || 0));
       unassignedCount = data?.unassigned_count || 0;
     } else {
       grouped = await api(`/api/restaurant/branches/${branchId}/menu`);
@@ -829,13 +859,16 @@ async function loadMenu() {
     if (isAll && branches.length) {
       const allItems = (Array.isArray(grouped) ? grouped : []).flatMap(g => g.items || []);
       const sel = document.getElementById('m-branch');
-      sel.innerHTML = `<option value="__all__">All Branches (${totalItems})</option>` +
+      const assignedCnt = Math.max(0, totalItems - unassignedCount);
+      sel.innerHTML = `<option value="__all__">All Products (${totalItems})</option>` +
+        `<option value="__assigned__">✅ Assigned only (${assignedCnt})</option>` +
+        (unassignedCount ? `<option value="__unassigned__">⚠️ Unassigned (${unassignedCount})</option>` : '<option value="__unassigned__">⚠️ Unassigned</option>') +
+        '<option disabled>──────────</option>' +
         branches.map(b => {
           const cnt = allItems.filter(i => i.branch_id === b.id).length;
           return `<option value="${b.id}">${b.name} (${cnt})</option>`;
-        }).join('') +
-        (unassignedCount ? `<option value="__unassigned__">⚠️ Unassigned (${unassignedCount})</option>` : '<option value="__unassigned__">⚠️ Unassigned</option>');
-      sel.value = '__all__';
+        }).join('');
+      sel.value = isAssignedOnly ? '__assigned__' : '__all__';
       // Update tab counts
       if (branches.length > 1) {
         const inner = document.getElementById('branch-tabs')?.querySelector('div');
@@ -911,6 +944,23 @@ function renderMenuGroups(grouped, showBranchBadge) {
   const branchCol = showBranchBadge ? '<th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Branch</th>' : '';
   const branchColCount = showBranchBadge ? 1 : 0;
 
+  // Branch-status column: visible everywhere. Tells the operator at-a-glance
+  // whether a product is wired up for customer ordering / WhatsApp sync.
+  function branchStatusCell(item) {
+    const ids = Array.isArray(item.branch_ids) ? item.branch_ids : [];
+    const legacy = item.branch_id ? 1 : 0;
+    const count = ids.length || legacy;
+    const unassigned = item.is_unassigned === true || count === 0;
+    if (unassigned) {
+      return `<span title="Assign to a branch to enable ordering and WhatsApp sync"
+        style="display:inline-flex;align-items:center;gap:.3rem;background:#fef2f2;color:#b91c1c;padding:.15rem .55rem;border-radius:99px;font-size:.7rem;font-weight:600;border:1px solid #fecaca">
+        ❌ Unassigned</span>
+        <div style="font-size:.65rem;color:#b91c1c;margin-top:.15rem">Not visible to customers</div>`;
+    }
+    return `<span style="display:inline-flex;align-items:center;gap:.3rem;background:#dcfce7;color:#15803d;padding:.15rem .55rem;border-radius:99px;font-size:.7rem;font-weight:600;border:1px solid #bbf7d0">
+      ✅ ${count} Branch${count !== 1 ? 'es' : ''}</span>`;
+  }
+
   let rows = allItems.map((item, idx) => {
     const safeName = item.name.replace(/'/g, "\\'");
     const typeIcon = foodTypeIndicator(item.food_type);
@@ -933,12 +983,18 @@ function renderMenuGroups(grouped, showBranchBadge) {
       <td style="padding:.45rem .7rem;font-size:.82rem;font-weight:500">${displayName}${item.is_bestseller ? ' <span style="font-size:.6rem;color:#f59e0b">⭐</span>' : ''}${item.is_available ? '' : ' <span style="font-size:.65rem;color:#9ca3af;font-weight:400">(unavailable)</span>'}</td>
       <td style="padding:.45rem .7rem;font-size:.78rem;color:var(--dim)">${item._categoryName}</td>
       ${branchTd}
+      <td style="padding:.45rem .7rem;font-size:.82rem">
+        ${branchStatusCell(item)}
+        ${item.meta_status === 'incomplete' ? `<div title="Required fields missing — fix to enable WhatsApp sync" style="margin-top:.2rem;display:inline-flex;align-items:center;gap:.25rem;background:#fef3c7;color:#92400e;padding:.1rem .45rem;border-radius:99px;font-size:.65rem;font-weight:600;border:1px solid #fde68a">⚠ Incomplete</div>` : ''}
+        ${item.meta_status === 'ready' ? `<div title="All required fields present" style="margin-top:.2rem;display:inline-flex;align-items:center;gap:.25rem;background:#dbeafe;color:#1d4ed8;padding:.1rem .45rem;border-radius:99px;font-size:.65rem;font-weight:600;border:1px solid #bfdbfe">✔ Ready</div>` : ''}
+      </td>
       <td style="padding:.45rem .7rem;font-size:.82rem;text-align:center">${typeIcon}</td>
       <td style="padding:.45rem .7rem;font-size:.82rem;font-weight:500;text-align:right;white-space:nowrap">${price}</td>
       <td style="padding:.45rem .7rem;text-align:center">
         <label class="tsl" style="margin:0"><input type="checkbox" id="avail-${item.id}" ${item.is_available ? 'checked' : ''} onchange="doToggleItem('${item.id}',this.checked,'${safeName}')"><div class="tsl-track"></div></label>
       </td>
-      <td style="padding:.45rem .7rem;text-align:center">
+      <td style="padding:.45rem .7rem;text-align:center;white-space:nowrap">
+        <button onclick="openAssignBranchModal('${item.id}','${safeName}')" title="Assign ${safeName} to a branch" style="background:none;border:1px solid var(--rim,#e5e7eb);border-radius:6px;padding:.18rem .42rem;cursor:pointer;font-size:.7rem;color:var(--wa);margin-right:.25rem">＋ Branch</button>
         <button onclick="doDeleteItem('${item.id}','${safeName}')" title="Delete ${safeName}" style="background:none;border:none;cursor:pointer;font-size:.85rem;color:#9ca3af;transition:color .15s" onmouseover="this.style.color='#dc2626'" onmouseout="this.style.color='#9ca3af'">🗑️</button>
       </td>
     </tr>`;
@@ -954,6 +1010,7 @@ function renderMenuGroups(grouped, showBranchBadge) {
             <th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Item Name</th>
             <th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim)">Category</th>
             ${branchCol}
+            <th style="padding:.55rem .7rem;text-align:left;font-size:.77rem;font-weight:600;color:var(--dim);width:130px">Branch Status</th>
             <th style="padding:.55rem .7rem;text-align:center;font-size:.77rem;font-weight:600;color:var(--dim);width:60px">Type</th>
             <th style="padding:.55rem .7rem;text-align:right;font-size:.77rem;font-weight:600;color:var(--dim);width:90px">Price</th>
             <th style="padding:.55rem .7rem;text-align:center;font-size:.77rem;font-weight:600;color:var(--dim);width:70px">Status</th>
@@ -2467,5 +2524,308 @@ window.openBulkImageUpload = openBulkImageUpload;
 window.closeBulkImageUpload = closeBulkImageUpload;
 window.updateBulkFileList = updateBulkFileList;
 window.doBulkImageUpload = doBulkImageUpload;
+
+// ─── BRANCH-FIRST: assign-to-branch modal ─────────────────────
+let _assignProductId = null;
+function openAssignBranchModal(productId, productName) {
+  _assignProductId = productId;
+  const modal = document.getElementById('assign-branch-modal');
+  if (!modal) return toast('Assign modal missing — reload the page', 'err');
+  document.getElementById('ab-product-name').textContent = productName || '';
+  // Populate branches dropdown from cache; only operational branches.
+  const sel = document.getElementById('ab-branch');
+  const opts = (branches || []).filter(b => b.is_active !== false).map(b =>
+    `<option value="${b.id}">${b.name}${b.fssai_number ? '' : ' (no FSSAI)'}</option>`).join('');
+  sel.innerHTML = '<option value="">Select branch…</option>' + opts;
+  document.getElementById('ab-price').value = '';
+  document.getElementById('ab-tax').value  = '';
+  document.getElementById('ab-avail').checked = true;
+  modal.style.display = 'flex';
+}
+function closeAssignBranchModal() {
+  const m = document.getElementById('assign-branch-modal');
+  if (m) m.style.display = 'none';
+  _assignProductId = null;
+}
+async function doAssignBranch() {
+  const branchId = document.getElementById('ab-branch').value;
+  const price    = parseFloat(document.getElementById('ab-price').value);
+  const tax      = parseFloat(document.getElementById('ab-tax').value);
+  const avail    = document.getElementById('ab-avail').checked;
+  if (!branchId) return toast('Pick a branch', 'err');
+  if (isNaN(price) || price < 0) return toast('Price is required', 'err');
+  const btn = document.getElementById('ab-go-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Assigning...';
+  try {
+    await api(`/api/restaurant/products/${_assignProductId}/assign-branch`, {
+      method: 'POST',
+      body: { branch_id: branchId, price, tax_percentage: isNaN(tax) ? undefined : tax, availability: avail },
+    });
+    toast('✅ Assigned to branch', 'ok');
+    closeAssignBranchModal();
+    loadMenu();
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = 'Assign'; }
+}
+
+// ─── BRANCH-FIRST: sync pre-flight guard ──────────────────────
+// Wraps doSync / doQuickSync / doSyncToCatalog to warn (not block) when
+// unassigned products exist. The user can proceed; the backend filter
+// will skip those products with a structured reason.
+let _syncWarnProceed = null;
+async function _checkUnassignedThen(proceed) {
+  try {
+    const items = await api('/api/restaurant/menu/unassigned').catch(() => []);
+    const n = Array.isArray(items) ? items.length : 0;
+    if (!n) return proceed();
+    document.getElementById('sync-warn-count').textContent = n;
+    _syncWarnProceed = proceed;
+    document.getElementById('sync-warn-modal').style.display = 'flex';
+  } catch (_) { proceed(); }
+}
+function closeSyncWarnModal() {
+  const m = document.getElementById('sync-warn-modal');
+  if (m) m.style.display = 'none';
+}
+
+// Wrap existing sync entry points without rewriting them.
+const _origDoSync          = typeof doSync === 'function' ? doSync : null;
+const _origDoQuickSync     = typeof doQuickSync === 'function' ? doQuickSync : null;
+const _origDoSyncToCatalog = typeof doSyncToCatalog === 'function' ? doSyncToCatalog : null;
+if (_origDoSync)          window.doSync          = (...a) => _checkUnassignedThen(() => _origDoSync(...a));
+if (_origDoQuickSync)     window.doQuickSync     = (...a) => _checkUnassignedThen(() => _origDoQuickSync(...a));
+if (_origDoSyncToCatalog) window.doSyncToCatalog = (...a) => _checkUnassignedThen(() => _origDoSyncToCatalog(...a));
+
+window.openAssignBranchModal = openAssignBranchModal;
+window.closeAssignBranchModal = closeAssignBranchModal;
+window.doAssignBranch = doAssignBranch;
+window.closeSyncWarnModal = closeSyncWarnModal;
+
+// ─── XLSX MENU IMPORT MODAL HANDLERS ──────────────────────────
+// Wires #menu-import-modal in dashboard.html to:
+//   POST /api/restaurant/menu/upload   → store XLSX, get raw rows
+//   POST /api/restaurant/menu/mapping  → auto-map + accept overrides
+//   POST /api/restaurant/menu/import   → normalize + insert as products
+let _miUploadId = null;
+let _miAutoMapping = null;
+let _miHeaders = [];
+let _miSampleRows = [];
+const MI_TARGET_FIELDS = ['name','price','category','description','image','food_type','tax','availability'];
+
+function _miShowStep(which) {
+  ['upload','map','done'].forEach(s => {
+    const el = document.getElementById('mi-step-' + s);
+    if (el) el.style.display = (s === which ? 'block' : 'none');
+  });
+}
+function openMenuImportModal() {
+  _miUploadId = null; _miAutoMapping = null; _miHeaders = []; _miSampleRows = [];
+  const fileInput = document.getElementById('mi-file');
+  if (fileInput) fileInput.value = '';
+  _miShowStep('upload');
+  const m = document.getElementById('menu-import-modal');
+  if (m) m.style.display = 'flex';
+}
+function closeMenuImportModal() {
+  const m = document.getElementById('menu-import-modal');
+  if (m) m.style.display = 'none';
+}
+async function doMenuImportUpload() {
+  const fileInput = document.getElementById('mi-file');
+  const f = fileInput && fileInput.files && fileInput.files[0];
+  if (!f) return toast('Pick an .xlsx file first', 'err');
+  if (!/\.xlsx$/i.test(f.name)) return toast('Only .xlsx is accepted', 'err');
+  const btn = document.getElementById('mi-upload-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Uploading...';
+  try {
+    const fd = new FormData();
+    fd.append('file', f);
+    const token = localStorage.getItem('rest_token') || localStorage.getItem('token') || '';
+    const r = await fetch('/api/restaurant/menu/upload', {
+      method: 'POST',
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {},
+      body: fd,
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Upload failed');
+    _miUploadId = data.upload_id;
+    // Now ask the server to auto-map
+    const mp = await api('/api/restaurant/menu/mapping', { method: 'POST', body: { upload_id: _miUploadId } });
+    _miAutoMapping = mp.column_mapping || {};
+    _miHeaders = mp.detected_headers || [];
+    _miSampleRows = mp.sample_rows || [];
+    _miRenderMappingEditor();
+    _miRenderPreview();
+    _miShowStep('map');
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = 'Upload & preview'; }
+}
+function _miRenderMappingEditor() {
+  const wrap = document.getElementById('mi-map-rows');
+  if (!wrap) return;
+  const opts = ['<option value="">— none —</option>']
+    .concat(_miHeaders.map(h => `<option value="${_esc(h)}">${_esc(h)}</option>`))
+    .join('');
+  wrap.innerHTML = MI_TARGET_FIELDS.map(field => {
+    const sel = _miAutoMapping[field] || '';
+    return `
+      <label style="font-weight:600;font-size:.8rem;align-self:center;text-transform:capitalize">${field.replace('_',' ')}</label>
+      <select data-mi-field="${field}" style="padding:.4rem .5rem;border:1px solid var(--rim,#d1d5db);border-radius:6px;font-size:.82rem">
+        ${opts.replace(`value="${_esc(sel)}"`, `value="${_esc(sel)}" selected`)}
+      </select>`;
+  }).join('');
+}
+function _miRenderPreview() {
+  const head = document.getElementById('mi-prev-head');
+  const body = document.getElementById('mi-prev-body');
+  if (!head || !body) return;
+  const cols = _miHeaders;
+  head.innerHTML = `<tr>${cols.map(c => `<th style="text-align:left;padding:.35rem .5rem;background:#f3f4f6;border-bottom:1px solid #e5e7eb;font-weight:600">${_esc(c)}</th>`).join('')}</tr>`;
+  const rows = (_miSampleRows || []).slice(0, 10);
+  body.innerHTML = rows.map(r =>
+    `<tr>${cols.map(c => `<td style="padding:.3rem .5rem;border-bottom:1px solid #f1f5f9">${_esc(r[c] == null ? '' : String(r[c]))}</td>`).join('')}</tr>`
+  ).join('') || `<tr><td colspan="${cols.length || 1}" style="padding:.6rem;color:var(--dim);text-align:center">No rows</td></tr>`;
+}
+function _esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+async function doMenuImportConfirm() {
+  if (!_miUploadId) return toast('Upload first', 'err');
+  const overrides = {};
+  document.querySelectorAll('#mi-map-rows select[data-mi-field]').forEach(sel => {
+    const f = sel.getAttribute('data-mi-field');
+    const v = sel.value;
+    if (v) overrides[f] = v;
+  });
+  const btn = document.getElementById('mi-import-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Importing...';
+  try {
+    const r = await api('/api/restaurant/menu/import', {
+      method: 'POST',
+      body: { upload_id: _miUploadId, column_mapping: overrides },
+    });
+    document.getElementById('mi-done-summary').innerHTML = `
+      <div style="margin-bottom:.5rem;font-size:1rem;font-weight:600">✅ Import complete</div>
+      <div>Total rows: <b>${r.total}</b></div>
+      <div>Inserted: <b style="color:#059669">${r.inserted}</b></div>
+      <div>Skipped: <b style="color:#b45309">${r.skipped}</b></div>
+      <div style="margin-top:.5rem;font-size:.83rem;color:var(--dim)">Ready: ${r.ready} · Incomplete (Meta): ${r.incomplete}</div>
+      <div style="margin-top:.6rem;font-size:.78rem;color:var(--dim)">New products start as <b>Unassigned</b>. Assign them to a branch to make them visible.</div>
+    `;
+    _miShowStep('done');
+    toast('Import complete', 'ok');
+  } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = 'Import products'; }
+}
+
+window.openMenuImportModal  = openMenuImportModal;
+window.closeMenuImportModal = closeMenuImportModal;
+window.doMenuImportUpload   = doMenuImportUpload;
+window.doMenuImportConfirm  = doMenuImportConfirm;
+
+// ─── BRANCH SUGGESTIONS MODAL ─────────────────────────────────
+// Pulls /products/branch-suggestions, lets the operator review and
+// edit per-product branch picks, then POSTs /assign-branch one row
+// at a time. Pure UI — backend never auto-writes from this flow.
+let _bsRows = [];   // [{product_id, suggested_branch_ids, reason, name}]
+let _bsState = {};  // product_id → Set of selected branch_ids
+async function openBranchSuggestions() {
+  const m = document.getElementById('branch-suggest-modal');
+  if (!m) return;
+  m.style.display = 'flex';
+  document.getElementById('bs-banner').textContent = 'Loading suggestions…';
+  document.getElementById('bs-list').innerHTML = '';
+  try {
+    const r = await api('/api/restaurant/products/branch-suggestions');
+    const list = (r && r.suggestions) || [];
+    // Resolve product names from the in-memory _menuItems if available.
+    const nameById = new Map();
+    if (Array.isArray(window._menuItems)) {
+      window._menuItems.forEach(it => nameById.set(String(it._id), it.name));
+    } else if (Array.isArray(_menuItems)) {
+      _menuItems.forEach(it => nameById.set(String(it._id), it.name));
+    }
+    _bsRows = list.map(s => ({
+      product_id: s.product_id,
+      suggested_branch_ids: s.suggested_branch_ids || [],
+      reason: s.reason,
+      name: nameById.get(String(s.product_id)) || s.product_id,
+    }));
+    _bsState = {};
+    _bsRows.forEach(row => { _bsState[row.product_id] = new Set(row.suggested_branch_ids); });
+    if (!_bsRows.length) {
+      document.getElementById('bs-banner').textContent = 'No suggestions — every product is already assigned.';
+      document.getElementById('bs-list').innerHTML = '';
+      return;
+    }
+    document.getElementById('bs-banner').innerHTML = `<b>Suggested mapping available</b> for ${_bsRows.length} product${_bsRows.length === 1 ? '' : 's'}. Edit selections below or accept all.`;
+    _bsRender();
+  } catch (e) {
+    document.getElementById('bs-banner').textContent = 'Failed: ' + e.message;
+  }
+}
+function closeBranchSuggestions() {
+  const m = document.getElementById('branch-suggest-modal');
+  if (m) m.style.display = 'none';
+}
+function _bsRender() {
+  const wrap = document.getElementById('bs-list');
+  if (!wrap) return;
+  const branchOptions = (Array.isArray(branches) ? branches : [])
+    .map(b => ({ id: String(b._id), name: b.name || b._id }));
+  const reasonLabel = { name_match: 'name match', category_cluster: 'category cluster', all_active_fallback: 'fallback (all active)' };
+  wrap.innerHTML = _bsRows.map(row => {
+    const selected = _bsState[row.product_id] || new Set();
+    const checks = branchOptions.map(b => `
+      <label style="display:inline-flex;align-items:center;gap:.3rem;font-size:.78rem;padding:.15rem .45rem;border:1px solid ${selected.has(b.id) ? '#4f46e5' : '#e5e7eb'};border-radius:99px;background:${selected.has(b.id) ? '#eef2ff' : '#fff'};cursor:pointer">
+        <input type="checkbox" data-bs-product="${row.product_id}" data-bs-branch="${b.id}" ${selected.has(b.id) ? 'checked' : ''} onchange="bsToggle(this)" style="margin:0">
+        ${_esc(b.name)}
+      </label>`).join(' ');
+    return `
+      <div style="padding:.65rem .8rem;border-bottom:1px solid #f1f5f9">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+          <div style="font-weight:600;font-size:.86rem">${_esc(row.name)}</div>
+          <div style="font-size:.7rem;color:var(--dim)">${reasonLabel[row.reason] || row.reason}</div>
+        </div>
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap">${checks || '<span style="font-size:.78rem;color:var(--dim)">No branches yet</span>'}</div>
+      </div>`;
+  }).join('');
+}
+function bsToggle(cb) {
+  const pid = cb.getAttribute('data-bs-product');
+  const bid = cb.getAttribute('data-bs-branch');
+  if (!_bsState[pid]) _bsState[pid] = new Set();
+  if (cb.checked) _bsState[pid].add(bid); else _bsState[pid].delete(bid);
+  _bsRender();
+}
+function bsAcceptAll() {
+  _bsRows.forEach(row => { _bsState[row.product_id] = new Set(row.suggested_branch_ids); });
+  _bsRender();
+}
+async function bsApply() {
+  const btn = document.getElementById('bs-apply-btn');
+  btn.disabled = true; btn.innerHTML = '<div class="spin"></div> Applying...';
+  let ok = 0, fail = 0;
+  for (const row of _bsRows) {
+    const picks = [..._bsState[row.product_id] || []];
+    for (const bid of picks) {
+      try {
+        await api(`/api/restaurant/products/${row.product_id}/assign-branch`, {
+          method: 'POST',
+          body: { branch_id: bid, price: 0, availability: true },
+        });
+        ok++;
+      } catch (_) { fail++; }
+    }
+  }
+  btn.disabled = false; btn.innerHTML = 'Apply selected';
+  toast(`Applied ${ok} assignment${ok === 1 ? '' : 's'}${fail ? ` · ${fail} failed` : ''}`, fail ? 'err' : 'ok');
+  closeBranchSuggestions();
+  loadMenu();
+}
+
+window.openBranchSuggestions  = openBranchSuggestions;
+window.closeBranchSuggestions = closeBranchSuggestions;
+window.bsToggle               = bsToggle;
+window.bsAcceptAll            = bsAcceptAll;
+window.bsApply                = bsApply;
 
 })();

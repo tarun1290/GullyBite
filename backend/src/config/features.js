@@ -23,6 +23,24 @@ const POS_INTEGRATIONS_ENABLED = isEnabled('DISABLE_POS_INTEGRATIONS',
   process.env.ENABLE_POS_INTEGRATIONS === 'true'
 );
 
+// ── Meta sync validation flags ───────────────────────────────
+// Two-flag pairing controls the WhatsApp catalog pre-sync guard:
+//
+//   ENABLE_META_VALIDATION   master switch — when false, bypass entirely
+//   META_VALIDATION_MODE     'log_only' (default) → validate + log, never block
+//                            'strict'             → skip invalid products
+//
+// The current default ('log_only') matches today's guard behaviour
+// (warn-only). Flipping META_VALIDATION_MODE=strict turns it into a
+// hard skip without code changes.
+const ENABLE_META_VALIDATION = isEnabled('DISABLE_META_VALIDATION',
+  process.env.ENABLE_META_VALIDATION !== 'false' // default ON
+);
+const META_VALIDATION_MODE = (() => {
+  const m = String(process.env.META_VALIDATION_MODE || 'log_only').toLowerCase();
+  return (m === 'strict') ? 'strict' : 'log_only';
+})();
+
 // ── Smart module flags ───────────────────────────────────────
 // Each can be killed instantly via env var: DISABLE_<NAME>=true
 // When disabled, callers fall back to simpler legacy paths.
@@ -40,6 +58,8 @@ const SMART_MODULES = {
 if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'test') {
   log.info({ enabled: IMAGE_PIPELINE_ENABLED }, `Image pipeline: ${IMAGE_PIPELINE_ENABLED ? 'ON' : 'OFF'}`);
   log.info({ enabled: POS_INTEGRATIONS_ENABLED }, `POS integrations: ${POS_INTEGRATIONS_ENABLED ? 'ON' : 'OFF'}`);
+  log.info({ enabled: ENABLE_META_VALIDATION, mode: META_VALIDATION_MODE },
+    `Meta validation: ${ENABLE_META_VALIDATION ? 'ON' : 'OFF'} (mode=${META_VALIDATION_MODE})`);
 
   const smartStatus = Object.entries(SMART_MODULES)
     .map(([k, v]) => `${k}=${v ? 'ON' : 'OFF'}`)
@@ -51,4 +71,6 @@ module.exports = {
   IMAGE_PIPELINE_ENABLED,
   POS_INTEGRATIONS_ENABLED,
   SMART_MODULES,
+  ENABLE_META_VALIDATION,
+  META_VALIDATION_MODE,
 };

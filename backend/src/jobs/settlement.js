@@ -131,6 +131,8 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
   await col('settlements').insertOne({
     _id: settlementId,
     restaurant_id: restaurantId,
+    // Disambiguates from Phase 5 balance-based rows (settlement_type='new').
+    settlement_type: 'legacy',
     period_start: periodStart,
     period_end: periodEnd,
 

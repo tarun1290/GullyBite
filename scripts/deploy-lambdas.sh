@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # scripts/deploy-lambdas.sh
 # Build and deploy AWS Lambda functions for GullyBite.
+# NOTE: Lambda package.json AWS SDK deps are pinned to 3.0.0 (no caret)
+# for reproducibility — verify before next Lambda deploy.
 #
 # Usage:
 #   ./scripts/deploy-lambdas.sh              # Build + deploy all lambdas

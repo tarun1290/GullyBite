@@ -22,13 +22,31 @@ const etaSvc = require('../services/eta');
 const loyaltySvc = require('../services/loyalty');
 const notify = require('../services/notify');
 const { getNextRetryAt, retryDefaults } = require('../utils/retry');
-const { waMessageLimiter, waOrderLimiter, abuseDetector, isPhoneBlocked, extractSenderIdentifier, extractPhoneNumberId } = require('../middleware/rateLimit');
+const { waMessageLimiter, waOrderLimiter, abuseDetector, isPhoneBlocked, isBlocked, rateLimit, adaptiveRateLimit, recordAbuseEvent, RateLimitExceededError, extractSenderIdentifier, extractPhoneNumberId } = require('../middleware/rateLimit');
 const customerIdentity = require('../services/customerIdentity');
+const Brand = require('../models/Brand');
 const issueSvc = require('../services/issues');
 const { logActivity } = require('../services/activityLog');
 const ws = require('../services/websocket');
 const memcache = require('../config/memcache');
+// [IDEMPOTENCY] keys.order(customerId, branchId, cart) builds a stable
+// fingerprint of the cart contents so two double-clicks with the same cart
+// collapse to one order. See utils/withIdempotency.js for details.
+const { keys: idemKeys } = require('../utils/withIdempotency');
 const log = require('../utils/logger').child({ component: 'whatsapp' });
+
+// Phase 1 flow handler (additive). Gated entirely by env so the legacy
+// flowManager path remains the default. To enable:
+//   PHASE1_FLOW_ENABLED=true
+// Optional per-number allow-list (comma-separated phone_number_ids):
+//   PHASE1_FLOW_PHONE_IDS=123456,654321
+const phase1Flow = require('../whatsapp/flowHandler');
+function _phase1FlowEnabled(phoneNumberId) {
+  if (process.env.PHASE1_FLOW_ENABLED !== 'true') return false;
+  const allow = (process.env.PHASE1_FLOW_PHONE_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (allow.length === 0) return true;
+  return allow.includes(String(phoneNumberId));
+}
 
 // ─── GET: WEBHOOK VERIFICATION ────────────────────────────────
 router.get('/', (req, res) => {
@@ -84,18 +102,39 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     // [BSUID] ── ABUSE CHECK: blocked identifier (phone or BSUID) ──
     const senderIdentifier = extractSenderIdentifier(body);
     if (senderIdentifier) {
-      const blocked = await isPhoneBlocked(senderIdentifier);
-      if (blocked) {
-        req.log.warn({ senderIdentifier }, 'Blocked identifier dropped');
+      // Two block sources to check:
+      //   1. Mongo blocked_phones — durable 24h auto-blocks / manual bans
+      //   2. Redis blocked:wa:<phone> — short-lived (10min) abuse-score blocks
+      const [mongoBlocked, redisBlock] = await Promise.all([
+        isPhoneBlocked(senderIdentifier),
+        isBlocked(`wa:${senderIdentifier}`),
+      ]);
+      if (mongoBlocked || redisBlock.blocked) {
+        req.log.warn({ senderIdentifier, source: mongoBlocked ? 'mongo' : 'redis' }, 'Blocked identifier dropped');
         return; // silently drop — already returned 200
       }
 
       // ── RATE LIMIT CHECK ──
-      const { allowed } = waMessageLimiter.isAllowed(senderIdentifier);
-      if (!allowed) {
-        req.log.warn({ senderIdentifier }, 'Message rate limited');
-        // Record violation for abuse detection
+      // Adaptive limit driven by trust tier (low=3/10, medium=5/10, high=15/10).
+      // adaptiveRateLimit already feeds the abuse scorer AND applies a
+      // trust penalty on WA overflow, so we don't repeat those here.
+      // Legacy waMessageLimiter (30/min, per-process) remains as a
+      // belt-and-suspenders for the Redis-less fallback path.
+      let specAllowed = true;
+      try {
+        await adaptiveRateLimit('wa', senderIdentifier);
+      } catch (e) {
+        if (e instanceof RateLimitExceededError) specAllowed = false;
+        else throw e;
+      }
+      const { allowed: legacyAllowed } = waMessageLimiter.isAllowed(senderIdentifier);
+      if (!specAllowed || !legacyAllowed) {
+        req.log.warn({ senderIdentifier, specAllowed, legacyAllowed }, 'Message rate limited');
+        // Record violation for BOTH scorers. Mongo-backed abuseDetector
+        // drives 24h auto-blocks; Redis-backed recordAbuseEvent drives
+        // 10-min cool-downs on repeated offenders within a single session.
         abuseDetector.recordViolation(senderIdentifier).catch(() => {});
+        recordAbuseEvent(`wa:${senderIdentifier}`, 'rate_limit_hit_wa').catch(() => {});
         // Log rate-limited event
         await col('webhook_logs').insertOne({
           _id: newId(),
@@ -178,6 +217,63 @@ const processChange = async (value) => {
   }
   log.info({ restaurantId: waAccount.restaurant_id }, 'WA account matched');
 
+  // ─── BRAND ROUTING (additive, non-blocking) ──────────────────
+  // Resolve the brand by phone_number_id via the Brand model. If found,
+  // stamp brand_id, business_id, and the raw phone_number_id onto the
+  // waAccount so every downstream writer in this change (message
+  // capture, order creation, etc.) picks up brand context for free.
+  //
+  // Fallback ladder when phone_number_id has no direct brand match:
+  //   1. Load the business (restaurants row) via waAccount.business_id
+  //      or legacy waAccount.restaurant_id.
+  //   2. business_type === 'single' → adopt business.default_brand_id
+  //      as the effective brand (single-brand tenants shouldn't need
+  //      to register their WABA in the brands collection to benefit
+  //      from brand-scoped writes).
+  //   3. business_type === 'multi' (or any other value) → leave
+  //      brand_id null; the legacy single-brand path handles it.
+  // Any failure at any step falls through to the legacy path —
+  // parsing and response logic are untouched.
+  waAccount.phone_number_id_received = phoneNumberId;
+  try {
+    const brand = await Brand.findByPhoneNumberId(phoneNumberId);
+    if (brand) {
+      waAccount.brand_id = brand._id;
+      waAccount.business_id = brand.business_id;
+      log.info({ brandId: brand._id, businessId: brand.business_id, phoneNumberId }, 'Brand matched for webhook');
+    } else {
+      // No direct brand row — try the business-aware fallback.
+      const businessId = waAccount.business_id || waAccount.restaurant_id || null;
+      if (businessId) {
+        try {
+          const biz = await col('restaurants').findOne(
+            { _id: String(businessId) },
+            { projection: { business_type: 1, default_brand_id: 1 } }
+          );
+          const type = biz?.business_type || 'single';  // legacy rows = single
+          if (type === 'single' && biz?.default_brand_id) {
+            const defaultBrand = await Brand.findById(biz.default_brand_id);
+            if (defaultBrand) {
+              waAccount.brand_id = defaultBrand._id;
+              waAccount.business_id = defaultBrand.business_id || String(businessId);
+              log.info({ brandId: defaultBrand._id, businessId: waAccount.business_id, phoneNumberId, via: 'default_brand' }, 'Default brand applied for single-business');
+            } else {
+              log.info({ phoneNumberId, businessId }, 'Default brand id set but brand row missing — legacy fallback');
+            }
+          } else {
+            log.info({ phoneNumberId, businessId, businessType: type }, 'No brand match — using legacy single-brand fallback');
+          }
+        } catch (err) {
+          log.warn({ err, phoneNumberId, businessId }, 'Business lookup for brand fallback failed — continuing with legacy path');
+        }
+      } else {
+        log.info({ phoneNumberId }, 'No brand match and no business context — using legacy single-brand fallback');
+      }
+    }
+  } catch (err) {
+    log.warn({ err, phoneNumberId }, 'Brand lookup failed — continuing with fallback');
+  }
+
   // Use system user token for all messaging (never-expiring, set via env var)
   waAccount.access_token = metaConfig.systemUserToken || waAccount.access_token;
 
@@ -214,6 +310,28 @@ const processChange = async (value) => {
 
     // [WhatsApp2026] Show typing indicator while processing
     wa.showTyping(phoneNumberId, waAccount.access_token, replyTo);
+
+    // ─── PHASE 1 FLOW HANDLER (feature-flagged) ─────────────
+    // When enabled, the new conversational state machine handles the
+    // message. If it defers (returns { handled: false }), fall through
+    // to the legacy flowManager path untouched. This lets us roll the
+    // new UX forward one phone_number_id at a time.
+    if (_phase1FlowEnabled(phoneNumberId)) {
+      try {
+        const res = await phase1Flow.handle({
+          phone_number_id: phoneNumberId,
+          from: replyTo,
+          message: msg,
+        });
+        if (res && res.handled) {
+          log.info({ msgId: msg.id, state: 'phase1_handled' }, 'Phase 1 flow handled message');
+          continue;
+        }
+        log.info({ msgId: msg.id, reason: res?.reason }, 'Phase 1 flow deferred — legacy path');
+      } catch (err) {
+        log.warn({ err, msgId: msg.id }, 'Phase 1 flow threw — legacy path will handle');
+      }
+    }
 
     logActivity({
       actorType: 'customer', actorId: wa_phone || bsuid, actorName: senderName,
@@ -340,8 +458,11 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
       const branch = await col('branches').findOne({ _id: session.branchId });
       const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
 
-      // Create order in PENDING_PAYMENT state so Razorpay webhook can match it
+      // Create order in PENDING_PAYMENT state so Razorpay webhook can match it.
+      // [IDEMPOTENCY] Pass idempotencyKey so a double-click on the Pay button
+      // (or a webhook retry, or a stuck client) returns the SAME order.
       const order = await orderSvc.createOrder({
+        idempotencyKey: idemKeys.order(customer?.id, session.branchId, session.cart),
         convId       : session.convId || null,
         customerId   : customer?.id,
         branchId     : session.branchId,
@@ -1714,7 +1835,10 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         return;
       }
 
+      // [IDEMPOTENCY] Same key shape as the checkout-flow caller above —
+      // a double-confirm collapses to one order.
       const order = await orderSvc.createOrder({
+        idempotencyKey: idemKeys.order(customer.id, session.branchId, session.cart),
         convId       : conv.id,
         customerId   : customer.id,
         branchId     : session.branchId,
@@ -2560,7 +2684,11 @@ const linkPhoneAndResumeOrder = async (phone, customer, conv, waAccount) => {
     return;
   }
 
+  // [IDEMPOTENCY] Phone-share-then-resume flow can fire twice if the user
+  // re-sends their phone number quickly. The cart-fingerprint key collapses
+  // both attempts to one order.
   const order = await orderSvc.createOrder({
+    idempotencyKey: idemKeys.order(customer.id, session.branchId, session.cart),
     convId       : freshConv.id,
     customerId   : customer.id,
     branchId     : session.branchId,
@@ -3168,10 +3296,20 @@ const captureCustomerMessage = async (msg, customer, conv, waAccount) => {
       if (msg.location?.address) text += ` — ${msg.location.address}`;
     }
 
+    // Brand context (set in processChange via Brand.findByPhoneNumberId).
+    // All three fields are optional — null/undefined preserves legacy
+    // single-brand behavior.
+    const brandId = waAccount?.brand_id || null;
+    const businessId = waAccount?.business_id || null;
+    const phoneNumberIdRx = waAccount?.phone_number_id_received || waAccount?.phone_number_id || null;
+
     const doc = {
       _id: newId(),
       restaurant_id: restaurantId,
       branch_id: branchId,
+      brand_id: brandId,
+      business_id: businessId,
+      phone_number_id: phoneNumberIdRx,
       customer_id: customer.id,
       customer_name: customer.name || null,
       customer_phone: customer.wa_phone || null,

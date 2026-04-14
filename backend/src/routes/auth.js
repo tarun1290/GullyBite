@@ -991,10 +991,17 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
     const {
       ownerName, phone, brandName, restaurantType, city,
       gstNumber, fssaiLicense,
+      // Multi-brand onboarding inputs (optional for back-compat — any
+      // existing client that doesn't send business_type continues to
+      // create a single-brand tenant.)
+      businessType,
+      wabaId, phoneNumberId, displayPhoneNumber, catalogId,
     } = req.body;
 
     if (!ownerName || !phone || !brandName)
       return res.status(400).json({ error: 'Name, phone and restaurant name are required' });
+
+    const normalizedType = businessType === 'multi' ? 'multi' : 'single';
 
     // Resolve store slug with this priority:
     //   1. Keep existing real slug (e.g., "beyond-snacks") — never break a live URL
@@ -1018,13 +1025,43 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
       owner_name: ownerName, phone, business_name: brandName, brand_name: brandName,
       restaurant_type: restaurantType || 'both', city: city || null,
       store_slug: storeSlug, store_url: storeUrl,
+      business_type: normalizedType,
       approval_status: 'pending', onboarding_step: 2, updated_at: new Date(),
     };
     if (gstNumber) $set.gst_number = gstNumber;
     if (fssaiLicense) $set.fssai_license = fssaiLicense;
 
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
-    res.json({ submitted: true, storeUrl });
+
+    // ─── BRAND BOOTSTRAP ────────────────────────────────────────
+    // 'single' tenants get a first brand auto-created (and set as
+    // default via Brand.create's default-brand rules). 'multi' tenants
+    // must create their brands explicitly via a dedicated endpoint.
+    //
+    // We skip auto-create when phone_number_id isn't available, since
+    // the brands schema requires it — the client can complete brand
+    // creation after the WABA signup step finishes.
+    let brand = null;
+    if (normalizedType === 'single' && phoneNumberId) {
+      try {
+        const Brand = require('../models/Brand');
+        brand = await Brand.create({
+          business_id: req.restaurantId,
+          name: brandName,
+          phone_number_id: phoneNumberId,
+          waba_id: wabaId || null,
+          display_phone_number: displayPhoneNumber || null,
+          catalog_id: catalogId || null,
+          status: 'active',
+        });
+        req.log.info({ brandId: brand._id, businessId: req.restaurantId }, 'Onboarding: default brand created');
+      } catch (err) {
+        req.log.warn({ err }, 'Onboarding: default brand create failed — tenant can retry later');
+      }
+    }
+
+    const business = await col('restaurants').findOne({ _id: req.restaurantId });
+    res.json({ submitted: true, storeUrl, business, brand });
   } catch (err) {
     req.log.error({ err }, 'Onboarding failed');
     res.status(500).json({ error: 'Failed to save details' });

@@ -5,6 +5,8 @@
 const axios = require('axios');
 const metaConfig = require('../config/meta');
 const log = require('../utils/logger').child({ component: 'WhatsApp' });
+const Brand = require('../models/Brand');
+const { col } = require('../config/database');
 
 // Build the messages API URL for a given phone number — uses centralized API version
 const apiUrl = (phoneNumberId) =>
@@ -424,6 +426,178 @@ const sendDocument = async (pid, token, to, { buffer, filename, caption, mimeTyp
   });
 };
 
+// ─── BRAND-AWARE SENDER (additive, non-breaking) ──────────────
+// New entry point that accepts an OPTIONAL `brand_id`. When present,
+// the brand's `phone_number_id` (and, if set, `access_token`) override
+// the caller's defaults. When absent, behavior is identical to calling
+// sendMsg directly — existing API consumers are unaffected.
+//
+//   sendMessage({
+//     brand_id,          // optional
+//     phone_number_id,   // default/fallback (legacy single-brand)
+//     access_token,      // default/fallback
+//     to, body,
+//   })
+//
+// Returns whatever sendMsg returns. Logs the resolved brand_id and
+// phone_number_id on every call for observability.
+// Resolution ladder:
+//   1. brand_id passed          → Brand.findById → brand.phone_number_id
+//   2. no brand_id, business_id → load business:
+//        • business_type == 'single' + default_brand_id set
+//             → Brand.findById(default_brand_id) → use its phone_number_id
+//        • business_type == 'multi' (or no default set) → legacy fallback
+//   3. no brand_id, no business_id → caller-supplied phone_number_id / token
+// Any failure at any step degrades to the legacy path — existing callers
+// that only pass (phone_number_id, access_token, to, body) are unaffected.
+// ─── FALLBACK REASON VOCABULARY ───────────────────────────────
+// Structured tags emitted on every log line so dashboards can filter
+// and alert by exact routing outcome instead of scraping message text.
+//
+//   no_brand_match               — brand_id passed but Brand.findById
+//                                  returned null or had no pid
+//   default_brand_used           — resolved via business.default_brand_id
+//   multi_brand_missing_brand_id — strict-mode reject on multi tenants
+//   deleted_default_brand        — default_brand_id points at a brand
+//                                  row that's gone (or has no pid)
+const FALLBACK_REASONS = Object.freeze({
+  NO_BRAND_MATCH:               'no_brand_match',
+  DEFAULT_BRAND_USED:           'default_brand_used',
+  MULTI_BRAND_MISSING_BRAND_ID: 'multi_brand_missing_brand_id',
+  DELETED_DEFAULT_BRAND:        'deleted_default_brand',
+});
+
+const sendMessage = async ({ brand_id, business_id, phone_number_id, access_token, to, body, allow_default_fallback = false } = {}) => {
+  let pid = phone_number_id;
+  let token = access_token;
+  let resolvedBrandId = null;
+  let routing = 'default';
+  let businessType = null;
+  let fallbackReason = null;
+
+  if (brand_id) {
+    try {
+      const brand = await Brand.findById(brand_id);
+      if (brand && brand.phone_number_id) {
+        pid = brand.phone_number_id;
+        token = brand.access_token || token;
+        resolvedBrandId = brand._id;
+        routing = 'brand';
+      } else {
+        fallbackReason = FALLBACK_REASONS.NO_BRAND_MATCH;
+        log.warn({
+          event: 'wa_send_routing',
+          brand_id,
+          business_id: business_id || null,
+          business_type: businessType,
+          fallback_reason: fallbackReason,
+        }, 'brand_id not found or missing phone_number_id — falling back to default');
+      }
+    } catch (err) {
+      fallbackReason = FALLBACK_REASONS.NO_BRAND_MATCH;
+      log.warn({
+        event: 'wa_send_routing',
+        err,
+        brand_id,
+        business_id: business_id || null,
+        business_type: businessType,
+        fallback_reason: fallbackReason,
+      }, 'Brand lookup failed — falling back to default');
+    }
+  } else if (business_id) {
+    try {
+      const biz = await col('restaurants').findOne(
+        { _id: String(business_id) },
+        { projection: { business_type: 1, default_brand_id: 1 } }
+      );
+      businessType = biz?.business_type || 'single';  // legacy rows = single
+
+      if (businessType === 'multi') {
+        if (!allow_default_fallback) {
+          fallbackReason = FALLBACK_REASONS.MULTI_BRAND_MISSING_BRAND_ID;
+          log.warn({
+            event: 'wa_send_routing',
+            business_id,
+            business_type: businessType,
+            fallback_reason: fallbackReason,
+          }, 'Multi-brand business requires explicit brand_id');
+          const err = new Error('Multi-brand business requires explicit brand_id');
+          err.code = 'BRAND_ID_REQUIRED';
+          err.business_type = 'multi';
+          throw err;
+        }
+        if (biz?.default_brand_id) {
+          const defaultBrand = await Brand.findById(biz.default_brand_id);
+          if (defaultBrand && defaultBrand.phone_number_id) {
+            pid = defaultBrand.phone_number_id;
+            token = defaultBrand.access_token || token;
+            resolvedBrandId = defaultBrand._id;
+            routing = 'default_brand';
+            fallbackReason = FALLBACK_REASONS.DEFAULT_BRAND_USED;
+            log.info({
+              event: 'wa_send_routing',
+              business_id,
+              business_type: businessType,
+              brand_id: defaultBrand._id,
+              fallback_reason: fallbackReason,
+            }, 'Multi-brand: default_brand_used via allow_default_fallback');
+          } else {
+            fallbackReason = FALLBACK_REASONS.DELETED_DEFAULT_BRAND;
+            log.warn({
+              event: 'wa_send_routing',
+              business_id,
+              business_type: businessType,
+              default_brand_id: biz.default_brand_id,
+              fallback_reason: fallbackReason,
+            }, 'Multi-brand default_brand_id points at missing or phoneless brand');
+          }
+        }
+      } else if (businessType === 'single' && biz?.default_brand_id) {
+        const defaultBrand = await Brand.findById(biz.default_brand_id);
+        if (defaultBrand && defaultBrand.phone_number_id) {
+          pid = defaultBrand.phone_number_id;
+          token = defaultBrand.access_token || token;
+          resolvedBrandId = defaultBrand._id;
+          routing = 'default_brand';
+          fallbackReason = FALLBACK_REASONS.DEFAULT_BRAND_USED;
+        } else {
+          fallbackReason = FALLBACK_REASONS.DELETED_DEFAULT_BRAND;
+          log.warn({
+            event: 'wa_send_routing',
+            business_id,
+            business_type: businessType,
+            default_brand_id: biz.default_brand_id,
+            fallback_reason: fallbackReason,
+          }, 'Default brand has no phone_number_id — legacy fallback');
+        }
+      }
+    } catch (err) {
+      if (err && err.code === 'BRAND_ID_REQUIRED') throw err;
+      log.warn({
+        event: 'wa_send_routing',
+        err,
+        business_id,
+        business_type: businessType,
+        fallback_reason: fallbackReason,
+      }, 'Business lookup for default brand failed — legacy fallback');
+    }
+  }
+
+  console.log({ brand_id: resolvedBrandId, phone_number_id: pid });
+  log.info({
+    event: 'wa_send_routing',
+    brand_id: resolvedBrandId,
+    business_id: business_id || null,
+    business_type: businessType,
+    phone_number_id: pid,
+    to: to?.slice(-4),
+    routing,
+    fallback_reason: fallbackReason,
+  }, 'Outbound message routing resolved');
+
+  return sendMsg(pid, token, to, body);
+};
+
 // DEPRECATED: sendCheckoutOrder and sendCheckoutTemplate removed — sendPaymentRequest is the single checkout function
 
-module.exports = { sendMsg, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };
+module.exports = { sendMsg, sendMessage, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendFlow, sendDocument, markRead, showTyping };

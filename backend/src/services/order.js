@@ -7,6 +7,7 @@ const couponSvc = require('./coupon');
 const { calculateOrderCharges } = require('./charges');
 const { calculateDynamicDeliveryFee } = require('./dynamicPricing');
 const log = require('../utils/logger').child({ component: 'Order' });
+const Brand = require('../models/Brand');
 
 // ─── GET OR CREATE CUSTOMER ───────────────────────────────────
 // [BSUID] Delegates to customerIdentity.js for universal identity resolution
@@ -71,14 +72,29 @@ const setState = async (convId, newState, sessionUpdates = {}) => {
 const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = null, deliveryLng = null, orderDetails = {}) => {
   const retailerIds = productItems.map(i => i.product_retailer_id);
 
+  // Branch-first: match items by either the legacy scalar OR the new
+  // branch_ids[] membership so post-migration products are picked up
+  // without breaking pre-migration rows.
   const menuItems = await col('menu_items').find({
     retailer_id: { $in: retailerIds },
-    branch_id: branchId,
     is_available: true,
+    $or: [{ branch_id: branchId }, { branch_ids: branchId }],
   }).toArray();
 
+  // Apply branch-first guard: drop unassigned products / inactive branch /
+  // missing FSSAI. These would have failed silently as "unavailable"
+  // anyway, but the structured reason lets us surface a clear message.
+  const branchGuard = require('../middleware/branchGuard');
+  const branchSvc   = require('./branch.service');
+  const guardBranch = await branchSvc.getBranch(branchId);
+  const guardSkips  = [];
+
   const itemMap = {};
-  menuItems.forEach(m => { itemMap[m.retailer_id] = m; });
+  menuItems.forEach(m => {
+    const check = branchGuard.checkProductForBranch(m, guardBranch);
+    if (check.ok) itemMap[m.retailer_id] = m;
+    else guardSkips.push({ retailer_id: m.retailer_id, reason: check.reason });
+  });
 
   const cart = [];
   const unavailable = [];
@@ -132,6 +148,7 @@ const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = n
     deliveryFeeRs: charges.customer_delivery_rs,
     totalRs: charges.customer_total_rs,
     charges, unavailable,
+    branch_guard_skips: guardSkips, // surfaced for logging / WA messaging
     deliveryFeeBreakdown: dynamicResult.breakdown,
     dynamicPricing: dynamicResult.dynamic,
     // 3PL quote data for session storage → used at dispatch time
@@ -164,7 +181,51 @@ const findActiveReferral = async (identifier, restaurantId) => {
 };
 
 // ─── CREATE ORDER ─────────────────────────────────────────────
-const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null, deliveryQuote = null, structuredAddress = null, addressSource = null, receiverName = null, receiverPhone = null, deliveryInstructions = null }) => {
+// [IDEMPOTENCY] Accepts an optional `idempotencyKey` parameter. When passed,
+// the entire order-creation body is wrapped in withIdempotency() so a double-
+// click on the Pay button (or a webhook retry, or a stuck client retry)
+// returns the SAME order — same _id, same order_number — instead of creating
+// a duplicate.
+//
+// Callers should compute the key via `withIdempotency.keys.order(customerId,
+// branchId, cart)` which fingerprints the cart contents. The key is stable
+// for as long as the cart contents are the same; if the user adds/removes
+// items, the fingerprint changes and a fresh order is allowed.
+//
+// If no idempotencyKey is passed, behaviour is unchanged (legacy callers
+// continue to work — no migration required).
+const createOrder = async (params) => {
+  // Per-user order rate limit — ADAPTIVE based on trust tier:
+  //   low:    1/60s    medium: 2/60s    high: 5/60s
+  // Centralised here so every entry point (WA text, WA buttons, dashboard
+  // manual order) is covered without call-site bookkeeping. Idempotency-
+  // replayed orders don't hit this because the idemKey cache returns
+  // before _createOrderImpl runs.
+  if (params && params.customerId) {
+    const { adaptiveRateLimit, RateLimitExceededError } = require('../middleware/rateLimit');
+    try {
+      await adaptiveRateLimit('order', String(params.customerId));
+    } catch (err) {
+      if (err instanceof RateLimitExceededError) {
+        log.warn({ customerId: params.customerId, retryAfterMs: err.retryAfterMs }, 'Order rate limit hit');
+        throw err;
+      }
+      throw err;
+    }
+  }
+  if (params && params.idempotencyKey) {
+    const { withIdempotency, keys: idemKeys } = require('../utils/withIdempotency');
+    return withIdempotency(
+      params.idempotencyKey,
+      'order',
+      () => _createOrderImpl(params),
+      { referenceId: params.customerId || null }
+    );
+  }
+  return _createOrderImpl(params);
+};
+
+const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null, deliveryQuote = null, structuredAddress = null, addressSource = null, receiverName = null, receiverPhone = null, deliveryInstructions = null, brandId = null, phoneNumberId = null, businessId = null }) => {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -180,6 +241,31 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
   const { getBranch } = require('../utils/cachedLookup');
   const branch = await getBranch(branchId);
   const restaurantId = branch?.restaurant_id;
+
+  // ─── BRAND RESOLUTION (additive, non-blocking) ─────────────
+  // Priority: explicit brandId from caller → infer via phoneNumberId
+  // from the message/webhook context (req.brand_id equivalent) →
+  // leave null (legacy single-brand path). Any failure falls through
+  // to null so the existing order flow continues working identically
+  // for non-brand-aware callers.
+  let resolvedBrandId = brandId || null;
+  let resolvedBusinessId = businessId || null;
+  try {
+    if (!resolvedBrandId && phoneNumberId) {
+      const brand = await Brand.findByPhoneNumberId(phoneNumberId);
+      if (brand) {
+        resolvedBrandId = brand._id;
+        resolvedBusinessId = resolvedBusinessId || brand.business_id || null;
+      }
+    } else if (resolvedBrandId && !resolvedBusinessId) {
+      const brand = await Brand.findById(resolvedBrandId);
+      if (brand) resolvedBusinessId = brand.business_id || null;
+    }
+  } catch (err) {
+    log.warn({ err, brandId: resolvedBrandId, phoneNumberId }, 'Brand resolution failed on order create — continuing without brand');
+  }
+  log.info({ orderBrandId: resolvedBrandId, businessId: resolvedBusinessId, phoneNumberId, routing: resolvedBrandId ? 'brand' : 'default' }, 'Order brand routing resolved');
+
   const referral      = await findActiveReferral(waPhone, restaurantId);
   const referralId    = referral?.id || null;
   const referralFeeRs = referral ? calculateReferralCommission(subtotalRs).commission_amount : 0;
@@ -220,6 +306,9 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     packaging_rs:               charges?.packaging_rs               ?? 0,
     packaging_gst_rs:           charges?.packaging_gst_rs           ?? 0,
     delivery_fee_breakdown:     deliveryFeeBreakdown                || null,
+    // Optional brand mapping — null preserves legacy single-brand behavior.
+    brand_id: resolvedBrandId,
+    business_id: resolvedBusinessId,
     status: 'PENDING_PAYMENT',
     paid_at: null,
     confirmed_at: null,
@@ -233,64 +322,86 @@ const createOrder = async ({ convId, customerId, branchId, cart, subtotalRs, del
     updated_at: now,
   };
 
-  await col('orders').insertOne(order);
+  // ─── TRANSACTIONAL WRITE ───────────────────────────────────
+  // orders + order_items + deliveries + conversation update (+ coupon
+  // and referral side-effects when applicable) must all commit together.
+  // A crash mid-write without a transaction used to leave orphan
+  // order_items rows pointing at a non-existent order, or a delivery row
+  // with no matching order. With the wrapper below, the cluster rolls
+  // back everything on any failure. Coupon redemption is intentionally
+  // included so a double-submit can't "spend" the coupon without
+  // producing an order.
+  //
+  // Runs without a session on standalone Mongo (local dev) — see
+  // withTransaction.js for the fallback rationale.
+  const { withTransaction } = require('../utils/withTransaction');
+  await withTransaction(async (session) => {
+    const sOpt = session ? { session } : {};
 
-  // Coupon usage tracking
-  if (couponId) {
-    await couponSvc.incrementUsage(couponId);
-    await couponSvc.recordRedemption(couponId, customerId, String(order._id));
-  }
+    await col('orders').insertOne(order, sOpt);
 
-  // Update referral totals
-  if (referralId) {
-    await col('referrals').updateOne(
-      { _id: referralId },
-      {
-        $set:  { status: 'converted', updated_at: now },
-        $inc:  { orders_count: 1, total_order_value_rs: subtotalRs, referral_fee_rs: referralFeeRs },
-      }
-    );
-  }
+    if (couponId) {
+      await couponSvc.incrementUsage(couponId, session);
+      await couponSvc.recordRedemption(couponId, customerId, String(order._id), session);
+    }
 
-  // Create order items (bulk insert instead of loop)
-  if (cart.length) {
-    await col('order_items').insertMany(cart.map(item => ({
+    if (referralId) {
+      await col('referrals').updateOne(
+        { _id: referralId },
+        {
+          $set:  { status: 'converted', updated_at: now },
+          $inc:  { orders_count: 1, total_order_value_rs: subtotalRs, referral_fee_rs: referralFeeRs },
+        },
+        sOpt
+      );
+    }
+
+    if (cart.length) {
+      await col('order_items').insertMany(cart.map(item => ({
+        _id: newId(),
+        order_id: orderId,
+        menu_item_id: item.menuItemId,
+        item_name: item.name,
+        unit_price_rs: item.unitPriceRs,
+        quantity: item.qty,
+        line_total_rs: item.lineTotalRs,
+      })), sOpt);
+    }
+
+    await col('deliveries').insertOne({
       _id: newId(),
       order_id: orderId,
-      menu_item_id: item.menuItemId,
-      item_name: item.name,
-      unit_price_rs: item.unitPriceRs,
-      quantity: item.qty,
-      line_total_rs: item.lineTotalRs,
-    })));
+      provider: deliveryQuote?.providerName || process.env.DEFAULT_DELIVERY_PROVIDER || 'porter',
+      provider_order_id: null,
+      tracking_url: null,
+      driver_name: null,
+      driver_phone: null,
+      driver_lat: null,
+      driver_lng: null,
+      status: 'pending',
+      estimated_mins: deliveryQuote?.estimatedMins || null,
+      cost_rs: deliveryQuote?.providerFeeRs || 0,
+      quote_id: deliveryQuote?.quoteId || null,
+      picked_up_at: null,
+      delivered_at: null,
+      created_at: now,
+      updated_at: now,
+    }, sOpt);
+
+    await col('conversations').updateOne(
+      { _id: convId },
+      { $set: { active_order_id: orderId, state: 'AWAITING_PAYMENT' } },
+      sOpt
+    );
+  }, { label: `createOrder:${orderId}` });
+
+  // Trust score: +5 for reaching the created-order milestone. Placed
+  // here (not at delivery) because a successfully composed + accepted
+  // order is already a positive signal; delivery-stage refunds/cancels
+  // are tracked via separate events if we add them later.
+  if (customerId) {
+    require('./trustScore').recordEvent(String(customerId), 'order_success').catch(() => {});
   }
-
-  // Create delivery record (pending dispatch until payment confirmed)
-  await col('deliveries').insertOne({
-    _id: newId(),
-    order_id: orderId,
-    provider: deliveryQuote?.providerName || process.env.DEFAULT_DELIVERY_PROVIDER || 'porter',
-    provider_order_id: null,
-    tracking_url: null,
-    driver_name: null,
-    driver_phone: null,
-    driver_lat: null,
-    driver_lng: null,
-    status: 'pending',
-    estimated_mins: deliveryQuote?.estimatedMins || null,
-    cost_rs: deliveryQuote?.providerFeeRs || 0,
-    quote_id: deliveryQuote?.quoteId || null,
-    picked_up_at: null,
-    delivered_at: null,
-    created_at: now,
-    updated_at: now,
-  });
-
-  // Link order to conversation
-  await col('conversations').updateOne(
-    { _id: convId },
-    { $set: { active_order_id: orderId, state: 'AWAITING_PAYMENT' } }
-  );
 
   return mapId(order);
 };
@@ -330,54 +441,26 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
     );
 
     // ─── PER-ORDER SETTLEMENT TRIGGER (v2) ───────────────────
-    // Create a per-order settlement record. Idempotent — unique constraint on order_id.
-    // Fire-and-forget to avoid blocking the delivery flow. Failures are logged.
-    setTimeout(async () => {
-      try {
-        const payoutEngine = require('./payoutEngine');
-        const settlement = await payoutEngine.createSettlementForOrder(orderId);
-        if (settlement && settlement.status === 'eligible') {
-          // Auto-process payout if enabled
-          if (process.env.AUTO_PAYOUT_ON_DELIVERY === 'true') {
-            await payoutEngine.processSettlement(String(settlement._id));
-          }
-        }
-      } catch (e) {
-        log.error({ err: e, orderId }, 'Per-order settlement creation failed');
-      }
-    }, 100);
+    // Phase 4: replaced setTimeout with a durable SETTLEMENT_TRIGGER job.
+    // Idempotent — payoutEngine.createSettlementForOrder has a unique
+    // (order_id) constraint, so retries are safe.
+    try {
+      const { enqueue, JOB_TYPES } = require('../queue/postPaymentJobs');
+      await enqueue(JOB_TYPES.SETTLEMENT_TRIGGER, { orderId: String(orderId) });
+    } catch (e) { log.error({ err: e, orderId }, 'settlement job enqueue failed'); }
 
-    // Award loyalty points + send notification
-    setTimeout(async () => {
-      try {
-        const customer = await col('customers').findOne({ _id: updated.customer_id });
-        const waAcc    = await col('whatsapp_accounts').findOne({ restaurant_id: updated.restaurant_id, is_active: true });
-        const metaConfig = require('../config/meta');
-        const waToken = metaConfig.systemUserToken || waAcc?.access_token;
-        // [BSUID] Use resolveRecipient — phone preferred, BSUID fallback
-        const { resolveRecipient } = require('./customerIdentity');
-        const toId = customer ? (customer.wa_phone || customer.bsuid) : null;
-        if (toId && waAcc?.phone_number_id && waToken) {
-          // Loyalty points
-          try {
-            const loyalty = require('./loyalty');
-            const reward = await loyalty.earnPoints(updated.customer_id, updated.restaurant_id, orderId, updated.total_rs);
-            if (reward.pointsEarned > 0) {
-              const wa = require('./whatsapp');
-              let msg = `🎉 You earned *${reward.pointsEarned} loyalty points*!\n💰 Balance: ${reward.newBalance} points\n🏅 Tier: ${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}\n\nRedeem points on your next order!`;
-              if (reward.tierUpgraded) {
-                msg = `🎊 *Congratulations!* You've been upgraded to *${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}*!\n\n` + msg;
-              }
-              await wa.sendText(waAcc.phone_number_id, waToken, toId, msg);
-            }
-          } catch (e) { log.error({ err: e }, 'Loyalty earn error'); }
-
-          // Rating request (after loyalty msg)
-          const { sendRatingRequest } = require('../webhooks/whatsapp');
-          await sendRatingRequest(orderId, waAcc.phone_number_id, waToken, toId);
-        }
-      } catch (e) { log.error({ err: e }, 'Rating delayed send error'); }
-    }, 30 * 60 * 1000); // 30 minutes after delivery — gives customer time to eat
+    // ─── LOYALTY AWARD + RATING REQUEST ──────────────────────
+    // Phase 4: replaced setTimeout with a LOYALTY_AWARD job scheduled
+    // 30 min out. Gives the customer time to finish the meal before
+    // the rating ask lands.
+    try {
+      const { enqueue, JOB_TYPES } = require('../queue/postPaymentJobs');
+      await enqueue(
+        JOB_TYPES.LOYALTY_AWARD,
+        { orderId: String(orderId) },
+        { delayMs: 30 * 60 * 1000 }
+      );
+    } catch (e) { log.error({ err: e, orderId }, 'loyalty job enqueue failed'); }
   }
 
   // Fire-and-forget POS status sync

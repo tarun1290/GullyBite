@@ -1,120 +1,159 @@
 // src/services/catalogSyncQueue.js
-// Debounced catalog sync queue — batches changes per restaurant, syncs after 3s quiet period
+// Phase 4: persistent catalog sync scheduling.
+//
+// Before: in-memory Map + setTimeout-based debouncer. Lost state on
+// restart; couldn't be observed by ops; no retry bookkeeping.
+//
+// After: writes to `catalog_sync_schedule` with a `schedule_time` in
+// the near future. A periodic worker (startProcessor below) picks up
+// rows whose schedule_time has passed, enqueues a CATALOG_SYNC job on
+// message_jobs, and marks the schedule row 'dispatched'. Debouncing
+// still works: a second queueSync() during the debounce window
+// updates the existing row's schedule_time forward, so the sync only
+// fires once after quiet settles.
 
-const { col } = require('../config/database');
+'use strict';
+
+const { col, newId } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'SyncQueue' });
 
-const pendingSyncs = new Map(); // restaurantId → { type, branchIds, timer }
-const activeSyncs = new Set();  // restaurantId set — prevents concurrent syncs
-
+const COLLECTION = 'catalog_sync_schedule';
 const DEBOUNCE_MS = 3000;
-const RETRY_DELAY_MS = 30000;
+const POLL_INTERVAL_MS = 2000;
 
-/**
- * Queue a catalog sync for a restaurant. Non-blocking — returns immediately.
- * @param {string} restaurantId
- * @param {'full'|'branch'} type — 'full' resyncs all branches, 'branch' resyncs specific branches
- * @param {string[]} branchIds — specific branches to sync (ignored for 'full')
- */
-function queueSync(restaurantId, type, branchIds) {
+async function queueSync(restaurantId, type, branchIds) {
   if (!restaurantId) return;
 
-  // Check restaurant has a catalog — silently skip if not
-  col('restaurants').findOne({ _id: restaurantId }, { projection: { meta_catalog_id: 1 } })
-    .then(r => {
-      if (!r?.meta_catalog_id) return; // no catalog connected, skip
+  // Only schedule if the tenant has a catalog wired up.
+  const r = await col('restaurants').findOne(
+    { _id: restaurantId },
+    { projection: { meta_catalog_id: 1 } }
+  ).catch(() => null);
+  if (!r?.meta_catalog_id) return;
 
-      const existing = pendingSyncs.get(restaurantId);
+  const now = new Date();
+  const scheduleTime = new Date(now.getTime() + DEBOUNCE_MS);
 
-      if (type === 'full') {
-        // Full sync supersedes any pending branch syncs
-        if (existing?.timer) clearTimeout(existing.timer);
-        const timer = setTimeout(() => executeSync(restaurantId), DEBOUNCE_MS);
-        pendingSyncs.set(restaurantId, { type: 'full', branchIds: null, timer });
-      } else {
-        // Merge branch IDs
-        if (existing?.type === 'full') return; // full sync pending, don't downgrade
-        if (existing?.timer) clearTimeout(existing.timer);
-        const merged = new Set([...(existing?.branchIds || []), ...(branchIds || [])]);
-        const timer = setTimeout(() => executeSync(restaurantId), DEBOUNCE_MS);
-        pendingSyncs.set(restaurantId, { type: 'branch', branchIds: [...merged], timer });
-      }
-    })
-    .catch(() => {}); // DB check failed, skip silently
-}
+  // Atomic upsert: one pending row per restaurant. 'full' beats
+  // 'branch' — once a full sync is scheduled, branch merges are
+  // ignored (they'll be covered).
+  const existing = await col(COLLECTION).findOne({
+    restaurant_id: String(restaurantId), status: 'pending',
+  });
 
-async function executeSync(restaurantId) {
-  const pending = pendingSyncs.get(restaurantId);
-  pendingSyncs.delete(restaurantId);
-  if (!pending) return;
-
-  // Simple lock — if already syncing, re-queue
-  if (activeSyncs.has(restaurantId)) {
-    setTimeout(() => {
-      pendingSyncs.set(restaurantId, pending);
-      setTimeout(() => executeSync(restaurantId), DEBOUNCE_MS);
-    }, 1000);
+  if (existing && existing.sync_type === 'full') {
+    // Extend the debounce for full syncs.
+    await col(COLLECTION).updateOne(
+      { _id: existing._id },
+      { $set: { schedule_time: scheduleTime, updated_at: now } }
+    );
     return;
   }
 
-  activeSyncs.add(restaurantId);
-
-  try {
-    const catalog = require('./catalog');
-
-    // Use compressed catalog sync — routes through compression engine first,
-    // then through the existing mapMenuItemToMetaProduct pipeline.
-    // Falls back to raw branch-by-branch sync if compression fails or is disabled.
-    const { guard } = require('../utils/smartModule');
-    const compResult = await guard('CATALOG_COMPRESSION', {
-      fn: () => catalog.syncCompressedCatalog(restaurantId),
-      fallback: null, // null signals fallback to raw sync
-      label: 'syncCompressedCatalog',
-      context: { restaurantId },
-    });
-
-    if (compResult) {
-      log.info({ restaurantId, synced: compResult.synced || 0, compressionRatio: compResult.compressionRatio || 0 }, 'Compressed sync complete');
+  if (type === 'full') {
+    if (existing) {
+      await col(COLLECTION).updateOne(
+        { _id: existing._id },
+        { $set: { sync_type: 'full', branch_ids: null, schedule_time: scheduleTime, updated_at: now } }
+      );
     } else {
-      // FALLBACK: original branch-by-branch sync (compression disabled or failed)
-      log.info({ restaurantId }, 'Using raw branch sync (compression unavailable)');
-      if (pending.type === 'full') {
-        const branches = await col('branches').find({ restaurant_id: restaurantId }).toArray();
-        for (const branch of branches) {
-          try { await catalog.syncBranchCatalog(String(branch._id)); }
-          catch (e) { log.error({ err: e, branchName: branch.name }, 'Branch sync failed'); }
-        }
-        log.info({ restaurantId }, 'Fallback full sync complete');
-      } else if (pending.branchIds?.length) {
-        for (const branchId of pending.branchIds) {
-          try { await catalog.syncBranchCatalog(branchId); }
-          catch (e) { log.error({ err: e, branchId }, 'Branch sync failed'); }
-        }
-        log.info({ restaurantId }, 'Fallback branch sync complete');
-      }
-    }
-  } catch (err) {
-    log.error({ err, restaurantId }, 'Sync failed');
-    // Retry once after delay
-    setTimeout(() => {
-      const catalog = require('./catalog');
-      catalog.syncCompressedCatalog(restaurantId).catch(() => {
-        // If compressed fails on retry too, try raw
-        col('branches').find({ restaurant_id: restaurantId }).toArray()
-          .then(branches => Promise.all(branches.map(b => catalog.syncBranchCatalog(String(b._id)).catch(() => {}))))
-          .catch(() => {});
+      await col(COLLECTION).insertOne({
+        _id: newId(),
+        restaurant_id: String(restaurantId),
+        branch_id: null,
+        sync_type: 'full',
+        branch_ids: null,
+        schedule_time: scheduleTime,
+        status: 'pending',
+        created_at: now,
+        updated_at: now,
       });
-    }, RETRY_DELAY_MS);
-  } finally {
-    activeSyncs.delete(restaurantId);
+    }
+    return;
+  }
+
+  // branch-scoped sync — merge branch_ids.
+  const ids = Array.isArray(branchIds) ? branchIds.map(String) : [];
+  if (existing) {
+    const merged = Array.from(new Set([...(existing.branch_ids || []), ...ids]));
+    await col(COLLECTION).updateOne(
+      { _id: existing._id },
+      { $set: { branch_ids: merged, schedule_time: scheduleTime, updated_at: now } }
+    );
+  } else {
+    await col(COLLECTION).insertOne({
+      _id: newId(),
+      restaurant_id: String(restaurantId),
+      branch_id: ids[0] || null,
+      sync_type: 'branch',
+      branch_ids: ids,
+      schedule_time: scheduleTime,
+      status: 'pending',
+      created_at: now,
+      updated_at: now,
+    });
   }
 }
 
-function retryFailedSyncs() {
-  // Called on server startup — no-op for now since we don't persist sync state
-  // The debounce model means pending syncs are lost on restart
-  // A full sync is triggered when the restaurant next visits the dashboard anyway
-  log.info('Ready');
+// Worker loop: claim-and-dispatch rows whose schedule_time has passed.
+let _running = false;
+let _stopRequested = false;
+
+async function _tick() {
+  const now = new Date();
+  const row = await col(COLLECTION).findOneAndUpdate(
+    { status: 'pending', schedule_time: { $lte: now } },
+    { $set: { status: 'dispatching', updated_at: now } },
+    { returnDocument: 'after' }
+  );
+  if (!row?.value) return false;
+  const doc = row.value;
+
+  try {
+    const { enqueue, JOB_TYPES } = require('../queue/postPaymentJobs');
+    await enqueue(JOB_TYPES.CATALOG_SYNC, {
+      restaurantId: doc.restaurant_id,
+      type: doc.sync_type,
+      branchIds: doc.branch_ids || [],
+    });
+    await col(COLLECTION).updateOne(
+      { _id: doc._id },
+      { $set: { status: 'dispatched', dispatched_at: new Date(), updated_at: new Date() } }
+    );
+  } catch (err) {
+    log.error({ err, restaurantId: doc.restaurant_id }, 'failed to dispatch catalog sync');
+    await col(COLLECTION).updateOne(
+      { _id: doc._id },
+      { $set: { status: 'pending', updated_at: new Date(), last_error: { message: err.message, at: new Date() } } }
+    );
+  }
+  return true;
 }
 
-module.exports = { queueSync, retryFailedSyncs };
+function startProcessor({ pollMs = POLL_INTERVAL_MS } = {}) {
+  if (_running) return;
+  _running = true;
+  _stopRequested = false;
+  (async function loop() {
+    log.info({ pollMs }, 'catalog sync scheduler started');
+    while (!_stopRequested) {
+      try {
+        const drained = await _tick();
+        if (drained) continue;
+      } catch (err) {
+        log.error({ err }, 'catalog sync scheduler tick failed');
+      }
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+    _running = false;
+  })();
+}
+
+function retryFailedSyncs() {
+  // Backwards-compat: old startup hook that this module exported.
+  // With the persistent queue there's nothing to recover on startup —
+  // the processor loop will find any unfinished rows on its own.
+  log.info('Ready (persistent queue)');
+}
+
+module.exports = { queueSync, retryFailedSyncs, startProcessor, COLLECTION };

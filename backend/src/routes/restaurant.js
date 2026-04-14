@@ -8,6 +8,7 @@ const multer = require('multer');
 const axios  = require('axios');
 const { col, newId, mapId, mapIds } = require('../config/database');
 const { requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS } = require('./auth');
+const { rateLimitFn } = require('../middleware/rateLimit');
 const catalog = require('../services/catalog');
 const { queueSync } = require('../services/catalogSyncQueue');
 const orderSvc = require('../services/order');
@@ -1454,6 +1455,16 @@ router.delete('/branches/:branchId/categories/:catId', async (req, res) => {
 // GET /api/restaurant/menu/all — ALL items across ALL branches (grouped by category)
 router.get('/menu/all', async (req, res) => {
   try {
+    // Brand context — same rules as /orders, /messages. Applied to the
+    // menu_items (catalog) filter so multi-brand tenants see only
+    // items scoped to the active brand.
+    const { resolveBrandContext, setBrandHeaders } = require('../utils/brandContext');
+    const brandCtx = await resolveBrandContext(req.restaurantId, req.query.brand_id);
+    if (brandCtx.missing) {
+      return res.status(400).json({ error: 'brand_id is required for multi-brand businesses', business_type: brandCtx.business_type });
+    }
+    setBrandHeaders(res, brandCtx);
+
     const branchDocs = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
     const branchIds = branchDocs.map(b => String(b._id));
 
@@ -1461,6 +1472,7 @@ router.get('/menu/all', async (req, res) => {
     const itemFilter = branchIds.length
       ? { $or: [{ branch_id: { $in: branchIds } }, { restaurant_id: req.restaurantId, branch_id: null }, { restaurant_id: req.restaurantId, branch_id: { $exists: false } }] }
       : { restaurant_id: req.restaurantId };
+    if (brandCtx.effective_brand_id) itemFilter.brand_id = brandCtx.effective_brand_id;
 
     const [cats, items] = await Promise.all([
       branchIds.length ? col('menu_categories').find({ branch_id: { $in: branchIds } }).sort({ sort_order: 1 }).toArray() : [],
@@ -3324,38 +3336,65 @@ router.post('/catalog/clear-and-resync', async (req, res) => {
     const catalogId = restaurant?.meta_catalog_id;
     if (!catalogId) return res.status(400).json({ error: 'No catalog connected' });
 
-    const token = metaConfig.getCatalogToken();
-    const GRAPH = metaConfig.graphUrl;
+    // [LOCK] Catalog clear-and-resync is a destructive multi-step operation:
+    // fetch all products → batch-delete from Meta → re-sync all local items.
+    // Two concurrent runs would corrupt the catalog state (one deleting while
+    // the other uploads). The lock guarantees only ONE clear-and-resync runs
+    // per restaurant at a time. TTL is 5 minutes — generous enough for large
+    // catalogs but short enough that a crashed process doesn't lock the user
+    // out for long. Second caller fails fast with HTTP 409 + clear message.
+    const { withLock, keys: lockKeys, LockBusyError } = require('../utils/withLock');
+    try {
+      const result = await withLock(
+        lockKeys.catalogResync(req.restaurantId),
+        async () => {
+          const token = metaConfig.getCatalogToken();
+          const GRAPH = metaConfig.graphUrl;
 
-    // Step 1: Fetch all existing products from Meta
-    let allProducts = [];
-    let url = `${GRAPH}/${catalogId}/products?fields=retailer_id&limit=500&access_token=${token}`;
-    while (url) {
-      const { data } = await axios.get(url, { timeout: 15000 });
-      allProducts.push(...(data.data || []));
-      url = data.paging?.next || null;
+          // Step 1: Fetch all existing products from Meta
+          let allProducts = [];
+          let url = `${GRAPH}/${catalogId}/products?fields=retailer_id&limit=500&access_token=${token}`;
+          while (url) {
+            const { data } = await axios.get(url, { timeout: 15000 });
+            allProducts.push(...(data.data || []));
+            url = data.paging?.next || null;
+          }
+
+          // Step 2: Delete all in batches of 4999 via items_batch
+          let deleted = 0;
+          for (let i = 0; i < allProducts.length; i += 4999) {
+            const batch = allProducts.slice(i, i + 4999).map(p => ({ method: 'DELETE', retailer_id: p.retailer_id }));
+            try {
+              await axios.post(`${GRAPH}/${catalogId}/items_batch`, {
+                access_token: token,
+                item_type: 'PRODUCT_ITEM',
+                requests: JSON.stringify(batch),
+              }, { timeout: 30000 });
+              deleted += batch.length;
+            } catch (e) { req.log.error({ err: e }, 'Catalog batch delete failed'); }
+          }
+
+          // Step 3: Re-sync all local items
+          const syncResult = await catalog.syncRestaurantCatalog(req.restaurantId);
+
+          log({ actorType: 'restaurant', actorId: req.user?.id, action: 'catalog.clear_and_resync', category: 'catalog', description: `Cleared ${deleted} items from Meta, re-synced ${syncResult.totalSynced}`, restaurantId: req.restaurantId, severity: 'info' });
+
+          return { success: true, deleted_from_meta: deleted, ...syncResult };
+        },
+        { ttlMs: 5 * 60 * 1000, type: 'catalog-resync' }
+      );
+      res.json(result);
+    } catch (lockErr) {
+      if (lockErr instanceof LockBusyError) {
+        // Another catalog resync is already in progress for this restaurant.
+        // 409 Conflict is the right HTTP status for "resource is busy".
+        return res.status(409).json({
+          error: 'Another catalog re-sync is already in progress for this restaurant. Please wait a few minutes and try again.',
+          code: 'CATALOG_RESYNC_BUSY',
+        });
+      }
+      throw lockErr;
     }
-
-    // Step 2: Delete all in batches of 4999 via items_batch
-    let deleted = 0;
-    for (let i = 0; i < allProducts.length; i += 4999) {
-      const batch = allProducts.slice(i, i + 4999).map(p => ({ method: 'DELETE', retailer_id: p.retailer_id }));
-      try {
-        await axios.post(`${GRAPH}/${catalogId}/items_batch`, {
-          access_token: token,
-          item_type: 'PRODUCT_ITEM',
-          requests: JSON.stringify(batch),
-        }, { timeout: 30000 });
-        deleted += batch.length;
-      } catch (e) { req.log.error({ err: e }, 'Catalog batch delete failed'); }
-    }
-
-    // Step 3: Re-sync all local items
-    const syncResult = await catalog.syncRestaurantCatalog(req.restaurantId);
-
-    log({ actorType: 'restaurant', actorId: req.user?.id, action: 'catalog.clear_and_resync', category: 'catalog', description: `Cleared ${deleted} items from Meta, re-synced ${syncResult.totalSynced}`, restaurantId: req.restaurantId, severity: 'info' });
-
-    res.json({ success: true, deleted_from_meta: deleted, ...syncResult });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -4333,7 +4372,16 @@ router.put('/catalog', async (req, res) => {
 
 router.get('/orders', async (req, res) => {
   try {
-    const { status, branchId, limit = 50, offset = 0 } = req.query;
+    const { status, branchId, brand_id, limit = 50, offset = 0 } = req.query;
+
+    // Brand context: single tenants pass through, multi tenants must
+    // supply brand_id (auto-filled from default_brand_id when possible).
+    const { resolveBrandContext, setBrandHeaders } = require('../utils/brandContext');
+    const brandCtx = await resolveBrandContext(req.restaurantId, brand_id);
+    if (brandCtx.missing) {
+      return res.status(400).json({ error: 'brand_id is required for multi-brand businesses', business_type: brandCtx.business_type });
+    }
+    setBrandHeaders(res, brandCtx);
 
     // Get all branch IDs for this restaurant
     const branchFilter = { restaurant_id: req.restaurantId };
@@ -4343,6 +4391,8 @@ router.get('/orders', async (req, res) => {
 
     const filter = { branch_id: { $in: branchIds } };
     if (status) filter.status = status;
+    // Brand filter — from query param or default_brand_id on multi tenants.
+    if (brandCtx.effective_brand_id) filter.brand_id = brandCtx.effective_brand_id;
 
     const orders = await col('orders')
       .find(filter)
@@ -5138,6 +5188,48 @@ router.get('/settlements', requirePermission('view_payments'), async (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// PHASE 5 — LEDGER DASHBOARD + ON-DEMAND SETTLEMENT HISTORY
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/restaurant/ledger/summary
+router.get('/ledger/summary', requirePermission('view_payments'), async (req, res) => {
+  try {
+    const svc = require('../services/ledgerDashboard.service');
+    const data = await svc.getSummary(req.restaurantId);
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/ledger/transactions?from&to&type&ref_type&page&limit
+router.get('/ledger/transactions', requirePermission('view_payments'), async (req, res) => {
+  try {
+    const svc = require('../services/ledgerDashboard.service');
+    const data = await svc.getTransactions(req.restaurantId, {
+      from:    req.query.from,
+      to:      req.query.to,
+      type:    req.query.type,
+      refType: req.query.ref_type,
+      page:    req.query.page,
+      limit:   req.query.limit,
+    });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/ledger/settlements — Phase 5 on-demand history.
+// (Legacy weekly rows remain at GET /settlements above.)
+router.get('/ledger/settlements', requirePermission('view_payments'), async (req, res) => {
+  try {
+    const svc = require('../services/ledgerDashboard.service');
+    const data = await svc.getSettlements(req.restaurantId, {
+      page:  req.query.page,
+      limit: req.query.limit,
+    });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/settlements/:id/download', requirePermission('view_payments'), async (req, res) => {
   try {
     const settlement = await col('settlements').findOne({ _id: req.params.id });
@@ -5194,7 +5286,15 @@ router.get('/wallet/transactions', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/wallet/topup', requirePermission('manage_settings'), async (req, res) => {
+// Payment rate limit: 3 attempts per 120s per restaurant.
+// Protects against rapid-retry loops on a failing card / webhook flakiness
+// racking up Razorpay orders. Keyed on restaurantId — a multi-operator
+// account shares the bucket, which is the desired behaviour (prevents one
+// staff member from burning through limits on everyone else's behalf).
+router.post('/wallet/topup',
+  requirePermission('manage_settings'),
+  rateLimitFn(req => `payment:${req.restaurantId}`, 3, 120, { message: 'Too many payment attempts, please try again shortly.' }),
+  async (req, res) => {
   try {
     const { amount_rs } = req.body;
     if (!amount_rs || amount_rs < 100 || amount_rs > 10000) {
@@ -6256,12 +6356,22 @@ const { logActivity } = require('../services/activityLog');
 router.get('/messages', requireAuth, requireApproved, async (req, res) => {
   try {
     const restId = req.restaurantId;
-    const { status, customer_id, search, page = 1, limit = 30 } = req.query;
+    const { status, customer_id, search, brand_id, page = 1, limit = 30 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Brand context — same rules as /orders.
+    const { resolveBrandContext, setBrandHeaders } = require('../utils/brandContext');
+    const brandCtx = await resolveBrandContext(restId, brand_id);
+    if (brandCtx.missing) {
+      return res.status(400).json({ error: 'brand_id is required for multi-brand businesses', business_type: brandCtx.business_type });
+    }
+    setBrandHeaders(res, brandCtx);
+    const effectiveBrandId = brandCtx.effective_brand_id;
 
     if (customer_id) {
       // Thread view — all messages with this customer
       const match = { restaurant_id: restId, customer_id };
+      if (effectiveBrandId) match.brand_id = effectiveBrandId;
       const msgs = await col('customer_messages').find(match)
         .sort({ created_at: 1 }).toArray();
       // Mark unread as read
@@ -6278,6 +6388,8 @@ router.get('/messages', requireAuth, requireApproved, async (req, res) => {
     // Threads overview — aggregate latest message per customer
     const match = { restaurant_id: restId };
     if (status && status !== 'all') match.status = status;
+    // Brand filter — from query param or default_brand_id on multi tenants.
+    if (effectiveBrandId) match.brand_id = effectiveBrandId;
     if (search) match.$or = [
       { text: { $regex: search, $options: 'i' } },
       { customer_name: { $regex: search, $options: 'i' } },
@@ -6285,7 +6397,7 @@ router.get('/messages', requireAuth, requireApproved, async (req, res) => {
     ];
 
     const threads = await col('customer_messages').aggregate([
-      { $match: { restaurant_id: restId, ...(status && status !== 'all' ? {} : {}) } },
+      { $match: { restaurant_id: restId, ...(effectiveBrandId ? { brand_id: effectiveBrandId } : {}), ...(status && status !== 'all' ? {} : {}) } },
       { $sort: { created_at: -1 } },
       {
         $group: {

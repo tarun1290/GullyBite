@@ -264,12 +264,19 @@ const handleLinkExpired = async (event) => {
 };
 
 // ─── ISSUE REFUND ─────────────────────────────────────────────
+// Phase 3.1: two-phase ledger debit. We post a 'pending' debit
+// immediately (keyed by rp_refund_id) so the liability shows up in
+// reporting the moment we call Razorpay. The refund.processed webhook
+// flips this entry to 'completed'. If the webhook never arrives (e.g.,
+// Razorpay failure), the pending row stays visible to ops for manual
+// reconciliation rather than silently disappearing.
 const issueRefund = async (orderId, reason = 'Order cancelled') => {
   const payment = await col('payments').findOne({ order_id: orderId, status: 'paid' });
   if (!payment) return null;
 
+  const amountPaise = Math.round(payment.amount_rs * 100);
   const refund = await getRzp().payments.refund(payment.rp_payment_id, {
-    amount: Math.round(payment.amount_rs * 100),
+    amount: amountPaise,
     notes : { reason, order_id: orderId },
   });
 
@@ -278,6 +285,30 @@ const issueRefund = async (orderId, reason = 'Order cancelled') => {
     { status: 'refunded', refunded_at: new Date() },
     `system:refund:${reason}`
   );
+
+  // Best-effort pending debit. Never fails the refund call — Razorpay
+  // already owes the customer; a missed ledger entry is an ops issue,
+  // not a customer-facing one.
+  try {
+    const ord = await col('orders').findOne(
+      { _id: String(orderId) },
+      { projection: { restaurant_id: 1 } }
+    );
+    if (ord?.restaurant_id && refund?.id) {
+      const ledger = require('./ledger.service');
+      await ledger.debit({
+        restaurantId: ord.restaurant_id,
+        amountPaise,
+        refType: 'refund',
+        refId: String(refund.id),
+        status: 'pending',
+        notes: `Refund initiated: ${reason}`,
+      });
+    }
+  } catch (err) {
+    log.warn({ err, orderId, refundId: refund?.id }, 'pending refund ledger debit failed');
+  }
+
   return refund;
 };
 
@@ -373,4 +404,8 @@ module.exports = {
   createPayout,
   createPayoutV2,
   updatePaymentWithAudit,
+  // Exposed for recovery job — lets it reconcile stuck payments by
+  // fetching ground truth from Razorpay. Kept underscore-prefixed to
+  // signal it's not part of the public API surface.
+  _getRzp: getRzp,
 };

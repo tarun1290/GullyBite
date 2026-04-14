@@ -175,6 +175,165 @@ router.post('/alerts/:id/acknowledge', async (req, res) => {
 });
 
 // ─── GET /api/admin/stats ─────────────────────────────────────
+// ─── BRANCH-FIRST INSIGHTS ────────────────────────────────────
+// Unassigned product count, branch activity, sync skip metrics —
+// vocabulary mirrors middleware/branchGuard.js REASONS.
+router.get('/branch-insights', requireAdmin, async (req, res) => {
+  try {
+    const restaurantId = req.query.restaurant_id || null;
+    const productScope = restaurantId ? { restaurant_id: restaurantId } : {};
+    const branchScope  = restaurantId ? { restaurant_id: restaurantId } : {};
+    const since        = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const skipScope    = { at: { $gte: since } };
+
+    const [
+      totalProducts, unassignedProducts,
+      totalBranches, activeBranches, branchesMissingFssai,
+      skipAgg,
+    ] = await Promise.all([
+      col('menu_items').countDocuments(productScope),
+      col('menu_items').countDocuments({
+        ...productScope,
+        $or: [{ is_unassigned: true }, { branch_ids: { $size: 0 } }, { branch_ids: { $exists: false } }],
+      }),
+      col('branches').countDocuments(branchScope),
+      col('branches').countDocuments({ ...branchScope, is_active: { $ne: false } }),
+      col('branches').countDocuments({
+        ...branchScope,
+        $or: [{ fssai_number: { $exists: false } }, { fssai_number: null }, { fssai_number: '' }],
+      }),
+      col('catalog_sync_skips').aggregate([
+        { $match: skipScope },
+        { $group: { _id: '$reason', count: { $sum: 1 } } },
+      ]).toArray().catch(() => []),
+    ]);
+
+    const skipped_by_reason = Object.fromEntries(skipAgg.map(s => [s._id, s.count]));
+    const skipped_total = skipAgg.reduce((s, r) => s + r.count, 0);
+
+    res.json({
+      products: { total: totalProducts, unassigned: unassignedProducts, assigned: totalProducts - unassignedProducts },
+      branches: { total: totalBranches, active: activeBranches, missing_fssai: branchesMissingFssai },
+      sync_last_7d: { skipped_total, skipped_by_reason },
+      generated_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    log.error({ err: e }, 'branch-insights failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── SYNC LOGS ────────────────────────────────────────────────
+// Per-product Meta sync audit. Filters: restaurant_id, status,
+// from/to (ISO), branch_id, reason. Results capped at 500/page.
+router.get('/sync-logs', requireAdmin, async (req, res) => {
+  try {
+    const { restaurant_id, status, branch_id, reason, from, to } = req.query;
+    const limit  = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+
+    const q = {};
+    if (restaurant_id) q.restaurant_id = restaurant_id;
+    if (status)        q.status = status;
+    if (branch_id)     q.branch_id = branch_id;
+    if (reason)        q.reason = reason;
+    if (from || to) {
+      q.timestamp = {};
+      if (from) q.timestamp.$gte = new Date(from);
+      if (to)   q.timestamp.$lte = new Date(to);
+    }
+
+    const [rows, total] = await Promise.all([
+      col('sync_logs').find(q).sort({ timestamp: -1 }).skip(offset).limit(limit).toArray(),
+      col('sync_logs').countDocuments(q),
+    ]);
+
+    // Hydrate display names for the admin table — keeps the frontend
+    // simple by avoiding per-row joins on the client.
+    const restIds   = [...new Set(rows.map(r => r.restaurant_id))];
+    const productIds= [...new Set(rows.map(r => r.product_id))];
+    const branchIds = [...new Set(rows.map(r => r.branch_id))];
+    const [rests, prods, brs] = await Promise.all([
+      col('restaurants').find({ _id: { $in: restIds } }).toArray(),
+      col('menu_items').find({ _id: { $in: productIds } }).toArray(),
+      col('branches').find({ _id: { $in: branchIds } }).toArray(),
+    ]);
+    const rN = Object.fromEntries(rests.map(r => [r._id, r.business_name || r.brand_name]));
+    const pN = Object.fromEntries(prods.map(p => [p._id, p.name]));
+    const bN = Object.fromEntries(brs.map(b => [b._id, b.name]));
+
+    res.json({
+      total, limit, offset,
+      logs: rows.map(r => ({
+        id: r._id,
+        restaurant_id: r.restaurant_id, restaurant_name: rN[r.restaurant_id] || '—',
+        product_id: r.product_id,       product_name:    pN[r.product_id] || '—',
+        branch_id: r.branch_id,         branch_name:     bN[r.branch_id] || '—',
+        status: r.status, reason: r.reason, timestamp: r.timestamp,
+        suggestion: r.suggestion || null,
+      })),
+    });
+  } catch (e) {
+    log.error({ err: e }, 'sync-logs query failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── META SYNC ALERTS ───────────────────────────────────────
+// Lists rows from the new `alerts` collection (META_SYNC_FAILURE,
+// etc). Distinct from the legacy `/alerts` endpoint above which
+// reads the older `platform_alerts` collection — kept for back-compat.
+router.get('/meta-alerts', requireAdmin, async (req, res) => {
+  try {
+    const { restaurant_id, status, type, from, to } = req.query;
+    const limit  = Math.min(parseInt(req.query.limit, 10) || 100, 500);
+
+    const q = {};
+    if (restaurant_id) q.restaurant_id = restaurant_id;
+    if (status)        q.status = status;
+    if (type)          q.type = type;
+    if (from || to) {
+      q.timestamp = {};
+      if (from) q.timestamp.$gte = new Date(from);
+      if (to)   q.timestamp.$lte = new Date(to);
+    }
+
+    const [rows, total] = await Promise.all([
+      col('alerts').find(q).sort({ timestamp: -1 }).limit(limit).toArray(),
+      col('alerts').countDocuments(q),
+    ]);
+
+    const restIds = [...new Set(rows.map(r => r.restaurant_id))];
+    const rests   = await col('restaurants').find({ _id: { $in: restIds } }).toArray();
+    const rN      = Object.fromEntries(rests.map(r => [r._id, r.business_name || r.brand_name]));
+
+    res.json({
+      total, limit,
+      alerts: rows.map(r => ({
+        id: r._id,
+        restaurant_id: r.restaurant_id, restaurant_name: rN[r.restaurant_id] || '—',
+        type: r.type, message: r.message,
+        failure_rate: r.failure_rate, context: r.context || {},
+        status: r.status, timestamp: r.timestamp,
+      })),
+    });
+  } catch (e) {
+    log.error({ err: e }, 'meta-alerts query failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Resolve a meta-alert (flip status: active → resolved).
+router.post('/meta-alerts/:id/resolve', requireAdmin, async (req, res) => {
+  try {
+    await col('alerts').updateOne(
+      { _id: req.params.id },
+      { $set: { status: 'resolved', resolved_at: new Date() } },
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 router.get('/stats', async (req, res) => {
   try {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -462,6 +621,55 @@ router.patch('/restaurants/:id', express.json(), async (req, res) => {
     res.json(mapId(updated));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/admin/settlements/run ─────────────────────────
+// Phase 5 — Manually trigger an on-demand ledger-balance settlement
+// for a single restaurant. Separate from /run-settlement (which runs
+// the legacy weekly cycle across all tenants).
+router.post('/settlements/run', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const restaurantId = req.body?.restaurant_id;
+    if (!restaurantId) return res.status(400).json({ error: 'restaurant_id required' });
+
+    const settlementSvc = require('../services/settlement.service');
+    const result = await settlementSvc.executeSettlement(String(restaurantId), { trigger: 'admin' });
+
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
+      action: 'settlement.payout_triggered', category: 'billing',
+      description: `Admin triggered ledger settlement for ${restaurantId}: ${JSON.stringify(result)}`,
+      restaurantId: String(restaurantId), resourceType: 'settlement',
+      resourceId: result.settlement_id || null, severity: 'info', metadata: result,
+    });
+
+    res.json(result);
+  } catch (e) {
+    log.error({ err: e }, 'admin.settlements.run failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── POST /api/admin/settlements/:id/retry ───────────────────
+// Manual retry of a failed Phase 5 settlement. Cron recovery lives
+// in jobs/settlementPayout.js. Uses the same provider-fallback loop.
+router.post('/settlements/:id/retry', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const settlementSvc = require('../services/settlement.service');
+    const result = await settlementSvc.retrySettlement(req.params.id);
+
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
+      action: 'settlement.retry', category: 'billing',
+      description: `Admin retried settlement ${req.params.id}: ${JSON.stringify(result)}`,
+      resourceType: 'settlement', resourceId: req.params.id, severity: 'info', metadata: result,
+    });
+
+    res.json(result);
+  } catch (e) {
+    log.error({ err: e }, 'admin.settlements.retry failed');
+    res.status(500).json({ error: e.message });
   }
 });
 

@@ -28,7 +28,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const log = require('./src/utils/logger');
 const requestId = require('./src/middleware/requestId');
-const { apiLimiter, authLimiter } = require('./src/middleware/rateLimit');
+const { apiLimiter, authLimiter, globalLimiter, rateLimitFn, limits: rlLimits, isBlocked } = require('./src/middleware/rateLimit');
 
 const app = express();
 
@@ -54,9 +54,35 @@ app.use(cors({
 }));
 
 // ─── RATE LIMITING ───────────────────────────────────────────
-// General API rate limit: 100 req/min per IP
-app.use('/api/', (req, res, next) => {
+// Layered protection:
+//   (a) Global ceiling: 1000 req/min across the whole platform — catches
+//       runaway clients, cron storms, coordinated spam. Applied FIRST so a
+//       flood burns the global bucket, not per-IP buckets.
+//   (b) Per-IP API: 100 req/min — legacy in-memory, fine-grained.
+//   (c) Short-lived Redis block check on /api and /auth so a flagged IP
+//       bounces before doing any real work.
+//   (d) Auth: 10 attempts per 60s per IP (Redis, spec-compliant). Narrower
+//       than before (was 5/15min) but the shorter window matches typical
+//       legit retry patterns — e.g. user mistyping OTP 3–4 times in a row.
+app.use((req, res, next) => {
+  try {
+    const { allowed, retryAfterMs } = globalLimiter.isAllowed('platform');
+    if (!allowed) {
+      res.set('Retry-After', String(Math.ceil((retryAfterMs || 60000) / 1000)));
+      return res.status(429).json({ error: 'Service is temporarily busy. Please try again shortly.' });
+    }
+  } catch { /* fail-open on limiter errors */ }
+  next();
+});
+
+app.use('/api/', async (req, res, next) => {
   const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+  // Reject hot-blocked IPs fast
+  const block = await isBlocked(`auth:${ip}`).catch(() => ({ blocked: false }));
+  if (block.blocked) {
+    res.set('Retry-After', String(block.ttl || 600));
+    return res.status(429).json({ error: 'Too many requests, please try again shortly.', blocked: true });
+  }
   const { allowed, remaining, retryAfterMs } = apiLimiter.isAllowed(ip);
   if (!allowed) {
     res.set('Retry-After', String(Math.ceil((retryAfterMs || 60000) / 1000)));
@@ -65,18 +91,18 @@ app.use('/api/', (req, res, next) => {
   res.set('X-RateLimit-Remaining', String(remaining));
   next();
 });
-// Stricter limit for auth endpoints: 5 attempts per 15 min per IP
-// Exempt GET /auth/me — it's a profile read, not a login attempt
-// Exempt GET /auth/meta-config — public, cacheable, called on page load
+
+// Auth: spec calls for 10/60s per IP. GET /me and /meta-config are exempt
+// — one is a profile read, the other is a public config fetched on every
+// page load; neither is a login attempt.
 app.use('/auth/', (req, res, next) => {
   if (req.method === 'GET' && (req.path === '/me' || req.path === '/meta-config')) return next();
-  const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
-  const { allowed, retryAfterMs } = authLimiter.isAllowed(ip);
-  if (!allowed) {
-    res.set('Retry-After', String(Math.ceil((retryAfterMs || 900000) / 1000)));
-    return res.status(429).json({ error: 'Too many login attempts. Please wait 15 minutes.' });
-  }
-  next();
+  return rateLimitFn(
+    r => `auth:${r.ip || r.headers['x-forwarded-for'] || 'unknown'}`,
+    10,
+    60,
+    { message: 'Too many auth attempts, please try again shortly.' }
+  )(req, res, next);
 });
 
 // ─── STATIC FILES ─────────────────────────────────────────────
@@ -188,10 +214,21 @@ app.get('/feed/:feedToken', async (req, res) => {
 // ─── ROUTES ───────────────────────────────────────────────────
 const { router: authRouter } = require('./src/routes/auth');
 app.use('/auth', express.json(), authRouter);
+// Branch-first product routes. Mounted BEFORE the legacy restaurant
+// router so specific paths (/products/unassigned, /products/:id/assign-branch)
+// resolve here rather than being shadowed by catch-all handlers downstream.
+app.use('/api/restaurant/products', express.json({ limit: '10mb' }), require('./src/routes/products'));
+// Menu file ingestion (XLSX). Mounted BEFORE the catch-all restaurant
+// router so /menu/upload doesn't collide with menu CRUD endpoints there.
+// Multer parses multipart/form-data — do NOT wrap in express.json().
+app.use('/api/restaurant/menu', require('./src/routes/menuUpload'));
 app.use('/api/restaurant', express.json({ limit: '10mb' }), require('./src/routes/restaurant'));
 app.use('/api/restaurant/integrations', express.json(), require('./src/routes/integrations'));
 app.use('/api/upload', express.json(), require('./src/routes/upload'));
 app.use('/api/admin', express.json(), require('./src/routes/admin'));
+// Phase 1 (Commit A): customer-facing API — addresses + profile. Cart
+// / reorder / order-create land with the WhatsApp flow handler (Commit B).
+app.use('/api/customer', express.json(), require('./src/routes/customer'));
 app.use('/api/admin/analytics', express.json(), require('./src/routes/analytics'));
 app.use('/api/cron', express.json(), require('./src/routes/cron'));
 app.use('/api/webhook-health', require('./src/routes/webhookHealth'));
@@ -246,6 +283,16 @@ app.get('*', (req, res) => {
 
 // ─── ERROR HANDLER ────────────────────────────────────────────
 app.use((err, req, res, next) => {
+  // RateLimitExceededError bubbled up from service-layer guards (e.g.
+  // orderSvc.createOrder) — surface as HTTP 429 with Retry-After.
+  if (err && err.code === 'RATE_LIMIT_EXCEEDED') {
+    const retryAfterSec = Math.ceil((err.retryAfterMs || 60000) / 1000);
+    res.set('Retry-After', String(retryAfterSec));
+    return res.status(429).json({
+      error: 'Too many requests, please try again shortly.',
+      retry_after_seconds: retryAfterSec,
+    });
+  }
   log.error({ component: 'server', err, requestId: req?.id }, 'Unhandled route error');
   res.status(500).json({
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
@@ -277,6 +324,32 @@ if (process.env.NODE_ENV !== 'production') {
 
     const { schedulePosSync } = require('./src/jobs/pos-sync');
     schedulePosSync();
+
+    const { scheduleRecovery } = require('./src/jobs/recovery');
+    scheduleRecovery();
+
+    // Mongo-backed outbound WhatsApp message worker. Polls `message_jobs`,
+    // delegates to wa.sendMessage, retries with exponential backoff.
+    require('./src/queue/messageWorker').start();
+
+    // Phase 3: post-payment fan-out worker. Handles ORDER_DISPATCH,
+    // CUSTOMER_NOTIFICATION, POS_SYNC jobs enqueued by the Razorpay
+    // payment-success path. Persistent retries + process-restart safety.
+    require('./src/queue/postPaymentJobs').start();
+
+    // Phase 3.1: nightly ledger-vs-Razorpay reconciliation. STUB — the
+    // Razorpay settlements fetch is a placeholder. Scheduling it now so
+    // cron wiring/ops are in place when the fetch lands.
+    require('./src/jobs/reconciliation').schedule();
+
+    // Phase 4: catalog sync scheduler. Claims due rows from
+    // catalog_sync_schedule and dispatches CATALOG_SYNC jobs.
+    require('./src/services/catalogSyncQueue').startProcessor();
+
+    // Phase 5: daily on-demand settlement payout cron. Drains each
+    // tenant's restaurant_ledger balance into a paise-shaped settlement
+    // row + Razorpay payout (subject to MIN_PAYOUT_PAISE threshold).
+    require('./src/jobs/settlementPayout').schedule();
   });
 }
 
