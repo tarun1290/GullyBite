@@ -131,6 +131,8 @@ async function getSettlements(restaurantId, { page = 1, limit = 25 } = {}) {
       status: s.status,
       payout_id: s.payout_id,
       payout_provider: s.payout_provider || null,
+      payout_mode: s.payout_mode || 'auto',
+      external_reference: s.external_reference || null,
       attempt_count: s.attempt_count || 0,
       last_attempt_at: s.last_attempt_at || null,
       failure_reason: s.failure_reason,

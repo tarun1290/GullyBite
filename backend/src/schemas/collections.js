@@ -473,6 +473,11 @@ const settlements = {
     status:                { type: 'string', enum: ['pending', 'processing', 'completed', 'failed'] },
     payout_id:             { type: 'string' },
     payout_provider:       { type: 'string', enum: ['razorpay', 'fallback_provider'] },
+    // Phase 5.1: manual payouts. 'auto' runs the provider loop; 'manual'
+    // skips the payout API — ops records the transfer externally and
+    // confirms via POST /admin/settlements/confirm with an external_reference.
+    payout_mode:           { type: 'string', enum: ['auto', 'manual'] },
+    external_reference:    { type: 'string' },
     attempt_count:         { type: 'number' },
     last_attempt_at:       { type: 'date' },
     processed_at:          { type: 'date' },

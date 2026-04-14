@@ -90,10 +90,11 @@ async function calculateSettlement(restaurantId) {
 }
 
 // ─── 2. EXECUTE ─────────────────────────────────────────────
-async function executeSettlement(restaurantId, { trigger = 'manual' } = {}) {
+async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode = 'auto' } = {}) {
   if (!restaurantId) throw new Error('executeSettlement: restaurantId required');
   const rid = String(restaurantId);
-  log.info({ restaurantId: rid, trigger }, 'settlement.start');
+  const mode = payout_mode === 'manual' ? 'manual' : 'auto';
+  log.info({ restaurantId: rid, trigger, payout_mode: mode }, 'settlement.start');
 
   // (14) Idempotency — one in-flight settlement at a time per tenant.
   const inflight = await col(COLLECTION).findOne({
@@ -117,7 +118,8 @@ async function executeSettlement(restaurantId, { trigger = 'manual' } = {}) {
     { _id: rid },
     { projection: { business_name: 1, razorpay_fund_acct_id: 1 } }
   );
-  if (!restaurant?.razorpay_fund_acct_id) {
+  // Manual mode skips the payout API entirely — no fund account needed.
+  if (mode === 'auto' && !restaurant?.razorpay_fund_acct_id) {
     log.warn({ restaurantId: rid }, 'settlement.skip.no_fund_account');
     return { skipped: true, reason: 'no_fund_account' };
   }
@@ -139,6 +141,8 @@ async function executeSettlement(restaurantId, { trigger = 'manual' } = {}) {
     status: 'processing',
     payout_id: null,
     payout_provider: null,
+    payout_mode: mode,
+    external_reference: null,
     attempt_count: 0,
     last_attempt_at: null,
     trigger,
@@ -146,6 +150,39 @@ async function executeSettlement(restaurantId, { trigger = 'manual' } = {}) {
     processed_at: null,
     failure_reason: null,
   });
+
+  // Manual mode: skip the provider loop. Reserve a synthetic payout_id
+  // so confirmPayout/failPayout (keyed by payout_id) can address this
+  // row, and write a pending ledger debit so balance stays reserved.
+  if (mode === 'manual') {
+    const manualPayoutId = `manual_${settlementId}`;
+    await col(COLLECTION).updateOne(
+      { _id: settlementId },
+      { $set: { payout_id: manualPayoutId, payout_provider: 'manual', attempt_count: 1, last_attempt_at: now } },
+    );
+    try {
+      await ledger.debit({
+        restaurantId: rid,
+        amountPaise: amount,
+        refType: 'payout',
+        refId: manualPayoutId,
+        status: 'pending',
+        notes: `Manual settlement ${settlementId}`,
+      });
+    } catch (ledgerErr) {
+      log.error({ err: ledgerErr, settlementId, payoutId: manualPayoutId }, 'settlement.manual.ledger_debit_failed');
+    }
+    log.info({ settlementId, payoutId: manualPayoutId, amount }, 'settlement.manual.opened');
+    return {
+      success: true,
+      confirmed: false,
+      manual: true,
+      settlement_id: settlementId,
+      payout_id: manualPayoutId,
+      payout_mode: 'manual',
+      amount_paise: amount,
+    };
+  }
 
   return _attemptPayout(settlementId, restaurant.razorpay_fund_acct_id, amount);
 }
@@ -299,7 +336,7 @@ async function _alertAdminOnFailure(settlementId, reason) {
 // as successful. Flips the ledger entry pending→completed AND the
 // settlement row processing→completed. Both updates are idempotent
 // (no-op if already completed).
-async function confirmPayout(payoutId) {
+async function confirmPayout(payoutId, { externalReference = null } = {}) {
   if (!payoutId) throw new Error('confirmPayout: payoutId required');
   const pid = String(payoutId);
 
@@ -323,9 +360,11 @@ async function confirmPayout(payoutId) {
     log.warn({ payoutId: pid, settlementId: settlement._id }, 'confirmPayout.ledger_entry_missing');
   }
 
+  const set = { status: 'completed', processed_at: new Date(), failure_reason: null };
+  if (externalReference) set.external_reference = String(externalReference);
   await col(COLLECTION).updateOne(
     { _id: settlement._id, status: { $ne: 'completed' } },
-    { $set: { status: 'completed', processed_at: new Date(), failure_reason: null } },
+    { $set: set },
   );
 
   log.info({ payoutId: pid, settlementId: settlement._id }, 'settlement.payout.confirmed');

@@ -632,9 +632,10 @@ router.post('/settlements/run', requireAdmin, express.json(), async (req, res) =
   try {
     const restaurantId = req.body?.restaurant_id;
     if (!restaurantId) return res.status(400).json({ error: 'restaurant_id required' });
+    const payout_mode = req.body?.payout_mode === 'manual' ? 'manual' : 'auto';
 
     const settlementSvc = require('../services/settlement.service');
-    const result = await settlementSvc.executeSettlement(String(restaurantId), { trigger: 'admin' });
+    const result = await settlementSvc.executeSettlement(String(restaurantId), { trigger: 'admin', payout_mode });
 
     logActivity({
       actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
@@ -669,6 +670,61 @@ router.post('/settlements/:id/retry', requireAdmin, express.json(), async (req, 
     res.json(result);
   } catch (e) {
     log.error({ err: e }, 'admin.settlements.retry failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── POST /api/admin/settlements/confirm ─────────────────────
+// Phase 5.1 — Ops confirms a manual (or stuck auto) payout landed at
+// the bank. Flips ledger pending→completed and settlement→completed,
+// stores the bank reference / UTR on the settlement row.
+router.post('/settlements/confirm', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const { payout_id, external_reference } = req.body || {};
+    if (!payout_id) return res.status(400).json({ error: 'payout_id required' });
+    if (!external_reference) return res.status(400).json({ error: 'external_reference required' });
+
+    const settlementSvc = require('../services/settlement.service');
+    const result = await settlementSvc.confirmPayout(String(payout_id), { externalReference: String(external_reference) });
+
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
+      action: 'settlement.payout_confirmed', category: 'billing',
+      description: `Admin confirmed payout ${payout_id} (ref ${external_reference}): ${JSON.stringify(result)}`,
+      resourceType: 'settlement', resourceId: result.settlement_id || null, severity: 'info',
+      metadata: { payout_id, external_reference, ...result },
+    });
+
+    res.json(result);
+  } catch (e) {
+    log.error({ err: e }, 'admin.settlements.confirm failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── POST /api/admin/settlements/fail ────────────────────────
+// Phase 5.1 — Ops marks a payout as failed (wire rejected, wrong
+// account, etc.). Un-reserves the pending ledger debit or writes a
+// compensating credit if the ledger was already completed.
+router.post('/settlements/fail', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const { payout_id, reason } = req.body || {};
+    if (!payout_id) return res.status(400).json({ error: 'payout_id required' });
+
+    const settlementSvc = require('../services/settlement.service');
+    const result = await settlementSvc.failPayout(String(payout_id), reason || 'admin_marked_failed');
+
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
+      action: 'settlement.payout_failed', category: 'billing',
+      description: `Admin failed payout ${payout_id}: ${reason || 'admin_marked_failed'}`,
+      resourceType: 'settlement', resourceId: result.settlement_id || null, severity: 'warn',
+      metadata: { payout_id, reason, ...result },
+    });
+
+    res.json(result);
+  } catch (e) {
+    log.error({ err: e }, 'admin.settlements.fail failed');
     res.status(500).json({ error: e.message });
   }
 });
