@@ -59,7 +59,25 @@ const FIELD_KEYWORDS = {
   food_type:   ['foodtype', 'vegnonveg', 'vegnon', 'vegtype', 'diet'],
   tax:         ['tax', 'taxpercentage', 'gst', 'gstpct'],
   availability:['available', 'availability', 'instock', 'isavailable', 'active'],
+  // CRIT-2A-03: additional columns the normaliser now consumes. Sparse —
+  // operators aren't required to include them; the builder fills gaps.
+  retailer_id: ['retailerid', 'skuid', 'sku', 'externalid'],
+  product_tags:['producttags', 'tags', 'labels'],
+  size:        ['size', 'variant', 'variation', 'portion'],
 };
+
+// Matches the per-integration slugify helper (petpooja.js:25,
+// urbanpiper.js:29, dotpe.js:33). Kept as an inline copy rather than
+// extracted because those integrations are out of scope per the fix spec.
+function slugify(str) {
+  return String(str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+// retailer_id contract: alphanumeric segments separated by single hyphens,
+// no leading/trailing hyphen, no underscores or whitespace. Matches what
+// slugify produces and what Meta catalog accepts. Case-insensitive so
+// existing POS-sourced IDs like `PP-12345-large` stay valid.
+const RETAILER_ID_PATTERN = /^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$/;
 
 function _normHeader(h) {
   return String(h || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -96,7 +114,18 @@ function _row(raw, map) {
     food_type:   get('food_type'),
     tax_percentage: get('tax'),
     availability:   get('availability'),
+    retailer_id:    get('retailer_id'),
+    product_tags:   get('product_tags'),
+    size:           get('size'),
   };
+}
+
+// Parse product_tags from a row. Accepts arrays (from structured sources)
+// and comma/pipe-delimited strings (typical CSV/XLSX representation).
+function _parseTags(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  return String(raw).split(/[|,;]/);
 }
 
 async function transformUpload(uploadId, mappingOverride) {
@@ -182,7 +211,7 @@ function _toBool(v, fallback = true) {
   return fallback;
 }
 
-function normalizeProduct(input) {
+function normalizeProduct(input, context = {}) {
   const name = (input.name || '').toString().trim();
   const price = _toNumber(input.price);
 
@@ -194,6 +223,32 @@ function normalizeProduct(input) {
     category = detectCategory(name);
   }
 
+  const size = input.size?.toString().trim() || null;
+  const foodType = input.food_type?.toString().toLowerCase().trim() || null;
+
+  // ─── retailer_id (CRIT-2A-03) ─────────────────────────────────
+  // Keep a caller-supplied retailer_id only if it matches the contract.
+  // Otherwise build one from branch-or-restaurant slug + item + size so
+  // Meta catalog sync works without manual spreadsheet surgery.
+  let retailerId = input.retailer_id?.toString().trim() || '';
+  if (!retailerId || !RETAILER_ID_PATTERN.test(retailerId)) {
+    const prefix = slugify(context.branchSlug || context.branchName
+                         || context.restaurantSlug || context.restaurantName
+                         || 'csv');
+    const parts = [prefix, slugify(name)].filter(Boolean);
+    if (size) parts.push(slugify(size));
+    retailerId = parts.join('-');
+  }
+
+  // ─── product_tags (CRIT-2A-03) ────────────────────────────────
+  // Union of caller-supplied tags + food_type + category, lowercased,
+  // trimmed, deduped. Matches the shape petpooja.js builds at line 88.
+  const rawTags = _parseTags(input.product_tags);
+  const merged = [...rawTags, foodType, category]
+    .map(t => (t == null ? '' : String(t).toLowerCase().trim()))
+    .filter(Boolean);
+  const productTags = Array.from(new Set(merged));
+
   const out = {
     name,
     description:  input.description?.toString().trim() || name,
@@ -202,8 +257,11 @@ function normalizeProduct(input) {
     currency:     'INR',
     availability: _toBool(input.availability, true),
     image_url:    input.image_url?.toString().trim() || DEFAULT_IMAGE_URL,
-    food_type:    input.food_type?.toString().toLowerCase().trim() || null,
+    food_type:    foodType,
     tax_percentage: _toNumber(input.tax_percentage),
+    retailer_id:  retailerId || null,
+    product_tags: productTags,
+    size,
     normalized:   true,
   };
 
@@ -229,6 +287,28 @@ function normalizeProduct(input) {
 // meta_status. Branch assignment is intentionally skipped — products
 // land as is_unassigned=true per spec.
 async function insertNormalizedProducts(restaurantId, uploadId, normalizedRows) {
+  // ─── retailer_id uniqueness (CRIT-2A-03) ─────────────────────
+  // Validate BEFORE any DB write so a conflicting batch fails fast
+  // instead of inserting half the rows. Collects every duplicate group
+  // so the UI can surface all conflicts in one pass.
+  const byRetailerId = new Map();
+  for (let i = 0; i < normalizedRows.length; i++) {
+    const rid = normalizedRows[i].retailer_id;
+    if (!rid) continue;
+    if (!byRetailerId.has(rid)) byRetailerId.set(rid, []);
+    byRetailerId.get(rid).push({ row_index: i, name: normalizedRows[i].name });
+  }
+  const duplicates = [];
+  for (const [rid, rows] of byRetailerId.entries()) {
+    if (rows.length > 1) duplicates.push({ retailer_id: rid, rows });
+  }
+  if (duplicates.length) {
+    const err = new Error(`retailer_id conflicts in upload: ${duplicates.map(d => d.retailer_id).join(', ')}`);
+    err.statusCode = 400;
+    err.duplicates = duplicates;
+    throw err;
+  }
+
   const inserted = [];
   const skipped  = [];
   for (const row of normalizedRows) {
@@ -246,6 +326,7 @@ async function insertNormalizedProducts(restaurantId, uploadId, normalizedRows) 
         tax_percentage:row.tax_percentage,
         food_type:     row.food_type,
         image_url:     row.image_url,
+        retailer_id:   row.retailer_id,
       });
       // Stamp additive fields on the row we just wrote.
       await col('menu_items').updateOne(
@@ -258,6 +339,8 @@ async function insertNormalizedProducts(restaurantId, uploadId, normalizedRows) 
             currency:         row.currency,
             is_available:     row.availability,
             price_flag:       row.price_flag || 'normal',
+            product_tags:     row.product_tags || [],
+            size:             row.size || null,
         }},
       );
       inserted.push({ id: product._id, name: product.name, meta_status: row.meta_status });

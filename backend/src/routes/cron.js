@@ -286,4 +286,77 @@ router.get('/payout-retry', async (req, res) => {
   }
 });
 
+// ─── RATING REQUEST RECONCILIATION (every 5 minutes) ─────────
+// Defense-in-depth for CRIT-2A-01. The primary path is the LOYALTY_AWARD
+// durable job (queue/postPaymentJobs.js) scheduled 30 min after DELIVERED.
+// This cron catches orders whose job was lost — e.g. a dropped message_jobs
+// row or a bug that prevented enqueue — and fires the rating ask.
+//
+// Dedup strategy:
+//   • rating_request_due <= now        — due window reached
+//   • rating_requested_at = null       — not already sent (set by the
+//                                         queue handler on success OR by
+//                                         this cron on success)
+//   • no pending/processing LOYALTY_AWARD job for the orderId — if the
+//     job is still scheduled or in-flight, let it handle the send to
+//     preserve the 30-min delay semantics and avoid a race.
+router.post('/rating-requests', async (req, res) => {
+  try {
+    const now = new Date();
+    const candidates = await col('orders').find({
+      status: 'DELIVERED',
+      rating_request_due: { $lte: now },
+      rating_requested_at: null,
+    }).limit(50).toArray();
+
+    if (!candidates.length) {
+      return res.json({ ok: true, processed: 0, errors: 0 });
+    }
+
+    const candidateIds = candidates.map(o => String(o._id));
+    const liveJobs = await col('message_jobs').find({
+      type: 'LOYALTY_AWARD',
+      status: { $in: ['pending', 'processing'] },
+      'payload.orderId': { $in: candidateIds },
+    }, { projection: { 'payload.orderId': 1 } }).toArray();
+    const heldByJob = new Set(liveJobs.map(j => j.payload?.orderId));
+
+    const { sendRatingRequest } = require('../webhooks/whatsapp');
+    const { resolveRecipient } = require('../services/customerIdentity');
+    const orderSvc = require('../services/order');
+    const metaConfig = require('../config/meta');
+
+    let processed = 0, errors = 0, skipped = 0;
+    for (const order of candidates) {
+      const orderId = String(order._id);
+      if (heldByJob.has(orderId)) { skipped++; continue; }
+      try {
+        const full = await orderSvc.getOrderDetails(orderId);
+        if (!full) { skipped++; continue; }
+        const customer = await col('customers').findOne({ _id: full.customer_id });
+        const waAcc    = await col('whatsapp_accounts').findOne({ restaurant_id: full.restaurant_id, is_active: true });
+        const waToken  = metaConfig.systemUserToken || waAcc?.access_token;
+        const toId     = customer ? (customer.wa_phone || customer.bsuid) : resolveRecipient(full);
+        if (!toId || !waAcc?.phone_number_id || !waToken) { skipped++; continue; }
+
+        await sendRatingRequest(orderId, waAcc.phone_number_id, waToken, toId);
+        await col('orders').updateOne(
+          { _id: orderId, rating_requested_at: null },
+          { $set: { rating_requested_at: new Date() } },
+        );
+        processed++;
+      } catch (err) {
+        log.warn({ err, orderId }, 'rating reconciliation send failed');
+        errors++;
+      }
+    }
+
+    log.info({ processed, errors, skipped, candidates: candidates.length }, 'rating-requests cron complete');
+    res.json({ ok: true, processed, errors, skipped });
+  } catch (e) {
+    log.error({ err: e }, 'rating-requests cron error');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 module.exports = router;

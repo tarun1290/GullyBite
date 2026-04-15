@@ -1,5 +1,19 @@
 // src/services/payoutEngine.js
 // ════════════════════════════════════════════════════════════════
+// DEPRECATED: use settlement.service.js. This file is retained
+// until order_settlements collection is confirmed empty in
+// production. Do not add new callers.
+//
+// Current live callers (as of 2026-04-15) — migrate before removal:
+//   • queue/postPaymentJobs.js  — createSettlementForOrder + processSettlement
+//   • webhooks/razorpay.js      — handlePayoutWebhook
+//   • routes/admin.js           — retryFailedSettlement / retryAllFailedSettlements / processSettlement
+//   • routes/cron.js            — retryAllFailedSettlements (payout-retry cron)
+//   • jobs/recovery.js          — calls payoutEngine.retryPayout (broken — not exported)
+//
+// Authoritative settlement engine: src/services/settlement.service.js
+// (balance-based, writes to `settlements` collection).
+// ════════════════════════════════════════════════════════════════
 // PER-ORDER SETTLEMENT + PAYOUT ENGINE (v2)
 // ════════════════════════════════════════════════════════════════
 // Production-grade, multi-tenant safe, idempotent payout pipeline.

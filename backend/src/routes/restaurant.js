@@ -4512,6 +4512,220 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── PERSISTENT ORDER NOTIFICATIONS (Zomato/Swiggy-style) ─────
+// Backend chokepoint stamps notified_at + broadcasts new_paid_order
+// when payment lands. The dashboard either receives that broadcast
+// over WebSocket or polls this endpoint when the WS is down. Either
+// way, the modal stays open (looping sound) until the restaurant
+// clicks Accept (PAID → CONFIRMED) or Decline (refund + PAID →
+// CANCELLED). Acknowledgement is recorded on the order so the same
+// modal never resurfaces.
+//
+// Path is /pending-order-notifications (NOT under /orders/:orderId)
+// to avoid Express shadowing by the /orders/:orderId GET above.
+router.get('/pending-order-notifications', async (req, res) => {
+  try {
+    const windowMin = Math.min(parseInt(req.query.window_min) || 60, 240);
+    const since = new Date(Date.now() - windowMin * 60 * 1000);
+
+    const orders = await col('orders').find({
+      restaurant_id: req.restaurantId,
+      status: 'PAID',
+      acknowledged_at: { $exists: false },
+      notified_at: { $gte: since },
+    }).sort({ notified_at: 1 }).limit(20).toArray();
+
+    if (!orders.length) return res.json([]);
+
+    const enriched = await Promise.all(orders.map(async o => {
+      const [customer, items] = await Promise.all([
+        col('customers').findOne({ _id: o.customer_id }),
+        col('order_items').find({ order_id: String(o._id) }).toArray(),
+      ]);
+      return {
+        orderId: String(o._id),
+        orderNumber: o.order_number,
+        customerName: customer?.name || o.customer_name || '',
+        customerPhone: customer?.wa_phone || o.customer_phone || '',
+        totalRs: o.total_rs,
+        itemCount: items.reduce((s, i) => s + (i.quantity || 0), 0),
+        items: items.slice(0, 6).map(i => ({ name: i.name || i.item_name, quantity: i.quantity })),
+        orderType: o.order_type || 'delivery',
+        notifiedAt: o.notified_at,
+      };
+    }));
+
+    res.json(enriched);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/restaurant/orders/:orderId/accept
+// PAID → CONFIRMED. Stamps acknowledgement so the modal closes and
+// doesn't reappear on the next poll. The state-engine update is the
+// authoritative transition; ack fields are denormalized for the UI.
+router.post('/orders/:orderId/accept', requireApproved, requirePermission('manage_orders'), async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const order = await col('orders').findOne({ _id: orderId });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    // Already acknowledged — idempotent success so a duplicate click
+    // (or two managers racing) doesn't surface an error.
+    if (order.acknowledged_at) {
+      return res.json({ success: true, alreadyAcknowledged: true, status: order.status });
+    }
+    if (order.status !== 'PAID') {
+      return res.status(409).json({ error: `Cannot accept order in status ${order.status}` });
+    }
+
+    const now = new Date();
+    await col('orders').updateOne(
+      { _id: orderId, acknowledged_at: { $exists: false } },
+      { $set: { acknowledged_at: now, acknowledged_by: req.user?.id || null } }
+    );
+
+    await orderSvc.updateStatus(orderId, 'CONFIRMED', {
+      actor: req.user?.email || req.user?.phone || 'restaurant',
+      actorType: 'restaurant',
+    });
+
+    ws.broadcastOrder(req.restaurantId, 'order_acknowledged', {
+      orderId, action: 'accept', newStatus: 'CONFIRMED',
+    });
+    ws.broadcastOrder(req.restaurantId, 'order_status_changed', {
+      orderId, newStatus: 'CONFIRMED', updatedAt: now.toISOString(),
+    });
+
+    // Customer confirmation — fire-and-forget so a WhatsApp hiccup
+    // doesn't fail the accept call.
+    try {
+      const fullOrder = await orderSvc.getOrderDetails(orderId);
+      if (fullOrder?.phone_number_id) {
+        notifyOrderStatus(
+          req.restaurantId,
+          fullOrder.phone_number_id, fullOrder.access_token, fullOrder.wa_phone,
+          'CONFIRMED',
+          {
+            _orderId: orderId,
+            order_number: fullOrder.order_number,
+            customer_name: fullOrder.customer_name,
+            total_rs: `₹${parseFloat(fullOrder.total_rs).toFixed(0)}`,
+            branch_name: fullOrder.branch_name,
+            restaurant_name: fullOrder.business_name,
+          }
+        ).catch(() => {});
+      }
+    } catch (_) {}
+
+    res.json({ success: true, status: 'CONFIRMED' });
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'order.accepted', category: 'order',
+      description: `Order ${orderId} accepted (PAID → CONFIRMED)`,
+      restaurantId: req.restaurantId,
+      branchId: order.branch_id,
+      resourceType: 'order', resourceId: orderId,
+      severity: 'info',
+    });
+  } catch (e) {
+    req.log?.error?.({ err: e, orderId: req.params.orderId }, 'order accept failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/restaurant/orders/:orderId/decline
+// Restaurant rejects a PAID order. Issues a Razorpay refund first;
+// only if that succeeds do we transition PAID → CANCELLED. The order
+// stays in PAID (with acknowledged_at set) on refund failure so ops
+// can retry — never trap the customer in limbo.
+// Body: { reason: string }
+router.post('/orders/:orderId/decline', express.json(), requireApproved, requirePermission('manage_orders'), async (req, res) => {
+  try {
+    const orderId = req.params.orderId;
+    const reason = (req.body?.reason || '').toString().trim().slice(0, 500) || 'Restaurant declined';
+
+    const order = await col('orders').findOne({ _id: orderId });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (order.acknowledged_at) {
+      return res.json({ success: true, alreadyAcknowledged: true, status: order.status });
+    }
+    if (order.status !== 'PAID') {
+      return res.status(409).json({ error: `Cannot decline order in status ${order.status}` });
+    }
+
+    // Issue refund FIRST. If Razorpay rejects we abort so we don't end
+    // up with a CANCELLED order the customer was never refunded for.
+    let refund = null;
+    try {
+      const payment = require('../services/payment');
+      refund = await payment.issueRefund(orderId, `Restaurant declined: ${reason}`);
+    } catch (err) {
+      req.log?.error?.({ err, orderId }, 'decline refund failed');
+      return res.status(502).json({ error: 'Refund failed — order not cancelled. Please retry or contact support.' });
+    }
+
+    const now = new Date();
+    await col('orders').updateOne(
+      { _id: orderId, acknowledged_at: { $exists: false } },
+      { $set: {
+          acknowledged_at: now,
+          acknowledged_by: req.user?.id || null,
+          decline_reason: reason,
+          refund_id: refund?.id || null,
+      } }
+    );
+
+    await orderSvc.updateStatus(orderId, 'CANCELLED', {
+      actor: req.user?.email || req.user?.phone || 'restaurant',
+      actorType: 'restaurant',
+      cancelReason: reason,
+    });
+
+    ws.broadcastOrder(req.restaurantId, 'order_acknowledged', {
+      orderId, action: 'decline', newStatus: 'CANCELLED',
+    });
+    ws.broadcastOrder(req.restaurantId, 'order_status_changed', {
+      orderId, newStatus: 'CANCELLED', updatedAt: now.toISOString(),
+    });
+
+    // Customer notification — fire-and-forget.
+    try {
+      const fullOrder = await orderSvc.getOrderDetails(orderId);
+      if (fullOrder?.phone_number_id) {
+        const waSvc = require('../services/whatsapp');
+        waSvc.sendText(
+          fullOrder.phone_number_id, fullOrder.access_token, fullOrder.wa_phone,
+          `We're sorry — your order #${fullOrder.order_number} couldn't be accepted by the restaurant.\n\nA full refund of ₹${parseFloat(fullOrder.total_rs).toFixed(0)} has been initiated and will reach you in 5–7 business days.\n\nReason: ${reason}`
+        ).catch(() => {});
+      }
+    } catch (_) {}
+
+    res.json({ success: true, status: 'CANCELLED', refundId: refund?.id || null });
+
+    log({
+      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      action: 'order.declined', category: 'order',
+      description: `Order ${orderId} declined (PAID → CANCELLED, refund ${refund?.id || 'n/a'})`,
+      restaurantId: req.restaurantId,
+      branchId: order.branch_id,
+      resourceType: 'order', resourceId: orderId,
+      severity: 'warn',
+      metadata: { reason, refund_id: refund?.id || null },
+    });
+  } catch (e) {
+    req.log?.error?.({ err: e, orderId: req.params.orderId }, 'order decline failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // PUT /api/restaurant/orders/:orderId/delivery
 router.put('/orders/:orderId/delivery', async (req, res) => {
   try {
@@ -6161,6 +6375,9 @@ router.post('/users', requirePermission('manage_users'), express.json(), async (
       phone: phone.trim(),
       email: req.body.email || null,
       pin_hash: pinHash,
+      pin_attempts: 0,
+      pin_locked_until: null,
+      token_version: 0,
       role,
       branch_ids: branchIds || [],
       permissions,
@@ -6214,7 +6431,10 @@ router.delete('/users/:id', requirePermission('manage_users'), async (req, res) 
     if (user.role === 'owner') return res.status(403).json({ error: 'Cannot delete owner account' });
     if (req.userId && req.params.id === req.userId) return res.status(400).json({ error: 'Cannot delete yourself' });
 
-    await col('restaurant_users').updateOne({ _id: req.params.id }, { $set: { is_active: false, updated_at: new Date() } });
+    await col('restaurant_users').updateOne(
+      { _id: req.params.id },
+      { $set: { is_active: false, updated_at: new Date() }, $inc: { token_version: 1 } }
+    );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -6230,7 +6450,10 @@ router.put('/users/:id/reset-pin', requirePermission('manage_users'), express.js
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const pinHash = await bcrypt.hash(pin, 10);
-    await col('restaurant_users').updateOne({ _id: req.params.id }, { $set: { pin_hash: pinHash, updated_at: new Date() } });
+    await col('restaurant_users').updateOne(
+      { _id: req.params.id },
+      { $set: { pin_hash: pinHash, pin_attempts: 0, pin_locked_until: null, updated_at: new Date() }, $inc: { token_version: 1 } }
+    );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -6289,6 +6512,24 @@ router.get('/campaigns/analytics', requirePermission('view_analytics'), async (r
       to:   req.query.to,
     });
     res.json({ items: rows, total: rows.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Daily-usage gauge for the campaigns tab (CRIT-2B-10).
+router.get('/campaigns/daily-usage', requirePermission('manage_settings'), async (req, res) => {
+  try {
+    const usage = await campaignSvc.getDailyUsage(req.restaurantId);
+    res.json(usage);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Tag discovery for campaign targeting UI (CRIT-2B-08). Returns the tags
+// actually present on customer_metrics docs for this restaurant's customers,
+// so the dashboard only surfaces tags that have live recipients.
+router.get('/customers/tags', requirePermission('manage_settings'), async (req, res) => {
+  try {
+    const tags = await campaignSvc.getAvailableTags(req.restaurantId);
+    res.json({ tags });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

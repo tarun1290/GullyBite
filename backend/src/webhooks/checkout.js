@@ -12,6 +12,8 @@ const { decryptCheckoutPayload, verifyCheckoutSignature } = require('../services
 const { calculateOrderCharges } = require('../services/charges');
 const orderSvc = require('../services/order');
 const customerIdentity = require('../services/customerIdentity');
+const { isBsuid } = customerIdentity;
+const { hashPhone } = require('../utils/phoneHash');
 const log = require('../utils/logger').child({ component: 'checkout' });
 
 // ─── WEBHOOK VERIFICATION ───────────────────────────────────────
@@ -275,14 +277,6 @@ async function handleOrder(value) {
   // Discount
   const discountRs = (data.discount?.amount || 0) / 100;
 
-  // Calculate charges
-  const charges = calculateOrderCharges(
-    restaurant,
-    subtotalRs,
-    isPickup ? 0 : deliveryFeeRs,
-    discountRs
-  );
-
   // Customer info
   const customerPhone = data.customer_phone || data.phone;
   const customerName = data.shipping_address?.name || data.customer_name || '';
@@ -290,11 +284,70 @@ async function handleOrder(value) {
     ? [data.shipping_address.address_line1, data.shipping_address.address_line2, data.shipping_address.city].filter(Boolean).join(', ')
     : '';
 
-  // [BSUID] Use universal identity resolution for customer creation
+  // [BSUID] Use universal identity resolution for customer creation.
+  // Meta may supply a BSUID on the checkout payload; pass it through so
+  // downstream unification ties this order to the same customer record
+  // regardless of entry path (catalog chat vs. checkout endpoint).
+  // [BSUID] Detect BSUID-format identifier on the checkout payload before
+  // identity resolution. Meta may surface the WhatsApp Username (w-prefixed,
+  // 20+ chars) on any of several fields depending on rollout phase, so check
+  // the explicit bsuid fields plus the raw wa_id / customer_phone slots.
+  const sightedBsuidCheckout =
+    [data.bsuid, data.customer_bsuid, data.wa_id, data.customer_phone, data.phone]
+      .find(v => v && isBsuid(String(v))) || null;
+
   const customer = await customerIdentity.getOrCreateCustomer({
     wa_phone: customerPhone,
+    bsuid: data.bsuid || data.customer_bsuid || sightedBsuidCheckout || null,
     profile_name: customerName,
   });
+
+  // Fire-and-forget BSUID sighting stamp. Never block the order path.
+  if (sightedBsuidCheckout) {
+    setImmediate(() => {
+      const now = new Date();
+      col('customers').updateOne(
+        { _id: customer.id },
+        { $set: { bsuid: sightedBsuidCheckout, bsuid_seen_at: now } }
+      ).then(() => {
+        log.info(`[BSUID] Detected on checkout for customer ${sightedBsuidCheckout.slice(0, 12)}…`);
+      }).catch(err => log.warn({ err }, '[BSUID] checkout stamp failed'));
+    });
+  }
+
+  // CRIT-2A-04: resolve loyalty tier for this customer+restaurant so the
+  // free-delivery waiver (Gold ≥ ₹500, Platinum always) lands in the
+  // charges we write onto the order. Failure is non-fatal — a missing
+  // record just means the customer doesn't qualify yet. Must run BEFORE
+  // calculateOrderCharges so the waiver actually applies.
+  let loyaltyTier = null;
+  try {
+    const loyalty = require('../services/loyalty');
+    const bal = await loyalty.getBalance(customer.id, waAccount.restaurant_id);
+    loyaltyTier = bal?.tier || null;
+  } catch (err) {
+    log.warn({ err, customerId: customer.id }, 'loyalty tier lookup failed — proceeding without waiver');
+  }
+
+  // Calculate charges (loyaltyTier waives customer delivery for Gold ≥ ₹500 / Platinum)
+  const charges = calculateOrderCharges(
+    restaurant,
+    subtotalRs,
+    isPickup ? 0 : deliveryFeeRs,
+    discountRs,
+    loyaltyTier
+  );
+
+  // Phase 6: identity-layer key, denormalized onto the order so
+  // customer_metrics aggregates don't need to join customers. Same
+  // compute path as services/order.js so both entry points produce
+  // identical hashes for the same phone.
+  let orderPhoneHash = null;
+  try {
+    orderPhoneHash = hashPhone(customerPhone);
+  } catch (err) {
+    log.warn({ err }, 'phone_hash compute failed');
+  }
 
   // Create order
   const orderId = newId();
@@ -304,6 +357,7 @@ async function handleOrder(value) {
     order_number: orderNumber,
     restaurant_id: waAccount.restaurant_id,
     branch_id: branchId,
+    phone_hash: orderPhoneHash,
     customer_id: customer.id,
     customer_name: customerName,
     customer_phone: customerPhone,
@@ -335,9 +389,70 @@ async function handleOrder(value) {
 
   log.info({ orderNumber, totalRs: charges.customer_total_rs, itemCount: orderItems.length }, 'Order created');
 
+  // ─── POST-ORDER HOOKS (fire-and-forget, must never fail the webhook) ──
+  // The HTTP 200 was already sent before handleOrder ran, so these hooks
+  // run off-path. Each is wrapped in its own try/catch so one failure
+  // can't cascade. Mirrors services/order.js:_createOrderImpl post-commit.
+  //
+  // Phase 6 customer_metrics aggregation + BSUID unification side-effects.
+  setImmediate(() => {
+    try {
+      require('../services/customerIdentityLayer').recordOrderCreated({
+        waPhone: customerPhone,
+        customerId: customer.id,
+        restaurantId: waAccount.restaurant_id,
+        name: customerName,
+        totalRs: charges.customer_total_rs,
+      }).catch(err => log.warn({ err, orderNumber }, 'recordOrderCreated failed'));
+    } catch (err) { log.warn({ err, orderNumber }, 'recordOrderCreated dispatch failed'); }
+  });
+
+  // Trust score: +5 for reaching the created-order milestone.
+  try {
+    if (customer.id) {
+      require('../services/trustScore')
+        .recordEvent(String(customer.id), 'order_success')
+        .catch(err => log.warn({ err, orderNumber }, 'trustScore.recordEvent failed'));
+    }
+  } catch (err) { log.warn({ err, orderNumber }, 'trustScore dispatch failed'); }
+
+  // Loyalty earnPoints: NOT called here. order.js also doesn't award points
+  // on create — the LOYALTY_AWARD job is enqueued by updateStatus() when the
+  // order transitions to DELIVERED (see services/order.js:498). Since the
+  // paid branch below calls orderSvc.updateStatus, and subsequent status
+  // transitions (PREPARING → DISPATCHED → DELIVERED) flow through the same
+  // state engine, loyalty fires at the correct milestone without a direct
+  // earnPoints call from this webhook.
+
   // If already paid, confirm the order
   if (data.payment_status === 'paid') {
     await orderSvc.updateStatus(orderId, 'PAID');
+
+    // Persistent-notification handshake — stamp notified_at + broadcast
+    // new_paid_order so the dashboard pops the looping-sound modal.
+    // Mirrors queue/postPaymentJobs._handleCustomerNotification so both
+    // payment paths (Razorpay link + native checkout) trigger the same UX.
+    try {
+      const notifyAt = new Date();
+      const stampRes = await col('orders').updateOne(
+        { _id: orderId, notified_at: { $exists: false } },
+        { $set: { notified_at: notifyAt } }
+      );
+      if (stampRes.modifiedCount > 0) {
+        const ws = require('../services/websocket');
+        ws.broadcastOrder(waAccount.restaurant_id, 'new_paid_order', {
+          orderId,
+          orderNumber,
+          customerName,
+          customerPhone,
+          totalRs: charges.customer_total_rs,
+          itemCount: orderItems.reduce((s, i) => s + i.quantity, 0),
+          items: orderItems.slice(0, 6).map(i => ({ name: i.name, quantity: i.quantity })),
+          orderType: isPickup ? 'pickup' : 'delivery',
+          notifiedAt: notifyAt.toISOString(),
+        });
+      }
+    } catch (err) { log.warn({ err, orderNumber }, 'new_paid_order broadcast failed'); }
 
     // Send confirmation via restaurant's WA
     const wa = require('../services/whatsapp');

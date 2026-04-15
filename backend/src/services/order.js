@@ -69,7 +69,11 @@ const setState = async (convId, newState, sessionUpdates = {}) => {
 // ─── PROCESS WHATSAPP CATALOG ORDER ──────────────────────────
 // deliveryLat/deliveryLng trigger 3PL quote for real delivery pricing
 // orderDetails: { deliveryAddress, customerName, customerPhone } for 3PL API
-const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = null, deliveryLng = null, orderDetails = {}) => {
+// CRIT-2A-04: `loyaltyTier` is threaded through so the delivery-fee
+// waiver applies at cart-preview time (same value the customer sees on
+// the confirmation screen). Null/unknown tiers fall through to the
+// existing paid-delivery math.
+const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = null, deliveryLng = null, orderDetails = {}, loyaltyTier = null) => {
   const retailerIds = productItems.map(i => i.product_retailer_id);
 
   // Branch-first: match items by either the legacy scalar OR the new
@@ -141,7 +145,7 @@ const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = n
     packaging_gst_pct:         restaurant?.packaging_gst_pct         ?? 18,
   };
 
-  const charges = calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs, 0);
+  const charges = calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs, 0, loyaltyTier);
 
   return {
     cart, subtotalRs,
@@ -494,14 +498,26 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
     // Phase 4: replaced setTimeout with a LOYALTY_AWARD job scheduled
     // 30 min out. Gives the customer time to finish the meal before
     // the rating ask lands.
+    //
+    // CRIT-2A-01 defense-in-depth: also stamp rating_request_due so the
+    // /cron/rating-requests reconciliation sweep can catch orders whose
+    // job was dropped. The cron skips any order where rating_requested_at
+    // is already set, so the job firing first is always safe.
+    const ratingDelayMs = 30 * 60 * 1000;
     try {
       const { enqueue, JOB_TYPES } = require('../queue/postPaymentJobs');
       await enqueue(
         JOB_TYPES.LOYALTY_AWARD,
         { orderId: String(orderId) },
-        { delayMs: 30 * 60 * 1000 }
+        { delayMs: ratingDelayMs }
       );
     } catch (e) { log.error({ err: e, orderId }, 'loyalty job enqueue failed'); }
+    try {
+      await col('orders').updateOne(
+        { _id: orderId, rating_request_due: { $exists: false } },
+        { $set: { rating_request_due: new Date(Date.now() + ratingDelayMs) } },
+      );
+    } catch (e) { log.warn({ err: e, orderId }, 'rating_request_due stamp failed'); }
   }
 
   // Fire-and-forget POS status sync

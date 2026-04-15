@@ -306,6 +306,34 @@ const processChange = async (value) => {
     // Best identifier for sending error messages back
     const replyTo = wa_phone || bsuid || msg.from;
 
+    // [BSUID] Persist sighting fire-and-forget — stamp bsuid_seen_at so
+    // we can trace Meta's June 2026 rollout even if the rest of the flow
+    // never writes a customers row (e.g. blocked phone, dedup race).
+    // Also fallback-detects if msg.from is itself BSUID-shaped but
+    // extractIdentifiers didn't surface it (belt-and-braces).
+    const sightedBsuid = bsuid || (customerIdentity.isBsuid(msg.from) ? msg.from : null);
+    if (sightedBsuid) {
+      setImmediate(() => {
+        (async () => {
+          try {
+            const filter = wa_phone
+              ? { $or: [{ bsuid: sightedBsuid }, { wa_phone }] }
+              : { bsuid: sightedBsuid };
+            const res = await col('customers').updateOne(
+              filter,
+              { $set: { bsuid: sightedBsuid, bsuid_seen_at: new Date() } },
+              { upsert: false },
+            );
+            if (res.matchedCount) {
+              console.log(`[BSUID] Detected and stored for customer ${sightedBsuid.slice(0, 12)}…`);
+            }
+          } catch (err) {
+            log.warn({ err, bsuid: sightedBsuid.slice(0, 12) }, '[BSUID] sighting stamp failed');
+          }
+        })();
+      });
+    }
+
     await wa.markRead(phoneNumberId, waAccount.access_token, msg.id);
 
     // [WhatsApp2026] Show typing indicator while processing
@@ -378,6 +406,18 @@ const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
     profile_name: senderName,
   });
   const conv = await orderSvc.getOrCreateConversation(customer.id, String(waAccount._id));
+
+  // [BSUID] Stash BSUID on the live session so downstream handlers can
+  // prefer it for identity resolution without a second DB lookup. Only
+  // writes when the session's current value differs.
+  const sessionBsuid = senderIdentifiers.bsuid || customer.bsuid || null;
+  if (sessionBsuid && conv.session_data?.bsuid !== sessionBsuid) {
+    col('conversations').updateOne(
+      { _id: conv.id },
+      { $set: { 'session_data.bsuid': sessionBsuid } },
+    ).catch(err => log.warn({ err, convId: conv.id }, '[BSUID] session stash failed'));
+    conv.session_data = { ...(conv.session_data || {}), bsuid: sessionBsuid };
+  }
 
   // [BSUID] Handle contacts message type (phone number sharing flow — Step 13)
   if (msg.type === 'contacts' && conv.state === 'AWAITING_PHONE_FOR_PAYMENT') {
@@ -1540,11 +1580,23 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
 
   logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.cart_submitted', category: 'order', description: `Cart submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, branchId: branchId ? String(branchId) : null, severity: 'info' });
 
+  // CRIT-2A-04: resolve loyalty tier for this customer+restaurant so the
+  // free-delivery waiver is reflected in the cart preview and any
+  // subsequent recalculation in this handler. Failure is non-fatal.
+  let loyaltyTier = null;
+  try {
+    const loyalty = require('../services/loyalty');
+    const bal = await loyalty.getBalance(customer.id, waAccount.restaurant_id);
+    loyaltyTier = bal?.tier || null;
+  } catch (err) {
+    log.warn({ err, customerId: customer.id }, 'loyalty tier lookup failed — proceeding without waiver');
+  }
+
   const cart = await orderSvc.buildCartFromCatalogOrder(productItems, branchId, session.deliveryLat, session.deliveryLng, {
     deliveryAddress: session.deliveryAddress,
     customerName: customer.name,
     customerPhone: customer.wa_phone || customer.bsuid || '',
-  });
+  }, loyaltyTier);
 
   if (!cart.cart.length) {
     await wa.sendText(pid, token, to, '⚠️ Some items are no longer available. Please browse the menu again.');
@@ -1604,7 +1656,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   if ((discountRs > 0 || couponData?.freeDelivery) && charges) {
     const { calculateOrderCharges } = require('../services/charges');
     const effectiveDelivery = couponData?.freeDelivery ? 0 : charges.delivery_fee_total_rs;
-    charges = calculateOrderCharges(restConfig, cart.subtotalRs, effectiveDelivery, discountRs);
+    charges = calculateOrderCharges(restConfig, cart.subtotalRs, effectiveDelivery, discountRs, loyaltyTier);
   }
   const finalTotalRs = charges ? charges.customer_total_rs : (cart.subtotalRs + cart.deliveryFeeRs - discountRs);
 

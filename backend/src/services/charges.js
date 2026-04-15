@@ -32,9 +32,9 @@ const DELIVERY_GST_PCT = 18;
  */
 // Delegates to the centralized financial engine — single source of truth for all calculations.
 // This wrapper preserves the existing function signature for backward compatibility.
-function calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs = 0, discountRs = 0) {
+function calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs = 0, discountRs = 0, loyaltyTier = null) {
   const { calculateCheckout } = require('../core/financialEngine');
-  return calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs, discountRs);
+  return calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs, discountRs, loyaltyTier);
 }
 
 /**
@@ -58,6 +58,13 @@ function formatChargeBreakdown(breakdown, menuGstMode = 'included') {
   if (breakdown.customer_delivery_rs > 0) {
     lines.push(fmt('Delivery', breakdown.customer_delivery_rs));
     lines.push(fmt('Delivery GST (18%)', breakdown.customer_delivery_gst_rs));
+  } else if (breakdown.delivery_discount_rs > 0) {
+    // CRIT-2A-04: loyalty waiver — show the free line instead of omitting it,
+    // so the customer sees the benefit they earned.
+    const tierLabel = breakdown.loyalty_tier_applied
+      ? ` (${String(breakdown.loyalty_tier_applied).charAt(0).toUpperCase() + String(breakdown.loyalty_tier_applied).slice(1)} perk)`
+      : '';
+    lines.push(fmt(`Delivery${tierLabel}`, 0) + '  ✨ FREE');
   }
 
   if (breakdown.packaging_rs > 0) {

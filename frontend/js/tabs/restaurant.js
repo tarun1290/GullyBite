@@ -577,6 +577,9 @@ async function loadCampaigns() {
   sel.innerHTML = '<option value="">Select branch…</option>' +
     branches.map(b => `<option value="${b.id}">${b.name}</option>`).join('');
 
+  // CRIT-2B-10: daily cap gauge. Fire-and-forget — never block campaign list.
+  loadCampaignDailyUsage().catch(() => {});
+
   const tb = document.getElementById('cmp-tbody');
   try {
     const rows = await api('/api/restaurant/campaigns');
@@ -663,19 +666,93 @@ function getCmpBody() {
   const name = document.getElementById('cmp-name').value.trim();
   const branchId = document.getElementById('cmp-branch').value;
   const productIds = [...document.querySelectorAll('.cmp-prod-cb:checked')].map(cb => cb.value);
+  const segment = document.getElementById('cmp-segment').value;
   if (!name) { toast('Enter a campaign name', 'err'); return null; }
   if (!branchId) { toast('Select a branch', 'err'); return null; }
   if (!productIds.length) { toast('Select at least one product', 'err'); return null; }
 
-  return {
+  const body = {
     branchId,
     name,
     productIds,
-    segment: document.getElementById('cmp-segment').value,
+    segment,
     scheduleAt: document.getElementById('cmp-schedule').value || null,
     headerText: document.getElementById('cmp-header').value.trim() || null,
     bodyText: document.getElementById('cmp-body').value.trim() || null,
   };
+
+  if (segment === 'tag' || segment === 'any_tag') {
+    const tags = [...document.querySelectorAll('.cmp-tag-cb:checked')].map(cb => cb.value);
+    if (!tags.length) { toast('Select at least one tag', 'err'); return null; }
+    body.tags = tags;
+  }
+
+  return body;
+}
+
+// CRIT-2B-10: show daily-send usage + disable Send-Now when cap reached.
+async function loadCampaignDailyUsage() {
+  const countEl = document.getElementById('cmp-usage-count');
+  const resetEl = document.getElementById('cmp-usage-reset');
+  if (!countEl) return;
+  try {
+    const u = await api('/api/restaurant/campaigns/daily-usage');
+    const sent = Number(u.sent_today) || 0;
+    const cap = Number(u.daily_cap) || 0;
+    const atCap = cap > 0 && sent >= cap;
+    countEl.innerHTML = `<strong>${sent}</strong> of <strong>${cap}</strong> campaigns sent today`;
+    countEl.style.color = atCap ? 'var(--red)' : 'var(--dim)';
+    if (resetEl && u.resets_at) {
+      const resetsAt = new Date(u.resets_at);
+      resetEl.textContent = atCap
+        ? `Daily limit reached. Resets at ${resetsAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
+        : `Resets at midnight IST.`;
+    }
+    const btn = document.querySelector('button[onclick="createAndSendCampaign()"]');
+    if (btn) {
+      btn.disabled = atCap;
+      btn.title = atCap ? 'Daily limit reached. Resets at midnight.' : '';
+      btn.style.opacity = atCap ? '0.5' : '';
+      btn.style.cursor = atCap ? 'not-allowed' : '';
+    }
+  } catch (e) {
+    countEl.textContent = 'usage unavailable';
+  }
+}
+
+// CRIT-2B-08: fetch tags once per tab-load, render as checkboxes. Called
+// from onCmpSegmentChange the first time a tag segment is chosen.
+let _cmpTagsLoaded = false;
+async function loadCampaignTags() {
+  if (_cmpTagsLoaded) return;
+  const box = document.getElementById('cmp-tags-list');
+  if (!box) return;
+  try {
+    const { tags } = await api('/api/restaurant/customers/tags');
+    if (!tags || !tags.length) {
+      box.innerHTML = '<span style="color:var(--dim);font-size:.82rem">No tags yet — customers are tagged automatically after their first order.</span>';
+    } else {
+      box.innerHTML = tags.map(t => {
+        const safe = String(t).replace(/[<>"'&]/g, c => ({'<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','&':'&amp;'}[c]));
+        return `<label style="display:inline-flex;align-items:center;gap:.4rem;padding:.3rem .6rem;border:1px solid var(--rim);border-radius:999px;cursor:pointer;font-size:.82rem"><input type="checkbox" class="cmp-tag-cb" value="${safe}"> ${safe}</label>`;
+      }).join('');
+    }
+    _cmpTagsLoaded = true;
+  } catch (e) {
+    box.innerHTML = `<span style="color:var(--bad);font-size:.82rem">Failed to load tags: ${e.message}</span>`;
+  }
+}
+
+function onCmpSegmentChange() {
+  const seg = document.getElementById('cmp-segment').value;
+  const row = document.getElementById('cmp-tags-row');
+  if (!row) return;
+  if (seg === 'tag' || seg === 'any_tag') {
+    row.style.display = '';
+    loadCampaignTags();
+  } else {
+    row.style.display = 'none';
+  }
 }
 
 async function createCampaign() {
@@ -1054,6 +1131,9 @@ window.loadCampaignProducts = loadCampaignProducts;
 window.updateCmpCount = updateCmpCount;
 window.getCmpBody = getCmpBody;
 window.createCampaign = createCampaign;
+window.onCmpSegmentChange = onCmpSegmentChange;
+window.loadCampaignTags = loadCampaignTags;
+window.loadCampaignDailyUsage = loadCampaignDailyUsage;
 window.createAndSendCampaign = createAndSendCampaign;
 window.sendCampaignNow = sendCampaignNow;
 window.deleteCampaignRow = deleteCampaignRow;

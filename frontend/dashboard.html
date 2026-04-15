@@ -1777,6 +1777,13 @@ tbody tr{transition:background .1s ease}
           &bull; Use "Recent" audience (ordered in last 30 days) for best results
         </div>
 
+        <!-- Daily usage indicator (CRIT-2B-10) — data fetched from /campaigns/daily-usage -->
+        <div id="cmp-daily-usage" class="card" style="margin-bottom:1rem;padding:.8rem 1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+          <span style="font-weight:600">Daily sends:</span>
+          <span id="cmp-usage-count" style="color:var(--dim)">…</span>
+          <span id="cmp-usage-reset" style="color:var(--dim);font-size:.78rem"></span>
+        </div>
+
         <!-- Create campaign form -->
         <div class="card" style="margin-bottom:1.2rem">
           <div class="ch"><h3>New Campaign</h3></div>
@@ -1803,10 +1810,12 @@ tbody tr{transition:background .1s ease}
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
               <div>
                 <label class="lbl">Customer Segment</label>
-                <select id="cmp-segment" class="inp">
+                <select id="cmp-segment" class="inp" onchange="onCmpSegmentChange()">
                   <option value="all">All Customers</option>
                   <option value="recent">Recent (last 30 days)</option>
                   <option value="inactive">Inactive (60+ days)</option>
+                  <option value="tag">By Customer Tag (match all)</option>
+                  <option value="any_tag">By Customer Tag (match any)</option>
                 </select>
               </div>
               <div>
@@ -1816,6 +1825,16 @@ tbody tr{transition:background .1s ease}
               <div style="display:flex;align-items:flex-end;gap:.5rem">
                 <button class="btn" onclick="createCampaign()" style="flex:1">Create</button>
                 <button class="btn-g" onclick="createAndSendCampaign()" style="flex:1">Send Now</button>
+              </div>
+            </div>
+            <!-- Tag picker (revealed when segment is 'tag' or 'any_tag') -->
+            <div id="cmp-tags-row" style="display:none;margin-bottom:1rem">
+              <label class="lbl">Tags</label>
+              <div id="cmp-tags-list" style="border:1px solid var(--rim);border-radius:8px;padding:.6rem;background:var(--ink4);display:flex;flex-wrap:wrap;gap:.5rem">
+                <span style="color:var(--dim);font-size:.82rem">Loading tags…</span>
+              </div>
+              <div style="font-size:.72rem;color:var(--dim);margin-top:.3rem">
+                Tags are assigned automatically from order history (e.g. <em>loyal</em>, <em>repeat</em>, <em>dormant</em>, <em>high_value</em>).
               </div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
@@ -2714,11 +2733,13 @@ function connectWebSocket() {
     _wsRetryMs = 2000;
     const dot = document.getElementById('ws-status');
     if (dot) { dot.style.background = 'var(--wa)'; dot.title = 'Live'; }
+    if (window.orderNotifications) window.orderNotifications.setWebsocketLive(true);
   };
 
   _ws.onclose = () => {
     const dot = document.getElementById('ws-status');
     if (dot) { dot.style.background = 'var(--dim)'; dot.title = 'Reconnecting...'; }
+    if (window.orderNotifications) window.orderNotifications.setWebsocketLive(false);
     setTimeout(() => { _wsRetryMs = Math.min(_wsRetryMs * 2, _wsMaxRetry); connectWebSocket(); }, _wsRetryMs);
   };
 
@@ -2736,6 +2757,20 @@ function connectWebSocket() {
       // Play beep
       try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const osc = ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = 880; osc.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.15); } catch {}
       if (document.getElementById('tab-orders')?.classList.contains('on')) loadOrders('ALL');
+    }
+
+    // Persistent-modal trigger — only fires AFTER payment confirmation
+    // (backend stamps notified_at + emits this event in the post-payment
+    // job). Distinct from 'new_order' (legacy in-chat creation toast).
+    if (ev === 'new_paid_order' && window.orderNotifications) {
+      window.orderNotifications.enqueue(d);
+      if (document.getElementById('tab-orders')?.classList.contains('on')) loadOrders('ALL');
+    }
+
+    // Another dashboard user (or another tab) acknowledged this order —
+    // dismiss the modal locally so two managers don't both refund.
+    if (ev === 'order_acknowledged' && window.orderNotifications) {
+      window.orderNotifications.dismissByOrderId(d.orderId);
     }
 
     if (ev === 'order_status_changed') {
@@ -2894,5 +2929,304 @@ function connectWebSocket() {
     </div>
   </div>
 </div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     PERSISTENT NEW-ORDER NOTIFICATION (Zomato/Swiggy-style)
+     Modal opens with a looping Web Audio beep when a paid order
+     arrives. Sound stops only when the restaurant clicks Accept
+     (PAID → CONFIRMED) or Decline (Razorpay refund → CANCELLED).
+     Visual fallback (pulse) if audio is blocked by autoplay policy.
+     ═══════════════════════════════════════════════════════════════ -->
+<style>
+  #orderNotifyModal{position:fixed;inset:0;z-index:9999;display:none;background:rgba(15,23,42,.55);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:1rem;animation:onFadeIn .25s ease}
+  #orderNotifyModal.on{display:flex}
+  @keyframes onFadeIn{from{opacity:0}to{opacity:1}}
+  #orderNotifyModal .card{background:#fff;border-radius:14px;max-width:440px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.35);animation:onPulse 1.2s ease-in-out infinite}
+  @keyframes onPulse{0%,100%{box-shadow:0 20px 60px rgba(0,0,0,.35),0 0 0 0 rgba(22,163,74,.5)}50%{box-shadow:0 20px 60px rgba(0,0,0,.35),0 0 0 18px rgba(22,163,74,0)}}
+  #orderNotifyModal .hd{padding:1.1rem 1.2rem;border-bottom:1px solid var(--rim);display:flex;align-items:center;gap:.7rem}
+  #orderNotifyModal .hd h2{margin:0;font-size:1.15rem;font-weight:700;color:var(--tx)}
+  #orderNotifyModal .badge-q{background:var(--gold);color:#fff;font-size:.68rem;padding:.15rem .45rem;border-radius:99px;margin-left:auto;font-weight:600}
+  #orderNotifyModal .body{padding:1rem 1.2rem}
+  #orderNotifyModal .row{display:flex;justify-content:space-between;font-size:.85rem;padding:.4rem 0;color:var(--tx)}
+  #orderNotifyModal .row .lbl{color:var(--dim)}
+  #orderNotifyModal .items{margin:.7rem 0;background:var(--ink4);border-radius:8px;padding:.6rem .8rem}
+  #orderNotifyModal .items .it{font-size:.8rem;color:var(--tx);padding:.15rem 0}
+  #orderNotifyModal .total{font-size:1.1rem;font-weight:700;color:var(--wa);text-align:right;margin:.5rem 0}
+  #orderNotifyModal .sound-ind{display:flex;align-items:center;gap:.4rem;font-size:.7rem;color:var(--dim);margin:.6rem 0}
+  #orderNotifyModal .sound-ind .wave{width:4px;height:10px;background:var(--wa);border-radius:2px;animation:onWave 1s ease-in-out infinite}
+  #orderNotifyModal .sound-ind .wave:nth-child(2){animation-delay:.15s;height:14px}
+  #orderNotifyModal .sound-ind .wave:nth-child(3){animation-delay:.3s;height:8px}
+  #orderNotifyModal .sound-ind.muted .wave{animation:none;background:var(--dim);height:6px}
+  @keyframes onWave{0%,100%{transform:scaleY(.4)}50%{transform:scaleY(1)}}
+  #orderNotifyModal .btns{display:flex;gap:.6rem;padding:0 1.2rem 1.2rem}
+  #orderNotifyModal .btns button{flex:1;padding:.75rem;border-radius:8px;font-weight:600;font-size:.9rem;cursor:pointer;border:none;transition:transform .1s}
+  #orderNotifyModal .btns button:active{transform:scale(.97)}
+  #orderNotifyModal .btn-accept{background:var(--wa);color:#fff}
+  #orderNotifyModal .btn-accept:hover{background:var(--wa2)}
+  #orderNotifyModal .btn-decline{background:var(--ink4);color:var(--tx)}
+  #orderNotifyModal .btn-decline:hover{background:#e5e7eb}
+  #orderNotifyModal button:disabled{opacity:.5;cursor:wait}
+  #orderNotifyModal .mute-btn{background:transparent;border:none;color:var(--dim);font-size:.7rem;cursor:pointer;text-decoration:underline}
+  #orderNotifyEnableSound{position:fixed;bottom:1rem;right:1rem;z-index:9998;background:var(--gold);color:#fff;padding:.6rem 1rem;border-radius:8px;border:none;font-weight:600;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.2);display:none}
+  #orderNotifyEnableSound.on{display:block}
+</style>
+<div id="orderNotifyModal" role="dialog" aria-modal="true" aria-labelledby="onTitle">
+  <div class="card">
+    <div class="hd">
+      <h2 id="onTitle">🎉 New Order!</h2>
+      <span class="badge-q" id="onQueueBadge" style="display:none">+0 more</span>
+    </div>
+    <div class="body">
+      <div class="row"><span class="lbl">Order #</span><span id="onOrderNum">—</span></div>
+      <div class="row"><span class="lbl">Customer</span><span id="onCustomer">—</span></div>
+      <div class="row"><span class="lbl">Type</span><span id="onType">—</span></div>
+      <div class="items" id="onItems"></div>
+      <div class="total" id="onTotal">₹0</div>
+      <div class="sound-ind" id="onSoundInd">
+        <div class="wave"></div><div class="wave"></div><div class="wave"></div>
+        <span id="onSoundLbl">Sound on</span>
+        <button class="mute-btn" type="button" onclick="orderNotifications.toggleMute()" id="onMuteBtn">Mute</button>
+      </div>
+    </div>
+    <div class="btns">
+      <button class="btn-decline" id="onDeclineBtn" type="button" onclick="orderNotifications.handleDecline()">✕ Decline</button>
+      <button class="btn-accept" id="onAcceptBtn" type="button" onclick="orderNotifications.handleAccept()">✓ Accept Order</button>
+    </div>
+  </div>
+</div>
+<button id="orderNotifyEnableSound" type="button" onclick="orderNotifications.unlockAudio()">🔔 Enable order sound</button>
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   OrderNotificationSystem
+   Manages a queue of paid-but-unacknowledged orders. Renders the
+   most recent on top with a queue badge ("+N more"). Looping Web
+   Audio sound until acknowledgement. Polling fallback every 5s
+   when WebSocket is down. Idempotent: backend uses notified_at as
+   the broadcast gate so the same order won't re-enqueue.
+   ═══════════════════════════════════════════════════════════════ */
+class OrderNotificationSystem {
+  constructor() {
+    this.queue = [];                 // array of payload objects (FIFO)
+    this.seen = new Set();           // orderIds already enqueued/dismissed
+    this.audioCtx = null;
+    this.audioUnlocked = false;
+    this.muted = localStorage.getItem('orderNotifyMuted') === '1';
+    this.beepTimer = null;
+    this.wsLive = false;
+    this.pollTimer = null;
+    this.busy = false;               // disables buttons during accept/decline
+  }
+
+  /* Lazy-init AudioContext on the first user gesture (browser policy). */
+  unlockAudio() {
+    try {
+      if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.audioCtx.state === 'suspended') this.audioCtx.resume();
+      this.audioUnlocked = true;
+      const btn = document.getElementById('orderNotifyEnableSound');
+      if (btn) btn.classList.remove('on');
+      // If a modal is already open, kick off the loop now.
+      if (this._modalOpen()) this._startBeep();
+    } catch (_) {}
+  }
+
+  setWebsocketLive(live) {
+    this.wsLive = !!live;
+    // Polling is only the fallback — when WS is healthy we don't need it.
+    if (live) this._stopPolling(); else this._startPolling();
+  }
+
+  enqueue(payload) {
+    if (!payload?.orderId || this.seen.has(payload.orderId)) return;
+    this.seen.add(payload.orderId);
+    this.queue.push(payload);
+    this._renderTop();
+  }
+
+  /* Fired by another dashboard user/tab acknowledging — close locally. */
+  dismissByOrderId(orderId) {
+    if (!orderId) return;
+    this.seen.add(orderId);
+    this.queue = this.queue.filter(o => o.orderId !== orderId);
+    if (this._modalOpen() && this._currentOrderId() === orderId) {
+      this._closeModal();
+      if (this.queue.length) this._renderTop();
+    }
+  }
+
+  toggleMute() {
+    this.muted = !this.muted;
+    localStorage.setItem('orderNotifyMuted', this.muted ? '1' : '0');
+    const lbl = document.getElementById('onSoundLbl');
+    const ind = document.getElementById('onSoundInd');
+    const btn = document.getElementById('onMuteBtn');
+    if (this.muted) { this._stopBeep(); ind?.classList.add('muted'); if (lbl) lbl.textContent = 'Muted'; if (btn) btn.textContent = 'Unmute'; }
+    else { ind?.classList.remove('muted'); if (lbl) lbl.textContent = 'Sound on'; if (btn) btn.textContent = 'Mute'; if (this._modalOpen()) this._startBeep(); }
+  }
+
+  async handleAccept() {
+    const id = this._currentOrderId();
+    if (!id || this.busy) return;
+    this.busy = true; this._setButtonsDisabled(true);
+    try {
+      const r = await fetch(`/api/restaurant/orders/${encodeURIComponent(id)}/accept`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Accept failed'); }
+      window.toast && toast(`Order accepted`, 'ok');
+      this._dismissCurrentAndAdvance();
+      if (document.getElementById('tab-orders')?.classList.contains('on')) window.loadOrders && loadOrders('ALL');
+    } catch (e) {
+      window.toast && toast(e.message || 'Accept failed', 'err');
+    } finally {
+      this.busy = false; this._setButtonsDisabled(false);
+    }
+  }
+
+  async handleDecline() {
+    const id = this._currentOrderId();
+    if (!id || this.busy) return;
+    const reason = prompt('Why are you declining? (Customer will be refunded in full.)', 'Restaurant unavailable');
+    if (reason === null) return;  // user cancelled the prompt
+    this.busy = true; this._setButtonsDisabled(true);
+    try {
+      const r = await fetch(`/api/restaurant/orders/${encodeURIComponent(id)}/decline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason: (reason || '').trim() || 'Restaurant declined' }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'Decline failed'); }
+      window.toast && toast('Order declined — refund initiated', 'ok');
+      this._dismissCurrentAndAdvance();
+      if (document.getElementById('tab-orders')?.classList.contains('on')) window.loadOrders && loadOrders('ALL');
+    } catch (e) {
+      window.toast && toast(e.message || 'Decline failed', 'err');
+    } finally {
+      this.busy = false; this._setButtonsDisabled(false);
+    }
+  }
+
+  /* ── INTERNAL ───────────────────────────────────────────── */
+
+  _modalOpen() { return document.getElementById('orderNotifyModal')?.classList.contains('on'); }
+  _currentOrderId() { return this.queue[0]?.orderId || null; }
+
+  _renderTop() {
+    const top = this.queue[0];
+    if (!top) return this._closeModal();
+    document.getElementById('onOrderNum').textContent = '#' + (top.orderNumber || top.orderId.slice(0, 8));
+    document.getElementById('onCustomer').textContent = top.customerName || top.customerPhone || 'Customer';
+    document.getElementById('onType').textContent = top.orderType === 'pickup' ? '🥡 Pickup' : '🛵 Delivery';
+    document.getElementById('onTotal').textContent = '₹' + Math.round(parseFloat(top.totalRs || 0));
+    const itemsEl = document.getElementById('onItems');
+    if (itemsEl) {
+      const items = (top.items || []);
+      itemsEl.innerHTML = items.length
+        ? items.map(i => `<div class="it">• ${escapeHtml(i.name || 'Item')} × ${parseInt(i.quantity) || 1}</div>`).join('')
+          + (top.itemCount > items.length ? `<div class="it" style="color:var(--dim)">…+${top.itemCount - items.length} more</div>` : '')
+        : `<div class="it" style="color:var(--dim)">${parseInt(top.itemCount) || 0} item(s)</div>`;
+    }
+    const badge = document.getElementById('onQueueBadge');
+    if (this.queue.length > 1) { badge.textContent = `+${this.queue.length - 1} more`; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+    this._openModal();
+  }
+
+  _openModal() {
+    document.getElementById('orderNotifyModal')?.classList.add('on');
+    if (!this.muted) {
+      if (this.audioUnlocked) this._startBeep();
+      else { document.getElementById('orderNotifyEnableSound')?.classList.add('on'); }
+    }
+  }
+
+  _closeModal() {
+    document.getElementById('orderNotifyModal')?.classList.remove('on');
+    document.getElementById('orderNotifyEnableSound')?.classList.remove('on');
+    this._stopBeep();
+  }
+
+  _dismissCurrentAndAdvance() {
+    this.queue.shift();
+    if (this.queue.length) this._renderTop();
+    else this._closeModal();
+  }
+
+  _setButtonsDisabled(b) {
+    const a = document.getElementById('onAcceptBtn'); const d = document.getElementById('onDeclineBtn');
+    if (a) a.disabled = b; if (d) d.disabled = b;
+  }
+
+  /* Looped beep pattern: short-short-short, repeat every 1.2s. */
+  _startBeep() {
+    if (this.muted || !this.audioCtx || this.beepTimer) return;
+    const fire = () => {
+      try {
+        const t0 = this.audioCtx.currentTime;
+        [0, 0.18, 0.36].forEach(off => {
+          const osc = this.audioCtx.createOscillator();
+          const gain = this.audioCtx.createGain();
+          osc.type = 'sine'; osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.0001, t0 + off);
+          gain.gain.exponentialRampToValueAtTime(0.3, t0 + off + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t0 + off + 0.13);
+          osc.connect(gain); gain.connect(this.audioCtx.destination);
+          osc.start(t0 + off); osc.stop(t0 + off + 0.14);
+        });
+      } catch (_) {}
+    };
+    fire();
+    this.beepTimer = setInterval(fire, 1200);
+  }
+
+  _stopBeep() {
+    if (this.beepTimer) { clearInterval(this.beepTimer); this.beepTimer = null; }
+  }
+
+  /* Polling fallback — only runs while WS is unhealthy. */
+  _startPolling() {
+    if (this.pollTimer) return;
+    const tick = async () => {
+      try {
+        if (!window.token || !window.rest?.id) return;
+        const r = await fetch('/api/restaurant/pending-order-notifications', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) return;
+        const list = await r.json();
+        for (const o of list) this.enqueue(o);
+      } catch (_) {}
+    };
+    tick();
+    this.pollTimer = setInterval(tick, 5000);
+  }
+
+  _stopPolling() {
+    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+  }
+}
+
+window.orderNotifications = new OrderNotificationSystem();
+
+/* Unlock audio on the first user click anywhere — satisfies browser
+   autoplay policy without a dedicated "enable sound" first-run prompt. */
+document.addEventListener('click', function _firstClick() {
+  window.orderNotifications.unlockAudio();
+  document.removeEventListener('click', _firstClick);
+}, { once: true });
+
+/* Kick off polling immediately so missed orders surface even if WS
+   never connects. setWebsocketLive(true) will stop polling once the
+   socket opens. */
+setTimeout(() => {
+  if (window.token && window.rest?.id) window.orderNotifications._startPolling();
+}, 1500);
+
+/* Tiny escape helper — kept local so we don't depend on shared.js. */
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
 </body>
 </html>

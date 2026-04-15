@@ -16,7 +16,17 @@ const metaConfig = require('../config/meta');
 const memcache = require('../config/memcache');
 
 const crypto = require('crypto');
+const { rateLimitFn } = require('../middleware/rateLimit');
 const log = require('../utils/logger').child({ component: 'auth' });
+
+// ── PIN LOGIN LIMITS ───────────────────────────────────────────
+// Route-level limiter is keyed on ip+restaurantId+phone so an attacker cannot
+// bypass by rotating any single dimension. DB-level lockout (pin_locked_until)
+// catches distributed attacks across IPs — see /pin-login handler.
+const PIN_RATE_LIMIT_WINDOW_MS = Number(process.env.PIN_RATE_LIMIT_WINDOW_MS) || (15 * 60 * 1000);
+const PIN_RATE_LIMIT_MAX       = Number(process.env.PIN_RATE_LIMIT_MAX)       || 5;
+const PIN_DB_LOCKOUT_THRESHOLD = 10;
+const PIN_DB_LOCKOUT_MS        = 30 * 60 * 1000;
 
 const META_GRAPH_URL = metaConfig.graphUrl;
 
@@ -99,6 +109,7 @@ router.post('/signup', express.json(), async (req, res) => {
       role: 'owner',
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
+      token_version: ownerUser.token_version ?? 0,
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
     logActivity({ actorType: 'restaurant', actorId: id, action: 'restaurant.signup', category: 'auth', description: `New restaurant registered: ${req.body.ownerName || 'Unknown'}`, restaurantId: id, severity: 'info' });
     res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
@@ -130,6 +141,7 @@ router.post('/signin', express.json(), async (req, res) => {
       role: 'owner',
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
+      token_version: ownerUser.token_version ?? 0,
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
     const step = restaurant.onboarding_step || 1;
     res.json({
@@ -210,6 +222,7 @@ router.post('/google', express.json(), async (req, res) => {
       role: 'owner',
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
+      token_version: ownerUser.token_version ?? 0,
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
     req.log.info({ restaurantId, needsOnboarding, approvalStatus }, 'Google auth success');
@@ -291,6 +304,7 @@ router.get('/google/callback', async (req, res) => {
       role: 'owner',
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
+      token_version: ownerUser.token_version ?? 0,
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
     req.log.info('Success, redirecting with token');
@@ -904,6 +918,14 @@ router.post('/change-password', requireAuth, express.json(), async (req, res) =>
     if (restaurant.auth_provider === 'google') $set.auth_provider = 'both';
     else if (!restaurant.auth_provider) $set.auth_provider = 'local';
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
+
+    // Revoke all outstanding JWTs for every user of this restaurant.
+    // Every restaurant JWT's userId points to a restaurant_users doc, so bump
+    // token_version on all of them — owner and staff alike.
+    await col('restaurant_users').updateMany(
+      { restaurant_id: req.restaurantId },
+      { $inc: { token_version: 1 }, $set: { updated_at: new Date() } }
+    );
     res.json({ ok: true });
   } catch (err) {
     req.log.error({ err }, 'Password change failed');
@@ -919,6 +941,14 @@ router.delete('/delete-account', requireAuth, async (req, res) => {
     // Get branch IDs to clean up menu items/categories linked by branch
     const branches = await col('branches').find({ restaurant_id: id }, { projection: { _id: 1 } }).toArray();
     const branchIds = branches.map(b => b._id);
+
+    // Invalidate every outstanding JWT for this restaurant's users before the
+    // delete cascade. Even though the cascade does not currently remove
+    // restaurant_users, any in-flight token must stop working immediately.
+    await col('restaurant_users').updateMany(
+      { restaurant_id: id },
+      { $inc: { token_version: 1 }, $set: { is_active: false, updated_at: new Date() } }
+    );
 
     // Delete all related data across collections
     await Promise.all([
@@ -1876,6 +1906,9 @@ async function ensureOwnerUser(restaurantId, ownerName, phone) {
     phone: phone || '',
     email: null,
     pin_hash: null,
+    pin_attempts: 0,
+    pin_locked_until: null,
+    token_version: 0,
     role: 'owner',
     branch_ids: [],
     permissions: { ...ROLE_PERMISSIONS.owner },
@@ -1889,7 +1922,22 @@ async function ensureOwnerUser(restaurantId, ownerName, phone) {
 }
 
 // ─── PIN LOGIN ───────────────────────────────────────────────
-router.post('/pin-login', express.json(), async (req, res) => {
+// Route-level limiter: PIN_RATE_LIMIT_MAX attempts per PIN_RATE_LIMIT_WINDOW_MS
+// keyed on ip+restaurantId+phone. Must run AFTER express.json() so the key
+// extractor can read req.body.
+const pinLoginLimiter = rateLimitFn(
+  (req) => {
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown';
+    const rid = (req.body && req.body.restaurantId) || 'unknown';
+    const ph  = (req.body && req.body.phone) || 'unknown';
+    return `pin:${ip}:${rid}:${ph}`;
+  },
+  PIN_RATE_LIMIT_MAX,
+  Math.ceil(PIN_RATE_LIMIT_WINDOW_MS / 1000),
+  { message: 'Too many PIN attempts. Try again in 15 minutes.' }
+);
+
+router.post('/pin-login', express.json(), pinLoginLimiter, async (req, res) => {
   try {
     const { restaurantId, phone, pin } = req.body;
     if (!restaurantId || !phone || !pin)
@@ -1903,10 +1951,33 @@ router.post('/pin-login', express.json(), async (req, res) => {
     if (!user) return res.status(401).json({ error: 'No account found with this phone number' });
     if (!user.pin_hash) return res.status(401).json({ error: 'PIN not set. Ask the owner to set your PIN.' });
 
-    const valid = await bcrypt.compare(pin, user.pin_hash);
-    if (!valid) return res.status(401).json({ error: 'Incorrect PIN' });
+    // DB-level lockout — catches distributed attacks that rotate IP to evade
+    // the route limiter. Never expose pin_locked_until to the client.
+    if (user.pin_locked_until && new Date(user.pin_locked_until) > new Date()) {
+      return res.status(423).json({ error: 'Account temporarily locked. Try again later.' });
+    }
 
-    await col('restaurant_users').updateOne({ _id: user._id }, { $set: { last_login_at: new Date() } });
+    const valid = await bcrypt.compare(pin, user.pin_hash);
+    if (!valid) {
+      const attempts = (user.pin_attempts || 0) + 1;
+      if (attempts >= PIN_DB_LOCKOUT_THRESHOLD) {
+        await col('restaurant_users').updateOne(
+          { _id: user._id },
+          { $set: { pin_attempts: 0, pin_locked_until: new Date(Date.now() + PIN_DB_LOCKOUT_MS), updated_at: new Date() } }
+        );
+        return res.status(423).json({ error: 'Account temporarily locked. Try again later.' });
+      }
+      await col('restaurant_users').updateOne(
+        { _id: user._id },
+        { $inc: { pin_attempts: 1 }, $set: { updated_at: new Date() } }
+      );
+      return res.status(401).json({ error: 'Incorrect PIN' });
+    }
+
+    await col('restaurant_users').updateOne(
+      { _id: user._id },
+      { $set: { last_login_at: new Date(), pin_attempts: 0, pin_locked_until: null } }
+    );
 
     const token = jwt.sign({
       restaurantId,
@@ -1914,6 +1985,7 @@ router.post('/pin-login', express.json(), async (req, res) => {
       role: user.role,
       permissions: user.permissions,
       branchIds: user.branch_ids,
+      token_version: user.token_version ?? 0,
     }, process.env.JWT_SECRET, { expiresIn: '12h' });
 
     res.json({
@@ -1927,11 +1999,29 @@ router.post('/pin-login', express.json(), async (req, res) => {
 });
 
 // ─── JWT AUTH MIDDLEWARE ──────────────────────────────────────
-function requireAuth(req, res, next) {
+// Async because it validates the JWT's token_version against the DB, so a
+// password change / logout / delete can revoke every outstanding token for
+// the user. Missing token_version on either side is treated as 0 — legacy
+// tokens issued before this field existed remain valid until natural expiry.
+async function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  let decoded;
   try {
-    const decoded    = jwt.verify(token, process.env.JWT_SECRET);
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Session expired. Please log in again.' });
+  }
+  try {
+    if (decoded.userId) {
+      const user = await col('restaurant_users').findOne({ _id: decoded.userId, is_active: true });
+      if (!user) return res.status(401).json({ error: 'Session expired. Please log in again.' });
+      const tokenVer = Number(decoded.token_version || 0);
+      const dbVer    = Number(user.token_version || 0);
+      if (tokenVer !== dbVer) {
+        return res.status(401).json({ error: 'Session expired. Please log in again.' });
+      }
+    }
     req.restaurantId = decoded.restaurantId;
     req.metaUserId   = decoded.metaUserId;
     req.userId       = decoded.userId || null;
@@ -1939,10 +2029,28 @@ function requireAuth(req, res, next) {
     req.userPermissions = decoded.permissions || ROLE_PERMISSIONS.owner;
     req.userBranchIds   = decoded.branchIds || [];
     next();
-  } catch {
-    res.status(401).json({ error: 'Session expired. Please log in again.' });
+  } catch (err) {
+    req.log?.error({ err }, 'requireAuth DB lookup failed');
+    res.status(500).json({ error: 'Authentication error' });
   }
 }
+
+// ─── LOGOUT ───────────────────────────────────────────────────
+// Increments token_version so this user's in-flight tokens stop working now.
+router.post('/logout', requireAuth, async (req, res) => {
+  try {
+    if (req.userId) {
+      await col('restaurant_users').updateOne(
+        { _id: req.userId },
+        { $inc: { token_version: 1 }, $set: { updated_at: new Date() } }
+      );
+    }
+    res.json({ message: 'Logged out successfully' });
+  } catch (err) {
+    req.log.error({ err }, 'Logout failed');
+    res.status(500).json({ error: 'Logout failed' });
+  }
+});
 
 // ─── PERMISSION MIDDLEWARE ───────────────────────────────────
 function requirePermission(permKey) {

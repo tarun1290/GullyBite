@@ -210,6 +210,23 @@ const orders = {
     // Optional brand layer. Sparse — legacy orders without brand_id
     // continue to resolve via restaurant_id-based single-brand path.
     brand_id:              { type: 'uuid' },
+    // Rating-request reconciliation (CRIT-2A-01 defense-in-depth).
+    // Primary path is the LOYALTY_AWARD durable job; these fields let a
+    // cron sweep orders whose job was lost (e.g. dropped row) without
+    // double-sending when the job did fire.
+    rating_request_due:    { type: 'date' },
+    rating_requested_at:   { type: 'date' },
+    // Persistent-notification handshake (Zomato/Swiggy-style).
+    // notified_at      = restaurant dashboard was alerted (broadcast/poll)
+    // acknowledged_at  = restaurant clicked Accept or Decline; sound stops
+    // acknowledged_by  = restaurant user id who acknowledged
+    // decline_reason   = free-text reason if declined (refund issued)
+    // refund_id        = Razorpay refund id when decline triggers a refund
+    notified_at:           { type: 'date' },
+    acknowledged_at:       { type: 'date' },
+    acknowledged_by:       { type: 'uuid' },
+    decline_reason:        { type: 'string' },
+    refund_id:             { type: 'string' },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },
@@ -218,6 +235,10 @@ const orders = {
     { key: { customer_id: 1, created_at: -1 } },
     { key: { branch_id: 1, created_at: -1 } },
     { key: { brand_id: 1, created_at: -1 } },
+    // Reconciliation cron — sparse so only delivered orders awaiting rating are scanned.
+    { key: { rating_request_due: 1 }, sparse: true },
+    // Pending-notification poll — sparse, only PAID orders awaiting ack.
+    { key: { restaurant_id: 1, acknowledged_at: 1, status: 1 }, sparse: true },
   ],
 };
 
@@ -260,6 +281,14 @@ const customers = {
     phone_hash:            { type: 'string' },
     name:                  { type: 'string' },
     bsuid:                 { type: 'string' },
+    // BSUID rollout (Meta June 2026): stamped every time we see a
+    // w-prefixed identifier for this customer so we can trace when
+    // the platform first started receiving the new format.
+    bsuid_seen_at:         { type: 'date' },
+    // Soft-delete pointer when an identity collision (same human,
+    // two rows — one indexed by phone, one by BSUID) gets merged.
+    merged_into:           { type: 'uuid' },
+    merged_at:             { type: 'date' },
     first_seen_at:         { type: 'date' },
     last_seen_at:          { type: 'date' },
     created_at:            { type: 'date', required: true },
@@ -268,6 +297,10 @@ const customers = {
   indexes: [
     { key: { wa_phone: 1 }, options: { unique: true, sparse: true } },
     { key: { phone_hash: 1 }, options: { unique: true, sparse: true } },
+    // Sparse + unique on bsuid so pre-rollout rows (null bsuid) don't
+    // collide; customerIdentity.ensureIndexes also creates this at
+    // runtime but declaring it here keeps the schema self-documenting.
+    { key: { bsuid: 1 }, options: { unique: true, sparse: true } },
   ],
 };
 
@@ -531,8 +564,9 @@ const settlements = {
     fee_amount_paise:      { type: 'number' },
     net_amount_paise:      { type: 'number' },
     total_amount_paise:    { type: 'number' },
-    status:                { type: 'string', enum: ['pending', 'processing', 'completed', 'failed'] },
+    status:                { type: 'string', enum: ['pending', 'processing', 'completed', 'failed', 'pending_manual_payout'] },
     payout_id:             { type: 'string' },
+    manual_payout_flagged_at: { type: 'date' },
     payout_provider:       { type: 'string', enum: ['razorpay', 'fallback_provider'] },
     // Phase 5.1: manual payouts. 'auto' runs the provider loop; 'manual'
     // skips the payout API — ops records the transfer externally and

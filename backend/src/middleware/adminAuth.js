@@ -56,6 +56,14 @@ function requireAdminAuth(permission, minLevel) {
       const adminUser = await col('admin_users').findOne({ _id: decoded.adminId, is_active: true });
       if (!adminUser) return res.status(401).json({ error: 'Account not found or deactivated' });
 
+      // Session revocation: token_version on the JWT must match the DB.
+      // Missing field on either side is treated as 0 (covers legacy tokens and docs).
+      const tokenVer = Number(decoded.token_version || 0);
+      const dbVer    = Number(adminUser.token_version || 0);
+      if (tokenVer !== dbVer) {
+        return res.status(401).json({ error: 'Session expired. Please log in again.' });
+      }
+
       req.adminUser = adminUser;
       req.canSeeFullPhones = adminUser.role === 'super_admin' || !!adminUser.permissions?.customer_full_phone;
 
@@ -102,7 +110,12 @@ function requireAnyAdmin() {
 // Sign a JWT for an admin user
 function signAdminToken(adminUser) {
   return jwt.sign(
-    { adminId: adminUser._id, email: adminUser.email, role: adminUser.role },
+    {
+      adminId: adminUser._id,
+      email: adminUser.email,
+      role: adminUser.role,
+      token_version: adminUser.token_version ?? 0,
+    },
     ADMIN_JWT_SECRET,
     { expiresIn: '24h' }
   );

@@ -279,6 +279,11 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         Abuse Protection
         <span class="badge" id="nav-abuse-badge" style="display:none;background:#dc2626"></span>
       </div>
+      <!-- CRIT-3B-01: Admins tab — super_admin only. Hidden by applySidebarPermissions. -->
+      <div class="nav-item" data-page="admins" onclick="nav(this)" id="nav-admins" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 11a4 4 0 1 0-8 0 4 4 0 0 0 8 0z"/><path d="M21 21v-2a4 4 0 0 0-3-3.87"/><path d="M3 21v-2a4 4 0 0 1 3-3.87"/></svg>
+        Admins
+      </div>
       <div class="nav-item" data-page="usernames" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M2 17a8 8 0 0 1 8-8"/></svg>
         Usernames
@@ -518,11 +523,14 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
       <div class="page" id="page-customers">
         <div class="table-wrap">
           <div class="table-head"><h2>Customers</h2>
-            <input type="text" id="fc-search" placeholder="Search phone / name…" oninput="debounce(loadCustomers)" style="margin-left:auto;width:200px;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem;outline:none">
+            <label style="margin-left:auto;display:inline-flex;align-items:center;gap:.3rem;color:var(--dim);font-size:.72rem;cursor:pointer">
+              <input type="checkbox" id="fc-show-bsuid" onchange="toggleBsuidCol()"> Show WhatsApp Username (BSUID)
+            </label>
+            <input type="text" id="fc-search" placeholder="Search phone / name…" oninput="debounce(loadCustomers)" style="margin-left:.6rem;width:200px;background:var(--ink3);border:1px solid var(--rim2);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem;outline:none">
           </div>
           <table>
-            <thead><tr><th>Phone</th><th>Name</th><th>Orders</th><th>Lifetime Value</th><th>Joined</th></tr></thead>
-            <tbody id="customers-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+            <thead><tr><th>Phone</th><th>Name</th><th class="bsuid-col" style="display:none">WhatsApp Username (BSUID)</th><th>Orders</th><th>Lifetime Value</th><th>Joined</th></tr></thead>
+            <tbody id="customers-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
           </table>
           <div class="pager">
             <button id="cust-prev" onclick="custPage(-1)" disabled>&#8592; Prev</button>
@@ -950,6 +958,22 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
           <table>
             <thead><tr><th>Phone</th><th>Reason</th><th>Blocked By</th><th>Blocked At</th><th>Expires</th><th>Status</th><th>Action</th></tr></thead>
             <tbody id="abuse-blocked-tbody"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── ADMIN USERS (CRIT-3B-01) ───────────────────────────────────── -->
+      <!-- Super-admin only. Primary purpose here is the customer_full_phone
+           permission toggle; name/role CRUD can be layered on later. -->
+      <div class="page" id="page-admins">
+        <div class="table-wrap">
+          <div class="table-head">
+            <h2>Admin Users</h2>
+            <span style="margin-left:auto;color:var(--dim);font-size:.78rem">Only super admins see this page.</span>
+          </div>
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th><th>Can view full phone numbers</th></tr></thead>
+            <tbody id="admins-tbody"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -1884,11 +1908,18 @@ function applySidebarPermissions() {
       flows: 'admin_waba', directory: 'directory', referrals: 'referrals',
       settlements: 'settlements', analytics: 'analytics', activity: 'activity_logs',
       abuse: 'platform_settings', financials: 'settlements',
+      // CRIT-3B-01: three modules previously missing from the sidebar
+      // permission map — now gated so non-super admins without these
+      // perms don't see sensitive CRM / coupon / marketing tabs.
+      customers: 'customers', coupons: 'coupons', marketing: 'marketing_messages',
     };
     const perm = permMap[page];
     if (perm && !hasPermission(perm)) el.style.display = 'none';
     else el.style.display = '';
   });
+  // CRIT-3B-01: Admins tab is super_admin only regardless of permissions map.
+  const adminsNav = document.getElementById('nav-admins');
+  if (adminsNav) adminsNav.style.display = (adminUser && adminUser.role === 'super_admin') ? '' : 'none';
 }
 
 // ─── AUTO-LOGIN ON PAGE LOAD ─────────────────────────────────────
@@ -1924,7 +1955,7 @@ document.getElementById('admin-pass-input')?.addEventListener('keydown', e => {
 // admin-key-input removed — JWT only
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', coupons: 'Coupon Templates', 'coupon-codes': 'Coupons', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics', marketing: 'Marketing Messages', 'sync-logs': 'Catalog Sync Logs' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', coupons: 'Coupon Templates', 'coupon-codes': 'Coupons', abuse: 'Abuse Protection', admins: 'Admin Users', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics', marketing: 'Marketing Messages', 'sync-logs': 'Catalog Sync Logs' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -1948,6 +1979,7 @@ function nav(el) {
   if (page === 'coupons')      loadCouponsPage();
   if (page === 'coupon-codes') loadCouponCodesPage();
   if (page === 'abuse')        loadAbuse();
+  if (page === 'admins')       loadAdmins();
   if (page === 'usernames')    loadUsernames();
   if (page === 'financials')   loadFinPage();
   if (page === 'activity')     loadActivity();
@@ -2535,6 +2567,55 @@ async function loadBlockedPhones() {
   } catch (e) { tbody.innerHTML = `<tr><td colspan="7" class="empty">${esc(e.message)}</td></tr>`; }
 }
 
+// ─── ADMIN USERS (CRIT-3B-01) ─────────────────────────────────────
+// Minimal super-admin-only surface whose primary job is the
+// customer_full_phone permission toggle. Other admin-user CRUD still
+// lives behind the /api/admin/users endpoints and can be layered in
+// here later.
+async function loadAdmins() {
+  const tbody = document.getElementById('admins-tbody');
+  if (!tbody) return;
+  if (!adminUser || adminUser.role !== 'super_admin') {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Super admin access required.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '<tr><td colspan="5" class="empty">Loading…</td></tr>';
+  try {
+    const users = await api('/api/admin/users');
+    if (!users.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No admin users yet.</td></tr>'; return; }
+    tbody.innerHTML = users.map(u => {
+      const canSee = !!(u.permissions && u.permissions.customer_full_phone) || u.role === 'super_admin';
+      // Super admins always have full-phone access (enforced in middleware),
+      // so the toggle is read-only for them.
+      const lockedSuper = u.role === 'super_admin';
+      const cb = `<label title="Can view full customer phone numbers"><input type="checkbox" ${canSee ? 'checked' : ''} ${lockedSuper ? 'disabled' : ''} onchange="toggleAdminFullPhone('${u.id}', this.checked, this)"> ${lockedSuper ? '(super admin — always on)' : ''}</label>`;
+      return `<tr>
+        <td>${esc(u.name || '—')}</td>
+        <td>${esc(u.email || '')}</td>
+        <td>${esc(u.role || 'admin')}</td>
+        <td>${u.is_active === false ? '<span style="color:var(--red)">disabled</span>' : 'yes'}</td>
+        <td>${cb}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function toggleAdminFullPhone(id, value, cb) {
+  const prev = !value;
+  try {
+    await api('/api/admin/users/' + id, {
+      method: 'PUT',
+      body: JSON.stringify({ customer_full_phone: !!value }),
+    });
+    toast(value ? 'Full-phone access granted' : 'Full-phone access revoked', 'ok');
+  } catch (e) {
+    if (cb) cb.checked = prev;
+    toast(e.message, 'err');
+  }
+}
+
 function showBlockModal() {
   document.getElementById('block-phone').value = '';
   document.getElementById('block-reason').value = '';
@@ -2596,12 +2677,31 @@ async function loadRestaurants() {
         <td style="white-space:nowrap">${r.status === 'active'
           ? `<button class="btn-sm danger" onclick="setRestaurantStatus('${r.id}','suspended','${esc(r.business_name)}')">Suspend</button>`
           : `<button class="btn-sm primary" onclick="setRestaurantStatus('${r.id}','active','${esc(r.business_name)}')">Activate</button>`
-        } <button class="btn-sm" style="color:var(--red);border-color:var(--red);margin-left:.3rem" onclick="deleteRestaurant('${r.id}','${esc(r.business_name).replace(/'/g,"\\'")}')">Delete</button></td>
+        } <button class="btn-sm" style="margin-left:.3rem" onclick="setCampaignCap('${r.id}','${esc(r.business_name).replace(/'/g,"\\'")}', ${r.campaign_daily_cap == null ? 'null' : Number(r.campaign_daily_cap)})">Cap</button> <button class="btn-sm" style="color:var(--red);border-color:var(--red);margin-left:.3rem" onclick="deleteRestaurant('${r.id}','${esc(r.business_name).replace(/'/g,"\\'")}')">Delete</button></td>
       </tr>`;
     }).join('');
   } catch (e) {
     tbody.innerHTML = `<tr><td colspan="10" class="empty">${esc(e.message)}</td></tr>`;
   }
+}
+
+// CRIT-2B-10: per-restaurant daily campaign cap override. Empty string
+// clears the override and reverts to CAMPAIGN_DEFAULT_DAILY_CAP.
+async function setCampaignCap(id, name, current) {
+  const cur = current == null ? '(default)' : current;
+  const input = prompt(`Daily campaign cap for "${name}"\nCurrent: ${cur}\n\nEnter a number (0 disables all sends), or leave blank to clear override and use platform default.`, current == null ? '' : String(current));
+  if (input === null) return;
+  const body = input.trim() === ''
+    ? { campaign_daily_cap: null }
+    : { campaign_daily_cap: Number(input) };
+  if (input.trim() !== '' && (!Number.isFinite(body.campaign_daily_cap) || body.campaign_daily_cap < 0)) {
+    toast('Invalid number', 'err'); return;
+  }
+  try {
+    await api(`/api/admin/restaurants/${id}/campaign-cap`, { method: 'PATCH', body: JSON.stringify(body) });
+    toast(`Cap updated for "${name}"`, 'ok');
+    loadRestaurants();
+  } catch (e) { toast(e.message, 'err'); }
 }
 
 async function setRestaurantStatus(id, status, name) {
@@ -2699,19 +2799,32 @@ async function loadCustomers() {
     document.getElementById('cust-page-info').textContent = `Page ${page}`;
     document.getElementById('cust-prev').disabled = custOffset === 0;
     document.getElementById('cust-next').disabled = rows.length < CUST_LIMIT;
-    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No customers found</td></tr>'; return; }
-    tbody.innerHTML = rows.map(c => `
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No customers found</td></tr>'; return; }
+    const showBsuid = document.getElementById('fc-show-bsuid')?.checked;
+    tbody.innerHTML = rows.map(c => {
+      const bsuidCell = c.bsuid
+        ? `<span title="${esc(c.bsuid)}">${esc(c.bsuid.slice(0, 8))}…</span>`
+        : '<span style="color:var(--dim)">—</span>';
+      return `
       <tr>
-        <td class="monospace">${esc(c.wa_phone || c.bsuid?.slice(0,12)+'…' || '—')}</td>
+        <td class="monospace">${esc(c.wa_phone || (c.bsuid ? c.bsuid.slice(0,12)+'…' : '—'))}</td>
         <td>${esc(c.name || '—')}</td>
+        <td class="bsuid-col monospace" style="display:${showBsuid ? '' : 'none'};font-size:.72rem;color:var(--dim)">${bsuidCell}</td>
         <td style="text-align:center">${c.order_count}</td>
         <td>₹${fmtNum(c.lifetime_rs)}</td>
         <td style="color:var(--dim);font-size:.75rem">${fmtDate(c.created_at)}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty">${esc(e.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">${esc(e.message)}</td></tr>`;
   }
 }
+
+function toggleBsuidCol() {
+  const show = document.getElementById('fc-show-bsuid')?.checked;
+  document.querySelectorAll('.bsuid-col').forEach(el => { el.style.display = show ? '' : 'none'; });
+}
+window.toggleBsuidCol = toggleBsuidCol;
 
 function custPage(dir) {
   custOffset = Math.max(0, custOffset + dir * CUST_LIMIT);

@@ -70,7 +70,7 @@ router.post('/auth/setup', express.json(), async (req, res) => {
     const user = {
       _id: newId(), email: email.toLowerCase().trim(), password_hash: hash,
       name: name || 'Super Admin', phone: null, role: 'super_admin', permissions: {},
-      is_active: true, last_login: null, login_count: 0, created_by: 'setup', created_at: new Date(), updated_at: new Date(),
+      is_active: true, last_login: null, login_count: 0, token_version: 0, created_by: 'setup', created_at: new Date(), updated_at: new Date(),
     };
     await col('admin_users').insertOne(user);
     await col('admin_users').createIndex({ email: 1 }, { unique: true }).catch(() => {});
@@ -96,8 +96,22 @@ router.post('/auth/change-password', requireAdminAuth(), express.json(), async (
     const valid = await bcrypt.compare(current_password, user.password_hash);
     if (!valid) return res.status(403).json({ error: 'Current password is incorrect' });
     const hash = await bcrypt.hash(new_password, 12);
-    await col('admin_users').updateOne({ _id: user._id }, { $set: { password_hash: hash, updated_at: new Date() } });
+    await col('admin_users').updateOne(
+      { _id: user._id },
+      { $set: { password_hash: hash, updated_at: new Date() }, $inc: { token_version: 1 } }
+    );
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/auth/logout — invalidates every outstanding token for this admin
+router.post('/auth/logout', requireAdminAuth(), async (req, res) => {
+  try {
+    await col('admin_users').updateOne(
+      { _id: req.adminUser._id },
+      { $inc: { token_version: 1 }, $set: { updated_at: new Date() } }
+    );
+    res.json({ message: 'Logged out successfully' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -118,7 +132,7 @@ router.post('/users', requireAdminAuth('admin_users', 'manage'), express.json(),
     const user = {
       _id: newId(), email: email.toLowerCase().trim(), password_hash: hash,
       name: name || '', phone: phone || null, role: role || 'admin', permissions: permissions || {},
-      is_active: true, last_login: null, login_count: 0, created_by: req.adminUser?._id || 'admin', created_at: new Date(), updated_at: new Date(),
+      is_active: true, last_login: null, login_count: 0, token_version: 0, created_by: req.adminUser?._id || 'admin', created_at: new Date(), updated_at: new Date(),
     };
     await col('admin_users').insertOne(user);
     const { password_hash, ...safe } = user;
@@ -131,7 +145,7 @@ router.post('/users', requireAdminAuth('admin_users', 'manage'), express.json(),
 
 router.put('/users/:id', requireAdminAuth('admin_users', 'manage'), express.json(), async (req, res) => {
   try {
-    const { name, phone, role, permissions, is_active } = req.body;
+    const { name, phone, role, permissions, is_active, customer_full_phone } = req.body;
     const target = await col('admin_users').findOne({ _id: req.params.id });
     if (!target) return res.status(404).json({ error: 'User not found' });
     if (target.role === 'super_admin' && req.adminUser._id !== target._id) return res.status(403).json({ error: 'Cannot modify super admin' });
@@ -141,7 +155,22 @@ router.put('/users/:id', requireAdminAuth('admin_users', 'manage'), express.json
     if (role !== undefined && role !== 'super_admin') $set.role = role;
     if (permissions !== undefined) $set.permissions = permissions;
     if (is_active !== undefined) $set.is_active = is_active;
-    await col('admin_users').updateOne({ _id: req.params.id }, { $set });
+
+    // CRIT-3B-01: customer_full_phone is a sensitive PII-escalation toggle.
+    // Only super_admin can grant/revoke it. Non-super_admin requests are
+    // silently ignored (per spec) so routine edits don't 403 just because
+    // the UI sent the field for read-back parity.
+    if (customer_full_phone !== undefined && req.adminUser?.role === 'super_admin') {
+      const nextPerms = permissions !== undefined
+        ? { ...(permissions || {}) }
+        : { ...(target.permissions || {}) };
+      nextPerms.customer_full_phone = !!customer_full_phone;
+      $set.permissions = nextPerms;
+    }
+    // Deactivation must invalidate any outstanding JWT for this admin
+    const $update = { $set };
+    if (is_active === false) $update.$inc = { token_version: 1 };
+    await col('admin_users').updateOne({ _id: req.params.id }, $update);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -151,7 +180,10 @@ router.post('/users/:id/reset-password', requireAdminAuth('admin_users', 'manage
     const { new_password } = req.body;
     if (!new_password || new_password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
     const hash = await bcrypt.hash(new_password, 12);
-    await col('admin_users').updateOne({ _id: req.params.id }, { $set: { password_hash: hash, updated_at: new Date() } });
+    await col('admin_users').updateOne(
+      { _id: req.params.id },
+      { $set: { password_hash: hash, updated_at: new Date() }, $inc: { token_version: 1 } }
+    );
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2134,6 +2166,30 @@ router.get('/restaurants/:id/verification', async (req, res) => {
     }
 
     res.json(stored);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// CRIT-2B-10: override per-restaurant daily campaign send cap. 0 disables
+// cap entirely; omit/null falls back to CAMPAIGN_DEFAULT_DAILY_CAP.
+router.patch('/restaurants/:id/campaign-cap', requireAdminAuth('restaurants', 'manage'), express.json(), async (req, res) => {
+  try {
+    const raw = req.body?.campaign_daily_cap;
+    if (raw === null || raw === undefined || raw === '') {
+      await col('restaurants').updateOne(
+        { _id: req.params.id },
+        { $unset: { campaign_daily_cap: '' }, $set: { updated_at: new Date() } },
+      );
+      return res.json({ ok: true, campaign_daily_cap: null });
+    }
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0 || n > 1000) {
+      return res.status(400).json({ error: 'campaign_daily_cap must be a non-negative integer <= 1000' });
+    }
+    await col('restaurants').updateOne(
+      { _id: req.params.id },
+      { $set: { campaign_daily_cap: Math.floor(n), updated_at: new Date() } },
+    );
+    res.json({ ok: true, campaign_daily_cap: Math.floor(n) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

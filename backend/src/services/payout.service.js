@@ -17,9 +17,14 @@
 
 'use strict';
 
-const { newId } = require('../config/database');
+const { newId, col } = require('../config/database');
 const paymentSvc = require('./payment');
 const log = require('../utils/logger').child({ component: 'payout' });
+
+// When true, non-Razorpay payouts are flagged for manual ops transfer
+// instead of being silently stubbed. Ops moves the money out-of-band,
+// then calls POST /admin/settlements/confirm to close the loop.
+const MANUAL_PAYOUTS_ENABLED = String(process.env.MANUAL_PAYOUTS_ENABLED ?? 'true').toLowerCase() === 'true';
 
 // data: { fundAccountId, amountPaise, idempotencyKey, referenceId, narration, mode? }
 async function initiatePayout(provider, data) {
@@ -47,18 +52,29 @@ async function _razorpayPayout({ fundAccountId, amountPaise, idempotencyKey, ref
 }
 
 async function _fallbackPayout({ amountPaise, idempotencyKey, referenceId }) {
-  const mode = (process.env.FALLBACK_PAYOUT_MODE || 'stub').toLowerCase();
-  if (mode === 'fail') {
-    throw new Error('fallback_provider: not configured');
+  if (!MANUAL_PAYOUTS_ENABLED) {
+    throw new Error('Non-Razorpay payout provider not configured. Set MANUAL_PAYOUTS_ENABLED=true or wire a real provider.');
   }
-  // Stub — emit a synthetic payout id so the downstream write path
-  // (settlement row update + ledger debit) behaves exactly as it
-  // would with a live rail. Swap this body when a real provider
-  // (Cashfree / ICICI / etc.) is integrated.
-  const payoutId = `fb_${newId()}`;
-  log.warn({ amountPaise, referenceId, idempotencyKey, payoutId },
-    'fallback_provider: STUB payout — no real money moved');
-  return { provider: 'fallback_provider', payout_id: payoutId, raw: { stub: true } };
+  if (!referenceId) {
+    throw new Error('fallback_provider: referenceId (settlementId) required for manual payout flagging');
+  }
+
+  // Manual-payout mode: flag the settlement for ops to transfer manually.
+  // A synthetic payout_id (manual_<settlementId>) lets the outer settlement
+  // flow debit the ledger as pending and keeps confirmPayout(payoutId)
+  // working unchanged — ops calls POST /admin/settlements/confirm with the
+  // external bank reference once the transfer clears.
+  const payoutId = `manual_${referenceId}`;
+  await col('settlements').updateOne(
+    { _id: referenceId, status: { $nin: ['completed', 'pending_manual_payout'] } },
+    { $set: {
+        status: 'pending_manual_payout',
+        manual_payout_flagged_at: new Date(),
+    } },
+  );
+  log.warn({ settlementId: referenceId, amountPaise, idempotencyKey, payoutId },
+    `Settlement ${referenceId} flagged for manual payout — transfer manually then confirm via admin panel`);
+  return { provider: 'fallback_provider', payout_id: payoutId, raw: { manual: true } };
 }
 
 module.exports = { initiatePayout };

@@ -36,7 +36,25 @@ const round2 = (n) => Math.round((n || 0) * 100) / 100;
 //   customer_total = subtotal + food_gst + customer_delivery + customer_delivery_gst
 //                    + packaging + packaging_gst - discount
 
-function calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs = 0, discountRs = 0) {
+// CRIT-2A-04: Loyalty-tier free-delivery waiver.
+//   platinum — always free delivery (per TIER_BENEFITS in services/loyalty.js)
+//   gold     — free delivery on orders ≥ ₹500
+//   bronze/silver — no waiver
+// Waiver zeroes the CUSTOMER'S share of delivery + delivery GST. The
+// restaurant's own absorbed share (delivery_fee_customer_pct < 100) is
+// unchanged — this is a platform-borne promotion, not a restaurant cost.
+const FREE_DELIVERY_PLATINUM_TIERS = new Set(['platinum']);
+const FREE_DELIVERY_GOLD_MIN_SUBTOTAL_RS = 500;
+
+function _qualifiesForFreeDelivery(loyaltyTier, subtotalRs) {
+  const t = (loyaltyTier || '').toString().toLowerCase().trim();
+  if (!t) return false;
+  if (FREE_DELIVERY_PLATINUM_TIERS.has(t)) return true;
+  if (t === 'gold' && Number(subtotalRs) >= FREE_DELIVERY_GOLD_MIN_SUBTOTAL_RS) return true;
+  return false;
+}
+
+function calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs = 0, discountRs = 0, loyaltyTier = null) {
   const {
     delivery_fee_customer_pct = 100,   // % of delivery fee paid by customer (rest absorbed by restaurant)
     menu_gst_mode             = 'included', // 'included' = GST baked into price, 'extra' = added on top
@@ -61,8 +79,20 @@ function calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs = 0, disc
 
   // GST on each party's delivery share (18% — standard Indian GST on services)
   const DELIVERY_GST_PCT = 18;
-  const customerDeliveryGstRs  = round2(customerDeliveryRs  * (DELIVERY_GST_PCT / 100));
+  const customerDeliveryGstRsRaw = round2(customerDeliveryRs  * (DELIVERY_GST_PCT / 100));
   const restaurantDeliveryGstRs = round2(restaurantDeliveryRs * (DELIVERY_GST_PCT / 100));
+
+  // ── Loyalty free-delivery waiver (CRIT-2A-04) ─────────────
+  // Applied BEFORE the customer total is summed. Zeroes customer's
+  // delivery + delivery GST; the original amount is surfaced as
+  // delivery_discount_rs so the receipt and settlement reports can
+  // attribute the promo cost. Restaurant's own share is untouched.
+  const qualifiesLoyaltyFree = _qualifiesForFreeDelivery(loyaltyTier, subtotalRs);
+  const customerDeliveryEffRs   = qualifiesLoyaltyFree ? 0 : customerDeliveryRs;
+  const customerDeliveryGstEffRs = qualifiesLoyaltyFree ? 0 : customerDeliveryGstRsRaw;
+  const deliveryDiscountRs = qualifiesLoyaltyFree
+    ? round2(customerDeliveryRs + customerDeliveryGstRsRaw)
+    : 0;
 
   // ── Packaging ─────────────────────────────────────────────
   const packagingRs    = round2(Number(packaging_charge_rs) || 0);
@@ -72,7 +102,7 @@ function calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs = 0, disc
   const discount  = round2(Number(discountRs) || 0);
   const customerTotal = round2(
     subtotalRs + foodGstRs
-    + customerDeliveryRs + customerDeliveryGstRs
+    + customerDeliveryEffRs + customerDeliveryGstEffRs
     + packagingRs + packagingGstRs
     - discount
   );
@@ -86,14 +116,17 @@ function calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs = 0, disc
     discount_rs: discount,
     delivery_fee_total_rs: deliveryTotal,
     food_gst_rs: foodGstRs,
-    customer_delivery_rs: customerDeliveryRs,
-    customer_delivery_gst_rs: customerDeliveryGstRs,
+    customer_delivery_rs: customerDeliveryEffRs,
+    customer_delivery_gst_rs: customerDeliveryGstEffRs,
     restaurant_delivery_rs: restaurantDeliveryRs,
     restaurant_delivery_gst_rs: restaurantDeliveryGstRs,
     packaging_rs: packagingRs,
     packaging_gst_rs: packagingGstRs,
     customer_total_rs: customerTotal,
     restaurant_delivery_deduction_rs: restaurantDeductionRs,
+    // CRIT-2A-04: loyalty waiver breadcrumbs for receipts + analytics.
+    delivery_discount_rs: deliveryDiscountRs,
+    loyalty_tier_applied: qualifiesLoyaltyFree ? String(loyaltyTier).toLowerCase() : null,
   };
 }
 

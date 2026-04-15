@@ -120,6 +120,34 @@ async function _handleCustomerNotification(payload) {
   }
   const ws = require('../services/websocket');
   try { ws.broadcastOrder(order.restaurant_id, 'payment_received', { orderId: payload.orderId, orderNumber: order.order_number, amountRs: order.total_rs }); } catch (_) {}
+
+  // Persistent-notification handshake: stamp notified_at ONCE so the
+  // dashboard can distinguish never-shown vs already-shown orders, then
+  // broadcast new_order for the looping modal + sound. Both side-effects
+  // are best-effort — the order itself was already persisted upstream.
+  try {
+    const notifyAt = new Date();
+    const stampRes = await col('orders').updateOne(
+      { _id: payload.orderId, notified_at: { $exists: false } },
+      { $set: { notified_at: notifyAt } }
+    );
+    // Only broadcast on the first stamp — prevents duplicate modals if
+    // the job retries after a successful template send.
+    if (stampRes.modifiedCount > 0) {
+      ws.broadcastOrder(order.restaurant_id, 'new_paid_order', {
+        orderId: payload.orderId,
+        orderNumber: order.order_number,
+        customerName: order.customer_name || '',
+        customerPhone: order.wa_phone || '',
+        totalRs: order.total_rs,
+        itemCount: order.item_count || (order.items?.length || 0),
+        items: (order.items || []).slice(0, 6).map(i => ({ name: i.name, quantity: i.quantity })),
+        orderType: order.order_type || 'delivery',
+        notifiedAt: notifyAt.toISOString(),
+      });
+    }
+  } catch (err) { log.warn({ err, orderId: payload.orderId }, 'new_order broadcast failed'); }
+
   try { require('../services/notify').notifyNewOrder(order); } catch (_) {}
 }
 
@@ -216,11 +244,17 @@ async function _handleLoyaltyAward(payload) {
     await wa.sendText(waAcc.phone_number_id, waToken, toId, msg);
   }
 
-  // Rating request — best-effort.
+  // Rating request — best-effort. Stamps rating_requested_at on success
+  // so the reconciliation cron (/api/cron/rating-requests) knows this
+  // order has already been handled and skips it.
   if (toId && waAcc?.phone_number_id && waToken) {
     try {
       const { sendRatingRequest } = require('../webhooks/whatsapp');
       await sendRatingRequest(payload.orderId, waAcc.phone_number_id, waToken, toId);
+      await col('orders').updateOne(
+        { _id: payload.orderId, rating_requested_at: null },
+        { $set: { rating_requested_at: new Date() } },
+      );
     } catch (e) { log.warn({ err: e, orderId: payload.orderId }, 'rating request failed'); }
   }
 }

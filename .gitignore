@@ -51,3 +51,9 @@ FLOW_BUILDER_FIX_SUMMARY.md
 backend/tests/tenantIsolation.test.js
 backend/tests/withIdempotency.test.js
 backend/tests/withLock.test.js
+prompts/audit-carry-1.md
+prompts/audit-carry-2a.md
+prompts/audit-carry-2b.md
+prompts/audit-carry-3a.md
+prompts/audit-carry-3b.md
+sales/GullyBite_Sales_Training_Guide_2026-04-15.pdf

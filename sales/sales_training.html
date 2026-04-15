@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GullyBite Sales Training Guide</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm 22mm 18mm;
+    @bottom-center {
+      content: "GullyBite Sales Training — Illustrative scenarios · Page " counter(page) " of " counter(pages);
+      font-family: 'Helvetica', sans-serif;
+      font-size: 8.5pt;
+      color: #6b7280;
+    }
+    @top-right {
+      content: "Internal · 2026-04-15";
+      font-family: 'Helvetica', sans-serif;
+      font-size: 8.5pt;
+      color: #9ca3af;
+    }
+  }
+  @page:first {
+    @top-right { content: ""; }
+    @bottom-center { content: ""; }
+  }
+  html { font-family: 'Helvetica', 'Arial', sans-serif; color: #1f2937; font-size: 10.5pt; line-height: 1.5; }
+  body { margin: 0; }
+  h1, h2, h3, h4 { color: #2D5016; margin-top: 0; }
+  h1 { font-size: 28pt; letter-spacing: -0.5px; }
+  h2 { font-size: 17pt; border-bottom: 2px solid #2D5016; padding-bottom: 4px; margin-top: 24px; }
+  h3 { font-size: 12.5pt; color: #1f5c10; margin-top: 16px; margin-bottom: 4px; }
+  h4 { font-size: 11pt; color: #3a7a1f; margin-bottom: 2px; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0 8px 0; padding-left: 20px; }
+  li { margin: 3px 0; }
+  section { page-break-inside: auto; }
+  .page-break { page-break-before: always; }
+
+  .cover {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    height: 250mm;
+    padding: 20mm;
+    background: linear-gradient(135deg, #2D5016 0%, #4a7c2a 100%);
+    color: white;
+    margin: -20mm -18mm 0 -18mm;
+  }
+  .cover h1 { color: white; font-size: 42pt; margin-bottom: 6px; }
+  .cover .sub { font-size: 16pt; opacity: 0.95; margin-bottom: 40px; }
+  .cover .meta { font-size: 11pt; opacity: 0.85; border-top: 1px solid rgba(255,255,255,0.4); padding-top: 16px; margin-top: 30px; width: 80%; }
+  .cover .tag { background: rgba(255,255,255,0.18); padding: 3px 10px; border-radius: 12px; font-size: 9pt; display: inline-block; margin-right: 6px; margin-bottom: 6px; }
+
+  .callout {
+    background: #f3f7ed;
+    border-left: 4px solid #2D5016;
+    padding: 10px 14px;
+    margin: 10px 0;
+    border-radius: 4px;
+  }
+  .callout.warn {
+    background: #fff7ed;
+    border-left-color: #c2410c;
+  }
+  .callout.note {
+    background: #eff6ff;
+    border-left-color: #1d4ed8;
+  }
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 8px 0;
+  }
+  .card {
+    background: #fafaf5;
+    border: 1px solid #e5e7e0;
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .card h4 { margin-top: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 9.5pt;
+  }
+  th, td {
+    border: 1px solid #d1d5db;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #2D5016;
+    color: white;
+    font-weight: 600;
+  }
+  tr:nth-child(even) td { background: #f9fafb; }
+  .illustrative {
+    background: #fef9c3;
+    color: #713f12;
+    font-size: 8.5pt;
+    padding: 2px 8px;
+    border-radius: 10px;
+    display: inline-block;
+    font-weight: 600;
+  }
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 12px 0;
+  }
+  .kpi {
+    background: #f3f7ed;
+    border-radius: 6px;
+    padding: 10px;
+    text-align: center;
+  }
+  .kpi .big { font-size: 18pt; font-weight: 700; color: #2D5016; }
+  .kpi .lbl { font-size: 9pt; color: #4b5563; margin-top: 2px; }
+  .toc ol { counter-reset: toc; list-style: none; padding: 0; }
+  .toc li { counter-increment: toc; padding: 5px 0; border-bottom: 1px dotted #d4d4d4; }
+  .toc li::before { content: counter(toc) ". "; color: #2D5016; font-weight: 700; }
+  small { color: #6b7280; }
+  .objection {
+    background: #fff;
+    border: 1px solid #e5e7e0;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 6px 0;
+  }
+  .objection .q { font-weight: 600; color: #7c2d12; }
+  .objection .a { margin-top: 4px; }
+  .badge-green { background: #2D5016; color: white; padding: 2px 8px; border-radius: 10px; font-size: 8.5pt; }
+  .badge-gray { background: #9ca3af; color: white; padding: 2px 8px; border-radius: 10px; font-size: 8.5pt; }
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <div style="font-size:11pt; opacity:0.9; margin-bottom:6px;">INTERNAL SALES ENABLEMENT</div>
+  <h1>GullyBite</h1>
+  <div class="sub">The Commission-Free WhatsApp Commerce<br/>Operating System for Indian Restaurants</div>
+  <div style="margin-top:18px;">
+    <span class="tag">WhatsApp-native ordering</span>
+    <span class="tag">Unified order inbox</span>
+    <span class="tag">POS &amp; aggregator sync</span>
+    <span class="tag">Own your customer</span>
+  </div>
+  <div class="meta">
+    Sales Training Guide · April 2026<br/>
+    Prepared for the field sales team<br/>
+    <em>All financial figures in this document are illustrative scenarios, not committed outcomes.</em>
+  </div>
+</div>
+
+<!-- TOC -->
+<section class="page-break toc">
+  <h2>Contents</h2>
+  <ol>
+    <li>Executive Summary &amp; The Opportunity</li>
+    <li>The Restaurant Owner's Pain Points</li>
+    <li>The GullyBite Solution</li>
+    <li>Key Selling Points &amp; Differentiators</li>
+    <li>Illustrative Case Studies</li>
+    <li>Sales Positioning &amp; Pitch Framework</li>
+    <li>Pricing &amp; ROI Conversation</li>
+    <li>FAQ &amp; Objection Handling</li>
+    <li>Competitive Positioning</li>
+    <li>Your 30-Day Action Plan</li>
+  </ol>
+  <div class="callout note">
+    <strong>How to use this guide.</strong> Read cover-to-cover once. Then keep Sections 6–8 open on your phone during prospect meetings — they map directly to the questions owners ask.
+  </div>
+</section>
+
+<!-- 1 -->
+<section class="page-break">
+  <h2>1. Executive Summary &amp; The Opportunity</h2>
+  <p>Indian restaurants — from single-kitchen dhabas to 20-branch chains — are squeezed between aggregator commissions (typically 18–30%), thin margins on dine-in, and no ownership of the customer relationship. Every order placed on Swiggy or Zomato leaves the restaurant with a receipt; it does not leave them with a customer they can re-message.</p>
+  <p><strong>GullyBite is a WhatsApp-first commerce operating system that lets restaurants take direct orders, unify every aggregator and POS into one dashboard, and keep the customer relationship they are already paying for.</strong></p>
+  <div class="kpi-row">
+    <div class="kpi"><div class="big">₹0</div><div class="lbl">commission on direct WhatsApp orders</div></div>
+    <div class="kpi"><div class="big">1</div><div class="lbl">dashboard for Swiggy, Zomato, POS, WhatsApp</div></div>
+    <div class="kpi"><div class="big">100%</div><div class="lbl">customer data retained by the restaurant</div></div>
+  </div>
+  <h3>Why WhatsApp, why now</h3>
+  <ul>
+    <li>WhatsApp Business is already the most trusted channel with Indian diners — no new app to download, no friction.</li>
+    <li>Meta's native Flows (address capture, cart review, payment handoff) now support an end-to-end ordering experience inside a single chat.</li>
+    <li>Razorpay + UPI makes checkout a 6-second flow. No card, no redirect, no "download our app."</li>
+  </ul>
+  <div class="callout">
+    <strong>Sales reality check.</strong> You are not selling software. You are selling a P&amp;L change: +10–20 direct orders per day replaces ~₹25–60k/month in aggregator commission for a mid-size outlet. <span class="illustrative">ILLUSTRATIVE</span>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="page-break">
+  <h2>2. The Restaurant Owner's Pain Points</h2>
+  <p>Before you walk into a meeting, know what keeps the owner awake. These five pains are the hooks your pitch attaches to.</p>
+
+  <h3>2.1 Aggregator commissions eat the margin</h3>
+  <p>A ₹500 order on an aggregator can net the restaurant ₹320–₹380 after commission, payment gateway, and promotion. On a 12% net margin business, that is the entire week's profit on one order.</p>
+
+  <h3>2.2 They do not own the customer</h3>
+  <p>A restaurant that has served 8,000 orders on Swiggy does not have 8,000 phone numbers. When the aggregator raises commission or throttles visibility, the restaurant has no way to reach its own diners.</p>
+
+  <h3>2.3 Operations are fragmented</h3>
+  <p>Swiggy tablet. Zomato tablet. Dunzo handset. POS screen. Phone for walk-in reservations. Each has its own login, tone, and dispatch flow. Orders get missed. Staff get confused during rush.</p>
+
+  <h3>2.4 Repeat-order marketing is manual or non-existent</h3>
+  <p>"Send a WhatsApp to last week's customers" means one staff member, 2 hours, zero personalisation, and no tracking. Campaigns that do happen cannot be attributed to revenue.</p>
+
+  <h3>2.5 Delivery logistics are a headache</h3>
+  <p>In-house riders are expensive and idle between peaks. Ad-hoc delivery is unreliable. Porter, Dunzo, and local 3PLs each have separate flows and no tracking visibility for the customer.</p>
+
+  <div class="callout warn">
+    <strong>Listen for these phrases in discovery.</strong> "Swiggy is killing us." "I wish we had their numbers." "My staff are running between tablets." "I tried WhatsApp marketing once, never tracked anything." Any one of these is a qualified opening.
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="page-break">
+  <h2>3. The GullyBite Solution</h2>
+  <p>GullyBite is a four-layer platform. You should be able to draw this on a napkin.</p>
+
+  <h3>3.1 Customer layer — WhatsApp-native ordering</h3>
+  <ul>
+    <li><strong>Catalog inside WhatsApp.</strong> Customer browses menu via a catalog message or interactive list — no app install.</li>
+    <li><strong>Meta Flows for heavy lifts.</strong> Address capture, location sharing, cart review, and reorder all run as native WhatsApp Flows, not clunky web redirects.</li>
+    <li><strong>Razorpay checkout.</strong> UPI, cards, wallets. Order is "paid" before the restaurant sees it — which eliminates fake orders and COD disputes.</li>
+    <li><strong>Loyalty and referrals baked in.</strong> 4 tiers (bronze → silver → gold → platinum) and a shareable GBREF referral code every customer gets automatically.</li>
+  </ul>
+
+  <h3>3.2 Restaurant layer — unified dashboard</h3>
+  <ul>
+    <li><strong>One inbox for every order</strong> — direct WhatsApp, Swiggy, Zomato, POS-originated — with the same accept/decline/dispatch flow.</li>
+    <li><strong>Persistent order notifications.</strong> A paid order triggers a looping sound + modal on the dashboard until staff explicitly accept or decline. No missed orders during rush.</li>
+    <li><strong>Accept / decline with automatic refund.</strong> Declining a paid order triggers a Razorpay refund automatically — the owner never has to remember to do it manually.</li>
+    <li><strong>Branch-level control.</strong> Menus, pricing, availability, and staff permissions scoped per outlet for multi-branch chains.</li>
+  </ul>
+
+  <h3>3.3 Integration layer — live today</h3>
+  <div class="grid-2">
+    <div class="card"><h4>POS</h4>Petpooja · UrbanPiper · DotPe — catalog &amp; order sync. <small>Additive: keep your POS, get a customer channel.</small></div>
+    <div class="card"><h4>Aggregators</h4>Swiggy · Zomato — orders flow into the same GullyBite inbox. <small>We do not replace them; we unify them.</small></div>
+    <div class="card"><h4>Delivery (3PL)</h4>Porter integration with live tracking links sent to the customer over WhatsApp.</div>
+    <div class="card"><h4>Payments</h4>Razorpay orders, webhooks, automatic refunds on decline, settlement engine for payouts.</div>
+  </div>
+
+  <h3>3.4 Growth layer — what drives repeat</h3>
+  <ul>
+    <li><strong>Abandoned-cart recovery.</strong> Customer drops off mid-order → automated nudge on WhatsApp.</li>
+    <li><strong>Post-order rating request</strong> with gating: 4–5 stars get a Google review deep link, lower scores route back to the manager privately.</li>
+    <li><strong>Coupon templates + referral attribution</strong> so every marketing rupee is traceable to a customer and an order.</li>
+  </ul>
+</section>
+
+<!-- 4 -->
+<section class="page-break">
+  <h2>4. Key Selling Points &amp; Differentiators</h2>
+
+  <h3>The five things no competitor has all of</h3>
+  <ol>
+    <li><strong>WhatsApp-native ordering with Meta Flows</strong> — not a web link sent over WhatsApp, but an actual in-chat experience.</li>
+    <li><strong>Commission-free direct channel + aggregator unification</strong> — we are not "anti-aggregator"; we are "own what you own, unify the rest."</li>
+    <li><strong>Automatic refund on decline</strong> — a small feature with huge owner-psychology impact. They accept the "paid first" model because refunds are one-click.</li>
+    <li><strong>Loyalty, referrals, cart recovery, and rating flow built in</strong> — not add-on modules with separate pricing.</li>
+    <li><strong>Branch-scoped multi-outlet architecture</strong> — priced for chains, not retrofitted from a single-outlet tool.</li>
+  </ol>
+
+  <h3>What owners feel in the first 2 weeks</h3>
+  <div class="grid-2">
+    <div class="card"><h4>Dashboard sanity</h4>"I see every order in one place. My staff stopped running between tablets."</div>
+    <div class="card"><h4>Customer list growing</h4>"I now have 400 WhatsApp numbers I can message. I had zero three weeks ago."</div>
+    <div class="card"><h4>Repeat-order visibility</h4>"I can finally see who my regulars are and message them when it's slow."</div>
+    <div class="card"><h4>Fewer missed orders</h4>"The modal + sound catches orders even when the counter is crowded."</div>
+  </div>
+
+  <div class="callout">
+    <strong>Sales shorthand.</strong> "You keep Swiggy and Zomato. We add a commission-free WhatsApp channel <em>and</em> pull all three into one screen. You lose nothing; you gain the customer list."
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="page-break">
+  <h2>5. Illustrative Case Studies</h2>
+  <p><span class="illustrative">ILLUSTRATIVE SCENARIOS</span> — the following are representative composites to help you tell the story. Do not quote specific numbers as guaranteed outcomes.</p>
+
+  <h3>Case A — The single-outlet QSR "Biryani House"</h3>
+  <ul>
+    <li><strong>Before:</strong> 180 orders/day, 70% via aggregators at ~23% blended commission. Monthly aggregator commission ≈ ₹2.4L.</li>
+    <li><strong>After 90 days:</strong> 40 orders/day migrated to direct WhatsApp (own customer list built from rating flow + coupon templates). Aggregator volume held; direct orders were <em>incremental</em> from repeat diners.</li>
+    <li><strong>Illustrative P&amp;L impact:</strong> ~₹65–80k/month margin recovered on those 40 direct orders + ~3,200 phone numbers owned and remarketable.</li>
+  </ul>
+
+  <h3>Case B — The 6-branch chain "South Spice"</h3>
+  <ul>
+    <li><strong>Before:</strong> 6 branches, 6 Swiggy tablets, 6 Zomato tablets, one central manager juggling screenshots over WhatsApp groups. No central view of performance.</li>
+    <li><strong>After 60 days:</strong> All 6 branches on a single GullyBite dashboard with branch-scoped permissions. POS sync via UrbanPiper live in 2 branches. Central manager views one inbox.</li>
+    <li><strong>Illustrative operational impact:</strong> missed-order rate (internally tracked) dropped significantly; direct-WhatsApp revenue reached mid-single-digit percent of total in the first quarter.</li>
+  </ul>
+
+  <h3>Case C — The dark kitchen "Late Night Noodles"</h3>
+  <ul>
+    <li><strong>Before:</strong> 100% aggregator-dependent. One bad visibility week = 40% revenue drop.</li>
+    <li><strong>After 45 days:</strong> Cart-recovery + loyalty drove repeat direct orders from existing aggregator customers who had opted into WhatsApp. Porter integration replaced ad-hoc delivery for the direct channel.</li>
+    <li><strong>Illustrative resilience impact:</strong> when aggregator visibility dropped the following month, direct-WhatsApp orders buffered ~25% of the shortfall. Owner described it as "an insurance policy that also makes money."</li>
+  </ul>
+
+  <div class="callout note">
+    <strong>How to use these in the field.</strong> Pick the one closest to the prospect's size and tell it as a story: problem → what they tried → what changed → where they are now. Do not quote percentages as promises; always say "owners like you have seen outcomes in this range."
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="page-break">
+  <h2>6. Sales Positioning &amp; Pitch Framework</h2>
+
+  <h3>6.1 The 30-second intro</h3>
+  <div class="callout">
+    "GullyBite is a WhatsApp-first ordering and operations platform for restaurants. You keep Swiggy and Zomato. On top of that you get (a) a direct WhatsApp ordering channel with zero commission, (b) one dashboard that unifies aggregators, POS, and direct orders, and (c) a customer list you own and can remarket to. Most outlets go live in under a week."
+  </div>
+
+  <h3>6.2 Discovery questions — ask these in order</h3>
+  <ol>
+    <li>How many outlets do you run and how many orders per day per outlet?</li>
+    <li>What's your rough aggregator commission as a % of GMV right now?</li>
+    <li>How do you currently track repeat customers or run promotions?</li>
+    <li>What POS do you use, and is it something your staff actually use fully?</li>
+    <li>What's the one thing about your current setup that frustrates you most during the dinner rush?</li>
+  </ol>
+
+  <h3>6.3 Demo flow — 12 minutes</h3>
+  <ol>
+    <li><strong>Customer view (3 min):</strong> demo an actual WhatsApp order end-to-end on a demo number. Browse, add to cart, pay, receive confirmation.</li>
+    <li><strong>Restaurant view (4 min):</strong> show the paid order arriving with sound + modal, accept it, show the dispatch to Porter with live tracking link, then show the customer side receiving that link.</li>
+    <li><strong>Unified inbox (2 min):</strong> show a Swiggy-originated and a direct-WhatsApp order side by side in the same dashboard.</li>
+    <li><strong>Growth view (2 min):</strong> loyalty tiers, referrals, cart-recovery flow, rating request.</li>
+    <li><strong>Multi-branch / permissions (1 min):</strong> only if prospect is a chain.</li>
+  </ol>
+
+  <h3>6.4 Closing framework — the "two lists" close</h3>
+  <p>"Today you have one list — Swiggy's. In 90 days with GullyBite you'll have two lists — theirs and yours. Which one of those do you want to depend on next year?"</p>
+</section>
+
+<!-- 7 -->
+<section class="page-break">
+  <h2>7. Pricing &amp; ROI Conversation</h2>
+  <p><span class="illustrative">ILLUSTRATIVE PRICING SCENARIOS</span> — final pricing is set by the commercial team per deal. Use these tiers to frame the conversation only.</p>
+
+  <table>
+    <thead>
+      <tr><th>Plan</th><th>Typical fit</th><th>Illustrative monthly</th><th>What's included</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Starter</strong></td>
+        <td>1 outlet, &lt; 100 orders/day</td>
+        <td>~₹5,000</td>
+        <td>WhatsApp ordering, Razorpay, dashboard, Porter delivery, loyalty, referrals</td>
+      </tr>
+      <tr>
+        <td><strong>Growth</strong></td>
+        <td>1–3 outlets, aggregator-heavy</td>
+        <td>~₹12,000</td>
+        <td>Everything in Starter + Swiggy/Zomato unified inbox + POS sync (1 platform) + cart recovery + rating flow</td>
+      </tr>
+      <tr>
+        <td><strong>Chain</strong></td>
+        <td>4+ outlets</td>
+        <td>~₹25,000+</td>
+        <td>Everything in Growth + branch-scoped permissions, multi-POS, priority support, dedicated success manager</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>The ROI conversation — do this on paper, in front of them</h3>
+  <ol>
+    <li>Ask current order volume and average order value.</li>
+    <li>Estimate aggregator share and blended commission.</li>
+    <li>Model: "If 15% of those orders migrate to direct WhatsApp in 90 days, what does that save you in commission?"</li>
+    <li>Subtract GullyBite subscription. The gap is the monthly ROI.</li>
+  </ol>
+
+  <div class="callout">
+    <strong>Worked illustration.</strong> 150 orders/day × ₹400 AOV × 70% aggregator × 22% commission ≈ ₹2.77L/month in commission. A 15% migration to direct ≈ ₹41k/month commission saved. Subtract ~₹12k Growth plan → <strong>~₹29k/month net</strong>. That is ~230% monthly ROI. <span class="illustrative">ILLUSTRATIVE</span>
+  </div>
+
+  <h3>The "what if it doesn't work" framing</h3>
+  <p>Offer a 30-day success checkpoint: if the dashboard isn't live and at least a baseline volume of direct orders isn't flowing by day 30, escalate to success manager. This removes perceived risk without giving away commercial terms.</p>
+</section>
+
+<!-- 8 -->
+<section class="page-break">
+  <h2>8. FAQ &amp; Objection Handling</h2>
+
+  <div class="objection">
+    <div class="q">Q: "I already have Swiggy and Zomato. Why do I need this?"</div>
+    <div class="a"><strong>A:</strong> You keep them. GullyBite is additive. It gives you a commission-free direct channel and pulls aggregator orders into one screen. The customer list you build on WhatsApp is yours — and that's the asset aggregators never give you.</div>
+  </div>
+
+  <div class="objection">
+    <div class="q">Q: "My customers won't order on WhatsApp."</div>
+    <div class="a"><strong>A:</strong> That's exactly what owners said three years ago about paying on UPI at a restaurant. WhatsApp is already the #1 customer-service channel in Indian F&amp;B. We're just adding a payment and catalog layer to a conversation you're already having.</div>
+  </div>
+
+  <div class="objection">
+    <div class="q">Q: "What if a customer pays and I can't fulfil the order?"</div>
+    <div class="a"><strong>A:</strong> The dashboard has one-click decline that automatically refunds via Razorpay. No manual refund process, no customer dispute calls. The system won't even mark the order cancelled unless the refund succeeds first.</div>
+  </div>
+
+  <div class="objection">
+    <div class="q">Q: "Will this work with my POS?"</div>
+    <div class="a"><strong>A:</strong> Petpooja, UrbanPiper, and DotPe are live today. If you're on one of those, catalog and orders sync automatically. If not, you can run GullyBite standalone and export daily.</div>
+  </div>
+
+  <div class="objection">
+    <div class="q">Q: "How do I get customers onto WhatsApp in the first place?"</div>
+    <div class="a"><strong>A:</strong> Three channels: the rating flow captures numbers from every delivered order (including aggregator); your referral codes are shareable; coupon templates incentivise the first direct order. Most outlets have their first 100 WhatsApp customers in week one.</div>
+  </div>
+
+  <div class="objection">
+    <div class="q">Q: "What about delivery? I don't have riders."</div>
+    <div class="a"><strong>A:</strong> Porter is integrated. Orders auto-dispatch, the customer gets a live tracking link on WhatsApp, and the delivery cost is transparent. No fleet to manage.</div>
+  </div>
+
+  <div class="objection">
+    <div class="q">Q: "Is this another long contract lock-in?"</div>
+    <div class="a"><strong>A:</strong> Pricing is monthly. There's a 30-day success checkpoint. No hidden per-order fees on the direct channel.</div>
+  </div>
+
+  <div class="objection">
+    <div class="q">Q: "Who owns the customer data?"</div>
+    <div class="a"><strong>A:</strong> You do. Every phone number, order, and preference sits in your GullyBite workspace. Exportable any time. That's the whole point.</div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="page-break">
+  <h2>9. Competitive Positioning</h2>
+
+  <table>
+    <thead>
+      <tr><th>Need</th><th>Swiggy/Zomato</th><th>POS-only (Petpooja etc.)</th><th>Generic "WhatsApp bot"</th><th>GullyBite</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Commission-free direct channel</td>
+        <td><span class="badge-gray">No</span></td>
+        <td><span class="badge-gray">No</span></td>
+        <td>Partial</td>
+        <td><span class="badge-green">Yes</span></td>
+      </tr>
+      <tr>
+        <td>Unified inbox across aggregators</td>
+        <td><span class="badge-gray">No</span></td>
+        <td>Some</td>
+        <td><span class="badge-gray">No</span></td>
+        <td><span class="badge-green">Yes</span></td>
+      </tr>
+      <tr>
+        <td>Native WhatsApp Flows (in-chat cart &amp; checkout)</td>
+        <td>N/A</td>
+        <td><span class="badge-gray">No</span></td>
+        <td>Rare</td>
+        <td><span class="badge-green">Yes</span></td>
+      </tr>
+      <tr>
+        <td>Automatic refund on decline</td>
+        <td>N/A</td>
+        <td><span class="badge-gray">No</span></td>
+        <td><span class="badge-gray">No</span></td>
+        <td><span class="badge-green">Yes</span></td>
+      </tr>
+      <tr>
+        <td>Loyalty, referrals, cart recovery included</td>
+        <td>Platform-owned</td>
+        <td>Add-on</td>
+        <td>Ad-hoc</td>
+        <td><span class="badge-green">Built-in</span></td>
+      </tr>
+      <tr>
+        <td>Customer list owned by restaurant</td>
+        <td><span class="badge-gray">No</span></td>
+        <td>Partial</td>
+        <td>Yes</td>
+        <td><span class="badge-green">Yes</span></td>
+      </tr>
+      <tr>
+        <td>Branch-scoped multi-outlet</td>
+        <td>N/A</td>
+        <td>Varies</td>
+        <td><span class="badge-gray">No</span></td>
+        <td><span class="badge-green">Yes</span></td>
+      </tr>
+      <tr>
+        <td>3PL delivery integrated (Porter)</td>
+        <td>In-platform only</td>
+        <td><span class="badge-gray">No</span></td>
+        <td><span class="badge-gray">No</span></td>
+        <td><span class="badge-green">Yes</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>How to talk about each competitor without trashing them</h3>
+  <ul>
+    <li><strong>vs. Swiggy/Zomato:</strong> "They are a demand channel. We are your commerce platform. You need both."</li>
+    <li><strong>vs. POS-only tools:</strong> "Your POS runs the kitchen. GullyBite runs the customer relationship. They work together."</li>
+    <li><strong>vs. generic WhatsApp chatbots:</strong> "Chatbots answer questions. GullyBite takes orders, collects payment, dispatches delivery, and brings the diner back. It's the difference between a receptionist and a full sales team."</li>
+  </ul>
+</section>
+
+<!-- 10 -->
+<section class="page-break">
+  <h2>10. Your 30-Day Action Plan</h2>
+  <p>This is how a new sales rep goes from onboarded to first closed deal.</p>
+
+  <h3>Week 1 — Absorb</h3>
+  <ul>
+    <li>Complete the demo-restaurant walkthrough on your own WhatsApp. Place three orders. Accept, decline (trigger refund), dispatch.</li>
+    <li>Shadow two discovery calls and two demos with a senior rep.</li>
+    <li>Memorise the 30-second intro (Section 6.1) word-perfect.</li>
+  </ul>
+
+  <h3>Week 2 — Prospect</h3>
+  <ul>
+    <li>Build a list of 40 target outlets within 5 km. Mix: 20 single-outlet, 15 two-to-five-branch, 5 larger chains.</li>
+    <li>Cold-walk 10 outlets/day in the 3–5 PM lull window. Goal: 10 discovery conversations by end of week.</li>
+    <li>Book at least 4 demo appointments.</li>
+  </ul>
+
+  <h3>Week 3 — Demo and Diagnose</h3>
+  <ul>
+    <li>Run 4 demos. Record what objection came up in each. Bring the two toughest to weekly sales review.</li>
+    <li>For every demo, do the ROI calculation on paper with the owner (Section 7).</li>
+    <li>Send a written follow-up within 24 hours — the ROI page and the case study nearest their size.</li>
+  </ul>
+
+  <h3>Week 4 — Close</h3>
+  <ul>
+    <li>Push at least 2 demo prospects to commercial conversation with the success manager.</li>
+    <li>First target: 1 Starter or Growth plan signed by day 30.</li>
+    <li>Stretch target: 1 chain in active evaluation.</li>
+  </ul>
+
+  <h3>Daily rituals that separate top reps</h3>
+  <ol>
+    <li>Morning 15-minute review of the previous day's demo notes. What objection blocked progress? Practise the counter aloud.</li>
+    <li>Keep a "live deal" WhatsApp group with your manager — post every meaningful signal (re-opened proposal, question about integration, referral intro).</li>
+    <li>End every demo by asking "what would need to be true for you to sign this week?" Listen. That sentence is the close.</li>
+  </ol>
+
+  <div class="callout">
+    <strong>One closing thought.</strong> You are not selling a SaaS login. You are selling a restaurant owner the chance to own their customer list — probably for the first time in their business life. Treat every pitch with the weight that deserves.
+  </div>
+
+  <p style="margin-top:20px; text-align:center; color:#6b7280; font-size:9pt;">
+    — End of Guide —<br/>
+    Questions, corrections, or field feedback? Route to sales-enablement internally.<br/>
+    <em>All financial figures in this document are illustrative; not guarantees of outcome.</em>
+  </p>
+</section>
+
+</body>
+</html>

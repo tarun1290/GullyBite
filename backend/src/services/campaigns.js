@@ -25,9 +25,93 @@ const DEFAULT_BATCH_SIZE = 500;
 const DEFAULT_BATCH_DELAY_MS = 5000;
 const FAILURE_THRESHOLD_PCT = 10; // Auto-pause if >10% fail in a batch
 
+// CRIT-2B-10: per-restaurant daily cap. Prevents a single tenant from burning
+// through the messaging wallet or tripping Meta rate limits via runaway sends.
+// Default can be overridden platform-wide via CAMPAIGN_DEFAULT_DAILY_CAP and
+// per-restaurant via restaurants.campaign_daily_cap.
+const CAMPAIGN_DEFAULT_DAILY_CAP = Number(process.env.CAMPAIGN_DEFAULT_DAILY_CAP) || 3;
+const CAMPAIGN_DAILY_CACHE_TTL_SEC = 25 * 3600; // 25h — overlaps midnight safely
+const IST_OFFSET_MS = 5.5 * 3600 * 1000;
+
+function _istDateKey(now = new Date()) {
+  // YYYY-MM-DD in IST — used as the bucket key so the counter resets at
+  // IST midnight regardless of server timezone.
+  const ist = new Date(now.getTime() + IST_OFFSET_MS);
+  return ist.toISOString().slice(0, 10);
+}
+
+function _nextIstMidnight(now = new Date()) {
+  // Start of tomorrow in IST, returned in UTC. Used for the 'resets_at'
+  // hint surfaced to the dashboard.
+  const ist = new Date(now.getTime() + IST_OFFSET_MS);
+  const y = ist.getUTCFullYear(), m = ist.getUTCMonth(), d = ist.getUTCDate();
+  return new Date(Date.UTC(y, m, d + 1) - IST_OFFSET_MS);
+}
+
+function _dailyCapKey(restaurantId) {
+  return `campaign_daily:${restaurantId}:${_istDateKey()}`;
+}
+
+async function _getConfiguredCap(restaurantId) {
+  try {
+    const r = await col('restaurants').findOne(
+      { _id: restaurantId },
+      { projection: { campaign_daily_cap: 1 } },
+    );
+    if (r && Number.isFinite(Number(r.campaign_daily_cap)) && Number(r.campaign_daily_cap) >= 0) {
+      return Number(r.campaign_daily_cap);
+    }
+  } catch (_) { /* fall through */ }
+  return CAMPAIGN_DEFAULT_DAILY_CAP;
+}
+
+async function _getSentTodayCount(restaurantId) {
+  try {
+    const doc = await col('_cache').findOne({ _id: _dailyCapKey(restaurantId) });
+    return Number(doc?.value?.count) || 0;
+  } catch (_) { return 0; }
+}
+
+async function _bumpSentTodayCount(restaurantId) {
+  try {
+    const key = _dailyCapKey(restaurantId);
+    const expiresAt = new Date(Date.now() + CAMPAIGN_DAILY_CACHE_TTL_SEC * 1000);
+    await col('_cache').updateOne(
+      { _id: key },
+      {
+        $inc: { 'value.count': 1 },
+        $set: { expiresAt, updatedAt: new Date() },
+      },
+      { upsert: true },
+    );
+  } catch (err) {
+    log.warn({ err, restaurantId }, 'campaign daily counter bump failed');
+  }
+}
+
+// Public: powers GET /campaigns/daily-usage on the restaurant dashboard.
+async function getDailyUsage(restaurantId) {
+  const [sentToday, cap] = await Promise.all([
+    _getSentTodayCount(restaurantId),
+    _getConfiguredCap(restaurantId),
+  ]);
+  return {
+    sent_today: sentToday,
+    daily_cap: cap,
+    resets_at: _nextIstMidnight().toISOString(),
+  };
+}
+
 // ─── CREATE CAMPAIGN ────────────────────────────────────────────
+// Segment types:
+//   all | recent | inactive              — time-based (customers collection)
+//   tag (match ALL) | any_tag (match ANY) — tag-based (customer_metrics.tags,
+//                                           restaurant-scoped via restaurant_stats)
+// Tags are written by customerIdentityLayer.classify: new|repeat|loyal|dormant|high_value.
+const TAG_SEGMENTS = new Set(['tag', 'any_tag']);
+
 async function createCampaign(restaurantId, data) {
-  const { branchId, name, productIds, segment, headerText, bodyText, footerText, scheduleAt, batchSize, sendMethod, couponId } = data;
+  const { branchId, name, productIds, segment, tags, tagMatchMode, headerText, bodyText, footerText, scheduleAt, batchSize, sendMethod, couponId } = data;
 
   if (!branchId || !productIds?.length) {
     throw new Error('branchId and at least one productId are required');
@@ -37,13 +121,27 @@ async function createCampaign(restaurantId, data) {
     throw new Error('Maximum 30 products per MPM campaign');
   }
 
+  const normalizedSegment = segment || 'all';
+  let normalizedTags = null;
+  if (TAG_SEGMENTS.has(normalizedSegment)) {
+    if (!Array.isArray(tags) || !tags.length) {
+      throw new Error('At least one tag is required for tag-based campaigns');
+    }
+    normalizedTags = [...new Set(tags.map(t => String(t).trim().toLowerCase()).filter(Boolean))];
+    if (!normalizedTags.length) throw new Error('At least one tag is required for tag-based campaigns');
+  }
+
   const campaign = {
     _id: newId(),
     restaurant_id: restaurantId,
     branch_id: branchId,
     name: name || 'Untitled Campaign',
     product_ids: productIds,
-    segment: segment || 'all', // all | recent | inactive | custom
+    segment: normalizedSegment, // all | recent | inactive | tag | any_tag | custom
+    tags: normalizedTags,
+    tag_match_mode: normalizedSegment === 'tag' ? 'all'
+      : normalizedSegment === 'any_tag' ? 'any'
+      : (tagMatchMode || null),
     header_text: headerText || null,
     body_text: bodyText || 'Check out our latest picks! Tap below to browse and order.',
     footer_text: footerText || 'GullyBite — Order on WhatsApp',
@@ -77,6 +175,34 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
     throw new Error('Campaign is not paused');
   }
 
+  // CRIT-2B-10: enforce per-restaurant daily cap. Only gates fresh sends —
+  // resumes of a previously counted campaign are allowed through so pausing
+  // doesn't cost a second slot. Uses _cache bucket keyed by IST date so the
+  // check is one lookup, not an aggregate over campaigns.
+  if (!resuming) {
+    const sentToday = await _getSentTodayCount(campaign.restaurant_id);
+    const cap = await _getConfiguredCap(campaign.restaurant_id);
+    if (cap > 0 && sentToday >= cap) {
+      console.warn(`[CAMPAIGN] Daily cap reached for restaurant ${campaign.restaurant_id}`);
+      await col('campaigns').updateOne({ _id: campaignId }, {
+        $set: {
+          status: 'capped',
+          pause_reason: 'Daily campaign limit reached. Resumes tomorrow.',
+          capped_at: new Date(),
+        },
+      });
+      logActivity({
+        actorType: 'system', action: 'campaign.capped', category: 'campaign',
+        description: `Campaign ${campaignId} blocked by daily cap (${sentToday}/${cap})`,
+        restaurantId: campaign.restaurant_id, resourceType: 'campaign', resourceId: campaignId,
+        severity: 'warning', metadata: { sentToday, cap },
+      });
+      return { sent: 0, failed: 0, total: 0, capped: true, sent_today: sentToday, daily_cap: cap };
+    }
+    // Count the slot now so concurrent sends can't both pass the gate.
+    await _bumpSentTodayCount(campaign.restaurant_id);
+  }
+
   await col('campaigns').updateOne({ _id: campaignId }, {
     $set: { status: 'sending', paused_at: null },
   });
@@ -88,7 +214,10 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
     });
     if (!waAccount) throw new Error('No active WhatsApp account');
 
-    const customers = await getSegmentCustomers(campaign.restaurant_id, campaign.segment);
+    const customers = await getSegmentCustomers(campaign.restaurant_id, campaign.segment, {
+      tags: campaign.tags,
+      tagMatchMode: campaign.tag_match_mode,
+    });
     const totalRecipients = customers.length;
 
     if (!totalRecipients) {
@@ -337,7 +466,7 @@ async function sendMPM(pid, token, to, catalogId, products, campaign) {
 }
 
 // ─── GET SEGMENT CUSTOMERS ──────────────────────────────────────
-async function getSegmentCustomers(restaurantId, segment) {
+async function getSegmentCustomers(restaurantId, segment, options = {}) {
   // [BSUID] Target customers who have at least one reachable identifier
   const filter = { restaurant_id: restaurantId, $or: [{ wa_phone: { $exists: true, $ne: null } }, { bsuid: { $exists: true, $ne: null } }] };
 
@@ -359,12 +488,44 @@ async function getSegmentCustomers(restaurantId, segment) {
       ];
       break;
     }
+    case 'tag':
+    case 'any_tag': {
+      // Tag matching lives on customer_metrics (global by phone_hash). Scope to
+      // restaurant via restaurant_stats.restaurant_id so we only message
+      // customers who've actually ordered here. 'tag' = match ALL provided tags,
+      // 'any_tag' = match ANY. We resolve back to customers rows to get
+      // wa_phone/bsuid/name for the send.
+      const tagList = Array.isArray(options.tags) ? options.tags : [];
+      if (!tagList.length) return [];
+      const tagOp = segment === 'any_tag' ? '$in' : '$all';
+      const metricsDocs = await col('customer_metrics').find(
+        {
+          tags: { [tagOp]: tagList },
+          'restaurant_stats.restaurant_id': restaurantId,
+        },
+        { projection: { phone_hash: 1 } },
+      ).toArray();
+      const hashes = metricsDocs.map(d => d.phone_hash).filter(Boolean);
+      if (!hashes.length) return [];
+      filter.phone_hash = { $in: hashes };
+      break;
+    }
     case 'all':
     default:
       break;
   }
 
   return col('customers').find(filter).project({ wa_phone: 1, bsuid: 1, name: 1 }).toArray();
+}
+
+// ─── LIST TAGS (for campaign targeting UI) ──────────────────────
+// Returns distinct tags on customer_metrics docs that have at least one
+// restaurant_stats entry for this restaurant. Powers the dashboard tag picker.
+async function getAvailableTags(restaurantId) {
+  const tags = await col('customer_metrics').distinct('tags', {
+    'restaurant_stats.restaurant_id': restaurantId,
+  });
+  return (tags || []).filter(Boolean).sort();
 }
 
 // ─── GET CAMPAIGNS ──────────────────────────────────────────────
@@ -414,4 +575,6 @@ module.exports = {
   getDueCampaigns,
   deleteCampaign,
   isMMliteEnabled,
+  getAvailableTags,
+  getDailyUsage,
 };

@@ -61,6 +61,33 @@ const getOrCreateCustomer = async ({ bsuid, wa_phone, profile_name }) => {
   if (bsuid) {
     const byBsuid = await col('customers').findOne({ bsuid });
     if (byBsuid) {
+      // Split-identity merge: if a SEPARATE doc exists for the same phone
+      // (created during the BSUID rollout window before the two were linked),
+      // fold it into the older doc so we don't keep a duplicate. Older doc
+      // wins as primary; newer is soft-deleted with a merged_into pointer.
+      if (wa_phone && byBsuid.wa_phone !== wa_phone) {
+        const phoneDoc = await col('customers').findOne({ wa_phone });
+        if (phoneDoc && String(phoneDoc._id) !== String(byBsuid._id)) {
+          const [primary, secondary] = (phoneDoc.created_at || now) <= (byBsuid.created_at || now)
+            ? [phoneDoc, byBsuid]
+            : [byBsuid, phoneDoc];
+          const mergeSet = {
+            bsuid: primary.bsuid || secondary.bsuid || bsuid,
+            wa_phone: primary.wa_phone || secondary.wa_phone || wa_phone,
+            identifier_type: 'both',
+            bsuid_first_seen_at: primary.bsuid_first_seen_at || secondary.bsuid_first_seen_at || now,
+            phone_shared_at: primary.phone_shared_at || secondary.phone_shared_at || now,
+          };
+          await col('customers').updateOne({ _id: primary._id }, { $set: mergeSet });
+          await col('customers').updateOne(
+            { _id: secondary._id },
+            { $set: { merged_into: String(primary._id), merged_at: now }, $unset: { bsuid: '', wa_phone: '' } }
+          );
+          log.info({ primary: String(primary._id), secondary: String(secondary._id) }, '[BSUID] Merged split identity');
+          Object.assign(primary, mergeSet);
+          return mapId(primary);
+        }
+      }
       const updates = {};
       // Link phone if customer didn't have one
       if (wa_phone && !byBsuid.wa_phone) {

@@ -180,8 +180,34 @@ router.post('/import', express.json({ limit: '2mb' }), requireAuth, async (req, 
     if (!owned) return res.status(404).json({ error: 'upload not found' });
 
     const { mapping, products } = await mappingSvc.transformUpload(upload_id, column_mapping);
-    const normalized = products.map(mappingSvc.normalizeProduct);
-    const result = await mappingSvc.insertNormalizedProducts(restaurantId, upload_id, normalized);
+
+    // CRIT-2A-03: normalizeProduct now builds retailer_id / product_tags
+    // from a slug context. Upload is restaurant-level (products land
+    // unassigned), so we seed the slug from the restaurant. When the
+    // item carries an explicit branch, that still wins inside the
+    // normalizer.
+    const restaurant = await col('restaurants').findOne(
+      { _id: restaurantId },
+      { projection: { slug: 1, business_name: 1, name: 1 } },
+    );
+    const context = {
+      restaurantSlug: restaurant?.slug || null,
+      restaurantName: restaurant?.business_name || restaurant?.name || null,
+    };
+    const normalized = products.map(p => mappingSvc.normalizeProduct(p, context));
+
+    let result;
+    try {
+      result = await mappingSvc.insertNormalizedProducts(restaurantId, upload_id, normalized);
+    } catch (e) {
+      if (e.statusCode === 400 && Array.isArray(e.duplicates)) {
+        return res.status(400).json({
+          error: 'retailer_id conflicts in upload',
+          duplicates: e.duplicates,
+        });
+      }
+      throw e;
+    }
 
     await col('menu_uploads').updateOne(
       { _id: owned._id },
