@@ -962,20 +962,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     history.replaceState({}, '', location.pathname);
   }
 
-  // Handle Google OAuth redirect callback — token passed via URL
-  const googleToken = params.get('google_token');
-  if (googleToken) {
-    history.replaceState({}, '', location.pathname);
-    localStorage.setItem('zm_token', googleToken);
-    console.log('[Boot] Google token received via redirect');
-    try {
-      const me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: `Bearer ${googleToken}` } }).then(r => r.json());
-      if (me.error) { localStorage.removeItem('zm_token'); toast('Session expired', 'err'); return; }
-      routeByStatus(me);
-    } catch { toast('Connection error', 'err'); }
-    return;
-  }
-
   const token = localStorage.getItem('zm_token');
   if (!token) return;
 
@@ -1072,10 +1058,10 @@ function initGoogleAuth() {
   _googleCodeClient = google.accounts.oauth2.initCodeClient({
     client_id: GOOGLE_CLIENT_ID,
     scope: 'openid email profile',
-    ux_mode: 'redirect',
-    redirect_uri: location.origin + '/auth/google/callback',
+    ux_mode: 'popup',
+    callback: handleGoogleResponse,
   });
-  console.log('[Google] Code client initialized (redirect mode), redirect_uri:', location.origin + '/auth/google/callback');
+  console.log('[Google] Code client initialized (popup mode)');
 }
 
 async function handleGoogleResponse(response) {
@@ -1152,7 +1138,7 @@ const _googleBtnHtml = '<svg width="20" height="20" viewBox="0 0 48 48"><path fi
 
 function doGoogleLogin() {
   if (!_googleCodeClient) return toast('Google sign-in loading — please wait a moment', 'err');
-  console.log('[Google] Requesting authorization code (redirect mode)...');
+  console.log('[Google] Requesting authorization code (popup mode)...');
   _googleCodeClient.requestCode();
 }
 
