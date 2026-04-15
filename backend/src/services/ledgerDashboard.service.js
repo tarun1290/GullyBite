@@ -137,6 +137,12 @@ async function getSettlements(restaurantId, { page = 1, limit = 25 } = {}) {
       last_attempt_at: s.last_attempt_at || null,
       failure_reason: s.failure_reason,
       trigger: s.trigger || null,
+      // Phase 5.2 — Meta (WhatsApp) marketing cost deducted from this payout.
+      // Present on rows created after the meta-cost integration; null/0 on
+      // earlier rows. Frontend shows a "Meta Messaging Charges" section
+      // when meta_message_count > 0.
+      meta_cost_total_paise: s.meta_cost_total_paise || 0,
+      meta_message_count:    s.meta_message_count || 0,
       created_at: s.created_at,
       processed_at: s.processed_at,
     })),

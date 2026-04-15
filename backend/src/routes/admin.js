@@ -1214,10 +1214,15 @@ router.get('/referrals', async (req, res) => {
 // ─── GET /api/admin/settlements ──────────────────────────────
 router.get('/settlements', async (req, res) => {
   try {
-    const { restaurant_id, status, limit = 50, offset = 0 } = req.query;
+    const { restaurant_id, status, from, to, limit = 50, offset = 0 } = req.query;
     const filter = {};
     if (restaurant_id) filter.restaurant_id = restaurant_id;
     if (status) filter.payout_status = status;
+    if (from || to) {
+      filter.created_at = {};
+      if (from) filter.created_at.$gte = new Date(from);
+      if (to)   filter.created_at.$lt  = new Date(new Date(to).getTime() + 24 * 60 * 60 * 1000);
+    }
 
     const [settlements, total] = await Promise.all([
       col('settlements').find(filter).sort({ created_at: -1 }).skip(parseInt(offset)).limit(parseInt(limit)).toArray(),
@@ -1226,7 +1231,13 @@ router.get('/settlements', async (req, res) => {
 
     const enriched = await Promise.all(settlements.map(async s => {
       const restaurant = await col('restaurants').findOne({ _id: s.restaurant_id }, { projection: { business_name: 1 } });
-      return { ...mapId(s), business_name: restaurant?.business_name || '—' };
+      return {
+        ...mapId(s),
+        business_name: restaurant?.business_name || '—',
+        // Phase 5.2 — Meta marketing cost deduction (0 on pre-integration rows).
+        meta_cost_total_paise: s.meta_cost_total_paise || 0,
+        meta_message_count:    s.meta_message_count || 0,
+      };
     }));
 
     res.json({ settlements: enriched, total });
@@ -1249,6 +1260,82 @@ router.get('/settlements/stats', async (req, res) => {
     res.json({ total, pending, processing, completed, failed, total_payout_rs, total_fee_rs });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/admin/settlements/:id/meta-breakdown ──────────
+// Phase 5.2 — per-settlement marketing_messages breakdown.
+//
+// Security posture:
+//   • Gated by requireAdminAuth('marketing_messages','read'). The
+//     middleware attaches req.admin and sets req.canSeeFullPhones only
+//     for super_admin or roles with the customer_full_phone permission.
+//   • Full phone visibility follows req.canSeeFullPhones verbatim — no
+//     fallback, no override via query/body.
+//   • Access is audit-logged (logActivity) so admin reads of PII are
+//     always traceable to admin_id + settlement + restaurant.
+router.get('/settlements/:id/meta-breakdown', requireAdminAuth('marketing_messages', 'read'), async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id || id.length > 64 || !/^[A-Za-z0-9_-]+$/.test(id)) {
+      return res.status(400).json({ error: 'Invalid settlement id' });
+    }
+
+    const settlement = await col('settlements').findOne(
+      { _id: id },
+      { projection: { _id: 1, restaurant_id: 1, meta_message_ids: 1, meta_cost_total_paise: 1, meta_message_count: 1 } },
+    );
+    if (!settlement) return res.status(404).json({ error: 'Settlement not found' });
+
+    const ids = Array.isArray(settlement.meta_message_ids) ? settlement.meta_message_ids : [];
+    let rows = [];
+    if (ids.length) {
+      rows = await col('marketing_messages')
+        .find({ _id: { $in: ids } })
+        // Explicit projection — keeps phone_hash / raw_meta_payload out
+        // of memory entirely. Raw phones only come from customers.wa_phone
+        // via enrichRows, and only when canSeeFullPhones is true.
+        .project({
+          _id: 1, restaurant_id: 1, waba_id: 1, customer_id: 1, customer_name: 1,
+          message_id: 1, message_type: 1, category: 1, cost: 1, currency: 1,
+          status: 1, sent_at: 1, delivered_at: 1,
+        })
+        .sort({ sent_at: -1 })
+        .toArray();
+    }
+    const { enrichRows } = require('./marketingMessages');
+    const items = await enrichRows(rows, { canSeeFullPhones: !!req.canSeeFullPhones });
+
+    // Audit log — admin PII access. Never log raw phone or waba_id
+    // values beyond the restaurant id. Metadata is deliberately small.
+    logActivity({
+      actorType: 'admin',
+      actorId: String(req.admin?._id || req.admin?.id || ''),
+      actorName: req.admin?.name || req.admin?.email || 'admin',
+      action: 'admin.meta_breakdown.read',
+      category: 'pii_access',
+      description: `Admin viewed settlement meta breakdown for ${settlement.restaurant_id}`,
+      restaurantId: settlement.restaurant_id,
+      resourceType: 'settlement',
+      resourceId: settlement._id,
+      severity: 'info',
+      metadata: {
+        endpoint: '/api/admin/settlements/:id/meta-breakdown',
+        message_count: items.length,
+        phones_unmasked: !!req.canSeeFullPhones,
+      },
+    });
+
+    res.json({
+      settlement_id:         settlement._id,
+      restaurant_id:         settlement.restaurant_id,
+      meta_cost_total_paise: settlement.meta_cost_total_paise || 0,
+      meta_message_count:    settlement.meta_message_count || 0,
+      items,
+    });
+  } catch (err) {
+    req.log?.error({ err, settlementId: req.params.id }, 'admin.meta_breakdown failed');
+    res.status(500).json({ error: 'Failed to load settlement breakdown' });
   }
 });
 
@@ -3739,6 +3826,69 @@ router.get('/reconciliation/settlements', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 // ADMIN CAMPAIGNS
 // ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN CUSTOMERS — global identity view
+// ═══════════════════════════════════════════════════════════════
+//
+// GET /api/admin/customers/identity?restaurant_id&customer_type&min_orders&sort&limit&skip
+// Cross-tenant view into customer_metrics. Phone is masked unless the
+// admin's role grants canSeeFullPhones (middleware-set, never request-
+// driven). Full-phone access is audit-logged.
+//
+// Distinct path from the legacy /customers list (line ~572) — that
+// endpoint returns a different shape keyed off the customers table.
+router.get('/customers/identity', requireAdminAuth('marketing_messages', 'read'), async (req, res) => {
+  try {
+    const svc = require('../services/customerView.service');
+    const canSeeFull = !!req.canSeeFullPhones;
+    const data = await svc.listCustomersGlobal({
+      restaurantId: req.query.restaurant_id || null,
+      customerType: req.query.customer_type || null,
+      minOrders:    req.query.min_orders || null,
+      sort:         req.query.sort,
+      limit:        req.query.limit,
+      skip:         req.query.skip,
+      canSeeFull,
+    });
+
+    if (canSeeFull) {
+      logActivity({
+        actorType: 'admin',
+        actorId: String(req.admin?._id || req.admin?.id || ''),
+        actorName: req.admin?.name || req.admin?.email || 'admin',
+        action: 'admin.customers.read',
+        category: 'pii_access',
+        description: `Admin viewed customers list with full phones (${data.items.length} rows)`,
+        severity: 'info',
+        metadata: {
+          endpoint: '/api/admin/customers',
+          row_count: data.items.length,
+          phones_unmasked: true,
+          filters: {
+            restaurant_id: req.query.restaurant_id || null,
+            customer_type: req.query.customer_type || null,
+          },
+        },
+      });
+    }
+
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/admin/campaigns/analytics — cross-tenant ROI
+router.get('/campaigns/analytics', async (req, res) => {
+  try {
+    const roi = require('../services/campaignROI.service');
+    const rows = await roi.getAnalytics({
+      restaurantId: req.query.restaurant_id || req.query.restaurantId || null,
+      from: req.query.from,
+      to:   req.query.to,
+    });
+    res.json({ items: rows, total: rows.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // GET /api/admin/campaigns — list all campaigns across restaurants
 router.get('/campaigns', async (req, res) => {

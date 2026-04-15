@@ -178,6 +178,10 @@ const orders = {
     // new writes MUST include it (services/orderCreate.service.js
     // enforces this). validateDocument() will reject inserts missing it.
     restaurant_id:         { type: 'uuid', required: true },
+    // Phase 6: phone_hash denormalized onto the order so the identity
+    // layer (customer_metrics) can aggregate without joining customers.
+    // Sparse — legacy orders without it fall back to customer_id joins.
+    phone_hash:            { type: 'string' },
     subtotal_rs:           { type: 'number', required: true },
     delivery_fee_rs:       { type: 'number' },
     discount_rs:           { type: 'number' },
@@ -248,13 +252,70 @@ const customers = {
   fields: {
     _id:                   { type: 'uuid', required: true },
     wa_phone:              { type: 'string', required: true },
+    // Phase 6: phone_hash is the canonical identity key used by the
+    // identity layer (customer_metrics) and campaign attribution.
+    // Written alongside wa_phone so hash-based lookups work without
+    // rehashing on read. Sparse-unique so legacy rows without a hash
+    // remain valid.
+    phone_hash:            { type: 'string' },
     name:                  { type: 'string' },
     bsuid:                 { type: 'string' },
+    first_seen_at:         { type: 'date' },
+    last_seen_at:          { type: 'date' },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },
   indexes: [
     { key: { wa_phone: 1 }, options: { unique: true, sparse: true } },
+    { key: { phone_hash: 1 }, options: { unique: true, sparse: true } },
+  ],
+};
+
+// Phase 6: identity-layer metrics, keyed by phone_hash.
+// Global lifetime totals in the top-level fields; per-tenant rollups
+// in restaurant_stats[]. Intentionally separate from customer_profiles
+// (which is joined by customer_id) because this collection is the
+// authoritative view of a HUMAN across tenants — and because order
+// creation writes here non-blocking without touching the transaction.
+const customer_metrics = {
+  collection: 'customer_metrics',
+  description: 'Global + per-tenant order/spend metrics keyed by phone_hash',
+  fields: {
+    _id:                   { type: 'uuid', required: true },
+    phone_hash:            { type: 'string', required: true },
+    customer_id:           { type: 'uuid' },
+    total_orders:          { type: 'number' },
+    total_spent_rs:        { type: 'number' },
+    last_order_at:         { type: 'date' },
+    restaurant_stats:      { type: 'array' },
+    // Phase 6.1: classification. `customer_type` is the primary bucket
+    // (mutually exclusive: new/repeat/loyal/dormant). `tags` is an
+    // additive set — a loyal customer can also carry 'high_value'.
+    customer_type:         { type: 'string', enum: ['new', 'repeat', 'loyal', 'dormant'] },
+    tags:                  { type: 'array' },
+    created_at:            { type: 'date' },
+    updated_at:            { type: 'date' },
+  },
+  indexes: [
+    { key: { phone_hash: 1 }, options: { unique: true } },
+    { key: { 'restaurant_stats.restaurant_id': 1 } },
+    { key: { customer_type: 1 } },
+  ],
+};
+
+const customer_tags = {
+  collection: 'customer_tags',
+  description: 'Derived tags per customer (new/repeat/loyal/high_value)',
+  fields: {
+    _id:                   { type: 'uuid', required: true },
+    phone_hash:            { type: 'string', required: true },
+    restaurant_id:         { type: 'uuid' },
+    type:                  { type: 'string', enum: ['new', 'repeat', 'loyal', 'high_value'] },
+    created_at:            { type: 'date' },
+    updated_at:            { type: 'date' },
+  },
+  indexes: [
+    { key: { phone_hash: 1, restaurant_id: 1 } },
   ],
 };
 
@@ -482,6 +543,13 @@ const settlements = {
     last_attempt_at:       { type: 'date' },
     processed_at:          { type: 'date' },
     failure_reason:        { type: 'string' },
+    // Phase 5.2: Meta (WhatsApp) marketing cost deducted from this payout.
+    // Set at settlement-row creation; message_ids frozen so retries are idempotent.
+    // marketing_messages rows get settled=true + settlement_id only after the
+    // payout succeeds (confirmPayout).
+    meta_cost_total_paise: { type: 'number' },
+    meta_message_count:    { type: 'number' },
+    meta_message_ids:      { type: 'array' },
     created_at:            { type: 'date', required: true },
   },
   indexes: [
@@ -815,7 +883,7 @@ const checkout_refs = {
 
 const ALL_SCHEMAS = {
   restaurants, branches, branch_products, menu_items, orders, order_items,
-  customers, customer_profiles, customer_addresses, cart_sessions, order_counters,
+  customers, customer_metrics, customer_tags, customer_profiles, customer_addresses, cart_sessions, order_counters,
   conversations, payments, restaurant_ledger, settlements,
   whatsapp_accounts, referrals, menu_uploads, sync_logs, sync_summary, alerts,
   brands, messages, catalog, catalog_sync_schedule, coupons, checkout_refs,

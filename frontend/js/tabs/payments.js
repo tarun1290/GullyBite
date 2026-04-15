@@ -233,6 +233,10 @@ async function openSettlementDetail(id) {
     // Breakdown
     html += '<div id="fin-settle-breakdown" style="font-family:\'SF Mono\',monospace;font-size:.78rem;line-height:1.9;background:var(--ink4);border-radius:8px;padding:1rem 1.2rem;margin-bottom:1rem"></div>';
 
+    // Meta Messaging Charges — populated async by loadSettleMetaBreakdown below.
+    // Hidden until we know meta_message_count > 0. Phase 5 rows only.
+    html += '<div id="fin-settle-meta" style="display:none;margin-bottom:1rem"></div>';
+
     // Order list
     if (d.orders && d.orders.length) {
       html += '<div style="font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:.4rem">Orders in this Settlement (' + d.orders.length + ')</div>';
@@ -256,9 +260,51 @@ async function openSettlementDetail(id) {
     }
 
     document.getElementById('fin-settle-dl-btn').style.display = 'inline-flex';
+
+    loadSettleMetaBreakdown(id);
   } catch (e) {
     body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--red)">Error: ' + _esc(e.message) + '</div>';
   }
+}
+
+// Meta Messaging Charges — fetches the Phase 5 deduction list for the
+// current settlement. Silent 404 / 0-count → section stays hidden.
+async function loadSettleMetaBreakdown(id) {
+  var wrap = document.getElementById('fin-settle-meta');
+  if (!wrap) return;
+  try {
+    var d = await api('/api/restaurant/settlements/' + id + '/meta-breakdown');
+    if (!d || !d.meta_message_count) return;
+    var totalRs = ((d.meta_cost_total_paise || 0) / 100).toFixed(2);
+    var rows = (d.items || []).map(function(m) {
+      var cost = Number(m.cost || 0).toFixed(2);
+      var sent = m.sent_at ? new Date(m.sent_at).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '\u2014';
+      return '<tr>'
+        + '<td style="padding:.4rem .6rem">' + _esc(m.customer_name || '\u2014') + '</td>'
+        + '<td style="padding:.4rem .6rem;font-family:monospace;color:var(--dim)">' + _esc(m.phone || '\u2014') + '</td>'
+        + '<td style="padding:.4rem .6rem">' + _esc(m.message_type || '\u2014') + '</td>'
+        + '<td style="padding:.4rem .6rem">\u20B9' + cost + '</td>'
+        + '<td style="padding:.4rem .6rem;color:var(--dim);font-size:.75rem">' + sent + '</td>'
+        + '</tr>';
+    }).join('');
+    wrap.innerHTML = ''
+      + '<details style="background:var(--ink4);border-radius:8px;padding:.8rem 1rem">'
+      +   '<summary style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:1rem">'
+      +     '<span style="font-weight:700;color:var(--tx)">Meta Messaging Charges</span>'
+      +     '<span style="font-size:.8rem;color:var(--dim)">' + d.meta_message_count + ' message' + (d.meta_message_count === 1 ? '' : 's') + ' &middot; <span style="color:var(--red)">\u2212 \u20B9' + totalRs + '</span></span>'
+      +   '</summary>'
+      +   '<div style="max-height:220px;overflow:auto;margin-top:.6rem;border:1px solid var(--rim);border-radius:6px">'
+      +     '<table style="width:100%;font-size:.78rem"><thead><tr>'
+      +       '<th style="padding:.4rem .6rem;text-align:left">Customer</th>'
+      +       '<th style="padding:.4rem .6rem;text-align:left">Phone</th>'
+      +       '<th style="padding:.4rem .6rem;text-align:left">Type</th>'
+      +       '<th style="padding:.4rem .6rem;text-align:left">Cost</th>'
+      +       '<th style="padding:.4rem .6rem;text-align:left">Time</th>'
+      +     '</tr></thead><tbody>' + rows + '</tbody></table>'
+      +   '</div>'
+      + '</details>';
+    wrap.style.display = 'block';
+  } catch (_) { /* silent — section stays hidden */ }
 }
 
 function closeFinSettleModal() {
@@ -457,5 +503,6 @@ window.showWalletTopup = showWalletTopup;
 window.doWalletTopup = doWalletTopup;
 window.loadSettlements = loadSettlements;
 window.downloadSettlement = downloadSettlement;
+window.loadSettleMetaBreakdown = loadSettleMetaBreakdown;
 
 })();

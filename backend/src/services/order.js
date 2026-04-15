@@ -272,11 +272,41 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
 
   const effectiveTotal = charges ? charges.customer_total_rs : totalRs;
 
+  // ─── CAMPAIGN ATTRIBUTION ─────────────────────────────────
+  // Best-effort look-up of the most recent campaign send to this phone
+  // within the attribution window. Sets attributed_campaign_id on the
+  // order so ROI analytics can join orders → campaigns without scanning.
+  // Failure is silent — attribution must never block checkout.
+  let attributedCampaignId = null;
+  let attributedMessageId = null;
+  try {
+    const { findAttribution } = require('./campaignAttribution');
+    const attr = await findAttribution({ restaurantId, waPhone });
+    if (attr) {
+      attributedCampaignId = attr.campaign_id;
+      attributedMessageId = attr.message_id;
+    }
+  } catch (err) {
+    log.warn({ err, waPhone: !!waPhone }, 'campaign attribution lookup failed');
+  }
+
+  // Phase 6: identity-layer key, denormalized onto the order so
+  // customer_metrics aggregates don't need to join customers.
+  let orderPhoneHash = null;
+  try {
+    orderPhoneHash = require('../utils/phoneHash').hashPhone(waPhone);
+  } catch (err) {
+    log.warn({ err }, 'phone_hash compute failed');
+  }
+
   const orderId = newId();
   const order = {
     _id: orderId,
     order_number: orderNumber,
     restaurant_id: restaurantId || null,
+    phone_hash: orderPhoneHash,
+    attributed_campaign_id: attributedCampaignId,
+    attributed_message_id: attributedMessageId,
     customer_id: customerId,
     branch_id: branchId,
     conversation_id: convId,
@@ -394,6 +424,17 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
       sOpt
     );
   }, { label: `createOrder:${orderId}` });
+
+  // Phase 6: identity-layer update. Fire-and-forget — must NOT block
+  // order creation. The service swallows its own errors into the log.
+  setImmediate(() => {
+    require('./customerIdentityLayer').recordOrderCreated({
+      waPhone,
+      customerId,
+      restaurantId,
+      totalRs: effectiveTotal,
+    }).catch(() => {});
+  });
 
   // Trust score: +5 for reaching the created-order milestone. Placed
   // here (not at delivery) because a successfully composed + accepted

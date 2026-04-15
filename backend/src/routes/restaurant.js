@@ -5245,6 +5245,63 @@ router.get('/settlements/:id/download', requirePermission('view_payments'), asyn
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/restaurant/settlements/:id/meta-breakdown
+// Phase 5.2 — per-settlement list of WhatsApp marketing messages that
+// were deducted from this payout.
+//
+// Security posture:
+//   • restaurant_id is taken ONLY from req.restaurantId (JWT-derived in
+//     auth.js). Never honored from query / body / headers.
+//   • Phone numbers are ALWAYS masked — canSeeFullPhones is hardcoded
+//     to false here regardless of any upstream flag.
+//   • :id is validated as a non-empty simple string to avoid malformed
+//     lookups (Mongo _ids in this codebase are UUID strings).
+//   • Unknown or cross-tenant ids → 404 (never 403; not-found is less
+//     information-leaky than access-denied).
+router.get('/settlements/:id/meta-breakdown', requirePermission('view_payments'), async (req, res) => {
+  try {
+    if (!req.restaurantId) return res.status(401).json({ error: 'Unauthorized' });
+    const id = String(req.params.id || '').trim();
+    if (!id || id.length > 64 || !/^[A-Za-z0-9_-]+$/.test(id)) {
+      return res.status(400).json({ error: 'Invalid settlement id' });
+    }
+
+    const settlement = await col('settlements').findOne(
+      { _id: id, restaurant_id: req.restaurantId },
+      { projection: { _id: 1, meta_message_ids: 1, meta_cost_total_paise: 1, meta_message_count: 1 } },
+    );
+    if (!settlement) return res.status(404).json({ error: 'Settlement not found' });
+
+    const ids = Array.isArray(settlement.meta_message_ids) ? settlement.meta_message_ids : [];
+    let rows = [];
+    if (ids.length) {
+      rows = await col('marketing_messages')
+        .find({ _id: { $in: ids } })
+        // Explicit projection — never pulls phone_hash / raw_meta_payload
+        // into memory so there's no way they can leak into the response.
+        .project({
+          _id: 1, restaurant_id: 1, waba_id: 1, customer_id: 1, customer_name: 1,
+          message_id: 1, message_type: 1, category: 1, cost: 1, currency: 1,
+          status: 1, sent_at: 1, delivered_at: 1,
+        })
+        .sort({ sent_at: -1 })
+        .toArray();
+    }
+    const { enrichRows } = require('./marketingMessages');
+    const items = await enrichRows(rows, { canSeeFullPhones: false });
+
+    res.json({
+      settlement_id: settlement._id,
+      meta_cost_total_paise: settlement.meta_cost_total_paise || 0,
+      meta_message_count:    settlement.meta_message_count || 0,
+      items,
+    });
+  } catch (e) {
+    req.log?.error({ err: e, settlementId: req.params.id }, 'restaurant.meta_breakdown failed');
+    res.status(500).json({ error: 'Failed to load settlement breakdown' });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════
 // PAYOUT ACCOUNT
 // ═══════════════════════════════════════════════════════════════
@@ -6201,6 +6258,37 @@ router.get('/campaigns', async (req, res) => {
   try {
     const docs = await campaignSvc.getCampaigns(req.restaurantId);
     res.json(mapIds(docs));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/customers?sort=orders|last_order|spent&limit&skip
+// Restaurant-scoped identity view. Phone always masked (dashboard ops
+// role, not an admin PII-access context).
+router.get('/customers', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const svc = require('../services/customerView.service');
+    const data = await svc.listCustomers({
+      restaurantId: req.restaurantId,
+      sort:  req.query.sort,
+      limit: req.query.limit,
+      skip:  req.query.skip,
+    });
+    res.json(data);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/restaurant/campaigns/analytics?from&to
+// Real-time ROI table keyed by campaign. Cost comes from marketing_messages;
+// revenue comes from orders.attributed_campaign_id. Scoped to this tenant.
+router.get('/campaigns/analytics', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const roi = require('../services/campaignROI.service');
+    const rows = await roi.getAnalytics({
+      restaurantId: req.restaurantId,
+      from: req.query.from,
+      to:   req.query.to,
+    });
+    res.json({ items: rows, total: rows.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -20,6 +20,7 @@
 
 const { col, newId } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'MessageTracking' });
+const { hashPhone } = require('../utils/phoneHash');
 
 // ─── INDIA 2026 MESSAGING RATES (₹ per message) ─────────────
 // Source: Meta WhatsApp Business pricing (India market)
@@ -58,8 +59,13 @@ function estimateCost(category, withinServiceWindow = true) {
 }
 
 // ─── TRACK OUTGOING MESSAGE ─────────────────────────────────
-// Called right after sendMsg() succeeds — records the message with status "sent"
-async function trackOutgoing({ wamId, restaurantId, branchId, customerId, context, withinServiceWindow = true }) {
+// Called right after sendMsg() succeeds — records the message with status "sent".
+// Optional params (to, customerName, wabaId, messageType, rawMetaPayload) power the
+// marketing_messages ledger when category === 'marketing'; all are best-effort.
+async function trackOutgoing({
+  wamId, restaurantId, branchId, customerId, context, withinServiceWindow = true,
+  to, customerName, wabaId, messageType, rawMetaPayload,
+}) {
   if (!wamId) return null;
 
   const category = categorizeMessage(context);
@@ -94,7 +100,71 @@ async function trackOutgoing({ wamId, restaurantId, branchId, customerId, contex
     wallet.debit(restaurantId, cost, `${category} message: ${context}`, wamId, { isOrderLifecycle }).catch(() => {});
   }
 
+  // Marketing ledger — fire-and-forget, never blocks caller.
+  if (category === 'marketing' || context === 'campaign' || context === 'promotion') {
+    setImmediate(() => {
+      _logMarketingMessage({
+        wamId, restaurantId, branchId, customerId, category, context,
+        cost, to, customerName, wabaId, messageType, rawMetaPayload,
+      }).catch((err) => log.warn({ err, wamId }, 'marketing_messages insert failed'));
+    });
+  }
+
   return doc;
+}
+
+// ─── MARKETING MESSAGE LEDGER INSERT ────────────────────────
+// Separate collection for chargeable marketing sends. Phone numbers stored
+// hashed only — never raw. Best-effort enrichment from customers / wa_accounts.
+async function _logMarketingMessage({
+  wamId, restaurantId, branchId, customerId, category, context,
+  cost, to, customerName, wabaId, messageType, rawMetaPayload,
+}) {
+  // If we don't have phone/name/waba, enrich from existing docs.
+  let phone = to;
+  let name = customerName;
+  if ((!phone || !name) && customerId) {
+    const customer = await col('customers').findOne(
+      { _id: customerId },
+      { projection: { wa_phone: 1, name: 1 } },
+    ).catch(() => null);
+    if (customer) {
+      if (!phone) phone = customer.wa_phone;
+      if (!name) name = customer.name;
+    }
+  }
+  if (!wabaId && restaurantId) {
+    const wa = await col('wa_accounts').findOne(
+      { restaurant_id: restaurantId, is_active: true },
+      { projection: { waba_id: 1 } },
+    ).catch(() => null);
+    if (wa) wabaId = wa.waba_id;
+  }
+
+  const resolvedType = messageType
+    || (context && /template|campaign|promotion/i.test(context) ? 'template' : 'freeform');
+
+  const now = new Date();
+  await col('marketing_messages').insertOne({
+    _id: newId(),
+    restaurant_id: restaurantId || null,
+    branch_id: branchId || null,
+    waba_id: wabaId || null,
+    customer_id: customerId || null,
+    phone_hash: phone ? hashPhone(phone) : null,
+    customer_name: name || null,
+    message_id: wamId,
+    message_type: resolvedType,
+    category: category || 'unknown',
+    cost: cost || 0,
+    currency: 'INR',
+    status: 'sent',
+    sent_at: now,
+    delivered_at: null,
+    raw_meta_payload: rawMetaPayload || null,
+    created_at: now,
+    updated_at: now,
+  });
 }
 
 // ─── UPDATE STATUS FROM WEBHOOK ─────────────────────────────
@@ -115,7 +185,118 @@ async function updateStatus(wamId, status, errorInfo = null) {
   }
 
   const result = await col('message_statuses').updateOne({ wam_id: wamId }, update);
+
+  // Mirror status onto marketing_messages row if one exists (fire-and-forget).
+  setImmediate(() => {
+    const mkUpdate = { $set: { status, updated_at: new Date() } };
+    if (status === 'delivered') mkUpdate.$set.delivered_at = new Date();
+    col('marketing_messages').updateOne({ message_id: wamId }, mkUpdate)
+      .catch((err) => log.warn({ err, wamId }, 'marketing_messages status update failed'));
+  });
+
   return result.modifiedCount > 0;
+}
+
+// ─── UPDATE MARKETING COST (from pricing webhook) ───────────
+// Called when Meta's status webhook carries pricing.category + billable info.
+// Safe to call repeatedly; only sets cost when provided and > 0.
+async function updateMarketingCost(wamId, { cost, category } = {}) {
+  if (!wamId) return false;
+  const $set = { updated_at: new Date() };
+  if (typeof cost === 'number') $set.cost = cost;
+  if (category) $set.category = category;
+  const res = await col('marketing_messages').updateOne({ message_id: wamId }, { $set });
+  return res.modifiedCount > 0;
+}
+
+// ─── CAPTURE PRICING FROM STATUS WEBHOOK ────────────────────
+// Parses conversation + pricing from Meta's status payload and upserts the
+// marketing_messages row. Safe to call on every status event — only acts
+// when the category resolves to "marketing". Never throws.
+//
+// Meta payload shape (relevant fields):
+//   status.id                       → message_id
+//   status.status                   → sent|delivered|read|failed
+//   status.timestamp                → unix seconds
+//   status.recipient_id             → customer phone (hashed before store)
+//   status.conversation.id          → WA conversation id
+//   status.conversation.origin.type → marketing|utility|authentication|service
+//   status.pricing.category         → authoritative category
+//   status.pricing.billable         → boolean
+//   status.pricing.pricing_model    → CBP|PMP
+async function capturePricingFromWebhook(status) {
+  try {
+    const wamId = status?.id;
+    if (!wamId) return false;
+
+    const pricing = status.pricing || {};
+    const conversation = status.conversation || {};
+    const category = pricing.category || conversation.origin?.type || null;
+
+    // Only act on marketing. Non-marketing statuses are handled elsewhere.
+    if (category !== 'marketing') return false;
+
+    const billable = pricing.billable !== false; // default true when absent
+    const cost = billable ? estimateCost('marketing', false) : 0;
+
+    const eventAt = status.timestamp
+      ? new Date(Number(status.timestamp) * 1000)
+      : new Date();
+
+    // If this message was sent by a campaign, carry the campaign_id through
+    // so the analytics aggregate can key costs by campaign_id directly
+    // without a second collection scan.
+    let campaignId = null;
+    try {
+      const cm = await col('campaign_messages').findOne(
+        { message_id: wamId },
+        { projection: { campaign_id: 1 } },
+      );
+      if (cm?.campaign_id) campaignId = cm.campaign_id;
+    } catch (_) { /* best-effort */ }
+
+    const $set = {
+      category,
+      cost,
+      currency: 'INR',
+      updated_at: new Date(),
+    };
+    if (campaignId) $set.campaign_id = campaignId;
+    if (conversation.id) $set.conversation_id = conversation.id;
+    if (pricing.pricing_model) $set.pricing_model = pricing.pricing_model;
+    if (typeof pricing.billable === 'boolean') $set.billable = pricing.billable;
+    if (status.status === 'delivered') $set.delivered_at = eventAt;
+    if (status.status === 'read')      $set.read_at      = eventAt;
+    if (status.status === 'failed')    $set.failed_at    = eventAt;
+    if (['sent', 'delivered', 'read', 'failed'].includes(status.status)) {
+      $set.status = status.status;
+    }
+
+    // Fallback fields only applied if we end up inserting a brand-new row.
+    const $setOnInsert = {
+      _id: newId(),
+      message_id: wamId,
+      restaurant_id: null,
+      branch_id: null,
+      waba_id: null,
+      phone_hash: status.recipient_id ? hashPhone(status.recipient_id) : null,
+      customer_name: null,
+      message_type: 'unknown',
+      sent_at: eventAt,
+      raw_meta_payload: status,
+      created_at: new Date(),
+    };
+
+    await col('marketing_messages').updateOne(
+      { message_id: wamId },
+      { $set, $setOnInsert },
+      { upsert: true },
+    );
+    return true;
+  } catch (err) {
+    log.warn({ err, wamId: status?.id }, 'capturePricingFromWebhook failed');
+    return false;
+  }
 }
 
 // ─── GET MESSAGE STATS FOR RESTAURANT ───────────────────────
@@ -256,6 +437,8 @@ module.exports = {
   estimateCost,
   trackOutgoing,
   updateStatus,
+  updateMarketingCost,
+  capturePricingFromWebhook,
   getMessageStats,
   getCostBreakdown,
   getDailyCostTrend,

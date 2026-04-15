@@ -335,9 +335,10 @@ function renderFunnelBars(funnel) {
 
 function _maskPhone(phone) {
   if (!phone) return '\u2014';
-  var s = String(phone);
-  if (s.length <= 4) return s;
-  return '\u2022\u2022\u2022\u2022' + s.slice(-4);
+  var digits = String(phone).replace(/\D+/g, '');
+  if (digits.length > 10 && digits.slice(0, 2) === '91') digits = digits.slice(2);
+  if (digits.length !== 10) return '**********';
+  return digits.slice(0, 2) + '*****' + digits.slice(-3);
 }
 
 function renderDropoffList(list) {

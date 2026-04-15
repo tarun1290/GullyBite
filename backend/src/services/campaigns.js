@@ -17,6 +17,8 @@
 const { col, newId } = require('../config/database');
 const wa = require('./whatsapp');
 const { logActivity } = require('./activityLog');
+const { hashPhone } = require('../utils/phoneHash');
+const { MESSAGING_RATES } = require('./messageTracking');
 const log = require('../utils/logger').child({ component: 'Campaign' });
 
 const DEFAULT_BATCH_SIZE = 500;
@@ -146,14 +148,21 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
           );
           sent++;
 
-          // Store message ID for delivery tracking
+          // Store message ID for delivery tracking + ROI attribution.
+          // phone_hash + cost + sent_at populated so the analytics aggregate
+          // doesn't have to join back to marketing_messages for every row,
+          // and so order attribution can key on phone_hash directly.
           const msgId = result?.messages?.[0]?.id;
           if (msgId) {
             await col('campaign_messages').updateOne(
               { message_id: msgId },
               { $setOnInsert: {
                 _id: newId(), message_id: msgId, campaign_id: campaignId,
-                customer_id: String(customer._id), status: 'sent', created_at: new Date(),
+                restaurant_id: campaign.restaurant_id,
+                customer_id: String(customer._id),
+                phone_hash: toId ? hashPhone(toId) : null,
+                cost: MESSAGING_RATES.marketing,
+                status: 'sent', sent_at: new Date(), created_at: new Date(),
               }},
               { upsert: true }
             );

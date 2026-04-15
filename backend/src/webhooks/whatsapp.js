@@ -2567,6 +2567,13 @@ const handleStatus = async (status) => {
         ? { code: status.errors[0].code, message: status.errors[0].title }
         : null;
       await msgTracking.updateStatus(status.id, status.status, errorInfo);
+
+      // Capture Meta-reported conversation + pricing for marketing messages.
+      // Upserts marketing_messages keyed by message_id — never throws, never
+      // blocks webhook response.
+      if (status.pricing || status.conversation) {
+        msgTracking.capturePricingFromWebhook(status).catch(() => {});
+      }
     } catch (_) {} // Non-critical
 
     // Campaign message tracking (existing)

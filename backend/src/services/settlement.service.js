@@ -89,6 +89,28 @@ async function calculateSettlement(restaurantId) {
   return { gross, refunds, payouts, net_balance, payable_amount };
 }
 
+// ─── 1b. META MARKETING COST ────────────────────────────────
+// Sum unsettled marketing_messages cost for a restaurant and return the
+// frozen list of message _ids to deduct from the current settlement.
+// `cost` on marketing_messages is stored in rupees (Number) — converted
+// to paise here with round-half-up so totals are deterministic across runs.
+async function _aggregateUnsettledMeta(restaurantId) {
+  const rows = await col('marketing_messages').find({
+    restaurant_id: String(restaurantId),
+    settled: { $ne: true },
+    cost: { $gt: 0 },
+    status: { $in: ['sent', 'delivered'] },
+  }).project({ _id: 1, cost: 1 }).toArray();
+
+  let totalPaise = 0;
+  const ids = [];
+  for (const r of rows) {
+    totalPaise += Math.round(Number(r.cost || 0) * 100);
+    ids.push(r._id);
+  }
+  return { totalPaise, ids, count: ids.length };
+}
+
 // ─── 2. EXECUTE ─────────────────────────────────────────────
 async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode = 'auto' } = {}) {
   if (!restaurantId) throw new Error('executeSettlement: restaurantId required');
@@ -107,11 +129,24 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
   }
 
   const calc = await calculateSettlement(rid);
-  const amount = calc.payable_amount;
+
+  // Meta (WhatsApp marketing) cost deduction. Frozen at settlement-row
+  // creation so retries/confirm always reference the same message_ids.
+  // Platform fee is already netted in the ledger balance — meta cost is
+  // a separate, additive deduction (does NOT touch platform fee logic).
+  const meta = await _aggregateUnsettledMeta(rid);
+  const amount = Math.max(0, calc.payable_amount - meta.totalPaise);
 
   if (amount < MIN_PAYOUT_PAISE) {
-    log.info({ restaurantId: rid, amount, threshold: MIN_PAYOUT_PAISE }, 'settlement.skip.below_threshold');
-    return { skipped: true, reason: 'below_threshold', payable_amount_paise: amount, threshold: MIN_PAYOUT_PAISE };
+    log.info({
+      restaurantId: rid, amount, threshold: MIN_PAYOUT_PAISE,
+      payable: calc.payable_amount, meta_cost_paise: meta.totalPaise, meta_count: meta.count,
+    }, 'settlement.skip.below_threshold');
+    return {
+      skipped: true, reason: 'below_threshold',
+      payable_amount_paise: amount, threshold: MIN_PAYOUT_PAISE,
+      meta_cost_paise: meta.totalPaise, meta_message_count: meta.count,
+    };
   }
 
   const restaurant = await col('restaurants').findOne(
@@ -146,6 +181,14 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
     attempt_count: 0,
     last_attempt_at: null,
     trigger,
+    // Meta marketing cost — frozen snapshot of unsettled message_ids and
+    // their paise total at the moment this settlement row was created.
+    // marketing_messages rows get settled=true + settlement_id only once
+    // the payout succeeds (confirmPayout). A failed payout leaves them
+    // unsettled so the next settlement picks them up again.
+    meta_cost_total_paise: meta.totalPaise,
+    meta_message_count: meta.count,
+    meta_message_ids: meta.ids,
     created_at: now,
     processed_at: null,
     failure_reason: null,
@@ -366,6 +409,28 @@ async function confirmPayout(payoutId, { externalReference = null } = {}) {
     { _id: settlement._id, status: { $ne: 'completed' } },
     { $set: set },
   );
+
+  // Mark the frozen marketing_messages as settled. Scoped to the
+  // pre-computed message_ids so a concurrent send after row-creation
+  // can't be accidentally swept in. Fire-and-forget — a failure here
+  // must not flip the settlement back to non-completed; the row already
+  // records meta_message_ids for manual reconciliation if needed.
+  if (Array.isArray(settlement.meta_message_ids) && settlement.meta_message_ids.length) {
+    try {
+      await col('marketing_messages').updateMany(
+        { _id: { $in: settlement.meta_message_ids }, settled: { $ne: true } },
+        { $set: {
+            settled: true,
+            settlement_id: settlement._id,
+            settled_at: new Date(),
+        } },
+      );
+    } catch (mmErr) {
+      log.error({
+        err: mmErr, settlementId: settlement._id, count: settlement.meta_message_ids.length,
+      }, 'settlement.mark_marketing_settled_failed');
+    }
+  }
 
   log.info({ payoutId: pid, settlementId: settlement._id }, 'settlement.payout.confirmed');
   return { success: true, settlement_id: settlement._id, payout_id: pid };

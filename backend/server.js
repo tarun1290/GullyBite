@@ -222,6 +222,10 @@ app.use('/api/restaurant/products', express.json({ limit: '10mb' }), require('./
 // router so /menu/upload doesn't collide with menu CRUD endpoints there.
 // Multer parses multipart/form-data — do NOT wrap in express.json().
 app.use('/api/restaurant/menu', require('./src/routes/menuUpload'));
+// Marketing messages ledger — mounted before catch-all restaurant router.
+const _marketing = require('./src/routes/marketingMessages');
+app.use('/api/restaurant/marketing-messages', express.json(), _marketing.restaurantRouter);
+app.use('/api/admin/marketing-messages', express.json(), _marketing.adminRouter);
 app.use('/api/restaurant', express.json({ limit: '10mb' }), require('./src/routes/restaurant'));
 app.use('/api/restaurant/integrations', express.json(), require('./src/routes/integrations'));
 app.use('/api/upload', express.json(), require('./src/routes/upload'));

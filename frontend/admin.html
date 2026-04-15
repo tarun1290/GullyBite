@@ -306,6 +306,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21H4.6C4.04 21 3.76 21 3.55 20.89C3.37 20.8 3.2 20.63 3.11 20.45C3 20.24 3 19.96 3 19.4V3"/><path d="M7 14l4-4 4 4 6-6"/></svg>
         Analytics
       </div>
+      <div class="nav-item" data-page="marketing" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l18-8v18L3 13v-2z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+        Marketing Msgs
+      </div>
       <div class="nav-item" data-page="sync-logs" onclick="nav(this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         Sync Logs
@@ -526,6 +530,35 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
             <button id="cust-next" onclick="custPage(1)">Next &#8594;</button>
           </div>
         </div>
+
+        <!-- Global identity metrics (customer_metrics) -->
+        <div class="table-wrap" style="margin-top:1.2rem">
+          <div class="table-head">
+            <h2>Global Identity</h2>
+            <span style="color:var(--dim);font-size:.72rem;margin-left:.5rem">Cross-restaurant totals</span>
+            <div style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap">
+              <input id="fci-restaurant" placeholder="Restaurant ID" onchange="loadCustomersGlobal()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem;width:13rem">
+              <select id="fci-type" onchange="loadCustomersGlobal()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem">
+                <option value="">All Types</option>
+                <option value="new">New</option>
+                <option value="repeat">Repeat</option>
+                <option value="loyal">Loyal</option>
+                <option value="dormant">Dormant</option>
+              </select>
+              <input id="fci-min-orders" type="number" min="0" placeholder="Min Orders" onchange="loadCustomersGlobal()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem;width:7rem">
+              <select id="fci-sort" onchange="loadCustomersGlobal()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem">
+                <option value="orders">Sort: Total Orders</option>
+                <option value="spent">Sort: Total Spend</option>
+                <option value="last_order">Sort: Last Order</option>
+              </select>
+              <button class="btn-sm" onclick="loadCustomersGlobal()">&#8635;</button>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th></th><th>Name</th><th>Phone</th><th>Total Orders</th><th>Total Spend</th><th>Type</th></tr></thead>
+            <tbody id="customers-global-tbody"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- ── SETTLEMENTS PAGE ────────────────────────────────────── -->
@@ -554,7 +587,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
           <div class="table-head">
             <h2>Settlement History</h2>
             <span id="stl-count" style="color:var(--dim);font-size:.75rem;margin-left:.5rem"></span>
-            <div style="margin-left:auto;display:flex;gap:.5rem">
+            <div style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap">
+              <input id="fs-restaurant" placeholder="Restaurant ID" onchange="loadSettlements()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem;width:13rem">
+              <input id="fs-from" type="date" onchange="loadSettlements()" title="From" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem">
+              <input id="fs-to" type="date" onchange="loadSettlements()" title="To" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem">
               <select id="fs-status" onchange="loadSettlements()" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.3rem .6rem;color:var(--tx);font-size:.78rem">
                 <option value="">All Statuses</option>
                 <option value="pending">Pending</option>
@@ -575,6 +611,7 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
                 <th>Platform Fee</th>
                 <th>Delivery</th>
                 <th>Refunds</th>
+                <th>Meta Cost</th>
                 <th>Net Payout</th>
                 <th>Status</th>
                 <th>Payout ID</th>
@@ -582,7 +619,7 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
                 <th></th>
               </tr>
             </thead>
-            <tbody id="stl-tbody"><tr><td colspan="12" class="empty">Loading…</td></tr></tbody>
+            <tbody id="stl-tbody"><tr><td colspan="13" class="empty">Loading…</td></tr></tbody>
           </table>
           <div class="pager">
             <button id="stl-prev" onclick="stlPage(-1)" disabled>&#8592; Prev</button>
@@ -1452,6 +1489,47 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
 
       </div>
 
+      <!-- ── MARKETING MESSAGES ────────────────────────────────── -->
+      <div class="page" id="page-marketing">
+        <div class="table-wrap" style="margin-bottom:1rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:.8rem 1rem;border-bottom:1px solid #e5e7eb;flex-wrap:wrap;gap:.6rem">
+            <h3 style="margin:0">Marketing Messages</h3>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+              <input id="mkt-admin-restaurant" placeholder="Restaurant ID (optional)" style="padding:.4rem .6rem;border:1px solid #e5e7eb;border-radius:6px;font-size:.8rem;width:220px">
+              <input id="mkt-admin-from" type="date" style="padding:.4rem .6rem;border:1px solid #e5e7eb;border-radius:6px;font-size:.8rem">
+              <input id="mkt-admin-to"   type="date" style="padding:.4rem .6rem;border:1px solid #e5e7eb;border-radius:6px;font-size:.8rem">
+              <button onclick="loadAdminMarketingMessages()" style="padding:.4rem .9rem;background:#111827;color:#fff;border:none;border-radius:6px;font-size:.8rem;cursor:pointer">Apply</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:1rem;padding:.8rem 1rem;border-bottom:1px solid #e5e7eb;background:#f9fafb;font-size:.82rem">
+            <div><span style="color:#6b7280">Total revenue from messages:</span> <strong id="mkt-admin-total">₹0.00</strong></div>
+            <div><span style="color:#6b7280">Count:</span> <strong id="mkt-admin-count">0</strong></div>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+              <thead>
+                <tr style="background:#f9fafb;text-align:left;color:#6b7280;font-size:.75rem">
+                  <th style="padding:.5rem .7rem">Restaurant</th>
+                  <th style="padding:.5rem .7rem">WABA ID</th>
+                  <th style="padding:.5rem .7rem">Customer</th>
+                  <th style="padding:.5rem .7rem">Phone</th>
+                  <th style="padding:.5rem .7rem">Type</th>
+                  <th style="padding:.5rem .7rem">Category</th>
+                  <th style="padding:.5rem .7rem">Cost</th>
+                  <th style="padding:.5rem .7rem">Sent</th>
+                </tr>
+              </thead>
+              <tbody id="mkt-admin-body"></tbody>
+            </table>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:.6rem 1rem;border-top:1px solid #e5e7eb">
+            <button id="mkt-admin-prev" onclick="mktAdminPage(-1)" disabled>&#8592; Prev</button>
+            <span id="mkt-admin-pageinfo" style="font-size:.8rem;color:#6b7280">Page 1</span>
+            <button id="mkt-admin-next" onclick="mktAdminPage(1)">Next &#8594;</button>
+          </div>
+        </div>
+      </div>
+
       <!-- ── SYNC LOGS ─────────────────────────────────────────── -->
       <div class="page" id="page-sync-logs">
 
@@ -1846,7 +1924,7 @@ document.getElementById('admin-pass-input')?.addEventListener('keydown', e => {
 // admin-key-input removed — JWT only
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', coupons: 'Coupon Templates', 'coupon-codes': 'Coupons', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics', 'sync-logs': 'Catalog Sync Logs' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', coupons: 'Coupon Templates', 'coupon-codes': 'Coupons', abuse: 'Abuse Protection', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics', marketing: 'Marketing Messages', 'sync-logs': 'Catalog Sync Logs' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -1862,7 +1940,7 @@ function nav(el) {
   if (page === 'dlq')          loadDlq();
   if (page === 'restaurants')  loadRestaurants();
   if (page === 'orders')       loadOrders();
-  if (page === 'customers')    loadCustomers();
+  if (page === 'customers')    { loadCustomers(); loadCustomersGlobal(); }
   if (page === 'settlements')  loadSettlements();
   if (page === 'referrals')    loadReferrals();
   if (page === 'directory')    loadDirectory();
@@ -1876,6 +1954,7 @@ function nav(el) {
   if (page === 'issues')       loadAdminIssues();
   if (page === 'flows')        loadFlowBuilder();
   if (page === 'analytics')    loadAnalyticsDashboard();
+  if (page === 'marketing')    loadAdminMarketingMessages();
   if (page === 'sync-logs')    { loadSyncLogs(true); loadMetaAlerts(); }
   // Persist active page in URL hash so refresh stays on the same page
   if (history.replaceState) history.replaceState(null, '', '#' + page);
@@ -1889,7 +1968,7 @@ function refreshCurrent() {
   else if (currentPage === 'dlq')          loadDlq();
   else if (currentPage === 'restaurants')  loadRestaurants();
   else if (currentPage === 'orders')       loadOrders();
-  else if (currentPage === 'customers')    loadCustomers();
+  else if (currentPage === 'customers')    { loadCustomers(); loadCustomersGlobal(); }
   else if (currentPage === 'settlements')  loadSettlements();
   else if (currentPage === 'referrals')    loadReferrals();
   else if (currentPage === 'directory')    loadDirectory();
@@ -2639,6 +2718,59 @@ function custPage(dir) {
   loadCustomers();
 }
 
+// ─── GLOBAL IDENTITY METRICS ──────────────────────────────────
+// Different endpoint + shape from the legacy /api/admin/customers —
+// this one aggregates customer_metrics across restaurants.
+async function loadCustomersGlobal() {
+  const tb = document.getElementById('customers-global-tbody');
+  if (!tb) return;
+  const qs = new URLSearchParams();
+  const r = document.getElementById('fci-restaurant')?.value.trim();
+  const t = document.getElementById('fci-type')?.value;
+  const m = document.getElementById('fci-min-orders')?.value;
+  const s = document.getElementById('fci-sort')?.value;
+  if (r) qs.set('restaurant_id', r);
+  if (t) qs.set('customer_type', t);
+  if (m) qs.set('min_orders', m);
+  if (s) qs.set('sort', s);
+  qs.set('limit', 100);
+  tb.innerHTML = '<tr><td colspan="6" class="empty">Loading…</td></tr>';
+  try {
+    const d = await api('/api/admin/customers/identity?' + qs.toString());
+    const rows = d?.items || [];
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="6" class="empty">No customers match</td></tr>'; return; }
+    const typeColor = { new: 'var(--dim)', repeat: 'var(--wa)', loyal: '#f5a623', dormant: 'var(--red)' };
+    tb.innerHTML = rows.map((c, i) => {
+      const color = typeColor[c.customer_type] || 'var(--dim)';
+      const hv = (c.tags || []).indexOf('high_value') >= 0
+        ? ' <span style="font-size:.6rem;padding:.05rem .3rem;border-radius:3px;background:#f5a62322;color:#f5a623;margin-left:.25rem">HIGH VALUE</span>'
+        : '';
+      const breakdown = (c.restaurant_breakdown || []).map(b =>
+        `<div style="font-family:monospace;font-size:.72rem"><span style="color:var(--dim)">${esc(String(b.restaurant_id))}</span>
+          &mdash; ${b.order_count} orders, ₹${fmtNum(b.total_spent_rs)}</div>`
+      ).join('') || '<div style="color:var(--dim);font-size:.72rem">No restaurant breakdown</div>';
+      return `
+        <tr>
+          <td><button class="btn-sm" style="padding:.1rem .4rem" onclick="toggleCustBreakdown(${i})">&#9656;</button></td>
+          <td>${esc(c.name || '—')}</td>
+          <td class="monospace">${esc(c.phone || '—')}</td>
+          <td style="text-align:center">${c.total_orders || 0}</td>
+          <td>₹${fmtNum(c.total_spent_rs)}</td>
+          <td style="text-transform:uppercase;font-weight:700;color:${color};font-size:.72rem">${esc(c.customer_type || '—')}${hv}</td>
+        </tr>
+        <tr id="cust-bk-${i}" style="display:none"><td></td><td colspan="5" style="background:var(--ink3);padding:.6rem .8rem">${breakdown}</td></tr>
+      `;
+    }).join('');
+  } catch (e) {
+    tb.innerHTML = `<tr><td colspan="6" class="empty">${esc(e.message || e)}</td></tr>`;
+  }
+}
+
+function toggleCustBreakdown(i) {
+  const row = document.getElementById('cust-bk-' + i);
+  if (row) row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
 // ─── SETTLEMENTS ──────────────────────────────────────────────────
 let stlOffset = 0;
 const STL_LIMIT = 50;
@@ -2663,11 +2795,17 @@ async function loadSettlements() {
 
   // Load table
   const statusFilter = document.getElementById('fs-status').value;
+  const restaurantFilter = document.getElementById('fs-restaurant')?.value?.trim();
+  const fromFilter = document.getElementById('fs-from')?.value;
+  const toFilter = document.getElementById('fs-to')?.value;
   const params = new URLSearchParams({ limit: STL_LIMIT, offset: stlOffset });
   if (statusFilter) params.set('status', statusFilter);
+  if (restaurantFilter) params.set('restaurant_id', restaurantFilter);
+  if (fromFilter) params.set('from', fromFilter);
+  if (toFilter) params.set('to', toFilter);
 
   const tbody = document.getElementById('stl-tbody');
-  tbody.innerHTML = '<tr><td colspan="12" class="empty">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="13" class="empty">Loading…</td></tr>';
 
   try {
     const d = await api('/api/admin/settlements?' + params);
@@ -2679,7 +2817,7 @@ async function loadSettlements() {
     document.getElementById('stl-prev').disabled = stlOffset === 0;
     document.getElementById('stl-next').disabled = stlOffset + STL_LIMIT >= d.total;
 
-    if (!d.settlements.length) { tbody.innerHTML = '<tr><td colspan="12" class="empty">No settlements yet. Click "Run Settlement Now" to generate.</td></tr>'; return; }
+    if (!d.settlements.length) { tbody.innerHTML = '<tr><td colspan="13" class="empty">No settlements yet. Click "Run Settlement Now" to generate.</td></tr>'; return; }
 
     tbody.innerHTML = d.settlements.map(s => {
       const periodStart = fmtDate(s.period_start);
@@ -2691,6 +2829,12 @@ async function loadSettlements() {
         failed:     '<span class="badge red">Failed</span>',
       }[s.payout_status] || '<span class="badge gray">' + esc(s.payout_status) + '</span>';
 
+      const metaCount = s.meta_message_count || 0;
+      const metaRs    = ((s.meta_cost_total_paise || 0) / 100);
+      const metaCell  = metaCount > 0
+        ? `<button class="btn-sm" onclick="openAdminMetaBreakdown('${s.id}')" title="View ${metaCount} messages" style="padding:.2rem .5rem;font-size:.75rem;color:var(--red)">₹${fmtNum(metaRs)} &middot; ${metaCount}</button>`
+        : '<span style="color:var(--dim)">—</span>';
+
       return `<tr>
         <td><strong>${esc(s.business_name)}</strong><br><span style="font-size:.72rem;color:var(--dim)">${s.restaurant_id.slice(0,8)}</span></td>
         <td style="font-size:.78rem;white-space:nowrap">${periodStart}<br>→ ${periodEnd}</td>
@@ -2699,6 +2843,7 @@ async function loadSettlements() {
         <td style="color:var(--acc)">₹${fmtNum(s.platform_fee_rs)}</td>
         <td>₹${fmtNum(s.delivery_costs_rs)}</td>
         <td>${s.refunds_rs > 0 ? '<span style="color:var(--red)">₹' + fmtNum(s.refunds_rs) + '</span>' : '—'}</td>
+        <td>${metaCell}</td>
         <td><strong>₹${fmtNum(s.net_payout_rs)}</strong></td>
         <td>${payoutBadge}</td>
         <td class="monospace" style="font-size:.72rem;color:var(--dim)">${s.rp_payout_id ? s.rp_payout_id.slice(0,14) + '…' : '—'}</td>
@@ -2707,7 +2852,59 @@ async function loadSettlements() {
       </tr>`;
     }).join('');
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="11" class="empty">${esc(e.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="empty">${esc(e.message)}</td></tr>`;
+  }
+}
+
+// Opens the Meta Messaging Charges breakdown modal for a settlement.
+// Admin view: shows restaurant_id + waba_id columns. Phone masked or
+// full depending on req.canSeeFullPhones on the backend.
+async function openAdminMetaBreakdown(settlementId) {
+  let modal = document.getElementById('admin-meta-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'admin-meta-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1000;padding:1.4rem';
+    modal.innerHTML = '<div style="background:#fff;border-radius:10px;width:min(960px,100%);max-height:86vh;overflow:auto;padding:1.2rem 1.4rem;position:relative">'
+      + '<button onclick="document.getElementById(\'admin-meta-modal\').remove()" style="position:absolute;top:.6rem;right:.8rem;background:transparent;border:0;font-size:1.4rem;cursor:pointer;color:var(--dim)">&times;</button>'
+      + '<div id="admin-meta-body" style="padding-top:.4rem">Loading&hellip;</div>'
+      + '</div>';
+    document.body.appendChild(modal);
+  }
+  const body = document.getElementById('admin-meta-body');
+  body.innerHTML = 'Loading&hellip;';
+  try {
+    const d = await api('/api/admin/settlements/' + settlementId + '/meta-breakdown');
+    const totalRs = ((d.meta_cost_total_paise || 0) / 100).toFixed(2);
+    const rows = (d.items || []).map(m => {
+      const sent = m.sent_at ? new Date(m.sent_at).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+      return '<tr>'
+        + '<td style="padding:.4rem .6rem;font-size:.72rem;color:var(--dim);font-family:monospace">' + esc((m.restaurant_id || '').slice(0,8)) + '</td>'
+        + '<td style="padding:.4rem .6rem;font-size:.72rem;color:var(--dim);font-family:monospace">' + esc(m.waba_id || '—') + '</td>'
+        + '<td style="padding:.4rem .6rem">' + esc(m.customer_name || '—') + '</td>'
+        + '<td style="padding:.4rem .6rem;font-family:monospace;color:var(--dim)">' + esc(m.phone || '—') + '</td>'
+        + '<td style="padding:.4rem .6rem">' + esc(m.message_type || '—') + '</td>'
+        + '<td style="padding:.4rem .6rem">' + esc(m.category || '—') + '</td>'
+        + '<td style="padding:.4rem .6rem">₹' + Number(m.cost || 0).toFixed(2) + '</td>'
+        + '<td style="padding:.4rem .6rem;color:var(--dim);font-size:.75rem">' + sent + '</td>'
+        + '</tr>';
+    }).join('');
+    body.innerHTML = '<h2 style="margin:0 0 .3rem 0">Meta Messaging Charges</h2>'
+      + '<div style="color:var(--dim);font-size:.8rem;margin-bottom:.8rem">Settlement <span style="font-family:monospace">' + esc(settlementId) + '</span> &middot; ' + (d.meta_message_count || 0) + ' messages &middot; <strong style="color:var(--red)">− ₹' + totalRs + '</strong></div>'
+      + (rows
+          ? '<table style="width:100%;font-size:.8rem"><thead><tr>'
+            + '<th style="text-align:left;padding:.4rem .6rem">Restaurant</th>'
+            + '<th style="text-align:left;padding:.4rem .6rem">WABA</th>'
+            + '<th style="text-align:left;padding:.4rem .6rem">Customer</th>'
+            + '<th style="text-align:left;padding:.4rem .6rem">Phone</th>'
+            + '<th style="text-align:left;padding:.4rem .6rem">Type</th>'
+            + '<th style="text-align:left;padding:.4rem .6rem">Category</th>'
+            + '<th style="text-align:left;padding:.4rem .6rem">Cost</th>'
+            + '<th style="text-align:left;padding:.4rem .6rem">Sent</th>'
+            + '</tr></thead><tbody>' + rows + '</tbody></table>'
+          : '<div style="color:var(--dim);padding:1rem 0">No marketing messages deducted from this settlement.</div>');
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--red);padding:1rem 0">Failed to load: ' + esc(e.message || String(e)) + '</div>';
   }
 }
 
@@ -4864,6 +5061,56 @@ async function _slPopulateRestaurants() {
     _slRestaurantsLoaded = true;
   } catch (_) { /* leave default */ }
 }
+// ─── MARKETING MESSAGES (ADMIN) ──────────────────────────────
+const _mktAdmin = { page: 1, limit: 20, totalPages: 1 };
+function mktAdminPage(delta) {
+  _mktAdmin.page = Math.max(1, Math.min(_mktAdmin.totalPages, _mktAdmin.page + delta));
+  loadAdminMarketingMessages();
+}
+async function loadAdminMarketingMessages() {
+  const tbody = document.getElementById('mkt-admin-body');
+  if (!tbody) return;
+  const params = new URLSearchParams();
+  params.set('page', _mktAdmin.page);
+  params.set('limit', _mktAdmin.limit);
+  const rid = document.getElementById('mkt-admin-restaurant')?.value.trim();
+  const from = document.getElementById('mkt-admin-from')?.value;
+  const to   = document.getElementById('mkt-admin-to')?.value;
+  if (rid)  params.set('restaurant_id', rid);
+  if (from) params.set('from', from);
+  if (to)   params.set('to', to);
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:1.2rem;color:#6b7280">Loading…</td></tr>';
+  try {
+    const d = await api('/api/admin/marketing-messages?' + params.toString());
+    document.getElementById('mkt-admin-total').textContent = '₹' + (Math.round((d.total_revenue || d.total_cost || 0) * 100) / 100).toFixed(2);
+    document.getElementById('mkt-admin-count').textContent = d.total || 0;
+    _mktAdmin.totalPages = Math.max(1, Math.ceil((d.total || 0) / (d.limit || _mktAdmin.limit)));
+    document.getElementById('mkt-admin-pageinfo').textContent = 'Page ' + _mktAdmin.page + ' of ' + _mktAdmin.totalPages;
+    document.getElementById('mkt-admin-prev').disabled = _mktAdmin.page <= 1;
+    document.getElementById('mkt-admin-next').disabled = _mktAdmin.page >= _mktAdmin.totalPages;
+    if (!d.items?.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:1.2rem;color:#6b7280">No marketing messages in this range.</td></tr>';
+      return;
+    }
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const fmt = d => d ? new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '—';
+    tbody.innerHTML = d.items.map(m => (
+      '<tr style="border-top:1px solid #f3f4f6">'
+      + '<td style="padding:.5rem .7rem;font-family:monospace;font-size:.75rem">' + esc(m.restaurant_id || '—') + '</td>'
+      + '<td style="padding:.5rem .7rem;font-family:monospace;font-size:.75rem">' + esc(m.waba_id || '—') + '</td>'
+      + '<td style="padding:.5rem .7rem">' + esc(m.customer_name || '—') + '</td>'
+      + '<td style="padding:.5rem .7rem;font-family:monospace">' + esc(m.phone || '—') + '</td>'
+      + '<td style="padding:.5rem .7rem">' + esc(m.message_type || '—') + '</td>'
+      + '<td style="padding:.5rem .7rem">' + esc(m.category || '—') + '</td>'
+      + '<td style="padding:.5rem .7rem">₹' + Number(m.cost || 0).toFixed(2) + '</td>'
+      + '<td style="padding:.5rem .7rem;color:#6b7280;font-size:.78rem">' + fmt(m.sent_at) + '</td>'
+      + '</tr>'
+    )).join('');
+  } catch (err) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:1.2rem;color:#dc2626">Failed to load: ' + (err.message || err) + '</td></tr>';
+  }
+}
+
 async function loadSyncLogs(initialLoad) {
   if (initialLoad) _slPopulateRestaurants();
   const tbody = document.getElementById('sl-tbody');

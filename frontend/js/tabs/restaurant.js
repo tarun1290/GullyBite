@@ -966,6 +966,90 @@ window.createCoupon = createCoupon;
 window.toggleCoupon = toggleCoupon;
 window.deleteCoupon = deleteCoupon;
 window.loadCampaigns = loadCampaigns;
+window.loadCampaignROI = loadCampaignROI;
+
+async function loadCampaignROI() {
+  var tb = document.getElementById('roi-tbody');
+  if (!tb) return;
+  var from = document.getElementById('roi-from')?.value;
+  var to   = document.getElementById('roi-to')?.value;
+  var sort = document.getElementById('roi-sort')?.value || 'roi';
+  var qs = [];
+  if (from) qs.push('from=' + encodeURIComponent(from));
+  if (to)   qs.push('to='   + encodeURIComponent(to));
+  tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--dim)">Loading&hellip;</td></tr>';
+  try {
+    var d = await api('/api/restaurant/campaigns/analytics' + (qs.length ? '?' + qs.join('&') : ''));
+    var rows = (d?.items || []).slice();
+    // Sort client-side — keeps the endpoint a single simple aggregate.
+    // null ROI rows sink to the bottom regardless of direction.
+    var key = { revenue: 'revenue', cost: 'cost', orders: 'orders_generated', created: 'created_at', roi: 'roi' }[sort] || 'roi';
+    rows.sort(function(a, b) {
+      if (key === 'created_at') return new Date(b.created_at) - new Date(a.created_at);
+      var av = a[key], bv = b[key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return bv - av;
+    });
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="ei">📊</div><h3>No campaign data</h3><p>ROI appears after messages are sent and orders land</p></div></td></tr>';
+      return;
+    }
+    tb.innerHTML = rows.map(function(r) {
+      var roi = r.roi == null ? '—' : (r.roi >= 10 ? r.roi.toFixed(0) : r.roi.toFixed(2)) + 'x';
+      var roiColor = r.roi == null ? 'var(--dim)' : (r.roi >= 1 ? 'var(--wa)' : 'var(--red)');
+      return '<tr>'
+        + '<td>' + _esc(r.campaign_name) + '<br><span style="font-size:.7rem;color:var(--dim)">' + _esc(r.type || '') + '</span></td>'
+        + '<td>' + (r.messages_sent || 0) + '</td>'
+        + '<td>₹' + Number(r.cost || 0).toFixed(2) + '</td>'
+        + '<td>' + (r.orders_generated || 0) + '</td>'
+        + '<td>₹' + Number(r.revenue || 0).toFixed(0) + '</td>'
+        + '<td style="font-weight:700;color:' + roiColor + '">' + roi + '</td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:1rem;color:var(--red)">Failed to load: ' + _esc(e.message || e) + '</td></tr>';
+  }
+}
+
+async function loadCustomersIdentity() {
+  var tb = document.getElementById('cust-identity-tbody');
+  if (!tb) return;
+  var sort = document.getElementById('cust-sort')?.value || 'orders';
+  tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:1rem;color:var(--dim)">Loading&hellip;</td></tr>';
+  try {
+    var d = await api('/api/restaurant/customers?sort=' + encodeURIComponent(sort) + '&limit=100');
+    var rows = d?.items || [];
+    if (!rows.length) {
+      tb.innerHTML = '<tr><td colspan="5"><div class="empty"><div class="ei">👤</div><h3>No customers yet</h3><p>Customers appear after their first order</p></div></td></tr>';
+      return;
+    }
+    var typeColor = { new: 'var(--dim)', repeat: 'var(--wa)', loyal: '#f5a623', dormant: 'var(--red)' };
+    tb.innerHTML = rows.map(function(r) {
+      var last = r.last_order_at ? new Date(r.last_order_at).toLocaleDateString() : '—';
+      var type = r.customer_type || '—';
+      var color = typeColor[type] || 'var(--dim)';
+      var hv = (r.tags || []).indexOf('high_value') >= 0
+        ? ' <span style="font-size:.65rem;padding:.1rem .35rem;border-radius:3px;background:#f5a62322;color:#f5a623;margin-left:.25rem">HIGH VALUE</span>'
+        : '';
+      return '<tr>'
+        + '<td>' + _esc(r.name || '—') + '</td>'
+        + '<td style="font-family:monospace;font-size:.78rem">' + _esc(r.phone || '—') + '</td>'
+        + '<td>' + (r.order_count || 0) + '</td>'
+        + '<td>' + last + '</td>'
+        + '<td style="text-transform:uppercase;font-size:.72rem;font-weight:700;color:' + color + '">' + _esc(type) + hv + '</td>'
+        + '</tr>';
+    }).join('');
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:1rem;color:var(--red)">Failed to load: ' + _esc(e.message || e) + '</td></tr>';
+  }
+}
+window.loadCustomersIdentity = loadCustomersIdentity;
+
+function _esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
+}
 window.loadCampaignProducts = loadCampaignProducts;
 window.updateCmpCount = updateCmpCount;
 window.getCmpBody = getCmpBody;

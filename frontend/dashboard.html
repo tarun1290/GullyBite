@@ -674,6 +674,36 @@ tbody tr{transition:background .1s ease}
         </div>
       </div>
 
+      <!-- ── MARKETING MESSAGES LEDGER ───────────────── -->
+      <div class="tab" id="tab-marketing">
+        <div class="card">
+          <div class="ch" style="display:flex;justify-content:space-between;align-items:center">
+            <h3>📣 Marketing Messages</h3>
+            <div style="display:flex;gap:.6rem;align-items:center;font-size:.8rem">
+              <span style="color:var(--dim)">Total cost:</span>
+              <strong id="mkt-msg-total">₹0.00</strong>
+              <span id="mkt-msg-count" style="color:var(--dim)">—</span>
+            </div>
+          </div>
+          <div class="cb" style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.86rem">
+              <thead>
+                <tr style="border-bottom:1px solid var(--rim);text-align:left;color:var(--dim);font-size:.78rem">
+                  <th style="padding:.5rem .7rem">Customer</th>
+                  <th style="padding:.5rem .7rem">Phone</th>
+                  <th style="padding:.5rem .7rem">Type</th>
+                  <th style="padding:.5rem .7rem">Category</th>
+                  <th style="padding:.5rem .7rem">Cost</th>
+                  <th style="padding:.5rem .7rem">Status</th>
+                  <th style="padding:.5rem .7rem">Sent</th>
+                </tr>
+              </thead>
+              <tbody id="mkt-msg-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- ── MESSAGES INBOX ────────────────────────── -->
       <div class="tab" id="tab-messages">
         <div style="display:flex;gap:1rem;height:calc(100vh - 120px);min-height:500px">
@@ -1811,6 +1841,54 @@ tbody tr{transition:background .1s ease}
             </table>
           </div>
         </div>
+
+        <!-- Campaign ROI / Revenue Attribution -->
+        <div class="card" style="margin-top:1.2rem">
+          <div class="ch" style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+            <h3 style="margin:0">Campaign ROI</h3>
+            <span style="color:var(--dim);font-size:.78rem">Revenue attributed from orders within 24h of send</span>
+            <div style="margin-left:auto;display:flex;gap:.4rem;align-items:center">
+              <input id="roi-from" type="date" class="inp" style="width:auto;padding:.3rem .5rem" onchange="loadCampaignROI()">
+              <input id="roi-to"   type="date" class="inp" style="width:auto;padding:.3rem .5rem" onchange="loadCampaignROI()">
+              <select id="roi-sort" class="inp" style="width:auto;padding:.3rem .5rem" onchange="loadCampaignROI()">
+                <option value="roi">Sort: ROI</option>
+                <option value="revenue">Sort: Revenue</option>
+                <option value="cost">Sort: Cost</option>
+                <option value="orders">Sort: Orders</option>
+                <option value="created">Sort: Newest</option>
+              </select>
+              <button class="btn-sm" onclick="loadCampaignROI()">&#8635;</button>
+            </div>
+          </div>
+          <div class="tbl">
+            <table>
+              <thead><tr><th>Campaign</th><th>Messages</th><th>Cost</th><th>Orders</th><th>Revenue</th><th>ROI</th></tr></thead>
+              <tbody id="roi-tbody"><tr><td colspan="6"><div class="empty"><div class="ei">📊</div><h3>No campaign data yet</h3><p>ROI appears after messages are sent and orders land</p></div></td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Customers (identity layer) -->
+      <div class="card" style="margin-top:1.2rem" id="card-customers-identity">
+        <div class="ch" style="display:flex;align-items:center;gap:.8rem;flex-wrap:wrap">
+          <h3 style="margin:0">Customers</h3>
+          <span style="color:var(--dim);font-size:.78rem">Restaurant-scoped identity &amp; metrics</span>
+          <div style="margin-left:auto;display:flex;gap:.4rem;align-items:center">
+            <select id="cust-sort" class="inp" style="width:auto;padding:.3rem .5rem" onchange="loadCustomersIdentity()">
+              <option value="orders">Sort: Orders</option>
+              <option value="last_order">Sort: Last Order</option>
+              <option value="spent">Sort: Total Spent</option>
+            </select>
+            <button class="btn-sm" onclick="loadCustomersIdentity()">&#8635;</button>
+          </div>
+        </div>
+        <div class="tbl">
+          <table>
+            <thead><tr><th>Name</th><th>Phone</th><th>Orders</th><th>Last Order</th><th>Type</th></tr></thead>
+            <tbody id="cust-identity-tbody"><tr><td colspan="5"><div class="empty"><div class="ei">👤</div><h3>No customers yet</h3><p>Customers appear after their first order</p></div></td></tr></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- ── TEAM ──────────────────────────────────── -->
@@ -2475,7 +2553,7 @@ const TMETA = {
   orders:      { title: 'Orders',             sub: 'Manage incoming orders',               fn: () => loadOrders('ALL') },
   menu:        { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); updateSyncStatus(); } },
   messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: () => loadMessages() },
-  analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); loadDropoffAnalytics(); loadCartRecoveryStats(); } },
+  analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); loadDropoffAnalytics(); loadCartRecoveryStats(); if (typeof loadMarketingMessages === 'function') loadMarketingMessages(); } },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
   restaurant:  { title: 'Restaurant',         sub: 'Profile, coupons, loyalty, and team',  fn: () => { loadRestaurantProfile(); loadOperatingHours(); loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
   settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: async () => { await loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); loadSyncLogs(); } },
@@ -2487,7 +2565,7 @@ const TMETA = {
   financials:  { title: 'Payments',           sub: 'Financials and settlements',           fn: () => { loadFinancials(); loadSettlements(); } },
   settlements: { title: 'Payments',           sub: 'Financials and settlements',           fn: () => { loadFinancials(); loadSettlements(); } },
   coupons:     { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadCoupons(); } },
-  campaigns:   { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadCoupons(); loadCampaigns(); } },
+  campaigns:   { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadCoupons(); loadCampaigns(); if (typeof loadCampaignROI === 'function') loadCampaignROI(); if (typeof loadCustomersIdentity === 'function') loadCustomersIdentity(); } },
   ratings:     { title: 'Analytics',          sub: 'Sales and ratings',                    fn: () => { loadAnalytics(); loadRatings(); } },
   loyalty:     { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadLoyalty(); } },
   team:        { title: 'Restaurant',         sub: 'Coupons, loyalty, and team',           fn: () => { loadTeam(); } },
@@ -2513,7 +2591,7 @@ function goTab(n, el) {
     loyalty:    ['tab-campaigns', 'tab-coupons', 'tab-referrals'],
     restaurant: ['tab-profile', 'tab-loyalty', 'tab-team', 'tab-issues'],
     settings:   ['tab-settings', 'tab-whatsapp', 'tab-integrations'],
-    analytics:  ['tab-analytics', 'tab-ratings', 'tab-customers'],
+    analytics:  ['tab-analytics', 'tab-ratings', 'tab-customers', 'tab-marketing'],
   };
 
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
@@ -2699,6 +2777,7 @@ function connectWebSocket() {
 <script src="/js/tabs/payments.js"></script>
 <script src="/js/tabs/restaurant.js"></script>
 <script src="/js/tabs/settings.js"></script>
+<script src="/js/tabs/marketing.js"></script>
 <script src="/js/tabs/messages.js"></script>
 <script src="/js/tabs/menu.js"></script>
 <!-- Bulk Image Upload Modal -->
