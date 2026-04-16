@@ -250,6 +250,29 @@ async function handleOrder(value) {
   const menuByRetailerId = {};
   menuItems.forEach(m => { menuByRetailerId[m.retailer_id] = m; });
 
+  // Re-check stock at checkout time. Meta catalog can lag MongoDB by 5–30 min,
+  // so an MPM that included an item which has since been marked unavailable
+  // can still arrive here. Reject with the item name(s) so the customer sees
+  // a useful message; abort before any order is written.
+  const unavailable = [];
+  for (const pi of productItems) {
+    const menu = menuByRetailerId[pi.product_retailer_id];
+    if (!menu) {
+      unavailable.push({ product_retailer_id: pi.product_retailer_id, item_name: null, reason: 'not_in_menu' });
+    } else if (menu.is_available === false) {
+      unavailable.push({ product_retailer_id: menu.retailer_id, item_name: menu.name, reason: 'out_of_stock' });
+    }
+  }
+  if (unavailable.length > 0) {
+    log.warn({
+      catalog_id: catalogId,
+      customer_phone: data.customer_phone || data.phone,
+      unavailable,
+    }, 'checkout rejected: items unavailable');
+    const names = unavailable.map(u => u.item_name).filter(Boolean).join(', ') || 'one or more items';
+    throw new Error(`Sorry, ${names} is out of stock. Please refresh your cart.`);
+  }
+
   const orderItems = [];
   let subtotalRs = 0;
   for (const pi of productItems) {

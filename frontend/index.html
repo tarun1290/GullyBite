@@ -962,6 +962,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     history.replaceState({}, '', location.pathname);
   }
 
+  // Redirect-mode Google callback returns to "/?google_token=...". Pick it up,
+  // persist under the same key the popup flow uses, and strip from the URL so
+  // a refresh doesn't re-trigger this branch.
+  const googleToken = params.get('google_token');
+  if (googleToken) {
+    localStorage.setItem('zm_token', googleToken);
+    history.replaceState({}, '', location.pathname);
+    console.log('[Google] Token received from URL → stored → routing');
+    try {
+      const me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: `Bearer ${googleToken}` } }).then(r => r.json());
+      if (me.error) { localStorage.removeItem('zm_token'); toast('Sign in failed — please try again', 'err'); return; }
+      routeByStatus(me);
+    } catch { toast('Could not complete sign in — please retry', 'err'); }
+    return;
+  }
+
   const token = localStorage.getItem('zm_token');
   if (!token) return;
 
