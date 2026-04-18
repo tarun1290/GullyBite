@@ -1,6 +1,11 @@
 {
   "outputDirectory": "frontend",
   "cleanUrls": true,
+  "functions": {
+    "api/[...all].js": {
+      "includeFiles": "backend/**"
+    }
+  },
   "rewrites": [
     { "source": "/auth/:path*", "destination": "/api/[...all]" },
     { "source": "/api/:path*", "destination": "/api/[...all]" }
