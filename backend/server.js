@@ -121,6 +121,9 @@ app.get('/health', (req, res) => {
 const { ensureConnected } = require('./src/config/database');
 app.use(ensureConnected);
 
+// Register event-bus listeners (order.created → WhatsApp + dashboard).
+require('./src/events');
+
 /* ═══ FUTURE FEATURE: GridFS Image Serving ═══
    Legacy route that served images from MongoDB GridFS.
    Replaced by S3 + CloudFront CDN (see imageUpload.js).
@@ -212,6 +215,7 @@ app.get('/feed/:feedToken', async (req, res) => {
 });
 
 // ─── ROUTES ───────────────────────────────────────────────────
+app.get('/auth/test', (req, res) => res.json({ ok: true }));
 const { router: authRouter } = require('./src/routes/auth');
 app.use('/auth', express.json(), authRouter);
 // Branch-first product routes. Mounted BEFORE the legacy restaurant

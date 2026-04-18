@@ -1918,6 +1918,15 @@ async function ensureOwnerUser(restaurantId, ownerName, phone) {
     updated_at: new Date(),
   };
   await col('restaurant_users').insertOne(doc);
+  try {
+    require('../events').emit('user.created', {
+      userId: doc._id,
+      userType: 'owner',
+      restaurantId: doc.restaurant_id,
+      name: doc.name,
+      phone: doc.phone,
+    });
+  } catch (_) { /* never block owner creation on bus load */ }
   return doc;
 }
 

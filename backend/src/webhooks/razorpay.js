@@ -272,6 +272,22 @@ const confirmPaidOrder = async (orderId, event) => {
     return;
   }
 
+  // Fan out payment.completed — ONCE, only for the process that won the
+  // flip. Idempotency guaranteed by the conditional updateOne above.
+  try {
+    const ord = await col('orders').findOne({ _id: String(orderId) }, { projection: { restaurant_id: 1, order_number: 1 } });
+    const bus = require('../events');
+    bus.emit('payment.completed', {
+      orderId: String(orderId),
+      restaurantId: ord?.restaurant_id || null,
+      orderNumber: ord?.order_number || null,
+      amountRs: paymentEntity ? (Number(paymentEntity.amount) || 0) / 100 : null,
+      method: paymentEntity?.method || null,
+      provider: 'razorpay',
+      paymentRef: paymentEntity?.id || null,
+    });
+  } catch (_) { /* never block payment confirmation on bus failure */ }
+
   // Phase 3: capture Razorpay fee breakdown on the payments row and
   // credit the NET amount to the restaurant's ledger.
   // Phase 3.1: net = amount - fee - tax (per updated spec). If Razorpay

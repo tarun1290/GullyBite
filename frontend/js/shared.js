@@ -195,7 +195,7 @@ async function _gbTryPopup(opts) {
 
   try {
     var jwt = (typeof token !== 'undefined' && token) || localStorage.getItem('zm_token') || '';
-    var res = await fetch('https://gullybite.duckdns.org/auth/meta/start', {
+    var res = await fetch('/auth/meta/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
       body: JSON.stringify({
@@ -250,7 +250,7 @@ async function _gbDoRedirect(opts) {
   opts = opts || {};
   try {
     var jwt = (typeof token !== 'undefined' && token) || localStorage.getItem('zm_token') || '';
-    var res = await fetch('https://gullybite.duckdns.org/auth/meta/start', {
+    var res = await fetch('/auth/meta/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt },
       body: JSON.stringify({

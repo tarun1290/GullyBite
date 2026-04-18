@@ -462,6 +462,8 @@ async function handleOrder(value) {
         { $set: { notified_at: notifyAt } }
       );
       if (stampRes.modifiedCount > 0) {
+        // Keep the legacy new_paid_order broadcast for the sound-modal UX —
+        // dashboard listener emits the generic order.created alongside.
         const ws = require('../services/websocket');
         ws.broadcastOrder(waAccount.restaurant_id, 'new_paid_order', {
           orderId,
@@ -477,17 +479,26 @@ async function handleOrder(value) {
       }
     } catch (err) { log.warn({ err, orderNumber }, 'new_paid_order broadcast failed'); }
 
-    // Send confirmation via restaurant's WA
-    const wa = require('../services/whatsapp');
-    await wa.sendStatusUpdate(
-      waAccount.phone_number_id, waAccount.access_token, customerPhone,
-      'CONFIRMED', { orderNumber }
-    ).catch(() => {});
-
-    // Notify manager
-    const notify = require('../services/notify');
+    // Event bus: fan out order.created + payment.completed. Listeners
+    // (customer WhatsApp, manager notify, analytics) run async and isolated.
     const fullOrder = await orderSvc.getOrderDetails(orderId);
-    if (fullOrder) notify.notifyNewOrder(fullOrder).catch(() => {});
+    const bus = require('../events');
+    bus.emit('order.created', {
+      orderId,
+      restaurantId: waAccount.restaurant_id,
+      customerPhone,
+      items: orderItems.map(i => ({ name: i.name, quantity: i.quantity, unitPriceRs: i.unit_price_rs })),
+      total: charges.customer_total_rs,
+      _order: fullOrder,
+    });
+    bus.emit('payment.completed', {
+      orderId,
+      restaurantId: waAccount.restaurant_id,
+      orderNumber,
+      amountRs: charges.customer_total_rs,
+      method: 'whatsapp_native',
+      provider: 'whatsapp_checkout',
+    });
 
     // Auto-dispatch delivery
     if (!isPickup) {

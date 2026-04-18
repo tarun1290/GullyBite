@@ -2555,7 +2555,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Load current user info and apply permissions
-  fetch('https://gullybite.duckdns.org/api/restaurant/me', { headers: { Authorization: `Bearer ${token}` } })
+  fetch('/api/restaurant/me', { headers: { Authorization: `Bearer ${token}` } })
     .then(r => r.ok ? r.json() : null)
     .then(user => { if (user) applyPermissions(user); })
     .catch(() => {});

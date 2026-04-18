@@ -148,6 +148,15 @@ const getOrCreateCustomer = async ({ bsuid, wa_phone, profile_name }) => {
   };
   await col('customers').insertOne(customer);
   log.info({ identifierType, phone: wa_phone?.slice(-4) || 'none', bsuid: bsuid ? bsuid.slice(0, 10) : 'none' }, 'New customer created');
+  try {
+    require('../events').emit('user.created', {
+      userId: customer._id,
+      userType: 'customer',
+      waPhone: customer.wa_phone || null,
+      bsuid: customer.bsuid || null,
+      identifierType: customer.identifier_type,
+    });
+  } catch (_) { /* never block customer creation on bus load */ }
   return mapId(customer);
 };
 

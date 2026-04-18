@@ -923,7 +923,7 @@ async function _fetchStoreUrl() {
 
   if (jwtToken) {
     try {
-      var me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: 'Bearer ' + jwtToken } }).then(function(r){ return r.json(); });
+      var me = await fetch('/auth/me', { headers: { Authorization: 'Bearer ' + jwtToken } }).then(function(r){ return r.json(); });
       if (me) {
         if (me.store_base_url) baseUrl = me.store_base_url;
         savedSlug = me.store_slug || null;
@@ -979,7 +979,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     history.replaceState({}, '', location.pathname);
     console.log('[Google] Token received from URL → stored → routing');
     try {
-      const me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: `Bearer ${googleToken}` } }).then(r => r.json());
+      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${googleToken}` } }).then(r => r.json());
       if (me.error) { localStorage.removeItem('zm_token'); toast('Sign in failed — please try again', 'err'); return; }
       routeByStatus(me);
     } catch { toast('Could not complete sign in — please retry', 'err'); }
@@ -990,7 +990,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!token) return;
 
   try {
-    const me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
     if (me.error) { localStorage.removeItem('zm_token'); return; }
     routeByStatus(me);
   } catch { /* network error — stay on landing */ }
@@ -1095,7 +1095,7 @@ async function handleGoogleResponse(response) {
   const btn = document.getElementById('google-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
   try {
-    const r = await fetch('https://gullybite.duckdns.org/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: response.code }) });
+    const r = await fetch('/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: response.code }) });
     const d = await r.json();
     console.log('[Google] Backend status:', r.status, 'response:', d);
     console.log('Google login response:', d);
@@ -1103,7 +1103,7 @@ async function handleGoogleResponse(response) {
     localStorage.setItem('zm_token', d.token);
     console.log('Stored token:', localStorage.getItem('zm_token'));
     console.log('Calling /auth/me with token');
-    const me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
     console.log('Auth me response:', me);
     routeByStatus(me);
   } catch (err) { console.error('[Google] Error:', err); toast(err.message || 'Sign in failed', 'err'); }
@@ -1136,7 +1136,7 @@ async function doSignup(e) {
     if (d.token) {
       localStorage.setItem('zm_token', d.token);
       toast('Account created!', 'ok');
-      const me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
       prefillOnboarding(me);
       showPage('pg-onboard');
     } else toast(d.error || 'Sign up failed', 'err');
@@ -1155,7 +1155,7 @@ async function doSignin(e) {
     });
     if (!d.token) return toast(d.error || 'Sign in failed', 'err');
     localStorage.setItem('zm_token', d.token);
-    const me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
     routeByStatus(me);
   } catch (err) { toast(err.message, 'err'); }
   finally { setLoading(btn, false, 'Sign In →'); }
@@ -1267,7 +1267,7 @@ async function submitDocuments(e) {
     formData.append('gst_doc', _docFiles.gst);
     formData.append('fssai_doc', _docFiles.fssai);
 
-    const res = await fetch('https://gullybite.duckdns.org/auth/onboarding/documents', {
+    const res = await fetch('/auth/onboarding/documents', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
       body: formData,
@@ -1368,7 +1368,7 @@ async function doConnectMeta() {
   }
 
   try {
-    const res = await fetch('https://gullybite.duckdns.org/auth/meta/start', {
+    const res = await fetch('/auth/meta/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwtToken },
       body: JSON.stringify({
@@ -1419,7 +1419,7 @@ async function checkStatus() {
   if (!token) return showPage('pg-land');
   toast('Checking…', 'nfo');
   try {
-    const me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
     routeByStatus(me);
   } catch { toast('Could not check status', 'err'); }
 }

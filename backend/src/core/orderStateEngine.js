@@ -183,6 +183,23 @@ async function transitionOrder(orderId, nextState, opts = {}) {
 
   log.info({ orderId, from: currentState, to: nextState, actorType, actor }, 'Order state transitioned');
 
+  // Fan out order.updated via the event bus. Listeners (notification,
+  // analytics) run async and isolated — a listener failure never breaks
+  // the transition.
+  try {
+    const bus = require('../events');
+    bus.emit('order.updated', {
+      orderId,
+      restaurantId: updated.restaurant_id,
+      orderNumber: updated.order_number,
+      oldStatus: currentState,
+      newStatus: nextState,
+      actor,
+      actorType,
+      _order: updated,
+    });
+  } catch (_) { /* bus load errors must never block the transition */ }
+
   return updated;
 }
 

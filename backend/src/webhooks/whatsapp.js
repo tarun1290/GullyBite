@@ -2417,11 +2417,8 @@ const handleCancelRequest = async (customer, conv, waAccount) => {
 
   await wa.sendStatusUpdate(pid, token, to, 'CANCELLED', { orderNumber: order.order_number });
 
-  // Fire-and-forget manager notification
-  const fullOrder = await orderSvc.getOrderDetails(String(order._id));
-  if (fullOrder) {
-    notify.notifyOrderStatusChange(fullOrder, order.status, 'CANCELLED').catch(() => {});
-  }
+  // Manager notification now handled by notificationListener.onOrderUpdated,
+  // which subscribes to order.updated emitted by orderStateEngine.transitionOrder.
 };
 
 // ─── TEXT MENU FALLBACK ───────────────────────────────────────

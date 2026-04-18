@@ -1,6 +1,10 @@
 {
   "outputDirectory": "frontend",
   "cleanUrls": true,
+  "rewrites": [
+    { "source": "/auth/:path*", "destination": "/api/[...all]" },
+    { "source": "/api/:path*", "destination": "/api/[...all]" }
+  ],
   "headers": [
     {
       "source": "/(.*\\.html)",

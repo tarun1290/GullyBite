@@ -1,7 +1,10 @@
-// Rewrites same-origin backend paths to the EC2 backend.
-// Loaded first on every page so all fetch() calls are redirected transparently.
+// Backend now runs on Vercel serverless (same origin as the frontend).
+// BACKEND_ORIGIN is empty so /auth/* and /api/* stay relative and hit
+// api/[...all].js via vercel.json rewrites. Webhooks continue to run on
+// EC2 and are NOT called from the browser — third parties (Meta, Razorpay,
+// Porter) post directly to the EC2 host.
 (function () {
-  var BACKEND_ORIGIN = 'https://gullybite.duckdns.org';
+  var BACKEND_ORIGIN = '';
   var BACKEND_PREFIXES = ['/api/', '/auth/', '/webhooks/', '/admin/'];
 
   window.BACKEND_ORIGIN = BACKEND_ORIGIN;

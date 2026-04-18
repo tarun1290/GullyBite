@@ -4489,14 +4489,8 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
       }
     }
 
-    // Fire-and-forget manager notification
-    if (order) {
-      const fullOrderForNotify = await orderSvc.getOrderDetails(order.id);
-      if (fullOrderForNotify) {
-        notify.notifyOrderStatusChange(fullOrderForNotify, req.body._oldStatus || '', status)
-          .catch(err => logger.error({ err, orderId: order.id }, 'Order status notification failed'));
-      }
-    }
+    // Manager notification now handled by notificationListener.onOrderUpdated,
+    // which subscribes to order.updated emitted by orderStateEngine.transitionOrder.
 
     res.json({ success: true, order, eta: etaResult });
 
@@ -6428,6 +6422,17 @@ router.post('/users', requirePermission('manage_users'), express.json(), async (
       created_at: new Date(),
       updated_at: new Date(),
     });
+
+    try {
+      require('../events').emit('user.created', {
+        userId: id,
+        userType: 'staff',
+        restaurantId: req.restaurantId,
+        name: name.trim(),
+        phone: phone.trim(),
+        role,
+      });
+    } catch (_) { /* never block user creation on bus load */ }
 
     res.json({ id, name, phone, role, permissions });
   } catch (e) { res.status(500).json({ error: e.message }); }

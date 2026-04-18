@@ -9,7 +9,7 @@ const log = require('../utils/logger').child({ component: 'database' });
 // NOTE: If using mongodb+srv://, DNS SRV resolution adds 5-15s BEFORE these timeouts apply.
 // Use standard mongodb:// with explicit hosts to eliminate DNS delay on cold starts.
 const POOL_OPTIONS = {
-  maxPoolSize: 1,           // One connection per serverless instance
+  maxPoolSize: 5,           // Up to 5 connections per serverless instance
   minPoolSize: 0,           // Allow pool to shrink to zero when idle
   maxIdleTimeMS: 10000,     // Close idle connections after 10s
   connectTimeoutMS: 5000,   // TCP connection timeout — fail fast

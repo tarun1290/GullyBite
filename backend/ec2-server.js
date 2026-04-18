@@ -41,6 +41,9 @@ app.get('/health', (req, res) => {
 const { ensureConnected, connect } = require('./src/config/database');
 app.use(ensureConnected);
 
+// Register event-bus listeners (order.created → WhatsApp + dashboard).
+require('./src/events');
+
 // ─── WEBHOOK ROUTES (raw body — each handler applies express.raw internally) ──
 app.use('/webhooks/whatsapp', require('./src/webhooks/whatsapp'));
 app.use('/webhooks/razorpay', require('./src/webhooks/razorpay'));
