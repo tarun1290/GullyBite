@@ -55,6 +55,7 @@ function start() {
 
   _worker = new Worker(QUEUE_NAME, processOrder, {
     connection,
+    prefix: '{bull}',
     concurrency: 5,
   });
 

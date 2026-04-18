@@ -13,6 +13,7 @@ const QUEUE_NAME = 'orders';
 
 const orderQueue = new Queue(QUEUE_NAME, {
   connection,
+  prefix: '{bull}',
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 5_000 }, // 5s, 10s, 20s
