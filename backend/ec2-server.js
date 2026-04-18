@@ -135,7 +135,8 @@ connect().then(() => {
   const { scheduleSettlement } = require('./src/jobs/settlement');
   scheduleSettlement();
 
-  try { require('./src/jobs/campaignSender'); } catch (e) { console.warn('[EC2] Campaign sender:', e.message); }
+  // try { require('./src/jobs/campaignSender'); } catch (e) { console.warn('[EC2] Campaign sender:', e.message); }
+  console.log('[EC2] Campaign sender: disabled — module not yet implemented');
 
   server.listen(PORT, () => {
     console.log(`\n🚀 [EC2] GullyBite Webhook Backend running on port ${PORT}`);
