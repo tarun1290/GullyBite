@@ -7,6 +7,7 @@ const router = express.Router();
 const multer = require('multer');
 const axios  = require('axios');
 const { col, newId, mapId, mapIds } = require('../config/database');
+const { maskPhone } = require('../utils/maskPhone');
 const { requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS } = require('./auth');
 const { rateLimitFn } = require('../middleware/rateLimit');
 const catalog = require('../services/catalog');
@@ -4411,7 +4412,7 @@ router.get('/orders', async (req, res) => {
       return {
         ...mapId(o),
         customer_name: customer?.name,
-        wa_phone:      customer?.wa_phone || customer?.bsuid || '',
+        wa_phone:      maskPhone(customer?.wa_phone),
         branch_name:   branch?.name,
         items:         mapIds(items),
       };
@@ -4440,7 +4441,7 @@ router.get('/orders/:orderId', async (req, res) => {
     res.json({
       ...mapId(o),
       customer_name: customer?.name,
-      wa_phone:      customer?.wa_phone || customer?.bsuid || '',
+      wa_phone:      maskPhone(customer?.wa_phone),
       branch_name:   branch?.name,
       items:         mapIds(items),
     });
@@ -4546,7 +4547,7 @@ router.get('/pending-order-notifications', async (req, res) => {
         orderId: String(o._id),
         orderNumber: o.order_number,
         customerName: customer?.name || o.customer_name || '',
-        customerPhone: customer?.wa_phone || o.customer_phone || '',
+        customerPhone: maskPhone(customer?.wa_phone || o.customer_phone),
         totalRs: o.total_rs,
         itemCount: items.reduce((s, i) => s + (i.quantity || 0), 0),
         items: items.slice(0, 6).map(i => ({ name: i.name || i.item_name, quantity: i.quantity })),
@@ -5174,7 +5175,7 @@ router.get('/analytics/customers', requirePermission('view_analytics'), async (r
       avg_orders_per_customer: avgOrders,
       top_customers: topCust.map(c => ({
         name: custMap[c._id]?.name || 'Unknown',
-        wa_phone: custMap[c._id]?.wa_phone || custMap[c._id]?.bsuid || '',
+        wa_phone: maskPhone(custMap[c._id]?.wa_phone),
         order_count: c.order_count,
         total_spent_rs: +c.total_spent.toFixed(2),
       })),
@@ -5437,7 +5438,7 @@ router.get('/analytics/conversations', requirePermission('view_analytics'), asyn
 
     // Mask phone numbers for active conversations
     const maskedActive = activeList.map(c => ({
-      phone: c.customer_phone ? c.customer_phone.replace(/(\+\d{2})\d{6}(\d{4})/, '$1****$2') : 'Unknown',
+      phone: maskPhone(c.customer_phone),
       last_message_at: c.last_message_at,
       direction: c.last_message_direction,
       category: c.category || 'service',
@@ -6159,44 +6160,10 @@ router.get('/catalog/diagnostics', async (req, res) => {
 // CUSTOMERS — Order history per customer
 // ═══════════════════════════════════════════════════════════════
 
-// GET /api/restaurant/customers — list customers who ordered from this restaurant
-router.get('/customers', async (req, res) => {
-  try {
-    const { search, limit = 50, offset = 0 } = req.query;
-
-    const branches   = await col('branches').find({ restaurant_id: req.restaurantId }, { projection: { _id: 1 } }).toArray();
-    const branchIds  = branches.map(b => String(b._id));
-
-    // Get unique customer IDs from orders
-    const orderFilter = { branch_id: { $in: branchIds } };
-    const customerIds = await col('orders').distinct('customer_id', orderFilter);
-
-    const customerFilter = { _id: { $in: customerIds } };
-    if (search) {
-      customerFilter.$or = [
-        { name    : { $regex: search, $options: 'i' } },
-        { wa_phone: { $regex: search, $options: 'i' } },
-        { bsuid   : { $regex: search, $options: 'i' } },
-      ];
-    }
-
-    const customers = await col('customers')
-      .find(customerFilter)
-      .sort({ last_order_at: -1, created_at: -1 })
-      .skip(parseInt(offset))
-      .limit(parseInt(limit))
-      .toArray();
-
-    res.json(customers.map(c => ({
-      id          : String(c._id),
-      name        : c.name,
-      wa_phone    : c.wa_phone || c.bsuid || '',
-      total_orders: c.total_orders || 0,
-      total_spent : c.total_spent_rs || 0,
-      last_order_at: c.last_order_at,
-    })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+// GET /api/restaurant/customers — canonical restaurant-scoped customer list.
+// Defined further below; routed through customerView.service with masking.
+// (The previous unmasked handler lived here and took precedence; it has
+//  been removed to close the phone-leak bug.)
 
 // GET /api/restaurant/customers/:customerId/orders — order history for one customer
 router.get('/customers/:customerId/orders', async (req, res) => {
@@ -6385,7 +6352,7 @@ router.get('/loyalty/customers', requireApproved, async (req, res) => {
       return {
         id: String(d._id),
         customer_name: c.name || 'Unknown',
-        wa_phone: c.wa_phone || c.bsuid || '',
+        wa_phone: maskPhone(c.wa_phone),
         points_balance: d.points_balance,
         lifetime_points: d.lifetime_points,
         tier: d.tier,
@@ -6843,7 +6810,7 @@ router.get('/messages', requireAuth, requireApproved, async (req, res) => {
     res.json({ threads: filtered.map(t => ({
       customer_id: t._id,
       customer_name: t.customer_name,
-      customer_phone: t.customer_phone,
+      customer_phone: maskPhone(t.customer_phone),
       customer_bsuid: t.customer_bsuid,
       last_message_text: t.last_message,
       last_message_type: t.last_message_type,
@@ -7023,7 +6990,12 @@ router.post('/messages/reply', requireAuth, requireApproved, async (req, res) =>
       severity: 'info',
     });
 
-    res.json({ ...msgDoc, id: String(msgDoc._id), wa_message_id: wamId });
+    res.json({
+      ...msgDoc,
+      id: String(msgDoc._id),
+      wa_message_id: wamId,
+      customer_phone: maskPhone(msgDoc.customer_phone),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -7043,6 +7015,11 @@ router.get('/messages/media/:media_id', requireAuth, requireApproved, async (req
 
 // ─── ISSUES ──────────────────────────────────────────────────────────
 
+// The shared issueSvc persists raw `customer_phone` for admin/operator
+// use, but every restaurant-facing response must collapse it to the
+// masked form. `maskIssue` applies that at the API boundary.
+const maskIssue = (i) => (i ? { ...i, customer_phone: maskPhone(i.customer_phone) } : i);
+
 // GET /api/restaurant/issues — list issues for this restaurant
 router.get('/issues', requireAuth, requireApproved, async (req, res) => {
   try {
@@ -7051,7 +7028,7 @@ router.get('/issues', requireAuth, requireApproved, async (req, res) => {
       { restaurantId: req.restaurantId, status, category, priority, search },
       { page: parseInt(page), limit: parseInt(limit) }
     );
-    res.json(result);
+    res.json({ ...result, issues: (result.issues || []).map(maskIssue) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -7068,7 +7045,7 @@ router.get('/issues/:id', requireAuth, requireApproved, async (req, res) => {
   try {
     const issue = await issueSvc.getIssue(req.params.id);
     if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
-    res.json(issue);
+    res.json(maskIssue(issue));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -7116,7 +7093,7 @@ router.post('/issues', requireAuth, requireApproved, async (req, res) => {
       }
     } catch (_) {}
 
-    res.status(201).json(issue);
+    res.status(201).json(maskIssue(issue));
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: (req.restaurant?.business_name || 'Restaurant'), action: 'issue.created', category: 'issue', description: `Issue created by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -7157,7 +7134,7 @@ router.put('/issues/:id/status', requireAuth, requireApproved, async (req, res) 
       }
     } catch (_) {}
 
-    res.json(updated);
+    res.json(maskIssue(updated));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -7234,7 +7211,7 @@ router.post('/issues/:id/escalate', requireAuth, requireApproved, async (req, re
       }
     } catch (_) {}
 
-    res.json(updated);
+    res.json(maskIssue(updated));
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: (req.restaurant?.business_name || 'Restaurant'), action: 'issue.escalated', category: 'issue', description: `Issue escalated to admin by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'warning' });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -7271,7 +7248,7 @@ router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res
       }
     } catch (_) {}
 
-    res.json(updated);
+    res.json(maskIssue(updated));
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: (req.restaurant?.business_name || 'Restaurant'), action: 'issue.resolved', category: 'issue', description: `Issue resolved by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -7287,7 +7264,7 @@ router.post('/issues/:id/reopen', requireAuth, requireApproved, async (req, res)
       actorType: 'restaurant', actorName: (req.restaurant?.business_name || 'Restaurant') || 'Restaurant',
       actorId: req.restaurantId, reason: req.body.reason,
     });
-    res.json(updated);
+    res.json(maskIssue(updated));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

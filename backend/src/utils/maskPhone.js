@@ -1,21 +1,17 @@
 'use strict';
 
 // Canonical phone masking utility.
-// Applied at the DB → API boundary for every endpoint that returns
-// customer phone numbers. No route is allowed to emit a raw phone
-// unless it explicitly short-circuits through `canSeeFullPhones`.
-//
-// Mask format: first 2 + "*****" + last 3 of the normalized 10-digit
-// national number (e.g. "98*****210"). Anything that cannot be
-// normalized to exactly 10 digits collapses to "**********" — this is
-// a fail-safe so malformed input never leaks partial digits.
+// For +91 10-digit Indian mobiles the output is formatted as:
+//   +91 <first3>XX XXX<last2>       (e.g. +919876789012 → "+91 987XX XXX12")
+// For any input that cannot be normalized to a 10-digit Indian number
+// (null, empty, wrong length, non-numeric), the output is the literal
+// string "Hidden". This is a hard fail-safe — no partial digits ever leak.
 
-const FAILSAFE_MASK = '**********';
+const FAILSAFE = 'Hidden';
 
-// Normalize to a bare 10-digit Indian mobile number.
-//   • strip every non-digit (handles "+", spaces, parens, dashes)
-//   • drop a leading "91" country code when the remainder is 10 digits
-//   • return null if the result isn't exactly 10 digits
+// Strip to digits, drop a leading "91" country code when appropriate,
+// and return a bare 10-digit string — or null if the result isn't a
+// 10-digit number.
 function normalizePhone(phone) {
   if (phone == null) return null;
   let digits = String(phone).replace(/\D+/g, '');
@@ -28,10 +24,9 @@ function normalizePhone(phone) {
 }
 
 function maskPhone(phone) {
-  if (phone == null) return null;
-  const normalized = normalizePhone(phone);
-  if (!normalized) return FAILSAFE_MASK;
-  return normalized.slice(0, 2) + '*****' + normalized.slice(-3);
+  const n = normalizePhone(phone);
+  if (!n) return FAILSAFE;
+  return `+91 ${n.slice(0, 3)}XX XXX${n.slice(-2)}`;
 }
 
 // For call sites that need to decide between full and masked based on
