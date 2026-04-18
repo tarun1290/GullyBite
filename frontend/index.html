@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GullyBite — WhatsApp Ordering for Restaurants</title>
 <script src="/js/api-base.js"></script>
+<script>
+  window.onerror = function (msg, url, line, col, error) {
+    console.error('GLOBAL ERROR:', msg, url, line, col, error);
+  };
+  window.onunhandledrejection = function (event) {
+    console.error('UNHANDLED PROMISE:', event.reason);
+  };
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -1085,18 +1093,21 @@ async function handleGoogleResponse(response) {
   if (response.error) { console.error('[Google] Error:', response.error); toast('Google sign-in failed: ' + response.error, 'err'); return; }
   if (!response.code) { console.error('[Google] No code received'); toast('Google sign-in failed — no authorization code', 'err'); return; }
   const btn = document.getElementById('google-btn');
-  btn.disabled = true;
-  btn.textContent = 'Signing in…';
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
   try {
     const r = await fetch('https://gullybite.duckdns.org/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: response.code }) });
     const d = await r.json();
-    console.log('[Google] Backend status:', r.status, 'response:', JSON.stringify(d));
+    console.log('[Google] Backend status:', r.status, 'response:', d);
+    console.log('Google login response:', d);
     if (!d.token) { toast(d.error || 'Sign in failed', 'err'); return; }
     localStorage.setItem('zm_token', d.token);
+    console.log('Stored token:', localStorage.getItem('zm_token'));
+    console.log('Calling /auth/me with token');
     const me = await fetch('https://gullybite.duckdns.org/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+    console.log('Auth me response:', me);
     routeByStatus(me);
   } catch (err) { console.error('[Google] Error:', err); toast(err.message || 'Sign in failed', 'err'); }
-  finally { btn.disabled = false; btn.innerHTML = _googleBtnHtml; }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = _googleBtnHtml; } }
 }
 /* ─── EMAIL/PASSWORD AUTH ──────────────────────────────── */
 function checkPwStrength(pw) {
