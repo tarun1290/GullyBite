@@ -4792,6 +4792,81 @@ router.put('/orders/:orderId/delivery', async (req, res) => {
 // 3PL DELIVERY MANAGEMENT
 // ═══════════════════════════════════════════════════════════════
 
+// GET /api/restaurant/orders/:orderId/track — live rider coords + tracking URL
+// Proxies Prorouting /track. Caches prorouting_tracking_url on the order
+// the first time we see it so the deep-link survives a restart of the
+// LSP's tracking tile. Returns 502 if Prorouting itself fails.
+router.get('/orders/:orderId/track', async (req, res) => {
+  try {
+    const o = await col('orders').findOne({ _id: req.params.orderId });
+    if (!o) return res.status(404).json({ error: 'Order not found' });
+    const branch = await col('branches').findOne({ _id: o.branch_id });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (!o.prorouting_order_id) {
+      return res.status(400).json({ error: 'Delivery not yet dispatched' });
+    }
+
+    const prorouting = require('../services/prorouting');
+    let tracking;
+    try {
+      tracking = await prorouting.getTrackingInfo(o.prorouting_order_id);
+    } catch (e) {
+      return res.status(502).json({ error: 'Unable to reach delivery partner' });
+    }
+
+    if (tracking?.tracking_url && !o.prorouting_tracking_url) {
+      await col('orders').updateOne(
+        { _id: o._id },
+        { $set: { prorouting_tracking_url: tracking.tracking_url, updated_at: new Date() } }
+      );
+    }
+
+    res.json({
+      rider_lat: tracking?.rider_lat ?? null,
+      rider_lng: tracking?.rider_lng ?? null,
+      tracking_url: tracking?.tracking_url || o.prorouting_tracking_url || null,
+      prorouting_status: o.prorouting_status || null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/restaurant/orders/:orderId/sync-status — poll Prorouting /status
+// Fallback for missed webhooks. Runs the returned state through the same
+// shared handler as routes/webhookProrouting.js so customer messages,
+// order-status transitions, and dispute auto-raises are identical.
+router.post('/orders/:orderId/sync-status', async (req, res) => {
+  try {
+    const o = await col('orders').findOne({ _id: req.params.orderId });
+    if (!o) return res.status(404).json({ error: 'Order not found' });
+    const branch = await col('branches').findOne({ _id: o.branch_id });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (!o.prorouting_order_id) {
+      return res.status(400).json({ error: 'Delivery not yet dispatched' });
+    }
+
+    const prorouting = require('../services/prorouting');
+    let statusRes;
+    try {
+      statusRes = await prorouting.getOrderStatus(o.prorouting_order_id);
+    } catch (e) {
+      return res.status(502).json({ error: 'Unable to reach delivery partner' });
+    }
+
+    const { applyProroutingState } = require('../services/proroutingState');
+    const result = await applyProroutingState(o, statusRes?.state, { agent: statusRes?.agent });
+
+    res.json({
+      previous_status: result.previousStatus,
+      current_status: result.currentStatus,
+      updated: result.updated,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/restaurant/orders/:orderId/delivery — get delivery status
 router.get('/orders/:orderId/delivery', async (req, res) => {
   try {

@@ -32,6 +32,10 @@ async function saveAddress(identifier, {
   // Enhanced fields (v2)
   type, receiverName, receiverPhone, buildingFloor, street, areaLocality, city, pincode,
   deliveryInstructions,
+  // Google Places integration — populated when address was picked from
+  // Places Autocomplete. place_id lets us re-resolve, locality is the
+  // human label shown to the user.
+  placeId, locality,
 } = {}) {
   const now = new Date();
   const filter = _customerFilter(identifier);
@@ -62,6 +66,9 @@ async function saveAddress(identifier, {
     longitude: longitude || null,
     // Delivery
     delivery_instructions: deliveryInstructions || null,
+    // Google Places
+    place_id: placeId || null,
+    locality: locality || areaLocality || null,
     is_default: makeDefault,
     created_at: now,
   };

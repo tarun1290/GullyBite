@@ -239,6 +239,14 @@ app.use('/api/webhook-health', require('./src/routes/webhookHealth'));
 // Meta WhatsApp Checkout endpoint (beta, ECDH + AES-GCM). Route owns its
 // own json parser — mounted bare so request body is untouched before decrypt.
 app.use('/api/checkout-endpoint', require('./src/routes/checkout-endpoint'));
+// Address Flow endpoint — Google Places autocomplete + submit handler.
+// Same RSA+AES-GCM crypto as /api/checkout-endpoint; route owns its parser.
+app.use('/flow/address', require('./src/routes/flowAddress'));
+
+// Prorouting (3PL) webhook — lifecycle callbacks from the dispatch
+// partner. Owns its own parser and api-key auth; see
+// src/routes/webhookProrouting.js.
+app.use('/webhook/prorouting', require('./src/routes/webhookProrouting'));
 
 // Webhooks: either handled here (Vercel) or offloaded to EC2 backend
 if (process.env.USE_EC2_WEBHOOKS === 'true') {

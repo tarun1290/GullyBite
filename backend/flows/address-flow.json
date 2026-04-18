@@ -1,0 +1,218 @@
+{
+  "version": "6.2",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "SELECT_ADDRESS": ["CONFIRM_DELIVERY", "ADD_ADDRESS"],
+    "CONFIRM_DELIVERY": [],
+    "ADD_ADDRESS": []
+  },
+  "screens": [
+    {
+      "id": "SELECT_ADDRESS",
+      "title": "Deliver To",
+      "terminal": false,
+      "data": {
+        "addresses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "addr_1", "title": "Home — 123 Main St, Hyderabad" }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Choose a saved address"
+          },
+          {
+            "type": "RadioButtonsGroup",
+            "name": "selected_address_id",
+            "label": "Your addresses",
+            "data-source": "${data.addresses}",
+            "required": true
+          },
+          {
+            "type": "Footer",
+            "label": "Deliver Here",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "CONFIRM_DELIVERY" },
+              "payload": {
+                "selected_address_id": "${form.selected_address_id}"
+              }
+            }
+          },
+          {
+            "type": "EmbeddedLink",
+            "text": "+ Add New Address",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "ADD_ADDRESS" },
+              "payload": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CONFIRM_DELIVERY",
+      "title": "Delivery Address",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "selected_address_id": { "type": "string", "__example__": "addr_1" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Confirm your selection"
+          },
+          {
+            "type": "TextBody",
+            "text": "Tap Continue to proceed with your delivery address."
+          },
+          {
+            "type": "Footer",
+            "label": "Continue",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "action": "select_address",
+                "selected_address_id": "${data.selected_address_id}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ADD_ADDRESS",
+      "title": "New Address",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "locality_options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "placeholder", "title": "Type to search..." }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextInput",
+            "name": "full_name",
+            "label": "Full Name",
+            "input-type": "text",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "phone_number",
+            "label": "Phone Number",
+            "input-type": "phone",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "door_no",
+            "label": "Door No / Flat No",
+            "input-type": "text",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "building_name",
+            "label": "Building Name",
+            "input-type": "text",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "street_name",
+            "label": "Street Name",
+            "input-type": "text",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "city",
+            "label": "City",
+            "input-type": "text",
+            "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "pincode",
+            "label": "Pincode",
+            "input-type": "number",
+            "required": true,
+            "max-chars": 6,
+            "min-chars": 6
+          },
+          {
+            "type": "TextInput",
+            "name": "locality_search",
+            "label": "Search area / locality",
+            "input-type": "text",
+            "required": true,
+            "helper-text": "Type to search, then pick from the list below",
+            "on-change-action": {
+              "name": "data_exchange",
+              "payload": {
+                "trigger": "locality_search",
+                "query": "${form.locality_search}"
+              }
+            }
+          },
+          {
+            "type": "Dropdown",
+            "name": "place_id",
+            "label": "Select locality",
+            "required": true,
+            "data-source": "${data.locality_options}"
+          },
+          {
+            "type": "Footer",
+            "label": "Save Address",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "action": "new_address",
+                "full_name": "${form.full_name}",
+                "phone_number": "${form.phone_number}",
+                "door_no": "${form.door_no}",
+                "building_name": "${form.building_name}",
+                "street_name": "${form.street_name}",
+                "city": "${form.city}",
+                "pincode": "${form.pincode}",
+                "locality_search": "${form.locality_search}",
+                "place_id": "${form.place_id}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -308,6 +308,47 @@ async function reverseGeocode(lat, lng) {
   }
 }
 
+// ─── PLACE DETAILS ───────────────────────────────────────────
+// Resolves a Google Places (New API) placeId to coordinates + formatted
+// address. Used after the Delivery Address flow returns a place_id from
+// the Autocomplete dropdown (see routes/flowAddress.js). Returns null if
+// the API key is missing or the lookup fails — callers should fall back
+// to forwardGeocode on the user-entered text.
+async function placeDetails(placeId) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) { log.error('GOOGLE_MAPS_API_KEY is not set — placeDetails disabled'); return null; }
+  if (!placeId) return null;
+  const axios = require('axios');
+  try {
+    const { data } = await axios.get(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+      headers: {
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'id,location,formattedAddress,displayName,addressComponents',
+      },
+      timeout: 8000,
+    });
+    const loc = data?.location;
+    if (!loc) { log.warn({ placeId }, 'placeDetails: no location on response'); return null; }
+    const comps = Array.isArray(data.addressComponents) ? data.addressComponents : [];
+    const getComp = (type) => comps.find(c => (c.types || []).includes(type))?.longText || null;
+    return {
+      lat: Number(loc.latitude),
+      lng: Number(loc.longitude),
+      place_id: data.id || placeId,
+      address: data.formattedAddress || data.displayName?.text || null,
+      full_address: data.formattedAddress || null,
+      city: getComp('locality') || getComp('administrative_area_level_2'),
+      pincode: getComp('postal_code'),
+      area: getComp('sublocality_level_1') || getComp('sublocality'),
+      state: getComp('administrative_area_level_1'),
+      source: 'places_details',
+    };
+  } catch (e) {
+    log.warn({ err: e.message, status: e.response?.status, placeId }, 'placeDetails failed');
+    return null;
+  }
+}
+
 // ─── IS BRANCH OPEN ──────────────────────────────────────────
 // Checks if a branch is currently open based on operating_hours or opening_time/closing_time.
 // If no hours are set, assumes always open (backward compatible).
@@ -457,4 +498,4 @@ async function findBestAvailableBranch(customerLat, customerLng, restaurantId = 
   };
 }
 
-module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractMapsUrl, extractCoordsFromMapsUrl, reverseGeocode, forwardGeocode };
+module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractMapsUrl, extractCoordsFromMapsUrl, reverseGeocode, forwardGeocode, placeDetails };

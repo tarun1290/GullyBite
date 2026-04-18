@@ -186,7 +186,7 @@ const orders = {
     delivery_fee_rs:       { type: 'number' },
     discount_rs:           { type: 'number' },
     total_rs:              { type: 'number', required: true },
-    status:                { type: 'string', required: true, enum: ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED'] },
+    status:                { type: 'string', required: true, enum: ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'RTO_IN_PROGRESS', 'RTO_COMPLETE'] },
     // Phase 1: denormalized payment state on the order row so status
     // transitions don't require a payments lookup.
     payment_status:        { type: 'string', enum: ['unpaid', 'pending', 'paid', 'failed', 'refunded'] },
@@ -227,6 +227,31 @@ const orders = {
     acknowledged_by:       { type: 'uuid' },
     decline_reason:        { type: 'string' },
     refund_id:             { type: 'string' },
+    // Prorouting (3PL) integration. `prorouting_estimate_price` and
+    // `prorouting_quote_id` are written at checkout time from /estimate.
+    // `customer_delivery_fee` is what the customer pays; `total_delivery_fee`
+    // is the Prorouting fare. The restaurant absorbs the difference when
+    // we subsidize. `prorouting_order_id` lands once /createasync acks;
+    // `prorouting_status` tracks webhook events. `needs_manual_dispatch`
+    // flags orders where /createasync failed and ops must re-route.
+    prorouting_estimate_price: { type: 'number' },
+    prorouting_quote_id:       { type: 'string' },
+    prorouting_order_id:       { type: 'string' },
+    prorouting_status:         { type: 'string' },
+    customer_delivery_fee:     { type: 'number' },
+    total_delivery_fee:        { type: 'number' },
+    needs_manual_dispatch:     { type: 'boolean' },
+    // Part 2: dispute + tracking. `prorouting_issue_id` is set once
+    // /partner/order/issue acks (manual admin raise OR auto-raise on
+    // RTO-Initiated). `prorouting_issue_state` mirrors the latest
+    // Prorouting issue state (OPEN / PROCESSING / RESOLVED / CLOSED).
+    // `prorouting_tracking_url` is cached from /track so the dashboard
+    // can deep-link to the LSP tracking page. `is_rto` is a flat flag
+    // set on RTO-Initiated — cheap to filter for ops queues.
+    prorouting_issue_id:       { type: 'string' },
+    prorouting_issue_state:    { type: 'string' },
+    prorouting_tracking_url:   { type: 'string' },
+    is_rto:                    { type: 'boolean' },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },
@@ -239,6 +264,8 @@ const orders = {
     { key: { rating_request_due: 1 }, sparse: true },
     // Pending-notification poll — sparse, only PAID orders awaiting ack.
     { key: { restaurant_id: 1, acknowledged_at: 1, status: 1 }, sparse: true },
+    // Prorouting dispatch lookup — sparse, only orders with a 3PL order id.
+    { key: { prorouting_order_id: 1 }, sparse: true },
   ],
 };
 
@@ -383,10 +410,14 @@ const customer_profiles = {
 // never rewrites historical orders.
 const customer_addresses = {
   collection: 'customer_addresses',
-  description: 'Global saved addresses (per-customer, cross-tenant)',
+  description: 'Global saved addresses (per-customer, cross-tenant, keyed by wa_id)',
   fields: {
     _id:                   { type: 'uuid', required: true },
     customer_id:           { type: 'uuid', required: true },
+    // wa_phone is the stable identity key — addresses are global per
+    // wa_id, never scoped to restaurant_id/branch_id. A customer's Home
+    // is the same Home across every tenant they order from.
+    wa_phone:              { type: 'string' },
     label:                 { type: 'string' },     // 'Home', 'Work', free text
     address_line:          { type: 'string', required: true },
     landmark:              { type: 'string' },
@@ -395,12 +426,18 @@ const customer_addresses = {
     state:                 { type: 'string' },
     latitude:              { type: 'number' },
     longitude:             { type: 'number' },
+    // Google Places integration. place_id is the canonical identifier
+    // for the Google Places record picked at save time; locality is the
+    // human-readable text label (formatted address) from the same record.
+    place_id:              { type: 'string' },
+    locality:              { type: 'string' },
     is_default:            { type: 'boolean' },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },
   indexes: [
     { key: { customer_id: 1, is_default: -1, updated_at: -1 } },
+    { key: { wa_phone: 1, is_default: -1, updated_at: -1 } },
   ],
 };
 

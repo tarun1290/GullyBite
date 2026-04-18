@@ -229,7 +229,7 @@ const createOrder = async (params) => {
   return _createOrderImpl(params);
 };
 
-const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null, deliveryQuote = null, structuredAddress = null, addressSource = null, receiverName = null, receiverPhone = null, deliveryInstructions = null, brandId = null, phoneNumberId = null, businessId = null }) => {
+const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs, deliveryFeeRs, totalRs, discountRs = 0, couponId = null, couponCode = null, deliveryAddress, deliveryLat, deliveryLng, waPhone, charges = null, deliveryFeeBreakdown = null, deliveryQuote = null, structuredAddress = null, addressSource = null, receiverName = null, receiverPhone = null, deliveryInstructions = null, brandId = null, phoneNumberId = null, businessId = null, proroutingEstimatePrice = null, proroutingQuoteId = null, customerDeliveryFee = null, totalDeliveryFee = null, needsManualDispatch = false }) => {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
 
@@ -340,6 +340,18 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
     packaging_rs:               charges?.packaging_rs               ?? 0,
     packaging_gst_rs:           charges?.packaging_gst_rs           ?? 0,
     delivery_fee_breakdown:     deliveryFeeBreakdown                || null,
+    // Prorouting (3PL) integration. These fields are populated only when
+    // the checkout handler called /estimate successfully. When they are
+    // null the order falls back to the flat/dynamic delivery fee path and
+    // no 3PL dispatch is attempted. `needs_manual_dispatch` is flipped on
+    // when /estimate OR /createasync fails so ops can reroute.
+    prorouting_estimate_price:  proroutingEstimatePrice,
+    prorouting_quote_id:        proroutingQuoteId,
+    prorouting_order_id:        null,
+    prorouting_status:          null,
+    customer_delivery_fee:      customerDeliveryFee,
+    total_delivery_fee:         totalDeliveryFee,
+    needs_manual_dispatch:      !!needsManualDispatch,
     // Optional brand mapping — null preserves legacy single-brand behavior.
     brand_id: resolvedBrandId,
     business_id: resolvedBusinessId,

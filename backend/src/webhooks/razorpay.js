@@ -333,6 +333,65 @@ const confirmPaidOrder = async (orderId, event) => {
   const order = await orderSvc.getOrderDetails(orderId);
   if (!order) return;
 
+  // ─── PROROUTING /createasync (fire-and-forget) ──────────────
+  // Dispatch the 3PL order. Pinned to the estimate quote_id so the
+  // customer pays exactly what was shown at checkout. Any failure flags
+  // `needs_manual_dispatch` for ops — MUST NOT throw, MUST NOT block the
+  // rest of the post-payment flow.
+  if (order.prorouting_quote_id) {
+    setImmediate(async () => {
+      try {
+        const prorouting = require('../services/prorouting');
+        const branch = await col('branches').findOne({ _id: order.branch_id });
+        if (!branch) {
+          log.warn({ orderId, branchId: order.branch_id }, 'prorouting createasync: branch not found');
+          await col('orders').updateOne({ _id: orderId }, { $set: { needs_manual_dispatch: true, updated_at: new Date() } });
+          return;
+        }
+        const pickupDetails = {
+          latitude: branch.latitude,
+          longitude: branch.longitude,
+          address: branch.address || '',
+          pincode: branch.pincode || '',
+          name: branch.name || '',
+          phone: branch.manager_phone || branch.phone || '',
+        };
+        const dropDetails = {
+          latitude: order.delivery_lat,
+          longitude: order.delivery_lng,
+          address: order.delivery_address || '',
+          pincode: order.structured_address?.pincode || '',
+          name: order.receiver_name || order.customer_name || '',
+          phone: order.receiver_phone || order.customer_phone || '',
+          order_value: Number(order.total_rs) || 0,
+        };
+        const { prorouting_order_id } = await prorouting.createDeliveryOrder(
+          String(order.id || order._id),
+          order.prorouting_quote_id,
+          pickupDetails,
+          dropDetails
+        );
+        await col('orders').updateOne(
+          { _id: orderId },
+          { $set: {
+              prorouting_order_id: prorouting_order_id || null,
+              prorouting_status: 'UnFulfilled',
+              updated_at: new Date(),
+            } }
+        );
+        log.info({ orderId, prorouting_order_id }, 'prorouting createasync ok');
+      } catch (proErr) {
+        log.warn({ err: proErr?.message, status: proErr?.response?.status, orderId }, 'prorouting createasync failed — flagging manual dispatch');
+        try {
+          await col('orders').updateOne(
+            { _id: orderId },
+            { $set: { needs_manual_dispatch: true, updated_at: new Date() } }
+          );
+        } catch (_) { /* swallow */ }
+      }
+    });
+  }
+
   // Phase 3: replace fire-and-forget Promise.allSettled with durable
   // queue jobs. Each side effect (customer notification, 3PL dispatch,
   // POS push) gets its own retry budget and survives process restarts.

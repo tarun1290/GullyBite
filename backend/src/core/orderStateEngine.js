@@ -31,6 +31,12 @@ const ORDER_STATES = [
   'DISPATCHED',
   'DELIVERED',
   'CANCELLED',
+  // Prorouting RTO lifecycle. When a 3PL rider cannot deliver and
+  // initiates return-to-origin, the order moves DISPATCHED → RTO_IN_PROGRESS.
+  // Once the package is returned (or disposed) it becomes terminal at
+  // RTO_COMPLETE. Neither state counts as a delivered order.
+  'RTO_IN_PROGRESS',
+  'RTO_COMPLETE',
 ];
 
 // ─── CONFIRMED ORDER STATES ────────────────────────────────
@@ -48,22 +54,26 @@ const TRANSITIONS = {
   CONFIRMED:       new Set(['PREPARING', 'CANCELLED']),
   PREPARING:       new Set(['PACKED', 'CANCELLED']),
   PACKED:          new Set(['DISPATCHED', 'CANCELLED']),
-  DISPATCHED:      new Set(['DELIVERED', 'CANCELLED']),
+  DISPATCHED:      new Set(['DELIVERED', 'CANCELLED', 'RTO_IN_PROGRESS']),
   DELIVERED:       new Set([]),  // Terminal state
   CANCELLED:       new Set([]),  // Terminal state
+  RTO_IN_PROGRESS: new Set(['RTO_COMPLETE', 'CANCELLED']),
+  RTO_COMPLETE:    new Set([]),  // Terminal state
 };
 
 // ─── TIMESTAMP FIELDS PER STATE ─────────────────────────────
 const STATE_TIMESTAMP = {
-  PAYMENT_FAILED: 'payment_failed_at',
-  EXPIRED:    'expired_at',
-  PAID:       'paid_at',
-  CONFIRMED:  'confirmed_at',
-  PREPARING:  'preparing_at',
-  PACKED:     'packed_at',
-  DISPATCHED: 'dispatched_at',
-  DELIVERED:  'delivered_at',
-  CANCELLED:  'cancelled_at',
+  PAYMENT_FAILED:  'payment_failed_at',
+  EXPIRED:         'expired_at',
+  PAID:            'paid_at',
+  CONFIRMED:       'confirmed_at',
+  PREPARING:       'preparing_at',
+  PACKED:          'packed_at',
+  DISPATCHED:      'dispatched_at',
+  DELIVERED:       'delivered_at',
+  CANCELLED:       'cancelled_at',
+  RTO_IN_PROGRESS: 'rto_initiated_at',
+  RTO_COMPLETE:    'rto_completed_at',
 };
 
 // ─── TRANSITION VALIDATION ──────────────────────────────────

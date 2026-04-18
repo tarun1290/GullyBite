@@ -498,6 +498,62 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
       const branch = await col('branches').findOne({ _id: session.branchId });
       const restaurant = branch ? await col('restaurants').findOne({ _id: branch.restaurant_id }) : null;
 
+      // ─── PROROUTING /estimate ───────────────────────────────
+      // Replace the flat/dynamic delivery fee with a live 3PL quote. On
+      // failure we fall back to whatever charges the upstream flow
+      // already produced and set needs_manual_dispatch so ops can
+      // reroute. Never blocks checkout — always degrades safely.
+      const prorouting = require('../services/prorouting');
+      let effectiveCharges = charges || session.charges || null;
+      let effectiveDeliveryFeeRs = session.deliveryFeeRs || Number(deliveryFee) || 0;
+      let effectiveTotalRs = session.totalRs || Number(total) || 0;
+      let proroutingEstimatePrice = null;
+      let proroutingQuoteId = null;
+      let needsManualDispatch = false;
+
+      const canQuote = branch
+        && Number.isFinite(Number(branch.latitude)) && Number.isFinite(Number(branch.longitude))
+        && Number.isFinite(Number(session.deliveryLat)) && Number.isFinite(Number(session.deliveryLng));
+
+      if (canQuote) {
+        const subtotalRs = session.subtotalRs || Number(subtotal) || 0;
+        try {
+          const est = await prorouting.getEstimate(
+            { latitude: branch.latitude, longitude: branch.longitude, address: branch.address || '', pincode: branch.pincode || '' },
+            { latitude: session.deliveryLat, longitude: session.deliveryLng, address: session.deliveryAddress || '', pincode: session.structuredAddress?.pincode || '' },
+            subtotalRs
+          );
+          proroutingEstimatePrice = Number(est?.estimated_price) || 0;
+          proroutingQuoteId = est?.quote_id || null;
+
+          // Re-run the financial split using the Prorouting fare so the
+          // customer/restaurant shares are re-derived from the live quote.
+          const { calculateCheckout } = require('../core/financialEngine');
+          const restaurantConfig = {
+            delivery_fee_customer_pct: restaurant?.delivery_fee_customer_pct ?? 100,
+            menu_gst_mode:             restaurant?.menu_gst_mode             ?? 'included',
+            menu_gst_pct:              restaurant?.menu_gst_pct              ?? 5,
+            packaging_charge_rs:       restaurant?.packaging_charge_rs       ?? 0,
+            packaging_gst_pct:         restaurant?.packaging_gst_pct         ?? 18,
+          };
+          effectiveCharges = calculateCheckout(
+            restaurantConfig,
+            subtotalRs,
+            proroutingEstimatePrice,
+            session.discountRs || 0,
+            session.loyaltyTier || null
+          );
+          effectiveDeliveryFeeRs = effectiveCharges.customer_delivery_rs;
+          effectiveTotalRs = effectiveCharges.customer_total_rs;
+          log.info({ proroutingEstimatePrice, proroutingQuoteId, customerDeliveryRs: effectiveCharges.customer_delivery_rs }, 'prorouting estimate applied');
+        } catch (estErr) {
+          needsManualDispatch = true;
+          log.warn({ err: estErr?.message, status: estErr?.response?.status }, 'prorouting.getEstimate failed — falling back to flat fee');
+        }
+      } else {
+        log.info({ hasBranchCoords: !!(branch?.latitude && branch?.longitude), hasDropCoords: !!(session?.deliveryLat && session?.deliveryLng) }, 'prorouting estimate skipped — missing coords');
+      }
+
       // Create order in PENDING_PAYMENT state so Razorpay webhook can match it.
       // [IDEMPOTENCY] Pass idempotencyKey so a double-click on the Pay button
       // (or a webhook retry, or a stuck client) returns the SAME order.
@@ -508,8 +564,8 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         branchId     : session.branchId,
         cart         : session.cart,
         subtotalRs   : session.subtotalRs || Number(subtotal) || 0,
-        deliveryFeeRs: session.deliveryFeeRs || Number(deliveryFee) || 0,
-        totalRs      : session.totalRs || Number(total) || 0,
+        deliveryFeeRs: effectiveDeliveryFeeRs,
+        totalRs      : effectiveTotalRs,
         discountRs   : session.discountRs || 0,
         couponId     : session.coupon?.id || null,
         couponCode   : session.coupon?.code || null,
@@ -517,29 +573,34 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         deliveryLat  : session.deliveryLat,
         deliveryLng  : session.deliveryLng,
         waPhone      : customer?.wa_phone || customer?.bsuid,
-        charges      : charges || session.charges || null,
+        charges      : effectiveCharges,
         deliveryFeeBreakdown: session.deliveryFeeBreakdown || null,
         deliveryQuote: session.deliveryQuote || null,
         structuredAddress: session.structuredAddress || null,
         addressSource: session.addressSource || null,
+        proroutingEstimatePrice,
+        proroutingQuoteId,
+        customerDeliveryFee: effectiveCharges?.customer_delivery_rs ?? null,
+        totalDeliveryFee: effectiveCharges?.delivery_fee_total_rs ?? (proroutingEstimatePrice ?? null),
+        needsManualDispatch,
       });
 
       const refId = order.order_number.substring(0, 35).replace(/[^a-zA-Z0-9_\-\.]/g, '-');
-      const taxRs = charges ? (charges.food_gst_rs || 0) + (charges.customer_delivery_gst_rs || 0) + (charges.packaging_gst_rs || 0) : 0;
+      const taxRs = effectiveCharges ? (effectiveCharges.food_gst_rs || 0) + (effectiveCharges.customer_delivery_gst_rs || 0) + (effectiveCharges.packaging_gst_rs || 0) : 0;
       const discountRs = discount?.amountRs || 0;
 
       // Build a fake fullOrder for sendPaymentRequest (same shape as getOrderDetails returns)
       const checkoutOrder = {
         order_number: order.order_number, id: order.id,
-        subtotal_rs: charges?.subtotal_rs || Number(subtotal) || 0,
-        customer_delivery_rs: charges?.customer_delivery_rs || Number(deliveryFee) || 0,
-        delivery_fee_rs: charges?.customer_delivery_rs || Number(deliveryFee) || 0,
-        food_gst_rs: charges?.food_gst_rs || 0,
-        customer_delivery_gst_rs: charges?.customer_delivery_gst_rs || 0,
-        packaging_gst_rs: charges?.packaging_gst_rs || 0,
+        subtotal_rs: effectiveCharges?.subtotal_rs || Number(subtotal) || 0,
+        customer_delivery_rs: effectiveCharges?.customer_delivery_rs || effectiveDeliveryFeeRs || 0,
+        delivery_fee_rs: effectiveCharges?.customer_delivery_rs || effectiveDeliveryFeeRs || 0,
+        food_gst_rs: effectiveCharges?.food_gst_rs || 0,
+        customer_delivery_gst_rs: effectiveCharges?.customer_delivery_gst_rs || 0,
+        packaging_gst_rs: effectiveCharges?.packaging_gst_rs || 0,
         discount_rs: discountRs,
         coupon_code: discount?.code || null,
-        total_rs: charges?.customer_total_rs || Number(total) || 0,
+        total_rs: effectiveCharges?.customer_total_rs || effectiveTotalRs || 0,
         business_name: restaurant?.business_name || branch?.name || 'Restaurant',
         items: (items || []).map(i => ({ item_name: i.name, quantity: i.qty || 1, unit_price_rs: Number(i.price) || 0, retailer_id: i.retailer_id || i.name })),
       };
@@ -570,7 +631,7 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         order_id: order.id,
         reference_id: refId,
         payment_type: 'checkout_order',
-        amount_rs: charges?.customer_total_rs || Number(total) || 0,
+        amount_rs: effectiveCharges?.customer_total_rs || effectiveTotalRs || 0,
         currency: 'INR',
         status: 'pending',
         created_at: new Date(),
@@ -728,9 +789,9 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
           const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
           if (savedAddrs?.length > 0) {
             const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
-            await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { addresses: addressItems } } });
+            await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } } });
           } else {
-            await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
+            await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
           }
         } else {
           await wa.sendLocationRequest(pid, token, to);
@@ -763,7 +824,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
           flowId: restaurant.flow_id,
           flowCta: 'Choose Address',
           screenId: 'SAVED_ADDRESSES',
-          flowData: { screenData: { addresses: addressItems } },
+          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } },
         });
       } else {
         await wa.sendFlow(pid, token, to, {
@@ -771,7 +832,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
           flowId: restaurant.flow_id,
           flowCta: 'Set Location',
           screenId: 'NEW_ADDRESS',
-          flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
+          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
         });
       }
     } else {
@@ -1114,9 +1175,9 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
       if (savedAddrs?.length > 0) {
         const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
-        await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { addresses: addressItems } } });
+        await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } } });
       } else {
-        await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
+        await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
       }
     } else {
       await wa.sendLocationRequest(pid, token, to);
@@ -1558,7 +1619,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
           flowId: restaurant.flow_id,
           flowCta: 'Choose Address',
           screenId: 'SAVED_ADDRESSES',
-          flowData: { screenData: { addresses: addressItems } },
+          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } },
         });
       } else {
         await wa.sendFlow(pid, token, to, {
@@ -1566,7 +1627,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
           flowId: restaurant.flow_id,
           flowCta: 'Set Location',
           screenId: 'NEW_ADDRESS',
-          flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
+          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
         });
       }
     } else {
@@ -1806,9 +1867,9 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
         if (savedAddrs?.length > 0) {
           const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
-          await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { addresses: addressItems } } });
+          await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } } });
         } else {
-          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
+          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
         }
       } else {
         await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
@@ -2930,7 +2991,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
           flowId: restaurant.flow_id,
           flowCta: 'Add Address',
           screenId: 'NEW_ADDRESS',
-          flowData: { screenData: { customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
+          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
         });
       } else {
         await wa.sendText(pid, token, to, '📍 Please share your location using the 📎 attach icon → Location.');
@@ -2975,8 +3036,38 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
   if (responseData.action === 'new_address') {
     let parsedAddress = null;
 
-    // Try Google Maps link first
-    if (responseData.maps_link?.trim()) {
+    // Normalize across legacy + new field names. New flow (address-flow.json)
+    // ships full_name/phone_number/door_no/building_name/street_name/
+    // locality_search/place_id. Older onboarded WABAs may still be on the
+    // legacy receiver_name/receiver_phone/building_floor/street/area_locality
+    // schema until they've been repointed via /flow/assign-all.
+    const buildingFloor = (responseData.door_no || responseData.building_floor)?.trim() || null;
+    const buildingName = responseData.building_name?.trim() || null;
+    const street = (responseData.street_name || responseData.street)?.trim() || null;
+    const areaLocality = (responseData.locality_search || responseData.area_locality)?.trim() || null;
+    const city = responseData.city?.trim() || null;
+    const pincode = responseData.pincode?.trim() || null;
+    const addressLandmark = responseData.landmark?.trim() || null;
+    const receiverName = responseData.full_name || responseData.receiver_name || null;
+    const receiverPhone = responseData.phone_number || responseData.receiver_phone || null;
+    const placeId = responseData.place_id?.trim() || null;
+
+    // Preferred path: resolve the Places Autocomplete selection by placeId
+    // (lat/lng + formatted address straight from Google, no text parsing).
+    if (placeId && placeId !== 'placeholder' && placeId !== 'none') {
+      try {
+        const details = await location.placeDetails(placeId);
+        if (details?.lat && details?.lng) {
+          parsedAddress = details;
+          log.info({ placeId, lat: details.lat, lng: details.lng }, 'Flow placeDetails resolved');
+        }
+      } catch (e) {
+        log.warn({ err: e.message, placeId }, 'Flow placeDetails failed — falling back');
+      }
+    }
+
+    // Legacy path: Google Maps link from older flow submissions
+    if (!parsedAddress && responseData.maps_link?.trim()) {
       try {
         const coords = await location.extractCoordsFromMapsUrl(responseData.maps_link.trim());
         if (coords) {
@@ -2987,17 +3078,9 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       }
     }
 
-    // Build full address from structured fields (v2 enhanced form)
-    const buildingFloor = responseData.building_floor?.trim() || null;
-    const street = responseData.street?.trim() || null;
-    const areaLocality = responseData.area_locality?.trim() || null;
-    const city = responseData.city?.trim() || null;
-    const pincode = responseData.pincode?.trim() || null;
-    const addressLandmark = responseData.landmark?.trim() || null;
-
-    // If no Maps link geocode, build address from structured fields or fall back to manual_address
+    // Final fallback: forward-geocode the structured text
     if (!parsedAddress) {
-      const structuredParts = [buildingFloor, street, areaLocality, addressLandmark ? `Near ${addressLandmark}` : null, city, pincode].filter(Boolean);
+      const structuredParts = [buildingFloor, buildingName, street, areaLocality, addressLandmark ? `Near ${addressLandmark}` : null, city, pincode].filter(Boolean);
       const structuredAddr = structuredParts.length >= 2 ? structuredParts.join(', ') : null;
       const manualAddr = responseData.manual_address?.trim() || null;
       const addressText = structuredAddr || manualAddr;
@@ -3023,7 +3106,8 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       return;
     }
 
-    // Resolve label — address_type (v2) or address_label (v1 compat)
+    // Resolve label — address_type (v2) or address_label (v1 compat). The
+    // new ADD_ADDRESS screen does not ship address_type; default to 'other'.
     const addressType = responseData.address_type || responseData.address_label || 'other';
     const nickname = responseData.address_nickname || '';
     let label;
@@ -3037,17 +3121,17 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
 
     // Build full address string from best available data
     const fullAddr = parsedAddress.address || parsedAddress.full_address
-      || [buildingFloor, street, areaLocality, city, pincode].filter(Boolean).join(', ');
+      || [buildingFloor, buildingName, street, areaLocality, city, pincode].filter(Boolean).join(', ');
 
     // Save to customer addresses with enhanced fields
     await addressSvc.saveAddress({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid }, {
       label,
       type: addressType.toLowerCase(),
       fullAddress: fullAddr,
-      receiverName: responseData.receiver_name || customer.name || null,
-      receiverPhone: responseData.receiver_phone || customer.wa_phone || null,
+      receiverName: receiverName || customer.name || null,
+      receiverPhone: receiverPhone || customer.wa_phone || null,
       buildingFloor,
-      street,
+      street: [buildingName, street].filter(Boolean).join(', ') || street,
       areaLocality,
       city,
       pincode,
@@ -3055,12 +3139,14 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       deliveryInstructions: responseData.delivery_instructions || null,
       latitude: parsedAddress.lat || null,
       longitude: parsedAddress.lng || null,
+      placeId: parsedAddress.place_id || placeId || null,
+      locality: parsedAddress.area || areaLocality || null,
       makeDefault: true,
     });
 
     // Confirmation message with receiver info if ordering for someone else
-    const receiverNote = (responseData.receiver_name && responseData.receiver_name !== customer.name)
-      ? `\n👤 Receiver: ${responseData.receiver_name}` : '';
+    const receiverNote = (receiverName && receiverName !== customer.name)
+      ? `\n👤 Receiver: ${receiverName}` : '';
     await wa.sendText(pid, token, to, `📍 Delivering to: *${fullAddr}*${receiverNote}\n\n🔍 Finding the nearest outlet...`);
 
     // Find branch and send menu

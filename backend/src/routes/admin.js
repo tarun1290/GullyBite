@@ -556,6 +556,127 @@ router.get('/orders', async (req, res) => {
   }
 });
 
+// ─── PROROUTING ISSUE MANAGEMENT ─────────────────────────────
+// Admin-only tools for raising, tracking, and closing Prorouting
+// (3PL) disputes against a delivery. Used when RTO auto-raise misses
+// an edge case, or ops needs to open a manual complaint (wrong item,
+// damaged packaging, etc.). All three sit behind requireAdmin.
+
+// POST /api/admin/orders/:orderId/issue — raise a manual issue
+router.post('/orders/:orderId/issue', requireAdmin, async (req, res) => {
+  try {
+    const order = await col('orders').findOne({ _id: req.params.orderId });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.prorouting_order_id) return res.status(400).json({ error: 'Delivery not yet dispatched' });
+    if (order.prorouting_issue_id) {
+      return res.status(400).json({ error: `Issue already exists: ${order.prorouting_issue_id}` });
+    }
+
+    const { sub_category, short_desc, long_desc } = req.body || {};
+    if (!sub_category) return res.status(400).json({ error: 'sub_category is required' });
+
+    const prorouting = require('../services/prorouting');
+    let result;
+    try {
+      result = await prorouting.raiseIssue(order.prorouting_order_id, sub_category, short_desc, long_desc);
+    } catch (e) {
+      if (e?.name === 'DuplicateIssueError') {
+        return res.status(409).json({ error: e.message });
+      }
+      return res.status(502).json({ error: e.message });
+    }
+
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: {
+          prorouting_issue_id: result.issue_id,
+          prorouting_issue_state: result.issue_state,
+          updated_at: new Date(),
+        } }
+    );
+
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.name || 'admin',
+      action: 'prorouting.issue_raised', category: 'delivery',
+      description: `Raised ${sub_category} issue for order #${order.order_number}`,
+      resourceType: 'order', resourceId: String(order._id), severity: 'info',
+      metadata: { sub_category, issue_id: result.issue_id },
+    });
+
+    res.json({ issue_id: result.issue_id, issue_state: result.issue_state });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/orders/:orderId/issue — fetch latest issue status
+router.get('/orders/:orderId/issue', requireAdmin, async (req, res) => {
+  try {
+    const order = await col('orders').findOne({ _id: req.params.orderId });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.prorouting_issue_id) return res.status(404).json({ error: 'No issue raised for this order' });
+
+    const prorouting = require('../services/prorouting');
+    let issue;
+    try {
+      issue = await prorouting.getIssueStatus(order.prorouting_issue_id);
+    } catch (e) {
+      return res.status(502).json({ error: e.message });
+    }
+
+    const latestState = issue?.status || issue?.state || null;
+    if (latestState && latestState !== order.prorouting_issue_state) {
+      await col('orders').updateOne(
+        { _id: order._id },
+        { $set: { prorouting_issue_state: latestState, updated_at: new Date() } }
+      );
+    }
+
+    res.json(issue);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/orders/:orderId/issue/close — resolve + close the dispute
+router.post('/orders/:orderId/issue/close', requireAdmin, async (req, res) => {
+  try {
+    const order = await col('orders').findOne({ _id: req.params.orderId });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!order.prorouting_issue_id) return res.status(404).json({ error: 'No issue raised for this order' });
+
+    const { rating, refund_by_lsp, refund_to_client } = req.body || {};
+    if (!rating || !['THUMBS-UP', 'THUMBS-DOWN'].includes(rating)) {
+      return res.status(400).json({ error: "rating must be 'THUMBS-UP' or 'THUMBS-DOWN'" });
+    }
+
+    const prorouting = require('../services/prorouting');
+    let result;
+    try {
+      result = await prorouting.closeIssue(order.prorouting_issue_id, rating, !!refund_by_lsp, !!refund_to_client);
+    } catch (e) {
+      return res.status(502).json({ error: e.message });
+    }
+
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: { prorouting_issue_state: 'Closed', updated_at: new Date() } }
+    );
+
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.name || 'admin',
+      action: 'prorouting.issue_closed', category: 'delivery',
+      description: `Closed Prorouting issue ${order.prorouting_issue_id} with rating ${rating}`,
+      resourceType: 'order', resourceId: String(order._id), severity: 'info',
+      metadata: { rating, refund_by_lsp: !!refund_by_lsp, refund_to_client: !!refund_to_client },
+    });
+
+    res.json({ message: result.message });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── GET /api/admin/logs ─────────────────────────────────────
 router.get('/logs', async (req, res) => {
   try {
@@ -2876,11 +2997,17 @@ router.get('/flow', async (req, res) => {
 });
 
 // POST /api/admin/flow/create — create Flow on Meta + save to platform_settings
+// Body: { force?: boolean, endpoint_uri?: string }
+// `force=true` ignores the early-return guard and creates a brand-new Flow.
+// Needed when migrating a published Flow (which Meta forbids editing) — we
+// create a new Flow and re-point the DB in one go.
 router.post('/flow/create', async (req, res) => {
   try {
+    const force = !!req.body?.force;
+    const endpointUri = req.body?.endpoint_uri || undefined;
     const existing = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
-    if (existing?.flow_id) {
-      return res.json({ success: true, already_exists: true, flow_id: existing.flow_id });
+    if (existing?.flow_id && !force) {
+      return res.json({ success: true, already_exists: true, flow_id: existing.flow_id, hint: 'pass { force: true } to create a new Flow (e.g. when migrating a published Flow)' });
     }
 
     // Use the platform WABA (from first active WA account or env)
@@ -2888,16 +3015,28 @@ router.post('/flow/create', async (req, res) => {
     const wabaId = wa?.waba_id;
     if (!wabaId) return res.status(400).json({ error: 'No active WABA found on platform.' });
 
-    const result = await flowMgr.createDeliveryFlow(wabaId);
+    const result = await flowMgr.createDeliveryFlow(wabaId, { endpointUri });
     if (!result.success) return res.status(400).json(result);
 
+    const oldFlowId = existing?.flow_id || null;
     await col('platform_settings').updateOne(
       { _id: 'whatsapp_flow' },
-      { $set: { flow_id: result.flowId, flow_name: 'GullyBite Delivery Address', flow_status: result.published ? 'PUBLISHED' : 'DRAFT', flow_json_version: '6.2', auto_assign_new: true, updated_at: new Date() }, $setOnInsert: { created_at: new Date() } },
+      { $set: { flow_id: result.flowId, flow_name: 'GullyBite Delivery Address', flow_status: result.published ? 'PUBLISHED' : 'DRAFT', flow_json_version: '6.2', endpoint_uri: result.endpoint_uri || null, auto_assign_new: true, updated_at: new Date() }, $setOnInsert: { created_at: new Date() } },
       { upsert: true }
     );
 
-    res.json({ success: true, flow_id: result.flowId, published: result.published });
+    // If forcing a recreate, repoint every restaurant that was still on
+    // the old Flow so the platform doesn't leave orphaned references.
+    let repointed = 0;
+    if (force && oldFlowId) {
+      const r = await col('restaurants').updateMany(
+        { flow_id: oldFlowId },
+        { $set: { flow_id: result.flowId, updated_at: new Date() } }
+      );
+      repointed = r.modifiedCount;
+    }
+
+    res.json({ success: true, flow_id: result.flowId, published: result.published, endpoint_uri: result.endpoint_uri || null, old_flow_id: oldFlowId, restaurants_repointed: repointed });
   } catch (e) {
     log.error({ err: e }, 'Flow create error');
     res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors });
@@ -2914,13 +3053,18 @@ router.get('/flow/preview', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
 });
 
-// POST /api/admin/flow/update — re-upload Flow JSON
+// POST /api/admin/flow/update — re-upload Flow JSON (DRAFT flows only)
+// Body: { endpoint_uri?: string } — override the default endpoint URL
 router.post('/flow/update', async (req, res) => {
   try {
     const setting = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
     if (!setting?.flow_id) return res.status(404).json({ error: 'No Flow created yet.' });
-    const data = await flowMgr.updateFlowJson(setting.flow_id);
-    await col('platform_settings').updateOne({ _id: 'whatsapp_flow' }, { $set: { updated_at: new Date() } });
+    const endpointUri = req.body?.endpoint_uri || undefined;
+    const data = await flowMgr.updateFlowJson(setting.flow_id, { endpointUri });
+    await col('platform_settings').updateOne(
+      { _id: 'whatsapp_flow' },
+      { $set: { endpoint_uri: data.endpoint_uri || null, updated_at: new Date() } }
+    );
     res.json({ success: true, ...data });
   } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors }); }
 });

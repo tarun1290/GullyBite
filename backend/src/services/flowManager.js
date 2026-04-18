@@ -1,19 +1,52 @@
 // src/services/flowManager.js
 // WhatsApp Flow management — creates, updates, and publishes Flows via Meta API.
-// This file manages the Delivery Address Flow (no-endpoint, client-side Flow).
+// This file manages the Delivery Address Flow.
+//
+// The address Flow is now ENDPOINT-MODE (v6.2) — JSON lives at
+// backend/flows/address-flow.json and the customer-facing search + submit
+// path talks to routes/flowAddress.js. buildDeliveryFlowJson() loads that
+// file at runtime. createDeliveryFlow + updateFlowJson also set
+// endpoint_uri so Meta routes runtime callbacks to us.
 
+const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 const metaConfig = require('../config/meta');
 const { col } = require('../config/database');
 const FormData = require('form-data');
 const log = require('../utils/logger').child({ component: 'Flow' });
 
+// Where the endpoint-mode flow JSON lives on disk.
+const ADDRESS_FLOW_JSON_PATH = path.resolve(__dirname, '../../flows/address-flow.json');
+
+// Default endpoint for the address Flow. Overridable per deploy with
+// ADDRESS_FLOW_ENDPOINT_URI. Must be HTTPS and reachable from Meta.
+function addressFlowEndpointUri() {
+  return process.env.ADDRESS_FLOW_ENDPOINT_URI
+      || 'https://gullybite.duckdns.org/flow/address';
+}
+
 // ─── FLOW JSON DEFINITION ────────────────────────────────────
-// Version 6.2 for NavigationList support.
-// Two paths: SAVED_ADDRESSES → CONFIRM_DELIVERY, or NEW_ADDRESS → complete.
-// NavigationList CANNOT be on a terminal screen, so SAVED_ADDRESSES navigates
-// to a minimal CONFIRM_DELIVERY terminal screen.
+// Primary source: backend/flows/address-flow.json (endpoint-mode v6.2).
+// Falls back to the legacy inline no-endpoint JSON only if the file
+// cannot be read — this keeps a working flow available during an aborted
+// migration but the file is the canonical source going forward.
 function buildDeliveryFlowJson() {
+  try {
+    if (fs.existsSync(ADDRESS_FLOW_JSON_PATH)) {
+      return JSON.parse(fs.readFileSync(ADDRESS_FLOW_JSON_PATH, 'utf8'));
+    }
+    log.warn({ path: ADDRESS_FLOW_JSON_PATH }, 'address-flow.json missing — falling back to legacy inline JSON');
+  } catch (e) {
+    log.error({ err: e, path: ADDRESS_FLOW_JSON_PATH }, 'Failed to read address-flow.json — falling back to legacy inline JSON');
+  }
+  return _legacyInlineDeliveryFlowJson();
+}
+
+// Legacy no-endpoint JSON. Retained as a fallback; new deploys should
+// push flows/address-flow.json instead. DO NOT extend this — edit the
+// JSON file.
+function _legacyInlineDeliveryFlowJson() {
   return {
     version: '6.2',
     screens: [
@@ -260,16 +293,21 @@ function buildDeliveryFlowJson() {
 }
 
 // ─── CREATE FLOW ─────────────────────────────────────────────
-async function createDeliveryFlow(wabaId) {
+// endpointUri (optional) wires Meta's runtime callbacks (INIT /
+// data_exchange / BACK) to our backend. Required for endpoint-mode
+// flows; harmless for no-endpoint flows (Meta accepts but ignores).
+async function createDeliveryFlow(wabaId, { endpointUri } = {}) {
   const token = metaConfig.getMessagingToken();
   const flowJson = buildDeliveryFlowJson();
+  const uri = endpointUri || addressFlowEndpointUri();
 
-  log.info({ wabaId }, 'Creating delivery address Flow');
+  log.info({ wabaId, endpoint_uri: uri }, 'Creating delivery address Flow');
 
   const { data } = await axios.post(`${metaConfig.graphUrl}/${wabaId}/flows`, {
     name: 'GullyBite Delivery Address',
     categories: ['OTHER'],
     flow_json: JSON.stringify(flowJson),
+    endpoint_uri: uri,
   }, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     timeout: 15000,
@@ -286,7 +324,7 @@ async function createDeliveryFlow(wabaId) {
   }
 
   const flowId = data.id;
-  log.info({ flowId }, 'Flow created');
+  log.info({ flowId, endpoint_uri: uri }, 'Flow created');
 
   // Publish the Flow
   try {
@@ -297,14 +335,16 @@ async function createDeliveryFlow(wabaId) {
     log.info({ flowId }, 'Flow published successfully');
   } catch (pubErr) {
     log.error({ err: pubErr, flowId }, 'Publish failed (Flow created as draft)');
-    return { success: true, flowId, published: false, error: pubErr.response?.data };
+    return { success: true, flowId, published: false, endpoint_uri: uri, error: pubErr.response?.data };
   }
 
-  return { success: true, flowId, published: true };
+  return { success: true, flowId, published: true, endpoint_uri: uri };
 }
 
 // ─── UPDATE FLOW JSON ────────────────────────────────────────
-async function updateFlowJson(flowId) {
+// Uploads the latest JSON to a DRAFT Flow. Also re-sets endpoint_uri
+// (Meta allows updating endpoint_uri on a DRAFT via POST /{flow-id}).
+async function updateFlowJson(flowId, { endpointUri } = {}) {
   const token = metaConfig.getMessagingToken();
   const flowJson = buildDeliveryFlowJson();
 
@@ -321,8 +361,21 @@ async function updateFlowJson(flowId) {
     timeout: 15000,
   });
 
-  log.info({ flowId }, 'Updated Flow JSON');
-  return data;
+  const uri = endpointUri || addressFlowEndpointUri();
+  try {
+    await axios.post(`${metaConfig.graphUrl}/${flowId}`,
+      { endpoint_uri: uri },
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 10000 }
+    );
+    log.info({ flowId, endpoint_uri: uri }, 'Updated Flow JSON + endpoint_uri');
+  } catch (e) {
+    // Published flows or category mismatches can reject endpoint_uri
+    // updates — the JSON asset upload above still succeeded, so log and
+    // move on.
+    log.warn({ flowId, err: e.response?.data || e.message }, 'endpoint_uri update failed — JSON asset still uploaded');
+  }
+
+  return { ...data, endpoint_uri: uri };
 }
 
 // ─── PUBLISH FLOW ────────────────────────────────────────────
