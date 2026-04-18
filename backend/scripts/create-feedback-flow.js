@@ -10,12 +10,14 @@
 
 'use strict';
 
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+
 const axios = require('axios');
 const FormData = require('form-data');
+const metaConfig = require('../src/config/meta');
 
 const WABA_ID = '1587562225840851';
-const API_VERSION = 'v25.0';
-const BASE_URL = `https://graph.facebook.com/${API_VERSION}`;
+const BASE_URL = metaConfig.graphUrl;
 const TOKEN = process.env.META_SYSTEM_USER_TOKEN;
 
 if (!TOKEN) {

@@ -174,7 +174,7 @@ const sendTemplateMessage = async (phoneNumberId, toPhone, templateName, languag
     payload.template.components = componentParams;
   }
 
-  const url = `https://graph.facebook.com/${process.env.WA_API_VERSION}/${phoneNumberId}/messages`;
+  const url = graphUrl(`${phoneNumberId}/messages`);
   const { data } = await axios.post(url, payload, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     timeout: 10000,

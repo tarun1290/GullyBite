@@ -559,7 +559,7 @@ const sendDocument = async (pid, token, to, { buffer, filename, caption, mimeTyp
   form.append('type', mimeType || 'application/octet-stream');
   form.append('file', buffer, { filename, contentType: mimeType });
 
-  const uploadUrl = `https://graph.facebook.com/${process.env.WA_API_VERSION}/${pid}/media`;
+  const uploadUrl = `${metaConfig.graphUrl}/${pid}/media`;
   const { data: media } = await axios.post(uploadUrl, form, {
     headers: { Authorization: `Bearer ${token}`, ...form.getHeaders() },
     timeout: 30000,

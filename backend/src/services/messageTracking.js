@@ -19,6 +19,7 @@
 'use strict';
 
 const { col, newId } = require('../config/database');
+const metaConfig = require('../config/meta');
 const log = require('../utils/logger').child({ component: 'MessageTracking' });
 const { hashPhone } = require('../utils/phoneHash');
 
@@ -377,7 +378,7 @@ async function getDailyCostTrend(restaurantId, days = 30) {
 async function checkAccountQuality(phoneNumberId, accessToken, restaurantId) {
   const axios = require('axios');
   try {
-    const url = `https://graph.facebook.com/${process.env.WA_API_VERSION}/${phoneNumberId}?fields=quality_rating,messaging_limit_tier,account_mode,status`;
+    const url = `${metaConfig.graphUrl}/${phoneNumberId}?fields=quality_rating,messaging_limit_tier,account_mode,status`;
     const { data } = await axios.get(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
       timeout: 10000,
