@@ -138,6 +138,20 @@ connect().then(() => {
   // try { require('./src/jobs/campaignSender'); } catch (e) { console.warn('[EC2] Campaign sender:', e.message); }
   console.log('[EC2] Campaign sender: disabled — module not yet implemented');
 
+  // BullMQ orders queue — producer + worker. EC2-only; Vercel cannot reach
+  // ElastiCache across its VPC boundary. Skipped entirely if REDIS_URL is unset.
+  if (process.env.REDIS_URL) {
+    try {
+      require('./src/queue/orderProducer').register();
+      require('./src/workers/orderWorker').start();
+      console.log('[EC2] BullMQ orders queue: producer + worker started');
+    } catch (err) {
+      console.error('[EC2] BullMQ setup failed:', err.message);
+    }
+  } else {
+    console.log('[EC2] BullMQ orders queue: disabled (REDIS_URL not set)');
+  }
+
   server.listen(PORT, () => {
     console.log(`\n🚀 [EC2] GullyBite Webhook Backend running on port ${PORT}`);
     console.log(`   Webhooks:  http://localhost:${PORT}/webhooks/whatsapp`);
