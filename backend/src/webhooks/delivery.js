@@ -20,14 +20,18 @@ router.post('/', express.json(), async (req, res) => {
   res.sendStatus(200);
 
   try {
-    // Basic auth: check webhook secret if configured (provider-specific)
+    // Signature check is mandatory. If DELIVERY_WEBHOOK_SECRET is unset we
+    // drop the payload — an unconfigured secret used to make this endpoint
+    // effectively public.
     const secret = process.env.DELIVERY_WEBHOOK_SECRET;
-    if (secret) {
-      const authHeader = req.headers['x-webhook-secret'] || req.headers['authorization'] || req.query?.secret;
-      if (authHeader !== secret && authHeader !== `Bearer ${secret}`) {
-        req.log.warn('Invalid webhook secret — dropping');
-        return;
-      }
+    if (!secret) {
+      req.log.error('DELIVERY_WEBHOOK_SECRET not configured — dropping webhook');
+      return;
+    }
+    const authHeader = req.headers['x-webhook-secret'] || req.headers['authorization'] || req.query?.secret;
+    if (authHeader !== secret && authHeader !== `Bearer ${secret}`) {
+      req.log.warn('Invalid webhook secret — dropping');
+      return;
     }
 
     const payload = req.body;

@@ -1,6 +1,7 @@
 // src/routes/admin.js
 // Admin-only REST API for the GullyBite management dashboard.
-// All routes (except /auth) require: Authorization: Bearer <ADMIN_KEY>
+// All routes (except /auth + /auth/setup) require a valid admin JWT via
+// Authorization: Bearer <token>. See middleware/adminAuth.js.
 
 const express = require('express');
 const router  = express.Router();
@@ -19,20 +20,23 @@ const log = require('../utils/logger').child({ component: 'admin' });
 // ─── AUTH MIDDLEWARE (RBAC) ───────────────────────────────────
 const bcrypt = require('bcryptjs');
 const { requireAdminAuth, signAdminToken } = require('../middleware/adminAuth');
+const { rateLimitFn } = require('../middleware/rateLimit');
 
 // Legacy compatibility: simple requireAdmin still works for existing route-level guards
 const requireAdmin = requireAdminAuth();
 
+// Admin login limiter: 10 attempts per 15 min per IP.
+const adminLoginLimiter = rateLimitFn(
+  (r) => `admin_auth:${r.ip || r.headers['x-forwarded-for'] || 'unknown'}`,
+  10,
+  15 * 60,
+  { message: 'Too many login attempts. Please try again in a few minutes.' }
+);
+
 // ─── AUTH ENDPOINTS ─────────────────────────────────────────
 // POST /api/admin/auth — JWT-based admin login (email + password)
-router.post('/auth', express.json(), async (req, res) => {
-  const { key, email, password } = req.body;
-
-  // ADMIN_KEY login removed — log warning if attempted
-  if (key) {
-    req.log.warn({ ip: req.ip }, 'ADMIN_KEY login attempted (deprecated, rejected)');
-    return res.status(403).json({ error: 'ADMIN_KEY login is no longer supported. Use email + password.' });
-  }
+router.post('/auth', adminLoginLimiter, express.json(), async (req, res) => {
+  const { email, password } = req.body;
 
   // JWT-based email+password login
   if (email && password) {
@@ -47,7 +51,7 @@ router.post('/auth', express.json(), async (req, res) => {
       logActivity({ actorType: 'admin', actorId: String(user._id), actorName: user.name, action: 'admin.login', category: 'auth', description: `Admin ${user.email} logged in`, severity: 'info' });
 
       return res.json({ ok: true, token, user: { id: String(user._id), name: user.name, email: user.email, role: user.role, permissions: user.permissions } });
-    } catch (e) { return res.status(500).json({ error: e.message }); }
+    } catch (e) { return res.status(500).json({ success: false, message: "Internal server error" }); }
   }
 
   // Check if any admin users exist (for first-run setup detection)
@@ -76,7 +80,7 @@ router.post('/auth/setup', express.json(), async (req, res) => {
     await col('admin_users').createIndex({ email: 1 }, { unique: true }).catch(() => {});
     const token = signAdminToken(user);
     res.json({ ok: true, token, user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: {} } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/auth/me — current admin user profile
@@ -101,7 +105,7 @@ router.post('/auth/change-password', requireAdminAuth(), express.json(), async (
       { $set: { password_hash: hash, updated_at: new Date() }, $inc: { token_version: 1 } }
     );
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/auth/logout — invalidates every outstanding token for this admin
@@ -112,7 +116,7 @@ router.post('/auth/logout', requireAdminAuth(), async (req, res) => {
       { $inc: { token_version: 1 }, $set: { updated_at: new Date() } }
     );
     res.json({ message: 'Logged out successfully' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── ADMIN USER MANAGEMENT (super_admin only) ────────────────
@@ -120,7 +124,7 @@ router.get('/users', requireAdminAuth('admin_users', 'manage'), async (req, res)
   try {
     const users = await col('admin_users').find({}, { projection: { password_hash: 0 } }).sort({ created_at: -1 }).toArray();
     res.json(mapIds(users));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.post('/users', requireAdminAuth('admin_users', 'manage'), express.json(), async (req, res) => {
@@ -139,7 +143,7 @@ router.post('/users', requireAdminAuth('admin_users', 'manage'), express.json(),
     res.json(mapId(safe));
   } catch (e) {
     if (e.code === 11000) return res.status(400).json({ error: 'Email already in use' });
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -172,7 +176,7 @@ router.put('/users/:id', requireAdminAuth('admin_users', 'manage'), express.json
     if (is_active === false) $update.$inc = { token_version: 1 };
     await col('admin_users').updateOne({ _id: req.params.id }, $update);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.post('/users/:id/reset-password', requireAdminAuth('admin_users', 'manage'), express.json(), async (req, res) => {
@@ -185,7 +189,7 @@ router.post('/users/:id/reset-password', requireAdminAuth('admin_users', 'manage
       { $set: { password_hash: hash, updated_at: new Date() }, $inc: { token_version: 1 } }
     );
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // All routes below require admin auth (any level)
@@ -196,14 +200,14 @@ router.get('/alerts', async (req, res) => {
   try {
     const alerts = await col('platform_alerts').find({ acknowledged: false }).sort({ created_at: -1 }).limit(20).toArray();
     res.json(alerts);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.post('/alerts/:id/acknowledge', async (req, res) => {
   try {
     await col('platform_alerts').updateOne({ _id: req.params.id }, { $set: { acknowledged: true, acknowledged_at: new Date() } });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── GET /api/admin/stats ─────────────────────────────────────
@@ -251,7 +255,7 @@ router.get('/branch-insights', requireAdmin, async (req, res) => {
     });
   } catch (e) {
     log.error({ err: e }, 'branch-insights failed');
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -307,7 +311,7 @@ router.get('/sync-logs', requireAdmin, async (req, res) => {
     });
   } catch (e) {
     log.error({ err: e }, 'sync-logs query failed');
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -351,7 +355,7 @@ router.get('/meta-alerts', requireAdmin, async (req, res) => {
     });
   } catch (e) {
     log.error({ err: e }, 'meta-alerts query failed');
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -363,7 +367,7 @@ router.post('/meta-alerts/:id/resolve', requireAdmin, async (req, res) => {
       { $set: { status: 'resolved', resolved_at: new Date() } },
     );
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.get('/stats', async (req, res) => {
@@ -413,7 +417,7 @@ router.get('/stats', async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, 'Stats error');
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -477,7 +481,7 @@ router.get('/restaurants', async (req, res) => {
 
     res.json(enriched);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -500,7 +504,7 @@ router.get('/branches', async (req, res) => {
 
     res.json(enriched);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -552,7 +556,7 @@ router.get('/orders', async (req, res) => {
 
     res.json({ orders: enriched, total });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -583,7 +587,7 @@ router.post('/orders/:orderId/issue', requireAdmin, async (req, res) => {
       if (e?.name === 'DuplicateIssueError') {
         return res.status(409).json({ error: e.message });
       }
-      return res.status(502).json({ error: e.message });
+      return res.status(502).json({ success: false, message: "Upstream service unavailable" });
     }
 
     await col('orders').updateOne(
@@ -605,7 +609,7 @@ router.post('/orders/:orderId/issue', requireAdmin, async (req, res) => {
 
     res.json({ issue_id: result.issue_id, issue_state: result.issue_state });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -621,7 +625,7 @@ router.get('/orders/:orderId/issue', requireAdmin, async (req, res) => {
     try {
       issue = await prorouting.getIssueStatus(order.prorouting_issue_id);
     } catch (e) {
-      return res.status(502).json({ error: e.message });
+      return res.status(502).json({ success: false, message: "Upstream service unavailable" });
     }
 
     const latestState = issue?.status || issue?.state || null;
@@ -634,7 +638,7 @@ router.get('/orders/:orderId/issue', requireAdmin, async (req, res) => {
 
     res.json(issue);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -655,7 +659,7 @@ router.post('/orders/:orderId/issue/close', requireAdmin, async (req, res) => {
     try {
       result = await prorouting.closeIssue(order.prorouting_issue_id, rating, !!refund_by_lsp, !!refund_to_client);
     } catch (e) {
-      return res.status(502).json({ error: e.message });
+      return res.status(502).json({ success: false, message: "Upstream service unavailable" });
     }
 
     await col('orders').updateOne(
@@ -673,7 +677,7 @@ router.post('/orders/:orderId/issue/close', requireAdmin, async (req, res) => {
 
     res.json({ message: result.message });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -706,7 +710,7 @@ router.get('/logs', async (req, res) => {
 
     res.json({ logs: mapIds(docs), total });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -717,7 +721,7 @@ router.get('/logs/:id', async (req, res) => {
     if (!doc) return res.status(404).json({ error: 'Not found' });
     res.json(mapId(doc));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -746,7 +750,7 @@ router.get('/customers', async (req, res) => {
 
     res.json(enriched);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -773,7 +777,7 @@ router.patch('/restaurants/:id', express.json(), async (req, res) => {
     }
     res.json(mapId(updated));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -801,7 +805,7 @@ router.post('/settlements/run', requireAdmin, express.json(), async (req, res) =
     res.json(result);
   } catch (e) {
     log.error({ err: e }, 'admin.settlements.run failed');
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -823,7 +827,7 @@ router.post('/settlements/:id/retry', requireAdmin, express.json(), async (req, 
     res.json(result);
   } catch (e) {
     log.error({ err: e }, 'admin.settlements.retry failed');
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -840,7 +844,7 @@ router.get('/coupons', requireAdmin, async (req, res) => {
       .sort({ created_at: -1 })
       .toArray();
     res.json({ items: rows.map(r => ({ ...r, id: String(r._id) })), count: rows.length });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.post('/coupons', requireAdmin, express.json(), async (req, res) => {
@@ -855,8 +859,8 @@ router.post('/coupons', requireAdmin, express.json(), async (req, res) => {
     });
     res.json(doc);
   } catch (e) {
-    const status = /required|must|>/.test(e.message) ? 400 : 500;
-    res.status(status).json({ error: e.message });
+    if (/required|must|>/.test(e.message)) res.status(400).json({ error: e.message });
+    else res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -876,7 +880,7 @@ router.patch('/coupons/:id', requireAdmin, express.json(), async (req, res) => {
     );
     if (!r) return res.status(404).json({ error: 'not found' });
     res.json({ ...r, id: String(r._id) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── COUPON TEMPLATES ────────────────────────────────────────
@@ -909,8 +913,8 @@ router.post('/coupon-templates', requireAdmin, express.json(), async (req, res) 
 
     res.json(result);
   } catch (e) {
-    const status = /required|must be/i.test(e.message) ? 400 : 500;
-    res.status(status).json({ error: e.message, meta: e.meta || undefined });
+    if (/required|must be/i.test(e.message)) res.status(400).json({ error: e.message, meta: e.meta || undefined });
+    else res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -922,7 +926,7 @@ router.get('/coupon-templates', requireAdmin, async (req, res) => {
     const items = await svc.listCouponTemplates(String(restaurant_id));
     res.json({ items, count: items.length });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -950,7 +954,7 @@ router.post('/settlements/confirm', requireAdmin, express.json(), async (req, re
     res.json(result);
   } catch (e) {
     log.error({ err: e }, 'admin.settlements.confirm failed');
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -977,7 +981,7 @@ router.post('/settlements/fail', requireAdmin, express.json(), async (req, res) 
     res.json(result);
   } catch (e) {
     log.error({ err: e }, 'admin.settlements.fail failed');
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -992,7 +996,7 @@ router.post('/run-settlement', async (req, res) => {
     });
     res.json({ message: 'Settlement started' });
     runSettlement().catch(err => log.error({ err }, 'Settlement run failed'));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── GET /api/admin/applications ─────────────────────────────
@@ -1022,7 +1026,7 @@ router.get('/applications', async (req, res) => {
       return rest;
     }));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1075,7 +1079,7 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
     });
     res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1100,7 +1104,7 @@ router.patch('/applications/:id/reject', express.json(), async (req, res) => {
     });
     res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1113,7 +1117,7 @@ router.patch('/applications/:id/verify-gst', express.json(), async (req, res) =>
       { $set: { gst_verified: !!verified, gst_verified_at: verified ? new Date() : null, updated_at: new Date() } }
     );
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── PATCH /api/admin/applications/:id/verify-fssai ──────────
@@ -1125,7 +1129,7 @@ router.patch('/applications/:id/verify-fssai', express.json(), async (req, res) 
       { $set: { fssai_verified: !!verified, fssai_verified_at: verified ? new Date() : null, updated_at: new Date() } }
     );
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── REFERRALS ────────────────────────────────────────────────────
@@ -1147,7 +1151,7 @@ router.post('/referrals', express.json(), async (req, res) => {
     });
     res.json(mapId(referral));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1159,7 +1163,7 @@ router.get('/referrals/commission-report', async (req, res) => {
       from: req.query.from, to: req.query.to, restaurantId: req.query.restaurant_id,
     });
     res.json(report);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/referrals/conflict-audit/:phone — attribution conflict audit
@@ -1168,7 +1172,7 @@ router.get('/referrals/conflict-audit/:phone', async (req, res) => {
     const refAttr = require('../services/referralAttribution');
     const audit = await refAttr.getConflictAudit(req.params.phone, req.query.restaurant_id);
     res.json(audit);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── REFERRAL LINKS (GBREF code-based tracking) ──────────────
@@ -1200,7 +1204,7 @@ router.get('/referrals/links', async (req, res) => {
       };
     }));
     res.json(enriched);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/referrals/links — generate a new GBREF link
@@ -1244,7 +1248,7 @@ router.post('/referrals/links', express.json(), async (req, res) => {
 
     req.log.info({ code, restaurantName: restaurant.business_name, phone: phone?.slice(-4) }, 'Referral link created');
     res.json({ ...mapId(link), wa_link: waLink });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PUT /api/admin/referrals/links/:id — update status or campaign name
@@ -1256,7 +1260,7 @@ router.put('/referrals/links/:id', express.json(), async (req, res) => {
     if (campaign_name !== undefined) $set.campaign_name = campaign_name;
     await col('referral_links').updateOne({ _id: req.params.id }, { $set });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // DELETE /api/admin/referrals/links/:id — soft delete (set expired)
@@ -1264,7 +1268,7 @@ router.delete('/referrals/links/:id', async (req, res) => {
   try {
     await col('referral_links').updateOne({ _id: req.params.id }, { $set: { status: 'expired', updated_at: new Date() } });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/referrals/link-stats — aggregate link stats
@@ -1285,7 +1289,7 @@ router.get('/referrals/link-stats', async (req, res) => {
       conversion_rate: sessions.length ? Math.round(converted.length / sessions.length * 1000) / 10 : 0,
       total_commission: Math.round(totalCommission * 100) / 100,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── WALLETS ─────────────────────────────────────────────────
@@ -1304,7 +1308,7 @@ router.get('/wallets', async (req, res) => {
     const negativeCount = wallets.filter(w => w.balance_rs < 0).length;
     const lowCount = wallets.filter(w => w.balance_rs > 0 && w.balance_rs < (w.low_balance_threshold_rs || 100)).length;
     res.json({ wallets: enriched, summary: { totalBalance, totalMonthly, negativeCount, lowCount } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.post('/wallets/refund', async (req, res) => {
@@ -1315,7 +1319,7 @@ router.post('/wallets/refund', async (req, res) => {
     const result = await walletSvc.refund(restaurantId, amount, description || 'Admin refund');
     if (!result) return res.status(404).json({ error: 'Wallet not found' });
     res.json({ success: true, balance: result.balance_rs });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/referrals/stats
@@ -1333,7 +1337,7 @@ router.get('/referrals/stats', async (req, res) => {
     const avg_window = total > 0 ? Math.round(all.reduce((s, r) => s + (r.attribution_window_hours || 8), 0) / total * 10) / 10 : 0;
     res.json({ total, active, converted, expired, late_night_referrals: lateNight, avg_attribution_window_hours: avg_window, total_orders, total_order_value_rs, total_referral_fee_rs });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1360,7 +1364,7 @@ router.get('/referrals', async (req, res) => {
 
     res.json(enriched);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1395,7 +1399,7 @@ router.get('/settlements', async (req, res) => {
 
     res.json({ settlements: enriched, total });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1412,7 +1416,7 @@ router.get('/settlements/stats', async (req, res) => {
     const total_fee_rs    = all.reduce((sum, s) => sum + (parseFloat(s.platform_fee_rs) || 0), 0);
     res.json({ total, pending, processing, completed, failed, total_payout_rs, total_fee_rs });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1502,7 +1506,7 @@ router.get('/settlements/:id/download', async (req, res) => {
     res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.set('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(Buffer.from(buffer));
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── DIRECTORY ───────────────────────────────────────────────
@@ -1513,13 +1517,13 @@ router.get('/directory/listings', async (req, res) => {
     const { limit = 50, offset = 0 } = req.query;
     const result = await directory.getAllListings({ limit: parseInt(limit), offset: parseInt(offset) });
     res.json(result);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.get('/directory/stats', async (req, res) => {
   try {
     res.json(await directory.getStats());
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.patch('/directory/listings/:id/toggle', async (req, res) => {
@@ -1530,7 +1534,7 @@ router.patch('/directory/listings/:id/toggle', async (req, res) => {
       { $set: { is_active: !!isActive, updated_at: new Date() } }
     );
     res.json({ ok: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.post('/directory/sync-all', async (req, res) => {
@@ -1558,7 +1562,7 @@ router.post('/checkout/generate-keys', async (req, res) => {
       privateKeyB64: keys.privateKeyB64,
       instructions: 'Set WA_CHECKOUT_PRIVATE_KEY_B64 in your .env to privateKeyB64. Upload publicKey to Meta Checkout settings.',
     });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.get('/checkout/status', async (req, res) => {
@@ -1567,7 +1571,7 @@ router.get('/checkout/status', async (req, res) => {
     const verifyToken = process.env.WA_CHECKOUT_VERIFY_TOKEN || '(not set)';
     const webhookSecret = !!process.env.WA_CHECKOUT_WEBHOOK_SECRET;
     res.json({ configured, verifyToken: configured ? verifyToken : null, webhookSecret });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── DELETE /api/admin/restaurants/:id ────────────────────────
@@ -1622,7 +1626,7 @@ router.delete('/restaurants/:id', async (req, res) => {
     res.json({ ok: true, archived: true, business_name: restaurant.business_name });
   } catch (err) {
     req.log.error({ err }, 'Delete restaurant error');
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1632,7 +1636,7 @@ router.get('/archived-restaurants', async (req, res) => {
     const docs = await col('archived_restaurants').find({}).sort({ deleted_at: -1 }).toArray();
     res.json(mapIds(docs));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1674,7 +1678,7 @@ router.post('/clear-cache', async (req, res) => {
 
     res.json({ ok: true, cleared: results });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -1739,7 +1743,7 @@ router.get('/ratings/stats', async (req, res) => {
       avg_overall: avg('overall_rating'), avg_food: avg('food_rating'),
       total, distribution, restaurant_breakdown, problem_areas, recent_negative,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1777,7 +1781,7 @@ router.get('/webhook-retry/stats', async (req, res) => {
       success_rate_24h: successRate,
       avg_retries_before_success: avgRetries,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/dlq — paginated dead letter queue
@@ -1795,7 +1799,7 @@ router.get('/dlq', async (req, res) => {
     ]);
 
     res.json({ entries: mapIds(docs), total });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/dlq/:id/retry — manually retry a DLQ entry
@@ -1822,7 +1826,7 @@ router.post('/dlq/:id/retry', async (req, res) => {
       resourceType: 'webhook_log', resourceId: req.params.id, severity: 'info',
     });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/dlq/:id/dismiss — permanently dismiss a DLQ entry
@@ -1834,7 +1838,7 @@ router.post('/dlq/:id/dismiss', async (req, res) => {
     );
     if (result.matchedCount === 0) return res.status(404).json({ error: 'Entry not found' });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1852,7 +1856,7 @@ router.get('/blocked-phones', async (req, res) => {
       is_active: !d.expires_at || d.expires_at > now,
     }));
     res.json(enriched);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/blocked-phones — manually block a phone
@@ -1884,7 +1888,7 @@ router.post('/blocked-phones', async (req, res) => {
       severity: 'warning', metadata: { wa_phone, reason, durationHours },
     });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // DELETE /api/admin/blocked-phones/:id — unblock a phone
@@ -1893,7 +1897,7 @@ router.delete('/blocked-phones/:id', async (req, res) => {
     const result = await col('blocked_phones').deleteOne({ _id: req.params.id });
     if (result.deletedCount === 0) return res.status(404).json({ error: 'Not found' });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/rate-limit/stats — rate limit & abuse overview
@@ -1935,7 +1939,7 @@ router.get('/rate-limit/stats', async (req, res) => {
       active_blocks: activeBlocks,
       top_rate_limited: topRateLimited,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1978,7 +1982,7 @@ router.get('/delivery/stats', async (req, res) => {
       cost_today_rs: Math.round(costToday * 100) / 100,
       failure_rate_pct: failureRate,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── TEMPLATE MANAGEMENT ────────────────────────────────────
@@ -1994,7 +1998,7 @@ router.get('/templates', async (req, res) => {
     if (name) filter.name = { $regex: name, $options: 'i' };
     const templates = await col('templates').find(filter).sort({ updated_at: -1 }).toArray();
     res.json(mapIds(templates));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/templates/sync — pull all templates from Meta into local DB
@@ -2004,7 +2008,7 @@ router.post('/templates/sync', express.json(), async (req, res) => {
     if (!waba_id) return res.status(400).json({ error: 'waba_id required' });
     const result = await templateSvc.syncTemplates(waba_id);
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/templates — create a new template on Meta
@@ -2061,7 +2065,7 @@ router.get('/templates/mappings', async (req, res) => {
   try {
     const mappings = await templateSvc.getEventMappings();
     res.json(mappings);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PUT /api/admin/templates/mappings/:event — update an event mapping
@@ -2081,7 +2085,7 @@ router.put('/templates/mappings/:event', express.json(), async (req, res) => {
       resourceType: 'template_mapping', resourceId: req.params.event, severity: 'info',
     });
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/templates/seed — force re-seed default mappings
@@ -2090,7 +2094,7 @@ router.post('/templates/seed', async (req, res) => {
     await templateSvc.seedDefaultMappings();
     const mappings = await templateSvc.getEventMappings();
     res.json({ seeded: true, mappings });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/templates/gallery — predefined template library
@@ -2109,7 +2113,7 @@ router.get('/templates/notifications', async (req, res) => {
       .limit(limit)
       .toArray();
     res.json(mapIds(logs));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/templates/test-send — Send a test template to a phone number
@@ -2153,7 +2157,7 @@ router.get('/usernames', async (req, res) => {
     const { search, status } = req.query;
     const data = await usernameSvc.getAllUsernameStatuses({ search, statusFilter: status });
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/usernames/:waAccountId/check — check availability
@@ -2161,7 +2165,7 @@ router.post('/usernames/:waAccountId/check', express.json(), async (req, res) =>
   try {
     const result = await usernameSvc.checkUsernameAvailability(req.body.username, req.params.waAccountId);
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/usernames/:waAccountId/set-target — set pending_claim
@@ -2193,7 +2197,7 @@ router.post('/usernames/:waAccountId/sync', async (req, res) => {
   try {
     const result = await usernameSvc.syncUsernameFromMeta(req.params.waAccountId);
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/usernames/sync-all — sync all WABAs
@@ -2201,7 +2205,7 @@ router.post('/usernames/sync-all', async (req, res) => {
   try {
     const result = await usernameSvc.syncAllUsernames();
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/usernames/auto-suggest — generate suggestions for all
@@ -2209,7 +2213,7 @@ router.post('/usernames/auto-suggest', async (req, res) => {
   try {
     const result = await usernameSvc.autoSuggestAll();
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/usernames/:waAccountId/suggest — generate suggestions for one
@@ -2228,7 +2232,7 @@ router.post('/usernames/:waAccountId/suggest', async (req, res) => {
       $set: { username_suggestions: suggestions, username_updated_at: new Date() },
     });
     res.json({ suggestions });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── BUSINESS VERIFICATION STATUS ──────────────────────────────
@@ -2287,7 +2291,7 @@ router.get('/restaurants/:id/verification', async (req, res) => {
     }
 
     res.json(stored);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // CRIT-2B-10: override per-restaurant daily campaign send cap. 0 disables
@@ -2311,7 +2315,7 @@ router.patch('/restaurants/:id/campaign-cap', requireAdminAuth('restaurants', 'm
       { $set: { campaign_daily_cap: Math.floor(n), updated_at: new Date() } },
     );
     res.json({ ok: true, campaign_daily_cap: Math.floor(n) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PATCH /api/admin/restaurants/:id/verification — manually set verification status
@@ -2325,7 +2329,7 @@ router.patch('/restaurants/:id/verification', express.json(), async (req, res) =
       $set: { business_verification_status: status, updated_at: new Date() },
     });
     res.json({ ok: true, status });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 const GRAPH = () => metaConfig.graphUrl;
@@ -2348,7 +2352,7 @@ router.get('/meta/token-debug', async (req, res) => {
       ...result,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -2375,7 +2379,7 @@ router.get('/activity', async (req, res) => {
       limit: parseInt(req.query.limit) || 50,
     });
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/activity/restaurant/:id — per-restaurant activity
@@ -2392,7 +2396,7 @@ router.get('/activity/restaurant/:id', async (req, res) => {
       limit: parseInt(req.query.limit) || 50,
     });
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/activity/stats — aggregated stats
@@ -2400,7 +2404,7 @@ router.get('/activity/stats', async (req, res) => {
   try {
     const stats = await actLog.getActivityStats();
     res.json(stats);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/activity/errors — recent errors + critical
@@ -2411,7 +2415,7 @@ router.get('/activity/errors', async (req, res) => {
       limit: parseInt(req.query.limit) || 50,
     });
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PUT /api/admin/activity/:id/resolve — mark an error/critical event as resolved
@@ -2424,7 +2428,7 @@ router.put('/activity/:id/resolve', async (req, res) => {
     );
     if (!result) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/webhooks/live — live webhook traffic
@@ -2454,7 +2458,7 @@ router.get('/webhooks/live', async (req, res) => {
     ]);
 
     res.json({ webhooks: logs, total, page, pages: Math.ceil(total / limit) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/webhooks/:id — single webhook with full payload
@@ -2463,7 +2467,7 @@ router.get('/webhooks/:id', async (req, res) => {
     const log = await col('webhook_logs').findOne({ _id: req.params.id });
     if (!log) return res.status(404).json({ error: 'Not found' });
     res.json(log);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── ISSUES ──────────────────────────────────────────────────────────
@@ -2478,7 +2482,7 @@ router.get('/issues', async (req, res) => {
     if (admin_queue === 'true') filters.adminQueue = true;
     const result = await issueSvc.listIssues(filters, { page: parseInt(page), limit: parseInt(limit) });
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/issues/stats — global issue stats
@@ -2489,7 +2493,7 @@ router.get('/issues/stats', async (req, res) => {
     if (req.query.admin_queue === 'true') filters.adminQueue = true;
     const stats = await issueSvc.getIssueStats(filters);
     res.json(stats);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/issues/:id — single issue detail
@@ -2509,7 +2513,7 @@ router.get('/issues/:id', async (req, res) => {
       if (payment) enriched._payment = { rp_payment_id: payment.rp_payment_id, amount_rs: payment.amount_rs, method: payment.method };
     }
     res.json(enriched);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PUT /api/admin/issues/:id/status — update status
@@ -2522,7 +2526,7 @@ router.put('/issues/:id/status', async (req, res) => {
     });
     if (!updated) return res.status(404).json({ error: 'Issue not found' });
     res.json(updated);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PUT /api/admin/issues/:id/assign — reassign issue
@@ -2548,7 +2552,7 @@ router.put('/issues/:id/assign', async (req, res) => {
       metadata: { assigned_to, routed_to },
     });
     res.json(updated);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/issues/:id/message — add message to issue thread
@@ -2585,7 +2589,7 @@ router.post('/issues/:id/message', async (req, res) => {
     }
 
     res.json(msg);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/issues/:id/refund — process refund (admin only)
@@ -2624,7 +2628,7 @@ router.post('/issues/:id/refund', async (req, res) => {
       metadata: { amount_rs: result.issue?.refund_amount_rs || amount_rs },
     });
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/issues/:id/resolve — resolve issue
@@ -2658,7 +2662,7 @@ router.post('/issues/:id/resolve', async (req, res) => {
     } catch (_) {}
 
     res.json(updated);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/issues/:id/reopen — reopen issue
@@ -2670,7 +2674,7 @@ router.post('/issues/:id/reopen', async (req, res) => {
     });
     if (!updated) return res.status(404).json({ error: 'Issue not found' });
     res.json(updated);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/issues/:id/flag-settlement — flag refund for settlement deduction
@@ -2702,7 +2706,7 @@ router.post('/issues/:id/flag-settlement', async (req, res) => {
     });
 
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── FINANCIAL ENDPOINTS ────────────────────────────────────────
@@ -2712,7 +2716,7 @@ router.get('/financials/overview', async (req, res) => {
   try {
     const overview = await financials.getPlatformOverview(req.query.period, req.query.from, req.query.to);
     res.json(overview);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/financials/restaurant/:id
@@ -2720,7 +2724,7 @@ router.get('/financials/restaurant/:id', async (req, res) => {
   try {
     const summary = await financials.getFinancialSummary(req.params.id, req.query.period || '30d', req.query.from, req.query.to);
     res.json(summary);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/financials/settlements
@@ -2744,7 +2748,7 @@ router.get('/financials/settlements', async (req, res) => {
     const rMap = Object.fromEntries(restaurants.map(r => [String(r._id), r.business_name]));
     const enriched = settlements.map(s => ({ ...s, business_name: rMap[s.restaurant_id] || s.restaurant_id }));
     res.json({ settlements: enriched, total, page, pages: Math.ceil(total / limit) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/financials/payments
@@ -2761,11 +2765,17 @@ router.get('/financials/payments', async (req, res) => {
       if (req.query.to) match.created_at.$lte = new Date(req.query.to);
     }
     const [payments, total] = await Promise.all([
-      col('payments').find(match).sort({ created_at: -1 }).skip(skip).limit(limit).toArray(),
+      col('payments').find(match, {
+        projection: {
+          _id: 1, order_id: 1, status: 1, amount_rs: 1, currency: 1,
+          rp_payment_id: 1, rp_order_id: 1, method: 1,
+          created_at: 1, updated_at: 1, captured_at: 1,
+        },
+      }).sort({ created_at: -1 }).skip(skip).limit(limit).toArray(),
       col('payments').countDocuments(match),
     ]);
     res.json({ payments, total, page, pages: Math.ceil(total / limit) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/financials/refunds
@@ -2781,11 +2791,17 @@ router.get('/financials/refunds', async (req, res) => {
       if (req.query.to) match.updated_at.$lte = new Date(req.query.to);
     }
     const [refunds, total] = await Promise.all([
-      col('payments').find(match).sort({ updated_at: -1 }).skip(skip).limit(limit).toArray(),
+      col('payments').find(match, {
+        projection: {
+          _id: 1, order_id: 1, status: 1, amount_rs: 1, currency: 1,
+          rp_payment_id: 1, rp_order_id: 1, rp_refund_id: 1, method: 1,
+          refund_reason: 1, created_at: 1, updated_at: 1, refunded_at: 1,
+        },
+      }).sort({ updated_at: -1 }).skip(skip).limit(limit).toArray(),
       col('payments').countDocuments(match),
     ]);
     res.json({ refunds, total, page, pages: Math.ceil(total / limit) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/financials/tax
@@ -2793,7 +2809,7 @@ router.get('/financials/tax', async (req, res) => {
   try {
     const summary = await financials.getPlatformTaxSummary(req.query.fy);
     res.json(summary);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -2850,7 +2866,7 @@ router.post('/images/cleanup', async (req, res) => {
       deleted: doDelete ? orphans.length : 0,
       orphan_keys: doDelete ? [] : orphans.slice(0, 100).map(o => o.key),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/images/stats — platform-wide image stats
@@ -2867,7 +2883,7 @@ router.get('/images/stats', async (req, res) => {
       coverage_pct: total ? Math.round(withImage / total * 100) : 0,
       rehosted, rehost_failed: rehostFailed,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -2916,7 +2932,7 @@ router.post('/migrate-catalogs', requireAdmin, async (req, res) => {
     }
 
     res.json({ success: true, ...results, total: restaurants.length });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/migrate-catalog-architecture
@@ -2978,7 +2994,7 @@ router.post('/migrate-catalog-architecture', requireAdmin, async (req, res) => {
 
     log.info(stats, 'Catalog architecture migration complete');
     res.json({ success: true, ...stats });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -2993,7 +3009,7 @@ router.get('/flow', async (req, res) => {
     const restaurantCount = await col('restaurants').countDocuments({ flow_id: { $ne: null } });
     const totalRestaurants = await col('restaurants').countDocuments({});
     res.json({ ...setting, assigned_restaurants: restaurantCount, total_restaurants: totalRestaurants });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/flow/create — create Flow on Meta + save to platform_settings
@@ -3039,7 +3055,7 @@ router.post('/flow/create', async (req, res) => {
     res.json({ success: true, flow_id: result.flowId, published: result.published, endpoint_uri: result.endpoint_uri || null, old_flow_id: oldFlowId, restaurants_repointed: repointed });
   } catch (e) {
     log.error({ err: e }, 'Flow create error');
-    res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -3050,7 +3066,7 @@ router.get('/flow/preview', async (req, res) => {
     if (!setting?.flow_id) return res.status(404).json({ error: 'No Flow created yet.' });
     const data = await flowMgr.getFlowPreview(setting.flow_id);
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/flow/update — re-upload Flow JSON (DRAFT flows only)
@@ -3066,7 +3082,7 @@ router.post('/flow/update', async (req, res) => {
       { $set: { endpoint_uri: data.endpoint_uri || null, updated_at: new Date() } }
     );
     res.json({ success: true, ...data });
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/flow/publish — publish a draft Flow
@@ -3077,7 +3093,7 @@ router.post('/flow/publish', async (req, res) => {
     const data = await flowMgr.publishFlow(setting.flow_id);
     await col('platform_settings').updateOne({ _id: 'whatsapp_flow' }, { $set: { flow_status: 'PUBLISHED', updated_at: new Date() } });
     res.json({ success: true, ...data });
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/flow/deprecate — deprecate the Flow
@@ -3090,7 +3106,7 @@ router.post('/flow/deprecate', async (req, res) => {
     // Clear flow_id from all restaurants
     await col('restaurants').updateMany({}, { $set: { flow_id: null } });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/flow/assign-all — assign platform Flow to all restaurants
@@ -3100,7 +3116,7 @@ router.post('/flow/assign-all', async (req, res) => {
     if (!setting?.flow_id) return res.status(404).json({ error: 'No Flow created yet.' });
     const result = await col('restaurants').updateMany({}, { $set: { flow_id: setting.flow_id } });
     res.json({ success: true, assigned: result.modifiedCount });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.post('/flow/toggle-auto-assign', async (req, res) => {
@@ -3111,7 +3127,7 @@ router.post('/flow/toggle-auto-assign', async (req, res) => {
       { $set: { auto_assign_new: !!enabled, updated_at: new Date() } }
     );
     res.json({ success: true, auto_assign_new: !!enabled });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/flows — List ALL Flows from Meta API for the platform WABA
@@ -3125,7 +3141,7 @@ router.get('/flows', async (req, res) => {
       timeout: 15000,
     });
     res.json({ flows: data.data || [], waba_id: wa.waba_id });
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ── Static /flows/* routes MUST come before /flows/:flowId for Express matching ──
@@ -3136,7 +3152,7 @@ router.get('/flows/assignments', async (req, res) => {
     const delivery = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
     const feedback = await col('platform_settings').findOne({ _id: 'feedback_flow' });
     res.json({ delivery: { flow_id: delivery?.flow_id || null, flow_name: delivery?.flow_name || null, flow_status: delivery?.flow_status || null, auto_assign: delivery?.auto_assign_new || false }, feedback: { flow_id: feedback?.flow_id || null, flow_name: feedback?.flow_name || null, flow_status: feedback?.flow_status || null } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PUT /api/admin/flows/assignments — Update Flow assignments
@@ -3154,7 +3170,7 @@ router.put('/flows/assignments', async (req, res) => {
       await col('restaurants').updateMany({}, { $set: { flow_id } });
     }
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/flows/templates — Built-in Flow JSON templates
@@ -3169,7 +3185,7 @@ router.get('/flows/templates', async (req, res) => {
       { id: 'survey', name: 'Customer Survey', json: { version: '6.2', screens: [{ id: 'Q1', title: 'Quick Survey', terminal: false, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Help us improve!' }, { type: 'RadioButtonsGroup', label: 'How did you hear about us?', name: 'source', required: true, 'data-source': [{ id: 'social_media', title: 'Social media' }, { id: 'friend', title: 'Friend/Family' }, { id: 'google', title: 'Google search' }, { id: 'walk_in', title: 'Walked by' }, { id: 'other', title: 'Other' }] }, { type: 'Footer', label: 'Next', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'Q2' }, payload: { source: '${form.source}' } } }] } }, { id: 'Q2', title: 'Your Preferences', terminal: false, data: { source: { type: 'string', __example__: 'social_media' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'What do you love?' }, { type: 'CheckboxGroup', label: 'Select all that apply', name: 'preferences', required: true, 'data-source': [{ id: 'taste', title: 'Great taste' }, { id: 'price', title: 'Good prices' }, { id: 'delivery', title: 'Fast delivery' }, { id: 'variety', title: 'Menu variety' }, { id: 'healthy', title: 'Healthy options' }] }, { type: 'Footer', label: 'Next', 'on-click-action': { name: 'navigate', next: { type: 'screen', name: 'Q3' }, payload: { source: '${data.source}', preferences: '${form.preferences}' } } }] } }, { id: 'Q3', title: 'Feedback', terminal: true, success: true, data: { source: { type: 'string', __example__: 'social_media' }, preferences: { type: 'string', __example__: 'taste' } }, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Any suggestions?' }, { type: 'TextInput', label: 'Your feedback', 'input-type': 'text', name: 'feedback', required: false, 'helper-text': 'Tell us anything — we read every response!' }, { type: 'Footer', label: 'Submit', 'on-click-action': { name: 'complete', payload: { action: 'survey_response', source: '${data.source}', preferences: '${data.preferences}', feedback: '${form.feedback}' } } }] } }] } },
       { id: 'order_preferences', name: 'Order Preferences', json: { version: '6.2', screens: [{ id: 'PREFERENCES', title: 'Your Preferences', terminal: true, success: true, layout: { type: 'SingleColumnLayout', children: [{ type: 'TextHeading', text: 'Customize Your Order' }, { type: 'CheckboxGroup', label: 'Dietary preferences', name: 'dietary', required: false, 'data-source': [{ id: 'veg', title: 'Vegetarian' }, { id: 'vegan', title: 'Vegan' }, { id: 'jain', title: 'Jain' }, { id: 'gluten_free', title: 'Gluten-free' }, { id: 'none', title: 'No restrictions' }] }, { type: 'RadioButtonsGroup', label: 'Spice level', name: 'spice_level', required: true, 'data-source': [{ id: 'mild', title: '\uD83C\uDF36 Mild' }, { id: 'medium', title: '\uD83C\uDF36\uD83C\uDF36 Medium' }, { id: 'hot', title: '\uD83C\uDF36\uD83C\uDF36\uD83C\uDF36 Hot' }, { id: 'extra_hot', title: '\uD83D\uDD25 Extra Hot' }] }, { type: 'TextInput', label: 'Special instructions', 'input-type': 'text', name: 'instructions', required: false, 'helper-text': 'Allergies, no onion/garlic, extra sauce, etc.' }, { type: 'Footer', label: 'Save Preferences', 'on-click-action': { name: 'complete', payload: { dietary: '${form.dietary}', spice_level: '${form.spice_level}', instructions: '${form.instructions}' } } }] } }] } },
     ]});
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/flows/:flowId — Get single Flow details including JSON
@@ -3181,7 +3197,7 @@ router.get('/flows/:flowId', async (req, res) => {
       timeout: 15000,
     });
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/flows — Create a new Flow on Meta
@@ -3198,19 +3214,19 @@ router.post('/flows', async (req, res) => {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 20000,
     });
     res.json({ success: true, flow_id: data.id, validation_errors: data.validation_errors });
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/flows/:flowId/publish — Publish a DRAFT Flow
 router.post('/flows/:flowId/publish', async (req, res) => {
   try { await flowMgr.publishFlow(req.params.flowId); res.json({ success: true }); }
-  catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/flows/:flowId/deprecate — Deprecate a PUBLISHED Flow
 router.post('/flows/:flowId/deprecate', async (req, res) => {
   try { await flowMgr.deprecateFlow(req.params.flowId); res.json({ success: true }); }
-  catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PUT /api/admin/flows/:flowId — Update Flow JSON (DRAFT only)
@@ -3230,7 +3246,7 @@ router.put('/flows/:flowId', async (req, res) => {
     });
     res.json({ success: true, ...data });
   } catch (e) {
-    res.status(500).json({ error: e.response?.data?.error?.message || e.message, validation_errors: e.response?.data?.validation_errors });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -3269,7 +3285,7 @@ router.get('/flows/:flowId/json', async (req, res) => {
       status: meta.status || null,
     });
   } catch (e) {
-    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -3282,7 +3298,7 @@ router.delete('/flows/:flowId', async (req, res) => {
     await col('platform_settings').updateMany({ flow_id: req.params.flowId }, { $set: { flow_id: null, flow_status: null, updated_at: new Date() } });
     await col('restaurants').updateMany({ flow_id: req.params.flowId }, { $set: { flow_id: null } });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 
@@ -3293,7 +3309,7 @@ router.get('/waba/config', async (req, res) => {
   try {
     const config = await col('admin_waba_config').findOne({ _id: 'admin_waba' });
     res.json(config || { _id: 'admin_waba', status: 'disconnected' });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PUT /api/admin/waba/config — connect/update admin WABA
@@ -3322,7 +3338,7 @@ router.put('/waba/config', express.json(), async (req, res) => {
     await col('admin_waba_config').updateOne({ _id: 'admin_waba' }, { $set, $setOnInsert: { created_at: new Date() } }, { upsert: true });
     const updated = await col('admin_waba_config').findOne({ _id: 'admin_waba' });
     res.json(updated);
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/waba/numbers — list admin numbers
@@ -3330,7 +3346,7 @@ router.get('/waba/numbers', async (req, res) => {
   try {
     const numbers = await col('admin_numbers').find({}).sort({ created_at: -1 }).toArray();
     res.json(mapIds(numbers));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/waba/numbers — add admin number (validates with Meta)
@@ -3361,7 +3377,7 @@ router.post('/waba/numbers', express.json(), async (req, res) => {
     };
     await col('admin_numbers').insertOne(doc);
     res.json(mapId(doc));
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PUT /api/admin/waba/numbers/:id — update label, purpose, etc.
@@ -3375,7 +3391,7 @@ router.put('/waba/numbers/:id', express.json(), async (req, res) => {
     if (is_active !== undefined) $set.is_active = is_active;
     await col('admin_numbers').updateOne({ _id: req.params.id }, { $set });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/waba/numbers/:id/refresh — refresh quality data from Meta
@@ -3394,7 +3410,7 @@ router.post('/waba/numbers/:id/refresh', async (req, res) => {
       throughput_level: data.throughput?.level, quality_last_checked: new Date(), updated_at: new Date(),
     }});
     res.json({ success: true, quality_rating: data.quality_rating, messaging_limit_tier: data.messaging_limit?.tier });
-  } catch (e) { res.status(500).json({ error: e.response?.data?.error?.message || e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/waba/send — send message from admin number
@@ -3419,7 +3435,7 @@ router.post('/waba/send', express.json(), async (req, res) => {
       wa_message_id: result?.messages?.[0]?.id || null, timestamp: new Date(),
     }).catch(() => {});
     res.json({ success: true, wa_message_id: result?.messages?.[0]?.id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/waba/messages — recent admin messages
@@ -3428,7 +3444,7 @@ router.get('/waba/messages', async (req, res) => {
     const limit = parseInt(req.query.limit) || 50;
     const msgs = await col('admin_messages').find({}).sort({ timestamp: -1 }).limit(limit).toArray();
     res.json(mapIds(msgs));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/waba/webhook-info — webhook registration info
@@ -3467,7 +3483,7 @@ router.get('/finance/restaurant-status/:restaurantId', async (req, res) => {
       platformFeeGstWaived: !financeConfig.shouldDeductPlatformFeeGst(restaurant),
       billingStartDate: restaurant.billing_start_date || restaurant.approved_at || restaurant.created_at,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── CATALOG COMPRESSION ENGINE ──────────────────────────────
@@ -3479,7 +3495,7 @@ router.post('/compression/rebuild/:restaurantId', async (req, res) => {
     const { dryRun, includeMedia } = req.body || {};
     const result = await compression.rebuildCompressedCatalog(req.params.restaurantId, { dryRun: !!dryRun, includeMedia: !!includeMedia });
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/compression/summary/:restaurantId — compression stats
@@ -3487,7 +3503,7 @@ router.get('/compression/summary/:restaurantId', async (req, res) => {
   try {
     const summary = await compression.getCompressionSummary(req.params.restaurantId);
     res.json(summary);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/compression/branch-preview/:restaurantId/:branchId — branch mapping preview
@@ -3495,7 +3511,7 @@ router.get('/compression/branch-preview/:restaurantId/:branchId', async (req, re
   try {
     const preview = await compression.getBranchMappingPreview(req.params.restaurantId, req.params.branchId);
     res.json(preview);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/compression/runs/:restaurantId — compression run history
@@ -3503,7 +3519,7 @@ router.get('/compression/runs/:restaurantId', async (req, res) => {
   try {
     const runs = await col('catalog_compression_runs').find({ restaurantId: req.params.restaurantId }).sort({ startedAt: -1 }).limit(20).toArray();
     res.json(runs);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── MPM STRATEGY ────────────────────────────────────────────
@@ -3514,7 +3530,7 @@ router.get('/mpm-preview/:restaurantId/:branchId', async (req, res) => {
   try {
     const preview = await mpmStrategy.getMPMPreview(req.params.branchId, req.params.restaurantId);
     res.json(preview);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── REORDER INTELLIGENCE ────────────────────────────────────
@@ -3528,7 +3544,7 @@ router.get('/reorder-preview/:restaurantId/:branchId/:customerId', async (req, r
     const items = await col('menu_items').find({ branch_id: branchId, is_available: true }).toArray();
     const preview = await reorderIntel.getReorderPreview(customerId, branchId, restaurantId, items);
     res.json(preview);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── CONTACT BOOK (BSUID → Phone mapping) ───────────────────
@@ -3545,7 +3561,7 @@ router.get('/waba/contact-book-status', async (req, res) => {
     const withBsuid = await col('customers').countDocuments({ bsuid: { $exists: true, $ne: null } });
     const withPhone = await col('customers').countDocuments({ wa_phone: { $exists: true, $ne: null } });
     res.json({ wabas: results, customers: { total: totalCustomers, with_bsuid: withBsuid, with_phone: withPhone, phone_only: withPhone - withBsuid } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.post('/waba/:wabaId/enable-contact-book', async (req, res) => {
@@ -3566,7 +3582,7 @@ router.post('/waba/:wabaId/enable-contact-book', async (req, res) => {
     res.json({ success: true, waba_id: wabaId });
   } catch (e) {
     req.log.error({ err: e, wabaId }, 'contact book enable failed');
-    res.status(500).json({ error: e.response?.data?.error?.message || e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -3588,7 +3604,7 @@ router.post('/waba/enable-all-contact-books', async (req, res) => {
     }
     logActivity({ actorType: 'admin', action: 'waba.contact_book_bulk_enabled', category: 'settings', description: `Contact Book bulk enable: ${enabled} enabled, ${failed} failed`, severity: 'info' });
     res.json({ success: true, enabled, failed, already_enabled: accounts.length - wabaIds.length });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── MM LITE (Marketing Messages Lite) ──────────────────────
@@ -3596,7 +3612,7 @@ router.get('/mm-lite/status', async (req, res) => {
   try {
     const setting = await col('platform_settings').findOne({ _id: 'mm_lite' });
     res.json({ enabled: !!setting?.enabled, updated_at: setting?.updated_at || null });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.post('/mm-lite/toggle', async (req, res) => {
@@ -3608,7 +3624,7 @@ router.post('/mm-lite/toggle', async (req, res) => {
       { upsert: true }
     );
     res.json({ success: true, enabled: !!enabled });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── FEEDBACK FLOW ──────────────────────────────────────────
@@ -3630,14 +3646,14 @@ router.post('/flow/create-feedback', async (req, res) => {
     );
 
     res.json({ success: true, flow_id: result.flowId });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.get('/flow/feedback-status', async (req, res) => {
   try {
     const setting = await col('platform_settings').findOne({ _id: 'feedback_flow' });
     res.json(setting || { flow_id: null });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── DROP-OFF / FUNNEL ANALYTICS (PLATFORM-WIDE) ───────────
@@ -3661,7 +3677,7 @@ router.get('/analytics/funnel', async (req, res) => {
 
     const result = await dropoff.getDropoffs(null, { from, to, includeDetails: false });
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/analytics/dropoffs — platform-wide dropoff list with restaurant names
@@ -3689,7 +3705,7 @@ router.get('/analytics/dropoffs', async (req, res) => {
       }
     }
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -3852,7 +3868,7 @@ router.get('/reconciliation/payments', async (req, res) => {
     }
 
     res.json({ summary, anomalies });
-  } catch (e) { req.log.error({ err: e }, 'Payment reconciliation failed'); res.status(500).json({ error: e.message }); }
+  } catch (e) { req.log.error({ err: e }, 'Payment reconciliation failed'); res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── SETTLEMENT ↔ PAYOUT RECONCILIATION ─────────────────────
@@ -4020,7 +4036,7 @@ router.get('/reconciliation/settlements', async (req, res) => {
     }
 
     res.json({ summary, anomalies });
-  } catch (e) { req.log.error({ err: e }, 'Settlement reconciliation failed'); res.status(500).json({ error: e.message }); }
+  } catch (e) { req.log.error({ err: e }, 'Settlement reconciliation failed'); res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -4074,7 +4090,7 @@ router.get('/customers/identity', requireAdminAuth('marketing_messages', 'read')
     }
 
     res.json(data);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/campaigns/analytics — cross-tenant ROI
@@ -4087,7 +4103,7 @@ router.get('/campaigns/analytics', async (req, res) => {
       to:   req.query.to,
     });
     res.json({ items: rows, total: rows.length });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/campaigns — list all campaigns across restaurants
@@ -4111,7 +4127,7 @@ router.get('/campaigns', async (req, res) => {
     }));
 
     res.json(enriched);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // PATCH /api/admin/campaigns/:id — admin can enable/disable campaigns
@@ -4129,7 +4145,7 @@ router.patch('/campaigns/:id', express.json(), async (req, res) => {
     );
     if (!updated) return res.status(404).json({ error: 'Campaign not found' });
     res.json(updated);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -4144,7 +4160,7 @@ router.get('/coupons', async (req, res) => {
       : {};
     const coupons = await col('coupons').find(filter).sort({ created_at: -1 }).limit(200).toArray();
     res.json(coupons.map(c => ({ ...c, id: String(c._id) })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/coupons — create platform-wide coupon (restaurant_id = null)
@@ -4185,7 +4201,7 @@ router.post('/coupons', express.json(), async (req, res) => {
     };
     await col('coupons').insertOne(coupon);
     res.json({ ...coupon, id: String(coupon._id) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -4216,7 +4232,7 @@ router.get('/analytics/overview', async (req, res) => {
       active_restaurants: restaurants,
       new_customers: customers,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Orders timeseries — confirmed orders only
@@ -4230,7 +4246,7 @@ router.get('/analytics/orders/timeseries', async (req, res) => {
       { $sort: { _id: 1 } },
     ]).toArray();
     res.json(result.map(r => ({ date: r._id, orders: r.orders, revenue_rs: Math.round(r.revenue) })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Orders by status — intentionally shows ALL statuses for the breakdown chart
@@ -4244,7 +4260,7 @@ router.get('/analytics/orders/by-status', async (req, res) => {
       { $sort: { count: -1 } },
     ]).toArray();
     res.json(result.map(r => ({ status: r._id, count: r.count })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Orders by hour — confirmed orders only
@@ -4258,7 +4274,7 @@ router.get('/analytics/orders/by-hour', async (req, res) => {
       { $sort: { _id: 1 } },
     ]).toArray();
     res.json(result.map(r => ({ hour: r._id, count: r.count })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Orders by day — confirmed orders only
@@ -4273,7 +4289,7 @@ router.get('/analytics/orders/by-day', async (req, res) => {
     ]).toArray();
     const dayNames = ['', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     res.json(result.map(r => ({ day: dayNames[r._id] || r._id, count: r.count, revenue_rs: Math.round(r.revenue) })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Customer segments
@@ -4297,7 +4313,7 @@ router.get('/analytics/customers/segments', async (req, res) => {
       new_last_30d: newLast30,
       inactive: total - active90,
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Customer overview
@@ -4315,7 +4331,7 @@ router.get('/analytics/customers/overview', async (req, res) => {
       ]).toArray(),
     ]);
     res.json({ new_customers: newCust, returning_customers: returning[0]?.count || 0, period_days: days });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Restaurant ranking
@@ -4341,7 +4357,7 @@ router.get('/analytics/restaurants/ranking', async (req, res) => {
       orders: r.orders,
       revenue_rs: Math.round(r.revenue),
     })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Delivery performance
@@ -4358,7 +4374,7 @@ router.get('/analytics/delivery/performance', async (req, res) => {
       }},
     ]).toArray();
     res.json(result.map(r => ({ status: r._id, count: r.count, avg_cost_rs: Math.round(r.avg_cost || 0) })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Geographic analytics (cities)
@@ -4370,7 +4386,7 @@ router.get('/analytics/geographic/cities', async (req, res) => {
       { $sort: { count: -1 } },
     ]).toArray();
     res.json(result.map(r => ({ city: r._id, restaurant_count: r.count })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // Analytics filter helpers
@@ -4378,7 +4394,7 @@ router.get('/analytics/filters/cities', async (_req, res) => {
   try {
     const cities = await col('restaurants').distinct('city', { status: 'active', city: { $ne: null } });
     res.json(cities.sort());
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 router.get('/analytics/filters/areas', async (req, res) => {
@@ -4387,7 +4403,7 @@ router.get('/analytics/filters/areas', async (req, res) => {
     if (req.query.city) filter.city = req.query.city;
     const areas = await col('restaurants').distinct('area', filter);
     res.json(areas.sort());
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -4574,7 +4590,7 @@ router.get('/logistics/analytics', async (req, res) => {
     });
   } catch (e) {
     log.error({ err: e }, 'logistics analytics failed');
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 });
 
@@ -4622,7 +4638,7 @@ router.get('/financials/tax/tds-report', async (req, res) => {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="tds_report_${period}.csv"`);
     res.send([header, ...rows].join('\n'));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GSTR-1 Export — CSV download
@@ -4668,7 +4684,7 @@ router.get('/financials/tax/gstr1', async (req, res) => {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="gstr1_${period}.csv"`);
     res.send([header, ...rows].join('\n'));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -4705,7 +4721,7 @@ router.get('/order-settlements', async (req, res) => {
         restaurant_name: restMap[s.restaurant_id] || 'Unknown',
       })),
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/order-settlements/:id — single settlement detail with payout
@@ -4719,7 +4735,7 @@ router.get('/order-settlements/:id', async (req, res) => {
     const restaurant = await col('restaurants').findOne({ _id: settlement.restaurant_id }, { projection: { business_name: 1, razorpay_fund_acct_id: 1 } });
 
     res.json({ settlement, payout, order, restaurant });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/order-settlements/:id/retry — retry a failed payout
@@ -4728,7 +4744,7 @@ router.post('/order-settlements/:id/retry', express.json(), async (req, res) => 
     const payoutEngine = require('../services/payoutEngine');
     const result = await payoutEngine.retryFailedSettlement(req.params.id);
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/order-settlements/retry-all — retry all failed payouts
@@ -4737,7 +4753,7 @@ router.post('/order-settlements/retry-all', express.json(), async (req, res) => 
     const payoutEngine = require('../services/payoutEngine');
     const result = await payoutEngine.retryAllFailedSettlements();
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // POST /api/admin/order-settlements/:id/process — manually trigger payout for an eligible settlement
@@ -4746,7 +4762,7 @@ router.post('/order-settlements/:id/process', express.json(), async (req, res) =
     const payoutEngine = require('../services/payoutEngine');
     const result = await payoutEngine.processSettlement(req.params.id);
     res.json(result);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/payouts — list all v2 payouts
@@ -4758,7 +4774,7 @@ router.get('/payouts', async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const payouts = await col('payouts').find(filter).sort({ created_at: -1 }).limit(limit).toArray();
     res.json(payouts);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 module.exports = router;

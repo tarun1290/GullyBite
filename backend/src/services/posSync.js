@@ -1,6 +1,10 @@
 // src/services/posSync.js
 // Shared POS sync functions — used by integration routes, webhook handler, and cron job
 
+// POS_DISABLED — this module is disabled. Remove this guard to re-enable.
+module.exports = {};
+return;
+
 const { col, newId } = require('../config/database');
 const { logActivity } = require('./activityLog');
 const memcache = require('../config/memcache');

@@ -20,8 +20,20 @@ const PORT = process.env.PORT || 3001;
 
 // ─── SECURITY ────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
+
+// Explicit CORS allowlist. No wildcard fallback — unconfigured origins are
+// rejected so a forgotten env var can't open the API to the world.
+const corsAllowed = (process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || process.env.BASE_URL || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+if (process.env.NODE_ENV !== 'production') {
+  corsAllowed.push('http://localhost:3000', 'http://localhost:5173');
+}
 app.use(cors({
-  origin: process.env.FRONTEND_URL || process.env.BASE_URL || '*',
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true); // same-origin / curl / mobile
+    if (corsAllowed.includes(origin) || /\.vercel\.app$/.test(origin)) return cb(null, true);
+    return cb(new Error(`CORS blocked: ${origin}`));
+  },
   credentials: true,
 }));
 
@@ -94,7 +106,7 @@ server.on('upgrade', (request, socket, head) => {
     return;
   }
   try {
-    jwt.verify(token, process.env.JWT_SECRET);
+    jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
   } catch {
     socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
     socket.destroy();

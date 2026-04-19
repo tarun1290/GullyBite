@@ -8,6 +8,10 @@
 //   access_token — Restaurant-specific access token from DotPe
 //   outlet_id    — DotPe store/outlet ID
 
+// POS_DISABLED — this module is disabled. Remove this guard to re-enable.
+module.exports = {};
+return;
+
 const axios = require('axios');
 const { POS_INTEGRATIONS_ENABLED } = require('../../config/features');
 const log = require('../../utils/logger').child({ component: 'DotPe' });

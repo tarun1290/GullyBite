@@ -36,7 +36,6 @@ function requireAdminAuth(permission, minLevel) {
       const header = req.headers['authorization'] || '';
       const token = header.startsWith('Bearer ') ? header.slice(7) : null;
 
-      // JWT is the ONLY auth method — no ADMIN_KEY bypass
       if (!token) {
         log.warn({ ip: req.ip, path: req.path }, 'Auth failed: no token provided');
         return res.status(401).json({ error: 'Authentication required' });
@@ -45,7 +44,7 @@ function requireAdminAuth(permission, minLevel) {
       // ── JWT auth ──
       let decoded;
       try {
-        decoded = jwt.verify(token, ADMIN_JWT_SECRET);
+        decoded = jwt.verify(token, ADMIN_JWT_SECRET, { algorithms: ['HS256'] });
       } catch (e) {
         // Log failed attempt without exposing the token
         log.warn({ ip: req.ip, path: req.path, reason: e.message }, 'Auth failed: invalid token');

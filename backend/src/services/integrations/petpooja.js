@@ -7,6 +7,10 @@
 //   access_token — restaurant-specific token
 //   outlet_id    — PetPooja restaurantid (shown in PetPooja dashboard)
 
+// POS_DISABLED — this module is disabled. Remove this guard to re-enable.
+module.exports = {};
+return;
+
 const axios = require('axios');
 const { POS_INTEGRATIONS_ENABLED } = require('../../config/features');
 const log = require('../../utils/logger').child({ component: 'PetPooja' });

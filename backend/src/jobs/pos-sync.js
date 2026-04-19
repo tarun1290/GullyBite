@@ -2,6 +2,10 @@
 // Cron: periodically pulls menu updates from connected POS platforms
 // Backup for webhook-based real-time updates — runs every 30 minutes
 
+// POS_DISABLED — this module is disabled. Remove this guard to re-enable.
+module.exports = {};
+return;
+
 const { col } = require('../config/database');
 const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
 const { triggerSync } = require('../services/posSync');

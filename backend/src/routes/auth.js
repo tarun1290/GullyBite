@@ -2017,7 +2017,7 @@ async function requireAuth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
   let decoded;
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET);
+    decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
   } catch {
     return res.status(401).json({ error: 'Session expired. Please log in again.' });
   }

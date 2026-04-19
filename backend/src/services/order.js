@@ -541,6 +541,10 @@ const updateStatus = async (orderId, newStatus, extra = {}) => {
 };
 
 async function syncPOSStatus(order) {
+  if (process.env.POS_ENABLED !== 'true') {
+    console.warn('POS integration disabled');
+    return;
+  }
   const integration = await col('restaurant_integrations').findOne({
     restaurant_id: order.restaurant_id,
     platform: order.pos_platform,

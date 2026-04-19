@@ -9,7 +9,14 @@ require('dotenv').config({ path: path.join(__dirname, '../.env') });
 // ── STARTUP SECRET VALIDATION ────────────────────────────────
 // Required secrets must be set. Crash early with clear error in production.
 const REQUIRED_SECRETS = ['JWT_SECRET'];
-const REQUIRED_IN_PROD = ['ADMIN_JWT_SECRET', 'RAZORPAY_WEBHOOK_SECRET', 'MONGODB_URI'];
+const REQUIRED_IN_PROD = [
+  'ADMIN_JWT_SECRET',
+  'RAZORPAY_WEBHOOK_SECRET',
+  'MONGODB_URI',
+  'WEBHOOK_APP_SECRET',          // Meta WhatsApp / Directory X-Hub-Signature-256
+  'WA_CHECKOUT_WEBHOOK_SECRET',  // WhatsApp checkout webhook HMAC
+  'DELIVERY_WEBHOOK_SECRET',     // 3PL delivery webhook bearer
+];
 const missing = REQUIRED_SECRETS.filter(k => !process.env[k]);
 if (missing.length) {
   console.error(`FATAL: Required environment variable(s) missing: ${missing.join(', ')}`); // console.error OK — logger not loaded yet
@@ -46,10 +53,21 @@ metaConfig.logStatus();
 
 // ─── SECURITY ─────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
+
+// Explicit CORS allowlist. In production, only BASE_URL + *.vercel.app are
+// allowed. In dev, localhost is added. No wildcard fallback even in dev —
+// that used to mask misconfigured origins.
+const corsAllowed = (process.env.CORS_ALLOWED_ORIGINS || process.env.BASE_URL || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+if (process.env.NODE_ENV !== 'production') {
+  corsAllowed.push('http://localhost:3000', 'http://localhost:5173', 'http://127.0.0.1:3000');
+}
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? [process.env.BASE_URL, /\.vercel\.app$/]
-    : '*',
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (corsAllowed.includes(origin) || /\.vercel\.app$/.test(origin)) return cb(null, true);
+    return cb(new Error(`CORS blocked: ${origin}`));
+  },
   credentials: true,
 }));
 
@@ -231,7 +249,9 @@ const _marketing = require('./src/routes/marketingMessages');
 app.use('/api/restaurant/marketing-messages', express.json(), _marketing.restaurantRouter);
 app.use('/api/admin/marketing-messages', express.json(), _marketing.adminRouter);
 app.use('/api/restaurant', express.json({ limit: '10mb' }), require('./src/routes/restaurant'));
-app.use('/api/restaurant/integrations', express.json(), require('./src/routes/integrations'));
+// POS_DISABLED — POS integrations router (Petpooja/UrbanPiper/DotPe) gated off.
+// Re-enable by uncommenting and setting POS_ENABLED=true.
+// app.use('/api/restaurant/integrations', express.json(), require('./src/routes/integrations'));
 app.use('/api/upload', express.json(), require('./src/routes/upload'));
 app.use('/api/admin', express.json(), require('./src/routes/admin'));
 // Phase 1 (Commit A): customer-facing API — addresses + profile. Cart
@@ -267,7 +287,9 @@ if (process.env.USE_EC2_WEBHOOKS === 'true') {
   app.use('/webhooks/delivery',  require('./src/webhooks/delivery'));
   app.use('/webhooks/directory', require('./src/webhooks/directory'));
   app.use('/webhooks/checkout',  require('./src/webhooks/checkout'));
-  app.use('/webhooks/pos',      require('./src/webhooks/pos'));
+  // POS_DISABLED — POS webhook handler (Petpooja/UrbanPiper/DotPe) gated off.
+  // Re-enable by uncommenting and setting POS_ENABLED=true.
+  // app.use('/webhooks/pos',      require('./src/webhooks/pos'));
 }
 
 // Admin dashboard
@@ -326,7 +348,8 @@ if (process.env.NODE_ENV !== 'production') {
     log.info({ component: 'server', port: PORT }, `GullyBite running on http://localhost:${PORT}`);
     log.info({ component: 'server' }, `WA Webhook  → ${process.env.BASE_URL}/webhooks/whatsapp`);
     log.info({ component: 'server' }, `Pay Webhook → ${process.env.BASE_URL}/webhooks/razorpay`);
-    log.info({ component: 'server' }, `POS Webhook → ${process.env.BASE_URL}/webhooks/pos/{platform}`);
+    // POS_DISABLED — log suppressed while POS integrations are off.
+    // log.info({ component: 'server' }, `POS Webhook → ${process.env.BASE_URL}/webhooks/pos/{platform}`);
 
     // Ensure MongoDB indexes after DB connects (fire-and-forget)
     const { connect } = require('./src/config/database');
@@ -341,8 +364,9 @@ if (process.env.NODE_ENV !== 'production') {
     const { scheduleCampaignSender } = require('./src/jobs/campaign-sender');
     scheduleCampaignSender();
 
-    const { schedulePosSync } = require('./src/jobs/pos-sync');
-    schedulePosSync();
+    // POS_DISABLED — periodic POS menu sync cron suppressed.
+    // const { schedulePosSync } = require('./src/jobs/pos-sync');
+    // schedulePosSync();
 
     const { scheduleRecovery } = require('./src/jobs/recovery');
     scheduleRecovery();

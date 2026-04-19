@@ -110,7 +110,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
         isBlocked(`wa:${senderIdentifier}`),
       ]);
       if (mongoBlocked || redisBlock.blocked) {
-        req.log.warn({ senderIdentifier, source: mongoBlocked ? 'mongo' : 'redis' }, 'Blocked identifier dropped');
+        req.log.warn({ phoneSuffix: String(senderIdentifier).slice(-4), source: mongoBlocked ? 'mongo' : 'redis' }, 'Blocked identifier dropped');
         return; // silently drop — already returned 200
       }
 
@@ -129,7 +129,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       }
       const { allowed: legacyAllowed } = waMessageLimiter.isAllowed(senderIdentifier);
       if (!specAllowed || !legacyAllowed) {
-        req.log.warn({ senderIdentifier, specAllowed, legacyAllowed }, 'Message rate limited');
+        req.log.warn({ phoneSuffix: String(senderIdentifier).slice(-4), specAllowed, legacyAllowed }, 'Message rate limited');
         // Record violation for BOTH scorers. Mongo-backed abuseDetector
         // drives 24h auto-blocks; Redis-backed recordAbuseEvent drives
         // 10-min cool-downs on repeated offenders within a single session.
@@ -1156,7 +1156,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       try {
         const geocoded = await location.forwardGeocode(rawText);
         if (geocoded?.lat && geocoded?.lng) {
-          log.info({ address: geocoded.address }, 'Forward geocoded address for pending cart');
+          log.info({ hasCoords: true }, 'Forward geocoded address for pending cart');
           const syntheticMsg = { type: 'location', location: { latitude: geocoded.lat, longitude: geocoded.lng, address: geocoded.address } };
           await handleLocationMessage(syntheticMsg, customer, conv, waAccount);
           return;
@@ -1191,7 +1191,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       try {
         const geocoded = await location.forwardGeocode(rawText);
         if (geocoded?.lat && geocoded?.lng) {
-          log.info({ address: geocoded.address }, 'Forward geocoded text address');
+          log.info({ hasCoords: true }, 'Forward geocoded text address');
           const syntheticMsg = { type: 'location', location: { latitude: geocoded.lat, longitude: geocoded.lng, address: geocoded.address } };
           await handleLocationMessage(syntheticMsg, customer, conv, waAccount);
           return;
@@ -1268,7 +1268,7 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     const geocoded = await location.reverseGeocode(latitude, longitude);
     if (geocoded?.address) {
       address = geocoded.address;
-      log.info({ address }, 'Geocoded address');
+      log.info({ hasAddress: !!address }, 'Geocoded address');
     }
   } catch (e) {
     log.warn({ err: e }, 'Reverse geocoding failed, using WhatsApp-provided address');
@@ -3087,7 +3087,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
           const geocoded = await location.forwardGeocode(addressText);
           if (geocoded) {
             parsedAddress = geocoded;
-            log.info({ address: geocoded.address, lat: geocoded.lat, lng: geocoded.lng }, 'Flow forward geocoded address');
+            log.info({ hasCoords: !!(geocoded.lat && geocoded.lng) }, 'Flow forward geocoded address');
           } else {
             parsedAddress = { full_address: addressText, source: 'manual' };
           }

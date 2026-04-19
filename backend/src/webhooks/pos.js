@@ -3,6 +3,7 @@
 // Always returns 200 immediately, then processes asynchronously.
 
 const express = require('express');
+const crypto  = require('crypto');
 const router  = express.Router();
 const { col, newId } = require('../config/database');
 const memcache = require('../config/memcache');
@@ -10,9 +11,41 @@ const { POS_INTEGRATIONS_ENABLED } = require('../config/features');
 const { triggerSync, SERVICES } = require('../services/posSync');
 const log = require('../utils/logger').child({ component: 'pos' });
 
-router.use(express.json({ limit: '5mb' }));
+// Preserve raw body so HMAC signatures can be verified against the exact bytes.
+router.use(express.json({
+  limit: '5mb',
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 const VALID_PLATFORMS = ['petpooja', 'urbanpiper', 'dotpe'];
+
+// Verifies platform-specific webhook signatures. Non-strict by default — returns
+// { verified: boolean, reason: string|null } so callers can log and decide whether
+// to reject (gated by POS_WEBHOOK_STRICT_MODE in the future).
+function verifyPosWebhookSignature(platform, rawBody, headers) {
+  if (platform === 'petpooja') {
+    const secret = process.env.PETPOOJA_WEBHOOK_SECRET;
+    if (!secret) return { verified: false, reason: 'secret_not_configured' };
+    const provided = headers['x-petpooja-signature'] || headers['X-Petpooja-Signature'];
+    if (!provided) return { verified: false, reason: 'missing_signature_header' };
+    if (!rawBody || !rawBody.length) return { verified: false, reason: 'empty_body' };
+    const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+    try {
+      const ok = crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(String(provided), 'hex'));
+      return ok ? { verified: true, reason: null } : { verified: false, reason: 'signature_mismatch' };
+    } catch (_) {
+      return { verified: false, reason: 'signature_format_invalid' };
+    }
+  }
+
+  // TODO: urbanpiper and dotpe do not publish stable HMAC schemes for stock
+  // webhooks yet — treat as verified pending vendor docs.
+  if (platform === 'urbanpiper' || platform === 'dotpe') {
+    return { verified: true, reason: null };
+  }
+
+  return { verified: false, reason: 'unknown_platform' };
+}
 
 router.post('/:platform', async (req, res) => {
   // Always respond 200 immediately — POS platforms retry on slow responses
@@ -26,6 +59,14 @@ router.post('/:platform', async (req, res) => {
   if (!POS_INTEGRATIONS_ENABLED) {
     log.info({ platform }, 'POS integrations disabled — ignoring webhook');
     return;
+  }
+
+  // Verify signature (log-only for now; flip to reject when POS_WEBHOOK_STRICT_MODE=true).
+  const sigResult = verifyPosWebhookSignature(platform, req.rawBody, req.headers);
+  const signatureVerified = sigResult.verified;
+  if (!signatureVerified) {
+    log.warn({ platform, reason: sigResult.reason }, 'POS webhook signature not verified');
+    // TODO: reject when process.env.POS_WEBHOOK_STRICT_MODE === 'true'
   }
 
   const payload = req.body;
@@ -51,7 +92,7 @@ router.post('/:platform', async (req, res) => {
     col('webhook_logs').insertOne({
       _id: newId(), source: 'pos', platform, event_type: event.type,
       outlet_id: event.outletId, payload: JSON.stringify(payload).substring(0, 5000),
-      received_at: new Date(),
+      received_at: new Date(), signature_verified: signatureVerified,
     }).catch(() => {});
 
     if (event.type === 'unknown') {
