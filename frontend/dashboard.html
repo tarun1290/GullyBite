@@ -357,6 +357,7 @@ tbody tr{transition:background .1s ease}
       <button class="sb-btn"     onclick="goTab('menu',this)"><span class="ic">🍽️</span>Menu</button>
       <button class="sb-btn"     onclick="goTab('messages',this)"><span class="ic">💬</span>Messages <span id="msg-badge" style="display:none;background:var(--red);color:#fff;font-size:.6rem;padding:.1rem .35rem;border-radius:9px;margin-left:.3rem">0</span></button>
       <button class="sb-btn"     onclick="goTab('analytics',this)"><span class="ic">📊</span>Analytics</button>
+      <button class="sb-btn"     onclick="goTab('delivery-stats',this)"><span class="ic">🚚</span>Delivery Stats</button>
       <button class="sb-btn"     onclick="goTab('payments',this)"><span class="ic">💰</span>Payments</button>
       <button class="sb-btn"     onclick="goTab('loyalty',this)"><span class="ic">🎁</span>Loyalty</button>
       <button class="sb-btn"     onclick="goTab('restaurant',this)"><span class="ic">🏪</span>Restaurant</button>
@@ -700,6 +701,43 @@ tbody tr{transition:background .1s ease}
               </thead>
               <tbody id="mkt-msg-body"></tbody>
             </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── DELIVERY STATS ─────────────────────────── -->
+      <div class="tab" id="tab-delivery-stats">
+        <div class="card">
+          <div class="ch" style="display:flex;flex-wrap:wrap;gap:.7rem;align-items:center;justify-content:space-between">
+            <h3>🚚 Delivery Stats</h3>
+            <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+              <select id="dl-branch" onchange="loadDeliveryStats()" style="padding:.4rem .55rem;border:1px solid var(--rim);border-radius:8px;font-size:.82rem;background:#fff">
+                <option value="">All Branches</option>
+              </select>
+              <input id="dl-from" type="date" onchange="loadDeliveryStats()" style="padding:.4rem .55rem;border:1px solid var(--rim);border-radius:8px;font-size:.82rem">
+              <input id="dl-to"   type="date" onchange="loadDeliveryStats()" style="padding:.4rem .55rem;border:1px solid var(--rim);border-radius:8px;font-size:.82rem">
+              <button class="btn-g btn-sm" onclick="dlToday()">Today</button>
+            </div>
+          </div>
+          <div class="cb">
+            <div id="dl-err" style="display:none;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;padding:.6rem .8rem;border-radius:8px;font-size:.82rem;margin-bottom:.9rem"></div>
+            <div class="stats" id="dl-stats">
+              <div class="stat"><div class="stat-l">Delivered Orders</div><div class="stat-v" id="dl-deliveredOrders">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Cancelled by Client</div><div class="stat-v" id="dl-cancelledByClient">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Cancelled by System</div><div class="stat-v" id="dl-cancelledBySystem">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Avg Distance (km)</div><div class="stat-v" id="dl-avgDistanceKm">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Avg LSP Fee</div><div class="stat-v" id="dl-avgLspFee">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Avg Total Fee</div><div class="stat-v" id="dl-avgTotalFee">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Total Fee (with GST)</div><div class="stat-v" id="dl-totalFeeWithGst">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">COD Collected</div><div class="stat-v" id="dl-codCollected">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Agent Assign (min)</div><div class="stat-v" id="dl-avgAgentAssignMinutes">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Reach Pickup (min)</div><div class="stat-v" id="dl-avgReachPickupMinutes">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Reach Delivery (min)</div><div class="stat-v" id="dl-avgReachDeliveryMinutes">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Delivery Total (min)</div><div class="stat-v" id="dl-avgDeliveryTotalMinutes">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Pickup Wait (min)</div><div class="stat-v" id="dl-avgPickupWaitMinutes">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Pending Issues</div><div class="stat-v" id="dl-pendingIssues">—</div><div class="stat-s">&nbsp;</div></div>
+              <div class="stat"><div class="stat-l">Liability Accepted</div><div class="stat-v" id="dl-liabilityAccepted">—</div><div class="stat-s">&nbsp;</div></div>
+            </div>
           </div>
         </div>
       </div>
@@ -2573,6 +2611,7 @@ const TMETA = {
   menu:        { title: 'Menu',               sub: 'Branches, catalog, and menu items',    fn: () => { loadBranches(); loadBranchSel(); loadCatalogStatus(); updateSyncStatus(); } },
   messages:    { title: 'Messages',           sub: 'Customer messages and replies',        fn: () => loadMessages() },
   analytics:   { title: 'Analytics',          sub: 'Sales, performance, and ratings',      fn: () => { loadAnalytics(); loadRatings(); loadDropoffAnalytics(); loadCartRecoveryStats(); if (typeof loadMarketingMessages === 'function') loadMarketingMessages(); } },
+  'delivery-stats': { title: 'Delivery Stats', sub: 'Logistics performance',               fn: () => loadDeliveryStatsInit() },
   payments:    { title: 'Payments',           sub: 'Financials, settlements, and payouts', fn: () => { loadFinancials(); loadSettlements(); loadWallet(); } },
   restaurant:  { title: 'Restaurant',         sub: 'Profile, coupons, loyalty, and team',  fn: () => { loadRestaurantProfile(); loadOperatingHours(); loadCoupons(); loadLoyalty(); loadTeam(); loadIssues(); } },
   settings:    { title: 'Settings',           sub: 'WhatsApp, profile, and integrations',  fn: async () => { await loadProfile(); loadWA(); loadIntegrations(); loadCatalogMgmt(); loadSyncLogs(); } },
@@ -3227,6 +3266,100 @@ setTimeout(() => {
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
+
+/* ─── Delivery Stats (per-restaurant logistics) ─────────────────
+   Mirrors admin logistics analytics, but scoped to the logged-in
+   restaurant. restaurantId is derived from the JWT server-side —
+   the frontend never sends it in query params. */
+var _dlInited = false;
+function _dlTodayISTDateStr() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+function dlToday() {
+  const d = _dlTodayISTDateStr();
+  const f = document.getElementById('dl-from'); if (f) f.value = d;
+  const t = document.getElementById('dl-to');   if (t) t.value = d;
+  loadDeliveryStats();
+}
+async function loadDeliveryStatsInit() {
+  if (!_dlInited) {
+    const today = _dlTodayISTDateStr();
+    document.getElementById('dl-from').value = today;
+    document.getElementById('dl-to').value   = today;
+    try {
+      const r = await api('/api/restaurant/branches');
+      const branches = Array.isArray(r) ? r : (r?.branches || []);
+      const sel = document.getElementById('dl-branch');
+      for (const b of branches) {
+        const opt = document.createElement('option');
+        opt.value = b.id || b._id;
+        opt.textContent = b.name || b.branch_name || '(unnamed)';
+        sel.appendChild(opt);
+      }
+    } catch (e) { /* branch list failure — leave dropdown with just All Branches */ }
+    _dlInited = true;
+  }
+  loadDeliveryStats();
+}
+function _dlQuery() {
+  const p = new URLSearchParams();
+  const from = document.getElementById('dl-from')?.value;
+  const to   = document.getElementById('dl-to')?.value;
+  const br   = document.getElementById('dl-branch')?.value;
+  if (from) p.set('from', from);
+  if (to)   p.set('to', to);
+  if (br)   p.set('branchId', br);
+  const s = p.toString();
+  return s ? '?' + s : '';
+}
+const _dlIds = [
+  'deliveredOrders','cancelledByClient','cancelledBySystem','avgDistanceKm',
+  'avgLspFee','avgTotalFee','totalFeeWithGst','codCollected',
+  'avgAgentAssignMinutes','avgReachPickupMinutes','avgReachDeliveryMinutes',
+  'avgDeliveryTotalMinutes','avgPickupWaitMinutes','pendingIssues','liabilityAccepted',
+];
+const _dlMoney    = new Set(['avgLspFee','avgTotalFee','totalFeeWithGst','codCollected']);
+const _dlDecimal  = new Set(['avgDistanceKm','avgAgentAssignMinutes','avgReachPickupMinutes','avgReachDeliveryMinutes','avgDeliveryTotalMinutes','avgPickupWaitMinutes']);
+function _dlFmtNum(v)    { return v == null ? '—' : new Intl.NumberFormat('en-IN').format(v); }
+function _dlFmtDecimal(v){ return v == null ? '—' : new Intl.NumberFormat('en-IN', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(v); }
+function _dlFmtRs(v)     { return v == null ? '—' : '₹' + new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v); }
+function _dlShowSkeleton() {
+  for (const id of _dlIds) {
+    const el = document.getElementById('dl-' + id);
+    if (el) el.textContent = '…';
+  }
+}
+async function loadDeliveryStats() {
+  const err = document.getElementById('dl-err');
+  if (err) { err.style.display = 'none'; err.textContent = ''; }
+  _dlShowSkeleton();
+  try {
+    const r = await api('/api/restaurant/logistics/stats' + _dlQuery());
+    const s = r?.summary || {};
+    for (const id of _dlIds) {
+      const el = document.getElementById('dl-' + id);
+      if (!el) continue;
+      const v = s[id];
+      if (_dlMoney.has(id))         el.textContent = _dlFmtRs(v);
+      else if (_dlDecimal.has(id))  el.textContent = _dlFmtDecimal(v);
+      else                          el.textContent = _dlFmtNum(v);
+    }
+  } catch (e) {
+    for (const id of _dlIds) {
+      const el = document.getElementById('dl-' + id);
+      if (el) el.textContent = '—';
+    }
+    if (err) {
+      err.textContent = 'Failed to load delivery stats: ' + (e?.error || e?.message || 'Unknown error');
+      err.style.display = '';
+    }
+  }
+}
+window.loadDeliveryStats = loadDeliveryStats;
+window.loadDeliveryStatsInit = loadDeliveryStatsInit;
+window.dlToday = dlToday;
 </script>
 </body>
 </html>

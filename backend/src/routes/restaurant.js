@@ -4703,6 +4703,21 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
       }
     } catch (_) {}
 
+    // Prorouting 3PL cancel — fire-and-forget. Only when a rider was
+    // already dispatched (prorouting_order_id set). cancelDeliveryOrder
+    // swallows all errors internally so no try/catch is strictly needed,
+    // but we wrap in setImmediate to detach from the response path.
+    if (order.prorouting_order_id) {
+      setImmediate(() => {
+        const prorouting = require('../services/prorouting');
+        prorouting.cancelDeliveryOrder(
+          order.prorouting_order_id,
+          '005',
+          `Restaurant declined: ${reason}`.slice(0, 200)
+        ).catch((e) => req.log?.warn?.({ err: e?.message, orderId }, 'prorouting cancel dispatch failed'));
+      });
+    }
+
     res.json({ success: true, status: 'CANCELLED', refundId: refund?.id || null });
 
     log({
@@ -5215,6 +5230,171 @@ router.get('/analytics/delivery', requirePermission('view_analytics'), async (re
       })),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── LOGISTICS STATS (per-restaurant, mirrors admin logistics analytics) ───
+// Reads orders.logistics.* subdocument populated by the Prorouting 3PL
+// integration. restaurantId is taken from the JWT (req.restaurantId) — never
+// from a query param. branchId is optional; if absent, all branches of the
+// restaurant are included (respecting the staff user's branch scope).
+const _LGS_IST_TZ = 'Asia/Kolkata';
+const _LGS_IST_OFFSET = '+05:30';
+
+function _lgsParseISTBoundary(dateStr, end) {
+  if (!dateStr) return null;
+  if (String(dateStr).length > 10) return new Date(dateStr);
+  const time = end ? 'T23:59:59.999' : 'T00:00:00.000';
+  return new Date(dateStr + time + _LGS_IST_OFFSET);
+}
+
+function _lgsTodayISTBoundary(end) {
+  const dateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: _LGS_IST_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  return _lgsParseISTBoundary(dateStr, end);
+}
+
+const _lgsR1 = (v) => v == null ? null : Math.round(v * 10) / 10;
+const _lgsR2 = (v) => v == null ? null : Math.round(v * 100) / 100;
+
+// GET /api/restaurant/logistics/stats
+router.get('/logistics/stats', requirePermission('view_analytics'), async (req, res) => {
+  try {
+    const from = _lgsParseISTBoundary(req.query.from, false) || _lgsTodayISTBoundary(false);
+    const to   = _lgsParseISTBoundary(req.query.to,   true)  || _lgsTodayISTBoundary(true);
+
+    // Resolve branch scope: owner (no userBranchIds) → all branches of the
+    // restaurant; scoped staff → only their assigned branches. If branchId
+    // is provided it must fall within that allowed set, else 403.
+    const allBranches = await col('branches')
+      .find({ restaurant_id: req.restaurantId })
+      .project({ _id: 1 }).toArray();
+    const restaurantBranchIds = allBranches.map(b => String(b._id));
+
+    const userScope = Array.isArray(req.userBranchIds) && req.userBranchIds.length
+      ? req.userBranchIds.map(String)
+      : restaurantBranchIds;
+
+    let scopedBranchIds = restaurantBranchIds.filter(id => userScope.includes(id));
+
+    const { branchId } = req.query;
+    if (branchId) {
+      if (!scopedBranchIds.includes(String(branchId))) {
+        return res.status(403).json({ error: 'Branch not in scope' });
+      }
+      scopedBranchIds = [String(branchId)];
+    }
+
+    const baseMatch = {
+      restaurant_id: req.restaurantId,
+      branch_id: { $in: scopedBranchIds },
+      created_at: { $gte: from, $lte: to },
+    };
+
+    const hasField = (path) => ({
+      $sum: { $cond: [{ $ne: [{ $ifNull: [`$${path}`, null] }, null] }, 1, 0] },
+    });
+    const sumField = (path) => ({ $sum: { $ifNull: [`$${path}`, 0] } });
+
+    const [agg] = await col('orders').aggregate([
+      { $match: baseMatch },
+      { $facet: {
+          statuses: [
+            { $group: { _id: '$status', count: { $sum: 1 } } },
+          ],
+          delivered: [
+            { $match: { status: 'DELIVERED' } },
+            { $group: {
+                _id: null,
+                avgDistanceKm:           { $avg: '$logistics.distanceKm' },
+                avgLspFee:               { $avg: '$logistics.lspFee' },
+                avgTotalFee:             { $avg: '$logistics.totalFee' },
+                sumTotalFeeWithGst:      sumField('logistics.totalFeeWithGst'),
+                cntTotalFeeWithGst:      hasField('logistics.totalFeeWithGst'),
+                sumCod:                  sumField('logistics.codCollected'),
+                cntCod:                  hasField('logistics.codCollected'),
+                avgAgentAssignMinutes:   { $avg: '$logistics.agentAssignMinutes' },
+                avgReachPickupMinutes:   { $avg: '$logistics.reachPickupMinutes' },
+                avgReachDeliveryMinutes: { $avg: '$logistics.reachDeliveryMinutes' },
+                avgDeliveryTotalMinutes: { $avg: '$logistics.deliveryTotalMinutes' },
+                avgPickupWaitMinutes:    { $avg: '$logistics.pickupWaitMinutes' },
+            }},
+          ],
+          pendingIssues: [
+            { $match: {
+                'logistics.hasIssue': true,
+                $or: [
+                  { 'logistics.issueResolved': { $ne: true } },
+                  { 'logistics.issueResolved': { $exists: false } },
+                ],
+            }},
+            { $count: 'count' },
+          ],
+          liabilityAccepted: [
+            { $match: { 'logistics.liabilityAccepted': true } },
+            { $count: 'count' },
+          ],
+      }},
+    ]).toArray();
+
+    const statusMap = {};
+    for (const s of (agg.statuses || [])) statusMap[s._id] = s.count;
+    const deliveredOrders = statusMap['DELIVERED'] || 0;
+
+    let cancelledByClient = 0, cancelledBySystem = 0;
+    const cancelledTotal = statusMap['CANCELLED'] || 0;
+    if (cancelledTotal > 0) {
+      const cancelledOrders = await col('orders').find(
+        { ...baseMatch, status: 'CANCELLED' },
+        { projection: { _id: 1 } },
+      ).toArray();
+      const ids = cancelledOrders.map(o => o._id);
+      if (ids.length) {
+        const actorAgg = await col('order_state_log').aggregate([
+          { $match: { order_id: { $in: ids }, to_state: 'CANCELLED' } },
+          { $sort: { timestamp: -1 } },
+          { $group: { _id: '$order_id', actor_type: { $first: '$actor_type' } } },
+          { $group: { _id: '$actor_type', count: { $sum: 1 } } },
+        ]).toArray();
+        for (const r of actorAgg) {
+          if (r._id === 'customer') cancelledByClient += r.count;
+          else cancelledBySystem += r.count;
+        }
+        const loggedTotal = actorAgg.reduce((s, r) => s + r.count, 0);
+        if (loggedTotal < ids.length) cancelledBySystem += (ids.length - loggedTotal);
+      }
+    }
+
+    const d = (agg.delivered && agg.delivered[0]) || {};
+
+    const summary = {
+      deliveredOrders,
+      cancelledByClient,
+      cancelledBySystem,
+      avgDistanceKm:           _lgsR1(d.avgDistanceKm           ?? null),
+      avgLspFee:               _lgsR2(d.avgLspFee               ?? null),
+      avgTotalFee:             _lgsR2(d.avgTotalFee             ?? null),
+      totalFeeWithGst:         d.cntTotalFeeWithGst > 0 ? _lgsR2(d.sumTotalFeeWithGst) : null,
+      codCollected:            d.cntCod             > 0 ? _lgsR2(d.sumCod)             : null,
+      avgAgentAssignMinutes:   _lgsR1(d.avgAgentAssignMinutes   ?? null),
+      avgReachPickupMinutes:   _lgsR1(d.avgReachPickupMinutes   ?? null),
+      avgReachDeliveryMinutes: _lgsR1(d.avgReachDeliveryMinutes ?? null),
+      avgDeliveryTotalMinutes: _lgsR1(d.avgDeliveryTotalMinutes ?? null),
+      avgPickupWaitMinutes:    _lgsR1(d.avgPickupWaitMinutes    ?? null),
+      pendingIssues:           (agg.pendingIssues[0]?.count)     || 0,
+      liabilityAccepted:       (agg.liabilityAccepted[0]?.count) || 0,
+    };
+
+    res.json({
+      from: from.toISOString(),
+      to: to.toISOString(),
+      filters: { branchId: branchId || null },
+      summary,
+    });
+  } catch (e) {
+    logger.error({ err: e }, 'logistics stats failed');
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── DROP-OFF ANALYTICS & RECOVERY ─────────────────────────

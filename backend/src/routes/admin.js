@@ -4391,6 +4391,194 @@ router.get('/analytics/filters/areas', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// LOGISTICS ANALYTICS
+// Reads orders.logistics.* subdocument populated by the Prorouting 3PL
+// integration. Until that integration is live, logistics fields will be
+// absent from all orders — averages return null, sums return null.
+// ═══════════════════════════════════════════════════════════════
+
+const IST_TZ = 'Asia/Kolkata';
+const IST_OFFSET = '+05:30';
+
+function _parseISTBoundary(dateStr, end) {
+  if (!dateStr) return null;
+  // Full datetime passed in (length > 10 means includes time portion) — trust it
+  if (String(dateStr).length > 10) return new Date(dateStr);
+  const time = end ? 'T23:59:59.999' : 'T00:00:00.000';
+  return new Date(dateStr + time + IST_OFFSET);
+}
+
+function _todayISTBoundary(end) {
+  // en-CA locale formats as YYYY-MM-DD
+  const dateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: IST_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+  return _parseISTBoundary(dateStr, end);
+}
+
+const _r1 = (v) => v == null ? null : Math.round(v * 10) / 10;
+const _r2 = (v) => v == null ? null : Math.round(v * 100) / 100;
+
+router.get('/logistics/analytics', async (req, res) => {
+  try {
+    const { restaurantId, branchId, lsp } = req.query;
+    const from = _parseISTBoundary(req.query.from, false) || _todayISTBoundary(false);
+    const to   = _parseISTBoundary(req.query.to,   true)  || _todayISTBoundary(true);
+
+    const baseMatch = { created_at: { $gte: from, $lte: to } };
+    if (restaurantId) baseMatch.restaurant_id = restaurantId;
+    if (branchId)     baseMatch.branch_id = branchId;
+    if (lsp)          baseMatch['logistics.lspName'] = lsp;
+
+    // Presence helper — counts docs where field is not null AND not missing.
+    // Using ($type != 'missing') alone is unreliable across driver versions,
+    // so compare $ifNull(field, null) !== null.
+    const hasField = (path) => ({
+      $sum: { $cond: [{ $ne: [{ $ifNull: [`$${path}`, null] }, null] }, 1, 0] },
+    });
+    const sumField = (path) => ({ $sum: { $ifNull: [`$${path}`, 0] } });
+
+    const [agg] = await col('orders').aggregate([
+      { $match: baseMatch },
+      { $facet: {
+          statuses: [
+            { $group: { _id: '$status', count: { $sum: 1 } } },
+          ],
+          delivered: [
+            { $match: { status: 'DELIVERED' } },
+            { $group: {
+                _id: null,
+                avgDistanceKm:           { $avg: '$logistics.distanceKm' },
+                avgLspFee:               { $avg: '$logistics.lspFee' },
+                avgTotalFee:             { $avg: '$logistics.totalFee' },
+                sumTotalFeeWithGst:      sumField('logistics.totalFeeWithGst'),
+                cntTotalFeeWithGst:      hasField('logistics.totalFeeWithGst'),
+                sumCod:                  sumField('logistics.codCollected'),
+                cntCod:                  hasField('logistics.codCollected'),
+                avgAgentAssignMinutes:   { $avg: '$logistics.agentAssignMinutes' },
+                avgReachPickupMinutes:   { $avg: '$logistics.reachPickupMinutes' },
+                avgReachDeliveryMinutes: { $avg: '$logistics.reachDeliveryMinutes' },
+                avgDeliveryTotalMinutes: { $avg: '$logistics.deliveryTotalMinutes' },
+                avgPickupWaitMinutes:    { $avg: '$logistics.pickupWaitMinutes' },
+            }},
+          ],
+          pendingIssues: [
+            { $match: {
+                'logistics.hasIssue': true,
+                $or: [
+                  { 'logistics.issueResolved': { $ne: true } },
+                  { 'logistics.issueResolved': { $exists: false } },
+                ],
+            }},
+            { $count: 'count' },
+          ],
+          liabilityAccepted: [
+            { $match: { 'logistics.liabilityAccepted': true } },
+            { $count: 'count' },
+          ],
+          dailyByLsp: [
+            { $match: { status: 'DELIVERED', 'logistics.lspName': { $nin: [null, ''] } } },
+            { $group: {
+                _id: {
+                  date: { $dateToString: { format: '%Y-%m-%d', date: '$created_at', timezone: IST_TZ } },
+                  lsp: '$logistics.lspName',
+                },
+                count: { $sum: 1 },
+            }},
+            { $sort: { '_id.date': 1, '_id.lsp': 1 } },
+          ],
+          dailyByStatus: [
+            { $group: {
+                _id: {
+                  date: { $dateToString: { format: '%Y-%m-%d', date: '$created_at', timezone: IST_TZ } },
+                  status: '$status',
+                },
+                count: { $sum: 1 },
+            }},
+            { $sort: { '_id.date': 1 } },
+          ],
+      }},
+    ]).toArray();
+
+    // Status map → deliveredOrders
+    const statusMap = {};
+    for (const s of (agg.statuses || [])) statusMap[s._id] = s.count;
+    const deliveredOrders = statusMap['DELIVERED'] || 0;
+
+    // Cancelled breakdown via order_state_log. Cancelled-in-range is defined
+    // by the order's created_at (matches the rest of the range filter).
+    let cancelledByClient = 0, cancelledBySystem = 0;
+    const cancelledTotal = statusMap['CANCELLED'] || 0;
+    if (cancelledTotal > 0) {
+      const cancelledOrders = await col('orders').find(
+        { ...baseMatch, status: 'CANCELLED' },
+        { projection: { _id: 1 } },
+      ).toArray();
+      const ids = cancelledOrders.map(o => o._id);
+      if (ids.length) {
+        const actorAgg = await col('order_state_log').aggregate([
+          { $match: { order_id: { $in: ids }, to_state: 'CANCELLED' } },
+          { $sort: { timestamp: -1 } },
+          // Keep only the most recent CANCELLED transition per order
+          { $group: { _id: '$order_id', actor_type: { $first: '$actor_type' } } },
+          { $group: { _id: '$actor_type', count: { $sum: 1 } } },
+        ]).toArray();
+        for (const r of actorAgg) {
+          if (r._id === 'customer') cancelledByClient += r.count;
+          else cancelledBySystem += r.count; // system | restaurant | admin | null
+        }
+        // Orders without an audit log entry fall through as systemic
+        const loggedTotal = actorAgg.reduce((s, r) => s + r.count, 0);
+        if (loggedTotal < ids.length) cancelledBySystem += (ids.length - loggedTotal);
+      }
+    }
+
+    const d = (agg.delivered && agg.delivered[0]) || {};
+
+    const summary = {
+      deliveredOrders,
+      cancelledByClient,
+      cancelledBySystem,
+      avgDistanceKm:           _r1(d.avgDistanceKm           ?? null),
+      avgLspFee:               _r2(d.avgLspFee               ?? null),
+      avgTotalFee:             _r2(d.avgTotalFee             ?? null),
+      totalFeeWithGst:         d.cntTotalFeeWithGst > 0 ? _r2(d.sumTotalFeeWithGst) : null,
+      codCollected:            d.cntCod             > 0 ? _r2(d.sumCod)             : null,
+      avgAgentAssignMinutes:   _r1(d.avgAgentAssignMinutes   ?? null),
+      avgReachPickupMinutes:   _r1(d.avgReachPickupMinutes   ?? null),
+      avgReachDeliveryMinutes: _r1(d.avgReachDeliveryMinutes ?? null),
+      avgDeliveryTotalMinutes: _r1(d.avgDeliveryTotalMinutes ?? null),
+      avgPickupWaitMinutes:    _r1(d.avgPickupWaitMinutes    ?? null),
+      pendingIssues:           (agg.pendingIssues[0]?.count)     || 0,
+      liabilityAccepted:       (agg.liabilityAccepted[0]?.count) || 0,
+    };
+
+    const dailyByLsp = (agg.dailyByLsp || []).map(r => ({
+      date: r._id.date, lsp: r._id.lsp, count: r.count,
+    }));
+    const dailyByStatus = (agg.dailyByStatus || []).map(r => ({
+      date: r._id.date, status: r._id.status, count: r.count,
+    }));
+
+    res.json({
+      from: from.toISOString(),
+      to: to.toISOString(),
+      filters: {
+        restaurantId: restaurantId || null,
+        branchId: branchId || null,
+        lsp: lsp || null,
+      },
+      summary,
+      dailyByLsp,
+      dailyByStatus,
+    });
+  } catch (e) {
+    log.error({ err: e }, 'logistics analytics failed');
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
 // ADMIN TAX REPORTS
 // ═══════════════════════════════════════════════════════════════
 

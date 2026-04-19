@@ -319,6 +319,10 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         Sync Logs
       </div>
+      <div class="nav-item" data-page="logistics" onclick="nav(this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        Logistics
+      </div>
     </nav>
     <div class="sb-footer">
       <div class="sb-user">
@@ -1612,6 +1616,75 @@ pre.json{background:var(--ink4);border:1px solid var(--rim);border-radius:6px;pa
         </div>
       </div>
 
+      <!-- ── LOGISTICS ANALYTICS ────────────────────────────────── -->
+      <div class="page" id="page-logistics">
+
+        <!-- Filter Bar -->
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:end;margin-bottom:1.2rem;padding:.75rem 1rem;background:#fff;border:1px solid var(--rim);border-radius:8px">
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">From</label>
+            <input type="date" id="lg-from" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem">
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">To</label>
+            <input type="date" id="lg-to" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem">
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">Restaurant</label>
+            <select id="lg-restaurant" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem;min-width:180px" onchange="lgRestaurantChanged()"><option value="">All restaurants</option></select>
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">Branch</label>
+            <select id="lg-branch" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem;min-width:160px"><option value="">All branches</option></select>
+          </div>
+          <div>
+            <label style="font-size:.68rem;color:var(--dim);display:block;margin-bottom:.2rem">LSP</label>
+            <input type="text" id="lg-lsp" placeholder="e.g. Prorouting" style="background:#fff;border:1px solid var(--rim);border-radius:6px;padding:.28rem .5rem;font-size:.78rem;width:140px">
+          </div>
+          <button class="btn-sm primary" onclick="loadLogisticsAnalytics()">Apply</button>
+          <button class="btn-sm" onclick="lgToday()">Today</button>
+          <span id="lg-err" style="margin-left:auto;color:var(--red);font-size:.78rem"></span>
+        </div>
+
+        <!-- KPI Cards -->
+        <div class="stat-grid" id="lg-kpis" style="margin-bottom:1.2rem">
+          <div class="stat-card"><div class="stat-label">Delivered Orders</div><div class="stat-val" id="lg-k-delivered">—</div></div>
+          <div class="stat-card"><div class="stat-label">Cancelled By Client</div><div class="stat-val" id="lg-k-cancel-client">—</div></div>
+          <div class="stat-card"><div class="stat-label">Cancelled By System</div><div class="stat-val" id="lg-k-cancel-system">—</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Distance</div><div class="stat-val" id="lg-k-distance">—</div><div class="stat-sub">km</div></div>
+          <div class="stat-card"><div class="stat-label">Avg LSP Fee</div><div class="stat-val" id="lg-k-lsp-fee">—</div><div class="stat-sub">₹</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Total Fee</div><div class="stat-val" id="lg-k-total-fee">—</div><div class="stat-sub">₹</div></div>
+          <div class="stat-card gold"><div class="stat-label">Total Fee With GST</div><div class="stat-val" id="lg-k-total-gst">—</div><div class="stat-sub">₹</div></div>
+          <div class="stat-card green"><div class="stat-label">COD Collected</div><div class="stat-val" id="lg-k-cod">—</div><div class="stat-sub">₹</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Agent Assign</div><div class="stat-val" id="lg-k-agent-assign">—</div><div class="stat-sub">min</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Reach Pickup</div><div class="stat-val" id="lg-k-reach-pickup">—</div><div class="stat-sub">min</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Reach Delivery</div><div class="stat-val" id="lg-k-reach-delivery">—</div><div class="stat-sub">min</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Delivery Time</div><div class="stat-val" id="lg-k-delivery-total">—</div><div class="stat-sub">min</div></div>
+          <div class="stat-card"><div class="stat-label">Avg Pickup Wait</div><div class="stat-val" id="lg-k-pickup-wait">—</div><div class="stat-sub">min</div></div>
+          <div class="stat-card"><div class="stat-label">Pending Issues</div><div class="stat-val" id="lg-k-issues">—</div></div>
+          <div class="stat-card"><div class="stat-label">Liability Accepted</div><div class="stat-val" id="lg-k-liability">—</div></div>
+        </div>
+
+        <!-- Charts Row -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.2rem" id="lg-charts-row">
+          <div class="table-wrap" style="padding:1rem">
+            <h3 style="font-size:.85rem;margin-bottom:.6rem">Daily Delivered by LSP</h3>
+            <div style="position:relative;height:260px">
+              <canvas id="lg-chart-lsp"></canvas>
+              <div id="lg-chart-lsp-empty" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--dim);font-size:.82rem">No delivery data yet</div>
+            </div>
+          </div>
+          <div class="table-wrap" style="padding:1rem">
+            <h3 style="font-size:.85rem;margin-bottom:.6rem">Daily by Status</h3>
+            <div style="position:relative;height:260px">
+              <canvas id="lg-chart-status"></canvas>
+              <div id="lg-chart-status-empty" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--dim);font-size:.82rem">No order data for this period</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
     </div><!-- /content -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -1912,6 +1985,7 @@ function applySidebarPermissions() {
       // permission map — now gated so non-super admins without these
       // perms don't see sensitive CRM / coupon / marketing tabs.
       customers: 'customers', coupons: 'coupons', marketing: 'marketing_messages',
+      logistics: 'analytics',
     };
     const perm = permMap[page];
     if (perm && !hasPermission(perm)) el.style.display = 'none';
@@ -1955,7 +2029,7 @@ document.getElementById('admin-pass-input')?.addEventListener('keydown', e => {
 // admin-key-input removed — JWT only
 
 // ─── NAVIGATION ───────────────────────────────────────────────────
-const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', coupons: 'Coupon Templates', 'coupon-codes': 'Coupons', abuse: 'Abuse Protection', admins: 'Admin Users', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics', marketing: 'Marketing Messages', 'sync-logs': 'Catalog Sync Logs' };
+const PAGE_TITLES = { overview: 'Overview', applications: 'Restaurant Applications', logs: 'Webhook Logs', dlq: 'Dead Letter Queue', restaurants: 'Restaurants', orders: 'Orders', customers: 'Customers', settlements: 'Settlements', referrals: 'Referrals', directory: 'Restaurant Directory', templates: 'WhatsApp Templates', coupons: 'Coupon Templates', 'coupon-codes': 'Coupons', abuse: 'Abuse Protection', admins: 'Admin Users', financials: 'Platform Financials', activity: 'Activity Monitor', issues: 'Issues', flows: 'Flow Builder', analytics: 'Analytics', marketing: 'Marketing Messages', 'sync-logs': 'Catalog Sync Logs', logistics: 'Logistics Analytics' };
 let currentPage = 'overview';
 
 function nav(el) {
@@ -1986,6 +2060,7 @@ function nav(el) {
   if (page === 'issues')       loadAdminIssues();
   if (page === 'flows')        loadFlowBuilder();
   if (page === 'analytics')    loadAnalyticsDashboard();
+  if (page === 'logistics')    loadLogisticsAnalyticsInit();
   if (page === 'marketing')    loadAdminMarketingMessages();
   if (page === 'sync-logs')    { loadSyncLogs(true); loadMetaAlerts(); }
   // Persist active page in URL hash so refresh stays on the same page
@@ -2013,6 +2088,7 @@ function refreshCurrent() {
   else if (currentPage === 'flows')        loadFlowBuilder();
   else if (currentPage === 'analytics')    loadAnalyticsDashboard();
   else if (currentPage === 'sync-logs')    { loadSyncLogs(); loadMetaAlerts(); }
+  else if (currentPage === 'logistics')    loadLogisticsAnalytics();
 }
 
 // ─── STATS ────────────────────────────────────────────────────────
@@ -5571,6 +5647,202 @@ window.loadCouponCodes = loadCouponCodes;
 window.toggleCouponCode = toggleCouponCode;
 window.resetCouponCodeForm = resetCouponCodeForm;
 window.submitCouponCode = submitCouponCode;
+
+// ─── LOGISTICS ANALYTICS ─────────────────────────────────────
+const _lgChartInstances = {};
+let _lgInited = false;
+let _lgRestaurants = [];
+
+function _lgTodayISTDateStr() {
+  // Intl with en-CA formats as YYYY-MM-DD; timeZone anchors to IST
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+function lgToday() {
+  const t = _lgTodayISTDateStr();
+  document.getElementById('lg-from').value = t;
+  document.getElementById('lg-to').value = t;
+  loadLogisticsAnalytics();
+}
+
+async function loadLogisticsAnalyticsInit() {
+  if (!_lgInited) {
+    _lgInited = true;
+    // Populate restaurant dropdown
+    try {
+      const rests = await api('/api/admin/restaurants');
+      _lgRestaurants = rests || [];
+      const sel = document.getElementById('lg-restaurant');
+      _lgRestaurants.forEach(r => {
+        const o = document.createElement('option');
+        o.value = r.id;
+        o.textContent = r.business_name || r.id;
+        sel.appendChild(o);
+      });
+    } catch (e) { /* non-fatal */ }
+    // Default to today
+    const t = _lgTodayISTDateStr();
+    if (!document.getElementById('lg-from').value) document.getElementById('lg-from').value = t;
+    if (!document.getElementById('lg-to').value)   document.getElementById('lg-to').value = t;
+  }
+  loadLogisticsAnalytics();
+}
+
+async function lgRestaurantChanged() {
+  const rid = document.getElementById('lg-restaurant').value;
+  const sel = document.getElementById('lg-branch');
+  sel.innerHTML = '<option value="">All branches</option>';
+  if (!rid) return;
+  try {
+    const branches = await api('/api/admin/branches?restaurant_id=' + encodeURIComponent(rid));
+    (branches || []).forEach(b => {
+      const o = document.createElement('option');
+      o.value = b.id;
+      o.textContent = b.name || b.branch_slug || b.id;
+      sel.appendChild(o);
+    });
+  } catch (e) { /* non-fatal */ }
+}
+
+function _lgDestroy(key) {
+  if (_lgChartInstances[key]) { _lgChartInstances[key].destroy(); _lgChartInstances[key] = null; }
+}
+
+function _lgQuery() {
+  const from = document.getElementById('lg-from').value;
+  const to   = document.getElementById('lg-to').value;
+  const rid  = document.getElementById('lg-restaurant').value;
+  const bid  = document.getElementById('lg-branch').value;
+  const lsp  = document.getElementById('lg-lsp').value.trim();
+  const p = new URLSearchParams();
+  if (from) p.set('from', from);
+  if (to)   p.set('to', to);
+  if (rid)  p.set('restaurantId', rid);
+  if (bid)  p.set('branchId', bid);
+  if (lsp)  p.set('lsp', lsp);
+  return p.toString() ? '?' + p.toString() : '';
+}
+
+function _lgFmtNum(n) { return n == null ? '\u2014' : Number(n).toLocaleString('en-IN'); }
+function _lgFmtDecimal(n) { return n == null ? '\u2014' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 1 }); }
+function _lgFmtRs(n) {
+  return n == null ? '\u2014' : '\u20B9' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+}
+
+function _lgShowSkeleton() {
+  ['delivered','cancel-client','cancel-system','distance','lsp-fee','total-fee','total-gst','cod','agent-assign','reach-pickup','reach-delivery','delivery-total','pickup-wait','issues','liability'].forEach(id => {
+    const el = document.getElementById('lg-k-' + id);
+    if (el) el.innerHTML = '<span style="display:inline-block;width:3.5ch;height:1em;background:#e5e7eb;border-radius:4px;animation:pulse 1.2s infinite"></span>';
+  });
+}
+
+async function loadLogisticsAnalytics() {
+  const errEl = document.getElementById('lg-err');
+  errEl.textContent = '';
+  _lgShowSkeleton();
+  try {
+    const d = await api('/api/admin/logistics/analytics' + _lgQuery());
+    const s = d.summary || {};
+    document.getElementById('lg-k-delivered').textContent       = _lgFmtNum(s.deliveredOrders);
+    document.getElementById('lg-k-cancel-client').textContent   = _lgFmtNum(s.cancelledByClient);
+    document.getElementById('lg-k-cancel-system').textContent   = _lgFmtNum(s.cancelledBySystem);
+    document.getElementById('lg-k-distance').textContent        = _lgFmtDecimal(s.avgDistanceKm);
+    document.getElementById('lg-k-lsp-fee').textContent         = _lgFmtRs(s.avgLspFee);
+    document.getElementById('lg-k-total-fee').textContent       = _lgFmtRs(s.avgTotalFee);
+    document.getElementById('lg-k-total-gst').textContent       = _lgFmtRs(s.totalFeeWithGst);
+    document.getElementById('lg-k-cod').textContent             = _lgFmtRs(s.codCollected);
+    document.getElementById('lg-k-agent-assign').textContent    = _lgFmtDecimal(s.avgAgentAssignMinutes);
+    document.getElementById('lg-k-reach-pickup').textContent    = _lgFmtDecimal(s.avgReachPickupMinutes);
+    document.getElementById('lg-k-reach-delivery').textContent  = _lgFmtDecimal(s.avgReachDeliveryMinutes);
+    document.getElementById('lg-k-delivery-total').textContent  = _lgFmtDecimal(s.avgDeliveryTotalMinutes);
+    document.getElementById('lg-k-pickup-wait').textContent     = _lgFmtDecimal(s.avgPickupWaitMinutes);
+    document.getElementById('lg-k-issues').textContent          = _lgFmtNum(s.pendingIssues);
+    document.getElementById('lg-k-liability').textContent       = _lgFmtNum(s.liabilityAccepted);
+
+    _lgRenderLspChart(d.dailyByLsp || []);
+    _lgRenderStatusChart(d.dailyByStatus || []);
+  } catch (e) {
+    errEl.textContent = 'Failed: ' + (e.message || 'error');
+    ['delivered','cancel-client','cancel-system','distance','lsp-fee','total-fee','total-gst','cod','agent-assign','reach-pickup','reach-delivery','delivery-total','pickup-wait','issues','liability'].forEach(id => {
+      const el = document.getElementById('lg-k-' + id);
+      if (el) el.textContent = '\u2014';
+    });
+  }
+}
+
+function _lgRenderLspChart(rows) {
+  const empty = document.getElementById('lg-chart-lsp-empty');
+  _lgDestroy('lsp');
+  if (!rows.length) { empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+
+  // Pivot: dates on x, one dataset per LSP
+  const dates = [...new Set(rows.map(r => r.date))].sort();
+  const lsps  = [...new Set(rows.map(r => r.lsp))].sort();
+  const palette = ['#4f46e5', '#16a34a', '#d97706', '#0891b2', '#dc2626', '#7c3aed', '#14b8a6'];
+  const datasets = lsps.map((lsp, i) => {
+    const color = palette[i % palette.length];
+    const data = dates.map(date => {
+      const row = rows.find(r => r.date === date && r.lsp === lsp);
+      return row ? row.count : 0;
+    });
+    return { label: lsp, data, backgroundColor: color + 'cc', borderColor: color, borderWidth: 1, borderRadius: 3 };
+  });
+
+  const ctx = document.getElementById('lg-chart-lsp').getContext('2d');
+  _lgChartInstances.lsp = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: dates, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } },
+      scales: { x: { ticks: { font: { size: 10 } } }, y: { beginAtZero: true, ticks: { precision: 0 } } },
+    },
+  });
+}
+
+function _lgRenderStatusChart(rows) {
+  const empty = document.getElementById('lg-chart-status-empty');
+  _lgDestroy('status');
+  if (!rows.length) { empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+
+  const colors = {
+    DELIVERED:'#16a34a', CONFIRMED:'#3b82f6', PREPARING:'#f59e0b', PACKED:'#8b5cf6',
+    DISPATCHED:'#06b6d4', CANCELLED:'#dc2626', PENDING_PAYMENT:'#94a3b8',
+    PAYMENT_FAILED:'#ef4444', EXPIRED:'#78716c', PAID:'#22c55e',
+    RTO_IN_PROGRESS:'#f97316', RTO_COMPLETE:'#64748b',
+  };
+  const dates    = [...new Set(rows.map(r => r.date))].sort();
+  const statuses = [...new Set(rows.map(r => r.status))];
+  const datasets = statuses.map(st => {
+    const color = colors[st] || '#94a3b8';
+    const data = dates.map(date => {
+      const row = rows.find(r => r.date === date && r.status === st);
+      return row ? row.count : 0;
+    });
+    return { label: st, data, backgroundColor: color + 'cc', borderColor: color, borderWidth: 1, borderRadius: 3 };
+  });
+
+  const ctx = document.getElementById('lg-chart-status').getContext('2d');
+  _lgChartInstances.status = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: dates, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } },
+      scales: {
+        x: { stacked: true, ticks: { font: { size: 10 } } },
+        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+      },
+    },
+  });
+}
+
+window.loadLogisticsAnalytics = loadLogisticsAnalytics;
+window.loadLogisticsAnalyticsInit = loadLogisticsAnalyticsInit;
+window.lgRestaurantChanged = lgRestaurantChanged;
+window.lgToday = lgToday;
 </script>
 <script src="/js/flow-editor.js"></script>
 <script src="/js/template-editor.js"></script>

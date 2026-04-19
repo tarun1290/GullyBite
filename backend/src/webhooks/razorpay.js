@@ -381,11 +381,20 @@ const confirmPaidOrder = async (orderId, event) => {
           phone: order.receiver_phone || order.customer_phone || '',
           order_value: Number(order.total_rs) || 0,
         };
+        const orderMeta = {
+          orderAmount: Number(order.total_rs) || 0,
+          orderItems: Array.isArray(order.items) ? order.items.map((it) => ({
+            name: it.item_name || '',
+            qty: Number(it.quantity) || 0,
+            price: Number(it.unit_price_rs) || 0,
+          })) : [],
+        };
         const { prorouting_order_id } = await prorouting.createDeliveryOrder(
           String(order.id || order._id),
           order.prorouting_quote_id,
           pickupDetails,
-          dropDetails
+          dropDetails,
+          orderMeta
         );
         await col('orders').updateOne(
           { _id: orderId },

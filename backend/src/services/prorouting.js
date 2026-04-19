@@ -7,8 +7,8 @@
 //     → { estimated_price, quote_id }
 //   createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dropDetails)
 //     → { prorouting_order_id, raw }
-//   cancelDeliveryOrder(proroutingOrderId)
-//     → throws 'not implemented'
+//   cancelDeliveryOrder(mp2OrderId, reasonId, reasonText)
+//     → raw response body on success, null on failure (never throws)
 //
 // Base URL and API key come from env. Auth header is `x-pro-api-key`.
 // All requests carry a 10s timeout; callers are responsible for falling back
@@ -103,16 +103,33 @@ async function getEstimate(pickupCoords, dropCoords, orderValue) {
 // quoteId:          prorouting_quote_id from getEstimate
 // pickupDetails:    { latitude, longitude, address, pincode, name, phone, ... }
 // dropDetails:      { latitude, longitude, address, pincode, name, phone, order_value, ... }
-async function createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dropDetails) {
+// orderMeta:        { orderAmount: number, orderItems: [{name, qty, price}, ...] }
+async function createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dropDetails, orderMeta = {}) {
   const pickupLatLng = toLatLng(pickupDetails);
   const dropLatLng = toLatLng(dropDetails);
   if (!pickupLatLng || !dropLatLng) {
     throw new Error('prorouting.createDeliveryOrder: pickup and drop must have lat/lng');
   }
 
+  const orderAmount = Number(
+    orderMeta.orderAmount ?? dropDetails.order_value ?? 0
+  ) || 0;
+  const orderItems = Array.isArray(orderMeta.orderItems)
+    ? orderMeta.orderItems.map((it) => ({
+        name: String(it?.name ?? ''),
+        qty: Number(it?.qty ?? 0) || 0,
+        price: Number(it?.price ?? 0) || 0,
+      }))
+    : [];
+
   const payload = {
     client_order_id: String(gullybiteOrderId),
     callback_url: CALLBACK_URL,
+    order_amount: orderAmount,
+    order_category: 'F&B',
+    search_category: 'Immediate Delivery',
+    ready_to_ship: 'yes',
+    order_items: orderItems,
     select_criteria: {
       mode: 'estimated_price',
       quote_id: quoteId || null,
@@ -146,12 +163,43 @@ async function createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dro
   }
 }
 
-// ─── CANCEL DELIVERY ORDER (stub) ─────────────────────────────
-// No cancel endpoint is documented yet in the preprod spec. Throw explicitly
-// so callers can't silently assume a cancel was issued.
-async function cancelDeliveryOrder(proroutingOrderId) {
-  log.warn({ prorouting_order_id: proroutingOrderId }, 'cancelDeliveryOrder called — not implemented');
-  throw new Error('not implemented');
+// ─── CANCEL DELIVERY ORDER ────────────────────────────────────
+// POST /partner/order/cancel. Called fire-and-forget from the
+// restaurant decline flow so the 3PL rider doesn't stay en route
+// after a GullyBite cancellation. Valid reasonIds for our side:
+//   '005' merchant rejected (default — restaurant decline)
+//   '012' buyer does not want product any more
+//   '006' order not shipped per SLA
+// This function NEVER throws: a failed cancel must not block the
+// GullyBite order cancellation. Logs on both the status-0 body
+// response and the network error paths; returns the raw body on
+// success, null on error.
+async function cancelDeliveryOrder(mp2OrderId, reasonId = '005', reasonText) {
+  if (!mp2OrderId) {
+    log.warn('cancelDeliveryOrder: missing mp2OrderId — no-op');
+    return null;
+  }
+  const payload = {
+    order: {
+      id: String(mp2OrderId),
+      cancellation_reason_id: String(reasonId || '005'),
+      ...(reasonText ? { cancellation_reason_text: String(reasonText) } : {}),
+    },
+  };
+  const t0 = Date.now();
+  try {
+    const { data } = await client().post('/partner/order/cancel', payload);
+    const status = data?.status;
+    if (status === 0 || status === '0') {
+      log.warn({ ms: Date.now() - t0, mp2_order_id: mp2OrderId, message: data?.message, body: data }, 'cancel returned status 0 — LSP did not cancel');
+      return data;
+    }
+    log.info({ ms: Date.now() - t0, mp2_order_id: mp2OrderId, reasonId }, 'cancel ok');
+    return data;
+  } catch (e) {
+    log.warn({ ms: Date.now() - t0, err: e.message, status: e.response?.status, body: e.response?.data, mp2_order_id: mp2OrderId }, 'cancel failed — continuing');
+    return null;
+  }
 }
 
 // ─── TRACKING / STATUS / ISSUE MANAGEMENT ─────────────────────
