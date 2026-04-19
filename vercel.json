@@ -1,6 +1,6 @@
 {
-  "buildCommand": "cd frontend && npm install && npm run build",
-  "installCommand": "cd frontend && npm install",
+  "buildCommand": "cd frontend && npm install --include=dev && npm run build",
+  "installCommand": "cd frontend && npm install --include=dev",
   "outputDirectory": "frontend/dist",
   "cleanUrls": true,
   "functions": {
