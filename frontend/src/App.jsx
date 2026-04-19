@@ -23,6 +23,7 @@ import RestaurantTab from './pages/dashboard/RestaurantTab.jsx';
 import AdminFlows from './pages/admin/AdminFlows.jsx';
 import AdminTemplates from './pages/admin/AdminTemplates.jsx';
 import AdminRestaurants from './pages/admin/AdminRestaurants.jsx';
+import AdminPincodes from './pages/admin/AdminPincodes.jsx';
 
 export default function App() {
   return (
@@ -65,6 +66,7 @@ export default function App() {
               <Route path="flows" element={<AdminFlows />} />
               <Route path="templates" element={<AdminTemplates />} />
               <Route path="restaurants" element={<AdminRestaurants />} />
+              <Route path="pincodes" element={<AdminPincodes />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />

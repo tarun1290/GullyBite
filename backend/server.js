@@ -254,6 +254,7 @@ app.use('/api/restaurant', express.json({ limit: '10mb' }), require('./src/route
 // app.use('/api/restaurant/integrations', express.json(), require('./src/routes/integrations'));
 app.use('/api/upload', express.json(), require('./src/routes/upload'));
 app.use('/api/admin', express.json(), require('./src/routes/admin'));
+app.use('/api/admin/pincodes', express.json(), require('./src/routes/adminPincodes'));
 // Phase 1 (Commit A): customer-facing API — addresses + profile. Cart
 // / reorder / order-create land with the WhatsApp flow handler (Commit B).
 app.use('/api/customer', express.json(), require('./src/routes/customer'));

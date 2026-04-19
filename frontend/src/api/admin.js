@@ -171,3 +171,51 @@ export async function deleteAdminRestaurant(id) {
   const { data } = await client.delete(`/api/admin/restaurants/${id}`);
   return data;
 }
+
+// ─── Pincode serviceability (Prorouting) ────────────────────────────────
+// Platform-wide pincode map. Not per-restaurant.
+
+// GET /api/admin/pincodes — paginated list with search/status filters.
+export async function getPincodes(params = {}) {
+  const { data } = await client.get('/api/admin/pincodes', { params });
+  return data;
+}
+
+// GET /api/admin/pincodes/stats — { total, enabled, disabled }.
+export async function getPincodeStats() {
+  const { data } = await client.get('/api/admin/pincodes/stats');
+  return data;
+}
+
+// PUT /api/admin/pincodes/:pincode/toggle — flip the enabled flag.
+export async function togglePincode(pincode) {
+  const { data } = await client.put(`/api/admin/pincodes/${encodeURIComponent(pincode)}/toggle`);
+  return data;
+}
+
+// PUT /api/admin/pincodes/bulk — enable/disable many at once. Accepts
+// either an explicit `pincodes` array OR a `filter` { search, status }.
+export async function bulkUpdatePincodes(body) {
+  const { data } = await client.put('/api/admin/pincodes/bulk', body);
+  return data;
+}
+
+// POST /api/admin/pincodes/import — upsert-on-insert; never overrides
+// existing `enabled` values. Used by the CSV importer.
+export async function importPincodes(body) {
+  const { data } = await client.post('/api/admin/pincodes/import', body);
+  return data;
+}
+
+// GET /api/admin/pincodes/cities — aggregated { state, city, total, enabled, disabled }
+// rows for the grouped admin view.
+export async function getPincodeCities() {
+  const { data } = await client.get('/api/admin/pincodes/cities');
+  return data;
+}
+
+// PUT /api/admin/pincodes/bulk-by-city — body: { city, state, enabled }.
+export async function bulkUpdateByCity(body) {
+  const { data } = await client.put('/api/admin/pincodes/bulk-by-city', body);
+  return data;
+}

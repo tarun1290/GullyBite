@@ -3004,6 +3004,22 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       return;
     }
 
+    // Re-gate saved addresses — a PIN that was serviceable at save
+    // time may have been disabled since. Fails open if no PIN stored.
+    {
+      const { isPincodeServiceable, extractPincode } = require('../utils/pincodeValidator');
+      const pinToCheck = addr.pincode || extractPincode(addr.full_address);
+      if (pinToCheck) {
+        const ok = await isPincodeServiceable(pinToCheck);
+        if (!ok) {
+          await wa.sendText(pid, token, to, `Sorry, we don't deliver to your area (PIN: ${pinToCheck}) yet. We're expanding soon! 🙏`);
+          return;
+        }
+      } else {
+        log.warn({ action: 'select_address', addressId }, 'No pincode extractable — skipping serviceability check');
+      }
+    }
+
     await wa.sendText(pid, token, to, `📍 Delivering to: *${addr.full_address}*\n\n🔍 Finding the nearest outlet...`);
 
     // Find branch and send menu
@@ -3119,6 +3135,24 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
     // Build full address string from best available data
     const fullAddr = parsedAddress.address || parsedAddress.full_address
       || [buildingFloor, buildingName, street, areaLocality, city, pincode].filter(Boolean).join(', ');
+
+    // Platform-wide Prorouting serviceability gate. Rejects addresses
+    // whose PIN isn't in the enabled serviceable_pincodes list. Fails
+    // OPEN when no PIN can be extracted (e.g. pin-less free-text
+    // address) so we never block users over parsing quirks.
+    {
+      const { isPincodeServiceable, extractPincode } = require('../utils/pincodeValidator');
+      const pinToCheck = pincode || extractPincode(fullAddr);
+      if (pinToCheck) {
+        const ok = await isPincodeServiceable(pinToCheck);
+        if (!ok) {
+          await wa.sendText(pid, token, to, `Sorry, we don't deliver to your area (PIN: ${pinToCheck}) yet. We're expanding soon! 🙏`);
+          return;
+        }
+      } else {
+        log.warn({ action: 'new_address' }, 'No pincode extractable — skipping serviceability check');
+      }
+    }
 
     // Save to customer addresses with enhanced fields
     await addressSvc.saveAddress({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid }, {

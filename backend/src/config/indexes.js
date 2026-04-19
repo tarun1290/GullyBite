@@ -325,6 +325,13 @@ const INDEXES = [
   // (set by worker on success or permanent failure), sparse so
   // in-flight jobs (no finished_at) never expire.
   { collection: 'message_jobs', index: { finished_at: 1 }, options: { expireAfterSeconds: 24 * 60 * 60, sparse: true } },
+
+  // Platform-wide pincode serviceability map (Prorouting seed).
+  // Unique on pincode so $setOnInsert upserts are idempotent.
+  { collection: 'serviceable_pincodes', index: { pincode: 1 }, options: { unique: true } },
+  { collection: 'serviceable_pincodes', index: { enabled: 1 } },
+  { collection: 'serviceable_pincodes', index: { city: 1 } },
+  { collection: 'serviceable_pincodes', index: { state: 1 } },
 ];
 
 async function ensureIndexes() {

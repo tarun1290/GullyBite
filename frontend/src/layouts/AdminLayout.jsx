@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { label: 'Flows',       icon: '\uD83D\uDD04', path: '/admin/flows' },
   { label: 'Templates',   icon: '\uD83D\uDCC4', path: '/admin/templates' },
   { label: 'Restaurants', icon: '\uD83C\uDFEA', path: '/admin/restaurants' },
+  { label: 'Pincodes',    icon: '\uD83D\uDCCD', path: '/admin/pincodes' },
 ];
 
 const TITLE_BY_PATH = Object.fromEntries(NAV_ITEMS.map((n) => [n.path, n.label]));
