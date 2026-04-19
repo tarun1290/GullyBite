@@ -1,5 +1,7 @@
 {
-  "outputDirectory": "frontend",
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "installCommand": "cd frontend && npm install",
+  "outputDirectory": "frontend/dist",
   "cleanUrls": true,
   "functions": {
     "api/[...all].js": {
@@ -8,7 +10,8 @@
   },
   "rewrites": [
     { "source": "/auth/:path*", "destination": "/api/[...all]" },
-    { "source": "/api/:path*", "destination": "/api/[...all]" }
+    { "source": "/api/:path*", "destination": "/api/[...all]" },
+    { "source": "/((?!api|auth).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
@@ -18,9 +21,9 @@
       ]
     },
     {
-      "source": "/(css|js|public)/(.*)",
+      "source": "/assets/(.*)",
       "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=3600, must-revalidate" }
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     }
   ]

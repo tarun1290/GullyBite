@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GullyBite — WhatsApp Ordering for Restaurants</title>
+<script src="/js/api-base.js"></script>
+<script>
+  window.onerror = function (msg, url, line, col, error) {
+    console.error('GLOBAL ERROR:', msg, url, line, col, error);
+  };
+  window.onunhandledrejection = function (event) {
+    console.error('UNHANDLED PROMISE:', event.reason);
+  };
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/wa-connect.css">
+<style>
+:root{
+  --bg   :#f1f5f9; --bg2  :#ffffff;
+  --rim  :#e2e8f0; --rim2 :#cbd5e1;
+  --tx   :#0f172a; --dim  :#64748b; --mute:#94a3b8;
+  --acc  :#4f46e5; --acc2 :#4338ca; --acc-glow:rgba(79,70,229,.12);
+  --wa   :#16a34a; --wa-light:#dcfce7;
+  --gold :#d97706;
+  --red  :#dc2626;
+  --font :'Plus Jakarta Sans',system-ui,sans-serif;
+  --r    :10px;
+  --shadow-sm:0 1px 3px rgba(15,23,42,.07),0 1px 2px rgba(15,23,42,.04);
+  --shadow   :0 4px 16px rgba(15,23,42,.08);
+  --shadow-lg:0 20px 60px rgba(15,23,42,.12);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg2);color:var(--tx);min-height:100vh;line-height:1.55;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:var(--font);letter-spacing:-.02em}
+button{cursor:pointer;font-family:var(--font)}
+a{color:inherit;text-decoration:none}
+.hidden{display:none!important}
+
+/* ── NAV ───────────────────────────────────────────────── */
+.nav{display:flex;align-items:center;justify-content:space-between;padding:1rem 2.5rem;border-bottom:1px solid var(--rim);position:sticky;top:0;z-index:99;background:rgba(255,255,255,.92);backdrop-filter:blur(16px)}
+.logo{display:flex;align-items:center;gap:.6rem;font-weight:800;font-size:1.1rem;color:var(--tx);letter-spacing:-.03em}
+.logo-ring{width:30px;height:30px;border-radius:8px;background:var(--acc);display:flex;align-items:center;justify-content:center;color:#fff;font-size:1rem;flex-shrink:0;box-shadow:0 2px 10px rgba(79,70,229,.3)}
+.nav-links{display:flex;align-items:center;gap:.4rem}
+.btn-outline{display:inline-flex;align-items:center;gap:.4rem;background:transparent;color:var(--tx);font-weight:600;font-size:.85rem;padding:.55rem 1.2rem;border-radius:8px;border:1px solid var(--rim2);transition:all .15s;cursor:pointer}
+.btn-outline:hover{background:var(--bg);border-color:var(--dim)}
+.btn-outline:disabled{opacity:.5;cursor:not-allowed}
+.btn-link{background:none;border:none;color:var(--acc);font-weight:600;font-size:.84rem;cursor:pointer;padding:0;text-decoration:underline}
+.btn-primary{display:inline-flex;align-items:center;gap:.4rem;background:var(--acc);color:#fff;font-weight:700;font-size:.85rem;padding:.55rem 1.3rem;border-radius:8px;border:none;transition:all .15s;cursor:pointer}
+.btn-primary:hover{background:var(--acc2);box-shadow:0 3px 12px rgba(79,70,229,.25)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+/* .btn-wa-connect lives in /css/wa-connect.css (loaded above) */
+
+/* ── LANDING PAGE ──────────────────────────────────────── */
+
+/* ─ HERO ─ */
+.hero-section{padding:5.5rem 2rem 4rem;text-align:center;background:linear-gradient(180deg,rgba(79,70,229,.04) 0%,transparent 60%);border-bottom:1px solid var(--rim);position:relative;overflow:hidden}
+.hero-section::before{content:'';position:absolute;top:-60px;left:50%;transform:translateX(-50%);width:700px;height:700px;border-radius:50%;background:radial-gradient(circle,rgba(79,70,229,.06) 0%,transparent 65%);pointer-events:none}
+.hero-pill{display:inline-flex;align-items:center;gap:.45rem;background:rgba(22,163,74,.1);border:1px solid rgba(22,163,74,.2);color:var(--wa);padding:.3rem 1rem;border-radius:100px;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;margin-bottom:1.6rem}
+.hero-pill span{width:6px;height:6px;border-radius:50%;background:var(--wa);animation:blink 1.8s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+.hero h1{font-size:clamp(2.4rem,5.5vw,4.2rem);line-height:1.06;margin-bottom:1.3rem;font-weight:800;color:var(--tx)}
+.hero h1 .accent{color:var(--acc)}
+.hero h1 .wa-green{color:var(--wa)}
+.hero-sub{font-size:1.05rem;color:var(--dim);max-width:520px;margin:0 auto 2.2rem;line-height:1.75}
+.hero-btns{display:flex;gap:.7rem;justify-content:center;flex-wrap:wrap;margin-bottom:2.8rem}
+.btn-hero{display:inline-flex;align-items:center;gap:.5rem;background:var(--acc);color:#fff;font-weight:700;font-size:.95rem;padding:.82rem 2rem;border-radius:10px;border:none;transition:all .18s;cursor:pointer;box-shadow:0 4px 14px rgba(79,70,229,.28)}
+.btn-hero:hover{background:var(--acc2);transform:translateY(-1px);box-shadow:0 6px 20px rgba(79,70,229,.35)}
+.btn-hero-ghost{display:inline-flex;align-items:center;gap:.5rem;background:#fff;color:var(--tx);font-weight:600;font-size:.92rem;padding:.8rem 1.9rem;border-radius:10px;border:1px solid var(--rim2);transition:all .15s;cursor:pointer}
+.btn-hero-ghost:hover{border-color:var(--acc);color:var(--acc);background:rgba(79,70,229,.03)}
+
+/* hero mockup */
+.hero-mockup{max-width:860px;margin:0 auto;background:#fff;border:1px solid var(--rim);border-radius:16px;box-shadow:var(--shadow-lg);overflow:hidden}
+.mock-topbar{background:var(--bg);border-bottom:1px solid var(--rim);padding:.65rem 1.2rem;display:flex;align-items:center;gap:.5rem}
+.mock-dot{width:10px;height:10px;border-radius:50%}
+.mock-title{font-size:.72rem;font-weight:600;color:var(--mute);margin:0 auto}
+.mock-body{padding:1.2rem}
+.mock-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem}
+.mock-stat{background:var(--bg);border:1px solid var(--rim);border-radius:8px;padding:.8rem 1rem}
+.mock-stat-v{font-size:1.35rem;font-weight:700;color:var(--acc);line-height:1;margin-bottom:.2rem}
+.mock-stat-l{font-size:.65rem;color:var(--dim)}
+.mock-table{width:100%;border-collapse:collapse;font-size:.75rem}
+.mock-table th{background:var(--bg);padding:.45rem .7rem;text-align:left;color:var(--mute);font-weight:600;font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--rim)}
+.mock-table td{padding:.5rem .7rem;border-bottom:1px solid var(--rim);color:var(--tx)}
+.mock-table tr:last-child td{border-bottom:none}
+.mock-badge{display:inline-flex;padding:.15rem .5rem;border-radius:100px;font-size:.62rem;font-weight:600}
+.mock-badge.prep{background:#fef9c3;color:#92400e}
+.mock-badge.paid{background:#dbeafe;color:#1d4ed8}
+.mock-badge.done{background:#dcfce7;color:#15803d}
+.mock-btn{background:#fff;border:1px solid var(--rim);border-radius:5px;padding:.2rem .55rem;font-size:.65rem;color:var(--tx);cursor:pointer}
+
+/* ─ STATS STRIP ─ */
+.stats-strip{background:#fff;border-top:1px solid var(--rim);border-bottom:1px solid var(--rim);padding:2rem 2.5rem}
+.stats-inner{max-width:900px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;text-align:center}
+.strip-stat-v{font-size:2rem;font-weight:800;color:var(--acc);letter-spacing:-.04em;line-height:1}
+.strip-stat-l{font-size:.78rem;color:var(--dim);margin-top:.3rem;font-weight:500}
+
+/* ─ HOW IT WORKS ─ */
+.section{padding:5rem 2rem}
+.section-center{max-width:960px;margin:0 auto}
+.section-pill{display:inline-block;background:rgba(79,70,229,.08);color:var(--acc);font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:.3rem .85rem;border-radius:100px;margin-bottom:1rem;border:1px solid rgba(79,70,229,.15)}
+.section-title{font-size:clamp(1.7rem,3.5vw,2.4rem);font-weight:800;color:var(--tx);margin-bottom:.75rem;line-height:1.15}
+.section-sub{font-size:.95rem;color:var(--dim);max-width:520px;line-height:1.75}
+.section-head{margin-bottom:3.2rem}
+
+.steps-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.step-card{background:#fff;border:1px solid var(--rim);border-radius:14px;padding:1.8rem;position:relative;box-shadow:var(--shadow-sm)}
+.step-num{width:36px;height:36px;border-radius:9px;background:rgba(79,70,229,.1);color:var(--acc);font-weight:800;font-size:.88rem;display:flex;align-items:center;justify-content:center;margin-bottom:1rem;border:1px solid rgba(79,70,229,.15)}
+.step-card h3{font-size:.97rem;font-weight:700;margin-bottom:.5rem;color:var(--tx)}
+.step-card p{font-size:.83rem;color:var(--dim);line-height:1.7}
+.step-conn{display:none}
+
+/* ─ FEATURES ─ */
+.features-section{background:var(--bg);border-top:1px solid var(--rim);border-bottom:1px solid var(--rim)}
+.feats-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+.feat-card{background:#fff;border:1px solid var(--rim);border-radius:14px;padding:1.6rem;box-shadow:var(--shadow-sm);transition:box-shadow .14s}
+.feat-card:hover{box-shadow:var(--shadow)}
+.feat-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;margin-bottom:1rem;flex-shrink:0}
+.feat-icon.indigo{background:rgba(79,70,229,.1)}
+.feat-icon.green{background:#dcfce7}
+.feat-icon.amber{background:#fef3c7}
+.feat-icon.blue{background:#dbeafe}
+.feat-icon.violet{background:#ede9fe}
+.feat-icon.rose{background:#ffe4e6}
+.feat-card h3{font-size:.92rem;font-weight:700;margin-bottom:.4rem;color:var(--tx)}
+.feat-card p{font-size:.81rem;color:var(--dim);line-height:1.7}
+
+/* ─ COMPARISON ─ */
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;max-width:760px;margin:0 auto}
+.compare-card{border-radius:14px;padding:1.8rem;border:2px solid var(--rim)}
+.compare-card.them{background:var(--bg)}
+.compare-card.us{background:#fff;border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,70,229,.08)}
+.compare-card h3{font-size:.95rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
+.compare-row{display:flex;align-items:center;gap:.65rem;padding:.5rem 0;border-bottom:1px solid var(--rim);font-size:.83rem;color:var(--dim)}
+.compare-row:last-child{border-bottom:none}
+.compare-row.good{color:var(--tx)}
+.cico{font-size:.85rem;width:18px;flex-shrink:0}
+
+/* ─ PRICING ─ */
+.pricing-card{background:#fff;border:2px solid var(--acc);border-radius:18px;padding:2.4rem;max-width:420px;margin:0 auto;text-align:center;box-shadow:0 0 0 4px rgba(79,70,229,.07),var(--shadow)}
+.pricing-badge{display:inline-block;background:rgba(79,70,229,.1);color:var(--acc);font-size:.72rem;font-weight:700;padding:.25rem .8rem;border-radius:100px;margin-bottom:1.2rem;letter-spacing:.06em;text-transform:uppercase}
+.pricing-price{font-size:3.2rem;font-weight:800;color:var(--tx);letter-spacing:-.05em;line-height:1}
+.pricing-price span{font-size:1rem;font-weight:600;color:var(--dim);letter-spacing:0}
+.pricing-sub{font-size:.82rem;color:var(--dim);margin:.6rem 0 1.6rem}
+.pricing-feats{list-style:none;text-align:left;margin-bottom:1.8rem;display:flex;flex-direction:column;gap:.65rem}
+.pricing-feats li{display:flex;align-items:center;gap:.6rem;font-size:.85rem;color:var(--tx)}
+.pricing-feats li::before{content:'✓';color:var(--wa);font-weight:700;font-size:.88rem;flex-shrink:0}
+.pricing-note{font-size:.75rem;color:var(--mute);margin-top:.8rem}
+
+/* ─ CTA SECTION ─ */
+.cta-section{background:var(--acc);padding:4.5rem 2rem;text-align:center}
+.cta-section h2{font-size:clamp(1.8rem,4vw,2.8rem);font-weight:800;color:#fff;margin-bottom:.8rem;line-height:1.15}
+.cta-section p{font-size:.97rem;color:rgba(255,255,255,.75);max-width:460px;margin:0 auto 2rem;line-height:1.75}
+.btn-cta{display:inline-flex;align-items:center;gap:.5rem;background:#fff;color:var(--acc);font-weight:700;font-size:.95rem;padding:.85rem 2.2rem;border-radius:10px;border:none;transition:all .18s;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.btn-cta:hover{background:var(--bg);transform:translateY(-1px);box-shadow:0 6px 22px rgba(0,0,0,.25)}
+
+/* ─ FOOTER ─ */
+.footer{background:var(--bg);border-top:1px solid var(--rim);padding:2rem 2.5rem;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem}
+.footer-logo{font-weight:800;font-size:.97rem;color:var(--tx);display:flex;align-items:center;gap:.5rem;letter-spacing:-.02em}
+.footer-links{display:flex;gap:1.5rem;font-size:.82rem;color:var(--dim)}
+.footer-links a:hover{color:var(--tx)}
+.footer-copy{font-size:.78rem;color:var(--mute)}
+
+/* ── AUTH PAGES ─────────────────────────────────────────── */
+.auth-wrap{min-height:100vh;display:flex;flex-direction:column;background:var(--bg)}
+.auth-body{flex:1;display:flex;align-items:center;justify-content:center;padding:2rem 1rem}
+.auth-card{background:#fff;border:1px solid var(--rim);border-radius:16px;padding:2.4rem;width:100%;max-width:440px;animation:riseIn .4s cubic-bezier(.22,1,.36,1) both;box-shadow:var(--shadow)}
+.auth-card h2{font-size:1.55rem;font-weight:800;margin-bottom:.35rem;color:var(--tx)}
+.auth-card .sub{font-size:.84rem;color:var(--dim);margin-bottom:1.6rem;line-height:1.6}
+.fld{display:flex;flex-direction:column;gap:.28rem;margin-bottom:.85rem}
+.fld label{font-size:.76rem;color:var(--dim);font-weight:600}
+.fld label .req{color:var(--red);margin-left:2px}
+.fld input,.fld select{background:#fff;border:1px solid var(--rim);border-radius:8px;padding:.6rem .9rem;color:var(--tx);font-size:.87rem;font-family:var(--font);outline:none;transition:border-color .14s,box-shadow .14s;width:100%}
+.fld input:focus,.fld select:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,70,229,.09)}
+.fld input::placeholder{color:var(--mute)}
+.fld-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+@media(max-width:480px){.fld-row{grid-template-columns:1fr}}
+.btn-full{width:100%;padding:.8rem;background:var(--acc);color:#fff;font-weight:700;font-size:.92rem;border:none;border-radius:9px;transition:background .15s,box-shadow .15s;margin-top:.3rem;cursor:pointer}
+.btn-full:hover:not(:disabled){background:var(--acc2);box-shadow:0 3px 12px rgba(79,70,229,.25)}
+.btn-full:disabled{opacity:.5;cursor:not-allowed}
+.auth-switch{text-align:center;margin-top:1.2rem;font-size:.82rem;color:var(--dim)}
+.auth-switch a{color:var(--acc);font-weight:600;cursor:pointer}
+.input-err{border-color:var(--red)!important}
+.field-err{font-size:.73rem;color:var(--red);margin-top:.2rem}
+.pwd-hint{font-size:.72rem;color:var(--mute);margin-top:.2rem}
+.pwd-rules{list-style:none;margin:.45rem 0 0;padding:0;display:flex;flex-direction:column;gap:.22rem}
+.pwd-rules li{font-size:.72rem;color:var(--mute);padding-left:1.2rem;position:relative;transition:color .2s}
+.pwd-rules li::before{content:"✗";position:absolute;left:0;color:#f87171}
+.pwd-rules li.ok{color:#4ade80}
+.pwd-rules li.ok::before{content:"✓";color:#4ade80}
+.auth-divider{display:flex;align-items:center;gap:.8rem;margin:1.2rem 0}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--rim2)}
+.auth-divider span{font-size:.75rem;color:var(--mute);font-weight:600}
+
+/* ── ONBOARDING ─────────────────────────────────────────── */
+.ob-wrap{width:100%;max-width:640px;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both;padding:1rem 0 3rem}
+.ob-header{text-align:center;margin-bottom:1.8rem}
+.ob-header h2{font-size:1.65rem;font-weight:800;margin-bottom:.4rem;color:var(--tx)}
+.ob-header p{color:var(--dim);font-size:.87rem}
+.ob-steps{display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:2rem}
+.ob-step-item{display:flex;flex-direction:column;align-items:center;gap:.3rem;flex:1;max-width:120px}
+.ob-step-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;border:2px solid var(--rim2);background:#fff;color:var(--dim);transition:all .3s}
+.ob-step-dot.done{background:#dcfce7;border-color:var(--wa);color:var(--wa)}
+.ob-step-dot.active{background:rgba(79,70,229,.1);border-color:var(--acc);color:var(--acc)}
+.ob-step-label{font-size:.7rem;color:var(--dim);text-align:center}
+.ob-step-label.active{color:var(--tx);font-weight:600}
+.ob-connector{flex:1;height:2px;background:var(--rim2);max-width:40px;margin-bottom:1.2rem;transition:background .3s}
+.ob-connector.done{background:var(--wa)}
+.ob-section{background:#fff;border:1px solid var(--rim);border-radius:12px;padding:1.5rem;margin-bottom:.9rem;box-shadow:var(--shadow-sm)}
+.ob-section-title{font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);margin-bottom:1rem}
+.ob-submit{width:100%;padding:.82rem;background:var(--acc);color:#fff;font-weight:700;font-size:.92rem;border:none;border-radius:9px;margin-top:.4rem;transition:background .18s,box-shadow .18s;cursor:pointer}
+.ob-submit:hover:not(:disabled){background:var(--acc2);box-shadow:0 3px 12px rgba(79,70,229,.25)}
+.ob-submit:disabled{opacity:.5;cursor:not-allowed}
+.ob-note{font-size:.72rem;color:var(--mute);text-align:center;margin-top:.7rem;line-height:1.6}
+
+/* ── Document upload dropzone (uncomment when enabling document upload step) ──
+.doc-dropzone{border:2px dashed var(--rim,#e2e8f0);border-radius:10px;cursor:pointer;transition:border-color .15s,background .15s;background:#fafbfc}
+.doc-dropzone:hover,.doc-dropzone.dragover{border-color:var(--brand,#4f46e5);background:rgba(79,70,229,.03)}
+.doc-dropzone .doc-preview{display:flex;align-items:center;gap:.7rem;padding:.8rem 1rem;font-size:.82rem}
+.doc-dropzone .doc-preview .doc-name{flex:1;font-weight:500;color:#0f172a;word-break:break-all}
+.doc-dropzone .doc-preview .doc-size{color:#64748b;font-size:.72rem}
+.doc-dropzone .doc-preview .doc-remove{color:#dc2626;font-size:.72rem;cursor:pointer;font-weight:600;padding:.2rem .4rem;border-radius:4px}
+.doc-dropzone .doc-preview .doc-remove:hover{background:#fee2e2}
+── end dropzone CSS */
+
+/* ── CONNECT WA STEP ────────────────────────────────────── */
+.wa-connect-card{background:#fff;border:1px solid var(--rim);border-radius:14px;padding:2rem 1.8rem;text-align:center;box-shadow:var(--shadow)}
+.wa-connect-card .wa-ic{font-size:3rem;margin-bottom:1rem}
+.wa-connect-card h3{font-size:1.2rem;font-weight:700;margin-bottom:.5rem;color:var(--tx)}
+.wa-connect-card p{color:var(--dim);font-size:.85rem;line-height:1.7;margin-bottom:1.4rem}
+.wa-bullets{list-style:none;text-align:left;margin-bottom:1.5rem;display:flex;flex-direction:column;gap:.5rem}
+.wa-bullets li{display:flex;align-items:center;gap:.6rem;font-size:.82rem;color:var(--tx)}
+.wa-bullets li::before{content:'✓';color:var(--wa);font-weight:700;flex-shrink:0}
+.btn-google{display:flex;align-items:center;justify-content:center;gap:.6rem;width:100%;padding:.82rem;background:#fff;color:#333;font-weight:600;font-size:.92rem;border:1px solid var(--rim2);border-radius:9px;transition:all .18s;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.btn-google:hover:not(:disabled){background:#f8f9fa;border-color:var(--dim);box-shadow:0 2px 6px rgba(0,0,0,.12)}
+.btn-google:disabled{opacity:.55;cursor:not-allowed}
+
+/* ── STATUS SCREENS ─────────────────────────────────────── */
+.status-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem;background:var(--bg)}
+.status-card{background:#fff;border:1px solid var(--rim);border-radius:18px;padding:2.8rem 2.4rem;max-width:460px;width:100%;text-align:center;animation:riseIn .5s cubic-bezier(.22,1,.36,1) both;box-shadow:var(--shadow)}
+.status-icon{font-size:3rem;margin-bottom:1rem}
+.status-card h2{font-size:1.5rem;font-weight:800;margin-bottom:.6rem;color:var(--tx)}
+.status-card p{color:var(--dim);font-size:.87rem;line-height:1.75;margin-bottom:1.3rem}
+.tl-list{list-style:none;text-align:left;margin:1.2rem 0;display:flex;flex-direction:column;gap:.65rem}
+.tl-list li{display:flex;align-items:center;gap:.65rem;font-size:.83rem;color:var(--tx)}
+.tl-dot{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.65rem;flex-shrink:0}
+.tl-dot.done{background:#dcfce7;color:var(--wa);border:1px solid rgba(22,163,74,.3)}
+.tl-dot.wait{background:var(--bg);color:var(--mute);border:1px solid var(--rim2)}
+.rej-box{background:#fff1f2;border:1px solid #fecaca;border-radius:10px;padding:.9rem 1rem;margin:1rem 0;text-align:left;font-size:.83rem;line-height:1.6;color:var(--red)}
+.btn-row{display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap;margin-top:1.3rem}
+
+/* ── TOAST ──────────────────────────────────────────────── */
+#toast{position:fixed;bottom:1.3rem;right:1.3rem;background:#fff;border:1px solid var(--rim);border-radius:10px;padding:.7rem 1.1rem;font-size:.83rem;box-shadow:0 8px 30px rgba(15,23,42,.14);z-index:9999;transform:translateY(130%);transition:transform .24s cubic-bezier(.34,1.56,.64,1);max-width:310px;display:flex;align-items:center;gap:.4rem;color:var(--tx)}
+#toast.on{transform:translateY(0)}
+#toast.ok {background:#f0fdf4;border-color:#bbf7d0;color:#15803d}
+#toast.err{background:#fff1f2;border-color:#fecaca;color:#dc2626}
+#toast.nfo{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.spin{width:14px;height:14px;border:2px solid var(--rim);border-top-color:var(--acc);border-radius:50%;animation:rot .6s linear infinite;display:inline-block;vertical-align:middle}
+@keyframes rot{to{transform:rotate(360deg)}}
+@keyframes riseIn{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:translateY(0)}}
+
+@media(max-width:900px){
+  .feats-grid{grid-template-columns:repeat(2,1fr)}
+  .steps-grid{grid-template-columns:1fr}
+  .compare-grid{grid-template-columns:1fr}
+  .mock-stats{grid-template-columns:repeat(2,1fr)}
+  .stats-inner{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:640px){
+  .nav{padding:.85rem 1.2rem}
+  .hero-section{padding:3.8rem 1.2rem 3rem}
+  .section{padding:3.5rem 1.2rem}
+  .feats-grid{grid-template-columns:1fr}
+  .stats-inner{grid-template-columns:1fr 1fr}
+  .footer{flex-direction:column;text-align:center}
+  .hero-mockup{display:none}
+}
+</style>
+</head>
+<body>
+<div id="toast"></div>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<!-- ══════════════════ LANDING ════════════════════════════ -->
+<div id="pg-land">
+
+  <!-- NAV -->
+  <nav class="nav">
+    <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
+    <div class="nav-links">
+      <button class="btn-outline" onclick="showPage('pg-signin')">Sign In</button>
+      <button class="btn-primary" onclick="showPage('pg-signup')">Sign Up →</button>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero-section">
+    <div class="hero">
+      <div class="hero-pill"><span></span> Now live across 12+ cities in India</div>
+      <h1>Turn WhatsApp into your<br><span class="wa-green">restaurant's</span> <span class="accent">ordering engine</span></h1>
+      <p class="hero-sub">GullyBite connects your menu to WhatsApp in minutes. Customers browse, order and pay — no app, no Swiggy, no commission. Just direct orders straight to your kitchen.</p>
+      <div class="hero-btns">
+        <button class="btn-hero" onclick="showPage('pg-signup')">🚀 Start for Free — No card needed</button>
+        <button class="btn-hero-ghost" onclick="showPage('pg-signin')">Sign In to Dashboard</button>
+      </div>
+
+      <!-- Dashboard Mockup -->
+      <div class="hero-mockup">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#ef4444"></div>
+          <div class="mock-dot" style="background:#f59e0b;margin-left:4px"></div>
+          <div class="mock-dot" style="background:#22c55e;margin-left:4px"></div>
+          <div class="mock-title">GullyBite Dashboard — Spice Route Kitchen</div>
+        </div>
+        <div class="mock-body">
+          <div class="mock-stats">
+            <div class="mock-stat"><div class="mock-stat-v">24</div><div class="mock-stat-l">Today's Orders</div></div>
+            <div class="mock-stat"><div class="mock-stat-v" style="color:#16a34a">₹12,480</div><div class="mock-stat-l">Today's Revenue</div></div>
+            <div class="mock-stat"><div class="mock-stat-v">6</div><div class="mock-stat-l">Active Orders</div></div>
+            <div class="mock-stat"><div class="mock-stat-v">₹50K</div><div class="mock-stat-l">Weekly Revenue</div></div>
+          </div>
+          <table class="mock-table">
+            <thead><tr><th>Order</th><th>Customer</th><th>Branch</th><th>Items</th><th>Total</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td>#GB-1042</td><td>Priya M.</td><td>Koramangala</td><td>Butter Chicken + Naan ×2</td><td>₹680</td><td><span class="mock-badge prep">Preparing</span></td><td><button class="mock-btn">Confirm</button></td></tr>
+              <tr><td>#GB-1041</td><td>Rahul K.</td><td>Indiranagar</td><td>Biryani ×1</td><td>₹320</td><td><span class="mock-badge paid">Paid</span></td><td><button class="mock-btn">Start Prep</button></td></tr>
+              <tr><td>#GB-1040</td><td>Sneha R.</td><td>HSR Layout</td><td>Paneer Tikka + Dal Makhani</td><td>₹520</td><td><span class="mock-badge done">Delivered</span></td><td><button class="mock-btn">Mark Packed</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS STRIP -->
+  <div class="stats-strip">
+    <div class="stats-inner">
+      <div>
+        <div class="strip-stat-v">₹0</div>
+        <div class="strip-stat-l">Commission on every order</div>
+      </div>
+      <div>
+        <div class="strip-stat-v">2 min</div>
+        <div class="strip-stat-l">To go live on WhatsApp</div>
+      </div>
+      <div>
+        <div class="strip-stat-v">100%</div>
+        <div class="strip-stat-l">Native WhatsApp checkout</div>
+      </div>
+      <div>
+        <div class="strip-stat-v">24/7</div>
+        <div class="strip-stat-l">Automated order management</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HOW IT WORKS -->
+  <section class="section" style="background:var(--bg)">
+    <div class="section-center">
+      <div class="section-head" style="text-align:center">
+        <div class="section-pill">How it works</div>
+        <h2 class="section-title">From signup to first order in under 10 minutes</h2>
+        <p class="section-sub" style="margin:0 auto">Three simple steps and your restaurant is live on WhatsApp — no technical setup, no developer needed.</p>
+      </div>
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-num">01</div>
+          <h3>Register &amp; Submit Details</h3>
+          <p>Create your account, fill in your restaurant's business details, FSSAI license and bank information. Our team verifies and activates your account within 1–2 business days.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">02</div>
+          <h3>Connect WhatsApp Business</h3>
+          <p>Link your Meta / WhatsApp Business account with one click. GullyBite auto-creates a product catalog for each branch and configures the order webhook — no code required.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">03</div>
+          <h3>Add Menu &amp; Start Selling</h3>
+          <p>Upload your menu via CSV or add items one by one. Customers can browse your catalog, add to cart and pay via UPI or card — entirely inside WhatsApp. Orders flow to your dashboard in real time.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="section features-section">
+    <div class="section-center">
+      <div class="section-head" style="text-align:center">
+        <div class="section-pill">Platform features</div>
+        <h2 class="section-title">Everything a modern restaurant needs</h2>
+        <p class="section-sub" style="margin:0 auto">Built specifically for Indian restaurants. No bloat, no per-order cut — just tools that help you sell more.</p>
+      </div>
+      <div class="feats-grid">
+        <div class="feat-card">
+          <div class="feat-icon indigo">📍</div>
+          <h3>Location-Based Branch Routing</h3>
+          <p>Customer shares their GPS location → GullyBite detects the nearest branch → shows only that branch's catalog. Multi-city coverage built in.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon green">🛒</div>
+          <h3>Native WhatsApp Cart &amp; Checkout</h3>
+          <p>Customers browse, build their cart and confirm orders entirely inside WhatsApp. No app download, no browser redirect, no friction.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon amber">⚡</div>
+          <h3>Auto Catalog Creation</h3>
+          <p>Add a branch and GullyBite instantly creates a dedicated Meta product catalog via API. Menu changes sync in seconds — toggle an item unavailable and it's gone from WhatsApp immediately.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon blue">💳</div>
+          <h3>Razorpay Payment Integration</h3>
+          <p>UPI, cards, net banking — GullyBite sends a payment link over WhatsApp. Payments are reconciled automatically. Auto-refund on cancelled orders.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon violet">🏷️</div>
+          <h3>Coupons &amp; Discount Codes</h3>
+          <p>Create percent or flat-amount discount codes with usage limits, minimum order thresholds and expiry dates. Customers apply codes directly during WhatsApp checkout.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon indigo">📋</div>
+          <h3>WhatsApp Message Templates</h3>
+          <p>Map approved Meta message templates to order events — Confirmed, Preparing, Dispatched, Delivered. Variables like order number and ETA are filled automatically.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon green">🔗</div>
+          <h3>Referral &amp; Affiliate Links</h3>
+          <p>Admin sends a restaurant's WhatsApp link to a prospective customer. If they order within 8 hours, a transparent 7.5% referral fee applies — tracked in both dashboards.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon amber">📊</div>
+          <h3>Real-Time Order Dashboard</h3>
+          <p>Live order stream with status management — Confirm → Preparing → Packed → Dispatched. Analytics on revenue, top items, busiest hours and customer retention.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon rose">💰</div>
+          <h3>Weekly Automatic Settlements</h3>
+          <p>Every Monday, your payout is calculated and transferred: gross revenue minus platform fee and delivery cost. Full itemised breakdown in the Settlements tab.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section class="section">
+    <div class="section-center">
+      <div class="section-head" style="text-align:center">
+        <div class="section-pill">Why GullyBite</div>
+        <h2 class="section-title">Stop paying 25–30% to aggregators</h2>
+        <p class="section-sub" style="margin:0 auto">Swiggy and Zomato take up to 30% of every order. GullyBite charges a flat monthly platform fee — and nothing more.</p>
+      </div>
+      <div class="compare-grid">
+        <div class="compare-card them">
+          <h3>❌ Swiggy / Zomato</h3>
+          <div class="compare-row"><span class="cico">✗</span>25–30% commission per order</div>
+          <div class="compare-row"><span class="cico">✗</span>You don't own the customer</div>
+          <div class="compare-row"><span class="cico">✗</span>Delayed weekly payouts</div>
+          <div class="compare-row"><span class="cico">✗</span>Controlled by platform algorithm</div>
+          <div class="compare-row"><span class="cico">✗</span>No direct customer communication</div>
+          <div class="compare-row"><span class="cico">✗</span>Paid ads to stay visible</div>
+        </div>
+        <div class="compare-card us">
+          <h3 style="color:var(--acc)">✅ GullyBite</h3>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Flat monthly fee, zero commission</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Direct WhatsApp relationship with customers</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Weekly automated bank transfers</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Your menu, your brand, your catalog</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>Message customers via WhatsApp anytime</div>
+          <div class="compare-row good"><span class="cico" style="color:var(--wa)">✓</span>No ads, no algorithm — just orders</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="section" style="background:var(--bg);border-top:1px solid var(--rim)">
+    <div class="section-center">
+      <div class="section-head" style="text-align:center">
+        <div class="section-pill">Simple pricing</div>
+        <h2 class="section-title">One plan. No surprises.</h2>
+        <p class="section-sub" style="margin:0 auto">No per-order commission, no hidden fees. Just a predictable monthly subscription so you keep what you earn.</p>
+      </div>
+      <div class="pricing-card">
+        <div class="pricing-badge">Restaurant Plan</div>
+        <div class="pricing-price">₹2,999<span>/month</span></div>
+        <div class="pricing-sub">Billed monthly · Cancel anytime · GST extra</div>
+        <ul class="pricing-feats">
+          <li>Unlimited orders — no per-order commission</li>
+          <li>Up to 5 branches &amp; locations</li>
+          <li>Unlimited menu items &amp; catalog sync</li>
+          <li>WhatsApp ordering, cart &amp; checkout</li>
+          <li>Razorpay payment collection built in</li>
+          <li>Coupon &amp; discount system</li>
+          <li>Message template automation</li>
+          <li>Real-time order dashboard &amp; analytics</li>
+          <li>Weekly automatic bank settlements</li>
+          <li>Dedicated onboarding support</li>
+        </ul>
+        <button class="btn-full" onclick="showPage('pg-signup')">Get Started Free →</button>
+        <p class="pricing-note">First 14 days free. No credit card required to sign up.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <h2>Ready to own your orders?</h2>
+    <p>Join restaurants across India who've switched from aggregators to direct WhatsApp ordering with GullyBite.</p>
+    <button class="btn-cta" onclick="showPage('pg-signup')">🚀 Start Your Free Trial</button>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer-logo"><div style="width:24px;height:24px;border-radius:6px;background:var(--acc);display:flex;align-items:center;justify-content:center;color:#fff;font-size:.75rem">🍜</div>GullyBite</div>
+    <div class="footer-links">
+      <a href="mailto:support@gullybite.com">support@gullybite.com</a>
+      <a href="#">Privacy Policy</a>
+      <a href="#">Terms</a>
+    </div>
+    <div class="footer-copy">© 2025 GullyBite. All rights reserved.</div>
+  </footer>
+
+</div>
+
+<!-- ══════════════════ SIGN UP ═══════════════════════════════ -->
+<div id="pg-signup" class="hidden auth-wrap">
+  <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring">🍜</div>GullyBite</div></nav>
+  <div class="auth-body">
+    <div class="auth-card">
+      <h2>Create Account</h2>
+      <p class="sub">Start your free 14-day trial — no credit card required</p>
+      <button class="btn-google" onclick="doGoogleLogin()">
+        <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <div class="auth-divider"><span>OR</span></div>
+      <form onsubmit="doSignup(event)">
+        <div class="fld">
+          <label>Your Full Name <span class="req">*</span></label>
+          <input id="su-name" type="text" placeholder="Ravi Kumar" autocomplete="name" required>
+        </div>
+        <div class="fld">
+          <label>Work Email <span class="req">*</span></label>
+          <input id="su-email" type="email" placeholder="ravi@restaurant.com" autocomplete="email" required>
+        </div>
+        <div class="fld">
+          <label>Password <span class="req">*</span></label>
+          <input id="su-pw" type="password" placeholder="Min 8 characters" autocomplete="new-password" required minlength="8" oninput="checkPwStrength(this.value)">
+          <ul class="pwd-rules" id="pwd-rules">
+            <li id="pr-len">At least 8 characters</li>
+            <li id="pr-upper">One uppercase letter (A–Z)</li>
+            <li id="pr-lower">One lowercase letter (a–z)</li>
+            <li id="pr-num">One number (0–9)</li>
+            <li id="pr-sym">One special character (@, #, ! …)</li>
+          </ul>
+        </div>
+        <div class="fld">
+          <label>Confirm Password <span class="req">*</span></label>
+          <input id="su-pw2" type="password" placeholder="Re-enter password" autocomplete="new-password" required>
+        </div>
+        <button class="btn-full" type="submit" id="su-btn">Create Account →</button>
+      </form>
+      <p class="auth-switch">Already have an account? <a onclick="showPage('pg-signin')">Sign In</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ SIGN IN ═══════════════════════════════ -->
+<div id="pg-signin" class="hidden auth-wrap">
+  <nav class="nav" style="position:relative"><div class="logo"><div class="logo-ring">🍜</div>GullyBite</div></nav>
+  <div class="auth-body">
+    <div class="auth-card">
+      <h2>Welcome Back</h2>
+      <p class="sub">Sign in to your GullyBite restaurant dashboard</p>
+      <button class="btn-google" onclick="doGoogleLogin()">
+        <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Continue with Google
+      </button>
+      <div class="auth-divider"><span>OR</span></div>
+      <form onsubmit="doSignin(event)">
+        <div class="fld">
+          <label>Email Address <span class="req">*</span></label>
+          <input id="si-email" type="email" placeholder="ravi@restaurant.com" autocomplete="email" required>
+        </div>
+        <div class="fld">
+          <label>Password <span class="req">*</span></label>
+          <input id="si-pw" type="password" placeholder="Your password" autocomplete="current-password" required>
+        </div>
+        <button class="btn-full" type="submit" id="si-btn">Sign In →</button>
+      </form>
+      <p class="auth-switch">New to GullyBite? <a onclick="showPage('pg-signup')">Create Account</a></p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ ONBOARDING ═════════════════════════ -->
+<div id="pg-onboard" class="hidden auth-wrap">
+  <nav class="nav" style="position:relative">
+    <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
+    <button class="btn-outline" style="font-size:.76rem;padding:.42rem .95rem" onclick="doLogout()">Sign out</button>
+  </nav>
+  <div class="auth-body" style="align-items:flex-start;padding-top:1.5rem">
+    <div class="ob-wrap">
+      <div class="ob-header">
+        <h2>Tell us about your restaurant</h2>
+        <p>Quick setup — takes less than a minute.</p>
+      </div>
+      <div class="ob-steps">
+        <div class="ob-step-item">
+          <div class="ob-step-dot done">✓</div>
+          <div class="ob-step-label">Account</div>
+        </div>
+        <div class="ob-connector done"></div>
+        <div class="ob-step-item">
+          <div class="ob-step-dot active">2</div>
+          <div class="ob-step-label active">Restaurant Info</div>
+        </div>
+        <div class="ob-connector"></div>
+        <div class="ob-step-item">
+          <div class="ob-step-dot">3</div>
+          <div class="ob-step-label">Connect WhatsApp</div>
+        </div>
+      </div>
+      <form onsubmit="submitBusinessDetails(event)">
+        <div class="ob-section">
+          <div class="fld-row">
+            <div class="fld"><label>Your Full Name <span class="req">*</span></label><input id="ob-owner" type="text" placeholder="Ravi Kumar" required></div>
+            <div class="fld"><label>Phone Number <span class="req">*</span></label><input id="ob-phone" type="tel" placeholder="+91 98765 43210" required></div>
+          </div>
+          <div class="fld">
+            <label>Restaurant Name <span class="req">*</span> <span style="font-weight:400;color:var(--mute)">(as customers will see it)</span></label>
+            <input id="ob-brand" type="text" placeholder="Spice Route Kitchen" oninput="_onObBrandInput(event)" required>
+          </div>
+          <div class="fld-row">
+            <div class="fld"><label>City <span class="req">*</span></label><input id="ob-city" type="text" placeholder="Bengaluru" required></div>
+            <div class="fld"><label>Restaurant Type</label>
+              <select id="ob-type">
+                <option value="both">Veg &amp; Non-Veg</option>
+                <option value="veg">Pure Veg</option>
+                <option value="non_veg">Non-Veg Only</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="ob-section">
+          <div class="ob-section-title">Legal & Compliance (Optional)</div>
+          <div class="fld-row">
+            <div class="fld">
+              <label>GST Number</label>
+              <input id="ob-gst" type="text" placeholder="22AAAAA0000A1Z5" maxlength="15" style="text-transform:uppercase">
+            </div>
+            <div class="fld">
+              <label>FSSAI License Number</label>
+              <input id="ob-fssai" type="text" placeholder="12345678901234" maxlength="14">
+            </div>
+          </div>
+        </div>
+        <button class="ob-submit" type="submit" id="ob-btn">Continue → Connect WhatsApp</button>
+        <p class="ob-note">GST and FSSAI can also be updated later in your dashboard settings.</p>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ DOCUMENT UPLOAD (STEP 2.5 — GST + FSSAI) ═══════════════════
+     Uncomment this entire block to enable mandatory document upload during onboarding.
+     Also uncomment the backend route POST /auth/onboarding/documents in auth.js.
+     Then update submitBusinessDetails() to show 'pg-documents' instead of 'pg-connect'.
+
+<div id="pg-documents" class="hidden auth-wrap">
+  <nav class="nav" style="position:relative">
+    <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
+    <button class="btn-outline" style="font-size:.76rem;padding:.42rem .95rem" onclick="doLogout()">Sign out</button>
+  </nav>
+  <div class="auth-body" style="align-items:flex-start;padding-top:1.5rem">
+    <div class="ob-wrap" style="max-width:640px">
+      <div class="ob-header">
+        <h2>Upload Business Documents</h2>
+        <p>GST and FSSAI documents are mandatory for food delivery compliance.</p>
+      </div>
+      <div class="ob-steps">
+        <div class="ob-step-item"><div class="ob-step-dot done">✓</div><div class="ob-step-label">Account</div></div>
+        <div class="ob-connector done"></div>
+        <div class="ob-step-item"><div class="ob-step-dot done">✓</div><div class="ob-step-label">Restaurant Info</div></div>
+        <div class="ob-connector done"></div>
+        <div class="ob-step-item"><div class="ob-step-dot active">3</div><div class="ob-step-label active">Documents</div></div>
+        <div class="ob-connector"></div>
+        <div class="ob-step-item"><div class="ob-step-dot">4</div><div class="ob-step-label">Connect WhatsApp</div></div>
+      </div>
+
+      <form onsubmit="submitDocuments(event)" style="display:flex;flex-direction:column;gap:1rem">
+        <div class="ob-section">
+          <h3 style="font-size:.88rem;font-weight:700;margin-bottom:.8rem;color:#0f172a">GST Certificate</h3>
+          <div class="fld">
+            <label>GST Number <span class="req">*</span></label>
+            <input id="doc-gst-number" type="text" placeholder="22AAAAA0000A1Z5" required maxlength="15"
+                   style="text-transform:uppercase" pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z]{1}[1-9A-Za-z]{1}[Zz]{1}[0-9A-Za-z]{1}"
+                   title="Enter a valid 15-character GST number">
+          </div>
+          <div class="fld">
+            <label>Upload GST Certificate <span class="req">*</span> <span style="font-weight:400;color:var(--mute)">(PDF, JPEG, or PNG — max 10 MB)</span></label>
+            <div id="doc-gst-drop" class="doc-dropzone" onclick="document.getElementById('doc-gst-file').click()" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleDocDrop(event,'gst')">
+              <input id="doc-gst-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleDocSelect(this,'gst')" required>
+              <div id="doc-gst-label" style="text-align:center;padding:1.5rem;color:#64748b;font-size:.82rem">
+                <div style="font-size:1.5rem;margin-bottom:.3rem">📄</div>
+                Click to upload or drag &amp; drop your GST certificate
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ob-section">
+          <h3 style="font-size:.88rem;font-weight:700;margin-bottom:.8rem;color:#0f172a">FSSAI License</h3>
+          <div class="fld-row">
+            <div class="fld">
+              <label>FSSAI License Number <span class="req">*</span></label>
+              <input id="doc-fssai-number" type="text" placeholder="12345678901234" required maxlength="14"
+                     pattern="[0-9]{14}" title="Enter a valid 14-digit FSSAI license number">
+            </div>
+            <div class="fld">
+              <label>License Expiry Date <span class="req">*</span></label>
+              <input id="doc-fssai-expiry" type="date" required>
+            </div>
+          </div>
+          <div class="fld">
+            <label>Upload FSSAI License <span class="req">*</span> <span style="font-weight:400;color:var(--mute)">(PDF, JPEG, or PNG — max 10 MB)</span></label>
+            <div id="doc-fssai-drop" class="doc-dropzone" onclick="document.getElementById('doc-fssai-file').click()" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleDocDrop(event,'fssai')">
+              <input id="doc-fssai-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="handleDocSelect(this,'fssai')" required>
+              <div id="doc-fssai-label" style="text-align:center;padding:1.5rem;color:#64748b;font-size:.82rem">
+                <div style="font-size:1.5rem;margin-bottom:.3rem">📄</div>
+                Click to upload or drag &amp; drop your FSSAI license
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="ob-submit" type="submit" id="doc-btn">Continue → Connect WhatsApp</button>
+        <p class="ob-note">These documents will be verified by our team. You'll be notified once approved.</p>
+      </form>
+    </div>
+  </div>
+</div>
+
+End of document upload block ═══════════════════════════════════════ -->
+
+<!-- ══════════════════ CONNECT WHATSAPP ═══════════════════ -->
+<div id="pg-connect" class="hidden auth-wrap">
+  <nav class="nav" style="position:relative">
+    <div class="logo"><div class="logo-ring">🍜</div>GullyBite</div>
+    <button class="btn-outline" style="font-size:.76rem;padding:.42rem .95rem" onclick="doLogout()">Sign out</button>
+  </nav>
+  <div class="auth-body" style="align-items:flex-start;padding-top:1.5rem">
+    <div class="ob-wrap" style="max-width:640px">
+      <div class="ob-header">
+        <h2>Connect WhatsApp Business</h2>
+        <p>Follow the steps below, then click Connect.</p>
+      </div>
+      <div class="ob-steps">
+        <div class="ob-step-item"><div class="ob-step-dot done">✓</div><div class="ob-step-label">Account</div></div>
+        <div class="ob-connector done"></div>
+        <div class="ob-step-item"><div class="ob-step-dot done">✓</div><div class="ob-step-label">Restaurant Info</div></div>
+        <div class="ob-connector done"></div>
+        <div class="ob-step-item"><div class="ob-step-dot active">3</div><div class="ob-step-label active">Connect WhatsApp</div></div>
+      </div>
+
+      <!-- Store URL -->
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:1rem 1.2rem;margin-bottom:1.1rem">
+        <p style="font-size:.72rem;font-weight:700;letter-spacing:.06em;color:#15803d;margin-bottom:.3rem">YOUR STORE URL — copy this, you'll need it below</p>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <input id="store-url-display" readonly style="flex:1;background:#fff;border:1px solid #bbf7d0;border-radius:7px;padding:.4rem .7rem;font-size:.8rem;color:#0f172a;outline:none;font-family:monospace" value="Loading…">
+          <button onclick="copyStoreUrl()" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:.4rem .9rem;font-size:.78rem;font-weight:600;cursor:pointer;white-space:nowrap">Copy</button>
+        </div>
+      </div>
+
+      <!-- Step-by-step instructions -->
+      <div style="background:#fff;border:1px solid var(--rim,#e2e8f0);border-radius:10px;padding:1.1rem 1.2rem;margin-bottom:1.1rem">
+        <p style="font-size:.82rem;font-weight:700;margin-bottom:.8rem">Setting up for the first time? Follow these steps:</p>
+        <ol style="padding-left:1.1rem;display:flex;flex-direction:column;gap:.6rem;font-size:.8rem;color:#334155;line-height:1.55">
+          <li><strong>Open Meta Business Manager</strong> → <a href="https://business.facebook.com" target="_blank" style="color:#4f46e5">business.facebook.com</a> → create a Business Portfolio if you don't have one yet.</li>
+          <li><strong>Create a WhatsApp Business Account (WABA)</strong> → inside your Portfolio → Accounts → WhatsApp Accounts → Add.</li>
+          <li><strong>Add a phone number</strong> to your WABA. Use a number that is NOT already on the regular WhatsApp app. Verify it via OTP.</li>
+          <li><strong>Set Privacy Policy &amp; Website URL</strong> → Business Settings → WhatsApp Accounts → your account → Settings → paste your Store URL (green box above) into both fields.</li>
+          <li><strong>Now click the button below</strong> → select your Business Portfolio → select your WABA and phone number → authorise GullyBite.</li>
+        </ol>
+      </div>
+
+      <!-- Connect button -->
+      <div style="background:#fff;border:1px solid var(--rim,#e2e8f0);border-radius:10px;padding:1.2rem;text-align:center">
+        <p style="font-size:.8rem;color:#64748b;margin-bottom:.9rem">Done with the steps above? Connect now.</p>
+        <button class="btn-wa-connect btn-lg" id="connect-btn" onclick="doConnectMeta()">
+          <!-- icon + label set by JS via META_BTN_HTML on reset; defaults match -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Connect WhatsApp Business
+        </button>
+        <p id="connect-fallback" style="display:none;margin-top:.6rem;font-size:.78rem">
+          Connection didn't go through? <a href="#" id="connect-redirect-link" onclick="event.preventDefault();doConnectMeta();return false;" style="color:#4f46e5;font-weight:600;text-decoration:underline">Try again</a>
+        </p>
+        <p style="margin-top:.6rem;font-size:.72rem;color:var(--dim)">Takes about 2 minutes. You'll be redirected back automatically.</p>
+        <div style="margin-top:1rem;padding-top:.9rem;border-top:1px solid #f1f5f9">
+          <p style="font-size:.75rem;color:var(--dim);margin-bottom:.4rem">Not ready yet? You can always connect later from your dashboard.</p>
+          <button class="btn-outline" style="font-size:.78rem" onclick="window.location.href='/dashboard'">Skip for now → Go to Dashboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ PENDING ════════════════════════════ -->
+<div id="pg-pending" class="hidden status-wrap">
+  <div class="status-card">
+    <div class="status-icon">⏳</div>
+    <h2>Application Under Review</h2>
+    <p>Thank you for registering. Our team is reviewing your details and will activate your account within 1–2 business days.</p>
+
+    <!-- WhatsApp connection status badge -->
+    <div id="wa-status-badge" style="display:none;align-items:center;gap:.6rem;background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:.7rem 1.1rem;margin:.5rem 0 1.2rem;font-size:.84rem">
+      <span style="width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block;flex-shrink:0"></span>
+      <span>WhatsApp connected — <strong id="wa-status-phone"></strong></span>
+    </div>
+    <div id="wa-status-warn" style="display:none;align-items:center;gap:.6rem;background:#fefce8;border:1px solid #fde047;border-radius:10px;padding:.7rem 1.1rem;margin:.5rem 0 1.2rem;font-size:.84rem">
+      <span style="width:10px;height:10px;border-radius:50%;background:#eab308;display:inline-block;flex-shrink:0"></span>
+      <span>WhatsApp not connected yet — <button class="btn-link" onclick="showPage('pg-connect')">connect now →</button></span>
+    </div>
+
+    <ul class="tl-list">
+      <li><div class="tl-dot done">✓</div><span>Account created</span></li>
+      <li><div class="tl-dot done">✓</div><span>Business details submitted</span></li>
+      <li id="tl-wa-step"><div class="tl-dot wait" id="tl-wa-dot">○</div><span id="tl-wa-label" style="color:var(--dim)">WhatsApp Business connected</span></li>
+      <li><div class="tl-dot wait">○</div><span style="color:var(--dim)">Admin review &amp; approval</span></li>
+      <li><div class="tl-dot wait">○</div><span style="color:var(--dim)">Dashboard access granted</span></li>
+    </ul>
+    <div class="btn-row">
+      <button class="btn-outline" onclick="checkStatus()">Check Status</button>
+      <button class="btn-outline" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ REJECTED ═══════════════════════════ -->
+<div id="pg-rejected" class="hidden status-wrap">
+  <div class="status-card">
+    <div class="status-icon">❌</div>
+    <h2>Application Not Approved</h2>
+    <p>Your application could not be approved. Please see the reason below and contact us if you have questions.</p>
+    <div class="rej-box" id="rejection-reason">—</div>
+    <p style="font-size:.78rem;color:var(--dim)">Contact <a href="mailto:support@gullybite.com" style="color:var(--acc)">support@gullybite.com</a> for help or to reapply.</p>
+    <div class="btn-row">
+      <button class="btn-outline" onclick="showPage('pg-onboard')">Update &amp; Reapply</button>
+      <button class="btn-outline" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PAGES = ['pg-land','pg-signup','pg-signin','pg-onboard','pg-connect','pg-pending','pg-rejected'];
+function showPage(id) {
+  PAGES.forEach(p => document.getElementById(p).classList.toggle('hidden', p !== id));
+  window.scrollTo(0,0);
+  if (id === 'pg-connect') { _fetchStoreUrl(); _loadFbSdk(); }
+}
+
+/* ─── META CONNECT — REDIRECT ONLY ────────────────────────
+ * The Facebook JS SDK is no longer loaded. doConnectMeta() now full-page
+ * redirects to Meta via /auth/meta/start. See dashboard.html and shared.js
+ * for the rationale (popup blockers, Vercel multi-instance state, CSRF). */
+function _loadFbSdk() { /* deprecated no-op kept to avoid breaking call sites */ }
+
+/* ─── STORE URL DERIVATION ──────────────────────────────────
+ * The Connect WhatsApp page shows the restaurant's store URL so they can paste
+ * it into Meta Business Manager. The URL is `{base}/store/{slug}` where slug
+ * is derived from the brand name.
+ *
+ * Resolution priority (matches backend /auth/me + /auth/onboarding):
+ *   1. Saved real slug from /auth/me (Beyond Snacks → "beyond-snacks")
+ *   2. Live preview from the brand-name input on the previous step
+ *   3. Live preview from rest.brand_name / rest.business_name returned by /auth/me
+ *   4. Friendly placeholder telling the user to enter their business name first
+ *
+ * The slug rules MUST stay in sync with backend slugifyName() in routes/auth.js.
+ */
+function _slugify(name) {
+  if (!name || typeof name !== 'string') return null;
+  var slug = name.toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .substring(0, 40);
+  return slug && /[a-z0-9]/.test(slug) ? slug : null;
+}
+function _isPlaceholderSlug(slug) {
+  return !slug || slug === 'my-restaurant' || /^my-restaurant(-\d+)?$/.test(slug);
+}
+// In-memory cache of the brand name as the user types it on pg-onboard.
+// Read by _fetchStoreUrl() when no saved slug exists yet. We deliberately
+// avoid touching localStorage here — onboarding is short-lived and shouldn't
+// leave artifacts on the device.
+var _onboardingBrandName = null;
+function _onObBrandInput(ev) {
+  _onboardingBrandName = (ev?.target?.value || '').trim() || null;
+  // If the user is currently on pg-connect (rare — they typed in pg-onboard
+  // then navigated back/forward), refresh the preview live.
+  var pgConnect = document.getElementById('pg-connect');
+  if (pgConnect && !pgConnect.classList.contains('hidden')) {
+    _fetchStoreUrl().catch(function(){});
+  }
+}
+
+async function _fetchStoreUrl() {
+  var inputEl = document.getElementById('store-url-display');
+  if (!inputEl) return;
+  var jwtToken = localStorage.getItem('zm_token');
+  // Resolve the canonical base URL the backend will save into store_url.
+  // We default to location.origin so previews always show the host the user
+  // is browsing now; /auth/me overrides with store_base_url when present.
+  var baseUrl = location.origin;
+  var savedSlug = null;
+  var savedUrl = null;
+  var brandNameFromBackend = null;
+
+  if (jwtToken) {
+    try {
+      var me = await fetch('/auth/me', { headers: { Authorization: 'Bearer ' + jwtToken } }).then(function(r){ return r.json(); });
+      if (me) {
+        if (me.store_base_url) baseUrl = me.store_base_url;
+        savedSlug = me.store_slug || null;
+        savedUrl  = me.store_url || null;
+        brandNameFromBackend = me.brand_name || me.business_name || null;
+      }
+    } catch (_) { /* network error — fall through to client-side preview */ }
+  }
+
+  // Priority 1: real saved slug + URL → use as-is
+  if (savedUrl && savedSlug && !_isPlaceholderSlug(savedSlug)) {
+    inputEl.value = savedUrl;
+    inputEl.dataset.gbReal = '1';
+    return;
+  }
+
+  // Priority 2: brand name from form input (most up-to-date if user is mid-onboard)
+  // Priority 3: brand name from /auth/me (already saved server-side but slug missing/stale)
+  var nameSource = _onboardingBrandName
+    || (document.getElementById('ob-brand') && document.getElementById('ob-brand').value.trim())
+    || brandNameFromBackend
+    || null;
+  var previewSlug = _slugify(nameSource);
+
+  if (previewSlug) {
+    inputEl.value = baseUrl + '/store/' + previewSlug;
+    inputEl.dataset.gbReal = savedSlug && savedSlug === previewSlug ? '1' : '0';
+    return;
+  }
+
+  // Priority 4: friendly placeholder — never silently fall back to "my-restaurant"
+  inputEl.value = 'Enter your business name on the previous step to generate your URL';
+  inputEl.dataset.gbReal = '0';
+}
+
+/* ─── BOOT ─────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', async () => {
+  initGoogleAuth();
+
+  const params = new URLSearchParams(location.search);
+
+  if (params.get('error')) {
+    toast('Authentication failed — please try again', 'err');
+    history.replaceState({}, '', location.pathname);
+  }
+
+  // Redirect-mode Google callback returns to "/?google_token=...". Pick it up,
+  // persist under the same key the popup flow uses, and strip from the URL so
+  // a refresh doesn't re-trigger this branch.
+  const googleToken = params.get('google_token');
+  if (googleToken) {
+    localStorage.setItem('zm_token', googleToken);
+    history.replaceState({}, '', location.pathname);
+    console.log('[Google] Token received from URL → stored → routing');
+    try {
+      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${googleToken}` } }).then(r => r.json());
+      if (me.error) { localStorage.removeItem('zm_token'); toast('Sign in failed — please try again', 'err'); return; }
+      routeByStatus(me);
+    } catch { toast('Could not complete sign in — please retry', 'err'); }
+    return;
+  }
+
+  const token = localStorage.getItem('zm_token');
+  if (!token) return;
+
+  try {
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+    if (me.error) { localStorage.removeItem('zm_token'); return; }
+    routeByStatus(me);
+  } catch { /* network error — stay on landing */ }
+});
+
+function routeByStatus(me) {
+  const step   = me.onboarding_step || 1;
+  const status = me.approval_status || 'pending';
+
+  if (status === 'rejected') {
+    document.getElementById('rejection-reason').textContent = me.approval_notes || 'No reason provided.';
+    showPage('pg-rejected'); return;
+  }
+
+  // Onboarding not done — collect restaurant details first
+  if (step < 2 || !me.brand_name) { prefillOnboarding(me); showPage('pg-onboard'); return; }
+
+  // Step 2+ → dashboard (WA connect banner shown there if needed)
+  window.location.href = '/dashboard';
+}
+
+/* ═══ FUTURE FEATURE: Pending Status + Store URL Helpers ═══
+   Utility functions for the pending-approval page.
+   populatePendingStatus: shows WhatsApp connection status badges during onboarding.
+   populateStoreUrl: auto-fills the store URL display field.
+
+   function populatePendingStatus(me) {
+     const waConnected = !!(me.meta_user_id || (me.waba_accounts && me.waba_accounts.length > 0));
+     const phone = me.waba_accounts?.[0]?.phone || me.meta_waba_id || '';
+     const badge = document.getElementById('wa-status-badge');
+     const warn  = document.getElementById('wa-status-warn');
+     const dot   = document.getElementById('tl-wa-dot');
+     const label = document.getElementById('tl-wa-label');
+
+     if (waConnected) {
+       badge.style.display = 'flex';
+       warn.style.display  = 'none';
+       document.getElementById('wa-status-phone').textContent = phone || 'WhatsApp Business Account';
+       dot.className = 'tl-dot done'; dot.textContent = '✓';
+       label.style.color = ''; label.textContent = 'WhatsApp Business connected';
+     } else {
+       badge.style.display = 'none';
+       warn.style.display  = 'flex';
+       dot.className = 'tl-dot wait'; dot.textContent = '○';
+       label.style.color = 'var(--dim)'; label.textContent = 'WhatsApp Business connected';
+     }
+   }
+
+   function populateStoreUrl(me) {
+     const el = document.getElementById('store-url-display');
+     if (el && me.store_url) el.value = me.store_url;
+   }
+   ═══ END FUTURE FEATURE ═══ */
+
+function copyStoreUrl() {
+  const el = document.getElementById('store-url-display');
+  if (!el) return;
+  const val = el.value || '';
+  // Refuse to copy placeholders / loading state — Meta would reject those
+  // and the user would have a frustrating debug session.
+  if (!val || val === 'Loading…' || val.indexOf('/store/') === -1 || !/^https?:\/\//.test(val)) {
+    toast('Enter your business name first to generate the URL', 'err');
+    return;
+  }
+  navigator.clipboard.writeText(val).then(
+    () => toast('Store URL copied!', 'ok'),
+    () => toast('Could not copy — please copy manually', 'err')
+  );
+}
+
+function prefillOnboarding(me) {
+  if (me.owner_name)      document.getElementById('ob-owner').value = me.owner_name;
+  if (me.phone)           document.getElementById('ob-phone').value = me.phone;
+  if (me.brand_name)      document.getElementById('ob-brand').value = me.brand_name;
+  if (me.city)            document.getElementById('ob-city').value  = me.city;
+  if (me.restaurant_type) document.getElementById('ob-type').value  = me.restaurant_type;
+  if (me.gst_number)      document.getElementById('ob-gst').value   = me.gst_number;
+  if (me.fssai_license)   document.getElementById('ob-fssai').value = me.fssai_license;
+}
+
+/* ─── GOOGLE SIGN IN ───────────────────────────────────── */
+const GOOGLE_CLIENT_ID = '554056535730-r6qprte4lndpak89n1dm2hmo07t6kiig.apps.googleusercontent.com';
+let _googleCodeClient;
+function initGoogleAuth() {
+  if (typeof google === 'undefined' || !google.accounts) {
+    setTimeout(initGoogleAuth, 200);
+    return;
+  }
+  _googleCodeClient = google.accounts.oauth2.initCodeClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: 'openid email profile',
+    ux_mode: 'popup',
+    callback: handleGoogleResponse,
+  });
+  console.log('[Google] Code client initialized (popup mode)');
+}
+
+async function handleGoogleResponse(response) {
+  console.log('[Google] Callback fired, response keys:', Object.keys(response));
+  if (response.error) { console.error('[Google] Error:', response.error); toast('Google sign-in failed: ' + response.error, 'err'); return; }
+  if (!response.code) { console.error('[Google] No code received'); toast('Google sign-in failed — no authorization code', 'err'); return; }
+  const btn = document.getElementById('google-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Signing in…'; }
+  try {
+    const r = await fetch('/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: response.code }) });
+    const d = await r.json();
+    console.log('[Google] Backend status:', r.status, 'response:', d);
+    console.log('Google login response:', d);
+    if (!d.token) { toast(d.error || 'Sign in failed', 'err'); return; }
+    localStorage.setItem('zm_token', d.token);
+    console.log('Stored token:', localStorage.getItem('zm_token'));
+    console.log('Calling /auth/me with token');
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+    console.log('Auth me response:', me);
+    routeByStatus(me);
+  } catch (err) { console.error('[Google] Error:', err); toast(err.message || 'Sign in failed', 'err'); }
+  finally { if (btn) { btn.disabled = false; btn.innerHTML = _googleBtnHtml; } }
+}
+/* ─── EMAIL/PASSWORD AUTH ──────────────────────────────── */
+function checkPwStrength(pw) {
+  const set = (id, ok) => document.getElementById(id)?.classList.toggle('ok', ok);
+  set('pr-len',   pw.length >= 8);
+  set('pr-upper', /[A-Z]/.test(pw));
+  set('pr-lower', /[a-z]/.test(pw));
+  set('pr-num',   /[0-9]/.test(pw));
+  set('pr-sym',   /[^A-Za-z0-9]/.test(pw));
+}
+
+async function doSignup(e) {
+  e.preventDefault();
+  const btn = document.getElementById('su-btn');
+  const pw  = document.getElementById('su-pw').value;
+  const pw2 = document.getElementById('su-pw2').value;
+  if (pw !== pw2) return toast('Passwords do not match', 'err');
+
+  setLoading(btn, true, 'Creating account…');
+  try {
+    const d = await post('/auth/signup', {
+      ownerName: document.getElementById('su-name').value.trim(),
+      email:     document.getElementById('su-email').value.trim(),
+      password:  pw,
+    });
+    if (d.token) {
+      localStorage.setItem('zm_token', d.token);
+      toast('Account created!', 'ok');
+      const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+      prefillOnboarding(me);
+      showPage('pg-onboard');
+    } else toast(d.error || 'Sign up failed', 'err');
+  } catch (err) { toast(err.message, 'err'); }
+  finally { setLoading(btn, false, 'Create Account →'); }
+}
+
+async function doSignin(e) {
+  e.preventDefault();
+  const btn = document.getElementById('si-btn');
+  setLoading(btn, true, 'Signing in…');
+  try {
+    const d = await post('/auth/signin', {
+      email:    document.getElementById('si-email').value.trim(),
+      password: document.getElementById('si-pw').value,
+    });
+    if (!d.token) return toast(d.error || 'Sign in failed', 'err');
+    localStorage.setItem('zm_token', d.token);
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${d.token}` } }).then(r => r.json());
+    routeByStatus(me);
+  } catch (err) { toast(err.message, 'err'); }
+  finally { setLoading(btn, false, 'Sign In →'); }
+}
+
+const _googleBtnHtml = '<svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Continue with Google';
+
+function doGoogleLogin() {
+  if (!_googleCodeClient) return toast('Google sign-in loading — please wait a moment', 'err');
+  console.log('[Google] Requesting authorization code (popup mode)...');
+  _googleCodeClient.requestCode();
+}
+
+/* ─── BUSINESS DETAILS FORM ─────────────────────────────── */
+async function submitBusinessDetails(e) {
+  e.preventDefault();
+  const btn = document.getElementById('ob-btn');
+  setLoading(btn, true, 'Saving…');
+  const token = localStorage.getItem('zm_token');
+  try {
+    const d = await post('/auth/onboarding', {
+      ownerName:      document.getElementById('ob-owner').value.trim(),
+      phone:          document.getElementById('ob-phone').value.trim(),
+      brandName:      document.getElementById('ob-brand').value.trim(),
+      restaurantType: document.getElementById('ob-type').value,
+      city:           document.getElementById('ob-city').value.trim(),
+      gstNumber:      document.getElementById('ob-gst').value.trim().toUpperCase() || null,
+      fssaiLicense:   document.getElementById('ob-fssai').value.trim() || null,
+    }, token);
+    if (d.submitted) {
+      toast('Details saved! Now connect your WhatsApp.', 'ok');
+      // TODO: When enabling document upload, change the line below to:
+      // showPage('pg-documents');
+      showPage('pg-connect');
+    } else toast(d.error || 'Save failed', 'err');
+  } catch (err) { toast(err.message, 'err'); }
+  finally { setLoading(btn, false, 'Continue → Connect WhatsApp'); }
+}
+
+/* ─── DOCUMENT UPLOAD (GST + FSSAI) ─────────────────────────
+   Uncomment this block when enabling the document upload step.
+   Also uncomment the HTML block (pg-documents) and the CSS (.doc-dropzone).
+   Then change submitBusinessDetails() above: replace showPage('pg-connect') with showPage('pg-documents').
+
+let _docFiles = { gst: null, fssai: null };
+
+function handleDocSelect(input, type) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) { toast('File too large — max 10 MB', 'err'); input.value = ''; return; }
+  _docFiles[type] = file;
+  renderDocPreview(type, file);
+}
+
+function handleDocDrop(e, type) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const allowed = ['image/jpeg','image/png','image/webp','application/pdf'];
+  if (!allowed.includes(file.type)) { toast('Only PDF, JPEG, PNG or WebP allowed', 'err'); return; }
+  if (file.size > 10 * 1024 * 1024) { toast('File too large — max 10 MB', 'err'); return; }
+  _docFiles[type] = file;
+  // Sync the hidden file input
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  document.getElementById(`doc-${type}-file`).files = dt.files;
+  renderDocPreview(type, file);
+}
+
+function renderDocPreview(type, file) {
+  const label = document.getElementById(`doc-${type}-label`);
+  const sizeKB = (file.size / 1024).toFixed(0);
+  const icon = file.type === 'application/pdf' ? '📑' : '🖼️';
+  label.innerHTML = `<div class="doc-preview">
+    <span style="font-size:1.3rem">${icon}</span>
+    <span class="doc-name">${file.name}</span>
+    <span class="doc-size">${sizeKB} KB</span>
+    <span class="doc-remove" onclick="event.stopPropagation();removeDoc('${type}')">✕ Remove</span>
+  </div>`;
+}
+
+function removeDoc(type) {
+  _docFiles[type] = null;
+  document.getElementById(`doc-${type}-file`).value = '';
+  const icon = type === 'gst' ? 'GST certificate' : 'FSSAI license';
+  document.getElementById(`doc-${type}-label`).innerHTML = `<div style="text-align:center;padding:1.5rem;color:#64748b;font-size:.82rem">
+    <div style="font-size:1.5rem;margin-bottom:.3rem">📄</div>
+    Click to upload or drag & drop your ${icon}
+  </div>`;
+}
+
+async function submitDocuments(e) {
+  e.preventDefault();
+  const btn = document.getElementById('doc-btn');
+  const token = localStorage.getItem('zm_token');
+
+  if (!_docFiles.gst || !_docFiles.fssai) {
+    toast('Please upload both GST and FSSAI documents', 'err');
+    return;
+  }
+
+  setLoading(btn, true, 'Uploading documents…');
+  try {
+    const formData = new FormData();
+    formData.append('gst_number', document.getElementById('doc-gst-number').value.trim().toUpperCase());
+    formData.append('fssai_license', document.getElementById('doc-fssai-number').value.trim());
+    formData.append('fssai_expiry', document.getElementById('doc-fssai-expiry').value);
+    formData.append('gst_doc', _docFiles.gst);
+    formData.append('fssai_doc', _docFiles.fssai);
+
+    const res = await fetch('/auth/onboarding/documents', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    });
+    const d = await res.json();
+
+    if (d.ok) {
+      toast('Documents uploaded! Now connect your WhatsApp.', 'ok');
+      showPage('pg-connect');
+    } else {
+      toast(d.error || 'Upload failed', 'err');
+    }
+  } catch (err) { toast(err.message, 'err'); }
+  finally { setLoading(btn, false, 'Continue → Connect WhatsApp'); }
+}
+
+   End of document upload JS ─────────────────────────────── */
+
+/* ─── CONNECT WHATSAPP ──────────────────────────────────── */
+// Shared "Connect WhatsApp Business" inner HTML — matches the .btn-wa-connect CTA used across the dashboard
+const META_BTN_HTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg> Connect WhatsApp Business';
+
+// Popup-era postMessage listeners and _showRedirectFallback() were REMOVED.
+// All Meta auth is now redirect-only — see doConnectMeta() below and
+// /auth/meta/start on the backend.
+
+function _resetConnectBtn() {
+  const btn = document.getElementById('connect-btn');
+  if (btn) { btn.disabled = false; btn.innerHTML = META_BTN_HTML; }
+}
+
+let _connectInProgress = false;
+
+// Browser-detect popup capability — same heuristic as shared.js (kept inline
+// because index.html does NOT load shared.js).
+function _ibCanUsePopup() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/FBAN|FBAV|FB_IAB|Instagram|Twitter|Line\/|MicroMessenger|MQQBrowser|WhatsApp|Snapchat|LinkedInApp|Pinterest/i.test(ua)) return false;
+  if (/Mobile|Android|iPhone|iPad|iPod|Windows Phone|webOS|BlackBerry/i.test(ua)) return false;
+  const isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS|OPR|Opera/i.test(ua);
+  if (isSafari) return false;
+  return true;
+}
+
+// Listen for popup → opener postMessage. After a successful popup auth, the
+// callback HTML postMessages the resultId here; we then redirect to the
+// dashboard which will fetch /auth/meta/result and show the outcome.
+window.addEventListener('message', function (ev) {
+  if (!ev || ev.origin !== window.location.origin) return;
+  const d = ev.data;
+  if (!d || d.type !== 'gb-meta-connect-result' || !d.resultId) return;
+  // The dashboard's initDash already knows how to consume meta_connect_id.
+  window.location.href = '/dashboard.html?meta_connect_id=' + encodeURIComponent(d.resultId);
+});
+
+// Dual-strategy Meta connect for the standalone onboarding page (index.html).
+// Tries popup on supported browsers, falls back to redirect everywhere else.
+async function doConnectMeta() {
+  if (_connectInProgress) return;
+  _connectInProgress = true;
+  const btn = document.getElementById('connect-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spin" style="border-top-color:#fff;border-color:rgba(255,255,255,.25)"></div> Connecting…';
+  }
+
+  const jwtToken = localStorage.getItem('zm_token');
+  if (!jwtToken) {
+    _connectInProgress = false;
+    _resetConnectBtn();
+    toast('Please sign in first', 'err');
+    return;
+  }
+
+  // ── Try popup path on supported browsers. window.open MUST run synchronously
+  //    inside the click handler — before any await — or popup blockers will
+  //    refuse to open it. We open about:blank, then navigate it after fetching
+  //    the auth URL.
+  let popup = null;
+  if (_ibCanUsePopup()) {
+    try {
+      const w = 600, h = 720;
+      const left = Math.max(0, Math.round((window.screen.width - w) / 2));
+      const top  = Math.max(0, Math.round((window.screen.height - h) / 2));
+      popup = window.open('about:blank', 'gb-meta-connect',
+        'width=' + w + ',height=' + h + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes');
+    } catch (e) { popup = null; }
+    if (popup && !popup.closed) {
+      try {
+        popup.document.open();
+        popup.document.write('<!doctype html><title>Connecting…</title><p style="font-family:system-ui;text-align:center;padding:60px 20px">Loading Meta authorization…</p>');
+        popup.document.close();
+      } catch (e) {}
+    } else {
+      popup = null; // blocked
+    }
+  }
+
+  try {
+    const res = await fetch('/auth/meta/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwtToken },
+      body: JSON.stringify({
+        mode: popup ? 'popup' : 'redirect',
+        return_to: '/dashboard',
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.authUrl) {
+      if (popup) try { popup.close(); } catch (e) {}
+      _connectInProgress = false;
+      _resetConnectBtn();
+      toast(data.error || ('Could not start Meta connection (HTTP ' + res.status + ')'), 'err');
+      return;
+    }
+
+    if (popup) {
+      // Popup path — navigate the popup; the postMessage listener above will
+      // catch the result. Poll for popup-closed-without-result to detect cancel.
+      popup.location.href = data.authUrl;
+      const poll = setInterval(function () {
+        if (popup.closed) {
+          clearInterval(poll);
+          if (_connectInProgress) {
+            _connectInProgress = false;
+            _resetConnectBtn();
+            toast('Connection cancelled', 'nfo');
+          }
+        }
+      }, 500);
+      return;
+    }
+
+    // Redirect path — full-page navigation to Meta. _connectInProgress stays
+    // true on purpose because the navigation aborts any further JS.
+    window.location.href = data.authUrl;
+  } catch (err) {
+    if (popup) try { popup.close(); } catch (e) {}
+    _connectInProgress = false;
+    _resetConnectBtn();
+    toast((err && err.message) || 'Network error starting Meta connection', 'err');
+  }
+}
+
+/* ─── CHECK STATUS ──────────────────────────────────────── */
+async function checkStatus() {
+  const token = localStorage.getItem('zm_token');
+  if (!token) return showPage('pg-land');
+  toast('Checking…', 'nfo');
+  try {
+    const me = await fetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
+    routeByStatus(me);
+  } catch { toast('Could not check status', 'err'); }
+}
+
+/* ─── LOGOUT ─────────────────────────────────────────────── */
+function doLogout() { localStorage.removeItem('zm_token'); showPage('pg-land'); }
+
+/* ─── HELPERS ────────────────────────────────────────────── */
+async function post(url, body, token) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+  return r.json();
+}
+function setLoading(btn, loading, label) {
+  btn.disabled = loading;
+  btn.innerHTML = loading ? `<div class="spin"></div> ${label}` : label;
+}
+let _tt;
+function toast(msg, type = 'ok') {
+  const el = document.getElementById('toast');
+  el.innerHTML = `<span>${{ok:'✓',err:'✗',nfo:'ℹ'}[type]||'•'}</span><span>${msg}</span>`;
+  el.className = 'on ' + type; clearTimeout(_tt);
+  _tt = setTimeout(() => el.classList.remove('on'), 3800);
+}
+</script>
+</body>
+</html>
