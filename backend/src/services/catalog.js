@@ -506,7 +506,66 @@ function _buildItemRequest(item, restaurant, branch) {
 
 // ─── SYNC ONE BRANCH CATALOG ──────────────────────────────────
 // Syncs branch items to the restaurant's MAIN catalog
+// Concurrency lock for per-branch sync. Uses `catalog_sync_locks` with
+// branch_id as the key; lock_expires_at is a safety net for crashed workers
+// (not a sync timeout), checked inline in the acquire filter — no TTL index.
+const BRANCH_SYNC_LOCK_TTL_MS = 2 * 60 * 1000;
+const BRANCH_SYNC_ITEM_CAP    = 5000;
+
 const syncBranchCatalog = async (branchId) => {
+  const LOCK_KEY = `branch:${String(branchId)}`;
+  const lockAcquiredAt = new Date();
+  const lockExpiresAt  = new Date(lockAcquiredAt.getTime() + BRANCH_SYNC_LOCK_TTL_MS);
+
+  // Acquire the lock. findOneAndUpdate with upsert:true and a filter that
+  // only matches "no doc" or "expired doc". If a live lock exists, the
+  // upsert collides on _id and Mongo throws E11000 — we treat that as
+  // "held by another worker" and bail.
+  try {
+    await col('catalog_sync_locks').findOneAndUpdate(
+      {
+        _id: LOCK_KEY,
+        $or: [
+          { lock_expires_at: { $exists: false } },
+          { lock_expires_at: { $lte: lockAcquiredAt } },
+        ],
+      },
+      {
+        $set: {
+          branch_id:       String(branchId),
+          locked_at:       lockAcquiredAt,
+          lock_expires_at: lockExpiresAt,
+        },
+      },
+      { upsert: true }
+    );
+  } catch (err) {
+    if (err && err.code === 11000) {
+      log.info({ branchId }, 'Branch sync skipped: another worker holds the lock');
+      return {
+        success: false, skipped: true,
+        branchName: null, catalogId: null,
+        total_products: 0, synced_count: 0, skipped_count: 0, skipped_reasons: [],
+        total: 0, updated: 0, deleted: 0, failed: 0,
+        errors: ['SYNC_IN_PROGRESS'],
+        success_rate: 0,
+      };
+    }
+    throw err;
+  }
+
+  try {
+    return await _syncBranchCatalogLocked(branchId);
+  } finally {
+    // Only release if our own lock timestamp is still there — don't clobber
+    // a lock taken over by another worker after ours expired mid-run.
+    await col('catalog_sync_locks')
+      .deleteOne({ _id: LOCK_KEY, locked_at: lockAcquiredAt })
+      .catch(() => { /* best-effort release */ });
+  }
+};
+
+const _syncBranchCatalogLocked = async (branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!branch) throw new Error('Branch not found');
 
@@ -620,6 +679,55 @@ const syncBranchCatalog = async (branchId) => {
   // operates on the eligible-only set.
   items.length = 0;
   items.push(...syncItems);
+
+  // ── META CATALOG ITEM CAP ──
+  // Meta enforces a hard 5000-product-per-catalog limit. Guard here so we
+  // never ship a partial batch that would leave the catalog in an
+  // inconsistent state. NOT the batch chunk size (BATCH_SIZE) — that caps
+  // requests per batch endpoint call, which is a different thing.
+  if (items.length > BRANCH_SYNC_ITEM_CAP) {
+    log.warn(
+      { branchId, itemCount: items.length, cap: BRANCH_SYNC_ITEM_CAP },
+      'catalog sync: branch exceeds Meta 5000-item cap — aborting before push'
+    );
+    try {
+      await col('sync_logs').insertOne({
+        _id:            newId(),
+        restaurant_id:  String(branch.restaurant_id),
+        branch_id:      String(branchId),
+        product_id:     null,
+        status:         'failed',
+        reason:         'ITEM_CAP_EXCEEDED',
+        item_count:     items.length,
+        cap:            BRANCH_SYNC_ITEM_CAP,
+        created_at:     new Date(),
+      });
+    } catch (_) { /* audit-only */ }
+    _writeSyncSummary({
+      restaurantId: branch.restaurant_id,
+      branchId,
+      total:        totalProducts,
+      synced:       0,
+      skipped:      skipped.length,
+      successRate:  0,
+      mode:         features.ENABLE_META_VALIDATION ? features.META_VALIDATION_MODE : 'disabled',
+    });
+    return {
+      success:         false,
+      branchName:      branch.name,
+      catalogId:       branch.catalog_id,
+      total_products:  totalProducts,
+      synced_count:    0,
+      skipped_count:   skipped.length,
+      skipped_reasons: skippedReasonsOut,
+      total:           items.length,
+      updated:         0,
+      deleted:         0,
+      failed:          items.length,
+      errors:          [`ITEM_CAP_EXCEEDED: ${items.length} items exceeds Meta catalog cap of ${BRANCH_SYNC_ITEM_CAP}`],
+      success_rate:    0,
+    };
+  }
 
   // Avoid double-writing audit rows: in log_only mode, invalid products
   // were already logged above as status='synced' with a reason code.
@@ -898,6 +1006,9 @@ const updateProduct = async (menuItemId) => {
 };
 
 // ─── DELETE SINGLE PRODUCT FROM CATALOG ──────────────────────
+// Retries up to 3 times with a 1-second gap on Meta API failure. If all
+// attempts fail, a delete_failed row is written to sync_logs so the item
+// can be reconciled later (Meta keeps the stale product otherwise).
 const deleteProduct = async (menuItem, branchId) => {
   const branch = await col('branches').findOne({ _id: branchId });
   if (!branch || !menuItem?.retailer_id) return { skipped: true };
@@ -909,19 +1020,113 @@ const deleteProduct = async (menuItem, branchId) => {
   const { token } = await _getAccessToken(branch.restaurant_id);
   initSdk(token);
 
-  try {
-    const catalogObj = new ProductCatalog(catalogId);
-    await catalogObj.createItemsBatch([], {
-      allow_upsert: true,
-      item_type: 'PRODUCT_ITEM',
-      requests: [{ method: 'DELETE', retailer_id: menuItem.retailer_id, item_type: 'PRODUCT_ITEM' }],
-    });
-    return { success: true, retailer_id: menuItem.retailer_id };
-  } catch (err) {
-    const errMsg = err._error?.error?.message || err.message;
-    log.error({ err }, 'deleteProduct failed');
-    return { success: false, error: errMsg };
+  const MAX_ATTEMPTS = 3;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const catalogObj = new ProductCatalog(catalogId);
+      await catalogObj.createItemsBatch([], {
+        allow_upsert: true,
+        item_type: 'PRODUCT_ITEM',
+        requests: [{ method: 'DELETE', retailer_id: menuItem.retailer_id, item_type: 'PRODUCT_ITEM' }],
+      });
+      return { success: true, retailer_id: menuItem.retailer_id, attempts: attempt };
+    } catch (err) {
+      lastErr = err;
+      const errMsg = err._error?.error?.message || err.message;
+      log.warn({ err, attempt, retailerId: menuItem.retailer_id }, 'deleteProduct attempt failed');
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else {
+        log.error({ err, retailerId: menuItem.retailer_id }, 'deleteProduct failed after retries');
+        try {
+          await col('sync_logs').insertOne({
+            _id:            newId(),
+            restaurant_id:  String(branch.restaurant_id),
+            branch_id:      String(branchId),
+            product_id:     menuItem._id ? String(menuItem._id) : null,
+            retailer_id:    menuItem.retailer_id,
+            status:         'failed',
+            reason:         'DELETE_FAILED',
+            error:          errMsg,
+            delete_failed:  true,
+            attempts:       MAX_ATTEMPTS,
+            created_at:     new Date(),
+          });
+        } catch (_) { /* audit-only */ }
+        return { success: false, error: errMsg, attempts: MAX_ATTEMPTS };
+      }
+    }
   }
+  // Unreachable — the loop either returns success or returns after MAX_ATTEMPTS.
+  return { success: false, error: lastErr?.message || 'unknown', attempts: MAX_ATTEMPTS };
+};
+
+// ─── BULK DELETE PRODUCTS FROM CATALOG ───────────────────────
+// Called after menu_items.deleteMany() in the bulk-delete route. Sends
+// explicit DELETE batch requests to Meta so removed items disappear from
+// the catalog immediately, without a full branch re-sync. Any chunk that
+// fails is recorded in sync_logs with delete_failed=true for later reconcile.
+const bulkDeleteProducts = async (items, branchId) => {
+  if (!Array.isArray(items) || !items.length) return { skipped: true };
+
+  const branch = await col('branches').findOne({ _id: branchId });
+  if (!branch) return { skipped: true, reason: 'Branch not found' };
+
+  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
+  const catalogId = restaurant?.meta_catalog_id || branch.catalog_id;
+  if (!catalogId) return { skipped: true, reason: 'No catalog for branch' };
+
+  const eligible = items.filter(i => i && i.retailer_id);
+  if (!eligible.length) return { skipped: true, reason: 'No items with retailer_id' };
+
+  const token = _getCatalogToken();
+  const BATCH_SIZE = 4999;
+  const results = { deleted: 0, failed: 0, errors: [] };
+
+  for (let i = 0; i < eligible.length; i += BATCH_SIZE) {
+    const chunk = eligible.slice(i, i + BATCH_SIZE);
+    const requests = chunk.map(it => ({
+      method: 'DELETE',
+      retailer_id: it.retailer_id,
+      item_type: 'PRODUCT_ITEM',
+    }));
+
+    try {
+      await axios.post(
+        `${GRAPH}/${catalogId}/items_batch`,
+        {
+          item_type: 'PRODUCT_ITEM',
+          requests: JSON.stringify(requests),
+        },
+        { params: { access_token: token }, timeout: 30000 }
+      );
+      results.deleted += chunk.length;
+      log.info({ branchId, catalogId, count: chunk.length }, 'bulkDeleteProducts chunk succeeded');
+    } catch (err) {
+      const errMsg = err.response?.data?.error?.message || err.message;
+      log.error({ err, branchId, chunkSize: chunk.length }, 'bulkDeleteProducts chunk failed');
+      results.failed += chunk.length;
+      results.errors.push(errMsg);
+      try {
+        await col('sync_logs').insertOne({
+          _id:              newId(),
+          restaurant_id:    String(branch.restaurant_id),
+          branch_id:        String(branchId),
+          product_id:       null,
+          retailer_ids:     chunk.map(it => it.retailer_id),
+          status:           'failed',
+          reason:           'BULK_DELETE_FAILED',
+          error:            errMsg,
+          delete_failed:    true,
+          count:            chunk.length,
+          created_at:       new Date(),
+        });
+      } catch (_) { /* audit-only */ }
+    }
+  }
+
+  return { success: results.failed === 0, ...results };
 };
 
 // ─── TOGGLE SINGLE ITEM AVAILABILITY ─────────────────────────
@@ -2109,6 +2314,7 @@ module.exports = {
   addProduct,
   updateProduct,
   deleteProduct,
+  bulkDeleteProducts,
   setItemAvailability,
   syncItemAvailability,
   syncBulkAvailability,

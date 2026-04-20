@@ -2318,6 +2318,40 @@ router.patch('/restaurants/:id/campaign-cap', requireAdminAuth('restaurants', 'm
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// ═══════════════════════════════════════════════════════════════
+// STAFF PIN — generate / status
+// Plain PIN is returned ONLY by /generate (once); /status never leaks it.
+// ═══════════════════════════════════════════════════════════════
+router.post('/restaurants/:restaurantId/staff-pin/generate', requireAdminAuth('restaurants', 'manage'), async (req, res) => {
+  try {
+    const { generateStaffPin } = require('../services/staffPin');
+    const { pin, updatedAt } = await generateStaffPin(req.params.restaurantId);
+    return res.json({ success: true, pin, staff_pin_updated_at: updatedAt });
+  } catch (e) {
+    if (e.message === 'restaurant not found') return res.status(404).json({ error: 'Restaurant not found' });
+    log.error({ err: e, restaurantId: req.params.restaurantId }, 'staff-pin generate failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+router.get('/restaurants/:restaurantId/staff-pin/status', requireAdminAuth('restaurants', 'read'), async (req, res) => {
+  try {
+    const r = await col('restaurants').findOne(
+      { _id: req.params.restaurantId },
+      { projection: { staff_pin: 1, staff_pin_updated_at: 1 } }
+    );
+    if (!r) return res.status(404).json({ error: 'Restaurant not found' });
+    return res.json({
+      success: true,
+      has_pin: !!r.staff_pin,
+      staff_pin_updated_at: r.staff_pin_updated_at || null,
+    });
+  } catch (e) {
+    log.error({ err: e, restaurantId: req.params.restaurantId }, 'staff-pin status failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // PATCH /api/admin/restaurants/:id/verification — manually set verification status
 router.patch('/restaurants/:id/verification', express.json(), async (req, res) => {
   try {
@@ -2343,8 +2377,7 @@ router.get('/meta/token-debug', async (req, res) => {
     const result = await metaConfig.verifyToken();
     res.json({
       systemUserToken: !!metaConfig.systemUserToken,
-      catalogToken: !!metaConfig.catalogToken,
-      catalogTokenSource: process.env.META_CATALOG_TOKEN ? 'META_CATALOG_TOKEN' : (metaConfig.systemUserToken ? 'META_SYSTEM_USER_TOKEN (fallback)' : 'NONE'),
+      catalogTokenSource: metaConfig.systemUserToken ? 'META_SYSTEM_USER_TOKEN' : 'NONE',
       appId: metaConfig.appId || null,
       appSecret: !!metaConfig.appSecret,
       businessId: metaConfig.businessId || null,

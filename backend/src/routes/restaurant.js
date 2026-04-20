@@ -1265,11 +1265,23 @@ router.post('/branches/csv', async (req, res) => {
 router.patch('/branches/:id', async (req, res) => {
   try {
     const {
-      isOpen, acceptsOrders, deliveryRadiusKm, catalogId,
+      name, isOpen, acceptsOrders, deliveryRadiusKm, catalogId,
       basePrepTimeMin, avgItemPrepMin, managerPhone,
       address, city, pincode, latitude, longitude, area, state, place_id,
     } = req.body;
     const $set = {};
+    let nameChanged = false;
+    if (name               !== undefined) {
+      const trimmed = String(name).trim();
+      if (trimmed) {
+        $set.name          = trimmed;
+        // Regenerate branch_slug from the new name so custom_label_0 (derived
+        // from branch.branch_slug) picks up the rename on the next catalog
+        // sync. Uses the same slugify() as makeRetailerId for consistency.
+        $set.branch_slug   = slugify(trimmed, 20) || req.params.id.slice(0, 8);
+        nameChanged = true;
+      }
+    }
     if (isOpen             !== undefined) $set.is_open              = isOpen;
     if (acceptsOrders      !== undefined) $set.accepts_orders       = acceptsOrders;
     if (deliveryRadiusKm   !== undefined) $set.delivery_radius_km   = deliveryRadiusKm;
@@ -1291,6 +1303,17 @@ router.patch('/branches/:id', async (req, res) => {
     );
     // Invalidate cached branch data
     require('../config/memcache').del(`branch:${req.params.id}`);
+
+    // If the branch was renamed, its branch_slug changed — the existing Meta
+    // product set filter (custom_label_0 = {old slug}) is now stale. Fire
+    // product-set sync in the background so the filter re-aligns with the
+    // new slug on the next item sync.
+    if (nameChanged) {
+      catalog.syncProductSets(req.params.id).catch(err =>
+        logger.error({ err, branchId: req.params.id }, 'syncProductSets after rename failed')
+      );
+    }
+
     res.json({ success: true });
 
     if (isOpen !== undefined) {
@@ -1774,15 +1797,31 @@ router.post('/menu/bulk-delete', requirePermission('manage_menu'), async (req, r
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array required' });
 
-    const items = await col('menu_items').find({ _id: { $in: ids } }).toArray();
+    // Fetch full docs BEFORE deleteMany — we need retailer_id + branch_id to
+    // fire explicit DELETEs to Meta. Project the fields actually used so
+    // large menus don't drag the whole document set into memory.
+    const items = await col('menu_items')
+      .find(
+        { _id: { $in: ids } },
+        { projection: { _id: 1, retailer_id: 1, branch_id: 1, branch_ids: 1 } }
+      )
+      .toArray();
     if (!items.length) return res.json({ deleted: 0 });
 
     await col('menu_items').deleteMany({ _id: { $in: ids } });
 
-    // Invalidate caches and queue catalog sync
     const branchIds = [...new Set(items.map(i => i.branch_id).filter(Boolean))];
     branchIds.forEach(bid => memcache.del(`branch:${bid}:menu`));
-    queueSync(req.restaurantId, 'branch', branchIds);
+
+    // Fire-and-forget explicit DELETE batches to Meta, one call per branch.
+    // Replaces the prior queueSync() re-sync approach — that left the window
+    // where Meta still served the deleted items until the next full sync.
+    for (const bid of branchIds) {
+      const bItems = items.filter(i => i.branch_id === bid);
+      if (!bItems.length) continue;
+      catalog.bulkDeleteProducts(bItems, bid)
+        .catch(err => logger.error({ err, branchId: bid, count: bItems.length }, 'bulkDeleteProducts failed'));
+    }
 
     res.json({ deleted: items.length });
 
@@ -7641,6 +7680,102 @@ router.get('/order-settlements/:id', async (req, res) => {
       updated_at: settlement.updated_at,
     });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// MARKETING SEND-FROM NUMBER
+// Lets a restaurant choose which of their WABA-registered numbers
+// is used as the sender for marketing campaigns. Backed by the
+// `marketingPhoneNumberId` field on restaurants.
+// ═══════════════════════════════════════════════════════════════
+
+// Fetch the list of phone numbers attached to a WABA. Used by both
+// the GET /waba-numbers handler and the PUT /marketing-number
+// validator, so errors bubble up the same way in both paths.
+async function _fetchWabaPhoneNumbers(wabaId) {
+  const res = await axios.get(`${metaConfig.graphUrl}/${wabaId}/phone_numbers`, {
+    params: {
+      fields: 'id,display_phone_number,verified_name,quality_rating',
+      access_token: metaConfig.getMessagingToken(),
+    },
+    timeout: 15000,
+  });
+  return res.data?.data || [];
+}
+
+router.get('/:restaurantId/waba-numbers', async (req, res) => {
+  try {
+    if (req.restaurantId !== req.params.restaurantId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const wa = await col('whatsapp_accounts').findOne({
+      restaurant_id: req.params.restaurantId,
+      is_active: true,
+    });
+    if (!wa?.waba_id) return res.status(404).json({ error: 'No active WABA for restaurant' });
+
+    const numbers = await _fetchWabaPhoneNumbers(wa.waba_id);
+    res.json({ numbers });
+  } catch (e) {
+    const metaErr = e.response?.data?.error?.message;
+    logger.error({ err: e, metaErr }, 'waba-numbers fetch failed');
+    res.status(500).json({ success: false, message: metaErr || 'Internal server error' });
+  }
+});
+
+router.put('/:restaurantId/marketing-number', async (req, res) => {
+  try {
+    if (req.restaurantId !== req.params.restaurantId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const { phoneNumberId, displayName } = req.body || {};
+
+    if (phoneNumberId === null || phoneNumberId === '' || typeof phoneNumberId === 'undefined') {
+      await col('restaurants').updateOne(
+        { _id: req.params.restaurantId },
+        { $set: { marketingPhoneNumberId: null, marketingPhoneDisplayName: null, updated_at: new Date() } }
+      );
+      invalidateCache(`restaurant:${req.params.restaurantId}:profile`);
+      memcache.del(`restaurant:${req.params.restaurantId}`);
+      return res.json({ success: true, marketingPhoneNumberId: null, marketingPhoneDisplayName: null });
+    }
+
+    const wa = await col('whatsapp_accounts').findOne({
+      restaurant_id: req.params.restaurantId,
+      is_active: true,
+    });
+    if (!wa?.waba_id) return res.status(404).json({ error: 'No active WABA for restaurant' });
+
+    const numbers = await _fetchWabaPhoneNumbers(wa.waba_id);
+    const match = numbers.find(n => String(n.id) === String(phoneNumberId));
+    if (!match) {
+      return res.status(400).json({ error: 'phoneNumberId does not belong to this WABA' });
+    }
+
+    const resolvedDisplayName = displayName || match.verified_name || match.display_phone_number || null;
+    await col('restaurants').updateOne(
+      { _id: req.params.restaurantId },
+      {
+        $set: {
+          marketingPhoneNumberId: String(phoneNumberId),
+          marketingPhoneDisplayName: resolvedDisplayName,
+          updated_at: new Date(),
+        },
+      }
+    );
+    invalidateCache(`restaurant:${req.params.restaurantId}:profile`);
+    memcache.del(`restaurant:${req.params.restaurantId}`);
+
+    res.json({
+      success: true,
+      marketingPhoneNumberId: String(phoneNumberId),
+      marketingPhoneDisplayName: resolvedDisplayName,
+    });
+  } catch (e) {
+    const metaErr = e.response?.data?.error?.message;
+    logger.error({ err: e, metaErr }, 'marketing-number set failed');
+    res.status(500).json({ success: false, message: metaErr || 'Internal server error' });
+  }
 });
 
 module.exports = router;

@@ -214,6 +214,14 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
     });
     if (!waAccount) throw new Error('No active WhatsApp account');
 
+    // Route campaign sends through the restaurant-configured marketing
+    // number when set (falls back to primary WABA number otherwise).
+    const restaurant = await col('restaurants').findOne({ _id: campaign.restaurant_id });
+    const outboundPid = wa.getOutboundNumberId({
+      ...restaurant,
+      phoneNumberId: waAccount.phone_number_id,
+    });
+
     const customers = await getSegmentCustomers(campaign.restaurant_id, campaign.segment, {
       tags: campaign.tags,
       tagMatchMode: campaign.tag_match_mode,
@@ -268,7 +276,7 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
           const toId = customer.wa_phone || customer.bsuid;
           if (!toId) { failed++; batchFailed++; continue; }
           const result = await sendMPM(
-            waAccount.phone_number_id,
+            outboundPid,
             waAccount.access_token,
             toId,
             catalogId,

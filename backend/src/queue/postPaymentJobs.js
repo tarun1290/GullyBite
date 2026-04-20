@@ -245,7 +245,14 @@ async function _handleLoyaltyAward(payload) {
     if (reward.tierUpgraded) {
       msg = `🎊 *Congratulations!* You've been upgraded to *${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}*!\n\n` + msg;
     }
-    await wa.sendText(waAcc.phone_number_id, waToken, toId, msg);
+    // Loyalty messaging is promotional — route via the restaurant's
+    // marketing number when set. Rating request below stays transactional.
+    const restaurant = await col('restaurants').findOne({ _id: order.restaurant_id });
+    const loyaltyPid = wa.getOutboundNumberId({
+      ...restaurant,
+      phoneNumberId: waAcc.phone_number_id,
+    });
+    await wa.sendText(loyaltyPid, waToken, toId, msg);
   }
 
   // Rating request — best-effort. Stamps rating_requested_at on success

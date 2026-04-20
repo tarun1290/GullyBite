@@ -168,7 +168,12 @@ async function sendRecoveryReminder(abandonedCartId, reminderNumber) {
   const cartTotal = Math.round(cart.cart_total || 0);
   const wa = require('./whatsapp');
   const metaConfig = require('../config/meta');
-  const pid = waAcc.phone_number_id;
+  // Cart-recovery is promotional (re-engagement) — route via the
+  // restaurant-configured marketing number when set.
+  const pid = wa.getOutboundNumberId({
+    ...restaurant,
+    phoneNumberId: waAcc.phone_number_id,
+  });
   const token = metaConfig.systemUserToken;
   const to = cart.customer_phone;
 

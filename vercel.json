@@ -3,14 +3,9 @@
   "installCommand": "cd frontend && npm install --include=dev",
   "outputDirectory": "frontend/dist",
   "cleanUrls": true,
-  "functions": {
-    "api/[...all].js": {
-      "includeFiles": "backend/**"
-    }
-  },
   "rewrites": [
-    { "source": "/auth/:path*", "destination": "/api/[...all]" },
-    { "source": "/api/:path*", "destination": "/api/[...all]" },
+    { "source": "/auth/:path*", "destination": "https://gullybite.duckdns.org/auth/:path*" },
+    { "source": "/api/:path*", "destination": "https://gullybite.duckdns.org/api/:path*" },
     { "source": "/((?!api|auth).*)", "destination": "/index.html" }
   ],
   "headers": [

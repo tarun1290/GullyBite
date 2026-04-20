@@ -19,17 +19,10 @@ const log = require('../utils/logger').child({ component: 'meta' });
 
 const metaConfig = {
   // ── Tokens ──────────────────────────────────────────────────
-  // Primary token — used for ALL Meta API calls (messaging + catalog + business)
+  // Single source of truth for ALL Meta API calls (messaging + catalog + business).
+  // Any legacy *_CATALOG_TOKEN env vars are deliberately NOT read here — they were
+  // User tokens that expire, and supporting them invited silent misconfiguration.
   get systemUserToken() { return process.env.META_SYSTEM_USER_TOKEN; },
-
-  // Catalog token: META_CATALOG_TOKEN if explicitly set, otherwise same as system user token.
-  // WA_CATALOG_TOKEN is deliberately NOT checked — it was a legacy User Token that expires.
-  get catalogToken() {
-    if (process.env.META_CATALOG_TOKEN && process.env.META_CATALOG_TOKEN !== process.env.META_SYSTEM_USER_TOKEN) {
-      log.warn('META_CATALOG_TOKEN is set separately from META_SYSTEM_USER_TOKEN — ensure both are valid System User tokens');
-    }
-    return process.env.META_CATALOG_TOKEN || process.env.META_SYSTEM_USER_TOKEN;
-  },
 
   // ── App credentials (OAuth flow during Embedded Signup only) ──
   get appId()     { return process.env.META_APP_ID; },
@@ -56,10 +49,13 @@ const metaConfig = {
     return t;
   },
 
-  /** Token for Catalog / Commerce API calls. Falls back to systemUserToken. */
+  /** Token for Catalog / Commerce API calls. Uses the single System User token. */
   getCatalogToken() {
-    const t = this.catalogToken;
-    if (!t) throw new Error('Catalog API is not configured. Please contact support.');
+    const t = this.systemUserToken;
+    if (!t) throw new Error(
+      'META_SYSTEM_USER_TOKEN is not set. Set a System User token with whatsapp_business_messaging, ' +
+      'whatsapp_business_management, catalog_management, and business_management scopes before starting the server.'
+    );
     return t;
   },
 
@@ -74,9 +70,6 @@ const metaConfig = {
     const mask = (v) => v ? `set (${v.length} chars)` : 'NOT SET';
     log.info({
       systemUserToken: mask(this.systemUserToken),
-      catalogToken: process.env.META_CATALOG_TOKEN
-        ? mask(process.env.META_CATALOG_TOKEN)
-        : 'not set → using META_SYSTEM_USER_TOKEN',
       appId: mask(this.appId),
       appSecret: mask(this.appSecret),
       loginConfigId: this.loginConfigId || 'NOT SET',
@@ -203,5 +196,15 @@ const metaConfig = {
     }
   },
 };
+
+// Fail loudly at module load if the single required token is missing.
+// Startup-time validation so a missing env var blows up on boot instead of
+// silently falling through to 401s from Meta on every catalog/messaging call.
+if (!process.env.META_SYSTEM_USER_TOKEN) {
+  throw new Error(
+    'META_SYSTEM_USER_TOKEN is not set. Set a System User token with whatsapp_business_messaging, ' +
+    'whatsapp_business_management, catalog_management, and business_management scopes before starting the server.'
+  );
+}
 
 module.exports = metaConfig;

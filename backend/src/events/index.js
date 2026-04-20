@@ -17,6 +17,7 @@ const bus = require('./bus');
 const whatsappListener = require('./listeners/whatsappListener');
 const notificationListener = require('./listeners/notificationListener');
 const analyticsListener = require('./listeners/analyticsListener');
+const sseListener = require('./listeners/sseListener');
 
 const EVENTS = ['order.created', 'order.updated', 'payment.completed', 'user.created'];
 
@@ -27,6 +28,9 @@ if (!global.__eventsBooted) {
   // Restaurant-manager notifications — order.created + order.updated.
   bus.on('order.created', notificationListener.onOrderCreated);
   bus.on('order.updated', notificationListener.onOrderUpdated);
+
+  // Staff POS SSE fan-out — fire-and-forget push to tablets.
+  bus.on('order.created', sseListener.onOrderCreated);
 
   // Analytics/persistence — every event in EVENTS gets archived.
   for (const ev of EVENTS) {

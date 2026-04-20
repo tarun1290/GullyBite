@@ -14,7 +14,7 @@ const axios = require('axios');
 
 const MONGO_URI = process.env.MONGODB_URI;
 const MONGO_DB = process.env.MONGODB_DB || 'gullybite';
-const META_TOKEN = process.env.META_CATALOG_TOKEN || process.env.WA_CATALOG_TOKEN || process.env.META_SYSTEM_USER_TOKEN;
+const META_TOKEN = process.env.META_SYSTEM_USER_TOKEN;
 const API_VERSION = process.env.WA_API_VERSION || 'v25.0';
 const GRAPH = `https://graph.facebook.com/${API_VERSION}`;
 
@@ -132,9 +132,9 @@ async function main() {
   summary.tokenValid = false;
   summary.tokenScopes = [];
   if (!META_TOKEN) {
-    console.log('  ❌ No catalog token found (META_CATALOG_TOKEN, WA_CATALOG_TOKEN, META_SYSTEM_USER_TOKEN all unset)');
+    console.log('  ❌ No catalog token found (META_SYSTEM_USER_TOKEN unset)');
   } else {
-    console.log(`  Token source: ${process.env.META_CATALOG_TOKEN ? 'META_CATALOG_TOKEN' : process.env.WA_CATALOG_TOKEN ? 'WA_CATALOG_TOKEN' : 'META_SYSTEM_USER_TOKEN'}`);
+    console.log(`  Token source: META_SYSTEM_USER_TOKEN`);
     console.log(`  Token length: ${META_TOKEN.length} chars`);
     try {
       const { data } = await axios.get('https://graph.facebook.com/debug_token', {

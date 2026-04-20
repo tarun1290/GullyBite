@@ -745,4 +745,20 @@ const sendMessage = async ({ brand_id, business_id, phone_number_id, access_toke
 
 // DEPRECATED: sendCheckoutOrder and sendCheckoutTemplate removed — sendPaymentRequest is the single checkout function
 
-module.exports = { sendMsg, sendMessage, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendCouponTemplate, sendCheckoutButtonTemplate, sendFlow, sendDocument, markRead, showTyping };
+// ─── OUTBOUND NUMBER SELECTION ────────────────────────────────
+// Picks the Meta phone_number_id to use for OUTBOUND sends.
+// Campaign / promotional paths (broadcasts, cart recovery, loyalty
+// marketing) should call this. Transactional paths (order
+// confirmation, payment status, order updates) must NOT — they
+// always send from the primary WABA number.
+//
+// Accepts both camelCase (`phoneNumberId`) and snake_case
+// (`phone_number_id`) fallbacks so callers can pass the restaurant
+// doc directly or a composed object `{ ...restaurant, phone_number_id }`.
+const getOutboundNumberId = (restaurant) => {
+  const mkt = restaurant?.marketingPhoneNumberId;
+  if (typeof mkt === 'string' && mkt.length > 0) return mkt;
+  return restaurant?.phoneNumberId || restaurant?.phone_number_id || null;
+};
+
+module.exports = { sendMsg, sendMessage, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendCouponTemplate, sendCheckoutButtonTemplate, sendFlow, sendDocument, markRead, showTyping, getOutboundNumberId };

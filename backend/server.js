@@ -253,6 +253,9 @@ app.use('/api/restaurant', express.json({ limit: '10mb' }), require('./src/route
 // Re-enable by uncommenting and setting POS_ENABLED=true.
 // app.use('/api/restaurant/integrations', express.json(), require('./src/routes/integrations'));
 app.use('/api/upload', express.json(), require('./src/routes/upload'));
+// Staff POS router — PIN auth + SSE + orders/menu. Body parser is applied
+// per-route inside the router since /stream must not consume the body.
+app.use('/api/staff', require('./src/routes/staff'));
 app.use('/api/admin', express.json(), require('./src/routes/admin'));
 app.use('/api/admin/pincodes', express.json(), require('./src/routes/adminPincodes'));
 // Phase 1 (Commit A): customer-facing API — addresses + profile. Cart
