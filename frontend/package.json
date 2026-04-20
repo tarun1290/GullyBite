@@ -1,5 +1,5 @@
 {
-  "name": "frontend-react",
+  "name": "frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -26,6 +26,8 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
-    "vite": "^8.0.4"
+    "vite": "^8.0.4",
+    "vite-plugin-pwa": "^1.2.0",
+    "workbox-window": "^7.4.0"
   }
 }

@@ -409,6 +409,20 @@ export async function disconnectWhatsapp() {
   return data;
 }
 
+// GET /api/restaurant/:id/waba-numbers — lists phone numbers attached to
+// the restaurant's WABA. Backend verifies caller owns :id.
+export async function getWabaNumbers(restaurantId) {
+  const { data } = await client.get(`/api/restaurant/${restaurantId}/waba-numbers`);
+  return data;
+}
+
+// PUT /api/restaurant/:id/marketing-number — body { phoneNumberId, displayName }.
+// Pass phoneNumberId=null to clear.
+export async function setMarketingNumber(restaurantId, body) {
+  const { data } = await client.put(`/api/restaurant/${restaurantId}/marketing-number`, body);
+  return data;
+}
+
 // POST /auth/change-password — body { currentPassword, newPassword } → { ok }
 // Legacy: settings.js:1542 (doChangePassword).
 export async function changePassword(body) {
@@ -846,5 +860,41 @@ export async function deleteUser(id) {
 // PUT /api/restaurant/users/:id/reset-pin body { pin } (restaurant.js:365)
 export async function resetUserPin(id, pin) {
   const { data } = await client.put(`/api/restaurant/users/${id}/reset-pin`, { pin });
+  return data;
+}
+
+// ── Ratings tab ──────────────────────────────────────────────────────
+// Mirrors loadRatings() in legacy js/tabs/restaurant.js:149.
+
+// GET /api/restaurant/ratings/summary?branch_id=
+// → { total, avg_overall, avg_taste, avg_packing, avg_delivery, avg_value, recent_comments[] }
+export async function getRatingsSummary(params = {}) {
+  const { data } = await client.get('/api/restaurant/ratings/summary', { params });
+  return data;
+}
+
+// GET /api/restaurant/ratings?page=&limit=&branch_id=
+// → { ratings: [{order_number, customer_name, branch_name, taste_rating, packing_rating,
+//                delivery_rating, value_rating, overall_rating, comment, created_at}], total, pages }
+export async function getRatings(params = {}) {
+  const { data } = await client.get('/api/restaurant/ratings', { params });
+  return data;
+}
+
+// ── Loyalty tab ──────────────────────────────────────────────────────
+// Mirrors loadLoyalty() in legacy js/tabs/restaurant.js:385.
+
+// GET /api/restaurant/loyalty/stats
+// → { total_members, total_points_issued, total_points_redeemed, tiers:{platinum,gold,silver,bronze} }
+export async function getLoyaltyStats() {
+  const { data } = await client.get('/api/restaurant/loyalty/stats');
+  return data;
+}
+
+// GET /api/restaurant/loyalty/customers?page=&limit=
+// → { customers: [{customer_name, wa_phone, bsuid, points_balance, lifetime_points,
+//                  tier, total_orders, total_spent_rs}], total, pages }
+export async function getLoyaltyCustomers(params = {}) {
+  const { data } = await client.get('/api/restaurant/loyalty/customers', { params });
   return data;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../components/Toast.jsx';
+import StaffAccess from '../../components/admin/StaffAccess.jsx';
 import {
   getAdminRestaurants,
   updateAdminRestaurant,
@@ -134,7 +135,7 @@ export default function AdminRestaurants() {
               {rows.length ? 'No restaurants match your search.' : 'No restaurants yet.'}
             </p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
+            <div className="tbl-card" style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ textAlign: 'left', fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase' }}>
@@ -188,34 +189,37 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
     `Cancelled: ${o.cancelled || 0}`,
   ].join('\n');
 
+  const staffPinOpen = pending?.kind === 'staffPin';
+
   return (
-    <tr style={{ borderBottom: '1px solid var(--rim)' }}>
-      <td style={{ padding: '.5rem' }}>
+    <>
+    <tr style={{ borderBottom: staffPinOpen ? 'none' : '1px solid var(--rim)' }}>
+      <td data-label="Business" style={{ padding: '.5rem' }}>
         <div style={{ fontWeight: 600, fontSize: '.84rem' }}>{r.business_name}</div>
         <div style={{ color: 'var(--dim)', fontSize: '.7rem', fontFamily: 'monospace' }}>{(r.id || '').slice(0, 8)}</div>
       </td>
-      <td style={{ padding: '.5rem', fontSize: '.8rem' }}>{r.owner_name || '—'}</td>
-      <td style={{ padding: '.5rem', textAlign: 'center', fontSize: '.82rem' }}>{r.branch_count ?? 0}</td>
-      <td style={{ padding: '.5rem', textAlign: 'center', fontSize: '.82rem' }}>{r.catalog_count ?? 0}</td>
-      <td style={{ padding: '.5rem', textAlign: 'center', cursor: 'help' }} title={orderTip}>
+      <td data-label="Owner" style={{ padding: '.5rem', fontSize: '.8rem' }}>{r.owner_name || '—'}</td>
+      <td data-label="Branches" style={{ padding: '.5rem', textAlign: 'center', fontSize: '.82rem' }}>{r.branch_count ?? 0}</td>
+      <td data-label="Catalogs" style={{ padding: '.5rem', textAlign: 'center', fontSize: '.82rem' }}>{r.catalog_count ?? 0}</td>
+      <td data-label="Orders" style={{ padding: '.5rem', textAlign: 'center', cursor: 'help' }} title={orderTip}>
         <div style={{ fontWeight: 600, fontSize: '.84rem' }}>{o.total ?? 0}</div>
         <div style={{ color: '#16a34a', fontSize: '.7rem' }}>{o.delivered ?? 0} del</div>
       </td>
-      <td style={{ padding: '.5rem', textAlign: 'center' }}>
+      <td data-label="Fulfil%" style={{ padding: '.5rem', textAlign: 'center' }}>
         <span style={{ color: fColor, fontWeight: 600 }}>{fpct}%</span>
       </td>
-      <td style={{ padding: '.5rem', textAlign: 'center' }}>
+      <td data-label="Issues" style={{ padding: '.5rem', textAlign: 'center' }}>
         {r.issues
           ? <span style={{ color: '#dc2626', fontWeight: 600 }}>{r.issues}</span>
           : <span style={{ color: 'var(--mute,#94a3b8)' }}>0</span>}
       </td>
-      <td style={{ padding: '.5rem', fontSize: '.82rem' }}>₹{fmtInr(r.revenue_rs)}</td>
-      <td style={{ padding: '.5rem' }}>
+      <td data-label="Revenue" style={{ padding: '.5rem', fontSize: '.82rem' }}>₹{fmtInr(r.revenue_rs)}</td>
+      <td data-label="Status" style={{ padding: '.5rem' }}>
         <span style={{ display: 'inline-block', padding: '.1rem .4rem', borderRadius: 99, background: `${badge.color}15`, color: badge.color, border: `1px solid ${badge.color}30`, fontSize: '.7rem', fontWeight: 600 }}>
           {badge.label}
         </span>
       </td>
-      <td style={{ padding: '.5rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
+      <td data-label="Actions" style={{ padding: '.5rem', textAlign: 'right', whiteSpace: 'normal' }}>
         {pending?.kind === 'status' ? (
           <InlineConfirm
             label={`${pending.target === 'suspended' ? 'Suspend' : 'Activate'} "${r.business_name}"?`}
@@ -239,7 +243,7 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
             onCancel={onCancel}
           />
         ) : (
-          <>
+          <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '.25rem', justifyContent: 'flex-end' }}>
             {r.status === 'active' ? (
               <button type="button" className="btn-sm" style={{ fontSize: '.72rem', color: '#dc2626' }} onClick={() => onAsk('status', { target: 'suspended' })} disabled={busy}>
                 Suspend
@@ -249,16 +253,34 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
                 Activate
               </button>
             )}
-            <button type="button" className="btn-sm" style={{ fontSize: '.72rem', marginLeft: '.25rem' }} onClick={() => onAsk('cap')} disabled={busy}>
+            <button type="button" className="btn-sm" style={{ fontSize: '.72rem' }} onClick={() => onAsk('cap')} disabled={busy}>
               Cap
             </button>
-            <button type="button" className="btn-sm" style={{ fontSize: '.72rem', marginLeft: '.25rem', color: '#dc2626' }} onClick={() => onAsk('delete')} disabled={busy}>
+            <button
+              type="button"
+              className="btn-sm"
+              style={{ fontSize: '.72rem' }}
+              onClick={() => (staffPinOpen ? onCancel() : onAsk('staffPin'))}
+              disabled={busy}
+              aria-expanded={staffPinOpen}
+            >
+              {staffPinOpen ? 'Close Staff PIN' : 'Staff PIN'}
+            </button>
+            <button type="button" className="btn-sm" style={{ fontSize: '.72rem', color: '#dc2626' }} onClick={() => onAsk('delete')} disabled={busy}>
               Delete
             </button>
-          </>
+          </div>
         )}
       </td>
     </tr>
+    {staffPinOpen && (
+      <tr style={{ borderBottom: '1px solid var(--rim)', background: 'var(--bg-soft, #f8fafc)' }}>
+        <td colSpan={10} style={{ padding: '.5rem .75rem 1rem' }}>
+          <StaffAccess restaurantId={r.id} slug={r.slug} />
+        </td>
+      </tr>
+    )}
+    </>
   );
 }
 

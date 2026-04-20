@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '../components/Sidebar.jsx';
 import Navbar from '../components/Navbar.jsx';
@@ -12,6 +13,8 @@ const NAV_ITEMS = [
   { label: 'Messages',   icon: '\uD83D\uDCAC', path: '/dashboard/messages' },
   { label: 'Marketing',  icon: '\uD83D\uDCE3', path: '/dashboard/marketing' },
   { label: 'Analytics',  icon: '\uD83D\uDCCA', path: '/dashboard/analytics' },
+  { label: 'Ratings',    icon: '\u2B50',       path: '/dashboard/ratings' },
+  { label: 'Loyalty',    icon: '\uD83C\uDF96', path: '/dashboard/loyalty' },
   { label: 'Payments',   icon: '\uD83D\uDCB0', path: '/dashboard/payments' },
   { label: 'Settings',   icon: '\u2699',       path: '/dashboard/settings' },
   { label: 'Restaurant', icon: '\uD83C\uDFEA', path: '/dashboard/restaurant' },
@@ -29,6 +32,11 @@ function DashboardShell() {
   const { logout } = useAuth();
   const location = useLocation();
   const { restaurant, loading, refetch } = useRestaurant();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
 
   const title = TITLE_BY_PATH[location.pathname] || 'Dashboard';
 
@@ -47,9 +55,19 @@ function DashboardShell() {
 
   return (
     <div id="pg-dash" style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar navItems={NAV_ITEMS} onLogout={logout} restaurantName={displayName} />
+      <Sidebar
+        navItems={NAV_ITEMS}
+        onLogout={logout}
+        restaurantName={displayName}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
       <main className="main">
-        <Navbar title={title} subtitle="Welcome back" />
+        <Navbar
+          title={title}
+          subtitle="Welcome back"
+          onMenuClick={() => setSidebarOpen(true)}
+        />
         {showWaBanner && <WaConnectBanner onConnected={refetch} />}
         {showPendingBanner && (
           <div
