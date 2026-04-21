@@ -50,7 +50,7 @@ router.post('/auth', adminLoginLimiter, express.json(), async (req, res) => {
       await col('admin_users').updateOne({ _id: user._id }, { $set: { last_login: new Date() }, $inc: { login_count: 1 } });
       logActivity({ actorType: 'admin', actorId: String(user._id), actorName: user.name, action: 'admin.login', category: 'auth', description: `Admin ${user.email} logged in`, severity: 'info' });
 
-      return res.json({ ok: true, token, user: { id: String(user._id), name: user.name, email: user.email, role: user.role, permissions: user.permissions } });
+      return res.json({ ok: true, token, user: { id: String(user._id), name: user.name, email: user.email, role: 'admin', admin_tier: user.role, permissions: user.permissions } });
     } catch (e) { return res.status(500).json({ success: false, message: "Internal server error" }); }
   }
 
@@ -79,14 +79,14 @@ router.post('/auth/setup', express.json(), async (req, res) => {
     await col('admin_users').insertOne(user);
     await col('admin_users').createIndex({ email: 1 }, { unique: true }).catch(() => {});
     const token = signAdminToken(user);
-    res.json({ ok: true, token, user: { id: user._id, name: user.name, email: user.email, role: user.role, permissions: {} } });
+    res.json({ ok: true, token, user: { id: user._id, name: user.name, email: user.email, role: 'admin', admin_tier: user.role, permissions: {} } });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // GET /api/admin/auth/me — current admin user profile
 router.get('/auth/me', requireAdminAuth(), async (req, res) => {
   const u = req.adminUser;
-  res.json({ id: u._id, name: u.name, email: u.email, role: u.role, permissions: u.permissions || {}, phone: u.phone });
+  res.json({ id: u._id, name: u.name, email: u.email, role: 'admin', admin_tier: u.role, permissions: u.permissions || {}, phone: u.phone });
 });
 
 // POST /api/admin/auth/change-password

@@ -178,7 +178,7 @@ router.post('/signup', express.json(), async (req, res) => {
       token_version: ownerUser.token_version ?? 0,
     }, process.env.JWT_SECRET, { expiresIn: '30d' });
     logActivity({ actorType: 'restaurant', actorId: id, action: 'restaurant.signup', category: 'auth', description: `New restaurant registered: ${req.body.ownerName || 'Unknown'}`, restaurantId: id, severity: 'info' });
-    res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
+    res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'restaurant', staff_role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
   } catch (err) {
     req.log.error({ err }, 'Signup failed');
     res.status(500).json({ error: err.message });
@@ -215,7 +215,7 @@ router.post('/signin', express.json(), async (req, res) => {
       approvalStatus: restaurant.approval_status || 'pending',
       onboardingStep: step,
       needsOnboarding: step < 2,
-      user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner },
+      user: { id: String(ownerUser._id), name: ownerUser.name, role: 'restaurant', staff_role: 'owner', permissions: ROLE_PERMISSIONS.owner },
     });
   } catch (err) {
     req.log.error({ err }, 'Signin failed');
@@ -298,7 +298,7 @@ router.post('/google', express.json(), async (req, res) => {
     res.json({
       token, approvalStatus, needsOnboarding,
       onboardingStep: restaurant?.onboarding_step || 1,
-      user: { id: String(ownerUser._id), name: ownerUser.name, role: 'owner', permissions: ROLE_PERMISSIONS.owner },
+      user: { id: String(ownerUser._id), name: ownerUser.name, role: 'restaurant', staff_role: 'owner', permissions: ROLE_PERMISSIONS.owner },
     });
   } catch (err) {
     req.log.error({ err, responseData: err.response?.data }, 'Google auth failed');
@@ -1284,7 +1284,7 @@ router.get('/me', requireAuth, async (req, res) => {
   // store_base_url lets the frontend build a preview that exactly matches the
   // canonical host the backend will save to (vs. location.origin which can
   // differ on Vercel preview deployments).
-  res.json({ ...safe, id: String(restaurant._id), waba_accounts, whatsapp_connected, store_base_url: baseUrl });
+  res.json({ ...safe, id: String(restaurant._id), role: 'restaurant', waba_accounts, whatsapp_connected, store_base_url: baseUrl });
 });
 
 // ─── WABA ACCOUNTS HELPER ─────────────────────────────────────
@@ -2069,7 +2069,7 @@ router.post('/pin-login', express.json(), pinLoginLimiter, async (req, res) => {
 
     res.json({
       token,
-      user: { id: String(user._id), name: user.name, role: user.role, permissions: user.permissions, branchIds: user.branch_ids },
+      user: { id: String(user._id), name: user.name, role: 'restaurant', staff_role: user.role, permissions: user.permissions, branchIds: user.branch_ids },
     });
   } catch (err) {
     req.log.error({ err }, 'PIN login failed');

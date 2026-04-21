@@ -17,7 +17,7 @@ export default function AdminAdmins() {
   const [err, setErr] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
-  const isSuper = user?.role === 'super_admin';
+  const isSuper = user?.admin_tier === 'super_admin';
 
   const load = useCallback(async () => {
     if (!isSuper) { setLoading(false); return; }
