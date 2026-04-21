@@ -70,6 +70,13 @@ app.use('/api/webhook-health', require('./src/routes/webhookHealth'));
 // ─── CRON ENDPOINTS (called by cron-job.org) ─────────────────
 app.use('/api/cron', express.json(), require('./src/routes/cron'));
 
+// ─── AUTH ROUTES ─────────────────────────────────────────────
+// Mounted on EC2 because Vercel no longer runs the Express backend —
+// it serves only the static frontend. The auth router does not apply
+// express.json() internally, so it must be wired here.
+const { router: authRouter } = require('./src/routes/auth');
+app.use('/auth', express.json(), authRouter);
+
 // ─── 404 FOR ANYTHING ELSE ──────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found — this is the webhook backend. Dashboard routes are on Vercel.' });
