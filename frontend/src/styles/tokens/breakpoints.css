@@ -1,0 +1,27 @@
+/* ============================================================
+ * GullyBite Design Tokens — Breakpoints
+ *
+ * CSS custom properties cannot be referenced inside @media
+ * query conditions in any shipped browser (the custom-media
+ * spec is still a draft). These values are therefore documented
+ * constants — use the exact pixel numbers below in @media rules.
+ *
+ * Current breakpoint pixel values in use:
+ *   --bp-sm:  480  — narrow phone layout edge
+ *   --bp-md:  640  — phone → tablet boundary (most common)
+ *   --bp-lg:  768  — dashboard sidebar collapse / tablet
+ *   --bp-xl:  900  — landing grid reflow
+ *   --bp-2xl: 960  — landing hero stack
+ *   --bp-3xl: 1024 — small desktop
+ *
+ * Future consolidation target: unify around 640 / 768 / 1024.
+ * ============================================================ */
+
+:root {
+  --bp-sm:  480px;
+  --bp-md:  640px;
+  --bp-lg:  768px;
+  --bp-xl:  900px;
+  --bp-2xl: 960px;
+  --bp-3xl: 1024px;
+}

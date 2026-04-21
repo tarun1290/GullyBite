@@ -1,0 +1,25 @@
+/* ============================================================
+ * GullyBite Design Tokens — Layout
+ *
+ * Semantic z-index layers and container widths. Layered in
+ * 100-unit gaps so new intermediate layers can be inserted
+ * without renumbering.
+ * ============================================================ */
+
+:root {
+  /* Z-index layers (semantic) */
+  --z-base:      0;
+  --z-dropdown:  100;
+  --z-sticky:    200;
+  --z-overlay:   300;
+  --z-modal:     400;
+  --z-popover:   500;
+  --z-toast:     600;
+  --z-tooltip:   700;
+
+  /* Container widths */
+  --container-narrow:  640px;
+  --container-base:    960px;
+  --container-wide:    1120px;
+  --container-max:     1280px;
+}

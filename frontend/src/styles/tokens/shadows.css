@@ -1,0 +1,26 @@
+/* ============================================================
+ * GullyBite Design Tokens — Shadows
+ *
+ * Two primitive scales exist because landing and dashboard had
+ * subtly different shadow treatments (slate-tinted vs black-tinted).
+ * The unified semantic aliases --shadow-sm / --shadow / --shadow-lg
+ * default to the landing (soft) set; dashboard.css :root re-aliases
+ * them to the crisp set. Zero visual change vs pre-refactor.
+ * ============================================================ */
+
+:root {
+  /* Soft (slate-tinted) — landing, auth, onboarding */
+  --shadow-soft-sm: 0 1px 3px rgba(15, 23, 42, .07), 0 1px 2px rgba(15, 23, 42, .04);
+  --shadow-soft-md: 0 4px 16px rgba(15, 23, 42, .08);
+  --shadow-soft-lg: 0 20px 60px rgba(15, 23, 42, .12);
+
+  /* Crisp (black-tinted, Tailwind-flavored) — dashboard, admin */
+  --shadow-crisp-sm: 0 1px 2px rgba(0, 0, 0, .04), 0 1px 3px rgba(0, 0, 0, .06);
+  --shadow-crisp-md: 0 4px 6px -1px rgba(0, 0, 0, .07), 0 2px 4px -2px rgba(0, 0, 0, .05);
+  --shadow-crisp-lg: 0 10px 25px -5px rgba(0, 0, 0, .08), 0 8px 10px -6px rgba(0, 0, 0, .04);
+
+  /* Legacy semantic aliases — default to soft (dashboard.css overrides to crisp) */
+  --shadow-sm: var(--shadow-soft-sm);
+  --shadow:    var(--shadow-soft-md);
+  --shadow-lg: var(--shadow-soft-lg);
+}

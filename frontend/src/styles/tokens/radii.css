@@ -1,0 +1,22 @@
+/* ============================================================
+ * GullyBite Design Tokens — Border radii
+ *
+ * Ordered from sharp to fully rounded. The legacy --r alias
+ * stays for components already using it:
+ *   global.css  :root  --r = --radius-lg  (10px)
+ *   dashboard.css :root --r = --radius-xl (12px)
+ * ============================================================ */
+
+:root {
+  --radius-none:   0;
+  --radius-sm:     6px;
+  --radius-md:     8px;
+  --radius-lg:     10px;
+  --radius-xl:     12px;
+  --radius-2xl:    16px;
+  --radius-3xl:    20px;
+  --radius-full:   9999px;
+
+  /* Legacy alias — global default (dashboard.css overrides to --radius-xl) */
+  --r: var(--radius-lg);
+}

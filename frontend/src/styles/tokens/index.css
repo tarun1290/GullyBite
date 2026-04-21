@@ -1,0 +1,19 @@
+/* ============================================================
+ * GullyBite Design Tokens — Entry
+ *
+ * Import order follows dependency: primitives first (colors),
+ * then scales with no deps (typography/spacing/radii), then
+ * composed scales (shadows reference nothing but are grouped
+ * by primitive flavor), then structural (layout/breakpoints).
+ *
+ * global.css @imports this file at the top; everything else
+ * consumes tokens through the resulting :root cascade.
+ * ============================================================ */
+
+@import './colors.css';
+@import './typography.css';
+@import './spacing.css';
+@import './radii.css';
+@import './shadows.css';
+@import './layout.css';
+@import './breakpoints.css';

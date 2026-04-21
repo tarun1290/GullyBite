@@ -1,0 +1,119 @@
+/* ============================================================
+ * GullyBite Design Tokens — Colors
+ *
+ * Primitives and semantic color tokens shared across landing,
+ * dashboard, and admin surfaces.
+ *
+ * Edit this file to change brand colors across the entire app.
+ * Every component should reference semantic tokens (e.g.,
+ * --color-text-primary), not primitives directly.
+ *
+ * Primitives: raw palette values (--gb-*-NNN). Add new shades here.
+ * Semantics:  usage-intent aliases (--bg, --tx, --acc, --wa, etc.).
+ *             Dashboard.css re-defines several of these at the
+ *             dashboard :root scope to preserve the dashboard's
+ *             neutral-gray look while landing uses the slate scale.
+ * ============================================================ */
+
+:root {
+  /* ── Primitives ─────────────────────────────────────────── */
+
+  /* Neutral (Tailwind neutral/gray — used by dashboard/admin) */
+  --gb-neutral-0:   #ffffff;
+  --gb-neutral-50:  #f9fafb;
+  --gb-neutral-100: #f3f4f6;
+  --gb-neutral-200: #e5e7eb;
+  --gb-neutral-300: #d1d5db;
+  --gb-neutral-400: #9ca3af;
+  --gb-neutral-500: #6b7280;
+  --gb-neutral-600: #4b5563;
+  --gb-neutral-700: #374151;
+  --gb-neutral-800: #1f2937;
+  --gb-neutral-900: #111827;
+
+  /* Slate (Tailwind slate — used by landing/auth) */
+  --gb-slate-50:  #f8fafc;
+  --gb-slate-100: #f1f5f9;
+  --gb-slate-200: #e2e8f0;
+  --gb-slate-300: #cbd5e1;
+  --gb-slate-400: #94a3b8;
+  --gb-slate-500: #64748b;
+  --gb-slate-600: #475569;
+  --gb-slate-700: #334155;
+  --gb-slate-800: #1e293b;
+  --gb-slate-900: #0f172a;
+
+  /* Indigo (legacy brand accent — landing nav + dashboard action color) */
+  --gb-indigo-500: #4f46e5;
+  --gb-indigo-600: #4338ca;
+  --gb-indigo-700: #3730a3;
+
+  /* Fresh Leaf green (landing brand palette) */
+  --gb-green-50:  #E6F5EC;
+  --gb-green-100: #C7E8D5;
+  --gb-green-300: #5DBD8F;
+  --gb-green-500: #0D9B6A;
+  --gb-green-600: #078A5A;
+  --gb-green-700: #04724A;
+  --gb-green-900: #0A1F17;
+
+  /* WhatsApp green (status + wa-connect CTA across all surfaces) */
+  --gb-wa-light: #dcfce7;
+  --gb-wa-500:   #16a34a;
+  --gb-wa-600:   #15803d;
+
+  /* Status — red / amber / blue / orange */
+  --gb-red-100: #fee2e2;
+  --gb-red-200: #fecaca;
+  --gb-red-500: #dc2626;
+  --gb-red-600: #b91c1c;
+  --gb-red-900: #991b1b;
+
+  --gb-amber-100: #fef3c7;
+  --gb-amber-500: #d97706;
+  --gb-amber-600: #b45309;
+
+  --gb-blue-500: #2563eb;
+  --gb-blue-600: #1d4ed8;
+
+  --gb-orange-500: #F28D35;
+
+  /* Landing warmth surfaces */
+  --gb-cream: #FAF8F3;
+  --gb-sand:  #F3EFE6;
+
+  /* ── Semantic tokens — landing/auth defaults ─────────────
+     Existing short names are preserved so no JSX/CSS rename is
+     required. dashboard.css :root overrides these with neutral
+     primitives to keep the dashboard look unchanged. */
+
+  --bg:        var(--gb-slate-100);   /* Page body bg on landing/auth */
+  --bg2:       var(--gb-neutral-0);    /* Card/surface bg */
+  --rim:       var(--gb-slate-200);    /* Subtle border */
+  --rim2:      var(--gb-slate-300);    /* Stronger border / divider */
+  --tx:        var(--gb-slate-900);    /* Primary text */
+  --dim:       var(--gb-slate-500);    /* Secondary text */
+  --mute:      var(--gb-slate-400);    /* Muted / placeholder text */
+  --acc:       var(--gb-indigo-500);   /* Primary action (landing/auth indigo) */
+  --acc2:      var(--gb-indigo-600);   /* Primary action hover */
+  --acc-glow:  rgba(79, 70, 229, .12); /* Accent glow — follows --acc primitive */
+  --wa:        var(--gb-wa-500);       /* WhatsApp / success CTA */
+  --wa-light:  var(--gb-wa-light);     /* WhatsApp tint bg */
+  --gold:      var(--gb-amber-500);    /* Amber / warning emphasis */
+  --red:       var(--gb-red-500);      /* Error / destructive */
+
+  /* ── Fresh Leaf landing semantic tokens ─────────────────── */
+  --landing-hero-bg:        var(--gb-cream);
+  --landing-section-bg:     var(--gb-neutral-0);
+  --landing-section-alt-bg: var(--gb-sand);
+  --landing-dark-bg:        var(--gb-green-900);
+  --landing-ink:            var(--gb-green-900);
+  --landing-slate:          var(--gb-slate-700);
+  --landing-mute:           var(--gb-slate-500);
+  --landing-line:           var(--gb-neutral-200);
+  --cta-primary-bg:         var(--gb-green-500);
+  --cta-primary-hover:      var(--gb-green-700);
+  --cta-primary-text:       var(--gb-neutral-0);
+  --cta-ghost-border:       var(--gb-green-500);
+  --cta-ghost-text:         var(--gb-green-700);
+}
