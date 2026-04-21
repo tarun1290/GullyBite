@@ -7,23 +7,21 @@ import PgOnboard from './landing/PgOnboard.jsx';
 import PgConnect from './landing/PgConnect.jsx';
 import PgPending from './landing/PgPending.jsx';
 import PgRejected from './landing/PgRejected.jsx';
-import {
-  Problem,
-  Solution,
-  Positioning,
-  HowItWorks,
-  Features,
-  Comparison,
-  Pricing,
-  Faq,
-  FinalCta,
-  LandingFooter,
-} from '../components/landing/sections.jsx';
 import LandingNav from '../components/landing/LandingNav.jsx';
 import LandingHero from '../components/landing/LandingHero.jsx';
 import StatsStrip from '../components/landing/StatsStrip.jsx';
-import FloatingWhatsApp from '../components/landing/FloatingWhatsApp.jsx';
+import SectionProblem from '../components/landing/SectionProblem.jsx';
+import SectionSolution from '../components/landing/SectionSolution.jsx';
+import SectionPositioning from '../components/landing/SectionPositioning.jsx';
+import SectionHowItWorks from '../components/landing/SectionHowItWorks.jsx';
+import SectionFeatures from '../components/landing/SectionFeatures.jsx';
+import SectionComparison from '../components/landing/SectionComparison.jsx';
 import RoiCalculator from '../components/landing/RoiCalculator.jsx';
+import SectionPricing from '../components/landing/SectionPricing.jsx';
+import SectionFaq from '../components/landing/SectionFaq.jsx';
+import SectionFinalCta from '../components/landing/SectionFinalCta.jsx';
+import SectionFooter from '../components/landing/SectionFooter.jsx';
+import FloatingWhatsApp from '../components/landing/FloatingWhatsApp.jsx';
 import ExitIntentPopup from '../components/landing/ExitIntentPopup.jsx';
 
 // Maps URL ?page= values and legacy showPage('pg-<id>') calls to the internal
@@ -122,17 +120,17 @@ export default function Landing() {
       <LandingNav onSignIn={goSignin} onGetStarted={goSignup} />
       <LandingHero onGetStarted={goSignup} />
       <StatsStrip />
-      <Problem />
-      <Solution />
-      <Positioning />
-      <HowItWorks />
-      <Features />
-      <Comparison />
-      <RoiCalculator onSignUp={goSignup} />
-      <Pricing onSignUp={goSignup} />
-      <Faq />
-      <FinalCta onSignUp={goSignup} />
-      <LandingFooter onSignIn={goSignin} onSignUp={goSignup} />
+      <SectionProblem />
+      <SectionSolution />
+      <SectionPositioning />
+      <SectionHowItWorks />
+      <SectionFeatures />
+      <SectionComparison />
+      <RoiCalculator onGetStarted={goSignup} />
+      <SectionPricing onGetStarted={goSignup} />
+      <SectionFaq />
+      <SectionFinalCta onGetStarted={goSignup} />
+      <SectionFooter />
       <FloatingWhatsApp />
       <ExitIntentPopup onSignUp={goSignup} />
     </div>
