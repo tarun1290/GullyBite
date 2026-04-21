@@ -106,17 +106,26 @@
   --red:       var(--gb-red-500);      /* Error / destructive */
 
   /* ── Fresh Leaf landing semantic tokens ─────────────────── */
+  /* Hero and primary section backgrounds — warm cream, food-appropriate */
   --landing-hero-bg:        var(--gb-cream);
-  --landing-section-bg:     var(--gb-neutral-0);
+  --landing-section-bg:     var(--gb-cream);
+  /* Alternating section bg — slightly warmer sand tone */
   --landing-section-alt-bg: var(--gb-sand);
+  /* Dark-mode sections (CTA block, footer) */
   --landing-dark-bg:        var(--gb-green-900);
+  /* Primary text on landing — near-black green for warmth */
   --landing-ink:            var(--gb-green-900);
+  /* Secondary text (body copy, descriptions) */
   --landing-slate:          var(--gb-slate-700);
+  /* Muted labels, captions, eyebrow text on dark surfaces */
   --landing-mute:           var(--gb-slate-500);
+  /* Hairline dividers between sections */
   --landing-line:           var(--gb-neutral-200);
+  /* Primary CTA ("Get Started Free") */
   --cta-primary-bg:         var(--gb-green-500);
-  --cta-primary-hover:      var(--gb-green-700);
+  --cta-primary-hover:      var(--gb-green-600);
   --cta-primary-text:       var(--gb-neutral-0);
-  --cta-ghost-border:       var(--gb-green-500);
-  --cta-ghost-text:         var(--gb-green-700);
+  /* Ghost / secondary CTA ("Sign In", "See How It Works") */
+  --cta-ghost-border:       var(--landing-ink);
+  --cta-ghost-text:         var(--landing-ink);
 }
