@@ -125,7 +125,8 @@ app.get('/feed/:feedToken', async (req, res) => {
 
     const esc = v => `"${String(v || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`;
     const brandName = esc(restaurant.business_name || 'Restaurant');
-    const baseUrl = process.env.BASE_URL || 'https://gully-bite.vercel.app';
+    const baseUrl = process.env.BASE_URL;
+    if (!baseUrl) throw new Error('BASE_URL is not set; cannot build feed item URLs');
 
     const header = 'id,title,description,availability,condition,price,link,image_link,brand,google_product_category';
     const rows = items.map(item => {

@@ -18,6 +18,7 @@ const memcache = require('../config/memcache');
 const crypto = require('crypto');
 const { rateLimitFn } = require('../middleware/rateLimit');
 const log = require('../utils/logger').child({ component: 'auth' });
+const { frontendUrl, FRONTEND_URL } = require('../utils/url');
 
 // ── PIN LOGIN LIMITS ───────────────────────────────────────────
 // Route-level limiter is keyed on ip+restaurantId+phone so an attacker cannot
@@ -313,7 +314,7 @@ router.get('/google/callback', async (req, res) => {
   req.log.info({ codePresent: !!code, error: error || 'none' }, 'Google callback hit');
 
   if (error || !code) {
-    return res.redirect('/?error=google_auth_failed');
+    return res.redirect(frontendUrl('/', { error: 'google_auth_failed' }));
   }
 
   try {
@@ -379,10 +380,10 @@ router.get('/google/callback', async (req, res) => {
 
     req.log.info('Success, redirecting with token');
     // Redirect to frontend with token in URL — frontend will pick it up
-    res.redirect(`/?google_token=${jwtToken}`);
+    res.redirect(frontendUrl('/', { google_token: jwtToken }));
   } catch (err) {
     req.log.error({ err, responseData: err.response?.data }, 'Google callback failed');
-    res.redirect('/?error=google_auth_failed');
+    res.redirect(frontendUrl('/', { error: 'google_auth_failed' }));
   }
 });
 
@@ -498,9 +499,14 @@ router.get('/callback', async (req, res) => {
       //   3. Falls back to a top-level navigation if window.opener is gone
       //      (covers the rare case where the user navigated the original tab
       //      away while the popup was running)
-      const target = restaurantId ? '/dashboard.html' : '/';
-      const fallbackUrl = `${target}?meta_connect_id=${resultId}`;
-      const baseUrl = process.env.BASE_URL || '';
+      const fallbackUrl = frontendUrl(
+        restaurantId ? '/dashboard/overview' : '/',
+        { meta_connect_id: resultId },
+      );
+      // postMessage targetOrigin must be the frontend origin (where the opener
+      // lives). In the split prod deploy the popup is on the backend origin
+      // while window.opener is on the frontend origin.
+      const postMessageOrigin = FRONTEND_URL;
       // Inject only the minimal data the opener needs — the resultId. The
       // opener will fetch /auth/meta/result?id=... to get the authoritative
       // payload (and mark the row consumed).
@@ -525,7 +531,7 @@ router.get('/callback', async (req, res) => {
   <script>
   (function () {
     var msg = { type: 'gb-meta-connect-result', resultId: ${safeJson(resultId)} };
-    var origin = ${safeJson(baseUrl)} || window.location.origin;
+    var origin = ${safeJson(postMessageOrigin)} || window.location.origin;
     var sent = false;
     try {
       if (window.opener && !window.opener.closed) {
@@ -555,8 +561,11 @@ router.get('/callback', async (req, res) => {
     }
 
     // Default redirect path — same behavior as before.
-    const target = restaurantId ? '/dashboard.html' : '/';
-    return res.redirect(`${target}?meta_connect_id=${resultId}`);
+    const target = frontendUrl(
+      restaurantId ? '/dashboard/overview' : '/',
+      { meta_connect_id: resultId },
+    );
+    return res.redirect(target);
   };
 
   // 1. Validate state — atomically claim it so it cannot be replayed.

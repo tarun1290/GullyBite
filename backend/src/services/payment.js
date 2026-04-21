@@ -17,6 +17,7 @@ const Razorpay = require('razorpay');
 const crypto  = require('crypto');
 const { col, newId } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'Payment' });
+const { frontendUrl } = require('../utils/url');
 
 // ─── PAYMENT AUDIT HELPER ────────────────────────────────────
 // Every payment status change appends to an embedded status_history array.
@@ -117,7 +118,7 @@ const createPaymentLink = async (order, customer) => {
       order_number: order.order_number,
       customer_wa : customer.wa_phone || customer.bsuid || '',
     },
-    callback_url   : `${process.env.BASE_URL}/payment-success`,
+    callback_url   : frontendUrl('/payment-success'),
     callback_method: 'get',
     expire_by      : expiresAt,
   });

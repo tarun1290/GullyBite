@@ -175,7 +175,8 @@ async function sendRestaurantCard(to, listing) {
   const name = listing.brand_name || listing.business_name;
   const area = listing.primary_branch?.area ? `📍 ${listing.primary_branch.area}, ${listing.city}` : `📍 ${listing.city}`;
   const cuisine = listing.cuisine_tags?.length ? `🍽️ ${listing.cuisine_tags.join(', ')}` : '';
-  const baseUrl = process.env.BASE_URL || 'https://gully-bite.vercel.app';
+  const baseUrl = process.env.BASE_URL;
+  if (!baseUrl) throw new Error('BASE_URL is not set; cannot build store URL');
 
   // [WhatsApp2026] Show username if available
   const usernameDisplay = listing.business_username

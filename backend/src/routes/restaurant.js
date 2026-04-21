@@ -6254,7 +6254,8 @@ router.post('/catalog/register-feed', async (req, res) => {
       await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { catalog_feed_token: feedToken } });
     }
 
-    const baseUrl = process.env.BASE_URL || 'https://gully-bite.vercel.app';
+    const baseUrl = process.env.BASE_URL;
+    if (!baseUrl) throw new Error('BASE_URL is not set; cannot build feed URL');
     const feedUrl = `${baseUrl}/feed/${feedToken}`;
 
     // Find a branch with a catalog

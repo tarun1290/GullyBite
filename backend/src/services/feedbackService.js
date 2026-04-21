@@ -31,7 +31,11 @@ const wsvc = require('./websocket');
 // we commit to the positive or negative branch.
 const ROUTING_DELAY_MS = 3 * 60 * 1000;
 
-const BASE_URL = () => (process.env.BASE_URL || '').replace(/\/+$/, '');
+const BASE_URL = () => {
+  const v = process.env.BASE_URL;
+  if (!v) throw new Error('BASE_URL is not set; cannot build review-redirect URL');
+  return v.replace(/\/+$/, '');
+};
 
 function isPositiveScore(score) {
   return Number(score) >= 4;

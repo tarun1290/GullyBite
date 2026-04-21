@@ -203,7 +203,8 @@ async function handleInteractive(from, interactive) {
     }
 
     if (listing.store_slug) {
-      const baseUrl = process.env.BASE_URL || 'https://gully-bite.vercel.app';
+      const baseUrl = process.env.BASE_URL;
+      if (!baseUrl) throw new Error('BASE_URL is not set; cannot build store URL');
       return wa.sendText(DIR_PID(), DIR_TOKEN(), from,
         `To order from *${name}*, visit their store:\n\n` +
         `👉 ${baseUrl}/store/${listing.store_slug}`
@@ -219,7 +220,8 @@ async function handleInteractive(from, interactive) {
     const restaurantId = id.replace('DIR_STORE_', '');
     const listing = await require('../config/database').col('directory_listings').findOne({ restaurant_id: restaurantId });
     if (listing?.store_slug) {
-      const baseUrl = process.env.BASE_URL || 'https://gully-bite.vercel.app';
+      const baseUrl = process.env.BASE_URL;
+      if (!baseUrl) throw new Error('BASE_URL is not set; cannot build store URL');
       return wa.sendText(DIR_PID(), DIR_TOKEN(), from,
         `View ${listing.brand_name || listing.business_name}'s store page:\n\n` +
         `👉 ${baseUrl}/store/${listing.store_slug}`

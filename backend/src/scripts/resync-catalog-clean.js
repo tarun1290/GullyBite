@@ -18,7 +18,8 @@ const MONGO_DB   = process.env.MONGODB_DB || 'gullybite';
 const TOKEN      = process.env.META_SYSTEM_USER_TOKEN;
 const API_VER    = process.env.WA_API_VERSION || 'v25.0';
 const GRAPH      = `https://graph.facebook.com/${API_VER}`;
-const BASE_URL   = process.env.BASE_URL || 'https://gully-bite.vercel.app';
+const BASE_URL   = process.env.BASE_URL;
+if (!BASE_URL) { console.error('BASE_URL is not set; aborting.'); process.exit(1); }
 const DRY_RUN    = process.argv.includes('--dry-run');
 
 let db;
