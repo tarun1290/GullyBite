@@ -1576,3 +1576,128 @@ a { color: inherit; text-decoration: none; }
   #pg-land .landing-roi-keep-value { font-size: 52px; }
   #pg-land .landing-roi-results { padding: 24px; }
 }
+
+/* =======================================================================
+   LANDING PAGE — Part 2 section: Pricing
+   ======================================================================= */
+#pg-land .landing-pricing {
+  background: var(--landing-section-bg);
+  padding: 96px 24px;
+}
+#pg-land .landing-pricing-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+}
+#pg-land .landing-pricing-head {
+  margin-bottom: 48px;
+}
+#pg-land .landing-pricing-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gb-green-500);
+  margin-bottom: 16px;
+}
+#pg-land .landing-pricing-headline {
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--landing-ink);
+  margin: 0 0 16px;
+}
+#pg-land .landing-pricing-sub {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--landing-slate);
+  margin: 0;
+}
+#pg-land .landing-pricing-card {
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--gb-neutral-0);
+  border: 2px solid var(--gb-green-500);
+  border-radius: 20px;
+  padding: 40px;
+  box-shadow: 0 12px 30px -18px rgba(10, 31, 23, 0.35);
+  text-align: left;
+}
+#pg-land .landing-pricing-plan {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gb-green-500);
+  margin-bottom: 16px;
+}
+#pg-land .landing-pricing-price {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+#pg-land .landing-pricing-amount {
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--landing-ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+#pg-land .landing-pricing-period {
+  font-size: 17px;
+  color: var(--landing-slate);
+  font-weight: 500;
+}
+#pg-land .landing-pricing-meta {
+  font-size: 14px;
+  color: var(--landing-mute);
+  margin-bottom: 28px;
+}
+#pg-land .landing-pricing-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#pg-land .landing-pricing-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--landing-ink);
+}
+#pg-land .landing-pricing-check {
+  width: 20px;
+  height: 20px;
+  color: var(--gb-green-500);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+#pg-land .landing-pricing-cta {
+  width: 100%;
+  justify-content: center;
+}
+#pg-land .landing-pricing-note {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--landing-mute);
+}
+#pg-land .landing-pricing-anchor {
+  margin-top: 48px;
+  font-size: 15px;
+  color: var(--landing-slate);
+  text-align: center;
+}
+#pg-land .landing-pricing-anchor strong { color: var(--gb-red-500); }
+
+@media (max-width: 640px) {
+  #pg-land .landing-pricing { padding: 72px 20px; }
+  #pg-land .landing-pricing-card { padding: 28px 24px; }
+  #pg-land .landing-pricing-amount { font-size: 40px; }
+}
