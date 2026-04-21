@@ -1,4 +1,5 @@
 import client from './client.js';
+import authClient from './authClient.js';
 
 // GET /api/restaurant — canonical profile. Served by backend/src/routes/restaurant.js:246.
 export async function getRestaurantProfile() {
@@ -557,7 +558,7 @@ export async function setMarketingNumber(restaurantId, body) {
 // POST /auth/change-password — body { currentPassword, newPassword } → { ok }
 // Legacy: settings.js:1542 (doChangePassword).
 export async function changePassword(body) {
-  const { data } = await client.post('/auth/change-password', body);
+  const { data } = await authClient.post('/auth/change-password', body);
   return data;
 }
 
@@ -565,7 +566,7 @@ export async function changePassword(body) {
 // Legacy: settings.js:1562 (doDeleteAccount). Caller is responsible for clearing
 // local auth state and redirecting.
 export async function deleteAccount() {
-  const { data } = await client.delete('/auth/delete-account');
+  const { data } = await authClient.delete('/auth/delete-account');
   return data;
 }
 
