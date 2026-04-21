@@ -1833,3 +1833,94 @@ a { color: inherit; text-decoration: none; }
   #pg-land .landing-finalcta-ctas .landing-btn-primary,
   #pg-land .landing-finalcta-ctas .landing-btn-ghost { justify-content: center; }
 }
+
+/* =======================================================================
+   LANDING PAGE — Part 2 section: Footer
+   ======================================================================= */
+#pg-land .landing-footer {
+  background: var(--landing-dark-bg);
+  color: var(--gb-neutral-0);
+  padding: 72px 24px 40px;
+  border-top: 1px solid var(--gb-green-700);
+}
+#pg-land .landing-footer-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  gap: 48px;
+  padding-bottom: 40px;
+  border-bottom: 1px solid var(--gb-green-700);
+}
+#pg-land .landing-footer-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--gb-neutral-0);
+  margin-bottom: 16px;
+}
+#pg-land .landing-footer-logo span:first-child {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--gb-green-500);
+  color: var(--gb-neutral-0);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .5px;
+}
+#pg-land .landing-footer-tagline {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--gb-slate-300);
+  margin: 0;
+  max-width: 280px;
+}
+#pg-land .landing-footer-h {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gb-green-500);
+  margin: 0 0 16px;
+}
+#pg-land .landing-footer-col ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#pg-land .landing-footer-col a {
+  color: var(--gb-neutral-0);
+  text-decoration: none;
+  font-size: 14px;
+  transition: color .15s ease;
+}
+#pg-land .landing-footer-col a:hover { color: var(--gb-green-500); }
+#pg-land .landing-footer-plain {
+  color: var(--gb-slate-300);
+  font-size: 14px;
+}
+#pg-land .landing-footer-bottom {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding-top: 32px;
+  font-size: 13px;
+  color: var(--gb-slate-400);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  #pg-land .landing-footer-inner { grid-template-columns: 1fr 1fr; gap: 36px; }
+}
+@media (max-width: 640px) {
+  #pg-land .landing-footer { padding: 56px 20px 32px; }
+  #pg-land .landing-footer-inner { grid-template-columns: 1fr; gap: 32px; }
+}
