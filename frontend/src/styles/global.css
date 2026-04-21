@@ -1003,3 +1003,74 @@ a { color: inherit; text-decoration: none; }
   #pg-land .landing-solution { padding: 72px 20px; }
   #pg-land .landing-solution-points { grid-template-columns: 1fr; gap: 16px; }
 }
+
+/* =======================================================================
+   LANDING PAGE — Part 2 section: Positioning
+   ======================================================================= */
+#pg-land .landing-positioning {
+  background: var(--landing-dark-bg);
+  color: var(--gb-neutral-0);
+  padding: 104px 24px;
+}
+#pg-land .landing-positioning-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+#pg-land .landing-positioning-head {
+  max-width: 820px;
+  margin: 0 auto 56px;
+  text-align: center;
+}
+#pg-land .landing-positioning-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gb-green-500);
+  margin-bottom: 20px;
+}
+#pg-land .landing-positioning-headline {
+  font-size: clamp(30px, 4.4vw, 48px);
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--gb-neutral-0);
+  margin: 0;
+}
+#pg-land .landing-positioning-accent { color: var(--gb-green-500); }
+#pg-land .landing-positioning-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+}
+#pg-land .landing-positioning-block {
+  display: flex;
+  flex-direction: column;
+}
+#pg-land .landing-positioning-num {
+  font-size: 56px;
+  font-weight: 300;
+  color: var(--gb-green-500);
+  line-height: 1;
+  margin-bottom: 16px;
+}
+#pg-land .landing-positioning-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--gb-neutral-0);
+  margin-bottom: 12px;
+}
+#pg-land .landing-positioning-body {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--gb-slate-300);
+  margin: 0;
+}
+
+@media (max-width: 960px) {
+  #pg-land .landing-positioning { padding: 72px 20px; }
+  #pg-land .landing-positioning-grid { grid-template-columns: repeat(2, 1fr); gap: 28px; }
+  #pg-land .landing-positioning-num { font-size: 44px; }
+}
