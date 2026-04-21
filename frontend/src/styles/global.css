@@ -734,3 +734,161 @@ a { color: inherit; text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   #pg-land .landing-fwa { animation: none; }
 }
+
+/* =======================================================================
+   LANDING PAGE — Part 2 section: Problem
+   ======================================================================= */
+#pg-land .landing-problem {
+  background: var(--landing-section-bg);
+  padding: 96px 24px;
+}
+#pg-land .landing-problem-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+#pg-land .landing-problem-head {
+  text-align: center;
+  max-width: 780px;
+  margin: 0 auto 48px;
+}
+#pg-land .landing-problem-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gb-red-500);
+  margin-bottom: 16px;
+}
+#pg-land .landing-problem-headline {
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--landing-ink);
+  margin: 0 0 20px;
+}
+#pg-land .landing-problem-percent {
+  color: var(--gb-red-500);
+}
+#pg-land .landing-problem-sub {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--landing-slate);
+  margin: 0;
+}
+#pg-land .landing-problem-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+#pg-land .landing-problem-payout {
+  background: var(--gb-neutral-0);
+  border: 1px solid var(--landing-line);
+  border-radius: 16px;
+  padding: 32px;
+  font-variant-numeric: tabular-nums;
+}
+#pg-land .landing-problem-payout-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--landing-mute);
+  margin-bottom: 20px;
+}
+#pg-land .landing-problem-payout-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#pg-land .landing-problem-payout-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 15px;
+  color: var(--landing-slate);
+}
+#pg-land .landing-problem-payout-row strong {
+  color: var(--landing-ink);
+  font-weight: 600;
+}
+#pg-land .landing-problem-payout-row.is-debit strong {
+  color: var(--gb-red-500);
+  font-weight: 600;
+}
+#pg-land .landing-problem-payout-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px dashed var(--landing-line);
+  font-size: 15px;
+  color: var(--landing-slate);
+}
+#pg-land .landing-problem-payout-total strong {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--gb-green-500);
+}
+#pg-land .landing-problem-payout-total.is-short strong {
+  color: var(--gb-red-500);
+}
+#pg-land .landing-problem-callout {
+  text-align: center;
+  font-size: 17px;
+  color: var(--landing-slate);
+  margin: 0 0 64px;
+}
+#pg-land .landing-problem-callout strong {
+  color: var(--landing-ink);
+}
+#pg-land .landing-problem-explainers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+#pg-land .landing-problem-explainer {
+  background: var(--gb-neutral-0);
+  border: 1px solid var(--landing-line);
+  border-radius: 14px;
+  padding: 24px;
+}
+#pg-land .landing-problem-explainer-head {
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--landing-ink);
+  cursor: default;
+  font-family: inherit;
+}
+#pg-land .landing-problem-explainer-chev {
+  display: none;
+  font-size: 20px;
+  color: var(--gb-green-500);
+  font-weight: 400;
+}
+#pg-land .landing-problem-explainer-body {
+  margin-top: 12px;
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--landing-slate);
+}
+
+@media (max-width: 960px) {
+  #pg-land .landing-problem { padding: 72px 20px; }
+  #pg-land .landing-problem-cards { grid-template-columns: 1fr; }
+  #pg-land .landing-problem-explainers { grid-template-columns: 1fr; gap: 12px; }
+  #pg-land .landing-problem-explainer { padding: 18px 20px; }
+  #pg-land .landing-problem-explainer-head { cursor: pointer; }
+  #pg-land .landing-problem-explainer-chev { display: inline-block; }
+  #pg-land .landing-problem-explainer-body { display: none; }
+  #pg-land .landing-problem-explainer.is-open .landing-problem-explainer-body { display: block; }
+}
