@@ -671,3 +671,33 @@ a { color: inherit; text-decoration: none; }
   #pg-land .landing-hero-ctas .landing-btn-primary,
   #pg-land .landing-hero-ctas .landing-btn-ghost { flex: 1 1 100%; }
 }
+
+/* ─ StatsStrip (Part 1) ─────────────────────────────────── */
+#pg-land .landing-stats {
+  background: var(--landing-section-alt-bg);
+  border-bottom: 1px solid var(--landing-line);
+  padding: 2.4rem 1.5rem;
+}
+#pg-land .landing-stats-grid {
+  max-width: 1120px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 2rem;
+}
+#pg-land .landing-stat { text-align: center; }
+#pg-land .landing-stat-value {
+  font-size: clamp(1.8rem, 3.5vw, 2.4rem);
+  font-weight: 800; line-height: 1;
+  color: var(--gb-green-700);
+  letter-spacing: -.03em;
+}
+#pg-land .landing-stat-label {
+  margin-top: .55rem;
+  font-size: .72rem; font-weight: 700;
+  color: var(--landing-slate);
+  letter-spacing: .12em; text-transform: uppercase;
+}
+
+@media (max-width: 768px) {
+  #pg-land .landing-stats-grid { grid-template-columns: repeat(2, 1fr); gap: 1.6rem; }
+  #pg-land .landing-stats { padding: 2rem 1.2rem; }
+}
