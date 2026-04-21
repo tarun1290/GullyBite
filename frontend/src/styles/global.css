@@ -1384,3 +1384,195 @@ a { color: inherit; text-decoration: none; }
     margin-left: 0;
   }
 }
+
+/* =======================================================================
+   LANDING PAGE — Part 2 section: ROI Calculator
+   ======================================================================= */
+#pg-land .landing-roi {
+  background: var(--landing-dark-bg);
+  color: var(--gb-neutral-0);
+  padding: 96px 24px;
+}
+#pg-land .landing-roi-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+#pg-land .landing-roi-head {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto 56px;
+}
+#pg-land .landing-roi-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gb-green-500);
+  margin-bottom: 16px;
+}
+#pg-land .landing-roi-headline {
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--gb-neutral-0);
+  margin: 0 0 16px;
+}
+#pg-land .landing-roi-sub {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--gb-slate-300);
+  margin: 0;
+}
+#pg-land .landing-roi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: start;
+}
+#pg-land .landing-roi-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+#pg-land .landing-roi-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+#pg-land .landing-roi-field-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gb-neutral-0);
+  margin: 0;
+}
+#pg-land .landing-roi-field-label label {
+  font-weight: 600;
+  color: var(--gb-neutral-0);
+}
+#pg-land .landing-roi-field-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--gb-green-500);
+  font-variant-numeric: tabular-nums;
+}
+#pg-land .landing-roi-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--gb-green-700);
+  outline: none;
+  cursor: pointer;
+}
+#pg-land .landing-roi-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--gb-neutral-0);
+  border: 3px solid var(--gb-green-500);
+  cursor: pointer;
+}
+#pg-land .landing-roi-range::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--gb-neutral-0);
+  border: 3px solid var(--gb-green-500);
+  cursor: pointer;
+}
+#pg-land .landing-roi-range:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 6px rgba(13, 155, 106, 0.3);
+}
+#pg-land .landing-roi-range-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--gb-slate-400);
+  font-variant-numeric: tabular-nums;
+}
+#pg-land .landing-roi-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--gb-green-700);
+  background: var(--gb-green-900);
+  color: var(--gb-neutral-0);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  font-family: inherit;
+}
+#pg-land .landing-roi-input:focus-visible {
+  outline: none;
+  border-color: var(--gb-green-500);
+  box-shadow: 0 0 0 3px rgba(13, 155, 106, 0.3);
+}
+#pg-land .landing-roi-results {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--gb-green-700);
+  border-radius: 16px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+#pg-land .landing-roi-result-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--gb-green-700);
+  font-variant-numeric: tabular-nums;
+}
+#pg-land .landing-roi-result-label {
+  font-size: 14px;
+  color: var(--gb-slate-300);
+}
+#pg-land .landing-roi-result-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--gb-neutral-0);
+}
+#pg-land .landing-roi-result-value.landing-roi-result-loss {
+  color: var(--gb-red-500);
+}
+#pg-land .landing-roi-keep {
+  margin-top: 8px;
+  text-align: center;
+  padding: 20px 8px 4px;
+}
+#pg-land .landing-roi-keep-label {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gb-green-500);
+  margin-bottom: 8px;
+}
+#pg-land .landing-roi-keep-value {
+  font-size: 64px;
+  font-weight: 700;
+  color: var(--gb-green-500);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+#pg-land .landing-roi-keep-note {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--gb-slate-400);
+}
+#pg-land .landing-roi-cta { margin-top: 12px; }
+
+@media (max-width: 960px) {
+  #pg-land .landing-roi { padding: 72px 20px; }
+  #pg-land .landing-roi-grid { grid-template-columns: 1fr; gap: 28px; }
+  #pg-land .landing-roi-keep-value { font-size: 52px; }
+  #pg-land .landing-roi-results { padding: 24px; }
+}

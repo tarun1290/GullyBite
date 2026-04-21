@@ -1,118 +1,142 @@
 import { useMemo, useState } from 'react';
 
-const MONTHLY_FEE = 2999;
+const DEFAULT_ORDERS = 50;
+const DEFAULT_AOV = 500;
+const DEFAULT_COMMISSION = 28;
+const GULLYBITE_COST = 2999;
 
-function fmtInr(n) {
-  const v = Math.max(0, Math.round(n));
-  return '₹' + v.toLocaleString('en-IN');
+const ORDERS_MIN = 10;
+const ORDERS_MAX = 500;
+const COMMISSION_MIN = 15;
+const COMMISSION_MAX = 35;
+
+const inrFormatter = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
+const fmtInt = (n) => inrFormatter.format(Math.max(0, Math.round(n)));
+const fmtInr = (n) => '\u20B9' + fmtInt(n);
+
+function clampNumber(raw, min, max, fallback) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  if (n < min) return min;
+  if (n > max) return max;
+  return n;
 }
 
-export default function RoiCalculator({ onSignUp }) {
-  const [ordersPerDay, setOrdersPerDay] = useState(50);
-  const [aov, setAov] = useState(500);
-  const [commissionPct, setCommissionPct] = useState(28);
+export default function RoiCalculator({ onGetStarted }) {
+  const [ordersPerDay, setOrdersPerDay] = useState(DEFAULT_ORDERS);
+  const [avgOrderValue, setAvgOrderValue] = useState(DEFAULT_AOV);
+  const [commissionPct, setCommissionPct] = useState(DEFAULT_COMMISSION);
 
   const numbers = useMemo(() => {
     const monthlyOrders = ordersPerDay * 30;
-    const gross = monthlyOrders * aov;
-    const aggCut = gross * (commissionPct / 100);
-    const gbCost = MONTHLY_FEE;
-    const youKeepAgg = gross - aggCut;
-    const youKeepGb = gross - gbCost;
-    const savings = youKeepGb - youKeepAgg;
-    return { monthlyOrders, gross, aggCut, gbCost, youKeepAgg, youKeepGb, savings };
-  }, [ordersPerDay, aov, commissionPct]);
+    const monthlyRevenue = monthlyOrders * avgOrderValue;
+    const aggregatorCost = monthlyRevenue * (commissionPct / 100);
+    const youKeep = aggregatorCost - GULLYBITE_COST;
+    return { monthlyOrders, monthlyRevenue, aggregatorCost, youKeep };
+  }, [ordersPerDay, avgOrderValue, commissionPct]);
 
   return (
-    <section className="lsection" id="calculator">
-      <div className="lsection-inner">
-        <div className="lsection-head">
-          <div className="lsection-pill">ROI Calculator</div>
-          <h2 className="lsection-title">See how much you'd save with GullyBite</h2>
-          <p className="lsection-sub">Adjust your numbers. The savings are real, every month.</p>
+    <section className="landing-roi" id="calculator">
+      <div className="landing-roi-inner">
+        <div className="landing-roi-head">
+          <div className="landing-roi-eyebrow">ROI calculator</div>
+          <h2 className="landing-roi-headline">Do the math on your own kitchen.</h2>
+          <p className="landing-roi-sub">
+            Drag the sliders. The numbers update live. No sign-up, no credit card.
+          </p>
         </div>
 
-        <div className="roi-card">
-          <div className="roi-head">
-            <div className="label">You'd keep an extra</div>
-            <div className="keep">{fmtInr(numbers.savings)}</div>
-            <div className="sub">per month vs. Swiggy / Zomato at {commissionPct}% commission</div>
-          </div>
-
-          <div className="roi-fields">
-            <div className="roi-field" style={{ gridColumn: '1 / -1' }}>
-              <label htmlFor="roi-orders">Orders per day: <strong style={{ color: 'var(--gb-green-700)' }}>{ordersPerDay}</strong></label>
+        <div className="landing-roi-grid">
+          <div className="landing-roi-controls">
+            <div className="landing-roi-field">
+              <div className="landing-roi-field-label">
+                <label htmlFor="roi-orders">Orders per day</label>
+                <strong className="landing-roi-field-value">{fmtInt(ordersPerDay)}</strong>
+              </div>
               <input
                 id="roi-orders"
                 type="range"
-                className="roi-slider"
-                min="10"
-                max="500"
+                className="landing-roi-range"
+                min={ORDERS_MIN}
+                max={ORDERS_MAX}
                 step="5"
                 value={ordersPerDay}
-                onChange={(e) => setOrdersPerDay(Number(e.target.value))}
+                onChange={(e) =>
+                  setOrdersPerDay(clampNumber(e.target.value, ORDERS_MIN, ORDERS_MAX, DEFAULT_ORDERS))
+                }
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.72rem', color: 'var(--landing-mute)' }}>
-                <span>10</span><span>500</span>
+              <div className="landing-roi-range-scale">
+                <span>{ORDERS_MIN}</span>
+                <span>{ORDERS_MAX}</span>
               </div>
             </div>
 
-            <div className="roi-field">
-              <label htmlFor="roi-aov">Average order value (₹)</label>
+            <div className="landing-roi-field">
+              <label htmlFor="roi-aov" className="landing-roi-field-label">
+                <span>Average order value (&#8377;)</span>
+              </label>
               <input
                 id="roi-aov"
                 type="number"
                 min="50"
                 step="10"
-                value={aov}
-                onChange={(e) => setAov(Math.max(0, Number(e.target.value) || 0))}
+                inputMode="numeric"
+                className="landing-roi-input"
+                value={avgOrderValue}
+                onChange={(e) => setAvgOrderValue(clampNumber(e.target.value, 0, 100000, DEFAULT_AOV))}
               />
             </div>
 
-            <div className="roi-field">
-              <label htmlFor="roi-comm">Aggregator commission: <strong>{commissionPct}%</strong></label>
+            <div className="landing-roi-field">
+              <label htmlFor="roi-commission" className="landing-roi-field-label">
+                <span>Commission on aggregator (%)</span>
+              </label>
               <input
-                id="roi-comm"
-                type="range"
-                className="roi-slider"
-                min="15"
-                max="35"
+                id="roi-commission"
+                type="number"
+                min={COMMISSION_MIN}
+                max={COMMISSION_MAX}
                 step="1"
+                inputMode="numeric"
+                className="landing-roi-input"
                 value={commissionPct}
-                onChange={(e) => setCommissionPct(Number(e.target.value))}
+                onChange={(e) =>
+                  setCommissionPct(clampNumber(e.target.value, COMMISSION_MIN, COMMISSION_MAX, DEFAULT_COMMISSION))
+                }
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.72rem', color: 'var(--landing-mute)' }}>
-                <span>15%</span><span>35%</span>
+              <div className="landing-roi-range-scale">
+                <span>min {COMMISSION_MIN}%</span>
+                <span>max {COMMISSION_MAX}%</span>
               </div>
             </div>
           </div>
 
-          <div className="roi-breakdown">
-            <div className="roi-breakdown-row">
-              <span>Monthly orders</span>
-              <strong>{numbers.monthlyOrders.toLocaleString('en-IN')}</strong>
+          <div className="landing-roi-results">
+            <div className="landing-roi-result-row">
+              <span className="landing-roi-result-label">Monthly orders</span>
+              <strong className="landing-roi-result-value">{fmtInt(numbers.monthlyOrders)}</strong>
             </div>
-            <div className="roi-breakdown-row">
-              <span>Gross revenue</span>
-              <strong>{fmtInr(numbers.gross)}</strong>
+            <div className="landing-roi-result-row">
+              <span className="landing-roi-result-label">Revenue lost to aggregator</span>
+              <strong className="landing-roi-result-value landing-roi-result-loss">
+                {fmtInr(numbers.aggregatorCost)}
+              </strong>
             </div>
-            <div className="roi-breakdown-row">
-              <span>Aggregator cut ({commissionPct}%)</span>
-              <strong style={{ color: 'var(--gb-red-500)' }}>− {fmtInr(numbers.aggCut)}</strong>
+            <div className="landing-roi-result-row">
+              <span className="landing-roi-result-label">GullyBite cost</span>
+              <strong className="landing-roi-result-value">{fmtInr(GULLYBITE_COST)}</strong>
             </div>
-            <div className="roi-breakdown-row">
-              <span>GullyBite flat fee</span>
-              <strong>− {fmtInr(numbers.gbCost)}</strong>
+            <div className="landing-roi-keep">
+              <div className="landing-roi-keep-label">You keep</div>
+              <div className="landing-roi-keep-value">{fmtInr(numbers.youKeep)}</div>
+              <div className="landing-roi-keep-note">per month, vs paying aggregator commission</div>
             </div>
-            <div className="roi-breakdown-row total">
-              <span>Extra in your pocket with GullyBite</span>
-              <strong>{fmtInr(numbers.savings)}/mo</strong>
-            </div>
-          </div>
-
-          <div className="roi-cta">
-            <button type="button" className="lbtn lbtn-primary lbtn-lg" onClick={onSignUp}>
-              Start Free Trial →
+            <button
+              type="button"
+              className="landing-btn-primary landing-btn-lg landing-roi-cta"
+              onClick={onGetStarted}
+            >
+              Start Keeping This Money &rarr;
             </button>
           </div>
         </div>
