@@ -43,10 +43,13 @@
   --gb-slate-800: #1e293b;
   --gb-slate-900: #0f172a;
 
-  /* Indigo (legacy brand accent — landing nav + dashboard action color) */
-  --gb-indigo-500: #4f46e5;
-  --gb-indigo-600: #4338ca;
-  --gb-indigo-700: #3730a3;
+  /* Indigo (legacy brand accent — landing nav + dashboard action color)
+     Tailwind-aligned numbering: 500 is the lightest used, 800 the darkest. */
+  --gb-indigo-500: #6366f1;
+  --gb-indigo-600: #4f46e5;
+  --gb-indigo-700: #4338ca;
+  --gb-indigo-800: #3730a3;
+  --gb-violet-600: #7c3aed;
 
   /* Fresh Leaf green (landing brand palette) */
   --gb-green-50:  #E6F5EC;
@@ -94,8 +97,8 @@
   --tx:        var(--gb-slate-900);    /* Primary text */
   --dim:       var(--gb-slate-500);    /* Secondary text */
   --mute:      var(--gb-slate-400);    /* Muted / placeholder text */
-  --acc:       var(--gb-indigo-500);   /* Primary action (landing/auth indigo) */
-  --acc2:      var(--gb-indigo-600);   /* Primary action hover */
+  --acc:       var(--gb-indigo-600);   /* Primary action (landing/auth indigo — #4f46e5) */
+  --acc2:      var(--gb-indigo-700);   /* Primary action hover (#4338ca) */
   --acc-glow:  rgba(79, 70, 229, .12); /* Accent glow — follows --acc primitive */
   --wa:        var(--gb-wa-500);       /* WhatsApp / success CTA */
   --wa-light:  var(--gb-wa-light);     /* WhatsApp tint bg */
