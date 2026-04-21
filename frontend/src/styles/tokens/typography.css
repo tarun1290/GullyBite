@@ -11,13 +11,15 @@
 
 :root {
   /* ── Font families ──────────────────────────────────────── */
-  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
-
-  /* Legacy aliases — referenced throughout existing CSS */
-  --font:      var(--font-sans);
-  --font-head: var(--font-sans);
-  --font-body: var(--font-sans);
+  /* Two stacks exist historically:
+     --font           landing/auth: no -apple-system in fallback
+     --font-head/body dashboard:    -apple-system in fallback
+     Kept as separate literals to preserve exact fallback behavior. */
+  --font:       'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-head:  'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-body:  'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-sans:  var(--font);
+  --font-mono:  ui-monospace, 'SF Mono', Menlo, monospace;
 
   /* ── Size scale ────────────────────────────────────────── */
   /* Numeric rem values; comments show the px equivalent at 16px base. */

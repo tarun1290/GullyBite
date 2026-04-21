@@ -1,56 +1,11 @@
 /*
- * Ported verbatim from the legacy frontend/index.html <style> block.
- * Loaded before dashboard.css in main.jsx — dashboard.css redefines :root
- * tokens for dashboard routes, so on landing/auth pages the values here win.
+ * Global stylesheet — loaded first (before dashboard.css / admin.css)
+ * via main.jsx. All design tokens live in ./tokens/; the :root overrides
+ * inside dashboard.css / admin.css rewire semantic names to different
+ * primitives for those surfaces (preserves current look exactly).
  */
 
-:root {
-  --bg   : #f1f5f9; --bg2  : #ffffff;
-  --rim  : #e2e8f0; --rim2 : #cbd5e1;
-  --tx   : #0f172a; --dim  : #64748b; --mute: #94a3b8;
-  --acc  : #4f46e5; --acc2 : #4338ca; --acc-glow: rgba(79,70,229,.12);
-  --wa   : #16a34a; --wa-light: #dcfce7;
-  --gold : #d97706;
-  --red  : #dc2626;
-  --font : 'Plus Jakarta Sans', system-ui, sans-serif;
-  --r    : 10px;
-  --shadow-sm: 0 1px 3px rgba(15,23,42,.07), 0 1px 2px rgba(15,23,42,.04);
-  --shadow   : 0 4px 16px rgba(15,23,42,.08);
-  --shadow-lg: 0 20px 60px rgba(15,23,42,.12);
-
-  /* ── Fresh Leaf primitives (landing page only) ─────────────
-     These tokens live alongside the legacy indigo --acc so that
-     dashboard.css and existing auth pages render unchanged. Landing
-     page scopes itself via #pg-land and uses only the --gb-* and
-     --landing-* semantic tokens below. */
-  --gb-green-50:  #E6F5EC;
-  --gb-green-100: #C7E8D5;
-  --gb-green-300: #5DBD8F;
-  --gb-green-500: #0D9B6A;
-  --gb-green-600: #078A5A;
-  --gb-green-700: #04724A;
-  --gb-green-900: #0A1F17;
-  --gb-cream:     #FAF8F3;
-  --gb-sand:      #F3EFE6;
-  --gb-orange-500:#F28D35;
-  --gb-blue-500:  #2563EB;
-  --gb-red-500:   #DC2626;
-
-  /* Semantic tokens — landing only */
-  --landing-hero-bg:        var(--gb-cream);
-  --landing-section-bg:     #ffffff;
-  --landing-section-alt-bg: var(--gb-sand);
-  --landing-dark-bg:        var(--gb-green-900);
-  --landing-ink:            #0A1F17;
-  --landing-slate:          #334155;
-  --landing-mute:           #64748B;
-  --landing-line:           #E5E7EB;
-  --cta-primary-bg:         var(--gb-green-500);
-  --cta-primary-hover:      var(--gb-green-700);
-  --cta-primary-text:       #ffffff;
-  --cta-ghost-border:       var(--gb-green-500);
-  --cta-ghost-text:         var(--gb-green-700);
-}
+@import './tokens/index.css';
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }
