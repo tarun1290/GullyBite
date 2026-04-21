@@ -6,85 +6,6 @@ function scrollTo(id) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-export function StickyNav({ onSignIn, onSignUp }) {
-  return (
-    <nav className="lnav">
-      <div className="lnav-inner">
-        <div className="lnav-brand">
-          <div className="brand-ring">🍜</div>
-          GullyBite
-        </div>
-        <div className="lnav-links">
-          <a href="#how-it-works" onClick={(e) => { e.preventDefault(); scrollTo('how-it-works'); }}>How it works</a>
-          <a href="#features" onClick={(e) => { e.preventDefault(); scrollTo('features'); }}>Features</a>
-          <a href="#calculator" onClick={(e) => { e.preventDefault(); scrollTo('calculator'); }}>Calculator</a>
-          <a href="#pricing" onClick={(e) => { e.preventDefault(); scrollTo('pricing'); }}>Pricing</a>
-          <a href="#faq" onClick={(e) => { e.preventDefault(); scrollTo('faq'); }}>FAQ</a>
-        </div>
-        <div className="lnav-cta">
-          <button type="button" className="lbtn lbtn-ghost" onClick={onSignIn}>Sign In</button>
-          <button type="button" className="lbtn lbtn-primary" onClick={onSignUp}>Get Started Free</button>
-        </div>
-      </div>
-    </nav>
-  );
-}
-
-export function Hero({ onSignUp }) {
-  return (
-    <section className="hero" id="hero">
-      <div className="hero-inner">
-        <div>
-          <div className="hero-pill"><span className="pulse"></span> Now live in {GULLYBITE_CITY}</div>
-          <h1>
-            Own your orders.<br />
-            Stop renting <span className="g">customers</span>.
-          </h1>
-          <p className="hero-sub">
-            GullyBite turns WhatsApp into your restaurant's ordering engine. Customers browse, order and
-            pay — right inside WhatsApp. No app, no Swiggy, no 25% commission.
-          </p>
-          <div className="hero-btns">
-            <button type="button" className="lbtn lbtn-primary lbtn-lg" onClick={onSignUp}>Get Started Free →</button>
-            <button type="button" className="lbtn lbtn-ghost lbtn-lg" onClick={() => scrollTo('how-it-works')}>See How It Works</button>
-          </div>
-          <div className="hero-trust">
-            <span>✓ No credit card</span>
-            <span>✓ 14-day free trial</span>
-            <span>✓ Live in 10 minutes</span>
-          </div>
-        </div>
-        <div className="hero-mock" aria-label="Hero mockup placeholder">
-          {/* Hero mockup — replace with real WhatsApp screenshot before launch */}
-          Hero phone mockup placeholder<br />
-          <em>(WhatsApp order screenshot goes here)</em>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function StatsStrip() {
-  const stats = [
-    ['₹0', 'Per-order commission'],
-    ['10 min', 'To go live on WhatsApp'],
-    ['100%', 'You own the customer'],
-    ['24/7', 'Automated order flow'],
-  ];
-  return (
-    <section className="lstats" aria-label="Key stats">
-      <div className="lstats-grid">
-        {stats.map(([v, l]) => (
-          <div key={l}>
-            <div className="lstat-v">{v}</div>
-            <div className="lstat-l">{l}</div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export function Problem() {
   const items = [
     { icon: '💸', title: '25–30% commission', body: 'Swiggy and Zomato quietly skim a quarter of every order — before you even pay rent, salaries or ingredient cost.' },
@@ -418,17 +339,3 @@ export function LandingFooter({ onSignIn, onSignUp }) {
   );
 }
 
-export function FloatingWhatsApp() {
-  return (
-    <a
-      className="float-wa"
-      href={waLink('Hi! I want to learn about GullyBite for my restaurant.')}
-      target="_blank"
-      rel="noreferrer"
-      aria-label="Chat with GullyBite on WhatsApp"
-    >
-      <span style={{ fontSize: '1.15rem' }}>💬</span>
-      Chat on WhatsApp
-    </a>
-  );
-}

@@ -8,9 +8,6 @@ import PgConnect from './landing/PgConnect.jsx';
 import PgPending from './landing/PgPending.jsx';
 import PgRejected from './landing/PgRejected.jsx';
 import {
-  StickyNav,
-  Hero,
-  StatsStrip,
   Problem,
   Solution,
   Positioning,
@@ -21,8 +18,11 @@ import {
   Faq,
   FinalCta,
   LandingFooter,
-  FloatingWhatsApp,
 } from '../components/landing/sections.jsx';
+import LandingNav from '../components/landing/LandingNav.jsx';
+import LandingHero from '../components/landing/LandingHero.jsx';
+import StatsStrip from '../components/landing/StatsStrip.jsx';
+import FloatingWhatsApp from '../components/landing/FloatingWhatsApp.jsx';
 import RoiCalculator from '../components/landing/RoiCalculator.jsx';
 import ExitIntentPopup from '../components/landing/ExitIntentPopup.jsx';
 
@@ -119,8 +119,8 @@ export default function Landing() {
 
   return (
     <div id="pg-land">
-      <StickyNav onSignIn={goSignin} onSignUp={goSignup} />
-      <Hero onSignUp={goSignup} />
+      <LandingNav onSignIn={goSignin} onGetStarted={goSignup} />
+      <LandingHero onGetStarted={goSignup} />
       <StatsStrip />
       <Problem />
       <Solution />
