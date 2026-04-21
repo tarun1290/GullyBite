@@ -288,6 +288,115 @@ const confirmPaidOrder = async (orderId, event) => {
     });
   } catch (_) { /* never block payment confirmation on bus failure */ }
 
+  // Loyalty redemption commit (only) — fire-and-forget.
+  // If the customer tapped YES on the pre-checkout redemption prompt,
+  // the flow stamped loyalty_points_redeemed + loyalty_discount_rs on
+  // the order before requesting payment. We debit their points here,
+  // once the payment has confirmed.
+  //
+  // Earn is NOT done here. Points are awarded by the LOYALTY_AWARD
+  // durable job that services/order.js enqueues 30 min after the order
+  // transitions to DELIVERED — crediting on payment would double-pay
+  // because that job still runs.
+  try {
+    const ordL = await col('orders').findOne(
+      { _id: String(orderId) },
+      { projection: {
+          restaurant_id: 1, customer_id: 1,
+          loyalty_points_redeemed: 1, loyalty_discount_rs: 1,
+        } },
+    );
+    if (ordL?.restaurant_id && ordL?.customer_id) {
+      const pointsToDeduct = Number(ordL.loyalty_points_redeemed) || 0;
+      const discountRs     = Number(ordL.loyalty_discount_rs) || 0;
+      if (pointsToDeduct > 0) {
+        const loyaltyEngine = require('../services/loyaltyEngine');
+        loyaltyEngine.redeemPoints(
+          String(ordL.customer_id),
+          String(ordL.restaurant_id),
+          String(orderId),
+          pointsToDeduct,
+          discountRs,
+        ).catch(() => {});
+      }
+    }
+  } catch (_) { /* never block payment confirmation on loyalty failure */ }
+
+  // Manual-blast campaign conversion attribution — fire-and-forget.
+  // Increments stats.converted + stats.revenue_attributed_rs on any
+  // marketing_campaigns row sent to this customer's segment within
+  // the last 48 hours. Never affects order flow.
+  try {
+    const ord2 = await col('orders').findOne(
+      { _id: String(orderId) },
+      { projection: { restaurant_id: 1, customer_id: 1, subtotal_rs: 1, total_rs: 1, amount_paise: 1 } },
+    );
+    if (ord2?.restaurant_id && ord2?.customer_id) {
+      const amountRs = paymentEntity
+        ? (Number(paymentEntity.amount) || 0) / 100
+        : (Number(ord2.total_rs) || Number(ord2.subtotal_rs) || ((Number(ord2.amount_paise) || 0) / 100));
+      const marketingCampaigns = require('../services/marketingCampaigns');
+      marketingCampaigns.attributeOrderConversion({
+        orderId: String(orderId),
+        restaurantId: String(ord2.restaurant_id),
+        customerId: String(ord2.customer_id),
+        amountRs,
+      }).catch(() => {}); // non-blocking
+    }
+  } catch (_) { /* never block payment confirmation on attribution failure */ }
+
+  // Auto-journey event triggers — welcome (first order, delayed 2h) and
+  // milestone (5th/10th/25th etc). Fire-and-forget; never blocks payment.
+  // Reads order_count from customer_rfm_profiles — the profile is
+  // rebuilt nightly, so the first-order check can lag by up to a day.
+  // Acceptable trade-off at current scale; tighter accuracy would require
+  // a real-time order_count $inc in the payment path.
+  try {
+    const ord3 = await col('orders').findOne(
+      { _id: String(orderId) },
+      { projection: { restaurant_id: 1, customer_id: 1 } },
+    );
+    if (ord3?.restaurant_id && ord3?.customer_id) {
+      const restaurantIdStr = String(ord3.restaurant_id);
+      const customerIdStr   = String(ord3.customer_id);
+      const profile = await col('customer_rfm_profiles').findOne({
+        restaurant_id: restaurantIdStr,
+        customer_id: customerIdStr,
+      });
+      const orderCount = Number(profile?.order_count || 0);
+      const journeyExecutor = require('../services/journeyExecutor');
+
+      // Welcome — only on first order. Delayed by 2h so the message
+      // doesn't collide with the order confirmation. Uses setTimeout;
+      // if the server restarts within 2h the welcome drops for this
+      // customer. A proper job queue would make this restart-safe —
+      // deferred until scale warrants the complexity.
+      if (orderCount === 1) {
+        setTimeout(() => {
+          journeyExecutor.executeJourney(restaurantIdStr, customerIdStr, 'welcome')
+            .catch(() => {});
+        }, 2 * 60 * 60 * 1000);
+      }
+
+      // Milestone — fires immediately on the configured order count.
+      // trigger_orders is per-restaurant; default [5, 10, 25].
+      if (orderCount > 0) {
+        const cfg = await col('auto_journey_config').findOne({ restaurant_id: restaurantIdStr });
+        const milestones = Array.isArray(cfg?.milestone?.trigger_orders)
+          ? cfg.milestone.trigger_orders
+          : [5, 10, 25];
+        if (milestones.includes(orderCount)) {
+          journeyExecutor.executeJourney(
+            restaurantIdStr,
+            customerIdStr,
+            'milestone',
+            { order_count: String(orderCount) },
+          ).catch(() => {});
+        }
+      }
+    }
+  } catch (_) { /* never block payment confirmation on journey failure */ }
+
   // Phase 3: capture Razorpay fee breakdown on the payments row and
   // credit the NET amount to the restaurant's ledger.
   // Phase 3.1: net = amount - fee - tax (per updated spec). If Razorpay

@@ -3,6 +3,8 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '../components/Sidebar.jsx';
 import Navbar from '../components/Navbar.jsx';
 import WaConnectBanner from '../components/dashboard/WaConnectBanner.jsx';
+import WalletWidget from '../components/dashboard/WalletWidget.jsx';
+import NotificationBell from '../components/dashboard/NotificationBell.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { RestaurantProvider, useRestaurant } from '../contexts/RestaurantContext.jsx';
 
@@ -12,9 +14,13 @@ const NAV_ITEMS = [
   { label: 'Menu',       icon: '\uD83C\uDF7D', path: '/dashboard/menu' },
   { label: 'Messages',   icon: '\uD83D\uDCAC', path: '/dashboard/messages' },
   { label: 'Marketing',  icon: '\uD83D\uDCE3', path: '/dashboard/marketing' },
+  { label: 'Campaigns',  icon: '\u2728',       path: '/dashboard/campaigns' },
   { label: 'Analytics',  icon: '\uD83D\uDCCA', path: '/dashboard/analytics' },
+  { label: 'Marketing Analytics', icon: '\uD83D\uDCC8', path: '/dashboard/marketing-analytics' },
   { label: 'Ratings',    icon: '\u2B50',       path: '/dashboard/ratings' },
+  { label: 'Feedback',   icon: '\uD83D\uDCAC', path: '/dashboard/feedback' },
   { label: 'Loyalty',    icon: '\uD83C\uDF96', path: '/dashboard/loyalty' },
+  { label: 'Customers',  icon: '\uD83D\uDC65', path: '/dashboard/customers' },
   { label: 'Payments',   icon: '\uD83D\uDCB0', path: '/dashboard/payments' },
   { label: 'Settings',   icon: '\u2699',       path: '/dashboard/settings' },
   { label: 'Restaurant', icon: '\uD83C\uDFEA', path: '/dashboard/restaurant' },
@@ -67,6 +73,12 @@ function DashboardShell() {
           title={title}
           subtitle="Welcome back"
           onMenuClick={() => setSidebarOpen(true)}
+          actions={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+              <NotificationBell />
+              <WalletWidget />
+            </div>
+          }
         />
         {showWaBanner && <WaConnectBanner onConnected={refetch} />}
         {showPendingBanner && (

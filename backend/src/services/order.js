@@ -69,11 +69,7 @@ const setState = async (convId, newState, sessionUpdates = {}) => {
 // ─── PROCESS WHATSAPP CATALOG ORDER ──────────────────────────
 // deliveryLat/deliveryLng trigger 3PL quote for real delivery pricing
 // orderDetails: { deliveryAddress, customerName, customerPhone } for 3PL API
-// CRIT-2A-04: `loyaltyTier` is threaded through so the delivery-fee
-// waiver applies at cart-preview time (same value the customer sees on
-// the confirmation screen). Null/unknown tiers fall through to the
-// existing paid-delivery math.
-const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = null, deliveryLng = null, orderDetails = {}, loyaltyTier = null) => {
+const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = null, deliveryLng = null, orderDetails = {}) => {
   const retailerIds = productItems.map(i => i.product_retailer_id);
 
   // Branch-first: match items by either the legacy scalar OR the new
@@ -145,7 +141,7 @@ const buildCartFromCatalogOrder = async (productItems, branchId, deliveryLat = n
     packaging_gst_pct:         restaurant?.packaging_gst_pct         ?? 18,
   };
 
-  const charges = calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs, 0, loyaltyTier);
+  const charges = calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs, 0);
 
   return {
     cart, subtotalRs,

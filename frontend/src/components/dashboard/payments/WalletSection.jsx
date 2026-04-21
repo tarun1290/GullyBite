@@ -20,6 +20,19 @@ const TYPE_ICO = {
   deduction: '📤',
   settlement_deduction: '📋',
   refund: '↩️',
+  order_payout: '💰',
+  meta_marketing_charge: '📣',
+  referral_commission: '🤝',
+};
+
+const TYPE_LABEL = {
+  topup: 'Top Up',
+  deduction: 'Message Charge',
+  settlement_deduction: 'Settlement Deduct',
+  refund: 'Refund',
+  order_payout: 'Order Payout',
+  meta_marketing_charge: 'Campaign Charge',
+  referral_commission: 'Referral Commission',
 };
 
 function loadRazorpayScript() {
@@ -76,6 +89,11 @@ export default function WalletSection() {
   const monthly = parseFloat(w.monthly_spend_rs) || 0;
   const active = w.status === 'active';
 
+  const monthEarnings  = parseFloat(w.current_month_earnings_rs) || 0;
+  const monthMessages  = parseFloat(w.current_month_message_charges_rs) || 0;
+  const monthCampaigns = parseFloat(w.current_month_campaign_charges_rs) || 0;
+  const monthReferrals = parseFloat(w.current_month_referral_charges_rs) || 0;
+
   const txns = Array.isArray(txnsQ.data) ? txnsQ.data : [];
 
   const doTopup = async (amt) => {
@@ -121,7 +139,7 @@ export default function WalletSection() {
   return (
     <div className="card" style={{ marginBottom: '1.2rem' }}>
       <div className="ch" style={{ justifyContent: 'space-between' }}>
-        <h3>Messaging Wallet</h3>
+        <h3>Wallet</h3>
         <button type="button" className="btn-p btn-sm" onClick={() => setShowTopup(true)}>
           Top Up
         </button>
@@ -147,6 +165,52 @@ export default function WalletSection() {
               <div style={{ fontSize: '.75rem', color: 'var(--dim)', marginBottom: '.2rem' }}>Status</div>
               <div id="wlt-status" style={{ fontSize: '1.1rem', fontWeight: 600, color: active ? 'var(--wa)' : 'var(--red,#dc2626)' }}>
                 {walletQ.loading && !walletQ.data ? '…' : active ? 'Active' : 'Suspended'}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!walletQ.error && (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: '.6rem',
+              padding: '.75rem',
+              background: 'var(--ink2, #f9fafb)',
+              border: '1px solid var(--rim, #e5e7eb)',
+              borderRadius: 8,
+              marginBottom: '1rem',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '.7rem', color: 'var(--dim)', marginBottom: '.15rem' }}>Earned this month</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--wa, #059669)' }}>
+                ₹{monthEarnings.toFixed(2)}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '.7rem', color: 'var(--dim)', marginBottom: '.15rem' }}>Spent on messages</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 700 }}>
+                ₹{monthMessages.toFixed(2)}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '.7rem', color: 'var(--dim)', marginBottom: '.15rem' }}>Campaign charges</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 700 }}>
+                ₹{monthCampaigns.toFixed(2)}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '.7rem', color: 'var(--dim)', marginBottom: '.15rem' }}>Referral commissions</div>
+              <div style={{ fontSize: '1.05rem', fontWeight: 700 }}>
+                ₹{monthReferrals.toFixed(2)}
+              </div>
+            </div>
+            <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--rim, #e5e7eb)', paddingTop: '.55rem' }}>
+              <div style={{ fontSize: '.7rem', color: 'var(--dim)', marginBottom: '.15rem' }}>Net balance</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: 800, color: balanceColor(bal, threshold) }}>
+                ₹{bal.toFixed(2)}
               </div>
             </div>
           </div>
@@ -238,7 +302,7 @@ export default function WalletSection() {
                       {formatTxnDate(t.created_at)}
                     </td>
                     <td style={{ padding: '.45rem .7rem', fontSize: '.8rem' }}>
-                      {TYPE_ICO[t.type] || ''} {t.type}
+                      {TYPE_ICO[t.type] || ''} {TYPE_LABEL[t.type] || t.type}
                     </td>
                     <td style={{
                       padding: '.45rem .7rem',

@@ -18,6 +18,7 @@ const whatsappListener = require('./listeners/whatsappListener');
 const notificationListener = require('./listeners/notificationListener');
 const analyticsListener = require('./listeners/analyticsListener');
 const sseListener = require('./listeners/sseListener');
+const walletListener = require('./listeners/walletListener');
 
 const EVENTS = ['order.created', 'order.updated', 'payment.completed', 'user.created'];
 
@@ -31,6 +32,9 @@ if (!global.__eventsBooted) {
 
   // Staff POS SSE fan-out — fire-and-forget push to tablets.
   bus.on('order.created', sseListener.onOrderCreated);
+
+  // WABA wallet — credit restaurant's earnings share on each paid order.
+  bus.on('payment.completed', walletListener.onPaymentCompleted);
 
   // Analytics/persistence — every event in EVENTS gets archived.
   for (const ev of EVENTS) {

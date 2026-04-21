@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { label: 'Overview',      icon: '\uD83D\uDCCA', path: '/admin/overview' },
   { label: 'Flows',         icon: '\uD83D\uDD04', path: '/admin/flows' },
   { label: 'Templates',     icon: '\uD83D\uDCC4', path: '/admin/templates' },
+  { label: 'Campaign Tpls', icon: '\u2728',       path: '/admin/campaign-templates' },
   { label: 'Applications',  icon: '\uD83D\uDCDD', path: '/admin/applications' },
   { label: 'Restaurants',   icon: '\uD83C\uDFEA', path: '/admin/restaurants' },
   { label: 'Directory',     icon: '\uD83D\uDCD6', path: '/admin/directory' },
@@ -30,6 +31,8 @@ const NAV_ITEMS = [
   { label: 'Admins',        icon: '\uD83D\uDC64', path: '/admin/admins' },
   { label: 'Usernames',     icon: '\uD83C\uDD94', path: '/admin/usernames' },
   { label: 'Logistics',     icon: '\uD83D\uDE9A', path: '/admin/logistics' },
+  { label: 'Festivals',     icon: '\uD83C\uDF89', path: '/admin/festivals' },
+  { label: 'Platform Marketing', icon: '\uD83D\uDCC8', path: '/admin/platform-marketing' },
 ];
 
 const TITLE_BY_PATH = Object.fromEntries(NAV_ITEMS.map((n) => [n.path, n.label]));

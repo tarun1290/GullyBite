@@ -19,7 +19,7 @@ const addressSvc = require('../services/address');
 const flowMgr = require('../services/flowManager');
 const couponSvc = require('../services/coupon');
 const etaSvc = require('../services/eta');
-const loyaltySvc = require('../services/loyalty');
+const loyaltySvc = require('../services/loyaltyEngine');
 const notify = require('../services/notify');
 const { getNextRetryAt, retryDefaults } = require('../utils/retry');
 const { waMessageLimiter, waOrderLimiter, abuseDetector, isPhoneBlocked, isBlocked, rateLimit, adaptiveRateLimit, recordAbuseEvent, RateLimitExceededError, extractSenderIdentifier, extractPhoneNumberId } = require('../middleware/rateLimit');
@@ -540,8 +540,7 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
             restaurantConfig,
             subtotalRs,
             proroutingEstimatePrice,
-            session.discountRs || 0,
-            session.loyaltyTier || null
+            session.discountRs || 0
           );
           effectiveDeliveryFeeRs = effectiveCharges.customer_delivery_rs;
           effectiveTotalRs = effectiveCharges.customer_total_rs;
@@ -677,6 +676,46 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   const token = waAccount.access_token;
   const to = customerIdentity.resolveRecipient(customer);
   let rawText = msg.text.body.trim();
+
+  // ── Dine-in rating text/contextual reply (Prompt 8) ─────────
+  // Fires when the customer replies to our list message with a
+  // number (1-5) or quotes the prompt directly. Matches by context.id
+  // when available, otherwise by recent pending prompt on this phone.
+  try {
+    const numericMatch = /^\s*([1-5])(?:\s*(?:star|stars|\u2B50))?\s*$/i.test(rawText);
+    const contextId = msg.context?.id || null;
+    if (numericMatch || contextId) {
+      const feedbackSvc = require('../services/feedbackService');
+      const pending = await feedbackSvc.findPendingByReply({
+        waMessageId: contextId,
+        customerPhone: customer?.wa_phone || null,
+        restaurantId: waAccount?.restaurant_id || null,
+      });
+      if (pending && pending.source === 'dine_in' && pending.status === 'sent') {
+        const score = numericMatch ? parseInt(rawText, 10) : null;
+        if (score) {
+          await handleDineInRating({
+            feedbackEventId: pending._id,
+            score,
+            customer,
+            waAccount,
+          });
+          return;
+        }
+        if (contextId && rawText) {
+          // Customer quoted the prompt with free-text feedback — stash it
+          // but leave status as 'sent' so a follow-up numeric reply can
+          // still land the rating.
+          await col('feedback_events').updateOne(
+            { _id: pending._id },
+            { $set: { feedback_text: rawText.substring(0, 1000), updated_at: new Date() } }
+          );
+        }
+      }
+    }
+  } catch (fbErr) {
+    log.warn({ err: fbErr }, 'dine-in text rating check failed');
+  }
 
   // ── GBREF code detection (referral tracking — invisible to customer) ──
   const gbrefMatch = rawText.match(/GBREF-([a-zA-Z0-9]{4,10})/i);
@@ -1032,6 +1071,28 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
         created_at: new Date(),
       });
       logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.feedback_submitted', category: 'customer', description: `Rating submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: order?.restaurant_id || null, severity: 'info' });
+      // Additive mirror into the unified feedback_events stream so the
+      // escalation inbox + review-link funnel pick up this rating.
+      // Failure is non-fatal — legacy order_ratings remains authoritative.
+      try {
+        const feedbackSvc = require('../services/feedbackService');
+        const fb = await feedbackSvc.createFeedbackRequest({
+          restaurantId: order?.restaurant_id,
+          outletId: order?.branch_id || null,
+          customerId: customer.id,
+          customerPhone: customer.wa_phone || null,
+          source: 'delivery',
+          orderId: session.ratingOrderId,
+          triggeredBy: 'system',
+        });
+        await feedbackSvc.recordRating({
+          feedbackEventId: fb._id,
+          rating: overall,
+          feedbackText: comment || null,
+        });
+      } catch (fbErr) {
+        log.warn({ err: fbErr }, 'feedback_events mirror (AWAITING_FEEDBACK) failed');
+      }
     } catch (e) {
       if (e.code !== 11000) log.error({ err: e }, 'Rating save error');
     }
@@ -1060,9 +1121,16 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       return;
     }
 
-    const result = await loyaltySvc.redeemPoints(customer.id, restaurantId, pointsToRedeem);
-    if (result.error) {
-      await wa.sendText(pid, token, to, `⚠️ ${result.error}\n\nType a different amount, *ALL*, or *SKIP*.`);
+    const result = await loyaltySvc.redeemPoints(customer.id, restaurantId, null, pointsToRedeem);
+    if (!result.ok) {
+      const reasonMsg = result.reason === 'insufficient_balance'
+        ? `You only have ${bal.balance} points.`
+        : result.reason === 'program_inactive'
+          ? 'Loyalty program is not active for this restaurant.'
+          : result.reason === 'invalid_points'
+            ? 'Please enter a valid point amount.'
+            : 'Could not redeem points right now.';
+      await wa.sendText(pid, token, to, `⚠️ ${reasonMsg}\n\nType a different amount, *ALL*, or *SKIP*.`);
       return;
     }
 
@@ -1641,23 +1709,11 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
 
   logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.cart_submitted', category: 'order', description: `Cart submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, branchId: branchId ? String(branchId) : null, severity: 'info' });
 
-  // CRIT-2A-04: resolve loyalty tier for this customer+restaurant so the
-  // free-delivery waiver is reflected in the cart preview and any
-  // subsequent recalculation in this handler. Failure is non-fatal.
-  let loyaltyTier = null;
-  try {
-    const loyalty = require('../services/loyalty');
-    const bal = await loyalty.getBalance(customer.id, waAccount.restaurant_id);
-    loyaltyTier = bal?.tier || null;
-  } catch (err) {
-    log.warn({ err, customerId: customer.id }, 'loyalty tier lookup failed — proceeding without waiver');
-  }
-
   const cart = await orderSvc.buildCartFromCatalogOrder(productItems, branchId, session.deliveryLat, session.deliveryLng, {
     deliveryAddress: session.deliveryAddress,
     customerName: customer.name,
     customerPhone: customer.wa_phone || customer.bsuid || '',
-  }, loyaltyTier);
+  });
 
   if (!cart.cart.length) {
     await wa.sendText(pid, token, to, '⚠️ Some items are no longer available. Please browse the menu again.');
@@ -1717,7 +1773,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   if ((discountRs > 0 || couponData?.freeDelivery) && charges) {
     const { calculateOrderCharges } = require('../services/charges');
     const effectiveDelivery = couponData?.freeDelivery ? 0 : charges.delivery_fee_total_rs;
-    charges = calculateOrderCharges(restConfig, cart.subtotalRs, effectiveDelivery, discountRs, loyaltyTier);
+    charges = calculateOrderCharges(restConfig, cart.subtotalRs, effectiveDelivery, discountRs);
   }
   const finalTotalRs = charges ? charges.customer_total_rs : (cart.subtotalRs + cart.deliveryFeeRs - discountRs);
 
@@ -1803,6 +1859,25 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
     const score = parseInt(parts[2]) || 3;
     await handleRatingReply(ratingOrderId, score, customer, conv, waAccount);
     return;
+  }
+
+  // ── Dine-in rating list reply: dinein-rating-<feedbackEventId>-<score>
+  if (replyId?.startsWith('dinein-rating-')) {
+    const rest = replyId.slice('dinein-rating-'.length);
+    const lastDash = rest.lastIndexOf('-');
+    if (lastDash > 0) {
+      const feedbackEventId = rest.slice(0, lastDash);
+      const score = parseInt(rest.slice(lastDash + 1), 10);
+      if (feedbackEventId && score >= 1 && score <= 5) {
+        await handleDineInRating({
+          feedbackEventId,
+          score,
+          customer,
+          waAccount,
+        });
+        return;
+      }
+    }
   }
 
   // ── Issue category selection: ISS_<category> ──
@@ -2483,11 +2558,8 @@ const sendLoyaltyBalance = async (customer, waAccount) => {
   let msg = '💰 *Your Loyalty Points*\n\n';
   for (const l of loyaltyDocs) {
     const name = restMap[l.restaurant_id] || 'Restaurant';
-    const tierLabel = l.tier.charAt(0).toUpperCase() + l.tier.slice(1);
     msg += `🏪 *${name}*\n`;
-    msg += `   Points: ${l.points_balance} (lifetime: ${l.lifetime_points})\n`;
-    msg += `   Tier: ${tierLabel}\n`;
-    msg += `   ${loyaltySvc.getTierBenefits(l.tier)}\n\n`;
+    msg += `   Points: ${l.points_balance} (lifetime: ${l.lifetime_points})\n\n`;
   }
   msg += '_Redeem points at checkout — 10 points = ₹1 off!_';
 
@@ -2543,9 +2615,67 @@ const handleRatingReply = async (orderId, score, customer, conv, waAccount) => {
     } catch (e) {
       if (e.code !== 11000) log.error({ err: e }, 'Rating save error');
     }
+    // Mirror into feedback_events so the unified inbox + review funnel
+    // reflect the positive rating. Triggers the Google/Zomato nudge.
+    try {
+      const feedbackSvc = require('../services/feedbackService');
+      const fb = await feedbackSvc.createFeedbackRequest({
+        restaurantId: order?.restaurant_id,
+        outletId: order?.branch_id || null,
+        customerId: customer.id,
+        customerPhone: customer.wa_phone || null,
+        source: 'delivery',
+        orderId,
+        triggeredBy: 'system',
+      });
+      await feedbackSvc.recordRating({ feedbackEventId: fb._id, rating: score });
+    } catch (fbErr) {
+      log.warn({ err: fbErr }, 'feedback_events mirror (handleRatingReply) failed');
+    }
     logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.feedback_submitted', category: 'customer', description: `Rating submitted by ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: order?.restaurant_id || null, severity: 'info' });
     await wa.sendText(pid, token, to, 'Thanks for your feedback! 🎉 We\'re glad you enjoyed it!');
     await orderSvc.setState(conv.id, 'GREETING', {});
+  }
+};
+
+// ─── DINE-IN RATING REPLY HANDLER (Prompt 8) ─────────────────
+// Resolves a list-row or text reply against a pending feedback_events
+// row. Positive replies trigger the delayed Google/Zomato nudge;
+// negative replies park an escalation for the merchant to act on.
+const handleDineInRating = async ({ feedbackEventId, score, feedbackText = null, customer, waAccount }) => {
+  const pid   = waAccount?.phone_number_id;
+  const token = waAccount?.access_token;
+  const to    = customer ? customerIdentity.resolveRecipient(customer) : null;
+
+  try {
+    const feedbackSvc = require('../services/feedbackService');
+    const row = await col('feedback_events').findOne({ _id: feedbackEventId });
+    if (!row) {
+      if (pid && token && to) {
+        await wa.sendText(pid, token, to, 'Thanks for your feedback!');
+      }
+      return;
+    }
+    if (row.status !== 'sent') {
+      if (pid && token && to) {
+        await wa.sendText(pid, token, to, 'You\'ve already rated this visit. Thank you! \uD83D\uDE0A');
+      }
+      return;
+    }
+    await feedbackSvc.recordRating({
+      feedbackEventId: row._id,
+      rating: score,
+      feedbackText: feedbackText || null,
+    });
+  } catch (err) {
+    log.warn({ err, feedbackEventId }, 'dine-in rating save failed');
+  }
+
+  if (pid && token && to) {
+    const msg = score >= 4
+      ? `Thanks for the ${score}\u2B50 rating! \uD83C\uDF89 We\'ll follow up shortly with a quick review nudge.`
+      : 'Sorry we didn\'t meet your expectations — thank you for telling us. The team has been alerted.';
+    await wa.sendText(pid, token, to, msg).catch(() => {});
   }
 };
 
@@ -2690,6 +2820,14 @@ const handleStatus = async (status) => {
     try {
       const campaignSvc = require('../services/campaigns');
       await campaignSvc.trackMessageStatus(status.id, status.status);
+    } catch (_) {} // Non-critical
+
+    // Manual-blast marketing campaigns — attribution lookup via
+    // campaign_message_map (separate from the MPM campaigns above).
+    // Never allowed to throw or delay the webhook response.
+    try {
+      const marketingCampaigns = require('../services/marketingCampaigns');
+      await marketingCampaigns.trackWebhookStatus(status.id, status.status);
     } catch (_) {} // Non-critical
   }
 };
@@ -3423,6 +3561,28 @@ const handleFlowResponse = async (responseData, customer, conv, waAccount) => {
       });
     } catch (e) {
       if (e.code !== 11000) log.error({ err: e }, 'Flow rating save error');
+    }
+    // Additive mirror into feedback_events for the unified inbox +
+    // review funnel. Legacy order_ratings remains the authoritative
+    // source for per-category analytics.
+    try {
+      const feedbackSvc = require('../services/feedbackService');
+      const fb = await feedbackSvc.createFeedbackRequest({
+        restaurantId: order?.restaurant_id,
+        outletId: order?.branch_id || null,
+        customerId: customer.id,
+        customerPhone: customer.wa_phone || null,
+        source: 'delivery',
+        orderId,
+        triggeredBy: 'system',
+      });
+      await feedbackSvc.recordRating({
+        feedbackEventId: fb._id,
+        rating: overall,
+        feedbackText: comment || null,
+      });
+    } catch (fbErr) {
+      log.warn({ err: fbErr }, 'feedback_events mirror (handleFlowResponse) failed');
     }
 
     const emoji = overall >= 4 ? '🎉' : '🙏';

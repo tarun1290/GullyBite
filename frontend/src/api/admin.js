@@ -834,3 +834,83 @@ export async function getAdminAlerts() {
   const { data } = await client.get('/api/admin/alerts');
   return data;
 }
+
+// ─── Campaign templates (admin CRUD + approval) ────────────────────────
+// GET /api/admin/campaign-templates — params: use_case, is_active, meta_approval_status.
+export async function getAdminCampaignTemplates(params = {}) {
+  const { data } = await client.get('/api/admin/campaign-templates', { params });
+  return data;
+}
+
+// POST /api/admin/campaign-templates — create.
+export async function createCampaignTemplate(body) {
+  const { data } = await client.post('/api/admin/campaign-templates', body);
+  return data;
+}
+
+// PUT /api/admin/campaign-templates/:templateId — update (template_id immutable).
+export async function updateCampaignTemplate(templateId, body) {
+  const { data } = await client.put(`/api/admin/campaign-templates/${encodeURIComponent(templateId)}`, body);
+  return data;
+}
+
+// DELETE /api/admin/campaign-templates/:templateId — soft delete (is_active=false).
+export async function deleteCampaignTemplate(templateId) {
+  const { data } = await client.delete(`/api/admin/campaign-templates/${encodeURIComponent(templateId)}`);
+  return data;
+}
+
+// POST /api/admin/campaign-templates/:templateId/activate — flip is_active=true.
+export async function activateCampaignTemplate(templateId) {
+  const { data } = await client.post(`/api/admin/campaign-templates/${encodeURIComponent(templateId)}/activate`);
+  return data;
+}
+
+// PATCH /api/admin/campaign-templates/:templateId/approval — body { status, rejection_reason? }.
+export async function updateCampaignTemplateApproval(templateId, body) {
+  const { data } = await client.patch(
+    `/api/admin/campaign-templates/${encodeURIComponent(templateId)}/approval`,
+    body,
+  );
+  return data;
+}
+
+// GET /api/admin/marketing-campaigns/overview — platform-wide manual-blast stats.
+export async function getMarketingCampaignsOverview() {
+  const { data } = await client.get('/api/admin/marketing-campaigns/overview');
+  return data;
+}
+
+// ─── Festival calendar (Prompt 9) ─────────────────────────────────
+
+export async function getAdminFestivals(params = {}) {
+  const { data } = await client.get('/api/admin/festivals', { params });
+  return data;
+}
+
+export async function createFestival(body) {
+  const { data } = await client.post('/api/admin/festivals', body);
+  return data;
+}
+
+export async function updateFestival(slug, body) {
+  const { data } = await client.put(`/api/admin/festivals/${encodeURIComponent(slug)}`, body);
+  return data;
+}
+
+export async function toggleFestival(slug) {
+  const { data } = await client.patch(`/api/admin/festivals/${encodeURIComponent(slug)}/toggle`);
+  return data;
+}
+
+export async function seedFestivalCalendarAdmin(years) {
+  const { data } = await client.post('/api/admin/festivals/seed', years ? { years } : {});
+  return data;
+}
+
+// ─── Platform Marketing Analytics (Prompt 10) ────────────────────
+// GET /api/admin/platform-marketing/snapshot?period=7d|30d|90d|all
+export async function getPlatformMarketingSnapshot(period = '30d') {
+  const { data } = await client.get('/api/admin/platform-marketing/snapshot', { params: { period } });
+  return data;
+}

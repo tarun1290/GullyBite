@@ -5828,8 +5828,20 @@ router.get('/wallet', async (req, res) => {
     const walletSvc = require('../services/wallet');
     let wallet = await walletSvc.getWallet(req.restaurantId);
     if (!wallet) wallet = await walletSvc.ensureWallet(req.restaurantId);
-    const monthlySpend = await walletSvc.getMonthlySpend(req.restaurantId);
-    res.json({ ...wallet, monthly_spend_rs: monthlySpend });
+    const [monthlySpend, breakdown, restaurant] = await Promise.all([
+      walletSvc.getMonthlySpend(req.restaurantId),
+      walletSvc.getBreakdownTotals(req.restaurantId),
+      col('restaurants').findOne(
+        { _id: req.restaurantId },
+        { projection: { campaigns_enabled: 1 } },
+      ),
+    ]);
+    res.json({
+      ...wallet,
+      monthly_spend_rs: monthlySpend,
+      campaigns_enabled: !!restaurant?.campaigns_enabled,
+      ...breakdown,
+    });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -6507,76 +6519,9 @@ router.get('/ratings/summary', requireApproved, async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-// ═══════════════════════════════════════════════════════════════
-// LOYALTY
-// ═══════════════════════════════════════════════════════════════
-
-// GET /api/restaurant/loyalty/stats
-router.get('/loyalty/stats', requireApproved, async (req, res) => {
-  try {
-    const allLoyalty = await col('loyalty_points').find({ restaurant_id: req.restaurantId }).toArray();
-    const total = allLoyalty.length;
-    const totalBalance = allLoyalty.reduce((s, l) => s + (l.points_balance || 0), 0);
-    const totalLifetime = allLoyalty.reduce((s, l) => s + (l.lifetime_points || 0), 0);
-
-    const tierCounts = { bronze: 0, silver: 0, gold: 0, platinum: 0 };
-    for (const l of allLoyalty) { tierCounts[l.tier] = (tierCounts[l.tier] || 0) + 1; }
-
-    // Points redeemed (sum of negative transactions)
-    const redeemTx = await col('loyalty_transactions')
-      .find({ restaurant_id: req.restaurantId, type: 'redeem' })
-      .toArray();
-    const totalRedeemed = redeemTx.reduce((s, t) => s + Math.abs(t.points || 0), 0);
-
-    res.json({
-      total_members: total,
-      total_points_issued: totalLifetime,
-      total_points_redeemed: totalRedeemed,
-      total_points_balance: totalBalance,
-      tiers: tierCounts,
-    });
-  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
-});
-
-// GET /api/restaurant/loyalty/customers
-router.get('/loyalty/customers', requireApproved, async (req, res) => {
-  try {
-    const page  = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(50, parseInt(req.query.limit) || 20);
-    const skip  = (page - 1) * limit;
-
-    const [docs, total] = await Promise.all([
-      col('loyalty_points')
-        .find({ restaurant_id: req.restaurantId })
-        .sort({ lifetime_points: -1 })
-        .skip(skip).limit(limit).toArray(),
-      col('loyalty_points').countDocuments({ restaurant_id: req.restaurantId }),
-    ]);
-
-    const customerIds = docs.map(d => d.customer_id).filter(Boolean);
-    const customers = customerIds.length
-      ? await col('customers').find({ _id: { $in: customerIds } }).toArray()
-      : [];
-    const custMap = Object.fromEntries(customers.map(c => [String(c._id), c]));
-
-    const enriched = docs.map(d => {
-      const c = custMap[d.customer_id] || {};
-      return {
-        id: String(d._id),
-        customer_name: c.name || 'Unknown',
-        wa_phone: maskPhone(c.wa_phone),
-        points_balance: d.points_balance,
-        lifetime_points: d.lifetime_points,
-        tier: d.tier,
-        total_orders: c.total_orders || 0,
-        total_spent_rs: c.total_spent_rs || 0,
-        last_order_at: c.last_order_at,
-      };
-    });
-
-    res.json({ customers: enriched, total, page, pages: Math.ceil(total / limit) });
-  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
-});
+// Loyalty routes previously lived here as /loyalty/stats + /loyalty/customers.
+// They moved to routes/loyalty.js under /api/restaurant/loyalty-program/*
+// as part of the unified loyalty engine (see services/loyaltyEngine.js).
 
 // ═══════════════════════════════════════════════════════════════
 // TEAM / USER MANAGEMENT

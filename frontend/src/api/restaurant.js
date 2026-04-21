@@ -373,6 +373,137 @@ export async function getWallet() {
   return data;
 }
 
+// GET /api/restaurant/settings/marketing-wa — current marketing WA config.
+export async function getMarketingWaStatus() {
+  const { data } = await client.get('/api/restaurant/settings/marketing-wa');
+  return data;
+}
+
+// POST /api/restaurant/settings/marketing-wa — save phone_number_id + waba_id.
+export async function saveMarketingWaNumber(payload) {
+  const { data } = await client.post('/api/restaurant/settings/marketing-wa', payload);
+  return data;
+}
+
+// GET /api/restaurant/customers/stats — headline tiles for Customers tab.
+export async function getCustomerStats() {
+  const { data } = await client.get('/api/restaurant/customers/stats');
+  return data;
+}
+
+// GET /api/restaurant/customers/segments — RFM segment counts.
+export async function getCustomerSegments() {
+  const { data } = await client.get('/api/restaurant/customers/segments');
+  return data;
+}
+
+// GET /api/restaurant/customers/by-segment/:label — top rows per segment.
+export async function getCustomersBySegment(label, limit = 20) {
+  const { data } = await client.get(
+    `/api/restaurant/customers/by-segment/${encodeURIComponent(label)}`,
+    { params: { limit } },
+  );
+  return data;
+}
+
+// GET /api/restaurant/campaign-templates?use_case= — approved + active only.
+export async function getCampaignTemplates(params = {}) {
+  const { data } = await client.get('/api/restaurant/campaign-templates', { params });
+  return data;
+}
+
+// GET /api/restaurant/campaign-templates/:templateId
+export async function getCampaignTemplate(templateId) {
+  const { data } = await client.get(`/api/restaurant/campaign-templates/${encodeURIComponent(templateId)}`);
+  return data;
+}
+
+// ── Marketing campaigns (manual blasts) ─────────────────────────────
+// Distinct from legacy /campaigns (MPM catalog). Uses campaign_templates
+// + customer_rfm_profiles to blast template messages to an RFM segment.
+
+// POST /api/restaurant/marketing-campaigns/create
+export async function createMarketingCampaign(body) {
+  const { data } = await client.post('/api/restaurant/marketing-campaigns/create', body);
+  return data;
+}
+
+// GET /api/restaurant/marketing-campaigns?page=&limit=&status=
+export async function getMarketingCampaigns(params = {}) {
+  const { data } = await client.get('/api/restaurant/marketing-campaigns', { params });
+  return data;
+}
+
+// GET /api/restaurant/marketing-campaigns/:id
+export async function getMarketingCampaign(id) {
+  const { data } = await client.get(`/api/restaurant/marketing-campaigns/${encodeURIComponent(id)}`);
+  return data;
+}
+
+// POST /api/restaurant/marketing-campaigns/:id/cancel
+export async function cancelMarketingCampaign(id) {
+  const { data } = await client.post(`/api/restaurant/marketing-campaigns/${encodeURIComponent(id)}/cancel`);
+  return data;
+}
+
+// GET /api/restaurant/marketing-campaigns/stats/summary
+export async function getMarketingCampaignSummary() {
+  const { data } = await client.get('/api/restaurant/marketing-campaigns/stats/summary');
+  return data;
+}
+
+// ── Auto journeys ───────────────────────────────────────────────────
+// Per-restaurant toggle + customisation for the six automated journeys.
+// Backend validates trigger_day, send_hour_ist, trigger_orders, and
+// template_id (must be active + approved).
+
+export async function getAutoJourneyConfig() {
+  const { data } = await client.get('/api/restaurant/auto-journeys/config');
+  return data;
+}
+
+export async function updateAutoJourneyConfig(body) {
+  const { data } = await client.put('/api/restaurant/auto-journeys/config', body);
+  return data;
+}
+
+export async function getAutoJourneyStats() {
+  const { data } = await client.get('/api/restaurant/auto-journeys/stats');
+  return data;
+}
+
+// ── Loyalty Program (Prompt 7) ──────────────────────────────────────
+// Per-restaurant loyalty engine. Mounted at /loyalty-program to avoid
+// collision with the legacy /loyalty/* endpoints (tiers + member
+// table) still served by the restaurant router.
+
+export async function getLoyaltyProgramConfig() {
+  const { data } = await client.get('/api/restaurant/loyalty-program/config');
+  return data;
+}
+
+export async function updateLoyaltyProgramConfig(body) {
+  const { data } = await client.put('/api/restaurant/loyalty-program/config', body);
+  return data;
+}
+
+export async function getLoyaltyProgramStats() {
+  const { data } = await client.get('/api/restaurant/loyalty-program/stats');
+  return data;
+}
+
+export async function lookupLoyaltyCustomer(phone) {
+  const { data } = await client.get(
+    `/api/restaurant/loyalty-program/customer/${encodeURIComponent(phone)}`,
+  );
+  return data;
+}
+
+export async function creditLoyaltyDineIn(body) {
+  const { data } = await client.post('/api/restaurant/loyalty-program/dine-in-credit', body);
+  return data;
+}
+
 // GET /api/restaurant/wallet/transactions?limit=
 export async function getWalletTransactions(params = {}) {
   const { data } = await client.get('/api/restaurant/wallet/transactions', { params });
@@ -881,20 +1012,102 @@ export async function getRatings(params = {}) {
   return data;
 }
 
-// ── Loyalty tab ──────────────────────────────────────────────────────
-// Mirrors loadLoyalty() in legacy js/tabs/restaurant.js:385.
+// Legacy loyalty helpers (getLoyaltyStats / getLoyaltyCustomers) have
+// been removed. Use the unified /api/restaurant/loyalty-program/*
+// helpers at the top of this file (getLoyaltyProgramStats,
+// lookupLoyaltyCustomer, etc.).
 
-// GET /api/restaurant/loyalty/stats
-// → { total_members, total_points_issued, total_points_redeemed, tiers:{platinum,gold,silver,bronze} }
-export async function getLoyaltyStats() {
-  const { data } = await client.get('/api/restaurant/loyalty/stats');
+// ═══════════════════════════════════════════════════════════════
+// Unified feedback & review funnel (Prompt 8)
+// ═══════════════════════════════════════════════════════════════
+
+// POST /api/restaurant/feedback/dine-in/send
+//   body: { phone, customer_name?, outlet_id?, order_ref? }
+export async function sendDineInFeedback(body) {
+  const { data } = await client.post('/api/restaurant/feedback/dine-in/send', body);
   return data;
 }
 
-// GET /api/restaurant/loyalty/customers?page=&limit=
-// → { customers: [{customer_name, wa_phone, bsuid, points_balance, lifetime_points,
-//                  tier, total_orders, total_spent_rs}], total, pages }
-export async function getLoyaltyCustomers(params = {}) {
-  const { data } = await client.get('/api/restaurant/loyalty/customers', { params });
+// GET /api/restaurant/feedback/events
+export async function getFeedbackEvents(params = {}) {
+  const { data } = await client.get('/api/restaurant/feedback/events', { params });
+  return data;
+}
+
+// GET /api/restaurant/feedback/stats?window=30d
+export async function getFeedbackStats(params = {}) {
+  const { data } = await client.get('/api/restaurant/feedback/stats', { params });
+  return data;
+}
+
+// GET /api/restaurant/feedback/escalations?include_resolved=true|false
+export async function getFeedbackEscalations(params = {}) {
+  const { data } = await client.get('/api/restaurant/feedback/escalations', { params });
+  return data;
+}
+
+// PATCH /api/restaurant/feedback/escalations/:id/resolve
+export async function resolveFeedbackEscalation(id, note) {
+  const { data } = await client.patch(`/api/restaurant/feedback/escalations/${id}/resolve`, { note });
+  return data;
+}
+
+// GET /api/restaurant/feedback/notifications
+export async function getRestaurantNotifications(params = {}) {
+  const { data } = await client.get('/api/restaurant/feedback/notifications', { params });
+  return data;
+}
+
+// PATCH /api/restaurant/feedback/notifications/:id/read
+export async function markNotificationRead(id) {
+  const { data } = await client.patch(`/api/restaurant/feedback/notifications/${id}/read`);
+  return data;
+}
+
+// PATCH /api/restaurant/feedback/notifications/read-all
+export async function markAllNotificationsRead() {
+  const { data } = await client.patch('/api/restaurant/feedback/notifications/read-all');
+  return data;
+}
+
+// GET /api/restaurant/feedback/settings/review-links
+export async function getReviewLinks() {
+  const { data } = await client.get('/api/restaurant/feedback/settings/review-links');
+  return data;
+}
+
+// PATCH /api/restaurant/feedback/settings/review-links
+//   body: { google_review_link?, zomato_review_link? }
+export async function updateReviewLinks(body) {
+  const { data } = await client.patch('/api/restaurant/feedback/settings/review-links', body);
+  return data;
+}
+
+// GET /api/restaurant/festivals/upcoming
+// Festival calendar rows in the next 60 days. Each row includes
+// days_until + already_sent so the campaign wizard can render a
+// festival nudge banner with a pre-filled template use_case.
+export async function getUpcomingFestivals() {
+  const { data } = await client.get('/api/restaurant/festivals/upcoming');
+  return data;
+}
+
+// GET /api/restaurant/campaigns/smart-send-time
+// Returns the peak-hour recommendation, or null if the tenant has
+// fewer than 20 paid orders in the last 90 days.
+export async function getCampaignSmartSendTime() {
+  const { data } = await client.get('/api/restaurant/campaigns/smart-send-time');
+  return data;
+}
+
+// ─── Marketing Analytics (Prompt 10) ─────────────────────────────
+// All endpoints accept ?period=7d|30d|90d|all (default 30d).
+export async function getMarketingAnalyticsDashboard(period = '30d') {
+  const { data } = await client.get('/api/restaurant/marketing-analytics/dashboard', { params: { period } });
+  return data;
+}
+
+export async function getMarketingAnalyticsSection(section, period = '30d') {
+  const { data } = await client.get(`/api/restaurant/marketing-analytics/${section}`, { params: { period } });
   return data;
 }

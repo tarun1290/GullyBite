@@ -55,8 +55,17 @@ const STATE = Object.freeze({
   CART:            'CART',
   AWAIT_ADDRESS:   'AWAIT_ADDRESS',
   CONFIRM:         'CONFIRM',
+  // Loyalty redemption YES/NO interstitial between CONFIRM and order_details.
+  // Only entered when loyaltyEngine.getRedemptionOffer returns eligible=true.
+  AWAIT_LOYALTY:   'AWAIT_LOYALTY',
   AWAIT_PAYMENT:   'AWAIT_PAYMENT',
 });
+
+// Loyalty prompt timeout: if the customer doesn't tap YES/NO within
+// this window we auto-proceed at full price. The pending row in
+// pending_loyalty_redemptions has its own 10-min TTL as a backstop
+// for the ledger — this setTimeout just drives the WhatsApp UX.
+const LOYALTY_PROMPT_TIMEOUT_MS = 5 * 60 * 1000;
 
 // ─── TENANT RESOLUTION ────────────────────────────────────────
 // phone_number_id → (brand, restaurant). Brand.findByPhoneNumberId is
@@ -416,6 +425,150 @@ async function _handleConfirm(tenant, convo, customer, from, input) {
       return;
     }
 
+    // Loyalty pre-checkout prompt. Skipped silently when the program
+    // is inactive, the customer isn't eligible, or the offer lookup
+    // errors — we never want loyalty to block ordering.
+    try {
+      const loyaltyEngine = require('../services/loyaltyEngine');
+      const cartSubtotal = (cart.items || []).reduce(
+        (a, it) => a + (Number(it.unit_price_rs) || 0) * (Number(it.qty) || 0),
+        0,
+      );
+      const offer = await loyaltyEngine.getRedemptionOffer({
+        restaurantId: tenant.restaurant_id,
+        customerId: customer._id,
+        cartTotalRs: cartSubtotal,
+      });
+      if (offer && offer.eligible) {
+        await _promptLoyaltyRedemption(tenant, convo, customer, from, offer);
+        return;
+      }
+    } catch (err) {
+      log.warn({ err }, 'loyalty offer lookup failed — proceeding without prompt');
+    }
+
+    await _placeOrderAndRequestPayment(tenant, convo, customer, from, {
+      discountRs: 0,
+      pointsToRedeem: 0,
+    });
+    return;
+  }
+  // Unknown input in CONFIRM — nudge back to the choice.
+  await _send(tenant, from, _textBody('Please tap *Confirm* or *Cancel*.'));
+}
+
+// Sends the YES/NO redemption buttons, parks a pending row, and sets
+// a 5-min timeout to auto-proceed at full price if the customer
+// stays silent. Pending row has a 10-min TTL so stale intent is never
+// applied to a later cart.
+async function _promptLoyaltyRedemption(tenant, convo, customer, from, offer) {
+  const points   = Number(offer.points_to_redeem) || 0;
+  const discount = Number(offer.discount_rs) || 0;
+  const pendingId = require('../config/database').newId();
+  try {
+    await col('pending_loyalty_redemptions').insertOne({
+      _id: pendingId,
+      restaurant_id: String(tenant.restaurant_id),
+      customer_id: String(customer._id),
+      wa_phone: String(from),
+      session_id: String(convo._id),
+      points_to_redeem: points,
+      discount_rs: discount,
+      created_at: new Date(),
+    });
+  } catch (err) {
+    log.warn({ err }, 'pending_loyalty_redemption insert failed — proceeding without prompt');
+    await _placeOrderAndRequestPayment(tenant, convo, customer, from, {
+      discountRs: 0,
+      pointsToRedeem: 0,
+    });
+    return;
+  }
+
+  await _send(tenant, from, _buttonsBody({
+    body: `⭐ You have ${offer.balance} loyalty points.\n\nRedeem ${points} points for ₹${discount} off this order?`,
+    buttons: [
+      { id: 'REDEEM_YES', title: '✅ Yes, redeem' },
+      { id: 'REDEEM_NO',  title: '❌ No, thanks' },
+    ],
+  }));
+  await _setState(convo._id, STATE.AWAIT_LOYALTY, {
+    ...(convo.session_data || {}),
+    pending_loyalty_id: pendingId,
+    loyalty_points: points,
+    loyalty_discount_rs: discount,
+  });
+
+  // Timeout fallback. Restart-loss is acceptable — if the server
+  // restarts, the TTL row eventually vanishes and the customer can
+  // resubmit the cart at full price.
+  setTimeout(() => {
+    _loyaltyPromptTimeout(tenant, convo._id, customer, from, pendingId).catch((err) => {
+      log.warn({ err, pendingId }, 'loyalty prompt timeout handler failed');
+    });
+  }, LOYALTY_PROMPT_TIMEOUT_MS).unref?.();
+}
+
+async function _loyaltyPromptTimeout(tenant, convoId, customer, from, pendingId) {
+  const pending = await col('pending_loyalty_redemptions').findOne({ _id: pendingId });
+  if (!pending) return; // customer already replied — nothing to do
+  await col('pending_loyalty_redemptions').deleteOne({ _id: pendingId });
+  const convo = await col('conversations').findOne({ _id: convoId });
+  if (!convo || convo.state !== STATE.AWAIT_LOYALTY) return;
+  await _send(tenant, from, _textBody('No worries — proceeding at full price.'));
+  await _placeOrderAndRequestPayment(tenant, convo, customer, from, {
+    discountRs: 0,
+    pointsToRedeem: 0,
+  });
+}
+
+async function _handleAwaitLoyalty(tenant, convo, customer, from, input) {
+  const pendingId = convo.session_data?.pending_loyalty_id;
+  const pending = pendingId
+    ? await col('pending_loyalty_redemptions').findOne({ _id: pendingId })
+    : null;
+
+  if (input === 'REDEEM_YES' && pending) {
+    await col('pending_loyalty_redemptions').deleteOne({ _id: pendingId });
+    await _placeOrderAndRequestPayment(tenant, convo, customer, from, {
+      discountRs: Number(pending.discount_rs) || 0,
+      pointsToRedeem: Number(pending.points_to_redeem) || 0,
+    });
+    return;
+  }
+  if (input === 'REDEEM_NO') {
+    if (pendingId) await col('pending_loyalty_redemptions').deleteOne({ _id: pendingId });
+    await _placeOrderAndRequestPayment(tenant, convo, customer, from, {
+      discountRs: 0,
+      pointsToRedeem: 0,
+    });
+    return;
+  }
+  // Unknown input while awaiting — nudge, keep state.
+  await _send(tenant, from, _buttonsBody({
+    body: 'Please tap Yes or No to continue.',
+    buttons: [
+      { id: 'REDEEM_YES', title: '✅ Yes, redeem' },
+      { id: 'REDEEM_NO',  title: '❌ No, thanks' },
+    ],
+  }));
+}
+
+async function _placeOrderAndRequestPayment(tenant, convo, customer, from, { discountRs, pointsToRedeem }) {
+  const cart = await cartSvc.getCart(tenant.restaurant_id, customer._id);
+  if (!cart || !cart.items?.length) {
+    await _send(tenant, from, _textBody('Your cart is empty — nothing to place.'));
+    await _setState(convo._id, STATE.HOME, convo.session_data);
+    await _sendHome(tenant, from, customer.name);
+    return;
+  }
+  if (!cart.address_id) {
+    await _send(tenant, from, _textBody('Please pick a delivery address first.'));
+    await _setState(convo._id, STATE.CART, convo.session_data);
+    return;
+  }
+
+  {
     // 1. Create order (address_snapshot + items frozen inside).
     let order;
     try {
@@ -423,9 +576,23 @@ async function _handleConfirm(tenant, convo, customer, from, input) {
         restaurantId: tenant.restaurant_id,
         customerId: customer._id,
         cart,
-        options: { brandId: tenant.brand_id },
+        options: { brandId: tenant.brand_id, discountRs: Number(discountRs) || 0 },
       });
       order = res.order;
+      if (Number(pointsToRedeem) > 0) {
+        try {
+          await col('orders').updateOne(
+            { _id: order._id },
+            { $set: {
+                loyalty_points_redeemed: Number(pointsToRedeem),
+                loyalty_discount_rs: Number(discountRs) || 0,
+                updated_at: new Date(),
+              } },
+          );
+          order.loyalty_points_redeemed = Number(pointsToRedeem);
+          order.loyalty_discount_rs = Number(discountRs) || 0;
+        } catch (_) { /* non-fatal — earn path is gated on loyalty_points_redeemed later */ }
+      }
     } catch (err) {
       log.error({ err }, 'orderCreate failed');
       await _send(tenant, from, _textBody('Sorry, we couldn\'t place your order. Your cart is saved — please try again in a moment.'));
@@ -527,10 +694,7 @@ async function _handleConfirm(tenant, convo, customer, from, input) {
       total_rs: order.total_rs,
       awaiting_payment_since: new Date(),
     });
-    return;
   }
-  // Unknown input in CONFIRM — nudge back to the choice.
-  await _send(tenant, from, _textBody('Please tap *Confirm* or *Cancel*.'));
 }
 
 // AWAIT_PAYMENT: we're waiting on Razorpay webhook. Any inbound message
@@ -717,6 +881,8 @@ async function handle({ phone_number_id, from, message } = {}) {
         await _handleAwaitAddress(tenant, convo, customer, from, input, message); break;
       case STATE.CONFIRM:
         await _handleConfirm(tenant, convo, customer, from, input); break;
+      case STATE.AWAIT_LOYALTY:
+        await _handleAwaitLoyalty(tenant, convo, customer, from, input); break;
       case STATE.AWAIT_PAYMENT:
         await _handleAwaitPayment(tenant, convo, customer, from, input); break;
       case STATE.BROWSE_CATEGORY:

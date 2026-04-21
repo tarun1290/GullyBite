@@ -3,281 +3,464 @@ import StatCard from '../../components/StatCard.jsx';
 import SectionError from '../../components/dashboard/analytics/SectionError.jsx';
 import { useRestaurant } from '../../contexts/RestaurantContext.jsx';
 import {
-  getLoyaltyCustomers,
-  getLoyaltyStats,
+  getLoyaltyProgramConfig,
+  updateLoyaltyProgramConfig,
+  getLoyaltyProgramStats,
+  lookupLoyaltyCustomer,
+  creditLoyaltyDineIn,
 } from '../../api/restaurant.js';
 
-// Mirrors loadLoyalty() in legacy js/tabs/restaurant.js:385.
+// Loyalty Program tab.
+// Three sections: Program Overview (stats + activate toggle), Program
+// Settings (config form), Dine-in Points Entry (phone + points +
+// description). Backed by the unified loyaltyEngine (loyalty_config +
+// loyalty_points + loyalty_transactions) via
+// /api/restaurant/loyalty-program/*.
 
-const PAGE_LIMIT = 20;
-
-const TIERS = [
-  { key: 'platinum', label: '💎 Platinum', color: 'var(--acc)' },
-  { key: 'gold',     label: '🥇 Gold',     color: 'var(--gold)' },
-  { key: 'silver',   label: '🥈 Silver',   color: 'var(--blue)' },
-  { key: 'bronze',   label: '🥉 Bronze',   color: 'var(--dim)' },
+const CONFIG_FIELDS = [
+  { key: 'program_name',             label: 'Program name',                      type: 'text',   step: null },
+  { key: 'points_per_rupee',         label: 'Points per ₹1',                     type: 'number', step: '0.01' },
+  { key: 'first_order_multiplier',   label: 'First-order multiplier',            type: 'number', step: '0.1' },
+  { key: 'birthday_week_multiplier', label: 'Birthday-week multiplier',          type: 'number', step: '0.1' },
+  { key: 'referral_bonus_points',    label: 'Referral bonus (points)',           type: 'number', step: '1' },
+  { key: 'min_points_to_redeem',     label: 'Minimum points to redeem',          type: 'number', step: '1' },
+  { key: 'max_redemption_percent',   label: 'Max redemption % of cart',          type: 'number', step: '1' },
+  { key: 'points_to_rupee_ratio',    label: 'Points per ₹1 discount',            type: 'number', step: '1' },
+  { key: 'max_redemptions_per_day',  label: 'Max redemptions per day',           type: 'number', step: '1' },
+  { key: 'points_expiry_days',       label: 'Points expire after (days)',        type: 'number', step: '1' },
+  { key: 'expiry_warning_days',      label: 'Expiry warning window (days)',      type: 'number', step: '1' },
 ];
 
-const TIER_META = {
-  platinum: { emoji: '💎', color: 'var(--acc)' },
-  gold:     { emoji: '🥇', color: 'var(--gold)' },
-  silver:   { emoji: '🥈', color: 'var(--blue)' },
-  bronze:   { emoji: '🥉', color: 'var(--dim)' },
-};
-
-function TierBadge({ tier }) {
-  const t = tier || 'bronze';
-  const meta = TIER_META[t] || TIER_META.bronze;
+function ProgramOverview({ stats, loading, err, onRetry, onToggleActive, config, savingActive }) {
+  if (err) return <SectionError message={err} onRetry={onRetry} />;
+  const redemptionRatePct = Math.round(((stats?.redemption_rate || 0) * 100) * 10) / 10;
   return (
-    <span style={{ color: meta.color, fontWeight: 600 }}>
-      {meta.emoji} {t.charAt(0).toUpperCase() + t.slice(1)}
-    </span>
+    <div style={{ marginBottom: '1rem' }}>
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <div className="ch" style={{ alignItems: 'center' }}>
+          <h3 style={{ margin: 0 }}>Program Overview</h3>
+          <button
+            type="button"
+            className={config?.is_active ? 'btn-g btn-sm' : 'btn-p btn-sm'}
+            disabled={savingActive || !config}
+            onClick={() => onToggleActive(!config?.is_active)}
+            style={{ marginLeft: 'auto' }}
+          >
+            {savingActive
+              ? 'Saving…'
+              : config?.is_active ? 'Pause program' : 'Activate program'}
+          </button>
+        </div>
+        <div className="cb">
+          <div style={{ fontSize: '.84rem', color: 'var(--dim)' }}>
+            {config?.is_active
+              ? 'Points are being issued on paid orders and redeemed pre-checkout.'
+              : 'Program is paused. No earn or redeem activity will occur until activated.'}
+          </div>
+        </div>
+      </div>
+
+      <div className="stats">
+        <StatCard
+          label="Total members"
+          value={loading ? '—' : (stats?.total_members || 0).toLocaleString()}
+          delta="Customers with a ledger"
+        />
+        <StatCard
+          label="Points issued"
+          value={loading ? '—' : (stats?.total_points_issued || 0).toLocaleString()}
+          delta="Lifetime"
+        />
+        <StatCard
+          label="Points redeemed"
+          value={loading ? '—' : (stats?.total_points_redeemed || 0).toLocaleString()}
+          delta="Lifetime"
+        />
+        <StatCard
+          label="Est. liability"
+          value={loading ? '—' : `\u20B9${(stats?.estimated_liability_rs || 0).toLocaleString()}`}
+          delta="Points outstanding × redeem ratio"
+        />
+        <StatCard
+          label="Redemption rate"
+          value={loading ? '—' : `${redemptionRatePct}%`}
+          delta="Redeemed ÷ issued"
+        />
+      </div>
+    </div>
   );
 }
 
-function waInfo(rest) {
-  if (!rest) return { phone: null, connected: false, catalog: null, waba: '—' };
-  const waPhone =
-    rest.wa_phone_number ||
-    rest.waba_accounts?.[0]?.phone ||
-    rest.waba_accounts?.[0]?.wa_phone_number ||
-    null;
-  const connected = !!(
-    waPhone ||
-    rest.whatsapp_connected ||
-    rest.meta_user_id ||
-    rest.waba_accounts?.length
+function ProgramSettings({ config, onSave, saving, disabled }) {
+  const [draft, setDraft] = useState(() => config ? { ...config } : {});
+
+  useEffect(() => {
+    if (config) setDraft({ ...config });
+  }, [config]);
+
+  function update(key, raw) {
+    setDraft((d) => ({ ...d, [key]: raw }));
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    const patch = {};
+    for (const f of CONFIG_FIELDS) {
+      const v = draft[f.key];
+      if (v === undefined || v === null || v === '') continue;
+      patch[f.key] = f.type === 'number' ? Number(v) : v;
+    }
+    await onSave(patch);
+  }
+
+  return (
+    <form
+      className="card"
+      onSubmit={submit}
+      style={{
+        marginBottom: '1rem',
+        opacity: disabled ? 0.6 : 1,
+        pointerEvents: disabled ? 'none' : 'auto',
+      }}
+    >
+      <div className="ch"><h3>Program Settings</h3></div>
+      <div
+        className="cb"
+        style={{
+          display: 'grid', gap: '.8rem',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        }}
+      >
+        {CONFIG_FIELDS.map((f) => (
+          <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
+            <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>{f.label}</span>
+            <input
+              type={f.type}
+              step={f.step || undefined}
+              value={draft[f.key] ?? ''}
+              onChange={(e) => update(f.key, e.target.value)}
+              disabled={disabled}
+              style={{
+                padding: '.45rem .55rem',
+                border: '1px solid var(--rim)',
+                borderRadius: 'var(--r)',
+                background: '#fff',
+              }}
+            />
+          </label>
+        ))}
+      </div>
+      <div className="cb" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          type="submit"
+          className="btn-p btn-sm"
+          disabled={saving || disabled}
+        >
+          {saving ? 'Saving…' : 'Save settings'}
+        </button>
+      </div>
+    </form>
   );
-  const catalog = rest.meta_catalog_id || rest.catalog_id || null;
-  const waba = rest.meta_waba_id || rest.waba_accounts?.[0]?.waba_id || '—';
-  return { phone: waPhone, connected, catalog, waba };
 }
 
-function customerIdentifier(c) {
-  if (c.wa_phone) return c.wa_phone;
-  if (c.bsuid) return `${String(c.bsuid).slice(0, 12)}…`;
-  return '—';
+function DineInEntry({ onCredit, disabled }) {
+  const [phone, setPhone] = useState('');
+  const [points, setPoints] = useState('');
+  const [description, setDescription] = useState('');
+  const [lookupResult, setLookupResult] = useState(null);
+  const [lookupErr, setLookupErr] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  async function onLookup() {
+    setLookupErr(null);
+    setLookupResult(null);
+    if (!phone.trim()) return;
+    try {
+      const res = await lookupLoyaltyCustomer(phone.trim());
+      setLookupResult(res);
+    } catch (err) {
+      const reason = err?.response?.data?.error || err?.message || 'Lookup failed';
+      setLookupErr(reason === 'customer_not_found' ? 'No customer found with this phone' : reason);
+    }
+  }
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    setMsg(null);
+    const p = Math.floor(Number(points) || 0);
+    if (!phone.trim() || p <= 0) {
+      setMsg({ kind: 'err', text: 'Phone and positive points are required' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await onCredit({ phone: phone.trim(), points: p, description: description.trim() || undefined });
+      setMsg({ kind: 'ok', text: `Credited ${res.awarded} points. New balance: ${res.balance}.` });
+      setPoints('');
+      setDescription('');
+      await onLookup(); // refresh lookup card
+    } catch (err) {
+      const reason = err?.response?.data?.error || err?.message || 'Credit failed';
+      setMsg({ kind: 'err', text: reason === 'customer_not_found' ? 'No customer found with this phone' : reason });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      className="card"
+      onSubmit={onSubmit}
+      style={{
+        opacity: disabled ? 0.6 : 1,
+        pointerEvents: disabled ? 'none' : 'auto',
+      }}
+    >
+      <div className="ch"><h3>Dine-in Points Entry</h3></div>
+      <div
+        className="cb"
+        style={{
+          display: 'grid', gap: '.8rem',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        }}
+      >
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
+          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Customer phone</span>
+          <div style={{ display: 'flex', gap: '.35rem' }}>
+            <input
+              type="tel"
+              inputMode="numeric"
+              placeholder="91XXXXXXXXXX"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              onBlur={onLookup}
+              disabled={disabled}
+              style={{
+                flex: 1,
+                padding: '.45rem .55rem',
+                border: '1px solid var(--rim)',
+                borderRadius: 'var(--r)',
+                background: '#fff',
+              }}
+            />
+            <button
+              type="button"
+              className="btn-g btn-sm"
+              onClick={onLookup}
+              disabled={disabled || !phone.trim()}
+            >
+              Check
+            </button>
+          </div>
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
+          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Points to credit</span>
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={points}
+            onChange={(e) => setPoints(e.target.value)}
+            disabled={disabled}
+            style={{
+              padding: '.45rem .55rem',
+              border: '1px solid var(--rim)',
+              borderRadius: 'var(--r)',
+              background: '#fff',
+            }}
+          />
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
+          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Description (optional)</span>
+          <input
+            type="text"
+            placeholder="e.g. Walk-in order #24"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={disabled}
+            style={{
+              padding: '.45rem .55rem',
+              border: '1px solid var(--rim)',
+              borderRadius: 'var(--r)',
+              background: '#fff',
+            }}
+          />
+        </label>
+      </div>
+
+      {(lookupResult || lookupErr) && (
+        <div className="cb">
+          {lookupErr ? (
+            <div style={{ color: 'var(--red)', fontSize: '.82rem' }}>{lookupErr}</div>
+          ) : (
+            <div
+              style={{
+                padding: '.55rem .65rem',
+                border: '1px solid var(--rim)',
+                borderRadius: 'var(--r)',
+                fontSize: '.82rem',
+                background: 'var(--panel)',
+              }}
+            >
+              <strong>{lookupResult.customer?.name || 'Customer'}</strong>
+              <span style={{ color: 'var(--dim)', marginLeft: '.4rem' }}>
+                {lookupResult.customer?.wa_phone_masked || ''}
+              </span>
+              <div style={{ marginTop: '.25rem' }}>
+                Balance: <strong>{lookupResult.balance}</strong> pts · Earned: {lookupResult.total_earned} · Redeemed: {lookupResult.total_redeemed}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {msg && (
+        <div
+          className="cb"
+          style={{
+            color: msg.kind === 'ok' ? 'var(--wa)' : 'var(--red)',
+            fontSize: '.82rem',
+          }}
+        >
+          {msg.text}
+        </div>
+      )}
+
+      <div className="cb" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="submit" className="btn-p btn-sm" disabled={busy || disabled}>
+          {busy ? 'Crediting…' : 'Credit points'}
+        </button>
+      </div>
+    </form>
+  );
 }
 
 export default function LoyaltyTab() {
   const { restaurant } = useRestaurant();
-  const wa = waInfo(restaurant);
+  const campaignsEnabled = !!restaurant?.campaigns_enabled;
 
-  const [page, setPage] = useState(1);
+  const [config, setConfig] = useState(null);
+  const [configErr, setConfigErr] = useState(null);
+  const [configLoading, setConfigLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savingActive, setSavingActive] = useState(false);
 
   const [stats, setStats] = useState(null);
   const [statsErr, setStatsErr] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
 
-  const [list, setList] = useState(null);
-  const [listErr, setListErr] = useState(null);
-  const [listLoading, setListLoading] = useState(true);
+  const loadConfig = useCallback(async () => {
+    setConfigLoading(true);
+    setConfigErr(null);
+    try {
+      const data = await getLoyaltyProgramConfig();
+      setConfig(data || null);
+    } catch (err) {
+      setConfigErr(err?.userMessage || err?.message || 'Could not load program settings');
+    } finally {
+      setConfigLoading(false);
+    }
+  }, []);
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
     setStatsErr(null);
     try {
-      const data = await getLoyaltyStats();
+      const data = await getLoyaltyProgramStats();
       setStats(data || null);
     } catch (err) {
-      setStatsErr(err?.userMessage || err?.message || 'Could not load loyalty stats');
+      setStatsErr(err?.userMessage || err?.message || 'Could not load program stats');
     } finally {
       setStatsLoading(false);
     }
   }, []);
 
-  const loadList = useCallback(async () => {
-    setListLoading(true);
-    setListErr(null);
-    try {
-      const data = await getLoyaltyCustomers({ page, limit: PAGE_LIMIT });
-      setList(data || null);
-    } catch (err) {
-      setListErr(err?.userMessage || err?.message || 'Could not load members');
-    } finally {
-      setListLoading(false);
-    }
-  }, [page]);
-
+  useEffect(() => { loadConfig(); }, [loadConfig]);
   useEffect(() => { loadStats(); }, [loadStats]);
-  useEffect(() => { loadList(); }, [loadList]);
 
-  const totalMembers = stats?.total_members || 0;
-  const issued = (stats?.total_points_issued || 0).toLocaleString();
-  const redeemed = (stats?.total_points_redeemed || 0).toLocaleString();
-  const tierCounts = stats?.tiers || {};
+  async function onSaveConfig(patch) {
+    setSaving(true);
+    try {
+      const next = await updateLoyaltyProgramConfig(patch);
+      setConfig(next);
+    } catch (err) {
+      const reason = err?.response?.data?.error || err?.message || 'Save failed';
+      // eslint-disable-next-line no-alert
+      alert(`Could not save: ${reason}`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function onToggleActive(nextActive) {
+    setSavingActive(true);
+    try {
+      const next = await updateLoyaltyProgramConfig({ is_active: !!nextActive });
+      setConfig(next);
+    } catch (err) {
+      const reason = err?.response?.data?.error || err?.message || 'Update failed';
+      // eslint-disable-next-line no-alert
+      alert(`Could not update program state: ${reason}`);
+    } finally {
+      setSavingActive(false);
+    }
+  }
+
+  async function onDineInCredit(body) {
+    const res = await creditLoyaltyDineIn(body);
+    await loadStats();
+    return res;
+  }
 
   return (
     <div id="tab-loyalty" className="tab on">
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="ch">
-          <h3>WhatsApp Connection</h3>
-        </div>
-        <div
-          className="stats"
-          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}
-        >
-          <div className="stat">
-            <div className="stat-l">Phone</div>
-            <div className="stat-v" id="wa-info-phone" style={{ fontSize: '.95rem' }}>
-              {wa.phone ? (
-                <span style={{ color: 'var(--wa)' }}>{wa.phone} ✅</span>
-              ) : wa.connected ? (
-                <span style={{ color: 'var(--wa)' }}>Connected ✅</span>
-              ) : (
-                <span style={{ color: 'var(--red)' }}>Not Connected ❌</span>
-              )}
-            </div>
-          </div>
-          <div className="stat">
-            <div className="stat-l">Catalog</div>
-            <div className="stat-v" id="wa-info-catalog" style={{ fontSize: '.95rem' }}>
-              {wa.catalog ? (
-                <span style={{ color: 'var(--wa)' }}>{wa.catalog} ✅</span>
-              ) : (
-                <span style={{ color: 'var(--red)' }}>No catalog ❌</span>
-              )}
-            </div>
-          </div>
-          <div className="stat">
-            <div className="stat-l">WABA ID</div>
-            <div className="stat-v" id="wa-info-waba" style={{ fontSize: '.95rem' }}>
-              {wa.waba}
-            </div>
-          </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <h2 style={{ margin: 0 }}>Loyalty</h2>
+        <div style={{ fontSize: '.84rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+          Points earn automatically on paid orders; customers can redeem pre-checkout.
         </div>
       </div>
 
-      {statsErr ? (
-        <div style={{ marginBottom: '1rem' }}>
-          <SectionError message={statsErr} onRetry={loadStats} />
-        </div>
-      ) : (
-        <div className="stats" style={{ marginBottom: '1rem' }}>
-          <StatCard
-            label="Total Members"
-            value={statsLoading ? '—' : totalMembers}
-            delta="Loyalty customers"
-          />
-          <StatCard
-            label="Points Issued"
-            value={statsLoading ? '—' : issued}
-            delta="Lifetime"
-          />
-          <StatCard
-            label="Points Redeemed"
-            value={statsLoading ? '—' : redeemed}
-            delta="Lifetime"
-          />
-          <div className="stat">
-            <div className="stat-l">Tier Breakdown</div>
-            <div id="ly-tiers" style={{ marginTop: '.3rem' }}>
-              {statsLoading ? (
-                <span style={{ color: 'var(--dim)', fontSize: '.8rem' }}>Loading…</span>
-              ) : (
-                TIERS.map((t) => (
-                  <div
-                    key={t.key}
-                    style={{ display: 'flex', justifyContent: 'space-between', margin: '.15rem 0' }}
-                  >
-                    <span style={{ color: t.color }}>{t.label}</span>
-                    <strong>{tierCounts[t.key] || 0}</strong>
-                  </div>
-                ))
-              )}
-            </div>
+      {!campaignsEnabled && (
+        <div className="notice wa" style={{ marginBottom: '1rem' }}>
+          <div className="notice-ico">{'\u2728'}</div>
+          <div className="notice-body">
+            <h4>Coming Soon</h4>
+            <p>
+              The loyalty program is locked until campaigns go live on your account. Settings below
+              are read-only in the meantime.
+            </p>
           </div>
         </div>
       )}
 
-      <div className="card">
-        <div className="ch">
-          <h3>Loyalty Members</h3>
-          <span id="ly-count" style={{ color: 'var(--dim)', fontSize: '.8rem' }}>
-            {list ? `${list.total} members` : ''}
-          </span>
+      {configErr ? (
+        <div style={{ marginBottom: '1rem' }}>
+          <SectionError message={configErr} onRetry={loadConfig} />
         </div>
-
-        {listErr ? (
-          <SectionError message={listErr} onRetry={loadList} />
-        ) : (
-          <div className="tbl">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Contact</th>
-                  <th style={{ textAlign: 'center' }}>Balance</th>
-                  <th style={{ textAlign: 'center' }}>Lifetime</th>
-                  <th style={{ textAlign: 'center' }}>Tier</th>
-                  <th style={{ textAlign: 'center' }}>Orders</th>
-                  <th style={{ textAlign: 'right' }}>Spent</th>
-                </tr>
-              </thead>
-              <tbody id="ly-tbody">
-                {listLoading ? (
-                  <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)' }}>
-                      Loading…
-                    </td>
-                  </tr>
-                ) : !list?.customers?.length ? (
-                  <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)' }}>
-                      No loyalty members yet. Points are earned automatically after each delivered order.
-                    </td>
-                  </tr>
-                ) : (
-                  list.customers.map((c, i) => (
-                    <tr key={c.id || c.bsuid || `${c.customer_name}-${i}`} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td>{c.customer_name}</td>
-                      <td style={{ fontSize: '.75rem', color: 'var(--dim)' }}>
-                        {customerIdentifier(c)}
-                      </td>
-                      <td style={{ textAlign: 'center', fontWeight: 600 }}>{c.points_balance}</td>
-                      <td style={{ textAlign: 'center', color: 'var(--dim)' }}>{c.lifetime_points}</td>
-                      <td style={{ textAlign: 'center' }}><TierBadge tier={c.tier} /></td>
-                      <td style={{ textAlign: 'center' }}>{c.total_orders}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        ₹{parseFloat(c.total_spent_rs || 0).toFixed(0)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {list && list.pages > 1 && (
-          <div
-            id="ly-pager"
-            style={{ display: 'flex', gap: '.3rem', flexWrap: 'wrap', marginTop: '.8rem' }}
-          >
-            {Array.from({ length: list.pages }, (_, i) => i + 1).map((p) => {
-              const active = p === page;
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPage(p)}
-                  style={{
-                    padding: '.3rem .6rem',
-                    border: `1px solid ${active ? 'var(--acc)' : 'var(--rim)'}`,
-                    borderRadius: 'var(--r)',
-                    background: active ? 'var(--acc)' : '#fff',
-                    color: active ? '#fff' : 'var(--tx)',
-                    cursor: 'pointer',
-                    fontSize: '.75rem',
-                  }}
-                >
-                  {p}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      ) : (
+        <>
+          <ProgramOverview
+            stats={stats}
+            loading={statsLoading}
+            err={statsErr}
+            onRetry={loadStats}
+            onToggleActive={onToggleActive}
+            config={config}
+            savingActive={savingActive}
+          />
+          <ProgramSettings
+            config={config}
+            onSave={onSaveConfig}
+            saving={saving || configLoading}
+            disabled={!campaignsEnabled}
+          />
+          <DineInEntry onCredit={onDineInCredit} disabled={!campaignsEnabled} />
+        </>
+      )}
     </div>
   );
 }

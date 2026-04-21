@@ -37,6 +37,54 @@ async function getWallet(restaurantId) {
   return col('waba_wallets').findOne({ restaurant_id: restaurantId });
 }
 
+// ─── CREDIT (ORDER PAYOUT) ──────────────────────────────────
+// Credits the restaurant's share of a paid order to the same WABA
+// wallet used for messaging charges. The event listener computes
+// restaurant share = gross × (1 − commission_pct/100) and passes
+// it here in rupees. Reuses the atomic $inc serialization point
+// — concurrent webhooks can't race. Separate from `credit` (top-up)
+// because we want a dedicated ledger type and do NOT reset
+// `low_balance_alerted` here (an order_payout bringing balance
+// above threshold will naturally re-arm the alert on the next dip).
+async function creditOrderPayout(restaurantId, amountRs, orderId, description) {
+  const amt = Number(amountRs);
+  if (!restaurantId || !Number.isFinite(amt) || amt <= 0) return null;
+
+  await ensureWallet(restaurantId);
+
+  const result = await col('waba_wallets').findOneAndUpdate(
+    { restaurant_id: restaurantId },
+    {
+      $inc: { balance_rs: amt },
+      $set: { updated_at: new Date() },
+    },
+    { returnDocument: 'after' }
+  );
+  if (!result) return null;
+
+  await col('wallet_transactions').insertOne({
+    _id: newId(),
+    restaurant_id: restaurantId,
+    type: 'order_payout',
+    amount_rs: amt,
+    balance_after_rs: result.balance_rs,
+    description: description || `Order payout ${orderId || ''}`.trim(),
+    reference_id: orderId || null,
+    created_at: new Date(),
+  });
+
+  // Arm the next low-balance alert if this credit pulls us back over
+  // the threshold — matches the reset done in `credit`/top-up.
+  if (result.low_balance_alerted && result.balance_rs >= result.low_balance_threshold_rs) {
+    col('waba_wallets').updateOne(
+      { restaurant_id: restaurantId },
+      { $set: { low_balance_alerted: false } }
+    ).catch(() => {});
+  }
+
+  return result;
+}
+
 // ─── CREDIT (TOP-UP) ────────────────────────────────────────
 async function credit(restaurantId, amountRs, description, referenceId = null) {
   const result = await col('waba_wallets').findOneAndUpdate(
@@ -167,6 +215,60 @@ async function getMonthlySpend(restaurantId) {
   return result[0]?.total || 0;
 }
 
+// ─── BREAKDOWN TOTALS (for unified wallet UI) ───────────────
+// Lifetime + current-month splits so the dashboard can show
+// Earnings / Messages / Campaigns / Referrals without each widget
+// doing its own aggregation. Debit types are summed in absolute
+// rupees; credit types keep their natural positive sign.
+const DEBIT_TYPES  = ['deduction', 'settlement_deduction', 'meta_marketing_charge', 'referral_commission'];
+const CREDIT_TYPES = ['topup', 'refund', 'order_payout'];
+
+async function getBreakdownTotals(restaurantId) {
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  const rows = await col('wallet_transactions').aggregate([
+    { $match: { restaurant_id: restaurantId } },
+    {
+      $group: {
+        _id: '$type',
+        lifetime: { $sum: { $abs: '$amount_rs' } },
+        month: {
+          $sum: {
+            $cond: [
+              { $gte: ['$created_at', startOfMonth] },
+              { $abs: '$amount_rs' },
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]).toArray();
+
+  const byType = Object.fromEntries(rows.map((r) => [r._id, r]));
+  const sum = (types, key) => types.reduce((s, t) => s + (byType[t]?.[key] || 0), 0);
+
+  return {
+    total_order_payouts_rs:     byType.order_payout?.lifetime || 0,
+    total_message_charges_rs:   sum(['deduction', 'settlement_deduction'], 'lifetime'),
+    total_campaign_charges_rs:  byType.meta_marketing_charge?.lifetime || 0,
+    total_referral_charges_rs:  byType.referral_commission?.lifetime || 0,
+    total_topups_rs:            byType.topup?.lifetime || 0,
+    total_refunds_rs:           byType.refund?.lifetime || 0,
+    current_month_earnings_rs:  byType.order_payout?.month || 0,
+    current_month_charges_rs:   sum(DEBIT_TYPES, 'month'),
+    current_month_message_charges_rs:  sum(['deduction', 'settlement_deduction'], 'month'),
+    current_month_campaign_charges_rs: byType.meta_marketing_charge?.month || 0,
+    current_month_referral_charges_rs: byType.referral_commission?.month || 0,
+  };
+}
+
+// Used by docs/tests — not exported as API but handy for consumers
+// that want to know valid type buckets.
+const TXN_TYPES = { CREDIT: CREDIT_TYPES, DEBIT: DEBIT_TYPES };
+
 // ─── LOW BALANCE ALERT ──────────────────────────────────────
 async function sendLowBalanceAlert(restaurantId, balanceRs) {
   try {
@@ -219,10 +321,13 @@ module.exports = {
   ensureWallet,
   getWallet,
   credit,
+  creditOrderPayout,
   debit,
   settleNegativeBalance,
   getTransactions,
   getMonthlySpend,
+  getBreakdownTotals,
+  TXN_TYPES,
   sendLowBalanceAlert,
   getAllWallets,
   refund,

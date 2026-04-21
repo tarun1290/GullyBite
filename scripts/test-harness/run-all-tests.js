@@ -404,26 +404,14 @@ function runLeafTests() {
 
   } catch (e) { fail('financials.js (load)', e.message); }
 
-  // ── 8. loyalty.js — pure functions ─────────────────
+  // ── 8. loyaltyEngine.js — pure surface check ───────
   try {
-    const loyalty = require(path.join(SRC, 'services', 'loyalty.js'));
-
-    if (typeof loyalty.calcTier !== 'function') fail('loyalty.calcTier', 'not exported');
-    else {
-      const t1 = loyalty.calcTier(0);
-      const t2 = loyalty.calcTier(500);
-      const t3 = loyalty.calcTier(5000);
-      pass('loyalty.calcTier', `0pts=${t1}, 500pts=${t2}, 5000pts=${t3}`);
+    const loyalty = require(path.join(SRC, 'services', 'loyaltyEngine.js'));
+    for (const fn of ['earnPoints', 'redeemPoints', 'getBalance', 'getStats', 'ensureConfig']) {
+      if (typeof loyalty[fn] !== 'function') fail(`loyaltyEngine.${fn}`, 'not exported');
+      else pass(`loyaltyEngine.${fn}`, 'exported');
     }
-
-    if (typeof loyalty.getTierBenefits !== 'function') fail('loyalty.getTierBenefits', 'not exported');
-    else {
-      const b = loyalty.getTierBenefits('bronze');
-      if (!b) fail('loyalty.getTierBenefits', 'returned null for bronze');
-      else pass('loyalty.getTierBenefits', `bronze: ${JSON.stringify(b).slice(0,60)}...`);
-    }
-
-  } catch (e) { fail('loyalty.js (load)', e.message); }
+  } catch (e) { fail('loyaltyEngine.js (load)', e.message); }
 
   // ── 9. utils/retry.js ──────────────────────────────
   try {

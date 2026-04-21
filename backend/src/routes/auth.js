@@ -44,6 +44,68 @@ const META_GRAPH_URL = metaConfig.graphUrl;
 const META_STATE_TTL_MS  = 10 * 60 * 1000; // 10 minutes — covers slow Meta consent + 2FA
 const META_RESULT_TTL_MS = 10 * 60 * 1000;
 
+// Seed the per-restaurant auto_journey_config row. All journeys start
+// disabled; the dashboard Auto Journeys surface is what flips them on.
+// Uses findOneAndUpdate with upsert so callers don't have to guard.
+async function seedAutoJourneyConfig(restaurantId) {
+  try {
+    await col('auto_journey_config').updateOne(
+      { restaurant_id: String(restaurantId) },
+      {
+        $setOnInsert: {
+          _id: newId(),
+          restaurant_id: String(restaurantId),
+          welcome:        { enabled: false, template_id: null, custom_variable_values: {} },
+          winback_short:  { enabled: false, trigger_day: 14, template_id: null, custom_variable_values: {} },
+          reactivation:   { enabled: false, trigger_day: 30, template_id: null, custom_variable_values: {} },
+          birthday:       { enabled: false, template_id: null, custom_variable_values: {}, send_hour_ist: 10 },
+          loyalty_expiry: { enabled: false, days_before_expiry: 5, template_id: null, custom_variable_values: {} },
+          milestone:      { enabled: false, trigger_orders: [5, 10, 25], template_id: null, custom_variable_values: {} },
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+  } catch (err) {
+    log.warn({ err, restaurantId }, 'seedAutoJourneyConfig failed');
+  }
+}
+
+// Seed the per-restaurant loyalty_config row. Program starts is_active=false;
+// the dashboard Loyalty tab is what turns it on. Idempotent upsert so
+// repeat signups (e.g. Google-linking) don't overwrite merchant-tuned knobs.
+async function seedLoyaltyConfig(restaurantId) {
+  try {
+    await col('loyalty_config').updateOne(
+      { restaurant_id: String(restaurantId) },
+      {
+        $setOnInsert: {
+          _id: newId(),
+          restaurant_id: String(restaurantId),
+          is_active: false,
+          program_name: 'Loyalty Rewards',
+          points_per_rupee: 1,
+          first_order_multiplier: 2,
+          birthday_week_multiplier: 3,
+          referral_bonus_points: 50,
+          min_points_to_redeem: 100,
+          max_redemption_percent: 20,
+          points_to_rupee_ratio: 1,
+          max_redemptions_per_day: 1,
+          points_expiry_days: 90,
+          expiry_warning_days: 5,
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+  } catch (err) {
+    log.warn({ err, restaurantId }, 'seedLoyaltyConfig failed');
+  }
+}
+
 // ── Log OAuth redirect URIs at startup ──
 log.info({
   googleCallback: `${process.env.BASE_URL}/auth/google/callback`,
@@ -100,8 +162,12 @@ router.post('/signup', express.json(), async (req, res) => {
       password_hash: passwordHash, auth_provider: 'local',
       approval_status: 'pending', onboarding_step: 1,
       business_name: 'My Restaurant', status: 'active',
+      campaigns_enabled: false,
+      marketing_wa_status: 'not_configured',
       created_at: new Date(), updated_at: new Date(),
     });
+    await seedAutoJourneyConfig(id);
+    await seedLoyaltyConfig(id);
     const ownerUser = await ensureOwnerUser(id, ownerName.trim());
     const token = jwt.sign({
       restaurantId: id,
@@ -208,8 +274,11 @@ router.post('/google', express.json(), async (req, res) => {
         profile_picture: picture || null, auth_provider: 'google',
         business_name: 'My Restaurant', status: 'active',
         approval_status: 'pending', onboarding_step: 1,
+        campaigns_enabled: false,
         created_at: new Date(), updated_at: new Date(),
       });
+      await seedAutoJourneyConfig(restaurantId);
+      await seedLoyaltyConfig(restaurantId);
       approvalStatus  = 'pending';
       needsOnboarding = true;
     }
@@ -292,6 +361,7 @@ router.get('/google/callback', async (req, res) => {
         profile_picture: picture || null, auth_provider: 'google',
         business_name: 'My Restaurant', status: 'active',
         approval_status: 'pending', onboarding_step: 1,
+        campaigns_enabled: false,
         created_at: new Date(), updated_at: new Date(),
       });
     }

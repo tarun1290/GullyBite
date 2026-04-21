@@ -55,6 +55,36 @@ const restaurants = {
     // query helpers and indexes for the null-tolerant fallback).
     business_type:         { type: 'string', enum: ['single', 'multi'], default: 'single' },
     default_brand_id:      { type: 'uuid' },   // optional → brands._id
+    // Feature flag — when true, campaigns/referrals are allowed to
+    // debit the unified waba_wallet. Dormant until campaigns product
+    // ships. Order-payout credits and message-charge debits are NOT
+    // gated by this flag.
+    campaigns_enabled:     { type: 'boolean', default: false },
+    // Marketing WhatsApp sender. Separate from the ordering number
+    // (which lives on whatsapp_accounts + meta_user_id). Restaurant
+    // owner enters Phone Number ID + WABA ID manually in settings;
+    // the verification cron confirms with Meta that the number is
+    // healthy. `marketingPhoneNumberId` above is the legacy picker
+    // that selects from a linked WABA — these fields are the manual
+    // entry path used while the picker is gated.
+    marketing_wa_phone_number_id: { type: 'string', default: null },
+    marketing_wa_waba_id:         { type: 'string', default: null },
+    marketing_wa_status: {
+      type: 'string',
+      enum: ['not_configured', 'pending', 'active', 'flagged', 'error'],
+      default: 'not_configured',
+    },
+    marketing_wa_verified_at:     { type: 'date', default: null },
+    // Quality rating Meta returns on the phone number — GREEN / YELLOW / RED.
+    marketing_wa_quality_rating:  { type: 'string', default: null },
+    marketing_wa_last_checked_at: { type: 'date', default: null },
+    // Admin-only; never returned from the restaurant-facing GET.
+    marketing_wa_error_message:   { type: 'string', default: null },
+    // Review redirect targets sent to customers after a 4-5 star rating.
+    // When set, positive feedback_events surface a Google/Zomato review
+    // nudge with a tracked /api/review-redirect/:id hop.
+    google_review_link:    { type: 'string', default: null },
+    zomato_review_link:    { type: 'string', default: null },
     // Timestamps
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
@@ -961,6 +991,546 @@ const checkout_refs = {
   ],
 };
 
+// Unified wallet ledger — one row per credit/debit on waba_wallets.
+// Originally created for prepaid messaging charges (type enum:
+// topup | deduction | settlement_deduction | refund). Extended to
+// also carry order-payout credits and future campaign/referral
+// debits so the restaurant sees a single wallet with one balance
+// and one transaction history. `reference_id` carries the opaque
+// anchor — order_id for order_payout, rp_order_id for topup,
+// campaign_id for meta_marketing_charge, etc.
+const wallet_transactions = {
+  collection: 'wallet_transactions',
+  description: 'WABA wallet ledger — credits (order payouts, top-ups, refunds) and debits (message charges, campaigns, referrals).',
+  fields: {
+    _id:              { type: 'uuid', required: true },
+    restaurant_id:    { type: 'uuid', required: true },
+    type: {
+      type: 'string',
+      required: true,
+      enum: [
+        'topup',
+        'deduction',
+        'settlement_deduction',
+        'refund',
+        'order_payout',
+        'meta_marketing_charge',
+        'referral_commission',
+      ],
+    },
+    // Signed: positive for credits, negative for debits. Rupees.
+    amount_rs:        { type: 'number', required: true },
+    description:      { type: 'string' },
+    // Opaque anchor — see collection-level comment above.
+    reference_id:     { type: 'string' },
+    balance_after_rs: { type: 'number', required: true },
+    created_at:       { type: 'date', required: true },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, created_at: -1 } },
+    { key: { type: 1, created_at: -1 } },
+  ],
+};
+
+// RFM segmentation rollup — one row per (restaurant_id, customer_id).
+// Rebuilt nightly by jobs/rebuildCustomerProfiles.js; never written
+// in the live order path. Separate from `customer_profiles` (LTV/prefs)
+// so the RFM rebuild can truncate-and-replace without touching the
+// authoritative per-tenant customer state. `rfm_label` is a derived
+// segment (Champion, Loyal, …) used by the dashboard Customers tab
+// once campaigns_enabled is flipped on.
+const customer_rfm_profiles = {
+  collection: 'customer_rfm_profiles',
+  description: 'Per-tenant RFM scores and segment labels (nightly rebuild).',
+  fields: {
+    _id:                   { type: 'uuid', required: true },
+    restaurant_id:         { type: 'uuid', required: true },
+    customer_id:           { type: 'uuid', required: true },
+    r_score:               { type: 'number', required: true },
+    f_score:               { type: 'number', required: true },
+    m_score:               { type: 'number', required: true },
+    rfm_label: {
+      type: 'string',
+      required: true,
+      enum: [
+        'Champion',
+        'Loyal',
+        'Potential Loyalist',
+        'At Risk',
+        'Hibernating',
+        'Lost',
+        'Big Spender',
+        'New Customer',
+        'Other',
+      ],
+    },
+    order_count:           { type: 'number', default: 0 },
+    total_spend_rs:        { type: 'number', default: 0 },
+    avg_order_value_rs:    { type: 'number', default: 0 },
+    first_order_at:        { type: 'date' },
+    last_order_at:         { type: 'date' },
+    days_since_last_order: { type: 'number' },
+    birthday:              { type: 'string' },   // DD/MM, optional
+    acquisition_source:    { type: 'string' },
+    last_rebuild_at:       { type: 'date' },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, customer_id: 1 }, options: { unique: true } },
+    { key: { restaurant_id: 1, rfm_label: 1 } },
+    { key: { restaurant_id: 1, days_since_last_order: 1 } },
+  ],
+};
+
+// Cron-job run log. One row per invocation of a scheduled job.
+// Status 'partial' means the job completed but some tenants/rows errored
+// — `errors` captures the per-restaurant failure breakdown so ops can
+// triage without re-running.
+const job_logs = {
+  collection: 'job_logs',
+  description: 'Scheduled job run log — one row per invocation.',
+  fields: {
+    _id:                   { type: 'uuid', required: true },
+    job_name:              { type: 'string', required: true },
+    started_at:            { type: 'date', required: true },
+    completed_at:          { type: 'date' },
+    duration_ms:           { type: 'number' },
+    restaurants_processed: { type: 'number' },
+    customers_processed:   { type: 'number' },
+    status:                { type: 'string', required: true, enum: ['success', 'partial', 'failed'] },
+    errors:                { type: 'array' },
+    created_at:            { type: 'date', required: true },
+  },
+  indexes: [
+    { key: { job_name: 1, started_at: -1 } },
+  ],
+};
+
+// Admin-curated campaign template library. Distinct from the `templates`
+// collection (which caches Meta-returned template bodies per WABA) and
+// `template_mappings` (event→template routing). `template_id` is the
+// literal Meta template name — restaurants pick a row from here, the
+// campaign sender resolves that name against Meta at send time.
+const campaign_templates = {
+  collection: 'campaign_templates',
+  description: 'Admin-curated catalog of approved WhatsApp campaign templates.',
+  fields: {
+    _id:                 { type: 'uuid', required: true },
+    // The exact Meta template name — used as the WhatsApp API `name` field.
+    template_id:         { type: 'string', required: true },
+    display_name:        { type: 'string', required: true },
+    category:            { type: 'string', required: true, enum: ['marketing', 'utility'] },
+    use_case: {
+      type: 'string', required: true,
+      enum: [
+        'welcome',
+        'winback_short',
+        'winback_long',
+        'birthday',
+        'loyalty_expiry',
+        'milestone',
+        'manual_blast',
+        'festival',
+        'new_dish',
+        'general',
+      ],
+    },
+    language:            { type: 'string', required: true, default: 'en' },
+    header_type:         { type: 'string', enum: ['text', 'image', 'none'], default: 'none' },
+    header_text:         { type: 'string' },
+    body_template:       { type: 'string', required: true },
+    // Array of { name, label, source, required, example } where
+    // source ∈ 'auto'|'restaurant_input'|'customer_data'|'system'.
+    variables:           { type: 'array', default: [] },
+    footer_text:         { type: 'string' },
+    cta_button_text:     { type: 'string' },
+    // Rupees per send. Default 0.65 for marketing / 0.40 for utility —
+    // applied at insert time when the field is omitted.
+    per_message_cost_rs: { type: 'number', required: true },
+    is_active:           { type: 'boolean', default: true },
+    meta_approval_status: {
+      type: 'string',
+      enum: ['pending', 'approved', 'rejected', 'paused'],
+      default: 'pending',
+    },
+    meta_rejection_reason: { type: 'string' },
+    preview_text:        { type: 'string' },
+    // Reserved for future restaurant-type gating; empty = visible to all.
+    applicable_restaurant_types: { type: 'array', default: [] },
+    created_by:          { type: 'string' },
+    created_at:          { type: 'date', required: true },
+    updated_at:          { type: 'date' },
+  },
+  indexes: [
+    { key: { template_id: 1 }, options: { unique: true } },
+    { key: { use_case: 1 } },
+    { key: { is_active: 1, meta_approval_status: 1 } },
+  ],
+};
+
+// Manual campaign blasts — template + RFM-segment based. Distinct from
+// the legacy `campaigns` collection (MPM/catalog-based product promos).
+// A campaign lifecycle: draft → scheduled → sending → sent | failed |
+// cancelled. Cost is locked in at creation (per_message_cost_rs copied
+// from the template), so mid-flight template price changes don't rewrite
+// history. Stats are $inc'd by the webhook handler (delivered/read/failed)
+// and by the payment path (converted + revenue_attributed_rs).
+const marketing_campaigns = {
+  collection: 'marketing_campaigns',
+  description: 'Restaurant-authored manual campaign blasts using campaign_templates.',
+  fields: {
+    _id:            { type: 'uuid', required: true },
+    restaurant_id:  { type: 'string', required: true },
+    // Plain string reference to campaign_templates.template_id.
+    template_id:    { type: 'string', required: true },
+    display_name:   { type: 'string', required: true },
+    use_case:       { type: 'string', required: true },
+    status: {
+      type: 'string', required: true,
+      enum: ['draft', 'scheduled', 'sending', 'sent', 'failed', 'cancelled'],
+      default: 'draft',
+    },
+    // Audience.
+    target_segment: { type: 'string', required: true },
+    target_count:   { type: 'number', default: 0 },
+    actual_sent_count: { type: 'number', default: 0 },
+    // Schedule.
+    send_at:        { type: 'date' },
+    sent_at:        { type: 'date' },
+    completed_at:   { type: 'date' },
+    // Restaurant-filled variable values keyed by variable name.
+    // Only restaurant_input values are stored here; auto/customer_data/
+    // system values are resolved at send time.
+    variable_values: { type: 'object', default: {} },
+    // Stats — $inc'd atomically from webhook + payment attribution.
+    stats: { type: 'object', default: {
+      sent: 0, delivered: 0, read: 0, failed: 0,
+      replied: 0, converted: 0, revenue_attributed_rs: 0,
+      delivery_rate: 0, read_rate: 0, conversion_rate: 0,
+    } },
+    estimated_cost_rs:   { type: 'number', default: 0 },
+    actual_cost_rs:      { type: 'number', default: 0 },
+    // Locked-in copy — avoid history rewrites on template edits.
+    per_message_cost_rs: { type: 'number', required: true },
+    error_message:  { type: 'string' },
+    created_at:     { type: 'date', required: true },
+    updated_at:     { type: 'date' },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, created_at: -1 } },
+    { key: { restaurant_id: 1, status: 1 } },
+    { key: { status: 1, send_at: 1 } },
+  ],
+};
+
+// Lookup map for webhook attribution: Meta message_id → campaign. TTL
+// of 7 days keeps this collection small; after that, attribution is no
+// longer possible but status stats have long since been $inc'd. Used by
+// the WhatsApp webhook status handler to know which marketing campaign
+// to update when a delivery/read/failed event arrives.
+const campaign_message_map = {
+  collection: 'campaign_message_map',
+  description: 'Meta message_id → marketing_campaigns mapping for webhook attribution.',
+  fields: {
+    _id:           { type: 'uuid', required: true },
+    message_id:    { type: 'string', required: true },
+    campaign_id:   { type: 'string', required: true },
+    restaurant_id: { type: 'string', required: true },
+    created_at:    { type: 'date', required: true },
+  },
+  indexes: [
+    { key: { message_id: 1 }, options: { unique: true } },
+    { key: { campaign_id: 1 } },
+    // TTL: 7 days. Matches attribution window.
+    { key: { created_at: 1 }, options: { expireAfterSeconds: 7 * 24 * 60 * 60 } },
+  ],
+};
+
+// Per-restaurant auto journey toggle + customisation state. One document
+// per restaurant; seeded at signup with all journeys disabled. Each
+// journey key carries its own enabled flag plus the knobs the dashboard
+// exposes. Service-layer reads go through services/journeyExecutor.js.
+const auto_journey_config = {
+  collection: 'auto_journey_config',
+  description: 'One document per restaurant storing auto journey toggle states and per-journey overrides.',
+  fields: {
+    _id:           { type: 'uuid', required: true },
+    restaurant_id: { type: 'string', required: true },
+    welcome: { type: 'object', default: {
+      enabled: false,
+      template_id: null,
+      custom_variable_values: {},
+    } },
+    winback_short: { type: 'object', default: {
+      enabled: false,
+      trigger_day: 14,
+      template_id: null,
+      custom_variable_values: {},
+    } },
+    reactivation: { type: 'object', default: {
+      enabled: false,
+      trigger_day: 30,
+      template_id: null,
+      custom_variable_values: {},
+    } },
+    birthday: { type: 'object', default: {
+      enabled: false,
+      template_id: null,
+      custom_variable_values: {},
+      send_hour_ist: 10,
+    } },
+    loyalty_expiry: { type: 'object', default: {
+      enabled: false,
+      days_before_expiry: 5,
+      template_id: null,
+      custom_variable_values: {},
+    } },
+    milestone: { type: 'object', default: {
+      enabled: false,
+      trigger_orders: [5, 10, 25],
+      template_id: null,
+      custom_variable_values: {},
+    } },
+    created_at: { type: 'date', required: true },
+    updated_at: { type: 'date' },
+  },
+  indexes: [
+    { key: { restaurant_id: 1 }, options: { unique: true } },
+  ],
+};
+
+// Send log used to enforce the 48-hour per-customer frequency cap.
+// TTL'd at 7 days — we only need the recent-ish window for cap checks
+// and 30-day stats are read from marketing_campaigns directly.
+const journey_send_log = {
+  collection: 'journey_send_log',
+  description: 'Records every auto-journey send for frequency-cap enforcement.',
+  fields: {
+    _id:           { type: 'uuid', required: true },
+    restaurant_id: { type: 'string', required: true },
+    customer_id:   { type: 'string', required: true },
+    journey_type:  { type: 'string', required: true },
+    sent_at:       { type: 'date', required: true },
+    campaign_id:   { type: 'string' },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, customer_id: 1, sent_at: -1 } },
+    // TTL: 7 days. Cap window is 48h; older rows are no longer consulted.
+    { key: { sent_at: 1 }, options: { expireAfterSeconds: 7 * 24 * 60 * 60 } },
+  ],
+};
+
+// Per-restaurant loyalty program configuration. One document per restaurant;
+// seeded at signup with is_active=false so the program lies dormant until
+// the merchant turns it on from the Loyalty tab. All economic knobs
+// (earn ratio, redemption caps, expiry) live here.
+const loyalty_config = {
+  collection: 'loyalty_config',
+  description: 'One document per restaurant storing loyalty program configuration.',
+  fields: {
+    _id:                    { type: 'uuid', required: true },
+    restaurant_id:          { type: 'string', required: true },
+    is_active:              { type: 'boolean', default: false },
+    program_name:           { type: 'string', default: 'Loyalty Rewards' },
+    points_per_rupee:       { type: 'number', default: 1 },
+    first_order_multiplier: { type: 'number', default: 2 },
+    birthday_week_multiplier:{ type: 'number', default: 3 },
+    referral_bonus_points:  { type: 'number', default: 50 },
+    min_points_to_redeem:   { type: 'number', default: 100 },
+    max_redemption_percent: { type: 'number', default: 20 },
+    points_to_rupee_ratio:  { type: 'number', default: 1 },
+    max_redemptions_per_day:{ type: 'number', default: 1 },
+    points_expiry_days:     { type: 'number', default: 90 },
+    expiry_warning_days:    { type: 'number', default: 5 },
+    created_at:             { type: 'date', required: true },
+    updated_at:             { type: 'date' },
+  },
+  indexes: [
+    { key: { restaurant_id: 1 }, options: { unique: true } },
+  ],
+};
+
+// Per-customer loyalty state. One document per (restaurant, customer)
+// pair. Holds running balance, lifetime points, and last redemption
+// timestamp for the daily-cap check. Transaction history lives in
+// loyalty_transactions; this doc is the hot-path lookup used by the
+// redemption offer.
+const loyalty_points = {
+  collection: 'loyalty_points',
+  description: 'Per-customer points balance and lifetime total.',
+  fields: {
+    _id:                  { type: 'uuid', required: true },
+    restaurant_id:        { type: 'string', required: true },
+    customer_id:          { type: 'string', required: true },
+    points_balance:       { type: 'number', default: 0 },
+    lifetime_points:      { type: 'number', default: 0 },
+    last_redemption_date: { type: 'date' },
+    points_expiry_days:   { type: 'number' },
+    created_at:           { type: 'date', required: true },
+    updated_at:           { type: 'date' },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, customer_id: 1 }, options: { unique: true } },
+    { key: { restaurant_id: 1, lifetime_points: -1 } },
+  ],
+};
+
+// Append-only loyalty transaction log. Each earn/redeem/expire/
+// manual_credit/referral_bonus produces one row. Earn-family rows
+// carry expires_at + relatedId (order_id when relevant) so the expiry
+// sweep can retire aged points. FIFO depletion against earn rows is
+// tracked implicitly by iterating oldest-first on redeem.
+const loyalty_transactions = {
+  collection: 'loyalty_transactions',
+  description: 'Append-only ledger of loyalty point movements per customer per restaurant.',
+  fields: {
+    _id:           { type: 'uuid', required: true },
+    restaurant_id: { type: 'string', required: true },
+    customer_id:   { type: 'string', required: true },
+    order_id:      { type: 'string' },
+    relatedId:     { type: 'string' },
+    type:          { type: 'string', required: true, enum: ['earn', 'redeem', 'expire', 'manual_credit', 'referral_bonus'] },
+    points:        { type: 'number', required: true },
+    balance_after: { type: 'number' },
+    remaining:     { type: 'number' },
+    expires_at:    { type: 'date' },
+    description:   { type: 'string' },
+    actor:         { type: 'string' },
+    created_at:    { type: 'date', required: true },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, customer_id: 1, created_at: -1 } },
+    { key: { restaurant_id: 1, type: 1, created_at: -1 } },
+    { key: { restaurant_id: 1, expires_at: 1 } },
+    { key: { order_id: 1 } },
+  ],
+};
+
+// Short-lived pending redemption state written when the YES/NO prompt
+// is sent pre-checkout. TTL'd at 10 min so stale prompts can't be
+// redeemed. The inbound handler reads this row on YES/NO reply.
+const pending_loyalty_redemptions = {
+  collection: 'pending_loyalty_redemptions',
+  description: 'Short-lived pending-redemption state for the pre-checkout YES/NO prompt.',
+  fields: {
+    _id:           { type: 'uuid', required: true },
+    restaurant_id: { type: 'string', required: true },
+    customer_id:   { type: 'string', required: true },
+    wa_phone:      { type: 'string', required: true },
+    session_id:    { type: 'string' },
+    points_to_redeem:{ type: 'number', required: true },
+    discount_rs:   { type: 'number', required: true },
+    cart_snapshot: { type: 'object' },
+    created_at:    { type: 'date', required: true },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, wa_phone: 1 } },
+    // TTL: 10 minutes. Prompt is valid for ~5 min UX-wise; 10 gives
+    // us a little slack for slow replies before the row vanishes.
+    { key: { created_at: 1 }, options: { expireAfterSeconds: 10 * 60 } },
+  ],
+};
+
+// Unified feedback & review funnel (Prompt 8). One row per feedback
+// request the platform has sent — covers both automated post-delivery
+// ratings and merchant-triggered dine-in ratings. Mirrors the existing
+// order_ratings data but stays the canonical source for escalations,
+// review-link tracking, and cross-source analytics. `source` tells the
+// UI which flow produced the row; `status` drives the escalation inbox
+// state machine.
+const feedback_events = {
+  collection: 'feedback_events',
+  description: 'Unified customer feedback requests and responses (delivery + dine-in).',
+  fields: {
+    _id:                    { type: 'uuid', required: true },
+    restaurant_id:          { type: 'string', required: true },
+    outlet_id:              { type: 'string', default: null },
+    customer_id:            { type: 'string', default: null },
+    customer_phone:         { type: 'string', default: null },
+    // 'delivery' → triggered from an order's DELIVERED state. 'dine_in' →
+    // merchant-initiated after a walk-in. 'reorder' reserved for future
+    // journey-style prompts.
+    source:                 { type: 'string', enum: ['delivery', 'dine_in', 'reorder'], required: true },
+    order_id:               { type: 'string', default: null },
+    rating:                 { type: 'number', default: null },   // 1-5, null until replied
+    feedback_text:          { type: 'string', default: null },
+    // sent → prompt went out. rated_positive / rated_negative set on
+    // reply. escalated when a negative rating produces a staff alert;
+    // resolved once the owner acts on it.
+    status:                 { type: 'string', enum: ['sent', 'rated_positive', 'rated_negative', 'escalated', 'resolved'], default: 'sent' },
+    is_positive:            { type: 'boolean', default: null },
+    review_link_clicked:    { type: 'boolean', default: false },
+    review_link_sent_at:    { type: 'date', default: null },
+    escalated_at:           { type: 'date', default: null },
+    escalation_resolved_at: { type: 'date', default: null },
+    escalation_note:        { type: 'string', default: null },
+    triggered_by:           { type: 'string', default: null },   // 'system' | userId
+    wa_message_id:          { type: 'string', default: null },   // sparse unique for inbound reply matching
+    created_at:             { type: 'date', required: true },
+    updated_at:             { type: 'date' },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, created_at: -1 } },
+    { key: { restaurant_id: 1, source: 1, created_at: -1 } },
+    { key: { restaurant_id: 1, status: 1 } },
+    { key: { wa_message_id: 1 }, options: { unique: true, sparse: true } },
+  ],
+};
+
+// Lightweight per-restaurant notification feed. Currently populated by
+// the feedback escalation flow but intentionally generic — future
+// platform events can share the same bell UI. 30-day TTL keeps the
+// collection self-pruning so the dashboard bell never drags on an
+// ever-growing inbox.
+const restaurant_notifications = {
+  collection: 'restaurant_notifications',
+  description: 'Dashboard bell notifications (escalations, alerts) with a 30-day TTL.',
+  fields: {
+    _id:           { type: 'uuid', required: true },
+    restaurant_id: { type: 'string', required: true },
+    type:          { type: 'string', enum: ['feedback_escalation', 'feedback_positive', 'festival_reminder', 'system'], required: true },
+    title:         { type: 'string', required: true },
+    body:          { type: 'string', default: null },
+    data:          { type: 'object', default: {} },
+    is_read:       { type: 'boolean', default: false },
+    created_at:    { type: 'date', required: true },
+  },
+  indexes: [
+    { key: { restaurant_id: 1, created_at: -1 } },
+    { key: { restaurant_id: 1, is_read: 1, created_at: -1 } },
+    // TTL: 30 days — auto-prune stale notifications.
+    { key: { created_at: 1 }, options: { expireAfterSeconds: 30 * 24 * 60 * 60 } },
+  ],
+};
+
+// Platform-wide festival calendar. One document per festival occurrence
+// per year, managed by GullyBite admin. The festival notifier cron
+// (src/jobs/festivalNotifier.js) runs daily at 08:00 IST and looks up
+// rows whose notification_date falls today — every active restaurant
+// gets a bell reminder nudging them to create a festival campaign.
+const festivals_calendar = {
+  collection: 'festivals_calendar',
+  description: 'Platform-wide Indian festival calendar powering 48h campaign reminder nudges.',
+  fields: {
+    _id:                        { type: 'uuid', required: true },
+    name:                       { type: 'string', required: true },
+    slug:                       { type: 'string', required: true },
+    date:                       { type: 'date', required: true },
+    notification_date:          { type: 'date', required: true },
+    default_template_use_case:  { type: 'string', default: 'festival' },
+    suggested_message_hint:     { type: 'string' },
+    applicable_to:              { type: 'string', enum: ['all', 'hindu', 'muslim', 'christian', 'sikh'], default: 'all' },
+    is_active:                  { type: 'boolean', default: true },
+    year:                       { type: 'number', required: true },
+    created_at:                 { type: 'date', required: true },
+    updated_at:                 { type: 'date' },
+  },
+  indexes: [
+    { key: { slug: 1 }, options: { unique: true } },
+    { key: { notification_date: 1, is_active: 1 } },
+    { key: { date: 1 } },
+  ],
+};
+
 // ═══════════════════════════════════════════════════════════════
 // EXPORT ALL SCHEMAS
 // ═══════════════════════════════════════════════════════════════
@@ -971,6 +1541,12 @@ const ALL_SCHEMAS = {
   conversations, payments, restaurant_ledger, settlements,
   whatsapp_accounts, referrals, menu_uploads, sync_logs, sync_summary, alerts,
   brands, messages, catalog, catalog_sync_schedule, coupons, checkout_refs,
+  wallet_transactions, customer_rfm_profiles, job_logs, campaign_templates,
+  marketing_campaigns, campaign_message_map,
+  auto_journey_config, journey_send_log,
+  loyalty_config, loyalty_points, loyalty_transactions, pending_loyalty_redemptions,
+  feedback_events, restaurant_notifications,
+  festivals_calendar,
 };
 
 module.exports = { ALL_SCHEMAS, ...ALL_SCHEMAS };

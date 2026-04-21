@@ -338,27 +338,11 @@ async function handleOrder(value) {
     });
   }
 
-  // CRIT-2A-04: resolve loyalty tier for this customer+restaurant so the
-  // free-delivery waiver (Gold ≥ ₹500, Platinum always) lands in the
-  // charges we write onto the order. Failure is non-fatal — a missing
-  // record just means the customer doesn't qualify yet. Must run BEFORE
-  // calculateOrderCharges so the waiver actually applies.
-  let loyaltyTier = null;
-  try {
-    const loyalty = require('../services/loyalty');
-    const bal = await loyalty.getBalance(customer.id, waAccount.restaurant_id);
-    loyaltyTier = bal?.tier || null;
-  } catch (err) {
-    log.warn({ err, customerId: customer.id }, 'loyalty tier lookup failed — proceeding without waiver');
-  }
-
-  // Calculate charges (loyaltyTier waives customer delivery for Gold ≥ ₹500 / Platinum)
   const charges = calculateOrderCharges(
     restaurant,
     subtotalRs,
     isPickup ? 0 : deliveryFeeRs,
-    discountRs,
-    loyaltyTier
+    discountRs
   );
 
   // Phase 6: identity-layer key, denormalized onto the order so

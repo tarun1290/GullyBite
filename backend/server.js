@@ -233,6 +233,11 @@ app.get('/feed/:feedToken', async (req, res) => {
 });
 
 // ─── ROUTES ───────────────────────────────────────────────────
+// Public review-redirect hop — stamped onto positive feedback_events so
+// we can track Google/Zomato click-through without relying on the
+// customer's browser UA. Intentionally mounted BEFORE any auth so the
+// customer's WhatsApp link works without login.
+app.use('/api/review-redirect', require('./src/routes/reviewRedirect'));
 app.get('/auth/test', (req, res) => res.json({ ok: true }));
 const { router: authRouter } = require('./src/routes/auth');
 app.use('/auth', express.json(), authRouter);
@@ -248,6 +253,44 @@ app.use('/api/restaurant/menu', require('./src/routes/menuUpload'));
 const _marketing = require('./src/routes/marketingMessages');
 app.use('/api/restaurant/marketing-messages', express.json(), _marketing.restaurantRouter);
 app.use('/api/admin/marketing-messages', express.json(), _marketing.adminRouter);
+// Customer RFM profile reads — mounted before the catch-all restaurant
+// router so /customers/* resolves here instead of hitting restaurant.js.
+app.use('/api/restaurant/customers', express.json(), require('./src/routes/customerProfiles'));
+// Marketing WhatsApp number settings — manual entry + background verify.
+// Mounted before the catch-all so /settings/marketing-wa routes here.
+app.use('/api/restaurant/settings', express.json(), require('./src/routes/marketingWa'));
+// Campaign template library — admin CRUD + restaurant read-only picker.
+// Mounted before the catch-all so /campaign-templates/* lands here.
+const _campaignTemplates = require('./src/routes/campaignTemplates');
+app.use('/api/restaurant/campaign-templates', express.json(), _campaignTemplates.restaurantRouter);
+app.use('/api/admin/campaign-templates', express.json(), _campaignTemplates.adminRouter);
+// Manual-blast marketing campaigns — template + RFM based.
+// Distinct namespace from legacy /api/restaurant/campaigns (MPM).
+app.use('/api/restaurant/marketing-campaigns', express.json(), require('./src/routes/marketingCampaigns'));
+// Festival calendar + smart-send-time (Prompt 9). Restaurant routes
+// piggyback two paths — /festivals/upcoming and /campaigns/smart-send-time.
+// Mounted BEFORE catch-all /api/restaurant so /campaigns/smart-send-time
+// doesn't get eaten by the legacy catalog-campaigns router.
+const _festivals = require('./src/routes/festivals');
+app.use('/api/restaurant/festivals', express.json(), _festivals.restaurantRouter);
+app.use('/api/restaurant/campaigns', express.json(), _festivals.restaurantCampaignsRouter);
+app.use('/api/admin/festivals', express.json(), _festivals.adminRouter);
+// Auto journeys (toggle configuration + 30-day stats). Writes are
+// validated per-journey; event hooks live in razorpay webhook + cron.
+app.use('/api/restaurant/auto-journeys', express.json(), require('./src/routes/autoJourneys'));
+// Prompt 7 loyalty engine — config + stats + manual dine-in credit.
+// Mounted at /loyalty-program to avoid colliding with the legacy
+// /loyalty/stats + /loyalty/customers endpoints on the restaurant
+// router (those still power the older loyalty_points /
+// loyalty_transactions collections used by flow callers).
+app.use('/api/restaurant/loyalty-program', express.json(), require('./src/routes/loyalty'));
+// Unified feedback & review funnel (Prompt 8) — dine-in trigger,
+// escalation inbox, notifications, review-link settings.
+app.use('/api/restaurant/feedback', express.json(), require('./src/routes/dineInFeedback'));
+// Marketing analytics dashboard (Prompt 10) — distinct from the legacy
+// operational admin /api/admin/analytics. Mounted before the catch-all.
+const _marketingAnalytics = require('./src/routes/marketingAnalytics');
+app.use('/api/restaurant/marketing-analytics', express.json(), _marketingAnalytics.restaurantRouter);
 app.use('/api/restaurant', express.json({ limit: '10mb' }), require('./src/routes/restaurant'));
 // POS_DISABLED — POS integrations router (Petpooja/UrbanPiper/DotPe) gated off.
 // Re-enable by uncommenting and setting POS_ENABLED=true.
@@ -262,6 +305,7 @@ app.use('/api/admin/pincodes', express.json(), require('./src/routes/adminPincod
 // / reorder / order-create land with the WhatsApp flow handler (Commit B).
 app.use('/api/customer', express.json(), require('./src/routes/customer'));
 app.use('/api/admin/analytics', express.json(), require('./src/routes/analytics'));
+app.use('/api/admin/platform-marketing', express.json(), _marketingAnalytics.adminRouter);
 app.use('/api/cron', express.json(), require('./src/routes/cron'));
 app.use('/api/webhook-health', require('./src/routes/webhookHealth'));
 // Meta WhatsApp Checkout endpoint (beta, ECDH + AES-GCM). Route owns its
@@ -397,6 +441,36 @@ if (process.env.NODE_ENV !== 'production') {
     // tenant's restaurant_ledger balance into a paise-shaped settlement
     // row + Razorpay payout (subject to MIN_PAYOUT_PAISE threshold).
     require('./src/jobs/settlementPayout').schedule();
+
+    // Nightly RFM rebuild. Populates customer_rfm_profiles from orders;
+    // the dashboard surface that reads it is gated by campaigns_enabled
+    // on each tenant. Runs in the background regardless.
+    require('./src/jobs/rebuildCustomerProfiles').schedule();
+
+    // Nightly marketing WA number verification. Polls Meta's Graph API
+    // per restaurant with configured marketing numbers; persists status
+    // + quality rating + error messages for admin visibility.
+    require('./src/jobs/verifyMarketingWaNumbers').schedule();
+
+    // Manual-blast marketing campaign dispatcher — scans for scheduled
+    // campaigns whose send_at has passed and invokes sendCampaign.
+    require('./src/jobs/marketing-campaign-sender').schedule();
+
+    // Auto-journey runner — hourly scan for winback/reactivation/birthday
+    // triggers. Event-driven journeys (welcome, milestone) fire from the
+    // Razorpay payment webhook, not here.
+    require('./src/jobs/autoJourneyRunner').schedule();
+
+    // Festival calendar seed — idempotent. Safe to run on every boot
+    // because seedFestivalCalendar skips rows whose slug already exists.
+    require('./src/jobs/seedFestivalCalendar').run().catch((err) =>
+      log.warn({ err, component: 'seedFestivalCalendar' }, 'festival seed failed'),
+    );
+
+    // Festival notifier — daily at 08:00 IST. Drops a `festival_reminder`
+    // restaurant_notifications row for every active tenant 48h before
+    // each festival date.
+    require('./src/jobs/festivalNotifier').schedule();
   });
 }
 

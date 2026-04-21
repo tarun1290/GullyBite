@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import WaConnectBanner from '../WaConnectBanner.jsx';
 import MarketingNumberSection from './MarketingNumberSection.jsx';
+import MarketingWaNumberSection from './MarketingWaNumberSection.jsx';
 import { useRestaurant } from '../../../contexts/RestaurantContext.jsx';
 import { useToast } from '../../Toast.jsx';
 import { disconnectWhatsapp } from '../../../api/restaurant.js';
@@ -178,6 +179,7 @@ export default function WhatsappSection() {
     </div>
 
     {fullyConnected && <MarketingNumberSection />}
+    <MarketingWaNumberSection />
     </>
   );
 }

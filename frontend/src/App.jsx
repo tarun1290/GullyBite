@@ -17,13 +17,18 @@ import MessagesTab from './pages/dashboard/MessagesTab.jsx';
 import MarketingTab from './pages/dashboard/MarketingTab.jsx';
 import AnalyticsTab from './pages/dashboard/AnalyticsTab.jsx';
 import RatingsTab from './pages/dashboard/RatingsTab.jsx';
+import FeedbackTab from './pages/dashboard/FeedbackTab.jsx';
 import LoyaltyTab from './pages/dashboard/LoyaltyTab.jsx';
+import CustomersTab from './pages/dashboard/CustomersTab.jsx';
+import CampaignsTab from './pages/dashboard/CampaignsTab.jsx';
 import PaymentsTab from './pages/dashboard/PaymentsTab.jsx';
 import SettingsTab from './pages/dashboard/SettingsTab.jsx';
 import RestaurantTab from './pages/dashboard/RestaurantTab.jsx';
+import MarketingAnalyticsTab from './pages/dashboard/MarketingAnalyticsTab.jsx';
 
 import AdminFlows from './pages/admin/AdminFlows.jsx';
 import AdminTemplates from './pages/admin/AdminTemplates.jsx';
+import AdminCampaignTemplates from './pages/admin/AdminCampaignTemplates.jsx';
 import AdminApplications from './pages/admin/AdminApplications.jsx';
 import AdminRestaurants from './pages/admin/AdminRestaurants.jsx';
 import AdminDirectory from './pages/admin/AdminDirectory.jsx';
@@ -47,6 +52,8 @@ import AdminAdmins from './pages/admin/AdminAdmins.jsx';
 import AdminUsernames from './pages/admin/AdminUsernames.jsx';
 import AdminLogistics from './pages/admin/AdminLogistics.jsx';
 import AdminOverview from './pages/admin/AdminOverview.jsx';
+import AdminFestivals from './pages/admin/AdminFestivals.jsx';
+import AdminPlatformAnalytics from './pages/admin/AdminPlatformAnalytics.jsx';
 
 export default function App() {
   return (
@@ -72,8 +79,12 @@ export default function App() {
               <Route path="messages" element={<MessagesTab />} />
               <Route path="marketing" element={<MarketingTab />} />
               <Route path="analytics" element={<AnalyticsTab />} />
+              <Route path="marketing-analytics" element={<MarketingAnalyticsTab />} />
               <Route path="ratings" element={<RatingsTab />} />
+              <Route path="feedback" element={<FeedbackTab />} />
               <Route path="loyalty" element={<LoyaltyTab />} />
+              <Route path="customers" element={<CustomersTab />} />
+              <Route path="campaigns" element={<CampaignsTab />} />
               <Route path="payments" element={<PaymentsTab />} />
               <Route path="settings" element={<SettingsTab />} />
               <Route path="restaurant" element={<RestaurantTab />} />
@@ -91,6 +102,7 @@ export default function App() {
               <Route path="overview" element={<AdminOverview />} />
               <Route path="flows" element={<AdminFlows />} />
               <Route path="templates" element={<AdminTemplates />} />
+              <Route path="campaign-templates" element={<AdminCampaignTemplates />} />
               <Route path="applications" element={<AdminApplications />} />
               <Route path="restaurants" element={<AdminRestaurants />} />
               <Route path="directory" element={<AdminDirectory />} />
@@ -113,6 +125,8 @@ export default function App() {
               <Route path="admins" element={<AdminAdmins />} />
               <Route path="usernames" element={<AdminUsernames />} />
               <Route path="logistics" element={<AdminLogistics />} />
+              <Route path="festivals" element={<AdminFestivals />} />
+              <Route path="platform-marketing" element={<AdminPlatformAnalytics />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />

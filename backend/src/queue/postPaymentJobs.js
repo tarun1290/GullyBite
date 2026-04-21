@@ -225,7 +225,7 @@ async function _handleSettlementTrigger(payload) {
 }
 
 async function _handleLoyaltyAward(payload) {
-  const loyalty = require('../services/loyalty');
+  const loyalty = require('../services/loyaltyEngine');
   const wa = require('../services/whatsapp');
   const { resolveRecipient } = require('../services/customerIdentity');
   const orderSvc = require('../services/order');
@@ -239,7 +239,30 @@ async function _handleLoyaltyAward(payload) {
   const waToken  = metaConfig.systemUserToken || waAcc?.access_token;
   const toId     = customer ? (customer.wa_phone || customer.bsuid) : resolveRecipient(order);
 
-  const reward = await loyalty.earnPoints(order.customer_id, order.restaurant_id, payload.orderId, order.total_rs);
+  // First-order + birthday-week multipliers come from the RFM profile,
+  // same source the razorpay webhook used to consult. order_count=1
+  // means this is the only paid order we've seen for the customer; the
+  // profile is updated by the same payment.completed bus event, so by
+  // the time the LOYALTY_AWARD job fires (30 min post-DELIVERED) the
+  // count is stable.
+  let isFirstOrder = false;
+  let isBirthdayWeek = false;
+  try {
+    const profile = await col('customer_rfm_profiles').findOne(
+      { restaurant_id: order.restaurant_id, customer_id: order.customer_id },
+      { projection: { order_count: 1, birthday: 1 } },
+    );
+    isFirstOrder = Number(profile?.order_count || 0) === 1;
+    if (profile?.birthday && /^\d{2}\/\d{2}$/.test(profile.birthday)) {
+      const [dd, mm] = profile.birthday.split('/').map((x) => Number(x));
+      const now = new Date();
+      const bday = new Date(now.getFullYear(), mm - 1, dd);
+      const diffDays = Math.abs(now - bday) / (24 * 60 * 60 * 1000);
+      isBirthdayWeek = diffDays <= 3;
+    }
+  } catch (err) { log.warn({ err, orderId: payload.orderId }, 'rfm profile lookup failed for loyalty multipliers'); }
+
+  const reward = await loyalty.earnPoints(order.customer_id, order.restaurant_id, payload.orderId, order.total_rs, isFirstOrder, isBirthdayWeek);
   if (reward?.pointsEarned > 0 && toId && waAcc?.phone_number_id && waToken) {
     let msg = `🎉 You earned *${reward.pointsEarned} loyalty points*!\n💰 Balance: ${reward.newBalance} points\n🏅 Tier: ${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}\n\nRedeem points on your next order!`;
     if (reward.tierUpgraded) {

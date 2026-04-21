@@ -4182,6 +4182,65 @@ router.patch('/campaigns/:id', express.json(), async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// MANUAL-BLAST MARKETING CAMPAIGNS (separate namespace from /campaigns
+// which belongs to the legacy MPM catalog system).
+// ═══════════════════════════════════════════════════════════════
+
+// GET /api/admin/marketing-campaigns/overview — platform-wide stats.
+router.get('/marketing-campaigns/overview', async (req, res) => {
+  try {
+    const all = await col('marketing_campaigns').find(
+      {},
+      { projection: { restaurant_id: 1, status: 1, stats: 1, created_at: 1, sent_at: 1 } },
+    ).toArray();
+
+    const by_status = {};
+    let platform_revenue_attributed_rs = 0;
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const perRestaurant = new Map();
+
+    for (const c of all) {
+      by_status[c.status] = (by_status[c.status] || 0) + 1;
+      platform_revenue_attributed_rs += Number(c.stats?.revenue_attributed_rs || 0);
+      const sentAt = c.sent_at ? new Date(c.sent_at) : null;
+      if (sentAt && sentAt >= startOfMonth) {
+        const rid = c.restaurant_id;
+        perRestaurant.set(rid, (perRestaurant.get(rid) || 0) + 1);
+      }
+    }
+
+    const topEntries = [...perRestaurant.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    const topIds = topEntries.map(([rid]) => rid);
+    const restaurants = topIds.length
+      ? await col('restaurants').find(
+          { _id: { $in: topIds } },
+          { projection: { _id: 1, business_name: 1 } },
+        ).toArray()
+      : [];
+    const nameMap = {};
+    for (const r of restaurants) nameMap[String(r._id)] = r.business_name;
+
+    const top_restaurants_this_month = topEntries.map(([rid, count]) => ({
+      restaurant_id: rid,
+      restaurant_name: nameMap[rid] || 'Unknown',
+      campaigns_sent: count,
+    }));
+
+    res.json({
+      total_campaigns: all.length,
+      by_status,
+      top_restaurants_this_month,
+      platform_revenue_attributed_rs: Number(platform_revenue_attributed_rs.toFixed(2)),
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
 // ADMIN PLATFORM COUPONS
 // ═══════════════════════════════════════════════════════════════
 
@@ -4808,6 +4867,105 @@ router.get('/payouts', async (req, res) => {
     const payouts = await col('payouts').find(filter).sort({ created_at: -1 }).limit(limit).toArray();
     res.json(payouts);
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
+// POST /api/admin/jobs/rebuild-customer-profiles — manual trigger for the
+// nightly RFM rebuild. Fires and forgets; response returns 202 immediately
+// so the admin console doesn't block on the full sweep.
+router.post('/jobs/rebuild-customer-profiles', requireAdminAuth('restaurants', 'manage'), async (req, res) => {
+  const job = require('../jobs/rebuildCustomerProfiles');
+  job.run().catch(() => { /* logged inside the job */ });
+  res.status(202).json({ ok: true, job: job.JOB_NAME, scheduled_at: new Date() });
+});
+
+// GET /api/admin/jobs/logs — recent scheduled-job runs. Optional
+// ?job_name= filter; defaults to newest first, capped at 100.
+router.get('/jobs/logs', requireAdminAuth('restaurants', 'read'), async (req, res) => {
+  try {
+    const filter = {};
+    if (req.query.job_name) filter.job_name = String(req.query.job_name);
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 100);
+    const rows = await col('job_logs')
+      .find(filter).sort({ started_at: -1 }).limit(limit).toArray();
+    res.json(rows);
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
+// GET /api/admin/restaurants/marketing-wa-status — full health
+// overview for the marketing WhatsApp number each restaurant has
+// configured. Sorted by status then business name so flagged/errored
+// tenants float to the top of ops triage.
+router.get('/restaurants/marketing-wa-status', requireAdminAuth('restaurants', 'read'), async (req, res) => {
+  try {
+    const rows = await col('restaurants').find({}, {
+      projection: {
+        _id: 1,
+        business_name: 1,
+        brand_name: 1,
+        marketing_wa_status: 1,
+        marketing_wa_quality_rating: 1,
+        marketing_wa_last_checked_at: 1,
+        marketing_wa_error_message: 1,
+      },
+    }).toArray();
+
+    const items = rows.map((r) => ({
+      restaurant_id: String(r._id),
+      name: r.business_name || r.brand_name || '—',
+      marketing_wa_status: r.marketing_wa_status || 'not_configured',
+      marketing_wa_quality_rating: r.marketing_wa_quality_rating || null,
+      marketing_wa_last_checked_at: r.marketing_wa_last_checked_at || null,
+      marketing_wa_error_message: r.marketing_wa_error_message || null,
+    }));
+
+    items.sort((a, b) => {
+      const s = String(a.marketing_wa_status).localeCompare(String(b.marketing_wa_status));
+      if (s !== 0) return s;
+      return String(a.name).localeCompare(String(b.name));
+    });
+    res.json(items);
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
+// POST /api/admin/restaurants/:restaurantId/verify-marketing-wa —
+// immediate manual verification trigger. Awaits the result so the
+// admin UI can display the outcome inline.
+router.post('/restaurants/:restaurantId/verify-marketing-wa', requireAdminAuth('restaurants', 'manage'), async (req, res) => {
+  try {
+    const { verifyMarketingWaNumber } = require('../services/marketingWaVerification');
+    const result = await verifyMarketingWaNumber(req.params.restaurantId);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
+// GET /api/admin/customers/overview — platform-wide RFM rollup.
+// Returns total profiled customers + counts per segment + top 10
+// tenants by customer count. Powers the admin dashboard snapshot.
+router.get('/customers/overview', requireAdminAuth('restaurants', 'read'), async (req, res) => {
+  try {
+    const [total, perSegment, topTenants] = await Promise.all([
+      col('customer_rfm_profiles').countDocuments({}),
+      col('customer_rfm_profiles').aggregate([
+        { $group: { _id: '$rfm_label', count: { $sum: 1 } } },
+      ]).toArray(),
+      col('customer_rfm_profiles').aggregate([
+        { $group: { _id: '$restaurant_id', customers: { $sum: 1 } } },
+        { $sort: { customers: -1 } },
+        { $limit: 10 },
+      ]).toArray(),
+    ]);
+    res.json({
+      total_profiles: total,
+      per_segment: perSegment.reduce((acc, r) => {
+        acc[r._id] = r.count;
+        return acc;
+      }, {}),
+      top_tenants: topTenants.map((r) => ({
+        restaurant_id: r._id,
+        customers: r.customers,
+      })),
+    });
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
 });
 
 module.exports = router;
