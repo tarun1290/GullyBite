@@ -1074,3 +1074,102 @@ a { color: inherit; text-decoration: none; }
   #pg-land .landing-positioning-grid { grid-template-columns: repeat(2, 1fr); gap: 28px; }
   #pg-land .landing-positioning-num { font-size: 44px; }
 }
+
+/* =======================================================================
+   LANDING PAGE — Part 2 section: How It Works
+   ======================================================================= */
+#pg-land .landing-hiw {
+  background: var(--landing-section-bg);
+  padding: 96px 24px;
+}
+#pg-land .landing-hiw-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+#pg-land .landing-hiw-head {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto 64px;
+}
+#pg-land .landing-hiw-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gb-green-500);
+  margin-bottom: 16px;
+}
+#pg-land .landing-hiw-headline {
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.15;
+  font-weight: 700;
+  color: var(--landing-ink);
+  margin: 0 0 16px;
+}
+#pg-land .landing-hiw-sub {
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--landing-slate);
+  margin: 0;
+}
+#pg-land .landing-hiw-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+  position: relative;
+}
+#pg-land .landing-hiw-steps::before {
+  content: '';
+  position: absolute;
+  top: 28px;
+  left: 12.5%;
+  right: 12.5%;
+  height: 1px;
+  background: var(--landing-line);
+  z-index: 0;
+}
+#pg-land .landing-hiw-step {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 0 8px;
+}
+#pg-land .landing-hiw-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--gb-green-500);
+  color: var(--gb-neutral-0);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  box-shadow: 0 0 0 6px var(--landing-section-bg);
+}
+#pg-land .landing-hiw-step-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--landing-ink);
+  margin: 0 0 8px;
+}
+#pg-land .landing-hiw-step-body {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--landing-slate);
+  margin: 0;
+}
+
+@media (max-width: 960px) {
+  #pg-land .landing-hiw { padding: 72px 20px; }
+  #pg-land .landing-hiw-steps { grid-template-columns: 1fr; gap: 28px; }
+  #pg-land .landing-hiw-steps::before { display: none; }
+  #pg-land .landing-hiw-step { text-align: left; display: grid; grid-template-columns: 56px 1fr; gap: 16px; align-items: start; }
+  #pg-land .landing-hiw-circle { margin-bottom: 0; box-shadow: none; }
+  #pg-land .landing-hiw-step-title { margin-top: 8px; }
+}
