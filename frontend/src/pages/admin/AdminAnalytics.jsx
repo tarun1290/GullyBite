@@ -24,18 +24,18 @@ import {
 const PERIODS = [7, 30, 90, 365];
 
 const STATUS_COLORS = {
-  DELIVERED: '#16a34a', CONFIRMED: '#3b82f6', PREPARING: '#f59e0b',
-  PACKED: '#8b5cf6', DISPATCHED: '#06b6d4', CANCELLED: '#dc2626',
-  PENDING_PAYMENT: '#94a3b8', PAYMENT_FAILED: '#ef4444',
+  DELIVERED: 'var(--gb-wa-500)', CONFIRMED: '#3b82f6', PREPARING: '#f59e0b',
+  PACKED: '#8b5cf6', DISPATCHED: '#06b6d4', CANCELLED: 'var(--gb-red-500)',
+  PENDING_PAYMENT: 'var(--gb-slate-400)', PAYMENT_FAILED: '#ef4444',
   EXPIRED: '#78716c', PAID: '#22c55e',
 };
 
 const SEGMENT_COLORS = {
-  new: '#3b82f6', active: '#16a34a', at_risk: '#f59e0b',
-  lapsed: '#f97316', lost: '#dc2626',
+  new: '#3b82f6', active: 'var(--gb-wa-500)', at_risk: '#f59e0b',
+  lapsed: '#f97316', lost: 'var(--gb-red-500)',
 };
 
-const FUNNEL_COLORS = ['#94a3b8', '#3b82f6', '#8b5cf6', '#d97706', '#0891b2', '#16a34a'];
+const FUNNEL_COLORS = ['var(--gb-slate-400)', '#3b82f6', '#8b5cf6', 'var(--gb-amber-500)', '#0891b2', 'var(--gb-wa-500)'];
 
 function fmtRs(n) {
   const v = parseFloat(n) || 0;
@@ -66,7 +66,7 @@ function ChangePill({ value }) {
   if (value == null || value === 0) return null;
   const pos = value >= 0;
   return (
-    <span style={{ color: pos ? '#16a34a' : '#dc2626' }}>
+    <span style={{ color: pos ? 'var(--gb-wa-500)' : 'var(--gb-red-500)' }}>
       {' '}{pos ? '▲' : '▼'} {Math.abs(value)}%
     </span>
   );
@@ -114,7 +114,7 @@ export default function AdminAnalytics() {
       <div style={{
         display: 'flex', gap: '.5rem', flexWrap: 'wrap', alignItems: 'end',
         marginBottom: '1.2rem', padding: '.75rem 1rem',
-        background: '#fff', border: '1px solid var(--rim)', borderRadius: 8,
+        background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 8,
       }}>
         <div>
           <label style={filterLbl}>Period</label>
@@ -257,7 +257,7 @@ function TimeseriesCard({ params }) {
             labels: data.map((d) => d.date),
             datasets: [
               { label: 'Orders', data: data.map((d) => d.order_count), backgroundColor: 'rgba(79,70,229,.6)', order: 2, yAxisID: 'y' },
-              { label: 'GMV', data: data.map((d) => d.gmv), borderColor: '#16a34a', type: 'line', tension: .3, pointRadius: 2, order: 1, yAxisID: 'y1' },
+              { label: 'GMV', data: data.map((d) => d.gmv), borderColor: 'var(--gb-wa-500)', type: 'line', tension: .3, pointRadius: 2, order: 1, yAxisID: 'y1' },
             ],
           }}
           options={{
@@ -305,7 +305,7 @@ function StatusCard({ params }) {
             labels: data.map((d) => d.status),
             datasets: [{
               data: data.map((d) => d.count),
-              backgroundColor: data.map((d) => STATUS_COLORS[d.status] || '#94a3b8'),
+              backgroundColor: data.map((d) => STATUS_COLORS[d.status] || 'var(--gb-slate-400)'),
             }],
           }}
           options={{
@@ -507,7 +507,7 @@ function RestaurantRankingCard({ params }) {
                   <td style={{ ...td, fontWeight: 600 }}>{d.name || '—'}</td>
                   <td style={{ ...td, color: 'var(--dim)' }}>{d.city || '—'}</td>
                   <td style={td}>{d.order_count}</td>
-                  <td style={{ ...td, fontWeight: 600, color: '#16a34a' }}>{fmtRs(d.gmv)}</td>
+                  <td style={{ ...td, fontWeight: 600, color: 'var(--gb-wa-500)' }}>{fmtRs(d.gmv)}</td>
                   <td style={td}>{fmtRs(d.avg_order_value)}</td>
                   <td style={td}>{d.customer_count}</td>
                 </tr>
@@ -549,7 +549,7 @@ function SegmentsCard() {
             labels: data.map((d) => d.segment),
             datasets: [{
               data: data.map((d) => d.count),
-              backgroundColor: data.map((d) => SEGMENT_COLORS[d.segment] || '#94a3b8'),
+              backgroundColor: data.map((d) => SEGMENT_COLORS[d.segment] || 'var(--gb-slate-400)'),
             }],
           }}
           options={{
@@ -648,7 +648,7 @@ function TopCustomersCard({ params }) {
                   <td style={td}>{c.name || '—'}</td>
                   <td style={{ ...td, fontSize: '.78rem', color: 'var(--dim)' }} className="mono">{c.phone || '—'}</td>
                   <td style={td}>{c.order_count}</td>
-                  <td style={{ ...td, fontWeight: 600, color: '#16a34a' }}>{fmtRs(c.total_spent)}</td>
+                  <td style={{ ...td, fontWeight: 600, color: 'var(--gb-wa-500)' }}>{fmtRs(c.total_spent)}</td>
                 </tr>
               ))}
             </tbody>
@@ -711,16 +711,16 @@ function FunnelCard() {
                     <span style={{ width: 110, fontSize: '.78rem', fontWeight: 500, color: 'var(--dim)', textAlign: 'right' }}>
                       {f.stage}
                     </span>
-                    <div style={{ flex: 1, background: '#f1f5f9', borderRadius: 6, overflow: 'hidden', height: 28, position: 'relative' }}>
+                    <div style={{ flex: 1, background: 'var(--gb-slate-100)', borderRadius: 6, overflow: 'hidden', height: 28, position: 'relative' }}>
                       <div style={{
                         width: `${pct}%`, height: '100%',
-                        background: FUNNEL_COLORS[i] || '#64748b', borderRadius: 6,
+                        background: FUNNEL_COLORS[i] || 'var(--gb-slate-500)', borderRadius: 6,
                         transition: 'width .4s',
                       }} />
                       <span style={{
                         position: 'absolute', left: '.6rem', top: '50%',
                         transform: 'translateY(-50%)', fontSize: '.72rem', fontWeight: 600,
-                        color: pct > 15 ? '#fff' : '#1e293b',
+                        color: pct > 15 ? 'var(--gb-neutral-0)' : 'var(--gb-slate-800)',
                       }}>
                         {f.count} ({f.pct}%)
                       </span>
@@ -749,7 +749,7 @@ function FunnelCard() {
                     <tr><td colSpan={5} style={emptyCell}>No data</td></tr>
                   ) : restData.map((r, i) => {
                     const rate = r.completion_rate || 0;
-                    const color = rate >= 50 ? '#16a34a' : rate >= 25 ? '#d97706' : '#dc2626';
+                    const color = rate >= 50 ? 'var(--gb-wa-500)' : rate >= 25 ? 'var(--gb-amber-500)' : 'var(--gb-red-500)';
                     return (
                       <tr key={i} style={{ borderBottom: '1px solid var(--rim)' }}>
                         <td style={{ ...td, fontWeight: 500 }}>{r.restaurant_name || '—'}</td>
@@ -775,5 +775,5 @@ const trHead = { background: 'var(--ink)', borderBottom: '1px solid var(--rim)' 
 const th = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.55rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.28rem .5rem', fontSize: '.78rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.28rem .5rem', fontSize: '.78rem' };
 const filterLbl = { fontSize: '.68rem', color: 'var(--dim)', display: 'block', marginBottom: '.2rem' };

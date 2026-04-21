@@ -197,8 +197,8 @@ export default function AdminCouponCodes() {
                         <span style={{
                           display: 'inline-block', padding: '.15rem .55rem', borderRadius: 10,
                           fontSize: '.72rem', fontWeight: 600,
-                          background: active ? '#d1fae5' : '#fee2e2',
-                          color: active ? '#059669' : '#dc2626',
+                          background: active ? '#d1fae5' : 'var(--gb-red-100)',
+                          color: active ? '#059669' : 'var(--gb-red-500)',
                         }}>{active ? 'ACTIVE' : 'INACTIVE'}</span>
                       </td>
                       <td style={td}>
@@ -322,7 +322,7 @@ export default function AdminCouponCodes() {
           {msg && (
             <div style={{
               gridColumn: '1 / -1', fontSize: '.8rem',
-              color: msg.type === 'error' ? '#dc2626' : msg.type === 'success' ? '#059669' : 'var(--dim)',
+              color: msg.type === 'error' ? 'var(--gb-red-500)' : msg.type === 'success' ? '#059669' : 'var(--dim)',
             }}>
               {msg.text}
             </div>
@@ -338,6 +338,6 @@ const trHead = { background: 'var(--ink)', borderBottom: '1px solid var(--rim)' 
 const th = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.55rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
 const lbl = { fontSize: '.75rem', color: 'var(--dim)', fontWeight: 600, display: 'block', marginBottom: '.25rem' };
-const star = { color: '#dc2626' };
+const star = { color: 'var(--gb-red-500)' };

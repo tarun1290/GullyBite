@@ -21,10 +21,10 @@ import {
 const STATUS_COLORS = {
   active:        { bg: 'rgba(34,197,94,.12)',  fg: '#047857' },
   pending_claim: { bg: 'rgba(234,179,8,.15)',  fg: '#a16207' },
-  suggested:     { bg: 'rgba(59,130,246,.12)', fg: '#1d4ed8' },
-  not_claimed:   { bg: 'rgba(148,163,184,.18)', fg: '#334155' },
-  released:      { bg: 'rgba(239,68,68,.15)',  fg: '#b91c1c' },
-  rejected:      { bg: 'rgba(239,68,68,.15)',  fg: '#b91c1c' },
+  suggested:     { bg: 'rgba(59,130,246,.12)', fg: 'var(--gb-blue-600)' },
+  not_claimed:   { bg: 'rgba(148,163,184,.18)', fg: 'var(--gb-slate-700)' },
+  released:      { bg: 'rgba(239,68,68,.15)',  fg: 'var(--gb-red-600)' },
+  rejected:      { bg: 'rgba(239,68,68,.15)',  fg: 'var(--gb-red-600)' },
 };
 
 function statusBadge(s) {
@@ -347,7 +347,7 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }) {
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem' }}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
           <h3 style={{ margin: 0, fontSize: '.95rem' }}>Username: {u.restaurant_name || 'Restaurant'}</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose}>✕</button>
@@ -355,7 +355,7 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }) {
         <div style={{ padding: '1rem' }}>
           <div style={{ marginBottom: '1rem' }}>
             {isActive ? (
-              <div style={{ background: '#dcfce7', border: '1px solid #86efac', borderRadius: 8, padding: '.7rem', fontSize: '.85rem' }}>
+              <div style={{ background: 'var(--gb-wa-light)', border: '1px solid #86efac', borderRadius: 8, padding: '.7rem', fontSize: '.85rem' }}>
                 Active: <strong>@{u.business_username}</strong> — <a href={`https://wa.me/${u.business_username}`} target="_blank" rel="noreferrer" style={{ color: 'var(--acc, #4f46e5)' }}>wa.me/{u.business_username}</a>
               </div>
             ) : isPending ? (
@@ -399,7 +399,7 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }) {
               />
               <span style={{ fontSize: '.85rem' }}>{checkState.status}</span>
             </div>
-            <div style={{ fontSize: '.72rem', color: '#b91c1c', minHeight: '1em', marginTop: '.2rem' }}>{checkState.error}</div>
+            <div style={{ fontSize: '.72rem', color: 'var(--gb-red-600)', minHeight: '1em', marginTop: '.2rem' }}>{checkState.error}</div>
           </div>
 
           <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
@@ -420,11 +420,11 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }) {
             {(isActive || isPending) && (
               confirmRelease ? (
                 <>
-                  <button type="button" className="btn-g btn-sm" style={{ background: '#dc2626', color: '#fff' }} onClick={doRelease} disabled={busy === 'release'}>Confirm Release</button>
+                  <button type="button" className="btn-g btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }} onClick={doRelease} disabled={busy === 'release'}>Confirm Release</button>
                   <button type="button" className="btn-g btn-sm" onClick={() => setConfirmRelease(false)}>Cancel</button>
                 </>
               ) : (
-                <button type="button" className="btn-g btn-sm" style={{ background: '#dc2626', color: '#fff' }} onClick={() => setConfirmRelease(true)}>Release</button>
+                <button type="button" className="btn-g btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }} onClick={() => setConfirmRelease(true)}>Release</button>
               )
             )}
             <button type="button" className="btn-g btn-sm" onClick={doRegenerate} disabled={busy === 'suggest'}>Regenerate Suggestions</button>
@@ -463,5 +463,5 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }) {
 const th = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.5rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
 const lbl = { fontSize: '.78rem', color: 'var(--dim)', display: 'block', marginBottom: '.3rem' };

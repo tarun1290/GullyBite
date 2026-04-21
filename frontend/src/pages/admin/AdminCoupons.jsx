@@ -17,12 +17,12 @@ function bodyOf(t) {
 
 function StatusBadge({ status }) {
   const color = status === 'APPROVED' ? '#059669'
-    : status === 'PENDING' ? '#d97706'
-    : status === 'REJECTED' ? '#dc2626'
+    : status === 'PENDING' ? 'var(--gb-amber-500)'
+    : status === 'REJECTED' ? 'var(--gb-red-500)'
     : 'var(--dim)';
   const bg = status === 'APPROVED' ? '#d1fae5'
-    : status === 'PENDING' ? '#fef3c7'
-    : status === 'REJECTED' ? '#fee2e2'
+    : status === 'PENDING' ? 'var(--gb-amber-100)'
+    : status === 'REJECTED' ? 'var(--gb-red-100)'
     : 'var(--ink3)';
   return (
     <span style={{
@@ -206,7 +206,7 @@ export default function AdminCoupons() {
         <div className="ch"><h3>Create New Coupon Template</h3></div>
         <div className="cb" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.85rem' }}>
           <div>
-            <label style={lbl}>Template Name <span style={{ color: '#dc2626' }}>*</span></label>
+            <label style={lbl}>Template Name <span style={{ color: 'var(--gb-red-500)' }}>*</span></label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -216,7 +216,7 @@ export default function AdminCoupons() {
             <div style={hint}>Lowercase, numbers, underscores only</div>
           </div>
           <div>
-            <label style={lbl}>Example Coupon Code <span style={{ color: '#dc2626' }}>*</span></label>
+            <label style={lbl}>Example Coupon Code <span style={{ color: 'var(--gb-red-500)' }}>*</span></label>
             <input
               value={example}
               onChange={(e) => setExample(e.target.value)}
@@ -235,7 +235,7 @@ export default function AdminCoupons() {
             />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={lbl}>Body Text <span style={{ color: '#dc2626' }}>*</span></label>
+            <label style={lbl}>Body Text <span style={{ color: 'var(--gb-red-500)' }}>*</span></label>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
@@ -254,7 +254,7 @@ export default function AdminCoupons() {
           {msg && (
             <div style={{
               gridColumn: '1 / -1', fontSize: '.8rem',
-              color: msg.type === 'error' ? '#dc2626' : msg.type === 'success' ? '#059669' : 'var(--dim)',
+              color: msg.type === 'error' ? 'var(--gb-red-500)' : msg.type === 'success' ? '#059669' : 'var(--dim)',
             }}>
               {msg.text}
             </div>
@@ -270,7 +270,7 @@ const trHead = { background: 'var(--ink)', borderBottom: '1px solid var(--rim)' 
 const th = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.55rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
 const lbl = { fontSize: '.75rem', color: 'var(--dim)', fontWeight: 600, display: 'block', marginBottom: '.25rem' };
 const hint = { fontSize: '.7rem', color: 'var(--dim)', marginTop: '.25rem' };
 const codeChip = { background: '#dbeafe', padding: '.05rem .3rem', borderRadius: 3 };

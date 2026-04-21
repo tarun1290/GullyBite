@@ -12,7 +12,7 @@ import {
 // Mirrors admin.html loadReferrals + createReferral (3203-3321).
 // Stats strip, inline create form (reveals shareable WA link), 9-col table.
 
-const STATUS_COLOR = { active: '#22c55e', converted: '#7c3aed', expired: '#6b7280' };
+const STATUS_COLOR = { active: '#22c55e', converted: 'var(--gb-violet-600)', expired: 'var(--gb-neutral-500)' };
 
 function fmtInr(n) {
   const v = Number(n || 0);
@@ -192,7 +192,7 @@ export default function AdminReferrals() {
             className="btn-p btn-sm"
             onClick={doCreate}
             disabled={creating}
-            style={{ background: '#7c3aed', color: '#fff', whiteSpace: 'nowrap' }}
+            style={{ background: 'var(--gb-violet-600)', color: 'var(--gb-neutral-0)', whiteSpace: 'nowrap' }}
           >
             {creating ? 'Creating…' : '+ Create Referral'}
           </button>
@@ -210,7 +210,7 @@ export default function AdminReferrals() {
               marginTop: '.9rem', background: 'var(--ink3)',
               border: '1px solid rgba(124,58,237,.26)', borderRadius: 8, padding: '.8rem 1rem',
             }}>
-              <div style={{ fontSize: '.76rem', color: '#7c3aed', marginBottom: '.4rem' }}>
+              <div style={{ fontSize: '.76rem', color: 'var(--gb-violet-600)', marginBottom: '.4rem' }}>
                 Referral created — share this restaurant's WhatsApp link with the customer. Attribution is live for 8 hours.
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
@@ -254,7 +254,7 @@ export default function AdminReferrals() {
                   <tr><td colSpan={9} style={emptyCell}>No referrals yet</td></tr>
                 ) : (
                   rows.map((r) => {
-                    const color = STATUS_COLOR[r.status] || '#6b7280';
+                    const color = STATUS_COLOR[r.status] || 'var(--gb-neutral-500)';
                     return (
                       <tr key={r._id || r.id || `${r.customer_wa_phone}-${r.created_at}`} style={{ borderBottom: '1px solid var(--rim)' }}>
                         <td style={td} className="mono">{r.customer_wa_phone}</td>
@@ -293,4 +293,4 @@ const th = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', colo
 const td = { padding: '.6rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
 const lbl = { fontSize: '.72rem', color: 'var(--dim)', display: 'block', marginBottom: '.25rem' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.4rem .6rem', fontSize: '.82rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.4rem .6rem', fontSize: '.82rem' };

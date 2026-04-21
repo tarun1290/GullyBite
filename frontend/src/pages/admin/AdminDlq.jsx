@@ -12,12 +12,12 @@ const DLQ_LIMIT = 50;
 
 const SOURCE_BADGE = {
   whatsapp: { bg: 'rgba(37,211,102,.18)', color: '#047857' },
-  razorpay: { bg: 'rgba(59,130,246,.18)', color: '#1d4ed8' },
+  razorpay: { bg: 'rgba(59,130,246,.18)', color: 'var(--gb-blue-600)' },
 };
 
 function sourceBadge(src) {
   const s = (src || '').toLowerCase();
-  const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: '#334155' };
+  const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: 'var(--gb-slate-700)' };
   return (
     <span style={{
       display: 'inline-block', padding: '.1rem .5rem', borderRadius: 10,
@@ -181,7 +181,7 @@ export default function AdminDlq() {
                     <td style={td}>{sourceBadge(e.source)}</td>
                     <td style={{ ...td, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="mono">{e.event_type || '—'}</td>
                     <td style={{ ...td, textAlign: 'center', fontWeight: 600 }}>{(e.retry_count || 0)} / {(e.max_retries || 5)}</td>
-                    <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#b91c1c', fontSize: '.75rem' }}
+                    <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--gb-red-600)', fontSize: '.75rem' }}
                         title={e.last_error || ''}>{e.last_error || '—'}</td>
                     <td style={td}>
                       <button type="button" className="btn-g btn-sm" onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
@@ -203,7 +203,7 @@ export default function AdminDlq() {
                       <button type="button" className="btn-p btn-sm" onClick={() => doRetry(e.id)} disabled={busy === e.id}>Retry</button>
                       {confirmDismiss === e.id ? (
                         <>
-                          <button type="button" className="btn-g btn-sm" style={{ background: '#dc2626', color: '#fff' }} onClick={() => doDismiss(e.id)} disabled={busy === e.id}>Confirm</button>
+                          <button type="button" className="btn-g btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }} onClick={() => doDismiss(e.id)} disabled={busy === e.id}>Confirm</button>
                           <button type="button" className="btn-g btn-sm" onClick={() => setConfirmDismiss(null)} disabled={busy === e.id}>Cancel</button>
                         </>
                       ) : (
@@ -235,7 +235,7 @@ export default function AdminDlq() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 720, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            style={{ background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 720, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
               <h3 style={{ margin: 0, fontSize: '.95rem' }}>{detail.event_type || 'DLQ Entry'}</h3>
@@ -262,4 +262,4 @@ export default function AdminDlq() {
 const th = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.5rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };

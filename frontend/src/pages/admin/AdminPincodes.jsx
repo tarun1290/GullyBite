@@ -408,8 +408,8 @@ export default function AdminPincodes() {
           style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '1rem' }}
         >
           <StatBlock label="Total pincodes" value={fmtNum(stats.total)} color="var(--fg)" />
-          <StatBlock label="Enabled" value={fmtNum(stats.enabled)} color="#16a34a" />
-          <StatBlock label="Disabled" value={fmtNum(stats.disabled)} color="#dc2626" />
+          <StatBlock label="Enabled" value={fmtNum(stats.enabled)} color="var(--gb-wa-500)" />
+          <StatBlock label="Disabled" value={fmtNum(stats.disabled)} color="var(--gb-red-500)" />
         </div>
       </div>
 
@@ -421,7 +421,7 @@ export default function AdminPincodes() {
             className="btn-sm"
             style={{
               background: view === 'pincode' ? 'var(--pri)' : 'transparent',
-              color: view === 'pincode' ? '#fff' : 'var(--fg)',
+              color: view === 'pincode' ? 'var(--gb-neutral-0)' : 'var(--fg)',
               border: view === 'pincode' ? 'none' : '1px solid var(--bd)',
             }}
             onClick={() => setView('pincode')}
@@ -432,7 +432,7 @@ export default function AdminPincodes() {
             className="btn-sm"
             style={{
               background: view === 'city' ? 'var(--pri)' : 'transparent',
-              color: view === 'city' ? '#fff' : 'var(--fg)',
+              color: view === 'city' ? 'var(--gb-neutral-0)' : 'var(--fg)',
               border: view === 'city' ? 'none' : '1px solid var(--bd)',
             }}
             onClick={() => setView('city')}
@@ -524,7 +524,7 @@ function PincodeView(p) {
               </span>
               <button
                 className="btn-sm"
-                style={{ background: p.bulkConfirm.enabled ? '#16a34a' : '#dc2626', color: '#fff' }}
+                style={{ background: p.bulkConfirm.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
                 onClick={() => p.doBulk(p.bulkConfirm.enabled)}
                 disabled={p.bulkBusy}
               >
@@ -631,7 +631,7 @@ function PincodeView(p) {
                       <span
                         style={{
                           fontSize: '.75rem',
-                          color: r.enabled ? '#16a34a' : '#dc2626',
+                          color: r.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)',
                           fontWeight: 500,
                         }}
                       >
@@ -755,14 +755,14 @@ function StateAccordion({
         <span
           style={{
             fontSize: '.75rem',
-            color: '#16a34a',
+            color: 'var(--gb-wa-500)',
             fontWeight: 500,
             marginLeft: '.4rem',
           }}
         >
           {fmtNum(bucket.enabled)} enabled
         </span>
-        <span style={{ fontSize: '.75rem', color: '#dc2626', fontWeight: 500 }}>
+        <span style={{ fontSize: '.75rem', color: 'var(--gb-red-500)', fontWeight: 500 }}>
           {fmtNum(bucket.disabled)} disabled
         </span>
         <div
@@ -776,7 +776,7 @@ function StateAccordion({
               </span>
               <button
                 className="btn-sm"
-                style={{ background: stateConfirm.enabled ? '#16a34a' : '#dc2626', color: '#fff' }}
+                style={{ background: stateConfirm.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
                 onClick={async () => {
                   await doStateBulk(bucket, stateConfirm.enabled);
                   setStateConfirm(null);
@@ -877,7 +877,7 @@ function CityCard({
               </span>
               <button
                 className="btn-sm"
-                style={{ background: confirm.enabled ? '#16a34a' : '#dc2626', color: '#fff' }}
+                style={{ background: confirm.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
                 onClick={async () => {
                   await doCityBulk(row.city, row.state, confirm.enabled);
                   setConfirm(null);
@@ -958,9 +958,9 @@ function PincodeChip({ pincode, enabled, disabled, onToggle }) {
         fontSize: '.8rem',
         padding: '.25rem .5rem',
         borderRadius: 4,
-        border: `1px solid ${enabled ? '#16a34a' : '#dc2626'}`,
+        border: `1px solid ${enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)'}`,
         background: enabled ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',
-        color: enabled ? '#16a34a' : '#dc2626',
+        color: enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)',
         cursor: disabled ? 'wait' : 'pointer',
         opacity: disabled ? 0.5 : 1,
       }}
@@ -984,7 +984,7 @@ function ProgressBar({ pct }) {
         style={{
           width: `${pct}%`,
           height: '100%',
-          background: '#16a34a',
+          background: 'var(--gb-wa-500)',
           transition: 'width .25s ease',
         }}
       />

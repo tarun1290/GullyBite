@@ -16,11 +16,11 @@
   justify-content: center;
   gap: .5rem;
   background: var(--wa, #16a34a);
-  color: #fff;
+  color: var(--gb-neutral-0);
   font-weight: 600;
   font-size: .85rem;
   padding: .6rem 1.1rem;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: none;
   cursor: pointer;
   transition: background .15s, box-shadow .15s, transform .1s;

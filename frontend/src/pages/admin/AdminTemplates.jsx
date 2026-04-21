@@ -18,13 +18,13 @@ import {
 // Edit opens the in-page TemplateEditor; legacy confirm()s become inline.
 
 const STATUS_COLORS = {
-  APPROVED: '#16a34a',
-  PENDING: '#d97706',
-  REJECTED: '#dc2626',
-  DELETED: '#94a3b8',
+  APPROVED: 'var(--gb-wa-500)',
+  PENDING: 'var(--gb-amber-500)',
+  REJECTED: 'var(--gb-red-500)',
+  DELETED: 'var(--gb-slate-400)',
 };
 
-const QUALITY_COLORS = { HIGH: '#16a34a', MEDIUM: '#d97706', LOW: '#dc2626' };
+const QUALITY_COLORS = { HIGH: 'var(--gb-wa-500)', MEDIUM: 'var(--gb-amber-500)', LOW: 'var(--gb-red-500)' };
 
 export default function AdminTemplates() {
   const { showToast } = useToast();
@@ -157,7 +157,7 @@ export default function AdminTemplates() {
                 </thead>
                 <tbody>
                   {templates.map((t) => {
-                    const clr = STATUS_COLORS[t.status] || '#6b7280';
+                    const clr = STATUS_COLORS[t.status] || 'var(--gb-neutral-500)';
                     const qclr = QUALITY_COLORS[t.quality_score];
                     const pending = pendingDelete === t.name;
                     const busy = rowBusy === t.name;
@@ -166,7 +166,7 @@ export default function AdminTemplates() {
                         <td style={{ padding: '.45rem', fontSize: '.84rem', fontWeight: 500 }}>
                           {t.name}
                           {t.status === 'REJECTED' && t.rejected_reason && (
-                            <div style={{ fontSize: '.7rem', color: '#dc2626', marginTop: '.2rem' }}>
+                            <div style={{ fontSize: '.7rem', color: 'var(--gb-red-500)', marginTop: '.2rem' }}>
                               {t.rejected_reason}
                             </div>
                           )}
@@ -184,7 +184,7 @@ export default function AdminTemplates() {
                           {pending ? (
                             <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
                               <span style={{ fontSize: '.72rem', color: 'var(--dim)', marginRight: '.2rem' }}>Delete "{t.name}"?</span>
-                              <button type="button" style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, padding: '.15rem .5rem', fontSize: '.72rem' }} onClick={() => doDelete(t.name)} disabled={busy}>
+                              <button type="button" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 4, padding: '.15rem .5rem', fontSize: '.72rem' }} onClick={() => doDelete(t.name)} disabled={busy}>
                                 {busy ? '…' : 'Confirm'}
                               </button>
                               <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={() => setPendingDelete(null)} disabled={busy}>Cancel</button>
@@ -249,7 +249,7 @@ export default function AdminTemplates() {
                       </td>
                       <td style={{ padding: '.45rem', fontSize: '.78rem' }}>
                         {m.is_active
-                          ? <span style={{ color: '#16a34a' }}>Active</span>
+                          ? <span style={{ color: 'var(--gb-wa-500)' }}>Active</span>
                           : <span style={{ color: 'var(--dim)' }}>Off</span>}
                       </td>
                     </tr>
@@ -289,7 +289,7 @@ export default function AdminTemplates() {
                       </td>
                       <td style={{ padding: '.45rem', fontSize: '.78rem' }}>{l.event}</td>
                       <td style={{ padding: '.45rem', fontSize: '.76rem' }}><code>{l.template_name}</code></td>
-                      <td style={{ padding: '.45rem', fontSize: '.78rem', color: l.status === 'sent' ? '#16a34a' : '#dc2626' }}>
+                      <td style={{ padding: '.45rem', fontSize: '.78rem', color: l.status === 'sent' ? 'var(--gb-wa-500)' : 'var(--gb-red-500)' }}>
                         {l.status}
                       </td>
                       <td style={{ padding: '.45rem', fontSize: '.78rem', color: 'var(--dim)' }}>

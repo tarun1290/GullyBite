@@ -154,7 +154,7 @@ function JustGeneratedView({ pin, slug, onCopy, onRegenerate, isGenerating }) {
               style={{
                 width: 52, height: 60, display: 'inline-flex',
                 alignItems: 'center', justifyContent: 'center',
-                background: '#fff', border: '1px solid var(--rim)', borderRadius: 10,
+                background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 10,
                 fontFamily: 'monospace', fontSize: '1.75rem', fontWeight: 800, color: 'var(--tx)',
                 boxShadow: 'var(--shadow-sm)',
               }}

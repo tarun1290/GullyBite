@@ -25,9 +25,9 @@ function fmtDate(iso) {
 
 const TYPE_COLOR = {
   new: 'var(--dim)',
-  repeat: '#16a34a',
+  repeat: 'var(--gb-wa-500)',
   loyal: '#f5a623',
-  dormant: '#dc2626',
+  dormant: 'var(--gb-red-500)',
 };
 
 export default function AdminCustomers() {
@@ -304,4 +304,4 @@ export default function AdminCustomers() {
 const th = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.6rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const sel = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };
+const sel = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };

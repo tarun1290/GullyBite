@@ -25,10 +25,10 @@ function fmtInr(n) {
 }
 
 const STATUS_BADGE = {
-  active: { color: '#16a34a', label: 'Active' },
-  suspended: { color: '#dc2626', label: 'Suspended' },
+  active: { color: 'var(--gb-wa-500)', label: 'Active' },
+  suspended: { color: 'var(--gb-red-500)', label: 'Suspended' },
   onboarding: { color: '#3b82f6', label: 'Onboarding' },
-  pending: { color: '#d97706', label: 'Pending' },
+  pending: { color: 'var(--gb-amber-500)', label: 'Pending' },
 };
 
 export default function AdminRestaurants() {
@@ -178,8 +178,8 @@ export default function AdminRestaurants() {
 function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onDelete }) {
   const o = r.orders || {};
   const fpct = r.fulfillment_pct || 0;
-  const fColor = fpct >= 80 ? '#16a34a' : fpct >= 50 ? '#d97706' : '#dc2626';
-  const badge = STATUS_BADGE[r.status] || { color: '#6b7280', label: r.status };
+  const fColor = fpct >= 80 ? 'var(--gb-wa-500)' : fpct >= 50 ? 'var(--gb-amber-500)' : 'var(--gb-red-500)';
+  const badge = STATUS_BADGE[r.status] || { color: 'var(--gb-neutral-500)', label: r.status };
   const orderTip = [
     `Delivered: ${o.delivered || 0}`,
     `Pending: ${o.pending || 0}`,
@@ -203,14 +203,14 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
       <td data-label="Catalogs" style={{ padding: '.5rem', textAlign: 'center', fontSize: '.82rem' }}>{r.catalog_count ?? 0}</td>
       <td data-label="Orders" style={{ padding: '.5rem', textAlign: 'center', cursor: 'help' }} title={orderTip}>
         <div style={{ fontWeight: 600, fontSize: '.84rem' }}>{o.total ?? 0}</div>
-        <div style={{ color: '#16a34a', fontSize: '.7rem' }}>{o.delivered ?? 0} del</div>
+        <div style={{ color: 'var(--gb-wa-500)', fontSize: '.7rem' }}>{o.delivered ?? 0} del</div>
       </td>
       <td data-label="Fulfil%" style={{ padding: '.5rem', textAlign: 'center' }}>
         <span style={{ color: fColor, fontWeight: 600 }}>{fpct}%</span>
       </td>
       <td data-label="Issues" style={{ padding: '.5rem', textAlign: 'center' }}>
         {r.issues
-          ? <span style={{ color: '#dc2626', fontWeight: 600 }}>{r.issues}</span>
+          ? <span style={{ color: 'var(--gb-red-500)', fontWeight: 600 }}>{r.issues}</span>
           : <span style={{ color: 'var(--mute,#94a3b8)' }}>0</span>}
       </td>
       <td data-label="Revenue" style={{ padding: '.5rem', fontSize: '.82rem' }}>₹{fmtInr(r.revenue_rs)}</td>
@@ -226,7 +226,7 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
             busy={busy}
             onConfirm={() => onStatus(r, pending.target)}
             onCancel={onCancel}
-            confirmColor={pending.target === 'suspended' ? '#dc2626' : '#16a34a'}
+            confirmColor={pending.target === 'suspended' ? 'var(--gb-red-500)' : 'var(--gb-wa-500)'}
           />
         ) : pending?.kind === 'cap' ? (
           <CapEditor
@@ -245,7 +245,7 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
         ) : (
           <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '.25rem', justifyContent: 'flex-end' }}>
             {r.status === 'active' ? (
-              <button type="button" className="btn-sm" style={{ fontSize: '.72rem', color: '#dc2626' }} onClick={() => onAsk('status', { target: 'suspended' })} disabled={busy}>
+              <button type="button" className="btn-sm" style={{ fontSize: '.72rem', color: 'var(--gb-red-500)' }} onClick={() => onAsk('status', { target: 'suspended' })} disabled={busy}>
                 Suspend
               </button>
             ) : (
@@ -266,7 +266,7 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
             >
               {staffPinOpen ? 'Close Staff PIN' : 'Staff PIN'}
             </button>
-            <button type="button" className="btn-sm" style={{ fontSize: '.72rem', color: '#dc2626' }} onClick={() => onAsk('delete')} disabled={busy}>
+            <button type="button" className="btn-sm" style={{ fontSize: '.72rem', color: 'var(--gb-red-500)' }} onClick={() => onAsk('delete')} disabled={busy}>
               Delete
             </button>
           </div>
@@ -284,11 +284,11 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
   );
 }
 
-function InlineConfirm({ label, busy, onConfirm, onCancel, confirmColor = '#dc2626' }) {
+function InlineConfirm({ label, busy, onConfirm, onCancel, confirmColor = 'var(--gb-red-500)' }) {
   return (
     <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
       <span style={{ fontSize: '.72rem', color: 'var(--dim)', marginRight: '.2rem' }}>{label}</span>
-      <button type="button" style={{ background: confirmColor, color: '#fff', border: 'none', borderRadius: 4, padding: '.15rem .5rem', fontSize: '.72rem' }} onClick={onConfirm} disabled={busy}>
+      <button type="button" style={{ background: confirmColor, color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 4, padding: '.15rem .5rem', fontSize: '.72rem' }} onClick={onConfirm} disabled={busy}>
         {busy ? '…' : 'Confirm'}
       </button>
       <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={onCancel} disabled={busy}>Cancel</button>
@@ -324,7 +324,7 @@ function DeleteEditor({ name, busy, onConfirm, onCancel }) {
   const match = typed.trim().toLowerCase() === (name || '').trim().toLowerCase();
   return (
     <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
-      <span style={{ fontSize: '.7rem', color: '#dc2626' }}>
+      <span style={{ fontSize: '.7rem', color: 'var(--gb-red-500)' }}>
         Type "{name}" to confirm:
       </span>
       <input
@@ -334,7 +334,7 @@ function DeleteEditor({ name, busy, onConfirm, onCancel }) {
         autoFocus
         style={{ width: 140, padding: '.15rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}
       />
-      <button type="button" style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 4, padding: '.15rem .5rem', fontSize: '.72rem', opacity: match ? 1 : 0.5 }} onClick={() => onConfirm(typed)} disabled={busy || !match}>
+      <button type="button" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 4, padding: '.15rem .5rem', fontSize: '.72rem', opacity: match ? 1 : 0.5 }} onClick={() => onConfirm(typed)} disabled={busy || !match}>
         {busy ? '…' : 'Delete'}
       </button>
       <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={onCancel} disabled={busy}>Cancel</button>

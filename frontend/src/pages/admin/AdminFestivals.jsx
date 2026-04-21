@@ -180,7 +180,7 @@ export default function AdminFestivals() {
           <select
             value={yearFilter}
             onChange={(e) => setYearFilter(e.target.value)}
-            style={{ padding: '.4rem .6rem', border: '1px solid #e5e7eb', borderRadius: 6 }}
+            style={{ padding: '.4rem .6rem', border: '1px solid var(--gb-neutral-200)', borderRadius: 6 }}
           >
             <option value="">All years</option>
             {Array.from(new Set(rows.map((r) => r.year))).sort((a, b) => b - a).map((y) => (
@@ -223,7 +223,7 @@ export default function AdminFestivals() {
                 </thead>
                 <tbody>
                   {list.map((r) => (
-                    <tr key={r.slug} style={{ borderTop: '1px solid #e5e7eb' }}>
+                    <tr key={r.slug} style={{ borderTop: '1px solid var(--gb-neutral-200)' }}>
                       <td style={tdStyle}>
                         <div style={{ fontWeight: 500 }}>{r.name}</div>
                         <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>{r.slug}</div>
@@ -336,9 +336,9 @@ export default function AdminFestivals() {
   );
 }
 
-const thStyle = { padding: '.55rem .7rem', textAlign: 'left', fontWeight: 600, fontSize: '.78rem', color: '#374151' };
+const thStyle = { padding: '.55rem .7rem', textAlign: 'left', fontWeight: 600, fontSize: '.78rem', color: 'var(--gb-neutral-700)' };
 const tdStyle = { padding: '.55rem .7rem', verticalAlign: 'middle' };
-const inputStyle = { padding: '.4rem .55rem', border: '1px solid #e5e7eb', borderRadius: 6, width: '100%' };
+const inputStyle = { padding: '.4rem .55rem', border: '1px solid var(--gb-neutral-200)', borderRadius: 6, width: '100%' };
 
 function FormRow({ label, children }) {
   return (
@@ -362,7 +362,7 @@ function Modal({ title, onClose, children }) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: '#fff', borderRadius: 'var(--r, 8px)',
+          background: 'var(--gb-neutral-0)', borderRadius: 'var(--r, 8px)',
           width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto',
           padding: '1.25rem',
         }}

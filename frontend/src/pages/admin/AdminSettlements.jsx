@@ -17,10 +17,10 @@ import {
 const STL_LIMIT = 50;
 
 const STATUS_BADGE = {
-  pending:    { bg: 'rgba(245,158,11,.16)',  color: '#b45309', label: 'Pending' },
-  processing: { bg: 'rgba(59,130,246,.16)',  color: '#2563eb', label: 'Processing' },
+  pending:    { bg: 'rgba(245,158,11,.16)',  color: 'var(--gb-amber-600)', label: 'Pending' },
+  processing: { bg: 'rgba(59,130,246,.16)',  color: 'var(--gb-blue-500)', label: 'Processing' },
   completed:  { bg: 'rgba(34,197,94,.16)',   color: '#047857', label: 'Completed' },
-  failed:     { bg: 'rgba(239,68,68,.18)',   color: '#b91c1c', label: 'Failed' },
+  failed:     { bg: 'rgba(239,68,68,.18)',   color: 'var(--gb-red-600)', label: 'Failed' },
 };
 
 function fmtCompact(n) {
@@ -269,7 +269,7 @@ export default function AdminSettlements() {
                       <td style={td}>₹{fmtCompact(s.delivery_costs_rs)}</td>
                       <td style={td}>
                         {s.refunds_rs > 0
-                          ? <span style={{ color: '#dc2626' }}>₹{fmtCompact(s.refunds_rs)}</span>
+                          ? <span style={{ color: 'var(--gb-red-500)' }}>₹{fmtCompact(s.refunds_rs)}</span>
                           : '—'}
                       </td>
                       <td style={td}>
@@ -279,7 +279,7 @@ export default function AdminSettlements() {
                             className="btn-g btn-sm"
                             onClick={() => openBreakdown(s.id)}
                             title={`View ${metaCount} messages`}
-                            style={{ padding: '.2rem .5rem', fontSize: '.75rem', color: '#b91c1c' }}
+                            style={{ padding: '.2rem .5rem', fontSize: '.75rem', color: 'var(--gb-red-600)' }}
                           >
                             ₹{fmtCompact(metaRs)} · {metaCount}
                           </button>
@@ -358,7 +358,7 @@ export default function AdminSettlements() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: '#fff', borderRadius: 10, width: 'min(960px, 100%)',
+              background: 'var(--gb-neutral-0)', borderRadius: 10, width: 'min(960px, 100%)',
               maxHeight: '86vh', overflow: 'auto', padding: '1.2rem 1.4rem', position: 'relative',
             }}
           >
@@ -379,7 +379,7 @@ export default function AdminSettlements() {
               {breakdown.data && (
                 <>
                   {' · '}{breakdown.data.meta_message_count || 0} messages{' · '}
-                  <strong style={{ color: '#b91c1c' }}>
+                  <strong style={{ color: 'var(--gb-red-600)' }}>
                     − ₹{((breakdown.data.meta_cost_total_paise || 0) / 100).toFixed(2)}
                   </strong>
                 </>
@@ -437,4 +437,4 @@ export default function AdminSettlements() {
 const th = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.55rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .6rem', fontSize: '.78rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .6rem', fontSize: '.78rem' };

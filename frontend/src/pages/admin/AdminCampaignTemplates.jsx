@@ -51,9 +51,9 @@ const emptyForm = () => ({
 function ApprovalBadge({ status }) {
   const map = {
     approved: { bg: '#d1fae5', fg: '#065f46', border: '#a7f3d0' },
-    pending:  { bg: '#fef3c7', fg: '#92400e', border: '#fde68a' },
-    rejected: { bg: '#fee2e2', fg: '#991b1b', border: '#fecaca' },
-    paused:   { bg: '#e5e7eb', fg: '#374151', border: '#d1d5db' },
+    pending:  { bg: 'var(--gb-amber-100)', fg: '#92400e', border: '#fde68a' },
+    rejected: { bg: 'var(--gb-red-100)', fg: 'var(--gb-red-900)', border: 'var(--gb-red-200)' },
+    paused:   { bg: 'var(--gb-neutral-200)', fg: 'var(--gb-neutral-700)', border: 'var(--gb-neutral-300)' },
   };
   const b = map[status] || map.pending;
   return (
@@ -266,11 +266,11 @@ export default function AdminCampaignTemplates() {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
                     <strong style={{ fontSize: '1rem' }}>{doc.display_name || doc.template_id}</strong>
-                    <span className="chip" style={{ background: '#eef2ff', color: '#3730a3' }}>{doc.use_case}</span>
+                    <span className="chip" style={{ background: '#eef2ff', color: 'var(--gb-indigo-800)' }}>{doc.use_case}</span>
                     <span className="chip" style={{ background: '#f0fdf4', color: '#166534' }}>{doc.category}</span>
                     <ApprovalBadge status={doc.meta_approval_status} />
                     {!doc.is_active && (
-                      <span className="chip" style={{ background: '#fee2e2', color: '#991b1b' }}>INACTIVE</span>
+                      <span className="chip" style={{ background: 'var(--gb-red-100)', color: 'var(--gb-red-900)' }}>INACTIVE</span>
                     )}
                   </div>
                   <div style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
@@ -278,7 +278,7 @@ export default function AdminCampaignTemplates() {
                   </div>
                 </div>
                 <div style={{
-                  fontSize: '.8rem', color: '#334155', background: 'var(--ink3,#f4f4f5)',
+                  fontSize: '.8rem', color: 'var(--gb-slate-700)', background: 'var(--ink3,#f4f4f5)',
                   padding: '.55rem .7rem', borderRadius: 6, whiteSpace: 'pre-wrap',
                   fontFamily: 'ui-monospace,Menlo,monospace',
                 }}>
@@ -292,7 +292,7 @@ export default function AdminCampaignTemplates() {
                   {Array.isArray(doc.variables) ? doc.variables.length : 0} variable(s)
                 </div>
                 {doc.meta_rejection_reason && (
-                  <div style={{ fontSize: '.75rem', color: '#b91c1c', marginTop: '.3rem' }}>
+                  <div style={{ fontSize: '.75rem', color: 'var(--gb-red-600)', marginTop: '.3rem' }}>
                     Rejection: {doc.meta_rejection_reason}
                   </div>
                 )}
@@ -349,7 +349,7 @@ export default function AdminCampaignTemplates() {
                   placeholder="e.g. gb_welcome_v1"
                   style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
                 />
-                {formErrors.template_id && <div style={{ color: '#dc2626', fontSize: '.72rem' }}>{formErrors.template_id}</div>}
+                {formErrors.template_id && <div style={{ color: 'var(--gb-red-500)', fontSize: '.72rem' }}>{formErrors.template_id}</div>}
               </div>
               <div>
                 <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Display name</label>
@@ -359,7 +359,7 @@ export default function AdminCampaignTemplates() {
                   onChange={(e) => setF('display_name', e.target.value)}
                   style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
                 />
-                {formErrors.display_name && <div style={{ color: '#dc2626', fontSize: '.72rem' }}>{formErrors.display_name}</div>}
+                {formErrors.display_name && <div style={{ color: 'var(--gb-red-500)', fontSize: '.72rem' }}>{formErrors.display_name}</div>}
               </div>
               <div>
                 <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Category</label>
@@ -422,7 +422,7 @@ export default function AdminCampaignTemplates() {
                     borderRadius: 6, fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '.82rem',
                   }}
                 />
-                {formErrors.body_template && <div style={{ color: '#dc2626', fontSize: '.72rem' }}>{formErrors.body_template}</div>}
+                {formErrors.body_template && <div style={{ color: 'var(--gb-red-500)', fontSize: '.72rem' }}>{formErrors.body_template}</div>}
               </div>
 
               <div>
@@ -499,7 +499,7 @@ export default function AdminCampaignTemplates() {
                     ))}
                   </div>
                 )}
-                {formErrors.variables && <div style={{ color: '#dc2626', fontSize: '.72rem' }}>{formErrors.variables}</div>}
+                {formErrors.variables && <div style={{ color: 'var(--gb-red-500)', fontSize: '.72rem' }}>{formErrors.variables}</div>}
               </div>
 
               <div style={{ gridColumn: '1 / -1' }}>

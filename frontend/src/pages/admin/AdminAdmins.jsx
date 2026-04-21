@@ -98,7 +98,7 @@ export default function AdminAdmins() {
                       <td style={td}>{u.name || '—'}</td>
                       <td style={td}>{u.email || ''}</td>
                       <td style={td}>{u.role || 'admin'}</td>
-                      <td style={td}>{u.is_active === false ? <span style={{ color: '#b91c1c' }}>disabled</span> : 'yes'}</td>
+                      <td style={td}>{u.is_active === false ? <span style={{ color: 'var(--gb-red-600)' }}>disabled</span> : 'yes'}</td>
                       <td style={td}>
                         <label title="Can view full customer phone numbers" style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', fontSize: '.78rem' }}>
                           <input

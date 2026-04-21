@@ -22,17 +22,17 @@ const STATUS_COLOR = {
   PENDING: '#f59e0b',
   CONFIRMED: '#3b82f6',
   PREPARING: '#8b5cf6',
-  PACKED: '#6366f1',
+  PACKED: 'var(--gb-indigo-500)',
   DISPATCHED: '#0ea5e9',
-  DELIVERED: '#16a34a',
-  CANCELLED: '#dc2626',
+  DELIVERED: 'var(--gb-wa-500)',
+  CANCELLED: 'var(--gb-red-500)',
 };
 
 function StatusBadge({ status }) {
-  const bg = STATUS_COLOR[status] || '#64748b';
+  const bg = STATUS_COLOR[status] || 'var(--gb-slate-500)';
   return (
     <span style={{
-      background: bg, color: '#fff', fontSize: '.68rem', fontWeight: 700,
+      background: bg, color: 'var(--gb-neutral-0)', fontSize: '.68rem', fontWeight: 700,
       padding: '.1rem .45rem', borderRadius: 4, textTransform: 'uppercase',
       letterSpacing: '.04em',
     }}>{status || '—'}</span>
@@ -186,4 +186,4 @@ export default function AdminOrders() {
 const th = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.6rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const sel = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };
+const sel = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };

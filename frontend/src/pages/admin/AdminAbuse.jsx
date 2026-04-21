@@ -145,7 +145,7 @@ export default function AdminAbuse() {
                     <button
                       type="button"
                       className="btn-g btn-sm"
-                      style={{ background: '#dc2626', color: '#fff' }}
+                      style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
                       onClick={() => openBlock(p.phone, 'Excessive rate-limit violations')}
                     >Block</button>
                   </td>
@@ -162,7 +162,7 @@ export default function AdminAbuse() {
           <button
             type="button"
             className="btn-p btn-sm"
-            style={{ background: '#dc2626' }}
+            style={{ background: 'var(--gb-red-500)' }}
             onClick={() => openBlock()}
           >+ Block Phone</button>
         </div>
@@ -197,23 +197,23 @@ export default function AdminAbuse() {
                         display: 'inline-block', padding: '.1rem .45rem', borderRadius: 10,
                         fontSize: '.7rem', fontWeight: 600,
                         background: b.blocked_by === 'auto' ? 'rgba(245,158,11,.18)' : 'rgba(59,130,246,.18)',
-                        color: b.blocked_by === 'auto' ? '#b45309' : '#1d4ed8',
+                        color: b.blocked_by === 'auto' ? 'var(--gb-amber-600)' : 'var(--gb-blue-600)',
                       }}>{b.blocked_by === 'auto' ? 'Auto' : 'Admin'}</span>
                     </td>
                     <td style={{ ...td, fontSize: '.75rem', color: 'var(--dim)' }}>{fmtTime(b.blocked_at)}</td>
-                    <td style={{ ...td, fontSize: '.75rem' }}>{b.expires_at ? fmtTime(b.expires_at) : <span style={{ color: '#b91c1c' }}>Never</span>}</td>
+                    <td style={{ ...td, fontSize: '.75rem' }}>{b.expires_at ? fmtTime(b.expires_at) : <span style={{ color: 'var(--gb-red-600)' }}>Never</span>}</td>
                     <td style={td}>
                       <span style={{
                         display: 'inline-block', padding: '.1rem .45rem', borderRadius: 10,
                         fontSize: '.7rem', fontWeight: 600,
                         background: b.is_active ? 'rgba(239,68,68,.18)' : 'rgba(100,116,139,.18)',
-                        color: b.is_active ? '#b91c1c' : '#334155',
+                        color: b.is_active ? 'var(--gb-red-600)' : 'var(--gb-slate-700)',
                       }}>{b.is_active ? 'Active' : 'Expired'}</span>
                     </td>
                     <td style={td}>
                       {confirmUnblock === b.id ? (
                         <>
-                          <button type="button" className="btn-g btn-sm" style={{ background: '#dc2626', color: '#fff', marginRight: '.3rem' }} onClick={() => doUnblock(b.id)} disabled={busyId === b.id}>Confirm</button>
+                          <button type="button" className="btn-g btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', marginRight: '.3rem' }} onClick={() => doUnblock(b.id)} disabled={busyId === b.id}>Confirm</button>
                           <button type="button" className="btn-g btn-sm" onClick={() => setConfirmUnblock(null)}>Cancel</button>
                         </>
                       ) : (
@@ -235,7 +235,7 @@ export default function AdminAbuse() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 420 }}
+            style={{ background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 420 }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
               <h3 style={{ margin: 0, fontSize: '.95rem' }}>Block Phone Number</h3>
@@ -275,7 +275,7 @@ export default function AdminAbuse() {
                 onClick={submitBlock}
                 disabled={submitting}
                 style={{
-                  width: '100%', background: '#dc2626', color: '#fff', border: 'none',
+                  width: '100%', background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none',
                   borderRadius: 6, padding: '.55rem', fontSize: '.88rem', fontWeight: 600, cursor: 'pointer',
                 }}
               >{submitting ? 'Blocking…' : 'Block Phone'}</button>
@@ -290,5 +290,5 @@ export default function AdminAbuse() {
 const th = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.5rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
 const lbl = { fontSize: '.78rem', color: 'var(--dim)', display: 'block', marginBottom: '.3rem' };

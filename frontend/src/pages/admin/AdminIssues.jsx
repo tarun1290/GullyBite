@@ -17,10 +17,10 @@ import {
 
 const PAGE_LIMIT = 30;
 
-const PRI_CLR = { critical: '#dc2626', high: '#f59e0b', medium: '#3b82f6', low: '#94a3b8' };
+const PRI_CLR = { critical: 'var(--gb-red-500)', high: '#f59e0b', medium: '#3b82f6', low: 'var(--gb-slate-400)' };
 const ST_CLR = {
-  open: '#3b82f6', assigned: '#8b5cf6', in_progress: '#f59e0b', waiting_customer: '#6366f1',
-  escalated_to_admin: '#dc2626', resolved: '#16a34a', closed: '#64748b', reopened: '#ef4444',
+  open: '#3b82f6', assigned: '#8b5cf6', in_progress: '#f59e0b', waiting_customer: 'var(--gb-indigo-500)',
+  escalated_to_admin: 'var(--gb-red-500)', resolved: 'var(--gb-wa-500)', closed: 'var(--gb-slate-500)', reopened: '#ef4444',
 };
 const CAT_LABEL = {
   food_quality: '🍕 Food', missing_item: '📦 Missing', wrong_order: '❌ Wrong',
@@ -55,15 +55,15 @@ const PRIORITIES = [
 ];
 
 function slaLabel(issue) {
-  if (['resolved', 'closed'].includes(issue.status)) return <span style={{ color: '#16a34a' }}>✓</span>;
+  if (['resolved', 'closed'].includes(issue.status)) return <span style={{ color: 'var(--gb-wa-500)' }}>✓</span>;
   if (!issue.sla_deadline) return '—';
   const rem = new Date(issue.sla_deadline).getTime() - Date.now();
-  if (rem <= 0) return <span style={{ color: '#dc2626', fontWeight: 600 }}>🔴 Breached</span>;
+  if (rem <= 0) return <span style={{ color: 'var(--gb-red-500)', fontWeight: 600 }}>🔴 Breached</span>;
   const h = Math.floor(rem / 3600000);
   const m = Math.floor((rem % 3600000) / 60000);
-  if (rem < 3600000) return <span style={{ color: '#dc2626' }}>🟡 {m}m</span>;
+  if (rem < 3600000) return <span style={{ color: 'var(--gb-red-500)' }}>🟡 {m}m</span>;
   if (h < 6) return <span style={{ color: '#f59e0b' }}>🟡 {h}h{m}m</span>;
-  return <span style={{ color: '#16a34a' }}>🟢 {h}h</span>;
+  return <span style={{ color: 'var(--gb-wa-500)' }}>🟢 {h}h</span>;
 }
 
 function timeAgo(ts) {
@@ -77,7 +77,7 @@ function timeAgo(ts) {
 function StatCard({ label, value, color }) {
   return (
     <div style={{
-      background: '#fff', border: '1px solid var(--rim)', borderRadius: 10,
+      background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 10,
       padding: '.65rem .8rem', boxShadow: 'var(--shadow-sm)',
     }}>
       <div style={{ fontSize: '.65rem', color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600 }}>
@@ -279,9 +279,9 @@ export default function AdminIssues() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '.65rem', marginBottom: '1rem' }}>
           <StatCard label="Open" value={stats?.open} color="#3b82f6" />
           <StatCard label="In Progress" value={stats?.in_progress} color="#f59e0b" />
-          <StatCard label="Escalated" value={stats?.escalated} color="#dc2626" />
-          <StatCard label="SLA Breached" value={stats?.sla_breached} color={stats?.sla_breached > 0 ? '#dc2626' : '#94a3b8'} />
-          <StatCard label="Resolved" value={stats?.resolved} color="#16a34a" />
+          <StatCard label="Escalated" value={stats?.escalated} color="var(--gb-red-500)" />
+          <StatCard label="SLA Breached" value={stats?.sla_breached} color={stats?.sla_breached > 0 ? 'var(--gb-red-500)' : 'var(--gb-slate-400)'} />
+          <StatCard label="Resolved" value={stats?.resolved} color="var(--gb-wa-500)" />
           <StatCard label="Total" value={stats?.total} color="var(--acc)" />
         </div>
       )}
@@ -341,8 +341,8 @@ export default function AdminIssues() {
                   <tr><td colSpan={11} style={emptyCell}>No issues</td></tr>
                 ) : (
                   issues.map((i) => {
-                    const priClr = PRI_CLR[i.priority] || '#94a3b8';
-                    const stClr = ST_CLR[i.status] || '#64748b';
+                    const priClr = PRI_CLR[i.priority] || 'var(--gb-slate-400)';
+                    const stClr = ST_CLR[i.status] || 'var(--gb-slate-500)';
                     return (
                       <tr
                         key={i._id}
@@ -362,7 +362,7 @@ export default function AdminIssues() {
                           </span>
                         </td>
                         <td style={td}>
-                          <span style={{ background: stClr, color: '#fff', fontSize: '.68rem', padding: '.1rem .35rem', borderRadius: 4, fontWeight: 600 }}>
+                          <span style={{ background: stClr, color: 'var(--gb-neutral-0)', fontSize: '.68rem', padding: '.1rem .35rem', borderRadius: 4, fontWeight: 600 }}>
                             {String(i.status).replace(/_/g, ' ')}
                           </span>
                         </td>
@@ -410,7 +410,7 @@ export default function AdminIssues() {
         >
           <div
             style={{
-              margin: '1.5rem auto', maxWidth: 850, background: '#fff',
+              margin: '1.5rem auto', maxWidth: 850, background: 'var(--gb-neutral-0)',
               borderRadius: 12, boxShadow: 'var(--shadow)', overflow: 'hidden',
             }}
             onClick={(e) => e.stopPropagation()}
@@ -426,11 +426,11 @@ export default function AdminIssues() {
                   </span>
                   <span style={{
                     fontSize: '.72rem', fontWeight: 700, padding: '.12rem .4rem', borderRadius: 4,
-                    color: PRI_CLR[detail.priority] || '#94a3b8', textTransform: 'uppercase',
+                    color: PRI_CLR[detail.priority] || 'var(--gb-slate-400)', textTransform: 'uppercase',
                   }}>{detail.priority}</span>
                   <span style={{
                     fontSize: '.72rem', fontWeight: 600, padding: '.12rem .4rem', borderRadius: 4,
-                    color: '#fff', background: ST_CLR[detail.status] || '#64748b',
+                    color: 'var(--gb-neutral-0)', background: ST_CLR[detail.status] || 'var(--gb-slate-500)',
                   }}>{String(detail.status).replace(/_/g, ' ')}</span>
                   <span style={{ fontSize: '.72rem', marginLeft: 'auto' }}>{slaLabel(detail)}</span>
                   <button type="button" className="btn-g btn-sm" onClick={closeDetail}>Close</button>
@@ -536,14 +536,14 @@ export default function AdminIssues() {
                       <button
                         type="button"
                         className="btn-g btn-sm"
-                        style={{ color: '#16a34a', borderColor: '#16a34a' }}
+                        style={{ color: 'var(--gb-wa-500)', borderColor: 'var(--gb-wa-500)' }}
                         onClick={() => setResolveOpen(true)}
                       >Resolve</button>
                       {detail.order_id && detail._payment && (
                         <button
                           type="button"
                           className="btn-g btn-sm"
-                          style={{ color: '#dc2626', borderColor: '#dc2626' }}
+                          style={{ color: 'var(--gb-red-500)', borderColor: 'var(--gb-red-500)' }}
                           onClick={() => setRefundOpen(true)}
                         >💰 Issue Refund</button>
                       )}
@@ -610,7 +610,7 @@ export default function AdminIssues() {
                       <button
                         type="button"
                         className="btn-sm"
-                        style={{ background: '#dc2626', color: '#fff' }}
+                        style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
                         onClick={doRefund}
                       >Refund</button>
                     </div>
@@ -652,6 +652,6 @@ export default function AdminIssues() {
 const th = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.6rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const sel = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };
+const sel = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };
 const lbl = { fontSize: '.72rem', color: 'var(--dim)', display: 'block', marginBottom: '.2rem' };
 const inlineForm = { padding: '.8rem 1.2rem', borderTop: '1px solid var(--rim)', background: 'var(--ink3)' };

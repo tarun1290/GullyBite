@@ -17,7 +17,7 @@ import {
 // errors/drilldown), stats row, filters with 5s polling, activity+webhook
 // detail modals, per-restaurant drilldown timeline grouped by day.
 
-const SEV_COLORS = { info: '#3b82f6', warning: '#f59e0b', error: '#ef4444', critical: '#dc2626' };
+const SEV_COLORS = { info: '#3b82f6', warning: '#f59e0b', error: '#ef4444', critical: 'var(--gb-red-500)' };
 const SEV_BG     = { info: 'rgba(59,130,246,.08)', warning: 'rgba(245,158,11,.08)', error: 'rgba(239,68,68,.08)', critical: 'rgba(220,38,38,.12)' };
 
 const CATEGORIES = [
@@ -239,7 +239,7 @@ function FeedTab({ autoRefresh, restaurants, restMap, onStatsChange, onOpenDrill
                   </td>
                   <td style={{ ...td, fontWeight: 500 }}>{a.action}</td>
                   <td style={{ ...td, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={a.description || ''}>{a.description || ''}</td>
-                  <td style={td}><span style={{ color: SEV_COLORS[a.severity] || '#64748b', fontWeight: 600, fontSize: '.76rem' }}>{sevIcon(a.severity)} {a.severity}</span></td>
+                  <td style={td}><span style={{ color: SEV_COLORS[a.severity] || 'var(--gb-slate-500)', fontWeight: 600, fontSize: '.76rem' }}>{sevIcon(a.severity)} {a.severity}</span></td>
                   <td style={{ ...td, fontSize: '.78rem' }} onClick={(e) => e.stopPropagation()}>
                     {a.restaurant_id ? (
                       <a href="#" onClick={(e) => { e.preventDefault(); onOpenDrilldown(a.restaurant_id); }} style={{ color: 'var(--acc, #4f46e5)', fontWeight: 500, textDecoration: 'none' }}>
@@ -331,7 +331,7 @@ function WebhooksTab({ autoRefresh }) {
               ) : rows.length === 0 ? (
                 <tr><td colSpan={5} style={emptyCell}>No webhook logs.</td></tr>
               ) : rows.map((w) => {
-                const statusColor = w.status === 'processed' ? '#047857' : w.status === 'failed' ? '#b91c1c' : 'var(--dim)';
+                const statusColor = w.status === 'processed' ? '#047857' : w.status === 'failed' ? 'var(--gb-red-600)' : 'var(--dim)';
                 return (
                   <tr key={w._id} style={{ borderTop: '1px solid var(--rim)' }}>
                     <td style={{ ...td, color: 'var(--dim)', fontSize: '.76rem', whiteSpace: 'nowrap' }}>{fmtDateTime(w.received_at || w.created_at)}</td>
@@ -353,7 +353,7 @@ function WebhooksTab({ autoRefresh }) {
           onClick={() => { setDetail(null); setDetailErr(null); }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem' }}
         >
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 720, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 720, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
               <h3 style={{ margin: 0, fontSize: '.95rem' }}>Webhook Detail</h3>
               <button type="button" className="btn-g btn-sm" onClick={() => { setDetail(null); setDetailErr(null); }}>✕</button>
@@ -558,7 +558,7 @@ function DrilldownTab({ initialRid, restaurants, restMap }) {
         <div className="cb"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <div style={{ padding: '1rem' }}>
-          <div style={{ background: '#fff', border: '1px solid var(--rim)', borderRadius: 8, padding: '.8rem', marginBottom: '1rem' }}>
+          <div style={{ background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 8, padding: '.8rem', marginBottom: '1rem' }}>
             <span style={{ fontSize: '1.05rem', fontWeight: 700 }}>{restMap[rid] || rid}</span>
             <span style={{ color: 'var(--dim)', fontSize: '.82rem', marginLeft: '.8rem' }}>{summary} total events</span>
           </div>
@@ -580,7 +580,7 @@ function DrilldownTab({ initialRid, restaurants, restMap }) {
                   </span>
                   <span style={{ fontSize: '.82rem' }}>{sevIcon(a.severity)}</span>
                   <span style={{ background: 'rgba(79,70,229,.06)', color: 'var(--acc, #4f46e5)', padding: '.1rem .35rem', borderRadius: 4, fontSize: '.68rem', fontWeight: 600 }}>{a.category || 'general'}</span>
-                  <span style={{ fontSize: '.82rem', fontWeight: 500, color: SEV_COLORS[a.severity] || '#64748b' }}>{a.action}</span>
+                  <span style={{ fontSize: '.82rem', fontWeight: 500, color: SEV_COLORS[a.severity] || 'var(--gb-slate-500)' }}>{a.action}</span>
                   <span style={{ fontSize: '.8rem', color: 'var(--dim)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.description || ''}</span>
                 </div>
               ))}
@@ -613,7 +613,7 @@ function ActivityDetailModal({ activity: a, restMap, onClose }) {
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem' }}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 10, width: '100%', maxWidth: 640, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 640, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
           <h3 style={{ margin: 0, fontSize: '.95rem' }}>Activity Detail</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose}>✕</button>
@@ -650,4 +650,4 @@ function ActivityDetailModal({ activity: a, restMap, onClose }) {
 const th = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.5rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };

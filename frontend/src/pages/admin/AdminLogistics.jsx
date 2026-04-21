@@ -268,5 +268,5 @@ export default function AdminLogistics() {
   );
 }
 
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .5rem', fontSize: '.78rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .5rem', fontSize: '.78rem' };
 const lbl = { fontSize: '.68rem', color: 'var(--dim)', display: 'block', marginBottom: '.2rem' };

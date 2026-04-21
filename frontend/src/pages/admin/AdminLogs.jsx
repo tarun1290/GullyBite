@@ -10,14 +10,14 @@ const LOGS_LIMIT = 50;
 
 const SOURCE_BADGE = {
   whatsapp: { bg: 'rgba(37,211,102,.18)', color: '#047857' },
-  razorpay: { bg: 'rgba(59,130,246,.18)', color: '#1d4ed8' },
-  '3pl':    { bg: 'rgba(245,158,11,.18)', color: '#b45309' },
+  razorpay: { bg: 'rgba(59,130,246,.18)', color: 'var(--gb-blue-600)' },
+  '3pl':    { bg: 'rgba(245,158,11,.18)', color: 'var(--gb-amber-600)' },
   catalog:  { bg: 'rgba(139,92,246,.18)', color: '#6d28d9' },
 };
 
 function sourceBadge(src) {
   const s = (src || 'other').toLowerCase();
-  const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: '#334155' };
+  const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: 'var(--gb-slate-700)' };
   return (
     <span style={{
       display: 'inline-block', padding: '.1rem .5rem', borderRadius: 10,
@@ -28,7 +28,7 @@ function sourceBadge(src) {
 }
 
 function statusBadge(l) {
-  if (l.error_message) return <span style={{ color: '#b91c1c', fontSize: '.75rem', fontWeight: 600 }}>Error</span>;
+  if (l.error_message) return <span style={{ color: 'var(--gb-red-600)', fontSize: '.75rem', fontWeight: 600 }}>Error</span>;
   if (l.processed) return <span style={{ color: '#047857', fontSize: '.75rem', fontWeight: 600 }}>Processed</span>;
   return <span style={{ color: 'var(--dim)', fontSize: '.75rem' }}>Pending</span>;
 }
@@ -177,7 +177,7 @@ export default function AdminLogs() {
                     <td style={td} className="mono">{l.event_type || '—'}</td>
                     <td style={{ ...td, fontSize: '.72rem', color: 'var(--dim)' }} className="mono">{l.phone_number_id || '—'}</td>
                     <td style={td}>{statusBadge(l)}</td>
-                    <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#b91c1c', fontSize: '.75rem' }}
+                    <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--gb-red-600)', fontSize: '.75rem' }}
                         title={l.error_message || ''}>{l.error_message || '—'}</td>
                     <td style={td}>
                       <button type="button" className="btn-g btn-sm" onClick={() => openDetail(l.id)}>View</button>
@@ -207,7 +207,7 @@ export default function AdminLogs() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: '#fff', borderRadius: 10, width: '100%', maxWidth: 720,
+              background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 720,
               maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
             }}
           >
@@ -219,7 +219,7 @@ export default function AdminLogs() {
               {detail.source && sourceBadge(detail.source)}
               {detail.received_at && <span>{fmtTime(detail.received_at)}</span>}
               {detail.phone_number_id && <span className="mono">{detail.phone_number_id}</span>}
-              {detail.error_message && <span style={{ color: '#b91c1c' }}>{detail.error_message}</span>}
+              {detail.error_message && <span style={{ color: 'var(--gb-red-600)' }}>{detail.error_message}</span>}
             </div>
             <div style={{ overflowY: 'auto', padding: '1rem', background: 'var(--ink)', flex: 1 }}>
               {detailLoading ? (
@@ -242,4 +242,4 @@ export default function AdminLogs() {
 const th = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.5rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };

@@ -13,7 +13,7 @@ import {
 // + 7-col listings table with per-row toggle.
 
 const TYPE_LABEL = { veg: 'Veg', non_veg: 'Non-Veg', both: 'Both' };
-const TYPE_COLOR = { veg: '#16a34a', non_veg: '#dc2626', both: '#3b82f6' };
+const TYPE_COLOR = { veg: 'var(--gb-wa-500)', non_veg: 'var(--gb-red-500)', both: '#3b82f6' };
 
 function fmtNum(n) {
   const v = Number(n || 0);
@@ -176,7 +176,7 @@ export default function AdminDirectory() {
                         <td style={td}>{l.order_count || 0}</td>
                         <td style={td}>
                           {l.is_active ? (
-                            <span style={{ color: '#16a34a', fontWeight: 600, fontSize: '.72rem' }}>Active</span>
+                            <span style={{ color: 'var(--gb-wa-500)', fontWeight: 600, fontSize: '.72rem' }}>Active</span>
                           ) : (
                             <span style={{ color: 'var(--dim)', fontWeight: 600, fontSize: '.72rem' }}>Inactive</span>
                           )}

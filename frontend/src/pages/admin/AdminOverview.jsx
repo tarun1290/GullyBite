@@ -18,14 +18,14 @@ import {
 
 const SOURCE_BADGE = {
   whatsapp: { bg: 'rgba(37,211,102,.18)', color: '#047857' },
-  razorpay: { bg: 'rgba(59,130,246,.18)', color: '#1d4ed8' },
-  '3pl':    { bg: 'rgba(245,158,11,.18)', color: '#b45309' },
+  razorpay: { bg: 'rgba(59,130,246,.18)', color: 'var(--gb-blue-600)' },
+  '3pl':    { bg: 'rgba(245,158,11,.18)', color: 'var(--gb-amber-600)' },
   catalog:  { bg: 'rgba(139,92,246,.18)', color: '#6d28d9' },
 };
 
 function sourceBadge(src) {
   const s = (src || 'other').toLowerCase();
-  const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: '#334155' };
+  const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: 'var(--gb-slate-700)' };
   return (
     <span style={{
       display: 'inline-block', padding: '.1rem .5rem', borderRadius: 10,
@@ -36,7 +36,7 @@ function sourceBadge(src) {
 }
 
 function logStatus(l) {
-  if (l.error_message) return <span style={{ color: '#b91c1c', fontSize: '.75rem', fontWeight: 600 }}>Error</span>;
+  if (l.error_message) return <span style={{ color: 'var(--gb-red-600)', fontSize: '.75rem', fontWeight: 600 }}>Error</span>;
   if (l.processed) return <span style={{ color: '#047857', fontSize: '.75rem', fontWeight: 600 }}>OK</span>;
   return <span style={{ color: 'var(--dim)', fontSize: '.75rem' }}>Pending</span>;
 }
@@ -44,10 +44,10 @@ function logStatus(l) {
 function orderStatus(s) {
   const st = (s || '').toUpperCase();
   const color = {
-    DELIVERED: '#047857', CONFIRMED: '#1d4ed8', PREPARING: '#b45309',
-    PACKED: '#6d28d9', DISPATCHED: '#0891b2', CANCELLED: '#b91c1c',
-    PAID: '#047857', PENDING_PAYMENT: '#64748b', PAYMENT_FAILED: '#dc2626',
-  }[st] || '#334155';
+    DELIVERED: '#047857', CONFIRMED: 'var(--gb-blue-600)', PREPARING: 'var(--gb-amber-600)',
+    PACKED: '#6d28d9', DISPATCHED: '#0891b2', CANCELLED: 'var(--gb-red-600)',
+    PAID: '#047857', PENDING_PAYMENT: 'var(--gb-slate-500)', PAYMENT_FAILED: 'var(--gb-red-500)',
+  }[st] || 'var(--gb-slate-700)';
   return <span style={{ color, fontSize: '.75rem', fontWeight: 600 }}>{st || '—'}</span>;
 }
 
@@ -133,8 +133,8 @@ export default function AdminOverview() {
                 display: 'flex', alignItems: 'center', gap: '.7rem',
                 padding: '.65rem 1rem',
                 background: crit ? '#fef2f2' : '#fffbeb',
-                border: `1px solid ${crit ? '#fecaca' : '#fde68a'}`,
-                color: crit ? '#dc2626' : '#d97706',
+                border: `1px solid ${crit ? 'var(--gb-red-200)' : '#fde68a'}`,
+                color: crit ? 'var(--gb-red-500)' : 'var(--gb-amber-500)',
                 borderRadius: 8, marginBottom: '.5rem', fontSize: '.84rem',
               }}>
                 <span>{crit ? '\u{1F534}' : '\u26A0\uFE0F'}</span>

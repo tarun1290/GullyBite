@@ -60,18 +60,18 @@ function pickStatusColor(status, type = 'settlement') {
   const s = String(status || '').toLowerCase();
   if (type === 'settlement') {
     if (s === 'paid') return { bg: 'rgba(34,197,94,.16)', color: '#047857' };
-    if (s === 'failed') return { bg: 'rgba(239,68,68,.16)', color: '#b91c1c' };
-    return { bg: 'rgba(245,158,11,.16)', color: '#b45309' };
+    if (s === 'failed') return { bg: 'rgba(239,68,68,.16)', color: 'var(--gb-red-600)' };
+    return { bg: 'rgba(245,158,11,.16)', color: 'var(--gb-amber-600)' };
   }
   if (type === 'payment') {
     if (s === 'captured' || s === 'paid') return { bg: 'rgba(34,197,94,.16)', color: '#047857' };
-    if (s === 'failed') return { bg: 'rgba(239,68,68,.16)', color: '#b91c1c' };
-    return { bg: 'rgba(245,158,11,.16)', color: '#b45309' };
+    if (s === 'failed') return { bg: 'rgba(239,68,68,.16)', color: 'var(--gb-red-600)' };
+    return { bg: 'rgba(245,158,11,.16)', color: 'var(--gb-amber-600)' };
   }
   if (type === 'refund') {
     if (s === 'processed') return { bg: 'rgba(34,197,94,.16)', color: '#047857' };
-    if (s === 'failed') return { bg: 'rgba(239,68,68,.16)', color: '#b91c1c' };
-    return { bg: 'rgba(245,158,11,.16)', color: '#b45309' };
+    if (s === 'failed') return { bg: 'rgba(239,68,68,.16)', color: 'var(--gb-red-600)' };
+    return { bg: 'rgba(245,158,11,.16)', color: 'var(--gb-amber-600)' };
   }
   return { bg: 'var(--ink3)', color: 'var(--dim)' };
 }
@@ -234,7 +234,7 @@ function OverviewSection({ period, restaurants }) {
                 GMV Collected: {fmtINR(data.gmv_rs)}
               </div>
               <div>
-                <strong style={{ color: '#b91c1c' }}>Money Out</strong><br />
+                <strong style={{ color: 'var(--gb-red-600)' }}>Money Out</strong><br />
                 Restaurant Payouts: {fmtINR(data.total_payouts_rs)}<br />
                 Refunds: {fmtINR(data.total_refunds_rs)}<br />
                 3PL Costs: {fmtINR(data.delivery_costs_rs)}<br />
@@ -441,7 +441,7 @@ function SettlementsSection({ showToast }) {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              background: '#fff', borderRadius: 10, width: 'min(720px, 100%)',
+              background: 'var(--gb-neutral-0)', borderRadius: 10, width: 'min(720px, 100%)',
               maxHeight: '86vh', overflow: 'auto', padding: '1.2rem 1.4rem', position: 'relative',
             }}
           >
@@ -806,4 +806,4 @@ const trHead = { background: 'var(--ink)', borderBottom: '1px solid var(--rim)' 
 const th = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.55rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .6rem', fontSize: '.78rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .6rem', fontSize: '.78rem' };

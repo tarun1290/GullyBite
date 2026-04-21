@@ -84,12 +84,12 @@ export default function AdminPlatformAnalytics() {
       {error && (
         <div
           style={{
-            background: '#fee2e2',
-            border: '1px solid #fecaca',
+            background: 'var(--gb-red-100)',
+            border: '1px solid var(--gb-red-200)',
             borderRadius: '.5rem',
             padding: '.75rem 1rem',
             fontSize: '.85rem',
-            color: '#991b1b',
+            color: 'var(--gb-red-900)',
             marginBottom: '1.1rem',
           }}
         >
@@ -99,7 +99,7 @@ export default function AdminPlatformAnalytics() {
 
       <Card title="Platform headline">
         {loading ? (
-          <div style={{ padding: '1rem 0', color: '#94a3b8', fontSize: '.85rem' }}>Loading…</div>
+          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>Loading…</div>
         ) : (
           <div
             style={{
@@ -125,7 +125,7 @@ export default function AdminPlatformAnalytics() {
 
       <Card title="Marketplace activity">
         {loading ? (
-          <div style={{ padding: '1rem 0', color: '#94a3b8', fontSize: '.85rem' }}>Loading…</div>
+          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>Loading…</div>
         ) : (
           <div
             style={{
@@ -148,9 +148,9 @@ export default function AdminPlatformAnalytics() {
 
       <Card title="Top 5 restaurants by ROI">
         {loading ? (
-          <div style={{ padding: '1rem 0', color: '#94a3b8', fontSize: '.85rem' }}>Loading…</div>
+          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>Loading…</div>
         ) : top.length === 0 ? (
-          <div style={{ padding: '1rem 0', color: '#94a3b8', fontSize: '.85rem' }}>
+          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>
             No restaurants with marketing spend in this period.
           </div>
         ) : (
@@ -169,7 +169,7 @@ export default function AdminPlatformAnalytics() {
                 <tr key={r.restaurant_id}>
                   <td style={{ textAlign: 'left' }}>
                     {r.restaurant_name}
-                    <div style={{ fontSize: '.7rem', color: '#94a3b8' }}>
+                    <div style={{ fontSize: '.7rem', color: 'var(--gb-slate-400)' }}>
                       <code>{r.restaurant_id}</code>
                     </div>
                   </td>
@@ -188,7 +188,7 @@ export default function AdminPlatformAnalytics() {
 
       <Card title="Adoption">
         {loading ? (
-          <div style={{ padding: '1rem 0', color: '#94a3b8', fontSize: '.85rem' }}>Loading…</div>
+          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>Loading…</div>
         ) : (
           <div
             style={{

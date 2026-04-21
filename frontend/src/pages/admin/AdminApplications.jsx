@@ -24,19 +24,19 @@ function StatusBadge({ status }) {
     borderRadius: 6,
     textTransform: 'uppercase',
     letterSpacing: '.03em',
-    color: '#fff',
+    color: 'var(--gb-neutral-0)',
   };
   if (status === 'approved')
-    return <span style={{ ...common, background: '#16a34a' }}>Approved</span>;
+    return <span style={{ ...common, background: 'var(--gb-wa-500)' }}>Approved</span>;
   if (status === 'rejected')
-    return <span style={{ ...common, background: '#dc2626' }}>Rejected</span>;
-  return <span style={{ ...common, background: '#d97706' }}>Pending</span>;
+    return <span style={{ ...common, background: 'var(--gb-red-500)' }}>Rejected</span>;
+  return <span style={{ ...common, background: 'var(--gb-amber-500)' }}>Pending</span>;
 }
 
 function VerifiedPill({ verified }) {
   if (verified) {
     return (
-      <span style={{ fontSize: '.66rem', color: '#16a34a', fontWeight: 700 }}>
+      <span style={{ fontSize: '.66rem', color: 'var(--gb-wa-500)', fontWeight: 700 }}>
         ✓ Verified
       </span>
     );
@@ -250,7 +250,7 @@ export default function AdminApplications() {
                                 <button
                                   type="button"
                                   className="btn-sm"
-                                  style={{ fontSize: '.72rem', color: '#dc2626', marginLeft: '.3rem' }}
+                                  style={{ fontSize: '.72rem', color: 'var(--gb-red-500)', marginLeft: '.3rem' }}
                                   disabled={busy}
                                   onClick={() => openConfirm(r, 'reject')}
                                 >Reject</button>
@@ -309,7 +309,7 @@ export default function AdminApplications() {
                                   type="button"
                                   className={pending.action === 'approve' ? 'btn-p btn-sm' : 'btn-sm'}
                                   style={pending.action === 'reject'
-                                    ? { background: '#dc2626', color: '#fff' }
+                                    ? { background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }
                                     : undefined}
                                   onClick={doConfirm}
                                   disabled={busy}

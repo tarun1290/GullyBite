@@ -426,7 +426,7 @@ export default function TemplateEditor({ metaId, wabaId, onClose, onSaved }) {
             {metaId && (
               confirmDelete ? (
                 <>
-                  <button type="button" className="btn-sm" style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.4rem .8rem' }} onClick={doDelete} disabled={deleting}>
+                  <button type="button" className="btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 6, padding: '.4rem .8rem' }} onClick={doDelete} disabled={deleting}>
                     {deleting ? '…' : `Confirm delete "${data.name}"`}
                   </button>
                   <button type="button" className="btn-g" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</button>
@@ -473,7 +473,7 @@ export default function TemplateEditor({ metaId, wabaId, onClose, onSaved }) {
               key={i}
               className="te-wa-btn"
               style={{
-                background: '#fff', borderRadius: 8, padding: '.5rem .6rem',
+                background: 'var(--gb-neutral-0)', borderRadius: 8, padding: '.5rem .6rem',
                 marginTop: '.35rem', textAlign: 'center', color: '#1f7ee3',
                 fontWeight: 600, fontSize: '.82rem', boxShadow: '0 1px 2px rgba(0,0,0,.08)',
               }}
@@ -549,7 +549,7 @@ function GalleryPicker({ onPick }) {
 
 const inp = {
   width: '100%', padding: '.4rem .55rem', border: '1px solid var(--rim)',
-  borderRadius: 6, fontSize: '.82rem', background: '#fff',
+  borderRadius: 6, fontSize: '.82rem', background: 'var(--gb-neutral-0)',
 };
 
 const bubble = {

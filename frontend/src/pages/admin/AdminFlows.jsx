@@ -21,8 +21,8 @@ import {
 const STATUS_COLORS = {
   DRAFT: '#3b82f6',
   PUBLISHED: '#22c55e',
-  DEPRECATED: '#94a3b8',
-  BLOCKED: '#dc2626',
+  DEPRECATED: 'var(--gb-slate-400)',
+  BLOCKED: 'var(--gb-red-500)',
 };
 
 function formatUpdated(ts) {
@@ -229,7 +229,7 @@ export default function AdminFlows() {
                 </thead>
                 <tbody>
                   {flows.map((f) => {
-                    const color = STATUS_COLORS[f.status] || '#6b7280';
+                    const color = STATUS_COLORS[f.status] || 'var(--gb-neutral-500)';
                     const busy = rowBusy === f.id;
                     const pending = pendingAction && pendingAction.id === f.id ? pendingAction : null;
                     return (
@@ -331,7 +331,7 @@ export default function AdminFlows() {
               style={{
                 marginTop: '.6rem', padding: '.5rem .7rem', borderRadius: 6,
                 background: newResult.ok ? '#f0fdf4' : '#fff1f2',
-                color: newResult.ok ? '#15803d' : '#dc2626',
+                color: newResult.ok ? 'var(--gb-wa-600)' : 'var(--gb-red-500)',
                 fontSize: '.82rem',
               }}
             >
@@ -345,7 +345,7 @@ export default function AdminFlows() {
 }
 
 function AssignmentRow({ label, a }) {
-  const color = { PUBLISHED: '#22c55e', DRAFT: '#3b82f6' }[a.flow_status] || '#6b7280';
+  const color = { PUBLISHED: '#22c55e', DRAFT: '#3b82f6' }[a.flow_status] || 'var(--gb-neutral-500)';
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '.5rem 0', borderBottom: '1px solid var(--rim)' }}>
       <span style={{ fontWeight: 600, minWidth: 140 }}>{label}</span>
@@ -374,7 +374,7 @@ function RowActions({ flow, busy, onEdit, onAsk }) {
       <button type="button" className="btn-sm" style={{ fontSize: '.7rem' }} onClick={onEdit} disabled={busy}>Edit</button>
       {flow.status === 'DRAFT' && (
         <>
-          <button type="button" className="btn-sm" style={{ fontSize: '.7rem', color: '#16a34a', marginLeft: '.25rem' }} onClick={() => onAsk('publish')} disabled={busy}>Publish</button>
+          <button type="button" className="btn-sm" style={{ fontSize: '.7rem', color: 'var(--gb-wa-500)', marginLeft: '.25rem' }} onClick={() => onAsk('publish')} disabled={busy}>Publish</button>
           <button type="button" className="btn-sm" style={{ fontSize: '.7rem', color: 'var(--red,#dc2626)', marginLeft: '.25rem' }} onClick={() => onAsk('delete')} disabled={busy}>Delete</button>
         </>
       )}
@@ -394,15 +394,15 @@ function RowActions({ flow, busy, onEdit, onAsk }) {
 
 function InlineConfirm({ pending, busy, onConfirm, onCancel }) {
   let label = pending.kind;
-  let bg = '#dc2626';
-  if (pending.kind === 'publish') { label = 'Confirm publish?'; bg = '#16a34a'; }
-  else if (pending.kind === 'deprecate') { label = 'Confirm deprecate?'; bg = '#6b7280'; }
-  else if (pending.kind === 'delete') { label = `Delete "${pending.name || pending.id}"?`; bg = '#dc2626'; }
-  else if (pending.kind === 'assign') { label = `Assign as ${pending.assignType}?`; bg = '#4f46e5'; }
+  let bg = 'var(--gb-red-500)';
+  if (pending.kind === 'publish') { label = 'Confirm publish?'; bg = 'var(--gb-wa-500)'; }
+  else if (pending.kind === 'deprecate') { label = 'Confirm deprecate?'; bg = 'var(--gb-neutral-500)'; }
+  else if (pending.kind === 'delete') { label = `Delete "${pending.name || pending.id}"?`; bg = 'var(--gb-red-500)'; }
+  else if (pending.kind === 'assign') { label = `Assign as ${pending.assignType}?`; bg = 'var(--gb-indigo-600)'; }
   return (
     <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
       <span style={{ fontSize: '.7rem', color: 'var(--dim)', marginRight: '.2rem' }}>{label}</span>
-      <button type="button" className="btn-sm" style={{ fontSize: '.7rem', background: bg, color: '#fff', border: 'none', borderRadius: 4, padding: '.15rem .5rem' }} onClick={onConfirm} disabled={busy}>
+      <button type="button" className="btn-sm" style={{ fontSize: '.7rem', background: bg, color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 4, padding: '.15rem .5rem' }} onClick={onConfirm} disabled={busy}>
         {busy ? '…' : 'Confirm'}
       </button>
       <button type="button" className="btn-g btn-sm" style={{ fontSize: '.7rem' }} onClick={onCancel} disabled={busy}>Cancel</button>

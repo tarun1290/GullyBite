@@ -146,9 +146,9 @@ export default function AdminSyncLogs() {
                   <tr><td colSpan={5} style={emptyCell}>No active alerts</td></tr>
                 ) : alerts.map((a) => (
                   <tr key={a.id} style={{ background: '#fef2f2', borderTop: '1px solid var(--rim)' }}>
-                    <td style={{ ...td, color: '#991b1b', fontWeight: 600 }}>{a.restaurant_name || a.restaurant_id || '—'}</td>
+                    <td style={{ ...td, color: 'var(--gb-red-900)', fontWeight: 600 }}>{a.restaurant_name || a.restaurant_id || '—'}</td>
                     <td style={{ ...td, color: '#7f1d1d' }}>{a.message}</td>
-                    <td style={{ ...td, color: '#b91c1c', fontWeight: 600 }}>{a.failure_rate != null ? Math.round(a.failure_rate * 100) + '%' : '—'}</td>
+                    <td style={{ ...td, color: 'var(--gb-red-600)', fontWeight: 600 }}>{a.failure_rate != null ? Math.round(a.failure_rate * 100) + '%' : '—'}</td>
                     <td style={{ ...td, color: 'var(--dim)', fontSize: '.75rem', whiteSpace: 'nowrap' }}>{fmtTime(a.timestamp)}</td>
                     <td style={td}>
                       <button type="button" className="btn-g btn-sm" onClick={() => resolveAlert(a.id)} disabled={resolvingId === a.id}>
@@ -220,13 +220,13 @@ export default function AdminSyncLogs() {
                         <span style={{
                           display: 'inline-block', padding: '.1rem .5rem', borderRadius: 99,
                           fontSize: '.72rem', fontWeight: 600,
-                          background: isSynced ? '#d1fae5' : '#fee2e2',
-                          color: isSynced ? '#047857' : '#b91c1c',
+                          background: isSynced ? '#d1fae5' : 'var(--gb-red-100)',
+                          color: isSynced ? '#047857' : 'var(--gb-red-600)',
                         }}>{r.status || '—'}</span>
                       </td>
                       <td style={{ ...td, fontSize: '.78rem', color: 'var(--dim)' }}>
                         {r.reason || ''}
-                        {r.suggestion && <div style={{ marginTop: '.2rem', fontSize: '.7rem', color: '#4f46e5' }}>💡 {r.suggestion}</div>}
+                        {r.suggestion && <div style={{ marginTop: '.2rem', fontSize: '.7rem', color: 'var(--gb-indigo-600)' }}>💡 {r.suggestion}</div>}
                       </td>
                       <td style={{ ...td, fontSize: '.75rem', color: 'var(--dim)', whiteSpace: 'nowrap' }}>{fmtTime(r.timestamp)}</td>
                     </tr>
@@ -244,4 +244,4 @@ export default function AdminSyncLogs() {
 const th = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td = { padding: '.5rem .7rem', verticalAlign: 'top' };
 const emptyCell = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input = { background: '#fff', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };
+const input = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };

@@ -417,7 +417,7 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
       {/* Top bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', padding: '.7rem .9rem', borderBottom: '1px solid var(--rim)', flexWrap: 'wrap' }}>
         <div style={{ fontWeight: 700 }} id="fe-flow-name">{flowName}</div>
-        <span id="fe-flow-status" style={{ fontSize: '.7rem', padding: '.1rem .45rem', borderRadius: 99, background: flowStatus === 'PUBLISHED' ? '#22c55e15' : '#3b82f615', color: flowStatus === 'PUBLISHED' ? '#16a34a' : '#3b82f6', fontWeight: 600 }}>{flowStatus}</span>
+        <span id="fe-flow-status" style={{ fontSize: '.7rem', padding: '.1rem .45rem', borderRadius: 99, background: flowStatus === 'PUBLISHED' ? '#22c55e15' : '#3b82f615', color: flowStatus === 'PUBLISHED' ? 'var(--gb-wa-500)' : '#3b82f6', fontWeight: 600 }}>{flowStatus}</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '.4rem' }}>
           <button type="button" id="fe-mode-btn" className="btn-sm" onClick={toggleJsonMode}>
             {jsonMode ? 'Visual Mode' : 'JSON Mode'}
@@ -428,13 +428,13 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
           </button>
           {confirmPublish ? (
             <>
-              <button type="button" className="btn-sm" style={{ background: '#dc2626', color: '#fff', border: 'none' }} onClick={handlePublish} disabled={publishing}>
+              <button type="button" className="btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none' }} onClick={handlePublish} disabled={publishing}>
                 {publishing ? '…' : 'Confirm Publish'}
               </button>
               <button type="button" className="btn-sm" onClick={() => setConfirmPublish(false)} disabled={publishing}>Cancel</button>
             </>
           ) : (
-            <button type="button" className="btn-sm" style={{ color: '#16a34a' }} onClick={handlePublish} disabled={publishing || !flowId}>
+            <button type="button" className="btn-sm" style={{ color: 'var(--gb-wa-500)' }} onClick={handlePublish} disabled={publishing || !flowId}>
               Publish
             </button>
           )}
@@ -525,8 +525,8 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
                   const typeVal = typeof v === 'object' ? (v.type || 'string') : 'string';
                   return (
                     <div key={k} style={{ display: 'flex', gap: '.25rem', alignItems: 'center', marginBottom: '.15rem' }}>
-                      <input defaultValue={k} placeholder="key" onBlur={(e) => renameDataField(k, e.target.value)} style={{ width: 80, padding: '.12rem .25rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.7rem', fontFamily: 'monospace', background: '#fff' }} />
-                      <select value={typeVal} onChange={(e) => updateDataFieldType(k, e.target.value)} style={{ padding: '.12rem .25rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.7rem', background: '#fff' }}>
+                      <input defaultValue={k} placeholder="key" onBlur={(e) => renameDataField(k, e.target.value)} style={{ width: 80, padding: '.12rem .25rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.7rem', fontFamily: 'monospace', background: 'var(--gb-neutral-0)' }} />
+                      <select value={typeVal} onChange={(e) => updateDataFieldType(k, e.target.value)} style={{ padding: '.12rem .25rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.7rem', background: 'var(--gb-neutral-0)' }}>
                         {['string', 'number', 'boolean', 'array', 'object'].map((t) => <option key={t} value={t}>{t}</option>)}
                       </select>
                       <button type="button" onClick={() => removeDataField(k)} style={{ background: 'none', border: 'none', color: 'var(--red,#dc2626)', cursor: 'pointer', fontSize: '.75rem' }}>×</button>
@@ -631,7 +631,7 @@ function ComponentCard({
               <input
                 value={val ?? ''}
                 onChange={(e) => onUpdate(idx, key, e.target.value)}
-                style={{ flex: 1, padding: '.2rem .4rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.76rem', background: '#fff' }}
+                style={{ flex: 1, padding: '.2rem .4rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.76rem', background: 'var(--gb-neutral-0)' }}
               />
             </div>
           );
@@ -639,7 +639,7 @@ function ComponentCard({
 
         {/* data-source editor */}
         {comp['data-source'] && (
-          <div style={{ marginTop: '.25rem', padding: '.4rem', background: '#fff', border: '1px solid var(--rim)', borderRadius: 4 }}>
+          <div style={{ marginTop: '.25rem', padding: '.4rem', background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '.3rem' }}>
               <span style={{ fontSize: '.7rem', fontWeight: 600, color: 'var(--dim)' }}>data-source</span>
               <button type="button" className="btn-sm" style={{ marginLeft: 'auto', fontSize: '.63rem', padding: '.05rem .35rem' }} onClick={() => onAddDS(idx)}>+ Add</button>
@@ -684,7 +684,7 @@ function ComponentCard({
 
 function ActionEditor({ action, screens, onUpdate, onAddPayload, onRenamePayload, onUpdatePayloadValue, onRemovePayload }) {
   return (
-    <div style={{ marginTop: '.25rem', padding: '.4rem', background: '#fff', border: '1px solid var(--rim)', borderRadius: 4 }}>
+    <div style={{ marginTop: '.25rem', padding: '.4rem', background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 4 }}>
       <div style={{ fontSize: '.7rem', fontWeight: 600, color: 'var(--dim)', marginBottom: '.3rem' }}>on-click-action</div>
 
       <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center', marginBottom: '.25rem' }}>
@@ -742,7 +742,7 @@ function ConditionEditor({ comp, screens, siblingFields, onUpdate, onUpdateBranc
       </div>
 
       <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center', marginBottom: '.25rem' }}>
-        <label style={{ fontSize: '.68rem', color: '#16a34a', fontWeight: 600, minWidth: 35 }}>THEN</label>
+        <label style={{ fontSize: '.68rem', color: 'var(--gb-wa-500)', fontWeight: 600, minWidth: 35 }}>THEN</label>
         <select value={thenAct.next?.name || ''} onChange={(e) => onUpdateBranch('then_action', e.target.value)} style={{ padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}>
           <option value="">-- go to screen --</option>
           {screens.map((s) => <option key={s.id} value={s.id}>{s.id}</option>)}
@@ -750,7 +750,7 @@ function ConditionEditor({ comp, screens, siblingFields, onUpdate, onUpdateBranc
       </div>
 
       <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center' }}>
-        <label style={{ fontSize: '.68rem', color: '#dc2626', fontWeight: 600, minWidth: 35 }}>ELSE</label>
+        <label style={{ fontSize: '.68rem', color: 'var(--gb-red-500)', fontWeight: 600, minWidth: 35 }}>ELSE</label>
         <select value={elseAct.next?.name || ''} onChange={(e) => onUpdateBranch('else_action', e.target.value)} style={{ padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}>
           <option value="">-- go to screen --</option>
           {screens.map((s) => <option key={s.id} value={s.id}>{s.id}</option>)}
@@ -763,7 +763,7 @@ function ConditionEditor({ comp, screens, siblingFields, onUpdate, onUpdateBranc
 function Preview({ screen }) {
   if (!screen) return <div style={{ color: 'var(--dim)' }}>No screen</div>;
   return (
-    <div style={{ background: '#fff', borderRadius: 12, padding: '.8rem', maxWidth: 260, margin: '0 auto', boxShadow: '0 1px 4px rgba(0,0,0,.12)', minHeight: 200, display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: 'var(--gb-neutral-0)', borderRadius: 12, padding: '.8rem', maxWidth: 260, margin: '0 auto', boxShadow: '0 1px 4px rgba(0,0,0,.12)', minHeight: 200, display: 'flex', flexDirection: 'column' }}>
       <div style={{ fontSize: '.78rem', fontWeight: 700, color: '#1a1a1a', padding: '.3rem 0 .5rem', borderBottom: '1px solid #eee', marginBottom: '.5rem' }}>
         {screen.title || screen.id}
       </div>
@@ -832,7 +832,7 @@ function PreviewComp({ c }) {
     case 'Footer':
       return (
         <div style={{ marginTop: 'auto', paddingTop: '.5rem' }}>
-          <button type="button" disabled style={{ width: '100%', background: '#25D366', color: '#fff', border: 'none', borderRadius: 20, padding: '.45rem', fontSize: '.78rem', fontWeight: 600 }}>{c.label}</button>
+          <button type="button" disabled style={{ width: '100%', background: '#25D366', color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 20, padding: '.45rem', fontSize: '.78rem', fontWeight: 600 }}>{c.label}</button>
         </div>
       );
     case 'NavigationList':
@@ -849,8 +849,8 @@ function PreviewComp({ c }) {
           <div style={{ fontSize: '.68rem', fontWeight: 700, color: '#92400e', marginBottom: '.2rem' }}>
             IF {cond.field ? `\${form.${cond.field}}` : '?'} {(cond.operator || '').replace(/_/g, ' ')} {cond.value || ''}
           </div>
-          <div style={{ fontSize: '.65rem', color: '#16a34a' }}>THEN → {c.then_action?.next?.name || '?'}</div>
-          <div style={{ fontSize: '.65rem', color: '#dc2626' }}>ELSE → {c.else_action?.next?.name || '?'}</div>
+          <div style={{ fontSize: '.65rem', color: 'var(--gb-wa-500)' }}>THEN → {c.then_action?.next?.name || '?'}</div>
+          <div style={{ fontSize: '.65rem', color: 'var(--gb-red-500)' }}>ELSE → {c.else_action?.next?.name || '?'}</div>
         </div>
       );
     }
