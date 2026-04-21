@@ -701,3 +701,36 @@ a { color: inherit; text-decoration: none; }
   #pg-land .landing-stats-grid { grid-template-columns: repeat(2, 1fr); gap: 1.6rem; }
   #pg-land .landing-stats { padding: 2rem 1.2rem; }
 }
+
+/* ─ FloatingWhatsApp (Part 1) ───────────────────────────── */
+#pg-land .landing-fwa {
+  position: fixed; bottom: 24px; right: 24px; z-index: 70;
+  width: 56px; height: 56px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--cta-primary-bg); color: var(--cta-primary-text);
+  border-radius: 50%; text-decoration: none;
+  box-shadow: 0 10px 28px rgba(13,155,106,.38);
+  animation: landingFwaPulse 2s ease-in-out infinite;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+#pg-land .landing-fwa:hover {
+  transform: scale(1.06);
+  box-shadow: 0 14px 32px rgba(13,155,106,.5);
+}
+#pg-land .landing-fwa:focus-visible {
+  outline: 3px solid var(--gb-green-300);
+  outline-offset: 3px;
+}
+#pg-land .landing-fwa-icon { width: 28px; height: 28px; }
+
+@keyframes landingFwaPulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.05); }
+}
+
+@media (max-width: 640px) {
+  #pg-land .landing-fwa { bottom: 16px; right: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #pg-land .landing-fwa { animation: none; }
+}
