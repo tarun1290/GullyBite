@@ -1245,3 +1245,142 @@ a { color: inherit; text-decoration: none; }
   #pg-land .landing-features { padding: 72px 20px; }
   #pg-land .landing-features-grid { grid-template-columns: 1fr; }
 }
+
+/* =======================================================================
+   LANDING PAGE — Part 2 section: Comparison (rent vs own)
+   ======================================================================= */
+#pg-land .landing-cmp {
+  background: var(--landing-section-bg);
+  padding: 96px 24px;
+}
+#pg-land .landing-cmp-inner {
+  max-width: 1000px;
+  margin: 0 auto;
+}
+#pg-land .landing-cmp-head {
+  text-align: center;
+  max-width: 780px;
+  margin: 0 auto 56px;
+}
+#pg-land .landing-cmp-eyebrow {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--gb-red-500);
+  margin-bottom: 16px;
+}
+#pg-land .landing-cmp-headline {
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.2;
+  font-weight: 700;
+  color: var(--landing-ink);
+  margin: 0;
+}
+#pg-land .landing-cmp-rent {
+  text-decoration: line-through;
+  text-decoration-color: var(--gb-red-500);
+  text-decoration-thickness: 3px;
+  text-decoration-skip-ink: none;
+}
+#pg-land .landing-cmp-own {
+  text-decoration: underline;
+  text-decoration-color: var(--gb-green-500);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 4px;
+  text-decoration-skip-ink: none;
+}
+#pg-land .landing-cmp-card {
+  background: var(--gb-neutral-0);
+  border: 1px solid var(--landing-line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+#pg-land .landing-cmp-header-row,
+#pg-land .landing-cmp-row {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1fr;
+  align-items: center;
+}
+#pg-land .landing-cmp-header-row {
+  background: var(--landing-section-alt-bg);
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--landing-line);
+}
+#pg-land .landing-cmp-row {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--landing-line);
+}
+#pg-land .landing-cmp-row:last-child { border-bottom: 0; }
+#pg-land .landing-cmp-header-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--landing-mute);
+}
+#pg-land .landing-cmp-header-col {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+#pg-land .landing-cmp-header-col.landing-cmp-them { color: var(--landing-mute); }
+#pg-land .landing-cmp-header-col.landing-cmp-us {
+  color: var(--gb-green-500);
+  border-left: 2px solid var(--gb-green-500);
+  padding-left: 16px;
+  margin-left: -16px;
+}
+#pg-land .landing-cmp-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--landing-ink);
+}
+#pg-land .landing-cmp-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+#pg-land .landing-cmp-cell.landing-cmp-them { color: var(--landing-mute); }
+#pg-land .landing-cmp-cell.landing-cmp-us {
+  color: var(--landing-ink);
+  border-left: 2px solid var(--gb-green-500);
+  padding-left: 16px;
+  margin-left: -16px;
+}
+#pg-land .landing-cmp-glyph { width: 18px; height: 18px; flex-shrink: 0; }
+#pg-land .landing-cmp-glyph-x { color: var(--gb-red-500); }
+#pg-land .landing-cmp-glyph-check { color: var(--gb-green-500); }
+
+@media (max-width: 768px) {
+  #pg-land .landing-cmp { padding: 72px 20px; }
+  #pg-land .landing-cmp-card { border: 0; background: transparent; border-radius: 0; }
+  #pg-land .landing-cmp-header-row { display: none; }
+  #pg-land .landing-cmp-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    background: var(--gb-neutral-0);
+    border: 1px solid var(--landing-line);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 12px;
+  }
+  #pg-land .landing-cmp-row:last-child { border-bottom: 1px solid var(--landing-line); }
+  #pg-land .landing-cmp-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--landing-mute);
+  }
+  #pg-land .landing-cmp-cell.landing-cmp-us {
+    border-left: 2px solid var(--gb-green-500);
+    padding-left: 12px;
+    margin-left: 0;
+  }
+}
