@@ -37,6 +37,14 @@ app.use(cors({
   credentials: true,
 }));
 
+// ─── REQUEST ID + PER-REQUEST LOGGER ─────────────────────────
+// Attaches req.id (unique request ID) and req.log (child logger bound to
+// { requestId, method, path }). Routes + webhooks call req.log.* — without
+// this middleware those calls throw and hang the request before any response
+// is sent. Must be mounted BEFORE any route handler.
+const requestId = require('./src/middleware/requestId');
+app.use(requestId);
+
 // ─── HEALTH CHECK (no DB needed) ─────────────────────────────
 app.get('/health', (req, res) => {
   res.json({
