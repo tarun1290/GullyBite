@@ -1284,8 +1284,40 @@ router.get('/me', requireAuth, async (req, res) => {
     }
   }
 
-  const waAccounts = await col('whatsapp_accounts').find({ restaurant_id: req.restaurantId }).toArray();
-  const waba_accounts = waAccounts.map(w => ({ waba_id: w.waba_id, name: w.display_name, phone: w.phone_display }));
+  // Active WABAs only, oldest first for deterministic card ordering.
+  // Explicit projection enforces no-leak of access_token even if downstream
+  // mapping is later refactored.
+  const waAccounts = await col('whatsapp_accounts')
+    .find(
+      { restaurant_id: req.restaurantId, is_active: true },
+      {
+        projection: {
+          waba_id: 1, phone_number_id: 1, phone_display: 1, display_name: 1,
+          quality_rating: 1, is_active: 1, phone_registered: 1,
+          business_username: 1, username_status: 1, username_suggestions: 1,
+          catalog_id: 1, created_at: 1,
+        },
+      },
+    )
+    .sort({ created_at: 1 })
+    .toArray();
+  const waba_accounts = waAccounts.map(w => ({
+    waba_id: w.waba_id,
+    phone_number_id: w.phone_number_id,
+    phone_display: w.phone_display,
+    display_name: w.display_name,
+    quality_rating: w.quality_rating,
+    is_active: w.is_active,
+    phone_registered: w.phone_registered,
+    business_username: w.business_username,
+    username_status: w.username_status,
+    username_suggestions: w.username_suggestions,
+    catalog_id: w.catalog_id,
+    // Back-compat aliases for the existing WhatsappSection card. Remove
+    // when the design-token rollout touches that component.
+    name: w.display_name,
+    phone: w.phone_display,
+  }));
 
   const { meta_access_token, password_hash, ...safe } = restaurant;
   // Derive whatsapp_connected from actual data if not explicitly set
