@@ -6,6 +6,25 @@ import client from './client.js';
 // these require the admin role — ProtectedRoute enforces that on the
 // matching routes, and the shared Axios client auto-attaches zm_token.
 
+// ─── Admin Auth (login + first-run setup) ──────────────────────────────
+// GET /api/admin/auth/setup-status — { needs_setup: boolean }. Public.
+export async function getAdminSetupStatus() {
+  const { data } = await client.get('/api/admin/auth/setup-status');
+  return data;
+}
+
+// POST /api/admin/auth — email/password login → { token, user }. Public.
+export async function adminSignin(email, password) {
+  const { data } = await client.post('/api/admin/auth', { email, password });
+  return data;
+}
+
+// POST /api/admin/auth/setup — first-run super admin creation → { token, user }. Public.
+export async function adminSetup(email, password, name) {
+  const { data } = await client.post('/api/admin/auth/setup', { email, password, name });
+  return data;
+}
+
 // ─── Flows ──────────────────────────────────────────────────────────────
 // GET /api/admin/flows — library list (admin.html:4790).
 export async function getFlows() {

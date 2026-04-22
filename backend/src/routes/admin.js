@@ -63,24 +63,62 @@ router.post('/auth', adminLoginLimiter, express.json(), async (req, res) => {
   return res.status(403).json({ error: 'Invalid credentials' });
 });
 
-// POST /api/admin/auth/setup — first-run super admin creation (only works if no admin users exist)
-router.post('/auth/setup', express.json(), async (req, res) => {
+// GET /api/admin/auth/setup-status — public endpoint so the AdminLogin page
+// can decide between showing the setup form (first-run) vs the login form.
+// Response is deliberately minimal: boolean only, no counts or emails.
+router.get('/auth/setup-status', adminLoginLimiter, async (req, res) => {
   try {
-    const count = await col('admin_users').countDocuments({});
-    if (count > 0) return res.status(400).json({ error: 'Setup already completed. Use login instead.' });
-    const { email, password, name } = req.body;
-    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
-    const hash = await bcrypt.hash(password, 12);
+    const count = await col('admin_users').countDocuments({ role: 'super_admin' });
+    return res.json({ needs_setup: count === 0 });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// POST /api/admin/auth/setup — first-run super admin creation. Rejects with
+// 403 setup_already_complete once any super_admin exists. The server-side
+// recheck inside the handler is the actual gate; the setup-status endpoint
+// is only a UI hint and cannot be relied on for authorization.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+router.post('/auth/setup', adminLoginLimiter, express.json(), async (req, res) => {
+  try {
+    const superCount = await col('admin_users').countDocuments({ role: 'super_admin' });
+    if (superCount > 0) return res.status(403).json({ error: 'setup_already_complete' });
+
+    const { email, password, name } = req.body || {};
+    const emailStr = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const nameStr = typeof name === 'string' ? name.trim() : '';
+    const pwStr = typeof password === 'string' ? password : '';
+
+    if (!EMAIL_RE.test(emailStr)) return res.status(400).json({ error: 'invalid_email' });
+    if (pwStr.length < 12) return res.status(400).json({ error: 'password_too_short' });
+    if (nameStr.length < 2) return res.status(400).json({ error: 'name_too_short' });
+
+    const hash = await bcrypt.hash(pwStr, 12);
     const user = {
-      _id: newId(), email: email.toLowerCase().trim(), password_hash: hash,
-      name: name || 'Super Admin', phone: null, role: 'super_admin', permissions: {},
-      is_active: true, last_login: null, login_count: 0, token_version: 0, created_by: 'setup', created_at: new Date(), updated_at: new Date(),
+      _id: newId(), email: emailStr, password_hash: hash,
+      name: nameStr, phone: null, role: 'super_admin', permissions: {},
+      is_active: true, last_login: null, login_count: 0, token_version: 0,
+      created_by: 'setup', created_at: new Date(), updated_at: new Date(),
     };
-    await col('admin_users').insertOne(user);
     await col('admin_users').createIndex({ email: 1 }, { unique: true }).catch(() => {});
+    try {
+      await col('admin_users').insertOne(user);
+    } catch (insertErr) {
+      // Duplicate-key race: someone else inserted the same email / a super_admin
+      // between our super_admin check and this insert. Treat as "already complete".
+      if (insertErr?.code === 11000) {
+        return res.status(403).json({ error: 'setup_already_complete' });
+      }
+      throw insertErr;
+    }
+    logActivity({ actorType: 'admin', actorId: String(user._id), actorName: user.name, action: 'admin.setup', category: 'auth', description: `First-run super admin created: ${user.email}`, severity: 'info' });
     const token = signAdminToken(user);
-    res.json({ ok: true, token, user: { id: user._id, name: user.name, email: user.email, role: 'admin', admin_tier: user.role, permissions: {} } });
-  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+    return res.json({ ok: true, token, user: { id: user._id, name: user.name, email: user.email, role: 'admin', admin_tier: user.role, permissions: {} } });
+  } catch (e) {
+    log.error({ err: e }, 'admin /auth/setup failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
 });
 
 // GET /api/admin/auth/me — current admin user profile

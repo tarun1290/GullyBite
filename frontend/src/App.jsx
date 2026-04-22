@@ -54,6 +54,7 @@ import AdminLogistics from './pages/admin/AdminLogistics.jsx';
 import AdminOverview from './pages/admin/AdminOverview.jsx';
 import AdminFestivals from './pages/admin/AdminFestivals.jsx';
 import AdminPlatformAnalytics from './pages/admin/AdminPlatformAnalytics.jsx';
+import AdminLogin from './pages/admin/AdminLogin.jsx';
 
 export default function App() {
   return (
@@ -63,11 +64,12 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/admin/login" element={<AdminLogin />} />
 
             <Route
               path="/dashboard"
               element={
-                <ProtectedRoute role="restaurant">
+                <ProtectedRoute role="restaurant" redirectTo="/login">
                   <DashboardLayout />
                 </ProtectedRoute>
               }
@@ -93,7 +95,7 @@ export default function App() {
             <Route
               path="/admin"
               element={
-                <ProtectedRoute role="admin">
+                <ProtectedRoute role="admin" redirectTo="/admin/login">
                   <AdminLayout />
                 </ProtectedRoute>
               }
