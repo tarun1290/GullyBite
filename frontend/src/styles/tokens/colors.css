@@ -105,6 +105,13 @@
   --gold:      var(--gb-amber-500);    /* Amber / warning emphasis */
   --red:       var(--gb-red-500);      /* Error / destructive */
 
+  /* Secondary accent — soft coral. Complements --acc (indigo) on the warm
+     side without colliding with --wa (success-green) or --gold (warning-amber).
+     Defined but not consumed yet; subsequent prompts will use it sparingly
+     for highlights (e.g., earnings emphasis, "new" badges). */
+  --accent-color:      #f97066;        /* coral-500 */
+  --accent-color-soft: #fee4e2;        /* coral-100 — subtle highlight bg */
+
   /* ── Fresh Leaf landing semantic tokens ─────────────────── */
   /* Hero and primary section backgrounds — warm cream, food-appropriate */
   --landing-hero-bg:        var(--gb-cream);

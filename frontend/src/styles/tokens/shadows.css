@@ -23,4 +23,9 @@
   --shadow-sm: var(--shadow-soft-sm);
   --shadow:    var(--shadow-soft-md);
   --shadow-lg: var(--shadow-soft-lg);
+
+  /* Named medium alias — same value as --shadow, added so the *-sm/-md/-lg
+     triplet is symmetric. Inherits the dashboard.css crisp override via
+     --shadow because it points at it. */
+  --shadow-md: var(--shadow);
 }

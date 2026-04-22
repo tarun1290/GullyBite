@@ -22,4 +22,13 @@
   --container-base:    960px;
   --container-wide:    1120px;
   --container-max:     1280px;
+
+  /* ── Component defaults ────────────────────────────────────
+     Component-level structural tokens. Live here (not spacing.css)
+     because spacing.css is strictly the 4px scale. */
+
+  /* Default body padding for .card / .cb. Matches the existing
+     dashboard.css .cb rule (1.3rem) so adopting this token in a
+     component is a no-op rather than a pixel shift. */
+  --card-padding: 1.3rem;
 }
