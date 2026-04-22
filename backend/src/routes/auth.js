@@ -1536,6 +1536,92 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
     }
   }
 
+  // Fallback: if nothing was saved via /me/businesses, /me/whatsapp_business_accounts,
+  // or sessionInfo, but the user's token has granular scopes pointing at specific
+  // WABA IDs, fetch each WABA's details directly. This covers Embedded Signup flows
+  // where the app permissions don't include business_management — Meta returns the
+  // WABA via granular scope claims and the nested businesses endpoint fails with
+  // "(#100) Tried accessing nonexisting field (whatsapp_business_accounts)".
+  if (!savedCount && allowedWabaIds && allowedWabaIds.size > 0) {
+    // Prefer the System User token — it has full visibility regardless of the
+    // user's granular scope. Fall back to the user's token only if the System
+    // User token is missing (dev/misconfig); flag loudly so ops notices.
+    let fetchToken = metaConfig.systemUserToken;
+    if (!fetchToken) {
+      log.warn({ restaurantId }, 'META_SYSTEM_USER_TOKEN not set, using user token for WABA detail fetch');
+      fetchToken = longToken;
+    }
+
+    log.info({
+      restaurantId,
+      wabaCount: allowedWabaIds.size,
+      wabaIds: [...allowedWabaIds],
+    }, 'Saving WABAs from granular scope fallback');
+
+    let granularFailedCount = 0;
+    const granularStartSaved = savedCount;
+
+    for (const wabaId of allowedWabaIds) {
+      try {
+        const [wabaRes, phoneRes] = await Promise.all([
+          axios.get(`${META_GRAPH_URL}/${wabaId}`, {
+            params: { fields: 'id,name,currency,message_template_namespace', access_token: fetchToken },
+            timeout: 10000,
+          }),
+          axios.get(`${META_GRAPH_URL}/${wabaId}/phone_numbers`, {
+            params: { fields: 'id,display_phone_number,verified_name,quality_rating', access_token: fetchToken },
+            timeout: 10000,
+          }),
+        ]);
+        const waba = wabaRes.data || { id: wabaId };
+        const phones = phoneRes.data?.data || [];
+
+        // Mirror the sessionInfo fallback: if WABA has no registered phone numbers
+        // yet but sessionInfo gave us a phone_number_id, insert a placeholder so
+        // the UI shows "Connected" rather than "No active WABA".
+        if (!phones.length && sessionInfo?.phone_number_id) {
+          phones.push({
+            id: sessionInfo.phone_number_id,
+            display_phone_number: '—',
+            verified_name: 'WhatsApp Business',
+            quality_rating: null,
+          });
+        }
+
+        await _subscribeWaba(wabaId);
+
+        for (const phone of phones) {
+          const ok = await savePhone(waba, phone);
+          if (ok) {
+            savedCount++;
+            if (!firstSavedWabaId) {
+              firstSavedWabaId = wabaId;
+              firstSavedPhoneId = phone.id;
+            }
+          }
+        }
+
+        _provisionWabaCatalog(restaurantId, wabaId, longToken).catch(err =>
+          log.error({ err, wabaId }, 'Catalog auto-provision failed')
+        );
+      } catch (e) {
+        granularFailedCount++;
+        log.error({
+          err: e?.response?.data || e?.message,
+          wabaId,
+          restaurantId,
+        }, 'Granular-scope WABA fetch failed — skipping this WABA');
+      }
+    }
+
+    log.info({
+      restaurantId,
+      savedCount: savedCount - granularStartSaved,
+      failedCount: granularFailedCount,
+      attempted: allowedWabaIds.size,
+    }, 'Granular scope fallback complete');
+  }
+
   // Record the explicit linkage on the restaurant doc. Settings read path
   // uses these as the source of truth for "which WABA is the primary?".
   if (firstSavedWabaId && firstSavedPhoneId) {
