@@ -99,6 +99,45 @@ export default function WhatsappSection() {
       <div className="cb">
         <StatusBox dot={dot} label={label} sub={sub} />
 
+        {fullyConnected && waAccounts.length > 0 && (
+          <div
+            style={{
+              marginBottom: '1rem',
+              border: '1px solid var(--rim)',
+              borderRadius: 8,
+              background: 'var(--panel, #fff)',
+            }}
+          >
+            {waAccounts.map((a, i) => (
+              <div
+                key={a.waba_id || i}
+                style={{
+                  padding: '.7rem 1rem',
+                  borderTop: i === 0 ? 'none' : '1px solid var(--rim)',
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(120px, 28%) 1fr',
+                  rowGap: '.35rem',
+                  columnGap: '.8rem',
+                  fontSize: '.82rem',
+                }}
+              >
+                <span style={{ color: 'var(--dim)' }}>WABA ID</span>
+                <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                  {a.waba_id || '—'}
+                </span>
+                <span style={{ color: 'var(--dim)' }}>Phone Number</span>
+                <span>{a.phone || a.phone_display || '—'}</span>
+                {a.name ? (
+                  <>
+                    <span style={{ color: 'var(--dim)' }}>Display Name</span>
+                    <span>{a.name}</span>
+                  </>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+
         {fullyConnected && (
           <>
             <div style={{

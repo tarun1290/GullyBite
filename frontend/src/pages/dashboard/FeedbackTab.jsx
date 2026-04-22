@@ -51,7 +51,7 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }
           delta={`${stats?.total_ratings || 0} ratings`}
         />
         <StatCard
-          label="Positive (4\u20135\u2B50)"
+          label="Positive (4–5⭐)"
           value={loading ? '\u2014' : (stats?.positive_ratings || 0).toLocaleString()}
           delta={`${stats?.total_ratings ? Math.round(((stats?.positive_ratings || 0) / stats.total_ratings) * 100) : 0}% of replies`}
         />
@@ -92,7 +92,7 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }
               </div>
               <div style={{ marginTop: '.25rem' }}>
                 <strong style={{ fontSize: '1.1rem' }}>
-                  {bySource[src]?.avg ?? '\u2014'} \u2B50
+                  {bySource[src]?.avg ?? '—'} ⭐
                 </strong>
                 <span style={{ marginLeft: '.5rem', fontSize: '.8rem', color: 'var(--dim)' }}>
                   {bySource[src]?.count || 0} ratings
@@ -120,10 +120,10 @@ function EscalationInbox({ escalations, loading, err, onRetry, includeResolved, 
       </div>
       <div className="cb">
         {loading ? (
-          <div style={{ fontSize: '.82rem', color: 'var(--dim)' }}>Loading\u2026</div>
+          <div style={{ fontSize: '.82rem', color: 'var(--dim)' }}>Loading…</div>
         ) : rows.length === 0 ? (
           <div style={{ fontSize: '.82rem', color: 'var(--dim)' }}>
-            No open escalations \u2014 nice work.
+            No open escalations — nice work.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
@@ -352,7 +352,7 @@ function ReviewLinksSettings({ links, onSave }) {
           <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Google review URL</span>
           <input
             type="url"
-            placeholder="https://g.page/r/\u2026/review"
+            placeholder="https://g.page/r/…/review"
             value={google}
             onChange={(ev) => setGoogle(ev.target.value)}
             style={{ padding: '.45rem .55rem', border: '1px solid var(--rim)', borderRadius: 'var(--r)', background: '#fff' }}
@@ -362,7 +362,7 @@ function ReviewLinksSettings({ links, onSave }) {
           <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Zomato review URL</span>
           <input
             type="url"
-            placeholder="https://www.zomato.com/\u2026"
+            placeholder="https://www.zomato.com/…"
             value={zomato}
             onChange={(ev) => setZomato(ev.target.value)}
             style={{ padding: '.45rem .55rem', border: '1px solid var(--rim)', borderRadius: 'var(--r)', background: '#fff' }}

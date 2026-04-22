@@ -379,7 +379,7 @@ function Wizard({
             Step {step} of 3 — {step === 1 ? 'Choose audience' : step === 2 ? 'Pick template' : 'Schedule & confirm'}
           </div>
         </div>
-        <button className="btn-g btn-sm" onClick={onCancel}>\u2190 Back to history</button>
+        <button className="btn-g btn-sm" onClick={onCancel}>← Back to history</button>
       </div>
 
       <div style={{ display: 'flex', gap: '.3rem', marginBottom: '1rem' }}>
@@ -447,12 +447,12 @@ function Wizard({
         <div style={{ display: 'flex', gap: '.5rem' }}>
           {step === 1 && (
             <button className="btn-p" onClick={() => setStep(2)} disabled={!canAdvanceStep1 || disabled}>
-              Next: Template \u2192
+              Next: Template →
             </button>
           )}
           {step === 2 && (
             <button className="btn-p" onClick={() => setStep(3)} disabled={!canAdvanceStep2 || disabled}>
-              Next: Schedule \u2192
+              Next: Schedule →
             </button>
           )}
           {step === 3 && !confirming && (
@@ -473,7 +473,7 @@ function Wizard({
 
       {step === 3 && confirming && (
         <div className="notice" style={{ marginTop: '.8rem' }}>
-          <div className="notice-ico">\u26A0\uFE0F</div>
+          <div className="notice-ico">⚠️</div>
           <div className="notice-body">
             <h4>Confirm campaign</h4>
             <p>
@@ -960,7 +960,7 @@ export default function CampaignsTab() {
       <>
       {disabled && (
         <div className="notice wa" style={{ marginBottom: '1rem' }}>
-          <div className="notice-ico">\u2728</div>
+          <div className="notice-ico">✨</div>
           <div className="notice-body">
             <h4>Coming Soon</h4>
             <p>

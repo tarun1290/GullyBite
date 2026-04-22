@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import StatCard from '../../components/StatCard.jsx';
 import SectionError from '../../components/dashboard/analytics/SectionError.jsx';
+import PendingApprovalNotice, { isPendingApproval } from '../../components/dashboard/PendingApprovalNotice.jsx';
 import {
   getBranches,
   getRatings,
@@ -74,7 +75,7 @@ export default function RatingsTab() {
       const data = await getRatingsSummary(params);
       setSummary(data || null);
     } catch (err) {
-      setSummaryErr(err?.userMessage || err?.message || 'Could not load summary');
+      setSummaryErr(err?.response?.data?.error || err?.userMessage || err?.message || 'Could not load summary');
     } finally {
       setSummaryLoading(false);
     }
@@ -89,7 +90,7 @@ export default function RatingsTab() {
       const data = await getRatings(params);
       setList(data || null);
     } catch (err) {
-      setListErr(err?.userMessage || err?.message || 'Could not load ratings');
+      setListErr(err?.response?.data?.error || err?.userMessage || err?.message || 'Could not load ratings');
     } finally {
       setListLoading(false);
     }
@@ -106,6 +107,14 @@ export default function RatingsTab() {
 
   const total = summary?.total ?? 0;
   const showValue = (v) => (total ? v : '—');
+
+  if (isPendingApproval(summaryErr) || isPendingApproval(listErr)) {
+    return (
+      <div id="tab-ratings" className="tab on">
+        <PendingApprovalNotice feature="Ratings" />
+      </div>
+    );
+  }
 
   return (
     <div id="tab-ratings" className="tab on">

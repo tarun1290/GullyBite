@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import useAnalyticsFetch from '../analytics/useAnalyticsFetch.js';
 import SectionError from '../analytics/SectionError.jsx';
+import PendingApprovalNotice, { isPendingApproval } from '../PendingApprovalNotice.jsx';
 import { getMarketingMessages } from '../../../api/restaurant.js';
 
 // Mirrors loadMarketingMessages() in legacy marketing.js:22-60. Legacy
@@ -27,6 +28,10 @@ export default function MarketingMessagesSection() {
   const total = Number(data?.total || 0);
   const totalCost = Number(data?.total_cost || 0);
   const pageCount = total > 0 ? Math.max(1, Math.ceil(total / LIMIT)) : 1;
+
+  if (isPendingApproval(error)) {
+    return <PendingApprovalNotice feature="Marketing Messages" />;
+  }
 
   return (
     <div className="card">

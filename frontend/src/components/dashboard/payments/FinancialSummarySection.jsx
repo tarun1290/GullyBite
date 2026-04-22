@@ -3,6 +3,7 @@ import ChartCanvas from '../ChartCanvas.jsx';
 import StatCard from '../../StatCard.jsx';
 import SectionError from '../analytics/SectionError.jsx';
 import useAnalyticsFetch from '../analytics/useAnalyticsFetch.js';
+import PendingApprovalNotice, { isPendingApproval } from '../PendingApprovalNotice.jsx';
 import { useToast } from '../../Toast.jsx';
 import { getFinancialSummary, getDailyFinancials } from '../../../api/restaurant.js';
 
@@ -103,6 +104,10 @@ export default function FinancialSummarySection() {
     if (!from || !to) { showToast('Select both dates', 'error'); return; }
     setPeriod('custom');
   };
+
+  if (isPendingApproval(summaryQ.error) || isPendingApproval(dailyQ.error)) {
+    return <PendingApprovalNotice feature="Payments" />;
+  }
 
   const summary = summaryQ.data || {};
   const breakdown = summary.breakdown || summary || {};
