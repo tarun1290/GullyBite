@@ -41,7 +41,6 @@ function categorizeMessage(context) {
       return 'marketing';
     case 'order_update':
     case 'payment':
-    case 'payment_link':
     case 'delivery_update':
     case 'template':
       return 'utility';

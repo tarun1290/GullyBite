@@ -139,8 +139,7 @@ const revalidateOrderForPayment = async (orderId) => {
 //      order_id. Guards against events routed to the wrong order.
 //   2. The event's amount matches orders.total_rs (paise → rupees,
 //      ₹1 rounding tolerance matches revalidateOrderForPayment).
-//   3. The payment entity's status === 'captured' for capture/order
-//      events, or 'paid' for payment_link events. Guards against
+//   3. The payment entity's status === 'captured'. Guards against
 //      authorized-but-not-captured and failure-replayed-as-success.
 //
 // Returns { valid: true } OR { valid: false, reason }. The caller is
@@ -150,7 +149,6 @@ const validatePaymentEvent = async (orderId, event) => {
 
   const paymentEntity = event.payload?.payment?.entity || null;
   const orderEntity   = event.payload?.order?.entity || null;
-  const linkEntity    = event.payload?.payment_link?.entity || null;
 
   // 1. Event → order mapping check.
   const eventRpOrderId = orderEntity?.id || paymentEntity?.order_id || null;
@@ -167,7 +165,7 @@ const validatePaymentEvent = async (orderId, event) => {
   // 2. Amount check (in paise on the event; rupees on our row).
   const order = await col('orders').findOne({ _id: String(orderId) }, { projection: { total_rs: 1 } });
   if (!order) return { valid: false, reason: 'order_not_found_during_validation' };
-  const eventAmountPaise = paymentEntity?.amount ?? orderEntity?.amount ?? linkEntity?.amount_paid ?? null;
+  const eventAmountPaise = paymentEntity?.amount ?? orderEntity?.amount ?? null;
   if (eventAmountPaise != null) {
     const eventAmountRs = Number(eventAmountPaise) / 100;
     const expectedRs = Number(order.total_rs) || 0;
@@ -177,19 +175,12 @@ const validatePaymentEvent = async (orderId, event) => {
   }
 
   // 3. Status check. payment.captured / order.paid carry a payment
-  // entity with status 'captured'. payment_link.paid carries a
-  // payment_link entity with status 'paid'. Anything else is rejected.
-  if (paymentEntity) {
-    if (paymentEntity.status !== 'captured') {
-      return { valid: false, reason: `payment.status=${paymentEntity.status} (not captured)` };
-    }
-  } else if (linkEntity) {
-    if (linkEntity.status !== 'paid') {
-      return { valid: false, reason: `payment_link.status=${linkEntity.status} (not paid)` };
-    }
-  } else {
-    // No payment/link entity at all — we cannot prove capture. Reject.
-    return { valid: false, reason: 'event_missing_payment_or_link_entity' };
+  // entity with status 'captured'. Anything else is rejected.
+  if (!paymentEntity) {
+    return { valid: false, reason: 'event_missing_payment_entity' };
+  }
+  if (paymentEntity.status !== 'captured') {
+    return { valid: false, reason: `payment.status=${paymentEntity.status} (not captured)` };
   }
 
   return { valid: true };
@@ -637,18 +628,6 @@ const handleEvent = async (event) => {
       break;
     }
 
-    case 'payment_link.paid': {
-      const orderId = await paymentSvc.handlePaymentSuccess(event);
-      if (!orderId) break;
-      await confirmPaidOrder(orderId, event);
-      // Trust: +10 for a completed payment. Best-effort.
-      try {
-        const ord = await col('orders').findOne({ _id: orderId }, { projection: { customer_id: 1 } });
-        if (ord?.customer_id) require('../services/trustScore').recordEvent(String(ord.customer_id), 'payment_success').catch(() => {});
-      } catch (_) {}
-      break;
-    }
-
     case 'payment.failed': {
       const orderId = await paymentSvc.handlePaymentFailed(event);
       if (!orderId) break;
@@ -713,27 +692,6 @@ const handleEvent = async (event) => {
         description: `Payment failed for order #${order.order_number}`,
         restaurantId: order.restaurant_id, resourceType: 'order', resourceId: orderId, severity: 'warning',
       });
-      break;
-    }
-
-    case 'payment_link.expired': {
-      const orderId = await paymentSvc.handleLinkExpired(event);
-      if (!orderId) break;
-
-      // Transition to EXPIRED (missed sale) — NOT CANCELLED
-      try {
-        await orderSvc.updateStatus(orderId, 'EXPIRED', { cancelReason: 'Payment link expired' });
-      } catch (stateErr) {
-        log.warn({ err: stateErr, orderId }, 'Could not transition to EXPIRED on link expiry');
-      }
-
-      const order = await orderSvc.getOrderDetails(orderId);
-      if (!order) break;
-
-      await wa.sendText(
-        order.phone_number_id, order.access_token, resolveRecipient(order),
-        `⏱️ Payment for order #${order.order_number} expired.\n\nType *MENU* to start a new order anytime!`
-      );
       break;
     }
 

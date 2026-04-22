@@ -1,13 +1,15 @@
 // src/services/payment.js
-// Razorpay payment integration — TWO payment flows:
+// Razorpay payment integration — single payment flow:
 //
-//   1. WhatsApp Pay (primary)
-//      createRazorpayOrder() → send order_details WhatsApp message →
-//      customer pays inside WhatsApp (UPI) → Razorpay fires order.paid webhook
+//   WhatsApp Pay (sole flow)
+//   createRazorpayOrder() → send order_details WhatsApp interactive
+//   message → customer reviews and pays inside WhatsApp (UPI) →
+//   Razorpay fires order.paid / payment.captured webhook.
 //
-//   2. Payment Link (fallback — for non-WhatsApp-Pay regions or errors)
-//      createPaymentLink() → send URL via WhatsApp text →
-//      customer opens browser → Razorpay fires payment_link.paid webhook
+// Payment links (Razorpay paymentLink.create) are not used. The link-based
+// fallback was retired in c887ca4 (2026-04-05) when every order flow was
+// migrated to interactive checkout; the dead handlers/validator branches
+// were removed in a follow-up cleanup.
 //
 // Settlements → GullyBite collects all money → weekly payout to restaurants
 //   registerPayoutAccount() registers restaurant's bank account with Razorpay X
@@ -17,7 +19,6 @@ const Razorpay = require('razorpay');
 const crypto  = require('crypto');
 const { col, newId } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'Payment' });
-const { frontendUrl } = require('../utils/url');
 
 // ─── PAYMENT AUDIT HELPER ────────────────────────────────────
 // Every payment status change appends to an embedded status_history array.
@@ -95,53 +96,6 @@ const createRazorpayOrder = async (order, customer) => {
   return rzpOrder;
 };
 
-// ─── 2. CREATE PAYMENT LINK (fallback) ────────────────────────
-const createPaymentLink = async (order, customer) => {
-  const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 15;
-  const expiresAt  = Math.floor(Date.now() / 1000) + expiryMins * 60;
-
-  const link = await getRzp().paymentLink.create({
-    amount        : Math.round(order.total_rs * 100),
-    currency      : 'INR',
-    accept_partial: false,
-    description   : `Order ${order.order_number} — ${order.business_name}`,
-    // [BSUID] Razorpay requires a phone number — wa_phone must be present
-    // The phone request flow (Step 13) ensures wa_phone is collected before payment
-    customer: {
-      name   : customer.name || 'Customer',
-      contact: customer.wa_phone ? (customer.wa_phone.startsWith('+') ? customer.wa_phone : `+${customer.wa_phone}`) : '',
-    },
-    notify         : { sms: false, email: false },
-    reminder_enable: false,
-    notes: {
-      order_id    : order.id,
-      order_number: order.order_number,
-      customer_wa : customer.wa_phone || customer.bsuid || '',
-    },
-    callback_url   : frontendUrl('/payment-success'),
-    callback_method: 'get',
-    expire_by      : expiresAt,
-  });
-
-  await col('payments').insertOne({
-    _id: newId(),
-    order_id: order.id,
-    rp_order_id: null,
-    rp_link_id: link.id,
-    rp_link_url: link.short_url,
-    rp_payment_id: null,
-    payment_method: null,
-    amount_rs: order.total_rs,
-    status: 'sent',
-    payment_type: 'link',
-    expires_at: new Date(expiresAt * 1000),
-    paid_at: null,
-    created_at: new Date(),
-  });
-
-  return { id: link.id, url: link.short_url, expiryMins };
-};
-
 // ─── VERIFY WEBHOOK SIGNATURE ─────────────────────────────────
 const verifyWebhookSignature = (rawBody, signature) => {
   if (!signature) return false;
@@ -193,75 +147,30 @@ const handleOrderPaid = async (event) => {
   return payment.order_id;
 };
 
-// ─── HANDLE PAYMENT LINK PAID (fallback flow) ─────────────────
-const handlePaymentSuccess = async (event) => {
-  const linkId        = event.payload?.payment_link?.entity?.id;
-  const paymentEntity = event.payload?.payment?.entity;
-
-  const payment = await col('payments').findOne({ rp_link_id: linkId });
-  if (!payment) {
-    log.error({ linkId }, 'No payment record for link');
-    return null;
-  }
-
-  await updatePaymentWithAudit(
-    { rp_link_id: linkId },
-    { status: 'paid', rp_payment_id: paymentEntity?.id, rp_order_id: paymentEntity?.order_id, payment_method: paymentEntity?.method, paid_at: new Date() },
-    'razorpay:payment_link.paid'
-  );
-
-  return payment.order_id;
-};
-
 // ─── HANDLE PAYMENT FAILED ────────────────────────────────────
 const handlePaymentFailed = async (event) => {
-  const linkId     = event.payload?.payment_link?.entity?.id;
   const rzpOrderId = event.payload?.payment?.entity?.order_id;
+  if (!rzpOrderId) return null;
 
-  if (linkId) {
-    const payment = await updatePaymentWithAudit(
-      { rp_link_id: linkId },
-      { status: 'failed' },
-      'razorpay:payment.failed'
-    );
-    return payment?.order_id || null;
-  }
-  if (rzpOrderId) {
-    let payment = await updatePaymentWithAudit(
-      { rp_order_id: rzpOrderId },
-      { status: 'failed' },
+  let payment = await updatePaymentWithAudit(
+    { rp_order_id: rzpOrderId },
+    { status: 'failed' },
+    'razorpay:payment.failed'
+  );
+  if (payment) return payment.order_id;
+
+  // Fallback: checkout template payments — match by reference_id
+  const receipt = event.payload?.order?.entity?.receipt
+               || event.payload?.payment?.entity?.notes?.reference_id;
+  if (receipt) {
+    payment = await updatePaymentWithAudit(
+      { reference_id: receipt, payment_type: 'checkout_template' },
+      { status: 'failed', rp_order_id: rzpOrderId },
       'razorpay:payment.failed'
     );
     if (payment) return payment.order_id;
-
-    // Fallback: checkout template payments — match by reference_id
-    const receipt = event.payload?.order?.entity?.receipt
-                 || event.payload?.payment?.entity?.notes?.reference_id;
-    if (receipt) {
-      payment = await updatePaymentWithAudit(
-        { reference_id: receipt, payment_type: 'checkout_template' },
-        { status: 'failed', rp_order_id: rzpOrderId },
-        'razorpay:payment.failed'
-      );
-      if (payment) return payment.order_id;
-    }
-    return null;
   }
   return null;
-};
-
-// ─── HANDLE PAYMENT LINK EXPIRED ──────────────────────────────
-const handleLinkExpired = async (event) => {
-  const linkId = event.payload?.payment_link?.entity?.id;
-  if (!linkId) return null;
-
-  const payment = await updatePaymentWithAudit(
-    { rp_link_id: linkId, status: { $ne: 'paid' } },
-    { status: 'expired' },
-    'razorpay:payment_link.expired'
-  );
-
-  return payment?.order_id || null;
 };
 
 // ─── ISSUE REFUND ─────────────────────────────────────────────
@@ -394,12 +303,9 @@ const createPayoutV2 = async ({ fundAccountId, amountRs, idempotencyKey, referen
 
 module.exports = {
   createRazorpayOrder,
-  createPaymentLink,
   verifyWebhookSignature,
   handleOrderPaid,
-  handlePaymentSuccess,
   handlePaymentFailed,
-  handleLinkExpired,
   issueRefund,
   registerPayoutAccount,
   createPayout,
