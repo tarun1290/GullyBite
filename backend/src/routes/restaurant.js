@@ -2358,29 +2358,25 @@ router.post('/menu/csv', async (req, res) => {
     // Load all branches for this restaurant
     let allBranches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
 
-    // Auto-create branches from upload data if branch column detected — BATCH via insertMany
+    // Reject the upload if any branch name in the CSV doesn't match an
+    // existing branch. Auto-creation was removed because skeleton branches
+    // (no FSSAI/GST/coords) silently broke catalog sync, delivery routing,
+    // and proximity queries — the user has to fix them later anyway. Force
+    // the create-then-upload sequence so every branch ships with full data.
     if (branchCol) {
       const uploadBranchNames = [...new Set(items.map(r => (String(r[branchCol] || '')).trim()).filter(Boolean))];
-      const newBranchDocs = [];
-      for (const bn of uploadBranchNames) {
-        const exists = allBranches.some(b => (b.name || '').toLowerCase().trim() === bn.toLowerCase() || (b.branch_slug || '') === slugify(bn, 20));
-        if (!exists) {
-          const now = new Date();
-          newBranchDocs.push({
-            _id: newId(), restaurant_id: req.restaurantId, name: bn, branch_slug: slugify(bn, 20),
-            city: '', is_open: true, accepts_orders: true, delivery_radius_km: 5,
-            opening_time: '10:00', closing_time: '22:00', created_at: now, updated_at: now,
-          });
-        }
-      }
-      if (newBranchDocs.length) {
-        await col('branches').insertMany(newBranchDocs).catch(() => {});
-        logger.warn({ branchCount: newBranchDocs.length }, 'Auto-created branches from CSV — coordinates need to be set in dashboard');
-        // Fire-and-forget catalog creation for new branches
-        for (const b of newBranchDocs) {
-          catalog.createBranchCatalog(b._id).catch(err => logger.error({ err, branchName: b.name }, 'CSV auto catalog creation failed'));
-        }
-        allBranches = [...allBranches, ...newBranchDocs];
+      const unknownBranches = uploadBranchNames.filter(
+        bn => !allBranches.some(b =>
+          (b.name || '').toLowerCase().trim() === bn.toLowerCase() ||
+          (b.branch_slug || '') === slugify(bn, 20)
+        )
+      );
+      if (unknownBranches.length) {
+        return res.status(400).json({
+          error: 'Branch mismatch',
+          message: `The following branches in your CSV do not exist yet: ${unknownBranches.join(', ')}. Please create them manually in Settings → Branches first, then re-upload.`,
+          unknown_branches: unknownBranches,
+        });
       }
     }
 
