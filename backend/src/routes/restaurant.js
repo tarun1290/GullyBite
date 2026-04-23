@@ -1212,6 +1212,7 @@ router.post('/branches', async (req, res) => {
       manager_phone: managerPhone || null,
       fssai_number: fssai_number || null,
       gst_number:   gst_number   || null,
+      is_active: true,
       is_open: true,
       accepts_orders: true,
       catalog_id: null,
@@ -1277,6 +1278,7 @@ router.post('/branches/csv', async (req, res) => {
           opening_time: row.opening_time || '10:00',
           closing_time: row.closing_time || '22:00',
           manager_phone: (row.manager_phone || '').trim() || null,
+          is_active: true,
           is_open: true,
           accepts_orders: true,
           catalog_id: null,
@@ -1311,7 +1313,7 @@ router.post('/branches/csv', async (req, res) => {
 router.patch('/branches/:id', async (req, res) => {
   try {
     const {
-      name, isOpen, acceptsOrders, deliveryRadiusKm, catalogId,
+      name, isOpen, acceptsOrders, isActive, deliveryRadiusKm, catalogId,
       basePrepTimeMin, avgItemPrepMin, managerPhone,
       address, city, pincode, latitude, longitude, area, state, place_id,
     } = req.body;
@@ -1330,6 +1332,7 @@ router.patch('/branches/:id', async (req, res) => {
     }
     if (isOpen             !== undefined) $set.is_open              = isOpen;
     if (acceptsOrders      !== undefined) $set.accepts_orders       = acceptsOrders;
+    if (isActive           !== undefined) $set.is_active            = isActive;
     if (deliveryRadiusKm   !== undefined) $set.delivery_radius_km   = deliveryRadiusKm;
     if (catalogId          !== undefined) $set.catalog_id           = catalogId;
     if (basePrepTimeMin    !== undefined) $set.base_prep_time_min   = parseInt(basePrepTimeMin) || 15;
@@ -1347,8 +1350,11 @@ router.patch('/branches/:id', async (req, res) => {
       { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set }
     );
-    // Invalidate cached branch data
+    // Invalidate cached branch data — both the in-process per-branch cache
+    // (used by webhook routing) and the Mongo _cache list/profile entries
+    // that the dashboard reads via getBranches() / getRestaurantProfile().
     require('../config/memcache').del(`branch:${req.params.id}`);
+    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
 
     // If the branch was renamed, its branch_slug changed — the existing Meta
     // product set filter (custom_label_0 = {old slug}) is now stale. Fire
