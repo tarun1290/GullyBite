@@ -139,6 +139,7 @@ export default function CatalogManagementCard() {
               state={catalogState}
               syncStatus={syncStatus}
               onSwitch={() => setPickerOpen(true)}
+              onCreate={() => setCreateOpen(true)}
               onDelete={() => setDeleteOpen(true)}
               onDisconnect={() => setDisconnectOpen(true)}
             />
@@ -248,7 +249,7 @@ function EmptyState({ onConnect, onCreate }) {
   );
 }
 
-function ConnectedState({ state, syncStatus, onSwitch, onDelete, onDisconnect }) {
+function ConnectedState({ state, syncStatus, onSwitch, onCreate, onDelete, onDisconnect }) {
   // Item count comes from availableCatalogs[i].product_count where connected=true
   // (full-state doesn't expose it on the top-level object).
   const connected = (state.availableCatalogs || []).find((c) => c.id === state.catalogId);
@@ -262,7 +263,13 @@ function ConnectedState({ state, syncStatus, onSwitch, onDelete, onDisconnect })
         <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--tx)', marginBottom: '.3rem' }}>
           {state.catalogName || 'Menu Catalog'}
         </div>
-        <div style={{ fontFamily: 'monospace', fontSize: '.78rem', color: 'var(--dim)', marginBottom: '.45rem', wordBreak: 'break-all' }}>
+        <div
+          title={state.catalogId}
+          style={{
+            fontFamily: 'monospace', fontSize: '.78rem', color: 'var(--dim)', marginBottom: '.45rem',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}
+        >
           {state.catalogId}
         </div>
         <div style={{ fontSize: '.82rem', color: 'var(--tx)', marginBottom: '.2rem' }}>
@@ -284,6 +291,7 @@ function ConnectedState({ state, syncStatus, onSwitch, onDelete, onDisconnect })
 
       <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
         <button type="button" className="btn-g btn-sm" onClick={onSwitch}>Switch catalog</button>
+        <button type="button" className="btn-g btn-sm" onClick={onCreate}>Create new catalog</button>
         <button type="button" className="btn-g btn-sm" onClick={onDisconnect}
           style={{ color: '#dc2626', borderColor: '#dc2626' }}
         >
@@ -403,7 +411,13 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
                       </span>
                     )}
                   </div>
-                  <div style={{ fontFamily: 'monospace', fontSize: '.7rem', color: 'var(--dim)', wordBreak: 'break-all' }}>
+                  <div
+                    title={c.id}
+                    style={{
+                      fontFamily: 'monospace', fontSize: '.7rem', color: 'var(--dim)',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}
+                  >
                     {c.id}
                   </div>
                   {c.product_count != null && (
