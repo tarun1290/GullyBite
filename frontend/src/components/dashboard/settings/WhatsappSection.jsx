@@ -3,7 +3,6 @@ import WaConnectBanner from '../WaConnectBanner.jsx';
 import MarketingNumberSection from './MarketingNumberSection.jsx';
 import MarketingWaNumberSection from './MarketingWaNumberSection.jsx';
 import CatalogManagementCard from './CatalogManagementCard.jsx';
-import WabaDetailsCard from './WabaDetailsCard.jsx';
 import { useRestaurant } from '../../../contexts/RestaurantContext.jsx';
 import { useToast } from '../../Toast.jsx';
 import { disconnectWhatsapp } from '../../../api/restaurant.js';
@@ -14,6 +13,32 @@ import { disconnectWhatsapp } from '../../../api/restaurant.js';
 //   2. brokenConnection   — meta_user_id exists but whatsapp_connected=false → Reconnect
 //   3. notConnected       — render WaConnectBanner (reused, non-compact)
 // Change + (initial) Connect both delegate to WaConnectBanner's OAuth flow.
+
+// Color pill for the Meta-reported phone-number quality rating.
+// GREEN/YELLOW/RED are the canonical Meta values; case-insensitive. Anything
+// else renders as plain text. Null/undefined → em-dash. Same logic that
+// previously lived in WabaDetailsCard before that file was removed.
+const QUALITY_PILL_COLORS = {
+  GREEN:  { bg: 'rgba(22,163,74,.10)', fg: 'var(--gb-green-600, #15803d)', label: 'GREEN' },
+  YELLOW: { bg: 'rgba(217,119,6,.10)', fg: 'var(--gb-amber-600, #b45309)', label: 'YELLOW' },
+  RED:    { bg: 'rgba(220,38,38,.10)', fg: 'var(--gb-red-600,   #b91c1c)', label: 'RED' },
+};
+
+function QualityValue({ value }) {
+  if (!value) return <span style={{ color: 'var(--dim)' }}>—</span>;
+  const upper = String(value).toUpperCase();
+  const pill = QUALITY_PILL_COLORS[upper];
+  if (!pill) return <span>{value}</span>;
+  return (
+    <span style={{
+      display: 'inline-block', padding: '.15rem .5rem', borderRadius: 6,
+      fontSize: '.75rem', fontWeight: 600, background: pill.bg, color: pill.fg,
+    }}
+    >
+      {pill.label}
+    </span>
+  );
+}
 
 function StatusBox({ dot, label, sub }) {
   return (
@@ -124,7 +149,13 @@ export default function WhatsappSection() {
                 }}
               >
                 <span style={{ color: 'var(--dim)' }}>WABA ID</span>
-                <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                <span
+                  title={a.waba_id || ''}
+                  style={{
+                    fontFamily: 'monospace',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  }}
+                >
                   {a.waba_id || '—'}
                 </span>
                 <span style={{ color: 'var(--dim)' }}>Phone Number</span>
@@ -135,6 +166,8 @@ export default function WhatsappSection() {
                     <span>{a.name}</span>
                   </>
                 ) : null}
+                <span style={{ color: 'var(--dim)' }}>Quality Rating</span>
+                <span><QualityValue value={a.quality_rating} /></span>
               </div>
             ))}
           </div>
@@ -218,8 +251,6 @@ export default function WhatsappSection() {
         )}
       </div>
     </div>
-
-    <WabaDetailsCard />
 
     <CatalogManagementCard />
 

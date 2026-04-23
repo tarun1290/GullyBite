@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from '../components/Sidebar.jsx';
 import Navbar from '../components/Navbar.jsx';
 import WaConnectBanner from '../components/dashboard/WaConnectBanner.jsx';
+import WabaTokenExpiryBanner from '../components/dashboard/WabaTokenExpiryBanner.jsx';
 import WalletWidget from '../components/dashboard/WalletWidget.jsx';
 import NotificationBell from '../components/dashboard/NotificationBell.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -96,6 +97,7 @@ function DashboardShell() {
             </span>
           </div>
         )}
+        <WabaTokenExpiryBanner />
         <div className="body">
           <Outlet />
         </div>

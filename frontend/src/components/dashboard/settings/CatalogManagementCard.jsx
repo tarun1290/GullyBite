@@ -364,7 +364,11 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
           No catalogs found. Try refreshing, or create a new one.
         </div>
       ) : (
-        <div style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid var(--rim)', borderRadius: 6 }}>
+        <div style={{
+          maxHeight: 320, overflowY: 'auto', overflowX: 'hidden',
+          border: '1px solid var(--rim)', borderRadius: 6,
+        }}
+        >
           {list.map((c) => {
             const isCurrent = c.id === currentCatalogId;
             return (
@@ -376,6 +380,7 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
                   cursor: isCurrent ? 'default' : 'pointer',
                   background: selected === c.id ? 'rgba(79,70,229,.06)' : 'transparent',
                   opacity: isCurrent ? 0.7 : 1,
+                  width: '100%', boxSizing: 'border-box',
                 }}
               >
                 <input
