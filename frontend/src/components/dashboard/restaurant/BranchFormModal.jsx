@@ -19,9 +19,9 @@ function loadGoogleMapsScript() {
   });
 }
 
-// Initialise a map + draggable marker inside `containerId`. Returns the
-// marker so the caller can re-position it later if needed. `onPinDrop`
-// fires after every dragend with the new lat/lng.
+// Initialise a map + draggable marker inside `containerId`. Returns both
+// instances so callers can panTo / setPosition when an autocomplete pick
+// happens. `onPinDrop` fires after every marker dragend with the new lat/lng.
 function initMap(containerId, center, onPinDrop) {
   const el = document.getElementById(containerId);
   if (!el) return null;
@@ -31,7 +31,7 @@ function initMap(containerId, center, onPinDrop) {
     const pos = marker.getPosition();
     onPinDrop({ lat: pos.lat(), lng: pos.lng() });
   });
-  return marker;
+  return { map, marker };
 }
 
 // Mirrors #menu-branch-form + doAddBranch (menu.js:253-294) plus the inline
@@ -103,18 +103,46 @@ export default function BranchFormModal({ open, onClose, onSaved, onCreated, mod
   const [showSuggest, setShowSuggest] = useState(false);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [showMap, setShowMap] = useState(false);
   const [mapLoading, setMapLoading] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
   const [mapCenter, setMapCenter] = useState({ lat: 17.385, lng: 78.4867 }); // Hyderabad default
   const searchTimer = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const mapMarkerRef = useRef(null);
 
   useEffect(() => {
     if (open) {
       setForm(isEdit ? formFromBranch(existingBranch) : emptyForm());
       setSuggestions([]);
       setShowSuggest(false);
-      setShowMap(false);
+      // Edit mode with valid stored coords → centre on the branch. Otherwise
+      // fall back to Hyderabad. The user can always re-position the marker.
+      const lat = isEdit ? Number(existingBranch?.latitude)  : NaN;
+      const lng = isEdit ? Number(existingBranch?.longitude) : NaN;
+      const center = (Number.isFinite(lat) && Number.isFinite(lng))
+        ? { lat, lng }
+        : { lat: 17.385, lng: 78.4867 };
+      setMapCenter(center);
+      setMapLoading(true);
+      loadGoogleMapsScript()
+        .then(() => {
+          setMapLoading(false);
+          // Defer one tick so React commits the map container DOM first.
+          setTimeout(() => {
+            const refs = initMap('gb-branch-map', center, handlePinDrop);
+            if (refs) {
+              mapInstanceRef.current = refs.map;
+              mapMarkerRef.current = refs.marker;
+            }
+          }, 50);
+        })
+        .catch(() => {
+          setMapLoading(false);
+          showToast('Could not load map', 'error');
+        });
+    } else {
+      mapInstanceRef.current = null;
+      mapMarkerRef.current = null;
     }
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -150,21 +178,6 @@ export default function BranchFormModal({ open, onClose, onSaved, onCreated, mod
     } finally {
       setGeocoding(false);
     }
-  };
-
-  const openMap = () => {
-    setShowMap(true);
-    setMapLoading(true);
-    loadGoogleMapsScript()
-      .then(() => {
-        setMapLoading(false);
-        // Defer map init one tick so React renders the container div first.
-        setTimeout(() => initMap('gb-branch-map', mapCenter, handlePinDrop), 50);
-      })
-      .catch(() => {
-        setMapLoading(false);
-        showToast('Could not load map', 'error');
-      });
   };
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -211,6 +224,15 @@ export default function BranchFormModal({ open, onClose, onSaved, onCreated, mod
         placeId: d.place_id || '',
         addrConfirm: parts.join(', '),
       }));
+      // Move the always-visible map marker to the picked address so the user
+      // can fine-tune the pin if Places' coordinates aren't perfect for
+      // delivery routing. Defensive: skip silently if the map isn't ready.
+      if (d.lat != null && d.lng != null && window.google?.maps && mapMarkerRef.current && mapInstanceRef.current) {
+        const next = { lat: d.lat, lng: d.lng };
+        mapMarkerRef.current.setPosition(next);
+        mapInstanceRef.current.panTo(next);
+        setMapCenter(next);
+      }
     } catch (err) {
       showToast('Could not fetch address details: ' + err.message, 'error');
     } finally {
@@ -358,57 +380,36 @@ export default function BranchFormModal({ open, onClose, onSaved, onCreated, mod
                   ✅ {form.addrConfirm}
                 </div>
               )}
-              {/* Pin-on-map fallback: only shows when autocomplete typed but
-                  returned zero suggestions. Hidden once the map opens. */}
-              {suggestions.length === 0 && form.addrSearch.length >= 2 && !showMap && (
-                <button
-                  type="button"
-                  onClick={openMap}
-                  style={{
-                    background: 'transparent', border: 'none', padding: '.3rem 0',
-                    color: 'var(--acc,#4f46e5)', cursor: 'pointer',
-                    fontSize: '.78rem', textAlign: 'left', marginTop: '.3rem',
-                  }}
-                >
-                  📍 Can't find it? Pin on map →
-                </button>
-              )}
-              {showMap && (
-                <div style={{ marginTop: '.55rem' }}>
-                  <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.25rem' }}>
-                    Drag the pin to your branch location
-                  </div>
-                  {mapLoading ? (
-                    <div style={{
-                      width: '100%', height: 280, borderRadius: 8,
-                      border: '1px solid var(--rim)', background: 'var(--ink2,#f4f4f5)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '.82rem', color: 'var(--dim)',
-                    }}
-                    >
-                      Loading map…
-                    </div>
-                  ) : (
-                    <div
-                      id="gb-branch-map"
-                      style={{ width: '100%', height: 280, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--rim)' }}
-                    />
-                  )}
-                  {geocoding && (
-                    <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.3rem' }}>
-                      📍 Getting address…
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    className="btn-g btn-sm"
-                    onClick={() => setShowMap(false)}
-                    style={{ marginTop: '.4rem' }}
-                  >
-                    ✕ Close map
-                  </button>
+              {/* Always-visible map. Centred on existing coords in edit mode,
+                  on Hyderabad for new branches. Marker syncs to autocomplete
+                  picks (see pickSuggestion); manual drags fire reverse-geocode
+                  via handlePinDrop. */}
+              <div style={{ marginTop: '.55rem' }}>
+                <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.25rem' }}>
+                  Drag the pin to fine-tune your branch location
                 </div>
-              )}
+                {mapLoading ? (
+                  <div style={{
+                    width: '100%', height: 280, borderRadius: 8,
+                    border: '1px solid var(--rim)', background: 'var(--ink2,#f4f4f5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '.82rem', color: 'var(--dim)',
+                  }}
+                  >
+                    Loading map…
+                  </div>
+                ) : (
+                  <div
+                    id="gb-branch-map"
+                    style={{ width: '100%', height: 280, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--rim)' }}
+                  />
+                )}
+                {geocoding && (
+                  <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.3rem' }}>
+                    📍 Getting address…
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="fg">
