@@ -1183,7 +1183,11 @@ router.get('/branches', async (req, res) => {
 
 router.post('/branches', async (req, res) => {
   try {
-    const { name, address, city, pincode, latitude, longitude, area, state, place_id, deliveryRadiusKm, openingTime, closingTime, managerPhone } = req.body;
+    const {
+      name, address, city, pincode, latitude, longitude, area, state, place_id,
+      deliveryRadiusKm, openingTime, closingTime, managerPhone,
+      fssai_number, gst_number,
+    } = req.body;
     if (!latitude || !longitude) return res.status(400).json({ error: 'latitude and longitude are required' });
 
     const branchId = newId();
@@ -1206,6 +1210,8 @@ router.post('/branches', async (req, res) => {
       opening_time: openingTime || '10:00',
       closing_time: closingTime || '22:00',
       manager_phone: managerPhone || null,
+      fssai_number: fssai_number || null,
+      gst_number:   gst_number   || null,
       is_open: true,
       accepts_orders: true,
       catalog_id: null,
@@ -1261,6 +1267,7 @@ router.post('/branches/csv', async (req, res) => {
           _id: branchId,
           restaurant_id: req.restaurantId,
           name,
+          branch_slug: slugify(name, 20) || branchId.slice(0, 8),
           address,
           city: (row.city    || '').trim() || null,
           pincode: (row.pincode || '').trim() || null,
