@@ -79,9 +79,14 @@ export default function BranchesSection() {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingBranch, setEditingBranch] = useState(null); // null = create mode; row = edit mode
   const [expandedId, setExpandedId] = useState(null);
   const [expandedPane, setExpandedPane] = useState('hours'); // 'hours' | 'menu'
   const [savingField, setSavingField] = useState(null); // `${id}:${field}` while PATCH in-flight
+
+  const openCreate = () => { setEditingBranch(null); setModalOpen(true); };
+  const openEdit = (b) => { setEditingBranch(b); setModalOpen(true); };
+  const closeModal = () => { setModalOpen(false); setEditingBranch(null); };
 
   // CSV state
   const [csvRows, setCsvRows] = useState([]);
@@ -226,7 +231,7 @@ export default function BranchesSection() {
             <button
               type="button"
               className="btn-p btn-sm"
-              onClick={() => setModalOpen(true)}
+              onClick={openCreate}
             >
               + Add Branch
             </button>
@@ -382,6 +387,21 @@ export default function BranchesSection() {
 
                 {isExpanded && (
                   <div className="bcard-body" style={{ padding: '.9rem' }}>
+                    {/* Top action row — full editor (modal) + space for future Phase-3 Delete */}
+                    <div
+                      className="bcard-actions"
+                      style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '.7rem' }}
+                    >
+                      <button
+                        type="button"
+                        className="btn-g btn-sm"
+                        onClick={(e) => { e.stopPropagation(); openEdit(b); }}
+                        title="Edit all branch details (name, address, hours, FSSAI…)"
+                      >
+                        ✏️ Edit Branch
+                      </button>
+                    </div>
+
                     {/* Quick-info pairs */}
                     <div
                       className="ipair-row"
@@ -497,11 +517,17 @@ export default function BranchesSection() {
 
       <BranchFormModal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onCreated={() => {
+        mode={editingBranch ? 'edit' : 'create'}
+        existingBranch={editingBranch}
+        onClose={closeModal}
+        onSaved={() => {
           load();
-          setTimeout(load, 3500);
-          setTimeout(load, 7000);
+          // Create flow runs background catalog provisioning, so a couple
+          // of delayed reloads catch the catalog_id once it's saved.
+          if (!editingBranch) {
+            setTimeout(load, 3500);
+            setTimeout(load, 7000);
+          }
         }}
       />
     </div>

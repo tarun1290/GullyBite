@@ -1316,6 +1316,7 @@ router.patch('/branches/:id', async (req, res) => {
       name, isOpen, acceptsOrders, isActive, deliveryRadiusKm, catalogId,
       basePrepTimeMin, avgItemPrepMin, managerPhone,
       address, city, pincode, latitude, longitude, area, state, place_id,
+      openingTime, closingTime, fssai_number, gst_number,
     } = req.body;
     const $set = {};
     let nameChanged = false;
@@ -1346,6 +1347,11 @@ router.patch('/branches/:id', async (req, res) => {
     if (area               !== undefined) $set.area                 = area || null;
     if (state              !== undefined) $set.state                = state || null;
     if (place_id           !== undefined) $set.place_id             = place_id || null;
+    if (openingTime        !== undefined) $set.opening_time         = openingTime;
+    if (closingTime        !== undefined) $set.closing_time         = closingTime;
+    if (fssai_number       !== undefined) $set.fssai_number         = fssai_number || null;
+    if (gst_number         !== undefined) $set.gst_number           = gst_number || null;
+    if (Object.keys($set).length > 0) $set.updated_at = new Date();
     await col('branches').updateOne(
       { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set }

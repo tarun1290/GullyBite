@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../../../components/Toast.jsx';
-import { createBranch, placesAutocomplete, placesDetails } from '../../../api/restaurant.js';
+import { createBranch, updateBranch, placesAutocomplete, placesDetails } from '../../../api/restaurant.js';
 
 // Mirrors #menu-branch-form + doAddBranch (menu.js:253-294) plus the inline
 // address autocomplete flow (menu.js:40-109). Legacy kept this as an inline
@@ -34,7 +34,37 @@ function emptyForm() {
   };
 }
 
-export default function BranchFormModal({ open, onClose, onCreated }) {
+// Convert an existing branch row into the form's local shape. Used in edit
+// mode to prefill all inputs. Lat/lng are persisted as numbers but the form
+// stores them as strings (input.value). Hours are sliced to HH:MM in case
+// the row has seconds (HH:MM:SS).
+function formFromBranch(b) {
+  if (!b) return emptyForm();
+  return {
+    name:             b.name || '',
+    city:             b.city || '',
+    addrSearch:       b.address || '',
+    addrConfirm:      b.address || '',
+    fullAddress:      b.address || '',
+    lat:              b.latitude  != null ? String(b.latitude)  : '',
+    lng:              b.longitude != null ? String(b.longitude) : '',
+    area:             b.area || '',
+    pincode:          b.pincode || '',
+    state:            b.state || '',
+    placeId:          b.place_id || '',
+    deliveryRadiusKm: b.delivery_radius_km != null ? String(b.delivery_radius_km) : '5',
+    openingTime:      (b.opening_time || '10:00').slice(0, 5),
+    closingTime:      (b.closing_time || '22:00').slice(0, 5),
+    managerPhone:     b.manager_phone || '',
+    fssai:            b.fssai_number || '',
+    gst:              b.gst_number || '',
+  };
+}
+
+export default function BranchFormModal({ open, onClose, onSaved, onCreated, mode = 'create', existingBranch = null }) {
+  // `onSaved` is the unified callback for both create + edit. `onCreated` is
+  // kept as a back-compat alias for the create-only callsite.
+  const isEdit = mode === 'edit' && !!existingBranch;
   const { showToast } = useToast();
   const [form, setForm] = useState(emptyForm());
   const [suggestions, setSuggestions] = useState([]);
@@ -45,14 +75,15 @@ export default function BranchFormModal({ open, onClose, onCreated }) {
 
   useEffect(() => {
     if (open) {
-      setForm(emptyForm());
+      setForm(isEdit ? formFromBranch(existingBranch) : emptyForm());
       setSuggestions([]);
       setShowSuggest(false);
     }
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-  }, [open]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEdit, existingBranch]);
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -114,37 +145,54 @@ export default function BranchFormModal({ open, onClose, onCreated }) {
     if (!name || isNaN(lat) || isNaN(lng)) {
       return showToast('Branch name and address selection are required', 'error');
     }
-    if (!/^\d{14}$/.test(fssai)) {
-      return showToast('FSSAI license must be exactly 14 digits', 'error');
+    // FSSAI rules:
+    //   create: required (legacy behavior).
+    //   edit + branch already had FSSAI: required (don't allow blanking it).
+    //   edit + branch had no FSSAI: optional (don't force the user to add one
+    //     mid-rename); but if they DO type something, format must be valid.
+    const fssaiRequired = !isEdit || !!existingBranch?.fssai_number;
+    if (fssaiRequired) {
+      if (!/^\d{14}$/.test(fssai)) {
+        return showToast('FSSAI license must be exactly 14 digits', 'error');
+      }
+    } else if (fssai && !/^\d{14}$/.test(fssai)) {
+      return showToast('FSSAI license must be exactly 14 digits if provided', 'error');
     }
     if (gst && !GST_RE.test(gst)) {
       return showToast('GST number is not a valid 15-character GSTIN', 'error');
     }
 
     setSaving(true);
+    const body = {
+      name,
+      city: form.city || '',
+      address: form.fullAddress,
+      latitude: lat,
+      longitude: lng,
+      pincode: form.pincode || '',
+      area: form.area || '',
+      state: form.state || '',
+      place_id: form.placeId || '',
+      deliveryRadiusKm: parseFloat(form.deliveryRadiusKm) || 5,
+      openingTime: form.openingTime,
+      closingTime: form.closingTime,
+      managerPhone: form.managerPhone,
+      fssai_number: fssai || null,
+      gst_number: gst || undefined,
+    };
     try {
-      await createBranch({
-        name,
-        city: form.city || '',
-        address: form.fullAddress,
-        latitude: lat,
-        longitude: lng,
-        pincode: form.pincode || '',
-        area: form.area || '',
-        state: form.state || '',
-        place_id: form.placeId || '',
-        deliveryRadiusKm: parseFloat(form.deliveryRadiusKm) || 5,
-        openingTime: form.openingTime,
-        closingTime: form.closingTime,
-        managerPhone: form.managerPhone,
-        fssai_number: fssai,
-        gst_number: gst || undefined,
-      });
-      showToast(`✅ "${name}" added! Creating WhatsApp catalog…`, 'success');
-      if (onCreated) onCreated();
+      if (isEdit) {
+        await updateBranch(existingBranch.id, body);
+        showToast(`✅ "${name}" updated`, 'success');
+      } else {
+        await createBranch(body);
+        showToast(`✅ "${name}" added! Creating WhatsApp catalog…`, 'success');
+      }
+      if (onSaved) onSaved();
+      else if (onCreated) onCreated();
       onClose();
     } catch (err) {
-      showToast(err?.response?.data?.error || err.message || 'Failed to create branch', 'error');
+      showToast(err?.response?.data?.error || err.message || (isEdit ? 'Failed to update branch' : 'Failed to create branch'), 'error');
     } finally {
       setSaving(false);
     }
@@ -163,7 +211,7 @@ export default function BranchFormModal({ open, onClose, onCreated }) {
     >
       <div className="card" style={{ maxWidth: 560, width: '100%', background: 'var(--surface,#fff)' }}>
         <div className="ch" style={{ justifyContent: 'space-between' }}>
-          <h3>+ Add Branch</h3>
+          <h3>{isEdit ? 'Edit Branch' : '+ Add Branch'}</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>✕</button>
         </div>
         <div className="cb">
@@ -296,7 +344,9 @@ export default function BranchFormModal({ open, onClose, onCreated }) {
 
           <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
             <button type="button" className="btn-p" onClick={handleSave} disabled={saving}>
-              {saving ? 'Creating…' : '+ Add Branch'}
+              {saving
+                ? (isEdit ? 'Saving…' : 'Creating…')
+                : (isEdit ? 'Save Changes' : '+ Add Branch')}
             </button>
             <button type="button" className="btn-g" onClick={onClose} disabled={saving}>
               Cancel
