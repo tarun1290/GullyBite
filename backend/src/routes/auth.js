@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const { rateLimitFn } = require('../middleware/rateLimit');
 const log = require('../utils/logger').child({ component: 'auth' });
 const { frontendUrl, FRONTEND_URL } = require('../utils/url');
+const { invalidateCache } = require('../config/cache');
 
 // ── PIN LOGIN LIMITS ───────────────────────────────────────────
 // Route-level limiter is keyed on ip+restaurantId+phone so an attacker cannot
@@ -1812,6 +1813,10 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
   } else {
     log.info({ restaurantId, savedCount, firstSavedWabaId, firstSavedPhoneId }, 'WABA accounts saved');
   }
+
+  // Bust the GET /api/restaurant 10-min profile cache so useRestaurant()
+  // sees the new waba_accounts immediately after a connect / reconnect.
+  await invalidateCache(`restaurant:${restaurantId}:profile`);
 }
 
 // ─── SUBSCRIBE WABA TO WEBHOOKS ───────────────────────────────
@@ -1988,6 +1993,11 @@ async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
 
   // Propagate catalog_id to existing branches that don't have one
   await _linkCatalogToBranches(restaurantId, catalogId);
+
+  // Bust the GET /api/restaurant 10-min profile cache so useRestaurant()
+  // picks up the new catalog_id on each waba_accounts row immediately
+  // after async catalog provisioning completes.
+  await invalidateCache(`restaurant:${restaurantId}:profile`);
 }
 
 // ─── ENABLE CART ICON ON A PHONE NUMBER ──────────────────────

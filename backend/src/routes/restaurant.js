@@ -243,18 +243,52 @@ router.post('/catalog-diagnosis/fix', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 
 // GET /api/restaurant — Get my restaurant + stats
+//
+// waba_accounts shape MUST stay identical to the projection in
+// backend/src/routes/auth.js /auth/me handler (~L1287). The Settings →
+// WhatsApp card and other useRestaurant() consumers expect the same field
+// set from both endpoints — change both together.
 router.get('/', async (req, res) => {
   try {
     const data = await getCached(`restaurant:${req.restaurantId}:profile`, async () => {
       const r = await col('restaurants').findOne({ _id: req.restaurantId });
       if (!r) return null;
-      const [branch_count, wa_count] = await Promise.all([
+      const [branch_count, wa_count, waAccounts] = await Promise.all([
         col('branches').countDocuments({ restaurant_id: req.restaurantId }),
         col('whatsapp_accounts').countDocuments({ restaurant_id: req.restaurantId, is_active: true }),
+        col('whatsapp_accounts')
+          .find(
+            { restaurant_id: req.restaurantId, is_active: true },
+            { projection: {
+                waba_id: 1, phone_number_id: 1, phone_display: 1, display_name: 1,
+                quality_rating: 1, is_active: 1, phone_registered: 1,
+                business_username: 1, username_status: 1, username_suggestions: 1,
+                catalog_id: 1, created_at: 1,
+            }},
+          )
+          .sort({ created_at: 1 })
+          .toArray(),
       ]);
+      const waba_accounts = waAccounts.map(w => ({
+        waba_id: w.waba_id,
+        phone_number_id: w.phone_number_id,
+        phone_display: w.phone_display,
+        display_name: w.display_name,
+        quality_rating: w.quality_rating,
+        is_active: w.is_active,
+        phone_registered: w.phone_registered,
+        business_username: w.business_username,
+        username_status: w.username_status,
+        username_suggestions: w.username_suggestions,
+        catalog_id: w.catalog_id,
+        // Back-compat aliases — match /auth/me. Remove when the design-token
+        // rollout touches WhatsappSection.jsx (kept in sync with /auth/me).
+        name: w.display_name,
+        phone: w.phone_display,
+      }));
       const out = mapId(r);
       delete out.meta_access_token;
-      return { ...out, branch_count, wa_count };
+      return { ...out, branch_count, wa_count, waba_accounts };
     }, 600);
     if (!data) return res.status(404).json({ error: 'Not found' });
     res.json(data);
@@ -786,6 +820,11 @@ router.post('/whatsapp/disconnect', requirePermission('manage_users'), async (re
         },
       }
     );
+
+    // Bust the GET /api/restaurant 10-min profile cache so the Settings
+    // page reflects the disconnect immediately (without this, the card
+    // keeps showing the WABA for up to 10 min after disconnect).
+    await invalidateCache(`restaurant:${req.restaurantId}:profile`);
 
     logActivity({
       actorType: 'restaurant',
