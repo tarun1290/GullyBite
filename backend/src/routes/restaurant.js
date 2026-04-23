@@ -1382,6 +1382,70 @@ router.patch('/branches/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// POST /api/restaurant/branches/:id/soft-delete
+// Soft-removes a branch from the restaurant's active set. The row stays in
+// Mongo so menu items / orders / catalog references remain intact and the
+// row can be restored without re-OAuth or re-syncing. Sets is_active=false
+// AND deleted_at so the frontend can distinguish "admin toggled off" (just
+// is_active) from "deleted" (deleted_at present).
+router.post('/branches/:id/soft-delete', async (req, res) => {
+  try {
+    const branch = await col('branches').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+    if (branch.deleted_at) return res.json({ success: true, branch }); // idempotent — already deleted
+
+    const now = new Date();
+    await col('branches').updateOne(
+      { _id: req.params.id, restaurant_id: req.restaurantId },
+      { $set: { is_active: false, deleted_at: now, updated_at: now } }
+    );
+    require('../config/memcache').del(`branch:${req.params.id}`);
+    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
+
+    log({
+      actorType: 'restaurant', actorId: String(req.restaurantId),
+      actorName: req.restaurant?.business_name || 'Restaurant',
+      action: 'branch.soft_deleted', category: 'settings',
+      description: `Branch "${branch.name}" soft-deleted`,
+      restaurantId: String(req.restaurantId),
+      resourceType: 'branch', resourceId: req.params.id,
+      severity: 'info',
+    });
+    res.json({ success: true, branch: { ...branch, is_active: false, deleted_at: now, updated_at: now } });
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
+// POST /api/restaurant/branches/:id/restore
+// Reverses soft-delete. is_active=true and deleted_at is unset. Used from
+// the "Restore branch" button on greyed-out cards.
+router.post('/branches/:id/restore', async (req, res) => {
+  try {
+    const branch = await col('branches').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+    if (!branch.deleted_at && branch.is_active !== false) return res.json({ success: true, branch }); // idempotent — already active
+
+    const now = new Date();
+    await col('branches').updateOne(
+      { _id: req.params.id, restaurant_id: req.restaurantId },
+      { $set: { is_active: true, updated_at: now }, $unset: { deleted_at: '' } }
+    );
+    require('../config/memcache').del(`branch:${req.params.id}`);
+    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
+
+    log({
+      actorType: 'restaurant', actorId: String(req.restaurantId),
+      actorName: req.restaurant?.business_name || 'Restaurant',
+      action: 'branch.restored', category: 'settings',
+      description: `Branch "${branch.name}" restored`,
+      restaurantId: String(req.restaurantId),
+      resourceType: 'branch', resourceId: req.params.id,
+      severity: 'info',
+    });
+    const { deleted_at: _ignore, ...rest } = branch;
+    res.json({ success: true, branch: { ...rest, is_active: true, updated_at: now } });
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
 // GET /api/restaurant/branches/:branchId/hours — operating hours for a branch
 router.get('/branches/:branchId/hours', async (req, res) => {
   try {

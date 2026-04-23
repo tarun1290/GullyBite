@@ -8,6 +8,8 @@ import {
   getBranches,
   updateBranch,
   importBranchesCsv,
+  softDeleteBranch,
+  restoreBranch,
 } from '../../../api/restaurant.js';
 
 // Mirrors renderBranchCard + loadBranches + doToggle + doUploadOutletCsv
@@ -80,6 +82,9 @@ export default function BranchesSection() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingBranch, setEditingBranch] = useState(null); // null = create mode; row = edit mode
+  const [deletingBranch, setDeletingBranch] = useState(null); // null = no confirm modal; row = confirm visible
+  const [deleting, setDeleting] = useState(false);
+  const [restoringId, setRestoringId] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
   const [expandedPane, setExpandedPane] = useState('hours'); // 'hours' | 'menu'
   const [savingField, setSavingField] = useState(null); // `${id}:${field}` while PATCH in-flight
@@ -87,6 +92,38 @@ export default function BranchesSection() {
   const openCreate = () => { setEditingBranch(null); setModalOpen(true); };
   const openEdit = (b) => { setEditingBranch(b); setModalOpen(true); };
   const closeModal = () => { setModalOpen(false); setEditingBranch(null); };
+
+  const confirmDelete = async () => {
+    if (!deletingBranch) return;
+    const id = deletingBranch.id;
+    setDeleting(true);
+    try {
+      await softDeleteBranch(id);
+      // Force-collapse if the deleted branch was expanded — its expand panel
+      // is hidden in the deleted state and we don't want a stale expandedId.
+      if (expandedId === id) setExpandedId(null);
+      setDeletingBranch(null);
+      showToast('Branch deleted — can be restored from the list', 'success');
+      load();
+    } catch (err) {
+      showToast(err?.response?.data?.error || err.message || 'Delete failed', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleRestore = async (b) => {
+    setRestoringId(b.id);
+    try {
+      await restoreBranch(b.id);
+      showToast(`✅ "${b.name}" restored`, 'success');
+      load();
+    } catch (err) {
+      showToast(err?.response?.data?.error || err.message || 'Restore failed', 'error');
+    } finally {
+      setRestoringId(null);
+    }
+  };
 
   // CSV state
   const [csvRows, setCsvRows] = useState([]);
@@ -214,6 +251,20 @@ export default function BranchesSection() {
     [expandedId, branches],
   );
 
+  // Two-group ordering: active (top) before deleted (bottom). Within each
+  // group, most recently updated first. Falls back to created_at if a row
+  // hasn't been updated since insert.
+  const sortedBranches = useMemo(() => {
+    const sortKey = (b) => {
+      const t = b.updated_at || b.created_at || 0;
+      const ms = new Date(t).getTime();
+      return Number.isFinite(ms) ? ms : 0;
+    };
+    const active = branches.filter((b) => !b.deleted_at).sort((a, b) => sortKey(b) - sortKey(a));
+    const deleted = branches.filter((b) => !!b.deleted_at).sort((a, b) => sortKey(b) - sortKey(a));
+    return [...active, ...deleted];
+  }, [branches]);
+
   return (
     <div>
       {/* Header */}
@@ -330,8 +381,9 @@ export default function BranchesSection() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '.7rem' }}>
-          {branches.map((b) => {
-            const isExpanded = expandedId === b.id;
+          {sortedBranches.map((b) => {
+            const isDeleted = !!b.deleted_at;
+            const isExpanded = !isDeleted && expandedId === b.id;
             return (
               <div
                 key={b.id}
@@ -342,16 +394,31 @@ export default function BranchesSection() {
                   border: '1px solid var(--bdr,#e5e7eb)',
                   borderRadius: 10,
                   overflow: 'hidden',
+                  opacity: isDeleted ? 0.55 : 1,
+                  position: 'relative',
                 }}
               >
+                {isDeleted && (
+                  <span
+                    style={{
+                      position: 'absolute', top: '.5rem', right: '.6rem',
+                      background: '#fee2e2', color: '#b91c1c',
+                      fontSize: '.65rem', fontWeight: 700, letterSpacing: '.04em',
+                      padding: '.15rem .5rem', borderRadius: 4, zIndex: 1,
+                    }}
+                  >
+                    DELETED
+                  </span>
+                )}
                 <div
                   className="bcard-hd"
                   style={{
                     display: 'flex', alignItems: 'flex-start', gap: '.7rem',
-                    padding: '.75rem .95rem', cursor: 'pointer',
+                    padding: '.75rem .95rem',
+                    cursor: isDeleted ? 'default' : 'pointer',
                     background: isExpanded ? 'var(--ink2,#f4f4f5)' : 'transparent',
                   }}
-                  onClick={() => setExpandedId(isExpanded ? null : b.id)}
+                  onClick={isDeleted ? undefined : () => setExpandedId(isExpanded ? null : b.id)}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="bcard-name" style={{ fontWeight: 700, fontSize: '.95rem' }}>
@@ -379,18 +446,40 @@ export default function BranchesSection() {
                     {b.gst_number && (
                       <span className="badge bg" title={b.gst_number} style={{ fontSize: '.65rem' }}>GST ✓</span>
                     )}
-                    <span style={{ fontSize: '.85rem', color: 'var(--dim)', marginLeft: '.4rem' }}>
-                      {isExpanded ? '▾' : '▸'}
-                    </span>
+                    {!isDeleted && (
+                      <span style={{ fontSize: '.85rem', color: 'var(--dim)', marginLeft: '.4rem' }}>
+                        {isExpanded ? '▾' : '▸'}
+                      </span>
+                    )}
                   </div>
                 </div>
 
+                {isDeleted && (
+                  <div
+                    style={{
+                      padding: '.6rem .95rem .75rem',
+                      borderTop: '1px solid var(--bdr,#e5e7eb)',
+                      display: 'flex', justifyContent: 'flex-end',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn-g btn-sm"
+                      onClick={() => handleRestore(b)}
+                      disabled={restoringId === b.id}
+                      style={{ opacity: 1 }}
+                    >
+                      {restoringId === b.id ? 'Restoring…' : '↺ Restore branch'}
+                    </button>
+                  </div>
+                )}
+
                 {isExpanded && (
                   <div className="bcard-body" style={{ padding: '.9rem' }}>
-                    {/* Top action row — full editor (modal) + space for future Phase-3 Delete */}
+                    {/* Top action row — full editor + soft-delete */}
                     <div
                       className="bcard-actions"
-                      style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '.7rem' }}
+                      style={{ display: 'flex', justifyContent: 'flex-end', gap: '.4rem', marginBottom: '.7rem' }}
                     >
                       <button
                         type="button"
@@ -399,6 +488,14 @@ export default function BranchesSection() {
                         title="Edit all branch details (name, address, hours, FSSAI…)"
                       >
                         ✏️ Edit Branch
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-del btn-sm"
+                        onClick={(e) => { e.stopPropagation(); setDeletingBranch(b); }}
+                        title="Soft-delete this branch (recoverable)"
+                      >
+                        🗑 Delete
                       </button>
                     </div>
 
@@ -512,6 +609,67 @@ export default function BranchesSection() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {deletingBranch && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Delete branch"
+          onClick={deleting ? undefined : () => setDeletingBranch(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: 'var(--surface,#fff)', borderRadius: 10, maxWidth: 460, width: '100%',
+              boxShadow: '0 12px 40px rgba(0,0,0,.18)', overflow: 'hidden',
+            }}
+          >
+            <div className="ch" style={{ justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0 }}>Delete this branch?</h3>
+              <button
+                type="button" className="btn-g btn-sm"
+                onClick={() => setDeletingBranch(null)} disabled={deleting}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="cb">
+              <div style={{
+                background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6,
+                padding: '.75rem .85rem', color: '#92400e', fontSize: '.82rem', marginBottom: '.85rem',
+              }}
+              >
+                <strong>{deletingBranch.name}</strong> will be hidden from the platform but can be restored later.
+                Customers can no longer order from this branch.
+              </div>
+              <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+                <button
+                  type="button" className="btn-g btn-sm"
+                  onClick={() => setDeletingBranch(null)} disabled={deleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmDelete}
+                  disabled={deleting}
+                  style={{
+                    background: '#dc2626', color: '#fff', border: 'none',
+                    borderRadius: 6, padding: '.4rem .9rem', fontSize: '.8rem', fontWeight: 600,
+                    cursor: deleting ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {deleting ? 'Deleting…' : 'Delete branch'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -916,6 +916,18 @@ export async function updateBranch(id, body) {
   return data;
 }
 
+// POST /api/restaurant/branches/:id/soft-delete — sets is_active=false + deleted_at.
+export async function softDeleteBranch(id) {
+  const { data } = await client.post(`/api/restaurant/branches/${id}/soft-delete`);
+  return data;
+}
+
+// POST /api/restaurant/branches/:id/restore — clears deleted_at, sets is_active=true.
+export async function restoreBranch(id) {
+  const { data } = await client.post(`/api/restaurant/branches/${id}/restore`);
+  return data;
+}
+
 // POST /api/restaurant/branches/csv (menu.js:217) — body { branches: [ … ] }
 // Geocoding happens client-side before this call (Nominatim, 1 req/sec).
 export async function importBranchesCsv(branchesBody) {
