@@ -693,7 +693,7 @@ router.get('/callback', async (req, res) => {
 
     // Auto-fetch catalog info using system token (best-effort)
     try {
-      const catToken = metaConfig.catalogToken;
+      const catToken = metaConfig.systemUserToken;
       if (catToken) {
         // [WABA-BIND-FIX] Use the EXPLICIT linked_waba_id we recorded during
         // _saveWabaAccounts, not "the first WABA in the collection". This is
@@ -927,7 +927,7 @@ router.post('/connect-meta', requireAuth, express.json(), async (req, res) => {
     // [WABA-BIND-FIX] Read the catalog for the EXPLICITLY linked WABA, not
     // "the first wa_account row found". The linkage was recorded by
     // _saveWabaAccounts as restaurants.linked_phone_number_id.
-    const catToken = metaConfig.catalogToken;
+    const catToken = metaConfig.systemUserToken;
     if (catToken) {
       try {
         const linkedRest = await col('restaurants').findOne(
@@ -1876,7 +1876,7 @@ async function _registerPhoneNumber(phoneNumberId, _accessToken) {
 // Creates one Meta catalog per WABA (if missing), links it to the WABA,
 // enables the cart icon on every phone number, and propagates to branches.
 async function _provisionWabaCatalog(restaurantId, wabaId, _accessToken) {
-  const catToken = metaConfig.catalogToken || _accessToken;
+  const catToken = metaConfig.systemUserToken || _accessToken;
   if (!catToken) { log.warn('No catalog token available, skipping'); return; }
 
   // Check if any account for this WABA already has a catalog_id

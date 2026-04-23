@@ -3323,7 +3323,7 @@ router.get('/catalog/details', async (req, res) => {
     const catalogId = restaurant?.meta_catalog_id;
     if (!catalogId) return res.status(404).json({ error: 'No catalog connected.' });
 
-    const token = metaConfig.catalogToken;
+    const token = metaConfig.systemUserToken;
     if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
     const response = await axios.get(
@@ -3352,7 +3352,7 @@ router.put('/catalog/settings', async (req, res) => {
     const { name } = req.body;
     if (!name?.trim()) return res.status(400).json({ error: 'Catalog name is required.' });
 
-    const token = metaConfig.catalogToken;
+    const token = metaConfig.systemUserToken;
     if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
     // Ensure admin access before updating
@@ -3833,7 +3833,7 @@ router.post('/catalog/create-new', requireApproved, async (req, res) => {
     const bizId = restaurant?.meta_business_id || metaConfig.businessId;
     if (!bizId) return res.status(400).json({ error: 'No Meta Business ID configured. Complete WhatsApp setup first.' });
 
-    const token = metaConfig.catalogToken;
+    const token = metaConfig.systemUserToken;
     if (!token) return res.status(500).json({ error: 'Meta token not configured. Contact support.' });
 
     const response = await axios.post(
@@ -3874,7 +3874,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
   if (!catalogId || catalogId === 'undefined' || catalogId === 'null') {
     return res.status(400).json({ error: 'Invalid catalog ID' });
   }
-  const token = metaConfig.catalogToken;
+  const token = metaConfig.systemUserToken;
   if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
   const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
@@ -3977,7 +3977,7 @@ router.post('/catalog/connect-waba', async (req, res) => {
     const wa = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
     if (!wa?.waba_id) return res.status(400).json({ error: 'No WABA connected. Complete WhatsApp setup first.' });
 
-    const token = metaConfig.catalogToken;
+    const token = metaConfig.systemUserToken;
     if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
     await axios.post(
@@ -4034,7 +4034,7 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
   const catalogId = wa?.catalog_id || restaurant?.meta_catalog_id;
   if (!catalogId) return res.status(400).json({ error: 'No catalog connected.' });
 
-  const token = metaConfig.catalogToken;
+  const token = metaConfig.systemUserToken;
   if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
   logger.info({ catalogId, wabaId: wa.waba_id }, 'Catalog disconnect requested');
@@ -4160,7 +4160,7 @@ router.put('/menu/:itemId/branch', requirePermission('manage_menu'), async (req,
 router.post('/catalog/merge', requireApproved, async (req, res) => {
   try {
     const { primary_catalog_id } = req.body;
-    const token = metaConfig.catalogToken;
+    const token = metaConfig.systemUserToken;
     if (!token) return res.status(500).json({ error: 'Meta token not configured.' });
 
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
@@ -4362,7 +4362,7 @@ router.get('/catalogs', async (req, res) => {
       return res.status(400).json({ error: 'Meta Business not connected. Complete WhatsApp setup first.' });
     }
 
-    const catToken = metaConfig.catalogToken;
+    const catToken = metaConfig.systemUserToken;
     if (!catToken) return res.status(500).json({ error: 'No Meta token configured. Please contact support.' });
 
     // Fetch ALL catalogs from business AND connected catalogs from WABA in parallel
@@ -4400,7 +4400,7 @@ router.get('/catalogs', async (req, res) => {
     if (wa_acc?.phone_number_id && activeCatalogId) {
       try {
         const csResp = await axios.get(`${metaConfig.graphUrl}/${wa_acc.phone_number_id}/whatsapp_commerce_settings`, {
-          headers: { Authorization: `Bearer ${metaConfig.catalogToken}` },
+          headers: { Authorization: `Bearer ${metaConfig.systemUserToken}` },
         });
         commerceEnabled = !!csResp.data?.data?.[0]?.is_catalog_visible;
       } catch (_) { /* commerce settings may not exist yet */ }
@@ -6283,7 +6283,7 @@ router.post('/catalog/register-feed', async (req, res) => {
     const restaurant = await col('restaurants').findOne({ _id: req.restaurantId });
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
 
-    const catToken = metaConfig.catalogToken || wa_acc?.access_token;
+    const catToken = metaConfig.systemUserToken || wa_acc?.access_token;
     if (!catToken) return res.status(400).json({ error: 'No Meta token configured. Please contact support.' });
 
     // Generate or reuse feed token
@@ -6357,7 +6357,7 @@ router.get('/catalog/feed-status', async (req, res) => {
     let lastUpload = null;
     try {
       const r = await axios.get(`${GRAPH}/${restaurant.meta_feed_id}/uploads`, {
-        params: { access_token: metaConfig.catalogToken || wa_acc?.access_token, limit: 1, fields: 'end_time,num_detected_items,num_invalid_items,url' },
+        params: { access_token: metaConfig.systemUserToken || wa_acc?.access_token, limit: 1, fields: 'end_time,num_detected_items,num_invalid_items,url' },
         timeout: 10000,
       });
       lastUpload = r.data?.data?.[0] || null;
