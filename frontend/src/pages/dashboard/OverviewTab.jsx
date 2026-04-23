@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatCard from '../../components/StatCard.jsx';
 import SetupWizard from '../../components/dashboard/SetupWizard.jsx';
+import { StatusBadge } from '../../components/dashboard/OrderCard.jsx';
 import { useRestaurant } from '../../contexts/RestaurantContext.jsx';
 import {
   getAnalyticsSummary,
@@ -13,11 +14,6 @@ import {
 function isWaConnected(rest) {
   if (!rest) return false;
   return !!(rest.whatsapp_connected || rest.meta_user_id || (rest.waba_accounts && rest.waba_accounts.length > 0));
-}
-
-function formatOrderStatus(status) {
-  if (!status) return '—';
-  return String(status).replace(/_/g, ' ').toLowerCase();
 }
 
 function customerLabel(order) {
@@ -87,10 +83,10 @@ export default function OverviewTab() {
     return (
       <div id="tab-overview" className="tab on">
         <div className="stats">
-          <StatCard label="Today's Orders" value="—" delta="Loading…" />
-          <StatCard label="Today's Revenue" value="—" delta="Loading…" />
-          <StatCard label="This Week" value="—" delta="Loading…" />
-          <StatCard label="In Progress" value="—" delta="Loading…" />
+          <StatCard label="Today's Orders" value="—" delta="Loading…" color="indigo" />
+          <StatCard label="Today's Revenue" value="—" delta="Loading…" color="green" />
+          <StatCard label="This Week" value="—" delta="Loading…" color="amber" />
+          <StatCard label="In Progress" value="—" delta="Loading…" color="indigo" />
         </div>
       </div>
     );
@@ -117,10 +113,10 @@ export default function OverviewTab() {
       <SetupWizard steps={steps} onWaConnected={handleWaConnected} />
 
       <div className="stats">
-        <StatCard label="Today's Orders"  value={todayOrders}  delta="All statuses" />
-        <StatCard label="Today's Revenue" value={todayRevenue} delta="Delivered only" />
-        <StatCard label="This Week"       value={weekOrders}   delta="Total orders" />
-        <StatCard label="In Progress"     value="—"            delta="Active orders" />
+        <StatCard label="Today's Orders"  value={todayOrders}  delta="All statuses"    color="indigo" />
+        <StatCard label="Today's Revenue" value={todayRevenue} delta="Delivered only"  color="green"  />
+        <StatCard label="This Week"       value={weekOrders}   delta="Total orders"    color="amber"  />
+        <StatCard label="In Progress"     value="—"            delta="Active orders"   color="indigo" />
       </div>
 
       <div className="card">
@@ -133,14 +129,14 @@ export default function OverviewTab() {
         {recent.length === 0 ? (
           <div id="recent-body">
             <div className="empty">
-              <div className="ei">📋</div>
+              <div className="ei">🛵</div>
               <h3>No orders yet</h3>
-              <p>Complete your setup to start receiving orders</p>
+              <p>Orders placed through WhatsApp will appear here</p>
             </div>
           </div>
         ) : (
           <div id="recent-body">
-            <div className="tbl">
+            <div className="tbl tbl-card">
               <table>
                 <thead>
                   <tr>
@@ -148,15 +144,21 @@ export default function OverviewTab() {
                     <th>Customer</th>
                     <th>Total</th>
                     <th>Status</th>
+                    <th>Time</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recent.map((r) => (
                     <tr key={r._id || r.order_number}>
-                      <td><span className="mono">{r.order_number}</span></td>
-                      <td>{customerLabel(r)}</td>
-                      <td>₹{r.total_rs}</td>
-                      <td>{formatOrderStatus(r.status)}</td>
+                      <td data-label="Order"><span className="mono">{r.order_number}</span></td>
+                      <td data-label="Customer">{customerLabel(r)}</td>
+                      <td data-label="Total">₹{r.total_rs}</td>
+                      <td data-label="Status"><StatusBadge status={r.status} /></td>
+                      <td data-label="Time">
+                        {r.created_at
+                          ? new Date(r.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                          : '—'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

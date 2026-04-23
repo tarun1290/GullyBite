@@ -26,6 +26,22 @@ const NEXT_STATUS = {
 
 const ACTIVE_ETA_STATUSES = new Set(['PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED']);
 
+// Row left-accent color by status, mirroring the badge color family. Lets the
+// operator scan the orders table by color before reading the badge text.
+const STATUS_ROW_COLOR = {
+  PENDING_PAYMENT: 'var(--gold)',
+  PREPARING:       'var(--gold)',
+  PAYMENT_FAILED:  'var(--red)',
+  CANCELLED:       'var(--red)',
+  EXPIRED:         'var(--mute)',
+  PAID:            'var(--blue)',
+  PACKED:          'var(--blue)',
+  CONFIRMED:       'var(--wa)',
+  DELIVERED:       'var(--wa)',
+  PAID_OUT:        'var(--wa)',
+  DISPATCHED:      'var(--gb-violet-600)',
+};
+
 export function StatusBadge({ status }) {
   const [cls, label] = STATUS_BADGE[status] || ['bd', (status || '').replace(/_/g, ' ')];
   return <span className={`badge ${cls}`}>{label}</span>;
@@ -75,8 +91,10 @@ export default function OrderCard({ order, onStatusChange, onDispatch, onViewDet
     }
   };
 
+  const statusColor = STATUS_ROW_COLOR[order.status] || 'transparent';
+
   return (
-    <tr>
+    <tr style={{ borderLeft: `3px solid ${statusColor}` }}>
       <td><span className="mono">{order.order_number}</span></td>
       <td>
         <div>{order.customer_name || '—'}</div>
@@ -90,25 +108,26 @@ export default function OrderCard({ order, onStatusChange, onDispatch, onViewDet
       <td style={{ fontSize: '.73rem' }}><EtaCell order={order} /></td>
       <td style={{ fontSize: '.73rem', color: 'var(--dim)' }}>{timeAgo(order.created_at)}</td>
       <td>
-        {next && (
+        <div style={{ display: 'flex', gap: '.35rem', alignItems: 'center', justifyContent: 'flex-end' }}>
+          {next && (
+            <button
+              type="button"
+              className="btn-g btn-sm"
+              onClick={handleNextStatus}
+              disabled={disabled}
+            >
+              {localBusy ? (<><span className="spin" /> …</>) : next[1]}
+            </button>
+          )}
           <button
             type="button"
             className="btn-g btn-sm"
-            onClick={handleNextStatus}
+            onClick={() => onViewDetail?.(order.id)}
             disabled={disabled}
           >
-            {localBusy ? (<><span className="spin" /> …</>) : next[1]}
+            Detail
           </button>
-        )}
-        <button
-          type="button"
-          className="btn-outline btn-sm"
-          style={{ marginLeft: '.4rem' }}
-          onClick={() => onViewDetail?.(order.id)}
-          disabled={disabled}
-        >
-          Detail
-        </button>
+        </div>
       </td>
     </tr>
   );

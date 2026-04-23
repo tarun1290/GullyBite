@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import OrderCard from '../../components/dashboard/OrderCard.jsx';
 import OrderDetailModal from '../../components/dashboard/OrderDetailModal.jsx';
 import { getOrders, updateOrderStatus } from '../../api/restaurant.js';
@@ -28,6 +28,7 @@ export default function OrdersTab() {
   const [loading, setLoading] = useState(true);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [rowBusy, setRowBusy] = useState({});
+  const [lastFetched, setLastFetched] = useState(null);
 
   const fetchOrders = useCallback(
     async (f, opts = {}) => {
@@ -38,6 +39,7 @@ export default function OrdersTab() {
         if (f !== 'ALL') params.status = f;
         const data = await getOrders(params);
         setOrders(Array.isArray(data) ? data : []);
+        setLastFetched(Date.now());
       } catch (_e) {
         showToast('Failed to load orders', 'error');
       } finally {
@@ -85,20 +87,71 @@ export default function OrdersTab() {
     fetchOrders(filter, { silent: true });
   }, [fetchOrders, filter]);
 
+  // Count map drives the chip badges. Computed from the local `orders` array,
+  // so non-ALL filters only populate their own bucket — accurate for "what's
+  // visible right now," which is what the chip badges advertise.
+  const countMap = useMemo(() => {
+    const m = { ALL: orders.length };
+    for (const o of orders) {
+      const s = o.status;
+      if (s) m[s] = (m[s] || 0) + 1;
+    }
+    return m;
+  }, [orders]);
+
+  const refreshedLabel = (() => {
+    if (!lastFetched) return '';
+    const secs = Math.floor((Date.now() - lastFetched) / 1000);
+    if (secs < 60) return 'just now';
+    const mins = Math.floor(secs / 60);
+    return mins === 1 ? '1 min ago' : `${mins} min ago`;
+  })();
+
+  const emptyLabel = filter === 'ALL'
+    ? 'No orders yet'
+    : `No ${filter.toLowerCase().replace(/_/g, ' ')} orders yet`;
+
   return (
     <div id="tab-orders">
       <div className="chips" id="ochips">
-        {FILTER_CHIPS.map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={filter === value ? 'chip on' : 'chip'}
-            onClick={() => setFilter(value)}
-          >
-            {label}
-          </button>
-        ))}
+        {FILTER_CHIPS.map(([value, label]) => {
+          const active = filter === value;
+          const count = countMap[value] || 0;
+          return (
+            <button
+              key={value}
+              type="button"
+              className={active ? 'chip on' : 'chip'}
+              onClick={() => setFilter(value)}
+            >
+              {label}
+              {count > 0 && (
+                <span
+                  style={{
+                    background: active ? 'var(--acc)' : 'var(--rim2)',
+                    color: active ? '#fff' : 'var(--dim)',
+                    fontSize: '.65rem',
+                    fontWeight: 700,
+                    borderRadius: 100,
+                    padding: '.05rem .4rem',
+                    marginLeft: '.2rem',
+                    minWidth: 16,
+                    textAlign: 'center',
+                    display: 'inline-block',
+                  }}
+                >
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
+      {!loading && orders.length > 0 && (
+        <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.6rem', padding: '0 .1rem' }}>
+          Showing {orders.length} orders · Last refreshed {refreshedLabel}
+        </div>
+      )}
       <div className="card">
         <div className="tbl">
           <table>
@@ -125,8 +178,8 @@ export default function OrdersTab() {
                 <tr>
                   <td colSpan={8}>
                     <div className="empty">
-                      <div className="ei">📋</div>
-                      <h3>No orders found</h3>
+                      <div className="ei">🛵</div>
+                      <h3>{emptyLabel}</h3>
                     </div>
                   </td>
                 </tr>
