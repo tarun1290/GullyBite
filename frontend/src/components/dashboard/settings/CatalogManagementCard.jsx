@@ -371,7 +371,7 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
               <label
                 key={c.id}
                 style={{
-                  display: 'flex', alignItems: 'flex-start', gap: '.6rem',
+                  display: 'flex', alignItems: 'center', gap: '.6rem',
                   padding: '.6rem .75rem', borderBottom: '1px solid var(--rim)',
                   cursor: isCurrent ? 'default' : 'pointer',
                   background: selected === c.id ? 'rgba(79,70,229,.06)' : 'transparent',
@@ -385,14 +385,30 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
                   checked={selected === c.id}
                   disabled={isCurrent || busy}
                   onChange={() => setSelected(c.id)}
-                  style={{ marginTop: 3 }}
+                  style={{ flexShrink: 0 }}
                 />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: '.86rem' }}>
-                    {c.name || 'Unnamed catalog'}
+                <div style={{
+                  flex: 1, minWidth: 0,
+                  display: 'flex', flexDirection: 'column', gap: '0.2rem',
+                }}
+                >
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '0.5rem',
+                    fontSize: '.86rem',
+                  }}
+                  >
+                    <span
+                      title={c.name || 'Unnamed catalog'}
+                      style={{
+                        flex: 1, minWidth: 0, fontWeight: 600,
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {c.name || 'Unnamed catalog'}
+                    </span>
                     {isCurrent && (
                       <span style={{
-                        marginLeft: '.4rem', fontSize: '.7rem', fontWeight: 500,
+                        flexShrink: 0, fontSize: '.7rem', fontWeight: 500,
                         color: 'var(--wa, #16a34a)', background: 'rgba(22,163,74,.1)',
                         padding: '.05rem .4rem', borderRadius: 999,
                       }}
@@ -402,7 +418,7 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
                     )}
                     {!isCurrent && c.connected && (
                       <span style={{
-                        marginLeft: '.4rem', fontSize: '.7rem', fontWeight: 500,
+                        flexShrink: 0, fontSize: '.7rem', fontWeight: 500,
                         color: 'var(--dim)', background: 'var(--surface2,#f4f4f5)',
                         padding: '.05rem .4rem', borderRadius: 999,
                       }}
@@ -421,7 +437,7 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
                     {c.id}
                   </div>
                   {c.product_count != null && (
-                    <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.15rem' }}>
+                    <div style={{ fontSize: '.74rem', color: 'var(--dim)' }}>
                       {c.product_count} item{c.product_count === 1 ? '' : 's'}
                     </div>
                   )}
