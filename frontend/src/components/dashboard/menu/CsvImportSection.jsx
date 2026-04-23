@@ -186,17 +186,28 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
     });
   };
 
-  const canUpload = parsed.length > 0 && (multiBranch || (selectedBranchId && !selectedBranchId.startsWith('__')));
+  // True when the user has mapped any column to the 'branch' field — either
+  // via auto-detect on file load (which also sets multiBranch) OR via a
+  // manual mapping change on a column whose original header didn't match
+  // BRANCH_ALIASES. Reactive — flips immediately when mapping changes.
+  const branchColumnMapped = Object.values(mapping).includes('branch');
+  const useMultiBranchPath = multiBranch || branchColumnMapped;
+  const canUpload = parsed.length > 0
+    && (useMultiBranchPath || (selectedBranchId && !selectedBranchId.startsWith('__')));
 
   const handleUpload = async () => {
-    if (!canUpload) {
-      showToast(multiBranch ? 'No rows to upload' : 'Select a specific branch first', 'error');
+    if (!parsed.length) {
+      showToast('No rows to upload', 'error');
+      return;
+    }
+    if (!useMultiBranchPath && (!selectedBranchId || selectedBranchId.startsWith('__'))) {
+      showToast('Select a target branch or map a Branch Name column', 'error');
       return;
     }
     setUploading(true);
     setResult(null);
     try {
-      const r = multiBranch
+      const r = useMultiBranchPath
         ? await uploadMultiBranchMenuCsv({ items: parsed, branchId: selectedBranchId })
         : await uploadMenuCsv(selectedBranchId, parsed);
       setResult(r);
@@ -302,16 +313,23 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
             </p>
 
             {!multiBranch && (
-              <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', marginBottom: '.6rem' }}>
-                <label style={{ fontSize: '.82rem', color: 'var(--dim)' }}>Target branch:</label>
-                <select
-                  value={selectedBranchId}
-                  onChange={(e) => setSelectedBranchId(e.target.value)}
-                  style={{ padding: '.4rem .6rem', borderRadius: 7, border: '1px solid var(--rim)', fontSize: '.85rem' }}
-                >
-                  <option value="">Select…</option>
-                  {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+              <div style={{ marginBottom: '.6rem' }}>
+                <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+                  <label style={{ fontSize: '.82rem', color: 'var(--dim)' }}>Target branch:</label>
+                  <select
+                    value={selectedBranchId}
+                    onChange={(e) => setSelectedBranchId(e.target.value)}
+                    style={{ padding: '.4rem .6rem', borderRadius: 7, border: '1px solid var(--rim)', fontSize: '.85rem' }}
+                  >
+                    <option value="">{branchColumnMapped ? 'Auto (from file)' : 'Select…'}</option>
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.3rem' }}>
+                  {branchColumnMapped
+                    ? 'Items will be routed by branch name from the file. Select a branch only to override.'
+                    : 'Required — select a branch, or map a Branch Name column above.'}
+                </div>
               </div>
             )}
 
