@@ -85,6 +85,7 @@ export default function MenuEditorSection({
   const [unassignedCount, setUnassignedCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState(new Set());
+  const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [showAdd, setShowAdd] = useState(false);
   const [assignFor, setAssignFor] = useState(null);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -148,10 +149,54 @@ export default function MenuEditorSection({
 
   useEffect(() => {
     load();
+    setExpandedGroups(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBranchId, branchesLoading]);
 
   const availCount = useMemo(() => items.filter((i) => i.is_available).length, [items]);
+
+  // Collapse the flat items array into groups by item_group_id. Items without
+  // a group ID stay as plain entries. Group entries carry _isGroup + _groupId
+  // + variants[] so the renderer can branch on the marker. Order is preserved
+  // — the first variant of a group decides where the header appears.
+  const groupedDisplay = useMemo(() => {
+    const out = [];
+    const seen = new Map(); // groupId -> index in `out`
+    for (const it of items) {
+      const gid = it.item_group_id;
+      if (gid) {
+        if (seen.has(gid)) {
+          out[seen.get(gid)].variants.push(it);
+        } else {
+          const entry = {
+            _isGroup: true,
+            _groupId: gid,
+            id: gid,
+            name: it.name,
+            variants: [it],
+          };
+          seen.set(gid, out.length);
+          out.push(entry);
+        }
+      } else {
+        out.push(it);
+      }
+    }
+    return out;
+  }, [items]);
+
+  const groupedItemCount = useMemo(
+    () => items.filter((i) => i.item_group_id).length,
+    [items],
+  );
+
+  const toggleGroupExpanded = (groupId) => {
+    setExpandedGroups((s) => {
+      const next = new Set(s);
+      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
+      return next;
+    });
+  };
   const allClosing = availCount > 0;
 
   const handleToggle = async (id, next, name) => {
@@ -364,6 +409,7 @@ export default function MenuEditorSection({
             {isAll ? `Showing all ${totalCount} items${unassignedCount ? ` · ${unassignedCount} unassigned` : ''}` :
               isUnassigned ? `${totalCount} unassigned items` :
                 totalCount ? `${totalCount} items` : ''}
+            {groupedItemCount > 0 ? ` (${groupedItemCount} grouped)` : ''}
           </span>
           <div style={{ flex: 1 }} />
           {pendingBulkAvail === null ? (
@@ -443,130 +489,261 @@ export default function MenuEditorSection({
                 </tr>
               </thead>
               <tbody>
-                {items.map((item, idx) => {
-                  const dim = item.is_available ? {} : { opacity: 0.55 };
-                  const displayName = item.item_group_id
-                    ? (<>
-                      {item.name} <span style={{ fontSize: '.72rem', color: 'var(--acc)', fontWeight: 500 }}>· {item.size || item.variant_value || 'Variant'}</span>
-                    </>)
-                    : item.name;
-                  const priceCell = item.sale_price_paise ? (
-                    <>
-                      <span style={{ textDecoration: 'line-through', color: 'var(--mute)', fontSize: '.75rem' }}>₹{item.price_paise / 100}</span>
-                      {' '}
-                      <span style={{ color: '#dc2626', fontWeight: 600 }}>₹{item.sale_price_paise / 100}</span>
-                    </>
-                  ) : `₹${item.price_paise / 100}`;
-                  return (
-                    <tr key={item.id} style={{ background: idx % 2 ? 'var(--ink4,#f9fafb)' : '', ...dim }}>
-                      <td style={{ padding: '.45rem .4rem', textAlign: 'center' }}>
-                        <input
-                          type="checkbox"
-                          checked={checked.has(item.id)}
-                          onChange={() => toggleChecked(item.id)}
-                        />
-                      </td>
-                      <td style={{ padding: '.45rem .7rem', textAlign: 'center', color: 'var(--dim)', fontSize: '.78rem' }}>{idx + 1}</td>
-                      <td style={{ padding: '.45rem .7rem', fontSize: '.82rem', fontWeight: 500 }}>
-                        {displayName}
-                        {item.is_bestseller && <span style={{ fontSize: '.6rem', color: '#f59e0b', marginLeft: '.25rem' }}>⭐</span>}
-                        {!item.is_available && <span style={{ fontSize: '.65rem', color: '#9ca3af', marginLeft: '.25rem' }}>(unavailable)</span>}
-                      </td>
-                      <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{item._categoryName || '—'}</td>
-                      {showBranchBadge && (
-                        <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{item.branch_name || '—'}</td>
-                      )}
-                      <td style={{ padding: '.45rem .7rem' }}>
-                        {branchStatusCell(item)}
-                        {item.meta_status === 'incomplete' && (
-                          <div style={{
-                            marginTop: '.2rem', display: 'inline-flex', alignItems: 'center', gap: '.25rem',
-                            background: '#fef3c7', color: '#92400e', padding: '.1rem .45rem',
-                            borderRadius: 99, fontSize: '.65rem', fontWeight: 600, border: '1px solid #fde68a',
-                          }}
-                          >
-                            ⚠ Incomplete
-                          </div>
+                {(() => {
+                  // Shared per-item row renderer. Used both for plain non-grouped
+                  // items (existing behavior preserved) and for variant child
+                  // rows under an expanded group header. `opts.isVariantChild`
+                  // toggles the indented-name + blank-index treatment.
+                  const renderItemRow = (item, idx, opts = {}) => {
+                    const isVariantChild = !!opts.isVariantChild;
+                    const dim = item.is_available ? {} : { opacity: 0.55 };
+                    const displayName = isVariantChild
+                      ? (
+                        <span style={{ paddingLeft: '1.5rem', color: 'var(--acc)', fontSize: '.78rem', fontWeight: 500 }}>
+                          · {item.size || item.variant_value || 'Variant'}
+                        </span>
+                      )
+                      : item.item_group_id
+                        ? (<>
+                          {item.name} <span style={{ fontSize: '.72rem', color: 'var(--acc)', fontWeight: 500 }}>· {item.size || item.variant_value || 'Variant'}</span>
+                        </>)
+                        : item.name;
+                    const priceCell = item.sale_price_paise ? (
+                      <>
+                        <span style={{ textDecoration: 'line-through', color: 'var(--mute)', fontSize: '.75rem' }}>₹{item.price_paise / 100}</span>
+                        {' '}
+                        <span style={{ color: '#dc2626', fontWeight: 600 }}>₹{item.sale_price_paise / 100}</span>
+                      </>
+                    ) : `₹${item.price_paise / 100}`;
+                    return (
+                      <tr key={item.id} style={{ background: idx % 2 ? 'var(--ink4,#f9fafb)' : '', ...dim }}>
+                        <td style={{ padding: '.45rem .4rem', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={checked.has(item.id)}
+                            onChange={() => toggleChecked(item.id)}
+                          />
+                        </td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'center', color: 'var(--dim)', fontSize: '.78rem' }}>
+                          {isVariantChild ? '' : idx + 1}
+                        </td>
+                        <td style={{ padding: '.45rem .7rem', fontSize: '.82rem', fontWeight: 500 }}>
+                          {displayName}
+                          {item.is_bestseller && <span style={{ fontSize: '.6rem', color: '#f59e0b', marginLeft: '.25rem' }}>⭐</span>}
+                          {!item.is_available && <span style={{ fontSize: '.65rem', color: '#9ca3af', marginLeft: '.25rem' }}>(unavailable)</span>}
+                        </td>
+                        <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{item._categoryName || '—'}</td>
+                        {showBranchBadge && (
+                          <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{item.branch_name || '—'}</td>
                         )}
-                        {item.meta_status === 'ready' && (
-                          <div style={{
-                            marginTop: '.2rem', display: 'inline-flex', alignItems: 'center', gap: '.25rem',
-                            background: '#dbeafe', color: '#1d4ed8', padding: '.1rem .45rem',
-                            borderRadius: 99, fontSize: '.65rem', fontWeight: 600, border: '1px solid #bfdbfe',
-                          }}
-                          >
-                            ✔ Ready
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>{foodTypeIcon(item.food_type)}</td>
-                      <td style={{ padding: '.45rem .7rem', textAlign: 'right', fontWeight: 500 }}>{priceCell}</td>
-                      <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>
-                        <Toggle
-                          checked={!!item.is_available}
-                          onChange={(next) => handleToggle(item.id, next, item.name)}
-                        />
-                      </td>
-                      <td style={{ padding: '.45rem .7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <button
-                          type="button"
-                          style={{
-                            background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
-                            padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.7rem',
-                            color: 'var(--wa)', marginRight: '.25rem',
-                          }}
-                          onClick={() => setAssignFor({ id: item.id, name: item.name })}
-                          title="Assign to a branch"
-                        >
-                          ＋ Branch
-                        </button>
-                        {Array.isArray(item.branch_ids) && item.branch_ids.length > 1 && (
+                        <td style={{ padding: '.45rem .7rem' }}>
+                          {branchStatusCell(item)}
+                          {item.meta_status === 'incomplete' && (
+                            <div style={{
+                              marginTop: '.2rem', display: 'inline-flex', alignItems: 'center', gap: '.25rem',
+                              background: '#fef3c7', color: '#92400e', padding: '.1rem .45rem',
+                              borderRadius: 99, fontSize: '.65rem', fontWeight: 600, border: '1px solid #fde68a',
+                            }}
+                            >
+                              ⚠ Incomplete
+                            </div>
+                          )}
+                          {item.meta_status === 'ready' && (
+                            <div style={{
+                              marginTop: '.2rem', display: 'inline-flex', alignItems: 'center', gap: '.25rem',
+                              background: '#dbeafe', color: '#1d4ed8', padding: '.1rem .45rem',
+                              borderRadius: 99, fontSize: '.65rem', fontWeight: 600, border: '1px solid #bfdbfe',
+                            }}
+                            >
+                              ✔ Ready
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>{foodTypeIcon(item.food_type)}</td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'right', fontWeight: 500 }}>{priceCell}</td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>
+                          <Toggle
+                            checked={!!item.is_available}
+                            onChange={(next) => handleToggle(item.id, next, item.name)}
+                          />
+                        </td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
                           <button
                             type="button"
                             style={{
                               background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
                               padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.7rem',
-                              color: 'var(--dim)', marginRight: '.25rem',
+                              color: 'var(--wa)', marginRight: '.25rem',
                             }}
-                            onClick={() => handleApplyAllBranches(item.id, !item.is_available, item.name)}
-                            title="Apply toggle to all branches"
+                            onClick={() => setAssignFor({ id: item.id, name: item.name })}
+                            title="Assign to a branch"
                           >
-                            All
+                            ＋ Branch
                           </button>
-                        )}
-                        {pendingDeleteId === item.id ? (
-                          <>
+                          {Array.isArray(item.branch_ids) && item.branch_ids.length > 1 && (
                             <button
                               type="button"
-                              className="btn-sm"
-                              style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.2rem .5rem', fontSize: '.7rem' }}
-                              onClick={() => handleDelete(item.id)}
+                              style={{
+                                background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
+                                padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.7rem',
+                                color: 'var(--dim)', marginRight: '.25rem',
+                              }}
+                              onClick={() => handleApplyAllBranches(item.id, !item.is_available, item.name)}
+                              title="Apply toggle to all branches"
                             >
-                              Yes
+                              All
                             </button>
+                          )}
+                          {pendingDeleteId === item.id ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn-sm"
+                                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.2rem .5rem', fontSize: '.7rem' }}
+                                onClick={() => handleDelete(item.id)}
+                              >
+                                Yes
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-g btn-sm"
+                                style={{ marginLeft: '.15rem', fontSize: '.7rem', padding: '.2rem .4rem' }}
+                                onClick={() => setPendingDeleteId(null)}
+                              >
+                                No
+                              </button>
+                            </>
+                          ) : (
                             <button
                               type="button"
-                              className="btn-g btn-sm"
-                              style={{ marginLeft: '.15rem', fontSize: '.7rem', padding: '.2rem .4rem' }}
-                              onClick={() => setPendingDeleteId(null)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '.85rem', color: '#9ca3af' }}
+                              onClick={() => setPendingDeleteId(item.id)}
+                              title="Delete"
                             >
-                              No
+                              🗑️
                             </button>
-                          </>
-                        ) : (
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  };
+
+                  const rows = [];
+                  groupedDisplay.forEach((entry, idx) => {
+                    if (!entry._isGroup) {
+                      rows.push(renderItemRow(entry, idx));
+                      return;
+                    }
+                    // ── Group header row ──
+                    const variantIds = entry.variants.map((v) => v.id);
+                    const allChecked = variantIds.length > 0 && variantIds.every((id) => checked.has(id));
+                    const isExpanded = expandedGroups.has(entry._groupId);
+                    const first = entry.variants[0];
+                    const prices = entry.variants.map((v) => v.price_paise || 0);
+                    const minP = Math.min(...prices);
+                    const maxP = Math.max(...prices);
+                    const priceCell = minP === maxP ? `₹${minP / 100}` : `₹${minP / 100} – ₹${maxP / 100}`;
+                    rows.push(
+                      <tr key={`group-${entry._groupId}`} style={{ background: '#f0fdf4', borderTop: '1px solid var(--rim,#e5e7eb)' }}>
+                        <td style={{ padding: '.45rem .4rem', textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={allChecked}
+                            onChange={() => {
+                              setChecked((s) => {
+                                const next = new Set(s);
+                                if (allChecked) variantIds.forEach((id) => next.delete(id));
+                                else variantIds.forEach((id) => next.add(id));
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>
                           <button
                             type="button"
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '.85rem', color: '#9ca3af' }}
-                            onClick={() => setPendingDeleteId(item.id)}
-                            title="Delete"
+                            onClick={() => toggleGroupExpanded(entry._groupId)}
+                            style={{
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              fontSize: '.78rem', color: 'var(--dim)', padding: '.1rem .25rem',
+                            }}
+                            aria-label={isExpanded ? 'Collapse variants' : 'Expand variants'}
                           >
-                            🗑️
+                            {isExpanded ? '▼' : '▶'}
                           </button>
+                        </td>
+                        <td style={{ padding: '.45rem .7rem', fontSize: '.84rem', fontWeight: 700 }}>
+                          {entry.name}
+                          <span style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 500, marginLeft: '.4rem' }}>
+                            · {entry.variants.length} variant{entry.variants.length === 1 ? '' : 's'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{first._categoryName || '—'}</td>
+                        {showBranchBadge && (
+                          <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{first.branch_name || '—'}</td>
                         )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        <td style={{ padding: '.45rem .7rem' }}>{branchStatusCell(first)}</td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>{foodTypeIcon(first.food_type)}</td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'right', fontWeight: 600 }}>{priceCell}</td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>
+                          <Toggle
+                            checked={!!first.is_available}
+                            onChange={(next) => entry.variants.forEach((v) => handleToggle(v.id, next, v.name))}
+                          />
+                        </td>
+                        <td style={{ padding: '.45rem .7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <button
+                            type="button"
+                            style={{
+                              background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
+                              padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.7rem',
+                              color: 'var(--wa)', marginRight: '.25rem',
+                            }}
+                            onClick={() => setAssignFor({ id: first.id, name: first.name })}
+                            title="Assign group's first variant to a branch"
+                          >
+                            ＋ Branch
+                          </button>
+                          {pendingDeleteId === first.id ? (
+                            <>
+                              <button
+                                type="button"
+                                className="btn-sm"
+                                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.2rem .5rem', fontSize: '.7rem' }}
+                                onClick={() => handleDelete(first.id)}
+                              >
+                                Yes
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-g btn-sm"
+                                style={{ marginLeft: '.15rem', fontSize: '.7rem', padding: '.2rem .4rem' }}
+                                onClick={() => setPendingDeleteId(null)}
+                              >
+                                No
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '.85rem', color: '#9ca3af' }}
+                              onClick={() => setPendingDeleteId(first.id)}
+                              title="Delete first variant"
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                    if (isExpanded) {
+                      entry.variants.forEach((v, vi) => {
+                        rows.push(renderItemRow(v, idx + vi + 1, { isVariantChild: true }));
+                      });
+                    }
+                  });
+                  return rows;
+                })()}
               </tbody>
             </table>
           )}

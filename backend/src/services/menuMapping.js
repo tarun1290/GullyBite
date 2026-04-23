@@ -224,7 +224,9 @@ function normalizeProduct(input, context = {}) {
   }
 
   const size = input.size?.toString().trim() || null;
-  const foodType = input.food_type?.toString().toLowerCase().trim() || null;
+  const rawFoodType = input.food_type?.toString().toLowerCase().trim().replace(/[\s\-]+/g, '_') || null;
+  const validFoodTypes = ['veg', 'non_veg', 'vegan', 'egg'];
+  const foodType = validFoodTypes.includes(rawFoodType) ? rawFoodType : (rawFoodType ? 'veg' : null);
 
   // ─── retailer_id (CRIT-2A-03) ─────────────────────────────────
   // Keep a caller-supplied retailer_id only if it matches the contract.
