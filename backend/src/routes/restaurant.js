@@ -3927,6 +3927,16 @@ router.post('/catalog/create-new', requireApproved, async (req, res) => {
     const catalogId = response.data.id;
     req.log.info({ catalogId, restaurantId: req.restaurantId }, 'Created new catalog');
 
+    // Fire-and-forget: assign the System User to the new catalog so subsequent
+    // catalog-level operations (rename, delete, item batch ops) don't 403.
+    // The helper is idempotent (per-process cache) and does its own
+    // system_user → business_user fallback. Errors are non-fatal — the
+    // catalog was still created, and the missing permission only bites on
+    // later operations that the user can retry from the UI.
+    metaConfig.ensureCatalogAdminAccess(catalogId).catch(err =>
+      req.log.warn({ err, catalogId }, 'Catalog admin access assignment failed (non-fatal)')
+    );
+
     // Store as active catalog
     await col('restaurants').updateOne(
       { _id: req.restaurantId },

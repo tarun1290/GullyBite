@@ -55,7 +55,7 @@ const upload = multer({
 router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded (field name: file)' });
-    const restaurantId = req.user?.restaurant_id || req.user?.restaurantId;
+    const restaurantId = req.restaurantId;
     if (!restaurantId) return res.status(401).json({ error: 'No restaurant context' });
 
     // Parse first (validates the file before we persist anything).
@@ -114,7 +114,7 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
 // ── GET /uploads ────────────────────────────────────────────
 router.get('/uploads', requireAuth, async (req, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id || req.user?.restaurantId;
+    const restaurantId = req.restaurantId;
     const items = await col('menu_uploads').find({ restaurant_id: restaurantId })
       .sort({ created_at: -1 }).toArray();
     res.json(items.map(d => ({
@@ -132,7 +132,7 @@ router.get('/uploads', requireAuth, async (req, res) => {
 // so /import can replay it without re-detecting.
 router.post('/mapping', express.json({ limit: '2mb' }), requireAuth, async (req, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id || req.user?.restaurantId;
+    const restaurantId = req.restaurantId;
     const { upload_id, column_mapping } = req.body || {};
     if (!upload_id) return res.status(400).json({ error: 'upload_id required' });
 
@@ -172,7 +172,7 @@ router.post('/mapping', express.json({ limit: '2mb' }), requireAuth, async (req,
 // upload doc and not in the body, autoMapColumns kicks in.
 router.post('/import', express.json({ limit: '2mb' }), requireAuth, async (req, res) => {
   try {
-    const restaurantId = req.user?.restaurant_id || req.user?.restaurantId;
+    const restaurantId = req.restaurantId;
     const { upload_id, column_mapping } = req.body || {};
     if (!upload_id) return res.status(400).json({ error: 'upload_id required' });
 
