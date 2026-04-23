@@ -1167,6 +1167,55 @@ router.get('/places/details', async (req, res) => {
   }
 });
 
+// GET /api/restaurant/places/reverse-geocode?lat=&lng=
+// Fallback for the "Pin on map" UX when Places autocomplete returns no
+// suggestions. Takes a lat/lng pair from a dropped map marker and resolves
+// it to a full Indian address via Google's Geocoding API. Response shape
+// matches /places/details so the frontend pickSuggestion / pin-drop paths
+// can share field-population logic.
+router.get('/places/reverse-geocode', async (req, res) => {
+  try {
+    const lat = parseFloat(req.query.lat);
+    const lng = parseFloat(req.query.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'lat and lng must be valid numbers' });
+    }
+
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'GOOGLE_MAPS_API_KEY not configured' });
+
+    const { data } = await axios.get(
+      'https://maps.googleapis.com/maps/api/geocode/json',
+      { params: { latlng: `${lat},${lng}`, key: apiKey }, timeout: 8000 },
+    );
+
+    if (data.status !== 'OK' || !data.results?.length) {
+      req.log.warn({ status: data.status, lat, lng }, 'Reverse geocode returned no results');
+      return res.status(500).json({ error: 'Reverse geocode failed' });
+    }
+
+    const first = data.results[0];
+    const getComponent = (type) => {
+      const c = (first.address_components || []).find(cc => cc.types?.includes(type));
+      return c?.long_name || '';
+    };
+
+    res.json({
+      full_address: first.formatted_address || '',
+      lat,
+      lng,
+      city:    getComponent('locality'),
+      state:   getComponent('administrative_area_level_1'),
+      pincode: getComponent('postal_code'),
+      area:    getComponent('sublocality_level_1') || getComponent('sublocality'),
+      place_id: first.place_id || '',
+    });
+  } catch (e) {
+    req.log.error({ err: e, metaResponse: e.response?.data }, 'Reverse geocode failed');
+    res.status(500).json({ error: 'Reverse geocode failed' });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════
 // BRANCHES
 // ═══════════════════════════════════════════════════════════════

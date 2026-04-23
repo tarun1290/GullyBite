@@ -1,6 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../../../components/Toast.jsx';
-import { createBranch, updateBranch, placesAutocomplete, placesDetails } from '../../../api/restaurant.js';
+import { createBranch, updateBranch, placesAutocomplete, placesDetails, reverseGeocode } from '../../../api/restaurant.js';
+
+// Lazy-load the Google Maps JS SDK on first map open. Idempotent — subsequent
+// calls resolve immediately if window.google.maps is already present.
+function loadGoogleMapsScript() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('no window'));
+  if (window.google?.maps) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const key = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+    const s = document.createElement('script');
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=maps,marker`;
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Google Maps script failed to load'));
+    document.head.appendChild(s);
+  });
+}
+
+// Initialise a map + draggable marker inside `containerId`. Returns the
+// marker so the caller can re-position it later if needed. `onPinDrop`
+// fires after every dragend with the new lat/lng.
+function initMap(containerId, center, onPinDrop) {
+  const el = document.getElementById(containerId);
+  if (!el) return null;
+  const map = new window.google.maps.Map(el, { center, zoom: 15 });
+  const marker = new window.google.maps.Marker({ position: center, map, draggable: true });
+  marker.addListener('dragend', () => {
+    const pos = marker.getPosition();
+    onPinDrop({ lat: pos.lat(), lng: pos.lng() });
+  });
+  return marker;
+}
 
 // Mirrors #menu-branch-form + doAddBranch (menu.js:253-294) plus the inline
 // address autocomplete flow (menu.js:40-109). Legacy kept this as an inline
@@ -71,6 +103,10 @@ export default function BranchFormModal({ open, onClose, onSaved, onCreated, mod
   const [showSuggest, setShowSuggest] = useState(false);
   const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showMap, setShowMap] = useState(false);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
+  const [mapCenter, setMapCenter] = useState({ lat: 17.385, lng: 78.4867 }); // Hyderabad default
   const searchTimer = useRef(null);
 
   useEffect(() => {
@@ -78,12 +114,58 @@ export default function BranchFormModal({ open, onClose, onSaved, onCreated, mod
       setForm(isEdit ? formFromBranch(existingBranch) : emptyForm());
       setSuggestions([]);
       setShowSuggest(false);
+      setShowMap(false);
     }
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEdit, existingBranch]);
+
+  // Pin-on-map fallback. Reverse-geocodes the dropped pin to populate the
+  // same form fields pickSuggestion fills. Failure leaves lat/lng on the
+  // form (the user knows the location is right) but skips address fields.
+  const handlePinDrop = async ({ lat, lng }) => {
+    setGeocoding(true);
+    setMapCenter({ lat, lng });
+    try {
+      const d = await reverseGeocode(lat, lng);
+      setForm((f) => ({
+        ...f,
+        lat: String(lat),
+        lng: String(lng),
+        addrSearch: d.full_address || f.addrSearch,
+        fullAddress: d.full_address || f.fullAddress,
+        addrConfirm: [d.area, d.city, d.pincode].filter(Boolean).join(', '),
+        city: d.city || f.city,
+        area: d.area || '',
+        pincode: d.pincode || '',
+        state: d.state || '',
+        placeId: d.place_id || '',
+      }));
+    } catch (err) {
+      // Still capture the lat/lng — user dropped the pin deliberately.
+      setForm((f) => ({ ...f, lat: String(lat), lng: String(lng) }));
+      showToast('Could not get address for that pin location', 'error');
+    } finally {
+      setGeocoding(false);
+    }
+  };
+
+  const openMap = () => {
+    setShowMap(true);
+    setMapLoading(true);
+    loadGoogleMapsScript()
+      .then(() => {
+        setMapLoading(false);
+        // Defer map init one tick so React renders the container div first.
+        setTimeout(() => initMap('gb-branch-map', mapCenter, handlePinDrop), 50);
+      })
+      .catch(() => {
+        setMapLoading(false);
+        showToast('Could not load map', 'error');
+      });
+  };
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -274,6 +356,57 @@ export default function BranchFormModal({ open, onClose, onSaved, onCreated, mod
               {form.addrConfirm && (
                 <div style={{ fontSize: '.74rem', color: 'var(--wa,#16a34a)', marginTop: '.3rem' }}>
                   ✅ {form.addrConfirm}
+                </div>
+              )}
+              {/* Pin-on-map fallback: only shows when autocomplete typed but
+                  returned zero suggestions. Hidden once the map opens. */}
+              {suggestions.length === 0 && form.addrSearch.length >= 2 && !showMap && (
+                <button
+                  type="button"
+                  onClick={openMap}
+                  style={{
+                    background: 'transparent', border: 'none', padding: '.3rem 0',
+                    color: 'var(--acc,#4f46e5)', cursor: 'pointer',
+                    fontSize: '.78rem', textAlign: 'left', marginTop: '.3rem',
+                  }}
+                >
+                  📍 Can't find it? Pin on map →
+                </button>
+              )}
+              {showMap && (
+                <div style={{ marginTop: '.55rem' }}>
+                  <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.25rem' }}>
+                    Drag the pin to your branch location
+                  </div>
+                  {mapLoading ? (
+                    <div style={{
+                      width: '100%', height: 280, borderRadius: 8,
+                      border: '1px solid var(--rim)', background: 'var(--ink2,#f4f4f5)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '.82rem', color: 'var(--dim)',
+                    }}
+                    >
+                      Loading map…
+                    </div>
+                  ) : (
+                    <div
+                      id="gb-branch-map"
+                      style={{ width: '100%', height: 280, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--rim)' }}
+                    />
+                  )}
+                  {geocoding && (
+                    <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.3rem' }}>
+                      📍 Getting address…
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="btn-g btn-sm"
+                    onClick={() => setShowMap(false)}
+                    style={{ marginTop: '.4rem' }}
+                  >
+                    ✕ Close map
+                  </button>
                 </div>
               )}
             </div>

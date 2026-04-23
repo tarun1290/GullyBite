@@ -973,6 +973,16 @@ export async function placesDetails(placeId) {
   return data;
 }
 
+// GET /api/restaurant/places/reverse-geocode — pin-on-map fallback.
+// Returns the same shape as placesDetails (full_address, lat, lng, city,
+// state, pincode, area, place_id) so consumers can share field-population.
+export async function reverseGeocode(lat, lng) {
+  const { data } = await client.get('/api/restaurant/places/reverse-geocode', {
+    params: { lat, lng },
+  });
+  return data;
+}
+
 // GET /api/restaurant/users → [{id,name,phone,role,branch_ids,is_active,last_login_at}] (restaurant.js:271)
 export async function getUsers() {
   const { data } = await client.get('/api/restaurant/users');
