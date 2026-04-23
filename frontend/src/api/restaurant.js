@@ -1111,3 +1111,49 @@ export async function getMarketingAnalyticsSection(section, period = '30d') {
   const { data } = await client.get(`/api/restaurant/marketing-analytics/${section}`, { params: { period } });
   return data;
 }
+
+// ─── Catalog Management (Settings → WhatsApp → Meta Catalog card) ──────
+// All endpoints documented in backend/src/routes/restaurant.js. JWT is
+// auto-attached by the shared client; errors bubble for the component
+// to render inline. Six core operations + sync-status read for last-sync
+// timestamp display.
+
+// GET /api/restaurant/catalog/full-state — canonical UI state read. DB-only.
+export async function getCatalogFullState() {
+  const { data } = await client.get('/api/restaurant/catalog/full-state');
+  return data;
+}
+
+// (getCatalogSyncStatus already exported above at L691 — reused, not redeclared.)
+
+// GET /api/restaurant/catalogs — list available catalogs (10-min cache).
+export async function listAvailableCatalogs({ refresh = false } = {}) {
+  const { data } = await client.get('/api/restaurant/catalogs', {
+    params: refresh ? { refresh: 'true' } : {},
+  });
+  return data;
+}
+
+// POST /api/restaurant/catalog/switch — atomic switch (Meta + DB).
+export async function switchCatalog(catalogId) {
+  const { data } = await client.post('/api/restaurant/catalog/switch', { catalog_id: catalogId });
+  return data;
+}
+
+// POST /api/restaurant/catalog/disconnect-waba — unlink current catalog from WABA.
+export async function disconnectCatalogFromWaba() {
+  const { data } = await client.post('/api/restaurant/catalog/disconnect-waba');
+  return data;
+}
+
+// POST /api/restaurant/catalog/create-new — create new catalog on Meta + auto-link.
+export async function createNewCatalog(name) {
+  const { data } = await client.post('/api/restaurant/catalog/create-new', { name });
+  return data;
+}
+
+// DELETE /api/restaurant/catalog/:catalogId — delete catalog (Meta + DB cleanup).
+export async function deleteCatalog(catalogId) {
+  const { data } = await client.delete(`/api/restaurant/catalog/${encodeURIComponent(catalogId)}`);
+  return data;
+}
