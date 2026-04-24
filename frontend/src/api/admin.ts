@@ -3,6 +3,7 @@ import type { AxiosResponse, RawAxiosResponseHeaders, AxiosResponseHeaders } fro
 import type {
   AdminRestaurant,
   AuthResponse,
+  AuthUser,
   QueryParams,
   RequestBody,
 } from '../types';
@@ -30,6 +31,11 @@ export async function adminSignin(email: string, password: string): Promise<Auth
 
 export async function adminSetup(email: string, password: string, name: string): Promise<AuthResponse> {
   const { data } = await client.post<AuthResponse>('/api/admin/auth/setup', { email, password, name });
+  return data;
+}
+
+export async function getAdminMe(): Promise<AuthUser> {
+  const { data } = await client.get<AuthUser>('/api/admin/auth/me');
   return data;
 }
 

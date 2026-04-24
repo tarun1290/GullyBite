@@ -2,10 +2,10 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import ProtectedRoute from '../../components/ProtectedRoute';
+import AdminProtectedRoute from '../../components/AdminProtectedRoute';
 import Sidebar, { type NavItem } from '../../components/Sidebar';
 import Navbar from '../../components/Navbar';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAdminAuth } from '../../contexts/AdminAuthContext';
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Overview',      icon: '📊', path: '/admin/overview' },
@@ -45,7 +45,7 @@ const TITLE_BY_PATH: Record<string, string> = Object.fromEntries(
 interface AdminShellProps { children: ReactNode }
 
 function AdminShell({ children }: AdminShellProps) {
-  const { logout } = useAuth();
+  const { logout } = useAdminAuth();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
@@ -86,8 +86,8 @@ export default function AdminLayoutClient({ children }: AdminLayoutClientProps) 
   // /admin/login is unprotected and must not be wrapped in the admin shell.
   if (pathname === '/admin/login') return <>{children}</>;
   return (
-    <ProtectedRoute role="admin" redirectTo="/admin/login">
+    <AdminProtectedRoute redirectTo="/admin/login">
       <AdminShell>{children}</AdminShell>
-    </ProtectedRoute>
+    </AdminProtectedRoute>
   );
 }

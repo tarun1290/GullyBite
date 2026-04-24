@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { useAuth } from '../../../contexts/AuthContext';
+import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { useToast } from '../../../components/Toast';
 import SectionError from '../../../components/dashboard/analytics/SectionError';
 import { getAdminUsers, updateAdminUser } from '../../../api/admin';
@@ -25,7 +25,7 @@ const td: CSSProperties = { padding: '.5rem .7rem', verticalAlign: 'top' };
 const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
 
 export default function AdminAdminsPage() {
-  const { user } = useAuth();
+  const { user } = useAdminAuth();
   const { showToast } = useToast();
   const [rows, setRows] = useState<AdminUserRow[]>([]);
   const [loading, setLoading] = useState<boolean>(true);

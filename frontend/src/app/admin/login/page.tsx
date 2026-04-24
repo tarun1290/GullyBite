@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent, type ChangeEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '../../../contexts/AuthContext';
+import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { adminSignin, adminSetup, getAdminSetupStatus } from '../../../api/admin';
 import type { AuthResponse } from '../../../types';
 
@@ -29,7 +29,7 @@ type LooseAuth = AuthResponse & ApiErrorBody;
 
 export default function AdminLogin() {
   const router = useRouter();
-  const { user, loading, login } = useAuth();
+  const { user, loading, login } = useAdminAuth();
 
   const [statusLoading, setStatusLoading] = useState<boolean>(true);
   const [needsSetup, setNeedsSetup] = useState<boolean>(false);
