@@ -36,34 +36,57 @@ async function saveAddress(identifier, {
   // Places Autocomplete. place_id lets us re-resolve, locality is the
   // human label shown to the user.
   placeId, locality,
+  // v3 fields — server-side geocoded structured address from the
+  // NEW_ADDRESS Flow. recipient_name/delivery_phone are per-delivery
+  // (the receiver may differ from the WA account holder); house_number
+  // and building_street replace the older buildingFloor/street pair.
+  recipientName, deliveryPhone, houseNumber, buildingStreet,
+  formattedAddress, geocodedAt,
 } = {}) {
   const now = new Date();
   const filter = _customerFilter(identifier);
   if (makeDefault) {
     await col('customer_addresses').updateMany(filter, { $set: { is_default: false } });
   }
+  const _recipient = recipientName || receiverName || null;
+  const _delivery  = deliveryPhone || receiverPhone || null;
+  const _house     = houseNumber || buildingFloor || flatNo || null;
+  const _street    = buildingStreet || street || null;
+  const _formatted = formattedAddress || fullAddress || null;
+  const _lat       = latitude != null ? latitude : null;
+  const _lng       = longitude != null ? longitude : null;
   const doc = {
     _id: newId(),
     customer_id: typeof identifier === 'object' ? identifier.customer_id : null,
     wa_phone: typeof identifier === 'object' ? (identifier.wa_phone || null) : identifier,
     label: label || 'Home',
     type: type || null,                            // home | office | other
-    full_address: fullAddress || null,
-    // Receiver details
-    receiver_name: receiverName || null,
-    receiver_phone: receiverPhone || null,
+    full_address: _formatted,
+    formatted_address: _formatted,
+    // v3 receiver fields (per-delivery contact)
+    recipient_name: _recipient,
+    delivery_phone: _delivery,
+    // Legacy receiver alias — kept populated so older readers still work
+    receiver_name: _recipient,
+    receiver_phone: _delivery,
     // Structured address fields
-    building_floor: buildingFloor || flatNo || null,
-    street: street || null,
+    house_number: _house,
+    building_street: _street,
+    // Legacy aliases — kept populated for backward compat with v1/v2 readers
+    building_floor: _house,
+    street: _street,
     area_locality: areaLocality || null,
     city: city || null,
     pincode: pincode || null,
     landmark: landmark || null,
     // Legacy compat
-    flat_no: flatNo || buildingFloor || null,
-    // GPS
-    latitude: latitude || null,
-    longitude: longitude || null,
+    flat_no: _house,
+    // GPS — from server-side geocoding (may be null if geocode failed)
+    lat: _lat,
+    lng: _lng,
+    latitude: _lat,
+    longitude: _lng,
+    geocoded_at: geocodedAt || (_lat != null ? now : null),
     // Delivery
     delivery_instructions: deliveryInstructions || null,
     // Google Places

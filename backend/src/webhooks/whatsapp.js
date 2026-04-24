@@ -883,14 +883,14 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
         });
       }
     } else {
-      // Fallback: no Flow — ask for location directly (no buttons)
+      // Flow is the only supported address path. A restaurant with no
+      // flow_id is mis-configured — surface a graceful "not ready" message
+      // instead of dropping the customer into the deprecated AWAITING_LOCATION
+      // collection flow.
       await wa.sendText(pid, token, to,
-        '📍 Share your delivery location so I can show you the menu:\n\n' +
-        '• *Share your live location* — tap + → Location\n' +
-        '• *Send a Google Maps link*\n' +
-        '• *Type your full address*'
+        "⚠️ This restaurant's ordering is currently being set up. Please contact the restaurant directly."
       );
-      await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
+      await orderSvc.setState(conv.id, 'GREETING');
     }
     return;
   }
@@ -1261,7 +1261,13 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  // DEPRECATED: AWAITING_LOCATION state is no longer reachable via normal flow.
+  // The WhatsApp delivery-address Flow is the only supported address-collection
+  // path. Kept in place so any conversation row stuck in this legacy state from
+  // before the migration still gets a usable response. Remove once
+  // `db.conversations.countDocuments({state:'AWAITING_LOCATION'})` is zero in prod.
   if (conv.state === 'AWAITING_LOCATION') {
+    console.warn('[DEPRECATED] AWAITING_LOCATION handler triggered — should not happen after flow_id enforcement');
     // Try forward geocoding the text as an address before re-prompting
     if (rawText && rawText.length > 5 && !['HI','HELLO','HEY','MENU','ORDER','START'].includes(text)) {
       try {
@@ -1283,8 +1289,24 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     if (addresses.length > 0) {
       await wa.sendAddressList(pid, token, to, addresses);
     } else {
-      await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
-      await wa.sendLocationRequest(pid, token, to);
+      // Flow is the only supported address path. Trigger NEW_ADDRESS screen
+      // when the customer has no saved addresses; not-ready message if the
+      // restaurant somehow has no flow_id.
+      const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+      if (restaurant?.flow_id) {
+        await wa.sendFlow(pid, token, to, {
+          body: 'Set your delivery location:',
+          flowId: restaurant.flow_id,
+          flowCta: 'Set Location',
+          screenId: 'NEW_ADDRESS',
+          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
+        });
+      } else {
+        await wa.sendText(pid, token, to,
+          "⚠️ This restaurant's ordering is currently being set up. Please contact the restaurant directly."
+        );
+        await orderSvc.setState(conv.id, 'GREETING');
+      }
     }
     return;
   }
@@ -1453,10 +1475,11 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
-  // [WhatsApp2026] Preserve structured address from address form if present
-  const structuredAddr = session.pendingStructuredAddress || null;
-  const addrSource = session.addressSource || 'gps';
-  const displayAddress = (structuredAddr ? session.pendingFullAddress : null) || address || 'Your location';
+  // Structured-address propagation from the legacy native address form was
+  // removed alongside the AWAITING_LOCATION deprecation — that chain is dead
+  // (no UI exposes TYPE_ADDRESS). Structured addresses now arrive exclusively
+  // via the delivery-address Flow handler, which writes order fields directly.
+  const displayAddress = address || 'Your location';
 
   await orderSvc.setState(conv.id, 'SHOWING_CATALOG', {
     branchId: branch.id,
@@ -1465,7 +1488,6 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     deliveryLat: latitude,
     deliveryLng: longitude,
     deliveryAddress: displayAddress,
-    ...(structuredAddr ? { structuredAddress: structuredAddr, addressSource: addrSource } : {}),
     ...(alreadySaved ? {} : {
       pendingSaveLat    : latitude,
       pendingSaveLng    : longitude,
@@ -1955,16 +1977,37 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
           await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
         }
       } else {
-        await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
-        await wa.sendLocationRequest(pid, token, to);
+        // Flow is the only supported address path. Mirror of the
+        // greeting-handler not-ready branch.
+        await wa.sendText(pid, token, to,
+          "⚠️ This restaurant's ordering is currently being set up. Please contact the restaurant directly."
+        );
+        await orderSvc.setState(conv.id, 'GREETING');
       }
       break;
     }
 
-    case 'USE_NEW_LOCATION':
-      await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
-      await wa.sendLocationRequest(pid, token, to);
+    case 'USE_NEW_LOCATION': {
+      // "Use current location" tapped in the saved-address list. Route to
+      // the Flow's NEW_ADDRESS screen instead of the deprecated native
+      // location prompt.
+      const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+      if (restaurant?.flow_id) {
+        await wa.sendFlow(pid, token, to, {
+          body: 'Set your delivery location:',
+          flowId: restaurant.flow_id,
+          flowCta: 'Set Location',
+          screenId: 'NEW_ADDRESS',
+          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
+        });
+      } else {
+        await wa.sendText(pid, token, to,
+          "⚠️ This restaurant's ordering is currently being set up. Please contact the restaurant directly."
+        );
+        await orderSvc.setState(conv.id, 'GREETING');
+      }
       break;
+    }
 
     // [WhatsApp2026] Native address form — opens structured address input
     case 'TYPE_ADDRESS':
@@ -2234,8 +2277,24 @@ const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) 
   const addr = await col('customer_addresses').findOne({ _id: addressId, $or: [{ customer_id: customer.id }, { wa_phone: customer.wa_phone }] });
 
   if (!addr || !addr.latitude) {
-    await orderSvc.setState(conv.id, 'AWAITING_LOCATION');
-    await wa.sendLocationRequest(pid, token, to);
+    // Saved address is missing GPS coords (legacy row, pre-Flow rollout).
+    // Re-collect via the Flow's NEW_ADDRESS screen instead of the
+    // deprecated native location prompt.
+    const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+    if (restaurant?.flow_id) {
+      await wa.sendFlow(pid, token, to, {
+        body: 'Set your delivery location:',
+        flowId: restaurant.flow_id,
+        flowCta: 'Set Location',
+        screenId: 'NEW_ADDRESS',
+        flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
+      });
+    } else {
+      await wa.sendText(pid, token, to,
+        "⚠️ This restaurant's ordering is currently being set up. Please contact the restaurant directly."
+      );
+      await orderSvc.setState(conv.id, 'GREETING');
+    }
     return;
   }
 
@@ -2407,7 +2466,11 @@ const _processReorder = async (orderId, customer, conv, waAccount) => {
 
   const cartText = cart.map(i => `${i.qty}x ${i.name} — ₹${i.lineTotalRs.toFixed(0)}`).join('\n');
 
-  await orderSvc.setState(conv.id, 'AWAITING_LOCATION', {
+  // Reorder recognises itself via session_data.reorderCart inside
+  // handleLocationMessage (not via state), so the state name is
+  // informational. Use GREETING (neutral) since AWAITING_LOCATION is
+  // deprecated; the session stash is what actually carries context.
+  await orderSvc.setState(conv.id, 'GREETING', {
     reorderCart    : cart,
     reorderBranchId: order.branch_id,
   });
@@ -3028,7 +3091,11 @@ const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
   } catch { responseData = {}; }
 
   // ── Delivery Address Flow response (action-based — check BEFORE flow_token) ──
-  if (responseData.action === 'select_address' || responseData.action === 'new_address') {
+  // Accept both 'add_address' (current Flow JSON) and 'new_address' (legacy
+  // submissions still in flight from older flow versions).
+  if (responseData.action === 'select_address'
+      || responseData.action === 'new_address'
+      || responseData.action === 'add_address') {
     await handleDeliveryFlowResponse(responseData, customer, conv, waAccount);
     return;
   }
@@ -3096,11 +3163,14 @@ const handleNfmReply = async (nfmReply, customer, conv, waAccount) => {
     return;
   }
 
-  // No GPS coords from address form — ask for location to find nearest branch
-  await orderSvc.setState(conv.id, 'AWAITING_LOCATION', {
+  // No GPS coords from address form — ask for location to find nearest branch.
+  // pendingStructuredAddress / pendingFullAddress used to be stashed here for
+  // handleLocationMessage to read back, but that whole legacy address-form
+  // chain is unreachable now (no UI exposes the TYPE_ADDRESS button). Keys
+  // dropped from the stash; the GPS prompt stays as a defensive fallback in
+  // case TYPE_ADDRESS is ever re-introduced upstream.
+  await orderSvc.setState(conv.id, 'GREETING', {
     ...session,
-    pendingStructuredAddress: structuredAddress,
-    pendingFullAddress: fullAddress,
     addressSource: 'address_form',
   });
   await wa.sendText(pid, token, to,
@@ -3192,100 +3262,80 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
   }
 
   // ── NEW ADDRESS SUBMITTED ──
-  if (responseData.action === 'new_address') {
-    let parsedAddress = null;
+  // Accepts the v3 Flow payload (action: 'add_address') as well as the older
+  // 'new_address' submissions still in flight while WABAs migrate to the
+  // updated address-flow.json. v3 ships fully-structured fields and we
+  // server-side geocode via GOOGLE_MAPS_API_KEY before saving — no Maps link.
+  if (responseData.action === 'add_address' || responseData.action === 'new_address') {
+    // ── Field normalisation across v3 / v2 / v1 payloads ──
+    const recipientName = (responseData.recipient_name
+        || responseData.full_name
+        || responseData.receiver_name
+        || customer.name
+        || '').toString().trim() || null;
+    const deliveryPhone = (responseData.delivery_phone
+        || responseData.phone_number
+        || responseData.receiver_phone
+        || customer.wa_phone
+        || '').toString().trim() || null;
+    const houseNumber  = (responseData.house_number
+        || responseData.door_no
+        || responseData.building_floor
+        || '').toString().trim() || null;
+    const buildingStreet = (responseData.building_street
+        || [responseData.building_name, responseData.street_name || responseData.street].filter(Boolean).join(', ')
+        || '').toString().trim() || null;
+    const areaLocality = (responseData.area_locality
+        || responseData.locality_search
+        || '').toString().trim() || null;
+    const city = (responseData.city || '').toString().trim() || null;
+    const pincode = (responseData.pincode || '').toString().trim() || null;
+    const addressLandmark = (responseData.landmark || '').toString().trim() || null;
 
-    // Normalize across legacy + new field names. New flow (address-flow.json)
-    // ships full_name/phone_number/door_no/building_name/street_name/
-    // locality_search/place_id. Older onboarded WABAs may still be on the
-    // legacy receiver_name/receiver_phone/building_floor/street/area_locality
-    // schema until they've been repointed via /flow/assign-all.
-    const buildingFloor = (responseData.door_no || responseData.building_floor)?.trim() || null;
-    const buildingName = responseData.building_name?.trim() || null;
-    const street = (responseData.street_name || responseData.street)?.trim() || null;
-    const areaLocality = (responseData.locality_search || responseData.area_locality)?.trim() || null;
-    const city = responseData.city?.trim() || null;
-    const pincode = responseData.pincode?.trim() || null;
-    const addressLandmark = responseData.landmark?.trim() || null;
-    const receiverName = responseData.full_name || responseData.receiver_name || null;
-    const receiverPhone = responseData.phone_number || responseData.receiver_phone || null;
-    const placeId = responseData.place_id?.trim() || null;
-
-    // Preferred path: resolve the Places Autocomplete selection by placeId
-    // (lat/lng + formatted address straight from Google, no text parsing).
-    if (placeId && placeId !== 'placeholder' && placeId !== 'none') {
-      try {
-        const details = await location.placeDetails(placeId);
-        if (details?.lat && details?.lng) {
-          parsedAddress = details;
-          log.info({ placeId, lat: details.lat, lng: details.lng }, 'Flow placeDetails resolved');
-        }
-      } catch (e) {
-        log.warn({ err: e.message, placeId }, 'Flow placeDetails failed — falling back');
-      }
-    }
-
-    // Legacy path: Google Maps link from older flow submissions
-    if (!parsedAddress && responseData.maps_link?.trim()) {
-      try {
-        const coords = await location.extractCoordsFromMapsUrl(responseData.maps_link.trim());
-        if (coords) {
-          parsedAddress = await location.reverseGeocode(coords.lat, coords.lng);
-        }
-      } catch (e) {
-        log.error({ err: e }, 'Flow Maps URL parse failed');
-      }
-    }
-
-    // Final fallback: forward-geocode the structured text
-    if (!parsedAddress) {
-      const structuredParts = [buildingFloor, buildingName, street, areaLocality, addressLandmark ? `Near ${addressLandmark}` : null, city, pincode].filter(Boolean);
-      const structuredAddr = structuredParts.length >= 2 ? structuredParts.join(', ') : null;
-      const manualAddr = responseData.manual_address?.trim() || null;
-      const addressText = structuredAddr || manualAddr;
-
-      if (addressText) {
-        try {
-          const geocoded = await location.forwardGeocode(addressText);
-          if (geocoded) {
-            parsedAddress = geocoded;
-            log.info({ hasCoords: !!(geocoded.lat && geocoded.lng) }, 'Flow forward geocoded address');
-          } else {
-            parsedAddress = { full_address: addressText, source: 'manual' };
-          }
-        } catch (e) {
-          log.warn({ err: e }, 'Flow forward geocode failed, using structured text');
-          parsedAddress = { full_address: addressText, source: 'manual' };
-        }
-      }
-    }
-
-    if (!parsedAddress) {
-      await wa.sendText(pid, token, to, "We couldn't read your address. Please share your Google Maps location pin or try again.");
-      return;
-    }
-
-    // Resolve label — address_type (v2) or address_label (v1 compat). The
-    // new ADD_ADDRESS screen does not ship address_type; default to 'other'.
-    const addressType = responseData.address_type || responseData.address_label || 'other';
-    const nickname = responseData.address_nickname || '';
+    // ── Save-as label resolution ──
+    // v3 sends a single 'label' field (Home / Work / Other). v2/v1 sent
+    // address_type (home/office/other) plus an optional address_nickname.
+    const rawLabel = responseData.label
+        || responseData.address_type
+        || responseData.address_label
+        || 'Home';
+    const labelLower = String(rawLabel).toLowerCase();
+    const nickname = (responseData.address_nickname || '').toString().trim();
     let label;
-    if (addressType === 'home' || addressType === 'Home') {
-      label = nickname || 'Home';
-    } else if (addressType === 'office' || addressType === 'Office') {
-      label = nickname || 'Office';
+    let typeKey;
+    if (labelLower === 'home') {
+      label = nickname || 'Home';   typeKey = 'home';
+    } else if (labelLower === 'work' || labelLower === 'office') {
+      label = nickname || (labelLower === 'work' ? 'Work' : 'Office');
+      typeKey = labelLower;
     } else {
-      label = nickname || areaLocality || 'Other Address';
+      label = nickname || rawLabel || 'Other';
+      typeKey = 'other';
     }
 
-    // Build full address string from best available data
-    const fullAddr = parsedAddress.address || parsedAddress.full_address
-      || [buildingFloor, buildingName, street, areaLocality, city, pincode].filter(Boolean).join(', ');
+    // ── Server-side geocoding (non-blocking on failure) ──
+    // Always run geocodeAddress before save, but if it returns null
+    // coords we still save the address and continue the order flow.
+    let geo = { lat: null, lng: null, formatted_address: null };
+    try {
+      geo = await location.geocodeAddress({
+        house_number: houseNumber,
+        building_street: buildingStreet,
+        area_locality: areaLocality,
+        city,
+        pincode,
+      });
+    } catch (e) {
+      log.warn({ err: e.message }, 'geocodeAddress threw — continuing with null coords');
+    }
 
-    // Platform-wide Prorouting serviceability gate. Rejects addresses
-    // whose PIN isn't in the enabled serviceable_pincodes list. Fails
-    // OPEN when no PIN can be extracted (e.g. pin-less free-text
-    // address) so we never block users over parsing quirks.
+    // Build a fallback formatted_address from the structured fields
+    // when Google didn't return one (e.g. partial address, API down).
+    const fallbackFormatted = [houseNumber, buildingStreet, areaLocality, city]
+      .filter(Boolean).join(', ') + (pincode ? ` - ${pincode}` : '');
+    const fullAddr = geo.formatted_address || fallbackFormatted || areaLocality || 'Saved address';
+
+    // ── Pincode serviceability gate (fails open when no PIN) ──
     {
       const { isPincodeServiceable, extractPincode } = require('../utils/pincodeValidator');
       const pinToCheck = pincode || extractPincode(fullAddr);
@@ -3296,39 +3346,53 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
           return;
         }
       } else {
-        log.warn({ action: 'new_address' }, 'No pincode extractable — skipping serviceability check');
+        log.warn({ action: 'add_address' }, 'No pincode extractable — skipping serviceability check');
       }
     }
 
-    // Save to customer addresses with enhanced fields
-    await addressSvc.saveAddress({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid }, {
-      label,
-      type: addressType.toLowerCase(),
-      fullAddress: fullAddr,
-      receiverName: receiverName || customer.name || null,
-      receiverPhone: receiverPhone || customer.wa_phone || null,
-      buildingFloor,
-      street: [buildingName, street].filter(Boolean).join(', ') || street,
-      areaLocality,
-      city,
-      pincode,
-      landmark: addressLandmark,
-      deliveryInstructions: responseData.delivery_instructions || null,
-      latitude: parsedAddress.lat || null,
-      longitude: parsedAddress.lng || null,
-      placeId: parsedAddress.place_id || placeId || null,
-      locality: parsedAddress.area || areaLocality || null,
-      makeDefault: true,
-    });
+    // ── Persist to customer_addresses ──
+    await addressSvc.saveAddress(
+      { customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid },
+      {
+        label,
+        type: typeKey,
+        fullAddress: fullAddr,
+        formattedAddress: fullAddr,
+        recipientName,
+        deliveryPhone,
+        // v3 structured fields
+        houseNumber,
+        buildingStreet,
+        areaLocality,
+        city,
+        pincode,
+        landmark: addressLandmark,
+        // v3 GPS (may be null — non-fatal)
+        latitude: geo.lat,
+        longitude: geo.lng,
+        geocodedAt: geo.lat != null ? new Date() : null,
+        locality: areaLocality,
+        makeDefault: true,
+      }
+    );
 
-    // Confirmation message with receiver info if ordering for someone else
-    const receiverNote = (receiverName && receiverName !== customer.name)
-      ? `\n👤 Receiver: ${receiverName}` : '';
+    // ── Confirmation + branch lookup ──
+    const receiverNote = (recipientName && recipientName !== customer.name)
+      ? `\n👤 Receiver: ${recipientName}` : '';
     await wa.sendText(pid, token, to, `📍 Delivering to: *${fullAddr}*${receiverNote}\n\n🔍 Finding the nearest outlet...`);
 
-    // Find branch and send menu
-    if (parsedAddress.lat && parsedAddress.lng) {
-      const result = await location.findBestAvailableBranch(parsedAddress.lat, parsedAddress.lng, restaurantId);
+    const parsedAddress = {
+      lat: geo.lat,
+      lng: geo.lng,
+      latitude: geo.lat,
+      longitude: geo.lng,
+      address: fullAddr,
+      full_address: fullAddr,
+      area: areaLocality,
+    };
+
+    if (geo.lat != null && geo.lng != null) {
+      const result = await location.findBestAvailableBranch(geo.lat, geo.lng, restaurantId);
       if (result.found) {
         if (result.isFallback && result.fallbackMessage) await wa.sendText(pid, token, to, result.fallbackMessage);
         await _sendBranchMenu(pid, token, to, result.branch, conv, customer, parsedAddress);
@@ -3336,7 +3400,8 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
         await wa.sendText(pid, token, to, result.message);
       }
     } else {
-      // Manual address without GPS — use nearest branch
+      // Geocoding failed — fall back to the first available branch for the
+      // restaurant so the customer can still browse the menu and order.
       const branch = await col('branches').findOne({ restaurant_id: restaurantId, is_open: true, accepts_orders: true });
       if (branch) {
         const restaurant = await col('restaurants').findOne({ _id: restaurantId });

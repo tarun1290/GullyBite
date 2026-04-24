@@ -7,7 +7,6 @@ import NotificationSection from '../../../components/dashboard/settings/Notifica
 import WhatsappSection from '../../../components/dashboard/settings/WhatsappSection';
 import IntegrationsSection from '../../../components/dashboard/settings/IntegrationsSection';
 import PasswordSection from '../../../components/dashboard/settings/PasswordSection';
-import DangerZoneSection from '../../../components/dashboard/settings/DangerZoneSection';
 
 const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['business', '🏢 Business'],
@@ -16,7 +15,6 @@ const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['whatsapp', '💬 WhatsApp'],
   ['integrations', '🔗 Integrations'],
   ['security', '🔒 Security'],
-  ['danger', '⚠️ Danger Zone'],
 ];
 
 export default function SettingsPage() {
@@ -52,7 +50,6 @@ export default function SettingsPage() {
       {activeSection === 'whatsapp' && <WhatsappSection />}
       {activeSection === 'integrations' && <IntegrationsSection />}
       {activeSection === 'security' && <PasswordSection />}
-      {activeSection === 'danger' && <DangerZoneSection />}
     </div>
   );
 }

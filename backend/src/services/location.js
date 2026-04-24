@@ -253,6 +253,71 @@ async function forwardGeocode(addressText) {
   }
 }
 
+// ─── GEOCODE STRUCTURED ADDRESS ─────────────────────────────
+// Forward-geocodes a structured Indian address (the Flow NEW_ADDRESS
+// payload) to coordinates + Google's canonical formatted_address.
+// Reuses GOOGLE_MAPS_API_KEY (the key everything else in this file
+// uses); GOOGLE_GEOCODING_API_KEY is checked as a secondary name in
+// case future infra splits the keys.
+//
+// Always resolves — never throws. Returns
+// { lat, lng, formatted_address } where any field may be null. The
+// caller (nfm_reply handler) treats null coords as non-fatal so the
+// address still saves and the order flow continues.
+async function geocodeAddress(addressObj = {}) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_GEOCODING_API_KEY;
+  if (!apiKey) {
+    console.warn('[GEOCODE] GOOGLE_MAPS_API_KEY / GOOGLE_GEOCODING_API_KEY not set — geocoding disabled');
+    return { lat: null, lng: null, formatted_address: null };
+  }
+
+  const {
+    house_number, building_street, area_locality, city, pincode,
+  } = addressObj || {};
+
+  const parts = [
+    [house_number, building_street].filter(Boolean).join(' ').trim(),
+    area_locality,
+    city,
+    pincode,
+    'India',
+  ].map(p => (typeof p === 'string' ? p.trim() : p)).filter(Boolean);
+
+  if (parts.length < 3) {
+    return { lat: null, lng: null, formatted_address: null };
+  }
+
+  const query = parts.join(', ');
+
+  try {
+    const axios = require('axios');
+    const { data } = await axios.get('https://maps.googleapis.com/maps/api/geocode/json', {
+      params: {
+        address: query,
+        key: apiKey,
+        region: 'in',
+        components: 'country:IN',
+      },
+      timeout: 8000,
+    });
+
+    if (data.status !== 'OK' || !data.results?.length) {
+      log.warn({ query, status: data.status }, '[GEOCODE] No results');
+      return { lat: null, lng: null, formatted_address: null };
+    }
+
+    const r = data.results[0];
+    const lat = r.geometry?.location?.lat ?? null;
+    const lng = r.geometry?.location?.lng ?? null;
+    const formatted_address = r.formatted_address || null;
+    console.log(`[GEOCODE] ${city || ''}, ${pincode || ''} → ${lat},${lng}`);
+    return { lat, lng, formatted_address };
+  } catch (e) {
+    console.warn(`[GEOCODE] Error: ${e.message}`);
+    return { lat: null, lng: null, formatted_address: null };
+  }
+}
+
 // ─── REVERSE GEOCODING ──────────────────────────────────────
 // Uses Google Maps Geocoding API to get a full address from coordinates.
 // GOOGLE_MAPS_API_KEY is required.
@@ -498,4 +563,4 @@ async function findBestAvailableBranch(customerLat, customerLng, restaurantId = 
   };
 }
 
-module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractMapsUrl, extractCoordsFromMapsUrl, reverseGeocode, forwardGeocode, placeDetails };
+module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractMapsUrl, extractCoordsFromMapsUrl, reverseGeocode, forwardGeocode, geocodeAddress, placeDetails };

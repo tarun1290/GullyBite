@@ -413,18 +413,46 @@ async function deprecateFlow(flowId) {
 // Converts saved addresses from DB format to NavigationList item format.
 // Respects NavigationList limits: title=30, description=20, metadata=80.
 function formatAddressesForFlow(addresses) {
-  const typeIcon = { home: '\uD83C\uDFE0', office: '\uD83C\uDFE2', other: '\uD83D\uDCCD' };
+  const typeIcon = {
+    home:   '\uD83C\uDFE0',
+    work:   '\uD83C\uDFE2',
+    office: '\uD83C\uDFE2',
+    other:  '\uD83D\uDCCD',
+  };
   const items = addresses.slice(0, 19).map(addr => {
-    const icon = typeIcon[addr.type || addr.address_type] || '';
-    const label = addr.label || 'Saved';
-    const title = (icon ? icon + ' ' + label : label).substring(0, 30);
-    const area = addr.area_locality || addr.area || addr.city || addr.full_address?.split(',')[1]?.trim() || '';
+    const labelText = addr?.label || 'Address';
+    const iconKey = (addr?.type || addr?.address_type || labelText || '').toString().toLowerCase();
+    const icon = typeIcon[iconKey] || '';
+    const title = (icon ? icon + ' ' + labelText : labelText).substring(0, 30);
+
+    // v3 fields with v1/v2 fallback
+    const recipient  = addr?.recipient_name   || addr?.receiver_name   || '';
+    const houseNum   = addr?.house_number     || addr?.building_floor  || addr?.flat_no || '';
+    const buildingSt = addr?.building_street  || addr?.street          || '';
+    const areaLoc    = addr?.area_locality    || addr?.area            || '';
+    const phone      = addr?.delivery_phone   || addr?.receiver_phone  || '';
+
+    const structuredLine = [houseNum, buildingSt, areaLoc].filter(Boolean).join(', ');
+
+    let descSource;
+    if (recipient && structuredLine) descSource = recipient + ' • ' + structuredLine;
+    else if (structuredLine)         descSource = structuredLine;
+    else if (recipient)              descSource = recipient;
+    else descSource = addr?.formatted_address || addr?.full_address || addr?.address || addr?.city || '';
+
+    const cityPin = [addr?.city, addr?.pincode].filter(Boolean).join(', ');
+    let metadata;
+    if (cityPin && phone) metadata = cityPin + ' • 📞 ' + phone;
+    else if (cityPin)     metadata = cityPin;
+    else if (phone)       metadata = '📞 ' + phone;
+    else metadata = addr?.formatted_address || addr?.full_address || addr?.address || '';
+
     return {
       id: String(addr._id || addr.id),
       'main-content': {
         title,
-        description: area.substring(0, 20),
-        metadata: (addr.full_address || addr.address || '').substring(0, 80),
+        description: String(descSource).substring(0, 20),
+        metadata: String(metadata).substring(0, 80),
       },
       ...(addr.is_default ? { badge: 'Default' } : {}),
     };
@@ -436,7 +464,7 @@ function formatAddressesForFlow(addresses) {
     'main-content': {
       title: '+ Add New Address',
       description: 'New location',
-      metadata: 'Enter a Google Maps link or type your address',
+      metadata: 'Enter your delivery address',
     },
   });
 

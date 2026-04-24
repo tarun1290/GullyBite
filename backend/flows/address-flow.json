@@ -1,28 +1,47 @@
 {
   "version": "6.2",
-  "data_api_version": "3.0",
-  "routing_model": {
-    "SELECT_ADDRESS": ["CONFIRM_DELIVERY", "ADD_ADDRESS"],
-    "CONFIRM_DELIVERY": [],
-    "ADD_ADDRESS": []
-  },
   "screens": [
     {
-      "id": "SELECT_ADDRESS",
+      "id": "SAVED_ADDRESSES",
       "title": "Deliver To",
       "terminal": false,
       "data": {
+        "wa_id": { "type": "string", "__example__": "919999999999" },
         "addresses": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
               "id": { "type": "string" },
-              "title": { "type": "string" }
+              "main-content": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "metadata": { "type": "string" }
+                }
+              },
+              "badge": { "type": "string" }
             }
           },
           "__example__": [
-            { "id": "addr_1", "title": "Home — 123 Main St, Hyderabad" }
+            {
+              "id": "addr_1",
+              "main-content": {
+                "title": "Home",
+                "description": "Tarun • 301, Tower B, Madhapur",
+                "metadata": "Hyderabad, 500081 • 📞 9999999999"
+              },
+              "badge": "Default"
+            },
+            {
+              "id": "new_address",
+              "main-content": {
+                "title": "+ Add New Address",
+                "description": "New location",
+                "metadata": "Enter your delivery address"
+              }
+            }
           ]
         }
       },
@@ -30,34 +49,17 @@
         "type": "SingleColumnLayout",
         "children": [
           {
-            "type": "TextHeading",
-            "text": "Choose a saved address"
-          },
-          {
-            "type": "RadioButtonsGroup",
-            "name": "selected_address_id",
-            "label": "Your addresses",
-            "data-source": "${data.addresses}",
-            "required": true
-          },
-          {
-            "type": "Footer",
-            "label": "Deliver Here",
+            "type": "NavigationList",
+            "name": "selected_address",
+            "label": "Your saved addresses",
+            "description": "Where to deliver?",
+            "list-items": "${data.addresses}",
             "on-click-action": {
               "name": "navigate",
               "next": { "type": "screen", "name": "CONFIRM_DELIVERY" },
               "payload": {
-                "selected_address_id": "${form.selected_address_id}"
+                "address_id": "${form.selected_address}"
               }
-            }
-          },
-          {
-            "type": "EmbeddedLink",
-            "text": "+ Add New Address",
-            "on-click-action": {
-              "name": "navigate",
-              "next": { "type": "screen", "name": "ADD_ADDRESS" },
-              "payload": {}
             }
           }
         ]
@@ -69,19 +71,13 @@
       "terminal": true,
       "success": true,
       "data": {
-        "selected_address_id": { "type": "string", "__example__": "addr_1" }
+        "address_id": { "type": "string", "__example__": "addr_1" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Confirm your selection"
-          },
-          {
-            "type": "TextBody",
-            "text": "Tap Continue to proceed with your delivery address."
-          },
+          { "type": "TextHeading", "text": "Confirm your selection" },
+          { "type": "TextBody", "text": "Tap Continue to proceed with your delivery address." },
           {
             "type": "Footer",
             "label": "Continue",
@@ -89,7 +85,7 @@
               "name": "complete",
               "payload": {
                 "action": "select_address",
-                "selected_address_id": "${data.selected_address_id}"
+                "selected_address_id": "${data.address_id}"
               }
             }
           }
@@ -97,62 +93,65 @@
       }
     },
     {
-      "id": "ADD_ADDRESS",
-      "title": "New Address",
+      "id": "NEW_ADDRESS",
+      "title": "Add Delivery Address",
       "terminal": true,
       "success": true,
       "data": {
-        "locality_options": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "id": { "type": "string" },
-              "title": { "type": "string" }
-            }
-          },
-          "__example__": [
-            { "id": "placeholder", "title": "Type to search..." }
-          ]
-        }
+        "wa_id": { "type": "string", "__example__": "919999999999" },
+        "customer_name": { "type": "string", "__example__": "Tarun" },
+        "customer_phone": { "type": "string", "__example__": "9999999999" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
+          { "type": "TextHeading", "text": "Add Delivery Address" },
           {
             "type": "TextInput",
-            "name": "full_name",
-            "label": "Full Name",
+            "name": "recipient_name",
+            "label": "Recipient Name",
             "input-type": "text",
-            "required": true
+            "required": true,
+            "init-value": "${data.customer_name}",
+            "helper-text": "Name of the person receiving the order"
           },
           {
             "type": "TextInput",
-            "name": "phone_number",
-            "label": "Phone Number",
+            "name": "delivery_phone",
+            "label": "Delivery Contact Number",
             "input-type": "phone",
-            "required": true
+            "required": true,
+            "init-value": "${data.customer_phone}",
+            "helper-text": "We'll call this number at delivery"
           },
           {
             "type": "TextInput",
-            "name": "door_no",
-            "label": "Door No / Flat No",
+            "name": "house_number",
+            "label": "Flat / House / Shop No.",
             "input-type": "text",
             "required": true
           },
           {
             "type": "TextInput",
-            "name": "building_name",
-            "label": "Building Name",
+            "name": "building_street",
+            "label": "Building Name / Street",
             "input-type": "text",
             "required": true
           },
           {
             "type": "TextInput",
-            "name": "street_name",
-            "label": "Street Name",
+            "name": "area_locality",
+            "label": "Area / Locality",
             "input-type": "text",
             "required": true
+          },
+          {
+            "type": "TextInput",
+            "name": "landmark",
+            "label": "Landmark",
+            "input-type": "text",
+            "required": false,
+            "helper-text": "e.g. Near Apollo Hospital, Opposite SBI ATM"
           },
           {
             "type": "TextInput",
@@ -167,30 +166,20 @@
             "label": "Pincode",
             "input-type": "number",
             "required": true,
-            "max-chars": 6,
-            "min-chars": 6
+            "min-chars": 6,
+            "max-chars": 6
           },
           {
-            "type": "TextInput",
-            "name": "locality_search",
-            "label": "Search area / locality",
-            "input-type": "text",
+            "type": "RadioButtonsGroup",
+            "name": "label",
+            "label": "Save as",
             "required": true,
-            "helper-text": "Type to search, then pick from the list below",
-            "on-change-action": {
-              "name": "data_exchange",
-              "payload": {
-                "trigger": "locality_search",
-                "query": "${form.locality_search}"
-              }
-            }
-          },
-          {
-            "type": "Dropdown",
-            "name": "place_id",
-            "label": "Select locality",
-            "required": true,
-            "data-source": "${data.locality_options}"
+            "data-source": [
+              { "id": "Home",  "title": "🏠 Home"  },
+              { "id": "Work",  "title": "🏢 Work"  },
+              { "id": "Other", "title": "📍 Other" }
+            ],
+            "init-value": "Home"
           },
           {
             "type": "Footer",
@@ -198,16 +187,16 @@
             "on-click-action": {
               "name": "complete",
               "payload": {
-                "action": "new_address",
-                "full_name": "${form.full_name}",
-                "phone_number": "${form.phone_number}",
-                "door_no": "${form.door_no}",
-                "building_name": "${form.building_name}",
-                "street_name": "${form.street_name}",
-                "city": "${form.city}",
-                "pincode": "${form.pincode}",
-                "locality_search": "${form.locality_search}",
-                "place_id": "${form.place_id}"
+                "action": "add_address",
+                "recipient_name":  "${form.recipient_name}",
+                "delivery_phone":  "${form.delivery_phone}",
+                "house_number":    "${form.house_number}",
+                "building_street": "${form.building_street}",
+                "area_locality":   "${form.area_locality}",
+                "landmark":        "${form.landmark}",
+                "city":            "${form.city}",
+                "pincode":         "${form.pincode}",
+                "label":           "${form.label}"
               }
             }
           }
