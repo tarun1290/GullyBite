@@ -8,7 +8,7 @@
 
 'use strict';
 
-require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'), quiet: true });
 
 const flowMgr = require('../src/services/flowManager');
 const { connect, col } = require('../src/config/database');

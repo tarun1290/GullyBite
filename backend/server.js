@@ -3,8 +3,8 @@
 
 // Load .env — check backend/ first (local dev), then root (Vercel/other)
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+require('dotenv').config({ path: path.join(__dirname, '.env'), quiet: true });
+require('dotenv').config({ path: path.join(__dirname, '../.env'), quiet: true });
 
 // ── STARTUP SECRET VALIDATION ────────────────────────────────
 // Required secrets must be set. Crash early with clear error in production.

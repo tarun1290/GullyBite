@@ -27,7 +27,7 @@
 
 'use strict';
 
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
 const { connect, col, newId } = require('../config/database');
 const { ensureIndexes } = require('../config/indexes');

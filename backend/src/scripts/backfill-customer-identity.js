@@ -8,7 +8,7 @@
 //
 // Run: node backend/src/scripts/backfill-customer-identity.js
 
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const { connect, col } = require('../config/database');
 const { hashPhone } = require('../utils/phoneHash');
 

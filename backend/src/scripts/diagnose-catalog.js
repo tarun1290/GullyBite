@@ -6,8 +6,8 @@
 
 const path = require('path');
 // Try multiple .env locations
-require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
-if (!process.env.MONGODB_URI) require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../../../.env'), quiet: true });
+if (!process.env.MONGODB_URI) require('dotenv').config({ path: path.join(__dirname, '../../.env'), quiet: true });
 
 const { MongoClient } = require('mongodb');
 const axios = require('axios');

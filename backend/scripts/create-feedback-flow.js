@@ -10,7 +10,7 @@
 
 'use strict';
 
-require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env'), quiet: true });
 
 const axios = require('axios');
 const FormData = require('form-data');

@@ -59,7 +59,7 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
     if (!restaurantId) return res.status(401).json({ error: 'No restaurant context' });
 
     // Parse first (validates the file before we persist anything).
-    const parsed = parseXlsxBuffer(req.file.buffer);
+    const parsed = await parseXlsxBuffer(req.file.buffer);
 
     // Phase 4: push the raw XLSX to S3 (or local-disk fallback) and
     // persist ONLY a preview sample on the Mongo row. Full rows are

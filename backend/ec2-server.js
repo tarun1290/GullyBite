@@ -5,7 +5,7 @@
 
 'use strict';
 
-require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
+require('dotenv').config({ path: require('path').join(__dirname, '../.env'), quiet: true });
 
 // ── STARTUP SECRET VALIDATION ────────────────────────────────
 // Required secrets must be set. Crash early with clear error in production.

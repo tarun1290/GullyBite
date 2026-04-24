@@ -27,7 +27,7 @@
 
 'use strict';
 
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const { connect, col } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'migration' });
 

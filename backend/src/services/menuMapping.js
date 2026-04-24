@@ -37,7 +37,7 @@ async function _reparseFromStorage(upload) {
         : (upload.file_key || upload.file_url);
       buffer = fs.readFileSync(absPath);
     }
-    const parsed = parseXlsxBuffer(buffer);
+    const parsed = await parseXlsxBuffer(buffer);
     return parsed.rows || [];
   } catch (err) {
     log.error({ err, uploadId: upload._id }, 'failed to re-parse XLSX from storage');
