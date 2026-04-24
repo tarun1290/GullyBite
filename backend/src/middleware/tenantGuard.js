@@ -7,20 +7,17 @@
 //                      the restaurants collection; attaches req.tenant.
 //                      Rejects unknown / suspended tenants with 404.
 //
-//   requireCustomer  — resolves the caller's customer identity from a
-//                      phone in the X-Customer-Phone header (MVP) or
-//                      from a customer_id passed by an upstream auth
-//                      layer if one exists. Attaches req.customer.
-//
-// These are intentionally NOT auth — the customer layer for WhatsApp
-// ordering is identified by the phone Meta forwards us on inbound
-// webhook events. A later auth hardening step can wrap these with
-// signed tokens without changing the service surface.
+//   requireCustomer  — DELEGATED to middleware/customerAuth.js. Verifies
+//                      a signed customer JWT (or a service-secret bypass
+//                      for trusted internal callers). The previous
+//                      X-Customer-Phone header trust was OWASP A01 —
+//                      anyone could read any customer's data by setting
+//                      a header.
 
 'use strict';
 
 const { col } = require('../config/database');
-const customerSvc = require('../services/customer.service');
+const { requireCustomerAuth } = require('./customerAuth');
 
 function _pickRestaurantId(req) {
   return (
@@ -52,25 +49,4 @@ async function requireTenant(req, res, next) {
   }
 }
 
-async function requireCustomer(req, res, next) {
-  try {
-    const phone = req.headers['x-customer-phone'] || req.body?.customer_phone || req.query?.customer_phone;
-    const passedId = req.headers['x-customer-id'] || req.body?.customer_id;
-
-    let customer = null;
-    if (passedId) {
-      customer = await customerSvc.findById(passedId);
-    } else if (phone) {
-      customer = await customerSvc.findOrCreateByPhone(phone);
-    }
-    if (!customer) {
-      return res.status(401).json({ error: 'customer identity required (X-Customer-Phone)' });
-    }
-    req.customer = { id: String(customer._id), wa_phone: customer.wa_phone, name: customer.name || null };
-    next();
-  } catch (err) {
-    next(err);
-  }
-}
-
-module.exports = { requireTenant, requireCustomer };
+module.exports = { requireTenant, requireCustomer: requireCustomerAuth };

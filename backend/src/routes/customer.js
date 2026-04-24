@@ -7,24 +7,84 @@
 //
 //   app.use('/api/customer', express.json(), require('./src/routes/customer'));
 //
-// Identity model (MVP): the caller passes X-Customer-Phone or
-// X-Customer-Id; tenantGuard resolves it into req.customer. No JWT yet
-// — these endpoints are called by the dashboard on behalf of a
-// customer, or by the WhatsApp flow handler with an already-resolved
-// customer id.
+// Identity model: the caller authenticates with a signed customer JWT
+// (issued by POST /session below) on every protected route. Trusted
+// internal callers (the WhatsApp Flow handler) instead pass
+// `x-service-secret` + `x-customer-phone` and skip the /session
+// roundtrip. See middleware/customerAuth.js.
 
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 
 const { requireTenant, requireCustomer } = require('../middleware/tenantGuard');
+const { signCustomerToken } = require('../middleware/customerAuth');
+const { rateLimit, RateLimitExceededError } = require('../middleware/rateLimit');
 const addressBook = require('../services/addressBook.service');
 const customerProfile = require('../services/customerProfile.service');
 const cartSvc = require('../services/cart.service');
 const reorderSvc = require('../services/reorder.service');
 const orderCreateSvc = require('../services/orderCreate.service');
+const customerSvc = require('../services/customer.service');
 const { col } = require('../config/database');
+const log = require('../utils/logger').child({ component: 'customer-routes' });
+
+// ─── SESSION HANDSHAKE ────────────────────────────────────────
+// POST /api/customer/session
+// Trusted internal endpoint that mints a 24h customer JWT. The caller
+// must present `x-service-secret` (constant-time compared against
+// CUSTOMER_SERVICE_SECRET) and the customer's phone — typically the
+// WhatsApp Flow handler does this after Meta has verified the phone.
+//
+// Rate-limited per phone (10/hour) so a leaked service secret can't be
+// used to enumerate the customer table without showing up in logs.
+//
+// NOT mounted behind requireTenant — sessions are global to the
+// platform; per-tenant scoping happens on every downstream call.
+router.post('/session', async (req, res, next) => {
+  try {
+    const expectedSecret = process.env.CUSTOMER_SERVICE_SECRET;
+    const providedSecret = req.get('x-service-secret') || '';
+
+    const expectedBuf = Buffer.from(expectedSecret, 'utf8');
+    const providedBuf = Buffer.from(providedSecret, 'utf8');
+    const ok = expectedBuf.length === providedBuf.length &&
+               crypto.timingSafeEqual(expectedBuf, providedBuf);
+    if (!ok) {
+      log.warn({ ip: req.ip }, '/session: invalid service secret');
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+
+    const rawPhone = req.body?.phone || req.body?.customer_phone || req.get('x-customer-phone');
+    const phone = customerSvc.normalizePhone(rawPhone);
+    if (!phone) return res.status(400).json({ error: 'phone is required' });
+
+    try {
+      await rateLimit(`customer-session:${phone}`, 10, 3600);
+    } catch (err) {
+      if (err instanceof RateLimitExceededError) {
+        return res.status(429).json({ error: 'Too many session requests for this phone' });
+      }
+      throw err;
+    }
+
+    const customer = await customerSvc.findOrCreateByPhone(phone);
+    if (!customer) return res.status(500).json({ error: 'failed to resolve customer' });
+
+    const token = signCustomerToken(customer);
+    res.json({
+      token,
+      customer: {
+        id: String(customer._id),
+        wa_phone: customer.wa_phone,
+        name: customer.name || null,
+      },
+      expires_in: 86400,
+    });
+  } catch (err) { next(err); }
+});
 
 // ─── PROFILE ──────────────────────────────────────────────────
 // GET /api/customer/:restaurant_id/profile

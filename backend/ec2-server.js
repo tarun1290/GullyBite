@@ -7,6 +7,35 @@
 
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 
+// ── STARTUP SECRET VALIDATION ────────────────────────────────
+// Required secrets must be set. Crash early with clear error in production.
+// Mirrors the block in server.js. Modules like adminAuth.js and
+// customerAuth.js also enforce their own secrets at require-time —
+// this block exists so ops sees ALL missing secrets in one boot log
+// instead of a series of one-at-a-time crash-loops.
+const REQUIRED_SECRETS = ['JWT_SECRET'];
+const REQUIRED_IN_PROD = [
+  'ADMIN_JWT_SECRET',
+  'CUSTOMER_JWT_SECRET',
+  'CUSTOMER_SERVICE_SECRET',
+  'RAZORPAY_WEBHOOK_SECRET',
+  'MONGODB_URI',
+  'WEBHOOK_APP_SECRET',
+  'WA_CHECKOUT_WEBHOOK_SECRET',
+];
+const _missing = REQUIRED_SECRETS.filter(k => !process.env[k]);
+if (_missing.length) {
+  console.error(`FATAL: Required environment variable(s) missing: ${_missing.join(', ')}`);
+  if (process.env.NODE_ENV === 'production') process.exit(1);
+}
+if (process.env.NODE_ENV === 'production') {
+  const _missingProd = REQUIRED_IN_PROD.filter(k => !process.env[k]);
+  if (_missingProd.length) {
+    console.error(`FATAL: Production-required env var(s) missing: ${_missingProd.join(', ')}`);
+    process.exit(1);
+  }
+}
+
 const http = require('http');
 const express = require('express');
 const cors = require('cors');
