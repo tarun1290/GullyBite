@@ -1,0 +1,12 @@
+{
+  "name": "GullyBite",
+  "short_name": "GullyBite",
+  "description": "WhatsApp-native food ordering for Indian restaurants",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FAF8F3",
+  "theme_color": "#0D9B6A",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

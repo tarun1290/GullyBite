@@ -68,6 +68,40 @@ const upload = multer({
   },
 });
 
+// ─── PUBLIC ROUTES ───────────────────────────────────────────
+// Defined BEFORE router.use(requireAuth) so they remain unauthenticated.
+// Used by the Next.js /store/[slug] ISR page; mirrors the JSON shape the
+// EC2 inline /store/:slug HTML route reads, plus a computed display_name.
+router.get('/public/store/:slug', express.json(), async (req, res) => {
+  try {
+    const slug = String(req.params.slug || '').trim();
+    if (!slug) return res.status(404).json({ error: 'Store not found' });
+    const restaurant = await col('restaurants').findOne(
+      { store_slug: slug, approval_status: 'approved' },
+      { projection: {
+        business_name: 1, brand_name: 1, city: 1, restaurant_type: 1,
+        logo_url: 1, store_url: 1, store_slug: 1, phone: 1,
+      } },
+    );
+    if (!restaurant) return res.status(404).json({ error: 'Store not found' });
+    const display_name = restaurant.brand_name || restaurant.business_name;
+    res.json({
+      business_name:   restaurant.business_name || null,
+      brand_name:      restaurant.brand_name || null,
+      city:            restaurant.city || null,
+      restaurant_type: restaurant.restaurant_type || null,
+      logo_url:        restaurant.logo_url || null,
+      store_url:       restaurant.store_url || null,
+      store_slug:      restaurant.store_slug || null,
+      phone:           restaurant.phone || null,
+      display_name,
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, 'public store lookup failed');
+    res.status(500).json({ error: 'Failed to load store' });
+  }
+});
+
 // All routes below require authentication
 // requireApproved is applied only to routes that need WhatsApp (order flow, catalog sync)
 router.use(requireAuth);
