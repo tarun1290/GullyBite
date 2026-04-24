@@ -829,6 +829,27 @@ router.post('/settlements/run', requireAdmin, express.json(), async (req, res) =
     if (!restaurantId) return res.status(400).json({ error: 'restaurant_id required' });
     const payout_mode = req.body?.payout_mode === 'manual' ? 'manual' : 'auto';
 
+    // Cross-system guard: refuse if any v2 per-order payout is in flight or
+    // recently paid for this restaurant. Phase 5 drains the ledger balance,
+    // and v2 per-order payouts haven't yet been reconciled out of the
+    // ledger — running both at once would double-pay the same orders.
+    // 30-day lookback is generous; older v2 rows are guaranteed already
+    // reflected in the ledger via the payout webhook.
+    const periodStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const conflicting = await col('order_settlements').findOne({
+      restaurant_id: String(restaurantId),
+      status: { $in: ['paid', 'processing'] },
+      created_at: { $gte: periodStart },
+    });
+    if (conflicting) {
+      return res.status(409).json({
+        error: 'Payout conflict',
+        message: 'A v2 per-order payout is already in progress for this period. Resolve it before running a manual settlement.',
+        conflicting_settlement_id: conflicting._id,
+        conflicting_status: conflicting.status,
+      });
+    }
+
     const settlementSvc = require('../services/settlement.service');
     const result = await settlementSvc.executeSettlement(String(restaurantId), { trigger: 'admin', payout_mode });
 

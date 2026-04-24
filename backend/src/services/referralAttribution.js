@@ -146,19 +146,72 @@ async function attributeOrder(orderId, orderSubtotal, referralId) {
 }
 
 // ─── CONFIRM COMMISSION (after payment) ─────────────────────
+// Flips the referral row pending → confirmed AND writes two ledger debits
+// (commission + 18% GST on commission) so the merchant's payable balance
+// reflects what the platform is owed for the GBREF. The debits are
+// idempotent via refId '<order_id>:referral' and '<order_id>:referral:gst'
+// — duplicate confirmations are no-ops at the unique index.
 async function confirmCommission(orderId) {
+  // Read the referral first so we have commission_amount + restaurant_id
+  // for the ledger writes. updateMany is preserved for safety in case
+  // multiple pending rows ever exist for one order, but findOne is
+  // sufficient for the ledger debit: there should be exactly one
+  // commission per attributed order.
+  const referral = await col('referrals').findOne({
+    attributed_order_id: orderId,
+    commission_status: 'pending',
+  });
+
   await col('referrals').updateMany(
     { attributed_order_id: orderId, commission_status: 'pending' },
     { $set: { commission_status: 'confirmed', updated_at: new Date() } }
   );
+
+  // No referral on this order = non-GBREF order. Correct behaviour: no debit.
+  if (!referral || !referral.restaurant_id) return;
+
+  const { FINANCE_CONFIG } = require('../config/financeConfig');
+  const ledger = require('./ledger.service');
+  const commissionPaise = Math.round((referral.commission_amount || 0) * 100);
+  const gstPaise = Math.round(commissionPaise * (FINANCE_CONFIG.gstReferralFeePct / 100));
+
+  if (commissionPaise <= 0) return; // 0% commission or missing amount → nothing to debit
+
+  // Fire-and-forget — commission confirmation must NEVER fail because of a
+  // ledger write blip. Errors are logged for ops reconciliation.
+  Promise.all([
+    ledger.debit({
+      restaurantId: referral.restaurant_id,
+      amountPaise: commissionPaise,
+      refType: 'referral',
+      refId: `${orderId}:referral`,
+      status: 'completed',
+      notes: `GBREF commission ${COMMISSION_PCT}% on order ${orderId}`,
+    }),
+    gstPaise > 0 ? ledger.debit({
+      restaurantId: referral.restaurant_id,
+      amountPaise: gstPaise,
+      refType: 'referral_fee_gst',
+      refId: `${orderId}:referral:gst`,
+      status: 'completed',
+      notes: `GST ${FINANCE_CONFIG.gstReferralFeePct}% on GBREF commission`,
+    }) : Promise.resolve(),
+  ]).catch(err => log.error({ err, orderId }, 'confirmCommission.ledger_debit_failed'));
 }
 
 // ─── REVERSE COMMISSION (cancellation/refund) ───────────────
+// Symmetric to confirmCommission: flips the referral row to reversed AND,
+// if the commission had already been confirmed (i.e. ledger debits were
+// written), posts compensating credits to restore the merchant's balance.
+// Uses ':reversal' refId suffix so the unique index makes replays safe.
 async function reverseCommission(orderId, reason = 'order_cancelled') {
   const referral = await col('referrals').findOne({ attributed_order_id: orderId, status: 'converted' });
   if (!referral) return;
 
   const reverseAmount = referral.commission_amount || 0;
+  // Snapshot the commission_status BEFORE the updateOne flips it — we need
+  // to know whether ledger debits were ever written for this referral.
+  const wasConfirmed = referral.commission_status === 'confirmed';
 
   await col('referrals').updateOne(
     { _id: referral._id },
@@ -182,6 +235,37 @@ async function reverseCommission(orderId, reason = 'order_cancelled') {
     { _id: orderId },
     { $set: { referral_fee_rs: 0, referral_reversed: true, referral_reversal_reason: reason } }
   );
+
+  // Only write reversal credits if the original confirmation actually wrote
+  // ledger debits. A 'pending' commission was never debited (debits are
+  // written by confirmCommission), so no compensating credit is needed.
+  if (!wasConfirmed || !referral.restaurant_id) return;
+
+  const { FINANCE_CONFIG } = require('../config/financeConfig');
+  const ledger = require('./ledger.service');
+  const commissionPaise = Math.round(reverseAmount * 100);
+  const gstPaise = Math.round(commissionPaise * (FINANCE_CONFIG.gstReferralFeePct / 100));
+
+  if (commissionPaise <= 0) return;
+
+  Promise.all([
+    ledger.credit({
+      restaurantId: referral.restaurant_id,
+      amountPaise: commissionPaise,
+      refType: 'referral',
+      refId: `${orderId}:referral:reversal`,
+      status: 'completed',
+      notes: `GBREF commission reversal — ${reason}`,
+    }),
+    gstPaise > 0 ? ledger.credit({
+      restaurantId: referral.restaurant_id,
+      amountPaise: gstPaise,
+      refType: 'referral_fee_gst',
+      refId: `${orderId}:referral:gst:reversal`,
+      status: 'completed',
+      notes: `GST reversal on GBREF commission — ${reason}`,
+    }) : Promise.resolve(),
+  ]).catch(err => log.error({ err, orderId }, 'reverseCommission.ledger_credit_failed'));
 }
 
 // ─── PAYOUT REPORTING ───────────────────────────────────────

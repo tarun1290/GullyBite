@@ -26,6 +26,7 @@
 const { col, newId } = require('../config/database');
 const ledger = require('./ledger.service');
 const payoutSvc = require('./payout.service');
+const { FINANCE_CONFIG, isFirstBillingMonth } = require('../config/financeConfig');
 const log = require('../utils/logger').child({ component: 'settlement' });
 
 const COLLECTION = 'settlements';
@@ -39,11 +40,13 @@ const PAYOUT_PROVIDERS    = ['razorpay', 'fallback_provider'];
 const SETTLEMENT_TIMEOUT_MS = Number(process.env.SETTLEMENT_TIMEOUT_MS) || 24 * 60 * 60 * 1000;
 
 // ─── 1. CALCULATE ───────────────────────────────────────────
-// Returns { gross, refunds, payouts, net_balance, payable_amount } in paise.
-//   gross          — Σ credits (payment, completed)
+// Returns { gross, refunds, payouts, fees, net_balance, payable_amount } in paise.
+//   gross          — Σ credits (payment + payout reversals, completed)
 //   refunds        — Σ debits  (refund,  completed)
 //   payouts        — Σ debits  (payout,  completed)
-//   net_balance    — gross − refunds − payouts
+//   fees           — Σ debits  (platform_fee + platform_fee_gst + referral
+//                    + referral_fee_gst + marketing + tds, completed)
+//   net_balance    — gross − refunds − payouts − fees
 //   payable_amount — net_balance − Σ (pending/processing settlement rows
 //                    not yet reflected in the ledger). Clamped to ≥ 0.
 async function calculateSettlement(restaurantId) {
@@ -58,22 +61,44 @@ async function calculateSettlement(restaurantId) {
     } },
   ]).toArray();
 
-  let gross = 0, refunds = 0, payouts = 0;
+  // Per-ref_type breakdown so the export / audit trail can show exactly
+  // why a payable amount is what it is. `fees` rolls up every platform-side
+  // deduction so net_balance matches the canonical credits − debits view
+  // returned by ledger.balancePaise().
+  let gross = 0, refunds = 0, payouts = 0, fees = 0;
   for (const row of agg) {
     const { type, ref_type } = row._id;
-    if (type === 'credit' && ref_type === 'payment') gross   += row.total;
-    if (type === 'debit'  && ref_type === 'refund')  refunds += row.total;
-    if (type === 'debit'  && ref_type === 'payout')  payouts += row.total;
+    if (type === 'credit' && ref_type === 'payment')          gross   += row.total;
+    // includes payout reversal credits (failPayout compensating entries) so
+    // a reversed payout restores the ledger balance instead of vanishing.
+    if (type === 'credit' && ref_type === 'payout')           gross   += row.total;
+    if (type === 'debit'  && ref_type === 'refund')           refunds += row.total;
+    if (type === 'debit'  && ref_type === 'payout')           payouts += row.total;
+    if (type === 'debit'  && ref_type === 'platform_fee')     fees    += row.total;
+    if (type === 'debit'  && ref_type === 'platform_fee_gst') fees    += row.total;
+    if (type === 'debit'  && ref_type === 'referral')         fees    += row.total;
+    if (type === 'debit'  && ref_type === 'referral_fee_gst') fees    += row.total;
+    if (type === 'debit'  && ref_type === 'marketing')        fees    += row.total;
+    if (type === 'debit'  && ref_type === 'tds')              fees    += row.total;
+    // Symmetric reversal credits restore the balance (e.g. cancelled GBREF
+    // order writes credits with refType='referral'/'referral_fee_gst' and
+    // refId '...:reversal'). Counting them as credits keeps net_balance
+    // consistent with ledger.balancePaise().
+    if (type === 'credit' && ref_type === 'referral')         gross   += row.total;
+    if (type === 'credit' && ref_type === 'referral_fee_gst') gross   += row.total;
   }
-  const net_balance = gross - refunds - payouts;
+  const net_balance = gross - refunds - payouts - fees;
 
   // In-flight settlement rows haven't written their ledger debit yet
   // (that happens on successful payout), so we reserve their amount
   // so two concurrent runs can't both pay out the same balance.
+  // 'pending_manual_payout' is included so a row stuck awaiting an ops
+  // bank transfer still reserves its balance — without it, a fresh
+  // settlement could double-pay the same money (W1 from spot-check).
   const inflightAgg = await col(COLLECTION).aggregate([
     { $match: {
         restaurant_id: rid,
-        status: { $in: ['pending', 'processing'] },
+        status: { $in: ['pending', 'processing', 'pending_manual_payout'] },
         payout_amount_paise: { $gt: 0 },
         // Restrict to Phase 5 rows; legacy weekly rows use a different
         // reservation model (orders.settlement_id) and must not be
@@ -86,7 +111,7 @@ async function calculateSettlement(restaurantId) {
 
   const payable_amount = Math.max(0, net_balance - inflight);
 
-  return { gross, refunds, payouts, net_balance, payable_amount };
+  return { gross, refunds, payouts, fees, net_balance, payable_amount };
 }
 
 // ─── 1b. META MARKETING COST ────────────────────────────────
@@ -128,31 +153,149 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
     return { skipped: true, reason: 'inflight', settlement_id: inflight._id };
   }
 
+  // Restaurant doc is needed up-front for first-month check + fund account
+  // gating. Projection includes the three timestamps isFirstBillingMonth()
+  // consults (billing_start_date → approved_at → created_at).
+  const restaurant = await col('restaurants').findOne(
+    { _id: rid },
+    { projection: {
+        business_name: 1, razorpay_fund_acct_id: 1,
+        created_at: 1, approved_at: 1, billing_start_date: 1,
+    } }
+  );
+  if (!restaurant) {
+    log.warn({ restaurantId: rid }, 'settlement.skip.restaurant_not_found');
+    return { skipped: true, reason: 'restaurant_not_found' };
+  }
+
   const calc = await calculateSettlement(rid);
+
+  // ── Monthly platform fee + GST (₹4,999/month + 18%) ───────────
+  // Deducted from the SECOND billing month onward. First month waives
+  // BOTH (collected upfront at onboarding, GST-inclusive). Two separate
+  // ledger debits — fee and GST — keyed for monthly idempotency:
+  //   platform_fee     → ref_id '<rid>:YYYY-MM'
+  //   platform_fee_gst → ref_id '<rid>:YYYY-MM:gst'
+  // The unique (restaurant_id, ref_type, ref_id) ledger index means a
+  // re-run within the same calendar month no-ops on both writes.
+  // Each debit is the FULL amount even when the balance is short — the
+  // ledger goes negative, the remainder is "carried" automatically into
+  // next month's payout. The actual payout is clamped to >= 0 below.
+  // IST month key — the platform's billing periods follow IST, not UTC.
+  const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+  const monthKey = istNow.toISOString().slice(0, 7); // 'YYYY-MM'
+  const platformFeePaise = Math.round(FINANCE_CONFIG.monthlyPlatformFeeRs * 100);
+  const platformFeeGstPaise = Math.round(platformFeePaise * (FINANCE_CONFIG.gstPlatformFeePct / 100));
+  const platformFeeWaived = isFirstBillingMonth(restaurant);
+
+  if (platformFeeWaived) {
+    log.info({ restaurantId: rid, monthKey, platformFeePaise, platformFeeGstPaise },
+      'platform_fee_gst: first month — both fee and GST waived');
+  } else if (platformFeePaise > 0) {
+    const monthRefId = `${rid}:${monthKey}`;
+    try {
+      await ledger.debit({
+        restaurantId: rid,
+        amountPaise: platformFeePaise,
+        refType: 'platform_fee',
+        refId: monthRefId,
+        status: 'completed',
+        notes: `Monthly platform subscription ₹${FINANCE_CONFIG.monthlyPlatformFeeRs} for ${monthKey}`,
+      });
+    } catch (err) {
+      log.error({ err: err?.message, restaurantId: rid, monthKey }, 'settlement.platform_fee.debit_failed');
+      // Continue — fee reconciliation can be done later. We'd rather
+      // pay the merchant than block a settlement on a ledger blip.
+    }
+    if (platformFeeGstPaise > 0) {
+      try {
+        await ledger.debit({
+          restaurantId: rid,
+          amountPaise: platformFeeGstPaise,
+          refType: 'platform_fee_gst',
+          refId: `${monthRefId}:gst`,
+          status: 'completed',
+          notes: `GST ${FINANCE_CONFIG.gstPlatformFeePct}% on platform subscription for ${monthKey}`,
+        });
+      } catch (err) {
+        log.error({ err: err?.message, restaurantId: rid, monthKey }, 'settlement.platform_fee_gst.debit_failed');
+      }
+    }
+  }
+
+  // Re-read the balance now that the platform fee debit (if any) has
+  // landed. ledger.debit is idempotent per month, so a replay returns the
+  // existing entry without changing balance — recalc is still correct.
+  const postFeeCalc = await calculateSettlement(rid);
 
   // Meta (WhatsApp marketing) cost deduction. Frozen at settlement-row
   // creation so retries/confirm always reference the same message_ids.
   // Platform fee is already netted in the ledger balance — meta cost is
   // a separate, additive deduction (does NOT touch platform fee logic).
   const meta = await _aggregateUnsettledMeta(rid);
-  const amount = Math.max(0, calc.payable_amount - meta.totalPaise);
+  let amount = Math.max(0, postFeeCalc.payable_amount - meta.totalPaise);
+
+  // ── TDS withholding (Section 194O) ─────────────────────────────
+  // Computed against the FY-cumulative net payouts: 1% with PAN, 5%
+  // without, only on the portion above ₹5L threshold. financials.calculateTDS
+  // reads previous settlements (period_end within current FY) and decides
+  // whether and how much TDS applies to THIS settlement's net.
+  // Pass the post-fee post-meta amount in rupees — that's the figure the
+  // merchant would otherwise receive, which is what TDS is calculated on.
+  // Idempotency: keyed by '<rid>:tds:YYYY-MM' (one TDS debit per restaurant
+  // per calendar month, same monthKey as platform fee).
+  const { calculateTDS } = require('./financials');
+  const round2 = (n) => Math.round((n || 0) * 100) / 100;
+  const netRsForTDS = round2(amount / 100);
+  let tds = { applicable: false, rate: 0, amount: 0, section: null, hasPAN: false };
+  if (amount > 0) {
+    try {
+      tds = await calculateTDS(rid, netRsForTDS);
+    } catch (err) {
+      log.error({ err: err?.message, restaurantId: rid }, 'settlement.tds.calc_failed');
+      // Continue with tds.applicable=false. Better to under-withhold than
+      // to block a settlement on a transient compute failure.
+    }
+  }
+  if (tds.applicable && tds.amount > 0) {
+    const tdsPaise = Math.round(tds.amount * 100);
+    try {
+      await ledger.debit({
+        restaurantId: rid,
+        amountPaise: tdsPaise,
+        refType: 'tds',
+        refId: `${rid}:tds:${monthKey}`,
+        status: 'completed',
+        notes: `TDS ${tds.rate}% u/s ${tds.section || '194O'} — FY cumulative ₹${tds.cumulative}`,
+      });
+    } catch (err) {
+      log.error({ err: err?.message, restaurantId: rid, tdsAmount: tds.amount }, 'settlement.tds.debit_failed');
+      // If the debit failed, do NOT subtract from amount — otherwise we'd
+      // under-pay the merchant without a corresponding ledger entry.
+      tds.applicable = false;
+      tds.amount = 0;
+    }
+    if (tds.applicable) {
+      amount = Math.max(0, amount - tdsPaise);
+    }
+  }
 
   if (amount < MIN_PAYOUT_PAISE) {
     log.info({
       restaurantId: rid, amount, threshold: MIN_PAYOUT_PAISE,
-      payable: calc.payable_amount, meta_cost_paise: meta.totalPaise, meta_count: meta.count,
+      payable: postFeeCalc.payable_amount,
+      payable_pre_fee: calc.payable_amount,
+      meta_cost_paise: meta.totalPaise, meta_count: meta.count,
+      tds_amount_rs: tds.amount,
     }, 'settlement.skip.below_threshold');
     return {
       skipped: true, reason: 'below_threshold',
       payable_amount_paise: amount, threshold: MIN_PAYOUT_PAISE,
       meta_cost_paise: meta.totalPaise, meta_message_count: meta.count,
+      tds_amount_rs: tds.amount,
     };
   }
 
-  const restaurant = await col('restaurants').findOne(
-    { _id: rid },
-    { projection: { business_name: 1, razorpay_fund_acct_id: 1 } }
-  );
   // Manual mode skips the payout API entirely — no fund account needed.
   if (mode === 'auto' && !restaurant?.razorpay_fund_acct_id) {
     log.warn({ restaurantId: rid }, 'settlement.skip.no_fund_account');
@@ -172,7 +315,30 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
     payout_amount_paise:  amount,
     fee_amount_paise:     0,          // Razorpay fee arrives via webhook; 0 until then
     net_amount_paise:     amount,     // amount actually payable now
+    // Rupee mirror of net_amount_paise — calculateTDS aggregates
+    // settlements.net_payout_rs across the FY to detect the ₹5L threshold.
+    // Without this field, Phase 5 rows are invisible to TDS computation
+    // and the threshold is never crossed.
+    net_payout_rs:        round2(amount / 100),
     total_amount_paise:   amount,     // alias, back-compat with prior turn
+    // Platform fee snapshot — captured at settlement-row creation so the
+    // export and audit trail show the exact amounts debited this cycle.
+    // Both paise (canonical) and rs (display) forms — settlement-export
+    // already reads platform_fee_rs / platform_fee_gst_rs.
+    platform_fee_paise:     platformFeeWaived ? 0 : platformFeePaise,
+    platform_fee_gst_paise: platformFeeWaived ? 0 : platformFeeGstPaise,
+    platform_fee_rs:        platformFeeWaived ? 0 : (platformFeePaise / 100),
+    platform_fee_gst_rs:    platformFeeWaived ? 0 : (platformFeeGstPaise / 100),
+    platform_fee_month:     monthKey,
+    platform_fee_waived:    platformFeeWaived,
+    // TDS snapshot — captured at settlement-row creation. Settlement-export
+    // already reads tds_amount_rs / tds_rate_pct / tds_section.
+    tds_applicable:         tds.applicable,
+    tds_rate:               tds.rate,
+    tds_rate_pct:           tds.rate,            // alias for legacy export key
+    tds_amount_rs:          tds.amount,
+    tds_section:            tds.section,
+    tds_pan_based:          tds.hasPAN ?? false,
     status: 'processing',
     payout_id: null,
     payout_provider: null,

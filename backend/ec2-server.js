@@ -394,6 +394,12 @@ connect().then(() => {
   const { scheduleSettlement } = require('./src/jobs/settlement');
   scheduleSettlement();
 
+  // Recovery crons: stuck-payment reconciliation (5m), stuck-settlement
+  // sweep via Phase 5 timeoutStaleSettlements (10m), expired-order cleanup
+  // (15m). All idempotent + locked; safe to run alongside webhooks.
+  const { scheduleRecovery } = require('./src/jobs/recovery');
+  scheduleRecovery();
+
   // try { require('./src/jobs/campaignSender'); } catch (e) { console.warn('[EC2] Campaign sender:', e.message); }
   console.log('[EC2] Campaign sender: disabled — module not yet implemented');
 

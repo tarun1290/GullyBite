@@ -272,7 +272,7 @@ async function getFinancialSummary(restaurantId, period, from, to) {
     getRefundSummary(branchIds, start, end),
   ]);
 
-  const commissionRate = parseFloat(restaurant?.commission_pct || 10) / 100;
+  const commissionRate = parseFloat(restaurant?.commission_pct ?? 0) / 100;
   const platformFee = round2(agg.food_revenue_rs * commissionRate);
   const platformFeeGst = round2(platformFee * GST_PLATFORM_FEE_PCT / 100);
   const referralFeeGst = round2(agg.referral_fee_rs * GST_PLATFORM_FEE_PCT / 100);
@@ -352,7 +352,7 @@ async function getTaxSummary(restaurantId, fyLabel) {
     { _id: restaurantId },
     { projection: { gst_number: 1, pan_number: 1, commission_pct: 1 } },
   );
-  const commRate = parseFloat(restaurant?.commission_pct || 10) / 100;
+  const commRate = parseFloat(restaurant?.commission_pct ?? 0) / 100;
 
   // Monthly GST aggregation
   const pipeline = [

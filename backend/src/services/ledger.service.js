@@ -22,7 +22,23 @@ const COLLECTION = 'restaurant_ledger';
 async function _insert({ restaurantId, type, amountPaise, refType, refId, status, notes }) {
   if (!restaurantId) throw new Error('ledger: restaurant_id required');
   if (!['credit', 'debit'].includes(type)) throw new Error(`ledger: bad type=${type}`);
-  if (!['payment', 'refund', 'payout', 'fee'].includes(refType)) throw new Error(`ledger: bad ref_type=${refType}`);
+  // ref_type allowlist:
+  //   payment           — incoming customer payment (credit, refId = rp_payment_id)
+  //   refund            — refund to customer (debit, refId = rp_refund_id)
+  //   payout            — settlement payout to merchant (debit, refId = razorpay payout_id)
+  //                       Compensating credits on failed payouts use refId '<payout_id>:reversal'
+  //   fee               — generic platform-side fee (legacy)
+  //   platform_fee      — monthly ₹4,999 subscription (debit, refId = '<rid>:YYYY-MM')
+  //   platform_fee_gst  — 18% GST on platform_fee   (debit, refId = '<rid>:YYYY-MM:gst')
+  //   referral          — 7.5% commission on GBREF orders (debit, refId = '<order_id>:referral')
+  //                       Reversed on order cancel via credit, refId = '<order_id>:referral:reversal'
+  //   referral_fee_gst  — 18% GST on referral commission (debit, refId = '<order_id>:referral:gst')
+  //                       Reversed via credit, refId = '<order_id>:referral:gst:reversal'
+  //   marketing         — WhatsApp marketing message charges (debit, refId = '<rid>:YYYY-MM:marketing' or per-message)
+  //   tds               — TDS withheld u/s 194O (debit, refId = '<rid>:tds:YYYY-MM')
+  if (!['payment', 'refund', 'payout', 'fee', 'platform_fee', 'platform_fee_gst', 'referral', 'referral_fee_gst', 'marketing', 'tds'].includes(refType)) {
+    throw new Error(`ledger: bad ref_type=${refType}`);
+  }
   if (!refId) throw new Error('ledger: ref_id required');
   if (!['pending', 'completed', 'failed'].includes(status)) throw new Error(`ledger: bad status=${status}`);
   const amount = Math.round(Number(amountPaise) || 0);

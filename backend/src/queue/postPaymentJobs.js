@@ -219,6 +219,10 @@ async function _handlePosSync(payload) {
 async function _handleSettlementTrigger(payload) {
   const payoutEngine = require('../services/payoutEngine');
   const settlement = await payoutEngine.createSettlementForOrder(payload.orderId);
+  // Auto-payout disabled until PG provider onboarded — the v2 per-order
+  // payout path stays dormant; the eligible row sits in order_settlements
+  // and the Phase 5 ledger-based cycle (admin-triggered) handles all
+  // actual payouts. AUTO_PAYOUT_ON_DELIVERY must remain unset in prod.
   if (settlement && settlement.status === 'eligible' && process.env.AUTO_PAYOUT_ON_DELIVERY === 'true') {
     await payoutEngine.processSettlement(String(settlement._id));
   }

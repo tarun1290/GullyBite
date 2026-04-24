@@ -1,6 +1,13 @@
 // src/jobs/settlement.js
-// Weekly settlement cron job
-// Runs every Monday at 9:00 AM — calculates and pays out restaurant earnings
+// LEGACY weekly settlement — order-based payout cycle. Replaced by the
+// Phase 5 ledger-based system in services/settlement.service.js.
+//
+// Settlement cadence: bi-weekly (Monday + Friday), admin-triggered manually
+// via POST /api/admin/settlements/run. Automation pending PG provider
+// onboarding. The legacy weekly cron below is intentionally NOT scheduled.
+// runSettlement() is kept callable for ops backfills / one-offs.
+//
+// expireReferrals continues to run daily at 3:00 AM IST — separate concern.
 
 const cron = require('node-cron');
 const { col, newId } = require('../config/database');
@@ -16,8 +23,12 @@ const log = require('../utils/logger').child({ component: 'settlement' });
 
 // ─── SCHEDULE THE JOB ─────────────────────────────────────────
 const scheduleSettlement = () => {
-  cron.schedule('0 9 * * 1', runSettlement, { timezone: 'Asia/Kolkata' });
-  log.info('settlement cron scheduled: every Monday at 9:00 AM IST');
+  // DISABLED: legacy order-based settlement replaced by Phase 5 ledger-based
+  // system (services/settlement.service.js + admin POST /settlements/run).
+  // Leaving runSettlement exported so ops can still invoke a backfill if
+  // ever needed, but the cron does not auto-fire.
+  // cron.schedule('0 9 * * 1', runSettlement, { timezone: 'Asia/Kolkata' });
+  // log.info('settlement cron scheduled: every Monday at 9:00 AM IST');
 
   // Expire stale referrals daily at 3:00 AM IST
   cron.schedule('0 3 * * *', expireReferrals, { timezone: 'Asia/Kolkata' });

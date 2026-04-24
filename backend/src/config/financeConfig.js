@@ -13,13 +13,21 @@ const FINANCE_CONFIG = {
   settlementDayOfWeek: parseInt(process.env.SETTLEMENT_DAY || '1'), // 0=Sun, 1=Mon, ..., 6=Sat
 
   // ── Platform Fee (commission on food revenue) ─────────────
-  // Per-restaurant override: restaurant.commission_pct takes priority
-  defaultPlatformFeePercent: parseFloat(process.env.PLATFORM_FEE_PCT || '10'),
+  // Business model: ZERO commission on regular orders. Restaurants pay a
+  // flat ₹4,999/month subscription instead. Per-restaurant override via
+  // restaurant.commission_pct still takes priority for legacy / bespoke deals.
+  defaultPlatformFeePercent: parseFloat(process.env.PLATFORM_FEE_PCT || '0'),
 
-  // ── Monthly Platform Fee (fixed fee, if applicable) ───────
-  monthlyPlatformFeeRs: parseFloat(process.env.MONTHLY_PLATFORM_FEE_RS || '0'),
+  // ── Monthly Platform Fee (flat subscription) ──────────────
+  // ₹4,999/month per restaurant. Deducted from settlement starting the
+  // SECOND billing month — first month is collected upfront at onboarding,
+  // see shouldDeductPlatformFee() / isFirstBillingMonth() below.
+  monthlyPlatformFeeRs: parseFloat(process.env.MONTHLY_PLATFORM_FEE_RS || '4999'),
 
   // ── Referral Fee ──────────────────────────────────────────
+  // 7.5% commission ONLY on GBREF-referred orders, plus 18% GST on the
+  // commission. NOT charged on regular orders. Untouched by the
+  // zero-commission switch above.
   referralFeePercent: parseFloat(process.env.REFERRAL_FEE_PCT || '7.5'),
 
   // ── GST Rates ─────────────────────────────────────────────

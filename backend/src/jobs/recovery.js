@@ -110,60 +110,28 @@ async function recoverStuckPayments() {
 }
 
 // ─── JOB 2: Stuck settlements ───────────────────────────────────
-// Settlement rows stuck in PROCESSING past STUCK_SETTLEMENT_MINUTES. A
-// Razorpay X payout call may have succeeded on their side but the
-// webhook got lost, or it failed transiently. We retry up to
-// MAX_SETTLEMENT_RETRIES then surface to ops as FAILED.
+// Settlement rows stuck in 'processing' past STUCK_SETTLEMENT_MINUTES.
+// Delegates to Phase 5's timeoutStaleSettlements() — the canonical
+// stuck-settlement sweeper. Earlier versions of this job queried the
+// orphaned `state` field on the settlements collection (no production
+// path ever wrote it) and called transitionSettlement (the orphaned
+// state engine), so it found and acted on zero rows. The Phase 5
+// sweeper queries `status: 'processing'` on settlement_type:'new' rows,
+// which is what the live system actually writes.
 async function recoverStuckSettlements() {
-  const cutoff = new Date(Date.now() - STUCK_SETTLEMENT_MINUTES * 60 * 1000);
-  const stuck = await col('settlements').find({
-    state: 'PROCESSING',
-    processing_at: { $lt: cutoff },
-  }).limit(BATCH_SIZE).toArray();
-
-  if (!stuck.length) return { scanned: 0, retried: 0, failed: 0 };
-  log.info({ count: stuck.length }, 'retrying stuck settlements');
-  let retried = 0, failed = 0;
-
-  for (const settlement of stuck) {
-    try {
-      const attempts = (settlement.retry_count || 0) + 1;
-      if (attempts > MAX_SETTLEMENT_RETRIES) {
-        await transitionSettlement(settlement._id, 'FAILED', {
-          actor: 'recovery',
-          metadata: { reason: 'max_retries_exceeded', attempts },
-        });
-        failed++;
-        continue;
-      }
-      // CAS-retry: bump retry_count with the transition. A parallel
-      // webhook arrival flips state → COMPLETED and our transition will
-      // .race (safely skipped).
-      await col('settlements').updateOne(
-        { _id: settlement._id, state: 'PROCESSING' },
-        { $inc: { retry_count: 1 }, $set: { last_retry_at: new Date() } }
-      );
-      log.warn({ settlementId: settlement._id, attempts }, 'settlement retry triggered');
-      // Delegate the actual payout retry to settlement-export / payoutEngine
-      // if they expose a retrySettlement — otherwise log and leave for a
-      // follow-up manual review. Keeping this loose so this job can ship
-      // without a hard dependency on a retry entry point.
-      try {
-        const payoutEngine = require('../services/payoutEngine');
-        if (typeof payoutEngine.retryPayout === 'function') {
-          await payoutEngine.retryPayout(settlement);
-        }
-      } catch (retryErr) {
-        log.warn({ settlementId: settlement._id, err: retryErr.message }, 'payout retry handler failed — ops review');
-      }
-      retried++;
-    } catch (err) {
-      log.error({ settlementId: settlement._id, err: err.message }, 'recoverStuckSettlements: row failed');
+  const settlementSvc = require('../services/settlement.service');
+  try {
+    const out = await settlementSvc.timeoutStaleSettlements({
+      thresholdMs: STUCK_SETTLEMENT_MINUTES * 60 * 1000,
+    });
+    if (out.found > 0) {
+      log.warn({ found: out.found, timedOut: out.timedOut }, 'stuck-settlement recovery done');
     }
+    return { scanned: out.found, timedOut: out.timedOut };
+  } catch (err) {
+    log.error({ err: err.message }, 'recoverStuckSettlements: timeoutStaleSettlements failed');
+    return { scanned: 0, timedOut: 0, error: err.message };
   }
-
-  log.info({ scanned: stuck.length, retried, failed }, 'stuck-settlement recovery done');
-  return { scanned: stuck.length, retried, failed };
 }
 
 // ─── JOB 3: Cleanup expired orders ───────────────────────────────

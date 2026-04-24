@@ -78,7 +78,7 @@ async function generateSettlementExcel(settlementId) {
   wb.created = new Date();
 
   const restaurantName = restaurant?.brand_name || restaurant?.business_name || 'Restaurant';
-  const commissionPct = parseFloat(restaurant?.commission_pct || 10);
+  const commissionPct = parseFloat(restaurant?.commission_pct ?? 0);
 
   // ══════════════════════════════════════════════════════════════
   // SHEET 1: SUMMARY (Full Tax Breakdown)
@@ -110,8 +110,20 @@ async function generateSettlementExcel(settlementId) {
 
   // Deductions section
   addSummaryLine(ws1, 'DEDUCTIONS', '', false, { section: true });
-  addSummaryLine(ws1, `Platform Fee (${commissionPct}%)`, -(settlement.platform_fee_rs || 0), true);
-  addSummaryLine(ws1, 'Platform Fee GST (18%)', -(settlement.platform_fee_gst_rs || 0), true);
+  // Platform fee label adapts to model: legacy commission rows show "%",
+  // Phase 5 flat-subscription rows show "Subscription". commissionPct is 0
+  // for all post-launch restaurants, signalling the flat model.
+  const platformFeeLabel = commissionPct > 0
+    ? `Platform Fee (${commissionPct}%)`
+    : 'Platform Subscription Fee';
+  addSummaryLine(ws1, platformFeeLabel, -(settlement.platform_fee_rs || 0), true);
+  addSummaryLine(ws1, `GST (${GST_PLATFORM_FEE_PCT}%) on Platform Fee`, -(settlement.platform_fee_gst_rs || 0), true);
+  // Combined subtotal so the merchant sees fee + GST as a single liability.
+  // Hidden when both are zero (first month / waived).
+  const platformFeeTotal = (settlement.platform_fee_rs || 0) + (settlement.platform_fee_gst_rs || 0);
+  if (platformFeeTotal > 0) {
+    addSummaryLine(ws1, 'Total Platform Deduction', -platformFeeTotal, true, { bold: true });
+  }
   addSummaryLine(ws1, 'Delivery Cost (Restaurant Share)', -(settlement.delivery_fee_restaurant_share_rs || settlement.delivery_costs_rs || 0), true);
   addSummaryLine(ws1, 'Delivery GST (18%)', -(settlement.delivery_fee_restaurant_gst_rs || 0), true);
   addSummaryLine(ws1, 'Coupon Discounts', -(settlement.discount_total_rs || 0), true);
