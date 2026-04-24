@@ -1,5 +1,5 @@
 import type { NextConfig } from 'next';
-import path from 'node:path';
+import path from 'path';
 
 // API base for client-side calls. Read here so the value is captured at build
 // time and surfaces in the bundle for client components via process.env.
@@ -9,11 +9,17 @@ if (!apiBaseUrl && process.env.NODE_ENV === 'production') {
   console.warn('[next.config] NEXT_PUBLIC_API_BASE_URL is not set');
 }
 
+// Repo root — one level above frontend/. Used for both Turbopack's workspace
+// root (so it stops walking up to $HOME when it sees ancestor lockfiles) and
+// Next.js's file-trace root (so build output can reach shared assets and the
+// monorepo lockfile). Both must point to the same place to keep dev and build
+// in sync.
+const repoRoot = path.resolve(__dirname, '..');
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // Pin Turbopack's workspace root to this project — without this, multiple
-  // lockfiles in ancestor directories cause Turbopack to walk up to $HOME.
-  turbopack: { root: path.resolve(__dirname) },
+  turbopack: { root: repoRoot },
+  outputFileTracingRoot: repoRoot,
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**.cloudfront.net' },
