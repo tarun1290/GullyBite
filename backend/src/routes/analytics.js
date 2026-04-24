@@ -26,14 +26,23 @@ function buildMatchFilter(query) {
   return match;
 }
 
+// Escape regex metacharacters before stitching user-supplied strings into
+// `new RegExp(...)`. Without this, a query like `?city=.*` matches every
+// branch, and a pathological pattern (`a(.+)+b`) hangs the server (ReDoS).
+// Matches the inline escapes used elsewhere in this file (lines ~240,
+// ~439) — extracted so all three callers share one definition.
+function escapeRegex(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // Lookup branch info for city/area filtering — returns a pipeline prefix
 function cityAreaPipeline(query) {
   const stages = [];
   if (query.city || query.area) {
     stages.push({ $lookup: { from: 'branches', localField: 'branch_id', foreignField: '_id', as: '_branch' } });
     stages.push({ $unwind: { path: '$_branch', preserveNullAndEmptyArrays: true } });
-    if (query.city) stages.push({ $match: { '_branch.city': { $regex: new RegExp(query.city, 'i') } } });
-    if (query.area) stages.push({ $match: { '_branch.area': { $regex: new RegExp(query.area, 'i') } } });
+    if (query.city) stages.push({ $match: { '_branch.city': { $regex: new RegExp(escapeRegex(query.city), 'i') } } });
+    if (query.area) stages.push({ $match: { '_branch.area': { $regex: new RegExp(escapeRegex(query.area), 'i') } } });
   }
   return stages;
 }

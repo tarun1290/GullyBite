@@ -26,7 +26,30 @@ const memcache = require('../config/memcache');
 const metaConfig = require('../config/meta');
 const { getCached, invalidateCache } = require('../config/cache');
 const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
+const customerSvc = require('../services/customer.service');
 const logger = require('../utils/logger').child({ component: 'restaurant' });
+
+// ── CSV input guards (shared across CSV import handlers) ─────
+// Cap any free-text field that ends up in MongoDB at 255 chars. This
+// stops a runaway document from a malformed CSV row and keeps index
+// keys within Mongo's 1024-byte limit.
+const MAX_CSV_STRING = 255;
+function sanitizeCsvString(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+  return s.slice(0, MAX_CSV_STRING);
+}
+// Validate a CSV phone field: digit-strip, then require 8–15 digits
+// (E.164-ish bounds; covers Indian + international). Returns the
+// normalised digit string or null if the input can't be salvaged.
+function sanitizeCsvPhone(v) {
+  if (v == null) return null;
+  const digits = customerSvc.normalizePhone(v); // strips non-digits, returns null if empty
+  if (!digits) return null;
+  if (digits.length < 8 || digits.length > 15) return null;
+  return digits;
+}
 
 // ── Slug helper ──────────────────────────────────────────────
 function slugify(str, maxLen = 40) {
@@ -1335,14 +1358,26 @@ router.post('/branches/csv', async (req, res) => {
     const created = [], skipped = [], errors = [];
 
     for (const row of rows) {
-      const name    = (row.branch_name || '').trim();
-      const address = (row.address     || '').trim();
+      const name    = sanitizeCsvString(row.branch_name);
+      const address = sanitizeCsvString(row.address);
       const lat     = parseFloat(row.latitude);
       const lng     = parseFloat(row.longitude);
 
       if (!name)          { skipped.push({ row, reason: 'branch_name is required' }); continue; }
       if (!address)       { skipped.push({ row, reason: 'address is required' });     continue; }
       if (isNaN(lat) || isNaN(lng)) { skipped.push({ row, reason: 'latitude and longitude are required — geocoding should have run on the client' }); continue; }
+
+      // manager_phone is optional, but if present it MUST be a valid 8–15
+      // digit number — anything else (typos, descriptions, garbage) is
+      // dropped so we never insert an unsendable phone into MongoDB.
+      let managerPhone = null;
+      if (row.manager_phone) {
+        managerPhone = sanitizeCsvPhone(row.manager_phone);
+        if (!managerPhone) {
+          skipped.push({ row, reason: `invalid manager_phone "${row.manager_phone}" — must be 8–15 digits` });
+          continue;
+        }
+      }
 
       try {
         const branchId = newId();
@@ -1353,14 +1388,14 @@ router.post('/branches/csv', async (req, res) => {
           name,
           branch_slug: slugify(name, 20) || branchId.slice(0, 8),
           address,
-          city: (row.city    || '').trim() || null,
-          pincode: (row.pincode || '').trim() || null,
+          city: sanitizeCsvString(row.city),
+          pincode: sanitizeCsvString(row.pincode),
           latitude: lat,
           longitude: lng,
           delivery_radius_km: parseFloat(row.delivery_radius_km) || 5,
           opening_time: row.opening_time || '10:00',
           closing_time: row.closing_time || '22:00',
-          manager_phone: (row.manager_phone || '').trim() || null,
+          manager_phone: managerPhone,
           is_active: true,
           is_open: true,
           accepts_orders: true,
@@ -2273,7 +2308,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
     const now = new Date();
 
     // ── Batch category lookup + creation ──
-    const catNames = [...new Set(items.map(r => { const n = _normalizeCSVRow(r); return (n.category || n.cat || '').trim(); }).filter(Boolean))];
+    const catNames = [...new Set(items.map(r => { const n = _normalizeCSVRow(r); return sanitizeCsvString(n.category || n.cat); }).filter(Boolean))];
     const categoryCache = {};
     if (catNames.length) {
       const existingCats = await col('menu_categories').find({ branch_id: branchId, name: { $in: catNames } }).toArray();
@@ -2293,14 +2328,14 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
     for (const [i, rawRow] of items.entries()) {
       const row = _normalizeCSVRow(rawRow);
       const rowNum = i + 2;
-      const name = (row.name || '').trim();
+      const name = sanitizeCsvString(row.name);
       const priceRaw = row.price_paise ? null : (row.price || row.price_rs || '').toString().replace(/[₹,\s]/g, '');
       const price = row.price_paise ? row.price_paise / 100 : parseFloat(priceRaw);
 
       if (!name) { results.errors.push(`Row ${rowNum}: missing name`); results.skipped++; continue; }
       if (isNaN(price) || price <= 0) { results.errors.push(`Row ${rowNum} "${name}": invalid price "${row.price}"`); results.skipped++; continue; }
 
-      const categoryName = (row.category || row.cat || '').trim();
+      const categoryName = sanitizeCsvString(row.category || row.cat) || '';
       const categoryId = categoryName ? (categoryCache[categoryName] || null) : null;
       const validTypes = ['veg', 'non_veg', 'vegan', 'egg'];
       let rawType = (row.food_type || row.type || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
@@ -2528,7 +2563,7 @@ router.post('/menu/csv', async (req, res) => {
       const mbBranchSlug = branchSlugCache[bid] || 'branch';
 
       // ── Pre-batch category lookups for this branch ──
-      const catNames = [...new Set(branchItems.map(r => { const n = _normalizeCSVRow(r); return (n.category || n.cat || '').trim(); }).filter(Boolean))];
+      const catNames = [...new Set(branchItems.map(r => { const n = _normalizeCSVRow(r); return sanitizeCsvString(n.category || n.cat); }).filter(Boolean))];
       const catCache = {};
       if (catNames.length) {
         const existingCats = await col('menu_categories').find({ branch_id: bid, name: { $in: catNames } }).toArray();
@@ -2550,14 +2585,14 @@ router.post('/menu/csv', async (req, res) => {
       for (const [i, rawRow] of branchItems.entries()) {
         const row = _normalizeCSVRow(rawRow);
         const rowNum = i + 2;
-        const name = (row.name || '').trim();
+        const name = sanitizeCsvString(row.name);
         const priceRaw = row.price_paise ? null : (row.price || row.price_rs || '').toString().replace(/[₹,\s]/g, '');
         const price = row.price_paise ? row.price_paise / 100 : parseFloat(priceRaw);
 
         if (!name) { branchResult.errors.push(`Row ${rowNum}: missing name`); branchResult.skipped++; continue; }
         if (isNaN(price) || price <= 0) { branchResult.errors.push(`Row ${rowNum} "${name}": invalid price "${row.price}"`); branchResult.skipped++; continue; }
 
-        const categoryName = (row.category || row.cat || '').trim();
+        const categoryName = sanitizeCsvString(row.category || row.cat) || '';
         const categoryId = categoryName ? (catCache[categoryName] || null) : null;
         const validTypes = ['veg', 'non_veg', 'vegan', 'egg'];
         let rawType = (row.food_type || row.type || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');

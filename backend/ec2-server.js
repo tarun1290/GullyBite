@@ -41,30 +41,95 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const path = require('path');
+const mongoSanitize = require('mongo-sanitize');
 const { WebSocketServer } = require('ws');
 const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// ─── SECURITY ────────────────────────────────────────────────
-app.use(helmet({ contentSecurityPolicy: false }));
+// ─── SECURITY: HELMET (must be the very first middleware) ─────
+// Default profile — no customisation. The earlier `contentSecurityPolicy:
+// false` override is dropped: this is an API server, helmet's default CSP
+// is appropriate, and disabling it left X-Powered-By, frame-options, and
+// HSTS in a weaker state than helmet ships out of the box.
+app.use(helmet());
 
-// Explicit CORS allowlist. No wildcard fallback — unconfigured origins are
-// rejected so a forgotten env var can't open the API to the world.
-const corsAllowed = (process.env.CORS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || process.env.BASE_URL || '')
-  .split(',').map(s => s.trim()).filter(Boolean);
+// ─── SECURITY: CORS (explicit allowlist, no wildcard) ─────────
+// Production origins are hard-coded so a forgotten env var can't open the
+// API to the world. Vercel preview deployments (*.vercel.app) are matched
+// by suffix. Localhost dev origins are added only when NODE_ENV !==
+// 'production'. Any other origin → 403.
+const CORS_PROD_ORIGINS = [
+  'https://gullybite.in',
+  'https://www.gullybite.in',
+];
+const CORS_DEV_ORIGINS = ['http://localhost:3000', 'http://localhost:5173'];
+const corsAllowed = [...CORS_PROD_ORIGINS];
 if (process.env.NODE_ENV !== 'production') {
-  corsAllowed.push('http://localhost:3000', 'http://localhost:5173');
+  corsAllowed.push(...CORS_DEV_ORIGINS);
+}
+function isAllowedOrigin(origin) {
+  if (corsAllowed.includes(origin)) return true;
+  // Vercel preview deployments — suffix match against the hostname only,
+  // not a substring of the full URL (avoids `evil.com/?vercel.app` tricks).
+  try {
+    const host = new URL(origin).hostname;
+    if (host.endsWith('.vercel.app')) return true;
+  } catch { /* invalid origin URL — fall through to deny */ }
+  return false;
 }
 app.use(cors({
   origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // same-origin / curl / mobile
-    if (corsAllowed.includes(origin) || /\.vercel\.app$/.test(origin)) return cb(null, true);
+    if (!origin) return cb(null, true); // same-origin / curl / mobile / server-to-server
+    if (isAllowedOrigin(origin)) return cb(null, true);
+    // Pass an Error so the cors middleware short-circuits with a 500 by
+    // default — caught by our handler below to convert to 403.
     return cb(new Error(`CORS blocked: ${origin}`));
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Restaurant-Id', 'X-Service-Secret'],
 }));
+
+// Convert the cors() Error into a clean 403 instead of a 500 stack trace.
+app.use((err, req, res, next) => {
+  if (err && typeof err.message === 'string' && err.message.startsWith('CORS blocked:')) {
+    return res.status(403).json({ error: 'Origin not allowed' });
+  }
+  next(err);
+});
+
+// ─── SECURITY: MONGO-SANITIZE (operator-injection guard) ──────
+// Strips keys beginning with `$` from req.body / req.query / req.params,
+// preventing an attacker from passing `{ "email": { "$ne": null } }` and
+// turning a findOne lookup into a wildcard match. Defence-in-depth: even
+// if a route handler is careless about extracting fields, the operator
+// keys never reach the Mongo driver.
+//
+// IMPORTANT: req.body is parsed PER-ROUTE in this file (each `app.use(...,
+// express.json(), router)` mount), so a global app.use here can only
+// sanitise req.query and req.params. Body sanitisation is wired into the
+// `jsonAndSanitize` helper below, which replaces every `express.json()`
+// call in the route mounts.
+app.use((req, res, next) => {
+  if (req.query) req.query = mongoSanitize(req.query);
+  if (req.params) req.params = mongoSanitize(req.params);
+  next();
+});
+
+// Helper: body parser + body sanitiser combined. Use anywhere we'd have
+// previously written `express.json(opts)` in a route mount. Returns an
+// array, which Express accepts as a chain of middlewares.
+function jsonAndSanitize(opts) {
+  return [
+    express.json(opts),
+    (req, _res, next) => {
+      if (req.body) req.body = mongoSanitize(req.body);
+      next();
+    },
+  ];
+}
 
 // ─── REQUEST ID + PER-REQUEST LOGGER ─────────────────────────
 // Attaches req.id (unique request ID) and req.log (child logger bound to
@@ -180,14 +245,14 @@ app.get('/feed/:feedToken', async (req, res) => {
 app.use('/api/webhook-health', require('./src/routes/webhookHealth'));
 
 // ─── CRON ENDPOINTS (called by cron-job.org) ─────────────────
-app.use('/api/cron', express.json(), require('./src/routes/cron'));
+app.use('/api/cron', jsonAndSanitize(), require('./src/routes/cron'));
 
 // ─── AUTH ROUTES ─────────────────────────────────────────────
 // Mounted on EC2 because Vercel no longer runs the Express backend —
 // it serves only the static frontend. The auth router does not apply
 // express.json() internally, so it must be wired here.
 const { router: authRouter } = require('./src/routes/auth');
-app.use('/auth', express.json(), authRouter);
+app.use('/auth', jsonAndSanitize(), authRouter);
 
 // ─── PUBLIC REDIRECT (unauthed customer click-through) ───────
 // Mounted BEFORE auth-gated mounts so the customer's WhatsApp link works
@@ -197,40 +262,40 @@ app.use('/api/review-redirect', require('./src/routes/reviewRedirect'));
 // ─── DASHBOARD ROUTES (RESTAURANT) ───────────────────────────
 // /api/restaurant/* sub-routes MUST be mounted BEFORE the catch-all
 // /api/restaurant router, which would otherwise shadow more specific paths.
-app.use('/api/restaurant/products', express.json({ limit: '10mb' }), require('./src/routes/products'));
+app.use('/api/restaurant/products', jsonAndSanitize({ limit: '10mb' }), require('./src/routes/products'));
 // Menu file ingestion via multer — do NOT wrap in express.json().
 app.use('/api/restaurant/menu', require('./src/routes/menuUpload'));
 const _marketing = require('./src/routes/marketingMessages');
-app.use('/api/restaurant/marketing-messages', express.json(), _marketing.restaurantRouter);
-app.use('/api/admin/marketing-messages', express.json(), _marketing.adminRouter);
-app.use('/api/restaurant/customers', express.json(), require('./src/routes/customerProfiles'));
-app.use('/api/restaurant/settings', express.json(), require('./src/routes/marketingWa'));
+app.use('/api/restaurant/marketing-messages', jsonAndSanitize(), _marketing.restaurantRouter);
+app.use('/api/admin/marketing-messages', jsonAndSanitize(), _marketing.adminRouter);
+app.use('/api/restaurant/customers', jsonAndSanitize(), require('./src/routes/customerProfiles'));
+app.use('/api/restaurant/settings', jsonAndSanitize(), require('./src/routes/marketingWa'));
 const _campaignTemplates = require('./src/routes/campaignTemplates');
-app.use('/api/restaurant/campaign-templates', express.json(), _campaignTemplates.restaurantRouter);
-app.use('/api/admin/campaign-templates', express.json(), _campaignTemplates.adminRouter);
-app.use('/api/restaurant/marketing-campaigns', express.json(), require('./src/routes/marketingCampaigns'));
+app.use('/api/restaurant/campaign-templates', jsonAndSanitize(), _campaignTemplates.restaurantRouter);
+app.use('/api/admin/campaign-templates', jsonAndSanitize(), _campaignTemplates.adminRouter);
+app.use('/api/restaurant/marketing-campaigns', jsonAndSanitize(), require('./src/routes/marketingCampaigns'));
 const _festivals = require('./src/routes/festivals');
-app.use('/api/restaurant/festivals', express.json(), _festivals.restaurantRouter);
-app.use('/api/restaurant/campaigns', express.json(), _festivals.restaurantCampaignsRouter);
-app.use('/api/admin/festivals', express.json(), _festivals.adminRouter);
-app.use('/api/restaurant/auto-journeys', express.json(), require('./src/routes/autoJourneys'));
-app.use('/api/restaurant/loyalty-program', express.json(), require('./src/routes/loyalty'));
-app.use('/api/restaurant/feedback', express.json(), require('./src/routes/dineInFeedback'));
+app.use('/api/restaurant/festivals', jsonAndSanitize(), _festivals.restaurantRouter);
+app.use('/api/restaurant/campaigns', jsonAndSanitize(), _festivals.restaurantCampaignsRouter);
+app.use('/api/admin/festivals', jsonAndSanitize(), _festivals.adminRouter);
+app.use('/api/restaurant/auto-journeys', jsonAndSanitize(), require('./src/routes/autoJourneys'));
+app.use('/api/restaurant/loyalty-program', jsonAndSanitize(), require('./src/routes/loyalty'));
+app.use('/api/restaurant/feedback', jsonAndSanitize(), require('./src/routes/dineInFeedback'));
 const _marketingAnalytics = require('./src/routes/marketingAnalytics');
-app.use('/api/restaurant/marketing-analytics', express.json(), _marketingAnalytics.restaurantRouter);
+app.use('/api/restaurant/marketing-analytics', jsonAndSanitize(), _marketingAnalytics.restaurantRouter);
 // Catch-all /api/restaurant router — must be LAST of the /api/restaurant/* group.
-app.use('/api/restaurant', express.json({ limit: '10mb' }), require('./src/routes/restaurant'));
+app.use('/api/restaurant', jsonAndSanitize({ limit: '10mb' }), require('./src/routes/restaurant'));
 
 // ─── UPLOADS + STAFF + ADMIN PANEL + CUSTOMER ────────────────
-app.use('/api/upload', express.json(), require('./src/routes/upload'));
+app.use('/api/upload', jsonAndSanitize(), require('./src/routes/upload'));
 // Staff POS router applies body parsers per-route — /stream is SSE and must
 // not be consumed by a top-level express.json().
 app.use('/api/staff', require('./src/routes/staff'));
-app.use('/api/admin', express.json(), require('./src/routes/admin'));
-app.use('/api/admin/pincodes', express.json(), require('./src/routes/adminPincodes'));
-app.use('/api/customer', express.json(), require('./src/routes/customer'));
-app.use('/api/admin/analytics', express.json(), require('./src/routes/analytics'));
-app.use('/api/admin/platform-marketing', express.json(), _marketingAnalytics.adminRouter);
+app.use('/api/admin', jsonAndSanitize(), require('./src/routes/admin'));
+app.use('/api/admin/pincodes', jsonAndSanitize(), require('./src/routes/adminPincodes'));
+app.use('/api/customer', jsonAndSanitize(), require('./src/routes/customer'));
+app.use('/api/admin/analytics', jsonAndSanitize(), require('./src/routes/analytics'));
+app.use('/api/admin/platform-marketing', jsonAndSanitize(), _marketingAnalytics.adminRouter);
 
 // ─── ENCRYPTED / RAW-BODY ENDPOINTS ──────────────────────────
 // Each router owns its own parser — payloads are encrypted (ECDH+AES-GCM /
@@ -245,9 +310,22 @@ app.use((req, res) => {
 });
 
 // ─── ERROR HANDLER ──────────────────────────────────────────
+// Production: response body is the generic message ONLY — no stack, no
+// err.message. The full error (message + stack) is always logged
+// server-side via console.error so EC2 logs / pm2 / CloudWatch still
+// capture it for debugging.
+// Development: include err.message + stack in the response so local
+// debugging stays ergonomic.
 app.use((err, req, res, _next) => {
-  console.error('[EC2] Unhandled error:', err.message);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error('[EC2] Unhandled error:', err?.message, '\n', err?.stack);
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+  res.status(500).json({
+    error: 'Internal server error',
+    message: err?.message,
+    stack: err?.stack,
+  });
 });
 
 // ─── HTTP SERVER + WEBSOCKET ────────────────────────────────
