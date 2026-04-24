@@ -885,8 +885,8 @@ router.post('/whatsapp/disconnect', requirePermission('manage_users'), async (re
 
     logActivity({
       actorType: 'restaurant',
-      actorId: req.user?.id || null,
-      actorName: req.user?.email || req.user?.phone || null,
+      actorId: String(req.userId || req.restaurantId),
+      actorName: req.userRole || null,
       action: 'whatsapp.disconnected',
       category: 'auth',
       description: `WhatsApp Business connection disconnected (${activeRows.length} row(s) deactivated)`,
@@ -1893,7 +1893,7 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
     res.status(201).json(mapId(item));
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'menu.item_added', category: 'menu',
       description: `Added menu item "${name}"`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -1995,7 +1995,7 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
     res.json({ success: true });
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'menu.item_updated', category: 'menu',
       description: `Updated menu item ${req.params.itemId}`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -2021,7 +2021,7 @@ router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res
     res.json({ success: true });
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'menu.item_deleted', category: 'menu',
       description: `Deleted menu item ${req.params.itemId}${item ? ` ("${item.name}")` : ''}`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -2066,7 +2066,7 @@ router.post('/menu/bulk-delete', requirePermission('manage_menu'), async (req, r
     res.json({ deleted: items.length });
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'menu.bulk_deleted', category: 'menu',
       description: `Bulk deleted ${items.length} menu items`,
       restaurantId: req.restaurantId, severity: 'info',
@@ -2120,7 +2120,7 @@ router.patch('/menu/bulk-availability', requirePermission('manage_menu'), async 
     }
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'menu.bulk_availability', category: 'menu',
       description: `Bulk ${available ? 'enabled' : 'disabled'} ${result.modifiedCount} items`,
       restaurantId: req.restaurantId, severity: 'info',
@@ -2295,7 +2295,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
 
     // Archive raw upload
     col('menu_uploads').insertOne({
-      _id: newId(), restaurant_id: req.restaurantId, uploaded_by: req.user?.id || null,
+      _id: newId(), restaurant_id: req.restaurantId, uploaded_by: req.userId || null,
       filename: filename || 'upload.csv', row_count: items.length, branch_id: req.params.branchId,
       raw_headers: items[0] ? Object.keys(items[0]) : [], upload_status: 'processing', created_at: new Date(),
     }).catch(() => {});
@@ -2456,7 +2456,7 @@ router.post('/menu/csv', async (req, res) => {
 
     // Archive raw upload
     col('menu_uploads').insertOne({
-      _id: newId(), restaurant_id: req.restaurantId, uploaded_by: req.user?.id || null,
+      _id: newId(), restaurant_id: req.restaurantId, uploaded_by: req.userId || null,
       filename: filename || 'upload.csv', row_count: items.length, multi_branch: true,
       raw_headers: items[0] ? Object.keys(items[0]) : [], upload_status: 'processing', created_at: new Date(),
     }).catch(() => {});
@@ -2764,7 +2764,7 @@ router.post('/branches/:branchId/sync-catalog', requireApproved, async (req, res
     res.json(result);
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'catalog.sync_triggered', category: 'catalog',
       description: `Catalog sync triggered for branch ${req.params.branchId}`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -3655,7 +3655,7 @@ router.post('/catalog/clear-and-resync', async (req, res) => {
           // Step 3: Re-sync all local items
           const syncResult = await catalog.syncRestaurantCatalog(req.restaurantId);
 
-          log({ actorType: 'restaurant', actorId: req.user?.id, action: 'catalog.clear_and_resync', category: 'catalog', description: `Cleared ${deleted} items from Meta, re-synced ${syncResult.totalSynced}`, restaurantId: req.restaurantId, severity: 'info' });
+          log({ actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), action: 'catalog.clear_and_resync', category: 'catalog', description: `Cleared ${deleted} items from Meta, re-synced ${syncResult.totalSynced}`, restaurantId: req.restaurantId, severity: 'info' });
 
           return { success: true, deleted_from_meta: deleted, ...syncResult };
         },
@@ -3686,7 +3686,7 @@ router.post('/catalog/sync', async (req, res) => {
     res.status(httpStatus).json({ success: results.totalFailed === 0, totalFailed: results.totalFailed || 0, errors: results.branches?.filter(b => b.error).map(b => b.error) || [], ...results });
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'catalog.sync_triggered', category: 'catalog',
       description: `Catalog sync: ${results.totalSynced || 0} synced, ${results.totalFailed || 0} failed`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -3950,7 +3950,7 @@ router.post('/catalog/reverse-sync', async (req, res) => {
     req.log.info({ stats }, 'Reverse sync complete');
     res.json({ success: true, ...stats });
 
-    log({ actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone, action: 'catalog.reverse_sync', category: 'catalog', description: `Reverse sync from Meta: ${stats.new_items_added} new, ${stats.existing_items_updated} updated`, restaurantId: req.restaurantId, severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null, action: 'catalog.reverse_sync', category: 'catalog', description: `Reverse sync from Meta: ${stats.new_items_added} new, ${stats.existing_items_updated} updated`, restaurantId: req.restaurantId, severity: 'info' });
   } catch (e) {
     req.log.error({ err: e, metaResponse: e.response?.data }, 'Catalog reverse sync failed');
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -4782,7 +4782,7 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
     res.json({ success: true, order, eta: etaResult });
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'order.status_changed', category: 'order',
       description: `Order ${req.params.orderId} status changed from ${req.body._oldStatus || 'unknown'} to ${status}`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -4867,11 +4867,11 @@ router.post('/orders/:orderId/accept', requireApproved, requirePermission('manag
     const now = new Date();
     await col('orders').updateOne(
       { _id: orderId, acknowledged_at: { $exists: false } },
-      { $set: { acknowledged_at: now, acknowledged_by: req.user?.id || null } }
+      { $set: { acknowledged_at: now, acknowledged_by: req.userId || null } }
     );
 
     await orderSvc.updateStatus(orderId, 'CONFIRMED', {
-      actor: req.user?.email || req.user?.phone || 'restaurant',
+      actor: req.userId || 'restaurant',
       actorType: 'restaurant',
     });
 
@@ -4906,7 +4906,7 @@ router.post('/orders/:orderId/accept', requireApproved, requirePermission('manag
     res.json({ success: true, status: 'CONFIRMED' });
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'order.accepted', category: 'order',
       description: `Order ${orderId} accepted (PAID → CONFIRMED)`,
       restaurantId: req.restaurantId,
@@ -4959,14 +4959,14 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
       { _id: orderId, acknowledged_at: { $exists: false } },
       { $set: {
           acknowledged_at: now,
-          acknowledged_by: req.user?.id || null,
+          acknowledged_by: req.userId || null,
           decline_reason: reason,
           refund_id: refund?.id || null,
       } }
     );
 
     await orderSvc.updateStatus(orderId, 'CANCELLED', {
-      actor: req.user?.email || req.user?.phone || 'restaurant',
+      actor: req.userId || 'restaurant',
       actorType: 'restaurant',
       cancelReason: reason,
     });
@@ -5008,7 +5008,7 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
     res.json({ success: true, status: 'CANCELLED', refundId: refund?.id || null });
 
     log({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'order.declined', category: 'order',
       description: `Order ${orderId} declined (PAID → CANCELLED, refund ${refund?.id || 'n/a'})`,
       restaurantId: req.restaurantId,
@@ -7167,7 +7167,7 @@ router.get('/messages', requireAuth, requireApproved, async (req, res) => {
       if (unreadIds.length) {
         await col('customer_messages').updateMany(
           { _id: { $in: unreadIds } },
-          { $set: { status: 'read', read_at: new Date(), read_by: req.user?.email || req.user?.phone || null, updated_at: new Date() } }
+          { $set: { status: 'read', read_at: new Date(), read_by: req.userId || null, updated_at: new Date() } }
         );
       }
       return res.json({ messages: msgs.map(m => ({ ...m, id: String(m._id) })) });
@@ -7256,7 +7256,7 @@ router.get('/messages/thread/:customer_id', requireAuth, requireApproved, async 
     if (unreadIds.length) {
       await col('customer_messages').updateMany(
         { _id: { $in: unreadIds } },
-        { $set: { status: 'read', read_at: new Date(), read_by: req.user?.email || req.user?.phone || null, updated_at: new Date() } }
+        { $set: { status: 'read', read_at: new Date(), read_by: req.userId || null, updated_at: new Date() } }
       );
     }
 
@@ -7282,8 +7282,8 @@ router.put('/messages/:id/status', requireAuth, requireApproved, async (req, res
     const { status } = req.body;
     if (!['read', 'replied', 'resolved'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
     const $set = { status, updated_at: new Date() };
-    if (status === 'read') { $set.read_at = new Date(); $set.read_by = req.user?.email || req.user?.phone || null; }
-    if (status === 'resolved') { $set.resolved_at = new Date(); $set.resolved_by = req.user?.email || req.user?.phone || null; }
+    if (status === 'read') { $set.read_at = new Date(); $set.read_by = req.userId || null; }
+    if (status === 'resolved') { $set.resolved_at = new Date(); $set.resolved_by = req.userId || null; }
     await col('customer_messages').updateOne(
       { _id: req.params.id, restaurant_id: req.restaurantId },
       { $set }
@@ -7302,7 +7302,7 @@ router.put('/messages/thread/:customer_id/resolve', requireAuth, requireApproved
     const now = new Date();
     await col('customer_messages').updateMany(
       { restaurant_id: req.restaurantId, customer_id: req.params.customer_id, status: { $ne: 'resolved' } },
-      { $set: { status: 'resolved', resolved_at: now, resolved_by: req.user?.email || req.user?.phone || null, updated_at: now } }
+      { $set: { status: 'resolved', resolved_at: now, resolved_by: req.userId || null, updated_at: now } }
     );
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -7385,7 +7385,7 @@ router.post('/messages/reply', requireAuth, requireApproved, async (req, res) =>
       read_at: null,
       read_by: null,
       replied_at: new Date(),
-      replied_by: req.user?.email || req.user?.phone || null,
+      replied_by: req.userId || null,
       resolved_at: null,
       resolved_by: null,
       created_at: new Date(),
@@ -7396,11 +7396,11 @@ router.post('/messages/reply', requireAuth, requireApproved, async (req, res) =>
     // Mark thread as replied
     await col('customer_messages').updateMany(
       { restaurant_id: restId, customer_id, direction: 'inbound', status: { $in: ['unread', 'read'] } },
-      { $set: { status: 'replied', replied_at: new Date(), replied_by: req.user?.email || req.user?.phone || null, updated_at: new Date() } }
+      { $set: { status: 'replied', replied_at: new Date(), replied_by: req.userId || null, updated_at: new Date() } }
     );
 
     logActivity({
-      actorType: 'restaurant', actorId: req.user?.id, actorName: req.user?.email || req.user?.phone,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'message.replied', category: 'messages',
       description: `Replied to customer ${customer.name || customer.wa_phone}: "${text.substring(0, 60)}"`,
       restaurantId: restId, resourceType: 'customer_message', resourceId: String(msgDoc._id),

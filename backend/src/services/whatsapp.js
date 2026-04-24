@@ -728,7 +728,13 @@ const sendMessage = async ({ brand_id, business_id, phone_number_id, access_toke
     }
   }
 
-  console.log({ brand_id: resolvedBrandId, phone_number_id: pid });
+  // Local-dev trace only. Duplicates the structured log.info below (which
+  // is the canonical record); leaving it on in prod just floods stdout
+  // with the WABA phone_number_id, which is reversibly tied to a
+  // restaurant identity.
+  if (process.env.NODE_ENV !== 'production') {
+    console.log({ brand_id: resolvedBrandId, phone_number_id: pid });
+  }
   log.info({
     event: 'wa_send_routing',
     brand_id: resolvedBrandId,
