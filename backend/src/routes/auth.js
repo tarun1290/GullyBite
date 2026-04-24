@@ -178,7 +178,7 @@ router.post('/signup', express.json(), async (req, res) => {
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
       token_version: ownerUser.token_version ?? 0,
-    }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    }, process.env.JWT_SECRET, { expiresIn: '7d' });
     logActivity({ actorType: 'restaurant', actorId: id, action: 'restaurant.signup', category: 'auth', description: `New restaurant registered: ${req.body.ownerName || 'Unknown'}`, restaurantId: id, severity: 'info' });
     res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'restaurant', staff_role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
   } catch (err) {
@@ -210,7 +210,7 @@ router.post('/signin', express.json(), async (req, res) => {
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
       token_version: ownerUser.token_version ?? 0,
-    }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    }, process.env.JWT_SECRET, { expiresIn: '7d' });
     const step = restaurant.onboarding_step || 1;
     res.json({
       token,
@@ -294,7 +294,7 @@ router.post('/google', express.json(), async (req, res) => {
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
       token_version: ownerUser.token_version ?? 0,
-    }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     req.log.info({ restaurantId, needsOnboarding, approvalStatus }, 'Google auth success');
     res.json({
@@ -377,7 +377,7 @@ router.get('/google/callback', async (req, res) => {
       permissions: ROLE_PERMISSIONS.owner,
       branchIds: [],
       token_version: ownerUser.token_version ?? 0,
-    }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     req.log.info('Success, redirecting with token');
     // Redirect to frontend with token in URL — frontend will pick it up
@@ -2217,8 +2217,11 @@ router.post('/pin-login', express.json(), pinLoginLimiter, async (req, res) => {
 // ─── JWT AUTH MIDDLEWARE ──────────────────────────────────────
 // Async because it validates the JWT's token_version against the DB, so a
 // password change / logout / delete can revoke every outstanding token for
-// the user. Missing token_version on either side is treated as 0 — legacy
-// tokens issued before this field existed remain valid until natural expiry.
+// the user. Tokens MUST carry a numeric token_version field — the prior
+// `|| 0` fallback meant a revoked token whose payload happened to omit
+// the field would be silently treated as version 0 and accepted. Pre-
+// launch (no live users), so invalidating any old token-version-less
+// tokens is acceptable.
 async function requireAuth(req, res, next) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
@@ -2232,9 +2235,14 @@ async function requireAuth(req, res, next) {
     if (decoded.userId) {
       const user = await col('restaurant_users').findOne({ _id: decoded.userId, is_active: true });
       if (!user) return res.status(401).json({ error: 'Session expired. Please log in again.' });
-      const tokenVer = Number(decoded.token_version || 0);
-      const dbVer    = Number(user.token_version || 0);
-      if (tokenVer !== dbVer) {
+      // Reject tokens that don't explicitly carry a token_version. The DB
+      // side may legitimately be 0 for a brand-new user, so only the
+      // payload side is treated as required.
+      if (typeof decoded.token_version !== 'number') {
+        return res.status(401).json({ error: 'Session expired. Please log in again.' });
+      }
+      const dbVer = Number(user.token_version || 0);
+      if (decoded.token_version !== dbVer) {
         return res.status(401).json({ error: 'Session expired. Please log in again.' });
       }
     }

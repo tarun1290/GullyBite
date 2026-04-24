@@ -59,10 +59,16 @@ function requireAdminAuth(permission, minLevel) {
       if (!adminUser) return res.status(401).json({ error: 'Account not found or deactivated' });
 
       // Session revocation: token_version on the JWT must match the DB.
-      // Missing field on either side is treated as 0 (covers legacy tokens and docs).
-      const tokenVer = Number(decoded.token_version || 0);
-      const dbVer    = Number(adminUser.token_version || 0);
-      if (tokenVer !== dbVer) {
+      // Tokens MUST carry a numeric token_version — the prior `|| 0`
+      // fallback meant a revoked token whose payload omitted the field
+      // would be silently accepted as version 0. Missing or non-numeric
+      // payload field → reject. Pre-launch (no live admin sessions), so
+      // invalidating legacy tokens here is acceptable.
+      if (typeof decoded.token_version !== 'number') {
+        return res.status(401).json({ error: 'Session expired. Please log in again.' });
+      }
+      const dbVer = Number(adminUser.token_version || 0);
+      if (decoded.token_version !== dbVer) {
         return res.status(401).json({ error: 'Session expired. Please log in again.' });
       }
 
