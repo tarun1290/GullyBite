@@ -376,8 +376,15 @@ async function handleOrder(value) {
     ...charges,
     total_rs: charges.customer_total_rs,
     item_count: orderItems.reduce((s, i) => s + i.quantity, 0),
-    status: data.payment_status === 'paid' ? 'PAID' : 'PENDING_PAYMENT',
-    payment_status: data.payment_status === 'paid' ? 'paid' : 'pending',
+    // Always inserted as PENDING_PAYMENT — even when Meta tells us
+    // payment_status='paid' on the same payload, we route the PAID
+    // transition through the strict state engine below so:
+    //   1. order_state_log captures the PENDING_PAYMENT → PAID move
+    //   2. The state-engine listeners (notification, analytics) fire
+    //   3. The flip-guard around payment_status idempotently controls
+    //      the ledger credit, so a duplicate webhook doesn't double-pay
+    status: 'PENDING_PAYMENT',
+    payment_status: 'pending',
     settlement_id: null,
     created_at: new Date(),
   };
@@ -433,7 +440,68 @@ async function handleOrder(value) {
 
   // If already paid, confirm the order
   if (data.payment_status === 'paid') {
-    await orderSvc.updateStatus(orderId, 'PAID');
+    // Drive the PENDING_PAYMENT → PAID transition through the strict
+    // state engine so order_state_log + the order.updated event bus
+    // fire correctly. The previous orderSvc.updateStatus call did the
+    // same plumbing but masked the fact that we were doing a real
+    // state change (the order was inserted as PAID up to this commit,
+    // making updateStatus a no-op via idempotency).
+    const { transitionOrder } = require('../core/orderStateEngine');
+    try {
+      await transitionOrder(orderId, 'PAID', {
+        actor: 'wa_checkout',
+        actorType: 'system',
+        metadata: { method: 'whatsapp_native', provider: 'whatsapp_checkout' },
+      });
+    } catch (transErr) {
+      // Already-PAID is the only realistic failure (concurrent webhook
+      // already moved the row); transitionOrder treats that as idempotent
+      // success internally, so this catch is true defence-in-depth.
+      log.warn({ err: transErr, orderId }, 'wa_checkout: transitionOrder PAID failed');
+    }
+
+    // ─── IDEMPOTENT LEDGER CREDIT (OF-C1 fix) ──────────────────────
+    // Mirrors the flip-guard pattern in razorpay.js so a duplicate
+    // checkout webhook can NEVER double-credit:
+    //   • The CAS update only matches when payment_status !== 'paid'
+    //   • Whichever process flips it first wins and writes the credit
+    //   • Concurrent / replay webhooks see matchedCount === 0 and skip
+    // refId 'wa_checkout:<orderId>' lives in a separate namespace from
+    // razorpay.js's 'rp_<paymentId>' ref_id, so the unique
+    // (restaurant_id, ref_type, ref_id) ledger index never collides
+    // across rails. Total fail-safe: even without the flip-guard, the
+    // unique index would block a duplicate insert.
+    try {
+      const flip = await col('orders').updateOne(
+        { _id: orderId, payment_status: { $ne: 'paid' } },
+        { $set: { payment_status: 'paid', updated_at: new Date() } }
+      );
+      if (flip.matchedCount === 1) {
+        const ord = await col('orders').findOne(
+          { _id: orderId },
+          { projection: { restaurant_id: 1, total_rs: 1, order_number: 1 } }
+        );
+        if (ord?.restaurant_id) {
+          const ledger = require('../services/ledger.service');
+          await ledger.credit({
+            restaurantId: ord.restaurant_id,
+            amountPaise: Math.round((ord.total_rs || 0) * 100),
+            refType: 'payment',
+            refId: `wa_checkout:${String(orderId)}`,
+            status: 'completed',
+            notes: `WA Native Checkout payment — order ${ord.order_number}`,
+          });
+          log.info({ orderId, orderNumber: ord.order_number }, 'wa_checkout ledger credit written');
+        }
+      } else {
+        log.info({ orderId }, 'wa_checkout: payment_status already paid — ledger credit skipped (race lost)');
+      }
+    } catch (ledgerErr) {
+      // Ledger failure must NEVER block the checkout flow — Meta has
+      // already accepted the customer's money; the ops dashboard surfaces
+      // missing ledger entries via the reconciliation job.
+      log.warn({ err: ledgerErr, orderId }, 'wa_checkout ledger credit failed — order still marked paid');
+    }
 
     // Persistent-notification handshake — stamp notified_at + broadcast
     // new_paid_order so the dashboard pops the looping-sound modal.

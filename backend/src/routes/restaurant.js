@@ -6346,6 +6346,59 @@ router.get('/referrals', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// ─── GBREF LINKS — RESTAURANT-FACING ─────────────────────────
+// GET /api/restaurant/referrals/links — the restaurant's own active GBREF
+// links so the dashboard can render share buttons. Mirrors the admin
+// /referrals/links projection but scoped to req.restaurantId.
+// requireApproved is intentionally NOT applied: unapproved restaurants
+// still see an empty list and the "request a link" CTA, matching the
+// /referrals listing UX.
+router.get('/referrals/links', async (req, res) => {
+  try {
+    const links = await col('referral_links')
+      .find({ restaurant_id: req.restaurantId, status: 'active' })
+      .sort({ created_at: -1 })
+      .toArray();
+    res.json({ links: mapIds(links) });
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
+// POST /api/restaurant/referrals/links/request — restaurant asks admin to
+// generate a GBREF link. Does NOT mint a link directly — the admin owns
+// the namespace + WA-number gating. Inserts a row into
+// referral_link_requests; the admin dashboard surfaces these for action.
+// One pending row per restaurant is enough — duplicate POSTs collapse via
+// updateOne $setOnInsert so a restaurant clicking "request" twice doesn't
+// flood ops.
+router.post('/referrals/links/request', async (req, res) => {
+  try {
+    const campaign_name = (req.body?.campaign_name || '').toString().trim().slice(0, 80) || null;
+    const now = new Date();
+    const result = await col('referral_link_requests').findOneAndUpdate(
+      { restaurant_id: req.restaurantId, status: 'pending' },
+      {
+        $setOnInsert: {
+          _id: newId(),
+          restaurant_id: req.restaurantId,
+          campaign_name,
+          status: 'pending',
+          created_at: now,
+        },
+        $set: { updated_at: now },
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+    const isNew = !!result?.lastErrorObject?.upserted;
+    res.json({
+      success: true,
+      already_pending: !isNew,
+      message: isNew
+        ? 'Request submitted. Admin will generate your link shortly.'
+        : 'You already have a pending request — admin will reach out shortly.',
+    });
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
 // ─── SYNC LOGS ───────────────────────────────────────────────
 router.get('/sync-logs', async (req, res) => {
   try {
@@ -6402,14 +6455,82 @@ router.get('/whatsapp/template-mappings', async (req, res) => {
 });
 
 // PUT /api/restaurant/whatsapp/template-mappings
+//
+// Safety net: refuses to bind a MARKETING template to a UTILITY event (or
+// vice versa). Meta enforces the same rule on send (charges marketing,
+// silently downgrades, or rejects) — catching it here prevents the
+// merchant from finding out at runtime via failed customer messages.
+// Skipped mappings are returned in `skipped` so the caller can surface
+// them; valid mappings still save.
 router.put('/whatsapp/template-mappings', requireApproved, express.json(), async (req, res) => {
   try {
     const mappings = req.body;
     if (!Array.isArray(mappings)) return res.status(400).json({ error: 'Array of mappings required' });
 
+    // Event → required category map. Sourced from
+    // config/predefined-templates.js: every UTILITY-categorised template
+    // there has a `suggested_event` here as UTILITY; every MARKETING one
+    // here. Events outside both sets get no category check (caller-defined
+    // / future events are allowed through).
+    const UTILITY_EVENTS = new Set([
+      'ORDER_CONFIRMED', 'ORDER_PREPARING', 'ORDER_PACKED',
+      'ORDER_DISPATCHED', 'ORDER_DELIVERED', 'ORDER_CANCELLED',
+      'PAYMENT_RECEIVED', 'PAYMENT_REMINDER', 'DELIVERY_OTP',
+      'FEEDBACK_REQUEST', 'REFUND_PROCESSED',
+    ]);
+    const MARKETING_EVENTS = new Set([
+      'CART_RECOVERY', 'WELCOME', 'REORDER_SUGGESTION',
+    ]);
+
+    const skipped = [];
+
     for (const m of mappings) {
       const { eventName, templateName, templateLanguage, variableMap } = m;
       if (!eventName || !templateName) continue;
+
+      // Look up the template's category + status from the local cache
+      // (populated by services/template.syncTemplates + the daily cron).
+      // Missing row → safe-fail: allow the mapping through (template may
+      // have just been created and not yet synced).
+      const templateRow = await col('templates').findOne(
+        { name: templateName },
+        { projection: { category: 1, status: 1 } }
+      );
+
+      if (templateRow) {
+        const eventUpper = eventName.toUpperCase();
+        const isUtilityEvent = UTILITY_EVENTS.has(eventUpper);
+        const isMarketingEvent = MARKETING_EVENTS.has(eventUpper);
+        const templateCategory = templateRow.category?.toUpperCase();
+
+        if (isUtilityEvent && templateCategory === 'MARKETING') {
+          logger.warn({
+            eventName, templateName, templateCategory,
+            restaurantId: req.restaurantId,
+          }, 'template-mapping: MARKETING template mapped to UTILITY event — skipped');
+          skipped.push({ eventName, templateName, reason: 'category_mismatch_marketing_to_utility' });
+          continue;
+        }
+        if (isMarketingEvent && templateCategory === 'UTILITY') {
+          logger.warn({
+            eventName, templateName, templateCategory,
+            restaurantId: req.restaurantId,
+          }, 'template-mapping: UTILITY template mapped to MARKETING event — skipped');
+          skipped.push({ eventName, templateName, reason: 'category_mismatch_utility_to_marketing' });
+          continue;
+        }
+
+        // Non-APPROVED templates are allowed (restaurant may be
+        // pre-configuring before approval lands), but logged so ops can
+        // spot a paused-template misconfiguration in the audit trail.
+        if (templateRow.status && templateRow.status !== 'APPROVED') {
+          logger.warn({
+            eventName, templateName, status: templateRow.status,
+            restaurantId: req.restaurantId,
+          }, 'template-mapping: template is not APPROVED — mapping saved but sends may fail');
+        }
+      }
+
       const now = new Date();
       await col('whatsapp_template_mappings').updateOne(
         { restaurant_id: req.restaurantId, event_name: eventName },
@@ -6425,7 +6546,7 @@ router.put('/whatsapp/template-mappings', requireApproved, express.json(), async
         { upsert: true }
       );
     }
-    res.json({ ok: true });
+    res.json({ ok: true, skipped });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 

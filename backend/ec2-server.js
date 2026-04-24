@@ -400,6 +400,13 @@ connect().then(() => {
   const { scheduleRecovery } = require('./src/jobs/recovery');
   scheduleRecovery();
 
+  // Template-status sync — daily 02:00 IST. Pulls Meta's APPROVED /
+  // PAUSED / REJECTED state into the local templates collection so a
+  // template paused by Meta surfaces in the dashboard within 24h instead
+  // of silently failing every send.
+  const { scheduleTemplateSync } = require('./src/jobs/templateSync');
+  scheduleTemplateSync();
+
   // try { require('./src/jobs/campaignSender'); } catch (e) { console.warn('[EC2] Campaign sender:', e.message); }
   console.log('[EC2] Campaign sender: disabled — module not yet implemented');
 

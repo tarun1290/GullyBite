@@ -268,6 +268,17 @@ export async function getReferrals(): Promise<unknown> {
   return data;
 }
 
+export async function getReferralLinks(): Promise<unknown> {
+  const { data } = await client.get('/api/restaurant/referrals/links');
+  return data;
+}
+
+export async function requestReferralLink(campaignName?: string): Promise<unknown> {
+  const body: RequestBody = campaignName ? { campaign_name: campaignName } : {};
+  const { data } = await client.post('/api/restaurant/referrals/links/request', body);
+  return data;
+}
+
 export async function getMarketingMessages(params: QueryParams = {}): Promise<unknown> {
   const { data } = await client.get('/api/restaurant/marketing-messages', { params });
   return data;

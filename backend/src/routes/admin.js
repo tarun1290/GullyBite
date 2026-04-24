@@ -1310,6 +1310,51 @@ router.post('/referrals/links', express.json(), async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// GET /api/admin/referral-link-requests — pending GBREF link requests from
+// restaurants. Each row is enriched with the restaurant's display name so
+// the admin dashboard can render the "Pending Requests" panel without a
+// second roundtrip.
+router.get('/referral-link-requests', async (req, res) => {
+  try {
+    const requests = await col('referral_link_requests')
+      .find({ status: 'pending' })
+      .sort({ created_at: -1 })
+      .limit(50)
+      .toArray();
+
+    const restaurantIds = [...new Set(requests.map(r => r.restaurant_id).filter(Boolean))];
+    const restaurants = restaurantIds.length
+      ? await col('restaurants').find(
+          { _id: { $in: restaurantIds } },
+          { projection: { business_name: 1, brand_name: 1 } }
+        ).toArray()
+      : [];
+    const nameById = Object.fromEntries(
+      restaurants.map(r => [String(r._id), r.brand_name || r.business_name || String(r._id)])
+    );
+
+    const enriched = requests.map(r => ({
+      ...mapId(r),
+      restaurant_name: nameById[String(r.restaurant_id)] || null,
+    }));
+    res.json({ requests: enriched });
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
+// POST /api/admin/referral-link-requests/:id/resolve — mark a pending
+// request as resolved (called after admin generates the link via the
+// existing POST /referrals/links endpoint). Idempotent: re-resolving a
+// resolved row is a no-op.
+router.post('/referral-link-requests/:id/resolve', express.json(), async (req, res) => {
+  try {
+    await col('referral_link_requests').updateOne(
+      { _id: req.params.id, status: 'pending' },
+      { $set: { status: 'resolved', resolved_at: new Date(), resolved_by: req.adminUser?._id || null } }
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+});
+
 // PUT /api/admin/referrals/links/:id — update status or campaign name
 router.put('/referrals/links/:id', express.json(), async (req, res) => {
   try {

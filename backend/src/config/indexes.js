@@ -68,6 +68,10 @@ const INDEXES = [
   { collection: 'referral_links', index: { code: 1 }, options: { unique: true } },
   { collection: 'referral_links', index: { restaurant_id: 1, status: 1 } },
   { collection: 'referrals', index: { referral_code: 1 } },
+  // At most one pending GBREF link request per restaurant — the application
+  // layer already upserts on (restaurant_id, status:'pending'); this partial
+  // unique index is the DB-layer guarantee.
+  { collection: 'referral_link_requests', index: { restaurant_id: 1, status: 1 }, options: { unique: true, partialFilterExpression: { status: 'pending' } } },
   // Abandoned cart recovery indexes
   { collection: 'abandoned_carts', index: { restaurant_id: 1, recovery_status: 1, created_at: -1 } },
   { collection: 'abandoned_carts', index: { customer_phone: 1, restaurant_id: 1, created_at: -1 } },

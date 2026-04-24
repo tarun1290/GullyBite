@@ -349,6 +349,23 @@ export async function createReferral(body: RequestBody): Promise<unknown> {
   return data;
 }
 
+export async function getReferralLinkRequests(): Promise<unknown> {
+  const { data } = await client.get('/api/admin/referral-link-requests');
+  return data;
+}
+
+export async function resolveReferralLinkRequest(id: string): Promise<unknown> {
+  const { data } = await client.post(`/api/admin/referral-link-requests/${id}/resolve`);
+  return data;
+}
+
+export async function createReferralLink(restaurantId: string, campaignName?: string | null): Promise<unknown> {
+  const body: RequestBody = { restaurant_id: restaurantId };
+  if (campaignName) body.campaign_name = campaignName;
+  const { data } = await client.post('/api/admin/referrals/links', body);
+  return data;
+}
+
 // ── Settlements ─────────────────────────────────────────────────────
 
 export async function getSettlementStats(): Promise<unknown> {

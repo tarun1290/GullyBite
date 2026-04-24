@@ -7,9 +7,12 @@ import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/dashboard/analytics/SectionError';
 import {
   createReferral,
+  createReferralLink,
   getAdminRestaurants,
+  getReferralLinkRequests,
   getReferralStats,
   getReferrals,
+  resolveReferralLinkRequest,
 } from '../../../api/admin';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -54,6 +57,18 @@ interface CreatedReferral {
   restaurant_wa_phone?: string;
 }
 
+interface LinkRequest {
+  _id?: string;
+  id?: string;
+  restaurant_id?: string;
+  restaurant_name?: string | null;
+  campaign_name?: string | null;
+  status?: string;
+  created_at?: string;
+}
+
+interface LinkRequestsEnvelope { requests?: LinkRequest[] }
+
 function fmtInr(n: number | string | null | undefined): string {
   const v = Number(n || 0);
   try {
@@ -77,6 +92,19 @@ function timeUntil(ts?: string): string {
   return h > 0 ? `in ${h}h ${m}m` : `in ${m}m`;
 }
 
+function timeAgo(ts?: string): string {
+  if (!ts) return '—';
+  const diff = Date.now() - new Date(ts).getTime();
+  if (diff < 0) return 'just now';
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
 const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
 const td: CSSProperties = { padding: '.6rem .7rem', verticalAlign: 'top' };
 const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
@@ -98,6 +126,12 @@ export default function AdminReferralsPage() {
   const [rows, setRows] = useState<AdminReferral[]>([]);
   const [listErr, setListErr] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+
+  const [linkRequests, setLinkRequests] = useState<LinkRequest[]>([]);
+  const [linkRequestsErr, setLinkRequestsErr] = useState<string | null>(null);
+  // Per-request in-flight flag (keyed by request _id) so the right button
+  // shows a spinner without disabling the others.
+  const [generating, setGenerating] = useState<Record<string, boolean>>({});
 
   const loadStats = useCallback(async () => {
     try {
@@ -131,11 +165,22 @@ export default function AdminReferralsPage() {
     }
   }, []);
 
+  const loadLinkRequests = useCallback(async () => {
+    try {
+      const r = (await getReferralLinkRequests()) as LinkRequestsEnvelope | null;
+      setLinkRequests(Array.isArray(r?.requests) ? r!.requests! : []);
+      setLinkRequestsErr(null);
+    } catch (e: unknown) {
+      const er = e as { response?: { data?: { error?: string } }; message?: string };
+      setLinkRequestsErr(er?.response?.data?.error || er?.message || 'Failed to load link requests');
+    }
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadStats(), loadList(), loadRestaurants()]);
+    await Promise.all([loadStats(), loadList(), loadRestaurants(), loadLinkRequests()]);
     setLoading(false);
-  }, [loadStats, loadList, loadRestaurants]);
+  }, [loadStats, loadList, loadRestaurants, loadLinkRequests]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -180,6 +225,35 @@ export default function AdminReferralsPage() {
       showToast('Link copied', 'success');
     } catch {
       showToast('Copy failed — please copy manually', 'error');
+    }
+  };
+
+  // Mint a GBREF link for a pending request, then mark the request resolved.
+  // Both calls are guarded — partial success is acceptable: link minted but
+  // resolution failed leaves the request visible for retry, which is fine.
+  const generateForRequest = async (req: LinkRequest) => {
+    if (!req._id || !req.restaurant_id) return;
+    setGenerating((g) => ({ ...g, [req._id!]: true }));
+    try {
+      const link = (await createReferralLink(req.restaurant_id, req.campaign_name || undefined)) as { wa_link?: string; code?: string } | null;
+      try {
+        await resolveReferralLinkRequest(req._id);
+      } catch {
+        // Non-fatal — the link is created; ops can clear the row manually.
+      }
+      const codeLabel = link?.code ? `GBREF-${link.code}` : 'link';
+      showToast(`${codeLabel} created for ${req.restaurant_name || 'restaurant'}`, 'success');
+      if (link?.wa_link) setLinkBox(link.wa_link);
+      await loadLinkRequests();
+    } catch (e: unknown) {
+      const er = e as { response?: { data?: { error?: string } }; message?: string };
+      showToast(er?.response?.data?.error || er?.message || 'Generate failed', 'error');
+    } finally {
+      setGenerating((g) => {
+        const next = { ...g };
+        delete next[req._id!];
+        return next;
+      });
     }
   };
 
@@ -270,6 +344,58 @@ export default function AdminReferralsPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* ── Pending GBREF link requests ─────────────────────────
+          Restaurants self-serve a request for a shareable GBREF link via
+          the dashboard; admin generates and the request collapses. */}
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <div className="ch" style={{ justifyContent: 'space-between' }}>
+          <h3>Pending Link Requests</h3>
+          <button type="button" className="btn-g btn-sm" onClick={loadLinkRequests} disabled={loading}>↻ Refresh</button>
+        </div>
+        {linkRequestsErr ? (
+          <div className="cb"><SectionError message={linkRequestsErr} onRetry={loadLinkRequests} /></div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+              <thead>
+                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
+                  <th style={th}>Restaurant</th>
+                  <th style={th}>Campaign</th>
+                  <th style={th}>Requested</th>
+                  <th style={th}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && linkRequests.length === 0 ? (
+                  <tr><td colSpan={4} style={emptyCell}>Loading…</td></tr>
+                ) : linkRequests.length === 0 ? (
+                  <tr><td colSpan={4} style={emptyCell}>No pending link requests</td></tr>
+                ) : (
+                  linkRequests.map((req) => (
+                    <tr key={req._id || req.id} style={{ borderBottom: '1px solid var(--rim)' }}>
+                      <td style={td}>{req.restaurant_name || req.restaurant_id || '—'}</td>
+                      <td style={td}>{req.campaign_name || <span style={{ color: 'var(--dim)' }}>—</span>}</td>
+                      <td style={{ ...td, fontSize: '.78rem', color: 'var(--dim)' }}>{timeAgo(req.created_at)}</td>
+                      <td style={td}>
+                        <button
+                          type="button"
+                          className="btn-p btn-sm"
+                          onClick={() => generateForRequest(req)}
+                          disabled={!!generating[req._id || '']}
+                          style={{ background: 'var(--gb-violet-600)', color: 'var(--gb-neutral-0)' }}
+                        >
+                          {generating[req._id || ''] ? 'Generating…' : 'Generate Link'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="card">
