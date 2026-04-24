@@ -9,14 +9,17 @@ const { col } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'adminAuth' });
 
 // ── STRICT SECRET VALIDATION ────────────────────────────────
-// ADMIN_JWT_SECRET is required. No fallback — crash early if missing.
-const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET || process.env.JWT_SECRET;
+// ADMIN_JWT_SECRET is required. No fallback — admin tokens MUST be signed
+// and verified with their own secret to keep privilege separation between
+// admin and customer JWTs. Missing → exit immediately so the server cannot
+// start with a silently insecure config (matches the boot-time pattern in
+// server.js REQUIRED_IN_PROD).
+const ADMIN_JWT_SECRET = process.env.ADMIN_JWT_SECRET;
 if (!ADMIN_JWT_SECRET) {
-  const msg = 'FATAL: ADMIN_JWT_SECRET (or JWT_SECRET) environment variable is not set. Admin auth cannot function.';
-  log.error(msg);
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error(msg); // Crash in production — don't start with insecure auth
-  }
+  // console.error so the message survives even if logger init fails earlier.
+  console.error('FATAL: ADMIN_JWT_SECRET environment variable is not set. Admin auth cannot function.');
+  log.error('FATAL: ADMIN_JWT_SECRET environment variable is not set. Admin auth cannot function.');
+  process.exit(1);
 }
 
 // Permission level hierarchy (higher number = more access)
