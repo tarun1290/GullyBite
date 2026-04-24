@@ -30,9 +30,7 @@ function authHeaders(apiKey, apiSecret) {
   };
 }
 
-function slugify(str) {
-  return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
+const slugify = require('../../utils/slugify');
 
 function isSizeGroup(group) {
   const title = (group.title || group.name || '').toLowerCase();

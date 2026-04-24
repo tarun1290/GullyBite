@@ -419,6 +419,23 @@ async function processRefund(issueId, { amountRs, actorName, actorId }) {
     $set: { refund_amount_rs: refundAmountRs, refund_issue_id: issueId, updated_at: new Date() },
   });
 
+  // Reverse GBREF referral commission on FULL refunds only. Partial
+  // refunds (single-item complaint, etc.) keep the commission since
+  // the restaurant fulfilled most of the order. reverseCommission is
+  // a no-op for non-GBREF orders and for referrals whose commission
+  // was never confirmed, so this is safe to call unconditionally on
+  // the full-refund branch.
+  const isFullRefund = !amountRs || refundAmountRs >= (refund.amount / 100);
+  if (isFullRefund) {
+    try {
+      const refAttr = require('./referralAttribution');
+      await refAttr.reverseCommission(issue.order_id, 'admin_full_refund');
+    } catch (err) {
+      const log = require('../utils/logger').child({ component: 'issues' });
+      log.warn({ err, orderId: issue.order_id }, 'reverseCommission failed on admin refund — continuing');
+    }
+  }
+
   return { refund, issue: await col('issues').findOne({ _id: issueId }) };
 }
 

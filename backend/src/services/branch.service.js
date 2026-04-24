@@ -17,12 +17,8 @@
 const { col, newId } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'branch.service' });
 
-// Local slugify — matches backend/src/routes/restaurant.js:32 verbatim.
-// Not imported from a shared util because none exists today; the codebase
-// already has ~9 near-identical copies. Consolidation is a separate refactor.
-function slugify(str, maxLen = 40) {
-  return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, maxLen);
-}
+// Canonical hyphen-separated slug (consolidated from per-file copies).
+const slugify = require('../utils/slugify');
 
 // ─── FORMAT VALIDATORS ──────────────────────────────────────────
 // FSSAI: 14-digit numeric string.

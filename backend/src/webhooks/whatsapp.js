@@ -299,9 +299,13 @@ const processChange = async (value) => {
 
     const msgStart = Date.now();
 
-    // [BSUID] Extract both phone and BSUID from webhook payload
+    // [BSUID] Extract both phone and BSUID from webhook payload.
+    // meta_bsuid is Meta's official user_id (kept distinct from our
+    // internal `bsuid` so the June 2026 rollout safety-net lookup
+    // (CASE 5 in customerIdentity.getOrCreateCustomer) can match
+    // returning customers without creating duplicate rows.
     const contact = value.contacts?.find(c => c.wa_id === msg.from || c.user_id === msg.from || c.user_id === msg.user_id);
-    const { bsuid, wa_phone } = customerIdentity.extractIdentifiers(msg, contact);
+    const { bsuid, wa_phone, meta_bsuid } = customerIdentity.extractIdentifiers(msg, contact);
     const senderName = contact?.profile?.name;
     // Best identifier for sending error messages back
     const replyTo = wa_phone || bsuid || msg.from;
@@ -370,7 +374,7 @@ const processChange = async (value) => {
     });
 
     try {
-      await handleMessage(msg, { bsuid, wa_phone }, senderName, waAccount);
+      await handleMessage(msg, { bsuid, wa_phone, meta_bsuid }, senderName, waAccount);
       log.info({ messageType: msg.type, phone: wa_phone?.slice(-4), durationMs: Date.now() - msgStart }, 'Message processed');
     } catch (err) {
       log.error({ err, phone: wa_phone?.slice(-4), durationMs: Date.now() - msgStart }, 'Error handling message');
@@ -398,11 +402,15 @@ const processChange = async (value) => {
 };
 
 // ─── HANDLE INCOMING MESSAGE ──────────────────────────────────
-// [BSUID] senderIdentifiers is now { bsuid, wa_phone } instead of plain phone string
+// [BSUID] senderIdentifiers is now { bsuid, wa_phone, meta_bsuid }.
+// meta_bsuid is forwarded to getOrCreateCustomer so the CASE 5 lookup
+// can recognise returning customers who switched to BSUID-only messaging
+// during Meta's June 2026 rollout.
 const handleMessage = async (msg, senderIdentifiers, senderName, waAccount) => {
   const customer = await orderSvc.getOrCreateCustomer({
     bsuid: senderIdentifiers.bsuid,
     wa_phone: senderIdentifiers.wa_phone,
+    meta_bsuid: senderIdentifiers.meta_bsuid,
     profile_name: senderName,
   });
   const conv = await orderSvc.getOrCreateConversation(customer.id, String(waAccount._id));

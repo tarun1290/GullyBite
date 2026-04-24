@@ -66,12 +66,8 @@ const FIELD_KEYWORDS = {
   size:        ['size', 'variant', 'variation', 'portion'],
 };
 
-// Matches the per-integration slugify helper (petpooja.js:25,
-// urbanpiper.js:29, dotpe.js:33). Kept as an inline copy rather than
-// extracted because those integrations are out of scope per the fix spec.
-function slugify(str) {
-  return String(str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
+// Canonical hyphen-separated slug (consolidated from per-file copies).
+const slugify = require('../utils/slugify');
 
 // retailer_id contract: alphanumeric segments separated by single hyphens,
 // no leading/trailing hyphen, no underscores or whitespace. Matches what

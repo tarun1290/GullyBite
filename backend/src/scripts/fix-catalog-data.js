@@ -17,9 +17,7 @@ const TOKEN = process.env.META_SYSTEM_USER_TOKEN;
 const API_VERSION = process.env.WA_API_VERSION || 'v25.0';
 const GRAPH = `https://graph.facebook.com/${API_VERSION}`;
 
-function slugify(str, maxLen = 40) {
-  return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, maxLen);
-}
+const slugify = require('../utils/slugify');
 
 let db;
 

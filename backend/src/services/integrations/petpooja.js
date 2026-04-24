@@ -26,9 +26,7 @@ const FOOD_TYPE_MAP = {
   '4': 'Vegan',
 };
 
-function slugify(str) {
-  return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
+const slugify = require('../../utils/slugify');
 
 async function fetchMenu(integration) {
   if (!POS_INTEGRATIONS_ENABLED) {

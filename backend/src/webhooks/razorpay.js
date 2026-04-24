@@ -358,15 +358,16 @@ const confirmPaidOrder = async (orderId, event) => {
       const journeyExecutor = require('../services/journeyExecutor');
 
       // Welcome — only on first order. Delayed by 2h so the message
-      // doesn't collide with the order confirmation. Uses setTimeout;
-      // if the server restarts within 2h the welcome drops for this
-      // customer. A proper job queue would make this restart-safe —
-      // deferred until scale warrants the complexity.
+      // doesn't collide with the order confirmation. Persisted via the
+      // postPaymentJobs queue so an EC2 restart within the 2h window
+      // does NOT drop the welcome (the previous setTimeout-based version
+      // did — replaced per the P-W2 audit fix).
       if (orderCount === 1) {
-        setTimeout(() => {
-          journeyExecutor.executeJourney(restaurantIdStr, customerIdStr, 'welcome')
-            .catch(() => {});
-        }, 2 * 60 * 60 * 1000);
+        const { enqueue, JOB_TYPES: JOBS } = require('../queue/postPaymentJobs');
+        enqueue(JOBS.WELCOME_JOURNEY, {
+          restaurantId: restaurantIdStr,
+          customerId: customerIdStr,
+        }, { delayMs: 2 * 60 * 60 * 1000 }).catch(() => {});
       }
 
       // Milestone — fires immediately on the configured order count.

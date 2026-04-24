@@ -15,6 +15,7 @@ const financials = require('../services/financials');
 const wa = require('../services/whatsapp');
 const ws = require('../services/websocket');
 const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
+const slugify = require('../utils/slugify');
 const log = require('../utils/logger').child({ component: 'admin' });
 
 // ─── AUTH MIDDLEWARE (RBAC) ───────────────────────────────────
@@ -177,6 +178,12 @@ router.post('/users', requireAdminAuth('admin_users', 'manage'), express.json(),
       is_active: true, last_login: null, login_count: 0, token_version: 0, created_by: req.adminUser?._id || 'admin', created_at: new Date(), updated_at: new Date(),
     };
     await col('admin_users').insertOne(user);
+    logActivity({
+      actorType: 'admin', actorId: String(req.adminUser?._id), actorName: req.adminUser?.name || req.adminUser?.email,
+      action: 'admin.user.created', category: 'admin_users',
+      description: `Admin user created: ${email} (role: ${role || 'admin'})`,
+      resourceType: 'admin_user', resourceId: String(user._id), severity: 'warning',
+    });
     const { password_hash, ...safe } = user;
     res.json(mapId(safe));
   } catch (e) {
@@ -213,6 +220,12 @@ router.put('/users/:id', requireAdminAuth('admin_users', 'manage'), express.json
     const $update = { $set };
     if (is_active === false) $update.$inc = { token_version: 1 };
     await col('admin_users').updateOne({ _id: req.params.id }, $update);
+    logActivity({
+      actorType: 'admin', actorId: String(req.adminUser?._id), actorName: req.adminUser?.name || req.adminUser?.email,
+      action: 'admin.user.updated', category: 'admin_users',
+      description: `Admin user updated: ${target.email}${is_active === false ? ' (deactivated)' : ''}`,
+      resourceType: 'admin_user', resourceId: req.params.id, severity: is_active === false ? 'warning' : 'info',
+    });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -226,6 +239,12 @@ router.post('/users/:id/reset-password', requireAdminAuth('admin_users', 'manage
       { _id: req.params.id },
       { $set: { password_hash: hash, updated_at: new Date() }, $inc: { token_version: 1 } }
     );
+    logActivity({
+      actorType: 'admin', actorId: String(req.adminUser?._id), actorName: req.adminUser?.name || req.adminUser?.email,
+      action: 'admin.user.password_reset', category: 'admin_users',
+      description: `Admin password reset for user ${req.params.id}`,
+      resourceType: 'admin_user', resourceId: req.params.id, severity: 'warning',
+    });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -1422,6 +1441,12 @@ router.post('/wallets/refund', async (req, res) => {
     const walletSvc = require('../services/wallet');
     const result = await walletSvc.refund(restaurantId, amount, description || 'Admin refund');
     if (!result) return res.status(404).json({ error: 'Wallet not found' });
+    logActivity({
+      actorType: 'admin', actorId: String(req.adminUser?._id), actorName: req.adminUser?.name || req.adminUser?.email,
+      action: 'admin.wallet.refund', category: 'payments',
+      description: `Manual wallet refund: ₹${amount} to restaurant ${restaurantId}`,
+      resourceType: 'wallet', resourceId: restaurantId, severity: 'warning',
+    });
     res.json({ success: true, balance: result.balance_rs });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -2144,6 +2169,12 @@ router.put('/templates/:metaId', express.json(), async (req, res) => {
     const { components } = req.body;
     if (!components?.length) return res.status(400).json({ error: 'components required' });
     const result = await templateSvc.updateTemplate(req.params.metaId, components);
+    logActivity({
+      actorType: 'admin', actorId: String(req.adminUser?._id), actorName: req.adminUser?.name || req.adminUser?.email,
+      action: 'admin.template.updated', category: 'templates',
+      description: `Template updated: metaId=${req.params.metaId}`,
+      resourceType: 'template', resourceId: req.params.metaId, severity: 'info',
+    });
     res.json(result);
   } catch (e) {
     const metaErr = e.response?.data?.error;
@@ -2157,6 +2188,12 @@ router.delete('/templates', express.json(), async (req, res) => {
     const { waba_id, name } = req.body;
     if (!waba_id || !name) return res.status(400).json({ error: 'waba_id and name required' });
     const result = await templateSvc.deleteTemplate(waba_id, name);
+    logActivity({
+      actorType: 'admin', actorId: String(req.adminUser?._id), actorName: req.adminUser?.name || req.adminUser?.email,
+      action: 'admin.template.deleted', category: 'templates',
+      description: `Template deleted: ${name} from WABA ${waba_id}`,
+      resourceType: 'template', resourceId: name, severity: 'warning',
+    });
     res.json(result);
   } catch (e) {
     const metaErr = e.response?.data?.error;
@@ -2250,6 +2287,35 @@ router.post('/templates/test-send', express.json(), async (req, res) => {
     const msg = e.response?.data?.error?.message || e.message;
     res.status(500).json({ error: msg });
   }
+});
+
+// ─── BSUID MIGRATION READINESS ─────────────────────────────────
+// GET /api/admin/bsuid-readiness — surfaces customer-identity stats
+// for the June 2026 Meta BSUID rollout. Phone-only customers are
+// "at risk" of being created as duplicates if they switch to BSUID-only
+// messaging before our CASE 5 lookup has stamped their meta_bsuid.
+// They get linked automatically on their next message that carries a
+// contact.user_id from Meta.
+router.get('/bsuid-readiness', async (req, res) => {
+  try {
+    const [total, withBsuid, withMetaBsuid, phoneOnly] = await Promise.all([
+      col('customers').countDocuments({}),
+      col('customers').countDocuments({ bsuid: { $exists: true, $ne: null } }),
+      col('customers').countDocuments({ meta_bsuid: { $exists: true, $ne: null } }),
+      col('customers').countDocuments({
+        wa_phone: { $exists: true, $ne: null },
+        bsuid: { $exists: false },
+      }),
+    ]);
+    res.json({
+      total_customers: total,
+      with_bsuid: withBsuid,
+      with_meta_bsuid: withMetaBsuid,
+      phone_only: phoneOnly,
+      readiness_pct: total > 0 ? Math.round((withBsuid / total) * 100) : 0,
+      migration_note: 'Meta BSUID rollout expected June 2026. Phone-only customers will be linked on their next message.',
+    });
+  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
 // ─── BUSINESS USERNAMES ────────────────────────────────────────
@@ -3077,10 +3143,6 @@ router.post('/migrate-catalogs', requireAdmin, async (req, res) => {
 router.post('/migrate-catalog-architecture', requireAdmin, async (req, res) => {
   try {
     const stats = { branches_slugged: 0, items_retagged: 0, groups_set: 0, errors: [] };
-
-    function slugify(str, max = 40) {
-      return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, max);
-    }
 
     // 1. Generate branch_slug for all branches missing one
     const branches = await col('branches').find({ $or: [{ branch_slug: null }, { branch_slug: { $exists: false } }] }).toArray();

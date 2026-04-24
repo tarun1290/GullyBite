@@ -36,16 +36,27 @@ const displayIdentifier = (customer) => {
 };
 
 // ─── EXTRACT IDENTIFIERS FROM WEBHOOK ───────────────────────
-// Parses the Meta webhook payload to extract both phone and BSUID
+// Parses the Meta webhook payload to extract both phone and BSUID.
+//
+// Returns three identifiers:
+//   wa_phone   — the customer's WhatsApp phone (legacy primary)
+//   bsuid      — GullyBite's INTERNAL BSUID (may be the userId today,
+//                may be a computed identifier for legacy customers)
+//   meta_bsuid — Meta's OFFICIAL BSUID, sourced ONLY from contact.user_id.
+//                Stored separately so we can distinguish "Meta said this
+//                is the customer's BSUID" from "we computed/inferred a
+//                bsuid for this row". Critical for the June 2026 rollout
+//                when meta_bsuid becomes the canonical lookup key.
 const extractIdentifiers = (message, contact) => {
   const fromField = message?.from;
   const userId = message?.user_id || contact?.user_id;
   const waId = contact?.wa_id;
+  const meta_bsuid = contact?.user_id || null;
 
   const bsuid = userId || (isBsuid(fromField) ? fromField : null);
   const wa_phone = waId || (!isBsuid(fromField) ? fromField : null);
 
-  return { bsuid, wa_phone };
+  return { bsuid, wa_phone, meta_bsuid };
 };
 
 // ─── GET OR CREATE CUSTOMER ─────────────────────────────────
@@ -54,7 +65,10 @@ const extractIdentifiers = (message, contact) => {
 // 2. Existing BSUID customer → found by bsuid, phone gets linked if provided
 // 3. New customer → created with whatever identifiers are available
 // 4. Phone+BSUID both present → links them together, no duplicates
-const getOrCreateCustomer = async ({ bsuid, wa_phone, profile_name }) => {
+// 5. (June 2026 rollout) BSUID-only message from a known customer who
+//    previously messaged via phone → matched by Meta's official user_id
+//    (meta_bsuid) before we'd otherwise create a duplicate row.
+const getOrCreateCustomer = async ({ bsuid, wa_phone, meta_bsuid, profile_name }) => {
   const now = new Date();
 
   // CASE 1: BSUID present → try find by bsuid first
@@ -96,6 +110,12 @@ const getOrCreateCustomer = async ({ bsuid, wa_phone, profile_name }) => {
         updates.phone_shared_at = now;
         log.info({ bsuid: bsuid.slice(0, 10), phone: wa_phone?.slice(-4) }, 'Phone linked to BSUID customer');
       }
+      // Stamp Meta's official BSUID on first sight (separate from our
+      // internal bsuid — see extractIdentifiers comment).
+      if (meta_bsuid && !byBsuid.meta_bsuid) {
+        updates.meta_bsuid = meta_bsuid;
+        updates.meta_bsuid_first_seen_at = now;
+      }
       // Update name if changed
       if (profile_name && byBsuid.name !== profile_name) {
         updates.name = profile_name;
@@ -120,6 +140,10 @@ const getOrCreateCustomer = async ({ bsuid, wa_phone, profile_name }) => {
         updates.bsuid_first_seen_at = now;
         log.info({ phone: wa_phone?.slice(-4), bsuid: bsuid.slice(0, 10) }, 'BSUID linked to phone customer');
       }
+      if (meta_bsuid && !byPhone.meta_bsuid) {
+        updates.meta_bsuid = meta_bsuid;
+        updates.meta_bsuid_first_seen_at = now;
+      }
       if (profile_name && byPhone.name !== profile_name) {
         updates.name = profile_name;
       }
@@ -131,15 +155,53 @@ const getOrCreateCustomer = async ({ bsuid, wa_phone, profile_name }) => {
     }
   }
 
+  // CASE 5: meta_bsuid provided but no match yet by bsuid or phone.
+  // This is the June 2026 rollout safety net: a customer who previously
+  // messaged via phone may switch to BSUID-only. Without this lookup,
+  // CASE 3 below would create a duplicate row, orphaning their order
+  // history, wallet, loyalty points, and referral attribution. By
+  // matching on Meta's official BSUID stamped during a prior message,
+  // we keep them linked to their original record.
+  if (meta_bsuid) {
+    const byMetaBsuid = await col('customers').findOne({ meta_bsuid });
+    if (byMetaBsuid) {
+      log.info({ meta_bsuid: meta_bsuid.slice(0, 10) }, '[BSUID] Customer found by meta_bsuid (CASE 5)');
+      const updates = {};
+      // First message from this BSUID since the rollout — backfill the
+      // internal bsuid pointer too so future CASE 1 lookups succeed
+      // without falling through to CASE 5.
+      if (bsuid && !byMetaBsuid.bsuid) {
+        updates.bsuid = bsuid;
+        updates.bsuid_first_seen_at = now;
+        if (byMetaBsuid.wa_phone) updates.identifier_type = 'both';
+      }
+      if (wa_phone && !byMetaBsuid.wa_phone) {
+        updates.wa_phone = wa_phone;
+        updates.phone_shared_at = now;
+        if (byMetaBsuid.bsuid || bsuid) updates.identifier_type = 'both';
+      }
+      if (profile_name && byMetaBsuid.name !== profile_name) {
+        updates.name = profile_name;
+      }
+      if (Object.keys(updates).length) {
+        await col('customers').updateOne({ _id: byMetaBsuid._id }, { $set: updates });
+        Object.assign(byMetaBsuid, updates);
+      }
+      return mapId(byMetaBsuid);
+    }
+  }
+
   // CASE 3: Not found at all → create new customer
   const identifierType = bsuid && wa_phone ? 'both' : (bsuid ? 'bsuid' : 'phone');
   const customer = {
     _id: newId(),
     bsuid: bsuid || null,
     wa_phone: wa_phone || null,
+    meta_bsuid: meta_bsuid || null,
     name: profile_name || null,
     identifier_type: identifierType,
     bsuid_first_seen_at: bsuid ? now : null,
+    meta_bsuid_first_seen_at: meta_bsuid ? now : null,
     phone_shared_at: wa_phone ? now : null,
     total_orders: 0,
     total_spent_rs: 0,
@@ -171,6 +233,13 @@ const ensureIndexes = async () => {
     await col('customers').createIndex(
       { wa_phone: 1 },
       { unique: true, sparse: true, name: 'idx_wa_phone_unique' }
+    );
+    // Defence-in-depth for the June 2026 BSUID rollout: prevents two
+    // customer rows from accidentally sharing one Meta user_id, even if
+    // CASE 5's application-layer lookup is somehow bypassed.
+    await col('customers').createIndex(
+      { meta_bsuid: 1 },
+      { unique: true, sparse: true, name: 'idx_meta_bsuid_unique' }
     );
     log.info('Customer indexes ensured');
   } catch (e) {

@@ -34,9 +34,7 @@ function authHeaders(apiKey, accessToken) {
   };
 }
 
-function slugify(str) {
-  return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
+const slugify = require('../../utils/slugify');
 
 function isSizeVariant(variant) {
   // DotPe variants can have a group_name or just be flat name/price entries.

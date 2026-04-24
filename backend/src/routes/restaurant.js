@@ -52,9 +52,7 @@ function sanitizeCsvPhone(v) {
 }
 
 // ── Slug helper ──────────────────────────────────────────────
-function slugify(str, maxLen = 40) {
-  return (str || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, maxLen);
-}
+const slugify = require('../utils/slugify');
 
 // Get or generate branch_slug for a branch
 async function getBranchSlug(branchId) {

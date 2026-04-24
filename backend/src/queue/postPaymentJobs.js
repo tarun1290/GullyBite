@@ -36,6 +36,10 @@ const JOB_TYPES = {
   SETTLEMENT_TRIGGER: 'SETTLEMENT_TRIGGER',
   LOYALTY_AWARD: 'LOYALTY_AWARD',
   CATALOG_SYNC: 'CATALOG_SYNC',
+  // Welcome journey for first-time customers — fires 2h after the first
+  // paid order (durable replacement for the prior setTimeout in
+  // webhooks/razorpay.js, which dropped the welcome on EC2 restart).
+  WELCOME_JOURNEY: 'WELCOME_JOURNEY',
 };
 
 const MAX_ATTEMPTS = 5;
@@ -297,6 +301,16 @@ async function _handleLoyaltyAward(payload) {
   }
 }
 
+// Welcome journey — durable replacement for the 2h setTimeout in the
+// Razorpay payment-success path. Idempotency: journeyExecutor.executeJourney
+// checks for an existing journey row before sending; a duplicate fire after
+// a worker retry is safely no-op.
+async function _handleWelcomeJourney({ restaurantId, customerId }) {
+  if (!restaurantId || !customerId) return;
+  const journeyExecutor = require('../services/journeyExecutor');
+  await journeyExecutor.executeJourney(restaurantId, customerId, 'welcome');
+}
+
 async function _handleCatalogSync(payload) {
   const catalog = require('../services/catalog');
   const { restaurantId, type, branchIds } = payload;
@@ -331,6 +345,7 @@ const HANDLERS = {
   [JOB_TYPES.SETTLEMENT_TRIGGER]: _handleSettlementTrigger,
   [JOB_TYPES.LOYALTY_AWARD]: _handleLoyaltyAward,
   [JOB_TYPES.CATALOG_SYNC]: _handleCatalogSync,
+  [JOB_TYPES.WELCOME_JOURNEY]: _handleWelcomeJourney,
 };
 
 // ─── WORKER LOOP ──────────────────────────────────────────────
