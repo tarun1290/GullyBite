@@ -9,20 +9,20 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@types/google.maps": "^3.64.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "axios": "^1.15.0",
     "chart.js": "^4.5.1",
     "next": "16.2.4",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "typescript": "^5",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@types/google.maps": "^3.64.0",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.4",
-    "typescript": "^5"
+    "eslint-config-next": "16.2.4"
   }
 }
