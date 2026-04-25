@@ -23,6 +23,7 @@ interface OrdersBreakdown {
 interface RestaurantRowData {
   id: string;
   business_name?: string;
+  registered_business_name?: string;
   owner_name?: string;
   slug?: string;
   branch_count?: number;
@@ -33,6 +34,7 @@ interface RestaurantRowData {
   revenue_rs?: number | string;
   status?: string;
   campaign_daily_cap?: number | null;
+  created_at?: string;
 }
 
 interface PendingAction {
@@ -239,7 +241,19 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
     <tr style={{ borderBottom: staffPinOpen ? 'none' : '1px solid var(--rim)' }}>
       <td data-label="Business" style={{ padding: '.5rem' }}>
         <div style={{ fontWeight: 600, fontSize: '.84rem' }}>{r.business_name}</div>
+        {r.registered_business_name ? (
+          <div style={{ color: 'var(--dim)', fontSize: '.74rem' }}>{r.registered_business_name}</div>
+        ) : null}
         <div style={{ color: 'var(--dim)', fontSize: '.7rem', fontFamily: 'monospace' }}>{(r.id || '').slice(0, 8)}</div>
+        {(() => {
+          if (!r.created_at) return null;
+          const d = new Date(r.created_at);
+          if (Number.isNaN(d.getTime())) return null;
+          const formatted = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+          return (
+            <div style={{ color: 'var(--dim)', fontSize: '.68rem', opacity: 0.75 }}>Created: {formatted}</div>
+          );
+        })()}
       </td>
       <td data-label="Owner" style={{ padding: '.5rem', fontSize: '.8rem' }}>{r.owner_name || '—'}</td>
       <td data-label="Branches" style={{ padding: '.5rem', textAlign: 'center', fontSize: '.82rem' }}>{r.branch_count ?? 0}</td>

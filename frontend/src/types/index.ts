@@ -87,6 +87,7 @@ export interface WabaAccount {
 export interface Restaurant {
   id?: string;
   brand_name?: string;
+  registered_business_name?: string;
   slug?: string;
   store_url?: string;
   phone?: string;
@@ -286,6 +287,7 @@ export interface AdminRestaurant {
   id: string;
   name?: string;
   brand_name?: string;
+  registered_business_name?: string;
   slug?: string;
   status?: string;
   orders?: number;

@@ -229,6 +229,15 @@ export default function BusinessInfoSection() {
     );
   };
 
+  const handleCopyRestaurantId = () => {
+    const fullId = String(restaurant?.id || (restaurant as { _id?: string } | null)?._id || '');
+    if (!fullId) return;
+    navigator.clipboard?.writeText(fullId).then(
+      () => showToast('Restaurant ID copied', 'success'),
+      () => showToast('Copy failed', 'error'),
+    );
+  };
+
   if (loading && !restaurant) {
     return (
       <div className="card">
@@ -255,6 +264,49 @@ export default function BusinessInfoSection() {
       <div className="cb">
         {!editing ? (
           <div>
+            {(() => {
+              const fullId = String(r.id || (r as { _id?: string })._id || '');
+              if (!fullId) return null;
+              const shortId = fullId.slice(0, 8);
+              return (
+                <ViewRow
+                  label="Restaurant ID"
+                  mono
+                  value={(
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem' }}>
+                      <span
+                        title={fullId}
+                        style={{
+                          padding: '.15rem .5rem',
+                          background: 'var(--ink2)',
+                          borderRadius: 5,
+                          fontSize: '.78rem',
+                        }}
+                      >
+                        {shortId}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyRestaurantId}
+                        title="Copy full ID for support"
+                        style={{
+                          background: 'var(--wa)',
+                          color: '#fff',
+                          border: 'none',
+                          borderRadius: 4,
+                          padding: '.15rem .45rem',
+                          fontSize: '.66rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Copy
+                      </button>
+                    </span>
+                  )}
+                />
+              );
+            })()}
             <ViewRow label="Brand Name" value={r.business_name} />
             <ViewRow label="Legal Name" value={r.registered_business_name} />
             <ViewRow label="Owner" value={r.owner_name} />
@@ -369,8 +421,11 @@ export default function BusinessInfoSection() {
               <Field label="Brand Name">
                 <input value={form.businessName} onChange={update('businessName')} placeholder="Burger Palace" />
               </Field>
-              <Field label="Registered Business Name">
-                <input value={form.registeredBusinessName} onChange={update('registeredBusinessName')} placeholder="Burger Palace Pvt Ltd" />
+              <Field
+                label="Registered Business Name"
+                hint="Optional — your legal entity name as registered with GST or MCA"
+              >
+                <input value={form.registeredBusinessName} onChange={update('registeredBusinessName')} placeholder="As per GST / legal registration" />
               </Field>
               <Field label="Owner / Contact Name">
                 <input value={form.ownerName} onChange={update('ownerName')} placeholder="Rajesh Kumar" />
