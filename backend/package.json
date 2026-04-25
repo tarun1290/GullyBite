@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
-    "db:setup": "node -e \"require('./src/config/database').connect()\""
+    "db:setup": "node -e \"require('./src/config/database').connect()\"",
+    "flow:publish": "node scripts/publishDeliveryAddressFlow.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1015.0",
