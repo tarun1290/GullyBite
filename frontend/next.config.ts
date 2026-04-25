@@ -34,6 +34,50 @@ const nextConfig: NextConfig = {
       { protocol: 'https', hostname: '**.whatsapp.net' },
     ],
   },
+  async headers() {
+    return [
+      {
+        // Disable CDN/browser caching for ALL HTML pages.
+        // HTML must always be fetched fresh because it references JS chunk
+        // hashes that change with every deploy. Stale HTML → 404 on chunks.
+        source: '/:path*',
+        has: [
+          {
+            type: 'header',
+            key: 'accept',
+            value: '.*text/html.*',
+          },
+        ],
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'no-store, no-cache, must-revalidate, max-age=0',
+          },
+          {
+            key: 'CDN-Cache-Control',
+            value: 'no-store',
+          },
+          {
+            key: 'Vercel-CDN-Cache-Control',
+            value: 'no-store',
+          },
+        ],
+      },
+      {
+        // Static assets under /_next/static are hash-named and immutable.
+        // Keep them aggressively cached to avoid breaking page-load perf.
+        // (Next.js sets this by default but we make it explicit so future
+        // edits don't accidentally drop it.)
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+    ];
+  },
   // TODO(pwa): Re-enable PWA support once a Next.js 16-compatible plugin
   // ships. `next-pwa` and `@next-pwa/core` are not Next 16-ready as of this
   // scaffold. Skipped per Part 1 spec instruction.
