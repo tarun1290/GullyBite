@@ -2,6 +2,8 @@ import type { NextConfig } from 'next';
 import path from 'path';
 import { validateEnv } from './src/lib/validateEnv';
 
+console.log('🔧 BUILD ENV:', process.env.NEXT_PUBLIC_API_BASE_URL);
+
 // API base for client-side calls. Read here so the value is captured at build
 // time and surfaces in the bundle for client components via process.env.
 // Reference: NEXT_PUBLIC_API_BASE_URL in .env.local.

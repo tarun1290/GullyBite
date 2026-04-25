@@ -9,6 +9,8 @@ declare module 'axios' {
 
 const baseURL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
+console.log('🌐 CLIENT ENV:', process.env.NEXT_PUBLIC_API_BASE_URL);
+
 const client: AxiosInstance = axios.create({
   baseURL,
   timeout: 20000,
