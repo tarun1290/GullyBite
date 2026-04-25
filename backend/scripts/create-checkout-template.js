@@ -25,14 +25,14 @@ async function main() {
   console.log('[Template] Creating checkout button template on WABA', WABA_ID);
 
   const templatePayload = {
-    name: 'order_checkout_v1',
+    name: 'order_checkout_v2',
     language: 'en_US',
-    category: 'MARKETING',
+    category: 'UTILITY',
     components: [
       {
         type: 'HEADER',
         format: 'TEXT',
-        text: '🛒 Order Ready for Checkout',
+        text: 'Order Ready for Checkout',
       },
       {
         type: 'BODY',
@@ -50,7 +50,7 @@ async function main() {
         buttons: [
           {
             type: 'order_details',
-            text: 'Buy now',
+            text: 'Review and Pay',
           },
         ],
       },
@@ -67,7 +67,7 @@ async function main() {
     console.log('\n=== DONE ===');
     console.log('Template ID:', res.data.id);
     console.log('Status:', res.data.status);
-    console.log('\nAdd to .env: CHECKOUT_TEMPLATE_NAME=order_checkout_v1');
+    console.log('\nAdd to .env: CHECKOUT_TEMPLATE_NAME=order_checkout_v2');
     console.log('The template needs Meta approval before it can be sent.');
   } catch (e) {
     console.error('[Template] Creation failed:', JSON.stringify(e.response?.data || e.message, null, 2));
