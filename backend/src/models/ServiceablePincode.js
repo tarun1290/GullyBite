@@ -9,7 +9,7 @@
 // Collection:   serviceable_pincodes
 // Indexes:      { pincode: 1 } unique, { enabled: 1 }, { city: 1 }, { state: 1 }
 //               (declared in src/config/indexes.js)
-// Shape:        { _id, pincode, enabled, notes, city, state,
+// Shape:        { _id, pincode, enabled, notes, city, state, area,
 //                 created_at, updated_at }
 //
 // city/state are derived from the 3-digit prefix via
@@ -23,7 +23,7 @@ const { getCityForPincode } = require('../utils/pincodeCityMap');
 
 const COLLECTION = 'serviceable_pincodes';
 
-function buildPincode({ pincode, enabled = true, notes = null, city = null, state = null } = {}) {
+function buildPincode({ pincode, enabled = true, notes = null, city = null, state = null, area = null } = {}) {
   if (!pincode) throw new Error('ServiceablePincode.pincode is required');
   const pc = String(pincode).trim();
   if (!/^[1-9][0-9]{5}$/.test(pc)) {
@@ -38,6 +38,9 @@ function buildPincode({ pincode, enabled = true, notes = null, city = null, stat
     notes: notes || null,
     city: city || autoTag.city,
     state: state || autoTag.state,
+    // Optional locality / neighbourhood within the PIN. No backfill —
+    // pre-existing rows return null until populated by a future tool.
+    area: area || null,
     created_at: now,
     updated_at: now,
   };

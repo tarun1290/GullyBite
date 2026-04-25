@@ -18,24 +18,31 @@ const PERIODS: ReadonlyArray<readonly [string, string]> = [
   ['last_month', 'Last Month'],
 ];
 
+// Field names mirror the exact keys returned by GET /api/restaurant/financials/summary
+// (see backend/src/services/financials.js:getFinancialSummary). Renamed from
+// the un-suffixed shape because the response uses _rs-suffixed keys at the top
+// level — the previous interface caused every breakdown line to render ₹0.
 interface Breakdown {
-  food_revenue?: number | string;
-  food_gst?: number | string;
-  packaging_revenue?: number | string;
-  packaging_gst?: number | string;
-  delivery_fee_customer?: number | string;
-  gross_collections?: number | string;
-  platform_fee?: number | string;
-  platform_fee_gst?: number | string;
-  delivery_cost?: number | string;
-  delivery_gst?: number | string;
-  discounts?: number | string;
-  refunds?: number | string;
-  tds?: number | string;
-  referral_fee?: number | string;
-  referral_fee_gst?: number | string;
-  total_deductions?: number | string;
-  net_payout?: number | string;
+  food_revenue_rs?: number | string;
+  food_gst_collected_rs?: number | string;
+  packaging_collected_rs?: number | string;
+  packaging_gst_rs?: number | string;
+  delivery_fee_collected_rs?: number | string;
+  delivery_fee_cust_gst_rs?: number | string;
+  gross_collections_rs?: number | string;
+  platform_fee_rs?: number | string;
+  platform_fee_gst_rs?: number | string;
+  delivery_cost_restaurant_rs?: number | string;
+  delivery_cost_restaurant_gst_rs?: number | string;
+  discount_total_rs?: number | string;
+  refund_total_rs?: number | string;
+  refund_count?: number;
+  // tds not in backend response yet — line will render ₹0 until exposed
+  tds_rs?: number | string;
+  referral_fee_rs?: number | string;
+  referral_fee_gst_rs?: number | string;
+  total_deductions_rs?: number | string;
+  net_earnings_rs?: number | string;
 }
 
 interface FinancialSummary extends Breakdown {
@@ -363,28 +370,28 @@ export default function FinancialSummarySection() {
               <>
                 {sectionHeader('EARNINGS SUMMARY', { marginBottom: '.4rem', fontFamily: 'var(--font-body)' })}
                 {DIVIDER}
-                <BreakdownLine label="Food Revenue" value={breakdown.food_revenue} sign="" tip="Revenue from food items sold" />
-                <BreakdownLine label="Food GST (5%)" value={breakdown.food_gst} sign="+" tip="GST collected on food orders" />
-                <BreakdownLine label="Packaging" value={breakdown.packaging_revenue} sign="+" tip="Packaging charges collected" />
-                <BreakdownLine label="Packaging GST" value={breakdown.packaging_gst} sign="+" tip="GST on packaging" />
-                <BreakdownLine label="Delivery Fee (Customer)" value={breakdown.delivery_fee_customer} sign="+" tip="Delivery charges paid by customers" />
+                <BreakdownLine label="Food Revenue" value={breakdown.food_revenue_rs} sign="" tip="Revenue from food items sold" />
+                <BreakdownLine label="Food GST (5%)" value={breakdown.food_gst_collected_rs} sign="+" tip="GST collected on food orders" />
+                <BreakdownLine label="Packaging" value={breakdown.packaging_collected_rs} sign="+" tip="Packaging charges collected" />
+                <BreakdownLine label="Packaging GST" value={breakdown.packaging_gst_rs} sign="+" tip="GST on packaging" />
+                <BreakdownLine label="Delivery Fee (Customer)" value={breakdown.delivery_fee_collected_rs} sign="+" tip="Delivery charges paid by customers" />
                 {DIVIDER}
-                <BreakdownTotal label="GROSS COLLECTIONS" value={breakdown.gross_collections} color="var(--acc)" />
+                <BreakdownTotal label="GROSS COLLECTIONS" value={breakdown.gross_collections_rs} color="var(--acc)" />
                 {DIVIDER}
                 {sectionHeader('DEDUCTIONS', { margin: '.5rem 0 .3rem', fontFamily: 'var(--font-body)' })}
-                <BreakdownLine label="Platform Fee" value={breakdown.platform_fee} sign="-" tip="GullyBite platform commission" />
-                <BreakdownLine label="Platform Fee GST (18%)" value={breakdown.platform_fee_gst} sign="-" tip="GST charged on platform fee" />
-                <BreakdownLine label="Delivery Cost (Restaurant)" value={breakdown.delivery_cost} sign="-" tip="Delivery partner charges borne by restaurant" />
-                <BreakdownLine label="Delivery GST" value={breakdown.delivery_gst} sign="-" tip="GST on delivery cost" />
-                <BreakdownLine label="Discounts" value={breakdown.discounts} sign="-" tip="Discount amounts funded by restaurant" />
-                <BreakdownLine label="Refunds" value={breakdown.refunds} sign="-" tip="Refund amounts for cancelled/returned orders" />
-                <BreakdownLine label="TDS (1%)" value={breakdown.tds} sign="-" tip="Tax Deducted at Source u/s 194-O" />
-                <BreakdownLine label="Referral Fee" value={breakdown.referral_fee} sign="-" tip="Referral commission for referred customers" />
-                <BreakdownLine label="Referral Fee GST" value={breakdown.referral_fee_gst} sign="-" tip="GST on referral fees" />
+                <BreakdownLine label="Platform Fee" value={breakdown.platform_fee_rs} sign="-" tip="GullyBite platform commission" />
+                <BreakdownLine label="Platform Fee GST (18%)" value={breakdown.platform_fee_gst_rs} sign="-" tip="GST charged on platform fee" />
+                <BreakdownLine label="Delivery Cost (Absorbed Share)" value={breakdown.delivery_cost_restaurant_rs} sign="-" tip="The portion of the order delivery fee absorbed by the restaurant (based on your delivery fee split setting). Zero if customers pay 100% of delivery." />
+                <BreakdownLine label="Delivery GST" value={breakdown.delivery_cost_restaurant_gst_rs} sign="-" tip="GST on the absorbed delivery share" />
+                <BreakdownLine label="Discounts" value={breakdown.discount_total_rs} sign="-" tip="Discount amounts funded by restaurant" />
+                <BreakdownLine label="Refunds" value={breakdown.refund_total_rs} sign="-" tip="Refund amounts for cancelled/returned orders" />
+                <BreakdownLine label="TDS (1%)" value={breakdown.tds_rs} sign="-" tip="Tax Deducted at Source u/s 194-O" />
+                <BreakdownLine label="Referral Fee" value={breakdown.referral_fee_rs} sign="-" tip="Referral commission for referred customers" />
+                <BreakdownLine label="Referral Fee GST" value={breakdown.referral_fee_gst_rs} sign="-" tip="GST on referral fees" />
                 {DIVIDER}
-                <BreakdownTotal label="TOTAL DEDUCTIONS" value={breakdown.total_deductions} color="var(--red,#dc2626)" />
+                <BreakdownTotal label="TOTAL DEDUCTIONS" value={breakdown.total_deductions_rs} color="var(--red,#dc2626)" />
                 {DIVIDER}
-                <BreakdownTotal label="NET PAYOUT" value={breakdown.net_payout} color="var(--wa)" />
+                <BreakdownTotal label="NET PAYOUT" value={breakdown.net_earnings_rs} color="var(--wa)" />
               </>
             )}
           </div>

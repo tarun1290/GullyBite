@@ -135,8 +135,10 @@ export async function getTemplateNotifications(limit: number = 30): Promise<unkn
   return data;
 }
 
-export async function syncTemplates(wabaId: string): Promise<unknown> {
-  const { data } = await client.post('/api/admin/templates/sync', { waba_id: wabaId });
+// Backend auto-discovers the platform WABA when waba_id is omitted (admin.js
+// /templates/sync). Frontend no longer needs to pass it.
+export async function syncTemplates(): Promise<unknown> {
+  const { data } = await client.post('/api/admin/templates/sync', {});
   return data;
 }
 

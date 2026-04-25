@@ -267,10 +267,25 @@ async function getFinancialSummary(restaurantId, period, from, to) {
     { projection: { commission_pct: 1, gst_number: 1, pan_number: 1, business_name: 1 } },
   );
 
-  const [agg, refundData] = await Promise.all([
+  // TDS is stamped on settlements (calculated by calculateTDS at settlement
+  // time, NOT per-order). Sum across settlements whose period falls inside
+  // the user's window — same query pattern getTaxSummary already uses for
+  // FY rollups. tds_applicable filters out below-threshold settlements that
+  // carry tds_amount_rs=0 anyway.
+  const [agg, refundData, settlementsInPeriod] = await Promise.all([
     aggregateOrderFinancials(branchIds, start, end),
     getRefundSummary(branchIds, start, end),
+    col('settlements').find(
+      { restaurant_id: restaurantId, period_end: { $gte: start, $lt: end } },
+      { projection: { tds_amount_rs: 1, tds_applicable: 1 } },
+    ).toArray(),
   ]);
+
+  const tdsRs = round2(
+    settlementsInPeriod
+      .filter(s => s.tds_applicable)
+      .reduce((sum, s) => sum + (parseFloat(s.tds_amount_rs) || 0), 0)
+  );
 
   const commissionRate = parseFloat(restaurant?.commission_pct ?? 0) / 100;
   const platformFee = round2(agg.food_revenue_rs * commissionRate);
@@ -283,11 +298,15 @@ async function getFinancialSummary(restaurantId, period, from, to) {
     agg.delivery_fee_collected_rs + agg.delivery_fee_cust_gst_rs
   );
 
+  // TDS is included so totalDeductions equals the sum of every deduction
+  // line the dashboard renders, and netEarnings stays mathematically
+  // consistent with calculateSettlement's preTdsNet - tdsAmount formula.
   const totalDeductions = round2(
     platformFee + platformFeeGst +
     agg.delivery_fee_rest_share_rs + agg.delivery_fee_rest_gst_rs +
     agg.discount_total_rs + refundData.total_rs +
-    agg.referral_fee_rs + referralFeeGst
+    agg.referral_fee_rs + referralFeeGst +
+    tdsRs
   );
 
   const netEarnings = round2(grossCollections - totalDeductions);
@@ -316,6 +335,7 @@ async function getFinancialSummary(restaurantId, period, from, to) {
     refund_count: refundData.count,
     referral_fee_rs: agg.referral_fee_rs,
     referral_fee_gst_rs: referralFeeGst,
+    tds_rs: tdsRs,
     total_deductions_rs: totalDeductions,
 
     // Net
@@ -337,7 +357,7 @@ function emptyFinancialSummary(start, end) {
     platform_fee_rs: 0, platform_fee_gst_rs: 0,
     delivery_cost_restaurant_rs: 0, delivery_cost_restaurant_gst_rs: 0,
     discount_total_rs: 0, refund_total_rs: 0, refund_count: 0,
-    referral_fee_rs: 0, referral_fee_gst_rs: 0, total_deductions_rs: 0,
+    referral_fee_rs: 0, referral_fee_gst_rs: 0, tds_rs: 0, total_deductions_rs: 0,
     net_earnings_rs: 0, gst_number: null, pan_number: null,
   };
 }

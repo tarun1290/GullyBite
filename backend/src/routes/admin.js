@@ -2130,11 +2130,17 @@ router.get('/templates', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-// POST /api/admin/templates/sync — pull all templates from Meta into local DB
+// POST /api/admin/templates/sync — pull all templates from Meta into local DB.
+// Auto-discovers the platform WABA when waba_id is not supplied — same pattern
+// as GET /api/admin/flows. Front-end no longer needs to pass it.
 router.post('/templates/sync', express.json(), async (req, res) => {
   try {
-    const { waba_id } = req.body;
-    if (!waba_id) return res.status(400).json({ error: 'waba_id required' });
+    let { waba_id } = req.body;
+    if (!waba_id) {
+      const wa = await col('whatsapp_accounts').findOne({ is_active: true });
+      waba_id = wa?.waba_id;
+    }
+    if (!waba_id) return res.status(400).json({ error: 'No active WABA found' });
     const result = await templateSvc.syncTemplates(waba_id);
     res.json(result);
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }

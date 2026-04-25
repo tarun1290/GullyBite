@@ -33,14 +33,6 @@
                 "metadata": "Hyderabad, 500081 • 📞 9999999999"
               },
               "badge": "Default"
-            },
-            {
-              "id": "new_address",
-              "main-content": {
-                "title": "+ Add New Address",
-                "description": "New location",
-                "metadata": "Enter your delivery address"
-              }
             }
           ]
         }
@@ -60,6 +52,15 @@
               "payload": {
                 "address_id": "${form.selected_address}"
               }
+            }
+          },
+          {
+            "type": "EmbeddedLink",
+            "text": "+ Add new address",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "NEW_ADDRESS" },
+              "payload": {}
             }
           }
         ]

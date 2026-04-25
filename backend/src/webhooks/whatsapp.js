@@ -3197,20 +3197,14 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
   if (responseData.action === 'select_address') {
     const addressId = responseData.selected_address_id;
 
-    // "Add New Address" was selected from NavigationList
+    // Defensive guard: legacy in-flight messages may still carry
+    // selected_address_id='new_address' from the old synthetic list item.
+    // The new flow uses an EmbeddedLink that navigates inline to
+    // NEW_ADDRESS, so this case shouldn't occur on the published version.
+    // If it does (a stale in-progress flow), no-op and let the customer
+    // retry — do NOT re-fire the flow as a fresh chat message.
     if (addressId === 'new_address') {
-      const restaurant = await col('restaurants').findOne({ _id: restaurantId });
-      if (restaurant?.flow_id) {
-        await wa.sendFlow(pid, token, to, {
-          body: 'Enter your new delivery address:',
-          flowId: restaurant.flow_id,
-          flowCta: 'Add Address',
-          screenId: 'NEW_ADDRESS',
-          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
-        });
-      } else {
-        await wa.sendText(pid, token, to, '📍 Please share your location using the 📎 attach icon → Location.');
-      }
+      log.warn({ customerId: customer.id }, 'select_address received legacy new_address sentinel — no-op');
       return;
     }
 

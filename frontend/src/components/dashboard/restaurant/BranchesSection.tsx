@@ -31,7 +31,6 @@ interface CsvRow {
   city?: string;
   latitude?: string;
   longitude?: string;
-  delivery_radius_km?: string;
   opening_time?: string;
   closing_time?: string;
   manager_phone?: string;
@@ -284,10 +283,10 @@ export default function BranchesSection() {
 
   const downloadSample = () => {
     const sample = [
-      'branch_name,address,city,latitude,longitude,delivery_radius_km,opening_time,closing_time,manager_phone',
-      'Koramangala Outlet,"Shop 5, Forum Mall, Koramangala, Bangalore 560095",Bangalore,12.934533,77.612487,5,10:00,22:00,+919876543210',
-      'Indiranagar Branch,"100 Feet Road, Indiranagar, Bangalore 560038",Bangalore,,,5,11:00,23:00,+919876543211',
-      'HSR Layout,"Sector 2, HSR Layout, Bangalore 560102",Bangalore,,,4,10:00,22:00,',
+      'branch_name,address,city,latitude,longitude,opening_time,closing_time,manager_phone',
+      'Koramangala Outlet,"Shop 5, Forum Mall, Koramangala, Bangalore 560095",Bangalore,12.934533,77.612487,10:00,22:00,+919876543210',
+      'Indiranagar Branch,"100 Feet Road, Indiranagar, Bangalore 560038",Bangalore,,,11:00,23:00,+919876543211',
+      'HSR Layout,"Sector 2, HSR Layout, Bangalore 560102",Bangalore,,,10:00,22:00,',
     ].join('\n');
     const blob = new Blob([sample], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -339,7 +338,7 @@ export default function BranchesSection() {
               <p style={{ fontSize: '.78rem', color: 'var(--dim)', marginTop: '.3rem' }}>
                 Required columns: <code>branch_name</code>, <code>address</code>. Optional:{' '}
                 <code>city</code>, <code>latitude</code>, <code>longitude</code>,{' '}
-                <code>delivery_radius_km</code>, <code>opening_time</code>, <code>closing_time</code>,{' '}
+                <code>opening_time</code>, <code>closing_time</code>,{' '}
                 <code>manager_phone</code>. Rows without coords will be geocoded at 1/sec.
               </p>
             </div>
@@ -544,10 +543,6 @@ export default function BranchesSection() {
                       className="ipair-row"
                       style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '.7rem', fontSize: '.78rem' }}
                     >
-                      <div className="ipair">
-                        <label style={{ color: 'var(--dim)', marginRight: '.3rem' }}>Radius</label>
-                        <code>{b.delivery_radius_km} km</code>
-                      </div>
                       <div className="ipair">
                         <label style={{ color: 'var(--dim)', marginRight: '.3rem' }}>Hours</label>
                         <code>{formatHoursSummary(b)}</code>

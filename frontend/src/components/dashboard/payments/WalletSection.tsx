@@ -278,17 +278,21 @@ export default function WalletSection() {
           >
             <div style={{ fontSize: '.82rem', fontWeight: 600, marginBottom: '.5rem' }}>Quick Top-Up</div>
             <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap', marginBottom: '.5rem' }}>
-              {TOPUP_PRESETS.map((amt, idx) => (
-                <button
-                  key={amt}
-                  type="button"
-                  className={idx === TOPUP_PRESETS.length - 1 ? 'btn-p btn-sm' : 'btn-g btn-sm'}
-                  disabled={busy}
-                  onClick={() => doTopup(amt)}
-                >
-                  ₹{amt}
-                </button>
-              ))}
+              {TOPUP_PRESETS.map((amt) => {
+                const selected = customAmt === String(amt);
+                return (
+                  <button
+                    key={amt}
+                    type="button"
+                    className={selected ? 'btn-p btn-sm' : 'btn-g btn-sm'}
+                    aria-pressed={selected}
+                    disabled={busy}
+                    onClick={() => setCustomAmt(String(amt))}
+                  >
+                    ₹{amt}
+                  </button>
+                );
+              })}
             </div>
             <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
               <input

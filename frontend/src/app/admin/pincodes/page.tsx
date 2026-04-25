@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, ChangeEvent, RefObject } from 'react';
+import type { CSSProperties, ChangeEvent, ReactNode, RefObject } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import Toggle from '../../../components/Toggle';
@@ -21,6 +21,7 @@ interface PincodeRow {
   pincode: string;
   city?: string;
   state?: string;
+  area?: string | null;
   enabled?: boolean;
   updated_at?: string;
 }
@@ -113,6 +114,9 @@ export default function AdminPincodesPage() {
   const [search, setSearch] = useState<string>('');
   const [debounced, setDebounced] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  // '' = "All States" / "All Cities". Server-side filters when set.
+  const [stateFilter, setStateFilter] = useState<string>('');
+  const [cityFilter, setCityFilter] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState<BulkConfirm | null>(null);
@@ -144,15 +148,23 @@ export default function AdminPincodesPage() {
     }
   };
 
+  // When both filters are "All" we render a single grouped-by-state list and
+  // skip pagination — fetch up to 1000 rows in one shot. When either filter
+  // is set, fall back to the existing 50-per-page behaviour.
+  const isGroupedMode = stateFilter === '' && cityFilter === '';
+
   const load = async () => {
     setLoading(true);
     try {
-      const data = (await getPincodes({
-        page,
-        limit: PAGE_SIZE,
+      const params: Record<string, string | number | undefined> = {
+        page: isGroupedMode ? 1 : page,
+        limit: isGroupedMode ? 1000 : PAGE_SIZE,
         search: debounced || undefined,
         status: statusFilter,
-      })) as PincodesResponse | null;
+      };
+      if (stateFilter) params.state = stateFilter;
+      if (cityFilter)  params.city  = cityFilter;
+      const data = (await getPincodes(params)) as PincodesResponse | null;
       setRows(Array.isArray(data?.pincodes) ? data.pincodes : []);
       setTotalPages(data?.totalPages || 1);
       setTotal(data?.total || 0);
@@ -194,12 +206,46 @@ export default function AdminPincodesPage() {
   useEffect(() => {
     if (view === 'pincode') load();
     /* eslint-disable-next-line */
-  }, [page, debounced, statusFilter, view]);
+  }, [page, debounced, statusFilter, stateFilter, cityFilter, view]);
 
   useEffect(() => {
     if (view === 'city' && !cityData.length) loadCities();
     /* eslint-disable-next-line */
   }, [view]);
+
+  // cityData is what /admin/pincodes/cities returns — used by both the "By
+  // City" view and the new state/city dropdowns in PincodeView. Loaded
+  // eagerly so the dropdowns are populated on first render in either view.
+  useEffect(() => {
+    if (!cityData.length) loadCities();
+    /* eslint-disable-next-line */
+  }, []);
+
+  const stateOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const r of cityData) if (r.state) set.add(r.state);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [cityData]);
+
+  const cityOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const r of cityData) {
+      if (!r.city) continue;
+      if (stateFilter && r.state !== stateFilter) continue;
+      set.add(r.city);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [cityData, stateFilter]);
+
+  const onStateFilterChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    setStateFilter(e.target.value);
+    setCityFilter('');         // resets City dropdown when State changes
+    setPage(1);
+  };
+  const onCityFilterChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    setCityFilter(e.target.value);
+    setPage(1);
+  };
 
   const onStatusChange = (e: ChangeEvent<HTMLSelectElement>) => {
     setStatusFilter(e.target.value);
@@ -495,6 +541,13 @@ export default function AdminPincodesPage() {
           setSearch={setSearch}
           statusFilter={statusFilter}
           onStatusChange={onStatusChange}
+          stateFilter={stateFilter}
+          cityFilter={cityFilter}
+          stateOptions={stateOptions}
+          cityOptions={cityOptions}
+          onStateFilterChange={onStateFilterChange}
+          onCityFilterChange={onCityFilterChange}
+          isGroupedMode={isGroupedMode}
           bulkConfirm={bulkConfirm}
           setBulkConfirm={setBulkConfirm}
           bulkBusy={bulkBusy}
@@ -544,6 +597,13 @@ interface PincodeViewProps {
   setSearch: (v: string) => void;
   statusFilter: string;
   onStatusChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  stateFilter: string;
+  cityFilter: string;
+  stateOptions: string[];
+  cityOptions: string[];
+  onStateFilterChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  onCityFilterChange: (e: ChangeEvent<HTMLSelectElement>) => void;
+  isGroupedMode: boolean;
   bulkConfirm: BulkConfirm | null;
   setBulkConfirm: (next: BulkConfirm | null) => void;
   bulkBusy: boolean;
@@ -574,9 +634,29 @@ function PincodeView(p: PincodeViewProps) {
           <input
             value={p.search}
             onChange={(e) => p.setSearch(e.target.value)}
-            placeholder="Search pincode…"
+            placeholder="Search pincode, city, state, area…"
             style={{ padding: '.35rem .5rem' }}
           />
+          <select
+            value={p.stateFilter}
+            onChange={p.onStateFilterChange}
+            style={{ padding: '.35rem .5rem' }}
+          >
+            <option value="">All States</option>
+            {p.stateOptions.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          <select
+            value={p.cityFilter}
+            onChange={p.onCityFilterChange}
+            style={{ padding: '.35rem .5rem' }}
+          >
+            <option value="">All Cities</option>
+            {p.cityOptions.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
           <select
             value={p.statusFilter}
             onChange={p.onStatusChange}
@@ -679,73 +759,149 @@ function PincodeView(p: PincodeViewProps) {
               <tr style={{ textAlign: 'left', fontSize: '.75rem', color: 'var(--dim)' }}>
                 <th style={{ padding: '.4rem .2rem' }}>Pincode</th>
                 <th style={{ padding: '.4rem .2rem' }}>City</th>
+                <th style={{ padding: '.4rem .2rem' }}>Area</th>
                 <th style={{ padding: '.4rem .2rem' }}>State</th>
                 <th style={{ padding: '.4rem .2rem' }}>Status</th>
                 <th style={{ padding: '.4rem .2rem' }}>Last Updated</th>
               </tr>
             </thead>
             <tbody>
-              {p.rows.map((r) => (
-                <tr key={r.pincode} style={{ borderTop: '1px solid var(--bd)' }}>
-                  <td style={{ padding: '.4rem .2rem', fontFamily: 'monospace' }}>{r.pincode}</td>
-                  <td style={{ padding: '.4rem .2rem', fontSize: '.85rem' }}>{r.city || '—'}</td>
-                  <td style={{ padding: '.4rem .2rem', fontSize: '.85rem', color: 'var(--dim)' }}>{r.state || '—'}</td>
-                  <td style={{ padding: '.4rem .2rem' }}>
-                    <span style={{ display: 'inline-flex', gap: '.4rem', alignItems: 'center' }}>
-                      <Toggle
-                        checked={!!r.enabled}
-                        disabled={p.rowBusy === r.pincode}
-                        onChange={() => p.handleToggle(r.pincode, !!r.enabled)}
-                      />
-                      <span
-                        style={{
-                          fontSize: '.75rem',
-                          color: r.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {r.enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </span>
-                  </td>
-                  <td style={{ padding: '.4rem .2rem', fontSize: '.8rem', color: 'var(--dim)' }}>
-                    {fmtDate(r.updated_at)}
-                  </td>
-                </tr>
-              ))}
+              {renderPincodeRows(p)}
             </tbody>
           </table>
         )}
 
-        <div
-          style={{
-            display: 'flex',
-            gap: '.4rem',
-            alignItems: 'center',
-            marginTop: '.8rem',
-            flexWrap: 'wrap',
-          }}
-        >
-          <button
-            className="btn-sm btn-g"
-            disabled={p.page <= 1 || p.loading}
-            onClick={() => p.setPage((x) => Math.max(1, x - 1))}
+        {!p.isGroupedMode && (
+          <div
+            style={{
+              display: 'flex',
+              gap: '.4rem',
+              alignItems: 'center',
+              marginTop: '.8rem',
+              flexWrap: 'wrap',
+            }}
           >
-            ‹ Previous
-          </button>
-          <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>
-            Page {p.page} of {p.totalPages} — {fmtNum(p.total)} total
-          </span>
-          <button
-            className="btn-sm btn-g"
-            disabled={p.page >= p.totalPages || p.loading}
-            onClick={() => p.setPage((x) => Math.min(p.totalPages, x + 1))}
-          >
-            Next ›
-          </button>
-        </div>
+            <button
+              className="btn-sm btn-g"
+              disabled={p.page <= 1 || p.loading}
+              onClick={() => p.setPage((x) => Math.max(1, x - 1))}
+            >
+              ‹ Previous
+            </button>
+            <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>
+              Page {p.page} of {p.totalPages} — {fmtNum(p.total)} total
+            </span>
+            <button
+              className="btn-sm btn-g"
+              disabled={p.page >= p.totalPages || p.loading}
+              onClick={() => p.setPage((x) => Math.min(p.totalPages, x + 1))}
+            >
+              Next ›
+            </button>
+          </div>
+        )}
+
+        {p.isGroupedMode && (
+          <div style={{ marginTop: '.8rem', fontSize: '.75rem', color: 'var(--dim)' }}>
+            Showing {fmtNum(p.rows.length)} of {fmtNum(p.total)} pincodes (grouped). Filter by State or City to narrow.
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+// Grouped view: when both state + city are "All", group rows by state and
+// render a sticky header before each group. Flat sorted view otherwise.
+// Search-and-status filtering happens server-side (search includes area
+// because the backend's text filter already covers all returned fields);
+// area is only used here for display.
+function renderPincodeRows(p: PincodeViewProps) {
+  const sortByCityPincode = (a: PincodeRow, b: PincodeRow): number => {
+    const ca = (a.city || '').localeCompare(b.city || '');
+    if (ca !== 0) return ca;
+    return a.pincode.localeCompare(b.pincode);
+  };
+
+  if (!p.isGroupedMode) {
+    const sorted = [...p.rows].sort(sortByCityPincode);
+    return sorted.map((r) => <PincodeTableRow key={r.pincode} r={r} p={p} />);
+  }
+
+  // Grouped: bucket by state, sort state names alphabetically, sort rows
+  // within each bucket by city → pincode ascending.
+  const buckets = new Map<string, PincodeRow[]>();
+  for (const r of p.rows) {
+    const k = r.state || 'Other';
+    const arr = buckets.get(k);
+    if (arr) arr.push(r);
+    else buckets.set(k, [r]);
+  }
+  const sortedStates = Array.from(buckets.keys()).sort((a, b) => a.localeCompare(b));
+  const out: ReactNode[] = [];
+  for (const st of sortedStates) {
+    out.push(
+      <tr key={`hdr-${st}`}>
+        <td
+          colSpan={6}
+          style={{
+            background: 'var(--ink2)',
+            padding: '.5rem .75rem',
+            fontSize: '.75rem',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '.05em',
+            color: 'var(--fg)',
+            position: 'sticky',
+            top: 0,
+            zIndex: 1,
+          }}
+        >
+          {st}
+        </td>
+      </tr>
+    );
+    const rowsForState = (buckets.get(st) || []).slice().sort(sortByCityPincode);
+    for (const r of rowsForState) {
+      out.push(<PincodeTableRow key={`${st}-${r.pincode}`} r={r} p={p} />);
+    }
+  }
+  return out;
+}
+
+interface PincodeTableRowProps { r: PincodeRow; p: PincodeViewProps }
+
+function PincodeTableRow({ r, p }: PincodeTableRowProps) {
+  return (
+    <tr style={{ borderTop: '1px solid var(--bd)' }}>
+      <td style={{ padding: '.4rem .2rem', fontFamily: 'monospace' }}>{r.pincode}</td>
+      <td style={{ padding: '.4rem .2rem', fontSize: '.85rem' }}>{r.city || '—'}</td>
+      <td style={{ padding: '.4rem .2rem', fontSize: '.85rem', color: r.area ? 'inherit' : 'var(--dim)' }}>
+        {r.area || '—'}
+      </td>
+      <td style={{ padding: '.4rem .2rem', fontSize: '.85rem', color: 'var(--dim)' }}>{r.state || '—'}</td>
+      <td style={{ padding: '.4rem .2rem' }}>
+        <span style={{ display: 'inline-flex', gap: '.4rem', alignItems: 'center' }}>
+          <Toggle
+            checked={!!r.enabled}
+            disabled={p.rowBusy === r.pincode}
+            onChange={() => p.handleToggle(r.pincode, !!r.enabled)}
+          />
+          <span
+            style={{
+              fontSize: '.75rem',
+              color: r.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)',
+              fontWeight: 500,
+            }}
+          >
+            {r.enabled ? 'Enabled' : 'Disabled'}
+          </span>
+        </span>
+      </td>
+      <td style={{ padding: '.4rem .2rem', fontSize: '.8rem', color: 'var(--dim)' }}>
+        {fmtDate(r.updated_at)}
+      </td>
+    </tr>
   );
 }
 

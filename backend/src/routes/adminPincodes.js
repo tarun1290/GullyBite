@@ -19,8 +19,18 @@ const COLLECTION = ServiceablePincode.COLLECTION;
 function buildFilter({ search, status, city, state }) {
   const q = {};
   if (search) {
+    // Match search across pincode, city, state, and area. Case-insensitive
+    // so partial typing surfaces results regardless of how the city/area
+    // text was originally cased on insert. Special chars escaped so user
+    // input can't break out of the regex.
     const safe = String(search).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    q.pincode = { $regex: safe };
+    const regex = { $regex: safe, $options: 'i' };
+    q.$or = [
+      { pincode: regex },
+      { city: regex },
+      { state: regex },
+      { area: regex },
+    ];
   }
   if (status === 'enabled') q.enabled = true;
   else if (status === 'disabled') q.enabled = false;
@@ -102,6 +112,7 @@ router.get('/', requireAdminAuth('pincodes', 'read'), async (req, res) => {
         notes: r.notes || null,
         city: r.city || null,
         state: r.state || null,
+        area: r.area || null,
         updated_at: r.updated_at,
       })),
       total,

@@ -159,12 +159,11 @@ function buildComponents(d: TemplateData): BuiltComponent[] {
 
 interface TemplateEditorProps {
   metaId?: string | null;
-  wabaId?: string;
   onClose?: () => void;
   onSaved?: () => void;
 }
 
-export default function TemplateEditor({ metaId, wabaId, onClose, onSaved }: TemplateEditorProps) {
+export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEditorProps) {
   const { showToast } = useToast();
   const [data, setData] = useState<TemplateData>(blankData());
   const [loading, setLoading] = useState<boolean>(false);
@@ -177,7 +176,7 @@ export default function TemplateEditor({ metaId, wabaId, onClose, onSaved }: Tem
   useEffect(() => {
     if (!metaId) return;
     setLoading(true);
-    (getTemplates(wabaId ? { waba_id: wabaId } : undefined) as Promise<TemplateRecord[] | TemplatesListEnvelope | null>)
+    (getTemplates() as Promise<TemplateRecord[] | TemplatesListEnvelope | null>)
       .then((list) => {
         const arr: TemplateRecord[] = Array.isArray(list)
           ? list
@@ -191,7 +190,7 @@ export default function TemplateEditor({ metaId, wabaId, onClose, onSaved }: Tem
         showToast(e?.response?.data?.error || e?.message || 'Load failed', 'error');
       })
       .finally(() => setLoading(false));
-  }, [metaId, wabaId, showToast]);
+  }, [metaId, showToast]);
 
   const set = (patch: Partial<TemplateData>) => setData((d) => ({ ...d, ...patch }));
 
@@ -265,7 +264,6 @@ export default function TemplateEditor({ metaId, wabaId, onClose, onSaved }: Tem
       language: data.language,
       components: buildComponents(data),
     };
-    if (wabaId) payload.waba_id = wabaId;
     setSaving(true);
     try {
       await createTemplate(payload);
@@ -284,9 +282,7 @@ export default function TemplateEditor({ metaId, wabaId, onClose, onSaved }: Tem
     if (!confirmDelete) { setConfirmDelete(true); return; }
     setDeleting(true);
     try {
-      const body: Record<string, unknown> = { name: data.name };
-      if (wabaId) body.waba_id = wabaId;
-      await deleteTemplate(body);
+      await deleteTemplate({ name: data.name });
       showToast('Template deleted', 'success');
       if (onSaved) onSaved();
       if (onClose) onClose();

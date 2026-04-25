@@ -80,6 +80,7 @@ export default function AdminFlowsPage() {
   const [flows, setFlows] = useState<FlowRow[]>([]);
   const [assignments, setAssignments] = useState<AssignmentsMap>({});
   const [loading, setLoading] = useState<boolean>(true);
+  const [syncing, setSyncing] = useState<boolean>(false);
   const [editing, setEditing] = useState<EditingState>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
@@ -110,6 +111,21 @@ export default function AdminFlowsPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // No backend cache for flows — GET /api/admin/flows already calls Meta
+  // directly, so this button just re-fetches and refreshes React state.
+  // Labelled "Sync from Meta" to match the Templates page Sync button.
+  const handleSyncFromMeta = async () => {
+    setSyncing(true);
+    try {
+      const fl = (await getFlows()) as FlowsResponse | null;
+      setFlows(Array.isArray(fl?.flows) ? fl.flows : []);
+      showToast('Flows refreshed from Meta', 'success');
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Sync failed', 'error');
+    } finally { setSyncing(false); }
+  };
 
   const doPublish = async (id: string) => {
     setRowBusy(id);
@@ -255,7 +271,12 @@ export default function AdminFlowsPage() {
       <div className="card" style={{ marginTop: '1rem' }}>
         <div className="ch" style={{ justifyContent: 'space-between' }}>
           <h3>📚 Flow Library</h3>
-          <button type="button" className="btn-p btn-sm" onClick={() => setEditing('new')}>+ New Flow</button>
+          <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+            <button type="button" className="btn-sm" onClick={handleSyncFromMeta} disabled={syncing}>
+              {syncing ? 'Syncing…' : '🔄 Sync from Meta'}
+            </button>
+            <button type="button" className="btn-p btn-sm" onClick={() => setEditing('new')}>+ New Flow</button>
+          </div>
         </div>
         <div className="cb">
           {loading ? (

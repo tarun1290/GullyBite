@@ -4208,8 +4208,21 @@ router.post('/catalog/connect-waba', async (req, res) => {
       { $set: { catalog_id, updated_at: new Date() } }
     );
 
-    // Auto-enable commerce settings (visibility + cart) after connecting
-    if (wa.phone_number_id) {
+    // Auto-enable commerce settings (visibility + cart) after connecting.
+    // Tracks success/failure so the response surfaces partial-success to
+    // the dashboard — previously this block silently swallowed errors and
+    // the route returned `{success:true}` even when Meta rejected the
+    // commerce settings update, causing the dashboard to show a misleading
+    // "connected" toast while Commerce Manager remained unlinked.
+    let metaSyncOk = false;
+    let metaSyncError = null;
+    if (!wa.phone_number_id) {
+      metaSyncError = 'WhatsApp phone number not registered yet — catalog saved in DB but Meta commerce settings not updated. Re-run after the phone number is approved.';
+      console.error('[catalog-connect-waba] phone_number_id missing on WABA — Meta sync skipped', {
+        restaurantId: req.restaurantId, wabaId: wa.waba_id, catalogId: catalog_id,
+      });
+      logger.warn({ restaurantId: req.restaurantId, wabaId: wa.waba_id }, 'phone_number_id missing — Meta commerce_settings sync skipped');
+    } else {
       try {
         await axios.post(
           `${metaConfig.graphUrl}/${wa.phone_number_id}/whatsapp_commerce_settings`,
@@ -4218,15 +4231,35 @@ router.post('/catalog/connect-waba', async (req, res) => {
         );
         await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { catalog_visible: true, cart_enabled: true } });
         logger.info('Auto-enabled commerce settings after connect');
+        metaSyncOk = true;
       } catch (csErr) {
-        logger.warn({ err: csErr }, 'Auto-enable commerce settings failed after connect');
+        const apiErr = csErr.response?.data?.error;
+        metaSyncError = apiErr?.message || csErr.message || 'Meta commerce_settings update failed';
+        // console.error so the failure surfaces in pm2 logs even when the
+        // structured logger pipeline is filtering warns.
+        console.error('[catalog-connect-waba] whatsapp_commerce_settings failed', {
+          restaurantId: req.restaurantId,
+          phoneNumberId: wa.phone_number_id,
+          catalogId: catalog_id,
+          error: metaSyncError,
+          metaResponse: apiErr || csErr.response?.data || null,
+        });
+        logger.warn({ err: csErr, metaResponse: apiErr }, 'Auto-enable commerce settings failed after connect');
       }
     }
 
     // Auto-sync all menu items to the connected catalog
     queueSync(req.restaurantId, 'full', null);
 
-    res.json({ success: true });
+    // Partial-success response: catalog_saved is the DB write; meta_sync
+    // is the commerce_settings update. Dashboard should show a warning
+    // toast (not a success toast) when meta_sync is false.
+    res.json({
+      success: true,
+      catalog_saved: true,
+      meta_sync: metaSyncOk,
+      ...(metaSyncError ? { meta_error: metaSyncError } : {}),
+    });
   } catch (e) {
     req.log.error({ err: e, metaResponse: e.response?.data }, 'Catalog connect WABA failed');
     res.status(500).json({ success: false, message: "Internal server error" });

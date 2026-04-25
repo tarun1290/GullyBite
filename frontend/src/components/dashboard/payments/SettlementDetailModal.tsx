@@ -10,42 +10,54 @@ import {
 
 const STATUS_CLS: Record<string, string> = { PAID: 'bg', PENDING: 'ba', PROCESSING: 'bb', FAILED: 'br' };
 
-interface SettlementBreakdown {
-  food_revenue?: number;
-  food_gst?: number;
-  packaging_revenue?: number;
-  packaging_gst?: number;
-  delivery_fee_customer?: number;
-  gross_collections?: number;
-  platform_fee?: number;
-  platform_fee_gst?: number;
-  delivery_cost?: number;
-  delivery_gst?: number;
-  discounts?: number;
-  refunds?: number;
-  tds?: number;
-  referral_fee?: number;
-  referral_fee_gst?: number;
-  net_payout?: number;
-}
-
-interface SettlementOrder {
-  id?: string;
-  order_number?: string;
-  date?: string;
-  amount?: number;
-  status?: string;
-}
-
-interface SettlementDetail {
+// Field names mirror the actual settlement document written by
+// jobs/settlement.js (insertOne at line 142). The backend route
+// GET /api/restaurant/financials/settlements/:id returns
+// { settlement, orders } with the raw document inline as `settlement`.
+// Names use _rs suffixes everywhere except for status/timestamp fields.
+interface SettlementDoc {
+  // Period + status
   period_start?: string;
   period_end?: string;
   payout_status?: string;
-  utr?: string;
-  payout_date?: string;
-  breakdown?: SettlementBreakdown;
+  payout_utr?: string | null;
+  payout_at?: string | null;
+  payout_completed_at?: string | null;
+  // Revenue breakdown
+  food_revenue_rs?: number;
+  food_gst_collected_rs?: number;
+  packaging_collected_rs?: number;
+  packaging_gst_rs?: number;
+  delivery_fee_collected_rs?: number;
+  // Deductions
+  platform_fee_rs?: number;
+  platform_fee_gst_rs?: number;
+  delivery_fee_restaurant_share_rs?: number;
+  delivery_fee_restaurant_gst_rs?: number;
+  discount_total_rs?: number;
+  refund_total_rs?: number;
+  tds_amount_rs?: number;
+  tds_applicable?: boolean;
+  referral_fee_rs?: number;
+  referral_fee_gst_rs?: number;
+  // Totals
+  gross_revenue_rs?: number;
+  net_payout_rs?: number;
+}
+
+interface SettlementOrder {
+  _id?: string;
+  order_number?: string;
+  delivered_at?: string;
+  created_at?: string;
+  total_rs?: number;
+  status?: string;
+}
+
+// Wrapper returned by the backend route.
+interface SettlementDetail {
+  settlement?: SettlementDoc;
   orders?: SettlementOrder[];
-  [k: string]: unknown;
 }
 
 interface MetaItem {
@@ -207,9 +219,23 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
     }
   };
 
-  const breakdown: SettlementBreakdown = detail?.breakdown || (detail as SettlementBreakdown | undefined) || {};
-  const statusKey = detail?.payout_status?.toUpperCase?.() || '';
+  // Backend returns { settlement, orders } — pull the raw settlement doc
+  // out of the wrapper. (Old code was casting the entire wrapper as a
+  // breakdown, which silently produced all-zero rows.)
+  const settlementDoc: SettlementDoc = detail?.settlement || {};
+  const statusKey = settlementDoc.payout_status?.toUpperCase?.() || '';
   const statusCls = STATUS_CLS[statusKey] || 'bd';
+  const paidAtRaw = settlementDoc.payout_completed_at || settlementDoc.payout_at;
+  const paidAtDisplay = paidAtRaw
+    ? new Date(paidAtRaw).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '';
+  const periodDisplay = (raw?: string | null): string => {
+    if (!raw) return '';
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime())
+      ? String(raw)
+      : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
 
   return (
     <div
@@ -243,41 +269,41 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem', flexWrap: 'wrap', gap: '.6rem' }}>
                 <div>
                   <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginBottom: '.2rem' }}>Period</div>
-                  <div style={{ fontWeight: 700 }}>{detail.period_start || ''} → {detail.period_end || ''}</div>
+                  <div style={{ fontWeight: 700 }}>{periodDisplay(settlementDoc.period_start)} → {periodDisplay(settlementDoc.period_end)}</div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <span className={`badge ${statusCls}`} style={{ fontSize: '.75rem' }}>{detail.payout_status || 'N/A'}</span>
-                  {detail.utr && (
+                  <span className={`badge ${statusCls}`} style={{ fontSize: '.75rem' }}>{settlementDoc.payout_status || 'N/A'}</span>
+                  {settlementDoc.payout_utr && (
                     <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginTop: '.2rem' }}>
-                      UTR: <span style={{ fontFamily: 'monospace' }}>{detail.utr}</span>
+                      UTR: <span style={{ fontFamily: 'monospace' }}>{settlementDoc.payout_utr}</span>
                     </div>
                   )}
-                  {detail.payout_date && (
-                    <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>Paid: {detail.payout_date}</div>
+                  {paidAtDisplay && (
+                    <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>Paid: {paidAtDisplay}</div>
                   )}
                 </div>
               </div>
 
               <div style={{ fontFamily: "'SF Mono',monospace", fontSize: '.78rem', lineHeight: 1.9, background: 'var(--ink4)', borderRadius: 8, padding: '1rem 1.2rem', marginBottom: '1rem' }}>
-                <BdLine label="Food Revenue" value={breakdown.food_revenue} sign="" />
-                <BdLine label="Food GST" value={breakdown.food_gst} sign="+" />
-                <BdLine label="Packaging" value={breakdown.packaging_revenue} sign="+" />
-                <BdLine label="Packaging GST" value={breakdown.packaging_gst} sign="+" />
-                <BdLine label="Delivery Fee" value={breakdown.delivery_fee_customer} sign="+" />
+                <BdLine label="Food Revenue" value={settlementDoc.food_revenue_rs} sign="" />
+                <BdLine label="Food GST" value={settlementDoc.food_gst_collected_rs} sign="+" />
+                <BdLine label="Packaging" value={settlementDoc.packaging_collected_rs} sign="+" />
+                <BdLine label="Packaging GST" value={settlementDoc.packaging_gst_rs} sign="+" />
+                <BdLine label="Delivery Fee" value={settlementDoc.delivery_fee_collected_rs} sign="+" />
                 {DASH}
-                <BdTotal label="GROSS" value={breakdown.gross_collections} color="var(--acc)" />
+                <BdTotal label="GROSS" value={settlementDoc.gross_revenue_rs} color="var(--acc)" />
                 {DASH}
-                <BdLine label="Platform Fee" value={breakdown.platform_fee} sign="-" />
-                <BdLine label="Platform Fee GST" value={breakdown.platform_fee_gst} sign="-" />
-                <BdLine label="Delivery Cost" value={breakdown.delivery_cost} sign="-" />
-                <BdLine label="Delivery GST" value={breakdown.delivery_gst} sign="-" />
-                <BdLine label="Discounts" value={breakdown.discounts} sign="-" />
-                <BdLine label="Refunds" value={breakdown.refunds} sign="-" />
-                <BdLine label="TDS" value={breakdown.tds} sign="-" />
-                <BdLine label="Referral Fee" value={breakdown.referral_fee} sign="-" />
-                <BdLine label="Referral GST" value={breakdown.referral_fee_gst} sign="-" />
+                <BdLine label="Platform Fee" value={settlementDoc.platform_fee_rs} sign="-" />
+                <BdLine label="Platform Fee GST" value={settlementDoc.platform_fee_gst_rs} sign="-" />
+                <BdLine label="Delivery Cost (Absorbed Share)" value={settlementDoc.delivery_fee_restaurant_share_rs} sign="-" />
+                <BdLine label="Delivery GST" value={settlementDoc.delivery_fee_restaurant_gst_rs} sign="-" />
+                <BdLine label="Discounts" value={settlementDoc.discount_total_rs} sign="-" />
+                <BdLine label="Refunds" value={settlementDoc.refund_total_rs} sign="-" />
+                <BdLine label="TDS" value={settlementDoc.tds_amount_rs} sign="-" />
+                <BdLine label="Referral Fee" value={settlementDoc.referral_fee_rs} sign="-" />
+                <BdLine label="Referral GST" value={settlementDoc.referral_fee_gst_rs} sign="-" />
                 {DASH}
-                <BdTotal label="NET PAYOUT" value={breakdown.net_payout} color="var(--wa)" />
+                <BdTotal label="NET PAYOUT" value={settlementDoc.net_payout_rs} color="var(--wa)" />
               </div>
 
               <MetaBreakdown data={meta} />
@@ -299,12 +325,12 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
                       </thead>
                       <tbody>
                         {detail.orders.map((o, idx) => (
-                          <tr key={o.id || o.order_number || idx}>
+                          <tr key={o._id || o.order_number || idx}>
                             <td style={{ fontFamily: 'monospace', fontSize: '.75rem' }}>
-                              {o.order_number || o.id}
+                              {o.order_number || o._id}
                             </td>
-                            <td style={{ fontSize: '.78rem' }}>{o.date || ''}</td>
-                            <td>{formatINR(o.amount)}</td>
+                            <td style={{ fontSize: '.78rem' }}>{periodDisplay(o.delivered_at || o.created_at)}</td>
+                            <td>{formatINR(o.total_rs)}</td>
                             <td><span className="badge bg">{o.status || 'Delivered'}</span></td>
                           </tr>
                         ))}

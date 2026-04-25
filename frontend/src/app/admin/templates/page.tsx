@@ -61,7 +61,6 @@ type EditingState = 'new' | { metaId: string } | null;
 
 export default function AdminTemplatesPage() {
   const { showToast } = useToast();
-  const [wabaId, setWabaId] = useState<string>('');
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [mappings, setMappings] = useState<MappingRow[]>([]);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
@@ -75,9 +74,8 @@ export default function AdminTemplatesPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const params = wabaId ? { waba_id: wabaId } : undefined;
       const [tpls, maps, notifs] = await Promise.all([
-        (getTemplates(params) as Promise<TemplateRow[] | TemplatesEnvelope | null>).catch(() => null),
+        (getTemplates() as Promise<TemplateRow[] | TemplatesEnvelope | null>).catch(() => null),
         (getTemplateMappings() as Promise<MappingRow[] | null>).catch(() => null),
         (getTemplateNotifications(30) as Promise<NotificationRow[] | null>).catch(() => null),
       ]);
@@ -98,10 +96,9 @@ export default function AdminTemplatesPage() {
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   const doSync = async () => {
-    if (!wabaId.trim()) { showToast('Enter a WABA ID first', 'error'); return; }
     setSyncing(true);
     try {
-      const r = (await syncTemplates(wabaId.trim())) as SyncResult | null;
+      const r = (await syncTemplates()) as SyncResult | null;
       showToast(`Synced ${r?.total ?? 0} templates`, 'success');
       load();
     } catch (err: unknown) {
@@ -125,9 +122,7 @@ export default function AdminTemplatesPage() {
   const doDelete = async (name: string) => {
     setRowBusy(name);
     try {
-      const body: Record<string, unknown> = { name };
-      if (wabaId.trim()) body.waba_id = wabaId.trim();
-      await deleteTemplate(body);
+      await deleteTemplate({ name });
       showToast('Template deleted', 'success');
       setPendingDelete(null);
       load();
@@ -141,7 +136,6 @@ export default function AdminTemplatesPage() {
     return (
       <TemplateEditor
         metaId={editing === 'new' ? null : editing.metaId}
-        wabaId={wabaId.trim() || undefined}
         onClose={() => setEditing(null)}
         onSaved={load}
       />
@@ -154,12 +148,6 @@ export default function AdminTemplatesPage() {
         <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.4rem' }}>
           <h3>📄 WhatsApp Templates</h3>
           <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <input
-              value={wabaId}
-              onChange={(e) => setWabaId(e.target.value)}
-              placeholder="WABA ID (optional)"
-              style={{ padding: '.3rem .55rem', border: '1px solid var(--rim)', borderRadius: 6, fontSize: '.8rem', width: 200 }}
-            />
             <button type="button" className="btn-sm" onClick={doSync} disabled={syncing}>
               {syncing ? 'Syncing…' : '🔄 Sync from Meta'}
             </button>

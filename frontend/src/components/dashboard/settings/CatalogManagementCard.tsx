@@ -180,9 +180,21 @@ export default function CatalogManagementCard() {
         onClose={() => setPickerOpen(false)}
         currentCatalogId={catalogState?.catalogId}
         seedCatalogs={catalogState?.availableCatalogs || []}
-        onSwitched={async (newId, newName) => {
+        onSwitched={async (newId, newName, result) => {
           setPickerOpen(false);
-          showToast(`Switched to ${newName}`, 'success');
+          // meta_sync === false means the DB write succeeded but the Meta
+          // commerce_settings update was skipped or failed (e.g. phone
+          // number not registered yet, scope missing, Meta API error).
+          // Surface as a warning so the user re-runs after fixing the
+          // underlying setup instead of trusting a false-positive success.
+          if (result.meta_sync === false) {
+            showToast(
+              `Catalog saved but Meta sync failed: ${result.meta_error || 'unknown error'}. Try reconnecting or check WhatsApp settings.`,
+              'warning',
+            );
+          } else {
+            showToast(`Switched to ${newName}`, 'success');
+          }
           await refetch();
           // eslint-disable-next-line no-unused-expressions
           newId;
@@ -335,12 +347,21 @@ function ConnectedState({ state, syncStatus, onSwitch, onCreate, onDelete, onDis
   );
 }
 
+// Backend partial-success shape — services/catalog.js:switchCatalog
+// returns { ..., meta_sync: boolean, meta_error?: string } so the dashboard
+// can warn instead of false-positive when Commerce Manager link silently
+// fails (e.g. phone_number_id missing, scope mismatch, Meta API error).
+interface SwitchResult {
+  meta_sync?: boolean;
+  meta_error?: string;
+}
+
 interface PickerModalProps {
   open: boolean;
   onClose: () => void;
   currentCatalogId?: string;
   seedCatalogs: CatalogSummary[];
-  onSwitched: (newId: string, newName: string) => void;
+  onSwitched: (newId: string, newName: string, result: SwitchResult) => void;
 }
 
 function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched }: PickerModalProps) {
@@ -377,9 +398,9 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
     if (!selected || selected === currentCatalogId) return;
     setBusy(true); setErr(null);
     try {
-      await switchCatalog(selected);
+      const res = (await switchCatalog(selected)) as SwitchResult | null;
       const chosen = list.find((c) => c.id === selected);
-      onSwitched(selected, chosen?.name || 'catalog');
+      onSwitched(selected, chosen?.name || 'catalog', res || {});
     } catch (e: unknown) {
       setErr(errorMessage(e, 'Switch failed'));
       setBusy(false);

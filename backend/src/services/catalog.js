@@ -2171,12 +2171,37 @@ const switchCatalog = async (restaurantId, newCatalogId) => {
     throw new Error(`Failed to connect new catalog: ${connErr.response?.data?.error?.message || connErr.message}`);
   }
 
-  // 4. Link to phone number (non-fatal)
-  if (wa.phone_number_id) {
+  // 4. Link to phone number — surface success/failure to the caller so
+  // the route response can flag a partial-success to the dashboard.
+  // Previously failures were only logged at warn level, so the dashboard
+  // toast showed "switched" while Commerce Manager remained unlinked.
+  let metaSyncOk = false;
+  let metaSyncError = null;
+  if (!wa.phone_number_id) {
+    metaSyncError = 'WhatsApp phone number not registered yet — catalog saved in DB but Meta commerce settings not updated. Re-run after the phone number is approved.';
+    console.error('[catalog-switch] phone_number_id missing on WABA — Meta sync skipped', {
+      restaurantId, wabaId: wa.waba_id, newCatalogId,
+    });
+    log.warn({ restaurantId, wabaId: wa.waba_id }, 'switchCatalog: phone_number_id missing — Meta commerce_settings sync skipped');
+  } else {
     try {
-      await axios.post(`${GRAPH}/${wa.phone_number_id}/whatsapp_commerce_settings`, { catalog_id: newCatalogId, is_catalog_visible: true, is_cart_enabled: true }, { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 });
+      await axios.post(
+        `${GRAPH}/${wa.phone_number_id}/whatsapp_commerce_settings`,
+        { catalog_id: newCatalogId, is_catalog_visible: true, is_cart_enabled: true },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+      );
+      metaSyncOk = true;
     } catch (phoneErr) {
-      log.warn({ err: phoneErr }, 'switchCatalog: phone link failed (non-fatal)');
+      const apiErr = phoneErr.response?.data?.error;
+      metaSyncError = apiErr?.message || phoneErr.message || 'Meta commerce_settings update failed';
+      console.error('[catalog-switch] whatsapp_commerce_settings failed', {
+        restaurantId,
+        phoneNumberId: wa.phone_number_id,
+        catalogId: newCatalogId,
+        error: metaSyncError,
+        metaResponse: apiErr || phoneErr.response?.data || null,
+      });
+      log.warn({ err: phoneErr, metaResponse: apiErr }, 'switchCatalog: phone link failed (non-fatal)');
     }
   }
 
@@ -2185,8 +2210,16 @@ const switchCatalog = async (restaurantId, newCatalogId) => {
   await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { catalog_id: newCatalogId, catalog_linked: true, cart_enabled: true, catalog_visible: true, updated_at: new Date() } });
   await col('branches').updateMany({ restaurant_id: restaurantId }, { $set: { catalog_id: newCatalogId, updated_at: new Date() } });
 
-  log.info({ businessName: restaurant.business_name, oldCatalogId, newCatalogId }, 'Switched restaurant catalog');
-  return { success: true, oldCatalogId, newCatalogId, catalogName: newCatalogName };
+  log.info({ businessName: restaurant.business_name, oldCatalogId, newCatalogId, metaSyncOk }, 'Switched restaurant catalog');
+  return {
+    success: true,
+    oldCatalogId,
+    newCatalogId,
+    catalogName: newCatalogName,
+    catalog_saved: true,
+    meta_sync: metaSyncOk,
+    ...(metaSyncError ? { meta_error: metaSyncError } : {}),
+  };
 };
 
 // ─── SYNC COMPRESSED CATALOG ────────────────────────────────

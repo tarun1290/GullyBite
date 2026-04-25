@@ -66,7 +66,6 @@ interface FormState {
   pincode: string;
   state: string;
   placeId: string;
-  deliveryRadiusKm: string;
   openingTime: string;
   closingTime: string;
   managerPhone: string;
@@ -106,7 +105,6 @@ function emptyForm(): FormState {
     pincode: '',
     state: '',
     placeId: '',
-    deliveryRadiusKm: '5',
     openingTime: '10:00',
     closingTime: '22:00',
     managerPhone: '',
@@ -134,7 +132,6 @@ function formFromBranch(b: BranchExt | null): FormState {
     pincode:          b.pincode || '',
     state:            b.state || '',
     placeId:          b.place_id || '',
-    deliveryRadiusKm: b.delivery_radius_km != null ? String(b.delivery_radius_km) : '5',
     openingTime:      (b.opening_time || '10:00').slice(0, 5),
     closingTime:      (b.closing_time || '22:00').slice(0, 5),
     managerPhone:     b.manager_phone || '',
@@ -332,7 +329,6 @@ export default function BranchFormModal({
       area: form.area || '',
       state: form.state || '',
       place_id: form.placeId || '',
-      deliveryRadiusKm: parseFloat(form.deliveryRadiusKm) || 5,
       openingTime: form.openingTime,
       closingTime: form.closingTime,
       managerPhone: form.managerPhone,
@@ -474,12 +470,10 @@ export default function BranchFormModal({
             </div>
 
             <div className="fg">
-              <label>Delivery Radius (km)</label>
-              <input
-                type="number"
-                value={form.deliveryRadiusKm}
-                onChange={(e) => setField('deliveryRadiusKm', e.target.value)}
-              />
+              <label>Delivery Radius</label>
+              <div style={{ fontSize: '.74rem', color: 'var(--dim)', padding: '.4rem 0' }}>
+                Delivery radius is managed platform-wide by GullyBite.
+              </div>
             </div>
             <div className="fg">
               <label>Manager Phone</label>

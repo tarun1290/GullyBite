@@ -458,16 +458,10 @@ function formatAddressesForFlow(addresses) {
     };
   });
 
-  // Add "New Address" as last item (max 20 total)
-  items.push({
-    id: 'new_address',
-    'main-content': {
-      title: '+ Add New Address',
-      description: 'New location',
-      metadata: 'Enter your delivery address',
-    },
-  });
-
+  // The "+ Add new address" affordance is now an EmbeddedLink on the
+  // SAVED_ADDRESSES screen layout itself (navigates inline to NEW_ADDRESS).
+  // No synthetic list item is appended — clicking it used to round-trip
+  // through the webhook and re-send a separate flow message.
   return items;
 }
 
