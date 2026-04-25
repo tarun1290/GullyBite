@@ -260,6 +260,23 @@ app.use('/auth', jsonAndSanitize(), authRouter);
 // without login.
 app.use('/api/review-redirect', require('./src/routes/reviewRedirect'));
 
+// ─── TENANT-DATA CACHE POLICY ────────────────────────────────
+// Stamp no-store on every JSON response under /api/restaurant/* and
+// /api/admin/* so no browser, intermediate proxy, or CDN heuristic ever
+// caches dashboard data. Mounted BEFORE the route handlers so it runs
+// first; any handler that needs different caching (e.g. a future cached
+// public read) can override by calling res.set('Cache-Control', ...) in
+// its own response — handler-level set wins over middleware-level set.
+// Webhooks (/webhooks/*), cron (/api/cron/*), auth (/auth/*), staff
+// (/api/staff/*), and customer (/api/customer/*) are NOT affected —
+// different path prefix.
+app.use(['/api/restaurant', '/api/admin'], (req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 // ─── DASHBOARD ROUTES (RESTAURANT) ───────────────────────────
 // /api/restaurant/* sub-routes MUST be mounted BEFORE the catch-all
 // /api/restaurant router, which would otherwise shadow more specific paths.
@@ -391,6 +408,15 @@ metaConfig.logStatus();
 
 connect().then(() => {
   require('./src/config/indexes').ensureIndexes().catch(e => console.warn('[DB] Index init:', e.message));
+
+  // Platform-wide delivery radius (km). Single source of truth for the
+  // "we don't deliver to your area" gate inside findBestAvailableBranch.
+  // Idempotent — $setOnInsert won't overwrite an admin-tuned value.
+  require('./src/config/database').col('platform_settings').updateOne(
+    { _id: 'delivery_radius' },
+    { $setOnInsert: { _id: 'delivery_radius', radius_km: 5 } },
+    { upsert: true },
+  ).catch(e => console.warn('[DB] delivery_radius seed:', e.message));
 
   const { scheduleSettlement } = require('./src/jobs/settlement');
   scheduleSettlement();

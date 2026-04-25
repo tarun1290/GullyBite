@@ -1377,7 +1377,8 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
     { $set: { last_lat: latitude, last_lng: longitude, last_address: address || null } }
   );
 
-  const result = await location.findBestAvailableBranch(latitude, longitude);
+  const radiusKm = await location.getPlatformDeliveryRadius();
+  const result = await location.findBestAvailableBranch(latitude, longitude, null, radiusKm);
 
   if (!result.found) {
     await wa.sendText(pid, token, to, result.message);
@@ -2302,7 +2303,8 @@ const handleSavedAddressSelected = async (addressId, customer, conv, waAccount) 
     `📍 Using *${addr.label}*${addr.full_address ? `: ${addr.full_address}` : ''}\n\n🔍 Finding nearest restaurant...`
   );
 
-  const result = await location.findBestAvailableBranch(addr.latitude, addr.longitude);
+  const radiusKm = await location.getPlatformDeliveryRadius();
+  const result = await location.findBestAvailableBranch(addr.latitude, addr.longitude, null, radiusKm);
   if (!result.found) {
     await wa.sendText(pid, token, to, result.message);
     return;
@@ -3240,7 +3242,8 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
 
     // Find branch and send menu
     if (addr.latitude && addr.longitude) {
-      const result = await location.findBestAvailableBranch(addr.latitude, addr.longitude, restaurantId);
+      const radiusKm = await location.getPlatformDeliveryRadius();
+      const result = await location.findBestAvailableBranch(addr.latitude, addr.longitude, restaurantId, radiusKm);
       if (result.found) {
         if (result.isFallback && result.fallbackMessage) await wa.sendText(pid, token, to, result.fallbackMessage);
         await _sendBranchMenu(pid, token, to, result.branch, conv, customer, addr);
@@ -3392,7 +3395,8 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
     };
 
     if (geo.lat != null && geo.lng != null) {
-      const result = await location.findBestAvailableBranch(geo.lat, geo.lng, restaurantId);
+      const radiusKm = await location.getPlatformDeliveryRadius();
+      const result = await location.findBestAvailableBranch(geo.lat, geo.lng, restaurantId, radiusKm);
       if (result.found) {
         if (result.isFallback && result.fallbackMessage) await wa.sendText(pid, token, to, result.fallbackMessage);
         await _sendBranchMenu(pid, token, to, result.branch, conv, customer, parsedAddress);

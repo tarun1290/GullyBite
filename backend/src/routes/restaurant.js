@@ -1310,7 +1310,6 @@ router.post('/branches', async (req, res) => {
       place_id: place_id || null,
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
-      delivery_radius_km: deliveryRadiusKm || 5,
       opening_time: openingTime || '10:00',
       closing_time: closingTime || '22:00',
       manager_phone: managerPhone || null,
@@ -1390,7 +1389,6 @@ router.post('/branches/csv', async (req, res) => {
           pincode: sanitizeCsvString(row.pincode),
           latitude: lat,
           longitude: lng,
-          delivery_radius_km: parseFloat(row.delivery_radius_km) || 5,
           opening_time: row.opening_time || '10:00',
           closing_time: row.closing_time || '22:00',
           manager_phone: managerPhone,
@@ -1450,7 +1448,9 @@ router.patch('/branches/:id', async (req, res) => {
     if (isOpen             !== undefined) $set.is_open              = isOpen;
     if (acceptsOrders      !== undefined) $set.accepts_orders       = acceptsOrders;
     if (isActive           !== undefined) $set.is_active            = isActive;
-    if (deliveryRadiusKm   !== undefined) $set.delivery_radius_km   = deliveryRadiusKm;
+    // delivery_radius_km removed — enforcement is now platform-wide via
+    // platform_settings._id='delivery_radius'. Per-branch overrides are
+    // intentionally ignored even if the dashboard form still sends one.
     if (catalogId          !== undefined) $set.catalog_id           = catalogId;
     if (basePrepTimeMin    !== undefined) $set.base_prep_time_min   = parseInt(basePrepTimeMin) || 15;
     if (avgItemPrepMin     !== undefined) $set.avg_item_prep_min    = parseInt(avgItemPrepMin) || 3;

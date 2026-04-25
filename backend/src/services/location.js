@@ -5,6 +5,21 @@
 const { col } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'Location' });
 
+// Platform-wide delivery radius (km). Stored in platform_settings._id='delivery_radius'.
+// Falls back to 5 km if the seed hasn't run yet (first boot before the upsert
+// completes). Single source of truth for branch-finder enforcement; per-branch
+// overrides are no longer honoured.
+const DEFAULT_DELIVERY_RADIUS_KM = 5;
+async function getPlatformDeliveryRadius() {
+  try {
+    const doc = await col('platform_settings').findOne({ _id: 'delivery_radius' });
+    const v = Number(doc?.radius_km);
+    return Number.isFinite(v) && v > 0 ? v : DEFAULT_DELIVERY_RADIUS_KM;
+  } catch {
+    return DEFAULT_DELIVERY_RADIUS_KM;
+  }
+}
+
 // ─── HAVERSINE FORMULA ────────────────────────────────────────
 const haversineKm = (lat1, lng1, lat2, lng2) => {
   const R = 6371;
@@ -19,7 +34,14 @@ const haversineKm = (lat1, lng1, lat2, lng2) => {
 const toRad = (deg) => (deg * Math.PI) / 180;
 
 // ─── FIND NEAREST BRANCH ──────────────────────────────────────
-const findNearestBranch = async (customerLat, customerLng, restaurantId = null) => {
+// `radiusKm` is the platform-wide delivery radius. When omitted, falls
+// back to `getPlatformDeliveryRadius()` so callers that haven't been
+// updated still work correctly.
+const findNearestBranch = async (customerLat, customerLng, restaurantId = null, radiusKm) => {
+  const effectiveRadiusKm = (Number.isFinite(Number(radiusKm)) && Number(radiusKm) > 0)
+    ? Number(radiusKm)
+    : await getPlatformDeliveryRadius();
+
   const branchFilter = { is_open: true, accepts_orders: true };
   if (restaurantId) branchFilter.restaurant_id = restaurantId;
 
@@ -54,9 +76,7 @@ const findNearestBranch = async (customerLat, customerLng, restaurantId = null) 
 
   withDistance.sort((a, b) => a.distanceKm - b.distanceKm);
 
-  const deliverable = withDistance.filter(
-    r => r.distanceKm <= parseFloat(r.branch.delivery_radius_km)
-  );
+  const deliverable = withDistance.filter(r => r.distanceKm <= effectiveRadiusKm);
 
   if (!deliverable.length) {
     const closest = withDistance[0];
@@ -65,7 +85,7 @@ const findNearestBranch = async (customerLat, customerLng, restaurantId = null) 
       message:
         `😔 Sorry, we don't deliver to your location yet.\n\n` +
         `Nearest outlet: *${closest.branch.name}* (${closest.distanceKm.toFixed(1)} km away)\n` +
-        `Our current delivery radius is ${closest.branch.delivery_radius_km} km from that outlet.\n\n` +
+        `Our current delivery radius is ${effectiveRadiusKm} km from that outlet.\n\n` +
         `We're expanding soon! 🚀`,
     };
   }
@@ -485,7 +505,15 @@ function getNextOpeningTime(branch) {
 // Like findNearestBranch but with operating hours awareness and fallback.
 // Reimplements branch lookup (not a wrapper) because it needs ALL deliverable
 // branches sorted by distance to find fallback options when the nearest is closed.
-async function findBestAvailableBranch(customerLat, customerLng, restaurantId = null) {
+//
+// `radiusKm` is the platform-wide delivery radius. When omitted, falls back
+// to `getPlatformDeliveryRadius()` so callers that haven't been updated
+// still work correctly.
+async function findBestAvailableBranch(customerLat, customerLng, restaurantId = null, radiusKm) {
+  const effectiveRadiusKm = (Number.isFinite(Number(radiusKm)) && Number(radiusKm) > 0)
+    ? Number(radiusKm)
+    : await getPlatformDeliveryRadius();
+
   // Get all deliverable branches sorted by distance
   const branchFilter = { is_open: true, accepts_orders: true };
   if (restaurantId) branchFilter.restaurant_id = restaurantId;
@@ -510,13 +538,13 @@ async function findBestAvailableBranch(customerLat, customerLng, restaurantId = 
     distanceKm: haversineKm(parseFloat(customerLat), parseFloat(customerLng), parseFloat(branch.latitude), parseFloat(branch.longitude)),
   })).sort((a, b) => a.distanceKm - b.distanceKm);
 
-  const deliverable = withDistance.filter(r => r.distanceKm <= parseFloat(r.branch.delivery_radius_km));
+  const deliverable = withDistance.filter(r => r.distanceKm <= effectiveRadiusKm);
 
   if (!deliverable.length) {
     const closest = withDistance[0];
     return {
       found: false,
-      message: `😔 Sorry, we don't deliver to your location yet.\n\nNearest outlet: *${closest.branch.name}* (${closest.distanceKm.toFixed(1)} km away)\nOur current delivery radius is ${closest.branch.delivery_radius_km} km from that outlet.\n\nWe're expanding soon! 🚀`,
+      message: `😔 Sorry, we don't deliver to your location yet.\n\nNearest outlet: *${closest.branch.name}* (${closest.distanceKm.toFixed(1)} km away)\nOur current delivery radius is ${effectiveRadiusKm} km from that outlet.\n\nWe're expanding soon! 🚀`,
     };
   }
 
@@ -563,4 +591,4 @@ async function findBestAvailableBranch(customerLat, customerLng, restaurantId = 
   };
 }
 
-module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractMapsUrl, extractCoordsFromMapsUrl, reverseGeocode, forwardGeocode, geocodeAddress, placeDetails };
+module.exports = { findNearestBranch, findBestAvailableBranch, isBranchOpen, haversineKm, isMapsUrl, extractMapsUrl, extractCoordsFromMapsUrl, reverseGeocode, forwardGeocode, geocodeAddress, placeDetails, getPlatformDeliveryRadius };

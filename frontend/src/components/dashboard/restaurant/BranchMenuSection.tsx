@@ -88,6 +88,7 @@ export default function BranchMenuSection({ branch, onCatalogChange }: BranchMen
       const r = (await syncBranchCatalog(branch.id)) as CatalogSyncResponse | null;
       if (r?.success) {
         showToast(`✅ ${branch.name}: ${r.updated || 0} live, ${r.deleted || 0} removed`, 'success');
+        await load();
       } else {
         showToast(r?.errors?.[0] || 'Sync failed', 'error');
       }
