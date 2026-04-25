@@ -411,6 +411,8 @@ connect().then(() => {
   // try { require('./src/jobs/campaignSender'); } catch (e) { console.warn('[EC2] Campaign sender:', e.message); }
   console.log('[EC2] Campaign sender: disabled — module not yet implemented');
 
+  require('./src/services/catalogSyncQueue').startProcessor(); // event-driven catalog sync — debounces item create/update events to Meta
+
   // BullMQ orders queue — producer + worker. EC2-only; Vercel cannot reach
   // ElastiCache across its VPC boundary. Skipped entirely if REDIS_URL is unset.
   if (process.env.REDIS_URL) {

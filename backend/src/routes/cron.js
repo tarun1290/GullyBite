@@ -22,56 +22,12 @@ router.use((req, res, next) => {
   next();
 });
 
-// ─── CATALOG AUTO-SYNC (every 30 minutes) ────────────────────
-// Returns 200 immediately, processes sync in background.
-// Vercel Hobby has 30s function timeout — sync can take longer than that.
-router.get('/catalog-sync', async (req, res) => {
-  // Respond immediately so cron-job.org gets a 200 (prevents "output too large" errors)
-  res.json({ ok: true, message: 'catalog-sync started', timestamp: new Date().toISOString() });
-
-  // Process in background after response is sent
-  const start = Date.now();
-  try {
-    const restaurants = await col('restaurants').find({
-      status: 'active',
-      $or: [
-        { meta_catalog_id: { $ne: null } },
-        { catalog_id: { $ne: null } },
-      ],
-    }).toArray();
-
-    log.info({ count: restaurants.length }, 'Auto-sync: restaurants with catalogs');
-
-    let synced = 0, failed = 0;
-    const BATCH = 3;
-    for (let i = 0; i < restaurants.length; i += BATCH) {
-      const batch = restaurants.slice(i, i + BATCH);
-      const results = await Promise.allSettled(
-        batch.map(async (r) => {
-          try {
-            await catalog.syncRestaurantCatalog(String(r._id));
-            await col('restaurants').updateOne({ _id: r._id }, { $set: { last_auto_sync_at: new Date() } });
-            return { id: r._id, ok: true };
-          } catch (err) {
-            log.error({ err, restaurantName: r.business_name }, 'Sync failed for restaurant');
-            return { id: r._id, ok: false, error: err.message };
-          }
-        })
-      );
-      results.forEach(r => {
-        if (r.status === 'fulfilled' && r.value.ok) synced++;
-        else failed++;
-      });
-    }
-
-    const duration = Date.now() - start;
-    log.info({ synced, failed, durationMs: duration }, 'Auto-sync complete');
-
-    logActivity({ actorType: 'system', action: 'cron.catalog_sync', category: 'catalog', description: `Auto-sync: ${synced} restaurants synced, ${failed} failed (${duration}ms)`, severity: failed > 0 ? 'warning' : 'info' });
-  } catch (e) {
-    log.error({ err: e }, 'Auto-sync error');
-  }
-});
+// Periodic full-restaurant resync route removed — event-driven pipeline
+// handles Meta sync. The previous external-cron handler walked every
+// active restaurant every 30 min and pushed the full catalog to Meta,
+// which bloated Commerce Manager's "items with issues" count. Item
+// create / update / delete now flow through queueSync() → debouncer →
+// BullMQ job (processor started in ec2-server.js boot).
 
 // ─── TRUST METRICS REFRESH (every 6-12 hours) ───────────────
 // Recalculates item trust scores, tags, and meta descriptions for all active restaurants.
