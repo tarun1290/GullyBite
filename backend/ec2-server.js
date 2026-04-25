@@ -63,6 +63,7 @@ app.use(helmet());
 const CORS_PROD_ORIGINS = [
   'https://gullybite.in',
   'https://www.gullybite.in',
+  'https://gully-bite.vercel.app',
 ];
 const CORS_DEV_ORIGINS = ['http://localhost:3000', 'http://localhost:5173'];
 const corsAllowed = [...CORS_PROD_ORIGINS];
