@@ -1,12 +1,16 @@
 import type { NextConfig } from 'next';
 import path from 'path';
+import { validateEnv } from './src/lib/validateEnv';
 
 // API base for client-side calls. Read here so the value is captured at build
 // time and surfaces in the bundle for client components via process.env.
 // Reference: NEXT_PUBLIC_API_BASE_URL in .env.local.
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-if (!apiBaseUrl && process.env.NODE_ENV === 'production') {
-  console.warn('[next.config] NEXT_PUBLIC_API_BASE_URL is not set');
+//
+// Hard-fail production builds when the API base is missing or non-HTTPS so
+// a misconfigured Vercel env can't ship a bundle that 404s against the
+// Vercel origin or downgrades requests to plain HTTP.
+if (process.env.NODE_ENV === 'production') {
+  validateEnv();
 }
 
 // Repo root — one level above frontend/. Used for both Turbopack's workspace
