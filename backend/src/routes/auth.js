@@ -108,6 +108,37 @@ async function seedLoyaltyConfig(restaurantId) {
   }
 }
 
+// Copy the platform-wide WhatsApp delivery Flow assignment onto the new
+// restaurant. Gated by the dormant-until-now `auto_assign_new` flag on
+// platform_settings._id='whatsapp_flow' so admins can disable auto-grant
+// without rolling back code. The $or filter makes this idempotent and
+// preserves any per-restaurant flow_id an admin may have manually set.
+// Fire-and-forget: failure here must not block onboarding (the webhook
+// handler already tolerates a missing flow_id by silently skipping).
+async function seedPlatformFlowAssignment(restaurantId) {
+  try {
+    const setting = await col('platform_settings').findOne({ _id: 'whatsapp_flow' });
+    if (!setting || setting.auto_assign_new !== true || !setting.flow_id) {
+      log.debug({
+        restaurantId,
+        hasSetting: !!setting,
+        autoAssign: setting?.auto_assign_new,
+        hasFlowId: !!setting?.flow_id,
+      }, 'seedPlatformFlowAssignment: skipped (no platform flow or auto-assign off)');
+      return;
+    }
+    await col('restaurants').updateOne(
+      {
+        _id: String(restaurantId),
+        $or: [{ flow_id: null }, { flow_id: { $exists: false } }],
+      },
+      { $set: { flow_id: setting.flow_id, updated_at: new Date() } }
+    );
+  } catch (err) {
+    console.error('[seedPlatformFlowAssignment]', { restaurantId, err: err?.message });
+  }
+}
+
 // ── Log OAuth redirect URIs at startup ──
 log.info({
   googleCallback: `${process.env.BASE_URL}/auth/google/callback`,
@@ -170,6 +201,7 @@ router.post('/signup', express.json(), async (req, res) => {
     });
     await seedAutoJourneyConfig(id);
     await seedLoyaltyConfig(id);
+    await seedPlatformFlowAssignment(id);
     const ownerUser = await ensureOwnerUser(id, ownerName.trim());
     const token = jwt.sign({
       restaurantId: id,
@@ -281,6 +313,7 @@ router.post('/google', express.json(), async (req, res) => {
       });
       await seedAutoJourneyConfig(restaurantId);
       await seedLoyaltyConfig(restaurantId);
+      await seedPlatformFlowAssignment(restaurantId);
       approvalStatus  = 'pending';
       needsOnboarding = true;
     }
@@ -366,6 +399,7 @@ router.get('/google/callback', async (req, res) => {
         campaigns_enabled: false,
         created_at: new Date(), updated_at: new Date(),
       });
+      await seedPlatformFlowAssignment(restaurantId);
     }
 
     // 4. Issue JWT
@@ -2306,4 +2340,4 @@ async function requireApproved(req, res, next) {
   }
 }
 
-module.exports = { router, requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS, ensureOwnerUser, _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };
+module.exports = { router, requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS, ensureOwnerUser, seedPlatformFlowAssignment, _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };
