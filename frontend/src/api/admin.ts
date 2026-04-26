@@ -224,6 +224,11 @@ export async function bulkUpdateByCity(body: RequestBody): Promise<unknown> {
   return data;
 }
 
+export async function bulkTogglePincodes(body: RequestBody): Promise<unknown> {
+  const { data } = await client.patch('/api/admin/pincodes/bulk-toggle', body);
+  return data;
+}
+
 // ── Applications ────────────────────────────────────────────────────
 
 export async function getApplications(): Promise<unknown> {

@@ -12,6 +12,7 @@ import {
   importPincodes,
   getPincodeCities,
   bulkUpdateByCity,
+  bulkTogglePincodes,
 } from '../../../api/admin';
 
 const PAGE_SIZE = 50;
@@ -66,7 +67,25 @@ interface ImportPreview { total: number; list: string[] }
 
 interface BulkUpdateResult { updated?: number }
 
+interface BulkToggleResult { modifiedCount?: number; matchedCount?: number }
+
 interface ImportResult { inserted?: number; skipped?: number }
+
+type GroupToggleVariant = 'enable' | 'disable' | 'mixed';
+
+function classifyGroup(rowsForGroup: PincodeRow[]): GroupToggleVariant {
+  if (!rowsForGroup.length) return 'enable';
+  let allOn = true;
+  let allOff = true;
+  for (const r of rowsForGroup) {
+    if (r.enabled) allOff = false;
+    else allOn = false;
+    if (!allOn && !allOff) break;
+  }
+  if (allOn) return 'disable';
+  if (allOff) return 'enable';
+  return 'mixed';
+}
 
 function fmtDate(d?: string): string {
   if (!d) return '—';
@@ -134,6 +153,11 @@ export default function AdminPincodesPage() {
   const [cityBusy, setCityBusy] = useState<string | null>(null);
   const [stateBusy, setStateBusy] = useState<string | null>(null);
   const [cityRowBusy, setCityRowBusy] = useState<string | null>(null);
+
+  // In-table inline group toggles (separate from the "By City" view's busy
+  // keys above). Keyed by state (state heading row) or "state|city" (city
+  // sub-heading row inside the pincode table view).
+  const [inlineGroupBusy, setInlineGroupBusy] = useState<string | null>(null);
 
   const refreshStats = async () => {
     try {
@@ -464,6 +488,36 @@ export default function AdminPincodesPage() {
     }
   };
 
+  // In-table state/city bulk toggle. Calls the new
+  // PATCH /api/admin/pincodes/bulk-toggle endpoint and refreshes the
+  // current pincode page + stats. `city` is optional — omit for
+  // state-scoped bulk action.
+  const doInlineBulkToggle = async (state: string, city: string | undefined, active: boolean) => {
+    const key = city ? `${state}|${city}` : state;
+    setInlineGroupBusy(key);
+    try {
+      const filter: { state: string; city?: string } = { state };
+      if (city) filter.city = city;
+      const res = (await bulkTogglePincodes({ filter, active })) as BulkToggleResult | null;
+      const n = res?.modifiedCount || 0;
+      await refreshStats();
+      await load();
+      // City counts feed both dropdowns and the "By City" view; refresh so
+      // they stay in sync with the inline toggle.
+      await loadCities();
+      const scope = city ? `${city}, ${state}` : state;
+      showToast(
+        `${active ? 'Enabled' : 'Disabled'} ${fmtNum(n)} pincodes in ${scope}`,
+        'success'
+      );
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Bulk toggle failed', 'error');
+    } finally {
+      setInlineGroupBusy(null);
+    }
+  };
+
   const handleCityPinToggle = async (city: string, state: string, pc: string, currentEnabled: boolean) => {
     const key = cityKey(city, state);
     setCityPincodes((prev) => ({
@@ -561,6 +615,8 @@ export default function AdminPincodesPage() {
           page={page}
           setPage={setPage}
           totalPages={totalPages}
+          inlineGroupBusy={inlineGroupBusy}
+          doInlineBulkToggle={doInlineBulkToggle}
         />
       )}
 
@@ -617,6 +673,8 @@ interface PincodeViewProps {
   page: number;
   setPage: (next: number | ((x: number) => number)) => void;
   totalPages: number;
+  inlineGroupBusy: string | null;
+  doInlineBulkToggle: (state: string, city: string | undefined, active: boolean) => Promise<void>;
 }
 
 function PincodeView(p: PincodeViewProps) {
@@ -637,6 +695,7 @@ function PincodeView(p: PincodeViewProps) {
             style={{ padding: '.35rem .5rem' }}
           >
             <option value="">All States</option>
+            <option disabled value="">──────────────</option>
             {p.stateOptions.map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
@@ -817,9 +876,41 @@ function renderPincodeRows(p: PincodeViewProps) {
     return a.pincode.localeCompare(b.pincode);
   };
 
+  // Flat (filtered) mode: when stateFilter is set, group rows by city under
+  // an implicit single state and render city sub-headings between buckets.
   if (!p.isGroupedMode) {
     const sorted = [...p.rows].sort(sortByCityPincode);
-    return sorted.map((r) => <PincodeTableRow key={r.pincode} r={r} p={p} />);
+    if (!p.stateFilter) {
+      return sorted.map((r) => <PincodeTableRow key={r.pincode} r={r} p={p} />);
+    }
+    const cityBuckets = new Map<string, PincodeRow[]>();
+    for (const r of sorted) {
+      const k = r.city || 'Other';
+      const arr = cityBuckets.get(k);
+      if (arr) arr.push(r);
+      else cityBuckets.set(k, [r]);
+    }
+    const out: ReactNode[] = [];
+    const cityEntries = Array.from(cityBuckets.entries());
+    cityEntries.forEach(([cityName, rowsForCity], i) => {
+      out.push(
+        <CityHeaderRow
+          key={`city-hdr-${p.stateFilter}-${cityName}`}
+          state={p.stateFilter}
+          city={cityName}
+          rowsForCity={rowsForCity}
+          inlineGroupBusy={p.inlineGroupBusy}
+          doInlineBulkToggle={p.doInlineBulkToggle}
+        />
+      );
+      for (const r of rowsForCity) {
+        out.push(<PincodeTableRow key={`${cityName}-${r.pincode}`} r={r} p={p} />);
+      }
+      if (i < cityEntries.length - 1) {
+        out.push(<GroupSpacerRow key={`city-sp-${p.stateFilter}-${cityName}`} subtle />);
+      }
+    });
+    return out;
   }
 
   // Grouped: bucket by state, sort state names alphabetically, sort rows
@@ -831,36 +922,156 @@ function renderPincodeRows(p: PincodeViewProps) {
     if (arr) arr.push(r);
     else buckets.set(k, [r]);
   }
-  const sortedStates = Array.from(buckets.keys()).sort((a, b) => a.localeCompare(b));
+  const stateEntries = Array.from(buckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([st, rs]) => [st, rs.slice().sort(sortByCityPincode)] as const);
   const out: ReactNode[] = [];
-  for (const st of sortedStates) {
+  stateEntries.forEach(([st, rowsForState], i) => {
     out.push(
-      <tr key={`hdr-${st}`}>
-        <td
-          colSpan={6}
-          style={{
-            background: 'var(--ink2)',
-            padding: '.5rem .75rem',
-            fontSize: '.75rem',
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '.05em',
-            color: 'var(--fg)',
-            position: 'sticky',
-            top: 0,
-            zIndex: 1,
-          }}
-        >
-          {st}
-        </td>
-      </tr>
+      <StateHeaderRow
+        key={`hdr-${st}`}
+        state={st}
+        rowsForState={rowsForState}
+        inlineGroupBusy={p.inlineGroupBusy}
+        doInlineBulkToggle={p.doInlineBulkToggle}
+      />
     );
-    const rowsForState = (buckets.get(st) || []).slice().sort(sortByCityPincode);
     for (const r of rowsForState) {
       out.push(<PincodeTableRow key={`${st}-${r.pincode}`} r={r} p={p} />);
     }
-  }
+    if (i < stateEntries.length - 1) {
+      out.push(<GroupSpacerRow key={`sp-${st}`} />);
+    }
+  });
   return out;
+}
+
+interface StateHeaderRowProps {
+  state: string;
+  rowsForState: PincodeRow[];
+  inlineGroupBusy: string | null;
+  doInlineBulkToggle: (state: string, city: string | undefined, active: boolean) => Promise<void>;
+}
+
+function StateHeaderRow({ state, rowsForState, inlineGroupBusy, doInlineBulkToggle }: StateHeaderRowProps) {
+  const variant = classifyGroup(rowsForState);
+  const busy = inlineGroupBusy === state;
+  // For variant: 'disable' (all on) → click sends active=false; for
+  // 'enable' / 'mixed' → click sends active=true.
+  const nextActive = variant !== 'disable';
+  const label = variant === 'disable' ? 'Disable All' : 'Enable All';
+  const btnClass =
+    variant === 'disable' ? 'btn-del btn-sm' :
+    variant === 'enable'  ? 'btn-p btn-sm'   :
+    'btn-p btn-sm';
+
+  return (
+    <tr>
+      <td
+        colSpan={6}
+        style={{
+          background: 'var(--ink2)',
+          padding: '.5rem .75rem',
+          fontSize: '.78rem',
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '.05em',
+          color: 'var(--fg)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
+          <span>{state}</span>
+          <span style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+            {fmtNum(rowsForState.length)} pincodes
+          </span>
+          <button
+            type="button"
+            className={btnClass}
+            style={{ marginLeft: 'auto' }}
+            disabled={busy}
+            onClick={() => doInlineBulkToggle(state, undefined, nextActive)}
+            title={
+              variant === 'mixed'
+                ? `Mixed — click to enable all in ${state}`
+                : `Click to ${nextActive ? 'enable' : 'disable'} all in ${state}`
+            }
+          >
+            {busy ? '…' : label}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+interface CityHeaderRowProps {
+  state: string;
+  city: string;
+  rowsForCity: PincodeRow[];
+  inlineGroupBusy: string | null;
+  doInlineBulkToggle: (state: string, city: string | undefined, active: boolean) => Promise<void>;
+}
+
+function CityHeaderRow({ state, city, rowsForCity, inlineGroupBusy, doInlineBulkToggle }: CityHeaderRowProps) {
+  const variant = classifyGroup(rowsForCity);
+  const key = `${state}|${city}`;
+  const busy = inlineGroupBusy === key;
+  const nextActive = variant !== 'disable';
+  const label = variant === 'disable' ? 'Disable All' : 'Enable All';
+  const btnClass =
+    variant === 'disable' ? 'btn-del btn-sm' :
+    variant === 'enable'  ? 'btn-p btn-sm'   :
+    'btn-p btn-sm';
+
+  return (
+    <tr>
+      <td
+        colSpan={6}
+        style={{
+          background: 'rgba(127,127,127,0.08)',
+          padding: '.4rem .75rem',
+          fontSize: '.78rem',
+          fontWeight: 600,
+          color: 'var(--fg)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
+          <span>{city}</span>
+          <span style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 500 }}>
+            {fmtNum(rowsForCity.length)} pincodes
+          </span>
+          <button
+            type="button"
+            className={btnClass}
+            style={{ marginLeft: 'auto' }}
+            disabled={busy}
+            onClick={() => doInlineBulkToggle(state, city, nextActive)}
+            title={
+              variant === 'mixed'
+                ? `Mixed — click to enable all in ${city}`
+                : `Click to ${nextActive ? 'enable' : 'disable'} all in ${city}`
+            }
+          >
+            {busy ? '…' : label}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// Full-width visual break between state (or city) groups in the table.
+function GroupSpacerRow({ subtle = false }: { subtle?: boolean }) {
+  return (
+    <tr style={{ background: 'transparent', pointerEvents: 'none', height: '1.5rem' }}>
+      <td colSpan={6} style={{ padding: 0 }}>
+        <div style={{ borderTop: subtle ? '1px solid var(--bd)' : '2px solid var(--bd)' }} />
+      </td>
+    </tr>
+  );
 }
 
 interface PincodeTableRowProps { r: PincodeRow; p: PincodeViewProps }
