@@ -3513,11 +3513,15 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
       }
       const linkedCatalog = commerceSettings.id || commerceSettings.catalog_id;
       if (linkedCatalog && String(linkedCatalog) !== String(effectiveCatalogId)) {
-        // Trust the DB. The `id` from commerce_settings is the settings
-        // entity id (not a catalog id), so a "mismatch" here is expected
-        // and meaningless — overriding the DB value with it produced an
-        // invalid catalog_id and broke MPM sends.
-        log.info({ dbCatalogId: effectiveCatalogId, commerceSettingsId: linkedCatalog }, '_sendBranchMenu: commerce_settings id differs from DB catalog (informational)');
+        // DB is authoritative — menu_items.retailer_id values are filtered
+        // against the DB catalog id, and Meta's whatsapp_commerce_settings
+        // can hold a stale phantom catalog id (Apr 26 incident: phantom
+        // 2107642493135111 vs real 1623100592347036, not flippable via
+        // Graph or UI). Stay on the DB id; warn so the drift is visible.
+        log.warn({
+          dbCatalogId: effectiveCatalogId,
+          metaCatalogId: linkedCatalog,
+        }, '_sendBranchMenu: Catalog mismatch — using DB catalog (Meta whatsapp_commerce_settings stale)');
       }
     } catch (preflightErr) {
       log.warn({ err: preflightErr }, '_sendBranchMenu: Preflight check failed (non-blocking)');
