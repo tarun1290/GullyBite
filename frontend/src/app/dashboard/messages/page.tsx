@@ -207,7 +207,8 @@ export default function MessagesPage() {
                     <button
                       key={value}
                       type="button"
-                      className={`btn-sm msg-filter-btn${msgFilter === value ? ' active' : ''}`}
+                      className={msgFilter === value ? 'btn-p btn-sm' : 'btn-g btn-sm'}
+                      aria-pressed={msgFilter === value}
                       onClick={() => setMsgFilter(value)}
                     >
                       {label}
@@ -248,7 +249,8 @@ export default function MessagesPage() {
                     <button
                       key={value || 'all'}
                       type="button"
-                      className={`btn-g btn-sm iss-filter-btn${issFilter === value ? ' active' : ''}`}
+                      className={issFilter === value ? 'btn-p btn-sm' : 'btn-g btn-sm'}
+                      aria-pressed={issFilter === value}
                       onClick={() => setIssFilter(value)}
                     >
                       {label}
