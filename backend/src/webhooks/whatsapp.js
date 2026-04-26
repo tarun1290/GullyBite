@@ -1520,6 +1520,15 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
   // Send branch-filtered MPMs (Multi-Product Messages)
   const restaurantDoc = await col('restaurants').findOne({ _id: branch.restaurantId });
   let catalogId = branch.catalogId || branch.catalog_id || restaurantDoc?.meta_catalog_id;
+  // Fallback: older onboarding paths sometimes only persisted catalog_id on
+  // whatsapp_accounts. Read it from there before giving up.
+  if (!catalogId) {
+    const waCatalog = await col('whatsapp_accounts').findOne(
+      { restaurant_id: branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id },
+      { projection: { catalog_id: 1 } }
+    );
+    if (waCatalog?.catalog_id) catalogId = waCatalog.catalog_id;
+  }
   log.info({ branchCatalogId: branch.catalogId, branchCatalog_id: branch.catalog_id, restaurantMetaCatalogId: restaurantDoc?.meta_catalog_id }, 'MPM catalogId source');
   log.info({ catalogId, catalogIdType: typeof catalogId }, 'Resolved catalogId');
   // Ensure catalog_id is a string — Meta API rejects numbers
@@ -1562,9 +1571,11 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
           log.error({ err: linkErr, responseData: linkErr.response?.data }, 'Auto-link failed');
         }
       } else if (String(linkedCatalog) !== String(catalogId)) {
-        // Different catalog linked — use Meta's catalog
-        log.warn({ dbCatalogId: catalogId, metaCatalogId: linkedCatalog }, 'Catalog mismatch — using Meta catalog');
-        catalogId = String(linkedCatalog);
+        // Trust the DB catalog_id. The `id` field in commerce_settings is
+        // the settings entity id, not a catalog id, so comparing the two
+        // produced bogus "mismatches" that overrode the correct DB value
+        // with garbage. Just log and move on.
+        log.info({ dbCatalogId: catalogId, commerceSettingsId: linkedCatalog }, 'Commerce settings id differs from DB catalog (informational)');
       }
     } catch (preflightErr) {
       // Pre-flight failed — proceed anyway, existing error handling will catch 131009
@@ -1611,6 +1622,12 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
             });
           }
           if (!mpm.sections?.length) {
+            console.error('[MPM-PREFLIGHT-ABORT] reason: mpm_no_valid_sections_after_filter', {
+              catalogId: String(catalogId),
+              sectionsBeforeFilter: mpm.sections?.length || 0,
+              restaurantId: branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id,
+              branchId: branch.id,
+            });
             log.warn('MPM has 0 valid sections after filtering — skipping');
             await wa.sendText(pid, token, to, 'Our menu is being set up. Please try again shortly.');
             break;
@@ -1635,6 +1652,12 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
           await wa.sendText(pid, token, to, '👆 Browse the menus above, add items to your cart, and send it when you\'re ready!');
         }
       } else {
+        console.error('[MPM-PREFLIGHT-ABORT] reason: build_returned_zero_mpms', {
+          catalogId: String(catalogId),
+          totalItems: 0,
+          restaurantId: branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id,
+          branchId: branch.id,
+        });
         log.info('No items in branch — sending text menu');
         await sendTextMenu(pid, token, to, branch.id);
       }
@@ -1645,6 +1668,13 @@ const handleLocationMessage = async (msg, customer, conv, waAccount) => {
       );
     }
   } else {
+    console.error('[MPM-PREFLIGHT-ABORT] reason: catalogId_unresolved', {
+      catalogId: null,
+      branchCatalogId: branch.catalogId || branch.catalog_id || null,
+      restaurantMetaCatalogId: restaurantDoc?.meta_catalog_id || null,
+      restaurantId: branch.restaurantId || branch.restaurant_id || waAccount.restaurant_id,
+      branchId: branch.id,
+    });
     log.info('No catalog_id found — sending text menu');
     await sendTextMenu(pid, token, to, branch.id);
   }
@@ -3417,8 +3447,17 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
 async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) {
   const restaurantId = branch.restaurantId || branch.restaurant_id;
 
-  // Resolve catalogId — branch first, then restaurant fallback
+  // Resolve catalogId — branch first, then restaurant fallback, then
+  // whatsapp_accounts fallback (older onboarding paths sometimes only
+  // persisted catalog_id there).
   let effectiveCatalogId = branch.catalogId || branch.catalog_id || (await col('restaurants').findOne({ _id: restaurantId }))?.meta_catalog_id;
+  if (!effectiveCatalogId) {
+    const waCatalog = await col('whatsapp_accounts').findOne(
+      { restaurant_id: restaurantId },
+      { projection: { catalog_id: 1 } }
+    );
+    if (waCatalog?.catalog_id) effectiveCatalogId = waCatalog.catalog_id;
+  }
   if (effectiveCatalogId && typeof effectiveCatalogId !== 'string') effectiveCatalogId = String(effectiveCatalogId);
 
   // Branch confirmation message — show nearest branch name + distance
@@ -3498,8 +3537,11 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
       }
       const linkedCatalog = commerceSettings.id || commerceSettings.catalog_id;
       if (linkedCatalog && String(linkedCatalog) !== String(effectiveCatalogId)) {
-        log.warn({ dbCatalogId: effectiveCatalogId, metaCatalogId: linkedCatalog }, '_sendBranchMenu: Catalog mismatch — using Meta catalog');
-        effectiveCatalogId = String(linkedCatalog);
+        // Trust the DB. The `id` from commerce_settings is the settings
+        // entity id (not a catalog id), so a "mismatch" here is expected
+        // and meaningless — overriding the DB value with it produced an
+        // invalid catalog_id and broke MPM sends.
+        log.info({ dbCatalogId: effectiveCatalogId, commerceSettingsId: linkedCatalog }, '_sendBranchMenu: commerce_settings id differs from DB catalog (informational)');
       }
     } catch (preflightErr) {
       log.warn({ err: preflightErr }, '_sendBranchMenu: Preflight check failed (non-blocking)');
@@ -3544,6 +3586,13 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
             });
           }
           if (!mpm.sections?.length) {
+            console.error('[MPM-PREFLIGHT-ABORT] reason: mpm_no_valid_sections_after_filter', {
+              catalogId: String(effectiveCatalogId),
+              sectionsBeforeFilter: mpm.sections?.length || 0,
+              restaurantId,
+              branchId: branch.id,
+              source: '_sendBranchMenu',
+            });
             log.warn('_sendBranchMenu: MPM has 0 valid sections after filtering — skipping');
             await wa.sendText(pid, token, to, 'Our menu is being set up. Please try again shortly.');
             break;
@@ -3567,6 +3616,13 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
           await wa.sendText(pid, token, to, '👆 Browse the menus above, add items to your cart, and send it when you\'re ready!');
         }
       } else {
+        console.error('[MPM-PREFLIGHT-ABORT] reason: build_returned_zero_mpms', {
+          catalogId: String(effectiveCatalogId),
+          totalItems: 0,
+          restaurantId,
+          branchId: branch.id,
+          source: '_sendBranchMenu',
+        });
         await sendTextMenu(pid, token, to, branch.id);
       }
     } catch (e) {
@@ -3574,6 +3630,13 @@ async function _sendBranchMenu(pid, token, to, branch, conv, customer, address) 
       await wa.sendCatalog(pid, token, to, effectiveCatalogId, `🍽️ Here's our menu from *${branch.name}*!\n\nBrowse and add items to your cart.`);
     }
   } else {
+    console.error('[MPM-PREFLIGHT-ABORT] reason: catalogId_unresolved', {
+      catalogId: null,
+      branchCatalogId: branch.catalogId || branch.catalog_id || null,
+      restaurantId,
+      branchId: branch.id,
+      source: '_sendBranchMenu',
+    });
     await wa.sendText(pid, token, to, `🍽️ Welcome to *${branch.name}*! Our catalog is being set up. Please check back shortly.`);
   }
 }

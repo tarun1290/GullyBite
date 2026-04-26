@@ -67,7 +67,7 @@ interface ImportPreview { total: number; list: string[] }
 
 interface BulkUpdateResult { updated?: number }
 
-interface BulkToggleResult { modifiedCount?: number; matchedCount?: number }
+interface BulkToggleResult { modifiedCount?: number; matchedCount?: number; affectedRestaurants?: number }
 
 interface ImportResult { inserted?: number; skipped?: number }
 
@@ -510,6 +510,16 @@ export default function AdminPincodesPage() {
         `${active ? 'Enabled' : 'Disabled'} ${fmtNum(n)} pincodes in ${scope}`,
         'success'
       );
+      // Disable-only follow-up: warn the admin if any tenants have a
+      // branch in the just-disabled area. Informational — the backend
+      // does not auto-pause those tenants.
+      const affected = res?.affectedRestaurants || 0;
+      if (!active && affected > 0) {
+        showToast(
+          `${fmtNum(n)} pincodes disabled. ${fmtNum(affected)} restaurant${affected === 1 ? '' : 's'} in this area may no longer be serviceable.`,
+          'warning'
+        );
+      }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       showToast(e?.response?.data?.error || e?.message || 'Bulk toggle failed', 'error');

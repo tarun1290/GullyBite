@@ -155,8 +155,7 @@ export default function MenuEditorSection({
 
   const isAll = selectedBranchId === '__all__';
   const isUnassigned = selectedBranchId === '__unassigned__';
-  const isAssignedOnly = selectedBranchId === '__assigned__';
-  const isSpecificBranch = !isAll && !isUnassigned && !isAssignedOnly && Boolean(selectedBranchId);
+  const isSpecificBranch = !isAll && !isUnassigned && Boolean(selectedBranchId);
   const currentBranch = isSpecificBranch ? branches.find((b) => b.id === selectedBranchId) : null;
   const hasCatalog = Boolean(currentBranch?.catalog_id);
 
@@ -171,20 +170,14 @@ export default function MenuEditorSection({
         setItems(arr);
         setTotalCount(arr.length);
         setUnassignedCount(arr.length);
-      } else if (isAll || isAssignedOnly) {
+      } else if (isAll) {
         const data = (await getMenuAll()) as MenuAllApi | LooseItem[] | null;
         const groups: MenuGroupApi[] = Array.isArray(data)
           ? (data as unknown as MenuGroupApi[])
           : (data?.groups || []);
-        let flat: LooseItem[] = groups.flatMap((g) => (g.items || []).map((it) => ({
+        const flat: LooseItem[] = groups.flatMap((g) => (g.items || []).map((it) => ({
           ...it, _categoryName: g.name || 'Uncategorized',
         })));
-        if (isAssignedOnly) {
-          flat = flat.filter((it) => {
-            const ids = Array.isArray(it.branch_ids) ? it.branch_ids : [];
-            return it.is_unassigned !== true && (ids.length > 0 || it.branch_id);
-          });
-        }
         setItems(flat);
         const total = !Array.isArray(data) ? data?.total_count : undefined;
         setTotalCount(total ?? flat.length);
@@ -378,7 +371,7 @@ export default function MenuEditorSection({
     setChecked(on ? new Set(items.map((it) => it.id)) : new Set());
   };
 
-  const showBranchBadge = isAll || isUnassigned || isAssignedOnly;
+  const showBranchBadge = isAll || isUnassigned;
 
   interface RenderOpts { isVariantChild?: boolean }
 
@@ -654,7 +647,6 @@ export default function MenuEditorSection({
           disabled={branchesLoading}
         >
           <option value="__all__">All Products ({totalCount})</option>
-          <option value="__assigned__">✅ Assigned only</option>
           <option value="__unassigned__">
             {unassignedCount ? `⚠️ Unassigned (${unassignedCount})` : '⚠️ Unassigned'}
           </option>

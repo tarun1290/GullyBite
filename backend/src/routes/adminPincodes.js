@@ -160,7 +160,11 @@ router.put('/bulk', requireAdminAuth('pincodes', 'write'), async (req, res) => {
 // Body: { filter: { state: string, city?: string }, active: boolean }
 // State-scoped (and optionally city-scoped) bulk enable/disable. The route
 // accepts `active` per public API contract but writes to the schema's
-// `enabled` field. Returns { modifiedCount, matchedCount }.
+// `enabled` field. Returns { modifiedCount, matchedCount, affectedRestaurants }.
+//
+// `affectedRestaurants` is informational — for disable actions it tells
+// the admin how many tenants have at least one branch in the just-disabled
+// area so they can follow up. We do NOT auto-pause those tenants.
 router.patch('/bulk-toggle', requireAdminAuth('pincodes', 'write'), async (req, res) => {
   try {
     const { filter, active } = req.body || {};
@@ -169,10 +173,32 @@ router.patch('/bulk-toggle', requireAdminAuth('pincodes', 'write'), async (req, 
     }
     const q = { state: String(filter.state) };
     if (filter.city) q.city = String(filter.city);
+
+    // Snapshot the actual pincodes about to be toggled BEFORE the update
+    // — needed for the affected-restaurants count below. Cheap because
+    // these queries are state/city-indexed and the result set is bounded.
+    const affectedPincodes = await col(COLLECTION)
+      .find(q, { projection: { pincode: 1, _id: 0 } })
+      .toArray();
+    const pincodeList = affectedPincodes.map((d) => d.pincode).filter(Boolean);
+
     const r = await col(COLLECTION).updateMany(q, {
       $set: { enabled: !!active, updated_at: new Date() },
     });
-    res.json({ modifiedCount: r.modifiedCount, matchedCount: r.matchedCount });
+
+    let affectedRestaurants = 0;
+    if (!active && pincodeList.length) {
+      const distinct = await col('branches').distinct('restaurant_id', {
+        pincode: { $in: pincodeList },
+      });
+      affectedRestaurants = distinct.length;
+    }
+
+    res.json({
+      modifiedCount: r.modifiedCount,
+      matchedCount: r.matchedCount,
+      affectedRestaurants,
+    });
   } catch (err) {
     log.error({ err }, 'bulk-toggle failed');
     res.status(500).json({ error: 'Bulk toggle failed' });

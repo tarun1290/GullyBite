@@ -348,7 +348,12 @@ export default function BranchFormModal({
       onClose();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
-      showToast(e?.response?.data?.error || e?.message || (isEdit ? 'Failed to update branch' : 'Failed to create branch'), 'error');
+      const code = e?.response?.data?.error;
+      if (code === 'SERVICE_UNAVAILABLE') {
+        showToast("We don't currently deliver to this area. Please check the pincode and try again.", 'error');
+      } else {
+        showToast(code || e?.message || (isEdit ? 'Failed to update branch' : 'Failed to create branch'), 'error');
+      }
     } finally {
       setSaving(false);
     }

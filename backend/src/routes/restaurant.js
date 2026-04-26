@@ -1294,6 +1294,23 @@ router.post('/branches', async (req, res) => {
     } = req.body;
     if (!latitude || !longitude) return res.status(400).json({ error: 'latitude and longitude are required' });
 
+    // Serviceability gate: block branch creation in pincodes that are
+    // either disabled or not on the platform-wide list. This is the first
+    // point in the onboarding flow where a pincode is actually collected
+    // (the auth.js signup/onboarding payloads carry no pincode), so it
+    // doubles as the merchant-side serviceability gate. `isPincodeServiceable`
+    // fails open on lookup errors, so it won't block on transient DB hiccups.
+    if (pincode) {
+      const { isPincodeServiceable } = require('../utils/pincodeValidator');
+      const ok = await isPincodeServiceable(pincode);
+      if (!ok) {
+        return res.status(400).json({
+          error: 'SERVICE_UNAVAILABLE',
+          message: "We don't currently deliver to your area. Please check back soon.",
+        });
+      }
+    }
+
     const branchId = newId();
     const now = new Date();
     const branchSlug = slugify(name, 20) || branchId.slice(0, 8);
@@ -2475,28 +2492,12 @@ router.post('/menu/csv', async (req, res) => {
     // Load all branches for this restaurant
     let allBranches = await col('branches').find({ restaurant_id: req.restaurantId }).toArray();
 
-    // Reject the upload if any branch name in the CSV doesn't match an
-    // existing branch. Auto-creation was removed because skeleton branches
-    // (no FSSAI/GST/coords) silently broke catalog sync, delivery routing,
-    // and proximity queries — the user has to fix them later anyway. Force
-    // the create-then-upload sequence so every branch ships with full data.
-    if (branchCol) {
-      const uploadBranchNames = [...new Set(items.map(r => (String(r[branchCol] || '')).trim()).filter(Boolean))];
-      const unknownBranches = uploadBranchNames.filter(
-        bn => !allBranches.some(b =>
-          (b.name || '').toLowerCase().trim() === bn.toLowerCase() ||
-          (b.branch_slug || '') === slugify(bn, 20)
-        )
-      );
-      if (unknownBranches.length) {
-        return res.status(400).json({
-          error: 'Branch mismatch',
-          message: `The following branches in your CSV do not exist yet: ${unknownBranches.join(', ')}. Please create them manually in Settings → Branches first, then re-upload.`,
-          unknown_branches: unknownBranches,
-        });
-      }
-    }
-
+    // Soft-assignment policy: items whose XLSX branch name doesn't match a
+    // DB branch are routed to the UNASSIGNED bucket (branch_id: null) so the
+    // upload always succeeds. Previously this returned HTTP 400 — that
+    // forced users to either rename branches or recreate them, neither of
+    // which is the right default. The dashboard's Unassigned filter is the
+    // recovery path.
     if (!allBranches.length) return res.status(400).json({ error: 'No branches found. Create a branch first.' });
 
     // Build branch name→id map (case-insensitive, trimmed, also by slug)
@@ -2506,9 +2507,13 @@ router.post('/menu/csv', async (req, res) => {
       if (b.branch_slug) branchMap[b.branch_slug.toLowerCase()] = String(b._id);
     }
 
-    // Group items by branch
-    const branchGroups = {}; // branchId → items[]
-    const unmatchedBranches = new Set();
+    // Group items by branch. Items whose branch name from the upload
+    // doesn't match any DB branch land in the UNASSIGNED_BUCKET sentinel,
+    // which is translated to branch_id: null at write time below.
+    const UNASSIGNED_BUCKET = '__UNASSIGNED__';
+    const branchGroups = {}; // branchId (or sentinel) → items[]
+    const unknownBranchNames = new Set();
+    let unassignedItemCount = 0;
 
     for (const row of items) {
       let targetBranchId = defaultBranchId;
@@ -2526,8 +2531,9 @@ router.post('/menu/csv', async (req, res) => {
           if (fuzzy) {
             targetBranchId = fuzzy[1];
           } else {
-            unmatchedBranches.add(row[branchCol]);
-            targetBranchId = defaultBranchId || String(allBranches[0]._id);
+            unknownBranchNames.add(String(row[branchCol]).trim());
+            targetBranchId = UNASSIGNED_BUCKET;
+            unassignedItemCount += 1;
           }
         }
       } else if (!targetBranchId) {
@@ -2556,14 +2562,26 @@ router.post('/menu/csv', async (req, res) => {
     const allErrors = [];
 
     for (const [bid, branchItems] of Object.entries(branchGroups)) {
-      const branchDoc = allBranches.find(b => String(b._id) === bid);
-      const branchResult = { branchId: bid, branchName: branchDoc?.name || bid, added: 0, skipped: 0, errors: [] };
-      const mbBranchSlug = branchSlugCache[bid] || 'branch';
+      const isUnassigned = bid === UNASSIGNED_BUCKET;
+      // Sentinel translates to a real null when written to MongoDB.
+      const actualBranchId = isUnassigned ? null : bid;
+      const branchDoc = isUnassigned ? null : allBranches.find(b => String(b._id) === bid);
+      const branchResult = {
+        branchId: actualBranchId,
+        branchName: isUnassigned ? '(Unassigned)' : (branchDoc?.name || bid),
+        added: 0,
+        skipped: 0,
+        errors: [],
+      };
+      // Categories are branch-scoped; for unassigned items we leave
+      // category_id null and let the user re-categorize from the dashboard
+      // after they create/rename the missing branch.
+      const mbBranchSlug = isUnassigned ? 'unassigned' : (branchSlugCache[bid] || 'branch');
 
       // ── Pre-batch category lookups for this branch ──
       const catNames = [...new Set(branchItems.map(r => { const n = _normalizeCSVRow(r); return sanitizeCsvString(n.category || n.cat); }).filter(Boolean))];
       const catCache = {};
-      if (catNames.length) {
+      if (!isUnassigned && catNames.length) {
         const existingCats = await col('menu_categories').find({ branch_id: bid, name: { $in: catNames } }).toArray();
         for (const c of existingCats) catCache[c.name] = String(c._id);
         const newCatNames = catNames.filter(n => !catCache[n]);
@@ -2618,7 +2636,10 @@ router.post('/menu/csv', async (req, res) => {
             filter: { retailer_id: retailerId },
             update: {
               $set: {
-                restaurant_id: req.restaurantId, branch_id: bid, category_id: categoryId,
+                restaurant_id: req.restaurantId,
+                branch_id: actualBranchId,
+                branch_name: isUnassigned ? null : (branchDoc?.name || null),
+                category_id: categoryId,
                 name, description: (row.description || row.desc || '').trim() || name,
                 price_paise: pricePaise, image_url: imageUrl, food_type: foodType, is_bestseller: isBestseller,
                 item_group_id: row.item_group_id || mbAutoGroupId || null, size: mbSizeVal,
@@ -2693,7 +2714,11 @@ router.post('/menu/csv', async (req, res) => {
       branchResult._touchedIds = touchedRetailerIds; // carry forward for stale detection
       perBranch.push(branchResult);
 
-      catalog.autoCreateProductSets(bid).catch(err => logger.error({ err, branchId: bid }, 'Auto-create product sets failed'));
+      // Skip product-set creation for the unassigned bucket — there's no
+      // real branch to attach a product set to.
+      if (!isUnassigned) {
+        catalog.autoCreateProductSets(bid).catch(err => logger.error({ err, branchId: bid }, 'Auto-create product sets failed'));
+      }
     }
 
     // ── Stale item detection: mark items not in upload as unavailable ──
@@ -2701,6 +2726,10 @@ router.post('/menu/csv', async (req, res) => {
     for (const br of perBranch) {
       const touched = br._touchedIds;
       if (!touched || !touched.size) continue;
+      // Don't run stale detection on the Unassigned bucket — items there
+      // come from many uploads, so a single upload can't authoritatively
+      // declare prior unassigned items obsolete.
+      if (br.branchId === null) { delete br._touchedIds; continue; }
 
       // Safety check: skip if upload looks like a partial/test file
       const existingActiveCount = await col('menu_items').countDocuments({ branch_id: br.branchId, is_available: true });
@@ -2729,9 +2758,10 @@ router.post('/menu/csv', async (req, res) => {
       delete br._touchedIds; // clean up internal field before response
     }
 
-    // Queue debounced sync for all affected branches
-    const syncBranchIds = Object.keys(branchGroups);
-    queueSync(req.restaurantId, 'branch', syncBranchIds);
+    // Queue debounced sync for all affected branches. The Unassigned
+    // sentinel isn't a real branch — drop it before queueing.
+    const syncBranchIds = Object.keys(branchGroups).filter((id) => id !== UNASSIGNED_BUCKET);
+    if (syncBranchIds.length) queueSync(req.restaurantId, 'branch', syncBranchIds);
 
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
@@ -2743,12 +2773,16 @@ router.post('/menu/csv', async (req, res) => {
       multi_branch: !!branchCol,
       branch_column_detected: branchCol || null,
       per_branch: perBranch,
-      unmatched_branches: [...unmatchedBranches],
       added: totalAdded,
+      inserted: totalAdded,
       skipped: totalSkipped,
       errors: allErrors,
       total: items.length,
       stale_items: staleResult,
+      unassigned_count: unassignedItemCount,
+      ...(unknownBranchNames.size > 0
+        ? { unassigned_reason: `Branch names not found in dashboard: ${[...unknownBranchNames].join(', ')}` }
+        : {}),
     });
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.bulk_upload_multi', category: 'menu', description: `Multi-branch bulk upload: ${perBranch.length} branches, ${totalAdded} items`, restaurantId: String(req.restaurantId), severity: 'info' });
