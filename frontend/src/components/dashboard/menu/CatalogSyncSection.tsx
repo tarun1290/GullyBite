@@ -202,7 +202,7 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
             <p style={{ color: 'var(--dim)', fontSize: '.84rem' }}>No branches yet.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.35rem' }}>
-              {branches.filter((b) => b.catalog_id).map((b) => (
+              {branches.filter((b) => b.catalog_id && b.is_active !== false).map((b) => (
                 <div
                   key={b.id}
                   style={{
