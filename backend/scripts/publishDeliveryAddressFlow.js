@@ -37,7 +37,7 @@ const { uploadFlowAsset, publishFlow } = require('../src/services/metaFlowsApi')
 
 // Hard-coded target — this script ONLY republishes the GullyBite Delivery
 // Address Flow. Other flows (feedback, etc.) get their own scripts.
-const FLOW_ID = '1295858815785776';
+const FLOW_ID = '26478907788405154';
 const FLOW_JSON_PATH = path.resolve(__dirname, '../flows/address-flow.json');
 
 function logErr(msg, extra) {

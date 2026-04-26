@@ -42,6 +42,9 @@ async function saveAddress(identifier, {
   // and building_street replace the older buildingFloor/street pair.
   recipientName, deliveryPhone, houseNumber, buildingStreet,
   formattedAddress, geocodedAt,
+  // v3.1: optional user-chosen nickname (e.g. "Office", "Mom's house"),
+  // displayed in preference to `label` on the SAVED_ADDRESSES radio list.
+  nickname,
 } = {}) {
   const now = new Date();
   const filter = _customerFilter(identifier);
@@ -60,6 +63,7 @@ async function saveAddress(identifier, {
     customer_id: typeof identifier === 'object' ? identifier.customer_id : null,
     wa_phone: typeof identifier === 'object' ? (identifier.wa_phone || null) : identifier,
     label: label || 'Home',
+    nickname: (nickname || '').toString().trim() || null,
     type: type || null,                            // home | office | other
     full_address: _formatted,
     formatted_address: _formatted,

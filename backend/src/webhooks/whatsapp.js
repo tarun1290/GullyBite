@@ -35,6 +35,42 @@ const memcache = require('../config/memcache');
 const { keys: idemKeys } = require('../utils/withIdempotency');
 const log = require('../utils/logger').child({ component: 'whatsapp' });
 
+// ─── ADDRESS FLOW HELPER ─────────────────────────────────────
+// New flow JSON (id: 26478907788405154) ALWAYS opens on SAVED_ADDRESSES,
+// even for customers with zero saved addresses. The "+ Add new address"
+// affordance is a synthetic radio option (id: "NEW") appended to whatever
+// the user has saved. Centralised here so the 5 greeting/re-engagement
+// sites all use the same payload shape and stay in sync if the flow
+// item shape ever changes again.
+const NEW_ADDRESS_OPTION = Object.freeze({
+  id: 'NEW',
+  title: '+ Add new address',
+  description: '',
+  metadata: '',
+});
+async function _sendSavedAddressesFlow(pid, token, to, restaurant, customer, body, flowCta) {
+  const savedAddrs = await addressSvc.getAddresses({
+    customer_id: customer.id,
+    wa_phone: customer.wa_phone || customer.bsuid,
+  });
+  const formatted = (savedAddrs?.length)
+    ? require('../services/flowManager').formatAddressesForFlow(savedAddrs)
+    : [];
+  const addresses = [...formatted, NEW_ADDRESS_OPTION];
+  await wa.sendFlow(pid, token, to, {
+    body,
+    flowId: restaurant.flow_id,
+    flowCta,
+    screenId: 'SAVED_ADDRESSES',
+    flowData: {
+      screenData: {
+        wa_id: customer.wa_phone || customer.bsuid,
+        addresses,
+      },
+    },
+  });
+}
+
 // Phase 1 flow handler (additive). Gated entirely by env so the legacy
 // flowManager path remains the default. To enable:
 //   PHASE1_FLOW_ENABLED=true
@@ -833,13 +869,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
         // Trigger address Flow
         const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
         if (restaurant?.flow_id) {
-          const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
-          if (savedAddrs?.length > 0) {
-            const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
-            await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } } });
-          } else {
-            await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
-          }
+          await _sendSavedAddressesFlow(pid, token, to, restaurant, customer, 'Choose your delivery address:', 'Choose Address');
         } else {
           await wa.sendLocationRequest(pid, token, to);
         }
@@ -863,25 +893,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
 
     // Immediately send delivery address Flow (no buttons, no waiting)
     if (restaurant?.flow_id) {
-      const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
-      if (savedAddrs?.length > 0) {
-        const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
-        await wa.sendFlow(pid, token, to, {
-          body: 'Choose your delivery address to see our menu:',
-          flowId: restaurant.flow_id,
-          flowCta: 'Choose Address',
-          screenId: 'SAVED_ADDRESSES',
-          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } },
-        });
-      } else {
-        await wa.sendFlow(pid, token, to, {
-          body: 'Set your delivery location to browse our menu:',
-          flowId: restaurant.flow_id,
-          flowCta: 'Set Location',
-          screenId: 'NEW_ADDRESS',
-          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
-        });
-      }
+      await _sendSavedAddressesFlow(pid, token, to, restaurant, customer, 'Choose your delivery address to see our menu:', 'Choose Address');
     } else {
       // Flow is the only supported address path. A restaurant with no
       // flow_id is mis-configured — surface a graceful "not ready" message
@@ -1248,13 +1260,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     // Re-send address Flow
     const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
     if (restaurant?.flow_id) {
-      const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
-      if (savedAddrs?.length > 0) {
-        const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
-        await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } } });
-      } else {
-        await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
-      }
+      await _sendSavedAddressesFlow(pid, token, to, restaurant, customer, 'Choose your delivery address:', 'Choose Address');
     } else {
       await wa.sendLocationRequest(pid, token, to);
     }
@@ -1707,28 +1713,13 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
       '🎉 Great choices! Before we proceed with your order, I need your delivery address.'
     );
 
-    // Trigger address Flow (same as greeting flow)
+    // Trigger address Flow (same as greeting flow). The SAVED_ADDRESSES
+    // screen is the single entry point — empty-list shows just the
+    // synthetic "+ Add new address" radio, which the webhook re-triggers
+    // as a fresh sendFlow on NEW_ADDRESS when the customer selects it.
     const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
     if (restaurant?.flow_id) {
-      const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
-      if (savedAddrs?.length > 0) {
-        const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
-        await wa.sendFlow(pid, token, to, {
-          body: 'Choose your delivery address:',
-          flowId: restaurant.flow_id,
-          flowCta: 'Choose Address',
-          screenId: 'SAVED_ADDRESSES',
-          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } },
-        });
-      } else {
-        await wa.sendFlow(pid, token, to, {
-          body: 'Set your delivery location:',
-          flowId: restaurant.flow_id,
-          flowCta: 'Set Location',
-          screenId: 'NEW_ADDRESS',
-          flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } },
-        });
-      }
+      await _sendSavedAddressesFlow(pid, token, to, restaurant, customer, 'Choose your delivery address:', 'Choose Address');
     } else {
       await wa.sendLocationRequest(pid, token, to);
     }
@@ -1970,13 +1961,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
       const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
       if (restaurant?.flow_id) {
-        const savedAddrs = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
-        if (savedAddrs?.length > 0) {
-          const addressItems = flowMgr.formatAddressesForFlow(savedAddrs);
-          await wa.sendFlow(pid, token, to, { body: 'Choose your delivery address:', flowId: restaurant.flow_id, flowCta: 'Choose Address', screenId: 'SAVED_ADDRESSES', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, addresses: addressItems } } });
-        } else {
-          await wa.sendFlow(pid, token, to, { body: 'Set your delivery location:', flowId: restaurant.flow_id, flowCta: 'Set Location', screenId: 'NEW_ADDRESS', flowData: { screenData: { wa_id: customer.wa_phone || customer.bsuid, customer_name: customer.name || '', customer_phone: customer.wa_phone || '' } } });
-        }
+        await _sendSavedAddressesFlow(pid, token, to, restaurant, customer, 'Choose your delivery address:', 'Choose Address');
       } else {
         // Flow is the only supported address path. Mirror of the
         // greeting-handler not-ready branch.
@@ -3195,16 +3180,28 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
 
   // ── SAVED ADDRESS SELECTED ──
   if (responseData.action === 'select_address') {
-    const addressId = responseData.selected_address_id;
+    // New flow JSON sends `address_id`; older in-flight payloads sent
+    // `selected_address_id` — accept both for the deploy-overlap window.
+    const addressId = responseData.address_id || responseData.selected_address_id;
 
-    // Defensive guard: legacy in-flight messages may still carry
-    // selected_address_id='new_address' from the old synthetic list item.
-    // The new flow uses an EmbeddedLink that navigates inline to
-    // NEW_ADDRESS, so this case shouldn't occur on the published version.
-    // If it does (a stale in-progress flow), no-op and let the customer
-    // retry — do NOT re-fire the flow as a fresh chat message.
-    if (addressId === 'new_address') {
-      log.warn({ customerId: customer.id }, 'select_address received legacy new_address sentinel — no-op');
+    // Synthetic "+ Add new address" radio option (id: "NEW") in the new
+    // flow's SAVED_ADDRESSES list. Re-trigger a fresh sendFlow opening on
+    // NEW_ADDRESS so the customer can fill in the structured form.
+    // (Legacy lowercase 'new_address' from the older synthetic-list flow
+    // is also accepted in case any in-flight messages straddle the deploy.)
+    if (addressId === 'NEW' || addressId === 'new_address') {
+      const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+      if (restaurant?.flow_id) {
+        await wa.sendFlow(pid, token, to, {
+          body: 'Enter your new delivery address:',
+          flowId: restaurant.flow_id,
+          flowCta: 'Add Address',
+          screenId: 'NEW_ADDRESS',
+          flowData: { screenData: {} },
+        });
+      } else {
+        await wa.sendText(pid, token, to, '📍 Please share your location using the 📎 attach icon → Location.');
+      }
       return;
     }
 
@@ -3289,24 +3286,26 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
     const pincode = (responseData.pincode || '').toString().trim() || null;
     const addressLandmark = (responseData.landmark || '').toString().trim() || null;
 
-    // ── Save-as label resolution ──
-    // v3 sends a single 'label' field (Home / Work / Other). v2/v1 sent
-    // address_type (home/office/other) plus an optional address_nickname.
+    // ── Save-as label + nickname resolution ──
+    // v3.1 (current flow JSON): `label` is the Home/Work/Other dropdown
+    // value; `nickname` is a separate optional free-text field that the
+    // SAVED_ADDRESSES card prefers over `label` for the title.
+    // v2/v1 compat: `address_type` + `address_nickname` accepted as well.
     const rawLabel = responseData.label
         || responseData.address_type
         || responseData.address_label
         || 'Home';
     const labelLower = String(rawLabel).toLowerCase();
-    const nickname = (responseData.address_nickname || '').toString().trim();
+    const nickname = (responseData.nickname || responseData.address_nickname || '').toString().trim();
     let label;
     let typeKey;
     if (labelLower === 'home') {
-      label = nickname || 'Home';   typeKey = 'home';
+      label = 'Home';   typeKey = 'home';
     } else if (labelLower === 'work' || labelLower === 'office') {
-      label = nickname || (labelLower === 'work' ? 'Work' : 'Office');
+      label = labelLower === 'work' ? 'Work' : 'Office';
       typeKey = labelLower;
     } else {
-      label = nickname || rawLabel || 'Other';
+      label = rawLabel || 'Other';
       typeKey = 'other';
     }
 
@@ -3352,6 +3351,7 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
       { customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid },
       {
         label,
+        nickname,            // v3.1: separate user-chosen friendly name
         type: typeKey,
         fullAddress: fullAddr,
         formattedAddress: fullAddr,

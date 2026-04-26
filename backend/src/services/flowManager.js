@@ -410,59 +410,49 @@ async function deprecateFlow(flowId) {
 }
 
 // ─── FORMAT ADDRESSES FOR FLOW ───────────────────────────────
-// Converts saved addresses from DB format to NavigationList item format.
-// Respects NavigationList limits: title=30, description=20, metadata=80.
+// Converts saved addresses from DB format to RadioButtonsGroup data-source
+// items for the new flow JSON (flat shape: id/title/description/metadata —
+// NOT the nested main-content shape used by the older NavigationList).
+//
+// Title prefers nickname (user-chosen, e.g. "Office", "Mom's house") over
+// the Save-as label ("Home" / "Work" / "Other"). Old rows without nickname
+// or structured fields fall back to whatever text is available so they
+// still render.
+//
+// The "+ Add new address" synthetic option (id: "NEW") is appended by the
+// CALLER (greeting handler), not here, so this function stays a pure
+// per-address formatter.
 function formatAddressesForFlow(addresses) {
-  const typeIcon = {
-    home:   '\uD83C\uDFE0',
-    work:   '\uD83C\uDFE2',
-    office: '\uD83C\uDFE2',
-    other:  '\uD83D\uDCCD',
-  };
-  const items = addresses.slice(0, 19).map(addr => {
-    const labelText = addr?.label || 'Address';
-    const iconKey = (addr?.type || addr?.address_type || labelText || '').toString().toLowerCase();
-    const icon = typeIcon[iconKey] || '';
-    const title = (icon ? icon + ' ' + labelText : labelText).substring(0, 30);
-
-    // v3 fields with v1/v2 fallback
+  return addresses.slice(0, 19).map((addr) => {
+    // v3 / v1 / v2 fallback chain — never crashes on missing fields
     const recipient  = addr?.recipient_name   || addr?.receiver_name   || '';
     const houseNum   = addr?.house_number     || addr?.building_floor  || addr?.flat_no || '';
     const buildingSt = addr?.building_street  || addr?.street          || '';
     const areaLoc    = addr?.area_locality    || addr?.area            || '';
     const phone      = addr?.delivery_phone   || addr?.receiver_phone  || '';
+    const labelText  = addr?.nickname || addr?.label || 'Address';
 
-    const structuredLine = [houseNum, buildingSt, areaLoc].filter(Boolean).join(', ');
+    const structuredLine = [recipient, houseNum, buildingSt, areaLoc].filter(Boolean).join(', ');
+    const description = structuredLine
+      || addr?.formatted_address
+      || addr?.full_address
+      || addr?.address
+      || '';
 
-    let descSource;
-    if (recipient && structuredLine) descSource = recipient + ' • ' + structuredLine;
-    else if (structuredLine)         descSource = structuredLine;
-    else if (recipient)              descSource = recipient;
-    else descSource = addr?.formatted_address || addr?.full_address || addr?.address || addr?.city || '';
-
-    const cityPin = [addr?.city, addr?.pincode].filter(Boolean).join(', ');
-    let metadata;
-    if (cityPin && phone) metadata = cityPin + ' • 📞 ' + phone;
-    else if (cityPin)     metadata = cityPin;
-    else if (phone)       metadata = '📞 ' + phone;
-    else metadata = addr?.formatted_address || addr?.full_address || addr?.address || '';
+    const metaParts = [
+      addr?.city || null,
+      addr?.pincode || null,
+      phone ? `📞 ${phone}` : null,
+    ].filter(Boolean);
+    const metadata = metaParts.join(' • ') || addr?.formatted_address || addr?.full_address || '';
 
     return {
       id: String(addr._id || addr.id),
-      'main-content': {
-        title,
-        description: String(descSource).substring(0, 20),
-        metadata: String(metadata).substring(0, 80),
-      },
-      ...(addr.is_default ? { badge: 'Default' } : {}),
+      title: String(labelText).substring(0, 30),
+      description: String(description).substring(0, 80),
+      metadata: String(metadata).substring(0, 80),
     };
   });
-
-  // The "+ Add new address" affordance is now an EmbeddedLink on the
-  // SAVED_ADDRESSES screen layout itself (navigates inline to NEW_ADDRESS).
-  // No synthetic list item is appended — clicking it used to round-trip
-  // through the webhook and re-send a separate flow message.
-  return items;
 }
 
 // ─── FEEDBACK/RATING FLOW ────────────────────────────────────
