@@ -28,12 +28,6 @@
               "title": "Home",
               "description": "Tarun • Flat 4B, Green Valley, Madhapur",
               "metadata": "Hyderabad, 500081 • 9876543210"
-            },
-            {
-              "id": "NEW",
-              "title": "+ Add new address",
-              "description": "",
-              "metadata": ""
             }
           ]
         }
@@ -49,8 +43,20 @@
             "type": "RadioButtonsGroup",
             "name": "selected_address_id",
             "label": "Your saved addresses",
-            "required": true,
+            "required": false,
             "data-source": "${data.addresses}"
+          },
+          {
+            "type": "EmbeddedLink",
+            "text": "➕ Add new address",
+            "on-click-action": {
+              "name": "navigate",
+              "next": {
+                "type": "screen",
+                "name": "NEW_ADDRESS"
+              },
+              "payload": {}
+            }
           },
           {
             "type": "Footer",

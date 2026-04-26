@@ -38,25 +38,17 @@ const log = require('../utils/logger').child({ component: 'whatsapp' });
 // ─── ADDRESS FLOW HELPER ─────────────────────────────────────
 // New flow JSON (id: 26478907788405154) ALWAYS opens on SAVED_ADDRESSES,
 // even for customers with zero saved addresses. The "+ Add new address"
-// affordance is a synthetic radio option (id: "NEW") appended to whatever
-// the user has saved. Centralised here so the 5 greeting/re-engagement
-// sites all use the same payload shape and stay in sync if the flow
-// item shape ever changes again.
-const NEW_ADDRESS_OPTION = Object.freeze({
-  id: 'NEW',
-  title: '+ Add new address',
-  description: '',
-  metadata: '',
-});
+// affordance is now a native EmbeddedLink in the Flow JSON that navigates
+// to the NEW_ADDRESS screen — no synthetic radio option, no second
+// sendFlow re-trigger from the webhook.
 async function _sendSavedAddressesFlow(pid, token, to, restaurant, customer, body, flowCta) {
   const savedAddrs = await addressSvc.getAddresses({
     customer_id: customer.id,
     wa_phone: customer.wa_phone || customer.bsuid,
   });
-  const formatted = (savedAddrs?.length)
+  const addresses = (savedAddrs?.length)
     ? require('../services/flowManager').formatAddressesForFlow(savedAddrs)
     : [];
-  const addresses = [...formatted, NEW_ADDRESS_OPTION];
   await wa.sendFlow(pid, token, to, {
     body,
     flowId: restaurant.flow_id,
@@ -3214,26 +3206,10 @@ const handleDeliveryFlowResponse = async (responseData, customer, conv, waAccoun
     // `selected_address_id` — accept both for the deploy-overlap window.
     const addressId = responseData.address_id || responseData.selected_address_id;
 
-    // Synthetic "+ Add new address" radio option (id: "NEW") in the new
-    // flow's SAVED_ADDRESSES list. Re-trigger a fresh sendFlow opening on
-    // NEW_ADDRESS so the customer can fill in the structured form.
-    // (Legacy lowercase 'new_address' from the older synthetic-list flow
-    // is also accepted in case any in-flight messages straddle the deploy.)
-    if (addressId === 'NEW' || addressId === 'new_address') {
-      const restaurant = await col('restaurants').findOne({ _id: restaurantId });
-      if (restaurant?.flow_id) {
-        await wa.sendFlow(pid, token, to, {
-          body: 'Enter your new delivery address:',
-          flowId: restaurant.flow_id,
-          flowCta: 'Add Address',
-          screenId: 'NEW_ADDRESS',
-          flowData: { screenData: {} },
-        });
-      } else {
-        await wa.sendText(pid, token, to, '📍 Please share your location using the 📎 attach icon → Location.');
-      }
-      return;
-    }
+    // "+ Add new address" is now a native EmbeddedLink in the Flow JSON
+    // that navigates inline to NEW_ADDRESS — the webhook will only ever
+    // receive `select_address` with a real saved-address id (or
+    // `add_address` from the NEW_ADDRESS submit handled below).
 
     // Look up saved address
     const addresses = await addressSvc.getAddresses({ customer_id: customer.id, wa_phone: customer.wa_phone || customer.bsuid });
