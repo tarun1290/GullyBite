@@ -751,6 +751,11 @@ export async function restoreBranch(id: string): Promise<unknown> {
   return data;
 }
 
+export async function permanentDeleteBranch(id: string): Promise<unknown> {
+  const { data } = await client.delete(`/api/restaurant/branches/${id}/permanent`);
+  return data;
+}
+
 export async function importBranchesCsv(branchesBody: RequestBody[]): Promise<unknown> {
   const { data } = await client.post('/api/restaurant/branches/csv', { branches: branchesBody });
   return data;

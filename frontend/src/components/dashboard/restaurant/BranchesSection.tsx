@@ -12,6 +12,7 @@ import {
   importBranchesCsv,
   softDeleteBranch,
   restoreBranch,
+  permanentDeleteBranch,
 } from '../../../api/restaurant';
 import type { Branch, BranchHours, BranchHoursDay } from '../../../types';
 
@@ -129,6 +130,7 @@ export default function BranchesSection() {
   const [deletingBranch, setDeletingBranch] = useState<BranchExt | null>(null);
   const [deleting, setDeleting] = useState<boolean>(false);
   const [restoringId, setRestoringId] = useState<string | null>(null);
+  const [permanentDeletingId, setPermanentDeletingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedPane, setExpandedPane] = useState<'hours' | 'menu'>('hours');
   const [savingField, setSavingField] = useState<string | null>(null);
@@ -179,6 +181,25 @@ export default function BranchesSection() {
       showToast(e?.response?.data?.error || e?.message || 'Restore failed', 'error');
     } finally {
       setRestoringId(null);
+    }
+  };
+
+  const handlePermanentDelete = async (b: BranchExt) => {
+    const ok = window.confirm(
+      `Permanently delete "${b.name}"? This will remove the branch and all its menu items from GullyBite and WhatsApp catalog. This cannot be undone.`
+    );
+    if (!ok) return;
+    setPermanentDeletingId(b.id);
+    try {
+      await permanentDeleteBranch(b.id);
+      setBranches((prev) => prev.filter((x) => x.id !== b.id));
+      if (expandedId === b.id) setExpandedId(null);
+      showToast('Branch permanently deleted', 'success');
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Permanent delete failed', 'error');
+    } finally {
+      setPermanentDeletingId(null);
     }
   };
 
@@ -500,17 +521,25 @@ export default function BranchesSection() {
                     style={{
                       padding: '.6rem .95rem .75rem',
                       borderTop: '1px solid var(--bdr,#e5e7eb)',
-                      display: 'flex', justifyContent: 'flex-end',
+                      display: 'flex', justifyContent: 'flex-end', gap: '.4rem',
                     }}
                   >
                     <button
                       type="button"
                       className="btn-g btn-sm"
                       onClick={() => handleRestore(b)}
-                      disabled={restoringId === b.id}
+                      disabled={restoringId === b.id || permanentDeletingId === b.id}
                       style={{ opacity: 1 }}
                     >
                       {restoringId === b.id ? 'Restoring…' : '↺ Restore branch'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-del btn-sm"
+                      onClick={() => handlePermanentDelete(b)}
+                      disabled={restoringId === b.id || permanentDeletingId === b.id}
+                    >
+                      {permanentDeletingId === b.id ? 'Deleting…' : '🗑 Permanently Delete'}
                     </button>
                   </div>
                 )}

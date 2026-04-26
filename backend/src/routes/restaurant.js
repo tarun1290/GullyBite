@@ -1579,6 +1579,105 @@ router.post('/branches/:id/restore', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// DELETE /api/restaurant/branches/:id/permanent
+// Hard-deletes a branch and all its menu items from MongoDB. Fire-and-forget
+// purges the same retailer_ids from the Meta catalog. Guards: the branch
+// must already be soft-deleted (deleted_at set) — paused/inactive branches
+// without deleted_at cannot be permanently removed via this route. The
+// soft-delete → permanent-delete two-step is the safety net.
+router.delete('/branches/:id/permanent', async (req, res) => {
+  try {
+    const branchId = req.params.id;
+    const branch = await col('branches').findOne({ _id: branchId, restaurant_id: req.restaurantId });
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    if (!branch.deleted_at) {
+      return res.status(400).json({ error: 'Branch must be deleted before permanent removal. Use the delete action first.' });
+    }
+
+    // Snapshot retailer_ids BEFORE the Mongo delete so the Meta purge has
+    // something to work with. Cheap projection — just the field we need.
+    const items = await col('menu_items')
+      .find({ branch_id: branchId }, { projection: { retailer_id: 1 } })
+      .toArray();
+    const retailerIds = items.map((i) => i.retailer_id).filter(Boolean);
+
+    // Resolve catalogId + token NOW, while the branch row still exists.
+    // The previous version called catalog.bulkDeleteProducts inside the
+    // fire-and-forget IIFE, which re-reads the branch from Mongo to find
+    // its catalog — and silently no-ops when that read races behind the
+    // deleteOne below. Capture everything the IIFE needs into closure
+    // before we touch Mongo or queue the IIFE.
+    const restaurant = await col('restaurants').findOne(
+      { _id: req.restaurantId },
+      { projection: { meta_catalog_id: 1 } }
+    );
+    const catalogId = restaurant?.meta_catalog_id;
+    const token = process.env.META_SYSTEM_USER_TOKEN;
+
+    await col('menu_items').deleteMany({ branch_id: branchId });
+
+    if (retailerIds.length > 0 && catalogId && token) {
+      // Fire-and-forget Meta purge. Direct items_batch DELETE — no second
+      // Mongo lookup, so the closure is immune to the branch row going
+      // away in the deleteOne below.
+      console.log(`[Branch:PermanentDelete] Deleting ${retailerIds.length} items from Meta catalog for branch ${branchId}`);
+      (async () => {
+        try {
+          const apiVersion = process.env.META_API_VERSION || 'v21.0';
+          const body = {
+            allow_upsert: false,
+            requests: retailerIds.map((id) => ({
+              method: 'DELETE',
+              retailer_id: id,
+            })),
+          };
+          const r = await fetch(
+            `https://graph.facebook.com/${apiVersion}/${catalogId}/items_batch`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify(body),
+            }
+          );
+          const result = await r.json();
+          if (result.handles) {
+            console.log(`[Branch:PermanentDelete] Removed ${retailerIds.length} items from Meta catalog`);
+          } else {
+            console.error('[Branch:PermanentDelete] Meta delete error:', JSON.stringify(result.error || result));
+          }
+        } catch (e) {
+          console.error('[Branch:PermanentDelete] Meta delete error:', e.message);
+        }
+      })();
+    }
+
+    await col('branches').deleteOne({ _id: branchId, restaurant_id: req.restaurantId });
+
+    require('../config/memcache').del(`branch:${branchId}`);
+    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
+
+    log({
+      actorType: 'restaurant', actorId: String(req.restaurantId),
+      actorName: req.restaurant?.business_name || 'Restaurant',
+      action: 'branch.permanently_deleted', category: 'settings',
+      description: `Branch "${branch.name}" permanently deleted (${items.length} menu items removed)`,
+      restaurantId: String(req.restaurantId),
+      resourceType: 'branch', resourceId: branchId,
+      severity: 'warning',
+    });
+
+    console.log(`[Branch:PermanentDelete] Branch ${branch.name} (${branchId}) permanently deleted. Items removed: ${items.length}`);
+    res.json({ success: true, deleted_items: items.length });
+  } catch (e) {
+    req.log.error({ err: e }, 'Permanent branch delete failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // GET /api/restaurant/branches/:branchId/hours — operating hours for a branch
 router.get('/branches/:branchId/hours', async (req, res) => {
   try {
