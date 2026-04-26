@@ -110,7 +110,7 @@ export default function CampaignRoiCard() {
           >
             {SORT_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
-          <button type="button" className="btn-sm" onClick={refetch}>↻</button>
+          <button type="button" className="btn-g btn-sm" onClick={refetch}>↻</button>
         </div>
       </div>
       <div className="tbl">

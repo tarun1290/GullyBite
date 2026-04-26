@@ -156,7 +156,7 @@ export default function CategoriesManager({ branchId, onChange }: CategoriesMana
                   ) : pendingDelete === c.id ? (
                     <>
                       <span style={{ fontSize: '.72rem', color: '#b91c1c' }}>Delete?</span>
-                      <button type="button" className="btn-sm" style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.25rem .6rem', fontSize: '.72rem' }} onClick={() => handleDelete(c.id)}>Yes</button>
+                      <button type="button" className="btn-del btn-sm" onClick={() => handleDelete(c.id)}>Yes</button>
                       <button type="button" className="btn-g btn-sm" onClick={() => setPendingDelete(null)}>No</button>
                     </>
                   ) : (

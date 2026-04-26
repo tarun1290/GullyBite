@@ -697,8 +697,7 @@ export default function AdminIssuesPage() {
                       <button type="button" className="btn-g btn-sm" onClick={() => setRefundOpen(false)}>Cancel</button>
                       <button
                         type="button"
-                        className="btn-sm"
-                        style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
+                        className="btn-del btn-sm"
                         onClick={doRefund}
                       >Refund</button>
                     </div>

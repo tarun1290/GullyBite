@@ -190,8 +190,7 @@ function CampaignActions({ campaign, onChanged }: CampaignActionsProps) {
       {showPause && (
         <button
           type="button"
-          className="btn-sm"
-          style={{ background: '#eab308', color: '#fff' }}
+          className="btn-g btn-sm"
           onClick={() => setConfirm('pause')}
         >
           Pause
@@ -203,8 +202,7 @@ function CampaignActions({ campaign, onChanged }: CampaignActionsProps) {
       {showDelete && (
         <button
           type="button"
-          className="btn-sm"
-          style={{ color: 'var(--red,#dc2626)' }}
+          className="btn-del btn-sm"
           onClick={() => setConfirm('delete')}
         >
           Delete

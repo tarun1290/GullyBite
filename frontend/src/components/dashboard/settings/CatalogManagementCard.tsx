@@ -668,14 +668,9 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"
-          className="btn-sm"
+          className="btn-del btn-sm"
           onClick={handleDelete}
           disabled={!matches || busy}
-          style={{
-            background: matches ? '#dc2626' : '#fca5a5', color: '#fff',
-            border: 'none', borderRadius: 6, padding: '.4rem .9rem',
-            fontWeight: 600, cursor: matches && !busy ? 'pointer' : 'not-allowed',
-          }}
         >
           {busy ? 'Deleting…' : 'Delete catalog'}
         </button>
@@ -728,14 +723,9 @@ function DisconnectModal({ open, onClose, catalogName, onDisconnected }: Disconn
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"
-          className="btn-sm"
+          className="btn-del btn-sm"
           onClick={handleConfirm}
           disabled={busy}
-          style={{
-            background: '#d97706', color: '#fff', border: 'none',
-            borderRadius: 6, padding: '.4rem .9rem', fontWeight: 600,
-            cursor: busy ? 'not-allowed' : 'pointer',
-          }}
         >
           {busy ? 'Disconnecting…' : 'Disconnect'}
         </button>

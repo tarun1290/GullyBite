@@ -130,7 +130,7 @@ export default function MarketingNumberSection() {
         <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <button
             type="button"
-            className="btn-sm"
+            className="btn-g btn-sm"
             onClick={handleLoad}
             disabled={loading || saving}
           >

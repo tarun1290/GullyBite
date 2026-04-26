@@ -156,7 +156,7 @@ export default function AdminRestaurantsPage() {
               placeholder="Search by name, owner, ID…"
               style={{ padding: '.3rem .55rem', border: '1px solid var(--rim)', borderRadius: 6, fontSize: '.8rem', width: 240 }}
             />
-            <button type="button" className="btn-sm" onClick={load} disabled={loading}>
+            <button type="button" className="btn-g btn-sm" onClick={load} disabled={loading}>
               {loading ? '…' : '↻ Refresh'}
             </button>
           </div>
@@ -302,28 +302,27 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
         ) : (
           <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '.25rem', justifyContent: 'flex-end' }}>
             {r.status === 'active' ? (
-              <button type="button" className="btn-sm" style={{ fontSize: '.72rem', color: 'var(--gb-red-500)' }} onClick={() => onAsk('status', { target: 'suspended' })} disabled={busy}>
+              <button type="button" className="btn-del btn-sm" onClick={() => onAsk('status', { target: 'suspended' })} disabled={busy}>
                 Suspend
               </button>
             ) : (
-              <button type="button" className="btn-p btn-sm" style={{ fontSize: '.72rem' }} onClick={() => onAsk('status', { target: 'active' })} disabled={busy}>
+              <button type="button" className="btn-p btn-sm" onClick={() => onAsk('status', { target: 'active' })} disabled={busy}>
                 Activate
               </button>
             )}
-            <button type="button" className="btn-sm" style={{ fontSize: '.72rem' }} onClick={() => onAsk('cap')} disabled={busy}>
+            <button type="button" className="btn-g btn-sm" onClick={() => onAsk('cap')} disabled={busy}>
               Cap
             </button>
             <button
               type="button"
-              className="btn-sm"
-              style={{ fontSize: '.72rem' }}
+              className="btn-g btn-sm"
               onClick={() => (staffPinOpen ? onCancel() : onAsk('staffPin'))}
               disabled={busy}
               aria-expanded={staffPinOpen}
             >
               {staffPinOpen ? 'Close Staff PIN' : 'Staff PIN'}
             </button>
-            <button type="button" className="btn-sm" style={{ fontSize: '.72rem', color: 'var(--gb-red-500)' }} onClick={() => onAsk('delete')} disabled={busy}>
+            <button type="button" className="btn-del btn-sm" onClick={() => onAsk('delete')} disabled={busy}>
               Delete
             </button>
           </div>

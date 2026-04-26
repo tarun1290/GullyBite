@@ -285,8 +285,8 @@ export default function AdminApplicationsPage() {
                                 >Approve</button>
                                 <button
                                   type="button"
-                                  className="btn-sm"
-                                  style={{ fontSize: '.72rem', color: 'var(--gb-red-500)', marginLeft: '.3rem' }}
+                                  className="btn-del btn-sm"
+                                  style={{ marginLeft: '.3rem' }}
                                   disabled={busy}
                                   onClick={() => openConfirm(r, 'reject')}
                                 >Reject</button>

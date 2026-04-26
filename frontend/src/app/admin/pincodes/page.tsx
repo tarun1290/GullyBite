@@ -508,23 +508,17 @@ export default function AdminPincodesPage() {
         <div className="cb" style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '.8rem', color: 'var(--dim)' }}>View:</span>
           <button
-            className="btn-sm"
-            style={{
-              background: view === 'pincode' ? 'var(--pri)' : 'transparent',
-              color: view === 'pincode' ? 'var(--gb-neutral-0)' : 'var(--fg)',
-              border: view === 'pincode' ? 'none' : '1px solid var(--bd)',
-            }}
+            type="button"
+            className={view === 'pincode' ? 'btn-p btn-sm' : 'btn-g btn-sm'}
+            aria-pressed={view === 'pincode'}
             onClick={() => setView('pincode')}
           >
             By Pincode
           </button>
           <button
-            className="btn-sm"
-            style={{
-              background: view === 'city' ? 'var(--pri)' : 'transparent',
-              color: view === 'city' ? 'var(--gb-neutral-0)' : 'var(--fg)',
-              border: view === 'city' ? 'none' : '1px solid var(--bd)',
-            }}
+            type="button"
+            className={view === 'city' ? 'btn-p btn-sm' : 'btn-g btn-sm'}
+            aria-pressed={view === 'city'}
             onClick={() => setView('city')}
           >
             By City
@@ -672,8 +666,8 @@ function PincodeView(p: PincodeViewProps) {
                 {p.bulkConfirm.enabled ? 'Enable' : 'Disable'} all {fmtNum(p.total)} filtered?
               </span>
               <button
-                className="btn-sm"
-                style={{ background: p.bulkConfirm.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
+                type="button"
+                className={p.bulkConfirm.enabled ? 'btn-p btn-sm' : 'btn-del btn-sm'}
                 onClick={() => p.bulkConfirm && p.doBulk(p.bulkConfirm.enabled)}
                 disabled={p.bulkBusy}
               >
@@ -1032,8 +1026,8 @@ function StateAccordion({
                 {stateConfirm.enabled ? 'Enable' : 'Disable'} all {bucket.cities.length} cities?
               </span>
               <button
-                className="btn-sm"
-                style={{ background: stateConfirm.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
+                type="button"
+                className={stateConfirm.enabled ? 'btn-p btn-sm' : 'btn-del btn-sm'}
                 onClick={async () => {
                   await doStateBulk(bucket, stateConfirm.enabled);
                   setStateConfirm(null);
@@ -1145,8 +1139,8 @@ function CityCard({
                 {confirm.enabled ? 'Enable' : 'Disable'} {fmtNum(row.total)}?
               </span>
               <button
-                className="btn-sm"
-                style={{ background: confirm.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
+                type="button"
+                className={confirm.enabled ? 'btn-p btn-sm' : 'btn-del btn-sm'}
                 onClick={async () => {
                   await doCityBulk(row.city, row.state, confirm.enabled);
                   setConfirm(null);

@@ -179,8 +179,7 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
                 <button type="button" className="btn-g btn-sm" onClick={() => setPendingAction(null)}>Cancel</button>
                 <button
                   type="button"
-                  className="btn-sm"
-                  style={{ background: '#d97706', color: '#fff', border: 'none', borderRadius: 6, padding: '.35rem .8rem', fontSize: '.8rem' }}
+                  className="btn-p btn-sm"
                   onClick={confirmPending}
                 >
                   Proceed regardless

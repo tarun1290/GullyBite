@@ -302,7 +302,7 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
                     <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={() => openEdit(c)}>✏ Edit</button>
                     {pendingDelete === c.id ? (
                       <>
-                        <button type="button" className="btn-sm" style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.2rem .5rem', fontSize: '.72rem' }} onClick={() => handleDelete(c.id)}>Delete</button>
+                        <button type="button" className="btn-del btn-sm" onClick={() => handleDelete(c.id)}>Delete</button>
                         <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={() => setPendingDelete(null)}>Cancel</button>
                       </>
                     ) : (

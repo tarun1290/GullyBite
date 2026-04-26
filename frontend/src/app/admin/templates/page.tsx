@@ -148,10 +148,10 @@ export default function AdminTemplatesPage() {
         <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.4rem' }}>
           <h3>📄 WhatsApp Templates</h3>
           <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <button type="button" className="btn-sm" onClick={doSync} disabled={syncing}>
+            <button type="button" className="btn-g btn-sm" onClick={doSync} disabled={syncing}>
               {syncing ? 'Syncing…' : '🔄 Sync from Meta'}
             </button>
-            <button type="button" className="btn-sm" onClick={doSeed} disabled={seeding}>
+            <button type="button" className="btn-g btn-sm" onClick={doSeed} disabled={seeding}>
               {seeding ? 'Seeding…' : '🌱 Seed Defaults'}
             </button>
             <button type="button" className="btn-p btn-sm" onClick={() => setEditing('new')}>
@@ -217,10 +217,10 @@ export default function AdminTemplatesPage() {
                             </span>
                           ) : (
                             <>
-                              <button type="button" className="btn-sm" style={{ fontSize: '.72rem' }} onClick={() => setEditing({ metaId: (t.meta_id || t.id) || '' })}>
+                              <button type="button" className="btn-g btn-sm" onClick={() => setEditing({ metaId: (t.meta_id || t.id) || '' })}>
                                 Edit
                               </button>
-                              <button type="button" className="btn-sm" style={{ fontSize: '.72rem', marginLeft: '.25rem', color: 'var(--red,#dc2626)' }} onClick={() => setPendingDelete(t.name)}>
+                              <button type="button" className="btn-del btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => setPendingDelete(t.name)}>
                                 Delete
                               </button>
                             </>

@@ -489,8 +489,7 @@ export default function MenuEditorSection({
             <>
               <button
                 type="button"
-                className="btn-sm"
-                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.2rem .5rem', fontSize: '.7rem' }}
+                className="btn-del btn-sm"
                 onClick={() => handleDelete(item.id)}
               >
                 Yes
@@ -601,8 +600,7 @@ export default function MenuEditorSection({
               <>
                 <button
                   type="button"
-                  className="btn-sm"
-                  style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.2rem .5rem', fontSize: '.7rem' }}
+                  className="btn-del btn-sm"
                   onClick={() => handleDelete(first.id)}
                 >
                   Yes
@@ -754,7 +752,7 @@ export default function MenuEditorSection({
               <span style={{ fontSize: '.78rem', color: '#b45309' }}>
                 {allClosing ? 'Mark all items unavailable?' : 'Bring all items back online?'}
               </span>
-              <button type="button" className="btn-sm" style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.3rem .7rem', fontSize: '.78rem' }} onClick={handleBulkAvail}>Confirm</button>
+              <button type="button" className="btn-p btn-sm" onClick={handleBulkAvail}>Confirm</button>
               <button type="button" className="btn-g btn-sm" onClick={() => setPendingBulkAvail(null)}>Cancel</button>
             </>
           )}
@@ -763,7 +761,7 @@ export default function MenuEditorSection({
             pendingBulkDelete ? (
               <>
                 <span style={{ fontSize: '.78rem', color: '#b91c1c' }}>Delete {checked.size} item{checked.size > 1 ? 's' : ''}?</span>
-                <button type="button" className="btn-sm" style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '.3rem .7rem', fontSize: '.78rem' }} onClick={handleBulkDelete}>Yes, delete</button>
+                <button type="button" className="btn-del btn-sm" onClick={handleBulkDelete}>Yes, delete</button>
                 <button type="button" className="btn-g btn-sm" onClick={() => setPendingBulkDelete(false)}>Cancel</button>
               </>
             ) : (

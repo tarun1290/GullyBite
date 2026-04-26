@@ -234,11 +234,7 @@ export default function UsersSection() {
                             <div style={{ display: 'flex', gap: '.3rem', justifyContent: 'flex-end' }}>
                               <button
                                 type="button"
-                                className="btn-sm"
-                                style={{
-                                  background: '#dc2626', color: '#fff', border: 'none',
-                                  borderRadius: 6, padding: '.2rem .55rem', fontSize: '.72rem',
-                                }}
+                                className="btn-del btn-sm"
                                 onClick={() => handleToggleActive(u)}
                                 disabled={rowBusy === u.id}
                               >

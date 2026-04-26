@@ -238,15 +238,9 @@ export default function WhatsappSection() {
                   </button>
                   <button
                     type="button"
-                    className="btn-sm"
+                    className="btn-del btn-sm"
                     onClick={handleDisconnect}
                     disabled={disconnecting}
-                    style={{
-                      background: '#dc2626', color: '#fff', border: 'none',
-                      borderRadius: 6, padding: '.4rem .9rem', fontSize: '.8rem',
-                      fontWeight: 600, cursor: disconnecting ? 'not-allowed' : 'pointer',
-                      opacity: disconnecting ? 0.6 : 1,
-                    }}
                   >
                     {disconnecting ? 'Disconnecting…' : 'Yes, disconnect'}
                   </button>

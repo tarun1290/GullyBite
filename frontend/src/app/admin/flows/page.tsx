@@ -272,7 +272,7 @@ export default function AdminFlowsPage() {
         <div className="ch" style={{ justifyContent: 'space-between' }}>
           <h3>📚 Flow Library</h3>
           <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
-            <button type="button" className="btn-sm" onClick={handleSyncFromMeta} disabled={syncing}>
+            <button type="button" className="btn-g btn-sm" onClick={handleSyncFromMeta} disabled={syncing}>
               {syncing ? 'Syncing…' : '🔄 Sync from Meta'}
             </button>
             <button type="button" className="btn-p btn-sm" onClick={() => setEditing('new')}>+ New Flow</button>
@@ -449,22 +449,22 @@ interface RowActionsProps {
 function RowActions({ flow, busy, onEdit, onAsk }: RowActionsProps): ReactNode {
   return (
     <>
-      <button type="button" className="btn-sm" style={{ fontSize: '.7rem' }} onClick={onEdit} disabled={busy}>Edit</button>
+      <button type="button" className="btn-g btn-sm" onClick={onEdit} disabled={busy}>Edit</button>
       {flow.status === 'DRAFT' && (
         <>
-          <button type="button" className="btn-sm" style={{ fontSize: '.7rem', color: 'var(--gb-wa-500)', marginLeft: '.25rem' }} onClick={() => onAsk('publish')} disabled={busy}>Publish</button>
-          <button type="button" className="btn-sm" style={{ fontSize: '.7rem', color: 'var(--red,#dc2626)', marginLeft: '.25rem' }} onClick={() => onAsk('delete')} disabled={busy}>Delete</button>
+          <button type="button" className="btn-p btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('publish')} disabled={busy}>Publish</button>
+          <button type="button" className="btn-del btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('delete')} disabled={busy}>Delete</button>
         </>
       )}
       {flow.status === 'PUBLISHED' && (
         <>
-          <button type="button" className="btn-sm" style={{ fontSize: '.7rem', marginLeft: '.25rem' }} onClick={() => onAsk('assign', { assignType: 'delivery' })} disabled={busy}>Assign Delivery</button>
-          <button type="button" className="btn-sm" style={{ fontSize: '.7rem', marginLeft: '.25rem' }} onClick={() => onAsk('assign', { assignType: 'feedback' })} disabled={busy}>Assign Feedback</button>
-          <button type="button" className="btn-sm" style={{ fontSize: '.7rem', color: 'var(--dim)', marginLeft: '.25rem' }} onClick={() => onAsk('deprecate')} disabled={busy}>Deprecate</button>
+          <button type="button" className="btn-g btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('assign', { assignType: 'delivery' })} disabled={busy}>Assign Delivery</button>
+          <button type="button" className="btn-g btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('assign', { assignType: 'feedback' })} disabled={busy}>Assign Feedback</button>
+          <button type="button" className="btn-g btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('deprecate')} disabled={busy}>Deprecate</button>
         </>
       )}
       {flow.status === 'DEPRECATED' && (
-        <button type="button" className="btn-sm" style={{ fontSize: '.7rem', color: 'var(--red,#dc2626)', marginLeft: '.25rem' }} onClick={() => onAsk('delete')} disabled={busy}>Delete</button>
+        <button type="button" className="btn-del btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('delete')} disabled={busy}>Delete</button>
       )}
     </>
   );
@@ -487,7 +487,7 @@ function InlineConfirm({ pending, busy, onConfirm, onCancel }: InlineConfirmProp
   return (
     <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
       <span style={{ fontSize: '.7rem', color: 'var(--dim)', marginRight: '.2rem' }}>{label}</span>
-      <button type="button" className="btn-sm" style={{ fontSize: '.7rem', background: bg, color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 4, padding: '.15rem .5rem' }} onClick={onConfirm} disabled={busy}>
+      <button type="button" className="btn-p btn-sm" style={{ background: bg }} onClick={onConfirm} disabled={busy}>
         {busy ? '…' : 'Confirm'}
       </button>
       <button type="button" className="btn-g btn-sm" style={{ fontSize: '.7rem' }} onClick={onCancel} disabled={busy}>Cancel</button>

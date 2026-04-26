@@ -266,12 +266,7 @@ function DeliverySection({ orderId, delivery, onDispatch, onCancelDelivery, busy
         {(status === 'assigned' || status === 'picked_up') && (
           <button
             type="button"
-            className="btn-sm"
-            style={{
-              fontSize: '.75rem',
-              background: '#fee2e2', color: '#b91c1c',
-              border: '1px solid #fca5a5', borderRadius: 4, cursor: 'pointer',
-            }}
+            className="btn-del btn-sm"
             onClick={() => onCancelDelivery(orderId)}
             disabled={busy}
           >
@@ -503,11 +498,7 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
                     </button>
                     <button
                       type="button"
-                      className="btn-sm"
-                      style={{
-                        background: '#dc2626', color: '#fff', border: 'none',
-                        borderRadius: 4, padding: '.3rem .7rem', cursor: 'pointer',
-                      }}
+                      className="btn-del btn-sm"
                       onClick={() => handleCancelDelivery(orderId)}
                       disabled={busy}
                     >
