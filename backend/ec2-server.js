@@ -43,6 +43,7 @@ const helmet = require('helmet');
 const path = require('path');
 const mongoSanitize = require('mongo-sanitize');
 const { WebSocketServer } = require('ws');
+const { Server: SocketIOServer } = require('socket.io');
 const jwt = require('jsonwebtoken');
 
 const app = express();
@@ -354,8 +355,60 @@ const wss = new WebSocketServer({ noServer: true });
 const wsManager = require('./src/services/wsManager');
 wsManager.init(wss);
 
+// ─── SOCKET.IO ──────────────────────────────────────────────
+// Socket.io rides the same HTTP server, mounted at its default path
+// (/socket.io/). The existing /ws WebSocketServer is left untouched —
+// the two transports coexist because the manual `upgrade` listener
+// below now only intercepts /ws and lets engine.io handle its own
+// upgrades. Auth is JWT-based (handshake.auth.token) and each socket
+// joins a per-restaurant room (`restaurant:<id>`) so a malicious
+// client can't subscribe to another tenant's events. utils/socketEmit
+// imports the io reference exported below.
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: process.env.FRONTEND_URL || '*',
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
+
+io.use((socket, next) => {
+  const token =
+    socket.handshake.auth?.token ||
+    (socket.handshake.headers?.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!token) return next(new Error('Authentication required'));
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    socket.restaurantId = payload.restaurantId;
+    socket.userId = payload.userId || payload.id;
+    next();
+  } catch (_e) {
+    next(new Error('Invalid token'));
+  }
+});
+
+io.on('connection', (socket) => {
+  if (socket.restaurantId) {
+    socket.join(`restaurant:${socket.restaurantId}`);
+    console.log(`[Socket] Client connected: restaurantId=${socket.restaurantId}`);
+  }
+  socket.on('disconnect', () => {
+    console.log(`[Socket] Client disconnected: restaurantId=${socket.restaurantId}`);
+  });
+});
+
+// Hand the io instance to the emit helper. Setter pattern (instead of
+// module.exports.io = io) because the bottom-of-file `module.exports =
+// app` for the Vercel adapter would clobber a direct exports assignment.
+// Mirrors how wsManager.init(wss) is wired above.
+require('./src/utils/socketEmit').init(io);
+
 server.on('upgrade', (request, socket, head) => {
   const url = new URL(request.url, `http://${request.headers.host}`);
+  // Let socket.io claim its own path (/socket.io/...) — engine.io has
+  // already registered its own upgrade listener on this server, so we
+  // simply stay out of its way instead of destroying the socket.
+  if (url.pathname.startsWith('/socket.io/')) return;
   if (url.pathname !== '/ws') { socket.destroy(); return; }
 
   // Accept both ?restaurant_id=xxx and ?room=restaurant:xxx formats

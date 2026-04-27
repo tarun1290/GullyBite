@@ -266,17 +266,30 @@ const confirmPaidOrder = async (orderId, event) => {
   // Fan out payment.completed — ONCE, only for the process that won the
   // flip. Idempotency guaranteed by the conditional updateOne above.
   try {
-    const ord = await col('orders').findOne({ _id: String(orderId) }, { projection: { restaurant_id: 1, order_number: 1 } });
+    const ord = await col('orders').findOne({ _id: String(orderId) }, { projection: { restaurant_id: 1, order_number: 1, total_rs: 1 } });
     const bus = require('../events');
+    const amountRs = paymentEntity ? (Number(paymentEntity.amount) || 0) / 100 : null;
     bus.emit('payment.completed', {
       orderId: String(orderId),
       restaurantId: ord?.restaurant_id || null,
       orderNumber: ord?.order_number || null,
-      amountRs: paymentEntity ? (Number(paymentEntity.amount) || 0) / 100 : null,
+      amountRs,
       method: paymentEntity?.method || null,
       provider: 'razorpay',
       paymentRef: paymentEntity?.id || null,
     });
+
+    // Socket.io fan-out — fire-and-forget. Gated by the same flip
+    // guarantee, so dashboards only receive one 'order:paid' per
+    // order even with concurrent webhook deliveries.
+    if (ord?.restaurant_id) {
+      const { emitToRestaurant } = require('../utils/socketEmit');
+      emitToRestaurant(ord.restaurant_id, 'order:paid', {
+        orderId: String(orderId),
+        amount: amountRs ?? ord?.total_rs ?? null,
+        paidAt: new Date().toISOString(),
+      });
+    }
   } catch (_) { /* never block payment confirmation on bus failure */ }
 
   // Loyalty redemption commit (only) — fire-and-forget.

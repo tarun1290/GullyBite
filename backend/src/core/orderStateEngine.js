@@ -221,6 +221,21 @@ async function transitionOrder(orderId, nextState, opts = {}) {
     });
   } catch (_) { /* bus load errors must never block the transition */ }
 
+  // Socket.io fan-out — fire-and-forget. Every state transition fans
+  // out as 'order:updated' so the dashboard's open list mutates
+  // without polling. The PAID-specific 'order:new' and 'order:paid'
+  // chimes are emitted by the webhook entrypoints (checkout.js for
+  // WhatsApp native, razorpay.js for hosted) — we only emit the
+  // generic transition event here.
+  try {
+    const { emitToRestaurant } = require('../utils/socketEmit');
+    emitToRestaurant(updated.restaurant_id, 'order:updated', {
+      orderId: String(orderId),
+      status: nextState,
+      updatedAt: now.toISOString(),
+    });
+  } catch (_) { /* socket failures must never block the transition */ }
+
   // ─── ACCEPTANCE TIMEOUT JOB (PAID only) ──────────────────────
   // Schedule the BullMQ acceptance-timeout job so the restaurant has
   // ORDER_ACCEPTANCE_TIMEOUT_MS (default 4 min) to /accept or /decline

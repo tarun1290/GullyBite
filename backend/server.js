@@ -389,10 +389,52 @@ app.use((err, req, res, next) => {
 });
 
 // ─── LOCAL DEV: start server normally ─────────────────────────
-// On Vercel this block is SKIPPED — Vercel imports app directly
+// On Vercel this block is SKIPPED — Vercel imports app directly.
+//
+// Socket.io: only meaningful for local dev here. The Vercel deployment
+// is serverless (no persistent connections), and prod sockets are
+// served by ec2-server.js. We still attach socket.io in dev so
+// `npm run dev` mirrors prod behaviour and developers can exercise
+// the same client code.
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
+  const http = require('http');
+  const jwt = require('jsonwebtoken');
+  const { Server: SocketIOServer } = require('socket.io');
+  const server = http.createServer(app);
+  const io = new SocketIOServer(server, {
+    cors: {
+      origin: process.env.FRONTEND_URL || '*',
+      methods: ['GET', 'POST'],
+      credentials: true,
+    },
+  });
+  io.use((socket, next) => {
+    const token =
+      socket.handshake.auth?.token ||
+      (socket.handshake.headers?.authorization || '').replace(/^Bearer\s+/i, '');
+    if (!token) return next(new Error('Authentication required'));
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      socket.restaurantId = payload.restaurantId;
+      socket.userId = payload.userId || payload.id;
+      next();
+    } catch (_e) {
+      next(new Error('Invalid token'));
+    }
+  });
+  io.on('connection', (socket) => {
+    if (socket.restaurantId) {
+      socket.join(`restaurant:${socket.restaurantId}`);
+      log.info({ component: 'socket', restaurantId: socket.restaurantId }, 'Client connected');
+    }
+    socket.on('disconnect', () => {
+      log.info({ component: 'socket', restaurantId: socket.restaurantId }, 'Client disconnected');
+    });
+  });
+  // Setter pattern — see ec2-server.js for the rationale.
+  require('./src/utils/socketEmit').init(io);
+  server.listen(PORT, () => {
     log.info({ component: 'server', port: PORT }, `GullyBite running on http://localhost:${PORT}`);
     log.info({ component: 'server' }, `WA Webhook  → ${process.env.BASE_URL}/webhooks/whatsapp`);
     log.info({ component: 'server' }, `Pay Webhook → ${process.env.BASE_URL}/webhooks/razorpay`);

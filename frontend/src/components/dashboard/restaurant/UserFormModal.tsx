@@ -173,12 +173,21 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                 return (
                   <label
                     key={b.id}
+                    title={b.name}
                     style={{
                       display: 'flex', alignItems: 'center', gap: '.3rem',
                       fontSize: '.8rem', padding: '.2rem .5rem',
                       border: `1px solid ${on ? 'var(--wa,#22c55e)' : 'var(--rim)'}`,
                       borderRadius: 4, cursor: 'pointer',
                       background: on ? 'rgba(34,197,94,.08)' : 'transparent',
+                      // Even-width chips: each grows from a 120px floor so
+                      // a long branch name (e.g. "banjara hills") doesn't
+                      // make its chip wider than its siblings on the row.
+                      // Truncation on the name span keeps the overflow
+                      // contained without breaking the chip's flex sizing.
+                      flex: '1 1 120px',
+                      minWidth: 120,
+                      overflow: 'hidden',
                     }}
                   >
                     <input
@@ -186,7 +195,16 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                       checked={on}
                       onChange={() => toggleBranch(b.id)}
                     />
-                    {b.name}
+                    <span
+                      style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        minWidth: 0,
+                      }}
+                    >
+                      {b.name}
+                    </span>
                   </label>
                 );
               })}

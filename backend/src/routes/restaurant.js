@@ -2664,10 +2664,18 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
       [{ $set: { onboarding_step: { $max: ['$onboarding_step', 4] } } }]
     );
 
-    // Auto-create product sets, then queue debounced catalog sync
-    catalog.autoCreateProductSets(branchId)
-      .catch(err => logger.error({ err, branchId }, 'Auto-create product sets after CSV upload failed'));
-    queueSync(req.restaurantId, 'branch', [branchId]);
+    // Auto-create product sets, then queue debounced catalog sync.
+    // Sentinel branchIds ('__all__' / '__unassigned__') flow through
+    // here when a user uploads against the menu picker's virtual
+    // buckets — autoCreateProductSets() does a real branch lookup
+    // and would throw "Branch not found" (catalog.js:1475), so we
+    // skip it for sentinels. queueSync also takes only real branch
+    // IDs so it's gated identically.
+    if (branchId && branchId !== '__all__' && branchId !== '__unassigned__') {
+      catalog.autoCreateProductSets(branchId)
+        .catch(err => logger.error({ err, branchId }, 'Auto-create product sets after CSV upload failed'));
+      queueSync(req.restaurantId, 'branch', [branchId]);
+    }
 
     res.json({ success: true, ...results, total: items.length });
 
@@ -2933,8 +2941,13 @@ router.post('/menu/csv', async (req, res) => {
       perBranch.push(branchResult);
 
       // Skip product-set creation for the unassigned bucket — there's no
-      // real branch to attach a product set to.
-      if (!isUnassigned) {
+      // real branch to attach a product set to. The lowercase '__all__' /
+      // '__unassigned__' checks are defensive: bid can only be a real
+      // branch id or UNASSIGNED_BUCKET ('__UNASSIGNED__') here, but we
+      // mirror the same guard at every autoCreateProductSets call site
+      // so a future caller passing the menu-picker sentinels can't
+      // trigger "Branch not found" (catalog.js:1475).
+      if (!isUnassigned && bid !== '__all__' && bid !== '__unassigned__') {
         catalog.autoCreateProductSets(bid).catch(err => logger.error({ err, branchId: bid }, 'Auto-create product sets failed'));
       }
     }
@@ -3258,6 +3271,12 @@ router.post('/product-sets/auto-create', requirePermission('manage_menu'), async
   try {
     const { branchId } = req.body;
     if (!branchId) return res.status(400).json({ error: 'branchId required' });
+    // Reject menu-picker sentinels — autoCreateProductSets needs a real
+    // branch document and would throw "Branch not found" deep inside
+    // catalog.js otherwise. 400 surfaces the misuse to the caller.
+    if (branchId === '__all__' || branchId === '__unassigned__') {
+      return res.status(400).json({ error: 'branchId must be a real branch — sentinel values are not allowed for product set auto-create' });
+    }
     const result = await catalog.autoCreateProductSets(branchId);
     res.json(result);
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }

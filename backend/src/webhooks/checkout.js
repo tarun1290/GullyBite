@@ -552,6 +552,30 @@ async function handleOrder(value) {
       provider: 'whatsapp_checkout',
     });
 
+    // Socket.io fan-out — fire-and-forget. WhatsApp Native checkout
+    // creates the order AND captures payment in one webhook, so we
+    // emit both order:new and order:paid here. Razorpay's webhook
+    // path (src/webhooks/razorpay.js) emits order:paid for the
+    // hosted-checkout flow — the conditional updateOne there
+    // guarantees we only fire it once per order regardless of which
+    // path won.
+    try {
+      const { emitToRestaurant } = require('../utils/socketEmit');
+      emitToRestaurant(waAccount.restaurant_id, 'order:new', {
+        orderId: String(orderId),
+        orderNumber,
+        total: charges.customer_total_rs,
+        branchName: fullOrder?.branch_name || null,
+        customerPhone,
+        createdAt: fullOrder?.created_at || new Date().toISOString(),
+      });
+      emitToRestaurant(waAccount.restaurant_id, 'order:paid', {
+        orderId: String(orderId),
+        amount: charges.customer_total_rs,
+        paidAt: new Date().toISOString(),
+      });
+    } catch (_e) { /* never block checkout completion on socket fan-out */ }
+
     // Auto-dispatch delivery
     if (!isPickup) {
       const deliveryService = require('../services/delivery');

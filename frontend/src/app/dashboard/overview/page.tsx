@@ -6,6 +6,7 @@ import StatCard from '../../../components/StatCard';
 import SetupWizard, { type WizardStep } from '../../../components/dashboard/SetupWizard';
 import { StatusBadge } from '../../../components/dashboard/OrderCard';
 import { useRestaurant } from '../../../contexts/RestaurantContext';
+import { useOrderNotifications } from '../../../hooks/useOrderNotifications';
 import {
   getAnalyticsSummary,
   getBranches,
@@ -64,6 +65,17 @@ export default function OverviewPage() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Socket.io live channel — refetch the dashboard summary whenever a
+  // new order arrives or a payment is confirmed so today's-orders /
+  // today's-revenue counters update without a manual reload. Generic
+  // 'order:updated' transitions are intentionally ignored here — they
+  // don't move the headline numbers and would just thrash the
+  // analytics fetches.
+  useOrderNotifications({
+    onNewOrder: () => { void loadAll(); },
+    onPaid: () => { void loadAll(); },
+  });
 
   const waConnected = isWaConnected(restaurant);
   const profileDone = Boolean(restaurant?.brand_name && restaurant?.phone);

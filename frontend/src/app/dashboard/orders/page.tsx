@@ -6,6 +6,7 @@ import OrderDetailModal from '../../../components/dashboard/OrderDetailModal';
 import { getOrders, updateOrderStatus } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
 import { useNewOrderSound } from '../../../hooks/useNewOrderSound';
+import { useOrderNotifications, type OrderNotification } from '../../../hooks/useOrderNotifications';
 import type { Order, OrderStatus } from '../../../types';
 
 type FilterValue = OrderStatus | 'ALL';
@@ -70,6 +71,25 @@ export default function OrdersPage() {
     const id = setInterval(() => fetchOrders(filter, { silent: true }), REFRESH_MS);
     return () => clearInterval(id);
   }, [filter, fetchOrders]);
+
+  // Socket.io live channel — toasts a new order, then refetches so the
+  // list updates without waiting for the 30s poll. order:updated /
+  // order:paid also refetch silently so status flips and payment-state
+  // changes propagate from the kitchen tablet or webhooks.
+  const handleNewOrder = useCallback((order: OrderNotification) => {
+    showToast(`New order #${order.orderNumber} — ₹${order.total}`, 'success');
+    fetchOrders(filter, { silent: true });
+  }, [showToast, fetchOrders, filter]);
+
+  const handleSilentRefresh = useCallback(() => {
+    fetchOrders(filter, { silent: true });
+  }, [fetchOrders, filter]);
+
+  const { connected: liveConnected } = useOrderNotifications({
+    onNewOrder: handleNewOrder,
+    onUpdated: handleSilentRefresh,
+    onPaid: handleSilentRefresh,
+  });
 
   // Drive the new-order alarm off the polled orders list. Runs after
   // every `orders` change (initial fetch, 30s polls, post-action
@@ -180,8 +200,11 @@ export default function OrdersPage() {
         })}
       </div>
       {!loading && orders.length > 0 && (
-        <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.6rem', padding: '0 .1rem' }}>
-          Showing {orders.length} orders · Last refreshed {refreshedLabel}
+        <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.6rem', padding: '0 .1rem', display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+          <span>Showing {orders.length} orders · Last refreshed {refreshedLabel}</span>
+          {liveConnected && (
+            <span style={{ color: 'var(--green,#10b981)', fontSize: '.72rem' }}>● Live</span>
+          )}
         </div>
       )}
       <div className="card">
