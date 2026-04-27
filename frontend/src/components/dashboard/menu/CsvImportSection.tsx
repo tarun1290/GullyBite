@@ -246,8 +246,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
   // BRANCH_ALIASES. Reactive — flips immediately when mapping changes.
   const branchColumnMapped = Object.values(mapping).includes('branch');
   const useMultiBranchPath = multiBranch || branchColumnMapped;
-  const canUpload = parsed.length > 0
-    && (useMultiBranchPath || (Boolean(selectedBranchId) && !selectedBranchId.startsWith('__')));
+  const canUpload = parsed.length > 0;
 
   const handleUpload = async () => {
     if (!parsed.length) {
@@ -255,8 +254,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
       return;
     }
     if (!useMultiBranchPath && (!selectedBranchId || selectedBranchId.startsWith('__'))) {
-      showToast('Select a target branch or map a Branch Name column', 'error');
-      return;
+      showToast('No branch selected — items will be assigned to the first branch or Unassigned', 'warning');
     }
     setUploading(true);
     setResult(null);
@@ -386,7 +384,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                 <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.3rem' }}>
                   {branchColumnMapped
                     ? 'Items will be routed by branch name from the file. Select a branch only to override.'
-                    : 'Required — select a branch, or map a Branch Name column above.'}
+                    : 'Optional — select a branch, or map a Branch Name column above. Items without a branch match go to Unassigned.'}
                 </div>
               </div>
             )}
