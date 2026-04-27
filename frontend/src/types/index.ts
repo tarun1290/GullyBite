@@ -347,3 +347,66 @@ export interface AdminPlatformAbsorbedFee {
   orderTotal: number;
   createdAt: string;
 }
+
+// ─── Branch Staff Link ─────────────────────────────────────────
+// Surface for GET /api/restaurant/branches/:id/staff-link and
+// POST /api/restaurant/branches/:id/staff-link/generate. The token
+// is the per-branch UUID staff use to resolve their branch at sign-in;
+// staff_login_url is the shareable {FRONTEND_URL}/staff/{token} link.
+export interface BranchStaffLink {
+  staff_access_token: string | null;
+  staff_login_url: string | null;
+  generated_at: string | null;
+}
+
+// ─── Web Staff Interface ───────────────────────────────────────
+// Surfaces consumed by /staff/[staffAccessToken] (web POS for
+// staff who can't install the Android APK — browser fallback).
+//
+// StaffAuthResult mirrors the JSON returned by POST /api/staff/auth
+// (see backend/src/routes/staff.js). We only persist `token` to
+// localStorage as 'staff_web_token'; the rest is rendered once
+// in the orders page header.
+export interface StaffAuthResultRestaurant {
+  id: string;
+  name: string | null;
+  slug: string | null;
+  logo_url: string | null;
+}
+
+export interface StaffAuthResultUser {
+  id: string;
+  name: string;
+  branchId: string;
+  permissions: Record<string, boolean>;
+}
+
+export interface StaffAuthResult {
+  success: true;
+  token: string;
+  restaurant: StaffAuthResultRestaurant;
+  staffUser: StaffAuthResultUser;
+}
+
+// Mirrors the per-row payload of GET /api/staff/orders. Distinct
+// from `Order` (the owner-dashboard shape) because the staff route
+// returns masked phones and a flatter items[] projection.
+export interface StaffOrderItem {
+  name: string;
+  quantity: number;
+}
+
+export interface StaffOrder {
+  id: string;
+  order_number: string | number;
+  customer_name: string;
+  customer_phone_masked: string;
+  total_rs: number;
+  total_amount: number;
+  status: OrderStatus;
+  payment_status: string | null;
+  branch_id: string | null;
+  accepted_at: string | null;
+  created_at: string;
+  items: StaffOrderItem[];
+}

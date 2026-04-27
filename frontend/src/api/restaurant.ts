@@ -4,6 +4,7 @@ import type {
   AnalyticsSummary,
   Branch,
   BranchHours,
+  BranchStaffLink,
   Campaign,
   MenuAllResponse,
   Order,
@@ -762,6 +763,20 @@ export async function restoreBranch(id: string): Promise<unknown> {
 
 export async function permanentDeleteBranch(id: string): Promise<unknown> {
   const { data } = await client.delete(`/api/restaurant/branches/${id}/permanent`);
+  return data;
+}
+
+export async function getBranchStaffLink(branchId: string): Promise<BranchStaffLink> {
+  const { data } = await client.get<BranchStaffLink>(
+    `/api/restaurant/branches/${encodeURIComponent(branchId)}/staff-link`,
+  );
+  return data;
+}
+
+export async function generateBranchStaffLink(branchId: string): Promise<BranchStaffLink> {
+  const { data } = await client.post<BranchStaffLink>(
+    `/api/restaurant/branches/${encodeURIComponent(branchId)}/staff-link/generate`,
+  );
   return data;
 }
 

@@ -10,6 +10,7 @@ import {
   reverseGeocode,
 } from '../../../api/restaurant';
 import type { Branch } from '../../../types';
+import BranchStaffLinkPanel from './BranchStaffLinkPanel';
 
 type GoogleWindow = Window & { google?: typeof google };
 
@@ -526,6 +527,13 @@ export default function BranchFormModal({
               />
             </div>
           </div>
+
+          {/* Staff login link — edit mode only (new branches don't have an
+              id to fetch a link for yet). One additive panel below the
+              form fields, before the action buttons. */}
+          {isEdit && existingBranch && (
+            <BranchStaffLinkPanel branchId={existingBranch.id} />
+          )}
 
           <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
             <button type="button" className="btn-p" onClick={handleSave} disabled={saving}>
