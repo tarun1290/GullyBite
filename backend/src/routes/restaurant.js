@@ -2702,17 +2702,59 @@ router.post('/menu/csv', async (req, res) => {
       raw_headers: items[0] ? Object.keys(items[0]) : [], upload_status: 'processing', created_at: new Date(),
     }).catch(() => {});
 
-    // Detect branch column — check standard aliases, then Meta template custom_label columns
+    // Detect branch column — match against the standard aliases only.
+    // custom_label_2/3 used to be a fallback here, but those are
+    // arbitrary Meta catalog labels with no fixed semantics; treating
+    // them as branch info silently mis-routed Meta-export uploads.
+    // Branch routing now relies on three explicit signals: a header
+    // alias match, section-header rows (preprocessed below), or
+    // defaultBranchId from the frontend.
     const firstRow = items[0];
     let branchCol = Object.keys(firstRow).find(k =>
       BRANCH_COLUMN_ALIASES.includes(k.toLowerCase().trim())
     );
-    // Fallback: check Meta template custom_label_3 (branch slug) and custom_label_2 (branch area)
-    if (!branchCol) {
-      const cl3 = Object.keys(firstRow).find(k => k.toLowerCase().trim() === 'custom_label_3');
-      const cl2 = Object.keys(firstRow).find(k => k.toLowerCase().trim() === 'custom_label_2');
-      if (cl3 && firstRow[cl3]) branchCol = cl3;
-      else if (cl2 && firstRow[cl2]) branchCol = cl2;
+
+    // Section-header detection: a row with only 1–2 non-empty cells whose
+    // first non-empty value is a non-numeric short string is treated as
+    // a branch label that applies to every subsequent row until the next
+    // header. The header row itself is dropped from the upload. We tag
+    // qualifying rows with a virtual __section_branch__ column and, if
+    // no real branchCol was found, point branchCol at this virtual key
+    // so the existing grouping logic below "just works".
+    let sectionHeadersFound = false;
+    let currentSectionBranch = null;
+    const processedItems = [];
+    for (const row of items) {
+      const values = Object.values(row);
+      const nonEmpty = values.filter(v => v !== '' && v != null && String(v).trim() !== '');
+      if (nonEmpty.length > 0 && nonEmpty.length <= 2) {
+        const headerVal = String(nonEmpty[0]).trim();
+        const isNumeric = !isNaN(parseFloat(headerVal));
+        const looksLikeHeader = !isNumeric && headerVal.length >= 2 && headerVal.length <= 60;
+        if (looksLikeHeader) {
+          currentSectionBranch = headerVal.replace(/^(branch|outlet|location|store)[\s:\-]+/i, '').trim();
+          sectionHeadersFound = true;
+          continue; // do not include header row as an item
+        }
+      }
+      if (currentSectionBranch && (!branchCol || !row[branchCol])) {
+        row.__section_branch__ = currentSectionBranch;
+      }
+      processedItems.push(row);
+    }
+
+    if (sectionHeadersFound && !branchCol) {
+      branchCol = '__section_branch__';
+    }
+
+    // Refuse the upload when we have NO branch signal at all — without
+    // a default, a header column, or section headers, every row would
+    // silently land in allBranches[0] and the user would have to chase
+    // down where their items went.
+    if (!defaultBranchId && !branchCol && !sectionHeadersFound) {
+      return res.status(400).json({
+        error: 'No branch information found. Add a branch/outlet column to the file, use section header rows, or select a specific target branch.',
+      });
     }
 
     // Load all branches for this restaurant
@@ -2741,7 +2783,7 @@ router.post('/menu/csv', async (req, res) => {
     const unknownBranchNames = new Set();
     let unassignedItemCount = 0;
 
-    for (const row of items) {
+    for (const row of processedItems) {
       let targetBranchId = defaultBranchId;
 
       if (branchCol && row[branchCol]) {
