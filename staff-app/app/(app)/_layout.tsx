@@ -1,15 +1,16 @@
 import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useRouter } from 'expo-router';
-import { clearAuth } from '@/storage';
+import { useAuth } from '@/store/authStore';
 import { colors } from '@/theme';
 
 function LogoutButton() {
   const router = useRouter();
+  const { logout } = useAuth();
   return (
     <Pressable
       onPress={async () => {
-        await clearAuth();
+        await logout();
         router.replace('/login');
       }}
       style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.7 }]}

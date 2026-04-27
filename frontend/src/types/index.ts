@@ -296,3 +296,54 @@ export interface AdminRestaurant {
   created_at?: string;
   [k: string]: unknown;
 }
+
+// ─── Penalties ─────────────────────────────────────────────────
+// Per-order cancellation_fault_fee record surfaced by
+// GET /api/restaurant/penalties. Mirrors the subdocument written by
+// services/orderCancellationService.handleRestaurantFault.
+export interface CancellationFaultFee {
+  orderId: string;
+  orderNumber: string;
+  amount: number;
+  reason: 'rejected_by_restaurant' | 'restaurant_timeout';
+  orderTotal: number;
+  createdAt: string;
+}
+
+export interface PenaltiesSummary {
+  totalFaultFees: number;
+  faultFees: CancellationFaultFee[];
+}
+
+// ─── Admin Fees Overview ───────────────────────────────────────
+// Surface for GET /api/admin/fees/{summary,restaurant-faults,platform-absorbed}.
+// Mirrors the cancellation_fault_fee + platform_absorbed_fee subdocuments
+// written by services/orderCancellationService.
+export interface AdminFeesSummary {
+  totalRestaurantFaultFees: number;
+  totalPlatformAbsorbedFees: number;
+  restaurantFaultCount: number;
+  platformAbsorbedCount: number;
+}
+
+export interface AdminRestaurantFaultFee {
+  orderId: string;
+  orderNumber: string;
+  restaurantId: string;
+  restaurantName: string;
+  amount: number;
+  reason: 'rejected_by_restaurant' | 'restaurant_timeout';
+  orderTotal: number;
+  createdAt: string;
+}
+
+export interface AdminPlatformAbsorbedFee {
+  orderId: string;
+  orderNumber: string;
+  restaurantId: string;
+  restaurantName: string;
+  amount: number;
+  reason: 'no_rider_found';
+  orderTotal: number;
+  createdAt: string;
+}

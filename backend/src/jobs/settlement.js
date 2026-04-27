@@ -116,6 +116,18 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
   const tds = await calculateTDS(restaurantId, settlementPass1.pre_tds_net_rs);
   const finalCalc = calcSettlement(restaurant, agg, refundTotal, messagingChargesRs, messagingChargesGst, tds.amount);
 
+  // ── Cancellation fault fees (drain accumulator) ─────────────
+  // Fault-cancellation Razorpay-fee debits accumulate on the restaurant
+  // doc as `pending_cancellation_fault_fees_paise` (written by
+  // services/orderCancellationService.handleRestaurantFault). We drain
+  // the accumulator into THIS settlement row's cancellation_fault_fees
+  // field and apply it as a final deduction post-TDS — so platform fee,
+  // referral fee, commission, and TDS amounts in finalCalc stay exactly
+  // as the financial engine produced them (additive change only).
+  // Absent field → treat as 0; restaurant with no faults gets a clean no-op.
+  const pendingFaultFeesPaise = Number(restaurant.pending_cancellation_fault_fees_paise) || 0;
+  const cancellationFaultFeesRs = round2(pendingFaultFeesPaise / 100);
+
   const platformFee = finalCalc.platform_fee_rs;
   const platformFeeGst = finalCalc.platform_fee_gst_rs;
   const platformFeeCalculated = finalCalc.platform_fee_calculated_rs;
@@ -123,7 +135,10 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
   const referralFeeGst = finalCalc.referral_fee_gst_rs;
   const grossRevenue = finalCalc.gross_revenue_rs;
   const preTdsNet = finalCalc.pre_tds_net_rs;
-  const netPayout = finalCalc.net_payout_rs;
+  // netPayout reflects the financial engine's full computation MINUS the
+  // drained cancellation fault fees. This is the only line where the
+  // calculation changes; all other deductions remain inside finalCalc.
+  const netPayout = round2(finalCalc.net_payout_rs - cancellationFaultFeesRs);
   const firstMonth = finalCalc.is_first_billing_month;
 
   if (firstMonth && finalCalc.platform_fee_waived_first_month) {
@@ -139,7 +154,7 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
   const settlementId = newId();
   const now = new Date();
 
-  await col('settlements').insertOne({
+  const insertResult = await col('settlements').insertOne({
     _id: settlementId,
     restaurant_id: restaurantId,
     // Disambiguates from Phase 5 balance-based rows (settlement_type='new').
@@ -181,6 +196,11 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     referral_fee_rs: agg.referral_fee_rs,
     referral_fee_gst_rs: referralFeeGst,
 
+    // Cancellation fault fees (drained from per-restaurant accumulator).
+    // Subtracted from net_payout_rs above; surfaced here so the dashboard
+    // breakdown line in SettlementDetailModal can render it.
+    cancellation_fault_fees: cancellationFaultFeesRs,
+
     // Messaging charges (recovered from negative wallet balance)
     messaging_charges_rs: messagingChargesRs,
     messaging_charges_gst_rs: messagingChargesGst,
@@ -206,6 +226,40 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
     generated_by: 'system',
     created_at: now,
   });
+
+  // ── Drain the cancellation-fault-fees accumulator ───────────
+  // Only after the settlement row insert is acknowledged. If the insert
+  // throws above, control flow never reaches here and the accumulator
+  // is preserved for the next settlement run — fees never lost. The
+  // `pendingFaultFeesPaise > 0` guard avoids a noisy update for the
+  // common case (most restaurants have no faults this period). Done
+  // BEFORE the order-tagging updateMany below so a downstream failure
+  // can't cause a re-insert next run that would re-charge these fees.
+  if (
+    pendingFaultFeesPaise > 0
+    && insertResult?.acknowledged
+    && insertResult?.insertedId
+  ) {
+    try {
+      await col('restaurants').updateOne(
+        { _id: restaurantId },
+        {
+          $set: {
+            pending_cancellation_fault_fees_paise: 0,
+            pending_cancellation_fault_fees_drained_at: now,
+            pending_cancellation_fault_fees_drained_settlement_id: settlementId,
+          },
+        },
+      );
+      log.info({ restaurantId, drainedPaise: pendingFaultFeesPaise, settlementId }, 'cancellation fault fees accumulator drained');
+    } catch (drainErr) {
+      // Non-fatal — the settlement row already records the fee. Worst
+      // case: next run double-counts these fees. Surface loud so ops can
+      // manually zero the accumulator if needed.
+      log.error({ err: drainErr, restaurantId, settlementId, drainedPaise: pendingFaultFeesPaise },
+        'cancellation fault fees accumulator drain FAILED — manual reset may be required');
+    }
+  }
 
   // Mark all orders as settled
   await col('orders').updateMany(

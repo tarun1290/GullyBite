@@ -5140,4 +5140,176 @@ router.get('/customers/overview', requireAdminAuth('restaurants', 'read'), async
   } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
 });
 
+// ─── FEES OVERVIEW (cancellation faults + platform-absorbed) ─────────
+// Three read-only endpoints surfacing the fee subdocuments written by
+// services/orderCancellationService.handleRestaurantFault (REJECTED_BY_RESTAURANT,
+// RESTAURANT_TIMEOUT) and handleNoRiderFault (NO_DELIVERY_AVAILABLE).
+//
+// Auth scope `fees` / level `read` — admins without `permissions.fees`
+// get 403; super_admin bypasses. Same RBAC pattern as the `pincodes`
+// scope already in use across adminPincodes.js.
+
+// Helper: parse from/to ISO strings into a Mongo $gte/$lte range, or
+// return undefined if neither bound is valid.
+function _parseFeesDateRange(from, to) {
+  const range = {};
+  if (from) {
+    const f = new Date(from);
+    if (!Number.isNaN(f.getTime())) range.$gte = f;
+  }
+  if (to) {
+    const t = new Date(to);
+    if (!Number.isNaN(t.getTime())) range.$lte = t;
+  }
+  return Object.keys(range).length ? range : undefined;
+}
+
+// GET /api/admin/fees/summary?from=&to=
+// Aggregate totals + counts across both fault buckets in one pass.
+router.get('/fees/summary', requireAdminAuth('fees', 'read'), async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const dateMatch = _parseFeesDateRange(from, to);
+
+    const baseMatch = (key) => {
+      const m = { [key]: { $exists: true } };
+      if (dateMatch) m[`${key}.created_at`] = dateMatch;
+      return m;
+    };
+
+    const [restaurantFaultAgg, platformAbsorbedAgg] = await Promise.all([
+      col('orders').aggregate([
+        { $match: baseMatch('cancellation_fault_fee') },
+        { $group: { _id: null, total: { $sum: '$cancellation_fault_fee.amount' }, count: { $sum: 1 } } },
+      ]).toArray(),
+      col('orders').aggregate([
+        { $match: baseMatch('platform_absorbed_fee') },
+        { $group: { _id: null, total: { $sum: '$platform_absorbed_fee.amount' }, count: { $sum: 1 } } },
+      ]).toArray(),
+    ]);
+
+    const r = restaurantFaultAgg[0] || { total: 0, count: 0 };
+    const p = platformAbsorbedAgg[0] || { total: 0, count: 0 };
+
+    res.json({
+      totalRestaurantFaultFees: Math.round((Number(r.total) || 0) * 100) / 100,
+      totalPlatformAbsorbedFees: Math.round((Number(p.total) || 0) * 100) / 100,
+      restaurantFaultCount: Number(r.count) || 0,
+      platformAbsorbedCount: Number(p.count) || 0,
+    });
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'fees/summary failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// GET /api/admin/fees/restaurant-faults?from=&to=&restaurantId=
+// Per-order REJECTED_BY_RESTAURANT / RESTAURANT_TIMEOUT fee rows joined
+// with restaurant business_name. Limit 500, newest first.
+router.get('/fees/restaurant-faults', requireAdminAuth('fees', 'read'), async (req, res) => {
+  try {
+    const { from, to, restaurantId } = req.query;
+    const dateMatch = _parseFeesDateRange(from, to);
+
+    const match = { cancellation_fault_fee: { $exists: true } };
+    if (restaurantId) match.restaurant_id = String(restaurantId);
+    if (dateMatch)    match['cancellation_fault_fee.created_at'] = dateMatch;
+
+    const orders = await col('orders').aggregate([
+      { $match: match },
+      { $sort: { 'cancellation_fault_fee.created_at': -1 } },
+      { $limit: 500 },
+      { $project: {
+          _id: 1,
+          order_number: 1,
+          restaurant_id: 1,
+          cancellation_fault_fee: 1,
+      } },
+      // Restaurant business_name lookup. _id on restaurants is a UUID
+      // string, same shape as orders.restaurant_id, so the equality join
+      // works directly.
+      { $lookup: {
+          from: 'restaurants',
+          localField: 'restaurant_id',
+          foreignField: '_id',
+          as: '_restaurant',
+          pipeline: [{ $project: { business_name: 1, name: 1 } }],
+      } },
+    ]).toArray();
+
+    const rows = orders.map((o) => {
+      const fee = o.cancellation_fault_fee || {};
+      const rest = (o._restaurant && o._restaurant[0]) || null;
+      return {
+        orderId: String(o._id),
+        orderNumber: o.order_number || String(o._id),
+        restaurantId: o.restaurant_id || null,
+        restaurantName: rest?.business_name || rest?.name || '—',
+        amount: Number(fee.amount) || 0,
+        reason: fee.reason || null,
+        orderTotal: Number(fee.order_total) || 0,
+        createdAt: fee.created_at || null,
+      };
+    });
+
+    res.json(rows);
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'fees/restaurant-faults failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// GET /api/admin/fees/platform-absorbed?from=&to=
+// Per-order NO_DELIVERY_AVAILABLE fee rows joined with restaurant name.
+// No restaurantId filter — these are platform-side costs to be reconciled
+// with Prorouting, not per-restaurant accounting.
+router.get('/fees/platform-absorbed', requireAdminAuth('fees', 'read'), async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const dateMatch = _parseFeesDateRange(from, to);
+
+    const match = { platform_absorbed_fee: { $exists: true } };
+    if (dateMatch) match['platform_absorbed_fee.created_at'] = dateMatch;
+
+    const orders = await col('orders').aggregate([
+      { $match: match },
+      { $sort: { 'platform_absorbed_fee.created_at': -1 } },
+      { $limit: 500 },
+      { $project: {
+          _id: 1,
+          order_number: 1,
+          restaurant_id: 1,
+          platform_absorbed_fee: 1,
+      } },
+      { $lookup: {
+          from: 'restaurants',
+          localField: 'restaurant_id',
+          foreignField: '_id',
+          as: '_restaurant',
+          pipeline: [{ $project: { business_name: 1, name: 1 } }],
+      } },
+    ]).toArray();
+
+    const rows = orders.map((o) => {
+      const fee = o.platform_absorbed_fee || {};
+      const rest = (o._restaurant && o._restaurant[0]) || null;
+      return {
+        orderId: String(o._id),
+        orderNumber: o.order_number || String(o._id),
+        restaurantId: o.restaurant_id || null,
+        restaurantName: rest?.business_name || rest?.name || '—',
+        amount: Number(fee.amount) || 0,
+        reason: fee.reason || null,
+        orderTotal: Number(fee.order_total) || 0,
+        createdAt: fee.created_at || null,
+      };
+    });
+
+    res.json(rows);
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'fees/platform-absorbed failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 module.exports = router;

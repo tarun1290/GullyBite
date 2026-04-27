@@ -24,7 +24,12 @@ function _safeWrite(res, payload) {
   }
 }
 
-function addConnection(restaurantId, res) {
+// Stash branchIds on the res object so per-event filtering can read it
+// without a separate parallel Map (the connections Set keys by res).
+// Empty array / nullish → no branch restriction (deliver everything).
+const BRANCH_IDS_KEY = '__sseBranchIds';
+
+function addConnection(restaurantId, res, branchIds) {
   if (!restaurantId || !res) return () => {};
   const key = String(restaurantId);
   let set = connections.get(key);
@@ -33,6 +38,10 @@ function addConnection(restaurantId, res) {
     connections.set(key, set);
   }
   set.add(res);
+  // Coerce to plain string array. Empty = no restriction = unscoped
+  // (used by owners and unscoped staff). Stashed on `res` so the push
+  // path can filter without a parallel Map.
+  res[BRANCH_IDS_KEY] = Array.isArray(branchIds) ? branchIds.map(String) : [];
 
   const heartbeat = setInterval(() => {
     if (!_safeWrite(res, ':\n\n')) {
@@ -75,9 +84,38 @@ function pushOrderToRestaurant(restaurantId, order) {
   const key = String(restaurantId);
   const set = connections.get(key);
   if (!set || !set.size) return 0;
+  // Same branch-filter rule as pushToRestaurant — connections with
+  // empty branchIds get every order; connections scoped to specific
+  // branches only receive orders for those branches.
+  const branchId = order.branch_id != null ? String(order.branch_id) : null;
   let delivered = 0;
   for (const res of Array.from(set)) {
+    const branchIds = res[BRANCH_IDS_KEY] || [];
+    if (branchIds.length && branchId && !branchIds.includes(branchId)) continue;
     const ok = _sendEvent(res, 'order', order);
+    if (!ok) removeConnection(key, res);
+    else delivered += 1;
+  }
+  return delivered;
+}
+
+// Generic per-restaurant push with caller-controlled event name +
+// payload. Branch-filtered the same way as pushOrderToRestaurant —
+// connections with no branch restriction receive everything; scoped
+// connections receive only events whose payload.branch_id matches.
+// Used by /api/staff/orders/:id/status, accept/decline, and any future
+// event channel that isn't strictly an order push.
+function pushToRestaurant(restaurantId, eventName, data) {
+  if (!restaurantId || !eventName) return 0;
+  const key = String(restaurantId);
+  const set = connections.get(key);
+  if (!set || !set.size) return 0;
+  const branchId = data && data.branch_id != null ? String(data.branch_id) : null;
+  let delivered = 0;
+  for (const res of Array.from(set)) {
+    const branchIds = res[BRANCH_IDS_KEY] || [];
+    if (branchIds.length && branchId && !branchIds.includes(branchId)) continue;
+    const ok = _sendEvent(res, eventName, data || {});
     if (!ok) removeConnection(key, res);
     else delivered += 1;
   }
@@ -93,6 +131,7 @@ module.exports = {
   addConnection,
   removeConnection,
   pushOrderToRestaurant,
+  pushToRestaurant,
   connectionCount,
   HEARTBEAT_MS,
 };

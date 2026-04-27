@@ -1,7 +1,10 @@
 import client from '../lib/apiClient';
 import type { AxiosResponse, RawAxiosResponseHeaders, AxiosResponseHeaders } from 'axios';
 import type {
+  AdminFeesSummary,
+  AdminPlatformAbsorbedFee,
   AdminRestaurant,
+  AdminRestaurantFaultFee,
   AuthResponse,
   AuthUser,
   QueryParams,
@@ -846,5 +849,45 @@ export async function seedFestivalCalendarAdmin(years?: number[]): Promise<unkno
 
 export async function getPlatformMarketingSnapshot(period: string = '30d'): Promise<unknown> {
   const { data } = await client.get('/api/admin/platform-marketing/snapshot', { params: { period } });
+  return data;
+}
+
+// ── Admin Fees Overview ─────────────────────────────────────────────
+
+export async function getAdminFeesSummary(from?: string, to?: string): Promise<AdminFeesSummary> {
+  const params: QueryParams = {};
+  if (from) params.from = from;
+  if (to) params.to = to;
+  const { data } = await client.get<AdminFeesSummary>('/api/admin/fees/summary', { params });
+  return data;
+}
+
+export async function getAdminRestaurantFaults(
+  from?: string,
+  to?: string,
+  restaurantId?: string,
+): Promise<AdminRestaurantFaultFee[]> {
+  const params: QueryParams = {};
+  if (from) params.from = from;
+  if (to) params.to = to;
+  if (restaurantId) params.restaurantId = restaurantId;
+  const { data } = await client.get<AdminRestaurantFaultFee[]>(
+    '/api/admin/fees/restaurant-faults',
+    { params },
+  );
+  return data;
+}
+
+export async function getAdminPlatformAbsorbed(
+  from?: string,
+  to?: string,
+): Promise<AdminPlatformAbsorbedFee[]> {
+  const params: QueryParams = {};
+  if (from) params.from = from;
+  if (to) params.to = to;
+  const { data } = await client.get<AdminPlatformAbsorbedFee[]>(
+    '/api/admin/fees/platform-absorbed',
+    { params },
+  );
   return data;
 }

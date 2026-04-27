@@ -8,39 +8,40 @@ import { StaffOrder } from '@/api';
 import { badgeFor, colors } from '@/theme';
 import { formatRs, timeAgo } from '@/time';
 
+// PAID orders go through the dedicated /accept and /decline endpoints
+// (they need refund + token-cancel side effects on decline). Staff
+// cannot transition a PAID order via the generic /status endpoint —
+// that's restricted server-side to CONFIRMED → PREPARING → PACKED.
+//
+// CONFIRMED+ orders use NEXT_ACTIONS below + onStatusChange callback.
 const NEXT_ACTIONS: Record<
   string,
   Array<{ label: string; to: string; kind?: 'danger' | 'primary' }>
 > = {
-  PENDING_PAYMENT: [
-    { label: 'Confirm', to: 'confirmed', kind: 'primary' },
-    { label: 'Cancel', to: 'cancelled', kind: 'danger' },
-  ],
-  pending: [
-    { label: 'Confirm', to: 'confirmed', kind: 'primary' },
-    { label: 'Cancel', to: 'cancelled', kind: 'danger' },
-  ],
   CONFIRMED: [{ label: 'Preparing', to: 'preparing', kind: 'primary' }],
   confirmed: [{ label: 'Preparing', to: 'preparing', kind: 'primary' }],
   PREPARING: [{ label: 'Ready', to: 'ready', kind: 'primary' }],
   preparing: [{ label: 'Ready', to: 'ready', kind: 'primary' }],
-  PACKED: [{ label: 'Out for Delivery', to: 'out_for_delivery', kind: 'primary' }],
-  ready: [{ label: 'Out for Delivery', to: 'out_for_delivery', kind: 'primary' }],
-  DISPATCHED: [{ label: 'Delivered', to: 'delivered', kind: 'primary' }],
-  out_for_delivery: [{ label: 'Delivered', to: 'delivered', kind: 'primary' }],
+  // PACKED is terminal for staff — Prorouting handles dispatch from here.
 };
 
 type Props = {
   order: StaffOrder;
   busyStatus?: string | null;
   onStatusChange: (orderId: string, toStatus: string) => void;
+  // PAID-specific callbacks. Parent provides them so OrderCard stays
+  // free of API imports (testable in isolation).
+  onAccept?: (orderId: string) => void;
+  onDecline?: (orderId: string) => void;
   highlight?: Animated.Value;
 };
 
-function OrderCardBase({ order, busyStatus, onStatusChange, highlight }: Props) {
+function OrderCardBase({ order, busyStatus, onStatusChange, onAccept, onDecline, highlight }: Props) {
   const badge = badgeFor(order.status);
   const phoneTail = (order.customer_phone_masked || '').slice(-4);
-  const actions = NEXT_ACTIONS[order.status || ''] || [];
+  const status = String(order.status || '').toUpperCase();
+  const isPaid = status === 'PAID';
+  const actions = isPaid ? [] : (NEXT_ACTIONS[order.status || ''] || []);
   const items = Array.isArray(order.items) ? order.items : [];
 
   const bg = highlight
@@ -80,34 +81,65 @@ function OrderCardBase({ order, busyStatus, onStatusChange, highlight }: Props) 
       </View>
 
       <View style={styles.footerRow}>
-        <Text style={styles.total}>{formatRs(order.total_rs ?? null)}</Text>
+        <Text style={styles.total}>{formatRs(order.total_rs ?? order.total_amount ?? null)}</Text>
         <View style={styles.actions}>
-          {actions.map((a) => {
-            const busy = busyStatus === a.to;
-            return (
+          {isPaid ? (
+            <>
               <Pressable
-                key={a.to}
-                onPress={() => onStatusChange(order.id, a.to)}
+                onPress={() => onAccept?.(order.id)}
                 disabled={!!busyStatus}
                 style={({ pressed }) => [
-                  styles.btn,
-                  a.kind === 'danger' && styles.btnDanger,
-                  a.kind === 'primary' && styles.btnPrimary,
+                  styles.btn, styles.btnPrimary,
                   pressed && { opacity: 0.8 },
                   !!busyStatus && { opacity: 0.6 },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.btnText,
-                    (a.kind === 'primary' || a.kind === 'danger') && styles.btnTextInv,
-                  ]}
-                >
-                  {busy ? '…' : a.label}
+                <Text style={[styles.btnText, styles.btnTextInv]}>
+                  {busyStatus === 'accept' ? '…' : 'Accept'}
                 </Text>
               </Pressable>
-            );
-          })}
+              <Pressable
+                onPress={() => onDecline?.(order.id)}
+                disabled={!!busyStatus}
+                style={({ pressed }) => [
+                  styles.btn, styles.btnDanger,
+                  pressed && { opacity: 0.8 },
+                  !!busyStatus && { opacity: 0.6 },
+                ]}
+              >
+                <Text style={[styles.btnText, styles.btnTextInv]}>
+                  {busyStatus === 'decline' ? '…' : 'Decline'}
+                </Text>
+              </Pressable>
+            </>
+          ) : (
+            actions.map((a) => {
+              const busy = busyStatus === a.to;
+              return (
+                <Pressable
+                  key={a.to}
+                  onPress={() => onStatusChange(order.id, a.to)}
+                  disabled={!!busyStatus}
+                  style={({ pressed }) => [
+                    styles.btn,
+                    a.kind === 'danger' && styles.btnDanger,
+                    a.kind === 'primary' && styles.btnPrimary,
+                    pressed && { opacity: 0.8 },
+                    !!busyStatus && { opacity: 0.6 },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.btnText,
+                      (a.kind === 'primary' || a.kind === 'danger') && styles.btnTextInv,
+                    ]}
+                  >
+                    {busy ? '…' : a.label}
+                  </Text>
+                </Pressable>
+              );
+            })
+          )}
         </View>
       </View>
     </Animated.View>

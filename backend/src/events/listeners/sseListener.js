@@ -69,4 +69,45 @@ function onOrderCreated(payload) {
   }
 }
 
-module.exports = { onOrderCreated };
+// onOrderUpdated — fan out every transition through transitionOrder
+// to staff SSE clients. Two event flavors:
+//   - newStatus === 'PAID' → 'new_order' (the moment a paid order
+//     becomes actionable for the kitchen)
+//   - any other transition → 'order_updated' (CONFIRMED, PREPARING,
+//     PACKED, fault statuses, etc.) so tablets reflect status changes
+//     from the owner dashboard, fault handlers, and the staff status
+//     endpoint without each callsite having to push manually.
+//
+// Branch filter is applied inside sse.pushToRestaurant by reading
+// branchIds off each connection (set at addConnection time from the
+// staff JWT) — staff scoped to a single branch don't see other
+// branches' orders.
+function onOrderUpdated(payload) {
+  try {
+    const restaurantId = payload?.restaurantId;
+    if (!restaurantId) return;
+    const newStatus = payload?.newStatus;
+    const order = payload?._order || {};
+    const eventName = newStatus === 'PAID' ? 'new_order' : 'order_updated';
+
+    sse.pushToRestaurant(restaurantId, eventName, {
+      id: String(order._id || payload.orderId || ''),
+      order_number: order.order_number || payload.orderNumber || null,
+      status: newStatus || order.status || null,
+      previous_status: payload?.oldStatus || null,
+      total_rs: order.total_rs ?? null,
+      customer_name: _pickCustomerName(order),
+      customer_phone_masked: _maskedPhone(order),
+      branch_id: order.branch_id || null,
+      items: Array.isArray(order.items) ? order.items.map((i) => ({
+        name: i.name, quantity: i.quantity,
+      })) : [],
+      updated_at: new Date().toISOString(),
+      event_type: eventName,
+    });
+  } catch (err) {
+    log.warn({ err: err.message }, 'SSE push on order.updated failed');
+  }
+}
+
+module.exports = { onOrderCreated, onOrderUpdated };

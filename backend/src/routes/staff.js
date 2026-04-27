@@ -1,16 +1,22 @@
 'use strict';
 
-// Staff POS router — PIN auth, SSE live-order stream, order status
-// updates, and menu availability toggles. Mounted at /api/staff in
-// backend/server.js. All routes except POST /auth require a staff JWT.
+// Staff POS router — per-user PIN auth, SSE live-order stream, order
+// status updates, and menu availability toggles. Mounted at /api/staff
+// in backend/ec2-server.js. All routes except POST /auth require a
+// staff JWT (per-user, hydrated by middleware/staffAuth.requireStaffAuth).
+//
+// Auth model: each staff member has their own row in restaurant_users
+// with role='staff', phone, bcrypt'd PIN, branch_ids, and permissions.
+// The legacy single shared restaurants.staff_pin is deprecated and no
+// longer consulted by /auth (Option A migration).
 
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcryptjs');
 
 const { col } = require('../config/database');
 const { requireStaffAuth, signStaffToken } = require('../middleware/staffAuth');
 const { rateLimitFn } = require('../middleware/rateLimit');
-const { verifyStaffPin } = require('../services/staffPin');
 const sse = require('../services/sseConnections');
 const expoPush = require('../services/expoPush');
 const { maskPhone } = require('../utils/maskPhone');
@@ -28,41 +34,100 @@ const staffAuthLimiter = rateLimitFn(
   { message: 'Too many attempts. Please try again later.' }
 );
 
-// POST /api/staff/auth — { restaurant_slug, pin } → { token, restaurant }
+// POST /api/staff/auth — { staff_access_token, name, pin } → { token, restaurant, staffUser }
+//
+// Per-user, per-branch auth. The staff_access_token is a UUID stored
+// on a branch document (see /restaurant/branches/:id/staff-link/generate).
+// Resolving the token gives us restaurantId + branchId; we then find
+// staff users in restaurant_users whose name matches (case-insensitive)
+// AND whose branch_ids either contains this branch or is empty (= all
+// branches). PIN is bcrypt-compared against the matching candidates.
+//
+// Generic 401 on any failure — never reveal whether the token, name,
+// or PIN was wrong.
 router.post('/auth', staffAuthLimiter, express.json(), async (req, res) => {
   try {
-    const { restaurant_slug, pin } = req.body || {};
-    if (!restaurant_slug || !pin || !/^\d{4}$/.test(String(pin))) {
+    const { staff_access_token, name, pin } = req.body || {};
+    if (!staff_access_token || !name || !pin || !/^\d{4}$/.test(String(pin))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+
+    // Resolve branch from the token. Single doc lookup — staff_access_token
+    // should be unique across branches (UUID v4 collision space) so we
+    // don't bother indexing on it for now; if branches grow large enough
+    // to matter, a sparse unique index keeps this O(log n).
+    const branch = await col('branches').findOne(
+      { staff_access_token: String(staff_access_token) },
+      { projection: {
+          _id: 1, restaurant_id: 1, name: 1,
+      } },
+    );
+    if (!branch) return res.status(401).json({ error: 'Invalid credentials' });
+
     const r = await col('restaurants').findOne(
-      { store_slug: String(restaurant_slug) },
+      { _id: branch.restaurant_id },
       { projection: {
           _id: 1, store_slug: 1, business_name: 1, brand_name: 1, logo_url: 1,
-          staff_pin: 1, default_branch_id: 1,
-        } }
+      } },
     );
-    if (!r || !r.staff_pin) {
+    if (!r) return res.status(401).json({ error: 'Invalid credentials' });
+
+    // Escape user input before regex compile so '.', '$', etc. in the
+    // submitted name can't broaden the match. Anchor + case-insensitive.
+    const safeName = String(name).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const nameRegex = new RegExp(`^${safeName}$`, 'i');
+
+    // Candidates: name match within this restaurant, role:'staff',
+    // active, and either scoped to this branch (branch_ids contains
+    // branchId) or unscoped (branch_ids is empty / missing — which
+    // means all branches).
+    const candidates = await col('restaurant_users').find({
+      restaurant_id: branch.restaurant_id,
+      role: 'staff',
+      is_active: true,
+      name: { $regex: nameRegex },
+      $or: [
+        { branch_ids: branch._id },
+        { branch_ids: { $size: 0 } },
+        { branch_ids: { $exists: false } },
+      ],
+    }).toArray();
+
+    if (!candidates.length) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const ok = await verifyStaffPin(r._id, String(pin));
-    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
-    // Optional single-branch hint for the UI (e.g. multi-branch chains
-    // can still show which outlet this tablet is logged into).
-    let branchName = null;
-    if (r.default_branch_id) {
-      const b = await col('branches').findOne(
-        { _id: r.default_branch_id },
-        { projection: { name: 1 } }
-      );
-      branchName = b?.name || null;
+    // PIN match against each candidate. Stop at first match — there
+    // shouldn't be name collisions within a branch in practice, but
+    // even if there are, PIN uniqueness disambiguates.
+    let matched = null;
+    for (const c of candidates) {
+      if (!c.pin_hash) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await bcrypt.compare(String(pin), c.pin_hash);
+      if (ok) { matched = c; break; }
     }
+    if (!matched) return res.status(401).json({ error: 'Invalid credentials' });
 
+    const now = new Date();
+    await col('restaurant_users').updateOne(
+      { _id: matched._id },
+      { $set: { last_login_at: now } },
+    );
+
+    // JWT now carries branchId (singular) — the token-resolved branch
+    // is the staff session's working branch even if the user is
+    // actually authorised for multiple. Branch-filtered SSE / order /
+    // menu queries downstream all read this single value.
     const token = signStaffToken({
+      userId: matched._id,
       restaurantId: String(r._id),
       restaurantSlug: r.store_slug || null,
+      branchId: String(branch._id),
+      permissions: matched.permissions || {},
+      tokenVersion: Number(matched.token_version || 0),
     });
+
     return res.json({
       success: true,
       token,
@@ -71,7 +136,12 @@ router.post('/auth', staffAuthLimiter, express.json(), async (req, res) => {
         name: r.brand_name || r.business_name,
         slug: r.store_slug || null,
         logo_url: r.logo_url || null,
-        branch_name: branchName,
+      },
+      staffUser: {
+        id: String(matched._id),
+        name: matched.name,
+        branchId: String(branch._id),
+        permissions: matched.permissions || {},
       },
     });
   } catch (e) {
@@ -91,7 +161,7 @@ router.get('/stream', requireStaffAuth(), (req, res) => {
   });
   res.flushHeaders?.();
 
-  sse.addConnection(req.staff.restaurantId, res);
+  sse.addConnection(req.staff.restaurantId, res, req.staff.branchIds);
   res.write(`event: connected\ndata: ${JSON.stringify({ at: new Date().toISOString() })}\n\n`);
   // Never end the response here — addConnection wires close/error cleanup.
 });
@@ -159,14 +229,23 @@ router.delete('/push-token', requireStaffAuth(), express.json(), async (req, res
   }
 });
 
-// GET /api/staff/orders — last 24h, masked phones.
+// GET /api/staff/orders — currently-actionable orders for this staff
+// member: status IN [PAID, CONFIRMED, PREPARING, PACKED], newest first,
+// limit 50. Branch-filtered when the staff JWT carries non-empty
+// branchIds. Masked customer phones.
 router.get('/orders', requireStaffAuth(), async (req, res) => {
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const filter = {
+      restaurant_id: req.staff.restaurantId,
+      status: { $in: ['PAID', 'CONFIRMED', 'PREPARING', 'PACKED'] },
+    };
+    if (Array.isArray(req.staff.branchIds) && req.staff.branchIds.length) {
+      filter.branch_id = { $in: req.staff.branchIds };
+    }
     const orders = await col('orders')
-      .find({ restaurant_id: req.staff.restaurantId, created_at: { $gte: since } })
+      .find(filter)
       .sort({ created_at: -1 })
-      .limit(500)
+      .limit(50)
       .toArray();
 
     const customerIds = [...new Set(orders.map(o => o.customer_id).filter(Boolean))];
@@ -185,10 +264,15 @@ router.get('/orders', requireStaffAuth(), async (req, res) => {
         customer_name: c?.name || o.receiver_name || 'Customer',
         customer_phone_masked: maskPhone(c?.wa_phone || o.receiver_phone || ''),
         total_rs: o.total_rs,
+        total_amount: o.total_rs,
         status: o.status,
         payment_status: o.payment_status || null,
+        branch_id: o.branch_id || null,
+        accepted_at: o.confirmed_at || o.acknowledged_at || null,
         created_at: o.created_at,
-        items: Array.isArray(o.items) ? o.items : [],
+        items: Array.isArray(o.items)
+          ? o.items.map(i => ({ name: i.name, quantity: i.quantity }))
+          : [],
       };
     });
     return res.json({ success: true, orders: payload });
@@ -198,20 +282,27 @@ router.get('/orders', requireStaffAuth(), async (req, res) => {
   }
 });
 
-// PATCH /api/staff/orders/:orderId/status — lowercase status in body maps
-// to the canonical uppercase DB enum. Transitions go through the state
-// engine so invariants (audit log, timestamps, referral reversal) hold.
+// PATCH /api/staff/orders/:orderId/status — staff-allowed transitions
+// only: CONFIRMED → PREPARING and PREPARING → PACKED. Staff cannot
+// transition to DISPATCHED, DELIVERED, CANCELLED, or any fault state —
+// those go through the owner dashboard or order-state-machine triggers.
+//
+// Lowercase status in body maps to the canonical uppercase DB enum.
+// Transitions go through the state engine so invariants (audit log,
+// timestamps, referral reversal) hold.
 const STATUS_MAP = {
-  confirmed:        'CONFIRMED',
-  preparing:        'PREPARING',
-  ready:            'PACKED',
-  out_for_delivery: 'DISPATCHED',
-  delivered:        'DELIVERED',
-  cancelled:        'CANCELLED',
+  preparing: 'PREPARING',
+  ready:     'PACKED',
+  packed:    'PACKED',
 };
+// Staff can only move FROM these states.
+const STAFF_ALLOWED_FROM = new Set(['CONFIRMED', 'PREPARING']);
 
 router.patch('/orders/:orderId/status', requireStaffAuth(), express.json(), async (req, res) => {
   try {
+    if (!req.staff.permissions?.manage_orders) {
+      return res.status(403).json({ error: 'Permission denied: manage_orders' });
+    }
     const incoming = String(req.body?.status || '').toLowerCase();
     const newStatus = STATUS_MAP[incoming];
     if (!newStatus) {
@@ -220,30 +311,36 @@ router.patch('/orders/:orderId/status', requireStaffAuth(), express.json(), asyn
 
     const order = await col('orders').findOne(
       { _id: req.params.orderId },
-      { projection: { _id: 1, restaurant_id: 1 } }
+      { projection: { _id: 1, restaurant_id: 1, branch_id: 1, status: 1 } }
     );
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (String(order.restaurant_id) !== String(req.staff.restaurantId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    // Branch guard: scoped staff can only act on their branches.
+    if (Array.isArray(req.staff.branchIds) && req.staff.branchIds.length) {
+      if (!req.staff.branchIds.map(String).includes(String(order.branch_id))) {
+        return res.status(403).json({ error: 'Forbidden — order not in your branch' });
+      }
+    }
+    // Restrict the FROM state. Staff can't kick a PAID order straight
+    // to PREPARING — owner has to /accept first to move PAID → CONFIRMED.
+    if (!STAFF_ALLOWED_FROM.has(order.status)) {
+      return res.status(409).json({
+        error: `Cannot transition order from ${order.status} via staff endpoint`,
+      });
+    }
 
     const updated = await orderSvc.updateStatus(req.params.orderId, newStatus, {
-      actor: 'staff',
+      actor: req.staff.userId || 'staff',
       actorType: 'staff',
     });
 
-    // Push updated order to all SSE clients for this restaurant.
-    try {
-      sse.pushOrderToRestaurant(req.staff.restaurantId, {
-        id: String(updated?._id || req.params.orderId),
-        order_number: updated?.order_number,
-        status: updated?.status || newStatus,
-        payment_status: updated?.payment_status || null,
-        total_rs: updated?.total_rs,
-        updated_at: new Date().toISOString(),
-        event_type: 'status_change',
-      });
-    } catch (err) { log.warn({ err }, 'sse push after status update failed'); }
+    // SSE push happens automatically via the order.updated bus event
+    // → events/listeners/sseListener.onOrderUpdated → sse.pushToRestaurant.
+    // No manual push here; the listener is the single source of truth so
+    // every transition (here, /accept, /decline, fault handlers) fans
+    // out identically without callsite duplication.
 
     const finalStatus = updated?.status || newStatus;
     const orderNumber = updated?.order_number || req.params.orderId;
@@ -274,13 +371,18 @@ router.patch('/orders/:orderId/status', requireStaffAuth(), express.json(), asyn
   }
 });
 
-// GET /api/staff/menu — items grouped by category_name.
+// GET /api/staff/menu — items grouped by category_name. Branch-filtered
+// when the staff JWT carries non-empty branchIds.
 router.get('/menu', requireStaffAuth(), async (req, res) => {
   try {
+    const filter = { restaurant_id: req.staff.restaurantId };
+    if (Array.isArray(req.staff.branchIds) && req.staff.branchIds.length) {
+      filter.branch_id = { $in: req.staff.branchIds };
+    }
     const items = await col('menu_items')
       .find(
-        { restaurant_id: req.staff.restaurantId },
-        { projection: { _id: 1, name: 1, price_paise: 1, is_available: 1, image_url: 1, category_name: 1, category_id: 1 } }
+        filter,
+        { projection: { _id: 1, name: 1, price_paise: 1, is_available: 1, image_url: 1, category_name: 1, category_id: 1, branch_id: 1 } }
       )
       .toArray();
 
@@ -305,29 +407,51 @@ router.get('/menu', requireStaffAuth(), async (req, res) => {
   }
 });
 
-// PATCH /api/staff/menu/:itemId/availability
-router.patch('/menu/:itemId/availability', requireStaffAuth(), express.json(), async (req, res) => {
+// Shared availability handler — used by both /menu/:id/availability
+// (existing path) and /items/:id/availability (spec'd path). Accepts
+// either `is_available` or `available` in the body. Gated by manage_menu
+// + branch scope.
+async function _setItemAvailability(req, res) {
   try {
-    if (typeof req.body?.is_available !== 'boolean') {
-      return res.status(400).json({ error: 'is_available must be boolean' });
+    if (!req.staff.permissions?.manage_menu) {
+      return res.status(403).json({ error: 'Permission denied: manage_menu' });
+    }
+    const raw = typeof req.body?.is_available === 'boolean'
+      ? req.body.is_available
+      : (typeof req.body?.available === 'boolean' ? req.body.available : null);
+    if (raw === null) {
+      return res.status(400).json({ error: 'is_available (or available) must be boolean' });
     }
     const item = await col('menu_items').findOne(
       { _id: req.params.itemId },
-      { projection: { _id: 1, restaurant_id: 1 } }
+      { projection: { _id: 1, restaurant_id: 1, branch_id: 1 } },
     );
     if (!item) return res.status(404).json({ error: 'Menu item not found' });
     if (String(item.restaurant_id) !== String(req.staff.restaurantId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    if (Array.isArray(req.staff.branchIds) && req.staff.branchIds.length) {
+      if (!req.staff.branchIds.map(String).includes(String(item.branch_id))) {
+        return res.status(403).json({ error: 'Forbidden — item not in your branch' });
+      }
+    }
     await col('menu_items').updateOne(
       { _id: req.params.itemId },
-      { $set: { is_available: req.body.is_available, updated_at: new Date() } }
+      { $set: { is_available: raw, updated_at: new Date() } },
     );
-    return res.json({ success: true, is_available: req.body.is_available });
+    return res.json({ success: true, is_available: raw });
   } catch (e) {
     log.error({ err: e, itemId: req.params.itemId }, 'staff availability toggle failed');
     return res.status(500).json({ error: 'Internal server error' });
   }
-});
+}
+
+// PATCH /api/staff/menu/:itemId/availability — existing path.
+router.patch('/menu/:itemId/availability', requireStaffAuth(), express.json(), _setItemAvailability);
+
+// PATCH /api/staff/items/:itemId/availability — alternate path per spec.
+// Mirrors /menu/:itemId/availability so frontends written against the
+// spec'd path also work.
+router.patch('/items/:itemId/availability', requireStaffAuth(), express.json(), _setItemAvailability);
 
 module.exports = router;

@@ -11,6 +11,7 @@ import WalletWidget from '../../components/dashboard/WalletWidget';
 import NotificationBell from '../../components/dashboard/NotificationBell';
 import { useAuth } from '../../contexts/AuthContext';
 import { RestaurantProvider, useRestaurant } from '../../contexts/RestaurantContext';
+import { useNewOrderSound } from '../../hooks/useNewOrderSound';
 import type { Restaurant, WabaAccount } from '../../types';
 
 const NAV_ITEMS: NavItem[] = [
@@ -27,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Loyalty',             icon: '🎖', path: '/dashboard/loyalty' },
   { label: 'Customers',           icon: '👥', path: '/dashboard/customers' },
   { label: 'Payments',            icon: '💰', path: '/dashboard/payments' },
+  { label: 'Penalties',           icon: '⚠️', path: '/dashboard/penalties' },
   { label: 'Settings',            icon: '⚙', path: '/dashboard/settings' },
   { label: 'Restaurant',          icon: '🏪', path: '/dashboard/restaurant' },
 ];
@@ -51,6 +53,12 @@ function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const { restaurant, loading, refetch } = useRestaurant();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
+  // Mount the new-order alarm hook here so the document-level
+  // autoplay-unlock listener installs as soon as the dashboard renders
+  // — by the time the user navigates to /orders, audio is unlocked.
+  // Return value unused at this layer; the orders page calls
+  // useNewOrderSound() again to drive playback (singleton inside).
+  useNewOrderSound();
 
   useEffect(() => {
     setSidebarOpen(false);

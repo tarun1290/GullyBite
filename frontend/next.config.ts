@@ -76,11 +76,21 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Service worker MUST never be cached by the browser. Every
+        // Vercel deploy ships a fresh /sw.js; the registration component
+        // calls registration.update() on focus, and only sees a new
+        // worker if this header keeps the browser from serving a stale
+        // copy. Service-Worker-Allowed: '/' lets sw.js (which lives at
+        // /sw.js) control the entire origin scope.
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
     ];
   },
-  // TODO(pwa): Re-enable PWA support once a Next.js 16-compatible plugin
-  // ships. `next-pwa` and `@next-pwa/core` are not Next 16-ready as of this
-  // scaffold. Skipped per Part 1 spec instruction.
 };
 
 export default nextConfig;

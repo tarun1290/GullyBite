@@ -11,7 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OrderCard } from '@/components/OrderCard';
-import { StaffOrder, getOrders, updateOrderStatus } from '@/api';
+import { StaffOrder, getOrders, updateOrderStatus, acceptOrder, declineOrder } from '@/api';
 import { StaffSse, SseState } from '@/sse';
 import { playNewOrderChime, unloadChime } from '@/sound';
 import { playLocalNewOrderNotification } from '@/push';
@@ -126,6 +126,43 @@ export default function OrdersScreen() {
     }
   };
 
+  // PAID-specific actions go through different endpoints
+  // (/api/restaurant/orders/:id/accept and /decline) — backed by the
+  // requireStaffOrRestaurantAuth middleware on the backend. Stop the
+  // alarm on either action so it doesn't keep ringing once handled.
+  const handleAccept = async (orderId: string) => {
+    setBusy((b) => ({ ...b, [orderId]: 'accept' }));
+    const prevStatus = orders.find((o) => o.id === orderId)?.status;
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, status: 'CONFIRMED' } : o))
+    );
+    try {
+      await acceptOrder(orderId);
+      void unloadChime();
+    } catch (e) {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, status: prevStatus } : o))
+      );
+      setLoadErr((e as Error).message || 'Accept failed');
+    } finally {
+      setBusy((b) => ({ ...b, [orderId]: null }));
+    }
+  };
+
+  const handleDecline = async (orderId: string) => {
+    setBusy((b) => ({ ...b, [orderId]: 'decline' }));
+    try {
+      await declineOrder(orderId);
+      void unloadChime();
+      // Remove the order from the list — it's terminal (REJECTED_BY_RESTAURANT).
+      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    } catch (e) {
+      setLoadErr((e as Error).message || 'Decline failed');
+    } finally {
+      setBusy((b) => ({ ...b, [orderId]: null }));
+    }
+  };
+
   const pillStyle =
     sseState === 'live'
       ? styles.pillLive
@@ -158,6 +195,8 @@ export default function OrdersScreen() {
             order={item}
             busyStatus={busy[item.id] || null}
             onStatusChange={handleStatus}
+            onAccept={handleAccept}
+            onDecline={handleDecline}
             highlight={highlightMap.current.get(item.id)}
           />
         )}

@@ -31,7 +31,10 @@ if (!global.__eventsBooted) {
   bus.on('order.updated', notificationListener.onOrderUpdated);
 
   // Staff POS SSE fan-out — fire-and-forget push to tablets.
+  // - order.created  → 'order' event (informational, status is pre-payment)
+  // - order.updated  → 'new_order' (PAID) or 'order_updated' (other transitions)
   bus.on('order.created', sseListener.onOrderCreated);
+  bus.on('order.updated', sseListener.onOrderUpdated);
 
   // WABA wallet — credit restaurant's earnings share on each paid order.
   bus.on('payment.completed', walletListener.onPaymentCompleted);

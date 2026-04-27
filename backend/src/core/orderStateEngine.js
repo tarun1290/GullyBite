@@ -20,6 +20,12 @@ const log = require('../utils/logger').child({ component: 'orderState' });
 //
 // EXPIRED is a DISTINCT terminal state for missed-sale analytics.
 // It is NOT the same as CANCELLED (which is an explicit user/admin action).
+//
+// Fault states (REJECTED_BY_RESTAURANT, RESTAURANT_TIMEOUT, NO_DELIVERY_AVAILABLE)
+// are terminal too. They split out from CANCELLED so analytics + settlement
+// can attribute the refund cost correctly: restaurant-fault rows feed back
+// into the restaurant's cancellation_fault_fees on the next settlement;
+// no-rider rows land in platform_absorbed_fee on the order itself only.
 const ORDER_STATES = [
   'PENDING_PAYMENT',
   'PAYMENT_FAILED',
@@ -31,6 +37,9 @@ const ORDER_STATES = [
   'DISPATCHED',
   'DELIVERED',
   'CANCELLED',
+  'REJECTED_BY_RESTAURANT',
+  'RESTAURANT_TIMEOUT',
+  'NO_DELIVERY_AVAILABLE',
   // Prorouting RTO lifecycle. When a 3PL rider cannot deliver and
   // initiates return-to-origin, the order moves DISPATCHED → RTO_IN_PROGRESS.
   // Once the package is returned (or disposed) it becomes terminal at
@@ -50,13 +59,22 @@ const TRANSITIONS = {
   PENDING_PAYMENT: new Set(['PAID', 'PAYMENT_FAILED', 'EXPIRED', 'CANCELLED']),
   PAYMENT_FAILED:  new Set(['PAID', 'EXPIRED', 'CANCELLED']),  // Retry allowed → PAID
   EXPIRED:         new Set([]),  // Terminal — missed sale, no further transitions
-  PAID:            new Set(['CONFIRMED', 'CANCELLED']),
-  CONFIRMED:       new Set(['PREPARING', 'CANCELLED']),
+  // PAID → REJECTED_BY_RESTAURANT (manual /decline) or RESTAURANT_TIMEOUT
+  // (BullMQ acceptance-timeout job fires) before the restaurant accepts.
+  PAID:            new Set(['CONFIRMED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT']),
+  // CONFIRMED → NO_DELIVERY_AVAILABLE when Prorouting can't allocate a rider
+  // (webhook fires before any agent-assigned event).
+  CONFIRMED:       new Set(['PREPARING', 'CANCELLED', 'NO_DELIVERY_AVAILABLE']),
   PREPARING:       new Set(['PACKED', 'CANCELLED']),
   PACKED:          new Set(['DISPATCHED', 'CANCELLED']),
-  DISPATCHED:      new Set(['DELIVERED', 'CANCELLED', 'RTO_IN_PROGRESS']),
+  // Defensive: a rider can drop after pickup. NO_DELIVERY_AVAILABLE allowed
+  // here too so the same fault handler covers both paths.
+  DISPATCHED:      new Set(['DELIVERED', 'CANCELLED', 'RTO_IN_PROGRESS', 'NO_DELIVERY_AVAILABLE']),
   DELIVERED:       new Set([]),  // Terminal state
   CANCELLED:       new Set([]),  // Terminal state
+  REJECTED_BY_RESTAURANT: new Set([]),  // Terminal — restaurant declined
+  RESTAURANT_TIMEOUT:     new Set([]),  // Terminal — restaurant didn't act in time
+  NO_DELIVERY_AVAILABLE:  new Set([]),  // Terminal — Prorouting couldn't allocate
   RTO_IN_PROGRESS: new Set(['RTO_COMPLETE', 'CANCELLED']),
   RTO_COMPLETE:    new Set([]),  // Terminal state
 };
@@ -72,6 +90,9 @@ const STATE_TIMESTAMP = {
   DISPATCHED:      'dispatched_at',
   DELIVERED:       'delivered_at',
   CANCELLED:       'cancelled_at',
+  REJECTED_BY_RESTAURANT: 'rejected_at',
+  RESTAURANT_TIMEOUT:     'timeout_at',
+  NO_DELIVERY_AVAILABLE:  'no_delivery_at',
   RTO_IN_PROGRESS: 'rto_initiated_at',
   RTO_COMPLETE:    'rto_completed_at',
 };
@@ -199,6 +220,35 @@ async function transitionOrder(orderId, nextState, opts = {}) {
       _order: updated,
     });
   } catch (_) { /* bus load errors must never block the transition */ }
+
+  // ─── ACCEPTANCE TIMEOUT JOB (PAID only) ──────────────────────
+  // Schedule the BullMQ acceptance-timeout job so the restaurant has
+  // ORDER_ACCEPTANCE_TIMEOUT_MS (default 4 min) to /accept or /decline
+  // before orderCancellationService.handleRestaurantFault('restaurant_timeout')
+  // fires. Centralized here so all PAID transition sites (Razorpay
+  // webhook, WhatsApp checkout webhook, recovery job) pick it up
+  // without duplication. Idempotent: jobId === orderId.
+  // Fire-and-forget: a Redis hiccup must never abort the state change.
+  if (nextState === 'PAID') {
+    setImmediate(() => {
+      try {
+        const { addAcceptanceTimeoutJob } = require('../jobs/orderAcceptanceQueue');
+        addAcceptanceTimeoutJob(orderId)
+          .then(({ jobId }) => {
+            // Stamp the BullMQ job id on the order so accept/decline can
+            // cancel it later. Stale stamp from a duplicate enqueue is
+            // harmless — same orderId means same jobId via dedup.
+            col('orders').updateOne(
+              { _id: orderId },
+              { $set: { acceptance_timeout_job_id: jobId, acceptance_timeout_scheduled_at: new Date() } }
+            ).catch(() => {});
+          })
+          .catch((err) => log.warn({ err: err.message, orderId }, 'addAcceptanceTimeoutJob failed (non-fatal)'));
+      } catch (err) {
+        log.warn({ err: err.message, orderId }, 'addAcceptanceTimeoutJob require failed (non-fatal)');
+      }
+    });
+  }
 
   return updated;
 }

@@ -449,6 +449,15 @@ connect().then(() => {
     } catch (err) {
       console.error('[EC2] BullMQ setup failed:', err.message);
     }
+    // BullMQ order-acceptance queue — fires acceptance timeout (default 4
+    // min) for PAID orders. Worker delegates to orderCancellationService
+    // when the restaurant didn't act in time.
+    try {
+      require('./src/jobs/orderAcceptanceProcessor').start();
+      console.log('[EC2] BullMQ order-acceptance worker started');
+    } catch (err) {
+      console.error('[EC2] BullMQ acceptance worker setup failed:', err.message);
+    }
   } else {
     console.log('[EC2] BullMQ orders queue: disabled (REDIS_URL not set)');
   }

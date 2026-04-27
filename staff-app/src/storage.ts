@@ -1,11 +1,14 @@
-// SecureStore wrapper for the two credential keys we persist. Token and
-// restaurant info are small, so SecureStore is fine — no need to split
-// into AsyncStorage.
+// SecureStore wrapper for credential keys. Token + restaurant + staff
+// user info are small, so SecureStore is fine — no need to split into
+// AsyncStorage. The `staff_info` key holds branchId + permissions,
+// mirroring what's encoded in the JWT, so the auth store can hydrate
+// without parsing the token.
 
 import * as SecureStore from 'expo-secure-store';
 
 const TOKEN_KEY = 'gb_staff_token';
 const REST_KEY = 'gb_staff_restaurant';
+const STAFF_KEY = 'gb_staff_info';
 const DEVICE_KEY = 'gb_staff_device_id';
 
 export type StoredRestaurant = {
@@ -15,9 +18,21 @@ export type StoredRestaurant = {
   logo_url?: string | null;
 };
 
-export async function saveAuth(token: string, restaurant: StoredRestaurant): Promise<void> {
+export type StoredStaffUser = {
+  userId: string;
+  name: string;
+  branchId: string;
+  permissions: Record<string, boolean>;
+};
+
+export async function saveAuth(
+  token: string,
+  restaurant: StoredRestaurant,
+  staff?: StoredStaffUser,
+): Promise<void> {
   await SecureStore.setItemAsync(TOKEN_KEY, token);
   await SecureStore.setItemAsync(REST_KEY, JSON.stringify(restaurant));
+  if (staff) await SecureStore.setItemAsync(STAFF_KEY, JSON.stringify(staff));
 }
 
 export async function getToken(): Promise<string | null> {
@@ -30,9 +45,16 @@ export async function getRestaurant(): Promise<StoredRestaurant | null> {
   try { return JSON.parse(raw) as StoredRestaurant; } catch { return null; }
 }
 
+export async function getStaffInfo(): Promise<StoredStaffUser | null> {
+  const raw = await SecureStore.getItemAsync(STAFF_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw) as StoredStaffUser; } catch { return null; }
+}
+
 export async function clearAuth(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
   await SecureStore.deleteItemAsync(REST_KEY);
+  await SecureStore.deleteItemAsync(STAFF_KEY);
 }
 
 export async function getDeviceId(): Promise<string | null> {

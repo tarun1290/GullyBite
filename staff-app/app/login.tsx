@@ -1,3 +1,12 @@
+// Per-user, per-branch login. The staff_access_token comes from the
+// branch-specific URL the manager sends to the staff member — never
+// typed by hand. We pull it from AsyncStorage where _layout.tsx
+// stashes it after parsing the deep link, then ask for name + PIN.
+//
+// If there's no pending token, render an instructional message
+// instead of input fields — the staff member has to open the link
+// from their manager's WhatsApp/SMS first.
+
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -12,25 +21,42 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { Keypad } from '@/components/Keypad';
 import { login } from '@/api';
-import { saveAuth } from '@/storage';
+import { useAuth } from '@/store/authStore';
 import { requestPermissionsAndRegister } from '@/push';
 import { colors } from '@/theme';
 
 const PIN_LEN = 4;
+const PENDING_TOKEN_KEY = 'pending_staff_access_token';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [slug, setSlug] = useState('');
+  const { login: storeLogin } = useAuth();
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [name, setName] = useState('');
   const [pin, setPin] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [tokenChecked, setTokenChecked] = useState(false);
   const shake = useRef(new Animated.Value(0)).current;
 
-  const sanitiseSlug = (s: string) =>
-    s.toLowerCase().replace(/\s+/g, '').replace(/[^a-z0-9-]/g, '');
+  // Hydrate the deep-link token from AsyncStorage on mount. _layout.tsx
+  // is the source of truth for parsing incoming URLs and stashing the
+  // segment under PENDING_TOKEN_KEY before navigating here.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const t = await AsyncStorage.getItem(PENDING_TOKEN_KEY);
+      if (!cancelled) {
+        setAccessToken(t);
+        setTokenChecked(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const doShake = () => {
     Animated.sequence([
@@ -52,8 +78,9 @@ export default function LoginScreen() {
 
   const submit = async () => {
     if (busy) return;
-    if (!slug.trim()) {
-      setErr('Enter the restaurant slug');
+    if (!accessToken) return;
+    if (!name.trim()) {
+      setErr('Enter your name');
       doShake();
       return;
     }
@@ -64,23 +91,35 @@ export default function LoginScreen() {
     }
     setBusy(true);
     try {
-      const res = await login(slug, pin);
-      await saveAuth(res.token, {
-        id: res.restaurant.id,
-        name: res.restaurant.name,
-        slug: res.restaurant.slug,
-        logo_url: res.restaurant.logo_url ?? null,
-      });
+      const res = await login(accessToken, name.trim(), pin);
+      // Persist via the auth store (writes SecureStore + sets state).
+      await storeLogin(
+        res.token,
+        {
+          userId: res.staffUser.id,
+          name: res.staffUser.name,
+          branchId: res.staffUser.branchId,
+          permissions: res.staffUser.permissions || {},
+        },
+        {
+          id: res.restaurant.id,
+          name: res.restaurant.name,
+          slug: res.restaurant.slug,
+          logo_url: res.restaurant.logo_url ?? null,
+        },
+      );
+      // Token consumed — clear it so a future logout doesn't auto-login.
+      await AsyncStorage.removeItem(PENDING_TOKEN_KEY);
       // Fire-and-forget push registration — do not block navigation.
       requestPermissionsAndRegister().catch(() => { /* noop */ });
-      router.replace('/(tabs)/orders');
+      router.replace('/(app)/orders');
     } catch (e) {
+      const status = (e as { status?: number }).status;
       const msg = (e as Error).message || 'Login failed';
-      setErr(
-        msg.toLowerCase().includes('pin') || msg.toLowerCase().includes('restaurant')
-          ? 'Invalid PIN or restaurant'
-          : msg
-      );
+      // 401 = wrong name/PIN/token (server returns generic). Anything
+      // else is treated as a transient error.
+      if (status === 401) setErr('Incorrect name or PIN. Please try again.');
+      else setErr(msg.toLowerCase().includes('network') ? 'Connection problem. Please try again.' : 'Something went wrong. Please try again.');
       setPin('');
       doShake();
     } finally {
@@ -88,13 +127,38 @@ export default function LoginScreen() {
     }
   };
 
-  // Auto-submit when PIN is 4 digits — nice UX, but we still gate on slug.
+  // Auto-submit when PIN is 4 digits — gated on name being filled.
   useEffect(() => {
-    if (pin.length === PIN_LEN && slug.trim() && !busy) {
+    if (pin.length === PIN_LEN && name.trim() && accessToken && !busy) {
       void submit();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pin]);
+
+  // Pre-token-check: brief loader so we don't flash the no-token message.
+  if (!tokenChecked) {
+    return <SafeAreaView style={{ flex: 1, backgroundColor: colors.ink }} />;
+  }
+
+  // No deep-link token — render instructions, no inputs.
+  if (!accessToken) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.ink }}>
+        <View style={styles.noTokenWrap}>
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoEmoji}>🔒</Text>
+          </View>
+          <Text style={styles.brand}>GullyBite Staff</Text>
+          <Text style={styles.noTokenText}>
+            Please open the staff login link provided by your manager.
+          </Text>
+          <Text style={styles.noTokenSub}>
+            The link looks like https://gullybite.duckdns.org/staff/…
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.ink }}>
@@ -115,16 +179,16 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.field}>
-            <Text style={styles.label}>Restaurant slug</Text>
+            <Text style={styles.label}>Your name</Text>
             <TextInput
-              value={slug}
+              value={name}
               onChangeText={(s) => {
                 setErr('');
-                setSlug(sanitiseSlug(s));
+                setName(s);
               }}
-              autoCapitalize="none"
+              autoCapitalize="words"
               autoCorrect={false}
-              placeholder="e.g. sharmas-dosa"
+              placeholder="Your name as registered"
               placeholderTextColor={colors.mute}
               style={styles.input}
               returnKeyType="done"
@@ -147,10 +211,10 @@ export default function LoginScreen() {
           <View style={{ height: 16 }} />
           <Pressable
             onPress={submit}
-            disabled={busy || pin.length !== PIN_LEN}
+            disabled={busy || !name.trim() || pin.length !== PIN_LEN}
             style={({ pressed }) => [
               styles.loginBtn,
-              (busy || pin.length !== PIN_LEN) && styles.loginBtnDisabled,
+              (busy || !name.trim() || pin.length !== PIN_LEN) && styles.loginBtnDisabled,
               pressed && { opacity: 0.85 },
             ]}
           >
@@ -205,4 +269,9 @@ const styles = StyleSheet.create({
   },
   loginBtnDisabled: { backgroundColor: colors.rim2, shadowOpacity: 0, elevation: 0 },
   loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // No-token state
+  noTokenWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
+  noTokenText: { fontSize: 15, color: colors.tx, textAlign: 'center', lineHeight: 22 },
+  noTokenSub: { fontSize: 12, color: colors.dim, textAlign: 'center' },
 });

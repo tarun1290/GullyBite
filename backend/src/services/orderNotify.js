@@ -9,7 +9,13 @@ const { resolveRecipient } = require('./customerIdentity');
 const { logActivity } = require('./activityLog');
 const log = require('../utils/logger').child({ component: 'OrderNotify' });
 
-// Map order status → event name used in template_mappings
+// Map order status → event name used in template_mappings.
+// Fault statuses (REJECTED_BY_RESTAURANT, RESTAURANT_TIMEOUT,
+// NO_DELIVERY_AVAILABLE) reuse the `order_cancelled` template — the
+// caller writes order.cancellation_reason with the spec-defined reason
+// text before invoking sendOrderTemplateMessage so {{3}} resolves
+// correctly (template variable maps to order.cancellation_reason via
+// predefined-templates.js).
 const STATUS_TO_EVENT = {
   PAID:       'payment_received',
   CONFIRMED:  'order_confirmed',
@@ -18,6 +24,9 @@ const STATUS_TO_EVENT = {
   DISPATCHED: 'order_dispatched',
   DELIVERED:  'order_delivered',
   CANCELLED:  'order_cancelled',
+  REJECTED_BY_RESTAURANT: 'order_cancelled',
+  RESTAURANT_TIMEOUT:     'order_cancelled',
+  NO_DELIVERY_AVAILABLE:  'order_cancelled',
 };
 
 // ─── SEND ORDER TEMPLATE MESSAGE ────────────────────────────
@@ -138,8 +147,84 @@ const buildOrderContext = async (orderId) => {
   };
 };
 
+// ─── SEND REFUND PROCESSED MESSAGE ──────────────────────────
+// Standalone event (not status-bound) that fires after a refund has been
+// initiated for a fault cancellation. Uses the existing `refund_processed`
+// template (predefined-templates.js: id 'refund_processed', variables:
+// {{1}}=customer name, {{2}}=refund amount in rupees, {{3}}=order number).
+// Caller writes order.refund_amount_rs onto the order doc first so the
+// template variable resolves correctly.
+//
+// Returns true if the template was sent, false on dedup/skip/failure.
+// Fire-and-forget — never throws.
+const sendRefundProcessedMessage = async (orderId, orderContext = null) => {
+  const event = 'refund_processed';
+  try {
+    const existing = await col('order_notifications').findOne({
+      order_id: orderId, event, status: 'sent',
+    });
+    if (existing) {
+      log.info({ event, orderId }, 'refund_processed already sent, skipping');
+      return false;
+    }
+
+    const context = orderContext || await buildOrderContext(orderId);
+    if (!context) {
+      log.warn({ orderId }, 'refund_processed: could not build context');
+      return false;
+    }
+
+    const toIdentifier = context.order.wa_phone || context.order.bsuid;
+    if (!context.order.phone_number_id || !toIdentifier) {
+      log.warn({ orderId }, 'refund_processed: missing WA details');
+      return false;
+    }
+
+    const mapping = await templateSvc.getMappingForEvent(event);
+    if (!mapping || !mapping.is_active) {
+      log.info({ event }, 'refund_processed: no active mapping, skipping template');
+      return false;
+    }
+
+    const componentParams = templateSvc.resolveTemplateVariables(mapping.variables, context);
+
+    let sent = false;
+    try {
+      await templateSvc.sendTemplateMessage(
+        context.order.phone_number_id,
+        toIdentifier,
+        mapping.template_name,
+        'en',
+        componentParams,
+      );
+      sent = true;
+      logActivity({ actorType: 'system', action: 'notification.template_sent', category: 'notification', description: `Template "${mapping.template_name}" sent for order ${orderId} (${event})`, resourceType: 'order', resourceId: orderId, severity: 'info' });
+    } catch (err) {
+      const metaErr = err.response?.data?.error;
+      log.error({ err, event, orderId }, 'refund_processed: template send failed');
+      logActivity({ actorType: 'system', action: 'notification.template_failed', category: 'notification', description: `Template send failed for order ${orderId} (${event}): ${metaErr?.message || err.message}`, resourceType: 'order', resourceId: orderId, severity: 'error', metadata: { error: metaErr?.message || err.message } });
+    }
+
+    await col('order_notifications').insertOne({
+      _id: newId(),
+      order_id: orderId,
+      event,
+      template_name: mapping.template_name,
+      status: sent ? 'sent' : 'failed',
+      error: sent ? null : 'Template send failed',
+      sent_at: new Date(),
+    });
+
+    return sent;
+  } catch (err) {
+    log.error({ err, event, orderId }, 'refund_processed notification error');
+    return false;
+  }
+};
+
 module.exports = {
   sendOrderTemplateMessage,
+  sendRefundProcessedMessage,
   buildOrderContext,
   STATUS_TO_EVENT,
 };

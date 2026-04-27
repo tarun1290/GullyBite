@@ -79,11 +79,17 @@ async function enqueue(type, payload, { delayMs = 0 } = {}) {
 }
 
 // Convenience: enqueue the full post-payment fan-out for a single order.
+//
+// ORDER_DISPATCH is deliberately NOT enqueued here — it now fires from
+// the restaurant /accept handler so dispatch only runs after the
+// restaurant confirms (acceptance state machine). _handleOrderDispatch
+// below carries a stale-job status guard so any in-flight ORDER_DISPATCH
+// job created by older code (pre-deploy) is skipped silently if the
+// order isn't in CONFIRMED.
 async function enqueueForOrder({ orderId, restaurantId, posEnabled }) {
   const payload = { orderId: String(orderId), restaurantId: restaurantId ? String(restaurantId) : null };
   const jobs = [
     enqueue(JOB_TYPES.CUSTOMER_NOTIFICATION, payload),
-    enqueue(JOB_TYPES.ORDER_DISPATCH, payload),
   ];
   if (posEnabled) jobs.push(enqueue(JOB_TYPES.POS_SYNC, payload));
   return Promise.all(jobs);
@@ -164,6 +170,17 @@ async function _handleOrderDispatch(payload) {
 
   const order = await orderSvc.getOrderDetails(payload.orderId);
   if (!order) throw new Error('order not found');
+
+  // Stale-job guard. Dispatch now fires from the restaurant /accept
+  // handler — only when the order has actually transitioned to
+  // CONFIRMED. Any in-flight pre-deploy ORDER_DISPATCH job created from
+  // the old PAID-time fan-out lands here in PAID (or beyond CONFIRMED)
+  // and we skip silently rather than re-dispatching.
+  if (order.status !== 'CONFIRMED') {
+    log.info({ orderId: payload.orderId, status: order.status },
+      'ORDER_DISPATCH: order not in CONFIRMED — skipping (stale or out-of-order job)');
+    return;
+  }
 
   try {
     const task = await deliveryService.dispatchDelivery(payload.orderId);

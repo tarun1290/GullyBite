@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Referrals',     icon: '🎯', path: '/admin/referrals' },
   { label: 'Settlements',   icon: '💸', path: '/admin/settlements' },
   { label: 'Financials',    icon: '💰', path: '/admin/financials' },
+  { label: 'Fees',          icon: '⚠️', path: '/admin/fees' },
   { label: 'Coupons',       icon: '🎫', path: '/admin/coupons' },
   { label: 'Coupon Codes',  icon: '🔖', path: '/admin/coupon-codes' },
   { label: 'Marketing',     icon: '📢', path: '/admin/marketing' },

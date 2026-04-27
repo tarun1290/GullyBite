@@ -229,7 +229,7 @@ const orders = {
     delivery_fee_rs:       { type: 'number' },
     discount_rs:           { type: 'number' },
     total_rs:              { type: 'number', required: true },
-    status:                { type: 'string', required: true, enum: ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'RTO_IN_PROGRESS', 'RTO_COMPLETE'] },
+    status:                { type: 'string', required: true, enum: ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'NO_DELIVERY_AVAILABLE', 'RTO_IN_PROGRESS', 'RTO_COMPLETE'] },
     // Phase 1: denormalized payment state on the order row so status
     // transitions don't require a payments lookup.
     payment_status:        { type: 'string', enum: ['unpaid', 'pending', 'paid', 'failed', 'refunded'] },

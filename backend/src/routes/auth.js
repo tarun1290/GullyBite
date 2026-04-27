@@ -2129,11 +2129,15 @@ async function _linkCatalogToBranches(restaurantId, catalogId) {
 }
 
 // ─── ROLE PERMISSION TEMPLATES ───────────────────────────────
+// `manage_staff` gates the per-user Staff-Users CRUD endpoints
+// (POST/GET/PUT/DELETE /restaurant/staff-users). Distinct from
+// `manage_users` (customer-side) — restaurant admins can manage their
+// own staff accounts without holding the broader `manage_users` perm.
 const ROLE_PERMISSIONS = {
-  owner:    { view_orders:true, manage_orders:true, view_menu:true, manage_menu:true, view_analytics:true, manage_settings:true, manage_coupons:true, manage_users:true, view_payments:true },
-  manager:  { view_orders:true, manage_orders:true, view_menu:true, manage_menu:true, view_analytics:true, manage_settings:false, manage_coupons:true, manage_users:false, view_payments:true },
-  kitchen:  { view_orders:true, manage_orders:true, view_menu:true, manage_menu:false, view_analytics:false, manage_settings:false, manage_coupons:false, manage_users:false, view_payments:false },
-  delivery: { view_orders:true, manage_orders:true, view_menu:false, manage_menu:false, view_analytics:false, manage_settings:false, manage_coupons:false, manage_users:false, view_payments:false },
+  owner:    { view_orders:true, manage_orders:true, view_menu:true, manage_menu:true, view_analytics:true, manage_settings:true, manage_coupons:true, manage_users:true, view_payments:true, manage_staff:true },
+  manager:  { view_orders:true, manage_orders:true, view_menu:true, manage_menu:true, view_analytics:true, manage_settings:false, manage_coupons:true, manage_users:false, view_payments:true, manage_staff:true },
+  kitchen:  { view_orders:true, manage_orders:true, view_menu:true, manage_menu:false, view_analytics:false, manage_settings:false, manage_coupons:false, manage_users:false, view_payments:false, manage_staff:false },
+  delivery: { view_orders:true, manage_orders:true, view_menu:false, manage_menu:false, view_analytics:false, manage_settings:false, manage_coupons:false, manage_users:false, view_payments:false, manage_staff:false },
 };
 
 // ─── AUTO-CREATE OWNER USER ──────────────────────────────────

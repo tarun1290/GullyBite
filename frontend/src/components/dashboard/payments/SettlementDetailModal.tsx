@@ -40,6 +40,12 @@ interface SettlementDoc {
   tds_applicable?: boolean;
   referral_fee_rs?: number;
   referral_fee_gst_rs?: number;
+  // Cancellation penalties (REJECTED_BY_RESTAURANT / RESTAURANT_TIMEOUT
+  // Razorpay-fee debits accumulated against the restaurant). Backed by
+  // services/orderCancellationService — will be ₹0 until jobs/settlement.js
+  // drains restaurants.pending_cancellation_fault_fees_paise into the
+  // settlement row. Known gap, not a bug.
+  cancellation_fault_fees?: number;
   // Totals
   gross_revenue_rs?: number;
   net_payout_rs?: number;
@@ -302,6 +308,7 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
                 <BdLine label="TDS" value={settlementDoc.tds_amount_rs} sign="-" />
                 <BdLine label="Referral Fee" value={settlementDoc.referral_fee_rs} sign="-" />
                 <BdLine label="Referral GST" value={settlementDoc.referral_fee_gst_rs} sign="-" />
+                <BdLine label="Cancellation Penalty Charges" value={settlementDoc.cancellation_fault_fees || 0} sign="-" />
                 {DASH}
                 <BdTotal label="NET PAYOUT" value={settlementDoc.net_payout_rs} color="var(--wa)" />
               </div>

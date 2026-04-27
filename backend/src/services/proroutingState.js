@@ -305,8 +305,15 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
   // restaurant/customer cancel paths own that transition. If the order
   // has already reached a terminal state we no-op so duplicate callbacks
   // don't re-alert.
+  //
+  // EXCEPTION: when the cancellation reason indicates Prorouting could
+  // not allocate a rider (no riders available, all unreachable, zone
+  // unsupported, etc.) the GullyBite order goes to NO_DELIVERY_AVAILABLE
+  // and we refund the customer in full — platform absorbs the Razorpay
+  // fee per business policy.
   if (status === 'cancelled') {
-    const TERMINAL_ORDER_STATES = ['CANCELLED', 'DELIVERED', 'EXPIRED', 'RTO_COMPLETE'];
+    const TERMINAL_ORDER_STATES = ['CANCELLED', 'DELIVERED', 'EXPIRED', 'RTO_COMPLETE',
+      'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'NO_DELIVERY_AVAILABLE'];
     if (TERMINAL_ORDER_STATES.includes(order.status)) {
       log.info({ orderId: order._id, orderStatus: order.status }, 'cancelled callback: GullyBite order already terminal — no-op');
       return { previousStatus, currentStatus: statusRaw, updated: false };
@@ -314,13 +321,34 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
 
     const cancelledAt = eventBody?.order?.cancelled_at || null;
     const reasonDesc  = eventBody?.order?.cancellation?.reason_desc || null;
+    const reasonCode  = eventBody?.order?.cancellation?.reason_code || null;
 
     const logisticsSet = {};
     if (cancelledAt) logisticsSet['logistics.cancelledAt']        = cancelledAt;
     if (reasonDesc)  logisticsSet['logistics.cancellationReason'] = reasonDesc;
+    if (reasonCode)  logisticsSet['logistics.cancellationReasonCode'] = reasonCode;
     if (Object.keys(logisticsSet).length) {
       logisticsSet.updated_at = new Date();
       await col('orders').updateOne({ _id: order._id }, { $set: logisticsSet });
+    }
+
+    // No-rider detection. Prorouting's reason taxonomy isn't fully
+    // documented for our integration; match common substrings and
+    // codes. Anything else falls through to the manual-reassignment
+    // alert below (existing behavior — preserved).
+    const reasonBlob = `${reasonDesc || ''} ${reasonCode || ''}`.toLowerCase();
+    const isNoRider = /no[\s_-]*rider|no[\s_-]*delivery|no[\s_-]*agent|unable[\s_-]*to[\s_-]*allocate|allocation[\s_-]*fail|rider[\s_-]*unavailable|no[\s_-]*executive/.test(reasonBlob);
+
+    if (isNoRider) {
+      log.warn({ orderId: order._id, reasonDesc, reasonCode }, 'prorouting cancelled — no rider available, initiating refund');
+      // Fire-and-forget: webhook contract is "always 200"; refund
+      // failures must not propagate as HTTP errors back to Prorouting.
+      setImmediate(() => {
+        const cancellation = require('./orderCancellationService');
+        cancellation.handleNoRiderFault(order._id)
+          .catch((err) => log.error({ err: err?.message, orderId: order._id }, 'handleNoRiderFault failed'));
+      });
+      return { previousStatus, currentStatus: statusRaw, updated: true };
     }
 
     log.warn({ orderId: order._id, clientOrderId: order._id, reasonDesc }, 'prorouting cancelled — LSP dropped delivery, manual reassignment needed');

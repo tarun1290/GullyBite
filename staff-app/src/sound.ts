@@ -1,5 +1,5 @@
 // Thin wrapper around expo-av's Audio.Sound for the new-order chime. The
-// file is bundled from ./assets/sounds/new-order.mp3 — see the asset
+// file is bundled from ./assets/sounds/new_order.mp3 — see the asset
 // README for how to add / replace it. If the asset is missing we swallow
 // the error so the rest of the flow keeps working.
 
@@ -19,7 +19,7 @@ async function ensureLoaded(): Promise<Audio.Sound | null> {
       staysActiveInBackground: false,
     });
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const asset = require('../assets/sounds/new-order.mp3');
+    const asset = require('../assets/sounds/new_order.mp3');
     const { sound } = await Audio.Sound.createAsync(asset, { shouldPlay: false });
     cached = sound;
     return sound;

@@ -5,6 +5,7 @@ import OrderCard from '../../../components/dashboard/OrderCard';
 import OrderDetailModal from '../../../components/dashboard/OrderDetailModal';
 import { getOrders, updateOrderStatus } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
+import { useNewOrderSound } from '../../../hooks/useNewOrderSound';
 import type { Order, OrderStatus } from '../../../types';
 
 type FilterValue = OrderStatus | 'ALL';
@@ -38,6 +39,12 @@ export default function OrdersPage() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState<Record<string, boolean>>({});
   const [lastFetched, setLastFetched] = useState<number | null>(null);
+  // New-order alarm. The hook diffs `orders` against its previous
+  // snapshot — fires on PAID arrivals, silences on transitions out of
+  // PAID. Respects the restaurant's `notification_settings.new_order`
+  // preference internally. stopAll() runs on unmount so navigating
+  // away from the orders tab silences any in-flight alarm.
+  const { syncWithOrders, stopAll } = useNewOrderSound();
 
   const fetchOrders = useCallback(
     async (f: FilterValue, opts: FetchOpts = {}) => {
@@ -63,6 +70,21 @@ export default function OrdersPage() {
     const id = setInterval(() => fetchOrders(filter, { silent: true }), REFRESH_MS);
     return () => clearInterval(id);
   }, [filter, fetchOrders]);
+
+  // Drive the new-order alarm off the polled orders list. Runs after
+  // every `orders` change (initial fetch, 30s polls, post-action
+  // refetches), so handleStatusChange silencing the alarm comes for
+  // free — accept/decline -> updateOrderStatus -> fetchOrders ->
+  // setOrders -> this effect -> syncWithOrders -> alarm stops. Final
+  // stopAll() on unmount silences the alarm if the user navigates
+  // away while a PAID order is still ringing.
+  useEffect(() => {
+    syncWithOrders(orders);
+  }, [orders, syncWithOrders]);
+
+  useEffect(() => {
+    return () => { stopAll(); };
+  }, [stopAll]);
 
   const handleStatusChange = useCallback(
     async (orderId: string, nextStatus: string) => {

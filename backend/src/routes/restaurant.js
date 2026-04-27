@@ -123,9 +123,23 @@ router.get('/public/store/:slug', express.json(), async (req, res) => {
   }
 });
 
-// All routes below require authentication
-// requireApproved is applied only to routes that need WhatsApp (order flow, catalog sync)
-router.use(requireAuth);
+// All routes below require authentication. Most use the standard
+// restaurant JWT (requireAuth). Two endpoints — /orders/:id/accept and
+// /orders/:id/decline — additionally accept a per-user staff JWT via
+// requireStaffOrRestaurantAuth. The combined middleware mirrors the
+// req.userPermissions / req.restaurantId / req.userBranchIds shape so
+// downstream requireApproved + requirePermission + audit log helpers
+// work uniformly across token types.
+const { requireStaffOrRestaurantAuth } = require('../middleware/staffAuth');
+const _staffOrOwner = requireStaffOrRestaurantAuth(requireAuth);
+router.use((req, res, next) => {
+  // Accept BOTH token types on shared accept/decline endpoints — owner
+  // managing from the dashboard, staff acting on a tablet.
+  if (/^\/orders\/[^/]+\/(accept|decline)$/.test(req.path)) {
+    return _staffOrOwner(req, res, next);
+  }
+  return requireAuth(req, res, next);
+});
 
 // ─── TENANT-OWNERSHIP HELPERS ────────────────────────────────
 // These helpers are the SINGLE source of truth for "does this resource
@@ -1674,6 +1688,88 @@ router.delete('/branches/:id/permanent', async (req, res) => {
     res.json({ success: true, deleted_items: items.length });
   } catch (e) {
     req.log.error({ err: e }, 'Permanent branch delete failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ─── BRANCH STAFF-LINK (UUID for staff app PIN login URL) ──────
+// staff_access_token is a per-branch UUID. Staff open the link
+// /staff/<token> on a tablet, which scopes the login to that branch
+// (the new /api/staff/auth resolves restaurantId + branchId from the
+// token). Token regeneration replaces the value but does NOT
+// invalidate existing JWTs — they carry branchId in the payload, not
+// the token. Old links simply stop working for new logins.
+
+// GET /api/restaurant/branches/:branchId/staff-link
+// Returns the existing staff_access_token + the construction of the
+// shareable login URL. { staff_access_token: null, ... } when none has
+// been generated yet (admin must POST /generate first).
+router.get('/branches/:branchId/staff-link', async (req, res) => {
+  try {
+    const branch = await col('branches').findOne(
+      { _id: req.params.branchId, restaurant_id: req.restaurantId },
+      { projection: { staff_access_token: 1, staff_access_token_generated_at: 1 } },
+    );
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+    const token = branch.staff_access_token || null;
+    const base = process.env.FRONTEND_URL || '';
+    const loginUrl = token && base ? `${base.replace(/\/$/, '')}/staff/${token}` : null;
+    res.json({
+      staff_access_token: token,
+      staff_login_url: loginUrl,
+      generated_at: branch.staff_access_token_generated_at || null,
+    });
+  } catch (e) {
+    req.log?.error?.({ err: e, branchId: req.params.branchId }, 'staff-link get failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// POST /api/restaurant/branches/:branchId/staff-link/generate
+// Generates (or replaces) the per-branch staff_access_token. Existing
+// staff JWTs continue to work — they carry branchId in the payload, not
+// the token, so revocation has to happen through the per-user
+// soft-delete or reset-pin paths in /restaurant/staff-users. Replacing
+// the token only blocks NEW logins via the old URL.
+router.post('/branches/:branchId/staff-link/generate', async (req, res) => {
+  try {
+    const branch = await col('branches').findOne(
+      { _id: req.params.branchId, restaurant_id: req.restaurantId },
+      { projection: { _id: 1 } },
+    );
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    const crypto = require('crypto');
+    const newToken = crypto.randomUUID();
+    const now = new Date();
+    await col('branches').updateOne(
+      { _id: req.params.branchId },
+      { $set: {
+          staff_access_token: newToken,
+          staff_access_token_generated_at: now,
+          updated_at: now,
+      } },
+    );
+
+    log({
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      action: 'branch.staff_link_generated', category: 'settings',
+      description: `Staff access token (re)generated for branch ${req.params.branchId}`,
+      restaurantId: req.restaurantId,
+      branchId: req.params.branchId,
+      resourceType: 'branch', resourceId: req.params.branchId,
+      severity: 'info',
+    });
+
+    const base = process.env.FRONTEND_URL || '';
+    const loginUrl = base ? `${base.replace(/\/$/, '')}/staff/${newToken}` : null;
+    res.json({
+      staff_access_token: newToken,
+      staff_login_url: loginUrl,
+      generated_at: now,
+    });
+  } catch (e) {
+    req.log?.error?.({ err: e, branchId: req.params.branchId }, 'staff-link generate failed');
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
@@ -5027,6 +5123,15 @@ router.post('/orders/:orderId/accept', requireApproved, requirePermission('manag
     if (order.status !== 'PAID') {
       return res.status(409).json({ error: `Cannot accept order in status ${order.status}` });
     }
+    // Per-user branch guard — applies to staff JWTs scoped to specific
+    // branches AND to restaurant JWTs for branch-scoped managers.
+    // Empty branchIds = no restriction (owner default). Centralized via
+    // req.actor (set by requireStaffOrRestaurantAuth above).
+    if (req.actor?.branchIds?.length) {
+      if (!req.actor.branchIds.map(String).includes(String(order.branch_id))) {
+        return res.status(403).json({ error: 'Forbidden — order not in your branch' });
+      }
+    }
 
     const now = new Date();
     await col('orders').updateOne(
@@ -5036,7 +5141,29 @@ router.post('/orders/:orderId/accept', requireApproved, requirePermission('manag
 
     await orderSvc.updateStatus(orderId, 'CONFIRMED', {
       actor: req.userId || 'restaurant',
-      actorType: 'restaurant',
+      actorType: req.actor?.type === 'staff' ? 'staff' : 'restaurant',
+    });
+
+    // Cancel the BullMQ acceptance-timeout job — restaurant acted in
+    // time. Best-effort: removeAcceptanceTimeoutJob is a no-op when the
+    // job is missing, so retries / stale ids never throw.
+    if (order.acceptance_timeout_job_id) {
+      try {
+        const { removeAcceptanceTimeoutJob } = require('../jobs/orderAcceptanceQueue');
+        await removeAcceptanceTimeoutJob(order.acceptance_timeout_job_id);
+      } catch (_) {}
+    }
+
+    // Trigger Prorouting dispatch — moved here from the post-payment
+    // fan-out so dispatch only fires AFTER the restaurant accepts.
+    // Fire-and-forget: a Prorouting outage shouldn't block the
+    // accept-modal close. The post-payment ORDER_DISPATCH job that used
+    // to handle this is gated by a status guard (`!== 'CONFIRMED'`)
+    // for stale jobs in flight during deploy.
+    setImmediate(() => {
+      const { enqueue, JOB_TYPES } = require('../queue/postPaymentJobs');
+      enqueue(JOB_TYPES.ORDER_DISPATCH, { orderId: String(orderId), restaurantId: String(req.restaurantId) })
+        .catch((err) => req.log?.warn?.({ err: err?.message, orderId }, 'enqueue ORDER_DISPATCH failed (non-fatal)'));
     });
 
     ws.broadcastOrder(req.restaurantId, 'order_acknowledged', {
@@ -5106,18 +5233,17 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
     if (order.status !== 'PAID') {
       return res.status(409).json({ error: `Cannot decline order in status ${order.status}` });
     }
-
-    // Issue refund FIRST. If Razorpay rejects we abort so we don't end
-    // up with a CANCELLED order the customer was never refunded for.
-    let refund = null;
-    try {
-      const payment = require('../services/payment');
-      refund = await payment.issueRefund(orderId, `Restaurant declined: ${reason}`);
-    } catch (err) {
-      req.log?.error?.({ err, orderId }, 'decline refund failed');
-      return res.status(502).json({ error: 'Refund failed — order not cancelled. Please retry or contact support.' });
+    // Branch guard — same rule as /accept above (req.actor branch scope
+    // applies for both staff JWTs and branch-scoped manager JWTs).
+    if (req.actor?.branchIds?.length) {
+      if (!req.actor.branchIds.map(String).includes(String(order.branch_id))) {
+        return res.status(403).json({ error: 'Forbidden — order not in your branch' });
+      }
     }
 
+    // Stamp acknowledgement BEFORE the cancellation handler — it does
+    // its own refund + state transition, and we want the modal to close
+    // even if the customer-WA leg of the handler fails.
     const now = new Date();
     await col('orders').updateOne(
       { _id: orderId, acknowledged_at: { $exists: false } },
@@ -5125,34 +5251,29 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
           acknowledged_at: now,
           acknowledged_by: req.userId || null,
           decline_reason: reason,
-          refund_id: refund?.id || null,
       } }
     );
 
-    await orderSvc.updateStatus(orderId, 'CANCELLED', {
-      actor: req.userId || 'restaurant',
-      actorType: 'restaurant',
-      cancelReason: reason,
-    });
+    // Centralized fault flow: refund → REJECTED_BY_RESTAURANT transition
+    // → cancellation_fault_fee on order doc → settlement accumulator
+    // increment → customer order_cancelled + refund_processed templates.
+    // Refund failure throws so we abort with a 502 (customer must not
+    // see CANCELLED before the refund is in flight).
+    let result;
+    try {
+      const cancellation = require('../services/orderCancellationService');
+      result = await cancellation.handleRestaurantFault(orderId, 'rejected_by_restaurant');
+    } catch (err) {
+      req.log?.error?.({ err, orderId }, 'decline fault handler failed');
+      return res.status(502).json({ error: 'Refund failed — order not cancelled. Please retry or contact support.' });
+    }
 
     ws.broadcastOrder(req.restaurantId, 'order_acknowledged', {
-      orderId, action: 'decline', newStatus: 'CANCELLED',
+      orderId, action: 'decline', newStatus: result?.status || 'REJECTED_BY_RESTAURANT',
     });
     ws.broadcastOrder(req.restaurantId, 'order_status_changed', {
-      orderId, newStatus: 'CANCELLED', updatedAt: now.toISOString(),
+      orderId, newStatus: result?.status || 'REJECTED_BY_RESTAURANT', updatedAt: now.toISOString(),
     });
-
-    // Customer notification — fire-and-forget.
-    try {
-      const fullOrder = await orderSvc.getOrderDetails(orderId);
-      if (fullOrder?.phone_number_id) {
-        const waSvc = require('../services/whatsapp');
-        waSvc.sendText(
-          fullOrder.phone_number_id, fullOrder.access_token, fullOrder.wa_phone,
-          `We're sorry — your order #${fullOrder.order_number} couldn't be accepted by the restaurant.\n\nA full refund of ₹${parseFloat(fullOrder.total_rs).toFixed(0)} has been initiated and will reach you in 5–7 business days.\n\nReason: ${reason}`
-        ).catch(() => {});
-      }
-    } catch (_) {}
 
     // Prorouting 3PL cancel — fire-and-forget. Only when a rider was
     // already dispatched (prorouting_order_id set). cancelDeliveryOrder
@@ -5169,17 +5290,17 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
       });
     }
 
-    res.json({ success: true, status: 'CANCELLED', refundId: refund?.id || null });
+    res.json({ success: true, status: result?.status || 'REJECTED_BY_RESTAURANT', refundId: result?.refundId || null });
 
     log({
       actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
       action: 'order.declined', category: 'order',
-      description: `Order ${orderId} declined (PAID → CANCELLED, refund ${refund?.id || 'n/a'})`,
+      description: `Order ${orderId} declined (PAID → ${result?.status || 'REJECTED_BY_RESTAURANT'}, refund ${result?.refundId || 'n/a'}, fault_fee ₹${result?.razorpayFeeRs || 0})`,
       restaurantId: req.restaurantId,
       branchId: order.branch_id,
       resourceType: 'order', resourceId: orderId,
       severity: 'warn',
-      metadata: { reason, refund_id: refund?.id || null },
+      metadata: { reason, refund_id: result?.refundId || null, razorpay_fee_rs: result?.razorpayFeeRs || 0 },
     });
   } catch (e) {
     req.log?.error?.({ err: e, orderId: req.params.orderId }, 'order decline failed');
@@ -7970,7 +8091,363 @@ router.post('/issues/:id/reopen', requireAuth, requireApproved, async (req, res)
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// ─── STAFF USERS (per-user RBAC) ───────────────────────────────
+// Owner/manager-side CRUD over staff accounts in restaurant_users
+// (role: 'staff'). All endpoints filter by req.restaurantId so a
+// restaurant can never read or modify another restaurant's staff.
+// Gated by manage_staff (NOT manage_users — that perm is for the
+// customer-side user management).
+//
+// PINs are 4-digit and bcrypt-hashed at 10 rounds. The plain PIN is
+// only ever returned ONCE (on create + reset) so the owner can hand it
+// off. Subsequent reads NEVER include pin_hash or the plain PIN.
+
+const _STAFF_BCRYPT = require('bcryptjs');
+
+const _STAFF_VALID_PERM_KEYS = new Set([
+  'view_orders', 'manage_orders',
+  'view_menu', 'manage_menu',
+  'view_analytics', 'manage_settings',
+  'manage_coupons', 'manage_users',
+  'view_payments', 'manage_staff',
+]);
+
+function _normalizeStaffPermissions(input) {
+  // Filter to known keys; coerce to boolean. Defaults to all-false.
+  const out = {};
+  for (const k of _STAFF_VALID_PERM_KEYS) out[k] = false;
+  if (input && typeof input === 'object') {
+    for (const [k, v] of Object.entries(input)) {
+      if (_STAFF_VALID_PERM_KEYS.has(k)) out[k] = !!v;
+    }
+  }
+  return out;
+}
+
+function _normalizeBranchIds(input, restaurantId) {
+  // Empty/missing array means "all branches". Otherwise must be an
+  // array of strings — we don't ownership-check the branches here
+  // (cheap), but the order/menu guards re-check at request time so a
+  // forged branch_id in the array is harmless.
+  if (!Array.isArray(input)) return [];
+  return input.map((b) => String(b)).filter(Boolean);
+}
+
+function _staffUserPublic(u) {
+  if (!u) return null;
+  return {
+    id: String(u._id),
+    name: u.name || '',
+    phone: u.phone || '',
+    role: u.role || 'staff',
+    branch_ids: Array.isArray(u.branch_ids) ? u.branch_ids : [],
+    permissions: u.permissions || {},
+    is_active: !!u.is_active,
+    last_login_at: u.last_login_at || null,
+    created_at: u.created_at || null,
+    updated_at: u.updated_at || null,
+  };
+}
+
+// POST /api/restaurant/staff-users
+// Body: { name, phone, pin (4-digit), branch_ids?, permissions? }
+// Returns: { staffUser: <public shape>, pin } — pin is the plain PIN
+// returned ONCE so the owner can hand it off.
+router.post('/staff-users', requireAuth, requirePermission('manage_staff'), express.json(),
+  async (req, res) => {
+    try {
+      const { name, phone, pin, branch_ids, permissions } = req.body || {};
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'name is required' });
+      }
+      if (!phone || !/^[0-9]{10,15}$/.test(String(phone))) {
+        return res.status(400).json({ error: 'phone is required (10-15 digits)' });
+      }
+      if (!pin || !/^\d{4}$/.test(String(pin))) {
+        return res.status(400).json({ error: 'pin must be exactly 4 digits' });
+      }
+      // Phone uniqueness within the restaurant (across active rows).
+      // Soft-deleted (is_active=false) rows don't conflict so the same
+      // phone can be re-used after a staff member leaves and rejoins.
+      const dupe = await col('restaurant_users').findOne({
+        restaurant_id: req.restaurantId,
+        phone: String(phone),
+        is_active: true,
+      });
+      if (dupe) return res.status(409).json({ error: 'A staff user with this phone already exists' });
+
+      const pinHash = await _STAFF_BCRYPT.hash(String(pin), 10);
+      const now = new Date();
+      const doc = {
+        _id: newId(),
+        restaurant_id: req.restaurantId,
+        name: name.trim(),
+        phone: String(phone),
+        email: null,
+        pin_hash: pinHash,
+        pin_attempts: 0,
+        pin_locked_until: null,
+        token_version: 0,
+        role: 'staff',
+        branch_ids: _normalizeBranchIds(branch_ids, req.restaurantId),
+        permissions: _normalizeStaffPermissions(permissions),
+        is_active: true,
+        last_login_at: null,
+        created_at: now,
+        updated_at: now,
+      };
+      await col('restaurant_users').insertOne(doc);
+
+      log({
+        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+        action: 'staff_user.created', category: 'settings',
+        description: `Staff user "${doc.name}" (${doc.phone}) created`,
+        restaurantId: req.restaurantId,
+        resourceType: 'staff_user', resourceId: doc._id,
+        severity: 'info',
+      });
+
+      return res.status(201).json({
+        success: true,
+        staffUser: _staffUserPublic(doc),
+        // Plain PIN returned ONCE so the admin can give it to the staff
+        // member. Never persisted.
+        pin: String(pin),
+      });
+    } catch (e) {
+      req.log?.error?.({ err: e }, 'staff_user create failed');
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  });
+
+// GET /api/restaurant/staff-users — list active staff for this restaurant.
+// Includes inactive too if ?include_inactive=true. Never returns pin_hash.
+router.get('/staff-users', requireAuth, requirePermission('manage_staff'), async (req, res) => {
+  try {
+    const filter = {
+      restaurant_id: req.restaurantId,
+      role: 'staff',
+    };
+    if (req.query.include_inactive !== 'true') filter.is_active = true;
+    const rows = await col('restaurant_users')
+      .find(filter, { projection: { pin_hash: 0 } })
+      .sort({ created_at: -1 })
+      .toArray();
+    res.json({ success: true, staffUsers: rows.map(_staffUserPublic) });
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'staff_user list failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// PUT /api/restaurant/staff-users/:userId — update name, branch_ids,
+// permissions, is_active. PIN is updated via the dedicated /reset-pin
+// route below (separate concern, separate audit trail).
+router.put('/staff-users/:userId', requireAuth, requirePermission('manage_staff'), express.json(),
+  async (req, res) => {
+    try {
+      const userId = req.params.userId;
+      const target = await col('restaurant_users').findOne({
+        _id: userId,
+        restaurant_id: req.restaurantId,
+        role: 'staff',
+      });
+      if (!target) return res.status(404).json({ error: 'Staff user not found' });
+
+      const $set = { updated_at: new Date() };
+      if (typeof req.body?.name === 'string' && req.body.name.trim()) {
+        $set.name = req.body.name.trim();
+      }
+      if (Array.isArray(req.body?.branch_ids)) {
+        $set.branch_ids = _normalizeBranchIds(req.body.branch_ids, req.restaurantId);
+      }
+      if (req.body?.permissions && typeof req.body.permissions === 'object') {
+        $set.permissions = _normalizeStaffPermissions(req.body.permissions);
+      }
+      let bumpTokenVersion = false;
+      if (typeof req.body?.is_active === 'boolean') {
+        if (req.body.is_active === false && target.is_active) bumpTokenVersion = true;
+        $set.is_active = req.body.is_active;
+      }
+
+      const update = { $set };
+      // Bumping token_version invalidates every in-flight token for
+      // this staff user — used when the admin deactivates them so
+      // tablets log out immediately.
+      if (bumpTokenVersion) update.$inc = { token_version: 1 };
+
+      await col('restaurant_users').updateOne({ _id: userId }, update);
+      const fresh = await col('restaurant_users').findOne(
+        { _id: userId },
+        { projection: { pin_hash: 0 } },
+      );
+
+      log({
+        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+        action: 'staff_user.updated', category: 'settings',
+        description: `Staff user "${target.name}" updated${bumpTokenVersion ? ' (deactivated — sessions revoked)' : ''}`,
+        restaurantId: req.restaurantId,
+        resourceType: 'staff_user', resourceId: userId,
+        severity: 'info',
+        metadata: { fields: Object.keys($set).filter(k => k !== 'updated_at') },
+      });
+
+      res.json({ success: true, staffUser: _staffUserPublic(fresh) });
+    } catch (e) {
+      req.log?.error?.({ err: e, userId: req.params.userId }, 'staff_user update failed');
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  });
+
+// PUT /api/restaurant/staff-users/:userId/reset-pin
+// Body: { pin } — 4-digit. Re-hashes; bumps token_version so any
+// in-flight session for this user (e.g., a forgotten tablet) is
+// immediately invalidated and forced to re-PIN.
+router.put('/staff-users/:userId/reset-pin', requireAuth, requirePermission('manage_staff'), express.json(),
+  async (req, res) => {
+    try {
+      const userId = req.params.userId;
+      const { pin } = req.body || {};
+      if (!pin || !/^\d{4}$/.test(String(pin))) {
+        return res.status(400).json({ error: 'pin must be exactly 4 digits' });
+      }
+      const target = await col('restaurant_users').findOne({
+        _id: userId,
+        restaurant_id: req.restaurantId,
+        role: 'staff',
+      });
+      if (!target) return res.status(404).json({ error: 'Staff user not found' });
+
+      const pinHash = await _STAFF_BCRYPT.hash(String(pin), 10);
+      await col('restaurant_users').updateOne(
+        { _id: userId },
+        {
+          $set: { pin_hash: pinHash, updated_at: new Date() },
+          $inc: { token_version: 1 },
+        },
+      );
+
+      log({
+        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+        action: 'staff_user.pin_reset', category: 'settings',
+        description: `Staff user "${target.name}" PIN reset (sessions revoked)`,
+        restaurantId: req.restaurantId,
+        resourceType: 'staff_user', resourceId: userId,
+        severity: 'warning',
+      });
+
+      res.json({ success: true, pin: String(pin) });
+    } catch (e) {
+      req.log?.error?.({ err: e, userId: req.params.userId }, 'staff_user reset-pin failed');
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  });
+
+// DELETE /api/restaurant/staff-users/:userId — soft delete.
+// is_active: false + token_version bump so any in-flight tablet is
+// logged out immediately. Row is preserved so audit logs that reference
+// it still resolve.
+router.delete('/staff-users/:userId', requireAuth, requirePermission('manage_staff'),
+  async (req, res) => {
+    try {
+      const userId = req.params.userId;
+      const target = await col('restaurant_users').findOne({
+        _id: userId,
+        restaurant_id: req.restaurantId,
+        role: 'staff',
+      });
+      if (!target) return res.status(404).json({ error: 'Staff user not found' });
+      if (!target.is_active) {
+        return res.json({ success: true, alreadyInactive: true });
+      }
+      await col('restaurant_users').updateOne(
+        { _id: userId },
+        {
+          $set: { is_active: false, updated_at: new Date() },
+          $inc: { token_version: 1 },
+        },
+      );
+
+      log({
+        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+        action: 'staff_user.deleted', category: 'settings',
+        description: `Staff user "${target.name}" deactivated (sessions revoked)`,
+        restaurantId: req.restaurantId,
+        resourceType: 'staff_user', resourceId: userId,
+        severity: 'warning',
+      });
+
+      res.json({ success: true });
+    } catch (e) {
+      req.log?.error?.({ err: e, userId: req.params.userId }, 'staff_user delete failed');
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  });
+
 // ─── FINANCIAL ENDPOINTS ────────────────────────────────────────
+
+// GET /api/restaurant/penalties
+// Per-restaurant cancellation_fault_fee history. Each REJECTED_BY_RESTAURANT
+// or RESTAURANT_TIMEOUT order writes a `cancellation_fault_fee` subdocument
+// onto the order (see services/orderCancellationService.js). We project it
+// out for the dashboard's Penalties page.
+//
+// Query: ?from=ISO&to=ISO (both optional). When provided, filters by
+// cancellation_fault_fee.created_at — the moment the fee was booked, not
+// the moment the order was placed (so the dashboard date filter matches
+// the period the fee actually hit the restaurant's account).
+router.get('/penalties', requireAuth, async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const match = {
+      restaurant_id: req.restaurantId,
+      cancellation_fault_fee: { $exists: true },
+    };
+    if (from || to) {
+      match['cancellation_fault_fee.created_at'] = {};
+      if (from) {
+        const f = new Date(from);
+        if (!Number.isNaN(f.getTime())) match['cancellation_fault_fee.created_at'].$gte = f;
+      }
+      if (to) {
+        const t = new Date(to);
+        if (!Number.isNaN(t.getTime())) match['cancellation_fault_fee.created_at'].$lte = t;
+      }
+      if (!Object.keys(match['cancellation_fault_fee.created_at']).length) {
+        delete match['cancellation_fault_fee.created_at'];
+      }
+    }
+
+    const orders = await col('orders')
+      .find(match, { projection: { _id: 1, order_number: 1, cancellation_fault_fee: 1 } })
+      .sort({ 'cancellation_fault_fee.created_at': -1 })
+      .limit(500)
+      .toArray();
+
+    let totalFaultFees = 0;
+    const faultFees = orders.map((o) => {
+      const fee = o.cancellation_fault_fee || {};
+      const amount = Number(fee.amount) || 0;
+      totalFaultFees += amount;
+      return {
+        orderId: String(o._id),
+        orderNumber: o.order_number || String(o._id),
+        amount,
+        reason: fee.reason || null,
+        orderTotal: Number(fee.order_total) || 0,
+        createdAt: fee.created_at || null,
+      };
+    });
+
+    res.json({
+      totalFaultFees: Math.round(totalFaultFees * 100) / 100,
+      faultFees,
+    });
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'penalties query failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
 
 // GET /api/restaurant/financials/summary
 router.get('/financials/summary', requireAuth, requireApproved, async (req, res) => {

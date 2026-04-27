@@ -7,6 +7,7 @@ import type {
   Campaign,
   MenuAllResponse,
   Order,
+  PenaltiesSummary,
   QueryParams,
   RequestBody,
   Restaurant,
@@ -298,6 +299,14 @@ export async function getDailyFinancials(params: QueryParams = {}): Promise<unkn
 
 export async function getSettlements(params: QueryParams = {}): Promise<unknown> {
   const { data } = await client.get('/api/restaurant/financials/settlements', { params });
+  return data;
+}
+
+export async function getPenalties(from?: string, to?: string): Promise<PenaltiesSummary> {
+  const params: QueryParams = {};
+  if (from) params.from = from;
+  if (to) params.to = to;
+  const { data } = await client.get<PenaltiesSummary>('/api/restaurant/penalties', { params });
   return data;
 }
 

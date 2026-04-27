@@ -49,7 +49,10 @@ async function request<T = unknown>(path: string, opts: FetchOpts = {}): Promise
   return (json as T) ?? ({} as T);
 }
 
-// ─── Types ────────────────────────────────────────────────────────────
+// ─── Types (legacy inline shapes — re-exported from src/types.ts) ──────
+//
+// Kept here for back-compat with the existing UI components that import
+// these from '@/api'. The canonical shapes are now in src/types.ts.
 
 export type StaffLoginResponse = {
   token: string;
@@ -58,6 +61,12 @@ export type StaffLoginResponse = {
     name?: string;
     slug?: string;
     logo_url?: string | null;
+  };
+  staffUser: {
+    id: string;
+    name: string;
+    branchId: string;
+    permissions: Record<string, boolean>;
   };
 };
 
@@ -76,8 +85,11 @@ export type StaffOrder = {
   customer_name?: string;
   customer_phone_masked?: string;
   total_rs?: number | null;
+  total_amount?: number | null;
   status?: string;
   payment_status?: string | null;
+  branch_id?: string | null;
+  accepted_at?: string | null;
   created_at?: string;
   items?: StaffOrderItem[];
 };
@@ -89,6 +101,7 @@ export type StaffMenuItem = {
   price?: number;
   is_available: boolean;
   category_name?: string;
+  category?: string;
   image_url?: string | null;
 };
 
@@ -98,10 +111,19 @@ export type StaffMenuResponse = {
 
 // ─── Endpoints ────────────────────────────────────────────────────────
 
-export async function login(slug: string, pin: string): Promise<StaffLoginResponse> {
+// Per-user, per-branch login. The staff_access_token is embedded in the
+// branch-specific URL the manager sends to the staff member; the staff
+// member then enters their name + PIN. Server resolves the token to a
+// branch, finds matching staff_users by name (case-insensitive),
+// bcrypt-compares the PIN, and signs a JWT carrying branchId.
+export async function login(
+  staffAccessToken: string,
+  name: string,
+  pin: string,
+): Promise<StaffLoginResponse> {
   return request<StaffLoginResponse>('/api/staff/auth', {
     method: 'POST',
-    body: { slug: slug.trim().toLowerCase(), pin },
+    body: { staff_access_token: staffAccessToken, name, pin },
     auth: false,
   });
 }
@@ -110,7 +132,32 @@ export async function getOrders(): Promise<{ orders: StaffOrder[] }> {
   return request<{ orders: StaffOrder[] }>('/api/staff/orders');
 }
 
-export async function updateOrderStatus(orderId: string, status: string): Promise<{ success: boolean; status: string }> {
+// Accept and decline are RESTAURANT-side endpoints that the new
+// `requireStaffOrRestaurantAuth` middleware accepts for staff JWTs too.
+// They live under /api/restaurant, not /api/staff — different prefix
+// from the rest of the staff endpoints below.
+export async function acceptOrder(orderId: string): Promise<{ success: boolean; status: string }> {
+  return request(`/api/restaurant/orders/${encodeURIComponent(orderId)}/accept`, {
+    method: 'POST',
+  });
+}
+
+export async function declineOrder(
+  orderId: string,
+  reason?: string,
+): Promise<{ success: boolean; status: string; refundId?: string | null }> {
+  return request(`/api/restaurant/orders/${encodeURIComponent(orderId)}/decline`, {
+    method: 'POST',
+    body: { reason: reason || 'Declined by staff' },
+  });
+}
+
+// Status update for CONFIRMED → PREPARING and PREPARING → PACKED only.
+// Staff cannot transition to DISPATCHED, DELIVERED, or any fault state.
+export async function updateOrderStatus(
+  orderId: string,
+  status: string,
+): Promise<{ success: boolean; status: string }> {
   return request(`/api/staff/orders/${encodeURIComponent(orderId)}/status`, {
     method: 'PATCH',
     body: { status },
@@ -121,15 +168,24 @@ export async function getMenu(): Promise<StaffMenuResponse> {
   return request<StaffMenuResponse>('/api/staff/menu');
 }
 
-export async function updateItemAvailability(
+// Spec'd as PATCH /api/staff/items/:itemId/availability with body
+// { available: boolean }. The backend mirrors this at both
+// /menu/:id/availability (legacy) and /items/:id/availability (spec) —
+// we use the spec'd path. Both `is_available` and `available` are
+// accepted by the server; sending `is_available` to match the existing
+// menu_items internal field.
+export async function toggleItemAvailability(
   itemId: string,
-  isAvailable: boolean
-): Promise<{ success: boolean }> {
-  return request(`/api/staff/menu/${encodeURIComponent(itemId)}/availability`, {
+  available: boolean,
+): Promise<{ success: boolean; is_available: boolean }> {
+  return request(`/api/staff/items/${encodeURIComponent(itemId)}/availability`, {
     method: 'PATCH',
-    body: { is_available: isAvailable },
+    body: { is_available: available },
   });
 }
+
+// Back-compat alias — older callers (existing menu screen) use this name.
+export const updateItemAvailability = toggleItemAvailability;
 
 export async function registerPushToken(token: string, deviceId: string): Promise<{ success: boolean }> {
   return request('/api/staff/push-token', {
