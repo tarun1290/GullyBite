@@ -1998,15 +1998,38 @@ router.get('/menu/unassigned', async (req, res) => {
 
 router.get('/branches/:branchId/menu', async (req, res) => {
   try {
-    // [TENANT] Verify branch ownership before listing — without this check
-    // any restaurant could read another restaurant's full menu (with prices,
-    // descriptions, internal availability state) by guessing branchId.
-    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
-    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+    // The frontend menu picker passes two sentinel branchIds — '__all__'
+    // (every item the restaurant owns) and '__unassigned__' (items
+    // whose branch_id is null/missing). They aren't real branches, so
+    // they bypass _assertBranchOwnedBy; tenant isolation is preserved
+    // by scoping the resulting filter to req.restaurantId.
+    const branchIdParam = req.params.branchId;
+    const isAllSentinel = branchIdParam === '__all__';
+    const isUnassignedSentinel = branchIdParam === '__unassigned__';
+
+    if (!isAllSentinel && !isUnassignedSentinel) {
+      // [TENANT] Verify branch ownership before listing — without this check
+      // any restaurant could read another restaurant's full menu (with prices,
+      // descriptions, internal availability state) by guessing branchId.
+      const branch = await _assertBranchOwnedBy(branchIdParam, req.restaurantId);
+      if (!branch) return res.status(404).json({ error: 'Branch not found' });
+    }
+
+    let menuFilter;
+    if (isAllSentinel) {
+      menuFilter = { restaurant_id: req.restaurantId };
+    } else if (isUnassignedSentinel) {
+      menuFilter = {
+        restaurant_id: req.restaurantId,
+        $or: [{ branch_id: null }, { branch_id: { $exists: false } }],
+      };
+    } else {
+      menuFilter = { branch_id: branchIdParam };
+    }
 
     const [cats, items] = await Promise.all([
-      col('menu_categories').find({ branch_id: req.params.branchId }).sort({ sort_order: 1 }).toArray(),
-      col('menu_items').find({ branch_id: req.params.branchId }).sort({ sort_order: 1, name: 1 }).toArray(),
+      col('menu_categories').find({ branch_id: branchIdParam }).sort({ sort_order: 1 }).toArray(),
+      col('menu_items').find(menuFilter).sort({ sort_order: 1, name: 1 }).toArray(),
     ]);
     const mappedCats  = mapIds(cats);
     const mappedItems = mapIds(items);
