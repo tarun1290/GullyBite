@@ -245,7 +245,13 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
   // manual mapping change on a column whose original header didn't match
   // BRANCH_ALIASES. Reactive — flips immediately when mapping changes.
   const branchColumnMapped = Object.values(mapping).includes('branch');
-  const useMultiBranchPath = multiBranch || branchColumnMapped;
+  // Route to /menu/csv (multi-branch path) whenever there is no real
+  // branch to target. Sentinel selectedBranchId values ('__all__',
+  // '__unassigned__') and an empty selection both fall through here so
+  // the backend's soft-assignment logic owns routing — the
+  // single-branch /branches/:branchId/menu/csv endpoint is reserved for
+  // explicit real-branch uploads.
+  const useMultiBranchPath = multiBranch || branchColumnMapped || !selectedBranchId || selectedBranchId.startsWith('__');
   const canUpload = parsed.length > 0;
 
   const handleUpload = async () => {
