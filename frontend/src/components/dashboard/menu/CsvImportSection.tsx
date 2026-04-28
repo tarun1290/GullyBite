@@ -5,7 +5,6 @@ import * as XLSX from 'xlsx';
 import { useToast } from '../../Toast';
 import {
   uploadMenuCsv,
-  uploadMultiBranchMenuCsv,
   uploadMenuXlsx,
   getMenuMapping,
   importMenu,
@@ -329,13 +328,13 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
   // via auto-detect on file load (which also sets multiBranch) OR via a
   // manual mapping change on a column whose original header didn't match
   // BRANCH_ALIASES. Reactive — flips immediately when mapping changes.
+  // Still surfaced in the helper text below the dropdown so users know a
+  // branch column was detected, even though it no longer affects routing.
   const branchColumnMapped = Object.values(mapping).includes('branch');
-  // Route to /menu/csv (multi-branch path) whenever the file itself
-  // carries branch info (auto-detected or manually mapped) OR the user
-  // explicitly picked the '__all__' option in the Target branch dropdown.
-  // The single-branch /branches/:branchId/menu/csv endpoint is reserved
-  // for explicit real-branch uploads.
-  const useMultiBranchPath = multiBranch || branchColumnMapped || selectedBranchId === '__all__';
+  // Strict-mode: every upload goes through the single-branch endpoint
+  // with the real branchId picked from the dropdown. The multi-branch
+  // routing path is gone — if a branch column exists in the file, the
+  // backend treats it as a row filter, not as a routing signal.
 
   // Mapping validation. Two failure modes block the upload:
   //   1. A required field (Item Name, Price) isn't mapped to any
@@ -367,34 +366,24 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
     }
     return null;
   })();
-  const canUpload = parsed.length > 0 && Boolean(selectedBranchId) && !mappingError;
+  const canUpload = parsed.length > 0 && Boolean(selectedBranchId) && !selectedBranchId.startsWith('__') && !mappingError;
 
   const handleUpload = async () => {
     if (!parsed.length) {
       showToast('No rows to upload', 'error');
       return;
     }
-    if (!selectedBranchId) {
+    if (!selectedBranchId || selectedBranchId.startsWith('__')) {
       showToast('Select a target branch', 'error');
       return;
     }
     setUploading(true);
     setResult(null);
     try {
-      // Multi-branch body: only carry branchId when it's a real branch.
-      // Omitting it on '__all__' lets the backend's soft-assignment
-      // logic route unmatched rows to the Unassigned bucket instead of
-      // pinning them to allBranches[0].
-      const multiBranchBody: { items: typeof parsed; filename: string; branchId?: string } = {
-        items: parsed,
-        filename: fileName,
-      };
-      if (selectedBranchId !== '__all__') {
-        multiBranchBody.branchId = selectedBranchId;
-      }
-      const r = (useMultiBranchPath
-        ? await uploadMultiBranchMenuCsv(multiBranchBody)
-        : await uploadMenuCsv(selectedBranchId, parsed)) as UploadResult;
+      // Single-branch route only — strict-mode upload always pins items
+      // to the dropdown selection. The backend's /branches/:id/menu/csv
+      // endpoint owns deduping, variant detection, and catalog sync.
+      const r = (await uploadMenuCsv(selectedBranchId, parsed)) as UploadResult;
       setResult(r);
       showToast(`✅ ${r.added || 0} items uploaded`, 'success');
       resetInline();
@@ -511,14 +500,13 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                     style={{ padding: '.4rem .6rem', borderRadius: 7, border: '1px solid var(--rim)', fontSize: '.85rem' }}
                   >
                     <option value="">{branchColumnMapped ? 'Auto (from file)' : 'Select…'}</option>
-                    <option value="__all__">📦 All branches (auto-route from file)</option>
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
                 <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.3rem' }}>
                   {branchColumnMapped
                     ? 'Items will be routed by branch name from the file. Select a branch only to override.'
-                    : 'Required — pick a target branch, or "All branches" to auto-route by branch column / section headers in the file.'}
+                    : 'Required — pick the target branch where these items should be imported. If your file has a branch column, only matching rows will be imported.'}
                 </div>
               </div>
             )}

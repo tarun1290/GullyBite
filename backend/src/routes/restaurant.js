@@ -2521,6 +2521,18 @@ function _normalizeCSVRow(row) {
 // Bulk upsert menu items from a parsed CSV (supports Meta Commerce Manager template)
 router.post('/branches/:branchId/menu/csv', async (req, res) => {
   try {
+    // [TENANT] Verify branch ownership BEFORE doing any work — the
+    // route previously only checked when a branch column was present
+    // in the file, leaving callers without that column able to POST
+    // items into another restaurant's branch by guessing branchId.
+    // Hoisting the check here also gates the menu_uploads archive
+    // insertion below so unauthorized POSTs leave no trace.
+    const pickedBranch = await col('branches').findOne({
+      _id: req.params.branchId,
+      restaurant_id: req.restaurantId,
+    });
+    if (!pickedBranch) return res.status(404).json({ error: 'Branch not found' });
+
     const { items, filename } = req.body;
     if (!Array.isArray(items) || !items.length) {
       return res.status(400).json({ error: 'items array is required' });
@@ -2536,12 +2548,51 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
     const branchId = req.params.branchId;
     const results = { added: 0, skipped: 0, errors: [] };
 
+    // ── Branch-column row filter ────────────────────────────────
+    // The frontend now strictly pins every upload to the dropdown's
+    // branchId, but a user can still upload a multi-branch file (e.g.
+    // a Meta export with one row per branch). When that file carries
+    // a branch/outlet column, we keep only rows whose branch value
+    // matches the picked branch's name or slug — empty values default
+    // to the picked branch. Non-matching rows are reported back via
+    // skipped_non_matching_branch so the UI can surface the count.
+    const BRANCH_COLUMN_ALIASES_LOCAL = ['branch', 'outlet', 'location', 'branch_name', 'outlet_name', 'store', 'store_name'];
+    const firstRow = items[0] || {};
+    const branchCol = Object.keys(firstRow).find(k =>
+      BRANCH_COLUMN_ALIASES_LOCAL.includes(k.toLowerCase().trim())
+    );
+
+    let filteredItems = items;
+    let skippedNonMatchingCount = 0;
+
+    if (branchCol) {
+      // pickedBranch is already loaded at the top of the handler for
+      // the tenant check, so we reuse it here for name/slug matching
+      // instead of re-querying.
+      const targetName = (pickedBranch.name || '').toLowerCase().trim();
+      const targetSlug = (pickedBranch.branch_slug || '').toLowerCase().trim();
+
+      filteredItems = items.filter(row => {
+        const rowBranch = String(row[branchCol] || '').toLowerCase().trim();
+        if (!rowBranch) return true; // empty value → applies to picked branch
+        const matches = rowBranch === targetName || rowBranch === targetSlug;
+        if (!matches) skippedNonMatchingCount += 1;
+        return matches;
+      });
+
+      if (filteredItems.length === 0) {
+        return res.status(400).json({
+          error: `No rows in file match selected branch "${pickedBranch.name}". File contains other branch names — pick the correct target branch or remove the branch column.`,
+        });
+      }
+    }
+
     // ── Pre-fetch branch slug ONCE (not per row) ──
     const csvBranchSlug = await getBranchSlug(branchId);
     const now = new Date();
 
     // ── Batch category lookup + creation ──
-    const catNames = [...new Set(items.map(r => { const n = _normalizeCSVRow(r); return sanitizeCsvString(n.category || n.cat); }).filter(Boolean))];
+    const catNames = [...new Set(filteredItems.map(r => { const n = _normalizeCSVRow(r); return sanitizeCsvString(n.category || n.cat); }).filter(Boolean))];
     const categoryCache = {};
     if (catNames.length) {
       const existingCats = await col('menu_categories').find({ branch_id: branchId, name: { $in: catNames } }).toArray();
@@ -2558,7 +2609,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
     const bulkOps = [];
     const nameTracker = {}; // lowercase name → [{ retailerId, hasGroupId }]
 
-    for (const [i, rawRow] of items.entries()) {
+    for (const [i, rawRow] of filteredItems.entries()) {
       const row = _normalizeCSVRow(rawRow);
       const rowNum = i + 2;
       const name = sanitizeCsvString(row.name);
@@ -2677,7 +2728,14 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
       queueSync(req.restaurantId, 'branch', [branchId]);
     }
 
-    res.json({ success: true, ...results, total: items.length });
+    // total = original row count (so the UI can show "X rows in file,
+    // Y added, Z skipped (branch mismatch)"). skipped_non_matching_branch
+    // is included only when the branch-column filter dropped rows.
+    const responsePayload = { success: true, ...results, total: items.length };
+    if (skippedNonMatchingCount > 0) {
+      responsePayload.skipped_non_matching_branch = skippedNonMatchingCount;
+    }
+    res.json(responsePayload);
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.bulk_upload', category: 'menu', description: `Bulk uploaded menu items`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
