@@ -732,6 +732,24 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
 
       return;
     } catch (checkoutErr) {
+      // Diagnostic-only — preserves existing fallback behavior. Surfaces
+      // the swallowed exception with axios response.data + truncated
+      // stack + cart context so we can tell whether the failure was
+      // orderSvc.createOrder, wa.sendPaymentRequest (Meta API rejection),
+      // or a downstream DB write. Variables declared inside the try
+      // (effectiveCharges, effectiveTotalRs, ...) are NOT in scope here,
+      // so we lean on the function parameters (charges, total, items,
+      // session, customer) which are guaranteed to be in scope at every
+      // throw point above.
+      log.error({
+        msg: checkoutErr?.message,
+        stack: (checkoutErr?.stack || '').slice(0, 2000),
+        axiosData: checkoutErr?.response?.data || null,
+        phoneSuffix: String(customer?.wa_phone || customer?.bsuid || '').slice(-4),
+        branchId: session?.branchId || null,
+        cartTotal: Number(charges?.customer_total_rs || total) || 0,
+        itemCount: (items || []).reduce((s, i) => s + (i.qty || 1), 0),
+      }, 'order_details build failed — checkout fallback fired');
       log.warn({ err: checkoutErr }, 'order_details send failed, falling back to text summary');
     }
   }
