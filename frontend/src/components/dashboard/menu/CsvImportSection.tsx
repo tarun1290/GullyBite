@@ -324,13 +324,6 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
     });
   };
 
-  // True when the user has mapped a column to the 'branch' field — either
-  // via auto-detect on file load (which also sets multiBranch) OR via a
-  // manual mapping change on a column whose original header didn't match
-  // BRANCH_ALIASES. Reactive — flips immediately when mapping changes.
-  // Still surfaced in the helper text below the dropdown so users know a
-  // branch column was detected, even though it no longer affects routing.
-  const branchColumnMapped = Object.values(mapping).includes('branch');
   // Strict-mode: every upload goes through the single-branch endpoint
   // with the real branchId picked from the dropdown. The multi-branch
   // routing path is gone — if a branch column exists in the file, the
@@ -490,7 +483,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
               pick below.
             </p>
 
-            {!multiBranch && (
+            {parsed.length > 0 && (
               <div style={{ marginBottom: '.6rem' }}>
                 <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
                   <label style={{ fontSize: '.82rem', color: 'var(--dim)' }}>Target branch:</label>
@@ -499,14 +492,12 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                     onChange={(e) => setSelectedBranchId(e.target.value)}
                     style={{ padding: '.4rem .6rem', borderRadius: 7, border: '1px solid var(--rim)', fontSize: '.85rem' }}
                   >
-                    <option value="">{branchColumnMapped ? 'Auto (from file)' : 'Select…'}</option>
+                    <option value="">Select…</option>
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
                 <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.3rem' }}>
-                  {branchColumnMapped
-                    ? 'Items will be routed by branch name from the file. Select a branch only to override.'
-                    : 'Required — pick the target branch where these items should be imported. If your file has a branch column, only matching rows will be imported.'}
+                  Required — pick the target branch where these items should be imported. If your file has a branch column, only matching rows will be imported.
                 </div>
               </div>
             )}
@@ -523,7 +514,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
               <>
                 <p style={{ fontSize: '.82rem', color: 'var(--dim)', marginBottom: '.5rem' }}>
                   <strong>{fileName}</strong> · {raw.rows.length} rows
-                  {multiBranch && ' · 🏪 Branch column detected — items will be routed automatically'}
+                  {multiBranch && ' · 🏪 Branch column detected — only rows matching the selected branch below will be imported'}
                 </p>
 
                 <h4 style={{ fontSize: '.84rem', margin: '.5rem 0' }}>🗂️ Map columns</h4>
