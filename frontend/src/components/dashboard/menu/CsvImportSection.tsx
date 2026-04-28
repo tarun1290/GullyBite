@@ -20,25 +20,107 @@ interface MenuFieldDef {
   aliases: string[];
 }
 
+// Field aliases are deliberately conservative. Generic / overlapping
+// tokens were stripped after Meta catalog exports were silently
+// mis-mapping `title`, `item_group_id`, and `google_product_category`
+// onto the Item Name field via fuzzy substring matches:
+//   - 'food', 'item', 'product'  (name)            → collided with food_type / item_group_id / google_product_category
+//   - 'group', 'type'            (category)        → collided with item_group_id / food_type
+//   - 'type', 'veg'              (food_type)       → over-broad
+//   - 'hot', 'top'               (is_bestseller)   → false positives ("hot dog", "top sirloin")
+//   - 'url'                      (image_url)       → collided with link / external_url
 const MENU_FIELDS: ReadonlyArray<MenuFieldDef> = [
-  { key: 'name', label: 'Item Name', required: true, aliases: ['name', 'item', 'item_name', 'product', 'dish', 'food', 'title', 'menu_item'] },
+  { key: 'name', label: 'Item Name', required: true, aliases: ['name', 'item_name', 'product_name', 'dish', 'title', 'menu_item'] },
   { key: 'price', label: 'Price (₹)', required: true, aliases: ['price', 'rate', 'mrp', 'cost', 'amount', 'selling_price', 'sp', 'rs', 'inr'] },
-  { key: 'category', label: 'Category', required: false, aliases: ['category', 'cat', 'section', 'group', 'type', 'menu_section', 'course'] },
+  { key: 'category', label: 'Category', required: false, aliases: ['category', 'cat', 'section', 'menu_section', 'course'] },
   { key: 'description', label: 'Description', required: false, aliases: ['description', 'desc', 'details', 'about', 'info', 'note', 'notes'] },
-  { key: 'food_type', label: 'Food Type (veg/non_veg)', required: false, aliases: ['food_type', 'type', 'veg_nonveg', 'veg', 'nonveg', 'diet', 'food_category', 'is_veg', 'veg/non-veg'] },
-  { key: 'image_url', label: 'Image URL', required: false, aliases: ['image_url', 'image', 'img', 'photo', 'picture', 'url', 'photo_url', 'image_link'] },
-  { key: 'is_bestseller', label: 'Bestseller', required: false, aliases: ['is_bestseller', 'bestseller', 'popular', 'featured', 'hot', 'recommended', 'best', 'top'] },
+  { key: 'food_type', label: 'Food Type (veg/non_veg)', required: false, aliases: ['food_type', 'veg_nonveg', 'nonveg', 'diet', 'food_category', 'is_veg', 'veg/non-veg'] },
+  { key: 'image_url', label: 'Image URL', required: false, aliases: ['image_url', 'image', 'img', 'photo', 'picture', 'photo_url', 'image_link'] },
+  { key: 'is_bestseller', label: 'Bestseller', required: false, aliases: ['is_bestseller', 'bestseller', 'popular', 'featured', 'recommended', 'best'] },
   { key: 'size', label: 'Size / Portion', required: false, aliases: ['size', 'portion', 'variant', 'option', 'variant_value', 'size_name'] },
   { key: 'branch', label: 'Branch / Outlet', required: false, aliases: ['branch', 'outlet', 'location', 'branch_name', 'outlet_name', 'store', 'store_name'] },
 ];
 
 const BRANCH_ALIASES: ReadonlyArray<string> = ['branch', 'outlet', 'location', 'branch_name', 'outlet_name', 'store', 'store_name'];
 
-function autoMatch(headerRaw: string): string {
-  const h = (headerRaw || '').toLowerCase().trim().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-  for (const f of MENU_FIELDS) if (f.aliases.includes(h)) return f.key;
-  for (const f of MENU_FIELDS) if (f.aliases.some((a) => h.includes(a) || a.includes(h))) return f.key;
-  return '__skip__';
+function normalizeHeader(headerRaw: string): string {
+  return (headerRaw || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+// Two-pass auto-mapping. Pass 1 only takes EXACT alias matches and
+// locks each target field to the first header that claims it, so
+// a Meta export with both 'name' and 'product_name' picks one of
+// them deterministically. Pass 2 then attempts token-level matches
+// for headers still unassigned (e.g. 'food_type' splits on '_' to
+// ['food', 'type'] — token equality, never substring containment).
+// When multiple fields could token-match the same header, we prefer
+// the field whose matching alias is longer (more specific).
+//
+// The substring-fuzzy path the old autoMatch() used was the source
+// of the silent multi-mapping bug — it claimed 'google_product_category'
+// for the Item Name field via the alias 'product'. Removing the
+// generic aliases (see MENU_FIELDS comment) plus this stricter
+// matcher eliminates the false positives.
+function autoMatchAll(headers: string[]): Record<string, string> {
+  const result: Record<string, string> = {};
+  const taken = new Set<string>(); // field.key values already locked
+  const norms = headers.map(normalizeHeader);
+
+  // PASS 1 — exact-match. Iterate fields so the spec's "first header
+  // whose normalized value exactly equals one of the field's aliases"
+  // is unambiguous: the first header (by index) wins.
+  for (const f of MENU_FIELDS) {
+    if (taken.has(f.key)) continue;
+    for (let i = 0; i < norms.length; i += 1) {
+      const headerKey = String(i);
+      if (result[headerKey]) continue;
+      const norm = norms[i] || '';
+      if (f.aliases.includes(norm)) {
+        result[headerKey] = f.key;
+        taken.add(f.key);
+        break;
+      }
+    }
+  }
+
+  // PASS 2 — token-match for still-unassigned headers. Tokens are
+  // alphanumeric runs split on '_'. A header matches a field if at
+  // least one token equals an alias verbatim. Pick the field whose
+  // matching alias is longest (most specific).
+  for (let i = 0; i < norms.length; i += 1) {
+    const headerKey = String(i);
+    if (result[headerKey]) continue;
+    const tokens = (norms[i] || '').split('_').filter(Boolean);
+    if (!tokens.length) {
+      result[headerKey] = '__skip__';
+      continue;
+    }
+    let bestField: string | null = null;
+    let bestAliasLen = 0;
+    for (const f of MENU_FIELDS) {
+      if (taken.has(f.key)) continue;
+      let bestForField = 0;
+      for (const a of f.aliases) {
+        if (tokens.includes(a) && a.length > bestForField) bestForField = a.length;
+      }
+      if (bestForField > bestAliasLen) {
+        bestAliasLen = bestForField;
+        bestField = f.key;
+      }
+    }
+    if (bestField) {
+      result[headerKey] = bestField;
+      taken.add(bestField);
+    } else {
+      result[headerKey] = '__skip__';
+    }
+  }
+
+  return result;
 }
 
 function splitCSVLine(line: string): string[] {
@@ -221,8 +303,11 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
       setRaw(data);
       const detected = data.headers.some((h) => BRANCH_ALIASES.includes((h || '').toLowerCase().trim()));
       setMultiBranch(detected);
-      const m: Mapping = {};
-      data.headers.forEach((h, i) => { m[i] = autoMatch(h); });
+      // Single pass over the whole header array — autoMatchAll
+      // dedupes target fields across columns so we never silently map
+      // two headers (e.g. 'name' AND 'product_name') onto the same
+      // field.
+      const m: Mapping = autoMatchAll(data.headers);
       setMapping(m);
       setParsed(applyMapping(data.rows, m));
     } catch (err: unknown) {
@@ -251,7 +336,38 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
   // The single-branch /branches/:branchId/menu/csv endpoint is reserved
   // for explicit real-branch uploads.
   const useMultiBranchPath = multiBranch || branchColumnMapped || selectedBranchId === '__all__';
-  const canUpload = parsed.length > 0 && Boolean(selectedBranchId);
+
+  // Mapping validation. Two failure modes block the upload:
+  //   1. A required field (Item Name, Price) isn't mapped to any
+  //      column — the row insert would explode at the backend.
+  //   2. The same field key is mapped to >1 column (auto-detect
+  //      conflict OR a user override that left the duplicate behind).
+  // We only validate when there's an active file (raw != null);
+  // otherwise the empty-state Upload button shouldn't read "fix the
+  // mapping" because there's no mapping yet.
+  const mappingError: string | null = (() => {
+    if (!raw) return null;
+    const fieldCounts: Record<string, number> = {};
+    for (const v of Object.values(mapping)) {
+      if (!v || v === '__skip__') continue;
+      fieldCounts[v] = (fieldCounts[v] || 0) + 1;
+    }
+    const dup = Object.entries(fieldCounts).find(([, n]) => n > 1);
+    if (dup) {
+      const [dupKey] = dup;
+      const f = MENU_FIELDS.find((x) => x.key === dupKey);
+      const label = f?.label || dupKey;
+      return `Mapping conflict: '${label}' is auto-detected on multiple columns — please select the correct one and set the others to (skip this column).`;
+    }
+    const required = MENU_FIELDS.filter((x) => x.required);
+    const missing = required.filter((x) => !fieldCounts[x.key]);
+    if (missing.length) {
+      const labels = missing.map((m) => `'${m.label}'`).join(', ');
+      return `Missing required mapping: ${labels}. Pick a column for each required field.`;
+    }
+    return null;
+  })();
+  const canUpload = parsed.length > 0 && Boolean(selectedBranchId) && !mappingError;
 
   const handleUpload = async () => {
     if (!parsed.length) {
@@ -423,6 +539,22 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                 </p>
 
                 <h4 style={{ fontSize: '.84rem', margin: '.5rem 0' }}>🗂️ Map columns</h4>
+                {mappingError && (
+                  <div
+                    style={{
+                      padding: '.5rem .7rem',
+                      marginBottom: '.5rem',
+                      background: 'rgba(220,38,38,0.08)',
+                      border: '1px solid rgba(220,38,38,0.4)',
+                      color: '#dc2626',
+                      borderRadius: 6,
+                      fontSize: '.8rem',
+                    }}
+                    role="alert"
+                  >
+                    ⚠️ {mappingError}
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '.4rem', marginBottom: '.7rem' }}>
                   {raw.headers.map((h, i) => (
                     <div key={i} style={{ display: 'contents' }}>
