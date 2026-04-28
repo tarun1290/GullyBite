@@ -410,12 +410,29 @@ const ABUSE_WEIGHTS = {
   message_burst: 2,
 };
 
+// Defense-in-depth allow-list for customer-driven events. Any callsite
+// passing an eventType not in this set is silently dropped — prevents
+// future regressions where a bot-driven code path (status callbacks,
+// internal jobs, etc.) accidentally feeds abuse scoring and silences
+// real customers. Kept tight on purpose: start with rate_limit_hit_wa
+// only and grow the list deliberately as new customer-driven events
+// are wired in.
+const ABUSE_EVENT_ALLOW_LIST = new Set([
+  'rate_limit_hit_wa',
+]);
+
 /**
  * Record an abuse signal. Returns { score, blocked }.
  * Blocks the identifier when the running score exceeds ABUSE_THRESHOLD.
  */
 async function recordAbuseEvent(id, eventType) {
   if (!id) return { score: 0, blocked: false };
+  if (!ABUSE_EVENT_ALLOW_LIST.has(eventType)) {
+    // Not a customer-driven event — do not score. See ABUSE_EVENT_ALLOW_LIST
+    // comment for rationale; weights in ABUSE_WEIGHTS are kept for any
+    // future re-enablement but are inert until the type joins the allow-list.
+    return { score: 0, blocked: false };
+  }
   const weight = ABUSE_WEIGHTS[eventType] || 1;
   try {
     const rc = await redis.getClient();

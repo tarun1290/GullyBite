@@ -127,8 +127,26 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       return;
     }
 
+    // ── STATUS-CALLBACK BYPASS ──
+    // Status callbacks are server-to-server delivery/read confirmations
+    // from Meta about the BOT's own outbound sends — they are NOT
+    // customer activity and must never count toward customer rate limits
+    // or abuse scoring. We walk every entry/change because a single
+    // webhook batch can mix message and status deliveries.
+    const hasInboundMessages = (Array.isArray(body.entry) ? body.entry : []).some((entry) =>
+      (Array.isArray(entry?.changes) ? entry.changes : []).some((change) =>
+        Array.isArray(change?.value?.messages) && change.value.messages.length > 0
+      )
+    );
+    if (!hasInboundMessages) {
+      req.log.info({ phoneNumberId: extractPhoneNumberId(body) }, 'Webhook entry — status callback');
+    }
+
     // [BSUID] ── ABUSE CHECK: blocked identifier (phone or BSUID) ──
-    const senderIdentifier = extractSenderIdentifier(body);
+    // Skipped entirely on status-only payloads (above): no isPhoneBlocked,
+    // no rate-limit checks, no recordViolation, no recordAbuseEvent, no
+    // rate_limited webhook_logs row.
+    const senderIdentifier = hasInboundMessages ? extractSenderIdentifier(body) : null;
     if (senderIdentifier) {
       // Resolve the WhatsApp account once up-front. We need its
       // restaurant_id to scope the block / violation check per tenant
