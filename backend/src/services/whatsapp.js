@@ -226,7 +226,18 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
         parameters: {
           reference_id: refId,
           type: 'digital-goods',
-          payment_configuration: configName,
+          // Meta requires payment_settings (an array of payment gateway
+          // objects) on review_and_pay CTAs — payment_configuration was
+          // never a valid field and Meta rejects it with #131008. Shape
+          // mirrors sendCheckoutButtonTemplate (line ~474) so the two
+          // checkout paths stay in lockstep on Razorpay credentials.
+          payment_settings: [{
+            type: 'payment_gateway',
+            payment_gateway: {
+              type: 'razorpay',
+              configuration_name: configName,
+            },
+          }],
           currency: 'INR',
           total_amount: { value: totalPaise, offset: 100 },
           order: orderPayload,
