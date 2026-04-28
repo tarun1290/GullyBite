@@ -1356,19 +1356,32 @@ const getSyncStatus = async (restaurantId) => {
 
 // ─── PRODUCT SETS — CRUD + SYNC ─────────────────────────────
 
-// Build Meta filter JSON from product_set document
+// Build Meta filter JSON from product_set document.
+//
+// Meta's Catalog filter rules are a thin Elastic Search-style DSL keyed
+// on top-level field names (retailer_id, product_tags, etc.) with
+// operators like is_any, contains, eq, i_contains. Two shapes Meta
+// rejects with "Param filter must be a valid Elastic Search rule":
+//   - Bracket-indexed paths like 'product_tags[0]' — invalid syntax
+//   - {} — empty filters cannot be persisted
+// Returning null here lets the caller skip the API call entirely
+// instead of POSTing a filter we know Meta will refuse.
 function _buildSetFilter(set) {
+  // Manual: explicit list of retailer_ids — keep as-is, this shape is correct
   if (set.type === 'manual' && set.manual_retailer_ids?.length) {
     return JSON.stringify({ retailer_id: { is_any: set.manual_retailer_ids } });
   }
+  // Tag- and category-based filters: use product_tags with i_contains
+  // (case-insensitive contains). Bracket-indexed paths are not supported.
   if (set.type === 'tag' && set.filter_value) {
-    return JSON.stringify({ 'product_tags[0]': { contains: set.filter_value } });
+    return JSON.stringify({ product_tags: { i_contains: set.filter_value } });
   }
   if (set.type === 'category' && set.filter_value) {
-    return JSON.stringify({ 'product_tags[1]': { contains: set.filter_value } });
+    return JSON.stringify({ product_tags: { i_contains: set.filter_value } });
   }
-  // Fallback: empty filter matches all products
-  return JSON.stringify({});
+  // No usable filter — return null so caller can skip the API call entirely
+  // (Meta rejects empty/missing filters with the same error).
+  return null;
 }
 
 // Create a product set on Meta
@@ -1441,6 +1454,15 @@ const syncProductSets = async (branchId) => {
 
   for (const set of sets) {
     const filter = _buildSetFilter(set);
+    // _buildSetFilter returns null when there's no usable filter
+    // (e.g. a tag-typed set with no filter_value). Posting a null/empty
+    // filter triggers Meta's "Param filter must be a valid Elastic
+    // Search rule" error and would just bump results.failed without
+    // surfacing a meaningful error to ops, so skip cleanly.
+    if (!filter) {
+      log.warn({ setName: set.name, branchId }, 'Skipping product set — no usable filter');
+      continue;
+    }
     try {
       if (set.meta_product_set_id) {
         await updateProductSet(set.meta_product_set_id, set.name, filter);
@@ -1456,6 +1478,27 @@ const syncProductSets = async (branchId) => {
     } catch (err) {
       log.error({ err, setName: set.name }, 'Product set sync failed');
       results.failed++;
+      // 'synced_orphan' = product live in Meta catalog but no product set covers it,
+      // so MPM cannot send it. Resolved automatically on the next successful sync.
+      // Items get downgraded only when we can deterministically identify which
+      // products this failed set was meant to cover (manual list, or a
+      // tag/category filter_value).
+      try {
+        let coveredFilter = null;
+        if (set.type === 'manual' && set.manual_retailer_ids?.length) {
+          coveredFilter = { retailer_id: { $in: set.manual_retailer_ids } };
+        } else if ((set.type === 'tag' || set.type === 'category') && set.filter_value) {
+          coveredFilter = { product_tags: set.filter_value };
+        }
+        if (coveredFilter) {
+          await col('menu_items').updateMany(
+            { branch_id: branchId, catalog_sync_status: 'synced', ...coveredFilter },
+            { $set: { catalog_sync_status: 'synced_orphan' } }
+          );
+        }
+      } catch (orphanErr) {
+        log.warn({ err: orphanErr.message, setName: set.name }, 'Failed to downgrade items to synced_orphan');
+      }
     }
   }
 
@@ -1602,7 +1645,7 @@ const createCollection = async (catalogId, name, productSetIds, description, cov
     if (description) body.description = description;
     if (coverImageUrl) body.cover_image_url = coverImageUrl;
     const res = await axios.post(
-      `${GRAPH}/${catalogId}/product_set_collections`,
+      `${GRAPH}/${catalogId}/collections`,
       body,
       { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
     );
@@ -1660,7 +1703,7 @@ const listCollections = async (catalogId) => {
   const token = _getCatalogToken();
   try {
     const res = await axios.get(
-      `${GRAPH}/${catalogId}/product_set_collections`,
+      `${GRAPH}/${catalogId}/collections`,
       { params: { access_token: token, fields: 'id,name,description,product_set_ids' }, timeout: 15000 }
     );
     return res.data?.data || [];
