@@ -119,7 +119,7 @@ class AbuseDetector {
     this.violations = new Map();
     this.threshold = 10;          // violations before auto-block
     this.windowMs = 60 * 60 * 1000; // 1 hour window
-    this.blockDurationMs = 24 * 60 * 60 * 1000; // 24-hour auto-block
+    this.blockDurationMs = 30 * 60 * 1000; // 30-minute auto-block
 
     // Track last warning sent per phone (to avoid message amplification)
     this.lastWarning = new Map();
@@ -130,36 +130,43 @@ class AbuseDetector {
     if (this._cleanupInterval.unref) this._cleanupInterval.unref();
   }
 
-  // Record a rate-limit violation for a phone number
-  // Returns { autoBlocked: true } if this triggers an auto-block
-  async recordViolation(waPhone) {
+  // Record a rate-limit violation for a phone number.
+  // Returns { autoBlocked: true } if this triggers an auto-block.
+  //
+  // restaurantId scopes the violation: hits against restaurant A do NOT
+  // count toward auto-blocks for restaurant B. The composite map key
+  // ('global' fallback when restaurantId is unknown) keeps legacy callers
+  // working while a per-tenant block coexists with the global-default.
+  async recordViolation(waPhone, restaurantId = null) {
     const now = Date.now();
     const windowStart = now - this.windowMs;
+    const mapKey = `${restaurantId || 'global'}:${waPhone}`;
 
-    let hits = this.violations.get(waPhone) || [];
+    let hits = this.violations.get(mapKey) || [];
     hits = hits.filter(t => t > windowStart);
     hits.push(now);
-    this.violations.set(waPhone, hits);
+    this.violations.set(mapKey, hits);
 
     if (hits.length >= this.threshold) {
       // Auto-block this phone
       try {
         const expiresAt = new Date(now + this.blockDurationMs);
         await col('blocked_phones').updateOne(
-          { wa_phone: waPhone, blocked_by: 'auto' },
+          { wa_phone: waPhone, blocked_by: 'auto', restaurant_id: restaurantId || null },
           {
             $set: {
-              reason: `Auto-blocked: ${hits.length} rate-limit violations in 1 hour`,
+              reason: `30-minute auto-block: ${hits.length} rate-limit violations in 1 hour`,
               blocked_at: new Date(),
               expires_at: expiresAt,
               blocked_by: 'auto',
+              restaurant_id: restaurantId || null,
             },
             $setOnInsert: { _id: newId() },
           },
           { upsert: true }
         );
-        this.violations.delete(waPhone);
-        log.warn({ phone: waPhone.slice(-4), violations: hits.length }, 'Auto-blocked phone for 24h');
+        this.violations.delete(mapKey);
+        log.warn({ phone: waPhone.slice(-4), violations: hits.length, restaurantId: restaurantId || null }, 'Auto-blocked phone for 30min');
         return { autoBlocked: true };
       } catch (err) {
         log.error({ err }, 'Failed to auto-block phone');
@@ -192,15 +199,34 @@ class AbuseDetector {
 const abuseDetector = new AbuseDetector();
 
 // ─── BLOCKED PHONE CHECK ─────────────────────────────────────────
-// [BSUID] Returns the block document if identifier (phone OR bsuid) is currently blocked
-const isPhoneBlocked = async (identifier) => {
+// [BSUID] Returns the block document if identifier (phone OR bsuid) is
+// currently blocked. Per-tenant scoping: when restaurantId is provided,
+// the query matches blocks scoped to that restaurant_id OR legacy
+// unscoped blocks (restaurant_id missing/null) — so existing global
+// rows still apply during the migration. When restaurantId is omitted
+// (legacy callers, admin tooling) the query falls back to the
+// pre-scoping behavior of matching any restaurant_id value.
+//
+// expires_at: { $gt: new Date() } guarantees expired auto-blocks stop
+// blocking even if the TTL index hasn't swept the row yet (TTL runs
+// once a minute and may lag).
+const isPhoneBlocked = async (identifier, restaurantId = null) => {
   if (!identifier) return null;
   try {
-    // Check both wa_phone and bsuid fields
-    return await col('blocked_phones').findOne({
+    const query = {
       $or: [{ wa_phone: identifier }, { bsuid: identifier }],
       $and: [{ $or: [{ expires_at: null }, { expires_at: { $gt: new Date() } }] }],
-    });
+    };
+    if (restaurantId) {
+      query.$and.push({
+        $or: [
+          { restaurant_id: restaurantId },
+          { restaurant_id: null },
+          { restaurant_id: { $exists: false } },
+        ],
+      });
+    }
+    return await col('blocked_phones').findOne(query);
   } catch {
     return null; // If DB fails, don't block — fail open
   }

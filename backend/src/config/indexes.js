@@ -78,6 +78,16 @@ const INDEXES = [
   { collection: 'abandoned_carts', index: { recovery_status: 1, created_at: 1 } },
   { collection: 'abandoned_carts', index: { restaurant_id: 1, created_at: -1 } },
   { collection: 'abandoned_carts', index: { expires_at: 1 }, options: { expireAfterSeconds: 0 } },
+  // blocked_phones: 30-min auto-blocks expire on expires_at; the TTL
+  // sweep deletes them automatically so a stale row can't keep a
+  // customer silenced past the intended window. Manual bans set
+  // expires_at far into the future (or null) and are never swept.
+  { collection: 'blocked_phones', index: { expires_at: 1 }, options: { expireAfterSeconds: 0 } },
+  // Lookup index for the per-tenant scoped read in isPhoneBlocked —
+  // covers both the (wa_phone, restaurant_id) and (bsuid, restaurant_id)
+  // shapes a single block document might match.
+  { collection: 'blocked_phones', index: { wa_phone: 1, restaurant_id: 1 } },
+  { collection: 'blocked_phones', index: { bsuid: 1, restaurant_id: 1 }, options: { sparse: true } },
   // Analytics indexes
   { collection: 'orders', index: { branch_id: 1, created_at: -1 } },
   { collection: 'orders', index: { status: 1, created_at: -1 } },

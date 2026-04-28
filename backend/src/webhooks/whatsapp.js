@@ -130,14 +130,29 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     // [BSUID] ── ABUSE CHECK: blocked identifier (phone or BSUID) ──
     const senderIdentifier = extractSenderIdentifier(body);
     if (senderIdentifier) {
+      // Resolve the WhatsApp account once up-front. We need its
+      // restaurant_id to scope the block / violation check per tenant
+      // (so a flood at restaurant A doesn't ban the user from
+      // restaurant B), and its access_token to send the user-facing
+      // warning when we DO rate-limit them. Reuses the same
+      // whatsapp_accounts.findOne pattern the downstream handlers use.
+      const phoneNumberId = extractPhoneNumberId(body);
+      const waAccount = phoneNumberId
+        ? await col('whatsapp_accounts').findOne({ phone_number_id: phoneNumberId })
+        : null;
+      const restaurantId = waAccount?.restaurant_id || null;
+
       // Two block sources to check:
-      //   1. Mongo blocked_phones — durable 24h auto-blocks / manual bans
+      //   1. Mongo blocked_phones — durable 30min auto-blocks / manual bans
       //   2. Redis blocked:wa:<phone> — short-lived (10min) abuse-score blocks
       const [mongoBlocked, redisBlock] = await Promise.all([
-        isPhoneBlocked(senderIdentifier),
+        isPhoneBlocked(senderIdentifier, restaurantId),
         isBlocked(`wa:${senderIdentifier}`),
       ]);
       if (mongoBlocked || redisBlock.blocked) {
+        // (C) Already-blocked customer — do NOT send a message back.
+        // The 30min auto-block warning was sent at block creation; sending
+        // again on every dropped webhook would amplify noise.
         req.log.warn({ phoneSuffix: String(senderIdentifier).slice(-4), source: mongoBlocked ? 'mongo' : 'redis' }, 'Blocked identifier dropped');
         return; // silently drop — already returned 200
       }
@@ -159,16 +174,41 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
       if (!specAllowed || !legacyAllowed) {
         req.log.warn({ phoneSuffix: String(senderIdentifier).slice(-4), specAllowed, legacyAllowed }, 'Message rate limited');
         // Record violation for BOTH scorers. Mongo-backed abuseDetector
-        // drives 24h auto-blocks; Redis-backed recordAbuseEvent drives
+        // drives 30min auto-blocks; Redis-backed recordAbuseEvent drives
         // 10-min cool-downs on repeated offenders within a single session.
-        abuseDetector.recordViolation(senderIdentifier).catch(() => {});
+        // Both restaurant_id-scoped now so a flood against tenant A does
+        // not contribute to a block at tenant B.
+        abuseDetector.recordViolation(senderIdentifier, restaurantId)
+          .then((result) => {
+            // (B) Auto-block tipped over: tell the user the chat is paused.
+            // (A) Otherwise, drip a "catching up" warning at most once per
+            //     5 min via canSendWarning. Both sends are fire-and-forget
+            //     — webhook already returned 200 at the top of the handler.
+            if (!waAccount) return;
+            if (result?.autoBlocked) {
+              wa.sendText(
+                waAccount.phone_number_id,
+                waAccount.access_token,
+                senderIdentifier,
+                "You've sent a lot of messages in a short time. I've paused this chat for 30 minutes — please try again later."
+              ).catch(() => {});
+            } else if (abuseDetector.canSendWarning(senderIdentifier)) {
+              wa.sendText(
+                waAccount.phone_number_id,
+                waAccount.access_token,
+                senderIdentifier,
+                "⏳ Just a moment — I'm catching up. Please try again in 60 seconds."
+              ).catch(() => {});
+            }
+          })
+          .catch(() => {});
         recordAbuseEvent(`wa:${senderIdentifier}`, 'rate_limit_hit_wa').catch(() => {});
         // Log rate-limited event
         await col('webhook_logs').insertOne({
           _id: newId(),
           source: 'whatsapp',
           event_type: 'rate_limited',
-          phone_number_id: extractPhoneNumberId(body),
+          phone_number_id: phoneNumberId,
           payload: { from: senderIdentifier, note: 'Rate limited — payload omitted' },
           processed: true,
           error_message: `Rate limited: ${senderIdentifier}`,
