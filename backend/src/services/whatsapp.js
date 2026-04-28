@@ -162,18 +162,18 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
     amount: { value: toPaise(i.unit_price_rs || i.price_rs), offset: 100 },
   }));
 
-  // Add delivery fee as a line item (instead of shipping) to avoid Meta showing address selection
+  // Delivery fee now goes into Meta's shipping field below (NOT as a
+  // line item). Historical note from the previous shape: a 2024-era
+  // comment warned that putting delivery into shipping made Meta show
+  // an address picker; we are deliberately moving back to shipping in
+  // 2026 because Meta's order_details accepts an address-less shipping
+  // value now. If the address picker re-appears at checkout, revert
+  // this block by pushing { retailer_id: 'delivery-fee', ... } into
+  // orderItems and removing the shipping field below.
   const deliveryRs = parseFloat(order.customer_delivery_rs || order.delivery_fee_rs || 0);
-  if (deliveryRs > 0) {
-    orderItems.push({
-      retailer_id: 'delivery-fee',
-      name: 'Delivery Fee',
-      quantity: 1,
-      amount: { value: toPaise(deliveryRs), offset: 100 },
-    });
-  }
+  const deliveryPaise = toPaise(deliveryRs);
 
-  // Add packaging as a line item
+  // Packaging stays a line item — Meta has no dedicated packaging field.
   const packagingRs = parseFloat(order.packaging_rs || 0);
   if (packagingRs > 0) {
     orderItems.push({
@@ -184,7 +184,9 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
     });
   }
 
-  // Subtotal = sum of all line item amounts (food + delivery + packaging)
+  // Subtotal = sum of line item amounts (food + packaging only).
+  // Delivery contributes through `shipping` instead, so the Meta
+  // formula becomes: total = subtotal + tax + shipping − discount.
   const subtotalPaise = orderItems.reduce((sum, i) => sum + i.amount.value * (i.quantity || 1), 0);
   const taxPaise = toPaise((order.food_gst_rs || 0) + (order.customer_delivery_gst_rs || 0) + (order.packaging_gst_rs || 0));
   const totalPaise = toPaise(order.total_rs);
@@ -196,6 +198,12 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
     subtotal: { value: subtotalPaise, offset: 100 },
     tax: { value: taxPaise, offset: 100 },
   };
+  if (deliveryPaise > 0) {
+    // Omitted entirely when delivery is zero — sending shipping: 0 is
+    // legal but noisier and confuses Meta's reconciliation in some
+    // edge cases (e.g. pickup orders).
+    orderPayload.shipping = { value: deliveryPaise, offset: 100 };
+  }
   if (discountRs > 0) {
     orderPayload.discount = { value: toPaise(discountRs), offset: 100, description: order.coupon_code || 'Discount' };
   }
