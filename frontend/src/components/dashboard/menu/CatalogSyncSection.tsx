@@ -195,31 +195,54 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
         <div className="ch"><h3>⚡ Per-branch Quick Sync</h3></div>
         <div className="cb">
           <p style={{ fontSize: '.82rem', color: 'var(--dim)', marginBottom: '.6rem' }}>
-            Push a single branch&apos;s menu to Meta without touching others. Only branches with a live
-            catalog are listed.
+            Push a single branch&apos;s menu to Meta without touching others. The badge next to each
+            branch reflects whether a Meta catalog is bound (✓ green) or still missing (✗ red);
+            sync against a branch with no catalog will fail until one is created from the Branches tab.
           </p>
           {!branches.length ? (
             <p style={{ color: 'var(--dim)', fontSize: '.84rem' }}>No branches yet.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '.35rem' }}>
-              {branches.filter((b) => b.catalog_id && b.is_active !== false).map((b) => (
-                <div
-                  key={b.id}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '.6rem',
-                    padding: '.5rem .7rem', background: 'var(--ink2,#f4f4f5)', borderRadius: 8,
-                  }}
-                >
-                  <span style={{ flex: 1, fontSize: '.86rem', fontWeight: selectedBranchId === b.id ? 600 : 400 }}>{b.name}</span>
-                  <span className="badge bg" style={{ fontSize: '.68rem' }}>✅ Catalog</span>
-                  <button type="button" className="btn-g btn-sm" onClick={() => doQuickSync(b.id)}>🔄 Sync</button>
-                </div>
-              ))}
-              {!branches.some((b) => b.catalog_id) && (
-                <p style={{ color: 'var(--dim)', fontSize: '.82rem' }}>
-                  None of your branches have a catalog yet. Create one from the Branches tab.
-                </p>
-              )}
+              {branches
+                .filter((b) => b.is_active !== false)
+                .map((b) => {
+                  // catalog_id is the source of truth — non-empty string ⇒ catalog
+                  // is bound on the Meta side. Treats null, undefined, and '' as
+                  // identically "no catalog" so the badge can't flicker on edge
+                  // cases like a freshly-created branch where catalog_id is '' before
+                  // the first sync.
+                  const hasCatalog = typeof b.catalog_id === 'string' && b.catalog_id.length > 0;
+                  return (
+                    <div
+                      key={b.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '.6rem',
+                        padding: '.5rem .7rem', background: 'var(--ink2,#f4f4f5)', borderRadius: 8,
+                      }}
+                    >
+                      <span style={{ flex: 1, fontSize: '.86rem', fontWeight: selectedBranchId === b.id ? 600 : 400 }}>{b.name}</span>
+                      {hasCatalog ? (
+                        <span className="badge bg" style={{ fontSize: '.68rem' }}>✓ Catalog</span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '.68rem',
+                            padding: '.15rem .45rem',
+                            borderRadius: 4,
+                            background: 'rgba(220,38,38,0.10)',
+                            border: '1px solid rgba(220,38,38,0.45)',
+                            color: '#dc2626',
+                            fontWeight: 600,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          ✗ No Catalog
+                        </span>
+                      )}
+                      <button type="button" className="btn-g btn-sm" onClick={() => doQuickSync(b.id)}>🔄 Sync</button>
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>
