@@ -199,6 +199,8 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
             branch reflects whether a Meta catalog is bound (✓ green) or still missing (✗ red);
             sync against a branch with no catalog will fail until one is created from the Branches tab.
           </p>
+          {/* TEMP DIAGNOSTIC — remove after confirming catalog_id shape on the wire */}
+          {(() => { console.log('[CatalogSync] raw branches:', branches); return null; })()}
           {!branches.length ? (
             <p style={{ color: 'var(--dim)', fontSize: '.84rem' }}>No branches yet.</p>
           ) : (
@@ -206,6 +208,9 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
               {branches
                 .filter((b) => b.is_active !== false)
                 .map((b) => {
+                  // TEMP DIAGNOSTIC — remove after confirming catalog_id shape
+                  // eslint-disable-next-line no-console
+                  console.log('[CatalogSync] branch row:', { id: b.id, name: b.name, catalog_id: b.catalog_id });
                   // catalog_id is the source of truth — non-empty string ⇒ catalog
                   // is bound on the Meta side. Treats null, undefined, and '' as
                   // identically "no catalog" so the badge can't flicker on edge
