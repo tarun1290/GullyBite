@@ -28,25 +28,55 @@ function parseRange(query) {
 // through utils/maskPhone.js so there is exactly one implementation.
 const maskLast4 = maskPhone;
 
-async function enrichRows(rows, { canSeeFullPhones = false } = {}) {
+// Shared customer-phone join. Returns { customer_id → { phone, name } }.
+// Kept as an internal helper so the restaurant and admin enrichers stay
+// truly independent — no shared permission flag plumbing means the
+// restaurant path cannot accidentally inherit a canSeeFull leak.
+async function _loadCustomerPhones(rows) {
   const customerIds = [...new Set(rows.map(r => r.customer_id).filter(Boolean))];
-  let phoneById = {};
-  if (customerIds.length) {
-    const customers = await col('customers')
-      .find({ _id: { $in: customerIds } })
-      .project({ _id: 1, wa_phone: 1, name: 1 })
-      .toArray();
-    phoneById = Object.fromEntries(
-      customers.map(c => [c._id, { phone: c.wa_phone, name: c.name }]),
-    );
-  }
+  if (!customerIds.length) return {};
+  const customers = await col('customers')
+    .find({ _id: { $in: customerIds } })
+    .project({ _id: 1, wa_phone: 1, name: 1 })
+    .toArray();
+  return Object.fromEntries(
+    customers.map(c => [c._id, { phone: c.wa_phone, name: c.name }]),
+  );
+}
 
-  // Response shaping happens HERE, not in the caller. Raw phone from
-  // customers.wa_phone is looked up above but never emitted — it flows
-  // through formatPhone() which collapses to masked unless the caller
-  // proved permission via canSeeFullPhones. phone_hash / raw_meta_payload /
-  // conversation_id are deliberately dropped — internal fields the UI
-  // doesn't need.
+// Restaurant variant — phones are ALWAYS masked. No permission flag,
+// no formatPhone, no way for a caller to opt out. This is the only
+// shaping helper restaurant-facing routes should use.
+async function enrichRowsMasked(rows) {
+  const phoneById = await _loadCustomerPhones(rows);
+  return rows.map(r => {
+    const cust = (r.customer_id && phoneById[r.customer_id]) || {};
+    const rawPhone = cust.phone || null;
+    return {
+      _id: r._id,
+      restaurant_id: r.restaurant_id,
+      waba_id: r.waba_id,
+      customer_name: r.customer_name || cust.name || null,
+      phone: rawPhone ? maskPhone(rawPhone) : null,
+      phone_masked: true,
+      message_id: r.message_id,
+      message_type: r.message_type,
+      category: r.category,
+      cost: r.cost || 0,
+      currency: r.currency || 'INR',
+      status: r.status,
+      sent_at: r.sent_at,
+      delivered_at: r.delivered_at || null,
+    };
+  });
+}
+
+// Admin variant — phones are unmasked only when the caller proved
+// permission via the middleware-set req.canSeeFullPhones (super_admin
+// or admins with the customer_full_phone permission). NEVER call this
+// from a restaurant route.
+async function enrichRows(rows, { canSeeFullPhones = false } = {}) {
+  const phoneById = await _loadCustomerPhones(rows);
   return rows.map(r => {
     const cust = (r.customer_id && phoneById[r.customer_id]) || {};
     const rawPhone = cust.phone || null;
@@ -115,7 +145,7 @@ restaurantRouter.get('/', requireApproved, async (req, res) => {
       limit: req.query.limit,
     });
 
-    const items = await enrichRows(data.rows, { canSeeFullPhones: false });
+    const items = await enrichRowsMasked(data.rows);
     res.json({
       items,
       total: data.total,
@@ -167,4 +197,4 @@ adminRouter.get('/', requireAdminAuth('marketing_messages', 'read'), async (req,
 // Exposed for the settlement meta-breakdown endpoints, which reuse the
 // same masking / customer-lookup logic keyed by settlement_id instead
 // of a date range.
-module.exports = { restaurantRouter, adminRouter, enrichRows, maskLast4 };
+module.exports = { restaurantRouter, adminRouter, enrichRows, enrichRowsMasked, maskLast4 };

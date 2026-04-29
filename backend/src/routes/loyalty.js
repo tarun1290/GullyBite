@@ -22,6 +22,11 @@ const { col } = require('../config/database');
 const { requireAuth } = require('./auth');
 const loyaltyEngine = require('../services/loyaltyEngine');
 const { hashPhone } = require('../utils/phoneHash');
+// Use the canonical shared mask. The earlier local helper produced
+// '****1234' which leaked through restaurant dashboards inconsistently
+// alongside the '+91 XXXXX XXXXX' shape the rest of the codebase emits;
+// one shared format keeps PII redaction uniform.
+const { maskPhone } = require('../utils/maskPhone');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -30,12 +35,6 @@ function normalisePhone(raw) {
   const s = String(raw || '').trim();
   if (!s) return '';
   return s.replace(/\D+/g, '');
-}
-
-function maskPhone(phone) {
-  if (!phone) return '';
-  const s = String(phone);
-  return s.length >= 4 ? `****${s.slice(-4)}` : s;
 }
 
 // GET /config

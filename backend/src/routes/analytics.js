@@ -8,6 +8,11 @@ const express = require('express');
 const router = express.Router();
 const { col, mapIds } = require('../config/database');
 const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
+// Permission-gated phone formatter. canSeeFull is wired below from
+// req.canSeeFullPhones, which adminAuth sets to true only for super_admin
+// or admins with the customer_full_phone permission. Mirrors the
+// pattern already in routes/marketingMessages.js.
+const { formatPhone } = require('../utils/maskPhone');
 
 // Admin auth — uses RBAC middleware with analytics read permission
 const { requireAdminAuth } = require('../middleware/adminAuth');
@@ -367,9 +372,18 @@ router.get('/customers/overview', async (req, res) => {
     ]);
 
     const bucketLabels = { 1: '1 order', 2: '2-5 orders', 6: '6-10 orders', 11: '10+ orders' };
+    // Post-aggregation phone redaction. The pipeline above intentionally
+    // selects $_c.wa_phone as `phone` so the raw value is available here;
+    // we replace it with formatPhone() before emitting so admins without
+    // the customer_full_phone permission only see the masked version.
+    const canSeeFull = !!req.canSeeFullPhones;
+    const topBySpendMasked = topBySpend.map((r) => ({
+      ...r,
+      phone: formatPhone(r.phone, { canSeeFull }),
+    }));
     res.json({
       total_registered: totalCustomers,
-      top_by_spend: topBySpend,
+      top_by_spend: topBySpendMasked,
       order_distribution: distribution.map(d => ({ bucket: bucketLabels[d._id] || `${d._id}+`, count: d.count })),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

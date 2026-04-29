@@ -23,6 +23,7 @@ const { requireAuth } = require('./auth');
 const feedbackSvc = require('../services/feedbackService');
 const wa = require('../services/whatsapp');
 const { hashPhone } = require('../utils/phoneHash');
+const { maskPhone } = require('../utils/maskPhone');
 const log = require('../utils/logger').child({ component: 'feedback-routes' });
 
 const router = express.Router();
@@ -115,7 +116,7 @@ router.post('/dine-in/send', async (req, res) => {
 
   res.json({
     ok: true,
-    feedback_event: { id: fb._id, status: 'sent', customer_phone: phoneNorm, wa_message_id: waMessageId },
+    feedback_event: { id: fb._id, status: 'sent', customer_phone: maskPhone(phoneNorm), wa_message_id: waMessageId },
   });
 });
 

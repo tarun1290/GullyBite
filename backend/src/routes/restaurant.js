@@ -6430,8 +6430,9 @@ router.get('/settlements/:id/download', requirePermission('view_payments'), asyn
 // Security posture:
 //   • restaurant_id is taken ONLY from req.restaurantId (JWT-derived in
 //     auth.js). Never honored from query / body / headers.
-//   • Phone numbers are ALWAYS masked — canSeeFullPhones is hardcoded
-//     to false here regardless of any upstream flag.
+//   • Phone numbers are ALWAYS masked. We call enrichRowsMasked, the
+//     restaurant-specific shaping helper that has no permission flag
+//     and runs every phone through maskPhone unconditionally.
 //   • :id is validated as a non-empty simple string to avoid malformed
 //     lookups (Mongo _ids in this codebase are UUID strings).
 //   • Unknown or cross-tenant ids → 404 (never 403; not-found is less
@@ -6465,8 +6466,8 @@ router.get('/settlements/:id/meta-breakdown', requirePermission('view_payments')
         .sort({ sent_at: -1 })
         .toArray();
     }
-    const { enrichRows } = require('./marketingMessages');
-    const items = await enrichRows(rows, { canSeeFullPhones: false });
+    const { enrichRowsMasked } = require('./marketingMessages');
+    const items = await enrichRowsMasked(rows);
 
     res.json({
       settlement_id: settlement._id,
