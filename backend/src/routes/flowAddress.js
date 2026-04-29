@@ -147,10 +147,20 @@ async function handleInit(payload, version) {
       description: _formatAddressDescription(a),
       metadata: _formatAddressMetadata(a),
     }));
+    // has_addresses / is_empty are emitted as plain booleans because
+    // Meta's flow `visible` property only accepts ${data.field}
+    // boolean references — it cannot evaluate `${data.addresses.length > 0}`
+    // or any other inline expression. Pre-computing both shapes here
+    // lets the screen toggle UI sections (e.g. show/hide an empty-state
+    // panel) without a server round-trip.
     return {
       version,
       screen: 'SAVED_ADDRESSES',
-      data: { addresses: mapped },
+      data: {
+        addresses: mapped,
+        has_addresses: addresses.length > 0,
+        is_empty: addresses.length === 0,
+      },
     };
   }
 
