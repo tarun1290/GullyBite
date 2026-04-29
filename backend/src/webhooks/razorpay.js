@@ -526,6 +526,7 @@ const confirmPaidOrder = async (orderId, event) => {
         };
         const { prorouting_order_id } = await prorouting.createDeliveryOrder(
           String(order.id || order._id),
+          order.prorouting_quote_id || null,
           pickupDetails,
           dropDetails,
           orderMeta

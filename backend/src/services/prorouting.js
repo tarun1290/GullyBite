@@ -5,7 +5,7 @@
 //
 //   getEstimate(pickupCoords, dropCoords, orderValue)
 //     → { estimated_price, quote_id }
-//   createDeliveryOrder(gullybiteOrderId, pickupDetails, dropDetails, orderMeta)
+//   createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dropDetails, orderMeta)
 //     → { prorouting_order_id, raw }
 //   cancelDeliveryOrder(mp2OrderId, reasonId, reasonText)
 //     → raw response body on success, null on failure (never throws)
@@ -94,14 +94,24 @@ async function getEstimate(pickupCoords, dropCoords, orderValue) {
 }
 
 // ─── CREATE DELIVERY ORDER ────────────────────────────────────
-// Fire after Razorpay payment confirmed. mode=fastest_agent (recommended
-// for F&B in Prorouting's docs) lets the LSP pick the closest available
-// rider — no quote_id is needed because the fare is re-derived from the
-// pickup/drop coords at dispatch time. callback_url receives lifecycle
-// events at /webhook/prorouting on our side; client_order_id is the
-// value the webhook will echo back so we can resolve our order row.
+// Fire after Razorpay payment confirmed. mode=estimated_price pins the
+// fare to the quote returned from getEstimate — required because the
+// upstream financial engine (financialEngine.calculateCheckout in
+// _sendOrderCheckout) re-runs against this exact quote to derive the
+// customer/restaurant delivery-fee split the customer agreed to pay.
+// fastest_agent would let the LSP re-derive the fare at dispatch and
+// break that contract.
+//
+// callback_url receives lifecycle events at /webhook/prorouting on our
+// side; client_order_id is the value the webhook will echo back so we
+// can resolve our order row.
+//
+// Address shape: nested {name, line1, line2, city, state, pincode} per
+// Prorouting Postman docs (Apr 2026 — Create Order async).
 //
 // gullybiteOrderId: our orders._id (string)
+// quoteId:          prorouting_quote_id from getEstimate; pinned via
+//                   select_criteria so the live fare matches the quote
 // pickupDetails:    {
 //   latitude, longitude, name, phone,
 //   address_name, address_line1, address_line2, city, state, pincode
@@ -111,7 +121,7 @@ async function getEstimate(pickupCoords, dropCoords, orderValue) {
 //   address_name, address_line1, address_line2, city, state, pincode
 // }
 // orderMeta:        { orderAmount: number, orderItems: [{name, qty, price}, ...] }
-async function createDeliveryOrder(gullybiteOrderId, pickupDetails, dropDetails, orderMeta = {}) {
+async function createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dropDetails, orderMeta = {}) {
   const pickupLatLng = toLatLng(pickupDetails);
   const dropLatLng = toLatLng(dropDetails);
   if (!pickupLatLng || !dropLatLng) {
@@ -137,7 +147,7 @@ async function createDeliveryOrder(gullybiteOrderId, pickupDetails, dropDetails,
     search_category: 'Immediate Delivery',
     ready_to_ship: 'yes',
     order_items: orderItems,
-    select_criteria: { mode: 'fastest_agent' },
+    select_criteria: { mode: 'estimated_price', quote_id: quoteId || null },
     pickup: {
       ...pickupLatLng,
       address: {
