@@ -151,7 +151,7 @@ const sendMPM = (pid, token, to, catalogId, { header, body, footer, sections }) 
 // ─── INTERACTIVE ORDER CHECKOUT (Review and Pay) ──────────────
 // Sends an interactive order_details message with native Razorpay payment inside WhatsApp.
 // Customer sees full order breakdown + "Review and Pay" button. Confirmed working format.
-const sendPaymentRequest = (pid, token, to, { order, items, customerName, restaurantName, deliveryAddress }) => {
+const sendPaymentRequest = (pid, token, to, { order, items, customerName, restaurantName, deliveryAddress, rpOrderId }) => {
   const toPaise = (rs) => Math.round((rs || 0) * 100);
   const configName = process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite';
 
@@ -244,6 +244,13 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
             payment_gateway: {
               type: 'razorpay',
               configuration_name: configName,
+              // Self-Service Razorpay: when the caller pre-creates a
+              // Razorpay order and passes its id here, Meta forwards
+              // it to Razorpay so the inbound webhook carries the
+              // matching rp_order_id. Omit the key entirely if we
+              // don't have one — Meta validates and would reject
+              // order_id: null.
+              ...(rpOrderId ? { order_id: rpOrderId } : {}),
             },
           }],
           currency: 'INR',

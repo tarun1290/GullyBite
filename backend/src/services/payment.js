@@ -96,6 +96,35 @@ const createRazorpayOrder = async (order, customer) => {
   return rzpOrder;
 };
 
+// ─── 1b. CREATE RAZORPAY ORDER — RAW (Self-Service) ───────────
+// Pure Razorpay /orders POST with NO side effects (no payments insert,
+// no DB writes). Used by the WhatsApp self-service order_details flow
+// (_sendOrderCheckout in webhooks/whatsapp.js), which needs the
+// rp_order_id BEFORE sending the interactive message so it can be
+// embedded in payment_settings.payment_gateway.order_id — that's what
+// makes the inbound webhook resolvable to a payments row by rp_order_id.
+//
+// We deliberately don't reuse createRazorpayOrder above because that
+// helper writes the payments row internally; the self-service caller
+// inserts its own payments doc (with reference_id + checkout_order
+// payment_type) right after sendPaymentRequest succeeds. Sharing the
+// function would double-insert.
+//
+// Throws on Razorpay API errors so the caller can decide whether to
+// degrade gracefully (continue without rp_order_id) or fail the flow.
+const createRazorpayOrderRaw = async ({ amountRs, currency = 'INR', receipt, notes = {} } = {}) => {
+  if (!amountRs || amountRs <= 0) throw new Error('createRazorpayOrderRaw: amountRs must be > 0');
+  const rzpOrder = await getRzp().orders.create({
+    amount: Math.round(Number(amountRs) * 100), // paise
+    currency,
+    // Razorpay caps receipt at 40 chars — clamp defensively in case
+    // a caller hands us something longer.
+    ...(receipt ? { receipt: String(receipt).slice(0, 40) } : {}),
+    notes: notes || {},
+  });
+  return rzpOrder; // { id: 'order_…', amount, currency, status, ... }
+};
+
 // ─── VERIFY WEBHOOK SIGNATURE ─────────────────────────────────
 const verifyWebhookSignature = (rawBody, signature) => {
   if (!signature) return false;
@@ -303,6 +332,7 @@ const createPayoutV2 = async ({ fundAccountId, amountRs, idempotencyKey, referen
 
 module.exports = {
   createRazorpayOrder,
+  createRazorpayOrderRaw,
   verifyWebhookSignature,
   handleOrderPaid,
   handlePaymentFailed,

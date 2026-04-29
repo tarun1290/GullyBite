@@ -698,12 +698,46 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         business_name: restaurant?.business_name || branch?.name || 'Restaurant',
         items: (items || []).map(i => ({ item_name: i.name, quantity: i.qty || 1, unit_price_rs: Number(i.price) || 0, retailer_id: i.retailer_id || i.name })),
       };
+
+      // ── Self-Service Razorpay pre-create ──
+      // Pre-create the Razorpay order BEFORE sending the WhatsApp
+      // interactive message so we can embed rp_order_id in
+      // payment_settings.payment_gateway.order_id. This is what makes
+      // the inbound Razorpay webhook resolvable: confirmPaidOrder
+      // queries payments by rp_order_id, so we MUST persist that id
+      // here. On Razorpay /orders failure we keep going — the existing
+      // reference_id-based reconciliation path remains the fallback.
+      const rpOrderAmountRs = effectiveCharges?.customer_total_rs || effectiveTotalRs || 0;
+      let rpOrderId = null;
+      try {
+        const rzpOrder = await paymentSvc.createRazorpayOrderRaw({
+          amountRs: rpOrderAmountRs,
+          currency: 'INR',
+          receipt: refId,
+          notes: {
+            client_order_id: order.order_number,
+            gullybite_order_id: String(order.id),
+            branch_id: String(session.branchId || ''),
+          },
+        });
+        rpOrderId = rzpOrder?.id || null;
+        log.info({ orderNumber: order.order_number, rpOrderId }, 'razorpay pre-create ok');
+      } catch (rpErr) {
+        log.warn({
+          err: rpErr?.message,
+          status: rpErr?.statusCode || rpErr?.response?.status,
+          body: rpErr?.error || rpErr?.response?.data,
+          orderNumber: order.order_number,
+        }, 'razorpay pre-create failed — continuing without rp_order_id');
+      }
+
       await wa.sendPaymentRequest(pid, token, to, {
         order: checkoutOrder,
         items: checkoutOrder.items,
         customerName: customer?.name || 'there',
         restaurantName: restaurant?.business_name || branch?.name,
         deliveryAddress: session.deliveryAddress || null,
+        rpOrderId,
       });
 
       // Update session with order ID and transition to AWAITING_PAYMENT
@@ -719,10 +753,13 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
 
       log.info({ orderNumber: order.order_number, orderId: order.id }, 'order_details sent');
 
-      // Save a payment record so the Razorpay webhook can match by reference_id
+      // Save a payment record so the Razorpay webhook can match it.
+      // Primary lookup is rp_order_id (Self-Service path); reference_id
+      // remains as a fallback when the pre-create above failed.
       await col('payments').insertOne({
         _id: newId(),
         order_id: order.id,
+        rp_order_id: rpOrderId,
         reference_id: refId,
         payment_type: 'checkout_order',
         amount_rs: effectiveCharges?.customer_total_rs || effectiveTotalRs || 0,
