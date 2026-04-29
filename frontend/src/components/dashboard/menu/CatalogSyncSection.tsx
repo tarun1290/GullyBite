@@ -196,11 +196,9 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
         <div className="cb">
           <p style={{ fontSize: '.82rem', color: 'var(--dim)', marginBottom: '.6rem' }}>
             Push a single branch&apos;s menu to Meta without touching others. The badge next to each
-            branch reflects whether a Meta catalog is bound (✓ green) or still missing (✗ red);
-            sync against a branch with no catalog will fail until one is created from the Branches tab.
+            branch reflects whether the branch has any items assigned (✓ green) or is empty (✗ red);
+            sync against an empty branch is a no-op — add items first.
           </p>
-          {/* TEMP DIAGNOSTIC — remove after confirming catalog_id shape on the wire */}
-          {(() => { console.log('[CatalogSync] raw branches:', branches); return null; })()}
           {!branches.length ? (
             <p style={{ color: 'var(--dim)', fontSize: '.84rem' }}>No branches yet.</p>
           ) : (
@@ -208,15 +206,14 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
               {branches
                 .filter((b) => b.is_active !== false)
                 .map((b) => {
-                  // TEMP DIAGNOSTIC — remove after confirming catalog_id shape
-                  // eslint-disable-next-line no-console
-                  console.log('[CatalogSync] branch row:', { id: b.id, name: b.name, catalog_id: b.catalog_id });
-                  // catalog_id is the source of truth — non-empty string ⇒ catalog
-                  // is bound on the Meta side. Treats null, undefined, and '' as
-                  // identically "no catalog" so the badge can't flicker on edge
-                  // cases like a freshly-created branch where catalog_id is '' before
-                  // the first sync.
-                  const hasCatalog = typeof b.catalog_id === 'string' && b.catalog_id.length > 0;
+                  // item_count is server-attached by GET /api/restaurant/branches
+                  // and counts menu_items where the branch appears in either
+                  // the legacy scalar `branch_id` or the newer `branch_ids`
+                  // array. Coerced through `?? 0` so an undefined field
+                  // (e.g. served from a stale cached payload, or from a
+                  // future endpoint that doesn't compute the count) renders
+                  // as the empty state rather than throwing.
+                  const hasItems = (b.item_count ?? 0) > 0;
                   return (
                     <div
                       key={b.id}
@@ -226,7 +223,7 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
                       }}
                     >
                       <span style={{ flex: 1, fontSize: '.86rem', fontWeight: selectedBranchId === b.id ? 600 : 400 }}>{b.name}</span>
-                      {hasCatalog ? (
+                      {hasItems ? (
                         <span className="badge bg" style={{ fontSize: '.68rem' }}>✓ Catalog</span>
                       ) : (
                         <span
@@ -241,7 +238,7 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          ✗ No Catalog
+                          ✗ No Items
                         </span>
                       )}
                       <button type="button" className="btn-g btn-sm" onClick={() => doQuickSync(b.id)}>🔄 Sync</button>

@@ -1291,11 +1291,57 @@ router.get('/places/reverse-geocode', async (req, res) => {
 
 router.get('/branches', async (req, res) => {
   try {
+    // Static branch fields are cached for 10min — they change rarely.
     const docs = await getCached(`restaurant:${req.restaurantId}:branches`, async () => {
       const raw = await col('branches').find({ restaurant_id: req.restaurantId }).sort({ created_at: 1 }).toArray();
       return mapIds(raw);
     }, 600);
-    res.json(docs);
+
+    // item_count is volatile (mutates on every CSV upload, item create,
+    // item delete) so it's computed fresh per request rather than baked
+    // into the cached payload. Single aggregation, no N+1: $setUnion
+    // merges the legacy scalar `branch_id` and the newer `branch_ids`
+    // array into one set per item, then unwinds + groups. An item with
+    // both fields populated only counts once per branch even if both
+    // happen to point at the same id.
+    const branchIds = docs.map((b) => b.id);
+    const itemCountByBranch = {};
+    if (branchIds.length) {
+      const counts = await col('menu_items').aggregate([
+        {
+          $match: {
+            restaurant_id: req.restaurantId,
+            $or: [
+              { branch_ids: { $in: branchIds } },
+              { branch_id: { $in: branchIds } },
+            ],
+          },
+        },
+        {
+          $project: {
+            _branches: {
+              $setUnion: [
+                { $ifNull: ['$branch_ids', []] },
+                {
+                  $cond: [
+                    { $and: [{ $ne: ['$branch_id', null] }, { $ne: ['$branch_id', undefined] }] },
+                    ['$branch_id'],
+                    [],
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        { $unwind: '$_branches' },
+        { $match: { _branches: { $in: branchIds } } },
+        { $group: { _id: '$_branches', count: { $sum: 1 } } },
+      ]).toArray();
+      for (const c of counts) itemCountByBranch[String(c._id)] = c.count;
+    }
+
+    const enriched = docs.map((b) => ({ ...b, item_count: itemCountByBranch[b.id] || 0 }));
+    res.json(enriched);
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 

@@ -128,6 +128,11 @@ export interface Branch {
   fssai_number?: string;
   gst_number?: string;
   catalog_id?: string;
+  // Per-branch menu-item count, attached server-side by GET /branches.
+  // Used by the menu page's per-branch sync badge ("✓ Catalog" vs "✗ No
+  // Items"). Optional because callers shaped through other code paths
+  // (single-branch fetch, edit form, etc.) may not include it.
+  item_count?: number;
   is_active?: boolean;
   deleted_at?: string | null;
   created_at?: string;
