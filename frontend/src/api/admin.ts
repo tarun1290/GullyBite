@@ -891,3 +891,27 @@ export async function getAdminPlatformAbsorbed(
   );
   return data;
 }
+
+// ── Admin ↔ Restaurant DM thread ────────────────────────────────
+// Calling getAdminMessageThread() also marks the restaurant→admin
+// rows in this thread as read server-side, clearing the admin's
+// unread badge for that conversation.
+export async function sendAdminMessage(
+  restaurantId: string,
+  message: string,
+): Promise<import('../types').AdminRestaurantMessage> {
+  const { data } = await client.post<import('../types').AdminRestaurantMessage>(
+    '/api/admin/messages',
+    { restaurantId, message },
+  );
+  return data;
+}
+
+export async function getAdminMessageThread(
+  restaurantId: string,
+): Promise<import('../types').AdminRestaurantMessagesResponse> {
+  const { data } = await client.get<import('../types').AdminRestaurantMessagesResponse>(
+    `/api/admin/messages/${encodeURIComponent(restaurantId)}`,
+  );
+  return data;
+}

@@ -281,14 +281,17 @@ const confirmPaidOrder = async (orderId, event) => {
 
     // Socket.io fan-out — fire-and-forget. Gated by the same flip
     // guarantee, so dashboards only receive one 'order:paid' per
-    // order even with concurrent webhook deliveries.
+    // order even with concurrent webhook deliveries. Mirrors to
+    // admin:platform so the platform dashboard sees payments too.
     if (ord?.restaurant_id) {
-      const { emitToRestaurant } = require('../utils/socketEmit');
-      emitToRestaurant(ord.restaurant_id, 'order:paid', {
+      const { emitToRestaurant, emitToAdmin } = require('../utils/socketEmit');
+      const paidPayload = {
         orderId: String(orderId),
         amount: amountRs ?? ord?.total_rs ?? null,
         paidAt: new Date().toISOString(),
-      });
+      };
+      emitToRestaurant(ord.restaurant_id, 'order:paid', paidPayload);
+      emitToAdmin('order:paid', paidPayload);
     }
   } catch (_) { /* never block payment confirmation on bus failure */ }
 

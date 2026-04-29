@@ -213,6 +213,18 @@ router.post('/signup', express.json(), async (req, res) => {
     }, process.env.JWT_SECRET, { expiresIn: '7d' });
     logActivity({ actorType: 'restaurant', actorId: id, action: 'restaurant.signup', category: 'auth', description: `New restaurant registered: ${req.body.ownerName || 'Unknown'}`, restaurantId: id, severity: 'info' });
     res.json({ token, needsOnboarding: true, onboardingStep: 1, user: { id: String(ownerUser._id), name: ownerUser.name, role: 'restaurant', staff_role: 'owner', permissions: ROLE_PERMISSIONS.owner } });
+
+    // Live-feed the platform admin console. Fired after res.json so
+    // signup latency is unaffected even if the socket layer is slow.
+    // Inline require so the module loads only when this route fires.
+    try {
+      const { emitToAdmin } = require('../utils/socketEmit');
+      emitToAdmin('admin:new_signup', {
+        restaurantId: id,
+        name: ownerName.trim(),
+        email: email.toLowerCase().trim(),
+      });
+    } catch (_) { /* socket failure must not poison the signup */ }
   } catch (err) {
     req.log.error({ err }, 'Signup failed');
     res.status(500).json({ error: err.message });

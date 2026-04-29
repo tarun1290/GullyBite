@@ -16,6 +16,11 @@ const wa = require('../services/whatsapp');
 const ws = require('../services/websocket');
 const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
 const slugify = require('../utils/slugify');
+// Socket.io fan-out helper. Used by admin action endpoints to push
+// 'admin:action' events to the affected restaurant's dashboard so the
+// merchant sees a real-time toast for approvals, suspensions, refunds,
+// etc. without refreshing.
+const { emitToRestaurant } = require('../utils/socketEmit');
 const log = require('../utils/logger').child({ component: 'admin' });
 
 // ─── AUTH MIDDLEWARE (RBAC) ───────────────────────────────────
@@ -831,6 +836,11 @@ router.patch('/restaurants/:id', express.json(), async (req, res) => {
         description: `Restaurant "${updated.business_name}" suspended`,
         restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'warning',
       });
+      emitToRestaurant(req.params.id, 'admin:action', {
+        type: 'suspension',
+        message: 'Your account has been suspended by GullyBite. Contact support for details.',
+        timestamp: new Date().toISOString(),
+      });
     }
     res.json(mapId(updated));
   } catch (err) {
@@ -1155,6 +1165,11 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
       description: `Restaurant "${updated.business_name}" approved`,
       restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'info',
     });
+    emitToRestaurant(req.params.id, 'admin:action', {
+      type: 'approval',
+      message: '🎉 Your application has been approved — your restaurant is now live on GullyBite.',
+      timestamp: new Date().toISOString(),
+    });
     res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -1179,6 +1194,11 @@ router.patch('/applications/:id/reject', express.json(), async (req, res) => {
       action: 'restaurant.rejected', category: 'auth',
       description: `Restaurant "${updated.business_name}" rejected: ${notes}`,
       restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'warning',
+    });
+    emitToRestaurant(req.params.id, 'admin:action', {
+      type: 'rejection',
+      message: `Your application was not approved. Reason: ${notes}`,
+      timestamp: new Date().toISOString(),
     });
     res.json({ ok: true, restaurant: mapId(updated) });
   } catch (err) {
@@ -1446,6 +1466,12 @@ router.post('/wallets/refund', async (req, res) => {
       action: 'admin.wallet.refund', category: 'payments',
       description: `Manual wallet refund: ₹${amount} to restaurant ${restaurantId}`,
       resourceType: 'wallet', resourceId: restaurantId, severity: 'warning',
+    });
+    emitToRestaurant(restaurantId, 'admin:action', {
+      type: 'credit',
+      message: `₹${amount} credited to your wallet${description ? ` — ${description}` : ''}.`,
+      amount: Number(amount) || 0,
+      timestamp: new Date().toISOString(),
     });
     res.json({ success: true, balance: result.balance_rs });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -2538,6 +2564,18 @@ router.patch('/restaurants/:id/verification', express.json(), async (req, res) =
     await col('restaurants').updateOne({ _id: req.params.id }, {
       $set: { business_verification_status: status, updated_at: new Date() },
     });
+    // Only emit on terminal states — 'pending' / 'not_started' are
+    // intermediate and don't warrant a merchant-facing notification.
+    if (status === 'verified' || status === 'rejected') {
+      const message = status === 'verified'
+        ? '✅ Your business documents have been verified.'
+        : 'Your business verification was rejected. Please re-upload your documents and contact support.';
+      emitToRestaurant(req.params.id, 'admin:action', {
+        type: 'verification',
+        message,
+        timestamp: new Date().toISOString(),
+      });
+    }
     res.json({ ok: true, status });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -5308,6 +5346,82 @@ router.get('/fees/platform-absorbed', requireAdminAuth('fees', 'read'), async (r
     res.json(rows);
   } catch (e) {
     req.log?.error?.({ err: e }, 'fees/platform-absorbed failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN ↔ RESTAURANT DIRECT MESSAGES
+// ═══════════════════════════════════════════════════════════════
+// One-on-one chat thread between platform admin and a specific
+// restaurant. Distinct from:
+//   • `customer_messages` — customer ↔ restaurant WhatsApp inbox
+//   • `admin_messages`    — admin-WABA inbound messages (different feature)
+//   • `messages`          — generic outbound WhatsApp message archive
+// Uses its own `admin_restaurant_messages` collection so the existing
+// three message stores stay untouched.
+
+// POST /api/admin/messages — admin sends to a restaurant
+router.post('/messages', requireAdminAuth(), express.json(), async (req, res) => {
+  try {
+    const { restaurantId, message } = req.body || {};
+    if (!restaurantId || typeof restaurantId !== 'string') {
+      return res.status(400).json({ error: 'restaurantId is required' });
+    }
+    const text = typeof message === 'string' ? message.trim() : '';
+    if (!text) return res.status(400).json({ error: 'message is required' });
+    if (text.length > 4000) return res.status(400).json({ error: 'message too long (max 4000 chars)' });
+
+    const doc = {
+      _id: newId(),
+      from: 'admin',
+      restaurantId: String(restaurantId),
+      message: text,
+      read: false,
+      created_at: new Date(),
+    };
+    await col('admin_restaurant_messages').insertOne(doc);
+
+    // Push to the restaurant's room so their dashboard pops the
+    // drawer + toast in real time. Fire-and-forget; the message is
+    // already persisted so a missed socket only delays delivery
+    // until the next dashboard refresh.
+    emitToRestaurant(restaurantId, 'message:new', {
+      from: 'admin',
+      message: text,
+      timestamp: doc.created_at.toISOString(),
+    });
+
+    res.status(201).json(mapId(doc));
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'admin send message failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// GET /api/admin/messages/:restaurantId — fetch thread (last 50)
+// Side-effect: marks all unread restaurant→admin messages in this
+// thread as read=true so the admin's unread badge clears.
+router.get('/messages/:restaurantId', requireAdminAuth(), async (req, res) => {
+  try {
+    const restaurantId = String(req.params.restaurantId || '');
+    if (!restaurantId) return res.status(400).json({ error: 'restaurantId required' });
+
+    const rows = await col('admin_restaurant_messages')
+      .find({ restaurantId })
+      .sort({ created_at: -1 })
+      .limit(50)
+      .toArray();
+
+    // Mark restaurant→admin messages as read (admin just opened thread).
+    await col('admin_restaurant_messages').updateMany(
+      { restaurantId, from: 'restaurant', read: false },
+      { $set: { read: true } },
+    ).catch(() => {});
+
+    res.json({ messages: mapIds(rows) });
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'admin fetch message thread failed');
     res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });

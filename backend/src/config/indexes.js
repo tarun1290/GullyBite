@@ -64,6 +64,11 @@ const INDEXES = [
   { collection: 'admin_numbers', index: { purpose: 1, is_active: 1 } },
   { collection: 'admin_messages', index: { timestamp: -1 } },
   { collection: 'admin_messages', index: { customer_phone: 1, timestamp: -1 } },
+  // Admin ↔ restaurant DM thread (different feature from admin_messages
+  // above, which is admin-WABA inbound). Thread fetch is per restaurant
+  // newest-first; the unread-badge query also filters by `from + read`
+  // but is small enough that it scans the per-restaurant slice.
+  { collection: 'admin_restaurant_messages', index: { restaurantId: 1, created_at: -1 } },
   // Referral link indexes
   { collection: 'referral_links', index: { code: 1 }, options: { unique: true } },
   { collection: 'referral_links', index: { restaurant_id: 1, status: 1 } },

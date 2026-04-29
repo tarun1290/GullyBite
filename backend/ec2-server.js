@@ -377,23 +377,49 @@ io.use((socket, next) => {
     socket.handshake.auth?.token ||
     (socket.handshake.headers?.authorization || '').replace(/^Bearer\s+/i, '');
   if (!token) return next(new Error('Authentication required'));
+
+  // Try the restaurant JWT first (most common path) — verifies with
+  // JWT_SECRET, attaches the restaurant scope to the socket and joins
+  // the per-tenant room downstream.
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     socket.restaurantId = payload.restaurantId;
     socket.userId = payload.userId || payload.id;
-    next();
-  } catch (_e) {
-    next(new Error('Invalid token'));
+    return next();
+  } catch (_restaurantErr) {
+    // Fall through to admin verify — admin tokens are signed with a
+    // different secret (ADMIN_JWT_SECRET) and carry adminId, not
+    // restaurantId. The two scopes are deliberately separated so a
+    // compromised restaurant token can't be replayed as an admin.
+  }
+
+  try {
+    const payload = jwt.verify(token, process.env.ADMIN_JWT_SECRET, { algorithms: ['HS256'] });
+    socket.isAdmin = true;
+    socket.userId = payload.adminId || payload.userId || payload.id;
+    return next();
+  } catch (_adminErr) {
+    return next(new Error('Invalid token'));
   }
 });
 
 io.on('connection', (socket) => {
-  if (socket.restaurantId) {
+  // Admins join the global admin:platform room; restaurants join their
+  // per-tenant room. The two never share a room — emitToAdmin and
+  // emitToRestaurant target the appropriate one explicitly.
+  if (socket.isAdmin) {
+    socket.join('admin:platform');
+    console.log(`[Socket] Admin connected: userId=${socket.userId}`);
+  } else if (socket.restaurantId) {
     socket.join(`restaurant:${socket.restaurantId}`);
     console.log(`[Socket] Client connected: restaurantId=${socket.restaurantId}`);
   }
   socket.on('disconnect', () => {
-    console.log(`[Socket] Client disconnected: restaurantId=${socket.restaurantId}`);
+    if (socket.isAdmin) {
+      console.log(`[Socket] Admin disconnected: userId=${socket.userId}`);
+    } else {
+      console.log(`[Socket] Client disconnected: restaurantId=${socket.restaurantId}`);
+    }
   });
 });
 

@@ -6,7 +6,7 @@ import OrderDetailModal from '../../../components/dashboard/OrderDetailModal';
 import { getOrders, updateOrderStatus } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
 import { useNewOrderSound } from '../../../hooks/useNewOrderSound';
-import { useOrderNotifications, type OrderNotification } from '../../../hooks/useOrderNotifications';
+import { useSocketContext } from '../../../components/shared/SocketProvider';
 import type { Order, OrderStatus } from '../../../types';
 
 type FilterValue = OrderStatus | 'ALL';
@@ -72,24 +72,25 @@ export default function OrdersPage() {
     return () => clearInterval(id);
   }, [filter, fetchOrders]);
 
-  // Socket.io live channel — toasts a new order, then refetches so the
-  // list updates without waiting for the 30s poll. order:updated /
-  // order:paid also refetch silently so status flips and payment-state
+  // Socket.io live channel — sourced from SocketProvider context now,
+  // so the connection itself is shared with every other dashboard page.
+  // The provider handles the toast on `order:new`; here we only react
+  // to the payload references changing to trigger a silent refetch so
+  // the table updates without waiting for the 30s poll. order:updated
+  // / order:paid also refetch so status flips and payment-state
   // changes propagate from the kitchen tablet or webhooks.
-  const handleNewOrder = useCallback((order: OrderNotification) => {
-    showToast(`New order #${order.orderNumber} — ₹${order.total}`, 'success');
-    fetchOrders(filter, { silent: true });
-  }, [showToast, fetchOrders, filter]);
-
-  const handleSilentRefresh = useCallback(() => {
+  const { lastOrder, lastUpdated, lastPaid } = useSocketContext();
+  const silentRefetch = useCallback(() => {
     fetchOrders(filter, { silent: true });
   }, [fetchOrders, filter]);
-
-  const { connected: liveConnected } = useOrderNotifications({
-    onNewOrder: handleNewOrder,
-    onUpdated: handleSilentRefresh,
-    onPaid: handleSilentRefresh,
-  });
+  // useEffect deps trigger once per new event (each event sets a fresh
+  // payload reference inside the provider). Initial null render is a
+  // no-op since silentRefetch on a missing payload is fine — but we
+  // still want to skip the very first effect to avoid double-fetching
+  // alongside the explicit fetchOrders(filter) call above.
+  useEffect(() => { if (lastOrder) silentRefetch(); }, [lastOrder, silentRefetch]);
+  useEffect(() => { if (lastUpdated) silentRefetch(); }, [lastUpdated, silentRefetch]);
+  useEffect(() => { if (lastPaid) silentRefetch(); }, [lastPaid, silentRefetch]);
 
   // Drive the new-order alarm off the polled orders list. Runs after
   // every `orders` change (initial fetch, 30s polls, post-action
@@ -200,11 +201,8 @@ export default function OrdersPage() {
         })}
       </div>
       {!loading && orders.length > 0 && (
-        <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.6rem', padding: '0 .1rem', display: 'flex', alignItems: 'center', gap: '.5rem' }}>
-          <span>Showing {orders.length} orders · Last refreshed {refreshedLabel}</span>
-          {liveConnected && (
-            <span style={{ color: 'var(--green,#10b981)', fontSize: '.72rem' }}>● Live</span>
-          )}
+        <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.6rem', padding: '0 .1rem' }}>
+          Showing {orders.length} orders · Last refreshed {refreshedLabel}
         </div>
       )}
       <div className="card">

@@ -16,7 +16,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 
-const TOKEN_KEY = 'zm_token';
+const RESTAURANT_TOKEN_KEY = 'zm_token';
+const ADMIN_TOKEN_KEY = 'gb_admin_token';
 
 function resolveSocketUrl(): string {
   return (
@@ -26,9 +27,22 @@ function resolveSocketUrl(): string {
   );
 }
 
+// Pick whichever scope has a token in localStorage. Restaurant first
+// (most common path); admin scope falls through when the user is on
+// /admin/* and only has gb_admin_token. The two scopes never share a
+// browser session in practice, but the fallback also makes the hook
+// resilient if both happen to coexist (e.g. a developer multi-tabbing).
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
-  try { return window.localStorage.getItem(TOKEN_KEY); } catch { return null; }
+  try {
+    const restaurantToken = window.localStorage.getItem(RESTAURANT_TOKEN_KEY);
+    if (restaurantToken) return restaurantToken;
+    const adminToken = window.localStorage.getItem(ADMIN_TOKEN_KEY);
+    if (adminToken) return adminToken;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 interface UseSocketReturn {

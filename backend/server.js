@@ -414,22 +414,39 @@ if (process.env.NODE_ENV !== 'production') {
       socket.handshake.auth?.token ||
       (socket.handshake.headers?.authorization || '').replace(/^Bearer\s+/i, '');
     if (!token) return next(new Error('Authentication required'));
+    // Restaurant JWT first; fall through to admin token on failure.
+    // See ec2-server.js for the full rationale on the two-scope split.
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       socket.restaurantId = payload.restaurantId;
       socket.userId = payload.userId || payload.id;
-      next();
-    } catch (_e) {
-      next(new Error('Invalid token'));
+      return next();
+    } catch (_restaurantErr) {
+      // fall through
+    }
+    try {
+      const payload = jwt.verify(token, process.env.ADMIN_JWT_SECRET, { algorithms: ['HS256'] });
+      socket.isAdmin = true;
+      socket.userId = payload.adminId || payload.userId || payload.id;
+      return next();
+    } catch (_adminErr) {
+      return next(new Error('Invalid token'));
     }
   });
   io.on('connection', (socket) => {
-    if (socket.restaurantId) {
+    if (socket.isAdmin) {
+      socket.join('admin:platform');
+      log.info({ component: 'socket', adminUserId: socket.userId }, 'Admin connected');
+    } else if (socket.restaurantId) {
       socket.join(`restaurant:${socket.restaurantId}`);
       log.info({ component: 'socket', restaurantId: socket.restaurantId }, 'Client connected');
     }
     socket.on('disconnect', () => {
-      log.info({ component: 'socket', restaurantId: socket.restaurantId }, 'Client disconnected');
+      if (socket.isAdmin) {
+        log.info({ component: 'socket', adminUserId: socket.userId }, 'Admin disconnected');
+      } else {
+        log.info({ component: 'socket', restaurantId: socket.restaurantId }, 'Client disconnected');
+      }
     });
   });
   // Setter pattern — see ec2-server.js for the rationale.

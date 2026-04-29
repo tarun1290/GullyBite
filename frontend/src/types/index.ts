@@ -415,3 +415,21 @@ export interface StaffOrder {
   created_at: string;
   items: StaffOrderItem[];
 }
+
+// ─── Admin ↔ Restaurant Direct Messages ────────────────────────
+// Shape for the admin-restaurant DM thread surfaced in the dashboard
+// and admin Message drawers. Backed by the `admin_restaurant_messages`
+// Mongo collection (separate from the customer inbox / WhatsApp
+// archives — see backend/src/routes/admin.js for the writer).
+export interface AdminRestaurantMessage {
+  id: string;
+  from: 'admin' | 'restaurant';
+  restaurantId: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+}
+
+export interface AdminRestaurantMessagesResponse {
+  messages: AdminRestaurantMessage[];
+}

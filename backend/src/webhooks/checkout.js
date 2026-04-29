@@ -560,19 +560,37 @@ async function handleOrder(value) {
     // guarantees we only fire it once per order regardless of which
     // path won.
     try {
-      const { emitToRestaurant } = require('../utils/socketEmit');
-      emitToRestaurant(waAccount.restaurant_id, 'order:new', {
+      const { emitToRestaurant, emitToAdmin } = require('../utils/socketEmit');
+      const newOrderPayload = {
         orderId: String(orderId),
         orderNumber,
         total: charges.customer_total_rs,
         branchName: fullOrder?.branch_name || null,
         customerPhone,
         createdAt: fullOrder?.created_at || new Date().toISOString(),
-      });
-      emitToRestaurant(waAccount.restaurant_id, 'order:paid', {
+      };
+      const paidPayload = {
         orderId: String(orderId),
         amount: charges.customer_total_rs,
         paidAt: new Date().toISOString(),
+      };
+      emitToRestaurant(waAccount.restaurant_id, 'order:new', newOrderPayload);
+      emitToRestaurant(waAccount.restaurant_id, 'order:paid', paidPayload);
+      // Mirror to admin:platform so platform-side dashboards can light
+      // up the same lifecycle events without hitting the order DB.
+      emitToAdmin('order:new', newOrderPayload);
+      emitToAdmin('order:paid', paidPayload);
+      // Admin live-feed event — slimmer payload tailored for the
+      // platform overview (no customer phone, no createdAt, but adds
+      // restaurantId so admin pages can route the toast to the right
+      // tenant view). Distinct event name from 'order:new' so the
+      // admin SocketProvider can toast it without re-toasting the
+      // generic event.
+      emitToAdmin('admin:order_new', {
+        restaurantId: String(waAccount.restaurant_id),
+        orderNumber,
+        total: charges.customer_total_rs,
+        branchName: fullOrder?.branch_name || null,
       });
     } catch (_e) { /* never block checkout completion on socket fan-out */ }
 

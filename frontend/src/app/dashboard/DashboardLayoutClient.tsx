@@ -9,9 +9,12 @@ import WaConnectBanner from '../../components/dashboard/WaConnectBanner';
 import WabaTokenExpiryBanner from '../../components/dashboard/WabaTokenExpiryBanner';
 import WalletWidget from '../../components/dashboard/WalletWidget';
 import NotificationBell from '../../components/dashboard/NotificationBell';
+import AdminMessageButton from '../../components/dashboard/AdminMessageButton';
 import { useAuth } from '../../contexts/AuthContext';
 import { RestaurantProvider, useRestaurant } from '../../contexts/RestaurantContext';
 import { useNewOrderSound } from '../../hooks/useNewOrderSound';
+import { SocketProvider } from '../../components/shared/SocketProvider';
+import LiveIndicator from '../../components/shared/LiveIndicator';
 import type { Restaurant, WabaAccount } from '../../types';
 
 const NAV_ITEMS: NavItem[] = [
@@ -97,6 +100,8 @@ function DashboardShell({ children }: DashboardShellProps) {
           onMenuClick={() => setSidebarOpen(true)}
           actions={
             <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+              <LiveIndicator />
+              <AdminMessageButton />
               <NotificationBell />
               <WalletWidget />
             </div>
@@ -135,7 +140,9 @@ export default function DashboardLayoutClient({ children }: DashboardLayoutClien
   return (
     <ProtectedRoute role="restaurant" redirectTo="/">
       <RestaurantProvider>
-        <DashboardShell>{children}</DashboardShell>
+        <SocketProvider>
+          <DashboardShell>{children}</DashboardShell>
+        </SocketProvider>
       </RestaurantProvider>
     </ProtectedRoute>
   );

@@ -6,6 +6,9 @@ import AdminProtectedRoute from '../../components/AdminProtectedRoute';
 import Sidebar, { type NavItem } from '../../components/Sidebar';
 import Navbar from '../../components/Navbar';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
+import { SocketProvider } from '../../components/shared/SocketProvider';
+import LiveIndicator from '../../components/shared/LiveIndicator';
+import RestaurantMessageButton from '../../components/admin/RestaurantMessageButton';
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Overview',      icon: '📊', path: '/admin/overview' },
@@ -71,6 +74,12 @@ function AdminShell({ children }: AdminShellProps) {
           title={title}
           subtitle="Platform administration"
           onMenuClick={() => setSidebarOpen(true)}
+          actions={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+              <LiveIndicator />
+              <RestaurantMessageButton />
+            </div>
+          }
         />
         <div className="body">
           {children}
@@ -88,7 +97,9 @@ export default function AdminLayoutClient({ children }: AdminLayoutClientProps) 
   if (pathname === '/admin/login') return <>{children}</>;
   return (
     <AdminProtectedRoute redirectTo="/admin/login">
-      <AdminShell>{children}</AdminShell>
+      <SocketProvider isAdmin>
+        <AdminShell>{children}</AdminShell>
+      </SocketProvider>
     </AdminProtectedRoute>
   );
 }

@@ -33,4 +33,19 @@ function emitToRestaurant(restaurantId, event, data) {
   }
 }
 
-module.exports = { init, emitToRestaurant };
+// Fan-out to the global admin room. Used by webhook + state-engine
+// emit sites that want admins to see the same events restaurants do
+// (order lifecycle today; could expand to settlement / abuse signals).
+// The room is joined by every authenticated admin socket — see the
+// io.on('connection') handler in ec2-server.js / server.js.
+function emitToAdmin(event, data) {
+  if (!_io) return;
+  if (!event) return;
+  try {
+    _io.to('admin:platform').emit(event, data);
+  } catch (_e) {
+    // Same fail-silent contract as emitToRestaurant.
+  }
+}
+
+module.exports = { init, emitToRestaurant, emitToAdmin };

@@ -1418,6 +1418,18 @@ router.post('/branches', async (req, res) => {
 
     invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
     res.status(201).json(newBranch);
+
+    // Fire-and-forget after the response — admin console gets a live
+    // signal whenever a merchant adds a new outlet. Restaurants don't
+    // need this on their own dashboard (the local /branches refetch
+    // already handles their view).
+    try {
+      const { emitToAdmin } = require('../utils/socketEmit');
+      emitToAdmin('restaurant:branch_created', {
+        restaurantId: String(req.restaurantId),
+        branchName: newBranch.name || null,
+      });
+    } catch (_) { /* socket failure must not poison the create */ }
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -1569,6 +1581,25 @@ router.patch('/branches/:id', async (req, res) => {
 
     if (isOpen !== undefined) {
       log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'branch.toggled', category: 'settings', description: `Branch toggled`, restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.id, severity: 'info' });
+      // Live-feed the platform admin console when a branch flips
+      // open/closed. Fire-and-forget after res.json so a socket hiccup
+      // can't slow down the dashboard's PATCH round-trip. Branch name
+      // is read post-update so a rename in the same call is reflected.
+      (async () => {
+        try {
+          const { emitToAdmin } = require('../utils/socketEmit');
+          const branch = await col('branches').findOne(
+            { _id: req.params.id, restaurant_id: req.restaurantId },
+            { projection: { _id: 1, name: 1 } },
+          );
+          emitToAdmin('restaurant:branch_status', {
+            restaurantId: String(req.restaurantId),
+            branchId: String(req.params.id),
+            branchName: branch?.name || null,
+            is_open: !!isOpen,
+          });
+        } catch (_) { /* never block branch update on socket fan-out */ }
+      })();
     } else {
       log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'branch.updated', category: 'settings', description: `Branch updated`, restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.id, severity: 'info' });
     }
@@ -8920,6 +8951,87 @@ router.put('/:restaurantId/marketing-number', async (req, res) => {
     const metaErr = e.response?.data?.error?.message;
     logger.error({ err: e, metaErr }, 'marketing-number set failed');
     res.status(500).json({ success: false, message: metaErr || 'Internal server error' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN ↔ RESTAURANT DIRECT MESSAGES (restaurant side)
+// ═══════════════════════════════════════════════════════════════
+// Mounted at /admin-messages (NOT /messages) because the existing
+// /messages and /messages/reply endpoints already serve the customer
+// inbox. Same `admin_restaurant_messages` collection backing as the
+// admin-side routes.
+
+// POST /api/restaurant/admin-messages/reply — restaurant replies to admin
+router.post('/admin-messages/reply', async (req, res) => {
+  try {
+    const { message } = req.body || {};
+    const text = typeof message === 'string' ? message.trim() : '';
+    if (!text) return res.status(400).json({ error: 'message is required' });
+    if (text.length > 4000) return res.status(400).json({ error: 'message too long (max 4000 chars)' });
+
+    const doc = {
+      _id: newId(),
+      from: 'restaurant',
+      restaurantId: String(req.restaurantId),
+      message: text,
+      read: false,
+      created_at: new Date(),
+    };
+    await col('admin_restaurant_messages').insertOne(doc);
+
+    // Resolve the restaurant name for the admin toast — kept off the
+    // critical path with a non-blocking projection lookup. If the
+    // restaurant doc is missing for any reason, fall back to id so
+    // the admin still gets a usable signal.
+    let restaurantName = null;
+    try {
+      const r = await col('restaurants').findOne(
+        { _id: req.restaurantId },
+        { projection: { _id: 0, business_name: 1, brand_name: 1 } },
+      );
+      restaurantName = r?.business_name || r?.brand_name || null;
+    } catch (_) { /* keep null */ }
+
+    // Fire to the admin:platform room so all admin sockets see the
+    // reply. The drawer on the admin side filters by restaurantId
+    // to surface in the right thread.
+    const { emitToAdmin } = require('../utils/socketEmit');
+    emitToAdmin('message:new', {
+      from: String(req.restaurantId),
+      restaurantId: String(req.restaurantId),
+      restaurantName,
+      message: text,
+      timestamp: doc.created_at.toISOString(),
+    });
+
+    res.status(201).json(mapId(doc));
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'restaurant reply admin message failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// GET /api/restaurant/admin-messages — fetch own thread (last 50).
+// Marks all admin→restaurant messages as read so the merchant's
+// unread badge clears.
+router.get('/admin-messages', async (req, res) => {
+  try {
+    const rows = await col('admin_restaurant_messages')
+      .find({ restaurantId: String(req.restaurantId) })
+      .sort({ created_at: -1 })
+      .limit(50)
+      .toArray();
+
+    await col('admin_restaurant_messages').updateMany(
+      { restaurantId: String(req.restaurantId), from: 'admin', read: false },
+      { $set: { read: true } },
+    ).catch(() => {});
+
+    res.json({ messages: mapIds(rows) });
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'restaurant fetch admin thread failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 

@@ -226,14 +226,17 @@ async function transitionOrder(orderId, nextState, opts = {}) {
   // without polling. The PAID-specific 'order:new' and 'order:paid'
   // chimes are emitted by the webhook entrypoints (checkout.js for
   // WhatsApp native, razorpay.js for hosted) — we only emit the
-  // generic transition event here.
+  // generic transition event here. Mirrors to admin:platform so
+  // platform-side dashboards see the same transitions.
   try {
-    const { emitToRestaurant } = require('../utils/socketEmit');
-    emitToRestaurant(updated.restaurant_id, 'order:updated', {
+    const { emitToRestaurant, emitToAdmin } = require('../utils/socketEmit');
+    const updatedPayload = {
       orderId: String(orderId),
       status: nextState,
       updatedAt: now.toISOString(),
-    });
+    };
+    emitToRestaurant(updated.restaurant_id, 'order:updated', updatedPayload);
+    emitToAdmin('order:updated', updatedPayload);
   } catch (_) { /* socket failures must never block the transition */ }
 
   // ─── ACCEPTANCE TIMEOUT JOB (PAID only) ──────────────────────

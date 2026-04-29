@@ -971,3 +971,23 @@ export async function deleteCatalog(catalogId: string): Promise<unknown> {
   const { data } = await client.delete(`/api/restaurant/catalog/${encodeURIComponent(catalogId)}`);
   return data;
 }
+
+// ── Admin ↔ Restaurant DM thread ────────────────────────────────
+// Mounted at /admin-messages (NOT /messages — that's the existing
+// customer inbox). Calling getAdminMessages() also marks all
+// admin→restaurant rows as read server-side, clearing the unread
+// badge for the merchant.
+export async function getAdminMessages(): Promise<import('../types').AdminRestaurantMessagesResponse> {
+  const { data } = await client.get<import('../types').AdminRestaurantMessagesResponse>(
+    '/api/restaurant/admin-messages',
+  );
+  return data;
+}
+
+export async function replyAdminMessage(message: string): Promise<import('../types').AdminRestaurantMessage> {
+  const { data } = await client.post<import('../types').AdminRestaurantMessage>(
+    '/api/restaurant/admin-messages/reply',
+    { message },
+  );
+  return data;
+}
