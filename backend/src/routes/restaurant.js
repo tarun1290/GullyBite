@@ -1306,6 +1306,24 @@ router.get('/branches', async (req, res) => {
     // happen to point at the same id.
     const branchIds = docs.map((b) => b.id);
     const itemCountByBranch = {};
+    // TEMP DIAGNOSTIC — first 3 branch ids being queried, raw item count
+    // for this restaurant, and the branch refs on a single sample item
+    // so we can confirm shape/values match what the aggregation expects.
+    // eslint-disable-next-line no-console
+    console.log('[items_count][diag] branchIds[0..3]:', branchIds.slice(0, 3));
+    {
+      // TEMP DIAGNOSTIC
+      const totalItems = await col('menu_items').countDocuments({ restaurant_id: req.restaurantId });
+      // eslint-disable-next-line no-console
+      console.log('[items_count][diag] menu_items.countDocuments({restaurant_id}):', totalItems);
+      // TEMP DIAGNOSTIC
+      const sampleItem = await col('menu_items').findOne(
+        { restaurant_id: req.restaurantId },
+        { projection: { _id: 0, branch_id: 1, branch_ids: 1 } },
+      );
+      // eslint-disable-next-line no-console
+      console.log('[items_count][diag] sample item branch fields:', sampleItem);
+    }
     if (branchIds.length) {
       const counts = await col('menu_items').aggregate([
         {
@@ -1337,7 +1355,14 @@ router.get('/branches', async (req, res) => {
         { $match: { _branches: { $in: branchIds } } },
         { $group: { _id: '$_branches', count: { $sum: 1 } } },
       ]).toArray();
+      // TEMP DIAGNOSTIC — raw aggregation result + the merged map so we
+      // can spot whether the pipeline produced rows but the merge missed
+      // them (id-typing mismatch, missing branch in docs, etc.).
+      // eslint-disable-next-line no-console
+      console.log('[items_count][diag] aggregation rows:', counts);
       for (const c of counts) itemCountByBranch[String(c._id)] = c.count;
+      // eslint-disable-next-line no-console
+      console.log('[items_count][diag] itemCountByBranch:', itemCountByBranch);
     }
 
     const enriched = docs.map((b) => ({ ...b, item_count: itemCountByBranch[b.id] || 0 }));
