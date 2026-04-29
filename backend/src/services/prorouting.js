@@ -5,7 +5,7 @@
 //
 //   getEstimate(pickupCoords, dropCoords, orderValue)
 //     → { estimated_price, quote_id }
-//   createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dropDetails)
+//   createDeliveryOrder(gullybiteOrderId, pickupDetails, dropDetails, orderMeta)
 //     → { prorouting_order_id, raw }
 //   cancelDeliveryOrder(mp2OrderId, reasonId, reasonText)
 //     → raw response body on success, null on failure (never throws)
@@ -82,7 +82,7 @@ async function getEstimate(pickupCoords, dropCoords, orderValue) {
 
   const t0 = Date.now();
   try {
-    const { data } = await client().post('/estimate', payload);
+    const { data } = await client().post('/partner/estimate', payload);
     const estimated_price = Number(data?.estimated_price ?? data?.price ?? 0);
     const quote_id = data?.quote_id || data?.quoteId || null;
     log.info({ ms: Date.now() - t0, estimated_price, quote_id }, 'estimate ok');
@@ -94,17 +94,24 @@ async function getEstimate(pickupCoords, dropCoords, orderValue) {
 }
 
 // ─── CREATE DELIVERY ORDER ────────────────────────────────────
-// Fire after Razorpay payment confirmed. mode=estimated_price pins the fare
-// to the quote returned from /estimate. callback_url receives lifecycle
-// events at /webhook/prorouting on our side. client_order_id is the value
-// the webhook will echo back so we can resolve our order row.
+// Fire after Razorpay payment confirmed. mode=fastest_agent (recommended
+// for F&B in Prorouting's docs) lets the LSP pick the closest available
+// rider — no quote_id is needed because the fare is re-derived from the
+// pickup/drop coords at dispatch time. callback_url receives lifecycle
+// events at /webhook/prorouting on our side; client_order_id is the
+// value the webhook will echo back so we can resolve our order row.
 //
 // gullybiteOrderId: our orders._id (string)
-// quoteId:          prorouting_quote_id from getEstimate
-// pickupDetails:    { latitude, longitude, address, pincode, name, phone, ... }
-// dropDetails:      { latitude, longitude, address, pincode, name, phone, order_value, ... }
+// pickupDetails:    {
+//   latitude, longitude, name, phone,
+//   address_name, address_line1, address_line2, city, state, pincode
+// }
+// dropDetails:      {
+//   latitude, longitude, name, phone, order_value,
+//   address_name, address_line1, address_line2, city, state, pincode
+// }
 // orderMeta:        { orderAmount: number, orderItems: [{name, qty, price}, ...] }
-async function createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dropDetails, orderMeta = {}) {
+async function createDeliveryOrder(gullybiteOrderId, pickupDetails, dropDetails, orderMeta = {}) {
   const pickupLatLng = toLatLng(pickupDetails);
   const dropLatLng = toLatLng(dropDetails);
   if (!pickupLatLng || !dropLatLng) {
@@ -130,21 +137,30 @@ async function createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dro
     search_category: 'Immediate Delivery',
     ready_to_ship: 'yes',
     order_items: orderItems,
-    select_criteria: {
-      mode: 'estimated_price',
-      quote_id: quoteId || null,
-    },
+    select_criteria: { mode: 'fastest_agent' },
     pickup: {
       ...pickupLatLng,
-      address: pickupDetails.address || pickupDetails.full_address || '',
-      pincode: pickupDetails.pincode || '',
+      address: {
+        name: pickupDetails.address_name || '',
+        line1: pickupDetails.address_line1 || '',
+        line2: pickupDetails.address_line2 || '',
+        city: pickupDetails.city || '',
+        state: pickupDetails.state || '',
+        pincode: pickupDetails.pincode || '',
+      },
       name: pickupDetails.name || '',
       phone: pickupDetails.phone || '',
     },
     drop: {
       ...dropLatLng,
-      address: dropDetails.address || dropDetails.full_address || '',
-      pincode: dropDetails.pincode || '',
+      address: {
+        name: dropDetails.address_name || '',
+        line1: dropDetails.address_line1 || '',
+        line2: dropDetails.address_line2 || '',
+        city: dropDetails.city || '',
+        state: dropDetails.state || '',
+        pincode: dropDetails.pincode || '',
+      },
       name: dropDetails.name || '',
       phone: dropDetails.phone || '',
       order_value: Number(dropDetails.order_value) || 0,
@@ -153,7 +169,7 @@ async function createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dro
 
   const t0 = Date.now();
   try {
-    const { data } = await client().post('/createasync', payload);
+    const { data } = await client().post('/partner/order/createasync', payload);
     const prorouting_order_id = data?.order_id || data?.orderId || data?.prorouting_order_id || null;
     log.info({ ms: Date.now() - t0, prorouting_order_id, client_order_id: payload.client_order_id }, 'createasync ok');
     return { prorouting_order_id, raw: data };
@@ -227,7 +243,7 @@ async function getTrackingInfo(proroutingOrderId) {
   if (!proroutingOrderId) throw new Error('prorouting.getTrackingInfo: proroutingOrderId is required');
   const t0 = Date.now();
   try {
-    const { data } = await client().post('/track', { order: { id: String(proroutingOrderId) } });
+    const { data } = await client().post('/partner/order/track', { order: { id: String(proroutingOrderId) } });
     const fulfilment = data?.order?.fulfillments?.[0] || data?.fulfillments?.[0] || data?.order || data || {};
     const agentLoc = fulfilment?.agent?.location || fulfilment?.agent_location || data?.agent?.location || {};
     const trackingBlock = fulfilment?.tracking || data?.tracking || {};
@@ -253,7 +269,7 @@ async function getOrderStatus(proroutingOrderId) {
   if (!proroutingOrderId) throw new Error('prorouting.getOrderStatus: proroutingOrderId is required');
   const t0 = Date.now();
   try {
-    const { data } = await client().post('/status', { order: { id: String(proroutingOrderId) } });
+    const { data } = await client().post('/partner/order/status', { order: { id: String(proroutingOrderId) } });
     const fulfilment = data?.order?.fulfillments?.[0] || data?.fulfillments?.[0] || data?.order || data || {};
     const state = fulfilment?.state?.descriptor?.code
       || fulfilment?.state?.code

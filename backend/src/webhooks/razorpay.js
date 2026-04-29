@@ -478,10 +478,27 @@ const confirmPaidOrder = async (orderId, event) => {
           await col('orders').updateOne({ _id: orderId }, { $set: { needs_manual_dispatch: true, updated_at: new Date() } });
           return;
         }
+        // Prorouting now requires nested address objects {name, line1,
+        // line2, city, state, pincode} for both pickup and drop. Branch
+        // documents store a single flat `address` string, so we drop
+        // the whole thing into line1 and leave line2 empty — splitting
+        // a free-text address would be more brittle than what the LSP
+        // already does on its side. structured_address on the order
+        // (filled by the WhatsApp delivery flow) carries finer-grained
+        // parts which we surface via line1 / line2.
+        const sa = order.structured_address || {};
+        const dropLine1 = sa.building_floor || sa.house_number || '';
+        const dropLine2 = [sa.street || sa.building_street, sa.area_locality]
+          .filter(Boolean)
+          .join(', ') || (dropLine1 ? '' : (order.delivery_address || ''));
         const pickupDetails = {
           latitude: branch.latitude,
           longitude: branch.longitude,
-          address: branch.address || '',
+          address_name: branch.name || '',
+          address_line1: branch.address || '',
+          address_line2: '',
+          city: branch.city || '',
+          state: branch.state || '',
           pincode: branch.pincode || '',
           name: branch.name || '',
           phone: branch.manager_phone || branch.phone || '',
@@ -489,8 +506,12 @@ const confirmPaidOrder = async (orderId, event) => {
         const dropDetails = {
           latitude: order.delivery_lat,
           longitude: order.delivery_lng,
-          address: order.delivery_address || '',
-          pincode: order.structured_address?.pincode || '',
+          address_name: order.receiver_name || order.customer_name || '',
+          address_line1: dropLine1,
+          address_line2: dropLine2,
+          city: sa.city || '',
+          state: sa.state || '',
+          pincode: sa.pincode || '',
           name: order.receiver_name || order.customer_name || '',
           phone: order.receiver_phone || order.customer_phone || '',
           order_value: Number(order.total_rs) || 0,
@@ -505,7 +526,6 @@ const confirmPaidOrder = async (orderId, event) => {
         };
         const { prorouting_order_id } = await prorouting.createDeliveryOrder(
           String(order.id || order._id),
-          order.prorouting_quote_id,
           pickupDetails,
           dropDetails,
           orderMeta
