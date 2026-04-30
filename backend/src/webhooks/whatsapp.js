@@ -1448,14 +1448,22 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   }
 
   if (conv.state === 'SELECTING_ADDRESS') {
+    // Flow is the only supported address path. Populated case opens
+    // SAVED_ADDRESSES with the customer's addresses pre-loaded; empty
+    // case opens NEW_ADDRESS so the customer goes straight to entry.
+    // Restaurant fetch hoisted above the if/else so both branches see
+    // the same flow_id without a second DB round-trip.
     const addresses = await addressSvc.getAddresses({ customer_id: customer.id });
+    const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
     if (addresses.length > 0) {
-      await wa.sendAddressList(pid, token, to, addresses);
+      if (restaurant?.flow_id) {
+        await _sendSavedAddressesFlow(pid, token, to, restaurant, customer, 'Choose your delivery address:', 'Choose Address');
+      } else {
+        await wa.sendLocationRequest(pid, token, to);
+      }
     } else {
-      // Flow is the only supported address path. Trigger NEW_ADDRESS screen
-      // when the customer has no saved addresses; not-ready message if the
-      // restaurant somehow has no flow_id.
-      const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
+      // No saved addresses → straight to NEW_ADDRESS. Not-ready message
+      // when the restaurant somehow has no flow_id (mis-configured).
       if (restaurant?.flow_id) {
         await wa.sendFlow(pid, token, to, {
           body: 'Set your delivery location:',

@@ -283,36 +283,6 @@ const sendStatusUpdate = (pid, token, to, status, { orderNumber, eta, trackingUr
   return sendText(pid, token, to, msgs[status] || `Order #${orderNumber}: ${status}`);
 };
 
-// ─── SAVED ADDRESS LIST ───────────────────────────────────────
-// Shows a WhatsApp list message with the customer's saved addresses.
-// Each row id = `ADDR_<uuid>` so we know which was tapped.
-// A final row lets the customer share a fresh GPS pin instead.
-const sendAddressList = (pid, token, to, addresses) => {
-  const rows = addresses.map((a) => ({
-    id         : `ADDR_${a.id}`,
-    title      : a.label.substring(0, 24),
-    description: (a.full_address || '').substring(0, 72),
-  }));
-  rows.push({
-    id         : 'USE_NEW_LOCATION',
-    title      : 'Use current location',
-    description: 'Share your GPS pin',
-  });
-
-  return sendMsg(pid, token, to, {
-    type: 'interactive',
-    interactive: {
-      type  : 'list',
-      body  : { text: '📍 *Select delivery address*\n\nChoose a saved address or share your current location.' },
-      footer: { text: 'Tap to select' },
-      action: {
-        button  : 'Choose Address',
-        sections: [{ title: 'Your Addresses', rows }],
-      },
-    },
-  });
-};
-
 // ─── ADDRESS REQUEST (Native Address Form) ──────────────────
 // [WhatsApp2026] Sends an interactive address_message form.
 // Meta renders a native structured form (name, phone, building, floor, pin_code, etc.)
@@ -794,4 +764,4 @@ const getOutboundNumberId = (restaurant) => {
   return restaurant?.phoneNumberId || restaurant?.phone_number_id || null;
 };
 
-module.exports = { sendMsg, sendMessage, sendText, sendButtons, sendList, sendAddressList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendCouponTemplate, sendCheckoutButtonTemplate, sendFlow, sendDocument, markRead, showTyping, getOutboundNumberId };
+module.exports = { sendMsg, sendMessage, sendText, sendButtons, sendList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendCouponTemplate, sendCheckoutButtonTemplate, sendFlow, sendDocument, markRead, showTyping, getOutboundNumberId };
