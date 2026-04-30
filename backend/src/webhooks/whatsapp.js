@@ -1031,7 +1031,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     } catch (e) { log.warn({ err: e }, 'Cart recovery re-engagement check failed'); }
   }
 
-  if (['HI', 'HELLO', 'HEY', 'START', 'MENU', 'ORDER'].includes(text)) {
+  if (['HI', 'HAI', 'HELLO', 'HEY', 'START', 'MENU', 'ORDER'].includes(text)) {
     await orderSvc.setState(conv.id, 'SELECTING_ADDRESS');
 
     const restaurant = await col('restaurants').findOne({ _id: waAccount.restaurant_id });
@@ -1060,25 +1060,37 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  // LEGACY KEYWORD: disabled per Tarun 2026-04-30 — pending dead-code audit decision
+  /*
   if (['TRACK', 'STATUS', 'WHERE'].some(w => text.includes(w))) {
     await sendTrackingInfo(customer, conv, waAccount);
     return;
   }
+  */
 
+  // LEGACY KEYWORD: disabled per Tarun 2026-04-30 — pending dead-code audit decision
+  /*
   if (text === 'CANCEL') {
     await handleCancelRequest(customer, conv, waAccount);
     return;
   }
+  */
 
+  // LEGACY KEYWORD: disabled per Tarun 2026-04-30 — pending dead-code audit decision
+  /*
   if (['HISTORY', 'ORDERS', 'PAST ORDERS', 'MY ORDERS'].includes(text)) {
     await sendOrderHistory(customer, waAccount);
     return;
   }
+  */
 
+  // LEGACY KEYWORD: disabled per Tarun 2026-04-30 — pending dead-code audit decision
+  /*
   if (['POINTS', 'LOYALTY', 'REWARDS', 'MY POINTS'].includes(text)) {
     await sendLoyaltyBalance(customer, waAccount);
     return;
   }
+  */
 
   if (text.startsWith('REORDER')) {
     const num = parseInt(text.replace('REORDER', '').trim()) || 1;
@@ -1086,6 +1098,8 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     return;
   }
 
+  // LEGACY KEYWORD: disabled per Tarun 2026-04-30 — pending dead-code audit decision
+  /*
   if (['COMPLAINT', 'ISSUE', 'PROBLEM', 'HELP', 'REFUND'].includes(text)) {
     // Show issue category picker
     await wa.sendList(pid, token, to, {
@@ -1106,6 +1120,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     await orderSvc.setState(conv.id, 'SELECTING_ISSUE_CATEGORY', {});
     return;
   }
+  */
 
   if (text === 'REOPEN') {
     // Find customer's most recent resolved issue
