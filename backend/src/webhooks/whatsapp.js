@@ -733,7 +733,7 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         coupon_code: discount?.code || null,
         total_rs: effectiveCharges?.customer_total_rs || effectiveTotalRs || 0,
         business_name: restaurant?.business_name || branch?.name || 'Restaurant',
-        items: (items || []).map(i => ({ item_name: i.name, quantity: i.qty || 1, unit_price_rs: Number(i.price) || 0, retailer_id: i.retailer_id || i.name })),
+        items: (items || []).map(i => ({ item_name: i.name, quantity: i.qty || 1, unit_price_rs: Number(i.price) || 0, retailer_id: i.retailer_id || i.retailerId || i.menu_item_id || i.name })),
       };
 
       // ── Razorpay pre-create ──
@@ -1163,7 +1163,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
       await _sendOrderCheckout(pid, token, to, {
         orderNumber: tempNum,
-        items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+        items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0), retailer_id: i.retailerId })),
         subtotal:    session.subtotalRs.toFixed(0),
         deliveryFee: session.deliveryFeeRs.toFixed(0),
         total:       session.totalRs.toFixed(0),
@@ -1207,7 +1207,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
     await _sendOrderCheckout(pid, token, to, {
       orderNumber: tempNum,
-      items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+      items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0), retailer_id: i.retailerId })),
       charges:     updatedCharges,
       subtotal:    session.subtotalRs.toFixed(0),
       deliveryFee: (updatedCharges ? updatedCharges.customer_delivery_rs : session.deliveryFeeRs).toFixed(0),
@@ -1356,7 +1356,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
     await _sendOrderCheckout(pid, token, to, {
       orderNumber: tempNum,
-      items: session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+      items: session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0), retailer_id: i.retailerId })),
       charges: updatedCharges,
       subtotal: session.subtotalRs.toFixed(0),
       deliveryFee: (updatedCharges ? updatedCharges.customer_delivery_rs : session.deliveryFeeRs).toFixed(0),
@@ -1531,7 +1531,7 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
   // ── GENERAL MESSAGE — not recognized by any handler → route to restaurant inbox ──
   await captureCustomerMessage(msg, customer, conv, waAccount);
   await wa.sendText(pid, token, to,
-    'Thanks for your message! The restaurant team will get back to you shortly. 😊\n\nIn the meantime:\n• Type *MENU* to browse our menu 🍽️\n• Type *TRACK* to track your order 📦'
+    "Sorry, I didn't quite get that. Type *Hi* to browse our menu or tap a button below."
   );
 };
 
@@ -2066,7 +2066,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
 
   await _sendOrderCheckout(pid, token, to, {
     orderNumber: tempOrderNum,
-    items: cart.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+    items: cart.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0), retailer_id: i.retailerId })),
     charges,
     subtotal:    cart.subtotalRs.toFixed(0),
     deliveryFee: (charges ? charges.customer_delivery_rs : cart.deliveryFeeRs).toFixed(0),
@@ -2448,7 +2448,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       await wa.sendText(pid, token, to, '🗑 Coupon removed.');
       await _sendOrderCheckout(pid, token, to, {
         orderNumber: tempNum,
-        items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0) })),
+        items:       session.cart.map(i => ({ name: i.name, qty: i.qty, price: i.unitPriceRs.toFixed(0), retailer_id: i.retailerId })),
         charges:     restoredCharges,
         subtotal:    session.subtotalRs.toFixed(0),
         deliveryFee: (restoredCharges ? restoredCharges.customer_delivery_rs : session.deliveryFeeRs).toFixed(0),
