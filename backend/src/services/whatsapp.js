@@ -151,7 +151,7 @@ const sendMPM = (pid, token, to, catalogId, { header, body, footer, sections }) 
 // ─── INTERACTIVE ORDER CHECKOUT (Review and Pay) ──────────────
 // Sends an interactive order_details message with native Razorpay payment inside WhatsApp.
 // Customer sees full order breakdown + "Review and Pay" button. Confirmed working format.
-const sendPaymentRequest = (pid, token, to, { order, items, customerName, restaurantName, deliveryAddress, rpOrderId }) => {
+const sendPaymentRequest = async (pid, token, to, { order, items, customerName, restaurantName, deliveryAddress, rpOrderId }) => {
   const toPaise = (rs) => Math.round((rs || 0) * 100);
   const configName = process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite';
 
@@ -263,7 +263,42 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
 
   log.info({ refId, payload: JSON.stringify(msgPayload.interactive.action.parameters) }, 'order_details payload');
 
-  return sendMsg(pid, token, to, msgPayload);
+  // Deep-trace logging for the Meta Graph API send. The real axios.post
+  // lives inside sendMsg above; this wrapper observes around it so we can
+  // see exactly what we send and exactly what Meta returns. Logic is
+  // unchanged — sendMsg still owns the request, retries, and timeouts.
+  // Status is recorded as 200 on the success branch because sendMsg
+  // unwraps `data` from the axios response and only returns when the
+  // call was 2xx (it throws on 4xx/5xx, which the catch below captures
+  // with the real err.response.status from Meta).
+  const url = apiUrl(pid);
+  const outboundBody = { messaging_product: 'whatsapp', recipient_type: 'individual', to, ...msgPayload };
+  const outboundHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  log.info({
+    component: 'WhatsApp',
+    msg: 'order_details FULL outbound',
+    url,
+    headers: { ...outboundHeaders, Authorization: '[REDACTED]' },
+    body: JSON.stringify(outboundBody),
+  });
+  try {
+    const resp = await sendMsg(pid, token, to, msgPayload);
+    log.info({
+      component: 'WhatsApp',
+      msg: 'order_details FULL response',
+      status: 200,
+      data: resp,
+    });
+    return resp;
+  } catch (err) {
+    log.warn({
+      component: 'WhatsApp',
+      msg: 'order_details FULL error',
+      status: err.response?.status,
+      data: err.response?.data,
+    });
+    throw err;
+  }
 };
 
 // DEPRECATED: sendPaymentLink removed — only interactive checkout is used
