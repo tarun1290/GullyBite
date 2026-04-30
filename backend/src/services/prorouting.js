@@ -285,6 +285,9 @@ async function getTrackingInfo(proroutingOrderId) {
   const t0 = Date.now();
   try {
     const { data } = await client().post('/partner/order/track', { order: { id: String(proroutingOrderId) } });
+    if (data?.status !== 1) {
+      throw new Error('prorouting getTrackingInfo rejected: ' + (data?.message || 'unknown'));
+    }
     const fulfilment = data?.order?.fulfillments?.[0] || data?.fulfillments?.[0] || data?.order || data || {};
     const agentLoc = fulfilment?.agent?.location || fulfilment?.agent_location || data?.agent?.location || {};
     const trackingBlock = fulfilment?.tracking || data?.tracking || {};
@@ -311,6 +314,9 @@ async function getOrderStatus(proroutingOrderId) {
   const t0 = Date.now();
   try {
     const { data } = await client().post('/partner/order/status', { order: { id: String(proroutingOrderId) } });
+    if (data?.status !== 1) {
+      throw new Error('prorouting getOrderStatus rejected: ' + (data?.message || 'unknown'));
+    }
     const fulfilment = data?.order?.fulfillments?.[0] || data?.fulfillments?.[0] || data?.order || data || {};
     const state = fulfilment?.state?.descriptor?.code
       || fulfilment?.state?.code
@@ -366,6 +372,18 @@ async function raiseIssue(proroutingOrderId, subCategory, shortDesc, longDesc) {
   const t0 = Date.now();
   try {
     const { data } = await client().post('/partner/order/issue', payload);
+    // /issue uses the ONDC envelope, so data.message is normally an
+    // object ({ issue: {...} }) on success. Guard the message extraction
+    // so the rejection-error string doesn't render as "[object Object]".
+    if (data?.status !== 1) {
+      const msgRaw = data?.message;
+      const msgStr = typeof msgRaw === 'string' ? msgRaw : (data?.error?.message || '');
+      if (/open issue already present/i.test(msgStr)) {
+        log.info({ prorouting_order_id: proroutingOrderId, sub_category: subCategory }, 'raiseIssue duplicate — issue already open');
+        throw new DuplicateIssueError(msgStr);
+      }
+      throw new Error('prorouting raiseIssue rejected: ' + (msgStr || 'unknown'));
+    }
     const issueBlock = data?.message?.issue || data?.issue || data || {};
     const issue_id = issueBlock.id || issueBlock.issue_id || data?.issue_id || null;
     const issue_state = issueBlock.status || issueBlock.state || data?.issue_state || 'OPEN';
@@ -392,6 +410,11 @@ async function getIssueStatus(issueId) {
   const t0 = Date.now();
   try {
     const { data } = await client().post('/partner/order/issue_status', { issue: { id: String(issueId) } });
+    if (data?.status !== 1) {
+      const msgRaw = data?.message;
+      const msgStr = typeof msgRaw === 'string' ? msgRaw : (data?.error?.message || '');
+      throw new Error('prorouting getIssueStatus rejected: ' + (msgStr || 'unknown'));
+    }
     const issue = data?.message?.issue || data?.issue || data || {};
     log.info({ ms: Date.now() - t0, issue_id: issueId, state: issue.status || issue.state }, 'getIssueStatus ok');
     return issue;
@@ -425,6 +448,11 @@ async function closeIssue(issueId, rating, refundByLsp, refundToClient) {
   const t0 = Date.now();
   try {
     const { data } = await client().post('/partner/order/issue_close', payload);
+    if (data?.status !== 1) {
+      const msgRaw = data?.message;
+      const msgStr = typeof msgRaw === 'string' ? msgRaw : (data?.error?.message || '');
+      throw new Error('prorouting closeIssue rejected: ' + (msgStr || 'unknown'));
+    }
     const message = data?.message?.message || data?.message || 'closed';
     log.info({ ms: Date.now() - t0, issue_id: issueId, rating }, 'closeIssue ok');
     return { message };
