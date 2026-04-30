@@ -645,6 +645,7 @@ async function _placeOrderAndRequestPayment(tenant, convo, customer, from, { dis
         const totalPaise = toPaise(order.total_rs);
         const refId = String(order.order_number || order._id).substring(0, 35);
         const configName = process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite';
+        const rpOrderId = rzpOrder?.id || null;
         const addrLine = order.address_snapshot?.address_line;
         return {
           type: 'interactive',
@@ -658,7 +659,14 @@ async function _placeOrderAndRequestPayment(tenant, convo, customer, from, { dis
               parameters: {
                 reference_id: refId,
                 type: 'digital-goods',
-                payment_configuration: configName,
+                payment_settings: [{
+                  type: 'payment_gateway',
+                  payment_gateway: {
+                    type: 'razorpay',
+                    configuration_name: configName,
+                    ...(rpOrderId ? { order_id: rpOrderId } : {}),
+                  },
+                }],
                 currency: 'INR',
                 total_amount: { value: totalPaise, offset: 100 },
                 order: {
@@ -786,6 +794,7 @@ async function _handleAwaitPayment(tenant, convo, customer, from, input) {
       const totalPaise = toPaise(order.total_rs);
       const refId = String(order.order_number || order._id).substring(0, 35);
       const configName = process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite';
+      const rpOrderId = rzpOrder?.id || null;
       const addrLine = order.address_snapshot?.address_line;
       await _send(tenant, from, {
         type: 'interactive',
@@ -799,7 +808,14 @@ async function _handleAwaitPayment(tenant, convo, customer, from, input) {
             parameters: {
               reference_id: refId,
               type: 'digital-goods',
-              payment_configuration: configName,
+              payment_settings: [{
+                type: 'payment_gateway',
+                payment_gateway: {
+                  type: 'razorpay',
+                  configuration_name: configName,
+                  ...(rpOrderId ? { order_id: rpOrderId } : {}),
+                },
+              }],
               currency: 'INR',
               total_amount: { value: totalPaise, offset: 100 },
               order: {
