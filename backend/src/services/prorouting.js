@@ -57,34 +57,57 @@ function toLatLng(point) {
 
 // ─── GET ESTIMATE ─────────────────────────────────────────────
 // Called during checkout (before payment) to quote the delivery fee.
-// pickupCoords / dropCoords: { latitude, longitude, address?, pincode? }
-// orderValue: rupees (number), used by Prorouting for insurance/category tier.
-async function getEstimate(pickupCoords, dropCoords, orderValue) {
+// Spec body shape per Prorouting Postman docs:
+//   { pickup:{lat,lng,pincode}, drop:{lat,lng,pincode}, city, order_category,
+//     search_category, order_amount, order_weight? }
+// pickupCoords / dropCoords: { latitude, longitude, pincode? }  (also accept .lat/.lng)
+// orderValue: rupees (number, NOT paise) — used by Prorouting for insurance/category tier.
+// city:       string. Same-city fulfilment for F&B; spec wants ONE city per request.
+//             Falls back to pickupCoords.city / dropCoords.city when omitted by the caller.
+//
+// Response handling: HTTP 200 is returned even on validation failures.
+// The real success signal is body.status === 1; we throw on anything else
+// so callers don't silently treat status:0 rejections as zero-rupee quotes
+// (which would land an order with delivery=0, exactly the "estimated_price: 0"
+// failure mode that started this investigation).
+async function getEstimate(pickupCoords, dropCoords, orderValue, city) {
   const pickupLatLng = toLatLng(pickupCoords);
   const dropLatLng = toLatLng(dropCoords);
   if (!pickupLatLng || !dropLatLng) {
     throw new Error('prorouting.getEstimate: pickup and drop must have lat/lng');
   }
+  const cityName = String(city || pickupCoords?.city || dropCoords?.city || '').trim();
+  if (!cityName) {
+    throw new Error('prorouting.getEstimate: city is required (pass as 4th arg or on pickupCoords.city)');
+  }
 
   const payload = {
     pickup: {
       ...pickupLatLng,
-      address: pickupCoords.address || pickupCoords.full_address || '',
-      pincode: pickupCoords.pincode || '',
+      pincode: String(pickupCoords.pincode || ''),
     },
     drop: {
       ...dropLatLng,
-      address: dropCoords.address || dropCoords.full_address || '',
-      pincode: dropCoords.pincode || '',
+      pincode: String(dropCoords.pincode || ''),
     },
-    order_value: Number(orderValue) || 0,
+    city: cityName,
+    order_category: 'F&B',
+    search_category: 'Immediate Delivery',
+    order_amount: Number(orderValue) || 0,
   };
 
   const t0 = Date.now();
   try {
     const { data } = await client().post('/partner/estimate', payload);
-    const estimated_price = Number(data?.estimated_price ?? data?.price ?? 0);
-    const quote_id = data?.quote_id || data?.quoteId || null;
+    if (data?.status !== 1) {
+      throw new Error(`prorouting estimate rejected: ${data?.message || 'unknown'}`);
+    }
+    // Map spec field names → internal return shape so callers / order-doc
+    // fields (prorouting_estimate_price, prorouting_quote_id) don't churn.
+    // data.price is the rupee fare; data.estimate_id is what /createasync
+    // expects under select_criteria.estimate_id.
+    const estimated_price = Number(data.price ?? 0);
+    const quote_id = data.estimate_id || null;
     log.info({ ms: Date.now() - t0, estimated_price, quote_id }, 'estimate ok');
     return { estimated_price, quote_id };
   } catch (e) {
@@ -106,12 +129,18 @@ async function getEstimate(pickupCoords, dropCoords, orderValue) {
 // side; client_order_id is the value the webhook will echo back so we
 // can resolve our order row.
 //
-// Address shape: nested {name, line1, line2, city, state, pincode} per
-// Prorouting Postman docs (Apr 2026 — Create Order async).
+// Spec body per Prorouting Postman docs (Apr 2026 — Create Order async):
+//   pickup/drop blocks have `pincode` as a SIBLING of `address`, not
+//   nested inside it. Address sub-object is {name, line1, line2, city, state}.
+//   select_criteria pairs with /estimate's response via `estimate_id`
+//   (NOT `quote_id` — that name was wrong in the previous shape and
+//   caused dispatch to fall back to a fresh fare).
 //
 // gullybiteOrderId: our orders._id (string)
-// quoteId:          prorouting_quote_id from getEstimate; pinned via
-//                   select_criteria so the live fare matches the quote
+// quoteId:          estimate_id from getEstimate; we still call the
+//                   parameter `quoteId` for back-compat with the
+//                   order-doc field `prorouting_quote_id`, but on the
+//                   wire it goes into `select_criteria.estimate_id`.
 // pickupDetails:    {
 //   latitude, longitude, name, phone,
 //   address_name, address_line1, address_line2, city, state, pincode
@@ -143,43 +172,45 @@ async function createDeliveryOrder(gullybiteOrderId, quoteId, pickupDetails, dro
     client_order_id: String(gullybiteOrderId),
     callback_url: CALLBACK_URL,
     order_amount: orderAmount,
+    cod_amount: 0,                   // prepaid via Razorpay — no COD
     order_category: 'F&B',
     search_category: 'Immediate Delivery',
     ready_to_ship: 'yes',
+    rto_required: false,             // F&B doesn't return
     order_items: orderItems,
-    select_criteria: { mode: 'estimated_price', quote_id: quoteId || null },
+    select_criteria: { mode: 'estimated_price', estimate_id: quoteId || null },
     pickup: {
       ...pickupLatLng,
+      pincode: String(pickupDetails.pincode || ''),
       address: {
-        name: pickupDetails.address_name || '',
+        name: pickupDetails.address_name || pickupDetails.name || '',
         line1: pickupDetails.address_line1 || '',
         line2: pickupDetails.address_line2 || '',
         city: pickupDetails.city || '',
         state: pickupDetails.state || '',
-        pincode: pickupDetails.pincode || '',
       },
-      name: pickupDetails.name || '',
       phone: pickupDetails.phone || '',
     },
     drop: {
       ...dropLatLng,
+      pincode: String(dropDetails.pincode || ''),
       address: {
-        name: dropDetails.address_name || '',
+        name: dropDetails.address_name || dropDetails.name || '',
         line1: dropDetails.address_line1 || '',
         line2: dropDetails.address_line2 || '',
         city: dropDetails.city || '',
         state: dropDetails.state || '',
-        pincode: dropDetails.pincode || '',
       },
-      name: dropDetails.name || '',
       phone: dropDetails.phone || '',
-      order_value: Number(dropDetails.order_value) || 0,
     },
   };
 
   const t0 = Date.now();
   try {
     const { data } = await client().post('/partner/order/createasync', payload);
+    if (data?.status !== 1) {
+      throw new Error(`prorouting createDeliveryOrder rejected: ${data?.message || 'unknown'}`);
+    }
     const prorouting_order_id = data?.order_id || data?.orderId || data?.prorouting_order_id || null;
     log.info({ ms: Date.now() - t0, prorouting_order_id, client_order_id: payload.client_order_id }, 'createasync ok');
     return { prorouting_order_id, raw: data };

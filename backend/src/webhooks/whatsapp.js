@@ -649,9 +649,10 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         const subtotalRs = session.subtotalRs || Number(subtotal) || 0;
         try {
           const est = await prorouting.getEstimate(
-            { latitude: branch.latitude, longitude: branch.longitude, address: branch.address || '', pincode: branch.pincode || '' },
-            { latitude: session.deliveryLat, longitude: session.deliveryLng, address: session.deliveryAddress || '', pincode: session.structuredAddress?.pincode || '' },
-            subtotalRs
+            { latitude: branch.latitude, longitude: branch.longitude, pincode: branch.pincode || '' },
+            { latitude: session.deliveryLat, longitude: session.deliveryLng, pincode: session.structuredAddress?.pincode || '' },
+            subtotalRs,
+            branch.city || ''
           );
           proroutingEstimatePrice = Number(est?.estimated_price) || 0;
           proroutingQuoteId = est?.quote_id || null;
