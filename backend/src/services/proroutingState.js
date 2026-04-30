@@ -168,8 +168,21 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       await col('orders').updateOne({ _id: order._id }, { $set: logisticsSet });
     }
 
-    try { await orderSvc.updateStatus(order._id, 'DISPATCHED'); } catch (e) { log.warn({ err: e?.message, orderId: order._id }, 'updateStatus DISPATCHED failed'); }
-    if (ctx) {
+    // Customer notification gates on updateStatus success. The order's
+    // state machine rejects DISPATCHED transitions from terminal states
+    // (EXPIRED, CANCELLED, DELIVERED, RTO_*) by throwing; without this
+    // gate, a Prorouting callback for an expired or cancelled order would
+    // still send the customer a misleading "rider on the way" message.
+    // Logistics analytics + prorouting_status mirroring above is
+    // unconditional — that's raw 3PL state, useful for debugging.
+    let dispatchedOk = false;
+    try {
+      await orderSvc.updateStatus(order._id, 'DISPATCHED');
+      dispatchedOk = true;
+    } catch (e) {
+      log.warn({ err: e?.message, orderId: order._id, orderStatus: order.status }, 'updateStatus DISPATCHED failed — skipping customer notification');
+    }
+    if (dispatchedOk && ctx) {
       const riderName = eventBody.rider_name || eventBody.agent_name || eventBody.driver_name || null;
       const riderPhone = eventBody.rider_phone || eventBody.agent_phone || eventBody.driver_phone || null;
       const riderLine = riderName || riderPhone
@@ -223,8 +236,20 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       await col('orders').updateOne({ _id: order._id }, { $set: logisticsSet });
     }
 
-    try { await orderSvc.updateStatus(order._id, 'DELIVERED'); } catch (e) { log.warn({ err: e?.message, orderId: order._id }, 'updateStatus DELIVERED failed'); }
-    if (ctx) {
+    // Customer notifications gate on updateStatus success — same
+    // reasoning as Agent-assigned. A DELIVERED transition rejected by
+    // the state machine (e.g. order was already CANCELLED / EXPIRED /
+    // RTO_COMPLETE) means the order didn't actually deliver from
+    // GullyBite's perspective; we must not tell the customer it did or
+    // ask them to rate it.
+    let deliveredOk = false;
+    try {
+      await orderSvc.updateStatus(order._id, 'DELIVERED');
+      deliveredOk = true;
+    } catch (e) {
+      log.warn({ err: e?.message, orderId: order._id, orderStatus: order.status }, 'updateStatus DELIVERED failed — skipping customer notification + rating flow');
+    }
+    if (deliveredOk && ctx) {
       await wa.sendText(ctx.pid, ctx.token, ctx.to,
         `✅ Order #${order.order_number} delivered. Enjoy your meal! 🍽️`
       ).catch((e) => log.warn({ err: e?.message }, 'order-delivered sendText failed'));
