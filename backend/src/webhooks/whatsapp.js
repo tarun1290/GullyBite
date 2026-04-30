@@ -58,6 +58,15 @@ async function _sendSavedAddressesFlow(pid, token, to, restaurant, customer, bod
       screenData: {
         wa_id: customer.wa_phone || customer.bsuid,
         addresses,
+        // has_addresses / is_empty are precomputed booleans because
+        // Meta's Flow `visible` property only resolves ${data.<field>}
+        // references — it can't evaluate `${data.addresses.length > 0}`
+        // or any other inline expression. Mirrors the same fields
+        // returned by the data-exchange endpoint at routes/flowAddress.js
+        // so this kickoff payload and the runtime callbacks stay in
+        // lockstep on what the flow JSON can read.
+        has_addresses: addresses.length > 0,
+        is_empty: addresses.length === 0,
       },
     },
   });
