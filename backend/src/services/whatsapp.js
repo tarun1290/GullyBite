@@ -151,7 +151,7 @@ const sendMPM = (pid, token, to, catalogId, { header, body, footer, sections }) 
 // ─── INTERACTIVE ORDER CHECKOUT (Review and Pay) ──────────────
 // Sends an interactive order_details message with native Razorpay payment inside WhatsApp.
 // Customer sees full order breakdown + "Review and Pay" button. Confirmed working format.
-const sendPaymentRequest = (pid, token, to, { order, items, customerName, restaurantName, deliveryAddress, rpOrderId }) => {
+const sendPaymentRequest = async (pid, token, to, { order, items, customerName, restaurantName, deliveryAddress, rpOrderId }) => {
   const toPaise = (rs) => Math.round((rs || 0) * 100);
   const configName = process.env.RAZORPAY_WA_CONFIG_NAME || 'GullyBite';
 
@@ -263,7 +263,38 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
 
   log.info({ refId, payload: JSON.stringify(msgPayload.interactive.action.parameters) }, 'order_details payload');
 
-  return sendMsg(pid, token, to, msgPayload);
+  // Deep-trace logging for the Meta Graph API send. The actual axios.post
+  // is inside sendMsg above; this wrapper observes around it. URL and
+  // headers live inside sendMsg and aren't in this scope, so we log the
+  // in-scope inputs (pid, to, msgPayload) instead. Status is 200 on the
+  // success branch because sendMsg unwraps `data` from the axios response
+  // and only resolves on 2xx (it throws on 4xx/5xx, which the catch
+  // captures with the real Meta status + body).
+  log.info({
+    component: 'WhatsApp',
+    msg: 'order_details FULL outbound',
+    pid,
+    to,
+    msgPayload: JSON.stringify(msgPayload),
+  });
+  try {
+    const result = await sendMsg(pid, token, to, msgPayload);
+    log.info({
+      component: 'WhatsApp',
+      msg: 'order_details FULL response',
+      status: 200,
+      data: result,
+    });
+    return result;
+  } catch (err) {
+    log.warn({
+      component: 'WhatsApp',
+      msg: 'order_details FULL error',
+      status: err.response?.status,
+      data: err.response?.data,
+    });
+    throw err;
+  }
 };
 
 // DEPRECATED: sendPaymentLink removed — only interactive checkout is used
