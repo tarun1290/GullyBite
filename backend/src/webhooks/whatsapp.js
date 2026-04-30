@@ -35,6 +35,33 @@ const memcache = require('../config/memcache');
 const { keys: idemKeys } = require('../utils/withIdempotency');
 const log = require('../utils/logger').child({ component: 'whatsapp' });
 
+// ─── ORDER-LINKAGE RESET ─────────────────────────────────────
+// When the cart contents or totals change, any session.orderId carried
+// over from a previously-created order becomes a hazard: a subsequent
+// checkout would anchor the new cart's items to the OLD order_number,
+// which Meta then rejects with error 131009 (total_amount mismatch). This
+// helper nulls the order-tied linkage on a session object so the next
+// checkout creates a fresh order from scratch.
+//
+// Use it at every cart-mutation / totals-mutation site by spreading the
+// returned session FIRST in the new state's payload, then overriding any
+// fields the site recomputes (cart, subtotalRs, totalRs, etc.) afterwards
+// so the recomputed values take precedence.
+//
+// Does NOT touch branchId, deliveryAddress, deliveryLat/Lng, catalogId,
+// customer-identity fields, or the cart itself — those belong to the
+// conversation, not to a specific just-created order.
+function _resetOrderLinkage(session) {
+  return {
+    ...session,
+    orderId: null,
+    orderNumber: null,
+    rpOrderId: null,
+    subtotalRs: null,
+    totalRs: null,
+  };
+}
+
 // ─── ADDRESS FLOW HELPER ─────────────────────────────────────
 // New flow JSON (id: 26478907788405154) ALWAYS opens on SAVED_ADDRESSES,
 // even for customers with zero saved addresses. The "+ Add new address"
@@ -1144,8 +1171,10 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       );
     }
     const newTotal = updatedCharges ? updatedCharges.customer_total_rs : (session.subtotalRs + session.deliveryFeeRs - result.discountRs);
+    // Coupon changes the total — drop the linkage to whatever order
+    // existed under the old totals so checkout below builds a fresh one.
     await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
-      ...session, coupon: couponData, discountRs: result.discountRs, totalRs: newTotal, charges: updatedCharges,
+      ..._resetOrderLinkage(session), coupon: couponData, discountRs: result.discountRs, totalRs: newTotal, charges: updatedCharges,
     });
 
     await wa.sendText(pid, token, to, result.message);
@@ -1286,8 +1315,10 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     }
     const newTotal = updatedCharges ? updatedCharges.customer_total_rs : (session.subtotalRs + session.deliveryFeeRs - totalDiscount);
 
+    // Loyalty redeem changes the total — drop the linkage to the prior
+    // order so checkout below builds a fresh one against the new total.
     await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
-      ...session,
+      ..._resetOrderLinkage(session),
       loyaltyDiscount: result.discountRs,
       loyaltyPointsUsed: result.pointsRedeemed,
       discountRs: totalDiscount,
@@ -1944,8 +1975,12 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
   }
   const finalTotalRs = charges ? charges.customer_total_rs : (cart.subtotalRs + cart.deliveryFeeRs - discountRs);
 
+  // Cart contents replaced — drop the linkage to whatever order was
+  // created under the previous cart. Without this, a subsequent checkout
+  // would reuse the old order_number with the new cart's items → Meta
+  // 131009 total_amount mismatch.
   await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
-    ...session,
+    ..._resetOrderLinkage(session),
     cart: cart.cart,
     subtotalRs:    cart.subtotalRs,
     deliveryFeeRs: charges ? charges.customer_delivery_rs : cart.deliveryFeeRs,
@@ -2346,8 +2381,11 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         );
       }
       const updatedTotal = restoredCharges ? restoredCharges.customer_total_rs : (session.subtotalRs + session.deliveryFeeRs);
+      // Coupon removed — total reverts upward, so any order created under
+      // the discounted total is now stale. Drop the linkage and let
+      // checkout below build a fresh one.
       await orderSvc.setState(conv.id, 'ORDER_REVIEW', {
-        ...session, coupon: null, discountRs: 0, totalRs: updatedTotal, charges: restoredCharges,
+        ..._resetOrderLinkage(session), coupon: null, discountRs: 0, totalRs: updatedTotal, charges: restoredCharges,
       });
       const tempNum = `TEMP-${Date.now().toString().slice(-6)}`;
       await wa.sendText(pid, token, to, '🗑 Coupon removed.');
