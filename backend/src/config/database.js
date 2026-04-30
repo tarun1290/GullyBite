@@ -19,7 +19,10 @@ const POOL_OPTIONS = {
   retryReads: true,
 };
 
-// Module-level cache — survives across warm invocations in Vercel
+// Module-level cache — survives across warm invocations in Vercel and
+// across pm2 process lifetime on EC2. `_connectPromise` is the single
+// in-flight connect; concurrent callers await the same promise so we
+// never race a close() against a half-connected client.
 let _client = global._mongoClient || null;
 let _db = global._mongoDb || null;
 let _connectPromise = global._mongoConnectPromise || null;
@@ -28,56 +31,98 @@ function _isAlive() {
   try { return _client?.topology?.isConnected?.() !== false; } catch { return false; }
 }
 
+// Public entry point — single-flight. Returns the cached db on warm hits,
+// otherwise dedupes concurrent reconnect callers onto one promise. The
+// old version started a parallel reconnect on every call, which closed
+// the still-connecting client owned by the first call → spurious
+// MongoTopologyClosedError on every cold start / idle wakeup.
 const connect = async () => {
-  // Check if existing connection is truly alive (not just cached but stale)
   if (_db && _isAlive()) return _db;
+  if (_connectPromise) return _connectPromise;
+  _connectPromise = _doConnect()
+    .finally(() => {
+      _connectPromise = null;
+      global._mongoConnectPromise = null;
+    });
+  global._mongoConnectPromise = _connectPromise;
+  return _connectPromise;
+};
 
-  // Stale connection — discard and reconnect
-  if (_client && !_isAlive()) {
+// The actual reconnect work. Runs at most once at a time thanks to the
+// _connectPromise gate above. Three invariants this enforces that the
+// old code didn't:
+//   1. close() is AWAITED before we open a new client.
+//   2. The new client is only committed to module scope (_client / _db)
+//      AFTER `await client.connect()` resolves — so _isAlive() never
+//      returns false on a doc that another caller is about to interpret
+//      as "stale, kill it".
+//   3. MongoTopologyClosedError on close() is swallowed (expected during
+//      teardown), other close() errors are warned but don't block the
+//      reconnect.
+async function _doConnect() {
+  // Tear down a previous client if any. close() is awaited so the new
+  // client.connect() below cannot race against an in-flight close.
+  if (_client) {
     log.info('Stale connection detected — reconnecting');
-    try { _client.close().catch(() => {}); } catch {}
-    _client = null; _db = null;
-    global._mongoClient = null; global._mongoDb = null;
+    const stale = _client;
+    _client = null;
+    _db = null;
+    global._mongoClient = null;
+    global._mongoDb = null;
+    try {
+      await stale.close();
+    } catch (err) {
+      // MongoTopologyClosedError is the "already closed" case — expected
+      // when a teardown has already happened on another path. Other
+      // errors are surfaced at warn level (not error) because the next
+      // step is to open a fresh client anyway.
+      const isAlreadyClosed = err && err.name === 'MongoTopologyClosedError';
+      if (!isAlreadyClosed) {
+        log.warn({ err: err && err.message ? err.message : String(err) },
+          'Stale client close errored — continuing with reconnect');
+      }
+    }
   }
 
   if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI env var is not set');
   const isSrv = process.env.MONGODB_URI.startsWith('mongodb+srv://');
   const start = Date.now();
   log.info({ isSrv }, 'Connecting to MongoDB');
-  _client = new MongoClient(process.env.MONGODB_URI, POOL_OPTIONS);
-  await _client.connect();
-  _db = _client.db(process.env.MONGODB_DB || 'gullybite');
+  const newClient = new MongoClient(process.env.MONGODB_URI, POOL_OPTIONS);
+  await newClient.connect();
+  // Commit to module scope only after the handshake completes. This is
+  // the key fix for the "second connect() sees _client set but
+  // _isAlive() false → triggers stale path → closes the in-flight
+  // client" race.
+  _client = newClient;
+  _db = newClient.db(process.env.MONGODB_DB || 'gullybite');
   global._mongoClient = _client;
   global._mongoDb = _db;
   const elapsed = Date.now() - start;
   log.info({ elapsedMs: elapsed, slow: elapsed > 5000 }, `MongoDB connected (${elapsed}ms)`);
   return _db;
-};
-
-// Connect on startup — non-blocking, stores promise for ensureConnected to await
-if (!_connectPromise) {
-  _connectPromise = connect().catch(err => {
-    log.error({ err }, 'MongoDB connection FAILED');
-    _connectPromise = null;
-    global._mongoConnectPromise = null;
-  });
-  global._mongoConnectPromise = _connectPromise;
 }
 
-// Middleware: ensures DB is connected before any route runs
+// Connect on startup — non-blocking. The first connect() call seeds
+// _connectPromise via the gate inside connect() itself, so a route or
+// script that calls connect() / ensureConnected() within the next few
+// hundred ms simply awaits the same promise rather than racing it.
+if (!_connectPromise) {
+  connect().catch(err => {
+    log.error({ err }, 'MongoDB connection FAILED');
+  });
+}
+
+// Middleware: ensures DB is connected before any route runs. Simplified
+// from the old version — connect() now handles the in-flight gating,
+// so this just awaits it. One retry is preserved for the cold-start
+// race where the very first connect rejected (e.g. Atlas DNS hiccup).
 const ensureConnected = async (req, res, next) => {
-  if (_db && _isAlive()) return next(); // already connected (warm start)
+  if (_db && _isAlive()) return next();
   try {
-    if (_connectPromise) {
-      await _connectPromise;
-    } else {
-      await connect();
-    }
+    await connect();
   } catch (_) {
-    // First attempt failed — retry once (handles Vercel cold-start race)
     try {
-      _connectPromise = null;
-      global._mongoConnectPromise = null;
       await connect();
     } catch (err) {
       log.error({ err }, 'DB unavailable on retry');
