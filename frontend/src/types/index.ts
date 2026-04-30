@@ -433,3 +433,16 @@ export interface AdminRestaurantMessage {
 export interface AdminRestaurantMessagesResponse {
   messages: AdminRestaurantMessage[];
 }
+
+// ─── Pincode State Summary ────────────────────────────────────
+// Returned by GET /api/admin/pincodes/states. One row per state present
+// in the serviceable_pincodes collection — drives the admin pincodes
+// accordion at mount time. Counts come from a $group/$sum aggregation
+// (see backend/src/routes/adminPincodes.js GET /states).
+export interface PincodeStateSummary {
+  state: string;
+  total_pincodes: number;
+  enabled_count: number;
+  disabled_count: number;
+  last_updated?: string | null;
+}

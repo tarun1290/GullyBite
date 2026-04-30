@@ -538,6 +538,17 @@ export async function createBranchMenuItem(branchId: string, body: RequestBody):
   return data;
 }
 
+// Partial-update an existing menu item. Backed by PUT /api/restaurant/menu/:id
+// (the existing route — same one the availability toggle path goes through
+// when more than just `available` changes). Send only the fields you want
+// to change; immutable fields (_id, restaurant_id, created_at) are rejected
+// at the writer. Successful updates trigger an activity_logs entry and a
+// debounced catalog sync to Meta.
+export async function updateMenuItem(itemId: string, body: RequestBody): Promise<unknown> {
+  const { data } = await client.put(`/api/restaurant/menu/${itemId}`, body);
+  return data;
+}
+
 export async function updateItemAvailability(id: string, available: boolean): Promise<unknown> {
   const { data } = await client.patch(`/api/restaurant/menu/${id}/availability`, { available });
   return data;

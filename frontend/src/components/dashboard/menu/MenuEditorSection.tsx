@@ -144,6 +144,10 @@ export default function MenuEditorSection({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [showAdd, setShowAdd] = useState<boolean>(false);
+  // Edit-mode handle: when set, ItemFormModal opens pre-filled with this row.
+  // Distinct from `showAdd` so the create path (which targets a branch by id)
+  // and the edit path (which targets a single item by id) can't collide.
+  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [assignFor, setAssignFor] = useState<{ id: string; name: string } | null>(null);
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [pendingBulkAvail, setPendingBulkAvail] = useState<'open' | 'close' | null>(null);
@@ -456,6 +460,18 @@ export default function MenuEditorSection({
             type="button"
             style={{
               background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
+              padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.85rem',
+              color: 'var(--dim)', marginRight: '.25rem',
+            }}
+            onClick={() => setEditingItem(item as MenuItem)}
+            title="Edit item"
+          >
+            ✏️
+          </button>
+          <button
+            type="button"
+            style={{
+              background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
               padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.7rem',
               color: 'var(--wa)', marginRight: '.25rem',
             }}
@@ -577,6 +593,18 @@ export default function MenuEditorSection({
             />
           </td>
           <td style={{ padding: '.45rem .7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+            <button
+              type="button"
+              style={{
+                background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
+                padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.85rem',
+                color: 'var(--dim)', marginRight: '.25rem',
+              }}
+              onClick={() => setEditingItem(first as MenuItem)}
+              title="Edit first variant — expand the group to edit other variants individually"
+            >
+              ✏️
+            </button>
             <button
               type="button"
               style={{
@@ -819,6 +847,19 @@ export default function MenuEditorSection({
         <ItemFormModal
           branchId={selectedBranchId}
           onClose={() => setShowAdd(false)}
+          onSaved={load}
+        />
+      )}
+      {editingItem && (
+        <ItemFormModal
+          // The existing item lives under its own branch (which may differ
+          // from the currently-selected one when viewing "All Products").
+          // ItemFormModal will fall back to initialItem.branch_id when this
+          // is empty.
+          branchId={String(editingItem.branch_id || selectedBranchId || '')}
+          mode="edit"
+          initialItem={editingItem}
+          onClose={() => setEditingItem(null)}
           onSaved={load}
         />
       )}

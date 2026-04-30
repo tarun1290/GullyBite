@@ -6,9 +6,10 @@ import {
   getBranchCategories,
   createBranchCategory,
   createBranchMenuItem,
+  updateMenuItem,
   uploadMenuImage,
 } from '../../../api/restaurant';
-import type { FoodType } from '../../../types';
+import type { FoodType, MenuItem } from '../../../types';
 
 const VARIANT_PRESETS: Record<string, string[]> = {
   Size: ['Small', 'Medium', 'Large'],
@@ -40,43 +41,148 @@ interface ImageUploadResult {
   s3_key?: string;
 }
 
+// `mode === 'edit'` re-uses the same form to PATCH an existing menu_item via
+// PUT /api/restaurant/menu/:id. The data model has one document per variant
+// (rows in the table sharing item_group_id), so edit mode operates on a
+// SINGLE document — the multi-variant insert path used by create is
+// suppressed. To convert a non-variant item into part of a group, the user
+// can fill in `variantType` + `variantValue` (and optionally `itemGroupId`
+// in the advanced section) on the row.
+type ModalMode = 'create' | 'edit';
+
 interface ItemFormModalProps {
+  // Branch context for the form. In create mode this is the target branch
+  // for the new item; in edit mode it's the branch the existing item lives
+  // under (used to populate the category dropdown). Optional in edit mode
+  // because `initialItem.branch_id` is the source of truth there — pass an
+  // empty string and the modal will fall back to the item's own branch_id.
   branchId: string;
+  mode?: ModalMode;
+  initialItem?: MenuItem;
   onClose: () => void;
   onSaved?: () => void;
 }
 
-export default function ItemFormModal({ branchId, onClose, onSaved }: ItemFormModalProps) {
+// Convert an api-shaped MenuItem (snake_case, paise) into the form's internal
+// state. Only used in edit mode; pulled out so the field-mapping is in one
+// place. Anything not represented in the form gracefully maps to '' / [] /
+// false so the user can still save without re-entering everything.
+interface InitialFormState {
+  name: string;
+  desc: string;
+  price: string;
+  foodType: FoodType;
+  categoryId: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  imageS3Key: string;
+  hasVariantFields: boolean;
+  variantType: string;
+  variantValue: string;
+  advGroupId: string;
+  advSize: string;
+  advSalePrice: string;
+  advStock: string;
+  advTags: string;
+}
+
+function deriveInitialState(item: MenuItem | undefined): InitialFormState {
+  if (!item) {
+    return {
+      name: '', desc: '', price: '', foodType: 'veg', categoryId: '',
+      imageUrl: '', thumbnailUrl: '', imageS3Key: '',
+      hasVariantFields: false, variantType: 'Size', variantValue: '',
+      advGroupId: '', advSize: '', advSalePrice: '', advStock: '', advTags: '',
+    };
+  }
+  const pricePaise = typeof item.price_paise === 'number' ? item.price_paise : 0;
+  const priceRs = pricePaise > 0 ? String(pricePaise / 100) : (item.price_rs != null ? String(item.price_rs) : '');
+  // sale_price_rs may be derived; sale_price_paise is what the table reads,
+  // so check both. Kept blank if zero/absent to avoid spuriously sending
+  // salePriceRs=0 on save.
+  const salePaise = typeof item.sale_price_paise === 'number' ? (item.sale_price_paise as number) : 0;
+  const saleRs = salePaise > 0 ? String(salePaise / 100) : (item.sale_price_rs != null ? String(item.sale_price_rs) : '');
+  const stockField = typeof item.quantity_to_sell_on_facebook === 'number'
+    ? String(item.quantity_to_sell_on_facebook) : '';
+  const tags = Array.isArray(item.product_tags) ? item.product_tags.join(', ') : '';
+  const variantType = item.variant_type ? String(item.variant_type) : 'Size';
+  const variantValue = item.variant_value ? String(item.variant_value) : '';
+  return {
+    name: item.name || '',
+    desc: item.description || '',
+    price: priceRs,
+    foodType: (item.food_type as FoodType) || 'veg',
+    categoryId: item.category_id ? String(item.category_id) : '',
+    imageUrl: item.image_url || '',
+    thumbnailUrl: item.thumbnail_url || '',
+    imageS3Key: item.image_s3_key || '',
+    hasVariantFields: Boolean(item.variant_type || item.variant_value || item.item_group_id),
+    variantType,
+    variantValue,
+    advGroupId: item.item_group_id ? String(item.item_group_id) : '',
+    advSize: item.size ? String(item.size) : '',
+    advSalePrice: saleRs,
+    advStock: stockField,
+    advTags: tags,
+  };
+}
+
+export default function ItemFormModal({
+  branchId,
+  mode = 'create',
+  initialItem,
+  onClose,
+  onSaved,
+}: ItemFormModalProps) {
   const { showToast } = useToast();
-  const [name, setName] = useState<string>('');
-  const [desc, setDesc] = useState<string>('');
-  const [price, setPrice] = useState<string>('');
-  const [foodType, setFoodType] = useState<FoodType>('veg');
-  const [categoryId, setCategoryId] = useState<string>('');
+  const isEdit = mode === 'edit' && !!initialItem;
+  const seed = isEdit ? deriveInitialState(initialItem) : deriveInitialState(undefined);
+  // The branch the form targets for category lookup. In edit mode we prefer
+  // the item's own branch_id over any branch passed in by the caller — the
+  // table sometimes opens edit from the "All Products" view where the
+  // selected branch is a sentinel like '__all__' rather than a real id.
+  const formBranchId = isEdit
+    ? String((initialItem?.branch_id as string | undefined) || branchId || '')
+    : branchId;
+
+  const [name, setName] = useState<string>(seed.name);
+  const [desc, setDesc] = useState<string>(seed.desc);
+  const [price, setPrice] = useState<string>(seed.price);
+  const [foodType, setFoodType] = useState<FoodType>(seed.foodType);
+  const [categoryId, setCategoryId] = useState<string>(seed.categoryId);
   const [newCategoryName, setNewCategoryName] = useState<string>('');
   const [categories, setCategories] = useState<Category[]>([]);
-  const [hasVariants, setHasVariants] = useState<boolean>(false);
-  const [variantType, setVariantType] = useState<string>('Size');
+  // In create mode this drives the multi-variant insert path. In edit mode
+  // it instead reveals two simple fields (variantType + variantValue) that
+  // are written straight onto the single document being edited — no
+  // multi-row insertion. Renamed conceptually but kept as-is to minimise
+  // diff scope.
+  const [hasVariants, setHasVariants] = useState<boolean>(isEdit ? seed.hasVariantFields : false);
+  const [variantType, setVariantType] = useState<string>(seed.variantType);
   const [variants, setVariants] = useState<VariantRow[]>([{ name: 'Small', price: '' }]);
-  const [imageUrl, setImageUrl] = useState<string>('');
-  const [thumbnailUrl, setThumbnailUrl] = useState<string>('');
-  const [imageS3Key, setImageS3Key] = useState<string>('');
+  // Edit-mode-only: the variant_value of the single doc being edited (e.g.
+  // "Small", "Family Pack"). Unused in create mode — the create flow
+  // reads variant labels from the multi-row variants[] above instead.
+  const [editVariantValue, setEditVariantValue] = useState<string>(seed.variantValue);
+  const [imageUrl, setImageUrl] = useState<string>(seed.imageUrl);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string>(seed.thumbnailUrl);
+  const [imageS3Key, setImageS3Key] = useState<string>(seed.imageS3Key);
   const [imgBusy, setImgBusy] = useState<boolean>(false);
   const [showAdv, setShowAdv] = useState<boolean>(false);
-  const [advGroupId, setAdvGroupId] = useState<string>('');
-  const [advSize, setAdvSize] = useState<string>('');
-  const [advSalePrice, setAdvSalePrice] = useState<string>('');
-  const [advStock, setAdvStock] = useState<string>('');
-  const [advTags, setAdvTags] = useState<string>('');
+  const [advGroupId, setAdvGroupId] = useState<string>(seed.advGroupId);
+  const [advSize, setAdvSize] = useState<string>(seed.advSize);
+  const [advSalePrice, setAdvSalePrice] = useState<string>(seed.advSalePrice);
+  const [advStock, setAdvStock] = useState<string>(seed.advStock);
+  const [advTags, setAdvTags] = useState<string>(seed.advTags);
   const [saving, setSaving] = useState<boolean>(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!branchId) return;
-    getBranchCategories(branchId).then((list) => {
+    if (!formBranchId) return;
+    getBranchCategories(formBranchId).then((list) => {
       setCategories(Array.isArray(list) ? (list as Category[]) : []);
     }).catch(() => {});
-  }, [branchId]);
+  }, [formBranchId]);
 
   const handleVariantTypeChange = (t: string) => {
     setVariantType(t);
@@ -116,8 +222,13 @@ export default function ItemFormModal({ branchId, onClose, onSaved }: ItemFormMo
     if (categoryId === '__new__') {
       const newName = newCategoryName.trim();
       if (!newName) return showToast('Enter a category name', 'error');
+      // Need a real branch id to create a category against; fall back to
+      // the form's resolved branch (which prefers initialItem.branch_id in
+      // edit mode).
+      const targetBranch = formBranchId;
+      if (!targetBranch) return showToast('Cannot create a category without a branch context', 'error');
       try {
-        const cat = (await createBranchCategory(branchId, newName)) as Category;
+        const cat = (await createBranchCategory(targetBranch, newName)) as Category;
         resolvedCat = cat.id;
       } catch (err: unknown) {
         const e = err as { response?: { data?: { error?: string } }; message?: string };
@@ -141,6 +252,34 @@ export default function ItemFormModal({ branchId, onClose, onSaved }: ItemFormMo
 
     setSaving(true);
     try {
+      if (isEdit && initialItem) {
+        // Edit mode: PATCH a single document. The variants UI is hidden in
+        // edit mode (each row is one doc), so we send variantType/Value
+        // straight from the simple inline fields. Empty strings are sent
+        // to clear the field — the backend translates them to `null`.
+        if (!price) { setSaving(false); return showToast('Price is required', 'error'); }
+        const body: Record<string, unknown> = {
+          ...common,
+          name: name.trim(),
+          priceRs: parseFloat(price),
+        };
+        if (hasVariants) {
+          body.variantType = variantType || '';
+          body.variantValue = editVariantValue.trim();
+        } else {
+          // User unchecked the variant fields — explicitly clear them so
+          // the row is converted back to a non-variant item.
+          body.variantType = '';
+          body.variantValue = '';
+        }
+        await updateMenuItem(initialItem.id, body);
+        showToast(`Item updated — syncing to WhatsApp...`, 'success');
+        if (onSaved) onSaved();
+        if (onClose) onClose();
+        return;
+      }
+
+      // Create mode (existing behaviour, unchanged below this line).
       if (hasVariants) {
         const rows = variants
           .map((v) => ({ name: (v.name || '').trim(), price: parseFloat(String(v.price)) }))
@@ -175,7 +314,8 @@ export default function ItemFormModal({ branchId, onClose, onSaved }: ItemFormMo
       if (onClose) onClose();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
-      showToast(e?.response?.data?.error || e?.message || 'Failed to add item', 'error');
+      const fallback = isEdit ? 'Failed to update item' : 'Failed to add item';
+      showToast(e?.response?.data?.error || e?.message || fallback, 'error');
     } finally {
       setSaving(false);
     }
@@ -195,7 +335,7 @@ export default function ItemFormModal({ branchId, onClose, onSaved }: ItemFormMo
         style={{ maxWidth: 680, width: '100%', background: 'var(--surface,#fff)' }}
       >
         <div className="ch" style={{ justifyContent: 'space-between' }}>
-          <h3>➕ Add Menu Item</h3>
+          <h3>{isEdit ? '✏️ Edit Menu Item' : '➕ Add Menu Item'}</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>✕</button>
         </div>
         <div className="cb">
@@ -248,11 +388,40 @@ export default function ItemFormModal({ branchId, onClose, onSaved }: ItemFormMo
                   checked={hasVariants}
                   onChange={(e) => setHasVariants(e.target.checked)}
                 />
-                This item has size/portion variants
+                {isEdit ? 'This item is a size/portion variant' : 'This item has size/portion variants'}
               </label>
             </div>
 
-            {!hasVariants ? (
+            {/* Edit mode: always show the price field for the single doc; the
+                variant block (when ticked) only adds variantType + variantValue.
+                Create mode keeps the original behavior — multi-row variants
+                replace the single price field. */}
+            {isEdit ? (
+              <>
+                <div className="fg">
+                  <label>Price (₹) *</label>
+                  <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0" />
+                </div>
+                {hasVariants && (
+                  <>
+                    <div className="fg">
+                      <label>Variant Type</label>
+                      <select value={variantType} onChange={(e) => setVariantType(e.target.value)}>
+                        {Object.keys(VARIANT_PRESETS).map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="fg span2">
+                      <label>Variant Value (e.g. Small, Family Pack)</label>
+                      <input
+                        value={editVariantValue}
+                        onChange={(e) => setEditVariantValue(e.target.value)}
+                        placeholder="Small"
+                      />
+                    </div>
+                  </>
+                )}
+              </>
+            ) : !hasVariants ? (
               <div className="fg">
                 <label>Price (₹) *</label>
                 <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0" />
@@ -310,7 +479,7 @@ export default function ItemFormModal({ branchId, onClose, onSaved }: ItemFormMo
                   type="file"
                   accept="image/*"
                   onChange={handleImgFile}
-                  disabled={imgBusy || !branchId}
+                  disabled={imgBusy || !formBranchId}
                 />
                 {imgBusy && <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Uploading…</span>}
               </div>
@@ -359,8 +528,8 @@ export default function ItemFormModal({ branchId, onClose, onSaved }: ItemFormMo
           )}
 
           <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
-            <button type="button" className="btn-p" onClick={handleSave} disabled={saving || !branchId}>
-              {saving ? 'Adding…' : 'Add Item'}
+            <button type="button" className="btn-p" onClick={handleSave} disabled={saving || !formBranchId}>
+              {saving ? (isEdit ? 'Saving…' : 'Adding…') : (isEdit ? 'Save Changes' : 'Add Item')}
             </button>
             <button type="button" className="btn-g" onClick={onClose} disabled={saving}>Cancel</button>
           </div>

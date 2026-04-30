@@ -55,6 +55,45 @@ router.get('/stats', requireAdminAuth('pincodes', 'read'), async (req, res) => {
   }
 });
 
+// GET /api/admin/pincodes/states
+// One row per state with serviceability counts. Drives the admin page's
+// collapsed accordion — needs to return EVERY state present in the
+// collection regardless of how many pincodes that state has, so the
+// previous "fetch first 200 rows and group client-side" approach is
+// retired. Payload stays small (50–60 states for India even with 100k+
+// pincodes), so no pagination needed.
+//
+// Declared BEFORE /:pincode/toggle so `states` is never parsed as a PIN.
+router.get('/states', requireAdminAuth('pincodes', 'read'), async (req, res) => {
+  try {
+    const rows = await col(COLLECTION).aggregate([
+      {
+        $group: {
+          _id: '$state',
+          total: { $sum: 1 },
+          enabled: { $sum: { $cond: [{ $eq: ['$enabled', true] }, 1, 0] } },
+          last_updated: { $max: '$updated_at' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          state: { $ifNull: ['$_id', 'Other'] },
+          total_pincodes: '$total',
+          enabled_count: '$enabled',
+          disabled_count: { $subtract: ['$total', '$enabled'] },
+          last_updated: 1,
+        },
+      },
+      { $sort: { state: 1 } },
+    ]).toArray();
+    res.json(rows);
+  } catch (err) {
+    log.error({ err }, 'states summary failed');
+    res.status(500).json({ error: 'Failed to load state summary' });
+  }
+});
+
 // GET /api/admin/pincodes/cities
 // Aggregated summary grouped by (state, city). Sorted by total desc.
 // Declared BEFORE /:pincode/toggle so `cities` is never parsed as a PIN.
@@ -91,7 +130,11 @@ router.get('/cities', requireAdminAuth('pincodes', 'read'), async (req, res) => 
 router.get('/', requireAdminAuth('pincodes', 'read'), async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    // Default 100, max 500 — bumped from prior 50/200 cap so per-state
+    // requests can pull a typical state's pincodes (most states under 500)
+    // in one call. The accordion in the admin UI lazy-loads per state, so
+    // this is bounded per click rather than per page-load.
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
     const skip = (page - 1) * limit;
     const q = buildFilter({
       search: req.query.search,

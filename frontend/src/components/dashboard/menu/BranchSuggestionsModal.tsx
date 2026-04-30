@@ -148,21 +148,53 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
                       <div style={{ fontWeight: 600, fontSize: '.86rem' }}>{row.name}</div>
                       <div style={{ fontSize: '.7rem', color: 'var(--dim)' }}>{REASON_LABEL[row.reason] || row.reason}</div>
                     </div>
-                    <div style={{ display: 'flex', gap: '.35rem', flexWrap: 'wrap' }}>
+                    <div
+                      style={{
+                        // Equal-width chip grid. minmax(110px, 1fr) keeps every
+                        // chip in a row at the same width while letting the
+                        // browser auto-pick column count by viewport width —
+                        // approximates the spec's 3 / 4 / 6 breakpoints
+                        // without needing a CSS-module media query (the rest
+                        // of the file is inline-styled).
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+                        gap: '.35rem',
+                      }}
+                    >
                       {branchOpts.length ? branchOpts.map((b) => {
                         const on = sel.has(b.id);
                         return (
                           <label
                             key={b.id}
                             style={{
-                              display: 'inline-flex', alignItems: 'center', gap: '.3rem',
-                              fontSize: '.78rem', padding: '.15rem .45rem',
+                              // width:100% via grid-cell stretch;
+                              // minHeight ≈ two lines of .78rem text (1.2 line-height) + padding
+                              // so single-word and two-word chips align top + bottom.
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '.3rem',
+                              width: '100%',
+                              minHeight: '2.4rem',
+                              boxSizing: 'border-box',
+                              fontSize: '.78rem',
+                              lineHeight: 1.2,
+                              padding: '.25rem .45rem',
+                              textAlign: 'center',
+                              wordBreak: 'break-word',
                               border: `1px solid ${on ? '#4f46e5' : '#e5e7eb'}`,
-                              borderRadius: 99, background: on ? '#eef2ff' : '#fff', cursor: 'pointer',
+                              borderRadius: 12,
+                              background: on ? '#eef2ff' : '#fff',
+                              cursor: 'pointer',
                             }}
                           >
-                            <input type="checkbox" checked={on} onChange={() => toggle(row.product_id, b.id)} style={{ margin: 0 }} />
-                            {b.name}
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => toggle(row.product_id, b.id)}
+                              style={{ margin: 0, flexShrink: 0 }}
+                            />
+                            <span>{b.name}</span>
                           </label>
                         );
                       }) : <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>No branches yet</span>}

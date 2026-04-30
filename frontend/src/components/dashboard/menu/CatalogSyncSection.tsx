@@ -145,10 +145,10 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
 
           <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', marginBottom: '.8rem' }}>
             <button type="button" className="btn-p" onClick={tryPush} disabled={pushing || pulling}>
-              {pushing ? '⬆ Syncing…' : '⬆ Sync to Catalog'}
+              {pushing ? '⬆ Syncing…' : '⬆ Sync to Meta'}
             </button>
             <button type="button" className="btn-g" onClick={tryPull} disabled={pushing || pulling}>
-              {pulling ? '⬇ Pulling…' : '⬇ Sync from Catalog'}
+              {pulling ? '⬇ Pulling…' : '⬇ Sync from Meta'}
             </button>
           </div>
 

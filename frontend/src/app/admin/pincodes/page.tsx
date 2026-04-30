@@ -7,6 +7,7 @@ import Toggle from '../../../components/Toggle';
 import {
   getPincodes,
   getPincodeStats,
+  getPincodeStates,
   togglePincode,
   bulkUpdatePincodes,
   importPincodes,
@@ -14,9 +15,15 @@ import {
   bulkUpdateByCity,
   bulkTogglePincodes,
 } from '../../../api/admin';
+import type { PincodeStateSummary } from '../../../types';
 
 const PAGE_SIZE = 50;
 const CITY_PAGE_LIMIT = 200;
+// Per-state lazy fetch cap. Backend GET / now allows up to 500 in one shot
+// (raised from 200 specifically so a typical state's pincodes pull in one
+// click — most Indian states are well under 500). If this ceiling is ever
+// hit, follow up with the backend team rather than paginating in the UI.
+const STATE_PINCODE_LIMIT = 500;
 
 interface PincodeRow {
   pincode: string;
@@ -161,6 +168,19 @@ export default function AdminPincodesPage() {
   // counts; click a heading to drill in.
   const [expandedStates, setExpandedStates] = useState<Record<string, boolean>>({});
 
+  // Summary-mode hooks (active whenever there is no active search).
+  // `stateSummaries` is the full list of states from the $group aggregation,
+  // populated once at mount via GET /api/admin/pincodes/states.
+  // `stateRowsCache` holds per-state pincode rows fetched lazily on first
+  // expand — keyed by state name, sticks for the lifetime of the page so
+  // collapse-then-re-expand is a no-op fetch.
+  // `stateRowsLoading` tracks in-flight per-state fetches so the UI can show
+  // a transient "Loading…" beneath the heading without showing stale data.
+  const [stateSummaries, setStateSummaries] = useState<PincodeStateSummary[]>([]);
+  const [stateRowsCache, setStateRowsCache] = useState<Record<string, PincodeRow[]>>({});
+  const [stateRowsLoading, setStateRowsLoading] = useState<Record<string, boolean>>({});
+  const [summaryLoading, setSummaryLoading] = useState<boolean>(false);
+
   const refreshStats = async () => {
     try {
       const s = (await getPincodeStats()) as PincodeStatsApi | null;
@@ -171,6 +191,46 @@ export default function AdminPincodesPage() {
       });
     } catch {
       /* non-fatal */
+    }
+  };
+
+  // Pulls the one-row-per-state aggregation. This is the mount-time call in
+  // summary mode (no active search) — drives the collapsed accordion. Cheap
+  // even at 50–60 states, since the backend $group already collapses.
+  const loadStateSummaries = async () => {
+    setSummaryLoading(true);
+    try {
+      const list = await getPincodeStates();
+      setStateSummaries(Array.isArray(list) ? list : []);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Failed to load states', 'error');
+      setStateSummaries([]);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  // Lazy-fetch the pincode rows for a single state. No-op if already cached
+  // (the cache is invalidated by inline bulk toggles below). Capped at 500
+  // — the backend now allows that ceiling specifically so a single state's
+  // pincodes come down in one round-trip.
+  const loadStateRows = async (state: string, force: boolean = false) => {
+    if (!force && stateRowsCache[state]) return;
+    setStateRowsLoading((prev) => ({ ...prev, [state]: true }));
+    try {
+      const data = (await getPincodes({
+        state,
+        page: 1,
+        limit: STATE_PINCODE_LIMIT,
+      })) as PincodesResponse | null;
+      const rowsOut = Array.isArray(data?.pincodes) ? data.pincodes : [];
+      setStateRowsCache((prev) => ({ ...prev, [state]: rowsOut }));
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Failed to load pincodes', 'error');
+    } finally {
+      setStateRowsLoading((prev) => ({ ...prev, [state]: false }));
     }
   };
 
@@ -224,8 +284,23 @@ export default function AdminPincodesPage() {
     return () => clearTimeout(id);
   }, [search]);
 
+  // In summary mode (`view === 'pincode'` AND no active search), the page
+  // shows the collapsed state accordion driven by stateSummaries; the flat
+  // `rows` list stays empty until the user types a search term. Once they
+  // do, we fall through to the original `load()` flow which fetches the
+  // matching rows via the existing GET / endpoint.
   useEffect(() => {
-    if (view === 'pincode') load();
+    if (view !== 'pincode') return;
+    if (debounced) {
+      load();
+    } else {
+      loadStateSummaries();
+      // Clear the flat list from any prior search so the summary accordion
+      // is the only thing on screen when search is cleared.
+      setRows([]);
+      setTotal(0);
+      setTotalPages(1);
+    }
     /* eslint-disable-next-line */
   }, [page, debounced, statusFilter, view]);
 
@@ -240,11 +315,55 @@ export default function AdminPincodesPage() {
   };
 
   const toggleStateExpansion = (state: string) => {
-    setExpandedStates((prev) => ({ ...prev, [state]: !prev[state] }));
+    setExpandedStates((prev) => {
+      const willExpand = !prev[state];
+      // Kick the lazy fetch only when transitioning to expanded; collapsing
+      // doesn't drop the cache (collapse-then-re-expand is instant).
+      if (willExpand && !debounced) {
+        // Fire-and-forget — `loadStateRows` no-ops if already cached and
+        // sets its own per-state loading flag for the spinner row.
+        loadStateRows(state);
+      }
+      return { ...prev, [state]: willExpand };
+    });
   };
 
+  // Per-row toggle. In search mode the row lives in `rows`; in summary mode
+  // the row lives in `stateRowsCache[state]` (lazy-loaded under each state
+  // heading). We optimistically flip the row in whichever surface holds it,
+  // then roll back on error.
   const handleToggle = async (pc: string, currentEnabled: boolean) => {
-    setRows((prev) => prev.map((r) => (r.pincode === pc ? { ...r, enabled: !currentEnabled } : r)));
+    const flipRow = (next: boolean) => {
+      setRows((prev) => prev.map((r) => (r.pincode === pc ? { ...r, enabled: next } : r)));
+      setStateRowsCache((prev) => {
+        const out: Record<string, PincodeRow[]> = {};
+        for (const [st, list] of Object.entries(prev)) {
+          out[st] = list.map((r) => (r.pincode === pc ? { ...r, enabled: next } : r));
+        }
+        return out;
+      });
+    };
+    flipRow(!currentEnabled);
+    // Bump the stateSummaries enabled/disabled counts so the heading chip
+    // reflects the toggle without a roundtrip. We don't know which state
+    // the row is in without a lookup — use the cache reverse-map.
+    let owningState: string | null = null;
+    for (const [st, list] of Object.entries(stateRowsCache)) {
+      if (list.some((r) => r.pincode === pc)) { owningState = st; break; }
+    }
+    if (owningState) {
+      setStateSummaries((prev) =>
+        prev.map((s) =>
+          s.state === owningState
+            ? {
+                ...s,
+                enabled_count: s.enabled_count + (currentEnabled ? -1 : 1),
+                disabled_count: s.disabled_count + (currentEnabled ? 1 : -1),
+              }
+            : s
+        )
+      );
+    }
     setRowBusy(pc);
     try {
       await togglePincode(pc);
@@ -254,7 +373,20 @@ export default function AdminPincodesPage() {
         disabled: s.disabled + (currentEnabled ? 1 : -1),
       }));
     } catch (err: unknown) {
-      setRows((prev) => prev.map((r) => (r.pincode === pc ? { ...r, enabled: currentEnabled } : r)));
+      flipRow(currentEnabled);
+      if (owningState) {
+        setStateSummaries((prev) =>
+          prev.map((s) =>
+            s.state === owningState
+              ? {
+                  ...s,
+                  enabled_count: s.enabled_count + (currentEnabled ? 1 : -1),
+                  disabled_count: s.disabled_count + (currentEnabled ? -1 : 1),
+                }
+              : s
+          )
+        );
+      }
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       showToast(e?.response?.data?.error || e?.message || 'Toggle failed', 'error');
     } finally {
@@ -272,7 +404,18 @@ export default function AdminPincodesPage() {
       showToast(`Updated ${fmtNum(res?.updated || 0)} pincodes`, 'success');
       setBulkConfirm(null);
       await refreshStats();
-      await load();
+      // The "Enable/Disable filtered" buttons are only available when the
+      // user has typed a search (the filtered set is the visible flat list
+      // — there's no filtered set in summary mode), so refreshing via
+      // load() is correct here. If summary mode is active, also blow the
+      // per-state cache so newly enabled/disabled rows surface on next
+      // expand.
+      if (debounced) {
+        await load();
+      } else {
+        setStateRowsCache({});
+        await loadStateSummaries();
+      }
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       showToast(e?.response?.data?.error || e?.message || 'Bulk update failed', 'error');
@@ -315,7 +458,16 @@ export default function AdminPincodesPage() {
       );
       setImportPreview(null);
       await refreshStats();
-      await load();
+      // Import can add new states or rebalance counts within existing ones,
+      // so refresh both surfaces. In search mode keep showing the flat list;
+      // in summary mode invalidate the per-state cache so re-expand picks
+      // up the new rows.
+      if (debounced) {
+        await load();
+      } else {
+        setStateRowsCache({});
+        await loadStateSummaries();
+      }
       if (view === 'city') await loadCities();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
@@ -468,7 +620,21 @@ export default function AdminPincodesPage() {
       const res = (await bulkTogglePincodes({ filter, active })) as BulkToggleResult | null;
       const n = res?.modifiedCount || 0;
       await refreshStats();
-      await load();
+      // Refresh path differs by mode:
+      //  - search mode (`debounced`): the user is looking at a flat filtered
+      //    list, so reload it via the existing GET / call.
+      //  - summary mode: invalidate just the affected state's per-state row
+      //    cache + force-reload it (so the inline toggle shows immediately
+      //    on the rows beneath the heading) and refresh stateSummaries so
+      //    the count chip on the heading flips with the toggle.
+      if (debounced) {
+        await load();
+      } else {
+        await Promise.all([
+          loadStateRows(state, true),
+          loadStateSummaries(),
+        ]);
+      }
       // City counts feed both dropdowns and the "By City" view; refresh so
       // they stay in sync with the inline toggle.
       await loadCities();
@@ -564,6 +730,7 @@ export default function AdminPincodesPage() {
         <PincodeView
           search={search}
           setSearch={setSearch}
+          debounced={debounced}
           statusFilter={statusFilter}
           onStatusChange={onStatusChange}
           bulkConfirm={bulkConfirm}
@@ -586,6 +753,10 @@ export default function AdminPincodesPage() {
           doInlineBulkToggle={doInlineBulkToggle}
           expandedStates={expandedStates}
           toggleStateExpansion={toggleStateExpansion}
+          stateSummaries={stateSummaries}
+          stateRowsCache={stateRowsCache}
+          stateRowsLoading={stateRowsLoading}
+          summaryLoading={summaryLoading}
         />
       )}
 
@@ -614,6 +785,10 @@ export default function AdminPincodesPage() {
 interface PincodeViewProps {
   search: string;
   setSearch: (v: string) => void;
+  // The debounced search term — empty string ↔ summary mode (state
+  // accordion). Distinguishes mid-type "search" (user just typed a char,
+  // debounce hasn't fired yet) from the actual data-fetch trigger.
+  debounced: string;
   statusFilter: string;
   onStatusChange: (e: ChangeEvent<HTMLSelectElement>) => void;
   bulkConfirm: BulkConfirm | null;
@@ -636,6 +811,13 @@ interface PincodeViewProps {
   doInlineBulkToggle: (state: string, city: string | undefined, active: boolean) => Promise<void>;
   expandedStates: Record<string, boolean>;
   toggleStateExpansion: (state: string) => void;
+  // Summary-mode payload. Empty array + `summaryLoading=true` means the
+  // mount-time GET /states call is still in flight; empty array +
+  // `summaryLoading=false` means the DB has no states yet (fresh tenant).
+  stateSummaries: PincodeStateSummary[];
+  stateRowsCache: Record<string, PincodeRow[]>;
+  stateRowsLoading: Record<string, boolean>;
+  summaryLoading: boolean;
 }
 
 function PincodeView(p: PincodeViewProps) {
@@ -742,34 +924,162 @@ function PincodeView(p: PincodeViewProps) {
       )}
 
       <div className="cb">
-        {p.loading ? (
-          <p>Loading…</p>
-        ) : !p.rows.length ? (
-          <p style={{ color: 'var(--dim)' }}>No pincodes match the current filter.</p>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', fontSize: '.75rem', color: 'var(--dim)' }}>
-                <th style={{ padding: '.4rem .2rem' }}>Pincode</th>
-                <th style={{ padding: '.4rem .2rem' }}>City</th>
-                <th style={{ padding: '.4rem .2rem' }}>Area</th>
-                <th style={{ padding: '.4rem .2rem' }}>State</th>
-                <th style={{ padding: '.4rem .2rem' }}>Status</th>
-                <th style={{ padding: '.4rem .2rem' }}>Last Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {renderPincodeRows(p)}
-            </tbody>
-          </table>
-        )}
-
-        <div style={{ marginTop: '.8rem', fontSize: '.75rem', color: 'var(--dim)' }}>
-          Showing {fmtNum(p.rows.length)} of {fmtNum(p.total)} pincodes. Click a state heading to expand.
-        </div>
+        {renderPincodeBody(p)}
+        {renderFooter(p)}
       </div>
     </div>
   );
+}
+
+// Body renderer — picks between summary-mode (collapsed state accordion
+// driven by stateSummaries + lazy-loaded stateRowsCache) and search-mode
+// (flat filtered rows from the existing GET / endpoint).
+function renderPincodeBody(p: PincodeViewProps): ReactNode {
+  const summaryMode = !p.debounced;
+
+  if (summaryMode) {
+    if (p.summaryLoading && !p.stateSummaries.length) {
+      return <p>Loading states…</p>;
+    }
+    if (!p.stateSummaries.length) {
+      return <p style={{ color: 'var(--dim)' }}>No pincodes loaded yet. Import a CSV to get started.</p>;
+    }
+    return (
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ textAlign: 'left', fontSize: '.75rem', color: 'var(--dim)' }}>
+            <th style={{ padding: '.4rem .2rem' }}>Pincode</th>
+            <th style={{ padding: '.4rem .2rem' }}>City</th>
+            <th style={{ padding: '.4rem .2rem' }}>Area</th>
+            <th style={{ padding: '.4rem .2rem' }}>State</th>
+            <th style={{ padding: '.4rem .2rem' }}>Status</th>
+            <th style={{ padding: '.4rem .2rem' }}>Last Updated</th>
+          </tr>
+        </thead>
+        <tbody>{renderSummaryRows(p)}</tbody>
+      </table>
+    );
+  }
+
+  // Search mode — original flat-list flow.
+  if (p.loading) return <p>Loading…</p>;
+  if (!p.rows.length) return <p style={{ color: 'var(--dim)' }}>No pincodes match the current filter.</p>;
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <thead>
+        <tr style={{ textAlign: 'left', fontSize: '.75rem', color: 'var(--dim)' }}>
+          <th style={{ padding: '.4rem .2rem' }}>Pincode</th>
+          <th style={{ padding: '.4rem .2rem' }}>City</th>
+          <th style={{ padding: '.4rem .2rem' }}>Area</th>
+          <th style={{ padding: '.4rem .2rem' }}>State</th>
+          <th style={{ padding: '.4rem .2rem' }}>Status</th>
+          <th style={{ padding: '.4rem .2rem' }}>Last Updated</th>
+        </tr>
+      </thead>
+      <tbody>{renderPincodeRows(p)}</tbody>
+    </table>
+  );
+}
+
+function renderFooter(p: PincodeViewProps): ReactNode {
+  const summaryMode = !p.debounced;
+  if (summaryMode) {
+    const totalPincodes = p.stateSummaries.reduce((s, r) => s + (r.total_pincodes || 0), 0);
+    return (
+      <div style={{ marginTop: '.8rem', fontSize: '.75rem', color: 'var(--dim)' }}>
+        {fmtNum(p.stateSummaries.length)} state{p.stateSummaries.length === 1 ? '' : 's'} ·{' '}
+        {fmtNum(totalPincodes)} pincode{totalPincodes === 1 ? '' : 's'} total. Click a state to expand.
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: '.8rem', fontSize: '.75rem', color: 'var(--dim)' }}>
+      Showing {fmtNum(p.rows.length)} of {fmtNum(p.total)} pincodes matching “{p.debounced}”.
+    </div>
+  );
+}
+
+// Summary-mode renderer. Iterates the full list of stateSummaries (from the
+// $group aggregation) so EVERY state is in the accordion regardless of how
+// many pincodes it has. Per-state pincode rows come from `stateRowsCache`,
+// populated lazily on first expand. The per-state spinner row reads from
+// `stateRowsLoading[state]`.
+function renderSummaryRows(p: PincodeViewProps): ReactNode[] {
+  const sortByCityPincode = (a: PincodeRow, b: PincodeRow): number => {
+    const ca = (a.city || '').localeCompare(b.city || '');
+    if (ca !== 0) return ca;
+    return a.pincode.localeCompare(b.pincode);
+  };
+
+  const out: ReactNode[] = [];
+  p.stateSummaries.forEach((sum, i) => {
+    const st = sum.state;
+    const isExpanded = !!p.expandedStates[st];
+    const rowsForState = p.stateRowsCache[st];
+    const rowsLoading = !!p.stateRowsLoading[st];
+
+    out.push(
+      <StateHeaderRow
+        key={`hdr-${st}`}
+        state={st}
+        rowsForState={rowsForState || []}
+        summary={sum}
+        inlineGroupBusy={p.inlineGroupBusy}
+        doInlineBulkToggle={p.doInlineBulkToggle}
+        expanded={isExpanded}
+        onToggleExpand={() => p.toggleStateExpansion(st)}
+      />
+    );
+
+    if (isExpanded) {
+      if (rowsLoading && !rowsForState) {
+        out.push(
+          <tr key={`load-${st}`}>
+            <td colSpan={6} style={{ padding: '.6rem .75rem', fontSize: '.8rem', color: 'var(--dim)' }}>
+              Loading pincodes for {st}…
+            </td>
+          </tr>
+        );
+      } else if (rowsForState && rowsForState.length) {
+        const sorted = rowsForState.slice().sort(sortByCityPincode);
+        const cityBuckets = new Map<string, PincodeRow[]>();
+        for (const r of sorted) {
+          const ck = r.city || 'Other';
+          const arr = cityBuckets.get(ck);
+          if (arr) arr.push(r);
+          else cityBuckets.set(ck, [r]);
+        }
+        for (const [cityName, rowsForCity] of cityBuckets) {
+          out.push(
+            <CityHeaderRow
+              key={`city-hdr-${st}-${cityName}`}
+              state={st}
+              city={cityName}
+              rowsForCity={rowsForCity}
+              inlineGroupBusy={p.inlineGroupBusy}
+              doInlineBulkToggle={p.doInlineBulkToggle}
+            />
+          );
+          for (const r of rowsForCity) {
+            out.push(<PincodeTableRow key={`${st}-${cityName}-${r.pincode}`} r={r} p={p} />);
+          }
+        }
+      } else if (rowsForState && !rowsForState.length) {
+        out.push(
+          <tr key={`empty-${st}`}>
+            <td colSpan={6} style={{ padding: '.6rem .75rem', fontSize: '.8rem', color: 'var(--dim)' }}>
+              No pincodes returned for {st}.
+            </td>
+          </tr>
+        );
+      }
+    }
+
+    if (i < p.stateSummaries.length - 1) {
+      out.push(<GroupSpacerRow key={`sp-${st}`} />);
+    }
+  });
+  return out;
 }
 
 // Always grouped by state, with per-state collapsible accordion. Each state
@@ -849,6 +1159,11 @@ function renderPincodeRows(p: PincodeViewProps) {
 interface StateHeaderRowProps {
   state: string;
   rowsForState: PincodeRow[];
+  // Summary-mode payload — when present, count and variant are derived
+  // from the aggregated counts (no need to wait for per-state rows to
+  // arrive before showing the heading + button). When absent (search
+  // mode), we fall back to scanning rowsForState in-memory.
+  summary?: PincodeStateSummary;
   inlineGroupBusy: string | null;
   doInlineBulkToggle: (state: string, city: string | undefined, active: boolean) => Promise<void>;
   expanded: boolean;
@@ -858,12 +1173,26 @@ interface StateHeaderRowProps {
 function StateHeaderRow({
   state,
   rowsForState,
+  summary,
   inlineGroupBusy,
   doInlineBulkToggle,
   expanded,
   onToggleExpand,
 }: StateHeaderRowProps) {
-  const variant = classifyGroup(rowsForState);
+  // Prefer the aggregated summary (truthful even before per-state rows are
+  // fetched); fall back to scanning rowsForState in search mode where
+  // there's no summary.
+  let variant: GroupToggleVariant;
+  let count: number;
+  if (summary) {
+    count = summary.total_pincodes;
+    if (summary.enabled_count === summary.total_pincodes && summary.total_pincodes > 0) variant = 'disable';
+    else if (summary.enabled_count === 0) variant = 'enable';
+    else variant = 'mixed';
+  } else {
+    variant = classifyGroup(rowsForState);
+    count = rowsForState.length;
+  }
   const busy = inlineGroupBusy === state;
   // For variant: 'disable' (all on) → click sends active=false; for
   // 'enable' / 'mixed' → click sends active=true.
@@ -897,8 +1226,21 @@ function StateHeaderRow({
           </span>
           <span>{state}</span>
           <span style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
-            {fmtNum(rowsForState.length)} pincodes
+            {fmtNum(count)} pincodes
           </span>
+          {summary && (
+            <span
+              style={{
+                fontSize: '.65rem',
+                color: 'var(--dim)',
+                fontWeight: 500,
+                textTransform: 'none',
+                letterSpacing: 0,
+              }}
+            >
+              ({fmtNum(summary.enabled_count)} on · {fmtNum(summary.disabled_count)} off)
+            </span>
+          )}
           <button
             type="button"
             className={btnClass}

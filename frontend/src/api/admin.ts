@@ -222,6 +222,18 @@ export async function getPincodeCities(): Promise<unknown> {
   return data;
 }
 
+// Per-state aggregation for the collapsed accordion. One row per state,
+// regardless of how many pincodes that state has. Drives the mount-time
+// render so the accordion shows the FULL state list instead of just the
+// states whose pincodes happen to fall in the first N rows of the
+// flat-list endpoint.
+export async function getPincodeStates(): Promise<import('../types').PincodeStateSummary[]> {
+  const { data } = await client.get<import('../types').PincodeStateSummary[]>(
+    '/api/admin/pincodes/states',
+  );
+  return data;
+}
+
 export async function bulkUpdateByCity(body: RequestBody): Promise<unknown> {
   const { data } = await client.put('/api/admin/pincodes/bulk-by-city', body);
   return data;

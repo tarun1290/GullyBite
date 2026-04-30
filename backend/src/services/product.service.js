@@ -77,6 +77,21 @@ async function createProduct(input) {
   return product;
 }
 
+// ─── ASSIGN / UNASSIGN INVARIANT ────────────────────────────────
+// Multi-branch assignment invariant:
+//   branch_ids[] is the canonical set of branches the product is
+//   assigned to.
+//   branch_id (scalar) MUST be one of branch_ids[] when branch_ids
+//   is non-empty, otherwise null.
+//   This keeps mpmBuilder (which filters on branch_id scalar) and
+//   catalog sync (which reads $or over both) consistent.
+//
+// Anything that mutates branch_ids in this file is responsible for
+// reconciling the scalar branch_id at the same time. The dedicated
+// helpers below do that. If a future writer skips this reconciliation,
+// items will silently disappear from MPM even though the catalog still
+// shows them — see services/mpmBuilder.js for the reader contract.
+
 // ─── ASSIGN TO BRANCH ───────────────────────────────────────────
 // POST /products/:id/assign-branch — add branch to product.branch_ids AND
 // create/update the branch_products override row. Idempotent: re-calling
@@ -113,21 +128,37 @@ async function assignProductToBranch({ product_id, branch_id, price, tax_percent
     { upsert: true }
   );
 
-  // 2) Patch product: add branch to array, recompute is_unassigned.
+  // 2) Patch product: add branch to array, recompute is_unassigned, and —
+  // when the scalar branch_id is currently empty — backfill it to the new
+  // branch so the invariant holds. We deliberately DO NOT overwrite an
+  // existing non-null scalar; another branch may already be the "primary"
+  // assignment that downstream readers (e.g. mpmBuilder.js) rely on.
+  const setOps = { is_unassigned: false, updated_at: now };
+  const currentScalar = product.branch_id;
+  if (currentScalar == null || currentScalar === '') {
+    setOps.branch_id = String(branch_id);
+  }
   const updated = await col('menu_items').findOneAndUpdate(
     { _id: String(product_id) },
     {
       $addToSet: { branch_ids: String(branch_id) },
-      $set: { is_unassigned: false, updated_at: now },
+      $set: setOps,
     },
     { returnDocument: 'after' }
   );
 
-  log.info({ productId: product_id, branchId: branch_id }, 'product assigned to branch');
+  log.info(
+    { productId: product_id, branchId: branch_id, scalarBackfilled: 'branch_id' in setOps },
+    'product assigned to branch'
+  );
   return updated.value;
 }
 
 // ─── UNASSIGN ───────────────────────────────────────────────────
+// Removes a single branch from branch_ids[] and reconciles the scalar
+// branch_id per the invariant above. Two round-trips when reconciliation
+// is needed (rare path, unassign is uncommon) — keeping consistency
+// strictly correct beats saving a millisecond here.
 async function unassignFromBranch({ product_id, branch_id }) {
   const res = await col('menu_items').findOneAndUpdate(
     { _id: String(product_id) },
@@ -135,18 +166,36 @@ async function unassignFromBranch({ product_id, branch_id }) {
     { returnDocument: 'after' }
   );
   if (!res.value) throw Object.assign(new Error('product not found'), { statusCode: 404 });
-  if (!res.value.branch_ids || res.value.branch_ids.length === 0) {
+
+  const doc = res.value;
+  const remaining = Array.isArray(doc.branch_ids) ? doc.branch_ids : [];
+  const scalarPointedAtUnassigned = String(doc.branch_id || '') === String(branch_id);
+
+  // Reconciliation cases:
+  //   • branch_ids now empty → null the scalar, mark unassigned.
+  //   • branch_ids still has entries AND scalar pointed at the branch we
+  //     just removed → re-point scalar at the first remaining branch.
+  //   • Otherwise (scalar still points at a branch that's still in the
+  //     array) → no-op, invariant already holds.
+  let reconcile = null;
+  if (remaining.length === 0) {
+    reconcile = { branch_id: null, is_unassigned: true, updated_at: new Date() };
+  } else if (scalarPointedAtUnassigned) {
+    reconcile = { branch_id: String(remaining[0]), updated_at: new Date() };
+  }
+  if (reconcile) {
     await col('menu_items').updateOne(
       { _id: String(product_id) },
-      { $set: { is_unassigned: true } }
+      { $set: reconcile }
     );
-    res.value.is_unassigned = true;
+    Object.assign(doc, reconcile);
   }
+
   await col('branch_products').deleteOne({
     product_id: String(product_id),
     branch_id: String(branch_id),
   });
-  return res.value;
+  return doc;
 }
 
 // ─── LISTS ──────────────────────────────────────────────────────
