@@ -1993,6 +1993,29 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     deliveryQuote:        cart.deliveryQuote || null,
   });
 
+  // setState persists the new cart/charges to MongoDB but the local
+  // `conv.session_data` and `session` JS variables are pre-setState
+  // snapshots — they still hold the OLD cart contents. Passing them
+  // straight to _sendOrderCheckout below caused Meta error 131009 on
+  // ZM-20260430-0005: orderSvc.createOrder used session.cart (OLD)
+  // for the persisted order while _sendOrderCheckout's items arg was
+  // already the NEW cart, so the line items diverged from total_amount.
+  // Mirror the setState payload field-for-field here so downstream
+  // reads see consistent state.
+  const refreshedSession = {
+    ..._resetOrderLinkage(session),
+    cart: cart.cart,
+    subtotalRs:    cart.subtotalRs,
+    deliveryFeeRs: charges ? charges.customer_delivery_rs : cart.deliveryFeeRs,
+    totalRs:       finalTotalRs,
+    discountRs,
+    coupon:        couponData,
+    charges,
+    deliveryFeeBreakdown: cart.deliveryFeeBreakdown || null,
+    dynamicPricing:       cart.dynamicPricing || false,
+    deliveryQuote:        cart.deliveryQuote || null,
+  };
+
   const tempOrderNum = `TEMP-${Date.now().toString().slice(-6)}`;
 
   // Build 3PL delivery info text for order summary
@@ -2016,7 +2039,7 @@ const handleCatalogOrder = async (msg, customer, conv, waAccount) => {
     total:       finalTotalRs.toFixed(0),
     discount:    couponData ? { code: couponData.code, amountRs: discountRs } : null,
     dynamicNote,
-    session: conv.session_data || session,
+    session: refreshedSession,
     customer, waAccount,
   });
 
