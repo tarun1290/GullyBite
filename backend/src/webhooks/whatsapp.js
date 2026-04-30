@@ -736,14 +736,14 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         items: (items || []).map(i => ({ item_name: i.name, quantity: i.qty || 1, unit_price_rs: Number(i.price) || 0, retailer_id: i.retailer_id || i.name })),
       };
 
-      // ── Self-Service Razorpay pre-create ──
-      // Pre-create the Razorpay order BEFORE sending the WhatsApp
-      // interactive message so we can embed rp_order_id in
-      // payment_settings.payment_gateway.order_id. This is what makes
-      // the inbound Razorpay webhook resolvable: confirmPaidOrder
-      // queries payments by rp_order_id, so we MUST persist that id
-      // here. On Razorpay /orders failure we keep going — the existing
-      // reference_id-based reconciliation path remains the fallback.
+      // ── Razorpay pre-create ──
+      // Pre-create the Razorpay order before sending the WhatsApp
+      // interactive message and persist rp_order_id on the orders doc
+      // (alongside the payments-collection write below) so reconciliation
+      // can resolve from either side. The rp_order_id is NOT embedded in
+      // the Meta order_details payload — Meta's schema rejects extra
+      // keys on payment_gateway with #131008. Inbound Razorpay webhooks
+      // resolve via reference_id (the order_number).
       const rpOrderAmountRs = effectiveCharges?.customer_total_rs || effectiveTotalRs || 0;
       let rpOrderId = null;
       try {
@@ -759,6 +759,16 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
         });
         rpOrderId = rzpOrder?.id || null;
         log.info({ orderNumber: order.order_number, rpOrderId }, 'razorpay pre-create ok');
+        if (rpOrderId) {
+          // Persist on the orders doc — denormalised helper so dashboards
+          // and ops scripts can filter orders by rp_order_id without
+          // joining payments. Source of truth for webhook reconciliation
+          // remains the payments collection (written below).
+          await col('orders').updateOne(
+            { _id: order.id },
+            { $set: { rp_order_id: rpOrderId, updated_at: new Date() } }
+          ).catch((err) => log.warn({ err: err?.message, orderId: order.id }, 'orders.rp_order_id persist failed (continuing)'));
+        }
       } catch (rpErr) {
         log.warn({
           err: rpErr?.message,

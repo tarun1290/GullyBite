@@ -664,7 +664,6 @@ async function _placeOrderAndRequestPayment(tenant, convo, customer, from, { dis
                   payment_gateway: {
                     type: 'razorpay',
                     configuration_name: configName,
-                    ...(rpOrderId ? { order_id: rpOrderId } : {}),
                   },
                 }],
                 currency: 'INR',
@@ -813,7 +812,6 @@ async function _handleAwaitPayment(tenant, convo, customer, from, input) {
                 payment_gateway: {
                   type: 'razorpay',
                   configuration_name: configName,
-                  ...(rpOrderId ? { order_id: rpOrderId } : {}),
                 },
               }],
               currency: 'INR',

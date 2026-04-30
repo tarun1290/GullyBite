@@ -239,18 +239,19 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
           // never a valid field and Meta rejects it with #131008. Shape
           // mirrors sendCheckoutButtonTemplate (line ~474) so the two
           // checkout paths stay in lockstep on Razorpay credentials.
+          // Meta's order_details schema does NOT accept any extra
+          // keys on payment_gateway beyond `type` and `configuration_name`.
+          // A previous attempt to embed the pre-created Razorpay
+          // order_id here was rejected by Meta with "Unexpected key
+          // 'order_id' on param ...payment_gateway". The pre-create
+          // still happens upstream (rp_order_id persisted on the
+          // payments + orders docs); inbound Razorpay webhook
+          // reconciliation uses reference_id, not the pre-created id.
           payment_settings: [{
             type: 'payment_gateway',
             payment_gateway: {
               type: 'razorpay',
               configuration_name: configName,
-              // Self-Service Razorpay: when the caller pre-creates a
-              // Razorpay order and passes its id here, Meta forwards
-              // it to Razorpay so the inbound webhook carries the
-              // matching rp_order_id. Omit the key entirely if we
-              // don't have one — Meta validates and would reject
-              // order_id: null.
-              ...(rpOrderId ? { order_id: rpOrderId } : {}),
             },
           }],
           currency: 'INR',
