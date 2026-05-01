@@ -129,7 +129,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
   let items = memcache.get(cacheKey);
   if (!items) {
     items = await col('menu_items').find({
-      branch_id: branchId,
+      $or: [{ branch_id: branchId }, { branch_ids: branchId }],
       is_available: true,
     }).sort({ sort_order: 1, name: 1 }).toArray();
     if (items.length) memcache.set(cacheKey, items, 120);
