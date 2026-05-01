@@ -195,6 +195,38 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
+  // ─── SEARCHING / AT-PICKUP / AT-DELIVERY ────────────────────
+  // Intermediate Prorouting states. No GullyBite order-status flip and
+  // no customer notification — those are the loud signals (agent
+  // assigned / picked up / delivered). These cases just normalise the
+  // state string onto the order doc so the dashboard's logistics column
+  // and any future timeline view can read a stable constant.
+  if (status === 'searching-for-agent') {
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: { prorouting_state: 'SEARCHING_AGENT', updated_at: new Date() } }
+    );
+    return { previousStatus, currentStatus: statusRaw, updated: true };
+  }
+
+  if (status === 'at-pickup') {
+    const atPickupAt = parseISTTimestamp(eventBody?.order?.at_pickup_at) || new Date();
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: { prorouting_state: 'AT_PICKUP', prorouting_at_pickup_at: atPickupAt, updated_at: new Date() } }
+    );
+    return { previousStatus, currentStatus: statusRaw, updated: true };
+  }
+
+  if (status === 'at-delivery') {
+    const atDeliveryAt = parseISTTimestamp(eventBody?.order?.at_delivery_at) || new Date();
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: { prorouting_state: 'AT_DELIVERY', prorouting_at_delivery_at: atDeliveryAt, updated_at: new Date() } }
+    );
+    return { previousStatus, currentStatus: statusRaw, updated: true };
+  }
+
   if (status === 'order-picked-up') {
     // Dual-write logistics timings for analytics. Skip any field we
     // can't compute — null writes would poison the "no data" checks.
@@ -276,7 +308,18 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
   // ─── RTO PATH ──────────────────────────────────────────────
   if (status === 'rto-initiated') {
     try { await orderSvc.updateStatus(order._id, 'RTO_IN_PROGRESS'); } catch (e) { log.warn({ err: e?.message, orderId: order._id }, 'updateStatus RTO_IN_PROGRESS failed'); }
-    await col('orders').updateOne({ _id: order._id }, { $set: { is_rto: true, updated_at: new Date() } });
+    const rtoInitiatedAt = parseISTTimestamp(eventBody?.order?.rto_initiated_at) || new Date();
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: {
+          is_rto: true,
+          delivery_status: 'RTO_INITIATED',
+          prorouting_state:  'RTO_INITIATED',
+          prorouting_rto_initiated_at: rtoInitiatedAt,
+          updated_at: new Date(),
+      } }
+    );
+    log.warn({ orderId: order._id, orderNumber: order.order_number }, 'prorouting RTO initiated');
 
     // Auto-raise a FULFILLMENT / FLM03 issue so ops has a dispute
     // thread queued before the kitchen + customer start asking.
@@ -309,6 +352,17 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
 
   if (status === 'rto-delivered') {
     try { await orderSvc.updateStatus(order._id, 'RTO_COMPLETE'); } catch (e) { log.warn({ err: e?.message, orderId: order._id }, 'updateStatus RTO_COMPLETE failed'); }
+    const rtoDeliveredAt = parseISTTimestamp(eventBody?.order?.rto_delivered_at) || new Date();
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: {
+          delivery_status: 'RTO_DELIVERED',
+          prorouting_state: 'RTO_DELIVERED',
+          prorouting_rto_delivered_at: rtoDeliveredAt,
+          updated_at: new Date(),
+      } }
+    );
+    log.warn({ orderId: order._id, orderNumber: order.order_number }, 'prorouting RTO delivered (returned to restaurant)');
     await _sendRtoAlert(order,
       `📦 RTO complete for Order #${order.order_number}. Package has been returned to the restaurant.`
     );
@@ -317,6 +371,17 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
 
   if (status === 'rto-disposed') {
     try { await orderSvc.updateStatus(order._id, 'RTO_COMPLETE'); } catch (e) { log.warn({ err: e?.message, orderId: order._id }, 'updateStatus RTO_COMPLETE failed'); }
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: {
+          delivery_status: 'RTO_DISPOSED',
+          prorouting_state: 'RTO_DISPOSED',
+          updated_at: new Date(),
+      } }
+    );
+    // ERROR-level: RTO disposed means the food is lost — neither delivered
+    // to customer nor returned to restaurant. Surfaces in error dashboards.
+    log.error({ orderId: order._id, orderNumber: order.order_number }, 'prorouting RTO DISPOSED — food lost, package neither delivered nor returned');
     await _sendRtoAlert(order,
       `⚠️ RTO disposed for Order #${order.order_number}. Package could not be returned and has been disposed by the LSP. Please raise a dispute if needed.`
     );

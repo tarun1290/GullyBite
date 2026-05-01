@@ -5701,6 +5701,53 @@ router.post('/orders/:orderId/dispatch', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// POST /api/restaurant/orders/:orderId/report-fake-delivery
+// Raises an FLM08 dispute against the 3PL when the rider marked the
+// order as delivered but the customer didn't receive it. Gated on
+// (a) order belongs to this restaurant, (b) order.status === 'DELIVERED',
+// (c) no existing prorouting_issue_id (idempotent — same order can't
+// raise twice). The raiseDeliveryIssue service handles the upstream
+// duplicate-issue path and returns a soft `{ success:false, message }`
+// rather than throwing.
+router.post('/orders/:orderId/report-fake-delivery', async (req, res) => {
+  try {
+    const o = await col('orders').findOne({ _id: req.params.orderId });
+    if (!o) return res.status(404).json({ error: 'Order not found' });
+    const branch = await col('branches').findOne({ _id: o.branch_id });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (o.status !== 'DELIVERED') {
+      return res.status(400).json({ error: 'Order must be delivered before reporting' });
+    }
+    if (o.prorouting_issue_id) {
+      return res.status(409).json({ error: 'Issue already reported', issue_id: o.prorouting_issue_id });
+    }
+
+    const prorouting = require('../services/prorouting');
+    const result = await prorouting.raiseDeliveryIssue(req.params.orderId);
+    if (!result.success) {
+      if (result.message === 'already_exists') {
+        return res.status(409).json({ error: 'Issue already reported on 3PL side' });
+      }
+      if (result.message === 'delivery_not_dispatched') {
+        return res.status(400).json({ error: 'Delivery was never dispatched via 3PL' });
+      }
+      return res.status(502).json({ error: 'Upstream service unavailable' });
+    }
+
+    log({
+      actorType: 'restaurant', actorId: req.restaurantId, actorName: 'restaurant',
+      action: 'prorouting.fake_delivery_reported', category: 'delivery',
+      description: `Reported fake delivery for order #${o.order_number}`,
+      resourceType: 'order', resourceId: String(o._id), severity: 'warning',
+      metadata: { issue_id: result.issue_id },
+    });
+
+    res.json({ success: true, issue_id: result.issue_id });
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
 // POST /api/restaurant/orders/:orderId/cancel-delivery — cancel active delivery
 router.post('/orders/:orderId/cancel-delivery', async (req, res) => {
   try {

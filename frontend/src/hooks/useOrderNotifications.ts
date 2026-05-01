@@ -99,6 +99,25 @@ export interface DirectMessagePayload {
   timestamp: string;
 }
 
+// Live rider location event. Emitted by /webhook/prorouting/track on
+// the backend (see backend/src/routes/webhookProrouting.js) for each
+// position update from Prorouting's Track Callback. Per-restaurant room
+// scope; consumers filter client-side by order_id since multiple orders
+// may be in flight at any given branch. The (0,0) sentinel and NaN
+// values are filtered server-side, so any payload landing here has
+// genuinely valid coordinates.
+export interface RiderLocationPayload {
+  order_id: string;
+  // branch_id present when the order has one; consumers in branch-scoped
+  // contexts can filter on it. For RiderLocationCard the order_id match
+  // is the primary filter.
+  branch_id?: string;
+  lat: number;
+  lng: number;
+  updated_at: string;
+  tracking_url?: string;
+}
+
 interface UseOrderNotificationsOptions {
   onNewOrder?: (order: OrderNotification) => void;
   onUpdated?: (payload: OrderUpdatePayload) => void;
@@ -108,6 +127,7 @@ interface UseOrderNotificationsOptions {
   onBranchStatus?: (payload: BranchStatusPayload) => void;
   onAdminNewSignup?: (payload: AdminNewSignupPayload) => void;
   onMessage?: (payload: DirectMessagePayload) => void;
+  onRiderLocation?: (payload: RiderLocationPayload) => void;
 }
 
 interface UseOrderNotificationsReturn {
@@ -149,6 +169,7 @@ export function useOrderNotifications(
     onBranchStatus,
     onAdminNewSignup,
     onMessage,
+    onRiderLocation,
   } = opts;
 
   const { socket, connected } = useSocket();
@@ -212,6 +233,13 @@ export function useOrderNotifications(
     [onMessage],
   );
 
+  const handleRiderLocation = useCallback(
+    (data: RiderLocationPayload) => {
+      if (onRiderLocation) onRiderLocation(data);
+    },
+    [onRiderLocation],
+  );
+
   useEffect(() => {
     if (!socket) return;
     socket.on('order:new', handleNew);
@@ -222,6 +250,7 @@ export function useOrderNotifications(
     socket.on('restaurant:branch_status', handleBranchStatus);
     socket.on('admin:new_signup', handleAdminNewSignup);
     socket.on('message:new', handleMessage);
+    socket.on('rider_location', handleRiderLocation);
     return () => {
       socket.off('order:new', handleNew);
       socket.off('order:updated', handleUpdated);
@@ -231,6 +260,7 @@ export function useOrderNotifications(
       socket.off('restaurant:branch_status', handleBranchStatus);
       socket.off('admin:new_signup', handleAdminNewSignup);
       socket.off('message:new', handleMessage);
+      socket.off('rider_location', handleRiderLocation);
     };
   }, [
     socket,
@@ -242,6 +272,7 @@ export function useOrderNotifications(
     handleBranchStatus,
     handleAdminNewSignup,
     handleMessage,
+    handleRiderLocation,
   ]);
 
   return { connected, lastOrder };

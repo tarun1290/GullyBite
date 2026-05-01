@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Orders',        icon: '📦', path: '/admin/orders' },
   { label: 'Customers',     icon: '👥', path: '/admin/customers' },
   { label: 'Issues',        icon: '🚨', path: '/admin/issues' },
+  { label: 'Delivery Disputes', icon: '⚠️', path: '/admin/delivery-disputes' },
   { label: 'Referrals',     icon: '🎯', path: '/admin/referrals' },
   { label: 'Settlements',   icon: '💸', path: '/admin/settlements' },
   { label: 'Financials',    icon: '💰', path: '/admin/financials' },

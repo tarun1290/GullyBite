@@ -300,6 +300,16 @@ export async function getAdminOrders(params: QueryParams = {}): Promise<unknown>
   return data;
 }
 
+export async function reportFakeDeliveryAdmin(id: string): Promise<{ success: boolean; issue_id: string }> {
+  const { data } = await client.post(`/api/admin/orders/${id}/report-fake-delivery`);
+  return data as { success: boolean; issue_id: string };
+}
+
+export async function getAdminOrdersWithIssues(): Promise<unknown> {
+  const { data } = await client.get('/api/admin/orders/with-issues');
+  return data;
+}
+
 // ── Customers ───────────────────────────────────────────────────────
 
 export async function getAdminCustomers(params: QueryParams = {}): Promise<unknown> {

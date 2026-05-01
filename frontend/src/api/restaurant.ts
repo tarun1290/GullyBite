@@ -66,6 +66,11 @@ export async function getDeliveryStatus(id: string): Promise<unknown> {
   return data;
 }
 
+export async function reportFakeDelivery(id: string): Promise<{ success: boolean; issue_id: string }> {
+  const { data } = await client.post(`/api/restaurant/orders/${id}/report-fake-delivery`);
+  return data as { success: boolean; issue_id: string };
+}
+
 export async function getBranches(): Promise<Branch[]> {
   const { data } = await client.get<Branch[]>('/api/restaurant/branches');
   return data;

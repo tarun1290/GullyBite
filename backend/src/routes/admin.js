@@ -704,6 +704,107 @@ router.get('/orders/:orderId/issue', requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/admin/orders/:orderId/report-fake-delivery
+// Admin-side counterpart to the restaurant's report-fake-delivery
+// endpoint. No tenant ownership check — admins act across all tenants.
+// Same idempotency: refuses if prorouting_issue_id is already set, and
+// surfaces the upstream duplicate-issue case as a 409. Distinct from
+// the generic /orders/:orderId/issue route above which lets ops attach
+// arbitrary sub_categories; this one is hardcoded to FLM08 fake-delivery.
+router.post('/orders/:orderId/report-fake-delivery', requireAdmin, async (req, res) => {
+  try {
+    const order = await col('orders').findOne({ _id: req.params.orderId });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (order.status !== 'DELIVERED') {
+      return res.status(400).json({ error: 'Order must be delivered before reporting' });
+    }
+    if (order.prorouting_issue_id) {
+      return res.status(409).json({ error: 'Issue already reported', issue_id: order.prorouting_issue_id });
+    }
+
+    const prorouting = require('../services/prorouting');
+    const result = await prorouting.raiseDeliveryIssue(req.params.orderId);
+    if (!result.success) {
+      if (result.message === 'already_exists') {
+        return res.status(409).json({ error: 'Issue already reported on 3PL side' });
+      }
+      if (result.message === 'delivery_not_dispatched') {
+        return res.status(400).json({ error: 'Delivery was never dispatched via 3PL' });
+      }
+      return res.status(502).json({ error: 'Upstream service unavailable' });
+    }
+
+    logActivity({
+      actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.name || 'admin',
+      action: 'prorouting.fake_delivery_reported', category: 'delivery',
+      description: `Reported fake delivery for order #${order.order_number} (admin-raised)`,
+      resourceType: 'order', resourceId: String(order._id), severity: 'warning',
+      metadata: { issue_id: result.issue_id, raised_by: 'admin' },
+    });
+
+    res.json({ success: true, issue_id: result.issue_id });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// GET /api/admin/orders/with-issues
+// Lists orders that have a Prorouting issue raised against them. Powers
+// the Delivery Disputes overview page. Joins branch + restaurant for
+// the display columns; returns at most 100 rows sorted by raised-at
+// desc (recent disputes first). Admins follow up on these in
+// reconciliation reviews.
+router.get('/orders/with-issues', requireAdmin, async (req, res) => {
+  try {
+    const orders = await col('orders')
+      .find({ prorouting_issue_id: { $exists: true, $ne: null } })
+      .project({
+        order_number: 1,
+        prorouting_issue_id: 1,
+        prorouting_issue_state: 1,
+        prorouting_issue_raised_at: 1,
+        prorouting_state: 1,
+        delivered_at: 1,
+        status: 1,
+        branch_id: 1,
+        total_rs: 1,
+      })
+      .sort({ prorouting_issue_raised_at: -1 })
+      .limit(100)
+      .toArray();
+
+    const branchIds = [...new Set(orders.map((o) => o.branch_id).filter(Boolean))];
+    const branches = branchIds.length
+      ? await col('branches').find({ _id: { $in: branchIds } })
+          .project({ name: 1, restaurant_id: 1 })
+          .toArray()
+      : [];
+    const branchById = new Map(branches.map((b) => [String(b._id), b]));
+
+    const restaurantIds = [...new Set(branches.map((b) => b.restaurant_id).filter(Boolean))];
+    const restaurants = restaurantIds.length
+      ? await col('restaurants').find({ _id: { $in: restaurantIds } })
+          .project({ business_name: 1 })
+          .toArray()
+      : [];
+    const restaurantById = new Map(restaurants.map((r) => [String(r._id), r]));
+
+    const enriched = orders.map((o) => {
+      const branch = branchById.get(String(o.branch_id));
+      const restaurant = branch ? restaurantById.get(String(branch.restaurant_id)) : null;
+      return {
+        ...mapId(o),
+        branch_name: branch?.name || null,
+        business_name: restaurant?.business_name || null,
+      };
+    });
+
+    res.json({ orders: enriched, total: enriched.length });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // POST /api/admin/orders/:orderId/issue/close — resolve + close the dispute
 router.post('/orders/:orderId/issue/close', requireAdmin, async (req, res) => {
   try {

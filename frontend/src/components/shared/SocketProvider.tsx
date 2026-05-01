@@ -49,6 +49,7 @@ import {
   type OrderNotification,
   type OrderPaidPayload,
   type OrderUpdatePayload,
+  type RiderLocationPayload,
 } from '../../hooks/useOrderNotifications';
 
 // Discriminated union of admin-feed events. Stored as the most-recent
@@ -71,6 +72,12 @@ interface SocketContextValue {
   // restaurant-side drawer auto-opens; the admin-side drawer bumps an
   // unread badge unless the matching thread is already open.
   lastMessage: DirectMessagePayload | null;
+  // Latest rider-position update from the Prorouting Track Callback.
+  // Per-restaurant scope; consumers (e.g. RiderLocationCard) filter by
+  // order_id since multiple orders can be in flight per branch. Reference
+  // identity changes per event for the same useEffect-on-payload pattern
+  // used by other lastX fields.
+  lastRiderLocation: RiderLocationPayload | null;
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null);
@@ -92,6 +99,7 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
   const [lastAdminAction, setLastAdminAction] = useState<AdminActionPayload | null>(null);
   const [lastAdminFeedEvent, setLastAdminFeedEvent] = useState<AdminFeedEvent | null>(null);
   const [lastMessage, setLastMessage] = useState<DirectMessagePayload | null>(null);
+  const [lastRiderLocation, setLastRiderLocation] = useState<RiderLocationPayload | null>(null);
 
   const { connected } = useOrderNotifications({
     onNewOrder: (order) => {
@@ -150,6 +158,13 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
       }
       setLastMessage(payload);
     },
+    // No toast for rider location — these fire every few seconds while
+    // a delivery is in flight and would spam the UI. Consumers
+    // (RiderLocationCard) read lastRiderLocation directly and filter
+    // by order_id.
+    onRiderLocation: (payload) => {
+      setLastRiderLocation(payload);
+    },
   });
 
   return (
@@ -162,6 +177,7 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
         lastAdminAction,
         lastAdminFeedEvent,
         lastMessage,
+        lastRiderLocation,
       }}
     >
       {children}

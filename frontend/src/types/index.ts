@@ -227,6 +227,34 @@ export interface Order {
   items?: OrderItem[];
   created_at?: string;
   delivered_at?: string;
+  // Prorouting (3PL) proof URLs + state — populated on the order doc by
+  // the status-callback handler at routes/webhookProrouting.js. Surfaced
+  // in the order detail modal for delivered / RTO orders.
+  prorouting_pickup_proof?: string;
+  prorouting_delivery_proof?: string;
+  prorouting_state?: string;
+  prorouting_tracking_url?: string;
+  // Per-state timestamps stamped by routes/webhookProrouting.js as the
+  // 3PL fires status callbacks. DeliveryTimeline renders a checklist-style
+  // milestone view from these. Forward path: assigned → at_pickup →
+  // pickedup → at_delivery → delivered. RTO branch (after pickup):
+  // rto_initiated → rto_delivered (back to merchant) OR rto_disposed
+  // (state-only, no separate stamp). cancelled_at applies pre-pickup only.
+  prorouting_assigned_at?: string;
+  prorouting_pickedup_at?: string;
+  prorouting_delivered_at?: string;
+  prorouting_at_pickup_at?: string;
+  prorouting_at_delivery_at?: string;
+  prorouting_rto_initiated_at?: string;
+  prorouting_rto_delivered_at?: string;
+  prorouting_cancelled_at?: string;
+  // Prorouting-side dispute (FLM08 fake delivery, FLM02 wrong-item, etc.)
+  // raised against the 3PL. Populated by the report-fake-delivery routes
+  // and the generic admin /orders/:id/issue endpoint. UI surfaces these
+  // via IssueStatusBadge.
+  prorouting_issue_id?: string;
+  prorouting_issue_state?: string;
+  prorouting_issue_raised_at?: string;
   [k: string]: unknown;
 }
 

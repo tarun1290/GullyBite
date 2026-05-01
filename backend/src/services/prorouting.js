@@ -462,6 +462,58 @@ async function closeIssue(issueId, rating, refundByLsp, refundToClient) {
   }
 }
 
+// ─── FAKE-DELIVERY DISPUTE WRAPPER ────────────────────────────
+// Higher-level wrapper used by both the restaurant dashboard ("Report
+// Fake Delivery") and the admin dashboard. Takes a GullyBite order id
+// (not the Prorouting mp2 id), looks up the mp2 id off the order doc,
+// raises an FLM08 fulfillment issue with a fixed description, and
+// stamps the issue id + raised_at back onto the order. Soft-idempotent:
+// if Prorouting reports an existing open issue, returns
+// `{ success: false, message: 'already_exists' }` without throwing so
+// the route layer can return a clean 409. Distinct from the generic
+// raiseIssue() above, which lets admins attach arbitrary sub_categories.
+async function raiseDeliveryIssue(gullybiteOrderId) {
+  if (!gullybiteOrderId) {
+    return { success: false, message: 'order_id_required' };
+  }
+  const { col } = require('../config/database');
+  const order = await col('orders').findOne({ _id: gullybiteOrderId });
+  if (!order) return { success: false, message: 'order_not_found' };
+  if (!order.prorouting_order_id) {
+    return { success: false, message: 'delivery_not_dispatched' };
+  }
+
+  const SHORT = 'Fake Delivery by Rider';
+  const LONG = 'Order marked as delivered but customer did not receive it.';
+
+  let issue;
+  try {
+    issue = await raiseIssue(order.prorouting_order_id, 'FLM08', SHORT, LONG);
+  } catch (e) {
+    if (e instanceof DuplicateIssueError || e?.code === 'PROROUTING_DUPLICATE_ISSUE') {
+      log.warn({ gullybite_order_id: gullybiteOrderId, prorouting_order_id: order.prorouting_order_id }, 'raiseDeliveryIssue: open issue already present');
+      return { success: false, message: 'already_exists' };
+    }
+    log.warn({ err: e.message, gullybite_order_id: gullybiteOrderId }, 'raiseDeliveryIssue failed');
+    return { success: false, message: e.message || 'upstream_error' };
+  }
+
+  const raisedAt = new Date();
+  await col('orders').updateOne(
+    { _id: order._id },
+    {
+      $set: {
+        prorouting_issue_id: issue.issue_id,
+        prorouting_issue_state: issue.issue_state || 'OPEN',
+        prorouting_issue_raised_at: raisedAt,
+        updated_at: raisedAt,
+      },
+    },
+  );
+
+  return { success: true, issue_id: issue.issue_id };
+}
+
 module.exports = {
   getEstimate,
   createDeliveryOrder,
@@ -469,6 +521,7 @@ module.exports = {
   getTrackingInfo,
   getOrderStatus,
   raiseIssue,
+  raiseDeliveryIssue,
   getIssueStatus,
   closeIssue,
   DuplicateIssueError,

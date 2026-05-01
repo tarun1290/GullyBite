@@ -128,6 +128,7 @@ async function _handleStatusCallback(body) {
     // don't blow away previously-persisted values with undefined.
     const $set = { updated_at: new Date() };
     if (orderBlock.id != null)            $set.prorouting_order_id      = String(orderBlock.id);
+    if (orderBlock.state)                 $set.prorouting_state          = String(orderBlock.state);
     if (orderBlock.lsp)                   $set.lsp                       = orderBlock.lsp;
     if (orderBlock.price != null)         $set.prorouting_actual_price   = Number(orderBlock.price) || 0;
     if (orderBlock.distance != null)      $set.prorouting_distance       = Number(orderBlock.distance) || 0;
@@ -190,5 +191,152 @@ async function _handleTrackCallback(orders) {
     }
   }
 }
+
+// ─── POST /webhook/prorouting/track ───────────────────────────
+// Dedicated Track Callback endpoint. Prorouting POSTs a bulk array of
+// rider position updates here (configured via the Track Callback URL
+// field in their dashboard, separate from createasync's callback_url
+// which is for status events). Position updates are write-heavy and
+// volatile — we land them in Redis with a 10-minute TTL instead of the
+// orders collection so the dashboard's tracking-page poll can read them
+// cheaply without bloating Mongo. The status-callback endpoint at `/`
+// continues to handle lifecycle state separately.
+//
+// Body shape (per Prorouting spec):
+//   { status: 1, orders: [{ id, network_order_id, client_order_id,
+//                           rider: { last_location: { lat, lng, updated_at } },
+//                           url }] }
+//
+// Auth, no-state-transitions, fire-and-forget. Always 200 once auth
+// passes — never block Prorouting on internal failures.
+router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
+  const expectedKey = process.env.PROROUTING_API_KEY;
+  if (!expectedKey) {
+    log.error('PROROUTING_API_KEY not configured — rejecting track webhook');
+    return res.status(500).send('not configured');
+  }
+  const providedKey = req.get('x-pro-api-key');
+  if (!timingSafeStringEqual(providedKey, expectedKey)) {
+    log.warn({ ip: req.ip }, 'prorouting track webhook: invalid api key');
+    return res.status(401).send('unauthorized');
+  }
+
+  res.status(200).json({ ok: true });
+
+  const body = req.body || {};
+  if (body.status !== 1 && body.status !== '1') {
+    log.warn({ status: body.status, message: body.message }, 'prorouting track webhook: status != 1, skipping');
+    return;
+  }
+  const orders = Array.isArray(body.orders) ? body.orders : [];
+  if (!orders.length) {
+    log.warn('prorouting track webhook: empty orders array, nothing to do');
+    return;
+  }
+
+  let written = 0;
+  let sseEmitted = 0;
+  let socketEmitted = 0;
+  try {
+    const redis = require('../config/redis');
+    const sse = require('../services/sseConnections');
+    const { emitToRestaurant } = require('../utils/socketEmit');
+    const rc = await redis.getClient();
+
+    // Per-batch cache so the same client_order_id appearing twice in a
+    // batch (rare but possible during catch-up retries) doesn't trigger
+    // two findOne calls. Keyed by client_order_id; value is null when the
+    // lookup didn't find an order so we don't retry.
+    const orderCtxCache = new Map();
+    const ordersDb = (globalThis._mongoClient
+      ? globalThis._mongoClient.db('gullybite').collection('orders')
+      : null);
+
+    for (const o of orders) {
+      const cid = o?.client_order_id;
+      const lat = Number(o?.rider?.last_location?.lat);
+      const lng = Number(o?.rider?.last_location?.lng);
+      if (!cid) continue;
+      // Reject NaN, ±Infinity, AND the (0, 0) sentinel that Prorouting
+      // sometimes sends as a placeholder before the rider's GPS locks.
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      if (lat === 0 && lng === 0) continue;
+
+      const updatedAt = o?.rider?.last_location?.updated_at || new Date().toISOString();
+      const trackingUrl = o?.url ? String(o.url) : undefined;
+
+      const value = JSON.stringify({
+        lat,
+        lng,
+        updated_at: updatedAt,
+        ...(o?.id ? { prorouting_order_id: String(o.id) } : {}),
+        ...(trackingUrl ? { tracking_url: trackingUrl } : {}),
+      });
+      try {
+        await rc.set(`prorouting:rider:${cid}`, value, { EX: 600 });
+        written += 1;
+      } catch (err) {
+        log.warn({ err: err?.message, cid }, 'prorouting track: redis set failed');
+      }
+
+      // Resolve order → branch_id + restaurant_id, then push via SSE
+      // through the existing pushToRestaurant channel. Keyed per
+      // restaurant; sseConnections internally branch-filters by
+      // matching payload.branch_id against each connection's
+      // branchIds[] (see services/sseConnections.js:108-123). Failures
+      // here MUST NOT block Prorouting — wrap and warn only.
+      if (!ordersDb) continue;
+      try {
+        let ctx = orderCtxCache.get(cid);
+        if (ctx === undefined) {
+          const orderDoc = await ordersDb.findOne(
+            { _id: String(cid) },
+            { projection: { branch_id: 1, restaurant_id: 1 } }
+          );
+          ctx = orderDoc ? {
+            branch_id: orderDoc.branch_id ? String(orderDoc.branch_id) : null,
+            restaurant_id: orderDoc.restaurant_id ? String(orderDoc.restaurant_id) : null,
+          } : null;
+          orderCtxCache.set(cid, ctx);
+        }
+        if (!ctx) {
+          log.debug({ cid }, 'prorouting track: order not found, skipping SSE push');
+          continue;
+        }
+        if (!ctx.restaurant_id) {
+          log.debug({ cid }, 'prorouting track: order has no restaurant_id, skipping SSE push');
+          continue;
+        }
+
+        const ssePayload = {
+          order_id: String(cid),
+          branch_id: ctx.branch_id || undefined,
+          lat,
+          lng,
+          updated_at: updatedAt,
+          ...(trackingUrl ? { tracking_url: trackingUrl } : {}),
+        };
+        const delivered = sse.pushToRestaurant(ctx.restaurant_id, 'rider_location', ssePayload);
+        if (delivered > 0) sseEmitted += 1;
+
+        // Socket.io emit to the restaurant room — this is the channel
+        // the dashboard's SocketProvider actually subscribes to (the SSE
+        // push above lands in services/sseConnections, which only the
+        // staff app consumes today). emitToRestaurant is internally
+        // fail-silent and fire-and-forget per the canonical pattern at
+        // utils/socketEmit.js:25-34, matching every other emit site
+        // (orderStateEngine, webhooks/checkout, jobs/postPaymentJobs).
+        // Same ssePayload is reused — both channels see identical data.
+        emitToRestaurant(ctx.restaurant_id, 'rider_location', ssePayload);
+        socketEmitted += 1;
+      } catch (sseErr) {
+        log.warn({ err: sseErr?.message, cid }, 'prorouting track: SSE / socket push failed (continuing)');
+      }
+    }
+    log.debug({ count: orders.length, written, sseEmitted, socketEmitted }, 'prorouting track callback batch processed');
+  } catch (err) {
+    log.error({ err: err?.message, stack: err?.stack }, 'prorouting track callback handler failed');
+  }
+});
 
 module.exports = router;

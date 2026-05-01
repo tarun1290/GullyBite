@@ -1,9 +1,13 @@
 'use client';
 
 import type { CSSProperties, ChangeEvent } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import SectionError from '../../../components/dashboard/analytics/SectionError';
-import { getAdminOrders } from '../../../api/admin';
+import DeliveryProofPhotos from '../../../components/shared/DeliveryProofPhotos';
+import DeliveryTimeline from '../../../components/shared/DeliveryTimeline';
+import IssueStatusBadge from '../../../components/shared/IssueStatusBadge';
+import { useToast } from '../../../components/Toast';
+import { getAdminOrders, reportFakeDeliveryAdmin } from '../../../api/admin';
 
 const ORDERS_LIMIT = 50;
 
@@ -40,6 +44,30 @@ interface AdminOrderRow {
   total_rs?: number;
   status?: string;
   created_at?: string;
+  // Prorouting (3PL) proof URLs — populated by the status-callback handler
+  // on delivered/RTO orders. Surfaced via DeliveryProofPhotos in the row.
+  // The /api/admin/orders endpoint returns the full order doc unprojected,
+  // so these fields are present in the response when persisted.
+  prorouting_pickup_proof?: string;
+  prorouting_delivery_proof?: string;
+  // Prorouting state + per-state timestamps. Powers the inline
+  // DeliveryTimeline expansion — admins reconcile RTO orders by walking
+  // these stamps. Same source as the order detail modal on the
+  // restaurant side; kept name-for-name aligned with the Order type.
+  prorouting_state?: string;
+  prorouting_assigned_at?: string;
+  prorouting_pickedup_at?: string;
+  prorouting_delivered_at?: string;
+  prorouting_at_pickup_at?: string;
+  prorouting_at_delivery_at?: string;
+  prorouting_rto_initiated_at?: string;
+  prorouting_rto_delivered_at?: string;
+  prorouting_cancelled_at?: string;
+  // Prorouting dispute (fake-delivery, wrong-item, damage). Surfaced
+  // inline next to the DeliveryTimeline; admins can also raise FLM08
+  // disputes from here on behalf of restaurants.
+  prorouting_issue_id?: string;
+  prorouting_issue_raised_at?: string;
 }
 
 interface AdminOrdersResponse {
@@ -79,6 +107,7 @@ const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color
 const sel: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };
 
 export default function AdminOrdersPage() {
+  const { showToast } = useToast();
   const [status, setStatus] = useState<string>('');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
@@ -87,6 +116,27 @@ export default function AdminOrdersPage() {
   const [data, setData] = useState<AdminOrdersResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
+  // Per-row timeline expansion. Set of order ids whose Delivery Timeline
+  // detail row is currently visible. Cleared on filter change implicitly
+  // — when `data` reloads, ids that no longer appear in `orders` simply
+  // never render their detail row, so leaving stale ids in the set is
+  // harmless and saves a manual reset.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Per-row "Report Fake Delivery" busy state. Tracked as a Set rather
+  // than a single boolean so an admin can fire two reports back-to-back
+  // on different orders without the second click being blocked while
+  // the first is still in flight. Cleared on the row-level await.
+  const [reporting, setReporting] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,6 +157,29 @@ export default function AdminOrdersPage() {
   }, [status, dateFrom, dateTo, offset]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleReportFakeDelivery = useCallback(async (id: string) => {
+    if (!id || reporting.has(id)) return;
+    if (!window.confirm('Report this delivery as fake on behalf of the restaurant? This raises a formal dispute with the 3PL and cannot be undone.')) {
+      return;
+    }
+    setReporting((prev) => new Set(prev).add(id));
+    try {
+      const result = await reportFakeDeliveryAdmin(id);
+      showToast(`Dispute raised — issue ${result.issue_id}`, 'success');
+      await load();
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
+      const msg = e?.response?.data?.error || e?.message || 'Could not raise dispute';
+      showToast(msg, e?.response?.status === 409 ? 'warning' : 'error');
+    } finally {
+      setReporting((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }, [reporting, showToast, load]);
 
   const total = data?.total ?? 0;
   const orders = data?.orders ?? [];
@@ -149,6 +222,7 @@ export default function AdminOrdersPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
               <thead>
                 <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
+                  <th style={{ ...th, width: 28 }} aria-label="Expand timeline" />
                   <th style={th}>Order #</th>
                   <th style={th}>Restaurant</th>
                   <th style={th}>Branch</th>
@@ -156,29 +230,96 @@ export default function AdminOrdersPage() {
                   <th style={th}>Total</th>
                   <th style={th}>Status</th>
                   <th style={th}>Time</th>
+                  <th style={th}>Proofs</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={9} style={emptyCell}>Loading…</td></tr>
                 ) : orders.length === 0 ? (
-                  <tr><td colSpan={7} style={emptyCell}>No orders found</td></tr>
+                  <tr><td colSpan={9} style={emptyCell}>No orders found</td></tr>
                 ) : (
-                  orders.map((o) => (
-                    <tr key={o._id || o.order_number} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td style={td}><span className="mono">#{o.order_number}</span></td>
-                      <td style={td}>{o.business_name || '—'}</td>
-                      <td style={td}>{o.branch_name || '—'}</td>
-                      <td style={{ ...td, fontSize: '.76rem' }} className="mono">
-                        {customerLabel(o)}
-                      </td>
-                      <td style={td}><strong>₹{o.total_rs}</strong></td>
-                      <td style={td}><StatusBadge status={o.status} /></td>
-                      <td style={{ ...td, color: 'var(--dim)', fontSize: '.74rem' }}>
-                        {fmtTime(o.created_at)}
-                      </td>
-                    </tr>
-                  ))
+                  orders.map((o) => {
+                    const id = o._id || String(o.order_number || '');
+                    const isOpen = id ? expanded.has(id) : false;
+                    const hasTimeline = !!o.prorouting_state;
+                    return (
+                      <Fragment key={id || o.order_number}>
+                        <tr style={{ borderBottom: isOpen ? 'none' : '1px solid var(--rim)' }}>
+                          <td style={{ ...td, padding: '.4rem .3rem .4rem .7rem' }}>
+                            {hasTimeline ? (
+                              <button
+                                type="button"
+                                onClick={() => toggleExpanded(id)}
+                                aria-expanded={isOpen}
+                                aria-label={isOpen ? 'Hide delivery timeline' : 'Show delivery timeline'}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  padding: '.15rem .3rem',
+                                  cursor: 'pointer',
+                                  color: 'var(--dim)',
+                                  fontSize: '.7rem',
+                                  lineHeight: 1,
+                                  transform: isOpen ? 'rotate(90deg)' : 'rotate(0)',
+                                  transition: 'transform .15s ease',
+                                }}
+                              >
+                                ▶
+                              </button>
+                            ) : null}
+                          </td>
+                          <td style={td}><span className="mono">#{o.order_number}</span></td>
+                          <td style={td}>{o.business_name || '—'}</td>
+                          <td style={td}>{o.branch_name || '—'}</td>
+                          <td style={{ ...td, fontSize: '.76rem' }} className="mono">
+                            {customerLabel(o)}
+                          </td>
+                          <td style={td}><strong>₹{o.total_rs}</strong></td>
+                          <td style={td}><StatusBadge status={o.status} /></td>
+                          <td style={{ ...td, color: 'var(--dim)', fontSize: '.74rem' }}>
+                            {fmtTime(o.created_at)}
+                          </td>
+                          <td style={td}>
+                            <DeliveryProofPhotos
+                              pickupProof={o.prorouting_pickup_proof}
+                              deliveryProof={o.prorouting_delivery_proof}
+                              size={64}
+                              layout="vertical"
+                            />
+                          </td>
+                        </tr>
+                        {isOpen && hasTimeline && (
+                          <tr style={{ borderBottom: '1px solid var(--rim)', background: 'var(--ink2)' }}>
+                            <td />
+                            <td colSpan={8} style={{ padding: '.6rem 1rem 1rem' }}>
+                              <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.3rem', fontWeight: 600 }}>
+                                Delivery Timeline
+                              </div>
+                              <DeliveryTimeline order={o} />
+                              <IssueStatusBadge
+                                issueId={o.prorouting_issue_id}
+                                raisedAt={o.prorouting_issue_raised_at}
+                              />
+                              {o.status === 'DELIVERED' && !o.prorouting_issue_id && (
+                                <div style={{ marginTop: '.6rem' }}>
+                                  <button
+                                    type="button"
+                                    className="btn-del btn-sm"
+                                    onClick={() => handleReportFakeDelivery(id)}
+                                    disabled={reporting.has(id)}
+                                    style={{ fontSize: '.78rem' }}
+                                  >
+                                    {reporting.has(id) ? '…' : '⚠ Report Fake Delivery'}
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>

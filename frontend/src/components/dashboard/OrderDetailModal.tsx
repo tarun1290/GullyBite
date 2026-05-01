@@ -6,9 +6,14 @@ import {
   getDeliveryStatus,
   dispatchOrder,
   cancelDelivery,
+  reportFakeDelivery,
 } from '../../api/restaurant';
 import { useToast } from '../Toast';
 import type { Order, OrderItem } from '../../types';
+import DeliveryProofPhotos from '../shared/DeliveryProofPhotos';
+import DeliveryTimeline from '../shared/DeliveryTimeline';
+import IssueStatusBadge from '../shared/IssueStatusBadge';
+import RiderLocationCard from '../restaurant/RiderLocationCard';
 
 // Delivery-status → palette (mirrors statusColors map in legacy orders.js:165).
 const DELIVERY_STATUS_COLORS: Record<string, string> = {
@@ -309,6 +314,7 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [confirmCancelDelivery, setConfirmCancelDelivery] = useState<boolean>(false);
+  const [timelineOpen, setTimelineOpen] = useState<boolean>(false);
 
   const fetchAll = useCallback(async () => {
     if (!orderId) return;
@@ -355,6 +361,25 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
     } catch (err: unknown) {
       const e = err as { userMessage?: string; message?: string };
       showToast(e?.userMessage || e?.message || 'Dispatch failed', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReportFakeDelivery = async () => {
+    if (busy || !order) return;
+    if (!window.confirm('Report this delivery as fake? This raises a formal dispute with the 3PL and cannot be undone.')) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await reportFakeDelivery(orderId);
+      showToast(`Dispute raised — issue ${result.issue_id}`, 'success');
+      await fetchAll();
+    } catch (err: unknown) {
+      const e = err as { response?: { status?: number; data?: { error?: string } }; userMessage?: string; message?: string };
+      const msg = e?.response?.data?.error || e?.userMessage || e?.message || 'Could not raise dispute';
+      showToast(msg, e?.response?.status === 409 ? 'warning' : 'error');
     } finally {
       setBusy(false);
     }
@@ -483,6 +508,86 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
                 onCancelDelivery={handleCancelDelivery}
                 busy={busy}
               />
+
+              {(delivery?.status === 'assigned' || delivery?.status === 'picked_up') && (
+                <RiderLocationCard orderId={orderId} />
+              )}
+
+              {order.prorouting_state && (
+                <div
+                  style={{
+                    marginTop: '.6rem',
+                    border: '1px solid var(--rim)',
+                    borderRadius: 8,
+                    background: 'var(--ink2)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setTimelineOpen((v) => !v)}
+                    aria-expanded={timelineOpen}
+                    style={{
+                      width: '100%',
+                      background: 'none',
+                      border: 'none',
+                      padding: '.55rem .8rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '.5rem',
+                      cursor: 'pointer',
+                      fontSize: '.8rem',
+                      fontWeight: 600,
+                      color: 'var(--tx)',
+                    }}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        display: 'inline-block',
+                        transition: 'transform .15s ease',
+                        transform: timelineOpen ? 'rotate(90deg)' : 'rotate(0)',
+                        fontSize: '.7rem',
+                        color: 'var(--dim)',
+                      }}
+                    >
+                      ▶
+                    </span>
+                    Delivery Timeline
+                  </button>
+                  {timelineOpen && (
+                    <div style={{ padding: '.4rem .9rem .8rem 1.6rem' }}>
+                      <DeliveryTimeline order={order} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ marginTop: '.6rem' }}>
+                <DeliveryProofPhotos
+                  pickupProof={order.prorouting_pickup_proof}
+                  deliveryProof={order.prorouting_delivery_proof}
+                />
+              </div>
+
+              <IssueStatusBadge
+                issueId={order.prorouting_issue_id}
+                raisedAt={order.prorouting_issue_raised_at}
+              />
+
+              {order.status === 'DELIVERED' && !order.prorouting_issue_id && (
+                <div style={{ marginTop: '.6rem' }}>
+                  <button
+                    type="button"
+                    className="btn-del btn-sm"
+                    onClick={handleReportFakeDelivery}
+                    disabled={busy}
+                    style={{ fontSize: '.78rem' }}
+                  >
+                    {busy ? '…' : '⚠ Report Fake Delivery'}
+                  </button>
+                </div>
+              )}
 
               {confirmCancelDelivery && (
                 <div
