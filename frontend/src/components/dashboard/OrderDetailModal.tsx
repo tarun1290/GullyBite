@@ -45,6 +45,7 @@ type LooseOrder = Order & {
   customer_delivery_rs?: number | string | null;
   customer_delivery_gst_rs?: number | string | null;
   delivery_fee_rs?: number | string | null;
+  delivery_fee_total_rs?: number | string | null;
   discount_rs?: number | string | null;
   coupon_code?: string | null;
   delivery_fee_breakdown?: DeliveryFeeBreakdown | null;
@@ -200,12 +201,17 @@ function SettlementNote({ order }: ChargeBreakdownProps) {
 interface DeliverySectionProps {
   orderId: string;
   delivery: DeliveryStatus | null;
+  // Gross delivery fee captured at checkout (order.delivery_fee_total_rs).
+  // Distinct from delivery.cost_rs (the 3PL invoice) — we display the
+  // checkout-time fee here so admins see what the customer was charged
+  // for delivery, not what the LSP billed us.
+  deliveryFeeTotalRs?: number | string | null;
   onDispatch: (id: string) => void | Promise<void>;
   onCancelDelivery: (id: string) => void | Promise<void>;
   busy: boolean;
 }
 
-function DeliverySection({ orderId, delivery, onDispatch, onCancelDelivery, busy }: DeliverySectionProps) {
+function DeliverySection({ orderId, delivery, deliveryFeeTotalRs, onDispatch, onCancelDelivery, busy }: DeliverySectionProps) {
   if (!delivery) return null;
   const status = delivery.status || 'pending';
   const color = DELIVERY_STATUS_COLORS[status] || '#6b7280';
@@ -236,8 +242,8 @@ function DeliverySection({ orderId, delivery, onDispatch, onCancelDelivery, busy
           </a>
         )}
         {delivery.estimated_mins && <span>⏱ ~{delivery.estimated_mins} min</span>}
-        {delivery.cost_rs && (
-          <span style={{ color: 'var(--dim)' }}>₹{parseFloat(String(delivery.cost_rs)).toFixed(0)} 3PL cost</span>
+        {deliveryFeeTotalRs != null && parseFloat(String(deliveryFeeTotalRs)) > 0 && (
+          <span style={{ color: 'var(--dim)' }}>₹{parseFloat(String(deliveryFeeTotalRs)).toFixed(0)} 3PL cost</span>
         )}
       </div>
       <div style={{ marginTop: '.5rem', display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
@@ -472,6 +478,7 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
               <DeliverySection
                 orderId={orderId}
                 delivery={delivery}
+                deliveryFeeTotalRs={order.delivery_fee_total_rs}
                 onDispatch={handleDispatch}
                 onCancelDelivery={handleCancelDelivery}
                 busy={busy}
