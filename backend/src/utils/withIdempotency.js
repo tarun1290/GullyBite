@@ -159,6 +159,50 @@ async function withIdempotency(key, type, handler, options = {}) {
   }
 
   if (existing.status === STATUS.SUCCESS) {
+    // ── Status-aware bypass for 'order' type ────────────────────
+    // If the cached response references an order that has since reached
+    // a terminal state (EXPIRED, CANCELLED, REJECTED_BY_RESTAURANT,
+    // RESTAURANT_TIMEOUT), the cache is a dead end — handing the caller
+    // back the expired order's id would anchor a fresh checkout (Meta
+    // payload, payments row, etc.) to a doc no flow will ever advance.
+    // Evict the row and recurse so a brand-new order is created.
+    //
+    // Uses globalThis._mongoClient.db('gullybite') explicitly per spec
+    // — keeps the lookup pinned to the prod db even if MONGODB_DB env
+    // var is overridden in some context. Lookup errors fall through
+    // (return the cached response anyway, matching pre-fix behaviour)
+    // so a transient db hiccup never blocks legitimate idempotency hits.
+    if ((type === 'order' || (typeof key === 'string' && key.startsWith('order:'))) && existing.response) {
+      const cachedOrderId =
+        existing.response?._id ||
+        existing.response?.id ||
+        existing.reference_id;
+      if (cachedOrderId) {
+        const STALE_STATUSES = ['EXPIRED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT'];
+        try {
+          const client = globalThis._mongoClient;
+          if (client) {
+            const orderDoc = await client.db('gullybite').collection('orders').findOne(
+              { _id: String(cachedOrderId) },
+              { projection: { status: 1 } }
+            );
+            if (orderDoc && STALE_STATUSES.includes(orderDoc.status)) {
+              log.info(
+                { key, type, cachedOrderId, staleStatus: orderDoc.status },
+                'Idempotency: cached order is stale, evicting cache and re-running handler'
+              );
+              await col(COLL).deleteOne({ _id: key }).catch(() => { /* best-effort */ });
+              return withIdempotency(key, type, handler, options);
+            }
+          }
+        } catch (lookupErr) {
+          log.warn(
+            { err: lookupErr?.message, key, cachedOrderId },
+            'Stale-order lookup failed — returning cached response anyway'
+          );
+        }
+      }
+    }
     log.info({ key, type }, 'Idempotency hit: returning cached success response');
     return existing.response;
   }
