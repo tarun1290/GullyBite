@@ -675,6 +675,19 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
           );
           effectiveDeliveryFeeRs = effectiveCharges.customer_delivery_rs;
           effectiveTotalRs = effectiveCharges.customer_total_rs;
+          // Refresh the breakdown's gross fee + provider so the persisted
+          // order shows the live Prorouting quote (Stage 2) rather than
+          // the stale dynamic-pricing snapshot (Stage 1, e.g. mock@43.81)
+          // that was captured during buildCartFromCatalogOrder. Other
+          // breakdown fields (distanceKm, surge, etc.) are preserved —
+          // they're still useful diagnostic context.
+          if (session.deliveryFeeBreakdown && typeof session.deliveryFeeBreakdown === 'object') {
+            session.deliveryFeeBreakdown = {
+              ...session.deliveryFeeBreakdown,
+              totalFeeRs: proroutingEstimatePrice,
+              providerName: 'prorouting',
+            };
+          }
           log.info({ proroutingEstimatePrice, proroutingQuoteId, customerDeliveryRs: effectiveCharges.customer_delivery_rs }, 'prorouting estimate applied');
         } catch (estErr) {
           needsManualDispatch = true;
