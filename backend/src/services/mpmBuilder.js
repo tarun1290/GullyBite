@@ -137,6 +137,26 @@ async function buildBranchMPMs(branchId, restaurantId) {
 
   if (!items.length) return [];
 
+  // Debug: dump every fetched item with the branch field that matched.
+  // The reader-side `$or` ({ branch_id } OR { branch_ids: branchId })
+  // is the hot path that's caught a few cross-branch leaks before, so
+  // log per-item which side won so a stray scalar→array drift shows up
+  // immediately in the logs.
+  log.info({
+    branchId,
+    branchName: branch.name,
+    itemCount: items.length,
+    items: items.map((it) => ({
+      _id: it._id,
+      name: it.name,
+      matched: it.branch_id === branchId
+        ? 'branch_id'
+        : (Array.isArray(it.branch_ids) && it.branch_ids.includes(branchId))
+          ? 'branch_ids'
+          : 'unknown',
+    })),
+  }, 'mpmBuilder: branch products fetched');
+
   // Resolve category names from category_ids
   const catIds = [...new Set(items.filter(i => i.category_id).map(i => i.category_id))];
   const catNameLookup = {};

@@ -6,7 +6,9 @@ import {
   getSettlementById,
   getSettlementMetaBreakdown,
   downloadSettlement,
+  getBranches,
 } from '../../../api/restaurant';
+import type { Branch } from '../../../types';
 
 const STATUS_CLS: Record<string, string> = { PAID: 'bg', PENDING: 'ba', PROCESSING: 'bb', FAILED: 'br' };
 
@@ -171,15 +173,34 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<MetaData | null>(null);
   const [downloading, setDownloading] = useState<boolean>(false);
+  // Branch filter — same shape as SettlementsSection's payments-log
+  // dropdown. null = "All Branches" → branch_id is omitted from the
+  // query, server returns the full settlement order list. Backend also
+  // re-validates the id against the restaurant's branch set so a stale
+  // value can't leak cross-tenant data.
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getBranches()
+      .then((rows) => { if (!cancelled) setBranches(Array.isArray(rows) ? rows : []); })
+      .catch(() => { /* dropdown silently degrades to "All Branches" only */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!settlementId) return undefined;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setDetail(null);
-    setMeta(null);
-    getSettlementById(settlementId)
+    // Don't reset `detail` on a branch-only refetch — the settlement
+    // breakdown panel reads restaurant-wide totals that don't change
+    // with the branch. Leaving `detail` in place avoids flashing
+    // "Loading…" over the breakdown every dropdown change; the orders
+    // list updates atomically when the response lands.
+    const params = selectedBranchId ? { branch_id: selectedBranchId } : {};
+    getSettlementById(settlementId, params)
       .then((d) => { if (!cancelled) setDetail(d as SettlementDetail | null); })
       .catch((e: unknown) => {
         if (cancelled) return;
@@ -187,6 +208,15 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
         setError(err?.response?.data?.error || err?.message || 'Failed to load');
       })
       .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [settlementId, selectedBranchId]);
+
+  // Meta-breakdown is settlement-wide (not branch-scoped), so it only
+  // needs to (re)load when the settlement itself changes.
+  useEffect(() => {
+    if (!settlementId) return undefined;
+    let cancelled = false;
+    setMeta(null);
     getSettlementMetaBreakdown(settlementId)
       .then((m) => { if (!cancelled) setMeta(m as MetaData | null); })
       .catch(() => { /* silent */ });
@@ -315,37 +345,65 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
 
               <MetaBreakdown data={meta} />
 
+              <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '.4rem' }}>
+                <span style={{ fontSize: '.72rem', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--mute,var(--dim))' }}>
+                  Orders in this Settlement{detail.orders ? ` (${detail.orders.length})` : ''}
+                </span>
+                <select
+                  id="fin-set-branch"
+                  value={selectedBranchId ?? ''}
+                  onChange={(e) => setSelectedBranchId(e.target.value || null)}
+                  style={{ marginLeft: 'auto', fontSize: '.75rem', padding: '.28rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                >
+                  <option value="">All Branches</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedBranchId && detail.orders ? (() => {
+                const branch = branches.find((b) => b.id === selectedBranchId);
+                const branchName = branch?.name || 'Selected branch';
+                const count = detail.orders.length;
+                const revenueRs = detail.orders.reduce((sum, o) => sum + (Number(o.total_rs) || 0), 0);
+                return (
+                  <div style={{ fontSize: '.78rem', color: 'var(--dim)', marginBottom: '.5rem' }}>
+                    {count} order{count === 1 ? '' : 's'} · {formatINR(revenueRs)} revenue from {branchName} in this settlement.
+                  </div>
+                );
+              })() : null}
+
               {detail.orders?.length ? (
-                <>
-                  <div style={{ fontSize: '.72rem', fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--mute,var(--dim))', marginBottom: '.4rem' }}>
-                    Orders in this Settlement ({detail.orders.length})
-                  </div>
-                  <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--rim)', borderRadius: 8 }}>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Order #</th>
-                          <th>Date</th>
-                          <th>Amount</th>
-                          <th>Status</th>
+                <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--rim)', borderRadius: 8 }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Order #</th>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detail.orders.map((o, idx) => (
+                        <tr key={o._id || o.order_number || idx}>
+                          <td style={{ fontFamily: 'monospace', fontSize: '.75rem' }}>
+                            {o.order_number || o._id}
+                          </td>
+                          <td style={{ fontSize: '.78rem' }}>{periodDisplay(o.delivered_at || o.created_at)}</td>
+                          <td>{formatINR(o.total_rs)}</td>
+                          <td><span className="badge bg">{o.status || 'Delivered'}</span></td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {detail.orders.map((o, idx) => (
-                          <tr key={o._id || o.order_number || idx}>
-                            <td style={{ fontFamily: 'monospace', fontSize: '.75rem' }}>
-                              {o.order_number || o._id}
-                            </td>
-                            <td style={{ fontSize: '.78rem' }}>{periodDisplay(o.delivered_at || o.created_at)}</td>
-                            <td>{formatINR(o.total_rs)}</td>
-                            <td><span className="badge bg">{o.status || 'Delivered'}</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              ) : null}
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ fontSize: '.78rem', color: 'var(--dim)', padding: '.6rem .2rem' }}>
+                  No orders {selectedBranchId ? 'from this branch' : ''} in this settlement.
+                </div>
+              )}
             </>
           )}
         </div>

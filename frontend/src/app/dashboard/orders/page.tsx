@@ -45,7 +45,11 @@ export default function OrdersPage() {
   // PAID. Respects the restaurant's `notification_settings.new_order`
   // preference internally. stopAll() runs on unmount so navigating
   // away from the orders tab silences any in-flight alarm.
-  const { syncWithOrders, stopAll } = useNewOrderSound();
+  // markOrderActioned is the immediate-silence escape hatch — called
+  // from handleStatusChange the moment updateOrderStatus resolves, so
+  // the alarm stops on click rather than waiting for the silent
+  // refetch + syncWithOrders round-trip (~100-300ms otherwise).
+  const { syncWithOrders, stopAll, markOrderActioned } = useNewOrderSound();
 
   const fetchOrders = useCallback(
     async (f: FilterValue, opts: FetchOpts = {}) => {
@@ -112,6 +116,11 @@ export default function OrdersPage() {
       setRowBusy((b) => ({ ...b, [orderId]: true }));
       try {
         await updateOrderStatus(orderId, nextStatus);
+        // Silence the alarm the moment the server confirms the
+        // transition. Covers both accept (PAID → PREPARING) and
+        // decline (PAID → CANCELLED) paths since both flow through
+        // here. No-op when the order wasn't ringing.
+        markOrderActioned(orderId);
         showToast('Order updated ✓', 'success');
         await fetchOrders(filter, { silent: true });
       } catch (e: unknown) {
@@ -125,7 +134,7 @@ export default function OrdersPage() {
         });
       }
     },
-    [fetchOrders, filter, showToast],
+    [fetchOrders, filter, showToast, markOrderActioned],
   );
 
   const handleViewDetail = useCallback((orderId: string) => {

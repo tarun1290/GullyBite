@@ -170,7 +170,7 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
 
   const calc = await calculateSettlement(rid);
 
-  // ── Monthly platform fee + GST (₹4,999/month + 18%) ───────────
+  // ── Monthly platform fee + GST (₹3,000/month + 18% = ₹3,540) ──
   // Deducted from the SECOND billing month onward. First month waives
   // BOTH (collected upfront at onboarding, GST-inclusive). Two separate
   // ledger debits — fee and GST — keyed for monthly idempotency:
@@ -184,8 +184,8 @@ async function executeSettlement(restaurantId, { trigger = 'manual', payout_mode
   // IST month key — the platform's billing periods follow IST, not UTC.
   const istNow = new Date(Date.now() + 5.5 * 60 * 60 * 1000);
   const monthKey = istNow.toISOString().slice(0, 7); // 'YYYY-MM'
-  const platformFeePaise = Math.round(FINANCE_CONFIG.monthlyPlatformFeeRs * 100);
-  const platformFeeGstPaise = Math.round(platformFeePaise * (FINANCE_CONFIG.gstPlatformFeePct / 100));
+  const platformFeePaise = FINANCE_CONFIG.subscriptionPricePaise;
+  const platformFeeGstPaise = Math.round(platformFeePaise * FINANCE_CONFIG.gstRate);
   const platformFeeWaived = isFirstBillingMonth(restaurant);
 
   if (platformFeeWaived) {

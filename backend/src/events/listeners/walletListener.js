@@ -15,7 +15,7 @@ const { col } = require('../../config/database');
 const walletSvc = require('../../services/wallet');
 const log = require('../../utils/logger').child({ component: 'WalletListener' });
 
-// Zero default — flat ₹4,999/month subscription, no per-order commission.
+// Zero default — flat ₹3,000/month subscription, no per-order commission.
 // Per-restaurant override via restaurants.commission_pct still wins.
 const DEFAULT_COMMISSION_PCT = 0;
 

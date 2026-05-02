@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import useAnalyticsFetch from '../analytics/useAnalyticsFetch';
 import SectionError from '../analytics/SectionError';
 import SettlementDetailModal from './SettlementDetailModal';
-import { getSettlements, getPayments } from '../../../api/restaurant';
+import { getSettlements, getPayments, getBranches } from '../../../api/restaurant';
+import type { Branch } from '../../../types';
 
 const SETTLE_LIMIT = 10;
 const PAY_LIMIT = 15;
@@ -206,15 +207,32 @@ export default function SettlementsSection() {
   const [payFromInput, setPayFromInput] = useState<string>('');
   const [payToInput, setPayToInput] = useState<string>('');
   const [payFilter, setPayFilter] = useState<PayFilter>({ from: '', to: '' });
+  // Branch filter — applies immediately on change (unlike the date inputs
+  // which need the Filter button). null = "All Branches" → branch_id is
+  // omitted from the query, server falls back to the existing $in over
+  // all the restaurant's branches. The backend also re-validates the id
+  // against the restaurant's branch set, so a stale value in this state
+  // can't leak cross-tenant data.
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getBranches()
+      .then((rows) => { if (!cancelled) setBranches(Array.isArray(rows) ? rows : []); })
+      .catch(() => { /* dropdown silently degrades to "All Branches" only */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const paymentsQ = useAnalyticsFetch<PaymentsResponse | null>(
     useCallback(() => {
       const params: Record<string, string | number> = { page: payPage, limit: PAY_LIMIT };
       if (payFilter.from) params.from = payFilter.from;
       if (payFilter.to) params.to = payFilter.to;
+      if (selectedBranchId) params.branch_id = selectedBranchId;
       return getPayments(params) as Promise<PaymentsResponse | null>;
-    }, [payPage, payFilter.from, payFilter.to]),
-    [payPage, payFilter.from, payFilter.to],
+    }, [payPage, payFilter.from, payFilter.to, selectedBranchId]),
+    [payPage, payFilter.from, payFilter.to, selectedBranchId],
   );
 
   const applyPayFilter = () => {
@@ -249,7 +267,21 @@ export default function SettlementsSection() {
       <div className="card" style={{ marginBottom: '1.2rem' }}>
         <div className="ch">
           <h3>Payments Log</h3>
-          <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <select
+              id="fin-pay-branch"
+              value={selectedBranchId ?? ''}
+              onChange={(e) => {
+                setSelectedBranchId(e.target.value || null);
+                setPayPage(1);
+              }}
+              style={{ fontSize: '.75rem', padding: '.28rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+            >
+              <option value="">All Branches</option>
+              {branches.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
             <input
               type="date"
               id="fin-pay-from"

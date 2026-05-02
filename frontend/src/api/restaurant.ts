@@ -316,8 +316,8 @@ export async function getPenalties(from?: string, to?: string): Promise<Penaltie
   return data;
 }
 
-export async function getSettlementById(id: string): Promise<unknown> {
-  const { data } = await client.get(`/api/restaurant/financials/settlements/${id}`);
+export async function getSettlementById(id: string, params: QueryParams = {}): Promise<unknown> {
+  const { data } = await client.get(`/api/restaurant/financials/settlements/${id}`, { params });
   return data;
 }
 

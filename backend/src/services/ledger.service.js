@@ -28,7 +28,7 @@ async function _insert({ restaurantId, type, amountPaise, refType, refId, status
   //   payout            — settlement payout to merchant (debit, refId = razorpay payout_id)
   //                       Compensating credits on failed payouts use refId '<payout_id>:reversal'
   //   fee               — generic platform-side fee (legacy)
-  //   platform_fee      — monthly ₹4,999 subscription (debit, refId = '<rid>:YYYY-MM')
+  //   platform_fee      — monthly ₹3,000 subscription (debit, refId = '<rid>:YYYY-MM')
   //   platform_fee_gst  — 18% GST on platform_fee   (debit, refId = '<rid>:YYYY-MM:gst')
   //   referral          — 7.5% commission on GBREF orders (debit, refId = '<order_id>:referral')
   //                       Reversed on order cancel via credit, refId = '<order_id>:referral:reversal'

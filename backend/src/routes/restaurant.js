@@ -8760,8 +8760,23 @@ router.get('/financials/settlements/:id', requireAuth, requireApproved, async (r
     // Fetch orders for this settlement. Exclude delivery_address snapshot,
     // customer contact fields, and raw payment objects — the settlement view
     // needs totals per order, not customer PII.
+    //
+    // branch_id query param narrows the order list to a single branch
+    // for the per-branch breakdown drawer. Same tenant-safety pattern as
+    // /financials/payments above: re-validate the supplied id is in the
+    // restaurant's branch set; a forged id silently falls through to the
+    // unfiltered settlement scope rather than 4xx-ing.
+    const orderFilter = { settlement_id: req.params.id };
+    const { branch_id } = req.query;
+    if (branch_id) {
+      const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1 }).toArray();
+      const branchIds = branches.map(b => String(b._id));
+      if (branchIds.includes(String(branch_id))) {
+        orderFilter.branch_id = String(branch_id);
+      }
+    }
     const orders = await col('orders').find(
-      { settlement_id: req.params.id },
+      orderFilter,
       {
         projection: {
           _id: 1, order_number: 1, status: 1, total_rs: 1, subtotal_rs: 1,
@@ -8781,11 +8796,18 @@ router.get('/financials/payments', requireAuth, requireApproved, async (req, res
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 30;
     const skip = (page - 1) * limit;
-    const { from, to, status } = req.query;
+    const { from, to, status, branch_id } = req.query;
     const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1 }).toArray();
     const branchIds = branches.map(b => String(b._id));
-    // Get order IDs for this restaurant
+    // Get order IDs for this restaurant. branch_id query param narrows
+    // the branch filter to a single tenant-owned branch; we still verify
+    // it's in the restaurant's branch set to keep the cross-tenant guard
+    // intact (a forged branch_id from another restaurant just falls
+    // through to the existing $in scope and matches nothing).
     const orderMatch = { branch_id: { $in: branchIds } };
+    if (branch_id && branchIds.includes(String(branch_id))) {
+      orderMatch.branch_id = String(branch_id);
+    }
     if (from || to) {
       orderMatch.created_at = {};
       if (from) orderMatch.created_at.$gte = new Date(from);

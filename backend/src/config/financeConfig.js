@@ -14,15 +14,17 @@ const FINANCE_CONFIG = {
 
   // ── Platform Fee (commission on food revenue) ─────────────
   // Business model: ZERO commission on regular orders. Restaurants pay a
-  // flat ₹4,999/month subscription instead. Per-restaurant override via
-  // restaurant.commission_pct still takes priority for legacy / bespoke deals.
+  // flat ₹3,000/month subscription instead (₹3,540/month all-in with 18%
+  // GST). Per-restaurant override via restaurant.commission_pct still
+  // takes priority for legacy / bespoke deals.
   defaultPlatformFeePercent: parseFloat(process.env.PLATFORM_FEE_PCT || '0'),
 
   // ── Monthly Platform Fee (flat subscription) ──────────────
-  // ₹4,999/month per restaurant. Deducted from settlement starting the
-  // SECOND billing month — first month is collected upfront at onboarding,
-  // see shouldDeductPlatformFee() / isFirstBillingMonth() below.
-  monthlyPlatformFeeRs: parseFloat(process.env.MONTHLY_PLATFORM_FEE_RS || '4999'),
+  // ₹3,000/month per restaurant (+ 18% GST = ₹3,540 all-in). Deducted
+  // from settlement starting the SECOND billing month — first month is
+  // collected upfront at onboarding, see shouldDeductPlatformFee() /
+  // isFirstBillingMonth() below.
+  monthlyPlatformFeeRs: parseFloat(process.env.MONTHLY_PLATFORM_FEE_RS || '3000'),
 
   // ── Referral Fee ──────────────────────────────────────────
   // 7.5% commission ONLY on GBREF-referred orders, plus 18% GST on the
@@ -49,6 +51,20 @@ const FINANCE_CONFIG = {
   firstMonthAdvancePlatformFee: process.env.FIRST_MONTH_ADVANCE_PLATFORM_FEE !== 'false', // default true
   firstMonthAdvancePlatformFeeGst: process.env.FIRST_MONTH_ADVANCE_PLATFORM_FEE_GST !== 'false',
 };
+
+// ── Derived constants (do not override directly) ───────────────
+// Alternate-unit aliases for the two values most commonly referenced
+// outside this file. Derived from monthlyPlatformFeeRs and
+// gstPlatformFeePct so an env override of either source value flows
+// through without a second variable to keep in sync.
+//   subscriptionPricePaise — paise form of the monthly subscription
+//                            (default 300000 ↔ ₹3,000). Used by
+//                            settlement.service for ledger entries.
+//   gstRate                — decimal form of gstPlatformFeePct
+//                            (default 0.18 ↔ 18%). Drop-in for any
+//                            multiplier-style GST math.
+FINANCE_CONFIG.subscriptionPricePaise = Math.round(FINANCE_CONFIG.monthlyPlatformFeeRs * 100);
+FINANCE_CONFIG.gstRate = FINANCE_CONFIG.gstPlatformFeePct / 100;
 
 /**
  * Get the effective platform fee percentage for a restaurant.

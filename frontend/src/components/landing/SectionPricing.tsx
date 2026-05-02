@@ -52,7 +52,7 @@ export default function SectionPricing({ onGetStarted }: SectionPricingProps) {
         <div className="landing-pricing-card">
           <div className="landing-pricing-plan">Restaurant plan</div>
           <div className="landing-pricing-price">
-            <span className="landing-pricing-amount">&#8377;2,999</span>
+            <span className="landing-pricing-amount">&#8377;3,000</span>
             <span className="landing-pricing-period">/month</span>
           </div>
           <div className="landing-pricing-meta">+ &#8377;5&ndash;10 per order processed</div>
