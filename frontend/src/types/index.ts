@@ -128,6 +128,16 @@ export interface Branch {
   fssai_number?: string;
   gst_number?: string;
   catalog_id?: string;
+  // Subscription / billing state per branch. Drives the paywall gate
+  // on creation and ongoing access. paid_through_date is set forward
+  // by each successful billing cycle and consulted by the billing job
+  // to flip status to 'paused' when it elapses.
+  //   pending_payment — awaiting first/next subscription payment
+  //   active          — paid through paid_through_date
+  //   paused          — auto-paused (paid_through_date elapsed)
+  //   force_paused    — admin-paused (manual ops action)
+  subscription_status?: 'pending_payment' | 'active' | 'paused' | 'force_paused';
+  paid_through_date?: string | null;
   // Per-branch menu-item count, attached server-side by GET /branches.
   // Used by the menu page's per-branch sync badge ("✓ Catalog" vs "✗ No
   // Items"). Optional because callers shaped through other code paths

@@ -19,7 +19,7 @@ const log = require('../utils/logger').child({ component: 'ledger' });
 
 const COLLECTION = 'restaurant_ledger';
 
-async function _insert({ restaurantId, type, amountPaise, refType, refId, status, notes }) {
+async function _insert({ restaurantId, type, amountPaise, refType, refId, status, notes, branchId }) {
   if (!restaurantId) throw new Error('ledger: restaurant_id required');
   if (!['credit', 'debit'].includes(type)) throw new Error(`ledger: bad type=${type}`);
   // ref_type allowlist:
@@ -36,7 +36,11 @@ async function _insert({ restaurantId, type, amountPaise, refType, refId, status
   //                       Reversed via credit, refId = '<order_id>:referral:gst:reversal'
   //   marketing         — WhatsApp marketing message charges (debit, refId = '<rid>:YYYY-MM:marketing' or per-message)
   //   tds               — TDS withheld u/s 194O (debit, refId = '<rid>:tds:YYYY-MM')
-  if (!['payment', 'refund', 'payout', 'fee', 'platform_fee', 'platform_fee_gst', 'referral', 'referral_fee_gst', 'marketing', 'tds'].includes(refType)) {
+  //   branch_subscription — per-branch paywall renewal cycle (debit, refId = '<branch_id>:<cycle-end-iso>')
+  //                       Carries `branch_id` on the entry doc since the
+  //                       fee is scoped to a specific branch, unlike the
+  //                       restaurant-wide entries above.
+  if (!['payment', 'refund', 'payout', 'fee', 'platform_fee', 'platform_fee_gst', 'referral', 'referral_fee_gst', 'marketing', 'tds', 'branch_subscription'].includes(refType)) {
     throw new Error(`ledger: bad ref_type=${refType}`);
   }
   if (!refId) throw new Error('ledger: ref_id required');
@@ -52,6 +56,10 @@ async function _insert({ restaurantId, type, amountPaise, refType, refId, status
     amount_paise: amount,
     ref_type: refType,
     ref_id: String(refId),
+    // Optional branch scope. Only populated for entries that pertain to
+    // a specific branch (currently: ref_type='branch_subscription').
+    // Restaurant-wide entries leave this null.
+    ...(branchId ? { branch_id: String(branchId) } : {}),
     status,
     notes: notes || null,
     created_at: now,
@@ -75,15 +83,15 @@ async function _insert({ restaurantId, type, amountPaise, refType, refId, status
 }
 
 // Payment credit — arrives only from the verified webhook, so always 'completed'.
-async function credit({ restaurantId, amountPaise, refType, refId, notes, status }) {
-  return _insert({ restaurantId, type: 'credit', amountPaise, refType, refId, status: status || 'completed', notes });
+async function credit({ restaurantId, amountPaise, refType, refId, notes, status, branchId }) {
+  return _insert({ restaurantId, type: 'credit', amountPaise, refType, refId, status: status || 'completed', notes, branchId });
 }
 
 // Debit — may be 'pending' (refund initiated, awaiting webhook) or
 // 'completed' (webhook confirmed). Default 'completed' for back-compat
 // with payout/fee callers.
-async function debit({ restaurantId, amountPaise, refType, refId, notes, status }) {
-  return _insert({ restaurantId, type: 'debit', amountPaise, refType, refId, status: status || 'completed', notes });
+async function debit({ restaurantId, amountPaise, refType, refId, notes, status, branchId }) {
+  return _insert({ restaurantId, type: 'debit', amountPaise, refType, refId, status: status || 'completed', notes, branchId });
 }
 
 // Phase 3.1: flip an existing 'pending' entry to 'completed'. Used by

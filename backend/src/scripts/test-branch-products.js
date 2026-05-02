@@ -63,6 +63,19 @@ require.cache[require.resolve('../config/database')] = {
   },
 };
 
+// Stub the payment service so createBranch's Razorpay order creation
+// runs without hitting the real API (and without needing RAZORPAY_KEY_ID
+// in the env). Same require.cache pattern as the database mock above.
+require.cache[require.resolve('../services/payment')] = {
+  exports: {
+    _getRzp: () => ({
+      orders: {
+        create: async (opts) => ({ id: 'rzp_test_' + Math.random().toString(36).slice(2), ...opts }),
+      },
+    }),
+  },
+};
+
 const branchSvc  = require('../services/branch.service');
 const productSvc = require('../services/product.service');
 const catalogGuard = require('../services/catalog.service');
@@ -85,7 +98,7 @@ const fail = (n, e) => { failed++; console.log(`  ✗ ${n} — ${e?.message || e
     await branchSvc.createBranch({ restaurant_id: 'r1', name: 'A', fssai_number: '12345678901234', gst_number: 'not-a-gstin' });
     fail('bad gst rejected');
   } catch (e) { ok('bad gst rejected'); }
-  const b = await branchSvc.createBranch({ restaurant_id: 'r1', name: 'Downtown', city: 'BLR', fssai_number: '12345678901234' });
+  const { branch: b } = await branchSvc.createBranch({ restaurant_id: 'r1', name: 'Downtown', city: 'BLR', fssai_number: '12345678901234' });
   (b.is_active === true && b.fssai_number === '12345678901234' ? ok : l => fail(l))('branch created with is_active=true');
 
   console.log('\n[2] Product created WITHOUT branch defaults to is_unassigned=true');
@@ -119,7 +132,7 @@ const fail = (n, e) => { failed++; console.log(`  ✗ ${n} — ${e?.message || e
   (e2.length === 1 && s2.length === 0 ? ok : l => fail(l, JSON.stringify({ e2, s2 })))('passes all gates');
 
   console.log('\n[8] Branch missing FSSAI → sync guard blocks');
-  const b2 = await branchSvc.createBranch({ restaurant_id: 'r1', name: 'NoFssai', fssai_number: '99999999999999' });
+  const { branch: b2 } = await branchSvc.createBranch({ restaurant_id: 'r1', name: 'NoFssai', fssai_number: '99999999999999' });
   // Corrupt fssai post-create to simulate a legacy branch
   await coll('branches').updateOne({ _id: b2._id }, { $set: { fssai_number: null } });
   await productSvc.assignProductToBranch({ product_id: p._id, branch_id: b2._id, price: 280 });

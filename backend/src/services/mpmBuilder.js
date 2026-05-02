@@ -117,8 +117,27 @@ function selectVariantRepresentative(variantItems) {
  */
 async function buildBranchMPMs(branchId, restaurantId) {
   const restaurant = await col('restaurants').findOne({ _id: restaurantId });
+  // Unprojected findOne — returns the full branch doc including
+  // subscription_status, used for the paywall gate immediately below.
+  // If a projection is ever introduced here, it MUST include
+  // subscription_status, or the gate will fail-open and pending-payment
+  // branches will leak onto the customer-facing MPM.
   const branch = await col('branches').findOne({ _id: branchId });
   if (!restaurant || !branch) throw new Error('Restaurant or branch not found');
+
+  // ── Subscription paywall gate ────────────────────────────────
+  // Only branches in 'active' state are surfaced to customers.
+  // Missing / unknown subscription_status fails closed — treated as
+  // pending_payment to prevent unpaid branches from leaking onto the
+  // MPM if a writer ever forgets to set the field. Returns [] so the
+  // caller's `if (mpms.length)` check naturally skips wa.sendMPM().
+  if (branch.subscription_status !== 'active') {
+    log.info(
+      { restaurantId, branchId, subscription_status: branch.subscription_status || 'missing' },
+      `[MPM] No active branches for restaurant ${restaurantId} — MPM suppressed`,
+    );
+    return [];
+  }
 
   if (branch.meta_collection_id) {
     log.info({ branchName: branch.name, collectionId: branch.meta_collection_id }, 'Branch has Collection');

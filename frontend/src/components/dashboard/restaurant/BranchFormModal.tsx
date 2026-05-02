@@ -2,15 +2,73 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '../../Toast';
+import { useRestaurant } from '../../../contexts/RestaurantContext';
 import {
   createBranch,
   updateBranch,
+  activateBranchSubscription,
   placesAutocomplete,
   placesDetails,
   reverseGeocode,
+  type BranchRazorpayOrder,
 } from '../../../api/restaurant';
 import type { Branch } from '../../../types';
 import BranchStaffLinkPanel from './BranchStaffLinkPanel';
+
+// ── Razorpay Checkout integration ─────────────────────────────────
+// Mirrors the loader pattern used by WalletSection — script is loaded
+// on demand and reused if already present on the page. Distinct copy
+// rather than a shared util to keep this PR scoped; both copies are
+// safe to call concurrently because of the duplicate-script guard.
+const RAZORPAY_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
+
+interface RazorpayHandlerArgs {
+  razorpay_payment_id?: string;
+  razorpay_order_id?: string;
+  razorpay_signature?: string;
+}
+interface RazorpayOpts {
+  key: string;
+  amount: number;
+  currency: string;
+  order_id: string;
+  name: string;
+  description: string;
+  prefill?: { name?: string; email?: string };
+  handler: (response: RazorpayHandlerArgs) => void;
+  modal?: { ondismiss?: () => void };
+  theme?: { color?: string };
+}
+interface RazorpayInstance { open: () => void }
+type RazorpayCtor = new (opts: RazorpayOpts) => RazorpayInstance;
+type RazorpayWindow = Window & { Razorpay?: RazorpayCtor };
+
+function loadRazorpayScript(): Promise<RazorpayCtor> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') return reject(new Error('No window'));
+    const w = window as RazorpayWindow;
+    if (w.Razorpay) return resolve(w.Razorpay);
+    const existing = document.querySelector(`script[src="${RAZORPAY_SRC}"]`);
+    if (existing) {
+      existing.addEventListener('load', () => {
+        const ctor = (window as RazorpayWindow).Razorpay;
+        if (ctor) resolve(ctor); else reject(new Error('Razorpay script loaded but constructor missing'));
+      });
+      existing.addEventListener('error', () => reject(new Error('Razorpay script failed to load')));
+      return undefined;
+    }
+    const s = document.createElement('script');
+    s.src = RAZORPAY_SRC;
+    s.async = true;
+    s.onload = () => {
+      const ctor = (window as RazorpayWindow).Razorpay;
+      if (ctor) resolve(ctor); else reject(new Error('Razorpay script loaded but constructor missing'));
+    };
+    s.onerror = () => reject(new Error('Razorpay script failed to load'));
+    document.head.appendChild(s);
+    return undefined;
+  });
+}
 
 type GoogleWindow = Window & { google?: typeof google };
 
@@ -160,11 +218,18 @@ export default function BranchFormModal({
 }: BranchFormModalProps) {
   const isEdit = mode === 'edit' && !!existingBranch;
   const { showToast } = useToast();
+  const { restaurant } = useRestaurant();
   const [form, setForm] = useState<FormState>(emptyForm());
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [showSuggest, setShowSuggest] = useState<boolean>(false);
   const [searching, setSearching] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
+  // Tracks the in-flight subscription payment for a just-created branch.
+  // Set the moment Razorpay Checkout opens; cleared on activate success
+  // or when the modal is dismissed. While set, the "+ Add Branch"
+  // submit is disabled — re-submitting would create a duplicate branch
+  // since the first one is already inserted (just unpaid).
+  const [pendingPaymentBranchId, setPendingPaymentBranchId] = useState<string | null>(null);
   const [mapLoading, setMapLoading] = useState<boolean>(false);
   const [geocoding, setGeocoding] = useState<boolean>(false);
   const [, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 17.385, lng: 78.4867 });
@@ -294,6 +359,81 @@ export default function BranchFormModal({
     }
   };
 
+  // Open Razorpay Checkout for a freshly-created branch's first-month
+  // subscription order. On payment success, posts the signed tuple to
+  // /branches/:id/activate-subscription, then refetches via onSaved/
+  // onCreated so the parent's branch list shows the new 'active' status.
+  // On dismiss, leaves the branch row in pending_payment and keeps the
+  // form open per spec (user closes the modal manually).
+  const openSubscriptionCheckout = async (branchId: string, order: BranchRazorpayOrder) => {
+    setPendingPaymentBranchId(branchId);
+    let Razorpay: RazorpayCtor;
+    try {
+      Razorpay = await loadRazorpayScript();
+    } catch {
+      showToast('Could not load payment library — please retry', 'error');
+      setPendingPaymentBranchId(null);
+      return;
+    }
+    const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '';
+    if (!key) {
+      showToast('Payment is not configured (missing key)', 'error');
+      setPendingPaymentBranchId(null);
+      return;
+    }
+
+    const opts: RazorpayOpts = {
+      key,
+      amount: order.amount,
+      currency: order.currency || 'INR',
+      order_id: order.id,
+      name: 'GullyBite',
+      description: 'Branch Subscription - First Month',
+      prefill: {
+        name: restaurant?.owner_name || restaurant?.brand_name || undefined,
+        email: restaurant?.owner_email || restaurant?.email || undefined,
+      },
+      handler: async (resp) => {
+        if (!resp?.razorpay_order_id || !resp?.razorpay_payment_id || !resp?.razorpay_signature) {
+          showToast('Payment response was incomplete — please retry', 'error');
+          setPendingPaymentBranchId(null);
+          return;
+        }
+        try {
+          await activateBranchSubscription(branchId, {
+            razorpay_order_id: resp.razorpay_order_id,
+            razorpay_payment_id: resp.razorpay_payment_id,
+            razorpay_signature: resp.razorpay_signature,
+          });
+          showToast('Branch activated successfully', 'success');
+          setPendingPaymentBranchId(null);
+          // Refetch via parent — the server now reports the branch with
+          // subscription_status: 'active', so a refetch is the simplest
+          // way to "update local state" without reaching across files.
+          if (onSaved) onSaved();
+          else if (onCreated) onCreated();
+          onClose();
+        } catch (err: unknown) {
+          const e = err as { response?: { data?: { error?: string } }; message?: string };
+          const msg = e?.response?.data?.error === 'invalid_signature'
+            ? 'Payment verification failed (invalid signature) — please contact support.'
+            : (e?.response?.data?.error || e?.message || 'Could not activate subscription');
+          showToast(msg, 'error');
+          setPendingPaymentBranchId(null);
+        }
+      },
+      modal: {
+        ondismiss: () => {
+          showToast('Payment pending — branch will be visible once payment is completed.', 'warning');
+          setPendingPaymentBranchId(null);
+        },
+      },
+      theme: { color: '#25D366' },
+    };
+    const rzp = new Razorpay(opts);
+    rzp.open();
+  };
+
   const handleSave = async () => {
     const name = form.name.trim();
     const lat = parseFloat(form.lat);
@@ -340,13 +480,28 @@ export default function BranchFormModal({
       if (isEdit && existingBranch) {
         await updateBranch(existingBranch.id, { ...body });
         showToast(`✅ "${name}" updated`, 'success');
+        if (onSaved) onSaved();
+        else if (onCreated) onCreated();
+        onClose();
       } else {
-        await createBranch({ ...body });
+        const created = await createBranch({ ...body });
         showToast(`✅ "${name}" added! Creating WhatsApp catalog…`, 'success');
+        // First-month subscription paywall: backend returns razorpay_order
+        // alongside the branch. Open Checkout immediately. The branch row
+        // exists in pending_payment until payment lands; if checkout is
+        // dismissed, we keep the form open so the user knows what's
+        // outstanding (per spec). On success we close + refetch.
+        if (created.razorpay_order && created.id) {
+          await openSubscriptionCheckout(created.id, created.razorpay_order);
+        } else {
+          // Branch created without a subscription order (e.g. legacy
+          // backend or admin-bypass path) — fall back to the prior
+          // behaviour: refetch + close.
+          if (onSaved) onSaved();
+          else if (onCreated) onCreated();
+          onClose();
+        }
       }
-      if (onSaved) onSaved();
-      else if (onCreated) onCreated();
-      onClose();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       const code = e?.response?.data?.error;
@@ -535,11 +690,31 @@ export default function BranchFormModal({
             <BranchStaffLinkPanel branchId={existingBranch.id} />
           )}
 
+          {pendingPaymentBranchId && (
+            <div
+              role="status"
+              style={{
+                marginTop: '.6rem', padding: '.55rem .75rem',
+                background: '#fef3c7', border: '1px solid #fde68a',
+                borderRadius: 8, fontSize: '.78rem', color: '#92400e',
+              }}
+            >
+              Payment in progress — complete the Razorpay checkout to activate this branch.
+            </div>
+          )}
           <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
-            <button type="button" className="btn-p" onClick={handleSave} disabled={saving}>
+            <button
+              type="button"
+              className="btn-p"
+              onClick={handleSave}
+              disabled={saving || !!pendingPaymentBranchId}
+              title={pendingPaymentBranchId ? 'Finish or dismiss the in-progress payment first' : undefined}
+            >
               {saving
                 ? (isEdit ? 'Saving…' : 'Creating…')
-                : (isEdit ? 'Save Changes' : '+ Add Branch')}
+                : pendingPaymentBranchId
+                  ? 'Awaiting Payment…'
+                  : (isEdit ? 'Save Changes' : '+ Add Branch')}
             </button>
             <button type="button" className="btn-g" onClick={onClose} disabled={saving}>
               Cancel

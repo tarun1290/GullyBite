@@ -16,6 +16,7 @@
 
 const { col, newId } = require('../config/database');
 const log = require('../utils/logger').child({ component: 'branch.service' });
+const { MONTHLY_FEE_PAISE } = require('../config/financeConfig');
 
 // Canonical hyphen-separated slug (consolidated from per-file copies).
 const slugify = require('../utils/slugify');
@@ -79,13 +80,38 @@ async function createBranch(input) {
     // Legacy flags — keep true by default so existing queries keep working
     is_open: true,
     accepts_orders: true,
+    // Subscription paywall state. Set explicitly here rather than relying
+    // on schema metadata defaults — the schema is descriptive, not a
+    // runtime validator, so the writer is the source of truth. Branch is
+    // created in pending_payment; flips to 'active' via the
+    // /branches/:id/activate-subscription route once Razorpay confirms.
+    subscription_status: 'pending_payment',
+    paid_through_date: null,
     created_at: now,
     updated_at: now,
   };
 
   await col('branches').insertOne(branch);
-  log.info({ branchId: branch._id, restaurantId: branch.restaurant_id, city: branch.city }, 'branch created');
-  return branch;
+
+  // Create the first-month Razorpay order for the paywall. Lazy-require
+  // payment service to avoid a load-order coupling at boot. Razorpay
+  // failure here is rethrown — better to fail the whole createBranch
+  // call (caller can retry) than orphan a branch row with no order.
+  const paymentSvc = require('./payment');
+  const rzp = paymentSvc._getRzp();
+  const razorpay_order = await rzp.orders.create({
+    amount: MONTHLY_FEE_PAISE,
+    currency: 'INR',
+    receipt: `branch-${branch._id}`,
+    notes: {
+      branch_id: branch._id,
+      restaurant_id: String(restaurant_id),
+      type: 'branch_subscription_first_month',
+    },
+  });
+
+  log.info({ branchId: branch._id, restaurantId: branch.restaurant_id, city: branch.city, rzpOrderId: razorpay_order.id }, 'branch created with subscription order');
+  return { branch, razorpay_order };
 }
 
 // ─── READ ───────────────────────────────────────────────────────

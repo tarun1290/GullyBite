@@ -26,11 +26,11 @@ router.use(requireAuth);
 // this endpoint.
 router.post('/branches', validateBranchPayload, async (req, res) => {
   try {
-    const branch = await branchSvc.createBranch({
+    const { branch, razorpay_order } = await branchSvc.createBranch({
       ...req.body,
       restaurant_id: req.restaurantId,
     });
-    res.status(201).json(branch);
+    res.status(201).json({ ...branch, razorpay_order });
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.message });
   }

@@ -120,6 +120,21 @@ const branches = {
     // Branch-first additions. `is_active` is the new canonical
     // operational flag; legacy `is_open`/`accepts_orders` retained.
     is_active:             { type: 'boolean' },
+    // ── Subscription / billing state (per branch) ────────────────
+    // subscription_status drives the paywall gate on branch creation
+    // and ongoing access. paid_through_date is set forward by each
+    // successful billing cycle (monthly or bi-monthly) and consulted by
+    // the billing job to decide when to flip status to 'paused'.
+    //   pending_payment — awaiting first/next subscription payment;
+    //                     branch hidden / non-operational until paid.
+    //   active          — paid through paid_through_date.
+    //   paused          — auto-paused (paid_through_date elapsed).
+    //   force_paused    — admin-paused (manual ops action).
+    // The `default` field is descriptive only — the schema is not a
+    // runtime validator; defaults are applied by the writer code at
+    // insert time. See branch.service.js / restaurant.js POST /branches.
+    subscription_status:   { type: 'string', enum: ['pending_payment', 'active', 'paused', 'force_paused'], default: 'pending_payment' },
+    paid_through_date:     { type: 'date', default: null },
     fssai_number:          { type: 'string' },  // 14-digit, required for food sync
     gst_number:            { type: 'string' },  // 15-char GSTIN, optional
     catalog_id:            { type: 'string' },

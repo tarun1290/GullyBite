@@ -66,6 +66,30 @@ const FINANCE_CONFIG = {
 FINANCE_CONFIG.subscriptionPricePaise = Math.round(FINANCE_CONFIG.monthlyPlatformFeeRs * 100);
 FINANCE_CONFIG.gstRate = FINANCE_CONFIG.gstPlatformFeePct / 100;
 
+// ── Subscription billing constants (per-branch paywall) ────────
+// Distinct from FINANCE_CONFIG.subscriptionPricePaise above: those
+// are the SETTLEMENT-cycle platform-fee values (fee-only, GST tracked
+// as a separate ledger debit). The constants below are the
+// PAYWALL-cycle figures the merchant pays via Razorpay to keep a
+// branch active — fee + GST already rolled in, since the paywall
+// charge is a single tax-inclusive amount.
+//
+// Hardcoded literals per the billing spec; NOT derived from
+// monthlyPlatformFeeRs. An env override of MONTHLY_PLATFORM_FEE_RS
+// will not flow into these — by design, since the paywall amount
+// shouldn't drift on a settlement-side env tweak.
+//
+//   BIMONTHLY_FEE_RS         = 1500   (₹1,500 ex-GST, every 2 months)
+//   BIMONTHLY_FEE_WITH_GST_RS = 1770   (₹1,500 + 18% GST, paid amount)
+//   MONTHLY_FEE_WITH_GST_RS   = 3540   (₹3,000 + 18% GST, paid amount)
+//   BIMONTHLY_FEE_PAISE       = 177000 (BIMONTHLY_FEE_WITH_GST_RS × 100)
+//   MONTHLY_FEE_PAISE         = 354000 (MONTHLY_FEE_WITH_GST_RS × 100)
+const BIMONTHLY_FEE_RS = 1500;
+const BIMONTHLY_FEE_WITH_GST_RS = Math.round(1500 * 1.18);
+const MONTHLY_FEE_WITH_GST_RS = Math.round(3000 * 1.18);
+const BIMONTHLY_FEE_PAISE = BIMONTHLY_FEE_WITH_GST_RS * 100;
+const MONTHLY_FEE_PAISE = MONTHLY_FEE_WITH_GST_RS * 100;
+
 /**
  * Get the effective platform fee percentage for a restaurant.
  * Per-restaurant override takes priority over default.
@@ -117,4 +141,9 @@ module.exports = {
   isFirstBillingMonth,
   shouldDeductPlatformFee,
   shouldDeductPlatformFeeGst,
+  BIMONTHLY_FEE_RS,
+  BIMONTHLY_FEE_WITH_GST_RS,
+  MONTHLY_FEE_WITH_GST_RS,
+  BIMONTHLY_FEE_PAISE,
+  MONTHLY_FEE_PAISE,
 };

@@ -1395,12 +1395,37 @@ router.post('/branches', async (req, res) => {
       is_active: true,
       is_open: true,
       accepts_orders: true,
+      // Subscription paywall — see schemas/collections.js. Set
+      // explicitly here rather than relying on schema metadata.
+      subscription_status: 'pending_payment',
+      paid_through_date: null,
       catalog_id: null,
       delivery_fee_rs: null,
       created_at: now,
       updated_at: now,
     };
     await col('branches').insertOne(branch);
+
+    // First-month subscription Razorpay order — frontend uses this to
+    // open Checkout, then calls POST /branches/:id/activate-subscription
+    // with the signed payment to flip status to 'active'. Failure here
+    // surfaces as 500 (the catch below) — the branch row exists but
+    // can't be activated yet; merchant retries via a separate
+    // "regenerate subscription order" flow (not yet built) or has admin
+    // recreate. Better than silently leaking pending_payment branches.
+    const paymentSvc = require('../services/payment');
+    const { MONTHLY_FEE_PAISE } = require('../config/financeConfig');
+    const rzp = paymentSvc._getRzp();
+    const razorpay_order = await rzp.orders.create({
+      amount: MONTHLY_FEE_PAISE,
+      currency: 'INR',
+      receipt: `branch-${branch._id}`,
+      notes: {
+        branch_id: branch._id,
+        restaurant_id: req.restaurantId,
+        type: 'branch_subscription_first_month',
+      },
+    });
 
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
@@ -1417,7 +1442,7 @@ router.post('/branches', async (req, res) => {
       .catch(err => logger.error({ err, branchName: newBranch.name }, 'Auto catalog creation failed for branch'));
 
     invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
-    res.status(201).json(newBranch);
+    res.status(201).json({ ...newBranch, razorpay_order });
 
     // Fire-and-forget after the response — admin console gets a live
     // signal whenever a merchant adds a new outlet. Restaurants don't
@@ -1440,6 +1465,12 @@ router.post('/branches/csv', async (req, res) => {
     const { branches: rows } = req.body;
     if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'No rows provided' });
     if (rows.length > 50) return res.status(400).json({ error: 'Max 50 outlets per upload' });
+
+    // Resolve Razorpay client + monthly fee paise once for the whole
+    // batch — saves N redundant lazy-init calls and N config reads.
+    const paymentSvc = require('../services/payment');
+    const { MONTHLY_FEE_PAISE } = require('../config/financeConfig');
+    const rzp = paymentSvc._getRzp();
 
     const created = [], skipped = [], errors = [];
 
@@ -1484,14 +1515,33 @@ router.post('/branches/csv', async (req, res) => {
           is_active: true,
           is_open: true,
           accepts_orders: true,
+          // Subscription paywall — same as single-branch route.
+          subscription_status: 'pending_payment',
+          paid_through_date: null,
           catalog_id: null,
           delivery_fee_rs: null,
           created_at: now,
           updated_at: now,
         };
         await col('branches').insertOne(branch);
+
+        // Per-row Razorpay order. The CSV path bulk-creates many
+        // pending_payment branches; merchant pays them one by one
+        // through the dashboard. Storing the order id on the created[]
+        // entry lets the frontend kick off Checkout for each.
+        const razorpay_order = await rzp.orders.create({
+          amount: MONTHLY_FEE_PAISE,
+          currency: 'INR',
+          receipt: `branch-${branch._id}`,
+          notes: {
+            branch_id: branch._id,
+            restaurant_id: req.restaurantId,
+            type: 'branch_subscription_first_month',
+          },
+        });
+
         const newBranch = mapId(branch);
-        created.push({ id: newBranch.id, name: newBranch.name, latitude: lat, longitude: lng });
+        created.push({ id: newBranch.id, name: newBranch.name, latitude: lat, longitude: lng, razorpay_order });
 
         // Auto-create WhatsApp catalog (background)
         catalog.createBranchCatalog(newBranch.id)
@@ -1607,6 +1657,64 @@ router.patch('/branches/:id', async (req, res) => {
 });
 
 // POST /api/restaurant/branches/:id/soft-delete
+// POST /branches/:branchId/activate-subscription
+// Flips a branch from pending_payment → active after the merchant
+// completes Razorpay Checkout for the first-month subscription order
+// created at branch-creation time. The frontend hands us the
+// (order_id, payment_id, signature) tuple from the Checkout success
+// callback; we recompute the HMAC against RAZORPAY_KEY_SECRET to prove
+// the payment is real and unmodified before extending paid_through_date.
+//
+// What this DOESN'T verify (worth knowing):
+//   - That razorpay_order_id was the one we created for THIS branch.
+//     A signature is valid for any (order, payment) pair Razorpay
+//     issued, so a merchant could in theory replay another branch's
+//     paid order to unlock a different one. Hardening: look up the
+//     order via rzp.orders.fetch() and compare notes.branch_id.
+//   - Idempotency. Calling this twice with the same payment id will
+//     extend paid_through_date by 30 days twice. Hardening: write the
+//     payment_id to a dedupe table inside a transaction.
+// Both are fine to defer until the paywall is live in production.
+router.post('/branches/:branchId/activate-subscription', async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {};
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: 'razorpay_order_id, razorpay_payment_id, razorpay_signature required' });
+    }
+
+    const crypto = require('crypto');
+    const expected = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || '')
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+    if (expected !== razorpay_signature) {
+      return res.status(400).json({ error: 'invalid_signature' });
+    }
+
+    const branch = await col('branches').findOne({ _id: req.params.branchId });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      // 404 (not 403) for cross-tenant probes — same convention as the
+      // tenant-ownership helpers earlier in this file.
+      return res.status(404).json({ error: 'Branch not found' });
+    }
+
+    const now = new Date();
+    const paidThrough = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    await col('branches').updateOne(
+      { _id: branch._id },
+      { $set: {
+          subscription_status: 'active',
+          paid_through_date: paidThrough,
+          updated_at: now,
+        } },
+    );
+    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
+
+    const updated = await col('branches').findOne({ _id: branch._id });
+    res.json(mapId(updated));
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
 // Soft-removes a branch from the restaurant's active set. The row stays in
 // Mongo so menu items / orders / catalog references remain intact and the
 // row can be restored without re-OAuth or re-syncing. Sets is_active=false

@@ -757,8 +757,28 @@ export async function getImageStats(): Promise<unknown> {
 
 // ── Branches + Users ────────────────────────────────────────────────
 
-export async function createBranch(body: RequestBody): Promise<Branch> {
-  const { data } = await client.post<Branch>('/api/restaurant/branches', body);
+// Backend appends the first-month subscription Razorpay order to the
+// branch creation response. Frontend opens Checkout immediately, then
+// posts the signed payment back to /branches/:id/activate-subscription.
+export interface BranchRazorpayOrder {
+  id: string;
+  amount: number;
+  currency: string;
+  receipt?: string;
+}
+
+export type CreateBranchResponse = Branch & { razorpay_order?: BranchRazorpayOrder };
+
+export async function createBranch(body: RequestBody): Promise<CreateBranchResponse> {
+  const { data } = await client.post<CreateBranchResponse>('/api/restaurant/branches', body);
+  return data;
+}
+
+export async function activateBranchSubscription(
+  branchId: string,
+  body: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string },
+): Promise<Branch> {
+  const { data } = await client.post<Branch>(`/api/restaurant/branches/${branchId}/activate-subscription`, body);
   return data;
 }
 

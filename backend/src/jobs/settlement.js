@@ -16,7 +16,14 @@ const { generateSettlementExcel } = require('../services/settlement-export');
 const wa = require('../services/whatsapp');
 const { calculateTDS, aggregateOrderFinancials } = require('../services/financials');
 const { calculateSettlement: calcSettlement, round2 } = require('../core/financialEngine');
-const { getPlatformFeePercent, isFirstBillingMonth, shouldDeductPlatformFee } = require('../config/financeConfig');
+const {
+  getPlatformFeePercent,
+  isFirstBillingMonth,
+  shouldDeductPlatformFee,
+  BIMONTHLY_FEE_PAISE,
+  BIMONTHLY_FEE_WITH_GST_RS,
+} = require('../config/financeConfig');
+const ledger = require('../services/ledger.service');
 const ws = require('../services/websocket');
 const { logActivity } = require('../services/activityLog');
 const log = require('../utils/logger').child({ component: 'settlement' });
@@ -143,6 +150,23 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
 
   if (firstMonth && finalCalc.platform_fee_waived_first_month) {
     log.info({ restaurant: restaurant.business_name, platformFeeCalculated, platformFeeGstCalculated }, 'first-month: platform fee not deducted (advance collected)');
+  }
+
+  // ── Per-branch subscription paywall renewal ─────────────────
+  // Deduct the bi-monthly subscription fee for any branch whose
+  // paid_through_date has elapsed. Skipped during the first billing
+  // month — that month's fee was collected upfront via Razorpay at
+  // branch creation. Runs BEFORE any payout-side step so the balance
+  // shown downstream reflects the post-deduction wallet state.
+  if (!firstMonth) {
+    try {
+      await deductBranchSubscriptions(restaurantId);
+    } catch (err) {
+      log.error({ err: err?.message, restaurantId }, '[BILLING] deductBranchSubscriptions failed');
+      // Continue settlement — billing reconciliation can be retried
+      // independently. Same posture as the platform_fee debit catch
+      // in services/settlement.service.js.
+    }
   }
 
   log.info({
@@ -332,6 +356,87 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
 
   return { id: settlementId };
 };
+
+// ─── PER-BRANCH SUBSCRIPTION PAYWALL ──────────────────────────
+// Deducts the bi-monthly branch subscription fee from the restaurant
+// wallet (= ledger balance) for every branch that's both 'active' and
+// past its paid_through_date. Sufficient balance → debit + advance
+// paid_through_date by 15 days. Insufficient → flip the branch to
+// 'paused' (auto-pause; admin can manually flip to 'force_paused' if
+// needed). Skipped entirely on the first billing month — that fee was
+// collected upfront via Razorpay at branch creation.
+//
+// db param accepted for spec compliance; this codebase uses the
+// shared `col()` helper from config/database, so it's unused here.
+async function deductBranchSubscriptions(restaurantId, _db) {
+  const now = new Date();
+  const dueBranches = await col('branches').find({
+    restaurant_id: String(restaurantId),
+    subscription_status: 'active',
+    paid_through_date: { $lte: now },
+  }).toArray();
+
+  if (!dueBranches.length) return;
+
+  // Read once before the loop. We track remainingBalance locally rather
+  // than re-querying after each debit — ledger.balancePaise is an
+  // aggregation, and each branch's debit decrements the same restaurant
+  // wallet, so the local counter accurately models successive
+  // deductions across the loop.
+  let remainingBalance = await ledger.balancePaise(restaurantId);
+
+  for (const branch of dueBranches) {
+    const branchId = String(branch._id);
+    if (remainingBalance >= BIMONTHLY_FEE_PAISE) {
+      try {
+        // ref_id keys the entry to the cycle being closed (the OLD
+        // paid_through_date), so a same-day re-run idempotently dedups
+        // via the unique (restaurant_id, ref_type, ref_id) index.
+        const cycleKey = (branch.paid_through_date instanceof Date
+          ? branch.paid_through_date
+          : new Date(branch.paid_through_date || now)).toISOString();
+        await ledger.debit({
+          restaurantId: String(restaurantId),
+          branchId,
+          amountPaise: BIMONTHLY_FEE_PAISE,
+          refType: 'branch_subscription',
+          refId: `${branchId}:${cycleKey}`,
+          status: 'completed',
+          notes: `Branch subscription renewal (₹${BIMONTHLY_FEE_WITH_GST_RS})`,
+        });
+      } catch (err) {
+        log.error({ err: err?.message, restaurantId, branchId }, '[BILLING] branch_subscription debit failed');
+        continue;
+      }
+      remainingBalance -= BIMONTHLY_FEE_PAISE;
+
+      const newPaidThrough = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000);
+      await col('branches').updateOne(
+        { _id: branch._id },
+        { $set: { paid_through_date: newPaidThrough, updated_at: now } },
+      );
+      log.info(
+        { restaurantId, branchId, amountPaise: BIMONTHLY_FEE_PAISE, paidThroughDate: newPaidThrough.toISOString() },
+        `[BILLING] Branch ${branchId} subscription deducted ₹${BIMONTHLY_FEE_WITH_GST_RS.toLocaleString('en-IN')} — next due ${newPaidThrough.toISOString()}`,
+      );
+    } else {
+      // Balance below the cycle fee — auto-pause. Don't write a debit;
+      // the branch sits in 'paused' until the merchant tops up the
+      // wallet, after which a future settlement run picks it up again
+      // (paused branches won't be selected, so they need a separate
+      // resume flow — admin or self-service top-up trigger; out of
+      // scope for this change).
+      await col('branches').updateOne(
+        { _id: branch._id },
+        { $set: { subscription_status: 'paused', updated_at: now } },
+      );
+      log.info(
+        { restaurantId, branchId, walletPaise: remainingBalance, requiredPaise: BIMONTHLY_FEE_PAISE },
+        `[BILLING] Branch ${branchId} paused — insufficient wallet balance`,
+      );
+    }
+  }
+}
 
 async function sendSettlementWhatsApp(restaurant, settlementId, netPayout, orderCount, periodStart, periodEnd) {
   // Need WA account linked to this restaurant
