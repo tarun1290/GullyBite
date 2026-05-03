@@ -134,6 +134,10 @@ export default function BranchesSection() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedPane, setExpandedPane] = useState<'hours' | 'menu'>('hours');
   const [savingField, setSavingField] = useState<string | null>(null);
+  // Tracks which branch's ID was just copied — drives the transient
+  // "Copied!" → "Copy" label flip per card. Single string is enough
+  // since at most one card's button can have just been clicked.
+  const [copiedBranchId, setCopiedBranchId] = useState<string | null>(null);
 
   const openCreate = () => { setEditingBranch(null); setModalOpen(true); };
   const openEdit = (b: BranchExt) => { setEditingBranch(b); setModalOpen(true); };
@@ -485,6 +489,57 @@ export default function BranchesSection() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="bcard-name" style={{ fontWeight: 700, fontSize: '.95rem' }}>
                       {b.name}
+                    </div>
+                    {/* Branch ID row — between name and address per spec.
+                        Inline copy button briefly flips to "Copied!" via
+                        copiedBranchId state, then reverts after 1.5s.
+                        e.stopPropagation() on the click so the surrounding
+                        row's setExpandedId toggle doesn't fire. */}
+                    <div
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '.4rem',
+                        marginTop: '.15rem', fontSize: '.72rem', color: 'var(--dim)',
+                      }}
+                    >
+                      <span>Branch ID:</span>
+                      <span
+                        style={{
+                          fontFamily: 'monospace',
+                          color: 'var(--dim)',
+                          fontSize: '.72rem',
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        #{b.id}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            await navigator.clipboard.writeText(b.id);
+                            setCopiedBranchId(b.id);
+                            setTimeout(() => {
+                              setCopiedBranchId((cur) => (cur === b.id ? null : cur));
+                            }, 1500);
+                          } catch {
+                            /* clipboard unavailable — silent no-op */
+                          }
+                        }}
+                        aria-label="Copy branch ID"
+                        style={{
+                          background: 'transparent',
+                          border: '1px solid var(--bdr,#e5e7eb)',
+                          color: 'var(--dim)',
+                          fontSize: '.68rem',
+                          padding: '.05rem .35rem',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {copiedBranchId === b.id ? 'Copied!' : 'Copy'}
+                      </button>
                     </div>
                     <div className="bcard-addr" style={{ fontSize: '.8rem', color: 'var(--dim)', marginTop: '.15rem' }}>
                       {b.address || b.city || '—'}
