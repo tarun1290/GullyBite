@@ -162,6 +162,8 @@ async function _handleCustomerNotification(payload) {
 }
 
 async function _handleOrderDispatch(payload) {
+  log.info({ orderId: payload?.orderId }, 'ORDER_DISPATCH: handler entered');
+
   const orderSvc = require('../services/order');
   const deliveryService = require('../services/delivery');
   const wa = require('../services/whatsapp');
@@ -169,6 +171,16 @@ async function _handleOrderDispatch(payload) {
   const notify = require('../services/notify');
 
   const order = await orderSvc.getOrderDetails(payload.orderId);
+  log.info(
+    {
+      orderId: payload.orderId,
+      found: !!order,
+      status: order?.status || null,
+      orderNumber: order?.order_number || null,
+      branchId: order?.branch_id || null,
+    },
+    'ORDER_DISPATCH: order fetched',
+  );
   if (!order) throw new Error('order not found');
 
   // Stale-job guard. Dispatch fires from the restaurant /accept
@@ -183,15 +195,44 @@ async function _handleOrderDispatch(payload) {
   // the order and a fresh dispatch would be a duplicate.
   // Any in-flight pre-deploy ORDER_DISPATCH job created from the old
   // PAID-time fan-out lands here in PAID and is skipped silently.
+  log.info(
+    { orderId: payload.orderId, status: order.status },
+    'ORDER_DISPATCH: evaluating status guard',
+  );
   if (order.status !== 'CONFIRMED' && order.status !== 'PREPARING') {
     log.info({ orderId: payload.orderId, status: order.status },
       'ORDER_DISPATCH: order not in CONFIRMED/PREPARING — skipping (stale or out-of-order job)');
     return;
   }
+  log.info(
+    { orderId: payload.orderId, status: order.status },
+    'ORDER_DISPATCH: status guard passed — proceeding to dispatch',
+  );
 
   try {
+    log.info(
+      {
+        orderId: payload.orderId,
+        orderNumber: order.order_number,
+        branchId: order.branch_id,
+        restaurantId: order.restaurant_id,
+        hasDeliveryLat: order.delivery_lat != null,
+        hasDeliveryLng: order.delivery_lng != null,
+        proroutingQuoteId: order.prorouting_quote_id || null,
+      },
+      'ORDER_DISPATCH: calling delivery provider',
+    );
     const task = await deliveryService.dispatchDelivery(payload.orderId);
-    log.info({ orderNumber: order.order_number, taskId: task?.taskId }, 'order dispatched');
+    log.info(
+      {
+        orderId: payload.orderId,
+        orderNumber: order.order_number,
+        taskId: task?.taskId || null,
+        hasTrackingUrl: !!task?.trackingUrl,
+        estimatedMins: task?.estimatedMins ?? null,
+      },
+      'ORDER_DISPATCH: delivery provider returned successfully',
+    );
     if (task?.trackingUrl && order.phone_number_id && resolveRecipient(order)) {
       await wa.sendText(
         order.phone_number_id, order.access_token, resolveRecipient(order),
@@ -201,7 +242,28 @@ async function _handleOrderDispatch(payload) {
   } catch (err) {
     // Terminal failure here means the restaurant has to dispatch manually.
     // Notify the manager but mark the job succeeded — retries won't help.
-    log.error({ err, orderId: payload.orderId }, 'dispatch failed');
+    // Detailed error log: surface message + stack always, plus
+    // err.response.data when this is an axios error from the 3PL —
+    // that's where the actual upstream rejection text lives (e.g.
+    // "lat/lng invalid", "quote expired"). Without it, the catch
+    // would log "[object Object]" and the real cause stays buried.
+    log.error(
+      {
+        orderId: payload.orderId,
+        orderNumber: order?.order_number,
+        errMessage: err?.message || String(err),
+        errStack: err?.stack,
+        errCode: err?.code,
+        // axios-specific fields when the error originated upstream
+        upstreamStatus: err?.response?.status,
+        upstreamBody: err?.response?.data,
+        // request shape for axios errors — useful when the 3PL rejects
+        // a malformed body and the message alone doesn't pinpoint why
+        upstreamUrl: err?.config?.url,
+        upstreamMethod: err?.config?.method,
+      },
+      'ORDER_DISPATCH: dispatch failed',
+    );
     try {
       await notify.sendManagerNotification(
         order.restaurant_id || order.branch_id, order.branch_id,
