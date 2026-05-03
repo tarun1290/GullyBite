@@ -68,6 +68,14 @@ interface PopupOrder {
   delivery_fee_rs?: number | string | null;
   delivery_fee_total_rs?: number | string | null;
   delivery_address?: string | null;
+  // The actual order doc carries `delivery_instructions` (set by
+  // services/order.js). Spec mentions `instructions` /
+  // `special_instructions` as alternative names — accept all three
+  // here so a backend rename or a Flow-style ingestion path doesn't
+  // silently drop the field.
+  instructions?: string | null;
+  special_instructions?: string | null;
+  delivery_instructions?: string | null;
   items?: PopupOrderItem[];
   created_at?: string;
 }
@@ -263,27 +271,53 @@ export default function NewOrderPopup() {
   const o = orderDetail;
   const items = o?.items || [];
   const orderRef = o?.order_number || currentId;
+  // Single instructions string sourced from whichever field the order
+  // doc actually carries (see PopupOrder type for why all three names
+  // are accepted). Trimmed empty values count as "no instructions".
+  const instructionsText = (
+    o?.instructions
+    ?? o?.special_instructions
+    ?? o?.delivery_instructions
+    ?? ''
+  );
+  const hasInstructions = typeof instructionsText === 'string' && instructionsText.trim().length > 0;
 
   return (
-    <div
-      role="dialog"
-      aria-label="New order"
-      style={{
-        position: 'fixed',
-        right: '1.25rem',
-        bottom: '1.25rem',
-        width: '100%',
-        maxWidth: 480,
-        zIndex: 9999,
-        background: 'var(--surface,#fff)',
-        border: '1px solid var(--rim,#e5e7eb)',
-        borderRadius: 12,
-        boxShadow: '0 20px 50px -10px rgba(15, 23, 42, .35), 0 6px 18px rgba(15, 23, 42, .2)',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
+    <>
+      {/* Backdrop — dims the dashboard so the popup reads as a modal
+          surface. Lower z-index than the popup. Non-dismissive: clicking
+          here intentionally does nothing because the merchant must
+          Confirm or Decline; cycling without action goes via "Next →". */}
+      <div
+        aria-hidden
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.4)',
+          zIndex: 9998,
+        }}
+      />
+      <div
+        role="dialog"
+        aria-label="New order"
+        style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '100%',
+          maxWidth: 480,
+          maxHeight: '90vh',
+          zIndex: 9999,
+          background: 'var(--surface,#fff)',
+          border: '1px solid var(--rim,#e5e7eb)',
+          borderRadius: 12,
+          boxShadow: '0 20px 50px -10px rgba(15, 23, 42, .35), 0 6px 18px rgba(15, 23, 42, .2)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
       {/* Header */}
       <div
         style={{
@@ -352,34 +386,6 @@ export default function NewOrderPopup() {
               </div>
             </div>
 
-            {items.length > 0 ? (
-              <div style={{ marginBottom: '.6rem' }}>
-                <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginBottom: '.25rem' }}>Items</div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <tbody>
-                    {items.map((it, idx) => {
-                      const name = it.item_name || it.name || '—';
-                      const qty = Number(it.quantity || 1);
-                      const linePriceRs = (it.line_total_rs != null ? it.line_total_rs : it.price_rs);
-                      const priceVal = parseFloat(String(linePriceRs || 0));
-                      return (
-                        <tr key={(it as { id?: string }).id || idx}>
-                          <td style={{ padding: '.2rem 0', fontSize: '.82rem' }}>
-                            {name}
-                            {it.size ? <span style={{ color: 'var(--dim)', fontSize: '.72rem' }}> · {it.size}</span> : null}
-                          </td>
-                          <td style={{ padding: '.2rem .4rem', textAlign: 'center', fontSize: '.82rem', color: 'var(--dim)' }}>×{qty}</td>
-                          <td style={{ padding: '.2rem 0', textAlign: 'right', fontSize: '.82rem' }}>
-                            {Number.isFinite(priceVal) ? formatRs(priceVal) : '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-
             <div style={{ borderTop: '1px dashed var(--rim2,#e5e7eb)', paddingTop: '.4rem', marginBottom: '.6rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.78rem' }}>
                 <span style={{ color: 'var(--dim)' }}>Subtotal</span>
@@ -396,8 +402,79 @@ export default function NewOrderPopup() {
             </div>
 
             {o.delivery_address ? (
-              <div style={{ fontSize: '.74rem', color: 'var(--dim)' }}>
+              <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.6rem' }}>
                 📍 {o.delivery_address}
+              </div>
+            ) : null}
+
+            {/* Items list (after address, per spec). Receipt-row format:
+                "[qty]x Item Name (size) ........... ₹price". The dotted
+                leader is a flex spacer with a dotted bottom border —
+                expands to fill horizontal slack between name and price. */}
+            {items.length > 0 ? (
+              <div style={{ marginBottom: '.6rem' }}>
+                <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginBottom: '.25rem' }}>Items</div>
+                {items.map((it, idx) => {
+                  const name = it.item_name || it.name || '—';
+                  const qty = Number(it.quantity || 1);
+                  const linePriceRs = (it.line_total_rs != null ? it.line_total_rs : it.price_rs);
+                  const priceVal = parseFloat(String(linePriceRs || 0));
+                  return (
+                    <div
+                      key={(it as { id?: string }).id || idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-end',
+                        gap: '.4rem',
+                        fontSize: '.82rem',
+                        padding: '.18rem 0',
+                      }}
+                    >
+                      <span style={{ whiteSpace: 'nowrap' }}>
+                        <span style={{ color: 'var(--dim)' }}>{qty}×</span>{' '}
+                        <span style={{ fontWeight: 500 }}>{name}</span>
+                        {it.size ? <span style={{ color: 'var(--dim)' }}>{` (${it.size})`}</span> : null}
+                      </span>
+                      <span
+                        aria-hidden
+                        style={{
+                          flex: 1,
+                          minWidth: '.4rem',
+                          borderBottom: '1px dotted var(--rim2,#cbd5e1)',
+                          marginBottom: '.32em',
+                        }}
+                      />
+                      <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                        {Number.isFinite(priceVal) ? formatRs(priceVal) : '—'}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {/* Instructions row — conditional on a non-empty value
+                across any of the three accepted field names. */}
+            {hasInstructions ? (
+              <div
+                style={{
+                  marginBottom: '.4rem',
+                  padding: '.45rem .65rem',
+                  background: '#fef3c7',
+                  border: '1px solid #fde68a',
+                  borderRadius: 6,
+                  fontSize: '.78rem',
+                  color: '#92400e',
+                  display: 'flex',
+                  gap: '.45rem',
+                  alignItems: 'flex-start',
+                }}
+              >
+                <span aria-hidden>📝</span>
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: '.1rem' }}>Instructions</div>
+                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{instructionsText}</div>
+                </div>
               </div>
             ) : null}
           </>
@@ -453,5 +530,6 @@ export default function NewOrderPopup() {
         </button>
       </div>
     </div>
+    </>
   );
 }
