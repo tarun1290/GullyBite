@@ -113,7 +113,7 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
 async function handleText(from, text) {
   const lower = text.toLowerCase();
 
-  if (['hi', 'hello', 'hey', 'start', 'menu'].includes(lower)) {
+  if (['hi', 'hy', 'hie', 'order','hello', 'hey', 'start', 'menu'].includes(lower)) {
     return sendWelcome(from);
   }
 

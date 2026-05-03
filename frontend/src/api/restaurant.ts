@@ -51,6 +51,25 @@ export async function updateOrderStatus(id: string, status: string): Promise<unk
   return data;
 }
 
+// Dedicated accept/decline endpoints. Distinct from updateOrderStatus
+// because they encode the merchant-acknowledge contract:
+//   /accept  → PAID → CONFIRMED + stamps acknowledged_at (idempotent)
+//   /decline → PAID → REJECTED_BY_RESTAURANT + Razorpay refund +
+//              cancellation fault-fee accounting
+// These are the only valid surfaces for accept/decline — calling
+// updateOrderStatus with 'CONFIRMED' technically works for accept but
+// skips the ack stamp; calling it with 'REJECTED_BY_RESTAURANT' bypasses
+// the refund entirely.
+export async function acceptOrder(id: string): Promise<{ success: boolean; status?: string; alreadyAcknowledged?: boolean }> {
+  const { data } = await client.post(`/api/restaurant/orders/${id}/accept`);
+  return data as { success: boolean; status?: string; alreadyAcknowledged?: boolean };
+}
+
+export async function declineOrder(id: string, reason?: string): Promise<{ success: boolean; status?: string; refundId?: string | null }> {
+  const { data } = await client.post(`/api/restaurant/orders/${id}/decline`, reason ? { reason } : {});
+  return data as { success: boolean; status?: string; refundId?: string | null };
+}
+
 export async function dispatchOrder(id: string, payload: RequestBody = {}): Promise<unknown> {
   const { data } = await client.post(`/api/restaurant/orders/${id}/dispatch`, payload);
   return data;

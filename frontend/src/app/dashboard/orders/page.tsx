@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import OrderCard from '../../../components/dashboard/OrderCard';
 import OrderDetailModal from '../../../components/dashboard/OrderDetailModal';
-import { getOrders, updateOrderStatus } from '../../../api/restaurant';
+import { getOrders, updateOrderStatus, declineOrder } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
 import { useNewOrderSound } from '../../../hooks/useNewOrderSound';
 import { useSocketContext } from '../../../components/shared/SocketProvider';
@@ -117,10 +117,25 @@ export default function OrdersPage() {
       try {
         await updateOrderStatus(orderId, nextStatus);
         // Silence the alarm the moment the server confirms the
-        // transition. Covers both accept (PAID → PREPARING) and
-        // decline (PAID → CANCELLED) paths since both flow through
-        // here. No-op when the order wasn't ringing.
+        // transition. Covers the accept path (PAID → CONFIRMED →
+        // PREPARING; the auto-advance below) and any other status
+        // change that flows through here. No-op when the order
+        // wasn't ringing.
         markOrderActioned(orderId);
+        // Auto-advance CONFIRMED → PREPARING. The owner dashboard
+        // treats CONFIRMED as transient — the staff app keeps an
+        // explicit prep button. Fire-and-forget: if this second call
+        // fails, the order is already accepted on the server, so we
+        // don't surface an error toast or block the row's success
+        // path. A console.warn flags the gap for ops follow-up.
+        if (nextStatus === 'CONFIRMED') {
+          try {
+            await updateOrderStatus(orderId, 'PREPARING');
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn('[orders] auto-advance to PREPARING failed:', err);
+          }
+        }
         showToast('Order updated ✓', 'success');
         await fetchOrders(filter, { silent: true });
       } catch (e: unknown) {
@@ -136,6 +151,29 @@ export default function OrdersPage() {
     },
     [fetchOrders, filter, showToast, markOrderActioned],
   );
+
+  const handleDecline = useCallback(async (orderId: string) => {
+    if (!window.confirm('Decline this order? Customer will be refunded automatically.')) return;
+    setRowBusy((b) => ({ ...b, [orderId]: true }));
+    try {
+      const res = await declineOrder(orderId);
+      // Silence the alarm immediately on success — same posture as the
+      // accept path in handleStatusChange above.
+      markOrderActioned(orderId);
+      const refundNote = res?.refundId ? ` (refund ${res.refundId})` : '';
+      showToast(`Order declined${refundNote}`, 'success');
+      await fetchOrders(filter, { silent: true });
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { error?: string } }; message?: string };
+      showToast(err?.response?.data?.error || err?.message || 'Decline failed', 'error');
+    } finally {
+      setRowBusy((b) => {
+        const n = { ...b };
+        delete n[orderId];
+        return n;
+      });
+    }
+  }, [fetchOrders, filter, showToast, markOrderActioned]);
 
   const handleViewDetail = useCallback((orderId: string) => {
     setSelectedOrderId(orderId);
@@ -251,6 +289,7 @@ export default function OrdersPage() {
                     key={o.id}
                     order={o}
                     onStatusChange={handleStatusChange}
+                    onDecline={handleDecline}
                     onViewDetail={handleViewDetail}
                     busy={Boolean(rowBusy[o.id])}
                   />

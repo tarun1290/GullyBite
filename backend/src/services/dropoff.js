@@ -24,6 +24,22 @@ const STATE_TO_STAGE = {
 const COMPLETED_STAGES = new Set(['completed']);
 const FUNNEL_ORDER = ['initiated', 'address', 'browsing', 'cart', 'payment_pending', 'completed'];
 
+// Terminal-failure order statuses. A conversation whose active_order_id
+// points to one of these is a dead lead — the customer never returns
+// to revive that order, so it must NOT keep showing up in Incomplete
+// Orders / dropoff analytics. Routed to the payment_failed bucket
+// below (same convention as the legacy "CANCELLED + cancel_reason
+// includes expired" branch this replaces). Mirrors the set in
+// core/orderStateEngine.js's TERMINAL_FAILURE_STATES — keep both in
+// sync if you ever add a status (e.g., NO_DELIVERY_AVAILABLE).
+const TERMINAL_FAILURE_STATUSES = new Set([
+  'EXPIRED',
+  'CANCELLED',
+  'REJECTED_BY_RESTAURANT',
+  'RESTAURANT_TIMEOUT',
+  'PAYMENT_FAILED',
+]);
+
 // Abandonment thresholds (hours) — early stages tolerate longer before being "abandoned"
 const ABANDON_HOURS = {
   initiated:       24,
@@ -67,23 +83,39 @@ async function getDropoffs(restaurantId, options = {}) {
   for (const conv of convs) {
     const stage = STATE_TO_STAGE[conv.state] || 'initiated';
 
-    // Check for orders to determine completion
-    const hasOrder = conv.active_order_id
-      ? await col('orders').findOne({ _id: conv.active_order_id, status: { $nin: ['CANCELLED', 'PAYMENT_FAILED'] } })
+    // Single fetch of the active order — used to classify both the
+    // success side (live or fulfilled order → completed) and the
+    // failure side (terminal-failure status → payment_failed).
+    // Replaces a prior two-findOne pattern that asymmetrically
+    // excluded CANCELLED/PAYMENT_FAILED while letting EXPIRED /
+    // RESTAURANT_TIMEOUT / REJECTED_BY_RESTAURANT slip through to
+    // dropoff classification — the bug behind customers reappearing
+    // in Incomplete Orders 24h after their order died.
+    const activeOrder = conv.active_order_id
+      ? await col('orders').findOne(
+          { _id: conv.active_order_id },
+          { projection: { _id: 1, status: 1 } },
+        )
       : null;
 
-    if (hasOrder || COMPLETED_STAGES.has(stage)) {
+    // Completion path: a non-terminal-failure order exists, OR the
+    // conversation state is itself in a post-completion stage
+    // (feedback / issue flows).
+    const isLiveOrSuccess = activeOrder && !TERMINAL_FAILURE_STATUSES.has(activeOrder.status);
+    if (isLiveOrSuccess || COMPLETED_STAGES.has(stage)) {
       stageCounts.completed++;
       continue;
     }
 
-    // Check payment failure
-    if (conv.active_order_id) {
-      const failedOrder = await col('orders').findOne({ _id: conv.active_order_id, status: { $in: ['CANCELLED', 'PAYMENT_FAILED'] } });
-      if (failedOrder && failedOrder.cancel_reason?.includes('expired')) {
-        stageCounts.payment_failed++;
-        continue;
-      }
+    // Failure path: any terminal-failure status (EXPIRED, CANCELLED,
+    // REJECTED_BY_RESTAURANT, RESTAURANT_TIMEOUT, PAYMENT_FAILED).
+    // Bucketed as payment_failed for parity with the prior behaviour
+    // for "CANCELLED with cancel_reason='expired'", which used the
+    // same bucket. Doesn't add to the dropoff list — these are dead,
+    // not in-progress.
+    if (activeOrder && TERMINAL_FAILURE_STATUSES.has(activeOrder.status)) {
+      stageCounts.payment_failed++;
+      continue;
     }
 
     stageCounts[stage] = (stageCounts[stage] || 0) + 1;

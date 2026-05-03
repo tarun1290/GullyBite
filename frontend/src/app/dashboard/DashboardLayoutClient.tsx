@@ -15,6 +15,7 @@ import { RestaurantProvider, useRestaurant } from '../../contexts/RestaurantCont
 import { useNewOrderSound } from '../../hooks/useNewOrderSound';
 import { SocketProvider } from '../../components/shared/SocketProvider';
 import LiveIndicator from '../../components/shared/LiveIndicator';
+import NewOrderPopup from '../../components/restaurant/NewOrderPopup';
 import type { Restaurant, WabaAccount } from '../../types';
 
 const NAV_ITEMS: NavItem[] = [
@@ -128,6 +129,11 @@ function DashboardShell({ children }: DashboardShellProps) {
           {children}
         </div>
       </main>
+      {/* Window-in-window new-order popup. Mounted at the layout level
+          so it appears on every dashboard route, not just /orders.
+          Self-polling — feeds syncWithOrders() to the alarm hook so
+          the audible alarm fires off the same detection. */}
+      <NewOrderPopup />
     </div>
   );
 }

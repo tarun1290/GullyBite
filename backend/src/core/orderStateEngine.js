@@ -239,6 +239,35 @@ async function transitionOrder(orderId, nextState, opts = {}) {
     emitToAdmin('order:updated', updatedPayload);
   } catch (_) { /* socket failures must never block the transition */ }
 
+  // ─── CONVERSATION RESET ON TERMINAL-FAILURE (defense in depth) ─
+  // When an order dies (EXPIRED, CANCELLED, REJECTED_BY_RESTAURANT,
+  // RESTAURANT_TIMEOUT, PAYMENT_FAILED), reset the customer's
+  // conversation back to GREETING and clear active_order_id. Without
+  // this, the customer keeps showing up under Incomplete Orders /
+  // dropoff analytics because (a) services/dropoff.js's hasOrder check
+  // treats CANCELLED/PAYMENT_FAILED as "no completed order" and falls
+  // through to stage classification, and (b) conv.state often stays
+  // pinned to ORDER_REVIEW / AWAITING_PAYMENT for the lifetime of the
+  // dead order. PAID orders intentionally don't trigger this — that
+  // path schedules the acceptance-timeout job below.
+  // Fire-and-forget: a conversations write failure must not abort the
+  // already-committed order transition.
+  const TERMINAL_FAILURE_STATES = new Set([
+    'EXPIRED', 'CANCELLED', 'REJECTED_BY_RESTAURANT',
+    'RESTAURANT_TIMEOUT', 'PAYMENT_FAILED',
+  ]);
+  if (TERMINAL_FAILURE_STATES.has(nextState)) {
+    setImmediate(() => {
+      col('conversations').updateOne(
+        { active_order_id: orderId },
+        { $set: { state: 'GREETING', active_order_id: null, updated_at: new Date() } },
+      ).catch((err) => log.warn(
+        { err: err.message, orderId, nextState },
+        'conversation reset on terminal transition failed (non-fatal)',
+      ));
+    });
+  }
+
   // ─── ACCEPTANCE TIMEOUT JOB (PAID only) ──────────────────────
   // Schedule the BullMQ acceptance-timeout job so the restaurant has
   // ORDER_ACCEPTANCE_TIMEOUT_MS (default 4 min) to /accept or /decline

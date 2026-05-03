@@ -19,11 +19,15 @@ const STATUS_BADGE: Record<string, [string, string]> = {
   PENDING:         ['ba', 'Pending'],
 };
 
-// PAID→CONFIRMED, CONFIRMED→PREPARING, PREPARING→PACKED.
-// From legacy orders.js:67. Later statuses have no status-button (handled via dispatch flow).
+// PAID → CONFIRMED, then CONFIRMED auto-advances to PREPARING from
+// the calling site (orders/page.tsx handleStatusChange + the new-order
+// popup). PREPARING → PACKED stays as a manual click — the kitchen
+// signals when packing is done. CONFIRMED is intentionally absent
+// here so no "Prep" button appears on the owner dashboard; the staff
+// app retains its own explicit prep control. Later statuses
+// (PACKED → DISPATCHED, DELIVERED) flow through the dispatch path.
 const NEXT_STATUS: Record<string, [string, string]> = {
   PAID:      ['CONFIRMED', '✅ Confirm'],
-  CONFIRMED: ['PREPARING', '👨‍🍳 Prep'],
   PREPARING: ['PACKED',    '📦 Packed'],
 };
 
@@ -93,13 +97,19 @@ interface OrderCardProps {
   onStatusChange?: (id: string, nextStatus: string) => void | Promise<void>;
   onDispatch?: (id: string) => void | Promise<void>;
   onViewDetail?: (id: string) => void;
+  // Decline triggers the dedicated /decline route on the backend
+  // (refund + REJECTED_BY_RESTAURANT transition). Passed in by the
+  // parent so the page-level toast/refetch flow stays consistent.
+  // Only PAID rows render the Decline button regardless.
+  onDecline?: (id: string) => void | Promise<void>;
   busy?: boolean;
 }
 
-export default function OrderCard({ order, onStatusChange, onViewDetail, busy = false }: OrderCardProps) {
+export default function OrderCard({ order, onStatusChange, onViewDetail, onDecline, busy = false }: OrderCardProps) {
   const [localBusy, setLocalBusy] = useState<boolean>(false);
+  const [decliningLocal, setDecliningLocal] = useState<boolean>(false);
   const next = NEXT_STATUS[order.status];
-  const disabled = busy || localBusy;
+  const disabled = busy || localBusy || decliningLocal;
 
   const handleNextStatus = async () => {
     if (disabled || !next) return;
@@ -108,6 +118,16 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, busy = 
       await onStatusChange?.(order.id, next[0]);
     } finally {
       setLocalBusy(false);
+    }
+  };
+
+  const handleDecline = async () => {
+    if (disabled || !onDecline) return;
+    setDecliningLocal(true);
+    try {
+      await onDecline(order.id);
+    } finally {
+      setDecliningLocal(false);
     }
   };
 
@@ -137,6 +157,26 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, busy = 
               disabled={disabled}
             >
               {localBusy ? (<><span className="spin" /> …</>) : next[1]}
+            </button>
+          )}
+          {/* Decline button — PAID rows only. Hits /decline (refund +
+              REJECTED_BY_RESTAURANT) via the parent-supplied onDecline.
+              Outlined red so it doesn't compete visually with the
+              filled green Confirm button. */}
+          {order.status === 'PAID' && onDecline && (
+            <button
+              type="button"
+              className="btn-sm"
+              onClick={handleDecline}
+              disabled={disabled}
+              style={{
+                background: 'transparent',
+                color: '#dc2626',
+                border: '1.5px solid #dc2626',
+                fontWeight: 600,
+              }}
+            >
+              {decliningLocal ? (<><span className="spin" /> …</>) : '✗ Decline'}
             </button>
           )}
           <button
