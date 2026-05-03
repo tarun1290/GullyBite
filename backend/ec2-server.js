@@ -537,6 +537,17 @@ connect().then(() => {
     } catch (err) {
       console.error('[EC2] BullMQ acceptance worker setup failed:', err.message);
     }
+    // Post-payment job poller — runs the ORDER_DISPATCH / POS_SYNC /
+    // RATING_REQUEST handlers off the post_payment_jobs Mongo queue.
+    // Same EC2-only / REDIS_URL gate as the other workers (its handler
+    // dependencies — delivery service + Prorouting — assume the
+    // VPC-private 3PL network egress is reachable).
+    try {
+      require('./src/queue/postPaymentJobs').start();
+      console.log('[EC2] post-payment jobs poller started');
+    } catch (err) {
+      console.error('[EC2] post-payment jobs poller setup failed:', err.message);
+    }
   } else {
     console.log('[EC2] BullMQ orders queue: disabled (REDIS_URL not set)');
   }
