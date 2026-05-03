@@ -533,6 +533,58 @@ export default function BranchFormModal({
         </div>
         <div className="cb">
           <div className="fgrid">
+            {/* Edit-mode only: surface the immutable branch _id with a
+                copy-to-clipboard affordance. Useful for support tickets,
+                catalog debugging, and the new paywall flows that key off
+                the id. Span-2 so the id+button live on one row without
+                squeezing the next "Branch Name / City" pair. */}
+            {isEdit && existingBranch?.id && (
+              <div className="fg span2">
+                <label>Branch ID</label>
+                <div style={{ display: 'flex', gap: '.4rem', alignItems: 'stretch' }}>
+                  <input
+                    value={existingBranch.id}
+                    readOnly
+                    aria-readonly="true"
+                    onFocus={(e) => e.currentTarget.select()}
+                    style={{
+                      flex: 1,
+                      fontFamily: 'monospace',
+                      fontSize: '.78rem',
+                      background: 'var(--ink2,#f4f4f5)',
+                      color: 'var(--dim,#6b7280)',
+                      cursor: 'text',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const id = existingBranch.id;
+                      // navigator.clipboard requires a secure context
+                      // (https / localhost). Falls back to an error
+                      // toast if it's missing or rejected — no
+                      // execCommand legacy path since the dashboard
+                      // runs in HTTPS in every deployed env.
+                      try {
+                        if (!navigator.clipboard?.writeText) {
+                          throw new Error('clipboard API unavailable');
+                        }
+                        await navigator.clipboard.writeText(id);
+                        showToast('Branch ID copied', 'success');
+                      } catch {
+                        showToast('Could not copy — select the field and copy manually', 'error');
+                      }
+                    }}
+                    className="btn-g btn-sm"
+                    aria-label="Copy branch ID to clipboard"
+                    title="Copy branch ID"
+                    style={{ flexShrink: 0 }}
+                  >
+                    📋 Copy
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="fg">
               <label>Branch Name ★</label>
               <input
