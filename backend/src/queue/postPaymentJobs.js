@@ -171,14 +171,21 @@ async function _handleOrderDispatch(payload) {
   const order = await orderSvc.getOrderDetails(payload.orderId);
   if (!order) throw new Error('order not found');
 
-  // Stale-job guard. Dispatch now fires from the restaurant /accept
+  // Stale-job guard. Dispatch fires from the restaurant /accept
   // handler — only when the order has actually transitioned to
-  // CONFIRMED. Any in-flight pre-deploy ORDER_DISPATCH job created from
-  // the old PAID-time fan-out lands here in PAID (or beyond CONFIRMED)
-  // and we skip silently rather than re-dispatching.
-  if (order.status !== 'CONFIRMED') {
+  // CONFIRMED. PREPARING is also accepted because the owner-dashboard
+  // accept flow auto-advances CONFIRMED → PREPARING immediately after
+  // /accept resolves (see app/dashboard/orders/page.tsx and
+  // components/restaurant/NewOrderPopup.tsx). That second PATCH can
+  // win the race against this job being picked up by a worker, so the
+  // job legitimately sees PREPARING on a brand-new accept. PACKED and
+  // beyond remain blocked — by then the kitchen has already advanced
+  // the order and a fresh dispatch would be a duplicate.
+  // Any in-flight pre-deploy ORDER_DISPATCH job created from the old
+  // PAID-time fan-out lands here in PAID and is skipped silently.
+  if (order.status !== 'CONFIRMED' && order.status !== 'PREPARING') {
     log.info({ orderId: payload.orderId, status: order.status },
-      'ORDER_DISPATCH: order not in CONFIRMED — skipping (stale or out-of-order job)');
+      'ORDER_DISPATCH: order not in CONFIRMED/PREPARING — skipping (stale or out-of-order job)');
     return;
   }
 
