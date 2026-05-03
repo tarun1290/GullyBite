@@ -173,20 +173,44 @@ function requireStaffOrRestaurantAuth(restaurantAuthMw) {
 
     // Try restaurant JWT first. requireAuth populates req.restaurantId,
     // req.userId, req.userRole, req.userPermissions, req.userBranchIds.
-    // Capture whether it succeeded by intercepting the next() callback.
+    //
+    // Detection strategy: requireAuth always exits one of two ways —
+    //   (a) calls next() with no error, having set req.restaurantId
+    //   (b) calls res.status(N).json({...}) without calling next()
+    // We resolve the Promise on whichever fires first, with no timer
+    // involved. To detect path (b) we wrap res.json for the duration
+    // of restaurantAuthMw — the wrapper records that a response was
+    // sent, then forwards to the original so the 401 still lands on
+    // the client. Restored on both exit paths so the route handler /
+    // staff path see the unwrapped writer.
     let restaurantOk = false;
     let resAlreadyHandled = false;
     await new Promise((resolve) => {
+      let settled = false;
+      const safeResolve = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+
+      const originalJson = res.json.bind(res);
+      res.json = function interceptedJson(body) {
+        // Restore first so a subsequent (legitimate) res.json call
+        // anywhere downstream goes straight to the original writer.
+        res.json = originalJson;
+        resAlreadyHandled = true;
+        const ret = originalJson(body);
+        safeResolve();
+        return ret;
+      };
+
       restaurantAuthMw(req, res, (err) => {
+        // Restore in case next() fired without res.json being called
+        // (the success path). Idempotent if the intercept already
+        // restored.
+        res.json = originalJson;
         if (!err && req.restaurantId) restaurantOk = true;
-        resolve();
-      });
-      // requireAuth may have called res.status(401).json(...) already
-      // — that's fine, we'll fall through to the staff path below
-      // unless headers are sent (handled below).
-      setImmediate(() => {
-        if (res.headersSent) resAlreadyHandled = true;
-        resolve();
+        safeResolve();
       });
     });
 
