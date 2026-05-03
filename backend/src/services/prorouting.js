@@ -46,13 +46,29 @@ function client() {
 }
 
 // Accept either { latitude, longitude } (our DB shape) or { lat, lng }
-// (Prorouting spec). Returns the spec shape.
+// (Prorouting spec). Returns the spec shape, or null when either side
+// is missing or coerces to a non-finite number.
+//
+// Why the extra rejection cases beyond `== null`: upstream writers
+// occasionally land empty strings ('') or string-typed zeros on these
+// fields when a form leaves a coord blank or a CSV import skips the
+// cell. The legacy `lat == null || lng == null` check let those slip
+// through, and Number('') === 0 then surfaced as a valid `(0, 0)`
+// payload to Prorouting — which the Track Callback later flags as a
+// sentinel and drops, but only after a wasted /createasync round-trip
+// (and a rider being assigned to coords nowhere near the actual
+// pickup). Reject empty strings and any value that doesn't coerce
+// to a finite number BEFORE the API call.
 function toLatLng(point) {
   if (!point) return null;
-  const lat = point.lat ?? point.latitude;
-  const lng = point.lng ?? point.longitude;
-  if (lat == null || lng == null) return null;
-  return { lat: Number(lat), lng: Number(lng) };
+  const rawLat = point.lat ?? point.latitude;
+  const rawLng = point.lng ?? point.longitude;
+  if (rawLat == null || rawLng == null) return null;
+  if (rawLat === '' || rawLng === '') return null;
+  const lat = Number(rawLat);
+  const lng = Number(rawLng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
 }
 
 // ─── GET ESTIMATE ─────────────────────────────────────────────
