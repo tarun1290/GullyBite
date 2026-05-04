@@ -128,7 +128,11 @@ async function _handleStatusCallback(body) {
   }
 
   try {
-    const order = await col('orders').findOne({ _id: clientOrderId });
+    // client_order_id is the human-readable order_number we sent on
+    // /createasync (e.g. "ZM-20260504-0009"), NOT the internal UUID
+    // _id. Prior code keyed on _id which never matched, so every
+    // status callback was dropped with a "not found" warn.
+    const order = await col('orders').findOne({ order_number: clientOrderId });
     if (!order) {
       log.warn({ clientOrderId }, 'prorouting status callback: order not found');
       return;
@@ -307,8 +311,10 @@ router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
       try {
         let ctx = orderCtxCache.get(cid);
         if (ctx === undefined) {
+          // Same fix as the status-callback site: cid is the
+          // order_number we echoed on /createasync, not the UUID _id.
           const orderDoc = await ordersDb.findOne(
-            { _id: String(cid) },
+            { order_number: String(cid) },
             { projection: { branch_id: 1, restaurant_id: 1 } }
           );
           ctx = orderDoc ? {
