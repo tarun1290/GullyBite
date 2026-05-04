@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Linking from 'expo-linking';
+import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -113,6 +114,31 @@ function RootInner() {
       try { sub.remove(); } catch { /* noop */ }
     };
   }, [router]);
+
+  // ─── Self-hosted OTA check (silent, fire-and-forget) ───────
+  // Runs once on mount. Updates.isEnabled gates dev mode (where
+  // Updates is a no-op stub) so this is safe to call locally too.
+  // Wrapped in try/catch — a network blip / 5xx must NOT brick the
+  // app. checkForUpdateAsync hits /api/ota/manifest with the
+  // expo-runtime-version + expo-platform headers; if the backend
+  // returns 204 (no active update) result.isAvailable is false and
+  // we no-op. If a fresh bundle is available, fetchUpdateAsync pulls
+  // the assets and reloadAsync swaps in the new bundle on the next
+  // foreground tick.
+  useEffect(() => {
+    if (!Updates.isEnabled) return;
+    (async () => {
+      try {
+        const result = await Updates.checkForUpdateAsync();
+        if (result.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch {
+        /* silent — never crash the app over an OTA failure */
+      }
+    })();
+  }, []);
 
   if (!ready || authLoading) {
     return (

@@ -16,6 +16,13 @@
 //
 // Both paths run the same script; the patch script itself is
 // idempotent so accidental double-runs are safe.
+//
+// ─── package-lock sync reminder ─────────────────────────────────────
+// After adding/removing any dependency in package.json (e.g.
+// expo-updates, expo-build-properties), run `npm install` in
+// staff-app/ locally to refresh package-lock.json before pushing.
+// GitHub Actions runs `npm ci`, which fails fast if lockfile and
+// package.json drift. `npm install --package-lock-only` is enough.
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://gullybite.duckdns.org';
 const PROJECT_ID = process.env.EXPO_PUBLIC_PROJECT_ID || '';
@@ -51,6 +58,7 @@ module.exports = ({ config }) => ({
   plugins: [
     'expo-router',
     'expo-secure-store',
+    'expo-updates',
     [
       'expo-notifications',
       {
@@ -71,6 +79,21 @@ module.exports = ({ config }) => ({
       { android: { kotlinVersion: '1.9.25' } },
     ],
   ],
+  // Self-hosted OTA. Manifest is served by the GullyBite backend at
+  // /api/ota/manifest (see backend/src/routes/otaUpdates.js). Runtime
+  // sends `expo-runtime-version` + `expo-platform` headers; the policy
+  // below pins runtimeVersion to the native android.versionCode (a
+  // bundle compiled against versionCode N is only delivered to APKs
+  // with the matching versionCode), so a JS-only OTA can never fight
+  // a native-binary mismatch. Bump versionCode to invalidate the OTA
+  // channel cleanly.
+  runtimeVersion: { policy: 'nativeVersion' },
+  updates: {
+    enabled: true,
+    checkAutomatically: 'ON_LOAD',
+    fallbackToCacheTimeout: 0,
+    url: `${API_URL}/api/ota/manifest`,
+  },
   extra: {
     apiUrl: API_URL,
     eas: PROJECT_ID ? { projectId: PROJECT_ID } : undefined,
