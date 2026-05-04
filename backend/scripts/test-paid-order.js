@@ -25,21 +25,50 @@
 //
 // What it does NOT do:
 //   • No order_items rows (the order doc carries items[] denormalized)
-//   • No customer record (uses a synthetic uuid — no FK lookups will resolve)
 //   • No WhatsApp messages, no Razorpay charge
+//
+// --customer_phone behaviour:
+//   • Omitted → synthetic customer_id (uuid), fake phone 919999999999.
+//     Notification path's findOne({_id: customer_id}) → null → silent
+//     no-op. Useful for pipeline smoke-tests with no live customer.
+//   • Provided → looks up the real customer by wa_phone (exact-match
+//     on normalized digits, with a substring-regex fallback for
+//     partial inputs like "9876543210" matching "+919876543210").
+//     Uses the real _id so resolveRecipient (services/customerIdentity)
+//     resolves to the real WhatsApp number — actual notifications WILL
+//     fire on this run. Hard-errors if no match (don't silently fall
+//     back to the synthetic id — that masks the most useful failure).
 
 const path = require('path');
 const crypto = require('crypto');
 const { MongoClient } = require('mongodb');
 
 function parseArgs(argv) {
-  const out = { restaurant_id: null, branch_id: null, customer_phone: '919999999999' };
+  // null sentinel for customer_phone so we can distinguish "user didn't
+  // pass the flag" (use synthetic) from "user explicitly asked for a
+  // real lookup" (resolve or fail). Default-to-fake gets applied later.
+  const out = { restaurant_id: null, branch_id: null, customer_phone: null };
   for (const raw of argv.slice(2)) {
     const m = raw.match(/^--([a-z_]+)=(.+)$/);
     if (!m) continue;
     if (m[1] in out) out[m[1]] = m[2];
   }
   return out;
+}
+
+// Strip non-digits — same shape as services/customer.service.js
+// normalizePhone (digit-only, null on empty). Inlined rather than
+// imported so the script stays standalone with zero project requires
+// before mongo connects.
+function normalizeDigits(s) {
+  if (!s) return null;
+  const d = String(s).replace(/[^\d]/g, '');
+  return d || null;
+}
+
+function maskPhone(p) {
+  const d = normalizeDigits(p) || '';
+  return d.length >= 4 ? `••••${d.slice(-4)}` : (p || '');
 }
 
 async function main() {
@@ -76,6 +105,48 @@ async function main() {
     process.exit(1);
   }
   console.log(`[test-paid-order] branch resolved: ${branch.name} (${branch._id})`);
+
+  // ─── Customer resolution ─────────────────────────────────────
+  // When --customer_phone is provided, look up the real customer so
+  // notifications resolve via the actual customerIdentity flow. When
+  // omitted, fall through with a synthetic id (no notifications fire).
+  let resolvedCustomer = null;
+  let effectiveCustomerPhone;
+  if (args.customer_phone) {
+    const phoneDigits = normalizeDigits(args.customer_phone);
+    if (!phoneDigits) {
+      console.error(`invalid --customer_phone: ${args.customer_phone}`);
+      await client.close();
+      process.exit(1);
+    }
+    // 1. Exact match on the normalised digit form — the canonical
+    //    pattern used by services/customerIdentity.js and
+    //    routes/dineInFeedback.js.
+    resolvedCustomer = await db.collection('customers').findOne({ wa_phone: phoneDigits });
+    // 2. Substring-regex fallback for partial inputs (e.g. user passed
+    //    last 10 digits while the stored row has a country-code
+    //    prefix). Escape regex metacharacters defensively even though
+    //    we just stripped to digits — guards against future relaxation
+    //    of normalizeDigits.
+    if (!resolvedCustomer) {
+      const escaped = phoneDigits.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      resolvedCustomer = await db.collection('customers').findOne({
+        wa_phone: { $regex: escaped },
+      });
+    }
+    if (!resolvedCustomer) {
+      console.error(`customer not found for phone ${args.customer_phone} — pass an existing wa_phone or omit the flag`);
+      await client.close();
+      process.exit(1);
+    }
+    effectiveCustomerPhone = resolvedCustomer.wa_phone || phoneDigits;
+    console.log(
+      `[test-paid-order] customer resolved: ${resolvedCustomer.name || '(no name)'} (${maskPhone(effectiveCustomerPhone)}) — _id=${resolvedCustomer._id}`,
+    );
+  } else {
+    effectiveCustomerPhone = '919999999999';
+    console.log('[test-paid-order] customer: synthetic (no --customer_phone passed) — phone 919999999999');
+  }
 
   // Pull 2 active menu items — same $or pattern as services/mpmBuilder.js
   // so a branch using the legacy scalar field OR the new array form both
@@ -127,7 +198,10 @@ async function main() {
   const orderNumber = `ZM-${dateStr}-${String(todayCount + 1).padStart(4, '0')}`;
 
   const orderId = crypto.randomUUID();
-  const customerId = crypto.randomUUID();
+  // Real customer when --customer_phone hit a row; synthetic uuid
+  // otherwise. The notification path's customer findOne keys off this,
+  // so the synthetic case is harmless (lookup → null → no-op).
+  const customerId = resolvedCustomer ? String(resolvedCustomer._id) : crypto.randomUUID();
   const fakeRzpOrderId = `test_order_${Date.now()}`;
   const fakeRzpPaymentId = `test_pay_${Date.now()}`;
 
@@ -159,8 +233,8 @@ async function main() {
     razorpay_payment_id: fakeRzpPaymentId,
     delivery_address: 'Test Address Line 1, Test Locality, Hyderabad',
     address_snapshot: {
-      recipient_name: 'Test Customer',
-      delivery_phone: args.customer_phone,
+      recipient_name: resolvedCustomer?.name || 'Test Customer',
+      delivery_phone: effectiveCustomerPhone,
       address_line1: 'Test Address Line 1',
       area_locality: 'Test Locality',
       city: fallbackCity,
@@ -169,8 +243,8 @@ async function main() {
     },
     delivery_lat: fallbackLat,
     delivery_lng: fallbackLng,
-    receiver_name: 'Test Customer',
-    receiver_phone: args.customer_phone,
+    receiver_name: resolvedCustomer?.name || 'Test Customer',
+    receiver_phone: effectiveCustomerPhone,
     source: 'whatsapp',
     paid_at: now,
     created_at: now,
@@ -204,6 +278,7 @@ async function main() {
   console.log(`bullmq jobId:     ${jobId}`);
   console.log(`status:           PAID`);
   console.log(`branch:           ${branch.name} (${args.branch_id})`);
+  console.log(`customer:         ${resolvedCustomer ? `${resolvedCustomer.name || '(no name)'} ${maskPhone(effectiveCustomerPhone)} (real)` : 'synthetic uuid (no notifications)'}`);
   console.log(`total_paise:      ${totalPaise}`);
   console.log('────────────────────────────────────────────');
 
