@@ -110,7 +110,8 @@ async function _claim() {
     { $set: { status: 'processing', updated_at: now }, $inc: { attempts: 1 } },
     { sort: { next_attempt_at: 1 }, returnDocument: 'after' }
   );
-  return res?.value || null;
+  // mongodb v4 wraps the doc as { value: doc }; v5+ returns the doc directly. Handle both shapes.
+  return res?.value ?? res ?? null;
 }
 
 // ─── HANDLERS ─────────────────────────────────────────────────
