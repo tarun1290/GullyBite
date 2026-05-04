@@ -64,6 +64,14 @@ router.post('/', express.json({ limit: '64kb' }), async (req, res) => {
   log.info({ headers: req.headers, body: req.body, ip: req.ip }, 'prorouting webhook: incoming raw request');
 
   // ─── AUTH ────────────────────────────────────────────────────
+  // TEMPORARY (2026-05-04): Soft-fail mode while confirming webhook
+  // auth scheme with Prorouting (Mahesh). Their callbacks don't
+  // include x-pro-api-key — that header is what WE send to THEM on
+  // outbound calls. Revert to strict 401 once Mahesh confirms the
+  // correct auth contract (likely IP allowlist on x-real-ip, HMAC,
+  // or separate webhook secret). See diagnostic capture in pm2 logs
+  // from 2026-05-04 09:56-09:57 for header shape Prorouting actually
+  // sends.
   const expectedKey = process.env.PROROUTING_API_KEY;
   if (!expectedKey) {
     log.error('PROROUTING_API_KEY not configured — rejecting webhook');
@@ -72,11 +80,13 @@ router.post('/', express.json({ limit: '64kb' }), async (req, res) => {
   const providedKey = req.get('x-pro-api-key');
   if (!timingSafeStringEqual(providedKey, expectedKey)) {
     log.warn({ ip: req.ip }, 'prorouting webhook: invalid api key');
-    return res.status(401).send('unauthorized');
+    // SOFT-FAIL: fall through and continue processing.
+    // Restore `return res.status(401).send('unauthorized');` once the
+    // real auth contract is wired.
   }
 
-  // Auth passed — from here on, always 200. Prorouting retries on
-  // non-200 so we must not propagate internal failures as HTTP errors.
+  // Always 200. Prorouting retries on non-200 so we must not
+  // propagate internal failures as HTTP errors.
   res.status(200).json({ ok: true });
 
   const body = req.body || {};
@@ -220,6 +230,14 @@ router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
   // has been fully characterised.
   log.info({ headers: req.headers, body: req.body, ip: req.ip }, 'prorouting webhook /track: incoming raw request');
 
+  // TEMPORARY (2026-05-04): Soft-fail mode while confirming webhook
+  // auth scheme with Prorouting (Mahesh). Their callbacks don't
+  // include x-pro-api-key — that header is what WE send to THEM on
+  // outbound calls. Revert to strict 401 once Mahesh confirms the
+  // correct auth contract (likely IP allowlist on x-real-ip, HMAC,
+  // or separate webhook secret). See diagnostic capture in pm2 logs
+  // from 2026-05-04 09:56-09:57 for header shape Prorouting actually
+  // sends.
   const expectedKey = process.env.PROROUTING_API_KEY;
   if (!expectedKey) {
     log.error('PROROUTING_API_KEY not configured — rejecting track webhook');
@@ -228,7 +246,9 @@ router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
   const providedKey = req.get('x-pro-api-key');
   if (!timingSafeStringEqual(providedKey, expectedKey)) {
     log.warn({ ip: req.ip }, 'prorouting track webhook: invalid api key');
-    return res.status(401).send('unauthorized');
+    // SOFT-FAIL: fall through and continue processing.
+    // Restore `return res.status(401).send('unauthorized');` once the
+    // real auth contract is wired.
   }
 
   res.status(200).json({ ok: true });
