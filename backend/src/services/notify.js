@@ -8,7 +8,10 @@ const { logActivity } = require('./activityLog');
 const log = require('../utils/logger').child({ component: 'Notify' });
 
 // ─── INTERNAL HELPER: SEND TO ALL NOTIFICATION RECIPIENTS ────
-const sendManagerNotification = async (restaurantId, branchId, message) => {
+// options.excludePhones: string | string[] — phones to remove from the
+// recipient set after collection (e.g. the order's customer phone for
+// dispatch-fail alerts; see postPaymentJobs.js).
+const sendManagerNotification = async (restaurantId, branchId, message, options = {}) => {
   try {
     // Get WA account for this restaurant
     const waAccount = await col('whatsapp_accounts').findOne({
@@ -46,6 +49,16 @@ const sendManagerNotification = async (restaurantId, branchId, message) => {
     // Filter out the business WA number itself (can't send to self)
     const bizNormalized = businessPhone ? normalizePhone(businessPhone) : null;
     if (bizNormalized) phones.delete(bizNormalized);
+
+    // Internal ops alerts must never reach the customer — defensive filter
+    // for cases where manager_phone or notification_phones coincide with
+    // the customer's number (common in single-owner restaurants).
+    const exclude = Array.isArray(options.excludePhones)
+      ? options.excludePhones
+      : (options.excludePhones ? [options.excludePhones] : []);
+    for (const ex of exclude) {
+      if (ex) phones.delete(normalizePhone(ex));
+    }
 
     // Check notification settings — if not set, default to enabled
     const settings = restaurant?.notification_settings || {};
