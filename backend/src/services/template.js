@@ -182,6 +182,92 @@ const sendTemplateMessage = async (phoneNumberId, toPhone, templateName, languag
   return data;
 };
 
+// ─── DEFAULT TEMPLATE LIBRARY ───────────────────────────────
+// Templates the platform expects to exist on Meta for the lifecycle
+// events wired into DEFAULT_MAPPINGS below. Seeded by
+// seedDefaultTemplates() so an empty WABA can boot to a working state
+// without an admin hand-crafting each template in the dashboard.
+//
+// Only the templates we genuinely need at boot. Existing approved
+// templates (order_confirmed, order_prepar, out_for_delivery,
+// order_delivered) live on Meta already and are excluded here — Meta
+// rejects re-creation by name and the seed would log a noisy "already
+// exists" skip on every run.
+//
+// Language: en_US (matches our other approved templates on Meta).
+// Examples are required for any component containing {{N}} variables.
+const DEFAULT_TEMPLATES = [
+  {
+    name: 'order_packed',
+    category: 'UTILITY',
+    language: 'en_US',
+    components: [
+      { type: 'HEADER', format: 'TEXT', text: '📦 Order Packed' },
+      {
+        type: 'BODY',
+        text: "Hi {{1}}, your order #{{2}} is packed and ready for pickup by the delivery rider. We'll notify you as soon as a rider is assigned.",
+        example: { body_text: [['John', '#ZM-20260504-0001']] },
+      },
+    ],
+  },
+  {
+    name: 'order_cancelled',
+    category: 'UTILITY',
+    language: 'en_US',
+    components: [
+      { type: 'HEADER', format: 'TEXT', text: '❌ Order Cancelled' },
+      {
+        type: 'BODY',
+        text: "Hi {{1}}, your order #{{2}} has been cancelled. Reason: {{3}}. If you've been charged, your refund will be processed within 5-7 business days.",
+        example: { body_text: [['John', '#ZM-20260504-0001', 'Restaurant unavailable']] },
+      },
+    ],
+  },
+  {
+    name: 'payment_received',
+    category: 'UTILITY',
+    language: 'en_US',
+    components: [
+      { type: 'HEADER', format: 'TEXT', text: '✅ Payment Confirmed' },
+      {
+        type: 'BODY',
+        text: "Hi {{1}}, we've received your payment of ₹{{3}} for order #{{2}}. The restaurant will start preparing your order shortly.",
+        example: { body_text: [['John', '#ZM-20260504-0001', '498']] },
+      },
+    ],
+  },
+];
+
+// Idempotently create the DEFAULT_TEMPLATES on Meta. Skips any name
+// already present in the local templates collection for this WABA;
+// also catches Meta's "name already exists" error (code 192) so a
+// half-synced state still progresses cleanly.
+const seedDefaultTemplates = async (wabaId) => {
+  if (!wabaId) throw new Error('seedDefaultTemplates: wabaId required');
+  const created = [];
+  const skipped = [];
+  for (const t of DEFAULT_TEMPLATES) {
+    const existing = await col('templates').findOne({ waba_id: wabaId, name: t.name });
+    if (existing) {
+      skipped.push({ name: t.name, reason: 'already_exists_local', status: existing.status || null });
+      continue;
+    }
+    try {
+      const result = await createTemplate(wabaId, t);
+      created.push({ name: t.name, meta_id: result.id, status: result.status || 'PENDING' });
+    } catch (e) {
+      const metaErr = e.response?.data?.error;
+      const msg = metaErr?.message || e.message || 'unknown error';
+      if (metaErr?.code === 192 || /already exists/i.test(msg)) {
+        skipped.push({ name: t.name, reason: 'already_exists_meta' });
+      } else {
+        skipped.push({ name: t.name, reason: msg });
+      }
+    }
+  }
+  return { created, skipped };
+};
+
 // ─── TEMPLATE EVENT MAPPINGS ────────────────────────────────
 // Maps order lifecycle events to template names + variable configs
 
@@ -366,6 +452,8 @@ module.exports = {
   getMappingForEvent,
   updateEventMapping,
   seedDefaultMappings,
+  seedDefaultTemplates,
   resolveTemplateVariables,
   DEFAULT_MAPPINGS,
+  DEFAULT_TEMPLATES,
 };

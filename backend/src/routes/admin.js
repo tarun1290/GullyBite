@@ -2362,12 +2362,35 @@ router.put('/templates/mappings/:event', express.json(), async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-// POST /api/admin/templates/seed — force re-seed default mappings
-router.post('/templates/seed', async (req, res) => {
+// POST /api/admin/templates/seed — force re-seed default event→template
+// mappings AND create any missing utility templates on Meta. Auto-discovers
+// the platform WABA so the frontend doesn't need to pass it. The template
+// seed is best-effort: if no WABA is configured we still seed mappings and
+// return an empty templates payload, mirroring the GET /flows pattern.
+router.post('/templates/seed', express.json(), async (req, res) => {
   try {
     await templateSvc.seedDefaultMappings();
+
+    let { waba_id } = req.body || {};
+    if (!waba_id) {
+      const wa = await col('whatsapp_accounts').findOne({ is_active: true });
+      waba_id = wa?.waba_id;
+    }
+    let templates = { created: [], skipped: [] };
+    if (waba_id) {
+      templates = await templateSvc.seedDefaultTemplates(waba_id);
+      if (templates.created.length) {
+        logActivity({
+          actorType: 'admin', actorId: null, actorName: 'Admin',
+          action: 'template.seeded', category: 'template',
+          description: `Seeded ${templates.created.length} default template(s) on WABA ${waba_id}: ${templates.created.map(t => t.name).join(', ')}`,
+          resourceType: 'template', resourceId: waba_id, severity: 'info',
+        });
+      }
+    }
+
     const mappings = await templateSvc.getEventMappings();
-    res.json({ seeded: true, mappings });
+    res.json({ seeded: true, mappings, templates });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 

@@ -110,8 +110,13 @@ export default function AdminTemplatesPage() {
   const doSeed = async () => {
     setSeeding(true);
     try {
-      await seedTemplates();
-      showToast('Default mappings seeded', 'success');
+      const r = (await seedTemplates()) as { templates?: { created?: { name: string }[]; skipped?: { name: string }[] } } | null;
+      const created = r?.templates?.created?.length ?? 0;
+      const skipped = r?.templates?.skipped?.length ?? 0;
+      const tail = created
+        ? ` + ${created} template(s) submitted to Meta${skipped ? ` (${skipped} skipped)` : ''}`
+        : skipped ? ` (${skipped} template(s) already exist)` : '';
+      showToast(`Default mappings seeded${tail}`, 'success');
       load();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
