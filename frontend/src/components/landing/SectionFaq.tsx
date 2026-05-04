@@ -13,7 +13,7 @@ const ITEMS = [
   },
   {
     q: 'What about deliveries?',
-    a: 'GullyBite plugs into delivery partners like Dunzo, Porter, and Shadowfax (city-dependent) with the delivery fee shown to the customer at checkout. You can also run your own delivery fleet — the choice is yours, and both can coexist.',
+    a: 'GullyBite plugs into delivery partners like Dunzo and Shadowfax (city-dependent) with the delivery fee shown to the customer at checkout. You can also run your own delivery fleet — the choice is yours, and both can coexist.',
   },
   {
     q: 'Is there a per-order commission on top of the monthly fee?',

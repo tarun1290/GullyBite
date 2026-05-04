@@ -413,7 +413,7 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
     await col('deliveries').insertOne({
       _id: newId(),
       order_id: orderId,
-      provider: deliveryQuote?.providerName || process.env.DEFAULT_DELIVERY_PROVIDER || 'porter',
+      provider: deliveryQuote?.providerName || process.env.DEFAULT_DELIVERY_PROVIDER || 'prorouting',
       provider_order_id: null,
       tracking_url: null,
       driver_name: null,

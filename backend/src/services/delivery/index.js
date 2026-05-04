@@ -1,14 +1,15 @@
 // src/services/delivery/index.js
 // 3PL delivery provider router — abstracts multiple delivery partners
-// Currently supports Porter; designed for adding Dunzo, Shadowfax, Borzo
+// Currently supports Prorouting; mock kept for tests / dev. Designed
+// for adding Dunzo, Shadowfax, Borzo behind the same interface.
 
 const { col, newId } = require('../../config/database');
-const porter = require('./porter');
-const mock = require('./mock');
+const prorouting = require('./providers/prorouting');
+const mock = require('./providers/mock');
 const log = require('../../utils/logger').child({ component: 'Delivery' });
 
 const PROVIDERS = {
-  porter,
+  prorouting,
   mock,
   // dunzo,       // future
   // shadowfax,   // future
@@ -115,7 +116,7 @@ async function dispatchDelivery(orderId) {
     { order_id: orderId },
     {
       $set: {
-        provider: provider.name || process.env.DEFAULT_DELIVERY_PROVIDER || 'porter',
+        provider: provider.name || process.env.DEFAULT_DELIVERY_PROVIDER || 'prorouting',
         provider_order_id: task.taskId,
         tracking_url: task.trackingUrl,
         estimated_mins: task.estimatedMins,

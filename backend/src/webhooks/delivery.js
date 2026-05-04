@@ -1,5 +1,5 @@
 // src/webhooks/delivery.js
-// Receives status updates from 3PL delivery partners (Porter, Dunzo, etc.)
+// Receives status updates from 3PL delivery partners (Dunzo, Shadowfax, etc.)
 // Always returns 200 immediately, then processes asynchronously.
 
 const express = require('express');
