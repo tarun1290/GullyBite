@@ -228,6 +228,19 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
   }
 
   if (status === 'picked-up') {
+    // Self-heal: if the order missed the agent-assigned transition (rare in
+    // production, common on staging where createasync fails), pulling
+    // ourselves into DISPATCHED first lets the delivered branch close out
+    // cleanly. Idempotent — if already DISPATCHED or further, this no-ops.
+    if (order.status === 'PACKED') {
+      try {
+        await orderSvc.updateStatus(order._id, 'DISPATCHED');
+        log.info({ orderId: order._id }, 'picked-up: self-healed PACKED → DISPATCHED');
+      } catch (e) {
+        log.warn({ err: e?.message, orderId: order._id, orderStatus: order.status }, 'picked-up: self-heal updateStatus DISPATCHED failed');
+      }
+    }
+
     // Dual-write logistics timings for analytics. Skip any field we
     // can't compute — null writes would poison the "no data" checks.
     const o = eventBody?.order || {};
