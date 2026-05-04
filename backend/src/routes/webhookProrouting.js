@@ -23,10 +23,14 @@
 // only refresh rider.last_location + tracking_url.
 //
 // Contract:
-//   - Auth: `x-pro-api-key` header must equal PROROUTING_API_KEY.
-//     Mismatch → 401. No key configured → 500 (misconfiguration, not a
-//     client error — Prorouting shouldn't retry into a misconfigured
-//     endpoint).
+//   - Inbound auth: Prorouting sends our webhook secret in the
+//     x-gullybite-webhook-secret header (configured at their account
+//     level on their side). Mismatch → 401. Missing
+//     PROROUTING_WEBHOOK_SECRET env var → 500 (misconfig — Prorouting
+//     shouldn't retry into a misconfigured endpoint).
+//     NOTE: x-pro-api-key / PROROUTING_API_KEY are OUTBOUND-only — the
+//     header WE send to Prorouting from services/prorouting.js. Don't
+//     conflate them with this inbound check.
 //   - Response: ALWAYS 200 OK once auth passes. Prorouting retries on
 //     any non-200, so internal failures are swallowed and logged.
 
@@ -64,29 +68,21 @@ router.post('/', express.json({ limit: '64kb' }), async (req, res) => {
   log.info({ headers: req.headers, body: req.body, ip: req.ip }, 'prorouting webhook: incoming raw request');
 
   // ─── AUTH ────────────────────────────────────────────────────
-  // TEMPORARY (2026-05-04): Soft-fail mode while confirming webhook
-  // auth scheme with Prorouting (Mahesh). Their callbacks don't
-  // include x-pro-api-key — that header is what WE send to THEM on
-  // outbound calls. Revert to strict 401 once Mahesh confirms the
-  // correct auth contract (likely IP allowlist on x-real-ip, HMAC,
-  // or separate webhook secret). See diagnostic capture in pm2 logs
-  // from 2026-05-04 09:56-09:57 for header shape Prorouting actually
-  // sends.
-  const expectedKey = process.env.PROROUTING_API_KEY;
-  if (!expectedKey) {
-    log.error('PROROUTING_API_KEY not configured — rejecting webhook');
+  // Prorouting echoes our shared secret in x-gullybite-webhook-secret.
+  // Anything else (or a missing header) is unauthenticated.
+  const expectedSecret = process.env.PROROUTING_WEBHOOK_SECRET;
+  if (!expectedSecret) {
+    log.error('PROROUTING_WEBHOOK_SECRET not configured — rejecting webhook');
     return res.status(500).send('not configured');
   }
-  const providedKey = req.get('x-pro-api-key');
-  if (!timingSafeStringEqual(providedKey, expectedKey)) {
-    log.warn({ ip: req.ip }, 'prorouting webhook: invalid api key');
-    // SOFT-FAIL: fall through and continue processing.
-    // Restore `return res.status(401).send('unauthorized');` once the
-    // real auth contract is wired.
+  const providedSecret = req.get('x-gullybite-webhook-secret');
+  if (!timingSafeStringEqual(providedSecret, expectedSecret)) {
+    log.warn({ ip: req.ip }, 'prorouting webhook: invalid webhook secret');
+    return res.status(401).send('unauthorized');
   }
 
-  // Always 200. Prorouting retries on non-200 so we must not
-  // propagate internal failures as HTTP errors.
+  // Auth passed — from here on, always 200. Prorouting retries on
+  // non-200 so we must not propagate internal failures as HTTP errors.
   res.status(200).json({ ok: true });
 
   const body = req.body || {};
@@ -230,25 +226,17 @@ router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
   // has been fully characterised.
   log.info({ headers: req.headers, body: req.body, ip: req.ip }, 'prorouting webhook /track: incoming raw request');
 
-  // TEMPORARY (2026-05-04): Soft-fail mode while confirming webhook
-  // auth scheme with Prorouting (Mahesh). Their callbacks don't
-  // include x-pro-api-key — that header is what WE send to THEM on
-  // outbound calls. Revert to strict 401 once Mahesh confirms the
-  // correct auth contract (likely IP allowlist on x-real-ip, HMAC,
-  // or separate webhook secret). See diagnostic capture in pm2 logs
-  // from 2026-05-04 09:56-09:57 for header shape Prorouting actually
-  // sends.
-  const expectedKey = process.env.PROROUTING_API_KEY;
-  if (!expectedKey) {
-    log.error('PROROUTING_API_KEY not configured — rejecting track webhook');
+  // ─── AUTH ────────────────────────────────────────────────────
+  // Same shared-secret contract as the / endpoint above.
+  const expectedSecret = process.env.PROROUTING_WEBHOOK_SECRET;
+  if (!expectedSecret) {
+    log.error('PROROUTING_WEBHOOK_SECRET not configured — rejecting track webhook');
     return res.status(500).send('not configured');
   }
-  const providedKey = req.get('x-pro-api-key');
-  if (!timingSafeStringEqual(providedKey, expectedKey)) {
-    log.warn({ ip: req.ip }, 'prorouting track webhook: invalid api key');
-    // SOFT-FAIL: fall through and continue processing.
-    // Restore `return res.status(401).send('unauthorized');` once the
-    // real auth contract is wired.
+  const providedSecret = req.get('x-gullybite-webhook-secret');
+  if (!timingSafeStringEqual(providedSecret, expectedSecret)) {
+    log.warn({ ip: req.ip }, 'prorouting track webhook: invalid webhook secret');
+    return res.status(401).send('unauthorized');
   }
 
   res.status(200).json({ ok: true });
