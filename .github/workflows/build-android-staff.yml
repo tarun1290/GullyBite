@@ -1,15 +1,16 @@
 # Build a signed release APK for the GullyBite Staff app.
 #
-# No EAS, no Expo account, no expo login — `npx expo prebuild`
-# generates a vanilla Android Gradle project, then we run the
-# patch-gradle-signing.js script to inject a release signingConfig
-# that reads keystore values from -P Gradle properties at build time,
-# then `./gradlew assembleRelease` builds + signs the APK.
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   • KEYSTORE_BASE64    — release keystore, base64-encoded.
+#                          Generate with:  base64 -w 0 your-keystore.jks
+#                          (on macOS:      base64 -i your-keystore.jks | tr -d '\n')
+#   • KEYSTORE_PASSWORD  — store password supplied to keytool at create time
+#   • KEY_ALIAS          — alias name inside the keystore
+#   • KEY_PASSWORD       — password for the key (often same as keystore password)
 #
-# Keystore is provided as a base64 GitHub secret and decoded into the
-# runner's filesystem. Other keystore creds (password, alias, key
-# password) come from secrets too. See staff-app/README-keystore.md
-# for one-time setup.
+# Local Gradle build only — no EAS, no Expo account, no `expo login`.
+# `npx expo prebuild` regenerates android/, then patch-gradle-signing.js
+# injects a release signingConfig that reads -P Gradle properties.
 
 name: Build Android Staff APK
 
@@ -19,18 +20,10 @@ on:
     branches: [main]
     paths:
       - staff-app/**
-      - .github/workflows/build-android-staff.yml
-
-# Cancel in-flight runs when a newer commit lands on the same ref —
-# CI minutes are not free.
-concurrency:
-  group: build-android-staff-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
-  build:
+  build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     defaults:
       run:
         working-directory: staff-app
@@ -39,73 +32,67 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
-          # Reads staff-app/.nvmrc when present, otherwise falls back
-          # to node-version below. setup-node prefers node-version-file
-          # if both are set, so we point it at .nvmrc explicitly.
-          node-version-file: staff-app/.nvmrc
-          # Default if no .nvmrc — Expo SDK 52 requires Node 20+.
-          node-version: 20
+          node-version: '20'
           cache: npm
           cache-dependency-path: staff-app/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Setup Java 17 (Temurin)
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Setup Gradle (with caching)
-        uses: gradle/actions/setup-gradle@v4
-
       - name: Run expo prebuild (generate android/)
         env:
           # Baked into the bundle at build time. Change this only when
           # the EC2 host changes — staff users will need a fresh APK.
           EXPO_PUBLIC_API_URL: https://gullybite.duckdns.org
-        run: npx expo prebuild --platform android --clean
+        run: npx expo prebuild --platform android --no-install
 
-      # `npx expo prebuild` doesn't trigger the package.json npm
-      # postprebuild lifecycle. Run the patch script explicitly so the
-      # release signingConfig gets injected into android/app/build.gradle.
+      # `npx expo prebuild` doesn't fire the package.json npm
+      # postprebuild lifecycle, so we invoke the signing-config patcher
+      # explicitly. Without this, android/app/build.gradle has no
+      # release signingConfig and assembleRelease falls back to the
+      # debug key (or fails).
       - name: Patch Gradle signing config
         run: node scripts/patch-gradle-signing.js
 
       - name: Decode keystore from secret
         env:
-          KEYSTORE_B64: ${{ secrets.STAFF_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          if [ -z "$KEYSTORE_B64" ]; then
-            echo "::error::STAFF_ANDROID_KEYSTORE_BASE64 secret is not set."
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::KEYSTORE_BASE64 secret is not set."
             exit 1
           fi
-          echo "$KEYSTORE_B64" | base64 --decode > android/app/gullybite-staff-key.keystore
-          # Confirm decode succeeded — keytool will reject a 0-byte file later anyway.
-          test -s android/app/gullybite-staff-key.keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/gullybite-staff.keystore
+          # 0-byte file means decode silently failed (e.g. secret was
+          # set with stray whitespace) — keytool would reject this far
+          # later in the build, so check now.
+          test -s android/app/gullybite-staff.keystore
 
       - name: Build release APK
         working-directory: staff-app/android
         env:
-          KEYSTORE_PASSWORD: ${{ secrets.STAFF_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.STAFF_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.STAFF_KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           ./gradlew assembleRelease \
-            -PkeystorePath=app/gullybite-staff-key.keystore \
+            -PkeystorePath=../app/gullybite-staff.keystore \
             -PkeystorePassword="$KEYSTORE_PASSWORD" \
             -PkeyAlias="$KEY_ALIAS" \
-            -PkeyPassword="$KEY_PASSWORD" \
-            --no-daemon
+            -PkeyPassword="$KEY_PASSWORD"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GullyBite-Staff-Release
+          name: gullybite-staff-apk
           path: staff-app/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
-          if-no-files-found: error

@@ -1715,6 +1715,81 @@ router.post('/branches/:branchId/activate-subscription', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
 });
 
+// POST /branches/:branchId/billing-retry
+// Auto-resume for a branch that the bi-monthly billing job paused due
+// to insufficient wallet balance (jobs/settlement.js
+// deductBranchSubscriptions). Charges the wallet for one cycle and
+// flips the branch back to 'active' with paid_through_date = now+15d
+// (matching the settlement job's cycle length).
+//
+// Idempotency / refId: the cycle key is the request timestamp, so a
+// rapid double-click writes two distinct ledger entries. We accept that
+// trade-off — the alternative (ref_id keyed by branch+date) would
+// silently no-op the second click without surfacing it. If duplicate
+// charges become a problem, add a short-lived per-branch in-flight
+// guard at the route layer.
+router.post('/branches/:branchId/billing-retry', async (req, res) => {
+  try {
+    const branch = await col('branches').findOne({ _id: req.params.branchId });
+    if (!branch || branch.restaurant_id !== req.restaurantId) {
+      // 404 (not 403) on cross-tenant — same convention as the rest of
+      // the file (don't let attackers probe for branch ids).
+      return res.status(404).json({ error: 'Branch not found' });
+    }
+    if (branch.subscription_status !== 'paused') {
+      return res.status(400).json({ error: 'Branch is not paused' });
+    }
+
+    const ledger = require('../services/ledger.service');
+    const { BIMONTHLY_FEE_PAISE, BIMONTHLY_FEE_WITH_GST_RS } = require('../config/financeConfig');
+
+    const balance = await ledger.balancePaise(req.restaurantId);
+    if (balance < BIMONTHLY_FEE_PAISE) {
+      return res.status(400).json({
+        error: 'Insufficient wallet balance',
+        required_paise: BIMONTHLY_FEE_PAISE,
+        current_paise: balance,
+      });
+    }
+
+    const now = new Date();
+    const branchId = String(branch._id);
+    try {
+      await ledger.debit({
+        restaurantId: String(req.restaurantId),
+        branchId,
+        amountPaise: BIMONTHLY_FEE_PAISE,
+        refType: 'branch_subscription',
+        // Timestamp keys this debit to the retry moment — see header
+        // comment for why we don't use a deterministic per-cycle key.
+        refId: `${branchId}:retry:${now.toISOString()}`,
+        status: 'completed',
+        notes: `Branch subscription retry (₹${BIMONTHLY_FEE_WITH_GST_RS})`,
+      });
+    } catch (err) {
+      logger.error({ err: err?.message, restaurantId: req.restaurantId, branchId }, '[BILLING] branch retry debit failed');
+      return res.status(502).json({ error: 'Could not charge wallet' });
+    }
+
+    const paidThrough = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000);
+    await col('branches').updateOne(
+      { _id: branch._id },
+      { $set: { subscription_status: 'active', paid_through_date: paidThrough, updated_at: now } },
+    );
+    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
+
+    logger.info(
+      { restaurantId: req.restaurantId, branchId, amountPaise: BIMONTHLY_FEE_PAISE, paidThroughDate: paidThrough.toISOString() },
+      `[BILLING] Branch ${branchId} resumed via retry — next due ${paidThrough.toISOString()}`,
+    );
+
+    res.json({ ok: true, paid_through_date: paidThrough.toISOString() });
+  } catch (e) {
+    logger.error({ err: e?.message, branchId: req.params.branchId }, 'billing-retry failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // Soft-removes a branch from the restaurant's active set. The row stays in
 // Mongo so menu items / orders / catalog references remain intact and the
 // row can be restored without re-OAuth or re-syncing. Sets is_active=false
