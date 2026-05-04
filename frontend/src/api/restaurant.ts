@@ -801,6 +801,20 @@ export async function activateBranchSubscription(
   return data;
 }
 
+// Manual retry path for a branch the bi-monthly billing job paused
+// because the wallet was empty. Server-side: charges the wallet for
+// one cycle and flips subscription_status back to 'active'.
+//   200 — { ok, paid_through_date }
+//   400 — { error: 'Branch is not paused' }
+//   400 — { error: 'Insufficient wallet balance', required_paise, current_paise }
+//   502 — { error: 'Could not charge wallet' } (ledger debit failed)
+export async function retryBranchBilling(branchId: string): Promise<{ ok: boolean; paid_through_date: string }> {
+  const { data } = await client.post<{ ok: boolean; paid_through_date: string }>(
+    `/api/restaurant/branches/${branchId}/billing-retry`,
+  );
+  return data;
+}
+
 export async function updateBranch(id: string, body: RequestBody): Promise<Branch> {
   const { data } = await client.patch<Branch>(`/api/restaurant/branches/${id}`, body);
   return data;

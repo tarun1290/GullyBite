@@ -13,6 +13,7 @@ import {
   softDeleteBranch,
   restoreBranch,
   permanentDeleteBranch,
+  retryBranchBilling,
 } from '../../../api/restaurant';
 import type { Branch, BranchHours, BranchHoursDay } from '../../../types';
 
@@ -138,6 +139,10 @@ export default function BranchesSection() {
   // "Copied!" → "Copy" label flip per card. Single string is enough
   // since at most one card's button can have just been clicked.
   const [copiedBranchId, setCopiedBranchId] = useState<string | null>(null);
+  // Tracks which branch's retry-payment call is in flight. Single string
+  // is enough — at most one retry should be running at a time, and
+  // disabling the button at the row level prevents double-clicks.
+  const [retryingBranchId, setRetryingBranchId] = useState<string | null>(null);
 
   const openCreate = () => { setEditingBranch(null); setModalOpen(true); };
   const openEdit = (b: BranchExt) => { setEditingBranch(b); setModalOpen(true); };
@@ -185,6 +190,26 @@ export default function BranchesSection() {
       showToast(e?.response?.data?.error || e?.message || 'Restore failed', 'error');
     } finally {
       setRestoringId(null);
+    }
+  };
+
+  // Manual retry for a paused branch. Charges the wallet and flips
+  // subscription_status back to 'active'. Surfaces the server-side
+  // structured error verbatim — `Insufficient wallet balance` is the
+  // common one; merchants need to know to top up.
+  const handleRetryBilling = async (b: BranchExt) => {
+    if (retryingBranchId) return;
+    setRetryingBranchId(b.id);
+    try {
+      await retryBranchBilling(b.id);
+      showToast('Branch reactivated', 'success');
+      load();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      const msg = e?.response?.data?.error || e?.message || 'Retry failed';
+      showToast(msg, 'error');
+    } finally {
+      setRetryingBranchId(null);
     }
   };
 
@@ -545,7 +570,35 @@ export default function BranchesSection() {
                       {b.address || b.city || '—'}
                     </div>
                   </div>
-                  <div className="bcard-badges" style={{ display: 'flex', gap: '.25rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <div className="bcard-badges" style={{ display: 'flex', gap: '.25rem', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+                    {b.subscription_status === 'paused' && (
+                      <>
+                        <span
+                          style={{
+                            background: 'var(--gb-error,#dc2626)',
+                            color: '#fff',
+                            fontSize: '.65rem',
+                            fontWeight: 700,
+                            padding: '.15rem .4rem',
+                            borderRadius: 4,
+                            textTransform: 'uppercase',
+                            letterSpacing: '.04em',
+                          }}
+                          title="Subscription paused — wallet was insufficient on the last billing cycle"
+                        >
+                          ⚠ Paused
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-p btn-sm"
+                          onClick={(e) => { e.stopPropagation(); handleRetryBilling(b); }}
+                          disabled={retryingBranchId === b.id}
+                          style={{ fontSize: '.7rem', padding: '.15rem .5rem' }}
+                        >
+                          {retryingBranchId === b.id ? '…' : 'Retry Payment'}
+                        </button>
+                      </>
+                    )}
                     <span className={`badge ${b.is_active === false ? 'br' : 'bg'}`} style={{ fontSize: '.65rem' }}>
                       {b.is_active === false ? '⏸ Inactive' : '✅ Active'}
                     </span>
