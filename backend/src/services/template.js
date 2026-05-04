@@ -6,6 +6,7 @@
 const axios = require('axios');
 const { col, newId, mapId, mapIds } = require('../config/database');
 const metaConfig = require('../config/meta');
+const log = require('../utils/logger').child({ component: 'template' });
 
 const graphUrl = (path) => `${metaConfig.graphUrl}/${path}`;
 
@@ -202,7 +203,7 @@ const DEFAULT_TEMPLATES = [
     category: 'UTILITY',
     language: 'en_US',
     components: [
-      { type: 'HEADER', format: 'TEXT', text: '📦 Order Packed' },
+      { type: 'HEADER', format: 'TEXT', text: 'Order Packed' },
       {
         type: 'BODY',
         text: "Hi {{1}}, your order #{{2}} is packed and ready for pickup by the delivery rider. We'll notify you as soon as a rider is assigned.",
@@ -215,7 +216,7 @@ const DEFAULT_TEMPLATES = [
     category: 'UTILITY',
     language: 'en_US',
     components: [
-      { type: 'HEADER', format: 'TEXT', text: '❌ Order Cancelled' },
+      { type: 'HEADER', format: 'TEXT', text: 'Order Cancelled' },
       {
         type: 'BODY',
         text: "Hi {{1}}, your order #{{2}} has been cancelled. Reason: {{3}}. If you've been charged, your refund will be processed within 5-7 business days.",
@@ -228,7 +229,7 @@ const DEFAULT_TEMPLATES = [
     category: 'UTILITY',
     language: 'en_US',
     components: [
-      { type: 'HEADER', format: 'TEXT', text: '✅ Payment Confirmed' },
+      { type: 'HEADER', format: 'TEXT', text: 'Payment Confirmed' },
       {
         type: 'BODY',
         text: "Hi {{1}}, we've received your payment of ₹{{3}} for order #{{2}}. The restaurant will start preparing your order shortly.",
@@ -261,6 +262,10 @@ const seedDefaultTemplates = async (wabaId) => {
       if (metaErr?.code === 192 || /already exists/i.test(msg)) {
         skipped.push({ name: t.name, reason: 'already_exists_meta' });
       } else {
+        // Surface the full Meta error so error_subcode + error_user_msg
+        // (where the actual rejection reason lives) hit the logs. The
+        // top-level `message` field is often a generic envelope.
+        log.warn({ template: t.name, metaErr }, 'seedDefaultTemplates: Meta rejected');
         skipped.push({ name: t.name, reason: msg });
       }
     }
