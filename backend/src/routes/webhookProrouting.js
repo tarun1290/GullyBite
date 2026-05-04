@@ -215,6 +215,11 @@ async function _handleTrackCallback(orders) {
 // Auth, no-state-transitions, fire-and-forget. Always 200 once auth
 // passes — never block Prorouting on internal failures.
 router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
+  // TEMPORARY diagnostic — fires before auth so we capture even
+  // unauthenticated probes. Remove once the upstream payload shape
+  // has been fully characterised.
+  log.info({ headers: req.headers, body: req.body, ip: req.ip }, 'prorouting webhook /track: incoming raw request');
+
   const expectedKey = process.env.PROROUTING_API_KEY;
   if (!expectedKey) {
     log.error('PROROUTING_API_KEY not configured — rejecting track webhook');
