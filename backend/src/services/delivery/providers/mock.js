@@ -6,7 +6,7 @@
 'use strict';
 
 const { v4: uuidv4 } = require('uuid');
-const log = require('../../utils/logger').child({ component: 'MockDelivery' });
+const log = require('../../../utils/logger').child({ component: 'MockDelivery' });
 
 // In-memory task store (resets on server restart)
 const _tasks = new Map();
