@@ -106,6 +106,24 @@ async function main() {
   }
   console.log(`[test-paid-order] branch resolved: ${branch.name} (${branch._id})`);
 
+  // ─── WABA resolution ─────────────────────────────────────────
+  // Real orders inserted by services/order.js carry phone_number_id +
+  // access_token sourced from the connected whatsapp_accounts row, so
+  // downstream notification handlers can call wa.sendText / sendTemplate
+  // without re-querying. Stamp the same fields here so the synthetic
+  // order behaves identically. Hard-fail when no row exists — without
+  // a connected WABA, every notification path silently no-ops, which
+  // hides the real configuration issue.
+  const waAccount = await db.collection('whatsapp_accounts').findOne({
+    restaurant_id: args.restaurant_id,
+  });
+  if (!waAccount) {
+    console.error('No connected WABA found for this restaurant — cannot send notifications.');
+    await client.close();
+    process.exit(1);
+  }
+  console.log(`[test-paid-order] waba: phone_number_id=${waAccount.phone_number_id}`);
+
   // ─── Customer resolution ─────────────────────────────────────
   // When --customer_phone is provided, look up the real customer so
   // notifications resolve via the actual customerIdentity flow. When
@@ -231,6 +249,13 @@ async function main() {
     payment_status: 'paid',
     razorpay_order_id: fakeRzpOrderId,
     razorpay_payment_id: fakeRzpPaymentId,
+    // WABA routing — real orders carry these so downstream
+    // notification code can send WhatsApp messages without
+    // re-querying. waba_id is omitted from the doc when absent
+    // on the source row (older signups predate the field).
+    phone_number_id: waAccount.phone_number_id,
+    access_token: waAccount.access_token,
+    ...(waAccount.waba_id ? { waba_id: waAccount.waba_id } : {}),
     delivery_address: 'Test Address Line 1, Test Locality, Hyderabad',
     address_snapshot: {
       recipient_name: resolvedCustomer?.name || 'Test Customer',
