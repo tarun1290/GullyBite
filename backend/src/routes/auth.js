@@ -2321,6 +2321,31 @@ async function requireAuth(req, res, next) {
   }
 }
 
+// ─── OWNER-ONLY MIDDLEWARE ────────────────────────────────────
+// Lightweight auth gate for the owner mobile dashboard, signed at
+// POST /api/restaurant/owner/login. Distinct from requireAuth above
+// (which enforces a token_version check tied to a restaurant_users row):
+// owner-mobile tokens carry only { restaurantId, role: 'owner', name }
+// and rely on the 30d expiry for revocation. Tradeoff is accepted for
+// v1 since the dashboard is read-mostly + per-branch toggles; rotating
+// the secret invalidates everything if we ever need a fast revoke.
+function requireOwnerAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+  } catch {
+    return res.status(401).json({ error: 'Session expired. Please log in again.' });
+  }
+  if (decoded.role !== 'owner' || !decoded.restaurantId) {
+    return res.status(403).json({ error: 'Owner access required' });
+  }
+  req.restaurantId = decoded.restaurantId;
+  req.userRole = 'owner';
+  next();
+}
+
 // ─── LOGOUT ───────────────────────────────────────────────────
 // Increments token_version so this user's in-flight tokens stop working now.
 router.post('/logout', requireAuth, async (req, res) => {
@@ -2368,4 +2393,4 @@ async function requireApproved(req, res, next) {
   }
 }
 
-module.exports = { router, requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS, ensureOwnerUser, seedPlatformFlowAssignment, _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };
+module.exports = { router, requireAuth, requireOwnerAuth, requireApproved, requirePermission, ROLE_PERMISSIONS, ensureOwnerUser, seedPlatformFlowAssignment, _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };

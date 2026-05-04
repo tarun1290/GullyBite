@@ -10,6 +10,10 @@ const TOKEN_KEY = 'gb_staff_token';
 const REST_KEY = 'gb_staff_restaurant';
 const STAFF_KEY = 'gb_staff_info';
 const DEVICE_KEY = 'gb_staff_device_id';
+const ROLE_KEY = 'gb_user_role';
+const OWNER_KEY = 'gb_owner_info';
+
+export type UserRole = 'staff' | 'owner';
 
 export type StoredRestaurant = {
   id: string;
@@ -23,6 +27,11 @@ export type StoredStaffUser = {
   name: string;
   branchId: string;
   permissions: Record<string, boolean>;
+};
+
+export type StoredOwnerInfo = {
+  restaurantId: string;
+  name: string;
 };
 
 export async function saveAuth(
@@ -51,10 +60,34 @@ export async function getStaffInfo(): Promise<StoredStaffUser | null> {
   try { return JSON.parse(raw) as StoredStaffUser; } catch { return null; }
 }
 
+export async function saveRole(role: UserRole): Promise<void> {
+  await SecureStore.setItemAsync(ROLE_KEY, role);
+}
+
+export async function getRole(): Promise<UserRole | null> {
+  const raw = await SecureStore.getItemAsync(ROLE_KEY);
+  if (raw === 'staff' || raw === 'owner') return raw;
+  return null;
+}
+
+export async function saveOwnerInfo(info: StoredOwnerInfo): Promise<void> {
+  await SecureStore.setItemAsync(OWNER_KEY, JSON.stringify(info));
+}
+
+export async function getOwnerInfo(): Promise<StoredOwnerInfo | null> {
+  const raw = await SecureStore.getItemAsync(OWNER_KEY);
+  if (!raw) return null;
+  try { return JSON.parse(raw) as StoredOwnerInfo; } catch { return null; }
+}
+
 export async function clearAuth(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
   await SecureStore.deleteItemAsync(REST_KEY);
   await SecureStore.deleteItemAsync(STAFF_KEY);
+  // New role/owner keys may not have been written on first logout — catch
+  // so a clean install + immediate logout doesn't surface a SecureStore error.
+  await SecureStore.deleteItemAsync(ROLE_KEY).catch(() => {});
+  await SecureStore.deleteItemAsync(OWNER_KEY).catch(() => {});
 }
 
 export async function getDeviceId(): Promise<string | null> {

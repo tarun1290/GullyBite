@@ -155,6 +155,9 @@ export default function LoginScreen() {
           <Text style={styles.noTokenSub}>
             The link looks like https://gullybite.duckdns.org/staff/…
           </Text>
+          <Pressable onPress={() => router.push('/owner-login')} style={styles.altLink}>
+            <Text style={styles.altLinkText}>Restaurant owner? Sign in here</Text>
+          </Pressable>
         </View>
       </SafeAreaView>
     );
@@ -222,6 +225,10 @@ export default function LoginScreen() {
               {busy ? 'Signing in…' : 'Log in'}
             </Text>
           </Pressable>
+
+          <Pressable onPress={() => router.push('/owner-login')} style={styles.altLink}>
+            <Text style={styles.altLinkText}>Restaurant owner? Sign in here</Text>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -274,4 +281,10 @@ const styles = StyleSheet.create({
   noTokenWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
   noTokenText: { fontSize: 15, color: colors.tx, textAlign: 'center', lineHeight: 22 },
   noTokenSub: { fontSize: 12, color: colors.dim, textAlign: 'center' },
+
+  // Cross-link to /owner-login. Same style in both the no-token instructional
+  // view and the form view so the owner can find their way to the right
+  // sign-in flow regardless of which state staff login is in.
+  altLink: { alignItems: 'center', paddingVertical: 12 },
+  altLinkText: { color: colors.dim, fontSize: 12 },
 });

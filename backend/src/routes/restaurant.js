@@ -8,7 +8,7 @@ const multer = require('multer');
 const axios  = require('axios');
 const { col, newId, mapId, mapIds } = require('../config/database');
 const { maskPhone } = require('../utils/maskPhone');
-const { requireAuth, requireApproved, requirePermission, ROLE_PERMISSIONS } = require('./auth');
+const { requireAuth, requireOwnerAuth, requireApproved, requirePermission, ROLE_PERMISSIONS } = require('./auth');
 const { rateLimitFn } = require('../middleware/rateLimit');
 const catalog = require('../services/catalog');
 const { queueSync } = require('../services/catalogSyncQueue');
@@ -120,6 +120,215 @@ router.get('/public/store/:slug', express.json(), async (req, res) => {
   } catch (err) {
     req.log?.error?.({ err }, 'public store lookup failed');
     res.status(500).json({ error: 'Failed to load store' });
+  }
+});
+
+// ─── OWNER MOBILE DASHBOARD ROUTES ───────────────────────────
+// Registered BEFORE the global requireAuth router.use so they don't
+// hit the restaurant_users token_version check — they carry their own
+// requireOwnerAuth middleware (or no auth, in /owner/login's case).
+// Distinct token shape from /signin's: only { restaurantId, role, name }
+// + 30d expiry, no userId / no token_version dependence.
+
+// POST /api/restaurant/owner/login — public, email + password → JWT
+router.post('/owner/login', express.json(), async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    // Case-insensitive email match — the existing /signin path lower-cases
+    // before query, but we want the owner mobile flow to forgive the user
+    // typing "Foo@Bar.com" on a phone keyboard with auto-capitalisation.
+    const safeEmail = String(email).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const restaurant = await col('restaurants').findOne({
+      email: { $regex: new RegExp(`^${safeEmail}$`, 'i') },
+    });
+    if (!restaurant || !restaurant.password_hash) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const bcrypt = require('bcryptjs');
+    const valid = await bcrypt.compare(password, restaurant.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const jwt = require('jsonwebtoken');
+    const name = restaurant.business_name || restaurant.brand_name || null;
+    const token = jwt.sign(
+      { restaurantId: String(restaurant._id), role: 'owner', name },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' },
+    );
+    res.json({
+      token,
+      restaurant: {
+        id: String(restaurant._id),
+        name,
+        slug: restaurant.slug || restaurant.store_slug || null,
+        logo_url: restaurant.logo_url || null,
+      },
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, 'owner/login failed');
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// GET /api/restaurant/owner/dashboard — branches + today's order/revenue rollup.
+// "Today" is server-local midnight; on EC2 (UTC) that's UTC midnight, which
+// drifts from IST midnight by 5h30m — accepted as a v1 approximation.
+router.get('/owner/dashboard', requireOwnerAuth, async (req, res) => {
+  try {
+    const restaurant = await col('restaurants').findOne(
+      { _id: req.restaurantId },
+      { projection: { business_name: 1, brand_name: 1, slug: 1, store_slug: 1 } },
+    );
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+
+    const branches = await col('branches')
+      .find({ restaurant_id: req.restaurantId, deleted_at: { $exists: false } })
+      .toArray();
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Pull today's orders for every branch in one query, then bucket in JS.
+    // CONFIRMED_ORDER_STATES is the canonical "this counts as a real order"
+    // list — kept in sync via the import at the top of this file so the
+    // dashboard never drifts from the analytics elsewhere.
+    const branchIds = branches.map((b) => b._id);
+    const orders = branchIds.length
+      ? await col('orders').find({
+          branch_id: { $in: branchIds },
+          created_at: { $gte: todayStart },
+          status: { $in: CONFIRMED_ORDER_STATES },
+        }).toArray()
+      : [];
+
+    const perBranch = new Map();
+    for (const o of orders) {
+      const bucket = perBranch.get(o.branch_id) || { count: 0, revenue: 0 };
+      bucket.count += 1;
+      bucket.revenue += Number(o.total_rs || 0);
+      perBranch.set(o.branch_id, bucket);
+    }
+
+    let totalOrders = 0;
+    let totalRevenue = 0;
+    let active = 0;
+    let paused = 0;
+    const branchPayload = branches.map((b) => {
+      const bucket = perBranch.get(b._id) || { count: 0, revenue: 0 };
+      totalOrders += bucket.count;
+      totalRevenue += bucket.revenue;
+      if (b.subscription_status === 'active') active += 1;
+      else if (b.subscription_status === 'paused' || b.subscription_status === 'force_paused') paused += 1;
+      return {
+        id: String(b._id),
+        name: b.name,
+        is_open: !!b.is_open,
+        accepts_orders: b.accepts_orders !== false,
+        subscription_status: b.subscription_status || null,
+        today_orders: bucket.count,
+        today_revenue_rs: Math.round(bucket.revenue * 100) / 100,
+      };
+    });
+
+    res.json({
+      restaurant: {
+        id: String(restaurant._id),
+        name: restaurant.business_name || restaurant.brand_name || null,
+        slug: restaurant.slug || restaurant.store_slug || null,
+      },
+      branches: branchPayload,
+      totals: {
+        today_orders: totalOrders,
+        today_revenue_rs: Math.round(totalRevenue * 100) / 100,
+        active_branches: active,
+        paused_branches: paused,
+      },
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, 'owner/dashboard failed');
+    res.status(500).json({ error: 'Failed to load dashboard' });
+  }
+});
+
+// PATCH /api/restaurant/owner/branches/:branchId/toggle-open
+router.patch('/owner/branches/:branchId/toggle-open', requireOwnerAuth, express.json(), async (req, res) => {
+  try {
+    const { is_open } = req.body || {};
+    if (typeof is_open !== 'boolean') {
+      return res.status(400).json({ error: 'is_open must be a boolean' });
+    }
+    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    await col('branches').updateOne(
+      { _id: branch._id },
+      { $set: { is_open, updated_at: new Date() } },
+    );
+    invalidateCache(`restaurant:${req.restaurantId}:branches`, `restaurant:${req.restaurantId}:profile`);
+    res.json({ ok: true, is_open });
+  } catch (err) {
+    req.log?.error?.({ err }, 'owner toggle-open failed');
+    res.status(500).json({ error: 'Toggle failed' });
+  }
+});
+
+// PATCH /api/restaurant/owner/items/:itemId/stock
+router.patch('/owner/items/:itemId/stock', requireOwnerAuth, express.json(), async (req, res) => {
+  try {
+    const { is_available } = req.body || {};
+    if (typeof is_available !== 'boolean') {
+      return res.status(400).json({ error: 'is_available must be a boolean' });
+    }
+    const item = await _assertMenuItemOwnedBy(req.params.itemId, req.restaurantId);
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    await col('menu_items').updateOne(
+      { _id: item._id },
+      { $set: { is_available, updated_at: new Date() } },
+    );
+    if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
+    res.json({ ok: true, is_available });
+  } catch (err) {
+    req.log?.error?.({ err }, 'owner item-stock failed');
+    res.status(500).json({ error: 'Stock toggle failed' });
+  }
+});
+
+// GET /api/restaurant/owner/branches/:branchId/menu — same shape as /api/staff/menu
+// (categories[].items[]) so the owner mobile app can share its list view code.
+router.get('/owner/branches/:branchId/menu', requireOwnerAuth, async (req, res) => {
+  try {
+    const branch = await _assertBranchOwnedBy(req.params.branchId, req.restaurantId);
+    if (!branch) return res.status(404).json({ error: 'Branch not found' });
+
+    const items = await col('menu_items')
+      .find(
+        { branch_id: branch._id },
+        { projection: { _id: 1, name: 1, price_paise: 1, is_available: 1, image_url: 1, category_name: 1 } },
+      )
+      .toArray();
+
+    const grouped = new Map();
+    for (const it of items) {
+      const cat = it.category_name || 'Uncategorized';
+      if (!grouped.has(cat)) grouped.set(cat, []);
+      grouped.get(cat).push({
+        id: String(it._id),
+        name: it.name,
+        price_rs: (it.price_paise || 0) / 100,
+        is_available: !!it.is_available,
+        image_url: it.image_url || null,
+        category: cat,
+      });
+    }
+    const categories = Array.from(grouped, ([name, menu_items]) => ({ name, items: menu_items }));
+    res.json({ success: true, categories });
+  } catch (err) {
+    req.log?.error?.({ err }, 'owner branch menu failed');
+    res.status(500).json({ error: 'Failed to load menu' });
   }
 });
 

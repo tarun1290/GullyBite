@@ -200,3 +200,77 @@ export async function deregisterPushToken(deviceId: string): Promise<{ success: 
     body: { device_id: deviceId },
   });
 }
+
+// ─── Owner mobile dashboard ──────────────────────────────────────────
+// Distinct token from the staff JWT — signed by /api/restaurant/owner/login
+// with role: 'owner', no token_version dependence, 30d expiry. The same
+// `request` helper attaches the token via Authorization Bearer; the
+// backend's requireOwnerAuth middleware verifies role + restaurantId.
+
+export type OwnerLoginResponse = {
+  token: string;
+  restaurant: {
+    id: string;
+    name?: string;
+    slug?: string;
+    logo_url?: string | null;
+  };
+};
+
+export async function ownerLogin(
+  email: string,
+  password: string,
+): Promise<OwnerLoginResponse> {
+  return request<OwnerLoginResponse>('/api/restaurant/owner/login', {
+    method: 'POST',
+    body: { email, password },
+    auth: false,
+  });
+}
+
+export async function getOwnerDashboard(): Promise<{
+  restaurant: { id: string; name: string; slug: string };
+  branches: Array<{
+    id: string;
+    name: string;
+    is_open: boolean;
+    accepts_orders: boolean;
+    subscription_status: string;
+    today_orders: number;
+    today_revenue_rs: number;
+  }>;
+  totals: {
+    today_orders: number;
+    today_revenue_rs: number;
+    active_branches: number;
+    paused_branches: number;
+  };
+}> {
+  return request('/api/restaurant/owner/dashboard');
+}
+
+export async function toggleBranchOpen(
+  branchId: string,
+  is_open: boolean,
+): Promise<{ ok: boolean; is_open: boolean }> {
+  return request(`/api/restaurant/owner/branches/${encodeURIComponent(branchId)}/toggle-open`, {
+    method: 'PATCH',
+    body: { is_open },
+  });
+}
+
+export async function toggleItemStock(
+  itemId: string,
+  is_available: boolean,
+): Promise<{ ok: boolean; is_available: boolean }> {
+  return request(`/api/restaurant/owner/items/${encodeURIComponent(itemId)}/stock`, {
+    method: 'PATCH',
+    body: { is_available },
+  });
+}
+
+export async function getOwnerBranchMenu(branchId: string): Promise<StaffMenuResponse> {
+  return request<StaffMenuResponse>(
+    `/api/restaurant/owner/branches/${encodeURIComponent(branchId)}/menu`,
+  );
+}

@@ -47,7 +47,7 @@ function RootInner() {
   const [ready, setReady] = useState(false);
   const router = useRouter();
   const segments = useSegments();
-  const { token, isLoading: authLoading } = useAuth();
+  const { token, role, isLoading: authLoading } = useAuth();
   const notifListener = useRef<Notifications.EventSubscription | null>(null);
 
   useEffect(() => {
@@ -92,28 +92,38 @@ function RootInner() {
   // ─── Route guard ──────────────────────────────────────────
   // Re-runs on every segment change so a logout (which navigates to
   // /login) doesn't get bounced back into (app).
+  // Role-aware: owner JWTs route to (owner), staff JWTs (and legacy
+  // pre-role-key sessions where role hydrates as null but a staffUser
+  // exists — handled in authStore HYDRATED) route to (app).
   useEffect(() => {
     if (!ready || authLoading) return;
     const authed = !!token;
     const inAppGroup = segments[0] === '(app)';
+    const inOwnerGroup = segments[0] === '(owner)';
     const atLogin = segments[0] === 'login';
-    if (!authed && !atLogin) router.replace('/login');
-    else if (authed && !inAppGroup && !atLogin) router.replace('/(app)/orders');
-  }, [ready, authLoading, token, segments, router]);
+    const atOwnerLogin = segments[0] === 'owner-login';
+    const atAuthScreen = atLogin || atOwnerLogin;
+    if (!authed && !atAuthScreen) router.replace('/login');
+    else if (authed && role === 'owner' && !inOwnerGroup) router.replace('/(owner)/dashboard');
+    else if (authed && role !== 'owner' && !inAppGroup && !atLogin) router.replace('/(app)/orders');
+  }, [ready, authLoading, token, role, segments, router]);
 
-  // Tap-to-open: navigate to Orders when a new_order push is tapped.
+  // Tap-to-open: route owner taps to their dashboard, staff taps to orders.
+  // Same data envelope (data.type === 'new_order') for both — owners want
+  // the live order count visible, staff want to start working the queue.
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
       const type = (resp?.notification?.request?.content?.data as any)?.type;
       if (type === 'new_order') {
-        router.navigate('/(app)/orders');
+        if (role === 'owner') router.navigate('/(owner)/dashboard');
+        else router.navigate('/(app)/orders');
       }
     });
     notifListener.current = sub;
     return () => {
       try { sub.remove(); } catch { /* noop */ }
     };
-  }, [router]);
+  }, [router, role]);
 
   // ─── Self-hosted OTA check (silent, fire-and-forget) ───────
   // Runs once on mount. Updates.isEnabled gates dev mode (where
@@ -151,7 +161,9 @@ function RootInner() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="login" />
+      <Stack.Screen name="owner-login" />
       <Stack.Screen name="(app)" />
+      <Stack.Screen name="(owner)" />
     </Stack>
   );
 }
