@@ -54,9 +54,31 @@ const createTemplate = async (wabaId, templateData) => {
     payload.allow_category_change = templateData.allow_category_change;
   }
 
-  const { data } = await axios.post(graphUrl(`${wabaId}/message_templates`), payload, {
-    headers: { Authorization: `Bearer ${sysToken()}`, 'Content-Type': 'application/json' },
-  });
+  let data;
+  try {
+    ({ data } = await axios.post(graphUrl(`${wabaId}/message_templates`), payload, {
+      headers: { Authorization: `Bearer ${sysToken()}`, 'Content-Type': 'application/json' },
+    }));
+  } catch (e) {
+    // Surface every diagnostic field Meta sends. error_user_msg + error_subcode
+    // are where the actual rejection reason lives ("Invalid parameter" at the
+    // top-level `message` field is generic). fbtrace_id lets ops cross-ref a
+    // specific failure with Meta support.
+    const metaErr = e.response?.data?.error;
+    log.error({
+      templateName: payload.name,
+      templatePayload: payload,
+      metaCode: metaErr?.code,
+      metaSubcode: metaErr?.error_subcode,
+      metaUserTitle: metaErr?.error_user_title,
+      metaUserMsg: metaErr?.error_user_msg,
+      metaFbtrace: metaErr?.fbtrace_id,
+      metaMessage: metaErr?.message,
+      httpStatus: e.response?.status,
+      rawMetaErr: metaErr || null,
+    }, 'createTemplate: Meta rejected — full error');
+    throw e;
+  }
 
   // Store in local DB for tracking
   await col('templates').updateOne(
@@ -262,10 +284,23 @@ const seedDefaultTemplates = async (wabaId) => {
       if (metaErr?.code === 192 || /already exists/i.test(msg)) {
         skipped.push({ name: t.name, reason: 'already_exists_meta' });
       } else {
-        // Surface the full Meta error so error_subcode + error_user_msg
-        // (where the actual rejection reason lives) hit the logs. The
-        // top-level `message` field is often a generic envelope.
-        log.warn({ template: t.name, metaErr }, 'seedDefaultTemplates: Meta rejected');
+        // Full diagnostic surface for non-duplicate failures. error_user_msg
+        // is where Meta puts the actual rejection reason (e.g. "Headers
+        // cannot contain emojis"); the top-level `message` is generic.
+        // rawMetaErr is included so any field we forgot to break out
+        // explicitly still hits the log.
+        log.error({
+          templateName: t.name,
+          templatePayload: t,
+          metaCode: metaErr?.code,
+          metaSubcode: metaErr?.error_subcode,
+          metaUserTitle: metaErr?.error_user_title,
+          metaUserMsg: metaErr?.error_user_msg,
+          metaFbtrace: metaErr?.fbtrace_id,
+          metaMessage: metaErr?.message,
+          httpStatus: e.response?.status,
+          rawMetaErr: metaErr || null,
+        }, 'seedDefaultTemplates: Meta rejected — full error');
         skipped.push({ name: t.name, reason: msg });
       }
     }
