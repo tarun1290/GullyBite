@@ -439,13 +439,17 @@ let _running = false;
 let _stopRequested = false;
 
 async function _processOne(job) {
+  log.info({ jobId: job._id, jobName: job.name }, '_processOne: invoked with job');
   const handler = HANDLERS[job.name];
+  log.info({ jobName: job.name, handlerFound: !!handler }, '_processOne: handler lookup');
   if (!handler) {
     await col('message_jobs').updateOne({ _id: job._id }, { $set: { status: 'failed', failed_at: new Date(), last_error: { message: `no handler for ${job.name}` } } });
     return;
   }
   try {
+    log.info({ jobId: job._id, jobName: job.name }, '_processOne: invoking handler');
     await handler(job.payload || {});
+    log.info({ jobId: job._id, jobName: job.name }, '_processOne: handler returned');
     await col('message_jobs').updateOne(
       { _id: job._id },
       { $set: { status: 'done', finished_at: new Date(), updated_at: new Date(), last_error: null } }
@@ -491,6 +495,7 @@ function start({ pollMs = POLL_INTERVAL_MS } = {}) {
     while (!_stopRequested) {
       try {
         const job = await _claim();
+        log.info({ claimedJobId: job ? job._id : null }, 'worker loop: claim result');
         if (job) { await _processOne(job); continue; }
       } catch (err) {
         log.error({ err }, 'worker loop error');
