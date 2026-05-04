@@ -89,6 +89,10 @@ export default function AdminLogsPage() {
   const [detail, setDetail] = useState<LogDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState<boolean>(false);
   const [detailErr, setDetailErr] = useState<string | null>(null);
+  // Drives the transient "Copied!" label flip on the modal copy
+  // button. Cleared after 1.5s; closing the modal clears it too via
+  // the closeDetail handler so a re-open starts fresh.
+  const [copied, setCopied] = useState<boolean>(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -145,7 +149,7 @@ export default function AdminLogsPage() {
     }
   };
 
-  const closeDetail = () => { setDetail(null); setDetailErr(null); };
+  const closeDetail = () => { setDetail(null); setDetailErr(null); setCopied(false); };
 
   return (
     <div id="pg-logs">
@@ -247,7 +251,32 @@ export default function AdminLogsPage() {
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
               <h3 style={{ margin: 0, fontSize: '.95rem' }}>{detail.event_type || 'Log Detail'}</h3>
-              <button type="button" className="btn-g btn-sm" onClick={closeDetail}>✕</button>
+              <div style={{ display: 'flex', gap: '.4rem' }}>
+                <button
+                  type="button"
+                  className="btn-g btn-sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(JSON.stringify(detail, null, 2));
+                      setCopied(true);
+                      // Auto-revert after 1.5s. Guard against a stale
+                      // timer overwriting a fresh copy if the user
+                      // double-clicks within the window — the second
+                      // click sets copied=true again, and the OLDER
+                      // timer's setCopied(false) would race; the
+                      // setCopied callback form keeps it idempotent.
+                      setTimeout(() => setCopied(false), 1500);
+                    } catch {
+                      /* clipboard unavailable — silent no-op */
+                    }
+                  }}
+                  aria-label="Copy log JSON to clipboard"
+                  title="Copy full log JSON"
+                >
+                  {copied ? 'Copied!' : '📋'}
+                </button>
+                <button type="button" className="btn-g btn-sm" onClick={closeDetail}>✕</button>
+              </div>
             </div>
             <div style={{ padding: '.7rem 1rem', display: 'flex', gap: '.8rem', flexWrap: 'wrap', fontSize: '.78rem', color: 'var(--dim)', borderBottom: '1px solid var(--rim)' }}>
               {detail.source && sourceBadge(detail.source)}
