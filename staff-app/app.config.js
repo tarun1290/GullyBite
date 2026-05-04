@@ -58,6 +58,18 @@ module.exports = ({ config }) => ({
         color: '#4338ca',
       },
     ],
+    // Pin Kotlin to 1.9.25 across all expo modules. Required because
+    // Compose Compiler 1.5.x bundled with SDK 52 rejects Kotlin 1.9.24
+    // (the default), crashing expo-modules-core:compileReleaseKotlin.
+    // The official build-properties plugin propagates the override to
+    // every module via the generated android/gradle.properties; a
+    // raw gradle.properties patch in postprebuild does not (modules
+    // resolve their own toolchain). Update this in lockstep with any
+    // Compose-aware library bump.
+    [
+      'expo-build-properties',
+      { android: { kotlinVersion: '1.9.25' } },
+    ],
   ],
   extra: {
     apiUrl: API_URL,
