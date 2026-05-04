@@ -28,46 +28,39 @@ function getProvider(providerName) {
 }
 
 // ─── GET DELIVERY QUOTE ──────────────────────────────────────────
-// Called during cart building to get real 3PL pricing
+// Called during cart building to get real 3PL pricing. Internally
+// delegates to dispatcher.getBestQuote — that function fans the request
+// out to every enabled provider in parallel and applies the
+// scoring rule (cheapest under 3 km, fastest at or above). Wrapper
+// shape (providerName / providerFeeRs / platformMarkupRs / etc.) is
+// preserved so existing callers don't change.
+//
+// Lazy require for ./dispatcher avoids the circular dep that would
+// otherwise form (index → dispatcher → index for PROVIDERS).
 async function getDeliveryQuote(branchId, deliveryLat, deliveryLng, orderDetails = {}) {
-  const branch = await col('branches').findOne({ _id: branchId });
-  if (!branch) throw new Error('Branch not found');
-
-  const restaurant = await col('restaurants').findOne({ _id: branch.restaurant_id });
-
-  const pickup = {
-    lat: parseFloat(branch.latitude),
-    lng: parseFloat(branch.longitude),
-    address: branch.address || '',
-    contactName: branch.name,
-    contactPhone: branch.manager_phone || restaurant?.phone || '',
-  };
-
-  const drop = {
-    lat: parseFloat(deliveryLat),
-    lng: parseFloat(deliveryLng),
-    address: orderDetails.deliveryAddress || '',
-    contactName: orderDetails.customerName || 'Customer',
-    contactPhone: orderDetails.customerPhone || '',
-  };
-
-  const provider = getProvider();
-  const quote = await provider.getQuote(pickup, drop, orderDetails);
+  const dispatcher = require('./dispatcher');
+  const { chosen, estimates } = await dispatcher.getBestQuote(branchId, deliveryLat, deliveryLng, orderDetails);
 
   // Apply GullyBite platform markup if configured
   const platformMarkupPct = parseFloat(process.env.DELIVERY_PLATFORM_MARKUP_PCT || 0);
-  const platformMarkupRs = Math.round(quote.deliveryFeeRs * (platformMarkupPct / 100) * 100) / 100;
+  const platformMarkupRs = Math.round(chosen.deliveryFeeRs * (platformMarkupPct / 100) * 100) / 100;
 
   return {
-    providerName: quote.providerName,
-    providerFeeRs: quote.deliveryFeeRs,
+    providerName: chosen.providerName,
+    providerFeeRs: chosen.deliveryFeeRs,
     platformMarkupRs,
-    totalFeeRs: Math.round((quote.deliveryFeeRs + platformMarkupRs) * 100) / 100,
-    estimatedMins: quote.estimatedMins,
-    distanceKm: quote.distanceKm,
-    quoteId: quote.quoteId,
-    quoteExpiresAt: quote.expiresAt,
-    surgeActive: quote.surgeActive,
+    totalFeeRs: Math.round((chosen.deliveryFeeRs + platformMarkupRs) * 100) / 100,
+    estimatedMins: chosen.estimatedMins,
+    distanceKm: chosen.distanceKm,
+    quoteId: chosen.quoteId,
+    quoteExpiresAt: chosen.expiresAt,
+    surgeActive: chosen.surgeActive,
+    // Phase 1 Part 3 audit field — full snapshot of every provider's
+    // quote with `won` flag. Callers (services/order.js order-creation
+    // path) persist this onto the deliveries row at order creation so
+    // dispatchDelivery can copy it forward to orders.delivery_estimates
+    // after the partner accepts the dispatch task.
+    estimates,
   };
 }
 
@@ -110,13 +103,23 @@ async function dispatchDelivery(orderId) {
     items,
   }, quoteId);
 
-  // Update or create delivery record
+  // Update or create delivery record. Resolve the canonical provider
+  // name from the deliveries row (set at order creation from the
+  // chosen quote) — that's the source of truth for which partner
+  // actually quoted, and works correctly for mock too (mock's quote
+  // returns providerName:'mock', stamped onto delivery.provider at
+  // creation; provider.name would be undefined and fall back to a
+  // wrong default).
   const now = new Date();
+  const resolvedProvider = delivery?.provider
+    || provider.name
+    || process.env.DEFAULT_DELIVERY_PROVIDER
+    || 'prorouting';
   await col('deliveries').updateOne(
     { order_id: orderId },
     {
       $set: {
-        provider: provider.name || process.env.DEFAULT_DELIVERY_PROVIDER || 'prorouting',
+        provider: resolvedProvider,
         provider_order_id: task.taskId,
         tracking_url: task.trackingUrl,
         estimated_mins: task.estimatedMins,
@@ -132,7 +135,22 @@ async function dispatchDelivery(orderId) {
     { upsert: true }
   );
 
-  log.info({ orderNumber: order.order_number, taskId: task.taskId }, 'Order dispatched');
+  // Phase 1 Part 3: stamp the audit fields on the order doc itself.
+  // delivery_provider mirrors deliveries.provider; delivery_estimates
+  // is copied from the deliveries row where it was persisted at
+  // order-creation time (services/order.js — see comment there).
+  // delivery_estimates may be null on legacy orders that pre-date the
+  // multi-3PL refactor; we leave the field absent in that case rather
+  // than fabricating a single-entry array, so analytics can
+  // distinguish "we didn't have estimates" from "we ran a real
+  // multi-provider auction".
+  const orderUpdate = { delivery_provider: resolvedProvider, updated_at: now };
+  if (Array.isArray(delivery?.estimates) && delivery.estimates.length > 0) {
+    orderUpdate.delivery_estimates = delivery.estimates;
+  }
+  await col('orders').updateOne({ _id: orderId }, { $set: orderUpdate });
+
+  log.info({ orderNumber: order.order_number, taskId: task.taskId, provider: resolvedProvider }, 'Order dispatched');
   return task;
 }
 
@@ -182,4 +200,4 @@ async function getDeliveryStatus(orderId) {
   return delivery;
 }
 
-module.exports = { getProvider, getDeliveryQuote, dispatchDelivery, cancelDelivery, getDeliveryStatus };
+module.exports = { getProvider, getDeliveryQuote, dispatchDelivery, cancelDelivery, getDeliveryStatus, PROVIDERS };

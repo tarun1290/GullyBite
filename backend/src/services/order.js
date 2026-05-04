@@ -424,6 +424,15 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
       estimated_mins: deliveryQuote?.estimatedMins || null,
       cost_rs: deliveryQuote?.providerFeeRs || 0,
       quote_id: deliveryQuote?.quoteId || null,
+      // Multi-3PL Phase 1 audit snapshot — full list of every
+      // provider's quote with `won` flag, captured at the moment the
+      // customer was charged (i.e. quote-time, not dispatch-time).
+      // delivery/index.js's dispatchDelivery copies this onto
+      // orders.delivery_estimates after the partner accepts the task.
+      // Persisted here (and not on the order doc directly) because
+      // the order doc isn't in the natural seam for the deliveryQuote
+      // payload — the deliveries row is.
+      estimates: Array.isArray(deliveryQuote?.estimates) ? deliveryQuote.estimates : null,
       picked_up_at: null,
       delivered_at: null,
       created_at: now,

@@ -310,6 +310,15 @@ const orders = {
     prorouting_issue_state:    { type: 'string' },
     prorouting_tracking_url:   { type: 'string' },
     is_rto:                    { type: 'boolean' },
+    // Multi-3PL Phase 1: provider-agnostic audit. delivery_provider is
+    // the partner that won the quote (and therefore handles dispatch).
+    // delivery_estimates is the snapshot of every provider's quote at
+    // the moment the customer was charged — one entry per provider,
+    // with `won: true` on the chosen one. Pre-Phase-1 orders carry
+    // null in both fields; the index in config/indexes.js is sparse
+    // for that reason. New shape — DO NOT migrate legacy rows.
+    delivery_provider:         { type: 'string' },
+    delivery_estimates:        { type: 'array' },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },

@@ -97,6 +97,11 @@ const INDEXES = [
   { collection: 'orders', index: { branch_id: 1, created_at: -1 } },
   { collection: 'orders', index: { status: 1, created_at: -1 } },
   { collection: 'orders', index: { created_at: -1, status: 1 } },
+  // Multi-3PL Phase 1: per-provider analytics (e.g. "all dispatches
+  // routed through prorouting last week"). Sparse because pre-Phase-1
+  // orders don't carry the field at all — leaving them out of the
+  // index keeps it small and avoids null clustering.
+  { collection: 'orders', index: { delivery_provider: 1, created_at: -1 }, options: { sparse: true } },
   { collection: 'order_items', index: { order_id: 1, name: 1 } },
   // Coupon + redemption indexes
   { collection: 'coupons', index: { restaurant_id: 1, is_active: 1, code: 1 } },
