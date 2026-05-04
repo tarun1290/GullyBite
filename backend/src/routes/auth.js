@@ -411,6 +411,18 @@ router.get('/google/callback', async (req, res) => {
         campaigns_enabled: false,
         created_at: new Date(), updated_at: new Date(),
       });
+      // Seed defaults for new restaurants only — same order as /auth/google
+      // (autoJourney → loyalty → platformFlow). The two new seeds are
+      // fire-and-forget with an explicit .catch so a transient seed
+      // failure can't break the OAuth redirect; the seeds are also
+      // internally try/caught (log-and-swallow), so this is
+      // defense-in-depth. seedPlatformFlowAssignment stays awaited
+      // because the platform Flow is needed by the very first message
+      // the customer might send post-signup.
+      seedAutoJourneyConfig(restaurantId).catch((err) =>
+        console.error('seedAutoJourneyConfig failed for', restaurantId, err));
+      seedLoyaltyConfig(restaurantId).catch((err) =>
+        console.error('seedLoyaltyConfig failed for', restaurantId, err));
       await seedPlatformFlowAssignment(restaurantId);
     }
 

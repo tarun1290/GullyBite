@@ -25,6 +25,7 @@
 
 const { col, newId } = require('../config/database');
 const branchSvc = require('./branch.service');
+const memcache = require('../config/memcache');
 const log = require('../utils/logger').child({ component: 'product.service' });
 
 // ─── CREATE ─────────────────────────────────────────────────────
@@ -146,6 +147,12 @@ async function assignProductToBranch({ product_id, branch_id, price, tax_percent
     },
     { returnDocument: 'after' }
   );
+
+  // Invalidate the branch's MPM-build cache so the next customer-facing
+  // catalog read picks up the new assignment immediately. Same key
+  // shape used everywhere else (mpmBuilder.js writes it; restaurant.js
+  // POS-sync / menu-edit paths invalidate it).
+  memcache.del(`branch:${branch_id}:menu`);
 
   log.info(
     { productId: product_id, branchId: branch_id, scalarBackfilled: 'branch_id' in setOps },
