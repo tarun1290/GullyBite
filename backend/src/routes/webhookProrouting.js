@@ -58,6 +58,11 @@ function timingSafeStringEqual(a, b) {
 }
 
 router.post('/', express.json({ limit: '64kb' }), async (req, res) => {
+  // TEMPORARY diagnostic — fires before auth so we capture even
+  // unauthenticated probes. Remove once the upstream payload shape
+  // has been fully characterised.
+  log.info({ headers: req.headers, body: req.body, ip: req.ip }, 'prorouting webhook: incoming raw request');
+
   // ─── AUTH ────────────────────────────────────────────────────
   const expectedKey = process.env.PROROUTING_API_KEY;
   if (!expectedKey) {
