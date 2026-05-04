@@ -227,7 +227,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
-  if (status === 'order-picked-up') {
+  if (status === 'picked-up') {
     // Dual-write logistics timings for analytics. Skip any field we
     // can't compute — null writes would poison the "no data" checks.
     const o = eventBody?.order || {};
@@ -249,7 +249,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
-  if (status === 'order-delivered') {
+  if (status === 'delivered') {
     // Dual-write final logistics totals. totalFee mirrors lspFee since
     // the callback doesn't break out GST. codCollected defaults to 0
     // when the field is absent (prepaid orders don't surface cod_amount).
