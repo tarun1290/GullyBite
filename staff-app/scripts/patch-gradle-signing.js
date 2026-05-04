@@ -13,6 +13,7 @@ const path = require('path');
 
 const GRADLE_PATH = path.join(__dirname, '..', 'android', 'app', 'build.gradle');
 const MARKER = '// gullybite-signing-patched';
+const ABI_MARKER = '// gullybite-abi-splits-patched';
 
 const SIGNING_BLOCK = `
     ${MARKER}
@@ -24,6 +25,24 @@ const SIGNING_BLOCK = `
                 keyAlias project.findProperty('keyAlias')
                 keyPassword project.findProperty('keyPassword')
             }
+        }
+    }
+`;
+
+// ABI split config — produces per-architecture APKs (arm64-v8a +
+// armeabi-v7a) instead of a single fat universal APK. Cuts the main
+// staff APK from ~75 MB to ~30-35 MB per arch. universalApk:false
+// is intentional — we don't ship the fallback fat APK; the GitHub
+// Actions workflow uploads BOTH per-arch APKs as artifacts so ops can
+// pick the right one at install time.
+const ABI_BLOCK = `
+    ${ABI_MARKER}
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a'
+            universalApk false
         }
     }
 `;
@@ -65,6 +84,29 @@ function main() {
     const RELEASE_RE = /(buildTypes\s*\{[\s\S]*?release\s*\{\s*\n)/;
     if (!RELEASE_RE.test(src)) die('could not find buildTypes.release block to attach signing');
     src = src.replace(RELEASE_RE, (m) => `${m}            signingConfig signingConfigs.release\n`);
+  }
+
+  // Step 3 — inject ABI splits so Gradle emits per-arch APKs. Idempotent
+  // via ABI_MARKER. Anchor: place immediately AFTER the SIGNING_BLOCK we
+  // just inserted so the section order inside `android { ... }` is
+  // signingConfigs → splits → buildTypes (matches the AGP convention,
+  // and AGP doesn't require any specific order anyway). Reliable because
+  // we know SIGNING_BLOCK was just inserted in this same main() pass —
+  // the early-return at the top of main() guarantees we're in a fresh
+  // patch cycle. Fallback path (signing block not in src) inserts before
+  // buildTypes, per spec.
+  if (!src.includes(ABI_MARKER)) {
+    const sigStart = src.indexOf(SIGNING_BLOCK);
+    if (sigStart !== -1) {
+      const insertAt = sigStart + SIGNING_BLOCK.length;
+      src = src.slice(0, insertAt) + ABI_BLOCK + src.slice(insertAt);
+    } else {
+      // Signing block not present — insert just before buildTypes.
+      const btMatch = src.match(/\n(\s*)buildTypes\s*\{/);
+      if (!btMatch) die('could not find signingConfigs or buildTypes block to insert ABI splits');
+      src = src.slice(0, btMatch.index) + ABI_BLOCK + src.slice(btMatch.index);
+    }
+    console.log('[patch-gradle-signing] injected ABI splits config');
   }
 
   fs.writeFileSync(GRADLE_PATH, src);
