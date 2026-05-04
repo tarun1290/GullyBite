@@ -261,6 +261,12 @@ app.use('/auth', jsonAndSanitize(), authRouter);
 // without login.
 app.use('/api/review-redirect', require('./src/routes/reviewRedirect'));
 
+// Self-hosted Expo OTA. Mounted ABOVE the /api/restaurant + /api/admin
+// auth gate (line ~274) because GET /api/ota/manifest must be public
+// — Expo's expo-updates client can't attach Authorization. Upload +
+// activate routes apply requireAdmin internally.
+app.use('/api/ota', require('./src/routes/otaUpdates'));
+
 // ─── TENANT-DATA CACHE POLICY ────────────────────────────────
 // Stamp no-store on every JSON response under /api/restaurant/* and
 // /api/admin/* so no browser, intermediate proxy, or CDN heuristic ever

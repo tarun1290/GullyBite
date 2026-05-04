@@ -238,6 +238,13 @@ app.get('/feed/:feedToken', async (req, res) => {
 // customer's browser UA. Intentionally mounted BEFORE any auth so the
 // customer's WhatsApp link works without login.
 app.use('/api/review-redirect', require('./src/routes/reviewRedirect'));
+
+// Self-hosted Expo OTA. Mounted ABOVE the /api/restaurant + /api/admin
+// auth gate because GET /api/ota/manifest must be public — Expo's
+// expo-updates client can't attach Authorization. Upload + activate
+// routes apply requireAdmin internally.
+app.use('/api/ota', require('./src/routes/otaUpdates'));
+
 app.get('/auth/test', (req, res) => res.json({ ok: true }));
 const { router: authRouter } = require('./src/routes/auth');
 app.use('/auth', express.json(), authRouter);
