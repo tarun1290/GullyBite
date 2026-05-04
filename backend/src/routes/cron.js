@@ -315,4 +315,95 @@ router.post('/rating-requests', async (req, res) => {
   }
 });
 
+// ─── OWNER DAILY SUMMARY (17:30 UTC = 23:00 IST daily) ───────
+// Sends each restaurant's owner mobile devices a roll-up of today's
+// orders + revenue. "Today" is server-local midnight (EC2 runs UTC,
+// so this is UTC midnight — a deliberate v1 approximation that
+// matches the dashboard endpoint's reading). Restaurants without an
+// owner push token registered are skipped at the projection level.
+//
+// Response is sent FIRST so Vercel/external cron sees a quick 200 and
+// the actual fan-out runs after the response. Batched at 10
+// restaurants per pass so a slow Mongo or Expo round-trip can't tie
+// up the event loop on a single chunk.
+router.get('/owner-daily-summary', async (req, res) => {
+  res.json({ ok: true, message: 'owner daily summary started', timestamp: new Date().toISOString() });
+
+  try {
+    const expoPush = require('../services/expoPush');
+    const prefs = await expoPush.getOwnerPushPrefs();
+    if (!prefs.daily_summary) return;
+
+    const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Only restaurants with at least one owner_push_tokens entry —
+    // anyone else has nothing to receive the push.
+    const restaurants = await col('restaurants').find(
+      { 'owner_push_tokens.0': { $exists: true } },
+      { projection: { _id: 1, owner_push_tokens: 1 } },
+    ).toArray();
+
+    if (!restaurants.length) {
+      log.info('owner-daily-summary: no eligible restaurants');
+      return;
+    }
+
+    let notified = 0;
+    const BATCH = 10;
+    for (let i = 0; i < restaurants.length; i += BATCH) {
+      const slice = restaurants.slice(i, i + BATCH);
+      await Promise.all(slice.map(async (r) => {
+        try {
+          const tokens = (r.owner_push_tokens || []).map((e) => e?.token).filter(Boolean);
+          if (!tokens.length) return;
+
+          const branches = await col('branches').find(
+            { restaurant_id: String(r._id), deleted_at: { $exists: false } },
+            { projection: { _id: 1 } },
+          ).toArray();
+          const branchIds = branches.map((b) => b._id);
+          if (!branchIds.length) return;
+
+          // Single $in query across all branches — same pattern as the
+          // owner dashboard endpoint, then aggregate in JS.
+          const orders = await col('orders').find(
+            {
+              branch_id: { $in: branchIds },
+              created_at: { $gte: todayStart },
+              status: { $in: CONFIRMED_ORDER_STATES },
+            },
+            { projection: { total_rs: 1 } },
+          ).toArray();
+          const totalOrders = orders.length;
+          const totalRevenue = orders.reduce((sum, o) => sum + Number(o.total_rs || 0), 0);
+          const revenueLabel = Math.round(totalRevenue).toLocaleString('en-IN');
+
+          await expoPush.sendPush(tokens, {
+            title: '📊 Daily Summary',
+            body: `Today: ${totalOrders} orders · ₹${revenueLabel}`,
+            data: { type: 'daily_summary' },
+            channelId: 'summary',
+          });
+          notified += 1;
+        } catch (err) {
+          log.warn({ err: err?.message, restaurantId: String(r._id) }, 'owner-daily-summary: per-restaurant send failed');
+        }
+      }));
+    }
+
+    log.info({ notified, eligible: restaurants.length }, 'owner-daily-summary complete');
+    logActivity({
+      actorType: 'system',
+      action: 'cron.owner_daily_summary',
+      category: 'notification',
+      description: `Owner daily summary: notified ${notified} of ${restaurants.length} restaurants`,
+      severity: 'info',
+    });
+  } catch (e) {
+    log.error({ err: e }, 'owner-daily-summary error');
+  }
+});
+
 module.exports = router;

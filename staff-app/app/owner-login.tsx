@@ -19,6 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import { ownerLogin } from '@/api';
+import { requestOwnerPermissionsAndRegister } from '@/push';
 import { useAuth } from '@/store/authStore';
 import { colors } from '@/theme';
 
@@ -53,6 +54,10 @@ export default function OwnerLoginScreen() {
           name: res.restaurant.name || '',
         },
       );
+      // Fire-and-forget push registration — same pattern as the staff
+      // login. Permission prompt + Expo token fetch can take several
+      // seconds and must not block the navigate to the dashboard.
+      requestOwnerPermissionsAndRegister().catch(() => { /* noop */ });
       router.replace('/(owner)/dashboard');
     } catch (e) {
       const status = (e as { status?: number }).status;

@@ -434,6 +434,32 @@ async function deductBranchSubscriptions(restaurantId, _db) {
         { restaurantId, branchId, walletPaise: remainingBalance, requiredPaise: BIMONTHLY_FEE_PAISE },
         `[BILLING] Branch ${branchId} paused — insufficient wallet balance`,
       );
+
+      // Owner mobile push — fire-and-forget. Detached with setImmediate
+      // so a token / Mongo / Expo hiccup never blocks the settlement
+      // loop from processing the next branch. Gated by
+      // platform_settings.owner_push_prefs.branch_paused.
+      setImmediate(async () => {
+        try {
+          const expoPush = require('../services/expoPush');
+          const prefs = await expoPush.getOwnerPushPrefs();
+          if (!prefs.branch_paused) return;
+          const r = await col('restaurants').findOne(
+            { _id: String(restaurantId) },
+            { projection: { owner_push_tokens: 1 } },
+          );
+          const tokens = (r?.owner_push_tokens || []).map((e) => e?.token).filter(Boolean);
+          if (!tokens.length) return;
+          expoPush.sendPush(tokens, {
+            title: '⚠️ Branch Paused',
+            body: `${branch.name} has been paused — insufficient wallet balance. Tap to retry.`,
+            data: { type: 'branch_paused', branch_id: branchId },
+            channelId: 'alerts',
+          }).catch(() => {});
+        } catch (err) {
+          log.warn({ err: err?.message, restaurantId, branchId }, 'owner push on branch_paused failed');
+        }
+      });
     }
   }
 }

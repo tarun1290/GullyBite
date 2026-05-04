@@ -274,3 +274,22 @@ export async function getOwnerBranchMenu(branchId: string): Promise<StaffMenuRes
     `/api/restaurant/owner/branches/${encodeURIComponent(branchId)}/menu`,
   );
 }
+
+export async function registerOwnerPushToken(
+  token: string,
+  deviceId: string,
+): Promise<{ ok: boolean }> {
+  return request('/api/restaurant/owner/push-token', {
+    method: 'POST',
+    body: { token, device_id: deviceId },
+  });
+}
+
+export async function deregisterOwnerPushToken(
+  deviceId: string,
+): Promise<{ ok: boolean }> {
+  return request('/api/restaurant/owner/push-token', {
+    method: 'DELETE',
+    body: { device_id: deviceId },
+  });
+}

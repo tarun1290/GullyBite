@@ -16,7 +16,11 @@ async function ensureLoaded(): Promise<Audio.Sound | null> {
     await Audio.setAudioModeAsync({
       playsInSilentModeIOS: true,
       shouldDuckAndroid: true,
-      staysActiveInBackground: false,
+      // Keep the alarm ringing if staff minimizes the app before
+      // accepting the order — matches the web dashboard's alarm
+      // behavior. unloadChime() (called when the order is actioned)
+      // is the only thing that stops it.
+      staysActiveInBackground: true,
     });
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const asset = require('../assets/sounds/new_order.mp3');
@@ -36,6 +40,10 @@ export async function playNewOrderChime(): Promise<void> {
   if (!sound) return;
   try {
     await sound.setPositionAsync(0);
+    // Loop until explicitly stopped via unloadChime() — the order
+    // popup / accept-or-decline flow is what triggers that stop.
+    // Set looping BEFORE play so the very first cycle already loops.
+    await sound.setIsLoopingAsync(true);
     await sound.playAsync();
   } catch (err) {
     console.warn('[sound] play failed:', (err as Error).message);
@@ -44,6 +52,11 @@ export async function playNewOrderChime(): Promise<void> {
 
 export async function unloadChime(): Promise<void> {
   if (cached) {
+    // Stop first so unloadAsync doesn't tear down a still-playing
+    // looped buffer — that path produces a brief audio glitch on
+    // some Android devices. stopAsync rejects on an already-stopped
+    // sound, so swallow.
+    try { await cached.stopAsync(); } catch { /* noop */ }
     try { await cached.unloadAsync(); } catch { /* noop */ }
     cached = null;
   }

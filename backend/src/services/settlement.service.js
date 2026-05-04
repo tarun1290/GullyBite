@@ -599,6 +599,35 @@ async function confirmPayout(payoutId, { externalReference = null } = {}) {
   }
 
   log.info({ payoutId: pid, settlementId: settlement._id }, 'settlement.payout.confirmed');
+
+  // Owner mobile push — fire-and-forget. setImmediate + try/catch
+  // ensure a token-lookup failure never flips the settlement back to
+  // pending or surfaces as a webhook error to Razorpay. Gated by
+  // platform_settings.owner_push_prefs.settlement_paid so admins can
+  // mute payout pushes without redeploying.
+  setImmediate(async () => {
+    try {
+      const expoPush = require('./expoPush');
+      const prefs = await expoPush.getOwnerPushPrefs();
+      if (!prefs.settlement_paid) return;
+      const r = await col('restaurants').findOne(
+        { _id: settlement.restaurant_id },
+        { projection: { owner_push_tokens: 1 } },
+      );
+      const tokens = (r?.owner_push_tokens || []).map((e) => e?.token).filter(Boolean);
+      if (!tokens.length) return;
+      const netPayoutRs = settlement.net_payout_rs;
+      expoPush.sendPush(tokens, {
+        title: '💰 Payout Credited',
+        body: `₹${netPayoutRs} has been transferred to your bank account`,
+        data: { type: 'settlement_paid' },
+        channelId: 'settlements',
+      }).catch(() => {});
+    } catch (err) {
+      log.warn({ err: err?.message, settlementId: settlement._id }, 'owner push on settlement_paid failed');
+    }
+  });
+
   return { success: true, settlement_id: settlement._id, payout_id: pid };
 }
 

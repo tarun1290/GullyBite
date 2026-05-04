@@ -937,3 +937,29 @@ export async function getAdminMessageThread(
   );
   return data;
 }
+
+// ── Owner Push Alerts (platform-level prefs) ─────────────────────────
+// Backed by platform_settings._id = 'owner_push_prefs'. Drives the four
+// owner-mobile push channels surfaced on the staff app.
+
+export type OwnerPushPrefs = {
+  new_order: boolean;
+  settlement_paid: boolean;
+  branch_paused: boolean;
+  daily_summary: boolean;
+};
+
+export async function getOwnerPushPrefs(): Promise<{ prefs: OwnerPushPrefs }> {
+  const { data } = await client.get<{ prefs: OwnerPushPrefs }>('/api/admin/owner-notifications');
+  return data;
+}
+
+export async function updateOwnerPushPrefs(
+  prefs: Partial<OwnerPushPrefs>,
+): Promise<{ ok: boolean; prefs: OwnerPushPrefs }> {
+  const { data } = await client.patch<{ ok: boolean; prefs: OwnerPushPrefs }>(
+    '/api/admin/owner-notifications',
+    prefs,
+  );
+  return data;
+}

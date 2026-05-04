@@ -1060,3 +1060,22 @@ export async function replyAdminMessage(message: string): Promise<import('../typ
   );
   return data;
 }
+
+// ── Staffed branch coverage ─────────────────────────────────────
+// Returns which branches have at least one active staff user with
+// `order_management` permission. The dashboard new-order alarm uses
+// this to suppress the looping audio for already-covered branches
+// (popup + browser Notification still surface — only the alarm
+// goes quiet).
+export async function getStaffedBranches(): Promise<{
+  staffed_branch_ids: string[];
+  total_branches: number;
+  all_staffed: boolean;
+}> {
+  const { data } = await client.get<{
+    staffed_branch_ids: string[];
+    total_branches: number;
+    all_staffed: boolean;
+  }>('/api/restaurant/staffed-branches');
+  return data;
+}

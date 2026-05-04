@@ -26,6 +26,7 @@ import {
   declineOrder,
   getOrderById,
   getOrders,
+  getStaffedBranches,
   updateOrderStatus,
 } from '../../api/restaurant';
 import { useNewOrderSound } from '../../hooks/useNewOrderSound';
@@ -115,7 +116,27 @@ function formatRs(n: number | string | null | undefined): string {
 }
 
 export default function NewOrderPopup() {
-  const { syncWithOrders, markOrderActioned } = useNewOrderSound();
+  const { syncWithOrders, markOrderActioned, setStaffedBranches } = useNewOrderSound();
+
+  // Populate the alarm hook's staffed-branch suppression set so the
+  // popup's syncWithOrders feeder respects per-branch coverage even
+  // when the user is on a non-orders dashboard page. The orders page
+  // also fires this fetch — both targets the same module-level set,
+  // so doubling up is idempotent. Failures fall back to "alarm fires
+  // for every branch", which is the safe default.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await getStaffedBranches();
+        if (cancelled) return;
+        setStaffedBranches(r.staffed_branch_ids || []);
+      } catch {
+        /* non-fatal */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [setStaffedBranches]);
   const { showToast } = useToast();
 
   // Queue of order ids in PAID state. Order is preserved across polls

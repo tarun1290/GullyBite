@@ -108,15 +108,27 @@ function RootInner() {
     else if (authed && role !== 'owner' && !inAppGroup && !atLogin) router.replace('/(app)/orders');
   }, [ready, authLoading, token, role, segments, router]);
 
-  // Tap-to-open: route owner taps to their dashboard, staff taps to orders.
-  // Same data envelope (data.type === 'new_order') for both — owners want
-  // the live order count visible, staff want to start working the queue.
+  // Tap-to-open routing. Five payload shapes today:
+  //   • new_order        — staff: orders queue; owner: dashboard
+  //   • settlement_paid  — owner-only: dashboard (totals card surfaces it)
+  //   • branch_paused    — owner-only: branches list (where the retry
+  //                                     CTA on the paused row lives)
+  //   • daily_summary    — owner-only: dashboard
+  // Owner-only payloads are no-ops on staff sessions; the backend
+  // gates them behind owner_push_tokens registration so a staff-only
+  // device shouldn't receive them in the first place.
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
       const type = (resp?.notification?.request?.content?.data as any)?.type;
       if (type === 'new_order') {
         if (role === 'owner') router.navigate('/(owner)/dashboard');
         else router.navigate('/(app)/orders');
+      } else if (type === 'settlement_paid') {
+        router.navigate('/(owner)/dashboard');
+      } else if (type === 'branch_paused') {
+        router.navigate('/(owner)/branches');
+      } else if (type === 'daily_summary') {
+        router.navigate('/(owner)/dashboard');
       }
     });
     notifListener.current = sub;

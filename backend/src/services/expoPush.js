@@ -47,12 +47,19 @@ async function _sendBatch(messages) {
   }
 }
 
-// sendPush(tokens, { title, body, data })
+// sendPush(tokens, { title, body, data, channelId })
 // tokens: array of strings (invalid entries are filtered out)
+// channelId: optional Android notification channel id (e.g. 'orders',
+//   'settlements', 'alerts', 'summary'). Expo passes this through to
+//   FCM so Android picks the matching channel's importance + vibration
+//   profile (defined in staff-app/src/push.ts setupNotificationHandler).
+//   iOS ignores the field. Omit to fall back to the device's default
+//   channel — staff pushes don't need it because the staff app's
+//   default channel is 'orders'.
 // Returns a promise that resolves when all batches settle, but callers
 // should NOT await it in a response path — kick it off with .catch() and
 // move on.
-async function sendPush(tokens, { title, body, data } = {}) {
+async function sendPush(tokens, { title, body, data, channelId } = {}) {
   try {
     const valid = (Array.isArray(tokens) ? tokens : []).filter(isValidExpoToken);
     if (!valid.length) return;
@@ -62,6 +69,7 @@ async function sendPush(tokens, { title, body, data } = {}) {
       title: title || '',
       body: body || '',
       data: data || {},
+      ...(channelId ? { channelId } : {}),
     };
     const batches = _chunk(valid.map(to => ({ ...base, to })), BATCH_SIZE);
     await Promise.all(batches.map(_sendBatch));
@@ -70,4 +78,32 @@ async function sendPush(tokens, { title, body, data } = {}) {
   }
 }
 
-module.exports = { sendPush, isValidExpoToken };
+// Read the platform-level owner notification preferences. Single
+// source of truth for whether owner-mobile pushes for new_order /
+// settlement_paid / branch_paused / daily_summary should fire. NOT
+// cached — every call hits Mongo so an admin toggle in
+// platform_settings.owner_push_prefs takes effect for the very next
+// event without an EC2 restart. Fail-open: if the read throws (DB
+// hiccup, missing collection, etc.) we return all-true so a
+// transient infra problem doesn't silently mute every owner push.
+//
+// Lazy-require config/database to avoid a load-order circular: this
+// module is required at boot from queue/postPaymentJobs.js +
+// events/listeners/sseListener.js, both of which sit upstream of any
+// Mongo connection setup.
+async function getOwnerPushPrefs() {
+  try {
+    const { col } = require('../config/database');
+    const doc = await col('platform_settings').findOne({ _id: 'owner_push_prefs' });
+    return {
+      new_order:       doc?.new_order       !== false,
+      settlement_paid: doc?.settlement_paid !== false,
+      branch_paused:   doc?.branch_paused   !== false,
+      daily_summary:   doc?.daily_summary   !== false,
+    };
+  } catch {
+    return { new_order: true, settlement_paid: true, branch_paused: true, daily_summary: true };
+  }
+}
+
+module.exports = { sendPush, isValidExpoToken, getOwnerPushPrefs };

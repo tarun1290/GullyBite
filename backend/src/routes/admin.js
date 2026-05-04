@@ -163,6 +163,52 @@ router.post('/auth/logout', requireAdminAuth(), async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// ─── OWNER PUSH NOTIFICATION PREFERENCES (platform-level) ────
+// Single-doc collection at platform_settings._id = 'owner_push_prefs'.
+// Default-on for all four keys when missing — fail-open semantics
+// match expoPush.getOwnerPushPrefs(). Admin-only; no per-restaurant
+// override in v1 (every owner mobile app respects these toggles).
+const OWNER_PUSH_PREFS_KEYS = ['new_order', 'settlement_paid', 'branch_paused', 'daily_summary'];
+
+router.get('/owner-notifications', requireAdmin, async (req, res) => {
+  try {
+    const doc = await col('platform_settings').findOne({ _id: 'owner_push_prefs' });
+    const prefs = {};
+    for (const k of OWNER_PUSH_PREFS_KEYS) prefs[k] = doc?.[k] !== false;
+    res.json({ prefs });
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
+router.patch('/owner-notifications', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const $set = { updated_at: new Date() };
+    for (const k of OWNER_PUSH_PREFS_KEYS) {
+      if (body[k] === undefined) continue;
+      if (typeof body[k] !== 'boolean') {
+        return res.status(400).json({ error: `${k} must be a boolean` });
+      }
+      $set[k] = body[k];
+    }
+    await col('platform_settings').updateOne(
+      { _id: 'owner_push_prefs' },
+      { $set, $setOnInsert: { _id: 'owner_push_prefs', created_at: new Date() } },
+      { upsert: true },
+    );
+    const doc = await col('platform_settings').findOne({ _id: 'owner_push_prefs' });
+    const prefs = {};
+    for (const k of OWNER_PUSH_PREFS_KEYS) prefs[k] = doc?.[k] !== false;
+    logActivity({
+      actorType: 'admin', actorId: String(req.adminUser?._id), actorName: req.adminUser?.name || req.adminUser?.email,
+      action: 'admin.owner_push_prefs_updated', category: 'platform',
+      description: 'Owner push notification preferences updated',
+      resourceType: 'platform_settings', resourceId: 'owner_push_prefs', severity: 'info',
+      metadata: { prefs },
+    });
+    res.json({ ok: true, prefs });
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
 // ─── ADMIN USER MANAGEMENT (super_admin only) ────────────────
 router.get('/users', requireAdminAuth('admin_users', 'manage'), async (req, res) => {
   try {

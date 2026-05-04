@@ -52,6 +52,13 @@ const pendingOrderIds = new Set<string>();
 // 30s poll would re-trigger play() for the same outstanding orders on
 // every tick.
 const lastSeenPendingIds = new Set<string>();
+// Branches with at least one active staff user holding the
+// order_management permission. Populated by setStaffedBranches() once
+// per page load (orders page + NewOrderPopup both call it). Module-
+// level so multiple consumers share the same coverage view; an order
+// arriving for a branch in this set still surfaces in the popup +
+// browser Notification but does NOT trigger the looping audio alarm.
+const staffedBranchIds = new Set<string>();
 
 function ensureAudio(): HTMLAudioElement | null {
   if (typeof window === 'undefined') return null;
@@ -163,6 +170,10 @@ function showNewOrderNotification(displayId: string) {
 type SyncOrder = Pick<Order, 'id' | 'status'> & {
   display_id?: string | number;
   order_number?: string | number;
+  // branch_id drives the alarm-suppression check against the staffed
+  // branch set. Optional — a missing field falls back to "uncovered"
+  // so the alarm still rings rather than silently failing closed.
+  branch_id?: string | null;
 };
 
 interface UseNewOrderSoundReturn {
@@ -179,6 +190,11 @@ interface UseNewOrderSoundReturn {
   // against the previous call and manages the alarm. Pass an empty
   // array (or call stopAll) to silence on unmount.
   syncWithOrders: (orders: SyncOrder[]) => void;
+  // Replace the module-level staffed-branch set. Idempotent —
+  // multiple call sites (orders page + NewOrderPopup) populate the
+  // same set. An order whose branch_id is in this set bypasses the
+  // looping alarm in syncWithOrders.
+  setStaffedBranches: (branchIds: string[]) => void;
 }
 
 interface RestaurantWithNotify {
@@ -257,7 +273,14 @@ export function useNewOrderSound(): UseNewOrderSoundReturn {
         const id = String(o.id);
         currentPaid.add(id);
         if (lastSeenPendingIds.has(id)) continue;
-        play(id);
+        // Per-branch suppression: when staff with order_management are
+        // covering this branch, skip the audio alarm but still surface
+        // the popup + browser Notification. A missing branch_id falls
+        // back to "uncovered" so the alarm still rings rather than
+        // silently failing closed for orders without a branch.
+        const branchId = o.branch_id ? String(o.branch_id) : null;
+        const isCovered = branchId ? staffedBranchIds.has(branchId) : false;
+        if (!isCovered) play(id);
         const display = o.display_id != null
           ? String(o.display_id)
           : o.order_number != null
@@ -280,5 +303,12 @@ export function useNewOrderSound(): UseNewOrderSoundReturn {
     [play, stop],
   );
 
-  return { play, stop, markOrderActioned: stop, stopAll, syncWithOrders };
+  const setStaffedBranches = useCallback((branchIds: string[]) => {
+    staffedBranchIds.clear();
+    for (const id of branchIds || []) {
+      if (id) staffedBranchIds.add(String(id));
+    }
+  }, []);
+
+  return { play, stop, markOrderActioned: stop, stopAll, syncWithOrders, setStaffedBranches };
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import OrderCard from '../../../components/dashboard/OrderCard';
 import OrderDetailModal from '../../../components/dashboard/OrderDetailModal';
-import { getOrders, updateOrderStatus, declineOrder } from '../../../api/restaurant';
+import { getOrders, updateOrderStatus, declineOrder, getStaffedBranches } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
 import { useNewOrderSound } from '../../../hooks/useNewOrderSound';
 import { useSocketContext } from '../../../components/shared/SocketProvider';
@@ -49,7 +49,26 @@ export default function OrdersPage() {
   // from handleStatusChange the moment updateOrderStatus resolves, so
   // the alarm stops on click rather than waiting for the silent
   // refetch + syncWithOrders round-trip (~100-300ms otherwise).
-  const { syncWithOrders, stopAll, markOrderActioned } = useNewOrderSound();
+  const { syncWithOrders, stopAll, markOrderActioned, setStaffedBranches } = useNewOrderSound();
+
+  // One-shot staff coverage fetch. Populates the hook's module-level
+  // staffedBranchIds set so syncWithOrders can suppress the looping
+  // alarm for branches with active order_management staff. Errors are
+  // swallowed — the alarm remains in default "always-rings" mode if
+  // the lookup fails, which is the safer fallback.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await getStaffedBranches();
+        if (cancelled) return;
+        setStaffedBranches(r.staffed_branch_ids || []);
+      } catch {
+        /* non-fatal — alarm falls back to fire-on-every-branch */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [setStaffedBranches]);
 
   const fetchOrders = useCallback(
     async (f: FilterValue, opts: FetchOpts = {}) => {

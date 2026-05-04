@@ -43,22 +43,39 @@ function onOrderCreated(payload) {
       event_type: 'new_order',
     });
 
-    // Fire-and-forget Expo push to any registered staff tablets.
-    // Event listeners already run outside the response path; still
-    // detach with setImmediate + .catch() so errors can't propagate up.
+    // Fire-and-forget Expo push to any registered staff tablets +
+    // owner mobile devices. Event listeners already run outside the
+    // response path; still detach with setImmediate + .catch() so
+    // errors can't propagate up.
     setImmediate(async () => {
       try {
         const r = await col('restaurants').findOne(
           { _id: restaurantId },
-          { projection: { push_tokens: 1 } }
+          { projection: { push_tokens: 1, owner_push_tokens: 1 } }
         );
-        const tokens = (r?.push_tokens || []).map(e => e?.token).filter(Boolean);
-        if (!tokens.length) return;
         const totalLabel = totalRs != null ? `₹${totalRs}` : '';
-        expoPush.sendPush(tokens, {
-          title: 'New Order!',
-          body: `Order #${orderNumber || ''} just came in${totalLabel ? ` — ${totalLabel}` : ''}`,
+
+        const staffTokens = (r?.push_tokens || []).map(e => e?.token).filter(Boolean);
+        if (staffTokens.length) {
+          expoPush.sendPush(staffTokens, {
+            title: 'New Order!',
+            body: `Order #${orderNumber || ''} just came in${totalLabel ? ` — ${totalLabel}` : ''}`,
+            data: { type: 'new_order', order_id: String(o._id || orderId || '') },
+          }).catch(() => {});
+        }
+
+        // Owner mobile fan-out — gated by platform-level prefs so an
+        // admin can mute new-order pushes without a deploy. Fail-open
+        // is handled inside getOwnerPushPrefs.
+        const prefs = await expoPush.getOwnerPushPrefs();
+        if (!prefs.new_order) return;
+        const ownerTokens = (r?.owner_push_tokens || []).map(e => e?.token).filter(Boolean);
+        if (!ownerTokens.length) return;
+        expoPush.sendPush(ownerTokens, {
+          title: '🛒 New Order!',
+          body: `Order #${orderNumber || ''}${totalLabel ? ` — ${totalLabel}` : ''}`,
           data: { type: 'new_order', order_id: String(o._id || orderId || '') },
+          channelId: 'orders',
         }).catch(() => {});
       } catch (err) {
         log.warn({ err: err.message }, 'expo push on order.created failed');

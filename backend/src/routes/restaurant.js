@@ -332,6 +332,74 @@ router.get('/owner/branches/:branchId/menu', requireOwnerAuth, async (req, res) 
   }
 });
 
+// ─── OWNER PUSH-TOKEN MANAGEMENT ─────────────────────────────
+// owner_push_tokens lives on the restaurants doc as a sibling to the
+// existing push_tokens array used by staff. Same shape — [{ token,
+// device_id, registered_at }] — so failure modes (token churn, cap
+// eviction) are identical. Capped at 10 entries; oldest evicted by
+// registered_at. Mirrors the pattern in routes/staff.js #L172-#L230.
+const OWNER_PUSH_TOKEN_CAP = 10;
+const expoPush = require('../services/expoPush');
+
+router.post('/owner/push-token', requireOwnerAuth, express.json(), async (req, res) => {
+  try {
+    const { token, device_id } = req.body || {};
+    if (!expoPush.isValidExpoToken(token)) {
+      return res.status(400).json({ error: 'Invalid Expo push token' });
+    }
+    if (!device_id || typeof device_id !== 'string') {
+      return res.status(400).json({ error: 'device_id required' });
+    }
+
+    const restaurant = await col('restaurants').findOne(
+      { _id: req.restaurantId },
+      { projection: { owner_push_tokens: 1 } },
+    );
+    if (!restaurant) return res.status(404).json({ error: 'Restaurant not found' });
+
+    const now = new Date();
+    const existing = Array.isArray(restaurant.owner_push_tokens) ? restaurant.owner_push_tokens : [];
+    const idx = existing.findIndex((e) => e && e.device_id === device_id);
+    let next;
+    if (idx >= 0) {
+      next = existing.slice();
+      next[idx] = { token, device_id, registered_at: now };
+    } else {
+      next = existing.concat({ token, device_id, registered_at: now });
+      if (next.length > OWNER_PUSH_TOKEN_CAP) {
+        next.sort((a, b) => new Date(a.registered_at || 0) - new Date(b.registered_at || 0));
+        next = next.slice(next.length - OWNER_PUSH_TOKEN_CAP);
+      }
+    }
+
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { owner_push_tokens: next, updated_at: now } },
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    req.log?.error?.({ err }, 'owner push-token register failed');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/owner/push-token', requireOwnerAuth, express.json(), async (req, res) => {
+  try {
+    const { device_id } = req.body || {};
+    if (!device_id || typeof device_id !== 'string') {
+      return res.status(400).json({ error: 'device_id required' });
+    }
+    await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $pull: { owner_push_tokens: { device_id } }, $set: { updated_at: new Date() } },
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    req.log?.error?.({ err }, 'owner push-token delete failed');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // All routes below require authentication. Most use the standard
 // restaurant JWT (requireAuth). Two endpoints — /orders/:id/accept and
 // /orders/:id/decline — additionally accept a per-user staff JWT via
@@ -7836,6 +7904,55 @@ router.get('/ratings/summary', requireApproved, async (req, res) => {
 // Loyalty routes previously lived here as /loyalty/stats + /loyalty/customers.
 // They moved to routes/loyalty.js under /api/restaurant/loyalty-program/*
 // as part of the unified loyalty engine (see services/loyaltyEngine.js).
+
+// GET /api/restaurant/staffed-branches
+// Returns which branches have at least one active staff user with the
+// `order_management` permission. Used by the dashboard new-order alarm
+// to suppress the looping audio for branches where staff are already
+// covering — the popup + browser Notification still surface; only the
+// alarm goes quiet. Read-only and lightweight — safe to call on mount
+// alongside the orders fetch.
+router.get('/staffed-branches', async (req, res) => {
+  try {
+    const users = await col('restaurant_users').find(
+      {
+        restaurant_id: req.restaurantId,
+        is_active: { $ne: false },
+        'permissions.order_management': true,
+      },
+      { projection: { branch_ids: 1 } },
+    ).toArray();
+
+    const staffedSet = new Set();
+    for (const u of users) {
+      if (!Array.isArray(u.branch_ids)) continue;
+      for (const bid of u.branch_ids) {
+        if (bid) staffedSet.add(String(bid));
+      }
+    }
+
+    const branches = await col('branches').find(
+      { restaurant_id: req.restaurantId, deleted_at: { $exists: false } },
+      { projection: { _id: 1 } },
+    ).toArray();
+    const totalBranches = branches.length;
+
+    const staffed_branch_ids = Array.from(staffedSet);
+    res.json({
+      staffed_branch_ids,
+      total_branches: totalBranches,
+      // all_staffed: every existing branch has at least one active staff
+      // user with order_management. Computed against the live branches
+      // list (not just the count of staffed ids) so a stale staff
+      // assignment to a deleted branch can't fake full coverage.
+      all_staffed: totalBranches > 0
+        && branches.every((b) => staffedSet.has(String(b._id))),
+    });
+  } catch (err) {
+    req.log?.error?.({ err }, 'staffed-branches fetch failed');
+    res.status(500).json({ error: 'Failed to load staffed branches' });
+  }
+});
 
 // ═══════════════════════════════════════════════════════════════
 // TEAM / USER MANAGEMENT

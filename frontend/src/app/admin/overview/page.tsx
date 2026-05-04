@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/dashboard/analytics/SectionError';
+import { useToast } from '../../../components/Toast';
 import {
   getAdminStats,
   getAdminRatingStats,
@@ -12,6 +13,9 @@ import {
   getAdminAlerts,
   getAdminOrders,
   getAdminLogs,
+  getOwnerPushPrefs,
+  updateOwnerPushPrefs,
+  type OwnerPushPrefs,
 } from '../../../api/admin';
 
 interface AdminStats {
@@ -115,6 +119,7 @@ const td: CSSProperties = { padding: '.5rem .7rem', verticalAlign: 'top' };
 const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
 
 export default function AdminOverviewPage() {
+  const { showToast } = useToast();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [rating, setRating] = useState<RatingStats | null>(null);
   const [delivery, setDelivery] = useState<DeliveryStats | null>(null);
@@ -123,6 +128,15 @@ export default function AdminOverviewPage() {
   const [logs, setLogs] = useState<OverviewLog[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
+
+  // Owner Push Alerts — platform-level prefs. Toggles save immediately
+  // (no Save button) so we track per-key in-flight state to disable the
+  // affected row while the PATCH is round-tripping. On error we revert
+  // the local optimistic flip; on success we trust the server-returned
+  // prefs payload as the new ground truth.
+  const [ownerPrefs, setOwnerPrefs] = useState<OwnerPushPrefs | null>(null);
+  const [ownerPrefsLoading, setOwnerPrefsLoading] = useState<boolean>(true);
+  const [ownerPrefsSavingKey, setOwnerPrefsSavingKey] = useState<keyof OwnerPushPrefs | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,6 +162,46 @@ export default function AdminOverviewPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // One-shot load for owner push prefs. Independent of the main `load`
+  // so a stats failure doesn't block the toggles from rendering, and
+  // vice versa. Errors here surface as a toast — the section will
+  // simply not render its toggle rows when prefs is null.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await getOwnerPushPrefs();
+        if (!cancelled) setOwnerPrefs(r.prefs);
+      } catch (e: unknown) {
+        const er = e as { response?: { data?: { error?: string } }; message?: string };
+        showToast(er?.response?.data?.error || er?.message || 'Failed to load owner push prefs', 'error');
+      } finally {
+        if (!cancelled) setOwnerPrefsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showToast]);
+
+  const onTogglePref = useCallback(async (key: keyof OwnerPushPrefs, next: boolean) => {
+    if (!ownerPrefs) return;
+    const prev = ownerPrefs[key];
+    setOwnerPrefs({ ...ownerPrefs, [key]: next });
+    setOwnerPrefsSavingKey(key);
+    try {
+      const r = await updateOwnerPushPrefs({ [key]: next });
+      // Server is source of truth — it returns the resolved prefs after upsert.
+      if (r?.prefs) setOwnerPrefs(r.prefs);
+      showToast('Owner push preference saved', 'success');
+    } catch (e: unknown) {
+      // Revert the optimistic flip so the UI matches the server state again.
+      setOwnerPrefs((cur) => (cur ? { ...cur, [key]: prev } : cur));
+      const er = e as { response?: { data?: { error?: string } }; message?: string };
+      showToast(er?.response?.data?.error || er?.message || 'Save failed', 'error');
+    } finally {
+      setOwnerPrefsSavingKey(null);
+    }
+  }, [ownerPrefs, showToast]);
 
   const s: AdminStats = stats || {};
   const r: RatingStats = rating || {};
@@ -296,8 +350,95 @@ export default function AdminOverviewPage() {
               </div>
             </div>
           </div>
+
+          <OwnerPushAlertsCard
+            prefs={ownerPrefs}
+            loading={ownerPrefsLoading}
+            savingKey={ownerPrefsSavingKey}
+            onToggle={onTogglePref}
+          />
         </>
       )}
+    </div>
+  );
+}
+
+// ─── Owner Push Alerts ───────────────────────────────────────────
+// Platform-level toggles for the four owner-mobile push channels:
+// new_order, settlement_paid, branch_paused, daily_summary. Each
+// row saves immediately on change — there's no "Save" button. The
+// gating logic on the backend (services/expoPush.js getOwnerPushPrefs)
+// is fail-open, so muting a channel via this UI is the only way to
+// stop those pushes platform-wide.
+
+interface OwnerPushAlertsCardProps {
+  prefs: OwnerPushPrefs | null;
+  loading: boolean;
+  savingKey: keyof OwnerPushPrefs | null;
+  onToggle: (key: keyof OwnerPushPrefs, next: boolean) => Promise<void>;
+}
+
+const OWNER_PUSH_ROWS: ReadonlyArray<{ key: keyof OwnerPushPrefs; label: string; description: string }> = [
+  { key: 'new_order',       label: 'New Orders',         description: 'Alert owners when any branch receives an order' },
+  { key: 'settlement_paid', label: 'Settlement Payouts', description: 'Alert when a payout is credited to bank' },
+  { key: 'branch_paused',   label: 'Branch Paused',      description: 'Alert when a branch is auto-paused due to low balance' },
+  { key: 'daily_summary',   label: 'Daily Summary',      description: 'Send 11pm summary of orders and revenue' },
+];
+
+function OwnerPushAlertsCard({ prefs, loading, savingKey, onToggle }: OwnerPushAlertsCardProps) {
+  return (
+    <div className="card" style={{ marginTop: '1.2rem' }}>
+      <div className="ch">
+        <h3 style={{ margin: 0, fontSize: '.9rem' }}>🔔 Owner Push Alerts</h3>
+      </div>
+      <div className="cb">
+        {loading ? (
+          <div style={{ color: 'var(--dim)', fontSize: '.84rem' }}>Loading…</div>
+        ) : !prefs ? (
+          <div style={{ color: 'var(--dim)', fontSize: '.84rem' }}>Unable to load preferences.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {OWNER_PUSH_ROWS.map((row, i) => {
+              const checked = prefs[row.key];
+              const busy = savingKey === row.key;
+              return (
+                <label
+                  key={row.key}
+                  htmlFor={`owner-push-${row.key}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '1rem',
+                    padding: '.75rem 0',
+                    borderTop: i === 0 ? 'none' : '1px solid var(--rim)',
+                    cursor: busy ? 'default' : 'pointer',
+                    opacity: busy ? 0.6 : 1,
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: '.86rem', fontWeight: 600, color: 'var(--tx,inherit)' }}>
+                      {row.label}
+                    </div>
+                    <div style={{ fontSize: '.76rem', color: 'var(--dim)', marginTop: '.15rem' }}>
+                      {row.description}
+                    </div>
+                  </div>
+                  <input
+                    id={`owner-push-${row.key}`}
+                    type="checkbox"
+                    role="switch"
+                    checked={checked}
+                    disabled={busy}
+                    onChange={(e) => { void onToggle(row.key, e.target.checked); }}
+                    style={{ width: 18, height: 18, cursor: busy ? 'default' : 'pointer' }}
+                  />
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
