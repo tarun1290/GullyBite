@@ -2292,6 +2292,8 @@ async function requireAuth(req, res, next) {
       if (decoded.token_version !== dbVer) {
         return res.status(401).json({ error: 'Session expired. Please log in again.' });
       }
+      // Already loaded above for token_version check — attach for downstream activity logging
+      req.user = user;
     }
     req.restaurantId = decoded.restaurantId;
     req.metaUserId   = decoded.metaUserId;

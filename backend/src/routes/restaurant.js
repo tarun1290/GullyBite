@@ -680,7 +680,7 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
     );
     res.json({ success: true });
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || req.body.businessName || 'Restaurant', action: 'settings.updated', category: 'settings', description: `Settings updated by ${req.restaurant?.business_name || 'restaurant'}`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'settings.updated', category: 'settings', description: `Settings updated by ${req.restaurant?.business_name || 'restaurant'}`, restaurantId: String(req.restaurantId), severity: 'info' });
     invalidateCache(`restaurant:${req.restaurantId}:profile`);
     invalidateRestaurant(req.restaurantId);
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -1182,7 +1182,7 @@ router.post('/whatsapp/disconnect', requirePermission('manage_users'), async (re
     logActivity({
       actorType: 'restaurant',
       actorId: String(req.userId || req.restaurantId),
-      actorName: req.userRole || null,
+      actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'whatsapp.disconnected',
       category: 'auth',
       description: `WhatsApp Business connection disconnected (${activeRows.length} row(s) deactivated)`,
@@ -1914,7 +1914,7 @@ router.patch('/branches/:id', async (req, res) => {
     res.json({ success: true });
 
     if (isOpen !== undefined) {
-      log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'branch.toggled', category: 'settings', description: `Branch toggled`, restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.id, severity: 'info' });
+      log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'branch.toggled', category: 'settings', description: `Branch toggled`, restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.id, severity: 'info' });
       // Live-feed the platform admin console when a branch flips
       // open/closed. Fire-and-forget after res.json so a socket hiccup
       // can't slow down the dashboard's PATCH round-trip. Branch name
@@ -1935,7 +1935,7 @@ router.patch('/branches/:id', async (req, res) => {
         } catch (_) { /* never block branch update on socket fan-out */ }
       })();
     } else {
-      log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'branch.updated', category: 'settings', description: `Branch updated`, restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.id, severity: 'info' });
+      log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'branch.updated', category: 'settings', description: `Branch updated`, restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.id, severity: 'info' });
     }
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -2095,7 +2095,7 @@ router.post('/branches/:id/soft-delete', async (req, res) => {
 
     log({
       actorType: 'restaurant', actorId: String(req.restaurantId),
-      actorName: req.restaurant?.business_name || 'Restaurant',
+      actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'branch.soft_deleted', category: 'settings',
       description: `Branch "${branch.name}" soft-deleted`,
       restaurantId: String(req.restaurantId),
@@ -2125,7 +2125,7 @@ router.post('/branches/:id/restore', async (req, res) => {
 
     log({
       actorType: 'restaurant', actorId: String(req.restaurantId),
-      actorName: req.restaurant?.business_name || 'Restaurant',
+      actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'branch.restored', category: 'settings',
       description: `Branch "${branch.name}" restored`,
       restaurantId: String(req.restaurantId),
@@ -2220,7 +2220,7 @@ router.delete('/branches/:id/permanent', async (req, res) => {
 
     log({
       actorType: 'restaurant', actorId: String(req.restaurantId),
-      actorName: req.restaurant?.business_name || 'Restaurant',
+      actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'branch.permanently_deleted', category: 'settings',
       description: `Branch "${branch.name}" permanently deleted (${items.length} menu items removed)`,
       restaurantId: String(req.restaurantId),
@@ -2296,7 +2296,7 @@ router.post('/branches/:branchId/staff-link/generate', async (req, res) => {
     );
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'branch.staff_link_generated', category: 'settings',
       description: `Staff access token (re)generated for branch ${req.params.branchId}`,
       restaurantId: req.restaurantId,
@@ -2386,7 +2386,7 @@ router.put('/branches/:branchId/hours', async (req, res) => {
     // Invalidate cached branch data
     require('../config/memcache').del(`branch:${req.params.branchId}`);
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'branch.hours_updated', category: 'settings', description: 'Operating hours updated', restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.branchId, severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'branch.hours_updated', category: 'settings', description: 'Operating hours updated', restaurantId: String(req.restaurantId), resourceType: 'branch', resourceId: req.params.branchId, severity: 'info' });
 
     res.json({ success: true, hours: cleaned });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -2670,7 +2670,7 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
     res.status(201).json(mapId(item));
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'menu.item_added', category: 'menu',
       description: `Added menu item "${name}"`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -2710,7 +2710,7 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
       catalog.setItemAvailability(req.params.itemId, isAvailable)
         .catch(err => logger.error({ err, itemId: req.params.itemId }, 'Menu availability sync failed'));
 
-      log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_toggled', category: 'menu', description: `Toggled menu item availability`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.itemId, severity: 'info' });
+      log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'menu.availability_toggled', category: 'menu', description: `Toggled menu item availability`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.itemId, severity: 'info' });
       return res.json({ success: true });
     }
 
@@ -2772,7 +2772,7 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
     res.json({ success: true });
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'menu.item_updated', category: 'menu',
       description: `Updated menu item ${req.params.itemId}`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -2798,7 +2798,7 @@ router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res
     res.json({ success: true });
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'menu.item_deleted', category: 'menu',
       description: `Deleted menu item ${req.params.itemId}${item ? ` ("${item.name}")` : ''}`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -2843,7 +2843,7 @@ router.post('/menu/bulk-delete', requirePermission('manage_menu'), async (req, r
     res.json({ deleted: items.length });
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'menu.bulk_deleted', category: 'menu',
       description: `Bulk deleted ${items.length} menu items`,
       restaurantId: req.restaurantId, severity: 'info',
@@ -2897,7 +2897,7 @@ router.patch('/menu/bulk-availability', requirePermission('manage_menu'), async 
     }
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'menu.bulk_availability', category: 'menu',
       description: `Bulk ${available ? 'enabled' : 'disabled'} ${result.modifiedCount} items`,
       restaurantId: req.restaurantId, severity: 'info',
@@ -2929,7 +2929,7 @@ router.patch('/menu/:id/availability', requirePermission('manage_menu'), async (
     catalog.syncItemAvailability(req.restaurantId, { ...item, is_available: available })
       .catch(err => logger.error({ err, itemId: req.params.id }, 'Catalog availability sync failed'));
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_toggled', category: 'menu', description: `Toggled ${item.name} ${available ? 'available' : 'unavailable'}`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.id, severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'menu.availability_toggled', category: 'menu', description: `Toggled ${item.name} ${available ? 'available' : 'unavailable'}`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.id, severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -2966,7 +2966,7 @@ router.patch('/menu/:id/availability-all-branches', requirePermission('manage_me
         .catch(err => logger.error({ err, restaurantId: req.restaurantId }, 'Cross-branch availability sync failed'));
     }
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.availability_all_branches', category: 'menu', description: `Toggled "${item.name}" ${available ? 'available' : 'unavailable'} at ${affectedBranchIds.length} branches (${result.modifiedCount} items)`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.id, severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'menu.availability_all_branches', category: 'menu', description: `Toggled "${item.name}" ${available ? 'available' : 'unavailable'} at ${affectedBranchIds.length} branches (${result.modifiedCount} items)`, restaurantId: String(req.restaurantId), resourceType: 'menu_item', resourceId: req.params.id, severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -3281,7 +3281,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
     }
     res.json(responsePayload);
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.bulk_upload', category: 'menu', description: `Bulk uploaded menu items`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'menu.bulk_upload', category: 'menu', description: `Bulk uploaded menu items`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -3660,7 +3660,7 @@ router.post('/menu/csv', async (req, res) => {
         : {}),
     });
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'menu.bulk_upload_multi', category: 'menu', description: `Multi-branch bulk upload: ${perBranch.length} branches, ${totalAdded} items`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'menu.bulk_upload_multi', category: 'menu', description: `Multi-branch bulk upload: ${perBranch.length} branches, ${totalAdded} items`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -3671,7 +3671,7 @@ router.post('/branches/:branchId/sync-catalog', requireApproved, async (req, res
     res.json(result);
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'catalog.sync_triggered', category: 'catalog',
       description: `Catalog sync triggered for branch ${req.params.branchId}`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -3855,7 +3855,7 @@ router.post('/product-sets', requirePermission('manage_menu'), async (req, res) 
 
     res.status(201).json(mapId(set));
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'product_set.created', category: 'catalog', description: `Product set created`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'product_set.created', category: 'catalog', description: `Product set created`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -3906,7 +3906,7 @@ router.delete('/product-sets/:id', requirePermission('manage_menu'), async (req,
     await col('product_sets').deleteOne({ _id: req.params.id });
     res.json({ success: true });
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'product_set.deleted', category: 'catalog', description: `Product set deleted`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'product_set.deleted', category: 'catalog', description: `Product set deleted`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -4004,7 +4004,7 @@ router.post('/collections', requirePermission('manage_menu'), async (req, res) =
 
     res.status(201).json(mapId(doc));
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'collection.created', category: 'catalog', description: `Collection created`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'collection.created', category: 'catalog', description: `Collection created`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -4599,7 +4599,7 @@ router.post('/catalog/sync', async (req, res) => {
     res.status(httpStatus).json({ success: results.totalFailed === 0, totalFailed: results.totalFailed || 0, errors: results.branches?.filter(b => b.error).map(b => b.error) || [], ...results });
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'catalog.sync_triggered', category: 'catalog',
       description: `Catalog sync: ${results.totalSynced || 0} synced, ${results.totalFailed || 0} failed`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -4863,7 +4863,7 @@ router.post('/catalog/reverse-sync', async (req, res) => {
     req.log.info({ stats }, 'Reverse sync complete');
     res.json({ success: true, ...stats });
 
-    log({ actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null, action: 'catalog.reverse_sync', category: 'catalog', description: `Reverse sync from Meta: ${stats.new_items_added} new, ${stats.existing_items_updated} updated`, restaurantId: req.restaurantId, severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'catalog.reverse_sync', category: 'catalog', description: `Reverse sync from Meta: ${stats.new_items_added} new, ${stats.existing_items_updated} updated`, restaurantId: req.restaurantId, severity: 'info' });
   } catch (e) {
     req.log.error({ err: e, metaResponse: e.response?.data }, 'Catalog reverse sync failed');
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -5745,7 +5745,7 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
     res.json({ success: true, order, eta: etaResult });
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'order.status_changed', category: 'order',
       description: `Order ${req.params.orderId} status changed from ${req.body._oldStatus || 'unknown'} to ${status}`,
       restaurantId: req.restaurantId || req.restaurant?._id,
@@ -5900,7 +5900,7 @@ router.post('/orders/:orderId/accept', requireApproved, requirePermission('manag
     res.json({ success: true, status: 'CONFIRMED' });
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'order.accepted', category: 'order',
       description: `Order ${orderId} accepted (PAID → CONFIRMED)`,
       restaurantId: req.restaurantId,
@@ -5996,7 +5996,7 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
     res.json({ success: true, status: result?.status || 'REJECTED_BY_RESTAURANT', refundId: result?.refundId || null });
 
     log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'order.declined', category: 'order',
       description: `Order ${orderId} declined (PAID → ${result?.status || 'REJECTED_BY_RESTAURANT'}, refund ${result?.refundId || 'n/a'}, fault_fee ₹${result?.razorpayFeeRs || 0})`,
       restaurantId: req.restaurantId,
@@ -8203,7 +8203,7 @@ router.post('/campaigns', requirePermission('manage_settings'), async (req, res)
     const campaign = await campaignSvc.createCampaign(req.restaurantId, req.body);
     res.json(mapId(campaign));
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'campaign.created', category: 'marketing', description: `Campaign created`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'campaign.created', category: 'marketing', description: `Campaign created`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
@@ -8212,7 +8212,7 @@ router.post('/campaigns/:id/send', requirePermission('manage_settings'), async (
     const result = await campaignSvc.sendCampaign(req.params.id);
     res.json(result);
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || 'Restaurant', action: 'campaign.sent', category: 'marketing', description: `Campaign sent`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'campaign.sent', category: 'marketing', description: `Campaign sent`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
@@ -8606,7 +8606,7 @@ router.post('/messages/reply', requireAuth, requireApproved, async (req, res) =>
     );
 
     logActivity({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'message.replied', category: 'messages',
       description: `Replied to customer ${customer.name || customer.wa_phone}: "${text.substring(0, 60)}"`,
       restaurantId: restId, resourceType: 'customer_message', resourceId: String(msgDoc._id),
@@ -8999,7 +8999,7 @@ router.post('/staff-users', requireAuth, requirePermission('manage_staff'), expr
       await col('restaurant_users').insertOne(doc);
 
       log({
-        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
         action: 'staff_user.created', category: 'settings',
         description: `Staff user "${doc.name}" (${doc.phone}) created`,
         restaurantId: req.restaurantId,
@@ -9083,7 +9083,7 @@ router.put('/staff-users/:userId', requireAuth, requirePermission('manage_staff'
       );
 
       log({
-        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
         action: 'staff_user.updated', category: 'settings',
         description: `Staff user "${target.name}" updated${bumpTokenVersion ? ' (deactivated — sessions revoked)' : ''}`,
         restaurantId: req.restaurantId,
@@ -9128,7 +9128,7 @@ router.put('/staff-users/:userId/reset-pin', requireAuth, requirePermission('man
       );
 
       log({
-        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
         action: 'staff_user.pin_reset', category: 'settings',
         description: `Staff user "${target.name}" PIN reset (sessions revoked)`,
         restaurantId: req.restaurantId,
@@ -9169,7 +9169,7 @@ router.delete('/staff-users/:userId', requireAuth, requirePermission('manage_sta
       );
 
       log({
-        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.userRole || null,
+        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
         action: 'staff_user.deleted', category: 'settings',
         description: `Staff user "${target.name}" deactivated (sessions revoked)`,
         restaurantId: req.restaurantId,
