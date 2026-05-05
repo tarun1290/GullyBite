@@ -319,7 +319,7 @@ const DEFAULT_TEMPLATES = [
     useCase: 'winback_long',
     category: 'MARKETING',
     language: 'en_US',
-    bodyNamed: "{{customer_name}}, it's been a month since your last order at {{restaurant_name}}. We'd love to have you back — enjoy {{discount_pct}}% off + free delivery on your next order.",
+    bodyNamed: "Hi {{customer_name}}, it's been a month since your last order at {{restaurant_name}}. We'd love to have you back — enjoy {{discount_pct}}% off + free delivery on your next order.",
     variables: [
       { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Rajesh' },
       { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Cafe Delight' },
@@ -329,7 +329,7 @@ const DEFAULT_TEMPLATES = [
     components: [
       {
         type: 'BODY',
-        text: "{{1}}, it's been a month since your last order at {{2}}. We'd love to have you back — enjoy {{3}}% off + free delivery on your next order.",
+        text: "Hi {{1}}, it's been a month since your last order at {{2}}. We'd love to have you back — enjoy {{3}}% off + free delivery on your next order.",
         example: { body_text: [['Rajesh', 'Cafe Delight', '20']] },
       },
       { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Reorder Now' }] },
@@ -363,7 +363,7 @@ const DEFAULT_TEMPLATES = [
     useCase: 'milestone',
     category: 'MARKETING',
     language: 'en_US',
-    bodyNamed: "{{customer_name}}, you've reached {{total_orders}} orders with {{restaurant_name}}! 🎉 You've earned {{points_balance}} loyalty points — redeem now for exclusive rewards.",
+    bodyNamed: "Wow {{customer_name}}, you've reached {{total_orders}} orders with {{restaurant_name}}! 🎉 You've earned {{points_balance}} loyalty points — redeem now for exclusive rewards.",
     variables: [
       { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Vikram' },
       { name: 'total_orders', label: 'Total Orders', source: 'customer_data', required: true, example: '10' },
@@ -374,7 +374,7 @@ const DEFAULT_TEMPLATES = [
     components: [
       {
         type: 'BODY',
-        text: "{{1}}, you've reached {{2}} orders with {{3}}! 🎉 You've earned {{4}} loyalty points — redeem now for exclusive rewards.",
+        text: "Wow {{1}}, you've reached {{2}} orders with {{3}}! 🎉 You've earned {{4}} loyalty points — redeem now for exclusive rewards.",
         example: { body_text: [['Vikram', '10', 'Biryani Hub', '500']] },
       },
       { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Redeem Points' }] },
@@ -453,7 +453,7 @@ const DEFAULT_TEMPLATES = [
     useCase: 'new_dish',
     category: 'MARKETING',
     language: 'en_US',
-    bodyNamed: '{{customer_name}}, something new at {{restaurant_name}}! 🌟 Try our latest dish: {{dish_name}}. Get {{discount_pct}}% off this week as a launch offer.',
+    bodyNamed: 'Hey {{customer_name}}, something new at {{restaurant_name}}! 🌟 Try our latest dish: {{dish_name}}. Get {{discount_pct}}% off this week as a launch offer.',
     variables: [
       { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Karthik' },
       { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Coastal Bites' },
@@ -464,7 +464,7 @@ const DEFAULT_TEMPLATES = [
     components: [
       {
         type: 'BODY',
-        text: '{{1}}, something new at {{2}}! 🌟 Try our latest dish: {{3}}. Get {{4}}% off this week as a launch offer.',
+        text: 'Hey {{1}}, something new at {{2}}! 🌟 Try our latest dish: {{3}}. Get {{4}}% off this week as a launch offer.',
         example: { body_text: [['Karthik', 'Coastal Bites', 'Prawn Curry', '20']] },
       },
       { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Try Now' }] },
