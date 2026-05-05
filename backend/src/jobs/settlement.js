@@ -26,6 +26,7 @@ const {
 const ledger = require('../services/ledger.service');
 const ws = require('../services/websocket');
 const { logActivity } = require('../services/activityLog');
+const { invalidateCache } = require('../config/cache');
 const log = require('../utils/logger').child({ component: 'settlement' });
 
 // ─── SCHEDULE THE JOB ─────────────────────────────────────────
@@ -166,6 +167,16 @@ const settleRestaurant = async (restaurant, periodStart, periodEnd) => {
       // Continue settlement — billing reconciliation can be retried
       // independently. Same posture as the platform_fee debit catch
       // in services/settlement.service.js.
+    }
+    // Auto-resume pass: paused branches whose wallet has refilled get
+    // charged + flipped back to active. Separate try/catch from the
+    // deduction above so a failure in one doesn't mask the other in
+    // the logs (and so a deduction crash still lets resumes process,
+    // and vice versa).
+    try {
+      await resumePausedBranches(restaurantId);
+    } catch (err) {
+      log.error({ err: err?.message, restaurantId }, '[BILLING] resumePausedBranches failed');
     }
   }
 
@@ -460,6 +471,90 @@ async function deductBranchSubscriptions(restaurantId, _db) {
           log.warn({ err: err?.message, restaurantId, branchId }, 'owner push on branch_paused failed');
         }
       });
+    }
+  }
+}
+
+// ─── PER-BRANCH SUBSCRIPTION AUTO-RESUME ──────────────────────
+// Companion to deductBranchSubscriptions. After the deduction pass
+// charges every active+overdue branch, this pass walks every paused
+// branch (no paid_through_date filter — all paused branches are
+// overdue by definition; subscription_status='paused' is only set in
+// the insufficient-balance else branch above) and tries to resume
+// each. Sufficient post-deduction wallet balance → debit + flip to
+// 'active' + advance paid_through_date 15d. Insufficient → leave
+// paused; the next settlement run will retry on the next wallet
+// top-up.
+//
+// Why two passes instead of one merged loop: the deduction filter
+// (active + overdue) and the resume filter (paused) are disjoint, so
+// a single $or query buys nothing. Keeping them separate also keeps
+// the audit trail readable — every entry in the ledger has a refId
+// that names which pass wrote it (`${branchId}:${cycleKey}` for
+// deductions, `${branchId}:resume:${nowIso}` for resumes).
+async function resumePausedBranches(restaurantId) {
+  const now = new Date();
+  const pausedBranches = await col('branches').find({
+    restaurant_id: String(restaurantId),
+    subscription_status: 'paused',
+  }).toArray();
+
+  if (!pausedBranches.length) return;
+
+  // Read the wallet once before the loop and decrement locally per
+  // successful debit — same pattern as deductBranchSubscriptions. The
+  // settle-restaurant call site already ran deductions before this
+  // function, so balancePaise here is the post-deduction balance.
+  let remainingBalance = await ledger.balancePaise(restaurantId);
+
+  for (const branch of pausedBranches) {
+    const branchId = String(branch._id);
+    if (remainingBalance >= BIMONTHLY_FEE_PAISE) {
+      try {
+        // ref_id ties the entry to the resume timestamp — the unique
+        // (restaurant_id, ref_type, ref_id) index dedupes a same-day
+        // re-run, and the `:resume:` infix prevents collision with any
+        // future renewal entry's `${branchId}:${cycleKey}` shape.
+        await ledger.debit({
+          restaurantId: String(restaurantId),
+          branchId,
+          amountPaise: BIMONTHLY_FEE_PAISE,
+          refType: 'branch_subscription',
+          refId: `${branchId}:resume:${now.toISOString()}`,
+          status: 'completed',
+          notes: `Branch subscription renewal (₹${BIMONTHLY_FEE_WITH_GST_RS})`,
+        });
+      } catch (err) {
+        log.error({ err: err?.message, restaurantId, branchId }, '[BILLING] resume debit failed');
+        continue;
+      }
+      remainingBalance -= BIMONTHLY_FEE_PAISE;
+
+      const newPaidThrough = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000);
+      await col('branches').updateOne(
+        { _id: branch._id },
+        { $set: { subscription_status: 'active', paid_through_date: newPaidThrough, updated_at: now } },
+      );
+
+      // Drop the cached branches list (drives MPM gate + dashboard
+      // branch picker) and the branch's menu cache so the now-resumed
+      // branch starts surfacing immediately rather than waiting for
+      // TTL expiry. invalidateCache no-ops on missing keys, so calling
+      // it here is safe even if neither cache entry was ever written.
+      await invalidateCache(
+        `restaurant:${restaurantId}:branches`,
+        `branch:${branchId}:menu`,
+      );
+
+      log.info(
+        { restaurantId, branchId, amountPaise: BIMONTHLY_FEE_PAISE, paidThroughDate: newPaidThrough.toISOString() },
+        `[BILLING] Branch ${branchId} resumed — debited ₹${BIMONTHLY_FEE_WITH_GST_RS.toLocaleString('en-IN')}, next due ${newPaidThrough.toISOString()}`,
+      );
+    } else {
+      log.info(
+        { restaurantId, branchId, walletPaise: remainingBalance, requiredPaise: BIMONTHLY_FEE_PAISE },
+        `[BILLING] Branch ${branchId} remains paused — wallet ${remainingBalance} paise < required ${BIMONTHLY_FEE_PAISE}`,
+      );
     }
   }
 }
