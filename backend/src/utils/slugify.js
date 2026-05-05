@@ -32,4 +32,37 @@ function slugify(str, maxLen = 40) {
     .slice(0, maxLen);
 }
 
+/**
+ * Restaurant-name-specific slug builder. Used for `restaurants.store_slug`
+ * (the public storefront URL segment). Distinct from `slugify()` above
+ * because the rules differ:
+ *   - Strict null-return on falsy / non-string input (callers gate on this
+ *     to fall back to a placeholder slug like 'my-restaurant').
+ *   - "&" → " and " before stripping (so "Biryani & Co" → "biryani-and-co",
+ *     not "biryani-co"). slugify() would collapse the & into a hyphen and
+ *     lose the conjunction entirely.
+ *   - Returns null when the result has no [a-z0-9] char — names that are
+ *     pure punctuation / emoji shouldn't yield a hyphen-only slug.
+ *
+ * SINGLE source of truth for restaurant store slugs. The frontend's
+ * `_slugify()` helper in index.html MUST stay in sync with the regex /
+ * length rules below; changing either one without the other breaks the
+ * preview slug shown during onboarding.
+ *
+ * @param {string} name
+ * @returns {string|null}
+ */
+function slugifyRestaurantName(name) {
+  if (!name || typeof name !== 'string') return null;
+  const slug = name.toLowerCase()
+    .replace(/&/g, ' and ')           // "Biryani & Co" → "biryani and co"
+    .replace(/[^a-z0-9\s-]/g, '')     // strip punctuation
+    .replace(/\s+/g, '-')             // spaces → hyphens
+    .replace(/-+/g, '-')              // collapse repeats
+    .replace(/^-+|-+$/g, '')          // trim leading/trailing hyphens
+    .substring(0, 40);
+  return slug && /[a-z0-9]/.test(slug) ? slug : null;
+}
+
 module.exports = slugify;
+module.exports.slugifyRestaurantName = slugifyRestaurantName;

@@ -17,6 +17,7 @@ const memcache = require('../config/memcache');
 
 const crypto = require('crypto');
 const { rateLimitFn } = require('../middleware/rateLimit');
+const { slugifyRestaurantName } = require('../utils/slugify');
 const log = require('../utils/logger').child({ component: 'auth' });
 const { frontendUrl, FRONTEND_URL } = require('../utils/url');
 const { invalidateCache } = require('../config/cache');
@@ -1110,29 +1111,13 @@ router.delete('/delete-account', requireAuth, async (req, res) => {
   }
 });
 
-// ─── SLUG HELPER ───────────────────────────────────────────────
-// Slugifies a brand/business name into a URL-safe slug. Returns null if the
-// resulting slug would be empty or unusable (e.g., name was only special chars).
-// This is the SINGLE source of truth for slug generation — the frontend has a
-// matching `_slugify()` helper in index.html that MUST stay in sync with the
-// regex/length rules below.
-function slugifyName(name) {
-  if (!name || typeof name !== 'string') return null;
-  const slug = name.toLowerCase()
-    .replace(/&/g, ' and ')           // "Biryani & Co" → "biryani and co"
-    .replace(/[^a-z0-9\s-]/g, '')     // strip punctuation
-    .replace(/\s+/g, '-')             // spaces → hyphens
-    .replace(/-+/g, '-')              // collapse repeats
-    .replace(/^-+|-+$/g, '')          // trim leading/trailing hyphens
-    .substring(0, 40);
-  return slug && /[a-z0-9]/.test(slug) ? slug : null;
-}
-
 // Returns a unique store_slug derived from brandName. Pass `excludeId` to
 // allow the same restaurant to keep (or rebuild) its own slug without
-// triggering a self-collision suffix.
+// triggering a self-collision suffix. Slug rules live in
+// utils/slugify.js → slugifyRestaurantName (single source of truth,
+// kept in sync with the frontend `_slugify()` helper in index.html).
 async function generateUniqueSlug(brandName, excludeId = null) {
-  const base = slugifyName(brandName);
+  const base = slugifyRestaurantName(brandName);
   if (!base) return null;
   let slug = base;
   let n = 1;
@@ -1175,7 +1160,7 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
     //   1. Keep existing real slug (e.g., "beyond-snacks") — never break a live URL
     //   2. Regenerate if missing OR if previous slug was a "my-restaurant" placeholder
     //      that was auto-created by /auth/me before onboarding completed
-    //   3. Fall back to a placeholder only if slugifyName(brandName) returns null
+    //   3. Fall back to a placeholder only if slugifyRestaurantName(brandName) returns null
     //      (e.g., name was purely special characters)
     const existing = await col('restaurants').findOne(
       { _id: req.restaurantId },

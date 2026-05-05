@@ -326,9 +326,11 @@ router.post('/rating-requests', async (req, res) => {
 // the actual fan-out runs after the response. Batched at 10
 // restaurants per pass so a slow Mongo or Expo round-trip can't tie
 // up the event loop on a single chunk.
-router.get('/owner-daily-summary', async (req, res) => {
-  res.json({ ok: true, message: 'owner daily summary started', timestamp: new Date().toISOString() });
-
+// Extracted so the EC2 in-process cron (jobs/ownerDailySummary.js) can
+// invoke the same code path as the HTTP route without making a self-call.
+// No parameters — every input (prefs, restaurants, branches, orders) is
+// read from Mongo at call time.
+async function runOwnerDailySummary() {
   try {
     const expoPush = require('../services/expoPush');
     const prefs = await expoPush.getOwnerPushPrefs();
@@ -404,6 +406,14 @@ router.get('/owner-daily-summary', async (req, res) => {
   } catch (e) {
     log.error({ err: e }, 'owner-daily-summary error');
   }
+}
+
+router.get('/owner-daily-summary', async (req, res) => {
+  res.json({ ok: true, message: 'owner daily summary started', timestamp: new Date().toISOString() });
+  // Fire-and-forget after the response — same posture as before the
+  // extraction. Errors land inside runOwnerDailySummary's outer catch.
+  runOwnerDailySummary();
 });
 
 module.exports = router;
+module.exports.runOwnerDailySummary = runOwnerDailySummary;

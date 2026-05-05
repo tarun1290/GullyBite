@@ -519,6 +519,14 @@ connect().then(() => {
   const { scheduleTemplateSync } = require('./src/jobs/templateSync');
   scheduleTemplateSync();
 
+  // Owner daily summary push — daily 17:30 UTC = 23:00 IST. Fans out
+  // a "Today: N orders · ₹X" Expo push to every restaurant's
+  // owner_push_tokens. Same code path as the HTTP route
+  // /cron/owner-daily-summary; the route stays available as a manual
+  // trigger for ops.
+  const { scheduleOwnerDailySummary } = require('./src/jobs/ownerDailySummary');
+  scheduleOwnerDailySummary();
+
   // try { require('./src/jobs/campaignSender'); } catch (e) { console.warn('[EC2] Campaign sender:', e.message); }
   console.log('[EC2] Campaign sender: disabled — module not yet implemented');
 
