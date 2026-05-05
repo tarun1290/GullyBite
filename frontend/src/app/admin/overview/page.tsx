@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import StatCard from '../../../components/StatCard';
-import SectionError from '../../../components/dashboard/analytics/SectionError';
+import SectionError from '../../../components/restaurant/analytics/SectionError';
 import { useToast } from '../../../components/Toast';
 import {
   getAdminStats,

@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useToast } from '../../Toast';
-import { useRestaurant } from '../../../contexts/RestaurantContext';
+import { useToast } from '../Toast';
+import { useRestaurant } from '../../contexts/RestaurantContext';
 import {
   createBranch,
   updateBranch,
@@ -11,8 +11,8 @@ import {
   placesDetails,
   reverseGeocode,
   type BranchRazorpayOrder,
-} from '../../../api/restaurant';
-import type { Branch } from '../../../types';
+} from '../../api/restaurant';
+import type { Branch } from '../../types';
 import BranchStaffLinkPanel from './BranchStaffLinkPanel';
 
 // ── Razorpay Checkout integration ─────────────────────────────────

@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import BranchesSection from '../../../components/dashboard/restaurant/BranchesSection';
-import UsersSection from '../../../components/dashboard/restaurant/UsersSection';
+import BranchesSection from '../../../components/restaurant/BranchesSection';
+import UsersSection from '../../../components/restaurant/UsersSection';
 
 const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['branches', '🏪 Branches'],

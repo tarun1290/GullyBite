@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState, type ChangeEvent } from 'react';
 import StatCard from '../../../components/StatCard';
-import SectionError from '../../../components/dashboard/analytics/SectionError';
-import PendingApprovalNotice, { isPendingApproval } from '../../../components/dashboard/PendingApprovalNotice';
+import SectionError from '../../../components/restaurant/analytics/SectionError';
+import PendingApprovalNotice, { isPendingApproval } from '../../../components/restaurant/PendingApprovalNotice';
 import {
   getBranches,
   getRatings,

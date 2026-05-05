@@ -1,6 +1,6 @@
 'use client';
 
-import PenaltiesSection from '../../../components/dashboard/payments/PenaltiesSection';
+import PenaltiesSection from '../../../components/restaurant/payments/PenaltiesSection';
 
 export default function PenaltiesPage() {
   return (

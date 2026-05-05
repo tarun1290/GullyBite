@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ChangeEvent } from 'react';
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import SectionError from '../../../components/dashboard/analytics/SectionError';
+import SectionError from '../../../components/restaurant/analytics/SectionError';
 import DeliveryProofPhotos from '../../../components/shared/DeliveryProofPhotos';
 import DeliveryTimeline from '../../../components/shared/DeliveryTimeline';
 import IssueStatusBadge from '../../../components/shared/IssueStatusBadge';

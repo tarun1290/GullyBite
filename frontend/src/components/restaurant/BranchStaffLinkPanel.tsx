@@ -10,9 +10,9 @@
 // has no `branchId` yet so the link can't be fetched/generated.
 
 import { useCallback, useEffect, useState } from 'react';
-import { useToast } from '../../Toast';
-import { getBranchStaffLink, generateBranchStaffLink } from '../../../api/restaurant';
-import type { BranchStaffLink } from '../../../types';
+import { useToast } from '../Toast';
+import { getBranchStaffLink, generateBranchStaffLink } from '../../api/restaurant';
+import type { BranchStaffLink } from '../../types';
 
 interface BranchStaffLinkPanelProps {
   branchId: string;

@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useToast } from '../../Toast';
-import { createUser, updateUser, getBranchStaffLink } from '../../../api/restaurant';
-import type { Branch, BranchStaffLink } from '../../../types';
+import { useToast } from '../Toast';
+import { createUser, updateUser, getBranchStaffLink } from '../../api/restaurant';
+import type { Branch, BranchStaffLink } from '../../types';
 
 // Per-branch login-link row used by the post-creation success screen.
 // `status` distinguishes a still-loading fetch from a resolved value or

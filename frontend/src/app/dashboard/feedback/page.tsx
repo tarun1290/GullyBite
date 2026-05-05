@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import StatCard from '../../../components/StatCard';
-import SectionError from '../../../components/dashboard/analytics/SectionError';
+import SectionError from '../../../components/restaurant/analytics/SectionError';
 import {
   sendDineInFeedback,
   getFeedbackStats,

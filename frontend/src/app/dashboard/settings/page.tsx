@@ -1,12 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import BusinessInfoSection from '../../../components/dashboard/settings/BusinessInfoSection';
-import PricingSection from '../../../components/dashboard/settings/PricingSection';
-import NotificationSection from '../../../components/dashboard/settings/NotificationSection';
-import WhatsappSection from '../../../components/dashboard/settings/WhatsappSection';
-import IntegrationsSection from '../../../components/dashboard/settings/IntegrationsSection';
-import PasswordSection from '../../../components/dashboard/settings/PasswordSection';
+import BusinessInfoSection from '../../../components/restaurant/settings/BusinessInfoSection';
+import PricingSection from '../../../components/restaurant/settings/PricingSection';
+import NotificationSection from '../../../components/restaurant/settings/NotificationSection';
+import WhatsappSection from '../../../components/restaurant/settings/WhatsappSection';
+import IntegrationsSection from '../../../components/restaurant/settings/IntegrationsSection';
+import PasswordSection from '../../../components/restaurant/settings/PasswordSection';
 
 const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['business', '🏢 Business'],

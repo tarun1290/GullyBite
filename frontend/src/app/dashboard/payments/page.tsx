@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import FinancialSummarySection from '../../../components/dashboard/payments/FinancialSummarySection';
-import SettlementsSection from '../../../components/dashboard/payments/SettlementsSection';
-import WalletSection from '../../../components/dashboard/payments/WalletSection';
-import TaxSummarySection from '../../../components/dashboard/payments/TaxSummarySection';
+import FinancialSummarySection from '../../../components/restaurant/payments/FinancialSummarySection';
+import SettlementsSection from '../../../components/restaurant/payments/SettlementsSection';
+import WalletSection from '../../../components/restaurant/payments/WalletSection';
+import TaxSummarySection from '../../../components/restaurant/payments/TaxSummarySection';
 
 const SECTIONS: ReadonlyArray<readonly [string, string]> = [
   ['summary', '📊 Summary'],

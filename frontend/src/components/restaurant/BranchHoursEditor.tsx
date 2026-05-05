@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useToast } from '../../Toast';
-import Toggle from '../../Toggle';
-import { getBranchHours, updateBranchHours } from '../../../api/restaurant';
-import type { BranchHours, BranchHoursDay } from '../../../types';
+import { useToast } from '../Toast';
+import Toggle from '../Toggle';
+import { getBranchHours, updateBranchHours } from '../../api/restaurant';
+import type { BranchHours, BranchHoursDay } from '../../types';
 
 const DAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const;
 const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const;

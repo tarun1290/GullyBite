@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import ConversationList, { type Thread } from '../../../components/dashboard/ConversationList';
-import ThreadPanel from '../../../components/dashboard/ThreadPanel';
-import IssueList, { type IssueListItem } from '../../../components/dashboard/IssueList';
-import IssueDetailPanel from '../../../components/dashboard/IssueDetailPanel';
+import ConversationList, { type Thread } from '../../../components/restaurant/ConversationList';
+import ThreadPanel from '../../../components/restaurant/ThreadPanel';
+import IssueList, { type IssueListItem } from '../../../components/restaurant/IssueList';
+import IssueDetailPanel from '../../../components/restaurant/IssueDetailPanel';
 import { getMessages, getIssues, getUnreadCount } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
 

@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import CampaignsSection from '../../../components/dashboard/marketing/CampaignsSection';
-import CouponsSection from '../../../components/dashboard/marketing/CouponsSection';
-import ReferralsSection from '../../../components/dashboard/marketing/ReferralsSection';
-import MarketingMessagesSection from '../../../components/dashboard/marketing/MarketingMessagesSection';
+import CampaignsSection from '../../../components/restaurant/marketing/CampaignsSection';
+import CouponsSection from '../../../components/restaurant/marketing/CouponsSection';
+import ReferralsSection from '../../../components/restaurant/marketing/ReferralsSection';
+import MarketingMessagesSection from '../../../components/restaurant/marketing/MarketingMessagesSection';
 
 type SectionKey = 'campaigns' | 'coupons' | 'referrals' | 'messages';
 

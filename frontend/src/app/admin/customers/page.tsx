@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from 'react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import SectionError from '../../../components/dashboard/analytics/SectionError';
+import SectionError from '../../../components/restaurant/analytics/SectionError';
 import {
   getAdminCustomerIdentity,
   getAdminCustomers,

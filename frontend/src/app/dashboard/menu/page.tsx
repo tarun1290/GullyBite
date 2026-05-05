@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import MenuEditorSection from '../../../components/dashboard/menu/MenuEditorSection';
-import CatalogSyncSection from '../../../components/dashboard/menu/CatalogSyncSection';
-import ProductSetsSection from '../../../components/dashboard/menu/ProductSetsSection';
-import CollectionsSection from '../../../components/dashboard/menu/CollectionsSection';
-import CsvImportSection from '../../../components/dashboard/menu/CsvImportSection';
-import ImageManagementSection from '../../../components/dashboard/menu/ImageManagementSection';
+import MenuEditorSection from '../../../components/restaurant/menu/MenuEditorSection';
+import CatalogSyncSection from '../../../components/restaurant/menu/CatalogSyncSection';
+import ProductSetsSection from '../../../components/restaurant/menu/ProductSetsSection';
+import CollectionsSection from '../../../components/restaurant/menu/CollectionsSection';
+import CsvImportSection from '../../../components/restaurant/menu/CsvImportSection';
+import ImageManagementSection from '../../../components/restaurant/menu/ImageManagementSection';
 import { getBranches } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
 import type { Branch } from '../../../types';

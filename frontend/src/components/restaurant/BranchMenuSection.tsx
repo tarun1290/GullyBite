@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useToast } from '../../Toast';
-import CategoriesManager from '../menu/CategoriesManager';
+import { useToast } from '../Toast';
+import CategoriesManager from './menu/CategoriesManager';
 import {
   getBranchMenu,
   createBranchCatalog,
   syncBranchCatalog,
-} from '../../../api/restaurant';
-import type { Branch } from '../../../types';
+} from '../../api/restaurant';
+import type { Branch } from '../../types';
 
 interface MenuItemRow {
   id: string;

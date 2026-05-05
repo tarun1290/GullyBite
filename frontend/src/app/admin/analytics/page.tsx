@@ -4,8 +4,8 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { ChartData, ChartOptions, ChartDataset } from 'chart.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StatCard from '../../../components/StatCard';
-import ChartCanvas from '../../../components/dashboard/ChartCanvas';
-import SectionError from '../../../components/dashboard/analytics/SectionError';
+import ChartCanvas from '../../../components/restaurant/ChartCanvas';
+import SectionError from '../../../components/restaurant/analytics/SectionError';
 import {
   getAnalyticsCities,
   getAnalyticsAreas,

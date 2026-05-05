@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useToast } from '../../Toast';
+import { useToast } from '../Toast';
 import UserFormModal, { type RestaurantUser } from './UserFormModal';
 import {
   getUsers,
@@ -9,8 +9,8 @@ import {
   deleteUser,
   updateUser,
   resetUserPin,
-} from '../../../api/restaurant';
-import type { Branch } from '../../../types';
+} from '../../api/restaurant';
+import type { Branch } from '../../types';
 
 interface RoleBadge { emoji: string; color: string; label: string }
 

@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import StatCard from '../../../components/StatCard';
-import SetupWizard, { type WizardStep } from '../../../components/dashboard/SetupWizard';
-import { StatusBadge } from '../../../components/dashboard/OrderCard';
+import SetupWizard, { type WizardStep } from '../../../components/restaurant/SetupWizard';
+import { StatusBadge } from '../../../components/restaurant/OrderCard';
 import { useRestaurant } from '../../../contexts/RestaurantContext';
 import { useSocketContext } from '../../../components/shared/SocketProvider';
 import {

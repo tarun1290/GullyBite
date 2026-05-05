@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import SectionError from '../../../components/dashboard/analytics/SectionError';
+import SectionError from '../../../components/restaurant/analytics/SectionError';
 import { getAdminLogs, getAdminLog } from '../../../api/admin';
 
 const LOGS_LIMIT = 50;

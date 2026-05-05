@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import OrderCard from '../../../components/dashboard/OrderCard';
-import OrderDetailModal from '../../../components/dashboard/OrderDetailModal';
+import OrderCard from '../../../components/restaurant/OrderCard';
+import OrderDetailModal from '../../../components/restaurant/OrderDetailModal';
 import { getOrders, updateOrderStatus, declineOrder, getStaffedBranches } from '../../../api/restaurant';
 import { useToast } from '../../../components/Toast';
 import { useNewOrderSound } from '../../../hooks/useNewOrderSound';

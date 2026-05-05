@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../../../components/Toast';
-import SectionError from '../../../components/dashboard/analytics/SectionError';
+import SectionError from '../../../components/restaurant/analytics/SectionError';
 import {
   flagIssueSettlement,
   getAdminIssue,

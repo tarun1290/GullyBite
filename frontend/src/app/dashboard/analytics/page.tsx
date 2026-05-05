@@ -1,13 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import RevenueSection from '../../../components/dashboard/analytics/RevenueSection';
-import TopItemsSection from '../../../components/dashboard/analytics/TopItemsSection';
-import PeakHoursSection from '../../../components/dashboard/analytics/PeakHoursSection';
-import CustomersSection from '../../../components/dashboard/analytics/CustomersSection';
-import DeliverySection from '../../../components/dashboard/analytics/DeliverySection';
-import DropoffsSection from '../../../components/dashboard/analytics/DropoffsSection';
-import RecoverySection from '../../../components/dashboard/analytics/RecoverySection';
+import RevenueSection from '../../../components/restaurant/analytics/RevenueSection';
+import TopItemsSection from '../../../components/restaurant/analytics/TopItemsSection';
+import PeakHoursSection from '../../../components/restaurant/analytics/PeakHoursSection';
+import CustomersSection from '../../../components/restaurant/analytics/CustomersSection';
+import DeliverySection from '../../../components/restaurant/analytics/DeliverySection';
+import DropoffsSection from '../../../components/restaurant/analytics/DropoffsSection';
+import RecoverySection from '../../../components/restaurant/analytics/RecoverySection';
 
 const PRESETS: ReadonlyArray<readonly [string, string]> = [
   ['today', 'Today'],

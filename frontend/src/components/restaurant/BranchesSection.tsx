@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useToast } from '../../Toast';
-import Toggle from '../../Toggle';
+import { useToast } from '../Toast';
+import Toggle from '../Toggle';
 import BranchFormModal from './BranchFormModal';
 import BranchHoursEditor from './BranchHoursEditor';
 import BranchMenuSection from './BranchMenuSection';
@@ -14,8 +14,8 @@ import {
   restoreBranch,
   permanentDeleteBranch,
   retryBranchBilling,
-} from '../../../api/restaurant';
-import type { Branch, BranchHours, BranchHoursDay } from '../../../types';
+} from '../../api/restaurant';
+import type { Branch, BranchHours, BranchHoursDay } from '../../types';
 
 interface BranchExt extends Branch {
   fssai_number?: string;

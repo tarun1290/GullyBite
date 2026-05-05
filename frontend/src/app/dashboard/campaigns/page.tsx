@@ -13,7 +13,7 @@ import {
   getUpcomingFestivals,
   getCampaignSmartSendTime,
 } from '../../../api/restaurant';
-import AutoJourneysSection from '../../../components/dashboard/AutoJourneysSection';
+import AutoJourneysSection from '../../../components/restaurant/AutoJourneysSection';
 
 const FESTIVAL_EMOJI: Record<string, string> = {
   diwali: '🪔',

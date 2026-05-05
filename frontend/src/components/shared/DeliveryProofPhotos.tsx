@@ -10,7 +10,7 @@
 // tab.
 //
 // Used by:
-//   • frontend/src/components/dashboard/OrderDetailModal.tsx (restaurant)
+//   • frontend/src/components/restaurant/OrderDetailModal.tsx (restaurant)
 //   • frontend/src/app/admin/orders/page.tsx (admin orders table)
 //
 // Style note: codebase uses inline `style={{...}}` rather than Tailwind
