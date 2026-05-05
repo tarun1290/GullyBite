@@ -135,7 +135,7 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, onDecli
 
   return (
     <tr style={{ borderLeft: `3px solid ${statusColor}` }}>
-      <td><span className="mono">{order.order_number}</span></td>
+      <td><span className="mono">{order.display_order_id || `#${(order.id || '').slice(-6) || '????'}`}</span></td>
       <td>
         <div>{order.customer_name || '—'}</div>
         <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>

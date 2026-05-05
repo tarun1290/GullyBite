@@ -45,6 +45,7 @@ interface AdminAlert {
 interface OverviewOrder {
   id?: string;
   order_number?: string;
+  display_order_id?: string;
   business_name?: string;
   total_rs?: number;
   status?: string;
@@ -306,7 +307,20 @@ export default function AdminOverviewPage() {
                       <tr><td colSpan={4} style={emptyCell}>No orders yet</td></tr>
                     ) : orders.map((o) => (
                       <tr key={o.id || o.order_number} style={{ borderTop: '1px solid var(--rim)' }}>
-                        <td style={{ ...td, fontFamily: 'monospace' }}>#{o.order_number}</td>
+                        <td style={{ ...td, fontFamily: 'monospace' }}>
+                          {o.display_order_id ? (
+                            <>
+                              <div>{o.display_order_id}</div>
+                              {o.order_number && (
+                                <div style={{ fontSize: '.68rem', color: 'var(--mute,var(--dim))' }}>
+                                  {o.order_number}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>#{o.order_number || '—'}</>
+                          )}
+                        </td>
                         <td style={{ ...td, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>{o.business_name || '—'}</td>
                         <td style={td}>{o.total_rs != null ? `₹${o.total_rs}` : '—'}</td>
                         <td style={td}>{orderStatus(o.status)}</td>

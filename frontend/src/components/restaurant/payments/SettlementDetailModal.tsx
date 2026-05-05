@@ -56,6 +56,7 @@ interface SettlementDoc {
 interface SettlementOrder {
   _id?: string;
   order_number?: string;
+  display_order_id?: string;
   delivered_at?: string;
   created_at?: string;
   total_rs?: number;
@@ -389,7 +390,7 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
                       {detail.orders.map((o, idx) => (
                         <tr key={o._id || o.order_number || idx}>
                           <td style={{ fontFamily: 'monospace', fontSize: '.75rem' }}>
-                            {o.order_number || o._id}
+                            {o.display_order_id || `#${(o._id || '').slice(-6) || '????'}`}
                           </td>
                           <td style={{ fontSize: '.78rem' }}>{periodDisplay(o.delivered_at || o.created_at)}</td>
                           <td>{formatINR(o.total_rs)}</td>

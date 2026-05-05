@@ -52,6 +52,7 @@ export interface IssueDetail {
   customer_name?: string;
   customer_phone?: string;
   order_number?: string;
+  display_order_id?: string;
   description?: string;
   sla_deadline?: string;
   messages?: IssueMessageRow[];
@@ -328,7 +329,7 @@ export default function IssueDetailPanel({ issueId, onStatusChange }: IssueDetai
       <div style={{ display: 'flex', gap: '1.5rem', fontSize: '.82rem', flexWrap: 'wrap', paddingBottom: '.7rem', borderBottom: '1px solid var(--rim)' }}>
         <div><span style={{ color: 'var(--dim)' }}>Customer:</span> <strong>{issue.customer_name || 'Unknown'}</strong></div>
         <div><span style={{ color: 'var(--dim)' }}>Phone:</span> {issue.customer_phone || '—'}</div>
-        <div><span style={{ color: 'var(--dim)' }}>Order:</span> {issue.order_number || '—'}</div>
+        <div><span style={{ color: 'var(--dim)' }}>Order:</span> {issue.display_order_id || '—'}</div>
       </div>
 
       <div style={{ padding: '.8rem 0', borderBottom: '1px solid var(--rim)' }}>

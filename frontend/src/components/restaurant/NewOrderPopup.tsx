@@ -57,6 +57,7 @@ interface PopupOrderItem {
 interface PopupOrder {
   id?: string;
   order_number?: string;
+  display_order_id?: string;
   status?: string;
   customer_name?: string;
   receiver_name?: string | null;
@@ -291,7 +292,11 @@ export default function NewOrderPopup() {
 
   const o = orderDetail;
   const items = o?.items || [];
-  const orderRef = o?.order_number || currentId;
+  // Per policy: never display legacy ZM-YYYYMMDD-NNNN to restaurant
+  // users. Prefer `display_order_id`; fall back to a slice of the
+  // internal id for old orders. `currentId` is the queue-cycle index
+  // tracker — useful as the absolute last resort if neither is set.
+  const orderRef = o?.display_order_id || (o?.id ? `#${o.id.slice(-6)}` : currentId);
   // Single instructions string sourced from whichever field the order
   // doc actually carries (see PopupOrder type for why all three names
   // are accepted). Trimmed empty values count as "no instructions".

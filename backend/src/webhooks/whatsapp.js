@@ -2538,7 +2538,11 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
         await orderSvc.setState(conv.id, 'AWAITING_PAYMENT', {
           ...session,
           orderId: order.id,
-          orderNumber: order.order_number,
+          // Prefer the per-restaurant display id so the
+          // payment-pending reminder ("Your order #X is awaiting
+          // payment") shows ABBR-MMDD-NNN. Falls back to the legacy
+          // order_number for orders created before this rollout.
+          orderNumber: order.display_order_id || order.order_number,
         });
         if (etaText) await wa.sendText(pid, token, to, `⏱ Estimated delivery: *${etaText}*`);
 
@@ -2565,7 +2569,7 @@ const handleInteractiveReply = async (msg, customer, conv, waAccount) => {
       } catch (payErr) {
         log.error({ err: payErr }, 'Interactive checkout failed');
         await wa.sendText(pid, token, to, '⚠️ We had trouble loading your checkout. Please type *PAY* to try again.');
-        await orderSvc.setState(conv.id, 'ORDER_REVIEW', { ...session, orderId: order.id, orderNumber: order.order_number });
+        await orderSvc.setState(conv.id, 'ORDER_REVIEW', { ...session, orderId: order.id, orderNumber: order.display_order_id || order.order_number });
       }
       log.info({ durationMs: Date.now() - _orderStart }, 'Order post-processing complete');
       logActivity({ actorType: 'customer', actorId: customer.wa_phone || customer.bsuid, action: 'customer.payment_initiated', category: 'payment', description: `Payment link sent to ${customer.name || customer.wa_phone || customer.bsuid}`, restaurantId: waAccount.restaurant_id, severity: 'info' });
@@ -2879,7 +2883,7 @@ const _processReorder = async (orderId, customer, conv, waAccount) => {
     reorderBranchId: order.branch_id,
   });
 
-  let replyText = `♻️ *Reordering from #${order.order_number}*\n\n${cartText}\n\n`;
+  let replyText = `♻️ *Reordering from #${order.display_order_id || order.order_number}*\n\n${cartText}\n\n`;
   if (unavailableNames.length) {
     replyText += `⚠️ Removed (unavailable): ${unavailableNames.join(', ')}\n\n`;
   }

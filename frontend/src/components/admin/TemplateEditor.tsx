@@ -12,7 +12,7 @@ const LANGUAGES: ReadonlyArray<{ v: string; l: string }> = [
   { v: 'pa', l: 'Punjabi' }, { v: 'ur', l: 'Urdu' },
 ];
 const VARIABLE_SOURCES: ReadonlyArray<string> = [
-  'customer.name', 'customer.wa_phone', 'order.order_number', 'order.total_rs',
+  'customer.name', 'customer.wa_phone', 'order.order_number', 'order.display_order_id', 'order.total_rs',
   'order.items_summary', 'order.item_count', 'order.eta_text', 'order.status',
   'order.cancellation_reason', 'order.refund_amount_rs', 'order.tracking_url',
   'branch.name', 'restaurant.business_name', 'rider.name', 'rider.phone',

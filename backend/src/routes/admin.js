@@ -21,6 +21,7 @@ const slugify = require('../utils/slugify');
 // merchant sees a real-time toast for approvals, suspensions, refunds,
 // etc. without refreshing.
 const { emitToRestaurant } = require('../utils/socketEmit');
+const { invalidateRestaurant } = require('../utils/cachedLookup');
 const log = require('../utils/logger').child({ component: 'admin' });
 
 // ─── AUTH MIDDLEWARE (RBAC) ───────────────────────────────────
@@ -966,16 +967,38 @@ router.get('/customers', async (req, res) => {
 // ─── PATCH /api/admin/restaurants/:id ────────────────────────
 router.patch('/restaurants/:id', express.json(), async (req, res) => {
   try {
-    const { status } = req.body;
-    if (!['active', 'suspended', 'pending'].includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' });
+    const { status, order_abbr } = req.body;
+    const $set = { updated_at: new Date() };
+
+    if (status !== undefined) {
+      if (!['active', 'suspended', 'pending'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid status' });
+      }
+      $set.status = status;
     }
+
+    // Same regex the owner-side endpoint uses, so admin can't sneak a
+    // value through that the owner endpoint would reject.
+    if (order_abbr !== undefined) {
+      if (typeof order_abbr !== 'string' || !/^[A-Z]{2,3}$/.test(order_abbr)) {
+        return res.status(400).json({ error: 'order_abbr must be 2–3 uppercase letters (A–Z)' });
+      }
+      $set.order_abbr = order_abbr;
+    }
+
+    // Reject no-op PATCHes so callers don't accidentally mutate
+    // updated_at without actually changing anything meaningful.
+    if (Object.keys($set).length === 1) {
+      return res.status(400).json({ error: 'No supported fields provided (status, order_abbr)' });
+    }
+
     const updated = await col('restaurants').findOneAndUpdate(
       { _id: req.params.id },
-      { $set: { status, updated_at: new Date() } },
-      { returnDocument: 'after', projection: { _id: 1, business_name: 1, status: 1 } }
+      { $set },
+      { returnDocument: 'after', projection: { _id: 1, business_name: 1, status: 1, order_abbr: 1 } }
     );
     if (!updated) return res.status(404).json({ error: 'Not found' });
+
     if (status === 'suspended') {
       logActivity({
         actorType: 'admin', actorId: null, actorName: 'Admin',
@@ -989,6 +1012,19 @@ router.patch('/restaurants/:id', express.json(), async (req, res) => {
         timestamp: new Date().toISOString(),
       });
     }
+    if (order_abbr !== undefined) {
+      logActivity({
+        actorType: 'admin', actorId: null, actorName: 'Admin',
+        action: 'restaurant.order_abbr_updated', category: 'settings',
+        description: `Restaurant "${updated.business_name}" order_abbr set to "${order_abbr}"`,
+        restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'info',
+      });
+    }
+
+    // Bust the cachedLookup memcache entry so the next read picks up
+    // the new status / order_abbr without waiting for the 5-min TTL.
+    invalidateRestaurant(String(req.params.id));
+
     res.json(mapId(updated));
   } catch (err) {
     res.status(500).json({ success: false, message: "Internal server error" });

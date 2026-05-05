@@ -26,6 +26,7 @@ export interface IssueListItem {
   status?: string;
   customer_name?: string;
   order_number?: string;
+  display_order_id?: string;
   created_at?: string;
 }
 
@@ -83,9 +84,15 @@ function IssueRow({ issue, active, onSelect }: IssueRowProps) {
         >
           {(issue.status || '').replace(/_/g, ' ')}
         </span>
-        {issue.order_number && (
-          <span style={{ fontSize: '.62rem', color: 'var(--dim)' }}>#{issue.order_number}</span>
-        )}
+        {/* Per the order-id-display policy, restaurant-facing UI never
+            shows the legacy ZM-YYYYMMDD-NNNN. Issue rows don't carry
+            the order's UUID, so when display_order_id isn't populated
+            (legacy orders) we render '—' rather than leak order_number.
+            Backend follow-up: join issues to orders.display_order_id in
+            the issue serializer so the fallback rarely fires. */}
+        {issue.display_order_id ? (
+          <span style={{ fontSize: '.62rem', color: 'var(--dim)' }}>{issue.display_order_id}</span>
+        ) : null}
       </div>
     </div>
   );

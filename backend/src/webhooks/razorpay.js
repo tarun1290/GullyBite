@@ -694,7 +694,7 @@ const handleEvent = async (event) => {
       await wa.sendButtons(
         order.phone_number_id, order.access_token, resolveRecipient(order),
         {
-          body   : `❌ Payment failed for order #${order.order_number}.\n\nWould you like to try again?`,
+          body   : `❌ Payment failed for order #${order.display_order_id || order.order_number}.\n\nWould you like to try again?`,
           buttons: [
             { id: 'CONFIRM_ORDER', title: '🔄 Retry Payment' },
             { id: 'CANCEL_ORDER',  title: '❌ Cancel Order'  },

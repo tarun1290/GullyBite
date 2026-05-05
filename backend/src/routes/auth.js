@@ -19,6 +19,33 @@ const crypto = require('crypto');
 const { rateLimitFn } = require('../middleware/rateLimit');
 const { slugifyRestaurantName } = require('../utils/slugify');
 const log = require('../utils/logger').child({ component: 'auth' });
+
+// Auto-generate a 2-letter uppercase order_abbr from a name. Strategy:
+//  1. Uppercase + treat '&' as a word separator ("M&S" → "M S").
+//  2. Tokenize on non-letter runs and drop common stop-words ('THE',
+//     'AND') so "The Burger Co" yields BR (from BURGER) instead of
+//     TH (from THE).
+//  3. From the meaningful-letters-only string, take the first 2
+//     consonants (consonants-first heuristic — they carry the brand
+//     identity better than vowels for short codes).
+//  4. Fallback: if fewer than 2 consonants exist, take the first 2
+//     letters; if the input has < 2 letters total, return 'XX'.
+// Auto-gen always returns exactly 2 uppercase letters; the PUT
+// /settings/order-abbr endpoint allows the owner to manually set 2 OR 3
+// letters later (and stamps `order_abbr_locked: true` so onboarding
+// regeneration won't clobber it).
+const ORDER_ABBR_STOP_WORDS = new Set(['THE', 'AND']);
+function generateOrderAbbr(name) {
+  const upper = String(name || '').toUpperCase().replace(/&/g, ' ');
+  const tokens = upper
+    .split(/[^A-Z]+/)
+    .filter((t) => t && !ORDER_ABBR_STOP_WORDS.has(t));
+  const meaningful = tokens.join('');
+  const consonants = meaningful.replace(/[AEIOU]/g, '');
+  if (consonants.length >= 2) return consonants.slice(0, 2);
+  if (meaningful.length >= 2) return meaningful.slice(0, 2);
+  return 'XX';
+}
 const { frontendUrl, FRONTEND_URL } = require('../utils/url');
 const { invalidateCache } = require('../config/cache');
 
@@ -191,11 +218,16 @@ router.post('/signup', express.json(), async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 12);
     const id = newId();
+    // business_name is the placeholder "My Restaurant" at this point —
+    // the real brand_name lands at /onboarding. Derive order_abbr from
+    // ownerName so each new account gets a meaningful default; the
+    // owner can override via PUT /api/restaurant/settings/order-abbr.
     await col('restaurants').insertOne({
       _id: id, owner_name: ownerName.trim(), email: email.toLowerCase().trim(),
       password_hash: passwordHash, auth_provider: 'local',
       approval_status: 'pending', onboarding_step: 1,
       business_name: 'My Restaurant', status: 'active',
+      order_abbr: generateOrderAbbr(ownerName),
       campaigns_enabled: false,
       marketing_wa_status: 'not_configured',
       created_at: new Date(), updated_at: new Date(),
@@ -320,6 +352,7 @@ router.post('/google', express.json(), async (req, res) => {
         owner_name: name || 'Owner', email: email?.toLowerCase(),
         profile_picture: picture || null, auth_provider: 'google',
         business_name: 'My Restaurant', status: 'active',
+        order_abbr: generateOrderAbbr(name || 'Owner'),
         approval_status: 'pending', onboarding_step: 1,
         campaigns_enabled: false,
         created_at: new Date(), updated_at: new Date(),
@@ -408,6 +441,7 @@ router.get('/google/callback', async (req, res) => {
         owner_name: name || 'Owner', email: email?.toLowerCase(),
         profile_picture: picture || null, auth_provider: 'google',
         business_name: 'My Restaurant', status: 'active',
+        order_abbr: generateOrderAbbr(name || 'Owner'),
         approval_status: 'pending', onboarding_step: 1,
         campaigns_enabled: false,
         created_at: new Date(), updated_at: new Date(),
@@ -1164,7 +1198,7 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
     //      (e.g., name was purely special characters)
     const existing = await col('restaurants').findOne(
       { _id: req.restaurantId },
-      { projection: { store_slug: 1, brand_name: 1 } }
+      { projection: { store_slug: 1, brand_name: 1, order_abbr_locked: 1 } }
     );
     let storeSlug = existing?.store_slug;
     if (!storeSlug || isPlaceholderSlug(storeSlug)) {
@@ -1185,6 +1219,26 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
     if (fssaiLicense) $set.fssai_license = fssaiLicense;
 
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set });
+
+    // ─── ORDER_ABBR REGENERATION (auto-gen only) ──────────────
+    // At signup we generated order_abbr from owner_name (the only real
+    // human-provided string at that point — business_name was the
+    // 'My Restaurant' placeholder). Now that brandName has landed,
+    // regenerate from the real brand so the abbr matches the storefront
+    // identity. SKIPPED when order_abbr_locked is true — that flag is
+    // set by PUT /api/restaurant/settings/order-abbr to preserve manual
+    // overrides through this onboarding sweep.
+    if (!existing?.order_abbr_locked) {
+      try {
+        const newAbbr = generateOrderAbbr(brandName);
+        await col('restaurants').updateOne(
+          { _id: req.restaurantId, order_abbr_locked: { $ne: true } },
+          { $set: { order_abbr: newAbbr, updated_at: new Date() } },
+        );
+      } catch (err) {
+        req.log?.warn?.({ err, restaurantId: req.restaurantId }, 'order_abbr regeneration on onboarding failed');
+      }
+    }
 
     // ─── BRAND BOOTSTRAP ────────────────────────────────────────
     // 'single' tenants get a first brand auto-created (and set as

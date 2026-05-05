@@ -64,6 +64,7 @@ interface AdminIssue {
   customer_phone?: string;
   order_number?: string;
   order_id?: string;
+  display_order_id?: string;
   priority?: string;
   status?: string;
   routed_to?: string;
@@ -443,7 +444,20 @@ export default function AdminIssuesPage() {
                         </td>
                         <td style={{ ...td, fontSize: '.78rem' }}>{CAT_LABEL[i.category || ''] || i.category}</td>
                         <td style={{ ...td, fontSize: '.8rem' }}>{i.customer_name || '—'}</td>
-                        <td style={{ ...td, fontSize: '.76rem', color: 'var(--dim)' }}>{i.order_number || '—'}</td>
+                        <td style={{ ...td, fontSize: '.76rem', color: 'var(--dim)' }}>
+                          {i.display_order_id ? (
+                            <>
+                              <div>{i.display_order_id}</div>
+                              {i.order_number && (
+                                <div style={{ fontSize: '.66rem', color: 'var(--mute,var(--dim))' }}>
+                                  {i.order_number}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <>{i.order_number || '—'}</>
+                          )}
+                        </td>
                         <td style={td}>
                           <span style={{ color: priClr, fontWeight: 600, fontSize: '.72rem', textTransform: 'uppercase' }}>
                             {i.priority}
@@ -527,7 +541,21 @@ export default function AdminIssuesPage() {
                 <div style={{ padding: '.7rem 1.2rem', borderBottom: '1px solid var(--rim)', display: 'flex', gap: '1.5rem', fontSize: '.82rem', flexWrap: 'wrap' }}>
                   <div><span style={{ color: 'var(--dim)' }}>Customer:</span> <strong>{detail.customer_name || 'Unknown'}</strong></div>
                   <div><span style={{ color: 'var(--dim)' }}>Phone:</span> {detail.customer_phone || '—'}</div>
-                  <div><span style={{ color: 'var(--dim)' }}>Order:</span> {detail.order_number || '—'}</div>
+                  <div>
+                    <span style={{ color: 'var(--dim)' }}>Order:</span>{' '}
+                    {detail.display_order_id ? (
+                      <>
+                        <strong>{detail.display_order_id}</strong>
+                        {detail.order_number && (
+                          <span style={{ fontSize: '.7rem', color: 'var(--mute,var(--dim))', marginLeft: '.4rem' }}>
+                            ({detail.order_number})
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      detail.order_number || '—'
+                    )}
+                  </div>
                   <div><span style={{ color: 'var(--dim)' }}>Restaurant:</span> {detail.restaurant_id || '—'}</div>
                   <div><span style={{ color: 'var(--dim)' }}>Routed:</span> {detail.routed_to || '—'}</div>
                 </div>

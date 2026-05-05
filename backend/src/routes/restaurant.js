@@ -686,6 +686,43 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// PUT /api/restaurant/settings/order-abbr — Owner updates the
+// 2–3 letter prefix used on outbound order numbers. Validation is
+// strict (regex `/^[A-Z]{2,3}$/`) so we never write a value that
+// breaks downstream order-number formatting. Cache invalidation
+// follows the same pattern as the other settings writes — the
+// cachedLookup memcache entry under restaurant:${id} is busted so
+// the next read picks up the new abbr immediately rather than waiting
+// for the 5-min TTL.
+router.put('/settings/order-abbr', requirePermission('manage_settings'), express.json(), async (req, res) => {
+  try {
+    const raw = req.body?.order_abbr;
+    if (typeof raw !== 'string' || !/^[A-Z]{2,3}$/.test(raw)) {
+      return res.status(400).json({ error: 'order_abbr must be 2–3 uppercase letters (A–Z)' });
+    }
+    // order_abbr_locked: true marks this value as a manual override so
+    // the /onboarding handler in auth.js skips its auto-regeneration
+    // sweep (which otherwise rewrites order_abbr from brandName).
+    const result = await col('restaurants').updateOne(
+      { _id: req.restaurantId },
+      { $set: { order_abbr: raw, order_abbr_locked: true, updated_at: new Date() } },
+    );
+    if (!result.matchedCount) return res.status(404).json({ error: 'Restaurant not found' });
+    invalidateRestaurant(req.restaurantId);
+    log({
+      actorType: 'restaurant', actorId: String(req.restaurantId),
+      actorName: req.user?.name || req.user?.email || req.userRole || null,
+      action: 'settings.order_abbr_updated', category: 'settings',
+      description: `Order abbreviation updated to "${raw}"`,
+      restaurantId: String(req.restaurantId), severity: 'info',
+    });
+    res.json({ success: true, order_abbr: raw });
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'order-abbr update failed');
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // POST /api/restaurant/update-slug — Update store URL slug
 router.post('/update-slug', requirePermission('manage_settings'), async (req, res) => {
   try {
@@ -8651,7 +8688,25 @@ router.get('/issues', requireAuth, requireApproved, async (req, res) => {
       { restaurantId: req.restaurantId, status, category, priority, search },
       { page: parseInt(page), limit: parseInt(limit) }
     );
-    res.json({ ...result, issues: (result.issues || []).map(maskIssue) });
+    // Enrich each issue with display_order_id pulled from the joined
+    // order doc. One $in query for the whole page (≤30 issues) — keeps
+    // this O(1) instead of N+1. Issues whose order_id doesn't resolve
+    // (deleted order, legacy doc) get null and the frontend falls back.
+    const issues = result.issues || [];
+    const issueOrderIds = [...new Set(issues.map((i) => i.order_id).filter(Boolean))];
+    const issueDisplayMap = new Map();
+    if (issueOrderIds.length) {
+      const issueOrders = await col('orders').find(
+        { _id: { $in: issueOrderIds } },
+        { projection: { _id: 1, display_order_id: 1 } },
+      ).toArray();
+      for (const o of issueOrders) issueDisplayMap.set(String(o._id), o.display_order_id || null);
+    }
+    const enrichedIssues = issues.map((i) => ({
+      ...i,
+      display_order_id: i.order_id ? (issueDisplayMap.get(String(i.order_id)) || null) : null,
+    }));
+    res.json({ ...result, issues: enrichedIssues.map(maskIssue) });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -8668,7 +8723,19 @@ router.get('/issues/:id', requireAuth, requireApproved, async (req, res) => {
   try {
     const issue = await issueSvc.getIssue(req.params.id);
     if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
-    res.json(maskIssue(issue));
+    // Enrich with display_order_id from the joined order doc — single
+    // findOne with a tight projection keeps this cheap. Falls through
+    // to null when the order is missing or has no display_order_id (the
+    // frontend's IssueDetailPanel falls back to '—' in that case).
+    let displayOrderId = null;
+    if (issue.order_id) {
+      const ord = await col('orders').findOne(
+        { _id: issue.order_id },
+        { projection: { display_order_id: 1 } },
+      );
+      displayOrderId = ord?.display_order_id || null;
+    }
+    res.json(maskIssue({ ...issue, display_order_id: displayOrderId }));
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -9312,7 +9379,7 @@ router.get('/financials/settlements/:id', requireAuth, requireApproved, async (r
       orderFilter,
       {
         projection: {
-          _id: 1, order_number: 1, status: 1, total_rs: 1, subtotal_rs: 1,
+          _id: 1, order_number: 1, display_order_id: 1, status: 1, total_rs: 1, subtotal_rs: 1,
           tax_rs: 1, delivery_fee_rs: 1, discount_rs: 1, commission_rs: 1,
           branch_id: 1, restaurant_id: 1, created_at: 1, delivered_at: 1,
           payment_status: 1, payment_method: 1,
@@ -9353,7 +9420,26 @@ router.get('/financials/payments', requireAuth, requireApproved, async (req, res
       col('payments').find(payMatch).sort({ created_at: -1 }).skip(skip).limit(limit).toArray(),
       col('payments').countDocuments(payMatch),
     ]);
-    res.json({ payments, total, page, pages: Math.ceil(total / limit) });
+    // Stamp display_order_id on each payment row by joining against
+    // orders. The SettlementsSection in the restaurant dashboard
+    // renders `p.display_order_id || '—'` per the order-id-display
+    // policy, so without this enrichment the column would be all '—'.
+    // One $in query for the page (≤30 payments) — same pattern as
+    // the /issues list above.
+    const paymentOrderIds = [...new Set(payments.map((p) => p.order_id).filter(Boolean))];
+    const paymentDisplayMap = new Map();
+    if (paymentOrderIds.length) {
+      const ords = await col('orders').find(
+        { _id: { $in: paymentOrderIds } },
+        { projection: { _id: 1, display_order_id: 1 } },
+      ).toArray();
+      for (const o of ords) paymentDisplayMap.set(String(o._id), o.display_order_id || null);
+    }
+    const enrichedPayments = payments.map((p) => ({
+      ...p,
+      display_order_id: p.order_id ? (paymentDisplayMap.get(String(p.order_id)) || null) : null,
+    }));
+    res.json({ payments: enrichedPayments, total, page, pages: Math.ceil(total / limit) });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 

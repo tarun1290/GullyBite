@@ -294,7 +294,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     }
     if (deliveredOk && ctx) {
       await wa.sendText(ctx.pid, ctx.token, ctx.to,
-        `✅ Order #${order.order_number} delivered. Enjoy your meal! 🍽️`
+        `✅ Order #${order.display_order_id || order.order_number} delivered. Enjoy your meal! 🍽️`
       ).catch((e) => log.warn({ err: e?.message }, 'order-delivered sendText failed'));
 
       // Rating ask is owned end-to-end by the LOYALTY_AWARD →

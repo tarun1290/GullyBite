@@ -20,6 +20,7 @@ interface DisputeRow {
   id?: string;
   _id?: string;
   order_number?: string;
+  display_order_id?: string;
   business_name?: string | null;
   branch_name?: string | null;
   total_rs?: number;
@@ -142,7 +143,18 @@ export default function AdminDeliveryDisputesPage() {
                     return (
                       <tr key={o.id || o._id || o.order_number} style={{ borderBottom: '1px solid var(--rim)' }}>
                         <td style={td}>
-                          <span className="mono">#{o.order_number || '—'}</span>
+                          {o.display_order_id ? (
+                            <>
+                              <div className="mono">{o.display_order_id}</div>
+                              {o.order_number && (
+                                <div style={{ fontSize: '.68rem', color: 'var(--mute,var(--dim))', fontFamily: 'monospace' }}>
+                                  {o.order_number}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <span className="mono">#{o.order_number || '—'}</span>
+                          )}
                         </td>
                         <td style={td}>{o.business_name || '—'}</td>
                         <td style={td}>{o.branch_name || '—'}</td>

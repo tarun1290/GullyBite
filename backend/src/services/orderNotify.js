@@ -131,6 +131,15 @@ const buildOrderContext = async (orderId) => {
     order: {
       ...fullOrder,
       business_name: fullOrder.business_name || branch?.name || '',
+      // Override `order_number` with the per-restaurant display id so
+      // every template variable that maps to {{order.order_number}}
+      // (predefined-templates.js: order_confirmed, order_packed,
+      // order_dispatched, order_delivered, order_cancelled,
+      // refund_processed, etc.) automatically renders the
+      // ABBR-MMDD-NNN form. Falls back to the legacy ZM-YYYYMMDD-NNNN
+      // when display_order_id wasn't written (pre-deploy orders, or
+      // orders where restaurantId wasn't resolvable at creation).
+      order_number: fullOrder.display_order_id || fullOrder.order_number,
     },
     delivery: delivery ? {
       driver_name: delivery.driver_name,

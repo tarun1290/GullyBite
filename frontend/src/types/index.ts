@@ -225,6 +225,10 @@ export interface OrderItem {
 export interface Order {
   id: string;
   order_number: string;
+  // Per-restaurant short display id (e.g. "ZM-0504-018"). Populated for
+  // orders created after the order_abbr rollout; falls back to a slice
+  // of `id` in restaurant-facing UI when missing.
+  display_order_id?: string;
   status: OrderStatus;
   customer_name?: string;
   wa_phone?: string;
@@ -442,6 +446,7 @@ export interface StaffOrderItem {
 export interface StaffOrder {
   id: string;
   order_number: string | number;
+  display_order_id?: string;
   customer_name: string;
   customer_phone_masked: string;
   total_rs: number;

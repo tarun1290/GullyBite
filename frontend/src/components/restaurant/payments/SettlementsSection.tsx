@@ -36,6 +36,7 @@ interface Payment {
   razorpay_id?: string;
   date?: string;
   order_number?: string;
+  display_order_id?: string;
   amount?: number | string;
   method?: string;
   status?: string;
@@ -136,7 +137,7 @@ function PaymentsLogTable({ paymentsQ }: PaymentsLogTableProps) {
           return (
             <tr key={p.id || p.razorpay_id || idx}>
               <td style={{ fontSize: '.78rem' }}>{p.date || ''}</td>
-              <td style={{ fontFamily: 'monospace', fontSize: '.75rem' }}>{p.order_number || '—'}</td>
+              <td style={{ fontFamily: 'monospace', fontSize: '.75rem' }}>{p.display_order_id || '—'}</td>
               <td>{formatINR(p.amount)}</td>
               <td style={{ fontSize: '.78rem' }}>{p.method || '—'}</td>
               <td style={{ fontFamily: 'monospace', fontSize: '.72rem', color: 'var(--dim)' }}>{p.razorpay_id || '—'}</td>

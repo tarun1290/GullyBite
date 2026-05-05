@@ -359,9 +359,41 @@ async function handleOrder(value) {
   // Create order
   const orderId = newId();
   const orderNumber = `WC${Date.now().toString(36).toUpperCase()}`;
+
+  // ─── DISPLAY ORDER ID (per-restaurant, daily-resetting) ─────
+  // Same pattern as services/order.js: ABBR-MMDD-NNN where ABBR is the
+  // restaurant's order_abbr (fallback 'ZM') and NNN is an atomic
+  // counter from the `counters` collection keyed on
+  // (restaurantId, MMDD). `restaurant` is already loaded above for
+  // calculateOrderCharges, so order_abbr is in memory — no extra DB hit.
+  // Wrapped in try/catch so a counter hiccup never blocks order
+  // creation; consumers fall back to order_number when null.
+  let displayOrderId = null;
+  try {
+    const restaurantId = waAccount.restaurant_id;
+    if (restaurantId) {
+      // Counter key uses YYYYMMDD so docs reset on calendar-year
+      // rollover; display string still uses only MMDD per the
+      // customer-facing format ABBR-MMDD-NNN.
+      const now = new Date();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const yyyy = String(now.getFullYear());
+      const mmdd = `${mm}${dd}`;
+      const yyyymmdd = `${yyyy}${mm}${dd}`;
+      const { getNextOrderSeq } = require('../utils/orderSeq');
+      const abbr = restaurant?.order_abbr || 'ZM';
+      const dispSeq = await getNextOrderSeq(restaurantId, yyyymmdd);
+      displayOrderId = `${abbr}-${mmdd}-${String(dispSeq).padStart(3, '0')}`;
+    }
+  } catch (err) {
+    log.warn({ err: err?.message, restaurantId: waAccount.restaurant_id }, 'display_order_id generation failed — falling back to order_number');
+  }
+
   const order = {
     _id: orderId,
     order_number: orderNumber,
+    display_order_id: displayOrderId,
     restaurant_id: waAccount.restaurant_id,
     branch_id: branchId,
     phone_hash: orderPhoneHash,

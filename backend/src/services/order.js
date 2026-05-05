@@ -238,9 +238,39 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
 
   const platformFeeRs = 0;
 
-  const { getBranch } = require('../utils/cachedLookup');
+  const { getBranch, getRestaurant } = require('../utils/cachedLookup');
   const branch = await getBranch(branchId);
   const restaurantId = branch?.restaurant_id;
+
+  // ─── DISPLAY ORDER ID (per-restaurant, daily-resetting) ─────
+  // Customer-facing short identifier — paired with the restaurant's
+  // `order_abbr` so a multi-tenant feed shows ABBR-MMDD-NNN. The
+  // counter lives in the `counters` collection keyed on
+  // (restaurantId, MMDD) and increments atomically. Falls back to
+  // 'ZM' when a legacy restaurant doc has no order_abbr written
+  // yet (auth.js generates it for new signups; the PUT
+  // /api/restaurant/settings/order-abbr endpoint lets owners edit it).
+  // Set BEFORE the order doc is built so display_order_id is part
+  // of the same atomic write.
+  let displayOrderId = null;
+  try {
+    if (restaurantId) {
+      // Pass YYYYMMDD to the counter so docs reset on the calendar year
+      // boundary (orderSeq.js keys on year+month+day). The display
+      // string still uses only MMDD — slice the year out at format time.
+      const mmdd = dateStr.slice(4); // YYYYMMDD → MMDD (display only)
+      const { getNextOrderSeq } = require('../utils/orderSeq');
+      const restaurant = await getRestaurant(restaurantId); // 5-min cached
+      const abbr = restaurant?.order_abbr || 'ZM';
+      const dispSeq = await getNextOrderSeq(restaurantId, dateStr);
+      displayOrderId = `${abbr}-${mmdd}-${String(dispSeq).padStart(3, '0')}`;
+    }
+  } catch (err) {
+    // Non-fatal — order creation must never fail because the display
+    // counter hiccupped. Falls back to null; consumers default to
+    // order_number in their fallback chain.
+    log.warn({ err, restaurantId }, 'display_order_id generation failed — falling back to order_number');
+  }
 
   // ─── BRAND RESOLUTION (additive, non-blocking) ─────────────
   // Priority: explicit brandId from caller → infer via phoneNumberId
@@ -303,6 +333,10 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
   const order = {
     _id: orderId,
     order_number: orderNumber,
+    // Customer-facing display id — null for orders where restaurantId
+    // wasn't resolvable; consumer fallback is `display_order_id ||
+    // order_number` so legacy/edge orders still render readably.
+    display_order_id: displayOrderId,
     restaurant_id: restaurantId || null,
     phone_hash: orderPhoneHash,
     attributed_campaign_id: attributedCampaignId,

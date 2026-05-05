@@ -406,7 +406,13 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
     }
   };
 
-  const title = order ? `Order #${order.order_number}` : 'Order Detail';
+  // Restaurant-facing label per the order-id-display policy: never expose
+  // the legacy ZM-YYYYMMDD-NNNN. Prefer `display_order_id`; fall back to a
+  // 6-char slice of the internal UUID for orders predating the rollout.
+  const orderRef = order
+    ? (order.display_order_id || `#${(order.id || '').slice(-6) || '????'}`)
+    : '';
+  const title = order ? `Order ${orderRef}` : 'Order Detail';
   const customerSecondary = order?.wa_phone || (order?.bsuid ? `${String(order.bsuid).slice(0, 12)}…` : '');
 
   return (

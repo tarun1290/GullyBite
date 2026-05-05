@@ -37,6 +37,7 @@ const STATUS_COLOR: Record<string, string> = {
 interface AdminOrderRow {
   _id?: string;
   order_number?: string;
+  display_order_id?: string;
   business_name?: string;
   branch_name?: string;
   wa_phone?: string;
@@ -269,7 +270,20 @@ export default function AdminOrdersPage() {
                               </button>
                             ) : null}
                           </td>
-                          <td style={td}><span className="mono">#{o.order_number}</span></td>
+                          <td style={td}>
+                            {o.display_order_id ? (
+                              <>
+                                <div className="mono">{o.display_order_id}</div>
+                                {o.order_number && (
+                                  <div style={{ fontSize: '.68rem', color: 'var(--mute,var(--dim))', fontFamily: 'monospace' }}>
+                                    {o.order_number}
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <span className="mono">#{o.order_number || '—'}</span>
+                            )}
+                          </td>
                           <td style={td}>{o.business_name || '—'}</td>
                           <td style={td}>{o.branch_name || '—'}</td>
                           <td style={{ ...td, fontSize: '.76rem' }} className="mono">
