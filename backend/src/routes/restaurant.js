@@ -27,6 +27,7 @@ const metaConfig = require('../config/meta');
 const { getCached, invalidateCache } = require('../config/cache');
 const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
 const customerSvc = require('../services/customer.service');
+const { invalidateRestaurant } = require('../utils/cachedLookup');
 const logger = require('../utils/logger').child({ component: 'restaurant' });
 
 // ── CSV input guards (shared across CSV import handlers) ─────
@@ -681,7 +682,7 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
 
     log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.restaurant?.business_name || req.body.businessName || 'Restaurant', action: 'settings.updated', category: 'settings', description: `Settings updated by ${req.restaurant?.business_name || 'restaurant'}`, restaurantId: String(req.restaurantId), severity: 'info' });
     invalidateCache(`restaurant:${req.restaurantId}:profile`);
-    require('../config/memcache').del(`restaurant:${req.restaurantId}`);
+    invalidateRestaurant(req.restaurantId);
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -702,6 +703,7 @@ router.post('/update-slug', requirePermission('manage_settings'), async (req, re
       { _id: req.restaurantId },
       { $set: { store_slug: slug, store_url: storeUrl, updated_at: new Date() } }
     );
+    invalidateRestaurant(req.restaurantId);
     req.log.info({ restaurantId: req.restaurantId, slug }, 'Store slug updated');
     res.json({ success: true, store_slug: slug, store_url: storeUrl });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
@@ -959,6 +961,7 @@ router.post('/images/logo', upload.single('image'), async (req, res) => {
       { _id: req.restaurantId },
       { $set: { logo_url: result.url, logo_s3_key: result.s3_key, updated_at: new Date() } }
     );
+    invalidateRestaurant(req.restaurantId);
 
     res.json(result);
   } catch (err) {
@@ -1073,6 +1076,7 @@ router.post('/whatsapp/verify-connection', async (req, res) => {
       await col('restaurants').updateOne({ _id: req.restaurantId }, {
         $set: { whatsapp_connected: true, updated_at: new Date() },
       });
+      invalidateRestaurant(req.restaurantId);
     }
 
     const connected = results.verified.length > 0;
@@ -1169,8 +1173,11 @@ router.post('/whatsapp/disconnect', requirePermission('manage_users'), async (re
 
     // Bust the GET /api/restaurant 10-min profile cache so the Settings
     // page reflects the disconnect immediately (without this, the card
-    // keeps showing the WABA for up to 10 min after disconnect).
+    // keeps showing the WABA for up to 10 min after disconnect). Also
+    // bust the cachedLookup restaurant entry so any consumer reading
+    // whatsapp_connected via getRestaurant() sees the new value.
     await invalidateCache(`restaurant:${req.restaurantId}:profile`);
+    invalidateRestaurant(req.restaurantId);
 
     logActivity({
       actorType: 'restaurant',
@@ -4912,6 +4919,7 @@ router.post('/catalog/toggle-auto-sync', async (req, res) => {
       { _id: req.restaurantId },
       { $set: { catalog_sync_enabled: !!enabled, updated_at: new Date() } }
     );
+    invalidateRestaurant(req.restaurantId);
     res.json({ success: true, catalogSyncEnabled: !!enabled });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -9506,7 +9514,7 @@ router.put('/:restaurantId/marketing-number', async (req, res) => {
         { $set: { marketingPhoneNumberId: null, marketingPhoneDisplayName: null, updated_at: new Date() } }
       );
       invalidateCache(`restaurant:${req.params.restaurantId}:profile`);
-      memcache.del(`restaurant:${req.params.restaurantId}`);
+      invalidateRestaurant(req.params.restaurantId);
       return res.json({ success: true, marketingPhoneNumberId: null, marketingPhoneDisplayName: null });
     }
 
@@ -9534,7 +9542,7 @@ router.put('/:restaurantId/marketing-number', async (req, res) => {
       }
     );
     invalidateCache(`restaurant:${req.params.restaurantId}:profile`);
-    memcache.del(`restaurant:${req.params.restaurantId}`);
+    invalidateRestaurant(req.params.restaurantId);
 
     res.json({
       success: true,

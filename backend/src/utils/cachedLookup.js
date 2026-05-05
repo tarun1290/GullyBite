@@ -36,4 +36,30 @@ async function getWaAccount(phoneNumberId) {
   return cached;
 }
 
-module.exports = { getBranch, getRestaurant, getWaAccount };
+// Invalidators — call after a write to the corresponding doc so the
+// next getX() does a fresh DB read instead of returning a stale 5-min
+// snapshot. Key shape mirrors each getter exactly. Cache misses are
+// silently no-op'd by memcache.del.
+function invalidateBranch(branchId) {
+  if (!branchId) return;
+  memcache.del(`branch:${branchId}`);
+}
+
+function invalidateRestaurant(restaurantId) {
+  if (!restaurantId) return;
+  memcache.del(`restaurant:${restaurantId}`);
+}
+
+function invalidateWaAccount(phoneNumberId) {
+  if (!phoneNumberId) return;
+  memcache.del(`wa_account:${phoneNumberId}`);
+}
+
+module.exports = {
+  getBranch,
+  getRestaurant,
+  getWaAccount,
+  invalidateBranch,
+  invalidateRestaurant,
+  invalidateWaAccount,
+};
