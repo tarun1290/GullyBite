@@ -19,8 +19,6 @@ const prorouting = require('../services/prorouting');
 const metaConfig = require('../config/meta');
 const log = require('../utils/logger').child({ component: 'prorouting-state' });
 
-const RATING_FLOW_ID = process.env.RATING_FLOW_ID || '941765451575098';
-
 function _normaliseStatus(raw) {
   if (!raw) return null;
   return String(raw).toLowerCase().replace(/[\s_]+/g, '-').trim();
@@ -299,21 +297,11 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
         `✅ Order #${order.order_number} delivered. Enjoy your meal! 🍽️`
       ).catch((e) => log.warn({ err: e?.message }, 'order-delivered sendText failed'));
 
-      await wa.sendFlow(ctx.pid, ctx.token, ctx.to, {
-        flowId: RATING_FLOW_ID,
-        flowToken: `rating_${order._id}`,
-        flowCta: '⭐ Rate Order',
-        screenId: 'RATING_SCREEN',
-        flowData: {
-          body: `How was your order #${order.order_number}?`,
-          footer: 'Your feedback helps improve quality',
-          screenData: {
-            order_number: order.order_number,
-            order_id: String(order._id),
-            flow_token: `rating_${order._id}`,
-          },
-        },
-      }).catch((e) => log.warn({ err: e?.message }, 'rating flow send failed'));
+      // Rating ask is owned end-to-end by the LOYALTY_AWARD →
+      // FEEDBACK_REQUEST chain in queue/postPaymentJobs.js, scheduled
+      // by services/order.js at every DELIVERED transition (regardless
+      // of payment path). No feedback fan-out from this Prorouting
+      // handler — the order.js path is the single canonical pipeline.
     }
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }

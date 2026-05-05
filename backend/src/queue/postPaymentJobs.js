@@ -40,6 +40,11 @@ const JOB_TYPES = {
   // paid order (durable replacement for the prior setTimeout in
   // webhooks/razorpay.js, which dropped the welcome on EC2 restart).
   WELCOME_JOURNEY: 'WELCOME_JOURNEY',
+  // Rating-request ask — chained from LOYALTY_AWARD with a 30-min delay
+  // so the customer gets the loyalty notification immediately after
+  // delivery and the rating prompt only after they've eaten. Owned by
+  // services/order.js → LOYALTY_AWARD; no other site enqueues this.
+  FEEDBACK_REQUEST: 'FEEDBACK_REQUEST',
 };
 
 const MAX_ATTEMPTS = 5;
@@ -56,24 +61,44 @@ function backoffDelayMs(attempts) {
 // legacy message_jobs indexes and any code that filters by `name`
 // continue to work unchanged. `delayMs` is optional — schedules the
 // job for future execution (e.g., LOYALTY_AWARD 30 min after delivery).
-async function enqueue(type, payload, { delayMs = 0 } = {}) {
+//
+// Optional `jobId` provides BullMQ-style dedup: when supplied it's
+// used as the row's _id so a duplicate enqueue (network retry,
+// duplicate webhook) collapses into the same row via duplicate-key
+// catch. The Mongo unique-index on _id is the dedup boundary; a row
+// in any state (pending/processing/completed/failed) blocks new
+// inserts with the same _id.
+//
+// Optional `maxAttempts` overrides MAX_ATTEMPTS for one-off jobs that
+// should retry less aggressively than the default 5.
+async function enqueue(type, payload, { delayMs = 0, jobId = null, maxAttempts = MAX_ATTEMPTS } = {}) {
   if (!JOB_TYPES[type]) throw new Error(`postPaymentJobs: unknown type ${type}`);
   const now = new Date();
   const runAt = delayMs > 0 ? new Date(now.getTime() + delayMs) : now;
   const job = {
-    _id: newId(),
+    _id: jobId || newId(),
     name: type,
     type,                            // Phase 4: canonical field
     payload: payload || {},
     status: 'pending',
     attempts: 0,
-    max_attempts: MAX_ATTEMPTS,
+    max_attempts: maxAttempts,
     next_attempt_at: runAt,
     last_error: null,
     created_at: now,
     updated_at: now,
   };
-  await col('message_jobs').insertOne(job);
+  try {
+    await col('message_jobs').insertOne(job);
+  } catch (err) {
+    // Duplicate-key on jobId → enqueue is a no-op; the existing row
+    // already covers this orderId/event. Mongo error code 11000.
+    if (jobId && (err?.code === 11000 || /duplicate key/i.test(err?.message || ''))) {
+      log.info({ type, jobId, payload }, 'enqueue: duplicate jobId — already queued, skipping');
+      return { id: jobId, deduped: true };
+    }
+    throw err;
+  }
   log.info({ type, jobId: job._id, runAt, payload }, 'job enqueued');
   return { id: job._id };
 }
@@ -385,19 +410,102 @@ async function _handleLoyaltyAward(payload) {
     await wa.sendText(loyaltyPid, waToken, toId, msg);
   }
 
-  // Rating request — best-effort. Stamps rating_requested_at on success
-  // so the reconciliation cron (/api/cron/rating-requests) knows this
-  // order has already been handled and skips it.
-  if (toId && waAcc?.phone_number_id && waToken) {
-    try {
-      const { sendRatingRequest } = require('../webhooks/whatsapp');
-      await sendRatingRequest(payload.orderId, waAcc.phone_number_id, waToken, toId);
-      await col('orders').updateOne(
-        { _id: payload.orderId, rating_requested_at: null },
-        { $set: { rating_requested_at: new Date() } },
-      );
-    } catch (e) { log.warn({ err: e, orderId: payload.orderId }, 'rating request failed'); }
+  // Rating ask — chained as a FEEDBACK_REQUEST job 30 min from now so
+  // the customer has time to actually eat the food before being asked
+  // to rate. The handler re-fetches the order to confirm DELIVERED +
+  // rating_requested_at is null at fire time (defends against a state
+  // change between LOYALTY_AWARD success and the FEEDBACK_REQUEST run).
+  // Deterministic jobId dedupes against duplicate LOYALTY_AWARD fires
+  // and the routes/cron.js rating-requests catcher.
+  try {
+    await enqueue(
+      JOB_TYPES.FEEDBACK_REQUEST,
+      { orderId: String(payload.orderId), waId: toId || null, restaurantId: order.restaurant_id ? String(order.restaurant_id) : null },
+      { delayMs: 30 * 60 * 1000, jobId: `feedback-${payload.orderId}`, maxAttempts: 2 },
+    );
+    log.info({ orderId: payload.orderId }, `[LoyaltyAward] Feedback job queued for orderId ${payload.orderId} in 30 min`);
+  } catch (e) { log.warn({ err: e, orderId: payload.orderId }, 'feedback enqueue failed'); }
+}
+
+// Feedback / rating request — fires 30 min after LOYALTY_AWARD
+// completes (chained from _handleLoyaltyAward above). The handler
+// re-fetches the order at fire time so any state change in the
+// 30-minute window (e.g. order somehow rolls back from DELIVERED, or
+// the routes/cron.js rating-requests catcher already sent the ask)
+// short-circuits before we double-send.
+//
+// Idempotency layers:
+//   1. jobId = `feedback-${orderId}` on enqueue — duplicate-key on
+//      message_jobs._id collapses re-enqueues into one row.
+//   2. order.rating_requested_at !== null short-circuit here — covers
+//      the race where the cron catcher fired first.
+//   3. order_ratings.findOne inside sendRatingRequest is the final
+//      backstop — already-rated orders never re-prompt.
+async function _handleFeedbackRequest(payload) {
+  const orderId = payload?.orderId;
+  if (!orderId) {
+    log.warn({ payload }, 'FEEDBACK_REQUEST: missing orderId — skipping');
+    return;
   }
+
+  const order = await col('orders').findOne(
+    { _id: orderId },
+    { projection: {
+        _id: 1, order_number: 1, status: 1, restaurant_id: 1, customer_id: 1,
+        receiver_phone: 1, rating_requested_at: 1,
+    } },
+  );
+  if (!order) {
+    log.warn({ orderId }, 'FEEDBACK_REQUEST: order not found — skipping');
+    return;
+  }
+  if (order.status !== 'DELIVERED') {
+    log.info({ orderId, status: order.status }, 'FEEDBACK_REQUEST: order not in DELIVERED — skipping');
+    return;
+  }
+  if (order.rating_requested_at) {
+    log.info({ orderId, ratedAt: order.rating_requested_at }, 'FEEDBACK_REQUEST: rating already requested — skipping');
+    return;
+  }
+
+  const metaConfig = require('../config/meta');
+  const waAcc = await col('whatsapp_accounts').findOne({
+    restaurant_id: order.restaurant_id, is_active: true,
+  });
+  const waToken = metaConfig.systemUserToken || waAcc?.access_token;
+  if (!waAcc?.phone_number_id || !waToken) {
+    log.warn({ orderId, restaurantId: order.restaurant_id }, 'FEEDBACK_REQUEST: no active WA account or token — skipping');
+    return;
+  }
+
+  // Recipient — prefer payload.waId (snapshotted by LOYALTY_AWARD when
+  // the customer was last seen), fall back to order.receiver_phone, then
+  // to a fresh customer-doc lookup.
+  let toId = payload.waId || order.receiver_phone || null;
+  if (!toId && order.customer_id) {
+    const customer = await col('customers').findOne({ _id: order.customer_id });
+    toId = customer?.wa_phone || customer?.bsuid || null;
+  }
+  if (!toId) {
+    log.warn({ orderId }, 'FEEDBACK_REQUEST: no recipient phone — skipping');
+    return;
+  }
+
+  // Lazy-require to avoid circular import: webhooks/whatsapp.js → various
+  // services → this queue file. sendRatingRequest itself tries the
+  // WhatsApp Flow first (platform_settings.feedback_flow.flow_id or
+  // process.env.RATING_FLOW_ID) and falls back to a 3-button rating list.
+  const { sendRatingRequest } = require('../webhooks/whatsapp');
+  await sendRatingRequest(orderId, waAcc.phone_number_id, waToken, toId);
+
+  // Stamp rating_requested_at so the cron catcher + any duplicate
+  // FEEDBACK_REQUEST job both skip on the next read. Conditional update
+  // means a parallel send can't double-write.
+  await col('orders').updateOne(
+    { _id: orderId, rating_requested_at: null },
+    { $set: { rating_requested_at: new Date() } },
+  );
+  log.info({ orderId, orderNumber: order.order_number }, 'FEEDBACK_REQUEST sent');
 }
 
 // Welcome journey — durable replacement for the 2h setTimeout in the
@@ -445,6 +553,7 @@ const HANDLERS = {
   [JOB_TYPES.LOYALTY_AWARD]: _handleLoyaltyAward,
   [JOB_TYPES.CATALOG_SYNC]: _handleCatalogSync,
   [JOB_TYPES.WELCOME_JOURNEY]: _handleWelcomeJourney,
+  [JOB_TYPES.FEEDBACK_REQUEST]: _handleFeedbackRequest,
 };
 
 // ─── WORKER LOOP ──────────────────────────────────────────────
