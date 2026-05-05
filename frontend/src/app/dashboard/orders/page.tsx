@@ -36,6 +36,11 @@ export default function OrdersPage() {
   const { showToast } = useToast();
   const [orders, setOrders] = useState<Order[]>([]);
   const [filter, setFilter] = useState<FilterValue>('ALL');
+  // Date range filter. Empty strings = unbounded; the API call below
+  // skips `from_date` / `to_date` when the matching state is empty so
+  // an empty range falls back to the full unfiltered list.
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState<Record<string, boolean>>({});
@@ -75,8 +80,10 @@ export default function OrdersPage() {
       const { silent = false } = opts;
       if (!silent) setLoading(true);
       try {
-        const params: { limit: number; status?: string } = { limit: 60 };
+        const params: { limit: number; status?: string; from_date?: string; to_date?: string } = { limit: 60 };
         if (f !== 'ALL') params.status = f;
+        if (fromDate) params.from_date = fromDate;
+        if (toDate) params.to_date = toDate;
         const data = await getOrders(params);
         setOrders(Array.isArray(data) ? data : []);
         setLastFetched(Date.now());
@@ -86,7 +93,10 @@ export default function OrdersPage() {
         if (!silent) setLoading(false);
       }
     },
-    [showToast],
+    // fromDate / toDate in the dep list rebuilds the callback on each
+    // change, which retriggers the [filter, fetchOrders]-keyed effect
+    // below — that's how the date inputs drive an immediate refetch.
+    [showToast, fromDate, toDate],
   );
 
   useEffect(() => {
@@ -232,6 +242,65 @@ export default function OrdersPage() {
 
   return (
     <div id="tab-orders">
+      <div
+        style={{
+          display: 'flex',
+          gap: '.6rem',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          marginBottom: '.6rem',
+        }}
+      >
+        <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', fontSize: '.78rem', color: 'var(--dim)' }}>
+          From
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            style={{
+              padding: '.3rem .5rem',
+              border: '1px solid var(--rim,#e5e7eb)',
+              borderRadius: 6,
+              fontSize: '.84rem',
+              background: 'var(--ink2,#fff)',
+              color: 'var(--tx,inherit)',
+            }}
+          />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', fontSize: '.78rem', color: 'var(--dim)' }}>
+          To
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            style={{
+              padding: '.3rem .5rem',
+              border: '1px solid var(--rim,#e5e7eb)',
+              borderRadius: 6,
+              fontSize: '.84rem',
+              background: 'var(--ink2,#fff)',
+              color: 'var(--tx,inherit)',
+            }}
+          />
+        </label>
+        {(fromDate || toDate) && (
+          <button
+            type="button"
+            onClick={() => { setFromDate(''); setToDate(''); }}
+            style={{
+              padding: '.3rem .6rem',
+              border: '1px solid var(--rim,#e5e7eb)',
+              borderRadius: 6,
+              fontSize: '.74rem',
+              color: 'var(--dim)',
+              background: 'transparent',
+              cursor: 'pointer',
+            }}
+          >
+            Clear dates
+          </button>
+        )}
+      </div>
       <div className="chips" id="ochips">
         {FILTER_CHIPS.map(([value, label]) => {
           const active = filter === value;

@@ -36,6 +36,12 @@ export async function getRestaurantOrders(params: QueryParams = {}): Promise<Ord
   return data;
 }
 
+// `params` is a plain Record so the orders page can pass any combination
+// of `status`, `branchId`, `brand_id`, `limit`, `offset`, `from_date`,
+// `to_date` (axios serializes whichever keys are present and skips
+// undefined values). The date keys expect YYYY-MM-DD strings — the
+// backend re-anchors `to_date` to 23:59:59.999 UTC end-of-day, so the
+// caller doesn't need to widen the range itself.
 export async function getOrders(params: QueryParams = {}): Promise<Order[]> {
   const { data } = await client.get<Order[]>('/api/restaurant/orders', { params });
   return data;

@@ -5599,7 +5599,7 @@ router.put('/catalog', async (req, res) => {
 
 router.get('/orders', async (req, res) => {
   try {
-    const { status, branchId, brand_id, limit = 50, offset = 0 } = req.query;
+    const { status, branchId, brand_id, limit = 50, offset = 0, from_date, to_date } = req.query;
 
     // Brand context: single tenants pass through, multi tenants must
     // supply brand_id (auto-filled from default_brand_id when possible).
@@ -5620,6 +5620,22 @@ router.get('/orders', async (req, res) => {
     if (status) filter.status = status;
     // Brand filter — from query param or default_brand_id on multi tenants.
     if (brandCtx.effective_brand_id) filter.brand_id = brandCtx.effective_brand_id;
+
+    // Date range filter — both bounds optional, applied independently.
+    // from_date arrives as YYYY-MM-DD; new Date('YYYY-MM-DD') parses as
+    // UTC midnight, which is the start of the day the merchant picked.
+    // For to_date we re-anchor to 23:59:59.999 UTC of the same date so
+    // orders placed late in the day are included.
+    if (from_date || to_date) {
+      const range = {};
+      if (from_date) range.$gte = new Date(from_date);
+      if (to_date) {
+        const end = new Date(to_date);
+        end.setUTCHours(23, 59, 59, 999);
+        range.$lte = end;
+      }
+      filter.created_at = range;
+    }
 
     const orders = await col('orders')
       .find(filter)
