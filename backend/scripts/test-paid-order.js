@@ -43,6 +43,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { MongoClient } = require('mongodb');
 const { calculateOrderCharges } = require('../src/services/charges');
+const { getDeliveryQuote } = require('../src/services/delivery');
 
 function parseArgs(argv) {
   // null sentinel for customer_phone so we can distinguish "user didn't
@@ -217,9 +218,59 @@ async function main() {
   });
 
   const subtotalPaise = itemDocs.reduce((s, i) => s + (i.price_paise * i.quantity), 0);
-  const deliveryFeePaise = 4000; // ₹40 — per spec
   const subtotalRs = subtotalPaise / 100;
-  const deliveryFeeRs = deliveryFeePaise / 100;
+
+  // Synthetic customer coords — re-using the branch's own lat/lng so
+  // 3PL distance lookups have something plausible to work with. Pulled
+  // up here so the quote call below has access to them; same values
+  // are reused in address_snapshot further down.
+  const fallbackLat = branch.latitude || 17.385;
+  const fallbackLng = branch.longitude || 78.4867;
+  const fallbackCity = branch.city || 'Hyderabad';
+
+  // 3PL delivery quote — exercises the same getDeliveryQuote that
+  // production calls so the seeded order carries a real
+  // platformMarkupRs (₹5 today via DELIVERY_PLATFORM_MARKUP_FLAT_RS).
+  // Falls back to a manual breakdown when Prorouting is unreachable
+  // (common in pre-prod for synthetic coords) so the script still
+  // completes end-to-end. Fallback breakdown matches the field names
+  // getDeliveryQuote returns — providerFeeRs / platformMarkupRs /
+  // totalFeeRs — so any downstream consumer reading delivery_fee_breakdown
+  // sees a consistent shape regardless of code path.
+  let deliveryFeeBreakdown;
+  try {
+    deliveryFeeBreakdown = await getDeliveryQuote(args.branch_id, fallbackLat, fallbackLng, {
+      items: itemDocs,
+      subtotalRs,
+    });
+    console.log(
+      `[test-paid-order] delivery quote: provider=${deliveryFeeBreakdown.providerName || 'unknown'} ` +
+      `provider_fee=${deliveryFeeBreakdown.providerFeeRs} ` +
+      `markup=${deliveryFeeBreakdown.platformMarkupRs} ` +
+      `total=${deliveryFeeBreakdown.totalFeeRs}`,
+    );
+  } catch (err) {
+    const flatMarkup = parseFloat(process.env.DELIVERY_PLATFORM_MARKUP_FLAT_RS || 0);
+    const baseFee = 40;
+    deliveryFeeBreakdown = {
+      providerName: 'fallback',
+      providerFeeRs: baseFee,
+      platformMarkupRs: flatMarkup,
+      totalFeeRs: Math.round((baseFee + flatMarkup) * 100) / 100,
+      estimatedMins: null,
+      distanceKm: null,
+      quoteId: null,
+      quoteExpiresAt: null,
+      surgeActive: false,
+      estimates: [],
+    };
+    console.warn(
+      `[test-paid-order] getDeliveryQuote failed (${err.message}) — ` +
+      `using fallback fee=${baseFee} + markup=${flatMarkup}`,
+    );
+  }
+  const deliveryFeeRs = deliveryFeeBreakdown.totalFeeRs;
+  const deliveryFeePaise = Math.round(deliveryFeeRs * 100);
 
   // Mirror services/order.js:136-142 exactly. Same fields, same defaults,
   // so calculateOrderCharges sees an identical restaurantConfig shape
@@ -252,10 +303,6 @@ async function main() {
   const fakeRzpOrderId = `test_order_${Date.now()}`;
   const fakeRzpPaymentId = `test_pay_${Date.now()}`;
 
-  const fallbackLat = branch.latitude || 17.385;
-  const fallbackLng = branch.longitude || 78.4867;
-  const fallbackCity = branch.city || 'Hyderabad';
-
   const order = {
     _id: orderId,
     order_number: orderNumber,
@@ -286,6 +333,13 @@ async function main() {
     packaging_rs:               charges.packaging_rs,
     packaging_gst_rs:           charges.packaging_gst_rs,
     delivery_fee_total_rs:      charges.delivery_fee_total_rs,
+    // 3PL quote snapshot. Production stores dynamicResult.breakdown here
+    // (with `baseFeeRs` instead of `providerFeeRs`); the seeded shape
+    // uses the getDeliveryQuote return shape directly. Both are read
+    // informationally — the queryable platform_markup_rs below is what
+    // financials.aggregateOrderFinancials sums for revenue tracking.
+    delivery_fee_breakdown: deliveryFeeBreakdown,
+    platform_markup_rs: deliveryFeeBreakdown?.platformMarkupRs ?? 0,
     status: 'PAID',
     payment_status: 'paid',
     razorpay_order_id: fakeRzpOrderId,
