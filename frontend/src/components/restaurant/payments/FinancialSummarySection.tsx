@@ -32,8 +32,14 @@ interface Breakdown {
   gross_collections_rs?: number | string;
   platform_fee_rs?: number | string;
   platform_fee_gst_rs?: number | string;
-  delivery_cost_restaurant_rs?: number | string;
-  delivery_cost_restaurant_gst_rs?: number | string;
+  // Restaurant's absorbed share + GST on it. Both are exposed for UI
+  // transparency so the breakdown can show the customer/restaurant
+  // split, but they're NOT separately deducted — the deduction line is
+  // delivery_costs_rs (the full 3PL fee, since GullyBite paid it
+  // upfront).
+  delivery_fee_rest_share_rs?: number | string;
+  delivery_fee_rest_gst_rs?: number | string;
+  delivery_costs_rs?: number | string;
   discount_total_rs?: number | string;
   refund_total_rs?: number | string;
   refund_count?: number;
@@ -112,6 +118,28 @@ interface BreakdownTotalProps {
   label: string;
   value: number | string | null | undefined;
   color?: string;
+}
+
+// Indented, dim, no-sign row that sits under a BreakdownLine to show a
+// pure informational sub-component (e.g. how a parent total splits into
+// customer-collected vs. restaurant-absorbed). The value here does NOT
+// contribute to any total — the parent BreakdownLine above it does.
+function BreakdownSubLine({ label, value }: { label: string; value: number }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '.1rem 0',
+        paddingLeft: '1.5rem',
+        fontSize: '.82em',
+      }}
+    >
+      <span style={{ color: 'var(--mute,var(--dim))' }}>↳ {label}</span>
+      <span style={{ color: 'var(--mute,var(--dim))' }}>{formatINR(value)}</span>
+    </div>
+  );
 }
 
 function BreakdownTotal({ label, value, color }: BreakdownTotalProps) {
@@ -375,14 +403,27 @@ export default function FinancialSummarySection() {
                 <BreakdownLine label="Packaging" value={breakdown.packaging_collected_rs} sign="+" tip="Packaging charges collected" />
                 <BreakdownLine label="Packaging GST" value={breakdown.packaging_gst_rs} sign="+" tip="GST on packaging" />
                 <BreakdownLine label="Delivery Fee (Customer)" value={breakdown.delivery_fee_collected_rs} sign="+" tip="Delivery charges paid by customers" />
+                <BreakdownLine label="Customer Delivery GST" value={breakdown.delivery_fee_cust_gst_rs} sign="+" tip="GST collected on the customer's delivery share" />
                 {DIVIDER}
                 <BreakdownTotal label="GROSS COLLECTIONS" value={breakdown.gross_collections_rs} color="var(--acc)" />
                 {DIVIDER}
                 {sectionHeader('DEDUCTIONS', { margin: '.5rem 0 .3rem', fontFamily: 'var(--font-body)' })}
                 <BreakdownLine label="Platform Fee" value={breakdown.platform_fee_rs} sign="-" tip="GullyBite platform commission" />
                 <BreakdownLine label="Platform Fee GST (18%)" value={breakdown.platform_fee_gst_rs} sign="-" tip="GST charged on platform fee" />
-                <BreakdownLine label="Delivery Cost (Absorbed Share)" value={breakdown.delivery_cost_restaurant_rs} sign="-" tip="The portion of the order delivery fee absorbed by the restaurant (based on your delivery fee split setting). Zero if customers pay 100% of delivery." />
-                <BreakdownLine label="Delivery GST" value={breakdown.delivery_cost_restaurant_gst_rs} sign="-" tip="GST on the absorbed delivery share" />
+                {/* Full 3PL delivery fee — GullyBite paid the rider upfront, so
+                    the restaurant reimburses the platform regardless of the
+                    customer/restaurant split. Sub-lines below break down where
+                    that fee came from (informational only — only the parent
+                    line contributes to TOTAL DEDUCTIONS). */}
+                <BreakdownLine label="Total Delivery Fee" value={breakdown.delivery_costs_rs} sign="-" tip="The full 3PL delivery fee paid by GullyBite (customer's share + customer GST + restaurant's absorbed share + GST on absorbed share). Customers paying 100% of delivery cancel this out against the GROSS line above; restaurants absorbing a share see the absorbed portion as a net deduction." />
+                <BreakdownSubLine
+                  label="Customer Collected"
+                  value={(Number(breakdown.delivery_fee_collected_rs) || 0) + (Number(breakdown.delivery_fee_cust_gst_rs) || 0)}
+                />
+                <BreakdownSubLine
+                  label="Restaurant Absorbed"
+                  value={(Number(breakdown.delivery_fee_rest_share_rs) || 0) + (Number(breakdown.delivery_fee_rest_gst_rs) || 0)}
+                />
                 <BreakdownLine label="Discounts" value={breakdown.discount_total_rs} sign="-" tip="Discount amounts funded by restaurant" />
                 <BreakdownLine label="Refunds" value={breakdown.refund_total_rs} sign="-" tip="Refund amounts for cancelled/returned orders" />
                 <BreakdownLine label="TDS (1%)" value={breakdown.tds_rs} sign="-" tip="Tax Deducted at Source u/s 194-O" />

@@ -298,12 +298,26 @@ async function getFinancialSummary(restaurantId, period, from, to) {
     agg.delivery_fee_collected_rs + agg.delivery_fee_cust_gst_rs
   );
 
+  // GullyBite pays the 3PL upfront, so the FULL delivery fee (customer's
+  // share + customer's GST + restaurant's share + restaurant's GST) is a
+  // platform-paid expense the restaurant must reimburse out of gross
+  // collections. Customer's share is already in gross_collections (the
+  // customer paid it), so deducting the full ₹X here nets to zero on a
+  // 100% customer-pays-delivery setup, and to -(absorbed share) when the
+  // restaurant absorbs part. Prior version only deducted the absorbed
+  // share, which double-counted the customer's share as restaurant
+  // revenue when delivery_fee_customer_pct = 100.
+  const deliveryCosts = round2(
+    agg.delivery_fee_collected_rs + agg.delivery_fee_cust_gst_rs +
+    agg.delivery_fee_rest_share_rs + agg.delivery_fee_rest_gst_rs
+  );
+
   // TDS is included so totalDeductions equals the sum of every deduction
   // line the dashboard renders, and netEarnings stays mathematically
   // consistent with calculateSettlement's preTdsNet - tdsAmount formula.
   const totalDeductions = round2(
     platformFee + platformFeeGst +
-    agg.delivery_fee_rest_share_rs + agg.delivery_fee_rest_gst_rs +
+    deliveryCosts +
     agg.discount_total_rs + refundData.total_rs +
     agg.referral_fee_rs + referralFeeGst +
     tdsRs
@@ -325,11 +339,15 @@ async function getFinancialSummary(restaurantId, period, from, to) {
     delivery_fee_cust_gst_rs: agg.delivery_fee_cust_gst_rs,
     gross_collections_rs: grossCollections,
 
-    // Deductions
+    // Deductions — delivery_costs_rs is the deducted total (full 3PL
+    // fee). The four sub-fields below it are exposed for UI transparency
+    // so the breakdown can show how the customer-paid + restaurant-
+    // absorbed split makes up the total.
     platform_fee_rs: platformFee,
     platform_fee_gst_rs: platformFeeGst,
-    delivery_cost_restaurant_rs: agg.delivery_fee_rest_share_rs,
-    delivery_cost_restaurant_gst_rs: agg.delivery_fee_rest_gst_rs,
+    delivery_fee_rest_share_rs: agg.delivery_fee_rest_share_rs,
+    delivery_fee_rest_gst_rs: agg.delivery_fee_rest_gst_rs,
+    delivery_costs_rs: deliveryCosts,
     discount_total_rs: agg.discount_total_rs,
     refund_total_rs: refundData.total_rs,
     refund_count: refundData.count,
@@ -355,7 +373,7 @@ function emptyFinancialSummary(start, end) {
     delivery_fee_collected_rs: 0, delivery_fee_cust_gst_rs: 0,
     gross_collections_rs: 0,
     platform_fee_rs: 0, platform_fee_gst_rs: 0,
-    delivery_cost_restaurant_rs: 0, delivery_cost_restaurant_gst_rs: 0,
+    delivery_fee_rest_share_rs: 0, delivery_fee_rest_gst_rs: 0, delivery_costs_rs: 0,
     discount_total_rs: 0, refund_total_rs: 0, refund_count: 0,
     referral_fee_rs: 0, referral_fee_gst_rs: 0, tds_rs: 0, total_deductions_rs: 0,
     net_earnings_rs: 0, gst_number: null, pan_number: null,
