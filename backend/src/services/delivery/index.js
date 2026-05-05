@@ -41,9 +41,12 @@ async function getDeliveryQuote(branchId, deliveryLat, deliveryLng, orderDetails
   const dispatcher = require('./dispatcher');
   const { chosen, estimates } = await dispatcher.getBestQuote(branchId, deliveryLat, deliveryLng, orderDetails);
 
-  // Apply GullyBite platform markup if configured
-  const platformMarkupPct = parseFloat(process.env.DELIVERY_PLATFORM_MARKUP_PCT || 0);
-  const platformMarkupRs = Math.round(chosen.deliveryFeeRs * (platformMarkupPct / 100) * 100) / 100;
+  // Flat per-order GullyBite handling fee. GST is computed downstream
+  // in financialEngine on the full delivery_fee_total which includes
+  // this markup, so we don't compute markup GST here. Switched from a
+  // pct-of-3PL model so the merchant-visible delivery fee doesn't swing
+  // when 3PL surge pricing fires — the markup stays steady at ₹5.
+  const platformMarkupRs = parseFloat(process.env.DELIVERY_PLATFORM_MARKUP_FLAT_RS || 0);
 
   return {
     providerName: chosen.providerName,

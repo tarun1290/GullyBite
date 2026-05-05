@@ -54,6 +54,10 @@ interface FinancialsOverview {
   total_refunds_rs?: number | string;
   total_tds_rs?: number | string;
   delivery_costs_rs?: number | string;
+  // Flat per-order GullyBite delivery markup summed across the period.
+  // Pure platform-revenue metric — admin-only; never surfaced to the
+  // restaurant-facing payments page.
+  platform_markup_collected_rs?: number | string;
 }
 
 interface FinSettlement {
@@ -274,6 +278,7 @@ function OverviewStats({ period }: PeriodProps): ReactNode {
       <StatCard label="Total Refunds"    value={data ? fmtINR(data.total_refunds_rs) : '—'} />
       <StatCard label="TDS Deducted"     value={data ? fmtINR(data.total_tds_rs) : '—'} />
       <StatCard label="3PL Costs"        value={data ? fmtINR(data.delivery_costs_rs) : '—'} />
+      <StatCard label="Platform Markup Revenue" value={data ? fmtINR(data.platform_markup_collected_rs) : '—'} />
     </div>
   );
 }

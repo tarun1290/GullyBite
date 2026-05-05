@@ -3,7 +3,8 @@
 // Does NOT know about delivery_fee_customer_pct — the split is handled
 // downstream by calculateOrderCharges().
 //
-// The 3PL quote is the base. DELIVERY_PLATFORM_MARKUP_PCT is GullyBite's margin.
+// The 3PL quote is the base. DELIVERY_PLATFORM_MARKUP_FLAT_RS is GullyBite's
+// flat per-order margin (added in services/delivery/index.js).
 
 const { col } = require('../config/database');
 const deliveryService = require('./delivery');

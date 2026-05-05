@@ -170,6 +170,7 @@ async function aggregateOrderFinancials(branchIds, start, end) {
         packaging_gst_rs:          { $sum: { $ifNull: ['$packaging_gst_rs', 0] } },
         discount_total_rs:         { $sum: { $ifNull: ['$discount_rs', 0] } },
         platform_fee_rs:           { $sum: { $ifNull: ['$platform_fee_rs', 0] } },
+        platform_markup_collected_rs: { $sum: { $ifNull: ['$platform_markup_rs', 0] } },
         referral_fee_rs:           { $sum: { $ifNull: ['$referral_fee_rs', 0] } },
         total_collected_rs:        { $sum: { $ifNull: ['$total_rs', 0] } },
       },
@@ -183,7 +184,8 @@ async function aggregateOrderFinancials(branchIds, start, end) {
       delivery_fee_collected_rs: 0, delivery_fee_cust_gst_rs: 0,
       delivery_fee_rest_share_rs: 0, delivery_fee_rest_gst_rs: 0,
       packaging_collected_rs: 0, packaging_gst_rs: 0,
-      discount_total_rs: 0, platform_fee_rs: 0, referral_fee_rs: 0,
+      discount_total_rs: 0, platform_fee_rs: 0, platform_markup_collected_rs: 0,
+      referral_fee_rs: 0,
       total_collected_rs: 0,
     };
   }
@@ -348,6 +350,12 @@ async function getFinancialSummary(restaurantId, period, from, to) {
     delivery_fee_rest_share_rs: agg.delivery_fee_rest_share_rs,
     delivery_fee_rest_gst_rs: agg.delivery_fee_rest_gst_rs,
     delivery_costs_rs: deliveryCosts,
+    // GullyBite's flat per-order delivery markup, summed across the
+    // period. Exposed for admin reporting only — this is platform
+    // revenue, NOT a restaurant deduction. Not added to
+    // total_deductions_rs and not surfaced on the restaurant payments
+    // page (it stays bundled inside delivery for the merchant).
+    platform_markup_collected_rs: agg.platform_markup_collected_rs,
     discount_total_rs: agg.discount_total_rs,
     refund_total_rs: refundData.total_rs,
     refund_count: refundData.count,
@@ -374,6 +382,7 @@ function emptyFinancialSummary(start, end) {
     gross_collections_rs: 0,
     platform_fee_rs: 0, platform_fee_gst_rs: 0,
     delivery_fee_rest_share_rs: 0, delivery_fee_rest_gst_rs: 0, delivery_costs_rs: 0,
+    platform_markup_collected_rs: 0,
     discount_total_rs: 0, refund_total_rs: 0, refund_count: 0,
     referral_fee_rs: 0, referral_fee_gst_rs: 0, tds_rs: 0, total_deductions_rs: 0,
     net_earnings_rs: 0, gst_number: null, pan_number: null,
@@ -466,6 +475,7 @@ async function getPlatformOverview(period, from, to) {
           gmv: { $sum: { $ifNull: ['$total_rs', 0] } },
           subtotal: { $sum: { $ifNull: ['$subtotal_rs', 0] } },
           platform_fees: { $sum: { $ifNull: ['$platform_fee_rs', 0] } },
+          platform_markup: { $sum: { $ifNull: ['$platform_markup_rs', 0] } },
           delivery_costs: { $sum: { $add: [
             { $ifNull: ['$restaurant_delivery_rs', 0] },
             { $ifNull: ['$restaurant_delivery_gst_rs', 0] },
@@ -496,7 +506,7 @@ async function getPlatformOverview(period, from, to) {
     ]).toArray(),
   ]);
 
-  const o = orderAgg[0] || { gmv: 0, subtotal: 0, platform_fees: 0, delivery_costs: 0, referral_fees: 0, order_count: 0 };
+  const o = orderAgg[0] || { gmv: 0, subtotal: 0, platform_fees: 0, platform_markup: 0, delivery_costs: 0, referral_fees: 0, order_count: 0 };
   const r = refundAgg[0] || { total: 0, count: 0 };
   const s = settlementAgg[0] || { total_payouts: 0, total_tds: 0, count: 0 };
   const p = pendingPayouts[0] || { total: 0, count: 0 };
@@ -516,6 +526,12 @@ async function getPlatformOverview(period, from, to) {
     total_refunds_rs: round2(r.total),
     refund_count: r.count,
     delivery_costs_rs: round2(o.delivery_costs),
+    // Flat per-order markup summed across delivered orders in the
+    // period. Pure platform-revenue metric — NOT included in
+    // money_out_rs or netted against delivery_costs (the markup is
+    // already baked into delivery_costs from the customer's POV via
+    // the customer/restaurant split).
+    platform_markup_collected_rs: round2(o.platform_markup),
     referral_fees_rs: round2(o.referral_fees),
     settlement_count: s.count,
     // Cash flow

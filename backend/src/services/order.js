@@ -335,6 +335,13 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
     restaurant_delivery_gst_rs: charges?.restaurant_delivery_gst_rs ?? 0,
     packaging_rs:               charges?.packaging_rs               ?? 0,
     packaging_gst_rs:           charges?.packaging_gst_rs           ?? 0,
+    // GullyBite flat per-order delivery markup (₹5 today, configurable
+    // via DELIVERY_PLATFORM_MARKUP_FLAT_RS). Already baked into the
+    // total delivery fee + customer/restaurant split; persisted as a
+    // top-level field so financial aggregations can $sum it directly
+    // without parsing the delivery_fee_breakdown blob below. NOT a
+    // restaurant-facing deduction — bundled inside delivery for them.
+    platform_markup_rs:         deliveryFeeBreakdown?.platformMarkupRs ?? 0,
     delivery_fee_breakdown:     deliveryFeeBreakdown                || null,
     // Prorouting (3PL) integration. These fields are populated only when
     // the checkout handler called /estimate successfully. When they are
