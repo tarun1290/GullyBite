@@ -17,6 +17,10 @@ const USE_CASES = new Set([
   'welcome', 'winback_short', 'winback_long', 'birthday',
   'loyalty_expiry', 'milestone', 'manual_blast',
   'festival', 'new_dish', 'general',
+  // Added for the Phase-2 marketing template seed (cart-recovery + reorder
+  // engines already exist in services/cart-recovery.js + reorderIntelligence;
+  // their templates need a use_case slot in the validator).
+  'cart_recovery', 'reorder_suggestion',
 ]);
 const CATEGORIES = new Set(['marketing', 'utility']);
 const HEADER_TYPES = new Set(['text', 'image', 'none']);

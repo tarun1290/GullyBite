@@ -259,30 +259,356 @@ const DEFAULT_TEMPLATES = [
       },
     ],
   },
+
+  // ─── MARKETING TEMPLATES ────────────────────────────────────
+  // These carry extra metadata fields (displayName, useCase, bodyNamed,
+  // variables, buttonText) so seedDefaultTemplates can mirror the row
+  // into the campaign_templates collection after Meta accepts the create.
+  // Meta itself sees only the standard {name, category, language,
+  // components} payload; the extra fields are read by the seed wrapper.
+  // No HEADER block — Meta rejects emojis in MARKETING headers, and a
+  // text-only header without variables adds no value here. Emojis in
+  // the BODY are accepted by Meta for MARKETING templates.
+  {
+    name: 'marketing_welcome_v1',
+    displayName: 'Welcome — First Order Offer',
+    useCase: 'welcome',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: "Hi {{customer_name}}! Welcome to {{restaurant_name}}. As a thank you, here's {{discount_pct}}% off your first order. Tap below to start exploring our menu!",
+    variables: [
+      { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Tarun' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'GullyBite' },
+      { name: 'discount_pct', label: 'Discount %', source: 'restaurant_input', required: true, example: '10' },
+    ],
+    buttonText: 'Order Now',
+    components: [
+      {
+        type: 'BODY',
+        text: "Hi {{1}}! Welcome to {{2}}. As a thank you, here's {{3}}% off your first order. Tap below to start exploring our menu!",
+        example: { body_text: [['Tarun', 'GullyBite', '10']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Order Now' }] },
+    ],
+  },
+  {
+    name: 'marketing_winback_short_v1',
+    displayName: 'Win-back — Short (14 days)',
+    useCase: 'winback_short',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: "Hey {{customer_name}}, we've missed you at {{restaurant_name}}! It's been a while since your last visit. Here's {{discount_pct}}% off to bring you back. Valid for 7 days.",
+    variables: [
+      { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Priya' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Spice Kitchen' },
+      { name: 'discount_pct', label: 'Discount %', source: 'restaurant_input', required: true, example: '15' },
+    ],
+    buttonText: 'Order Now',
+    components: [
+      {
+        type: 'BODY',
+        text: "Hey {{1}}, we've missed you at {{2}}! It's been a while since your last visit. Here's {{3}}% off to bring you back. Valid for 7 days.",
+        example: { body_text: [['Priya', 'Spice Kitchen', '15']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Order Now' }] },
+    ],
+  },
+  {
+    name: 'marketing_winback_long_v1',
+    displayName: 'Win-back — Long (30 days)',
+    useCase: 'winback_long',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: "{{customer_name}}, it's been a month since your last order at {{restaurant_name}}. We'd love to have you back — enjoy {{discount_pct}}% off + free delivery on your next order.",
+    variables: [
+      { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Rajesh' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Cafe Delight' },
+      { name: 'discount_pct', label: 'Discount %', source: 'restaurant_input', required: true, example: '20' },
+    ],
+    buttonText: 'Reorder Now',
+    components: [
+      {
+        type: 'BODY',
+        text: "{{1}}, it's been a month since your last order at {{2}}. We'd love to have you back — enjoy {{3}}% off + free delivery on your next order.",
+        example: { body_text: [['Rajesh', 'Cafe Delight', '20']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Reorder Now' }] },
+    ],
+  },
+  {
+    name: 'marketing_birthday_v1',
+    displayName: 'Birthday Greeting + Discount',
+    useCase: 'birthday',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: 'Happy birthday {{customer_name}}! 🎂 Treat yourself today with {{discount_pct}}% off your favorite from {{restaurant_name}}. Make it a delicious day!',
+    variables: [
+      { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Anjali' },
+      { name: 'discount_pct', label: 'Discount %', source: 'restaurant_input', required: true, example: '25' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Pizza Palace' },
+    ],
+    buttonText: 'Order My Favorite',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Happy birthday {{1}}! 🎂 Treat yourself today with {{2}}% off your favorite from {{3}}. Make it a delicious day!',
+        example: { body_text: [['Anjali', '25', 'Pizza Palace']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Order My Favorite' }] },
+    ],
+  },
+  {
+    name: 'marketing_loyalty_milestone_v1',
+    displayName: 'Loyalty Milestone Reward',
+    useCase: 'milestone',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: "{{customer_name}}, you've reached {{total_orders}} orders with {{restaurant_name}}! 🎉 You've earned {{points_balance}} loyalty points — redeem now for exclusive rewards.",
+    variables: [
+      { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Vikram' },
+      { name: 'total_orders', label: 'Total Orders', source: 'customer_data', required: true, example: '10' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Biryani Hub' },
+      { name: 'points_balance', label: 'Points Balance', source: 'system', required: true, example: '500' },
+    ],
+    buttonText: 'Redeem Points',
+    components: [
+      {
+        type: 'BODY',
+        text: "{{1}}, you've reached {{2}} orders with {{3}}! 🎉 You've earned {{4}} loyalty points — redeem now for exclusive rewards.",
+        example: { body_text: [['Vikram', '10', 'Biryani Hub', '500']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Redeem Points' }] },
+    ],
+  },
+  {
+    name: 'marketing_loyalty_expiry_v1',
+    displayName: 'Loyalty Points Expiring',
+    useCase: 'loyalty_expiry',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: "Heads up {{customer_name}}! Your {{points_balance}} loyalty points at {{restaurant_name}} expire in {{days_left}} days. Order now to redeem before they're gone.",
+    variables: [
+      { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Sneha' },
+      { name: 'points_balance', label: 'Points Balance', source: 'system', required: true, example: '300' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'South Spice' },
+      { name: 'days_left', label: 'Days Left', source: 'system', required: true, example: '5' },
+    ],
+    buttonText: 'Order Now',
+    components: [
+      {
+        type: 'BODY',
+        text: "Heads up {{1}}! Your {{2}} loyalty points at {{3}} expire in {{4}} days. Order now to redeem before they're gone.",
+        example: { body_text: [['Sneha', '300', 'South Spice', '5']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Order Now' }] },
+    ],
+  },
+  {
+    name: 'marketing_cart_recovery_v1',
+    displayName: 'Cart Recovery — Abandoned Order',
+    useCase: 'cart_recovery',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: 'Hey {{customer_name}}, you left items in your cart at {{restaurant_name}}. Complete your order now and save {{discount_pct}}% — your favorites are still waiting!',
+    variables: [
+      { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Arjun' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Burger Stop' },
+      { name: 'discount_pct', label: 'Discount %', source: 'restaurant_input', required: true, example: '10' },
+    ],
+    buttonText: 'Complete Order',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Hey {{1}}, you left items in your cart at {{2}}. Complete your order now and save {{3}}% — your favorites are still waiting!',
+        example: { body_text: [['Arjun', 'Burger Stop', '10']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Complete Order' }] },
+    ],
+  },
+  {
+    name: 'marketing_reorder_suggestion_v1',
+    displayName: 'Reorder Reminder — Your Usual',
+    useCase: 'reorder_suggestion',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: "Hi {{customer_name}}! It's been a while since your last {{last_item}} from {{restaurant_name}}. Reorder your favorite now in just one tap!",
+    variables: [
+      { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Meera' },
+      { name: 'last_item', label: 'Last Item', source: 'customer_data', required: true, example: 'Paneer Tikka' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Tandoor House' },
+    ],
+    buttonText: 'Reorder',
+    components: [
+      {
+        type: 'BODY',
+        text: "Hi {{1}}! It's been a while since your last {{2}} from {{3}}. Reorder your favorite now in just one tap!",
+        example: { body_text: [['Meera', 'Paneer Tikka', 'Tandoor House']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Reorder' }] },
+    ],
+  },
+  {
+    name: 'marketing_new_dish_v1',
+    displayName: 'New Menu Item Launch',
+    useCase: 'new_dish',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: '{{customer_name}}, something new at {{restaurant_name}}! 🌟 Try our latest dish: {{dish_name}}. Get {{discount_pct}}% off this week as a launch offer.',
+    variables: [
+      { name: 'customer_name', label: 'Customer Name', source: 'customer_data', required: true, example: 'Karthik' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Coastal Bites' },
+      { name: 'dish_name', label: 'Dish Name', source: 'restaurant_input', required: true, example: 'Prawn Curry' },
+      { name: 'discount_pct', label: 'Discount %', source: 'restaurant_input', required: true, example: '20' },
+    ],
+    buttonText: 'Try Now',
+    components: [
+      {
+        type: 'BODY',
+        text: '{{1}}, something new at {{2}}! 🌟 Try our latest dish: {{3}}. Get {{4}}% off this week as a launch offer.',
+        example: { body_text: [['Karthik', 'Coastal Bites', 'Prawn Curry', '20']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Try Now' }] },
+    ],
+  },
+  {
+    name: 'marketing_festival_v1',
+    displayName: 'Festival / Seasonal Promo',
+    useCase: 'festival',
+    category: 'MARKETING',
+    language: 'en_US',
+    bodyNamed: 'Celebrate {{festival_name}} with {{restaurant_name}}! 🎊 Enjoy {{discount_pct}}% off on all orders above ₹{{min_amount}} this festive season.',
+    variables: [
+      { name: 'festival_name', label: 'Festival Name', source: 'restaurant_input', required: true, example: 'Diwali' },
+      { name: 'restaurant_name', label: 'Restaurant Name', source: 'auto', required: true, example: 'Mithai Mart' },
+      { name: 'discount_pct', label: 'Discount %', source: 'restaurant_input', required: true, example: '15' },
+      { name: 'min_amount', label: 'Minimum Order ₹', source: 'restaurant_input', required: true, example: '500' },
+    ],
+    buttonText: 'Order Now',
+    components: [
+      {
+        type: 'BODY',
+        text: 'Celebrate {{1}} with {{2}}! 🎊 Enjoy {{3}}% off on all orders above ₹{{4}} this festive season.',
+        example: { body_text: [['Diwali', 'Mithai Mart', '15', '500']] },
+      },
+      { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Order Now' }] },
+    ],
+  },
 ];
+
+// Build the campaign_templates row for a MARKETING entry. metaTemplateId
+// is the Meta-side id (string) — comes either from a fresh createTemplate
+// response or from a name-collision lookup against listTemplates.
+function _buildCampaignTemplateRow(t, metaTemplateId) {
+  return {
+    template_id: t.name,
+    display_name: t.displayName,
+    category: 'marketing',          // lowercase per validator at routes/campaignTemplates.js:21
+    use_case: t.useCase,
+    language: 'en_US',
+    header_type: 'none',
+    header_text: null,
+    body_template: t.bodyNamed,
+    variables: t.variables || [],
+    footer_text: null,
+    cta_button_text: t.buttonText || null,
+    preview_text: t.displayName,
+    per_message_cost_rs: 0.65,
+    meta_template_id: metaTemplateId || null,
+    meta_approval_status: 'pending',
+    is_active: true,
+    created_by: 'seed-defaults',
+  };
+}
+
+// Upsert the campaign_templates mirror row for a MARKETING entry. Keyed
+// on template_id so re-runs are idempotent: unchanged metadata is rewritten
+// to the same values; new fields (e.g. meta_template_id discovered on a
+// later seed) get filled in. created_at is set once via $setOnInsert.
+async function _mirrorToCampaignTemplates(t, metaTemplateId) {
+  const row = _buildCampaignTemplateRow(t, metaTemplateId);
+  await col('campaign_templates').updateOne(
+    { template_id: t.name },
+    {
+      $set: { ...row, updated_at: new Date() },
+      $setOnInsert: { _id: newId(), created_at: new Date() },
+    },
+    { upsert: true },
+  );
+}
 
 // Idempotently create the DEFAULT_TEMPLATES on Meta. Skips any name
 // already present in the local templates collection for this WABA;
 // also catches Meta's "name already exists" error (code 192) so a
 // half-synced state still progresses cleanly.
+//
+// MARKETING entries also mirror into campaign_templates so the marketing
+// dashboard / journey engine can pick them up. Mirror happens in three
+// branches: fresh-create (use Meta's returned id), local-skip (look up
+// the existing local templates row and reuse its meta_id), and
+// already_exists_meta (fetch Meta's templates list and find the row by
+// name to recover the id).
 const seedDefaultTemplates = async (wabaId) => {
   if (!wabaId) throw new Error('seedDefaultTemplates: wabaId required');
   const created = [];
   const skipped = [];
+  const mirrored = [];
   for (const t of DEFAULT_TEMPLATES) {
+    const isMarketing = t.category === 'MARKETING';
     const existing = await col('templates').findOne({ waba_id: wabaId, name: t.name });
     if (existing) {
       skipped.push({ name: t.name, reason: 'already_exists_local', status: existing.status || null });
+      // Marketing entries still need their campaign_templates mirror —
+      // a fresh deploy where the templates row pre-exists (e.g. someone
+      // re-seeded after a partial failure) shouldn't leave the mirror
+      // missing.
+      if (isMarketing) {
+        try {
+          await _mirrorToCampaignTemplates(t, existing.meta_id || null);
+          mirrored.push({ name: t.name, source: 'existing_local' });
+        } catch (mirrorErr) {
+          log.warn({ template: t.name, err: mirrorErr?.message }, 'campaign_templates mirror failed (existing_local)');
+        }
+      }
       continue;
     }
     try {
       const result = await createTemplate(wabaId, t);
       created.push({ name: t.name, meta_id: result.id, status: result.status || 'PENDING' });
+      if (isMarketing) {
+        try {
+          await _mirrorToCampaignTemplates(t, result.id);
+          mirrored.push({ name: t.name, source: 'fresh_create' });
+        } catch (mirrorErr) {
+          log.warn({ template: t.name, err: mirrorErr?.message }, 'campaign_templates mirror failed (fresh_create)');
+        }
+      }
     } catch (e) {
       const metaErr = e.response?.data?.error;
       const msg = metaErr?.message || e.message || 'unknown error';
       if (metaErr?.code === 192 || /already exists/i.test(msg)) {
         skipped.push({ name: t.name, reason: 'already_exists_meta' });
+        // Recover the Meta id by listing the WABA's templates and
+        // finding the one that matches by name. listTemplates is
+        // already implemented above and pages through the full set, so
+        // a 1000-template WABA won't hide the lookup. Mirror with the
+        // recovered id so meta_template_id isn't null on collision.
+        if (isMarketing) {
+          try {
+            const remote = await listTemplates(wabaId, { name: t.name, limit: 5 });
+            const match = (remote || []).find((r) => r.name === t.name);
+            await _mirrorToCampaignTemplates(t, match?.id || null);
+            mirrored.push({ name: t.name, source: 'meta_collision_lookup', meta_id_resolved: !!match?.id });
+          } catch (lookupErr) {
+            log.warn({ template: t.name, err: lookupErr?.message }, 'campaign_templates mirror failed (meta_collision_lookup)');
+            // Mirror anyway with null meta_template_id so the row
+            // exists; templateSync auto-glue will fill in the id once
+            // the local templates row is populated by syncTemplates.
+            try {
+              await _mirrorToCampaignTemplates(t, null);
+              mirrored.push({ name: t.name, source: 'meta_collision_no_id' });
+            } catch (_) { /* swallow — already logged */ }
+          }
+        }
       } else {
         // Full diagnostic surface for non-duplicate failures. error_user_msg
         // is where Meta puts the actual rejection reason (e.g. "Headers
@@ -305,7 +631,7 @@ const seedDefaultTemplates = async (wabaId) => {
       }
     }
   }
-  return { created, skipped };
+  return { created, skipped, mirrored };
 };
 
 // ─── TEMPLATE EVENT MAPPINGS ────────────────────────────────

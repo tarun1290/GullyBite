@@ -95,11 +95,55 @@ async function runTemplateSync() {
     }
   }
 
+  // Auto-glue: hydrate campaign_templates.meta_approval_status from the
+  // local templates collection that syncTemplates just refreshed. The
+  // campaign-template flow only sees Meta state through this mirror —
+  // without the sweep, the marketing dashboard's
+  // {is_active, meta_approval_status:'approved'} filter never lights up
+  // because nothing else flips that field.
+  let approvedSynced = 0;
+  let rejectedSynced = 0;
+  try {
+    const linkedTemplates = await col('templates').find(
+      { meta_id: { $exists: true, $ne: null } },
+      { projection: { meta_id: 1, status: 1, rejection_reason: 1 } },
+    ).toArray();
+
+    for (const tpl of linkedTemplates) {
+      if (tpl.status === 'APPROVED') {
+        const r = await col('campaign_templates').updateOne(
+          { meta_template_id: tpl.meta_id },
+          { $set: { meta_approval_status: 'approved', approved_at: new Date(), updated_at: new Date() } },
+        );
+        if (r.modifiedCount) approvedSynced++;
+      } else if (tpl.status === 'REJECTED') {
+        const r = await col('campaign_templates').updateOne(
+          { meta_template_id: tpl.meta_id },
+          { $set: {
+              meta_approval_status: 'rejected',
+              rejection_reason: tpl.rejection_reason || 'unknown',
+              updated_at: new Date(),
+            } },
+        );
+        if (r.modifiedCount) rejectedSynced++;
+      }
+    }
+    log.info({ approved: approvedSynced, rejected: rejectedSynced }, `auto-glue: synced ${approvedSynced} approved, ${rejectedSynced} rejected to campaign_templates`);
+  } catch (err) {
+    log.error({ err: err?.message }, 'template_sync.auto_glue.failed');
+  }
+
   const elapsedMs = Date.now() - startedAt;
   log.info({
-    wabaCount: wabaIds.length, succeeded, failed, totalSynced, elapsedMs,
+    wabaCount: wabaIds.length, succeeded, failed, totalSynced,
+    autoGlueApproved: approvedSynced, autoGlueRejected: rejectedSynced,
+    elapsedMs,
   }, 'template_sync.done');
-  return { wabaCount: wabaIds.length, succeeded, failed, totalSynced, elapsedMs };
+  return {
+    wabaCount: wabaIds.length, succeeded, failed, totalSynced,
+    autoGlueApproved: approvedSynced, autoGlueRejected: rejectedSynced,
+    elapsedMs,
+  };
 }
 
 function scheduleTemplateSync() {
