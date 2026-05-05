@@ -16,6 +16,7 @@ const { runOwnerDailySummary } = require('../routes/cron');
 const log = require('../utils/logger').child({ component: 'ownerDailySummary' });
 
 const scheduleOwnerDailySummary = () => {
+  log.info('[CRON] owner-daily-summary scheduled: daily at 17:30 UTC');
   cron.schedule(
     '30 17 * * *',
     async () => {
@@ -27,7 +28,6 @@ const scheduleOwnerDailySummary = () => {
     },
     { timezone: 'UTC' },
   );
-  log.info('[CRON] owner-daily-summary scheduled: daily at 17:30 UTC');
 };
 
 module.exports = { scheduleOwnerDailySummary };
