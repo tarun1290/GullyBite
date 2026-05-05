@@ -42,6 +42,7 @@
 const path = require('path');
 const crypto = require('crypto');
 const { MongoClient } = require('mongodb');
+const { calculateOrderCharges } = require('../src/services/charges');
 
 function parseArgs(argv) {
   // null sentinel for customer_phone so we can distinguish "user didn't
@@ -124,6 +125,20 @@ async function main() {
   }
   console.log(`[test-paid-order] waba: phone_number_id=${waAccount.phone_number_id}`);
 
+  // ─── Restaurant doc (for charges config) ─────────────────────
+  // Real orders pull menu_gst_mode / delivery_fee_customer_pct /
+  // packaging_* off the restaurants row in services/order.js around
+  // line 136. Mirror that here so the seeded order's totals pass the
+  // same calculateOrderCharges() the production path uses, instead of
+  // the prior naïve subtotal+delivery sum that skipped GST + packaging.
+  const restaurant = await db.collection('restaurants').findOne({ _id: args.restaurant_id });
+  if (!restaurant) {
+    console.error(`restaurant not found: ${args.restaurant_id}`);
+    await client.close();
+    process.exit(1);
+  }
+  console.log(`[test-paid-order] restaurant resolved: ${restaurant.business_name || restaurant.brand_name || args.restaurant_id}`);
+
   // ─── Customer resolution ─────────────────────────────────────
   // When --customer_phone is provided, look up the real customer so
   // notifications resolve via the actual customerIdentity flow. When
@@ -203,7 +218,21 @@ async function main() {
 
   const subtotalPaise = itemDocs.reduce((s, i) => s + (i.price_paise * i.quantity), 0);
   const deliveryFeePaise = 4000; // ₹40 — per spec
-  const totalPaise = subtotalPaise + deliveryFeePaise;
+  const subtotalRs = subtotalPaise / 100;
+  const deliveryFeeRs = deliveryFeePaise / 100;
+
+  // Mirror services/order.js:136-142 exactly. Same fields, same defaults,
+  // so calculateOrderCharges sees an identical restaurantConfig shape
+  // here as it does on the live checkout path.
+  const restaurantConfig = {
+    delivery_fee_customer_pct: restaurant?.delivery_fee_customer_pct ?? 100,
+    menu_gst_mode:             restaurant?.menu_gst_mode             ?? 'included',
+    menu_gst_pct:              restaurant?.menu_gst_pct              ?? 5,
+    packaging_charge_rs:       restaurant?.packaging_charge_rs       ?? 0,
+    packaging_gst_pct:         restaurant?.packaging_gst_pct         ?? 18,
+  };
+  const charges = calculateOrderCharges(restaurantConfig, subtotalRs, deliveryFeeRs, 0);
+  const totalPaise = Math.round(charges.customer_total_rs * 100);
 
   // Order number: ZM-YYYYMMDD-#### using today's count + 1, matching the
   // generator in services/order.js so dashboards display a consistent
@@ -238,13 +267,25 @@ async function main() {
     // _rs fields, while the schema (subtotal_rs/total_rs) is what
     // validators check. paise variants help any code that prefers
     // integer math.
-    subtotal_rs: subtotalPaise / 100,
-    delivery_fee_rs: deliveryFeePaise / 100,
+    subtotal_rs: subtotalRs,
+    delivery_fee_rs: charges.customer_delivery_rs,
     discount_rs: 0,
-    total_rs: totalPaise / 100,
+    total_rs: charges.customer_total_rs,
     subtotal_paise: subtotalPaise,
-    delivery_fee_paise: deliveryFeePaise,
+    delivery_fee_paise: Math.round(charges.customer_delivery_rs * 100),
     total_paise: totalPaise,
+    // Mirror services/order.js:330-337 so the seeded order carries the
+    // same per-component breakdown the dashboard, settlement, and
+    // analytics paths expect. delivery_fee_total_rs is the FULL 3PL fee
+    // (₹40 here); customer_delivery_rs is only the customer's split.
+    food_gst_rs:                charges.food_gst_rs,
+    customer_delivery_rs:       charges.customer_delivery_rs,
+    customer_delivery_gst_rs:   charges.customer_delivery_gst_rs,
+    restaurant_delivery_rs:     charges.restaurant_delivery_rs,
+    restaurant_delivery_gst_rs: charges.restaurant_delivery_gst_rs,
+    packaging_rs:               charges.packaging_rs,
+    packaging_gst_rs:           charges.packaging_gst_rs,
+    delivery_fee_total_rs:      charges.delivery_fee_total_rs,
     status: 'PAID',
     payment_status: 'paid',
     razorpay_order_id: fakeRzpOrderId,
@@ -275,6 +316,14 @@ async function main() {
     created_at: now,
     updated_at: now,
   };
+
+  console.log(
+    `[test-paid-order] charges: subtotal=${subtotalRs.toFixed(2)} ` +
+    `gst=${(charges.food_gst_rs + charges.customer_delivery_gst_rs + charges.packaging_gst_rs).toFixed(2)} ` +
+    `packaging=${charges.packaging_rs.toFixed(2)} ` +
+    `delivery=${charges.customer_delivery_rs.toFixed(2)} ` +
+    `total=${charges.customer_total_rs.toFixed(2)}`,
+  );
 
   await db.collection('orders').insertOne(order);
   console.log(`[test-paid-order] order inserted: _id=${orderId} order_number=${orderNumber} total_paise=${totalPaise}`);
