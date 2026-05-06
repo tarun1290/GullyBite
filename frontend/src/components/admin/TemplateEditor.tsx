@@ -305,14 +305,14 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
   }, [data.body.text, data.variables]);
 
   if (loading) {
-    return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--dim)' }}>Loading template…</div>;
+    return <div className="p-8 text-center text-dim">Loading template…</div>;
   }
 
   return (
-    <div id="template-editor-container" style={{ border: '1px solid var(--rim)', borderRadius: 8, background: 'var(--surface,#fff)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', padding: '.7rem .9rem', borderBottom: '1px solid var(--rim)' }}>
-        <h3 style={{ margin: 0 }}>{metaId ? 'Edit Template' : 'New Template'}</h3>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '.4rem' }}>
+    <div id="template-editor-container" className="border border-rim rounded-lg bg-surface">
+      <div className="flex items-center gap-[0.6rem] py-[0.7rem] px-[0.9rem] border-b border-rim">
+        <h3 className="m-0">{metaId ? 'Edit Template' : 'New Template'}</h3>
+        <div className="ml-auto flex gap-[0.4rem]">
           <button type="button" className="btn-sm" onClick={() => setGalleryOpen((v) => !v)}>
             {galleryOpen ? 'Close Gallery' : 'Load from Gallery'}
           </button>
@@ -322,32 +322,31 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
 
       {galleryOpen && <GalleryPicker onPick={loadFromGallery} />}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', minHeight: 480 }}>
-        <div id="te-builder" style={{ padding: '.9rem', borderRight: '1px solid var(--rim)', overflowY: 'auto' }}>
+      <div className="grid grid-cols-[1fr_340px] min-h-[480px]">
+        <div id="te-builder" className="p-[0.9rem] border-r border-rim overflow-y-auto">
           <Field label="Template Name">
             <input
-              className="te-input"
+              className={`te-input ${INP_CLS} w-full`}
               value={data.name}
               placeholder="e.g. order_confirmation"
               onChange={(e) => set({ name: slugify(e.target.value) })}
-              style={inp}
             />
           </Field>
 
           <Field label="Category">
-            <select value={data.category} onChange={(e) => set({ category: e.target.value })} style={inp}>
+            <select value={data.category} onChange={(e) => set({ category: e.target.value })} className={`${INP_CLS} w-full`}>
               {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </Field>
 
           <Field label="Language">
-            <select value={data.language} onChange={(e) => set({ language: e.target.value })} style={inp}>
+            <select value={data.language} onChange={(e) => set({ language: e.target.value })} className={`${INP_CLS} w-full`}>
               {LANGUAGES.map((l) => <option key={l.v} value={l.v}>{l.l}</option>)}
             </select>
           </Field>
 
           <Section title="HEADER">
-            <select value={data.header.type} onChange={(e) => setHeaderType(e.target.value)} style={{ ...inp, width: 150 }}>
+            <select value={data.header.type} onChange={(e) => setHeaderType(e.target.value)} className={`${INP_CLS} w-[150px]`}>
               {['none', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'].map((t) => (
                 <option key={t} value={t}>{t === 'none' ? 'None' : t}</option>
               ))}
@@ -357,7 +356,7 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
                 value={data.header.text}
                 placeholder="Header text"
                 onChange={(e) => set({ header: { ...data.header, text: e.target.value } })}
-                style={{ ...inp, marginTop: '.35rem' }}
+                className={`${INP_CLS} w-full mt-[0.35rem]`}
               />
             )}
             {['IMAGE', 'VIDEO', 'DOCUMENT'].includes(data.header.type) && (
@@ -365,17 +364,17 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
                 value={data.header.url}
                 placeholder="Media URL"
                 onChange={(e) => set({ header: { ...data.header, url: e.target.value } })}
-                style={{ ...inp, marginTop: '.35rem' }}
+                className={`${INP_CLS} w-full mt-[0.35rem]`}
               />
             )}
           </Section>
 
           <Section title="BODY" extra={
             <>
-              <span style={{ fontSize: '.72rem', color: 'var(--dim)', marginRight: '.5rem' }}>
+              <span className="text-[0.72rem] text-dim mr-2">
                 {(data.body.text || '').length}/1024
               </span>
-              <button type="button" className="btn-sm" style={{ fontSize: '.7rem' }} onClick={insertVariable}>
+              <button type="button" className="btn-sm text-[0.7rem]" onClick={insertVariable}>
                 + Variable
               </button>
             </>
@@ -386,12 +385,12 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
               maxLength={1024}
               rows={5}
               onChange={(e) => set({ body: { text: e.target.value } })}
-              style={{ ...inp, fontFamily: 'inherit', resize: 'vertical' }}
+              className={`${INP_CLS} w-full font-[inherit] resize-y`}
             />
           </Section>
 
           <Section title="FOOTER" extra={
-            <label style={{ fontSize: '.76rem', display: 'inline-flex', alignItems: 'center', gap: '.3rem' }}>
+            <label className="text-[0.76rem] inline-flex items-center gap-[0.3rem]">
               <input
                 type="checkbox"
                 checked={!!data.footer.text || data.footer.text === ''}
@@ -405,59 +404,59 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
               maxLength={60}
               placeholder="Footer text (60 chars)"
               onChange={(e) => set({ footer: { text: e.target.value } })}
-              style={inp}
+              className={`${INP_CLS} w-full`}
             />
-            <span style={{ fontSize: '.7rem', color: 'var(--dim)' }}>{(data.footer.text || '').length}/60</span>
+            <span className="text-[0.7rem] text-dim">{(data.footer.text || '').length}/60</span>
           </Section>
 
           <Section title="BUTTONS" extra={
-            <button type="button" className="btn-sm" style={{ fontSize: '.7rem' }} onClick={addButton} disabled={data.buttons.length >= 3}>
+            <button type="button" className="btn-sm text-[0.7rem]" onClick={addButton} disabled={data.buttons.length >= 3}>
               + Button
             </button>
           }>
             {data.buttons.map((b, i) => (
-              <div key={i} style={{ display: 'flex', gap: '.3rem', alignItems: 'center', marginBottom: '.35rem' }}>
-                <select value={b.type} onChange={(e) => updateButton(i, 'type', e.target.value)} style={{ ...inp, width: 130 }}>
+              <div key={i} className="flex gap-[0.3rem] items-center mb-[0.35rem]">
+                <select value={b.type} onChange={(e) => updateButton(i, 'type', e.target.value)} className={`${INP_CLS} w-[130px]`}>
                   {['QUICK_REPLY', 'URL', 'PHONE_NUMBER'].map((t) => (
                     <option key={t} value={t}>{t.replace('_', ' ')}</option>
                   ))}
                 </select>
-                <input value={b.text} placeholder="Label" onChange={(e) => updateButton(i, 'text', e.target.value)} style={{ ...inp, flex: 1 }} />
+                <input value={b.text} placeholder="Label" onChange={(e) => updateButton(i, 'text', e.target.value)} className={`${INP_CLS} flex-1`} />
                 {b.type !== 'QUICK_REPLY' && (
                   <input
                     value={b.value}
                     placeholder={b.type === 'URL' ? 'https://...' : 'Phone'}
                     onChange={(e) => updateButton(i, 'value', e.target.value)}
-                    style={{ ...inp, flex: 1 }}
+                    className={`${INP_CLS} flex-1`}
                   />
                 )}
-                <button type="button" className="btn-sm" style={{ color: 'var(--red,#dc2626)', fontSize: '.75rem' }} onClick={() => removeButton(i)}>✕</button>
+                <button type="button" className="btn-sm text-red text-[0.75rem]" onClick={() => removeButton(i)}>✕</button>
               </div>
             ))}
           </Section>
 
           {data.variables.length > 0 && (
             <Section title="VARIABLES">
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.76rem' }}>
+              <table className="w-full border-collapse text-[0.76rem]">
                 <thead>
-                  <tr style={{ textAlign: 'left', color: 'var(--dim)' }}>
-                    <th style={{ padding: '.25rem', width: 60 }}>Var</th>
-                    <th style={{ padding: '.25rem' }}>Source</th>
-                    <th style={{ padding: '.25rem' }}>Sample</th>
+                  <tr className="text-left text-dim">
+                    <th className="p-1 w-[60px]">Var</th>
+                    <th className="p-1">Source</th>
+                    <th className="p-1">Sample</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.variables.map((v, i) => (
                     <tr key={i}>
-                      <td style={{ padding: '.2rem', fontFamily: 'monospace' }}>{`{{${v.index}}}`}</td>
-                      <td style={{ padding: '.2rem' }}>
-                        <select value={v.source} onChange={(e) => updateVariable(i, 'source', e.target.value)} style={{ ...inp, fontSize: '.72rem', padding: '.2rem .3rem' }}>
+                      <td className="p-[0.2rem] font-mono">{`{{${v.index}}}`}</td>
+                      <td className="p-[0.2rem]">
+                        <select value={v.source} onChange={(e) => updateVariable(i, 'source', e.target.value)} className={`${INP_SM_CLS} w-full`}>
                           <option value="">-- select --</option>
                           {VARIABLE_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
-                      <td style={{ padding: '.2rem' }}>
-                        <input value={v.sample} placeholder="Sample" onChange={(e) => updateVariable(i, 'sample', e.target.value)} style={{ ...inp, fontSize: '.72rem', padding: '.2rem .3rem' }} />
+                      <td className="p-[0.2rem]">
+                        <input value={v.sample} placeholder="Sample" onChange={(e) => updateVariable(i, 'sample', e.target.value)} className={`${INP_SM_CLS} w-full`} />
                       </td>
                     </tr>
                   ))}
@@ -466,20 +465,20 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
             </Section>
           )}
 
-          <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
+          <div className="flex gap-2 mt-4">
             <button type="button" className="btn-p" onClick={doSave} disabled={saving}>
               {saving ? 'Saving…' : 'Save Template'}
             </button>
             {metaId && (
               confirmDelete ? (
                 <>
-                  <button type="button" className="btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 6, padding: '.4rem .8rem' }} onClick={doDelete} disabled={deleting}>
+                  <button type="button" className="btn-sm bg-red-500 text-neutral-0 border-0 rounded-md py-[0.4rem] px-[0.8rem]" onClick={doDelete} disabled={deleting}>
                     {deleting ? '…' : `Confirm delete "${data.name}"`}
                   </button>
                   <button type="button" className="btn-g" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</button>
                 </>
               ) : (
-                <button type="button" className="btn-g" style={{ color: 'var(--red,#dc2626)' }} onClick={doDelete}>
+                <button type="button" className="btn-g text-red" onClick={doDelete}>
                   Delete
                 </button>
               )
@@ -488,41 +487,36 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
           </div>
         </div>
 
-        <div id="te-preview" style={{ padding: '1rem', background: '#e5ddd5', minHeight: 480 }}>
-          <div className="te-wa-bubble" style={bubble}>
+        <div id="te-preview" className="p-4 bg-[#e5ddd5] min-h-[480px]">
+          <div className={`te-wa-bubble ${BUBBLE_CLS}`}>
             {data.header.type === 'TEXT' && data.header.text && (
-              <div className="te-wa-header" style={{ fontWeight: 700, marginBottom: '.35rem' }} dangerouslySetInnerHTML={{ __html: fmtWa(data.header.text) }} />
+              <div className="te-wa-header font-bold mb-[0.35rem]" dangerouslySetInnerHTML={{ __html: fmtWa(data.header.text) }} />
             )}
             {data.header.type === 'IMAGE' && (
-              <div className="te-wa-img" style={imgBox}>
-                {data.header.url ? <img src={data.header.url} alt="header" style={{ width: '100%', borderRadius: 6 }} /> : <div style={placeholderPh}>IMAGE</div>}
+              <div className="te-wa-img mb-[0.35rem]">
+                {data.header.url ? <img src={data.header.url} alt="header" className="w-full rounded-md" /> : <div className={PLACEHOLDER_CLS}>IMAGE</div>}
               </div>
             )}
             {data.header.type === 'VIDEO' && (
-              <div className="te-wa-img" style={imgBox}><div style={placeholderPh}>VIDEO</div></div>
+              <div className="te-wa-img mb-[0.35rem]"><div className={PLACEHOLDER_CLS}>VIDEO</div></div>
             )}
             {data.header.type === 'DOCUMENT' && (
-              <div className="te-wa-img" style={imgBox}><div style={placeholderPh}>DOCUMENT</div></div>
+              <div className="te-wa-img mb-[0.35rem]"><div className={PLACEHOLDER_CLS}>DOCUMENT</div></div>
             )}
             {previewBody && (
-              <div className="te-wa-body" style={{ fontSize: '.85rem', color: '#111', whiteSpace: 'pre-wrap' }} dangerouslySetInnerHTML={{ __html: fmtWa(previewBody) }} />
+              <div className="te-wa-body text-[0.85rem] text-[#111] whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: fmtWa(previewBody) }} />
             )}
             {data.footer.text && (
-              <div className="te-wa-footer" style={{ fontSize: '.72rem', color: '#667781', marginTop: '.35rem' }}>{data.footer.text}</div>
+              <div className="te-wa-footer text-[0.72rem] text-[#667781] mt-[0.35rem]">{data.footer.text}</div>
             )}
-            <div className="te-wa-time" style={{ fontSize: '.68rem', color: '#667781', textAlign: 'right', marginTop: '.35rem' }}>
+            <div className="te-wa-time text-[0.68rem] text-[#667781] text-right mt-[0.35rem]">
               12:30 <span className="te-wa-checks">✓✓</span>
             </div>
           </div>
           {data.buttons.map((b, i) => (
             <div
               key={i}
-              className="te-wa-btn"
-              style={{
-                background: 'var(--gb-neutral-0)', borderRadius: 8, padding: '.5rem .6rem',
-                marginTop: '.35rem', textAlign: 'center', color: '#1f7ee3',
-                fontWeight: 600, fontSize: '.82rem', boxShadow: '0 1px 2px rgba(0,0,0,.08)',
-              }}
+              className="te-wa-btn bg-neutral-0 rounded-lg py-2 px-[0.6rem] mt-[0.35rem] text-center text-[#1f7ee3] font-semibold text-[0.82rem] shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
             >
               {b.text || 'Button'}
             </div>
@@ -537,8 +531,8 @@ interface FieldProps { label: string; children: ReactNode }
 
 function Field({ label, children }: FieldProps): ReactNode {
   return (
-    <div style={{ marginBottom: '.6rem' }}>
-      <label style={{ display: 'block', fontSize: '.74rem', color: 'var(--dim)', fontWeight: 600, marginBottom: '.2rem' }}>{label}</label>
+    <div className="mb-[0.6rem]">
+      <label className="block text-[0.74rem] text-dim font-semibold mb-[0.2rem]">{label}</label>
       {children}
     </div>
   );
@@ -548,10 +542,10 @@ interface SectionProps { title: string; extra?: ReactNode; children: ReactNode }
 
 function Section({ title, extra, children }: SectionProps): ReactNode {
   return (
-    <div style={{ marginTop: '.9rem', padding: '.6rem', background: 'var(--ink4,#f4f4f5)', border: '1px solid var(--rim)', borderRadius: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', marginBottom: '.45rem' }}>
-        <b style={{ fontSize: '.76rem' }}>{title}</b>
-        <div style={{ marginLeft: 'auto' }}>{extra}</div>
+    <div className="mt-[0.9rem] p-[0.6rem] bg-ink4 border border-rim rounded-md">
+      <div className="flex items-center gap-[0.4rem] mb-[0.45rem]">
+        <b className="text-[0.76rem]">{title}</b>
+        <div className="ml-auto">{extra}</div>
       </div>
       {children}
     </div>
@@ -584,19 +578,18 @@ function GalleryPicker({ onPick }: GalleryPickerProps): ReactNode {
   }, []);
 
   return (
-    <div style={{ padding: '.7rem .9rem', borderBottom: '1px solid var(--rim)', background: 'var(--ink4,#f4f4f5)' }}>
+    <div className="py-[0.7rem] px-[0.9rem] border-b border-rim bg-ink4">
       {loading ? (
-        <span style={{ color: 'var(--dim)', fontSize: '.82rem' }}>Loading gallery…</span>
+        <span className="text-dim text-[0.82rem]">Loading gallery…</span>
       ) : !items.length ? (
-        <span style={{ color: 'var(--dim)', fontSize: '.82rem' }}>No gallery templates available.</span>
+        <span className="text-dim text-[0.82rem]">No gallery templates available.</span>
       ) : (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem' }}>
+        <div className="flex flex-wrap gap-[0.4rem]">
           {items.map((t) => (
             <button
               key={t.id}
               type="button"
-              className="btn-sm"
-              style={{ fontSize: '.72rem' }}
+              className="btn-sm text-[0.72rem]"
               onClick={() => onPick(t.id)}
               title={t.description || t.name}
             >
@@ -609,18 +602,12 @@ function GalleryPicker({ onPick }: GalleryPickerProps): ReactNode {
   );
 }
 
-const inp: React.CSSProperties = {
-  width: '100%', padding: '.4rem .55rem', border: '1px solid var(--rim)',
-  borderRadius: 6, fontSize: '.82rem', background: 'var(--gb-neutral-0)',
-};
+// Composable className constants. Default-size input has its own variant
+// because the variables-table cells need a smaller font/padding override
+// and Tailwind utilities at the same specificity can't be reordered to
+// "win" — so we just publish two sizes instead of using `!important`.
+const INP_CLS = 'border border-rim rounded-md text-[0.82rem] py-[0.4rem] px-[0.55rem] bg-neutral-0';
+const INP_SM_CLS = 'border border-rim rounded-md text-[0.72rem] py-[0.2rem] px-[0.3rem] bg-neutral-0';
 
-const bubble: React.CSSProperties = {
-  background: '#d9fdd3', borderRadius: 8, padding: '.6rem .7rem',
-  maxWidth: 300, boxShadow: '0 1px 2px rgba(0,0,0,.08)',
-};
-
-const imgBox: React.CSSProperties = { marginBottom: '.35rem' };
-const placeholderPh: React.CSSProperties = {
-  background: '#c7e8c1', color: '#3d5f3a', padding: '1rem', borderRadius: 6,
-  textAlign: 'center', fontSize: '.76rem', fontWeight: 600,
-};
+const BUBBLE_CLS = 'bg-[#d9fdd3] rounded-lg py-[0.6rem] px-[0.7rem] max-w-[300px] shadow-[0_1px_2px_rgba(0,0,0,0.08)]';
+const PLACEHOLDER_CLS = 'bg-[#c7e8c1] text-[#3d5f3a] p-4 rounded-md text-center text-[0.76rem] font-semibold';

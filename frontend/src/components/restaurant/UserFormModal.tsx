@@ -357,39 +357,23 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
               <div className="fg" style={{ marginBottom: '.7rem' }}>
                 <label>Branches <small style={{ color: 'var(--dim)' }}>(leave empty for all)</small></label>
                 {(branches || []).length > 0 ? (
-                  <div
-                    style={{
-                      marginTop: '.3rem',
-                      maxHeight: 220,
-                      overflowY: 'auto',
-                      border: '1px solid var(--rim)',
-                      borderRadius: 6,
-                    }}
-                  >
+                  <div className="flex flex-wrap gap-2 mt-2">
                     {(branches || []).map((b) => {
                       const on = form.branchIds.includes(b.id);
                       return (
-                        <label
+                        <button
                           key={b.id}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '.5rem',
-                            padding: '.45rem .7rem',
-                            borderBottom: '1px solid var(--bdr,#e5e7eb)',
-                            cursor: 'pointer',
-                            background: on ? 'rgba(34,197,94,.08)' : 'transparent',
-                            fontSize: '.85rem',
-                          }}
+                          type="button"
+                          onClick={() => toggleBranch(b.id)}
+                          aria-pressed={on}
+                          className={
+                            on
+                              ? 'px-4 py-1.5 rounded-full border border-indigo-600 bg-indigo-600 text-white text-sm cursor-pointer'
+                              : 'px-4 py-1.5 rounded-full border border-gray-300 text-sm text-gray-700 bg-white hover:border-indigo-400 transition-colors cursor-pointer'
+                          }
                         >
-                          <input
-                            type="checkbox"
-                            checked={on}
-                            onChange={() => toggleBranch(b.id)}
-                            style={{ flexShrink: 0 }}
-                          />
-                          <span>{b.name}</span>
-                        </label>
+                          {b.name}
+                        </button>
                       );
                     })}
                   </div>

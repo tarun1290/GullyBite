@@ -12,8 +12,8 @@
 //   • `aria-hidden` on the panel mirrors `open` so SR users don't
 //     focus inside a hidden subtree.
 //
-// Keep the styling inline — no global class additions — so the
-// drawer doesn't fight whatever theme the parent app is on.
+// Surface/foreground colours come from CSS vars (with fallbacks) so
+// the drawer doesn't fight whatever theme the parent app is on.
 
 import { useEffect, type ReactNode } from 'react';
 
@@ -46,62 +46,29 @@ export default function SlideOverDrawer({ open, onClose, title, children }: Slid
       {/* Backdrop */}
       <div
         onClick={open ? onClose : undefined}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.35)',
-          opacity: open ? 1 : 0,
-          pointerEvents: open ? 'auto' : 'none',
-          transition: 'opacity .18s ease',
-          zIndex: 1000,
-        }}
+        className={`fixed inset-0 bg-black/35 z-[1000] transition-opacity duration-[180ms] ease ${
+          open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
       />
       {/* Panel */}
       <aside
         aria-hidden={!open}
-        style={{
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          height: '100vh',
-          width: 'min(420px, 100vw)',
-          background: 'var(--surface, #ffffff)',
-          color: 'var(--fg, inherit)',
-          boxShadow: '-12px 0 32px rgba(0,0,0,.12)',
-          transform: open ? 'translateX(0)' : 'translateX(100%)',
-          transition: 'transform .22s ease',
-          zIndex: 1001,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+        className={`fixed top-0 right-0 h-screen w-[min(420px,100vw)] bg-surface text-fg shadow-[-12px_0_32px_rgba(0,0,0,0.12)] transition-transform duration-[220ms] ease z-[1001] flex flex-col ${
+          open ? 'translate-x-0' : 'translate-x-full'
+        }`}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '.85rem 1rem',
-            borderBottom: '1px solid var(--rim, #e5e7eb)',
-          }}
-        >
-          <h3 style={{ margin: 0, fontSize: '.95rem', fontWeight: 600 }}>{title}</h3>
+        <div className="flex items-center justify-between py-[0.85rem] px-4 border-b border-rim">
+          <h3 className="m-0 text-[0.95rem] font-semibold">{title}</h3>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            style={{
-              background: 'transparent',
-              border: 'none',
-              fontSize: '1.2rem',
-              cursor: 'pointer',
-              color: 'var(--dim, #6b7280)',
-              lineHeight: 1,
-            }}
+            className="bg-transparent border-0 text-[1.2rem] cursor-pointer text-dim leading-none"
           >
             ✕
           </button>
         </div>
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="flex-1 min-h-0 flex flex-col">
           {children}
         </div>
       </aside>

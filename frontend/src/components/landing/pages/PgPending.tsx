@@ -63,13 +63,13 @@ export default function PgPending({ onLogout, showPage }: PgPendingProps) {
         </p>
 
         {waConnected ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 10, padding: '.7rem 1.1rem', margin: '.5rem 0 1.2rem', fontSize: '.84rem' }}>
-            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e', display: 'inline-block', flexShrink: 0 }}></span>
+          <div className="flex items-center gap-[0.6rem] bg-[#f0fdf4] border border-[#86efac] rounded-[10px] py-[0.7rem] px-[1.1rem] mt-2 mb-[1.2rem] text-[0.84rem]">
+            <span className="w-[10px] h-[10px] rounded-full bg-[#22c55e] inline-block shrink-0"></span>
             <span>WhatsApp connected — <strong>{waPhone || 'WhatsApp Business Account'}</strong></span>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', background: '#fefce8', border: '1px solid #fde047', borderRadius: 10, padding: '.7rem 1.1rem', margin: '.5rem 0 1.2rem', fontSize: '.84rem' }}>
-            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#eab308', display: 'inline-block', flexShrink: 0 }}></span>
+          <div className="flex items-center gap-[0.6rem] bg-[#fefce8] border border-[#fde047] rounded-[10px] py-[0.7rem] px-[1.1rem] mt-2 mb-[1.2rem] text-[0.84rem]">
+            <span className="w-[10px] h-[10px] rounded-full bg-[#eab308] inline-block shrink-0"></span>
             <span>
               WhatsApp not connected yet —{' '}
               <button type="button" className="btn-link" onClick={() => showPage?.('pg-connect')}>
@@ -84,10 +84,10 @@ export default function PgPending({ onLogout, showPage }: PgPendingProps) {
           <li><div className="tl-dot done">✓</div><span>Business details submitted</span></li>
           <li>
             <div className={`tl-dot ${waConnected ? 'done' : 'wait'}`}>{waConnected ? '✓' : '○'}</div>
-            <span style={waConnected ? undefined : { color: 'var(--dim)' }}>WhatsApp Business connected</span>
+            <span className={waConnected ? '' : 'text-dim'}>WhatsApp Business connected</span>
           </li>
-          <li><div className="tl-dot wait">○</div><span style={{ color: 'var(--dim)' }}>Admin review &amp; approval</span></li>
-          <li><div className="tl-dot wait">○</div><span style={{ color: 'var(--dim)' }}>Dashboard access granted</span></li>
+          <li><div className="tl-dot wait">○</div><span className="text-dim">Admin review &amp; approval</span></li>
+          <li><div className="tl-dot wait">○</div><span className="text-dim">Dashboard access granted</span></li>
         </ul>
 
         <div className="btn-row">

@@ -187,8 +187,39 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
   // Subtotal = sum of line item amounts (food + packaging only).
   // Delivery contributes through `shipping` instead, so the Meta
   // formula becomes: total = subtotal + tax + shipping − discount.
-  const subtotalPaise = orderItems.reduce((sum, i) => sum + i.amount.value * (i.quantity || 1), 0);
-  const taxPaise = toPaise((order.food_gst_rs || 0) + (order.customer_delivery_gst_rs || 0) + (order.packaging_gst_rs || 0));
+  const subtotalPaiseRaw = orderItems.reduce((sum, i) => sum + i.amount.value * (i.quantity || 1), 0);
+
+  // food_gst_rs disposition depends on the restaurant's menu_gst_mode:
+  //   • 'extra'    — menu prices are net of GST. Line items already
+  //                  exclude tax, so subtotal stays as the raw sum and
+  //                  food_gst_rs adds on top via tax.
+  //   • 'included' — menu prices are gross (GST baked in). The
+  //                  financialEngine reverse-extracts food_gst_rs for
+  //                  invoicing/settlement, but does NOT add it to
+  //                  total_rs (customer already paid it via the menu
+  //                  price). Here we deflate the Meta subtotal by
+  //                  food_gst_rs so Meta's invariant
+  //                    subtotal + tax + shipping − discount === total
+  //                  still holds without inflating what Razorpay
+  //                  charges (totalPaise comes straight from
+  //                  order.total_rs and is never recomputed).
+  //
+  // Default to 'included' when the field is absent — matches the
+  // financialEngine default and every upstream persistence/threading
+  // site so a restaurant with no explicit setting gets a self-
+  // consistent extract-and-deflate path. Legacy orders pre-dating the
+  // engine extraction had food_gst_rs = 0, so deflation by zero is a
+  // mathematical no-op there. Upstream callers (services/order.js,
+  // webhooks/whatsapp.js inline checkoutOrder) set order.menu_gst_mode
+  // explicitly so this fallback only fires for legacy orders.
+  const menuGstMode = order.menu_gst_mode || 'included';
+  const foodGstRs = order.food_gst_rs || 0;
+  const foodGstPaise = toPaise(foodGstRs);
+  const subtotalPaise = menuGstMode === 'included'
+    ? subtotalPaiseRaw - foodGstPaise
+    : subtotalPaiseRaw;
+
+  const taxPaise = toPaise(foodGstRs + (order.customer_delivery_gst_rs || 0) + (order.packaging_gst_rs || 0));
   const totalPaise = toPaise(order.total_rs);
   const discountRs = order.discount_rs || 0;
 

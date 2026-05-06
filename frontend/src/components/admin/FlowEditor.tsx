@@ -496,15 +496,22 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
   }, [flow]);
 
   if (loading) {
-    return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--dim)' }}>Loading flow…</div>;
+    return <div className="p-8 text-center text-dim">Loading flow…</div>;
   }
 
   return (
-    <div id="flow-editor-container" style={{ border: '1px solid var(--rim)', borderRadius: 8, background: 'var(--surface,#fff)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', padding: '.7rem .9rem', borderBottom: '1px solid var(--rim)', flexWrap: 'wrap' }}>
-        <div style={{ fontWeight: 700 }} id="fe-flow-name">{flowName}</div>
-        <span id="fe-flow-status" style={{ fontSize: '.7rem', padding: '.1rem .45rem', borderRadius: 99, background: flowStatus === 'PUBLISHED' ? '#22c55e15' : '#3b82f615', color: flowStatus === 'PUBLISHED' ? 'var(--gb-wa-500)' : '#3b82f6', fontWeight: 600 }}>{flowStatus}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '.4rem' }}>
+    <div id="flow-editor-container" className="border border-rim rounded-lg bg-surface">
+      <div className="flex items-center gap-[0.6rem] py-[0.7rem] px-[0.9rem] border-b border-rim flex-wrap">
+        <div className="font-bold" id="fe-flow-name">{flowName}</div>
+        <span
+          id="fe-flow-status"
+          className={`text-[0.7rem] py-[0.1rem] px-[0.45rem] rounded-full font-semibold ${
+            flowStatus === 'PUBLISHED'
+              ? 'bg-[#22c55e15] text-wa-500'
+              : 'bg-[#3b82f615] text-[#3b82f6]'
+          }`}
+        >{flowStatus}</span>
+        <div className="ml-auto flex gap-[0.4rem]">
           <button type="button" id="fe-mode-btn" className="btn-sm" onClick={toggleJsonMode}>
             {jsonMode ? 'Visual Mode' : 'JSON Mode'}
           </button>
@@ -514,13 +521,13 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
           </button>
           {confirmPublish ? (
             <>
-              <button type="button" className="btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none' }} onClick={handlePublish} disabled={publishing}>
+              <button type="button" className="btn-sm bg-red-500 text-neutral-0 border-0" onClick={handlePublish} disabled={publishing}>
                 {publishing ? '…' : 'Confirm Publish'}
               </button>
               <button type="button" className="btn-sm" onClick={() => setConfirmPublish(false)} disabled={publishing}>Cancel</button>
             </>
           ) : (
-            <button type="button" className="btn-sm" style={{ color: 'var(--gb-wa-500)' }} onClick={handlePublish} disabled={publishing || !flowId}>
+            <button type="button" className="btn-sm text-wa-500" onClick={handlePublish} disabled={publishing || !flowId}>
               Publish
             </button>
           )}
@@ -530,19 +537,17 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr 300px', minHeight: 500 }}>
-        <div id="fe-palette" style={{ padding: '.7rem', borderRight: '1px solid var(--rim)', fontSize: '.8rem' }}>
-          <div style={{ fontWeight: 700, marginBottom: '.5rem', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase' }}>Components</div>
+      <div className="grid grid-cols-[180px_1fr_300px] min-h-[500px]">
+        <div id="fe-palette" className="p-[0.7rem] border-r border-rim text-sm">
+          <div className="font-bold mb-2 text-[0.74rem] text-dim uppercase">Components</div>
           {PALETTE.map((g) => (
             <div key={g.cat}>
-              <div style={{ fontWeight: 600, fontSize: '.7rem', color: 'var(--mute,#94a3b8)', margin: '.5rem 0 .2rem', textTransform: 'uppercase' }}>{g.cat}</div>
+              <div className="font-semibold text-[0.7rem] text-mute mt-2 mb-[0.2rem] uppercase">{g.cat}</div>
               {g.items.map((t) => (
                 <div
                   key={t}
                   onClick={() => addComponent(t)}
-                  style={{ padding: '.25rem .45rem', cursor: 'pointer', borderRadius: 4, marginBottom: 2 }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--ink4,#f3f4f6)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                  className="py-1 px-[0.45rem] cursor-pointer rounded-[4px] mb-[2px] hover:bg-ink4"
                 >
                   {t}
                 </div>
@@ -551,65 +556,69 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
           ))}
         </div>
 
-        <div style={{ padding: '.7rem', minWidth: 0, overflow: 'hidden' }}>
-          <div id="fe-screen-tabs" style={{ display: 'flex', gap: '.2rem', borderBottom: '1px solid var(--rim)', marginBottom: '.6rem', overflowX: 'auto' }}>
+        <div className="p-[0.7rem] min-w-0 overflow-hidden">
+          <div id="fe-screen-tabs" className="flex gap-[0.2rem] border-b border-rim mb-[0.6rem] overflow-x-auto">
             {flow.screens.map((s, i) => (
               <div
                 key={s.id + '_' + i}
                 onClick={() => setScreenIdx(i)}
-                style={{ padding: '.4rem .8rem', cursor: 'pointer', fontSize: '.78rem', fontWeight: i === screenIdx ? 700 : 500, color: i === screenIdx ? 'var(--acc)' : 'var(--dim)', borderBottom: `2px solid ${i === screenIdx ? 'var(--acc)' : 'transparent'}`, whiteSpace: 'nowrap' }}
+                className={`py-[0.4rem] px-[0.8rem] cursor-pointer text-[0.78rem] whitespace-nowrap border-b-2 ${
+                  i === screenIdx
+                    ? 'font-bold text-acc border-acc'
+                    : 'font-medium text-dim border-transparent'
+                }`}
               >
                 {s.id}
               </div>
             ))}
-            <div onClick={addScreen} style={{ padding: '.4rem .6rem', cursor: 'pointer', fontWeight: 700, color: 'var(--mute,#94a3b8)' }} title="Add screen">+</div>
+            <div onClick={addScreen} className="py-[0.4rem] px-[0.6rem] cursor-pointer font-bold text-mute" title="Add screen">+</div>
           </div>
 
           {screen && !jsonMode && (
-            <div id="fe-screen-props" style={{ marginBottom: '.7rem' }}>
-              <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                <label style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 600 }}>ID</label>
+            <div id="fe-screen-props" className="mb-[0.7rem]">
+              <div className="flex gap-2 items-center flex-wrap">
+                <label className="text-[0.7rem] text-dim font-semibold">ID</label>
                 <input
                   value={screen.id}
                   onChange={(e) => updateScreenProp('id', e.target.value)}
-                  style={{ width: 120, padding: '.2rem .45rem', border: '1px solid var(--rim)', borderRadius: 4, fontFamily: 'monospace', fontSize: '.76rem' }}
+                  className="w-[120px] py-[0.2rem] px-[0.45rem] border border-rim rounded-[4px] font-mono text-[0.76rem]"
                 />
-                <label style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 600, marginLeft: '.3rem' }}>Title</label>
+                <label className="text-[0.7rem] text-dim font-semibold ml-[0.3rem]">Title</label>
                 <input
                   value={screen.title || ''}
                   onChange={(e) => updateScreenProp('title', e.target.value)}
-                  style={{ width: 150, padding: '.2rem .45rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.76rem' }}
+                  className="w-[150px] py-[0.2rem] px-[0.45rem] border border-rim rounded-[4px] text-[0.76rem]"
                 />
-                <label style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 600, marginLeft: '.3rem' }}>Terminal</label>
+                <label className="text-[0.7rem] text-dim font-semibold ml-[0.3rem]">Terminal</label>
                 <input type="checkbox" checked={!!screen.terminal} onChange={(e) => updateScreenProp('terminal', e.target.checked)} />
-                <label style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 600, marginLeft: '.3rem' }}>Success</label>
+                <label className="text-[0.7rem] text-dim font-semibold ml-[0.3rem]">Success</label>
                 <input type="checkbox" checked={!!screen.success} onChange={(e) => updateScreenProp('success', e.target.checked)} />
                 {flow.screens.length > 1 && (
-                  <button type="button" className="btn-sm" style={{ marginLeft: 'auto', color: 'var(--red,#dc2626)', fontSize: '.7rem' }} onClick={() => removeScreen(screenIdx)}>
+                  <button type="button" className="btn-sm ml-auto text-red text-[0.7rem]" onClick={() => removeScreen(screenIdx)}>
                     Remove Screen
                   </button>
                 )}
               </div>
 
-              <div style={{ marginTop: '.5rem', padding: '.4rem', background: 'var(--ink4,#f4f4f5)', border: '1px solid var(--rim)', borderRadius: 4 }}>
-                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '.25rem' }}>
-                  <span style={{ fontSize: '.7rem', fontWeight: 600, color: 'var(--dim)' }}>Screen Data (input variables)</span>
-                  <button type="button" className="btn-sm" style={{ marginLeft: 'auto', fontSize: '.62rem', padding: '.05rem .35rem' }} onClick={addDataField}>+ Add</button>
+              <div className="mt-2 p-[0.4rem] bg-ink4 border border-rim rounded-[4px]">
+                <div className="flex items-center mb-1">
+                  <span className="text-[0.7rem] font-semibold text-dim">Screen Data (input variables)</span>
+                  <button type="button" className="btn-sm ml-auto text-[0.62rem] py-[0.05rem] px-[0.35rem]" onClick={addDataField}>+ Add</button>
                 </div>
                 {!screen.data || !Object.keys(screen.data).length ? (
-                  <div style={{ fontSize: '.68rem', color: 'var(--mute,#94a3b8)', fontStyle: 'italic' }}>
+                  <div className="text-[0.68rem] text-mute italic">
                     No data fields. Add one if this screen needs input from a previous screen.
                   </div>
                 ) : Object.keys(screen.data).map((k) => {
                   const v = (screen.data as Record<string, unknown>)[k];
                   const typeVal = typeof v === 'object' && v !== null ? ((v as Record<string, unknown>).type as string || 'string') : 'string';
                   return (
-                    <div key={k} style={{ display: 'flex', gap: '.25rem', alignItems: 'center', marginBottom: '.15rem' }}>
-                      <input defaultValue={k} placeholder="key" onBlur={(e) => renameDataField(k, e.target.value)} style={{ width: 80, padding: '.12rem .25rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.7rem', fontFamily: 'monospace', background: 'var(--gb-neutral-0)' }} />
-                      <select value={typeVal} onChange={(e) => updateDataFieldType(k, e.target.value)} style={{ padding: '.12rem .25rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.7rem', background: 'var(--gb-neutral-0)' }}>
+                    <div key={k} className="flex gap-1 items-center mb-[0.15rem]">
+                      <input defaultValue={k} placeholder="key" onBlur={(e) => renameDataField(k, e.target.value)} className="w-20 py-[0.12rem] px-1 border border-rim rounded-[4px] text-[0.7rem] font-mono bg-neutral-0" />
+                      <select value={typeVal} onChange={(e) => updateDataFieldType(k, e.target.value)} className="py-[0.12rem] px-1 border border-rim rounded-[4px] text-[0.7rem] bg-neutral-0">
                         {['string', 'number', 'boolean', 'array', 'object'].map((t) => <option key={t} value={t}>{t}</option>)}
                       </select>
-                      <button type="button" onClick={() => removeDataField(k)} style={{ background: 'none', border: 'none', color: 'var(--red,#dc2626)', cursor: 'pointer', fontSize: '.75rem' }}>×</button>
+                      <button type="button" onClick={() => removeDataField(k)} className="bg-none border-0 text-red cursor-pointer text-[0.75rem]">×</button>
                     </div>
                   );
                 })}
@@ -624,13 +633,13 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
                 value={jsonText}
                 onChange={(e) => setJsonText(e.target.value)}
                 rows={24}
-                style={{ width: '100%', fontFamily: 'monospace', fontSize: '.78rem', padding: '.5rem', border: '1px solid var(--rim)', borderRadius: 4 }}
+                className="w-full font-mono text-[0.78rem] p-2 border border-rim rounded-[4px]"
               />
             </div>
           ) : (
             <div id="fe-components">
               {!children.length ? (
-                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--mute,#94a3b8)', fontSize: '.82rem' }}>
+                <div className="p-6 text-center text-mute text-[0.82rem]">
                   No components yet. Click items in the palette to add them.
                 </div>
               ) : children.map((c, i) => (
@@ -659,12 +668,12 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
             </div>
           )}
 
-          <div id="fe-nav-map" style={{ marginTop: '.7rem', padding: '.4rem .55rem', background: 'var(--ink4,#f4f4f5)', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.74rem' }}>
+          <div id="fe-nav-map" className="mt-[0.7rem] py-[0.4rem] px-[0.55rem] bg-ink4 border border-rim rounded-[4px] text-[0.74rem]">
             <strong>Navigation:</strong> {navMap || '—'}
           </div>
         </div>
 
-        <div id="fe-preview" style={{ padding: '.7rem', borderLeft: '1px solid var(--rim)', background: 'var(--ink4,#f4f4f5)' }}>
+        <div id="fe-preview" className="p-[0.7rem] border-l border-rim bg-ink4">
           <Preview screen={screen} />
         </div>
       </div>
@@ -701,50 +710,50 @@ function ComponentCard({
   onUpdateCondition, onUpdateBranchAction,
 }: ComponentCardProps): ReactNode {
   return (
-    <div style={{ background: 'var(--ink4,#f4f4f5)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.55rem', marginBottom: '.5rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', marginBottom: '.4rem' }}>
-        <span style={{ background: 'rgba(79,70,229,.08)', color: 'var(--acc)', fontSize: '.66rem', fontWeight: 700, padding: '.1rem .4rem', borderRadius: 4 }}>{comp.type}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '.2rem' }}>
-          {idx > 0 && <button type="button" className="btn-sm" style={{ padding: '.1rem .35rem', fontSize: '.7rem' }} onClick={() => onMove(idx, -1)} title="Move up">↑</button>}
-          {idx < total - 1 && <button type="button" className="btn-sm" style={{ padding: '.1rem .35rem', fontSize: '.7rem' }} onClick={() => onMove(idx, 1)} title="Move down">↓</button>}
-          <button type="button" className="btn-sm" style={{ padding: '.1rem .35rem', fontSize: '.7rem', color: 'var(--red,#dc2626)' }} onClick={() => onRemove(idx)} title="Remove">×</button>
+    <div className="bg-ink4 border border-rim rounded-md p-[0.55rem] mb-2">
+      <div className="flex items-center gap-[0.4rem] mb-[0.4rem]">
+        <span className="bg-[rgba(79,70,229,0.08)] text-acc text-[0.66rem] font-bold py-[0.1rem] px-[0.4rem] rounded-[4px]">{comp.type}</span>
+        <div className="ml-auto flex gap-[0.2rem]">
+          {idx > 0 && <button type="button" className="btn-sm py-[0.1rem] px-[0.35rem] text-[0.7rem]" onClick={() => onMove(idx, -1)} title="Move up">↑</button>}
+          {idx < total - 1 && <button type="button" className="btn-sm py-[0.1rem] px-[0.35rem] text-[0.7rem]" onClick={() => onMove(idx, 1)} title="Move down">↓</button>}
+          <button type="button" className="btn-sm py-[0.1rem] px-[0.35rem] text-[0.7rem] text-red" onClick={() => onRemove(idx)} title="Remove">×</button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+      <div className="flex flex-col gap-[0.3rem]">
         {Object.keys(comp).filter((k) => !SKIP_PROPS.includes(k)).map((key) => {
           const val = (comp as Record<string, unknown>)[key];
           if (typeof val === 'boolean') {
             return (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }}>
-                <label style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 600, minWidth: 60 }}>{key}</label>
+              <div key={key} className="flex items-center gap-[0.4rem]">
+                <label className="text-[0.7rem] text-dim font-semibold min-w-[60px]">{key}</label>
                 <input type="checkbox" checked={val} onChange={(e) => onUpdate(idx, key, e.target.checked)} />
               </div>
             );
           }
           return (
-            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }}>
-              <label style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 600, minWidth: 60 }}>{key}</label>
+            <div key={key} className="flex items-center gap-[0.4rem]">
+              <label className="text-[0.7rem] text-dim font-semibold min-w-[60px]">{key}</label>
               <input
                 value={(val as string | number | undefined) ?? ''}
                 onChange={(e) => onUpdate(idx, key, e.target.value)}
-                style={{ flex: 1, padding: '.2rem .4rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.76rem', background: 'var(--gb-neutral-0)' }}
+                className="flex-1 py-[0.2rem] px-[0.4rem] border border-rim rounded-[4px] text-[0.76rem] bg-neutral-0"
               />
             </div>
           );
         })}
 
         {comp['data-source'] && (
-          <div style={{ marginTop: '.25rem', padding: '.4rem', background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '.3rem' }}>
-              <span style={{ fontSize: '.7rem', fontWeight: 600, color: 'var(--dim)' }}>data-source</span>
-              <button type="button" className="btn-sm" style={{ marginLeft: 'auto', fontSize: '.63rem', padding: '.05rem .35rem' }} onClick={() => onAddDS(idx)}>+ Add</button>
+          <div className="mt-1 p-[0.4rem] bg-neutral-0 border border-rim rounded-[4px]">
+            <div className="flex items-center mb-[0.3rem]">
+              <span className="text-[0.7rem] font-semibold text-dim">data-source</span>
+              <button type="button" className="btn-sm ml-auto text-[0.63rem] py-[0.05rem] px-[0.35rem]" onClick={() => onAddDS(idx)}>+ Add</button>
             </div>
             {comp['data-source'].map((item, ii) => (
-              <div key={ii} style={{ display: 'flex', gap: '.25rem', alignItems: 'center', marginBottom: '.2rem' }}>
-                <input value={item.id || ''} placeholder="id" onChange={(e) => onUpdateDS(idx, ii, 'id', e.target.value)} style={{ width: 70, padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }} />
-                <input value={item.title || ''} placeholder="title" onChange={(e) => onUpdateDS(idx, ii, 'title', e.target.value)} style={{ flex: 1, padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }} />
-                <button type="button" onClick={() => onRemoveDS(idx, ii)} style={{ background: 'none', border: 'none', color: 'var(--red,#dc2626)', cursor: 'pointer', fontSize: '.78rem' }}>×</button>
+              <div key={ii} className="flex gap-1 items-center mb-[0.2rem]">
+                <input value={item.id || ''} placeholder="id" onChange={(e) => onUpdateDS(idx, ii, 'id', e.target.value)} className="w-[70px] py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]" />
+                <input value={item.title || ''} placeholder="title" onChange={(e) => onUpdateDS(idx, ii, 'title', e.target.value)} className="flex-1 py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]" />
+                <button type="button" onClick={() => onRemoveDS(idx, ii)} className="bg-none border-0 text-red cursor-pointer text-[0.78rem]">×</button>
               </div>
             ))}
           </div>
@@ -788,35 +797,35 @@ interface ActionEditorProps {
 
 function ActionEditor({ action, screens, onUpdate, onAddPayload, onRenamePayload, onUpdatePayloadValue, onRemovePayload }: ActionEditorProps): ReactNode {
   return (
-    <div style={{ marginTop: '.25rem', padding: '.4rem', background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 4 }}>
-      <div style={{ fontSize: '.7rem', fontWeight: 600, color: 'var(--dim)', marginBottom: '.3rem' }}>on-click-action</div>
+    <div className="mt-1 p-[0.4rem] bg-neutral-0 border border-rim rounded-[4px]">
+      <div className="text-[0.7rem] font-semibold text-dim mb-[0.3rem]">on-click-action</div>
 
-      <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center', marginBottom: '.25rem' }}>
-        <label style={{ fontSize: '.68rem', color: 'var(--dim)', minWidth: 50 }}>action</label>
-        <select value={action.name || ''} onChange={(e) => onUpdate('name', e.target.value)} style={{ padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}>
+      <div className="flex gap-[0.3rem] items-center mb-1">
+        <label className="text-[0.68rem] text-dim min-w-[50px]">action</label>
+        <select value={action.name || ''} onChange={(e) => onUpdate('name', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
           {['navigate', 'complete', 'data_exchange'].map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
       </div>
 
       {action.name === 'navigate' && (
-        <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center', marginBottom: '.25rem' }}>
-          <label style={{ fontSize: '.68rem', color: 'var(--dim)', minWidth: 50 }}>next</label>
-          <select value={action.next?.name || ''} onChange={(e) => onUpdate('next_screen', e.target.value)} style={{ padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}>
+        <div className="flex gap-[0.3rem] items-center mb-1">
+          <label className="text-[0.68rem] text-dim min-w-[50px]">next</label>
+          <select value={action.next?.name || ''} onChange={(e) => onUpdate('next_screen', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
             <option value="">-- select --</option>
             {screens.map((s) => <option key={s.id} value={s.id}>{s.id}</option>)}
           </select>
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', margin: '.25rem 0 .15rem' }}>
-        <span style={{ fontSize: '.68rem', color: 'var(--dim)' }}>payload</span>
-        <button type="button" className="btn-sm" style={{ marginLeft: 'auto', fontSize: '.62rem', padding: '.05rem .3rem' }} onClick={onAddPayload}>+ field</button>
+      <div className="flex items-center mt-1 mb-[0.15rem]">
+        <span className="text-[0.68rem] text-dim">payload</span>
+        <button type="button" className="btn-sm ml-auto text-[0.62rem] py-[0.05rem] px-[0.3rem]" onClick={onAddPayload}>+ field</button>
       </div>
       {Object.keys(action.payload || {}).map((k) => (
-        <div key={k} style={{ display: 'flex', gap: '.25rem', alignItems: 'center', marginBottom: '.15rem' }}>
-          <input defaultValue={k} placeholder="key" onBlur={(e) => onRenamePayload(k, e.target.value)} style={{ width: 70, padding: '.12rem .25rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.7rem' }} />
-          <input value={action.payload?.[k] ?? ''} placeholder="value" onChange={(e) => onUpdatePayloadValue(k, e.target.value)} style={{ flex: 1, padding: '.12rem .25rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.7rem' }} />
-          <button type="button" onClick={() => onRemovePayload(k)} style={{ background: 'none', border: 'none', color: 'var(--red,#dc2626)', cursor: 'pointer', fontSize: '.75rem' }}>×</button>
+        <div key={k} className="flex gap-1 items-center mb-[0.15rem]">
+          <input defaultValue={k} placeholder="key" onBlur={(e) => onRenamePayload(k, e.target.value)} className="w-[70px] py-[0.12rem] px-1 border border-rim rounded-[4px] text-[0.7rem]" />
+          <input value={action.payload?.[k] ?? ''} placeholder="value" onChange={(e) => onUpdatePayloadValue(k, e.target.value)} className="flex-1 py-[0.12rem] px-1 border border-rim rounded-[4px] text-[0.7rem]" />
+          <button type="button" onClick={() => onRemovePayload(k)} className="bg-none border-0 text-red cursor-pointer text-[0.75rem]">×</button>
         </div>
       ))}
     </div>
@@ -836,34 +845,34 @@ function ConditionEditor({ comp, screens, siblingFields, onUpdate, onUpdateBranc
   const thenAct = comp.then_action || {};
   const elseAct = comp.else_action || {};
   return (
-    <div style={{ marginTop: '.35rem', padding: '.5rem', background: 'linear-gradient(135deg,#fef3c710,#dbeafe15)', border: '1px solid #fde68a', borderRadius: 6 }}>
-      <div style={{ fontSize: '.72rem', fontWeight: 700, color: '#92400e', marginBottom: '.35rem' }}>CONDITION</div>
+    <div className="mt-[0.35rem] p-2 bg-[linear-gradient(135deg,#fef3c710,#dbeafe15)] border border-amber-200 rounded-md">
+      <div className="text-[0.72rem] font-bold text-amber-800 mb-[0.35rem]">CONDITION</div>
 
-      <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center', marginBottom: '.25rem' }}>
-        <label style={{ fontSize: '.68rem', color: 'var(--dim)', minWidth: 35 }}>IF</label>
-        <select value={cond.field || ''} onChange={(e) => onUpdate('field', e.target.value)} style={{ padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}>
+      <div className="flex gap-[0.3rem] items-center mb-1">
+        <label className="text-[0.68rem] text-dim min-w-[35px]">IF</label>
+        <select value={cond.field || ''} onChange={(e) => onUpdate('field', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
           <option value="">-- field --</option>
           {siblingFields.map((f) => <option key={f} value={f}>${`{form.${f}}`}</option>)}
         </select>
-        <select value={cond.operator || 'equals'} onChange={(e) => onUpdate('operator', e.target.value)} style={{ padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}>
+        <select value={cond.operator || 'equals'} onChange={(e) => onUpdate('operator', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
           {['equals', 'not_equals', 'contains', 'is_empty', 'is_not_empty'].map((op) => <option key={op} value={op}>{op.replace(/_/g, ' ')}</option>)}
         </select>
         {cond.operator !== 'is_empty' && cond.operator !== 'is_not_empty' && (
-          <input value={cond.value || ''} placeholder="value" onChange={(e) => onUpdate('value', e.target.value)} style={{ width: 80, padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }} />
+          <input value={cond.value || ''} placeholder="value" onChange={(e) => onUpdate('value', e.target.value)} className="w-20 py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]" />
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center', marginBottom: '.25rem' }}>
-        <label style={{ fontSize: '.68rem', color: 'var(--gb-wa-500)', fontWeight: 600, minWidth: 35 }}>THEN</label>
-        <select value={thenAct.next?.name || ''} onChange={(e) => onUpdateBranch('then_action', e.target.value)} style={{ padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}>
+      <div className="flex gap-[0.3rem] items-center mb-1">
+        <label className="text-[0.68rem] text-wa-500 font-semibold min-w-[35px]">THEN</label>
+        <select value={thenAct.next?.name || ''} onChange={(e) => onUpdateBranch('then_action', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
           <option value="">-- go to screen --</option>
           {screens.map((s) => <option key={s.id} value={s.id}>{s.id}</option>)}
         </select>
       </div>
 
-      <div style={{ display: 'flex', gap: '.3rem', alignItems: 'center' }}>
-        <label style={{ fontSize: '.68rem', color: 'var(--gb-red-500)', fontWeight: 600, minWidth: 35 }}>ELSE</label>
-        <select value={elseAct.next?.name || ''} onChange={(e) => onUpdateBranch('else_action', e.target.value)} style={{ padding: '.13rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}>
+      <div className="flex gap-[0.3rem] items-center">
+        <label className="text-[0.68rem] text-red-500 font-semibold min-w-[35px]">ELSE</label>
+        <select value={elseAct.next?.name || ''} onChange={(e) => onUpdateBranch('else_action', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
           <option value="">-- go to screen --</option>
           {screens.map((s) => <option key={s.id} value={s.id}>{s.id}</option>)}
         </select>
@@ -875,10 +884,10 @@ function ConditionEditor({ comp, screens, siblingFields, onUpdate, onUpdateBranc
 interface PreviewProps { screen: FlowScreen | null }
 
 function Preview({ screen }: PreviewProps): ReactNode {
-  if (!screen) return <div style={{ color: 'var(--dim)' }}>No screen</div>;
+  if (!screen) return <div className="text-dim">No screen</div>;
   return (
-    <div style={{ background: 'var(--gb-neutral-0)', borderRadius: 12, padding: '.8rem', maxWidth: 260, margin: '0 auto', boxShadow: '0 1px 4px rgba(0,0,0,.12)', minHeight: 200, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ fontSize: '.78rem', fontWeight: 700, color: '#1a1a1a', padding: '.3rem 0 .5rem', borderBottom: '1px solid #eee', marginBottom: '.5rem' }}>
+    <div className="bg-neutral-0 rounded-xl p-[0.8rem] max-w-[260px] mx-auto shadow-[0_1px_4px_rgba(0,0,0,0.12)] min-h-[200px] flex flex-col">
+      <div className="text-[0.78rem] font-bold text-[#1a1a1a] pt-[0.3rem] pb-2 border-b border-[#eee] mb-2">
         {screen.title || screen.id}
       </div>
       {(screen.layout?.children || []).map((c, i) => <PreviewComp key={i} c={c} />)}
@@ -891,86 +900,86 @@ interface PreviewCompProps { c: FlowComponent }
 function PreviewComp({ c }: PreviewCompProps): ReactNode {
   switch (c.type) {
     case 'TextHeading':
-      return <div style={{ fontSize: '.95rem', fontWeight: 700, color: '#1a1a1a', margin: '.3rem 0' }}>{c.text}</div>;
+      return <div className="text-[0.95rem] font-bold text-[#1a1a1a] my-[0.3rem]">{c.text}</div>;
     case 'TextSubheading':
-      return <div style={{ fontSize: '.82rem', fontWeight: 600, color: '#333', margin: '.25rem 0' }}>{c.text}</div>;
+      return <div className="text-[0.82rem] font-semibold text-[#333] my-1">{c.text}</div>;
     case 'TextBody':
-      return <div style={{ fontSize: '.78rem', color: '#444', margin: '.2rem 0' }}>{c.text}</div>;
+      return <div className="text-[0.78rem] text-[#444] my-[0.2rem]">{c.text}</div>;
     case 'TextCaption':
-      return <div style={{ fontSize: '.68rem', color: '#888', margin: '.15rem 0' }}>{c.text}</div>;
+      return <div className="text-[0.68rem] text-[#888] my-[0.15rem]">{c.text}</div>;
     case 'TextInput':
       return (
-        <div style={{ margin: '.35rem 0' }}>
-          <div style={{ fontSize: '.68rem', color: '#666', marginBottom: '.15rem' }}>{c.label}{c.required ? ' *' : ''}</div>
-          <div style={{ border: '1px solid #ccc', borderRadius: 6, padding: '.3rem .5rem', fontSize: '.72rem', color: '#aaa' }}>{c['input-type'] || 'text'}</div>
+        <div className="my-[0.35rem]">
+          <div className="text-[0.68rem] text-[#666] mb-[0.15rem]">{c.label}{c.required ? ' *' : ''}</div>
+          <div className="border border-[#ccc] rounded-md py-[0.3rem] px-2 text-[0.72rem] text-[#aaa]">{c['input-type'] || 'text'}</div>
         </div>
       );
     case 'Dropdown':
       return (
-        <div style={{ margin: '.35rem 0' }}>
-          <div style={{ fontSize: '.68rem', color: '#666', marginBottom: '.15rem' }}>{c.label}{c.required ? ' *' : ''}</div>
-          <div style={{ border: '1px solid #ccc', borderRadius: 6, padding: '.3rem .5rem', fontSize: '.72rem', color: '#888', display: 'flex', justifyContent: 'space-between' }}>
-            Select <span style={{ fontSize: '.6rem' }}>▼</span>
+        <div className="my-[0.35rem]">
+          <div className="text-[0.68rem] text-[#666] mb-[0.15rem]">{c.label}{c.required ? ' *' : ''}</div>
+          <div className="border border-[#ccc] rounded-md py-[0.3rem] px-2 text-[0.72rem] text-[#888] flex justify-between">
+            Select <span className="text-[0.6rem]">▼</span>
           </div>
         </div>
       );
     case 'RadioButtonsGroup':
       return (
-        <div style={{ margin: '.35rem 0' }}>
-          <div style={{ fontSize: '.68rem', color: '#666', marginBottom: '.2rem' }}>{c.label}</div>
+        <div className="my-[0.35rem]">
+          <div className="text-[0.68rem] text-[#666] mb-[0.2rem]">{c.label}</div>
           {(c['data-source'] || []).map((o, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '.3rem', marginBottom: '.15rem' }}>
-              <span style={{ width: 14, height: 14, border: '1.5px solid #999', borderRadius: '50%', display: 'inline-block', flexShrink: 0 }} />
-              <span style={{ fontSize: '.72rem', color: '#444' }}>{o.title}</span>
+            <div key={i} className="flex items-center gap-[0.3rem] mb-[0.15rem]">
+              <span className="w-[14px] h-[14px] border-[1.5px] border-[#999] rounded-full inline-block shrink-0" />
+              <span className="text-[0.72rem] text-[#444]">{o.title}</span>
             </div>
           ))}
         </div>
       );
     case 'CheckboxGroup':
       return (
-        <div style={{ margin: '.35rem 0' }}>
-          <div style={{ fontSize: '.68rem', color: '#666', marginBottom: '.2rem' }}>{c.label}</div>
+        <div className="my-[0.35rem]">
+          <div className="text-[0.68rem] text-[#666] mb-[0.2rem]">{c.label}</div>
           {(c['data-source'] || []).map((o, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '.3rem', marginBottom: '.15rem' }}>
-              <span style={{ width: 14, height: 14, border: '1.5px solid #999', borderRadius: 3, display: 'inline-block', flexShrink: 0 }} />
-              <span style={{ fontSize: '.72rem', color: '#444' }}>{o.title}</span>
+            <div key={i} className="flex items-center gap-[0.3rem] mb-[0.15rem]">
+              <span className="w-[14px] h-[14px] border-[1.5px] border-[#999] rounded-[3px] inline-block shrink-0" />
+              <span className="text-[0.72rem] text-[#444]">{o.title}</span>
             </div>
           ))}
         </div>
       );
     case 'OptIn':
       return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.35rem', margin: '.35rem 0' }}>
-          <span style={{ width: 14, height: 14, border: '1.5px solid #999', borderRadius: 3, display: 'inline-block', flexShrink: 0 }} />
-          <span style={{ fontSize: '.72rem', color: '#444' }}>{c.label}</span>
+        <div className="flex items-center gap-[0.35rem] my-[0.35rem]">
+          <span className="w-[14px] h-[14px] border-[1.5px] border-[#999] rounded-[3px] inline-block shrink-0" />
+          <span className="text-[0.72rem] text-[#444]">{c.label}</span>
         </div>
       );
     case 'Footer':
       return (
-        <div style={{ marginTop: 'auto', paddingTop: '.5rem' }}>
-          <button type="button" disabled style={{ width: '100%', background: '#25D366', color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 20, padding: '.45rem', fontSize: '.78rem', fontWeight: 600 }}>{c.label}</button>
+        <div className="mt-auto pt-2">
+          <button type="button" disabled className="w-full bg-[#25D366] text-neutral-0 border-0 rounded-[20px] p-[0.45rem] text-[0.78rem] font-semibold">{c.label}</button>
         </div>
       );
     case 'NavigationList':
       return (
-        <div style={{ margin: '.35rem 0', border: '1px solid #ddd', borderRadius: 8, overflow: 'hidden' }}>
-          <div style={{ padding: '.35rem .5rem', fontSize: '.72rem', fontWeight: 600, color: '#444', background: '#f5f5f5' }}>{c.label}</div>
-          <div style={{ padding: '.25rem .5rem', fontSize: '.68rem', color: '#888' }}>Dynamic list items</div>
+        <div className="my-[0.35rem] border border-[#ddd] rounded-lg overflow-hidden">
+          <div className="py-[0.35rem] px-2 text-[0.72rem] font-semibold text-[#444] bg-[#f5f5f5]">{c.label}</div>
+          <div className="py-1 px-2 text-[0.68rem] text-[#888]">Dynamic list items</div>
         </div>
       );
     case 'If': {
       const cond = c.condition || {};
       return (
-        <div style={{ margin: '.35rem 0', border: '1px dashed #fde68a', borderRadius: 6, padding: '.4rem', background: '#fefce8' }}>
-          <div style={{ fontSize: '.68rem', fontWeight: 700, color: '#92400e', marginBottom: '.2rem' }}>
+        <div className="my-[0.35rem] border border-dashed border-amber-200 rounded-md p-[0.4rem] bg-yellow-50">
+          <div className="text-[0.68rem] font-bold text-amber-800 mb-[0.2rem]">
             IF {cond.field ? `\${form.${cond.field}}` : '?'} {(cond.operator || '').replace(/_/g, ' ')} {cond.value || ''}
           </div>
-          <div style={{ fontSize: '.65rem', color: 'var(--gb-wa-500)' }}>THEN → {c.then_action?.next?.name || '?'}</div>
-          <div style={{ fontSize: '.65rem', color: 'var(--gb-red-500)' }}>ELSE → {c.else_action?.next?.name || '?'}</div>
+          <div className="text-[0.65rem] text-wa-500">THEN → {c.then_action?.next?.name || '?'}</div>
+          <div className="text-[0.65rem] text-red-500">ELSE → {c.else_action?.next?.name || '?'}</div>
         </div>
       );
     }
     default:
-      return <div style={{ margin: '.2rem 0', fontSize: '.72rem', color: '#999', fontStyle: 'italic' }}>[{c.type}]</div>;
+      return <div className="my-[0.2rem] text-[0.72rem] text-[#999] italic">[{c.type}]</div>;
   }
 }

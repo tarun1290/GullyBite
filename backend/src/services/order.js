@@ -253,6 +253,9 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
   // Set BEFORE the order doc is built so display_order_id is part
   // of the same atomic write.
   let displayOrderId = null;
+  // Lifted to outer scope so the order-doc build below can read
+  // restaurant.menu_gst_mode without re-fetching.
+  let restaurant = null;
   try {
     if (restaurantId) {
       // Pass YYYYMMDD to the counter so docs reset on the calendar year
@@ -260,7 +263,7 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
       // string still uses only MMDD — slice the year out at format time.
       const mmdd = dateStr.slice(4); // YYYYMMDD → MMDD (display only)
       const { getNextOrderSeq } = require('../utils/orderSeq');
-      const restaurant = await getRestaurant(restaurantId); // 5-min cached
+      restaurant = await getRestaurant(restaurantId); // 5-min cached
       const abbr = restaurant?.order_abbr || 'ZM';
       const dispSeq = await getNextOrderSeq(restaurantId, dateStr);
       displayOrderId = `${abbr}-${mmdd}-${String(dispSeq).padStart(3, '0')}`;
@@ -361,6 +364,15 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
     receiver_name: receiverName || null,
     receiver_phone: receiverPhone || null,
     delivery_instructions: deliveryInstructions || null,
+    // Persisted alongside food_gst_rs so downstream surfaces (Meta
+    // order_details payload, settlement, invoicing) know whether the
+    // GST line was extracted from the menu price ('included') or
+    // added on top ('extra'). Default 'included' matches the
+    // financialEngine default (financialEngine.js:42) so an
+    // unconfigured restaurant gets a self-consistent path: engine
+    // extracts food_gst_rs, persisted mode says 'included', Meta
+    // payload deflates the subtotal accordingly.
+    menu_gst_mode:              restaurant?.menu_gst_mode           ?? 'included',
     food_gst_rs:                charges?.food_gst_rs                ?? 0,
     delivery_fee_total_rs:      charges?.delivery_fee_total_rs      ?? (charges ? charges.customer_delivery_rs : deliveryFeeRs),
     customer_delivery_rs:       charges?.customer_delivery_rs       ?? deliveryFeeRs,

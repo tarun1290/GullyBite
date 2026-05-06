@@ -46,11 +46,21 @@ function calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs = 0, disc
   } = restaurantConfig;
 
   // ── Food GST ──────────────────────────────────────────────
-  // 'included': GST is baked into menu prices — no extra charge shown
-  // 'extra': GST added on top of subtotal — shown as separate line
+  // 'extra'   — menu prices are net of GST. Tax is added on top of
+  //             subtotal and shown to the customer as a separate line.
+  // 'included' — menu prices are gross (GST baked in). We reverse-
+  //             extract the embedded tax so settlement / invoicing /
+  //             template surfaces still see the GST amount, but DO
+  //             NOT add it back into customer_total_rs — the customer
+  //             already paid it as part of the menu price.
   const foodGstRs = menu_gst_mode === 'extra'
     ? round2(subtotalRs * (menu_gst_pct / 100))
-    : 0;
+    : round2(subtotalRs * menu_gst_pct / (100 + menu_gst_pct));
+
+  // Only 'extra' contributes to the customer-facing total. 'included'
+  // tax is already inside subtotalRs; adding foodGstRs again here
+  // would double-charge.
+  const foodGstAddedToTotal = menu_gst_mode === 'extra' ? foodGstRs : 0;
 
   // ── Delivery fee split ────────────────────────────────────
   // Total delivery fee is split between customer and restaurant.
@@ -71,7 +81,7 @@ function calculateCheckout(restaurantConfig, subtotalRs, deliveryFeeRs = 0, disc
   // ── Customer total ────────────────────────────────────────
   const discount  = round2(Number(discountRs) || 0);
   const customerTotal = round2(
-    subtotalRs + foodGstRs
+    subtotalRs + foodGstAddedToTotal
     + customerDeliveryRs + customerDeliveryGstRs
     + packagingRs + packagingGstRs
     - discount

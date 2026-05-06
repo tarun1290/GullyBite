@@ -17,12 +17,7 @@ export default function LiveIndicator() {
   return (
     <span
       title="Real-time channel connected"
-      style={{
-        color: 'var(--green,#10b981)',
-        fontSize: '.72rem',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-      }}
+      className="text-green text-[0.72rem] font-semibold whitespace-nowrap"
     >
       ● Live
     </span>

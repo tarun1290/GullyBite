@@ -68,18 +68,17 @@ export default function PgOnboard({ onLogout, onAdvance, onBrandNameChange }: Pg
 
   return (
     <div id="pg-onboard" className="auth-wrap">
-      <nav className="nav" style={{ position: 'relative' }}>
+      <nav className="nav relative">
         <div className="logo"><div className="logo-ring">🍜</div>GullyBite</div>
         <button
           type="button"
-          className="btn-outline"
-          style={{ fontSize: '.76rem', padding: '.42rem .95rem' }}
+          className="btn-outline text-[0.76rem] py-[0.42rem] px-[0.95rem]"
           onClick={onLogout}
         >
           Sign out
         </button>
       </nav>
-      <div className="auth-body" style={{ alignItems: 'flex-start', paddingTop: '1.5rem' }}>
+      <div className="auth-body items-start pt-6">
         <div className="ob-wrap">
           <div className="ob-header">
             <h2>Tell us about your restaurant</h2>
@@ -129,7 +128,7 @@ export default function PgOnboard({ onLogout, onAdvance, onBrandNameChange }: Pg
               <div className="fld">
                 <label>
                   Restaurant Name <span className="req">*</span>{' '}
-                  <span style={{ fontWeight: 400, color: 'var(--mute)' }}>(as customers will see it)</span>
+                  <span className="font-normal text-mute">(as customers will see it)</span>
                 </label>
                 <input
                   type="text"
@@ -173,7 +172,7 @@ export default function PgOnboard({ onLogout, onAdvance, onBrandNameChange }: Pg
                     type="text"
                     placeholder="22AAAAA0000A1Z5"
                     maxLength={15}
-                    style={{ textTransform: 'uppercase' }}
+                    className="uppercase"
                     value={gstNumber}
                     onChange={(e) => setGstNumber(e.target.value)}
                   />

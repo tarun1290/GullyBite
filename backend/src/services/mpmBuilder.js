@@ -143,6 +143,15 @@ async function buildBranchMPMs(branchId, restaurantId) {
     log.info({ branchName: branch.name, collectionId: branch.meta_collection_id }, 'Branch has Collection');
   }
 
+  // Footer copy mirrors the restaurant's GST display preference. 'extra'
+  // restaurants enter net prices and tax is added at checkout — the
+  // footer must say so. Every other value (incl. 'included' default and
+  // legacy nulls) keeps the inclusive-of-tax wording. Single source of
+  // truth used in all 4 MPM payload shapes below.
+  const taxFooter = restaurant?.menu_gst_mode === 'extra'
+    ? 'Prices shown exclude taxes — GST added at checkout'
+    : 'Prices inclusive of all taxes';
+
   // Get all available items for this branch (cached 2 min)
   const cacheKey = `branch:${branchId}:menu`;
   let items = memcache.get(cacheKey);
@@ -318,7 +327,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
     return [{
       header: `🍽️ ${restName} — ${branch.name}`,
       body: 'Browse items, tap for size options, and add to cart!',
-      footer: 'Prices inclusive of taxes',
+      footer: taxFooter,
       sections: mergeSectionsIfNeeded(sections),
     }];
   }
@@ -363,7 +372,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
       mpms.push({
         header: `${label} — ${branch.name}`,
         body: 'Browse and add to cart. Your cart persists across messages!',
-        footer: 'Prices inclusive of taxes',
+        footer: taxFooter,
         sections: secs,
       });
       log.info({ label, mpmCount: 1 }, 'Single MPM built from bucket');
@@ -380,7 +389,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
         mpms.push({
           header: `${label} (${part}) — ${branch.name}`,
           body: 'Browse and add to cart. Your cart persists across messages!',
-          footer: 'Prices inclusive of taxes',
+          footer: taxFooter,
           sections: mergeSectionsIfNeeded(batch),
         });
         part++;
@@ -395,7 +404,7 @@ async function buildBranchMPMs(branchId, restaurantId) {
       mpms.push({
         header: `${label}${part > 1 ? ` (${part})` : ''} — ${branch.name}`,
         body: 'Browse and add to cart. Your cart persists across messages!',
-        footer: 'Prices inclusive of taxes',
+        footer: taxFooter,
         sections: mergeSectionsIfNeeded(batch),
       });
     }

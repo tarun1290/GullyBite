@@ -20,9 +20,9 @@ export default function PgRejected({ onLogout, showPage }: PgRejectedProps) {
           Your application could not be approved. Please see the reason below and contact us if you have questions.
         </p>
         <div className="rej-box">{reason}</div>
-        <p style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+        <p className="text-[0.78rem] text-dim">
           Contact{' '}
-          <a href="mailto:support@gullybite.com" style={{ color: 'var(--acc)' }}>
+          <a href="mailto:support@gullybite.com" className="text-acc">
             support@gullybite.com
           </a>
           {' '}for help or to reapply.

@@ -11,10 +11,10 @@
 // (returned to merchant) or RTO_DISPOSED (lost/damaged in transit).
 // CANCELLED applies only pre-pickup (cancelled_at).
 //
-// Codebase doesn't use Tailwind — inline `style={{...}}` matches the
-// convention used by RiderLocationCard, OrderDetailModal, etc. The pulse
-// keyframe is a uniquely-named one-off (gb-timeline-pulse) to avoid
-// global collisions.
+// The pulse keyframe is a uniquely-named one-off (gb-timeline-pulse) to
+// avoid global collisions. Per-step palette colours come from
+// paletteFor() at runtime (hex strings driven by status × tone) so the
+// dot/ring/label colours stay inline; static layout uses Tailwind.
 
 // Structural prop type — both `Order` (from types/index.ts) and
 // `AdminOrderRow` (from app/admin/orders/page.tsx) satisfy this since
@@ -240,15 +240,7 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
         0%, 100% { transform: scale(1);   opacity: 1; }
         50%      { transform: scale(0.7); opacity: 0.5; }
       }`}</style>
-      <ol
-        style={{
-          listStyle: 'none',
-          margin: 0,
-          padding: '.4rem 0 .2rem',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
+      <ol className="list-none m-0 pt-[0.4rem] pb-[0.2rem] flex flex-col">
         {steps.map((s, idx) => {
           const palette = paletteFor(s.status, s.tone);
           const isLast = idx === steps.length - 1;
@@ -258,12 +250,7 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
           return (
             <li
               key={s.key}
-              style={{
-                display: 'flex',
-                gap: '.7rem',
-                position: 'relative',
-                paddingBottom: isLast ? 0 : '.65rem',
-              }}
+              className={`flex gap-[0.7rem] relative ${isLast ? 'pb-0' : 'pb-[0.65rem]'}`}
             >
               {/* Connector line — drawn from circle bottom down to next
                   row's circle top. Coloured per the FROM step's status
@@ -271,53 +258,41 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
               {!isLast && (
                 <span
                   aria-hidden
+                  className="absolute left-[5px] top-3 bottom-0 w-[2px]"
                   style={{
-                    position: 'absolute',
-                    left: 5,
-                    top: 12,
-                    bottom: 0,
-                    width: 2,
                     background: s.status === 'completed' ? palette.circle : '#e5e7eb',
                   }}
                 />
               )}
               <span
                 aria-hidden
+                className="w-3 h-3 rounded-full shrink-0 mt-[2px]"
                 style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%',
                   background: palette.circle,
                   boxShadow: showPulse ? `0 0 0 4px ${palette.ring}` : 'none',
                   animation: showPulse ? 'gb-timeline-pulse 1.4s ease-in-out infinite' : 'none',
-                  flexShrink: 0,
-                  marginTop: 2,
                 }}
               />
-              <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="flex-1 min-w-0">
                 <div
-                  style={{
-                    fontSize: '.82rem',
-                    fontWeight: s.status === 'completed' || s.status === 'active' ? 600 : 500,
-                    color: palette.label,
-                    lineHeight: 1.3,
-                  }}
+                  className={`text-[0.82rem] leading-[1.3] ${
+                    s.status === 'completed' || s.status === 'active'
+                      ? 'font-semibold'
+                      : 'font-medium'
+                  }`}
+                  style={{ color: palette.label }}
                 >
                   {s.label}
                 </div>
                 {s.timestamp && (
-                  <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginTop: 1 }}>
+                  <div className="text-[0.72rem] text-dim mt-px">
                     {fmtTime(s.timestamp)}
                   </div>
                 )}
                 {s.subtitle && (
                   <div
-                    style={{
-                      fontSize: '.72rem',
-                      color: s.tone === 'disposed' ? '#991b1b' : '#92400e',
-                      marginTop: 1,
-                      fontStyle: 'italic',
-                    }}
+                    className="text-[0.72rem] mt-px italic"
+                    style={{ color: s.tone === 'disposed' ? '#991b1b' : '#92400e' }}
                   >
                     {s.subtitle}
                   </div>
@@ -328,17 +303,7 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
         })}
       </ol>
       {order.prorouting_cancelled_at && (
-        <div
-          style={{
-            marginTop: '.4rem',
-            padding: '.45rem .65rem',
-            background: '#fef2f2',
-            border: '1px solid #fecaca',
-            borderRadius: 6,
-            fontSize: '.74rem',
-            color: '#991b1b',
-          }}
-        >
+        <div className="mt-[0.4rem] py-[0.45rem] px-[0.65rem] bg-red-50 border border-red-200 rounded-md text-[0.74rem] text-red-800">
           Cancelled at {fmtTime(order.prorouting_cancelled_at)}
         </div>
       )}

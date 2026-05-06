@@ -144,19 +144,18 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
 
   return (
     <div id="pg-connect" className="auth-wrap">
-      <nav className="nav" style={{ position: 'relative' }}>
+      <nav className="nav relative">
         <div className="logo"><div className="logo-ring">🍜</div>GullyBite</div>
         <button
           type="button"
-          className="btn-outline"
-          style={{ fontSize: '.76rem', padding: '.42rem .95rem' }}
+          className="btn-outline text-[0.76rem] py-[0.42rem] px-[0.95rem]"
           onClick={onLogout}
         >
           Sign out
         </button>
       </nav>
-      <div className="auth-body" style={{ alignItems: 'flex-start', paddingTop: '1.5rem' }}>
-        <div className="ob-wrap" style={{ maxWidth: 640 }}>
+      <div className="auth-body items-start pt-6">
+        <div className="ob-wrap max-w-[640px]">
           <div className="ob-header">
             <h2>Connect WhatsApp Business</h2>
             <p>Follow the steps below, then click Connect.</p>
@@ -178,32 +177,32 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
             </div>
           </div>
 
-          <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '1rem 1.2rem', marginBottom: '1.1rem' }}>
-            <p style={{ fontSize: '.72rem', fontWeight: 700, letterSpacing: '.06em', color: '#15803d', marginBottom: '.3rem' }}>
+          <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-[10px] py-4 px-[1.2rem] mb-[1.1rem]">
+            <p className="text-[0.72rem] font-bold tracking-[0.06em] text-[#15803d] mb-[0.3rem]">
               YOUR STORE URL — copy this, you'll need it below
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+            <div className="flex items-center gap-2">
               <input
                 readOnly
                 value={storeUrl}
-                style={{ flex: 1, background: '#fff', border: '1px solid #bbf7d0', borderRadius: 7, padding: '.4rem .7rem', fontSize: '.8rem', color: '#0f172a', outline: 'none', fontFamily: 'monospace' }}
+                className="flex-1 bg-white border border-[#bbf7d0] rounded-[7px] py-[0.4rem] px-[0.7rem] text-[0.8rem] text-[#0f172a] outline-none font-mono"
               />
               <button
                 type="button"
                 onClick={handleCopy}
-                style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 7, padding: '.4rem .9rem', fontSize: '.78rem', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                className="bg-[#16a34a] text-white border-0 rounded-[7px] py-[0.4rem] px-[0.9rem] text-[0.78rem] font-semibold cursor-pointer whitespace-nowrap"
               >
                 Copy
               </button>
             </div>
           </div>
 
-          <div style={{ background: '#fff', border: '1px solid var(--rim,#e2e8f0)', borderRadius: 10, padding: '1.1rem 1.2rem', marginBottom: '1.1rem' }}>
-            <p style={{ fontSize: '.82rem', fontWeight: 700, marginBottom: '.8rem' }}>
+          <div className="bg-white border border-rim rounded-[10px] py-[1.1rem] px-[1.2rem] mb-[1.1rem]">
+            <p className="text-[0.82rem] font-bold mb-[0.8rem]">
               Setting up for the first time? Follow these steps:
             </p>
-            <ol style={{ paddingLeft: '1.1rem', display: 'flex', flexDirection: 'column', gap: '.6rem', fontSize: '.8rem', color: '#334155', lineHeight: 1.55 }}>
-              <li><strong>Open Meta Business Manager</strong> → <a href="https://business.facebook.com" target="_blank" rel="noreferrer" style={{ color: '#4f46e5' }}>business.facebook.com</a> → create a Business Portfolio if you don't have one yet.</li>
+            <ol className="pl-[1.1rem] flex flex-col gap-[0.6rem] text-[0.8rem] text-[#334155] leading-[1.55]">
+              <li><strong>Open Meta Business Manager</strong> → <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="text-[#4f46e5]">business.facebook.com</a> → create a Business Portfolio if you don't have one yet.</li>
               <li><strong>Create a WhatsApp Business Account (WABA)</strong> → inside your Portfolio → Accounts → WhatsApp Accounts → Add.</li>
               <li><strong>Add a phone number</strong> to your WABA. Use a number that is NOT already on the regular WhatsApp app. Verify it via OTP.</li>
               <li><strong>Set Privacy Policy &amp; Website URL</strong> → Business Settings → WhatsApp Accounts → your account → Settings → paste your Store URL (green box above) into both fields.</li>
@@ -211,8 +210,8 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
             </ol>
           </div>
 
-          <div style={{ background: '#fff', border: '1px solid var(--rim,#e2e8f0)', borderRadius: 10, padding: '1.2rem', textAlign: 'center' }}>
-            <p style={{ fontSize: '.8rem', color: '#64748b', marginBottom: '.9rem' }}>
+          <div className="bg-white border border-rim rounded-[10px] p-[1.2rem] text-center">
+            <p className="text-[0.8rem] text-[#64748b] mb-[0.9rem]">
               Done with the steps above? Connect now.
             </p>
             <button
@@ -232,17 +231,16 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
                 </>
               )}
             </button>
-            <p style={{ marginTop: '.6rem', fontSize: '.72rem', color: 'var(--dim)' }}>
+            <p className="mt-[0.6rem] text-[0.72rem] text-dim">
               Takes about 2 minutes. You'll be redirected back automatically.
             </p>
-            <div style={{ marginTop: '1rem', paddingTop: '.9rem', borderTop: '1px solid #f1f5f9' }}>
-              <p style={{ fontSize: '.75rem', color: 'var(--dim)', marginBottom: '.4rem' }}>
+            <div className="mt-4 pt-[0.9rem] border-t border-[#f1f5f9]">
+              <p className="text-[0.75rem] text-dim mb-[0.4rem]">
                 Not ready yet? You can always connect later from your dashboard.
               </p>
               <button
                 type="button"
-                className="btn-outline"
-                style={{ fontSize: '.78rem' }}
+                className="btn-outline text-[0.78rem]"
                 onClick={handleSkip}
               >
                 Skip for now → Go to Dashboard

@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /*
  * Global stylesheet — loaded first (before dashboard.css / admin.css)
  * via main.jsx. All design tokens live in ./tokens/; the :root overrides

@@ -879,6 +879,12 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
       // Build a fake fullOrder for sendPaymentRequest (same shape as getOrderDetails returns)
       const checkoutOrder = {
         order_number: order.order_number, id: order.id,
+        // Mirrors the persisted field on the order doc — sendPaymentRequest
+        // gates the Meta-subtotal deflation on this. Default matches the
+        // financialEngine default ('included') so an unconfigured
+        // restaurant gets a self-consistent extraction-and-deflation
+        // path; Meta's subtotal+tax+shipping−discount invariant holds.
+        menu_gst_mode: restaurant?.menu_gst_mode ?? 'included',
         subtotal_rs: effectiveCharges?.subtotal_rs || Number(subtotal) || 0,
         customer_delivery_rs: effectiveCharges?.customer_delivery_rs || effectiveDeliveryFeeRs || 0,
         delivery_fee_rs: effectiveCharges?.customer_delivery_rs || effectiveDeliveryFeeRs || 0,

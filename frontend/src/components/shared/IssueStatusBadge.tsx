@@ -5,9 +5,6 @@
 // minimal — the badge itself is a status indicator; resolution + close
 // flows live on the existing admin /orders/:id/issue/close route and
 // aren't replicated here.
-//
-// Codebase doesn't use Tailwind — inline `style={{...}}` matches the
-// convention used by RiderLocationCard, DeliveryTimeline, etc.
 
 interface IssueStatusBadgeProps {
   issueId?: string;
@@ -37,30 +34,17 @@ export default function IssueStatusBadge({ issueId, raisedAt }: IssueStatusBadge
     <div
       role="status"
       aria-label="Delivery dispute raised"
-      style={{
-        marginTop: '.6rem',
-        padding: '.55rem .75rem',
-        background: '#fef3c7',
-        border: '1px solid #fde68a',
-        borderRadius: 8,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '.6rem',
-        flexWrap: 'wrap',
-        fontSize: '.8rem',
-        color: '#92400e',
-      }}
+      className="mt-[0.6rem] py-[0.55rem] px-3 bg-amber-100 border border-amber-200 rounded-lg flex items-center gap-[0.6rem] flex-wrap text-[0.8rem] text-amber-800"
     >
-      <span style={{ fontWeight: 700 }}>⚠ Dispute Raised</span>
+      <span className="font-bold">⚠ Dispute Raised</span>
       <span
-        className="mono"
-        style={{ fontSize: '.72rem', color: '#92400e', opacity: 0.85 }}
+        className="mono text-[0.72rem] text-amber-800 opacity-[0.85]"
         title="Prorouting issue id"
       >
         {issueId}
       </span>
       {raisedAt && (
-        <span style={{ marginLeft: 'auto', fontSize: '.72rem', color: 'var(--dim)' }}>
+        <span className="ml-auto text-[0.72rem] text-dim">
           {fmt(raisedAt)}
         </span>
       )}

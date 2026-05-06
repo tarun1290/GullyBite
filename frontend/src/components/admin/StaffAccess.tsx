@@ -96,15 +96,15 @@ export default function StaffAccess({ restaurantId, slug }: StaffAccessProps) {
     : null;
 
   return (
-    <section className="card" style={{ marginTop: '1.2rem' }}>
+    <section className="card mt-[1.2rem]">
       <div className="ch">
         <h3>🔐 Staff Access</h3>
       </div>
-      <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.9rem' }}>
+      <div className="cb flex flex-col gap-[0.9rem]">
         {loading ? (
-          <p style={{ color: 'var(--dim)', fontSize: '.82rem' }}>Loading PIN status…</p>
+          <p className="text-dim text-[0.82rem]">Loading PIN status…</p>
         ) : loadErr ? (
-          <p style={{ color: 'var(--red)', fontSize: '.82rem' }}>{loadErr}</p>
+          <p className="text-red text-[0.82rem]">{loadErr}</p>
         ) : generatedPin ? (
           <JustGeneratedView
             pin={generatedPin}
@@ -134,7 +134,7 @@ interface NoPinViewProps { onGenerate: () => void; isGenerating: boolean }
 function NoPinView({ onGenerate, isGenerating }: NoPinViewProps): ReactNode {
   return (
     <>
-      <p style={{ color: 'var(--dim)', fontSize: '.85rem', lineHeight: 1.5 }}>
+      <p className="text-dim text-[0.85rem] leading-[1.5]">
         No staff PIN set. Generate one to give your kitchen staff access to the GullyBite Staff app.
       </p>
       <div>
@@ -148,7 +148,7 @@ function NoPinView({ onGenerate, isGenerating }: NoPinViewProps): ReactNode {
           {isGenerating ? (
             <>
               <span className="spin" aria-hidden />
-              <span style={{ marginLeft: '.5rem' }}>Generating…</span>
+              <span className="ml-2">Generating…</span>
             </>
           ) : (
             'Generate Staff PIN'
@@ -171,18 +171,12 @@ function JustGeneratedView({ pin, slug, onCopy, onRegenerate, isGenerating }: Ju
   const digits = pin.padEnd(4, '•').split('').slice(0, Math.max(4, pin.length));
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', gap: '.5rem' }} aria-label="Generated staff PIN">
+      <div className="flex items-center gap-[0.6rem] flex-wrap">
+        <div className="flex gap-2" aria-label="Generated staff PIN">
           {digits.map((d, i) => (
             <span
               key={i}
-              style={{
-                width: 52, height: 60, display: 'inline-flex',
-                alignItems: 'center', justifyContent: 'center',
-                background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 10,
-                fontFamily: 'monospace', fontSize: '1.75rem', fontWeight: 800, color: 'var(--tx)',
-                boxShadow: 'var(--shadow-sm)',
-              }}
+              className="w-[52px] h-[60px] inline-flex items-center justify-center bg-neutral-0 border border-rim rounded-[10px] font-mono text-[1.75rem] font-extrabold text-tx shadow-sm-token"
             >
               {d}
             </span>
@@ -190,22 +184,17 @@ function JustGeneratedView({ pin, slug, onCopy, onRegenerate, isGenerating }: Ju
         </div>
         <button
           type="button"
-          className="btn-g"
+          className="btn-g min-h-[44px]"
           onClick={() => onCopy(pin, 'PIN copied')}
           aria-label="Copy PIN"
           title="Copy PIN"
-          style={{ minHeight: 44 }}
         >
           📋 Copy
         </button>
       </div>
       <div
         role="alert"
-        style={{
-          background: '#fffbeb', border: '1px solid #fcd34d',
-          borderRadius: 8, padding: '.7rem .9rem',
-          color: '#92400e', fontSize: '.82rem', fontWeight: 600, lineHeight: 1.45,
-        }}
+        className="bg-amber-50 border border-amber-300 rounded-lg py-[0.7rem] px-[0.9rem] text-amber-800 text-[0.82rem] font-semibold leading-[1.45]"
       >
         ⚠ Save this PIN now — it will not be shown again once you leave this page.
       </div>
@@ -230,7 +219,7 @@ interface ExistingPinViewProps {
 function ExistingPinView({ generatedAt, slug, onCopy, onRegenerate, isGenerating }: ExistingPinViewProps): ReactNode {
   return (
     <>
-      <p style={{ color: 'var(--tx)', fontSize: '.88rem' }}>
+      <p className="text-tx text-[0.88rem]">
         Staff PIN last generated on{' '}
         <strong>{generatedAt || 'an earlier date'}</strong>.
       </p>
@@ -240,7 +229,7 @@ function ExistingPinView({ generatedAt, slug, onCopy, onRegenerate, isGenerating
           {isGenerating ? (
             <>
               <span className="spin" aria-hidden />
-              <span style={{ marginLeft: '.5rem' }}>Regenerating…</span>
+              <span className="ml-2">Regenerating…</span>
             </>
           ) : (
             'Regenerate PIN'
@@ -258,24 +247,23 @@ function SlugField({ slug, onCopy }: SlugFieldProps): ReactNode {
   return (
     <div>
       <label className="lbl" htmlFor="staff-login-slug">Staff app login slug</label>
-      <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+      <div className="flex gap-[0.4rem] items-center">
         <input
           id="staff-login-slug"
           type="text"
           readOnly
           value={value}
           onFocus={(e) => e.currentTarget.select()}
-          style={{ flex: 1, fontFamily: 'monospace' }}
+          className="flex-1 font-mono"
           placeholder={value ? '' : 'Slug unavailable'}
         />
         <button
           type="button"
-          className="btn-g"
+          className="btn-g min-h-[44px]"
           onClick={() => onCopy(value, 'Slug copied')}
           disabled={!value}
           aria-label="Copy slug"
           title="Copy slug"
-          style={{ minHeight: 44 }}
         >
           📋 Copy
         </button>

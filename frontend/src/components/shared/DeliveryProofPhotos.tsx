@@ -12,11 +12,6 @@
 // Used by:
 //   • frontend/src/components/restaurant/OrderDetailModal.tsx (restaurant)
 //   • frontend/src/app/admin/orders/page.tsx (admin orders table)
-//
-// Style note: codebase uses inline `style={{...}}` rather than Tailwind
-// classes for component-local styling — this component matches that
-// convention so it slots into either surface without requiring tailwind
-// class import paths.
 
 interface DeliveryProofPhotosProps {
   pickupProof?: string;
@@ -43,39 +38,39 @@ export default function DeliveryProofPhotos({
     : null;
   if (!pickup && !delivery) return null;
 
-  const labelStyle = { fontSize: '.72rem', color: 'var(--dim)' as const };
-  const imgStyle = {
-    width: size,
-    height: size,
-    objectFit: 'cover' as const,
-    borderRadius: 8,
-    border: '1px solid var(--rim2)',
-    display: 'block' as const,
-  };
-  const containerStyle = {
-    display: 'flex',
-    flexDirection: layout === 'vertical' ? ('column' as const) : ('row' as const),
-    gap: '.6rem',
-    flexWrap: 'wrap' as const,
-  };
+  // width/height stay inline — `size` is a runtime prop and Tailwind
+  // arbitrary values must be statically analyzable at build time.
+  const imgSize = { width: size, height: size };
 
   return (
-    <div style={containerStyle}>
+    <div
+      className={`flex gap-[0.6rem] flex-wrap ${layout === 'vertical' ? 'flex-col' : 'flex-row'}`}
+    >
       {pickup && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <div style={labelStyle}>Pickup Proof</div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[0.72rem] text-dim">Pickup Proof</div>
           <a href={pickup} target="_blank" rel="noreferrer" title="Open full size">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={pickup} alt="Pickup proof" style={imgStyle} />
+            <img
+              src={pickup}
+              alt="Pickup proof"
+              style={imgSize}
+              className="object-cover rounded-lg border border-rim2 block"
+            />
           </a>
         </div>
       )}
       {delivery && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <div style={labelStyle}>Delivery Proof</div>
+        <div className="flex flex-col gap-1">
+          <div className="text-[0.72rem] text-dim">Delivery Proof</div>
           <a href={delivery} target="_blank" rel="noreferrer" title="Open full size">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={delivery} alt="Delivery proof" style={imgStyle} />
+            <img
+              src={delivery}
+              alt="Delivery proof"
+              style={imgSize}
+              className="object-cover rounded-lg border border-rim2 block"
+            />
           </a>
         </div>
       )}

@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const axios  = require('axios');
+const bcrypt = require('bcryptjs');
 const { col, newId, mapId, mapIds } = require('../config/database');
 const { maskPhone } = require('../utils/maskPhone');
 const { requireAuth, requireOwnerAuth, requireApproved, requirePermission, ROLE_PERMISSIONS } = require('./auth');
@@ -8090,7 +8091,10 @@ router.post('/users', requirePermission('manage_users'), express.json(), async (
     } catch (_) { /* never block user creation on bus load */ }
 
     res.json({ id, name, phone, role, permissions });
-  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'create_user failed');
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
 });
 
 // PUT /api/restaurant/users/:id
@@ -8157,7 +8161,10 @@ router.put('/users/:id/reset-pin', requirePermission('manage_users'), express.js
       { $set: { pin_hash: pinHash, pin_attempts: 0, pin_locked_until: null, updated_at: new Date() }, $inc: { token_version: 1 } }
     );
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
+  } catch (e) {
+    req.log?.error?.({ err: e }, 'reset_pin failed');
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
 });
 
 // GET /api/restaurant/me — current user info
