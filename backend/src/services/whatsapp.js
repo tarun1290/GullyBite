@@ -293,6 +293,14 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
           // expirationDescription string above keeps building correctly
           // and can be re-introduced here without further wiring.
           // expiration_description: expirationDescription,
+          // Unix-seconds timestamp on the order_details CTA — Meta uses
+          // this to render the countdown / "expires in" badge in the
+          // native checkout UI. Only emitted when expires_at is set so
+          // legacy orders pre-dating the expires_at field don't get
+          // rejected by Meta on a NaN payload.
+          ...(order.expires_at
+            ? { expiration_time: Math.floor(new Date(order.expires_at).getTime() / 1000) }
+            : {}),
           type: 'digital-goods',
           // Meta requires payment_settings (an array of payment gateway
           // objects) on review_and_pay CTAs — payment_configuration was
