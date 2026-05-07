@@ -78,7 +78,12 @@ const TRANSITIONS = {
   // (webhook fires before any agent-assigned event).
   CONFIRMED:       new Set(['PREPARING', 'CANCELLED', 'NO_DELIVERY_AVAILABLE']),
   PREPARING:       new Set(['PACKED', 'CANCELLED']),
-  PACKED:          new Set(['DISPATCHED', 'CANCELLED']),
+  // PACKED → DELIVERED is a self-heal path: when Prorouting drops the
+  // agent-assigned / picked-up callbacks but does fire delivered, the
+  // order would otherwise be stuck in PACKED forever. The transition
+  // is logged at warn-level by the caller (services/proroutingState.js
+  // delivered branch) so ops can spot the missing intermediate events.
+  PACKED:          new Set(['DISPATCHED', 'DELIVERED', 'CANCELLED']),
   // Defensive: a rider can drop after pickup. NO_DELIVERY_AVAILABLE allowed
   // here too so the same fault handler covers both paths.
   DISPATCHED:      new Set(['DELIVERED', 'CANCELLED', 'RTO_IN_PROGRESS', 'NO_DELIVERY_AVAILABLE']),

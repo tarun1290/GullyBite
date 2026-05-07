@@ -10,8 +10,16 @@ const log = require('../utils/logger').child({ component: 'database' });
 // Use standard mongodb:// with explicit hosts to eliminate DNS delay on cold starts.
 const POOL_OPTIONS = {
   maxPoolSize: 5,           // Up to 5 connections per serverless instance
-  minPoolSize: 0,           // Allow pool to shrink to zero when idle
-  maxIdleTimeMS: 10000,     // Close idle connections after 10s
+  minPoolSize: 1,           // Keep one warm connection — prevents the pool
+                            // from emptying after maxIdleTimeMS so the
+                            // first request after idle skips a cold reconnect
+                            // (and the MongoTopologyClosedError race that
+                            // came with it on EC2).
+  maxIdleTimeMS: 60000,     // 60s — gives Atlas Serverless room to keep
+                            // idle sockets alive between bursts. Bumped
+                            // from 10s, which was too aggressive for the
+                            // EC2 single-process workload and caused the
+                            // pool to drain repeatedly under low traffic.
   connectTimeoutMS: 5000,   // TCP connection timeout — fail fast
   socketTimeoutMS: 30000,   // Socket operations timeout
   serverSelectionTimeoutMS: 5000, // Find a server within 5s or fail
@@ -133,11 +141,101 @@ const ensureConnected = async (req, res, next) => {
   next();
 };
 
-// Get a collection (synchronous — only call after ensureConnected)
+// Wrap a Collection so awaitable methods (findOne / updateOne / insertOne /
+// deleteOne / countDocuments / findOneAndUpdate / bulkWrite / etc.) auto-retry
+// once on MongoTopologyClosedError. The retry path forces a reconnect via
+// connect() and re-issues the call against a fresh collection ref, so
+// callers don't need to handle the race themselves.
+//
+// Cursor-returning methods (find / aggregate / listIndexes / watch /
+// listSearchIndexes) are returned UNWRAPPED — they hand back a Cursor
+// synchronously, and the awaitable terminal ops (toArray / next / forEach)
+// live on the cursor, not the collection. Wrapping them here would either
+// break the cursor shape or do nothing useful; mid-iteration topology
+// failures are extremely rare in this codebase based on actual usage.
+const _CURSOR_METHODS = new Set(['find', 'aggregate', 'listIndexes', 'watch', 'listSearchIndexes']);
+
+function _wrapWithRetry(collection) {
+  return new Proxy(collection, {
+    get(target, prop, receiver) {
+      const orig = Reflect.get(target, prop, receiver);
+      if (typeof orig !== 'function' || _CURSOR_METHODS.has(prop)) {
+        return typeof orig === 'function' ? orig.bind(target) : orig;
+      }
+      return function(...args) {
+        let result;
+        try {
+          result = orig.apply(target, args);
+        } catch (err) {
+          // Sync throw — extremely unusual for collection methods, but
+          // handle it for completeness.
+          if (err && err.name === 'MongoTopologyClosedError') {
+            return connect().then(() => _db.collection(target.collectionName)[prop](...args));
+          }
+          throw err;
+        }
+        // Only attach retry to awaitable promises; pass through anything
+        // else untouched.
+        if (result && typeof result.then === 'function') {
+          return result.catch(async (err) => {
+            if (err && err.name === 'MongoTopologyClosedError') {
+              log.warn({ method: String(prop), collection: target.collectionName },
+                'MongoTopologyClosedError — reconnecting and retrying once');
+              await connect();
+              const fresh = _db.collection(target.collectionName);
+              return fresh[prop](...args);
+            }
+            throw err;
+          });
+        }
+        return result;
+      };
+    },
+  });
+}
+
+// Get a collection (synchronous — only call after ensureConnected). The
+// returned Collection is wrapped so awaitable methods auto-retry once on
+// MongoTopologyClosedError; callers see no API change.
 const col = (name) => {
   if (!_db) throw new Error('MongoDB not connected yet');
-  return _db.collection(name);
+  return _wrapWithRetry(_db.collection(name));
 };
+
+// Public retry helper for multi-step / cursor-iteration / transaction-style
+// blocks where the per-method wrapper above isn't enough. Runs `fn` once;
+// on MongoTopologyClosedError, reconnects and runs `fn` exactly once more.
+async function withRetry(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err && err.name === 'MongoTopologyClosedError') {
+      log.warn('withRetry: MongoTopologyClosedError — reconnecting and retrying once');
+      await connect();
+      return await fn();
+    }
+    throw err;
+  }
+}
+
+// Graceful shutdown — invoked from ec2-server.js's SIGTERM/SIGINT handler.
+// Idempotent: a second call after the client is already nulled is a no-op.
+// Errors during close are swallowed so the caller's process.exit() path
+// isn't blocked by a flaky teardown.
+async function close() {
+  if (!_client) return;
+  const dying = _client;
+  _client = null;
+  _db = null;
+  global._mongoClient = null;
+  global._mongoDb = null;
+  try {
+    await dying.close();
+  } catch (err) {
+    log.warn({ err: err && err.message ? err.message : String(err) },
+      'database.close: client.close errored — continuing shutdown');
+  }
+}
 
 // Transaction helper using MongoDB sessions
 // fn receives session; pass { session } to every collection op inside fn
@@ -175,4 +273,4 @@ const newId = () => uuidv4();
    // Add getBucket to module.exports
    ═══ END FUTURE FEATURE ═══ */
 
-module.exports = { col, transaction, connect, ensureConnected, mapId, mapIds, newId };
+module.exports = { col, transaction, connect, close, ensureConnected, withRetry, mapId, mapIds, newId };

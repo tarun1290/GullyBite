@@ -573,6 +573,53 @@ connect().then(() => {
     console.log(`   Health:    http://localhost:${PORT}/health`);
     console.log(`   Cron:      http://localhost:${PORT}/api/cron/catalog-sync\n`);
   });
+
+  // ─── GRACEFUL SHUTDOWN ─────────────────────────────────────
+  // pm2 restart sends SIGTERM; Ctrl-C in dev sends SIGINT. Without a
+  // handler the kernel rips sockets out from under the Mongo pool,
+  // which surfaces as MongoTopologyClosedError on the very next
+  // request after the new process boots (the old socket replies into
+  // a half-torn-down topology). The drain order is:
+  //   1. server.close() — stop accepting new HTTP / WS connections
+  //      and let in-flight requests finish.
+  //   2. database.close() — close the Mongo client cleanly so Atlas
+  //      sees the disconnect instead of a half-dead socket.
+  //   3. process.exit(0).
+  // 8s drain budget covers anything reasonable (worker job claim
+  // leases are 120s and recover on the next process anyway). After
+  // that we exit even if a request is still in flight.
+  let _shuttingDown = false;
+  const _gracefulShutdown = async (signal) => {
+    if (_shuttingDown) return;
+    _shuttingDown = true;
+    console.log(`[EC2] ${signal} received — draining`);
+
+    const drainStart = Date.now();
+    const DRAIN_TIMEOUT_MS = 8000;
+
+    const serverClosed = new Promise((resolve) => {
+      server.close((err) => {
+        if (err) console.warn('[EC2] server.close errored:', err.message);
+        resolve();
+      });
+    });
+    const drainTimeout = new Promise((resolve) => setTimeout(resolve, DRAIN_TIMEOUT_MS));
+    await Promise.race([serverClosed, drainTimeout]);
+    const drainElapsed = Date.now() - drainStart;
+    console.log(`[EC2] HTTP server drained in ${drainElapsed}ms (timeout: ${DRAIN_TIMEOUT_MS}ms)`);
+
+    try {
+      await require('./src/config/database').close();
+      console.log('[EC2] MongoDB connection closed');
+    } catch (err) {
+      console.warn('[EC2] database.close errored:', err.message);
+    }
+
+    console.log('[EC2] shutdown complete');
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => _gracefulShutdown('SIGTERM'));
+  process.on('SIGINT',  () => _gracefulShutdown('SIGINT'));
 }).catch(err => {
   console.error('❌ [EC2] Failed to start:', err.message);
   process.exit(1);

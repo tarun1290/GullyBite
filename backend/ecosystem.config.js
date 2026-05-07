@@ -12,6 +12,17 @@ module.exports = {
     instances: 1,
     autorestart: true,
     max_memory_restart: '512M',
+    // pm2 reload sends a stop signal then SIGKILLs after kill_timeout.
+    // ec2-server.js's _gracefulShutdown drains for up to 8s on
+    // server.close + closes Mongo cleanly; 12s gives that path a 4s
+    // buffer for slow Atlas teardowns before pm2 forces the kill.
+    kill_timeout: 12000,
+    // Switches the stop signal from SIGTERM to SIGINT so it matches
+    // the SIGINT handler registered alongside SIGTERM in
+    // ec2-server.js. Both handlers point at the same function so
+    // either works in practice; aligning explicitly avoids surprises
+    // if the handlers ever diverge.
+    shutdown_with_message: true,
     env: {
       NODE_ENV: 'production',
       PORT: 3001,

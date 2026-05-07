@@ -24,6 +24,26 @@ function _normaliseStatus(raw) {
   return String(raw).toLowerCase().replace(/[\s_]+/g, '-').trim();
 }
 
+// Order statuses for which any inbound dispatch / pickup / delivered
+// callback is "late" — the order has already moved past the lifecycle
+// stage the event would advance. Used as an idempotent early-return
+// gate in the dispatch-bound branches below so a duplicate webhook
+// never tries (and fails) a transitionOrder() call from a terminal
+// state. DELIVERED is the most common case (Meta's at-delivery and
+// delivered events sometimes both fire); the rest cover edge cases
+// where a refund / RTO / cancellation already finalised the order.
+const POST_DISPATCH_TERMINAL = new Set([
+  'DELIVERED',
+  'CANCELLED',
+  'RTO_IN_PROGRESS',
+  'RTO_COMPLETE',
+  'EXPIRED',
+  'EXPIRED_PAYMENT',
+  'REJECTED_BY_RESTAURANT',
+  'RESTAURANT_TIMEOUT',
+  'NO_DELIVERY_AVAILABLE',
+]);
+
 // Prorouting callback timestamps arrive as IST strings like
 // "YYYY-MM-DD HH:MM:SS". Parse as UTC+5:30 so diffs are accurate
 // regardless of where this process runs.
@@ -166,13 +186,22 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       await col('orders').updateOne({ _id: order._id }, { $set: logisticsSet });
     }
 
+    // Late-webhook guard. If the order has already moved past the
+    // dispatch lifecycle (DELIVERED, terminal cancellations, RTO),
+    // skip the transition attempt + customer notification entirely.
+    // Returning early here avoids a noisy "transition not allowed"
+    // warn on every duplicate / out-of-order Prorouting callback.
+    if (POST_DISPATCH_TERMINAL.has(order.status)) {
+      log.info({ orderId: order._id, orderStatus: order.status },
+        `late webhook ignored — order already in ${order.status}`);
+      return { previousStatus, currentStatus: statusRaw, updated: true, late: true };
+    }
     // Customer notification gates on updateStatus success. The order's
     // state machine rejects DISPATCHED transitions from terminal states
-    // (EXPIRED, CANCELLED, DELIVERED, RTO_*) by throwing; without this
-    // gate, a Prorouting callback for an expired or cancelled order would
-    // still send the customer a misleading "rider on the way" message.
-    // Logistics analytics + prorouting_status mirroring above is
-    // unconditional — that's raw 3PL state, useful for debugging.
+    // (EXPIRED, CANCELLED, DELIVERED, RTO_*) by throwing; the late-
+    // webhook guard above handles the common cases — this catch covers
+    // anything else (e.g. PAID without CONFIRMED) where a misleading
+    // "rider on the way" message would otherwise go out.
     let dispatchedOk = false;
     try {
       await orderSvc.updateStatus(order._id, 'DISPATCHED');
@@ -226,6 +255,12 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
   }
 
   if (status === 'picked-up') {
+    // Late-webhook guard — same shape as agent-assigned above.
+    if (POST_DISPATCH_TERMINAL.has(order.status)) {
+      log.info({ orderId: order._id, orderStatus: order.status },
+        `late webhook ignored — order already in ${order.status}`);
+      return { previousStatus, currentStatus: statusRaw, updated: true, late: true };
+    }
     // Self-heal: if the order missed the agent-assigned transition (rare in
     // production, common on staging where createasync fails), pulling
     // ourselves into DISPATCHED first lets the delivered branch close out
@@ -279,6 +314,23 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       await col('orders').updateOne({ _id: order._id }, { $set: logisticsSet });
     }
 
+    // Late-webhook guard. DELIVERED arriving when the order is already
+    // DELIVERED is the hot-path duplicate (Meta's at-delivery and
+    // delivered events fire close together). The other terminal
+    // states are the same edge cases as in agent-assigned above.
+    if (POST_DISPATCH_TERMINAL.has(order.status)) {
+      log.info({ orderId: order._id, orderStatus: order.status },
+        `late webhook ignored — order already in ${order.status}`);
+      return { previousStatus, currentStatus: statusRaw, updated: true, late: true };
+    }
+    // PACKED → DELIVERED self-heal path. Prorouting occasionally drops
+    // the agent-assigned + picked-up callbacks but does fire delivered;
+    // without this branch the order would be stuck in PACKED. The
+    // TRANSITIONS map permits the jump (orderStateEngine.js); we log
+    // the skip here at warn-level so ops can spot the missing events.
+    if (order.status === 'PACKED') {
+      log.warn({ orderId: order._id }, `self-heal: skipped DISPATCHED state for order ${order._id}`);
+    }
     // Customer notifications gate on updateStatus success — same
     // reasoning as Agent-assigned. A DELIVERED transition rejected by
     // the state machine (e.g. order was already CANCELLED / EXPIRED /
