@@ -216,7 +216,7 @@ export default function ReferralsSection() {
                         href={wa}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="btn-p btn-sm bg-[#25D366] text-white no-underline"
+                        className="btn-p btn-sm btn-wa no-underline"
                       >
                         📲 Share via WhatsApp
                       </a>

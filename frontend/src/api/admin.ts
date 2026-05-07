@@ -519,6 +519,11 @@ export async function patchAdminCoupon(id: string, body: RequestBody): Promise<u
   return data;
 }
 
+export async function deleteAdminCoupon(id: string): Promise<unknown> {
+  const { data } = await client.delete(`/api/admin/coupons/${id}`);
+  return data;
+}
+
 // ── Marketing messages ──────────────────────────────────────────────
 
 export async function getAdminMarketingMessages(params: QueryParams = {}): Promise<unknown> {

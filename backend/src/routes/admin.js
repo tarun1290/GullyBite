@@ -1108,10 +1108,19 @@ router.post('/settlements/:id/retry', requireAdmin, express.json(), async (req, 
 // services/coupon.js and the WhatsApp Checkout endpoint.
 router.get('/coupons', requireAdmin, async (req, res) => {
   try {
-    const { restaurant_id } = req.query;
-    if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id required' });
+    // Three modes:
+    //   ?scope=platform        — platform-wide coupons (restaurant_id null)
+    //   ?restaurant_id=<id>    — coupons scoped to a specific restaurant
+    //   no params              — every coupon, both scopes
+    // Sort newest-first; pagination intentionally not added here.
+    const filter = {};
+    if (req.query.scope === 'platform') {
+      filter.restaurant_id = null;
+    } else if (req.query.restaurant_id) {
+      filter.restaurant_id = String(req.query.restaurant_id);
+    }
     const rows = await col('coupons')
-      .find({ restaurant_id: String(restaurant_id) })
+      .find(filter)
       .sort({ created_at: -1 })
       .toArray();
     res.json({ items: rows.map(r => ({ ...r, id: String(r._id) })), count: rows.length });
@@ -1120,13 +1129,22 @@ router.get('/coupons', requireAdmin, async (req, res) => {
 
 router.post('/coupons', requireAdmin, express.json(), async (req, res) => {
   try {
+    // restaurant_id is optional. couponSvc.createCoupon coerces a falsy
+    // value (null / undefined / '') to null on the doc, marking the
+    // coupon platform-wide. Both scopes flow through the same code path.
     const couponSvc = require('../services/coupon');
     const doc = await couponSvc.createCoupon(req.body || {});
+    const isPlatform = doc.restaurant_id == null;
     logActivity({
       actorType: 'admin', actorId: req.adminUser?._id || null, actorName: req.adminUser?.email || 'Admin',
       action: 'coupon.created', category: 'billing',
-      description: `Coupon ${doc.code} created for restaurant ${doc.restaurant_id}`,
-      restaurantId: doc.restaurant_id, resourceType: 'coupon', resourceId: doc.id, severity: 'info',
+      description: isPlatform
+        ? `Platform-wide coupon ${doc.code} created`
+        : `Coupon ${doc.code} created for restaurant ${doc.restaurant_id}`,
+      restaurantId: doc.restaurant_id || null,
+      resourceType: 'coupon',
+      resourceId: doc.id,
+      severity: 'info',
     });
     res.json(doc);
   } catch (e) {
@@ -1137,7 +1155,7 @@ router.post('/coupons', requireAdmin, express.json(), async (req, res) => {
 
 router.patch('/coupons/:id', requireAdmin, express.json(), async (req, res) => {
   try {
-    const allowed = ['is_active', 'description', 'valid_from', 'valid_until', 'usage_limit', 'per_user_limit'];
+    const allowed = ['is_active', 'description', 'valid_from', 'valid_until', 'usage_limit', 'per_user_limit', 'max_discount_rs'];
     const set = {};
     for (const k of allowed) if (k in req.body) {
       set[k] = k.startsWith('valid_') && req.body[k] ? new Date(req.body[k]) : req.body[k];
@@ -4657,62 +4675,6 @@ router.get('/marketing-campaigns/overview', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// ADMIN PLATFORM COUPONS
-// ═══════════════════════════════════════════════════════════════
-
-// GET /api/admin/coupons — list platform-wide coupons
-router.get('/coupons', async (req, res) => {
-  try {
-    const filter = req.query.restaurantId
-      ? { restaurant_id: req.query.restaurantId }
-      : {};
-    const coupons = await col('coupons').find(filter).sort({ created_at: -1 }).limit(200).toArray();
-    res.json(coupons.map(c => ({ ...c, id: String(c._id) })));
-  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
-});
-
-// POST /api/admin/coupons — create platform-wide coupon (restaurant_id = null)
-router.post('/coupons', express.json(), async (req, res) => {
-  try {
-    const { code, description, discountType, discountValue, minOrderRs, maxDiscountRs,
-            usageLimit, perUserLimit, validFrom, validUntil, firstOrderOnly,
-            restaurantId, branchIds, campaignId } = req.body;
-    if (!code || !discountType) return res.status(400).json({ error: 'code and discountType required' });
-
-    const couponCode = code.trim().toUpperCase();
-    const scope = restaurantId || null; // null = platform-wide
-
-    const existing = await col('coupons').findOne({ restaurant_id: scope, code: couponCode });
-    if (existing) return res.status(409).json({ error: 'Coupon code already exists' });
-
-    const now = new Date();
-    const coupon = {
-      _id: newId(),
-      restaurant_id: scope,
-      code: couponCode,
-      description: description || null,
-      discount_type: discountType,
-      discount_value: parseFloat(discountValue) || 0,
-      min_order_rs: minOrderRs || 0,
-      max_discount_rs: maxDiscountRs || null,
-      usage_limit: usageLimit || null,
-      per_user_limit: perUserLimit || null,
-      usage_count: 0,
-      valid_from: validFrom ? new Date(validFrom) : null,
-      valid_until: validUntil ? new Date(validUntil) : null,
-      first_order_only: !!firstOrderOnly,
-      branch_ids: branchIds?.length ? branchIds : null,
-      campaign_id: campaignId || null,
-      is_active: true,
-      created_at: now,
-      updated_at: now,
-    };
-    await col('coupons').insertOne(coupon);
-    res.json({ ...coupon, id: String(coupon._id) });
-  } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
-});
-
-// ═══════════════════════════════════════════════════════════════
 // ADMIN ANALYTICS (stub endpoints to prevent 404s)
 // ═══════════════════════════════════════════════════════════════
 
@@ -4722,16 +4684,31 @@ router.get('/analytics/overview', async (req, res) => {
     const days = parseInt(req.query.days) || 7;
     const since = new Date(Date.now() - days * 86400000);
 
-    const [orders, restaurants, customers] = await Promise.all([
+    const [orders, restaurants, customers, platformCoupon] = await Promise.all([
       col('orders').aggregate([
         { $match: { created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
         { $group: { _id: null, count: { $sum: 1 }, revenue: { $sum: '$total_rs' }, avgOrder: { $avg: '$total_rs' } } },
       ]).toArray(),
       col('restaurants').countDocuments({ status: 'active' }),
       col('customers').countDocuments({ created_at: { $gte: since } }),
+      // Platform-funded coupon spend across the same window. Reads
+      // restaurant_ledger directly because that's the canonical source
+      // of per-redemption GullyBite outflow (services/coupon.js +
+      // razorpay/checkout webhooks write 'platform_coupon_credit'
+      // entries when a customer redeems a platform-wide coupon).
+      // status='completed' only — pending/failed entries don't count.
+      col('restaurant_ledger').aggregate([
+        { $match: {
+            ref_type: 'platform_coupon_credit',
+            status: 'completed',
+            created_at: { $gte: since },
+        } },
+        { $group: { _id: null, total: { $sum: '$amount_paise' }, count: { $sum: 1 } } },
+      ]).toArray(),
     ]);
 
     const agg = orders[0] || { count: 0, revenue: 0, avgOrder: 0 };
+    const couponAgg = platformCoupon[0] || { total: 0, count: 0 };
     res.json({
       period_days: days,
       total_orders: agg.count,
@@ -4739,6 +4716,8 @@ router.get('/analytics/overview', async (req, res) => {
       avg_order_value_rs: Math.round(agg.avgOrder || 0),
       active_restaurants: restaurants,
       new_customers: customers,
+      platform_coupon_spend_paise: couponAgg.total || 0,
+      platform_coupon_redemptions_count: couponAgg.count || 0,
     });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });

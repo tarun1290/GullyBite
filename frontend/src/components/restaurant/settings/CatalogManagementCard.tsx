@@ -318,7 +318,7 @@ function ConnectedState({ state, syncStatus, onSwitch, onCreate, onDelete, onDis
         <button type="button" className="btn-g btn-sm" onClick={onCreate}>Create new catalog</button>
         <button
           type="button"
-          className="btn-g btn-sm text-[#dc2626] border-[#dc2626]"
+          className="btn-del"
           onClick={onDisconnect}
         >
           Disconnect from WhatsApp

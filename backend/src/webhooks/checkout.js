@@ -11,6 +11,7 @@ const { col, newId } = require('../config/database');
 const { decryptCheckoutPayload, verifyCheckoutSignature } = require('../services/checkout-crypto');
 const { calculateOrderCharges } = require('../services/charges');
 const orderSvc = require('../services/order');
+const couponSvc = require('../services/coupon');
 const customerIdentity = require('../services/customerIdentity');
 const { isBsuid } = customerIdentity;
 const { hashPhone } = require('../utils/phoneHash');
@@ -51,8 +52,56 @@ router.post('/', express.raw({ type: '*/*' }), async (req, res) => {
     switch (eventType) {
       case 'shipping':
         return await handleShipping(value, res);
-      case 'coupon':
-        return await handleCoupon(value, res);
+      case 'coupon': {
+        // Coupon validation — routes through services/coupon.js so
+        // per_user_limit, first_order_only, and branch_ids checks all
+        // fire. An earlier in-file duplicate covered only a subset.
+        try {
+          const data = value.encrypted_payload
+            ? decryptCheckoutPayload(value)
+            : value;
+          const code = (data.coupon_code || '').toUpperCase().trim();
+          const subtotalRs = (data.order_subtotal?.amount || 0) / 100;
+          const waAccount = await col('whatsapp_accounts').findOne({ catalog_id: data.catalog_id });
+          if (!waAccount) return res.json({ valid: false, error: 'Store not found' });
+
+          const restaurantId = waAccount.restaurant_id;
+          const customerPhone = data.customer_phone || data.phone;
+          const branches = await col('branches').find({ restaurant_id: restaurantId }).toArray();
+          const branchId = branches[0] ? String(branches[0]._id) : null;
+          const customer = customerPhone
+            ? await customerIdentity.getOrCreateCustomer({ wa_phone: customerPhone })
+            : null;
+          const isFirstOrder = customer?.id
+            ? await couponSvc.isCustomerFirstOrder(customer.id, restaurantId).catch(() => false)
+            : true;
+          const result = await couponSvc.validateCoupon(code, restaurantId, subtotalRs, {
+            customerId: customer?.id || null,
+            branchId,
+            isFirstOrder,
+          });
+          if (!result.valid) {
+            return res.json({ valid: false, error: result.message || 'Invalid coupon' });
+          }
+          const c = result.coupon;
+          const description = c?.description || (c?.discount_type === 'percent'
+            ? `${c.discount_value}% off`
+            : c?.discount_type === 'free_delivery'
+              ? 'Free delivery'
+              : `₹${c?.discount_value || 0} off`);
+          return res.json({
+            valid: true,
+            discount: {
+              amount: Math.round((result.discountRs || 0) * 100),
+              currency: 'INR',
+              description,
+            },
+          });
+        } catch (err) {
+          log.error({ err }, 'Coupon error');
+          return res.json({ valid: false, error: 'Could not validate coupon' });
+        }
+      }
       case 'order':
         res.sendStatus(200); // Respond immediately
         await handleOrder(value).catch(err =>
@@ -130,73 +179,6 @@ async function handleShipping(value, res) {
   } catch (err) {
     log.error({ err }, 'Shipping error');
     res.json({ shipping_options: [] });
-  }
-}
-
-// ─── COUPON VALIDATION ──────────────────────────────────────────
-// WhatsApp asks: "Is this coupon code valid?"
-async function handleCoupon(value, res) {
-  try {
-    const data = value.encrypted_payload
-      ? decryptCheckoutPayload(value)
-      : value;
-
-    const code = (data.coupon_code || '').toUpperCase().trim();
-    const catalogId = data.catalog_id;
-    const subtotalPaise = data.order_subtotal?.amount || 0;
-    const subtotalRs = subtotalPaise / 100;
-
-    const waAccount = await col('whatsapp_accounts').findOne({ catalog_id: catalogId });
-    if (!waAccount) return res.json({ valid: false, error: 'Store not found' });
-
-    const coupon = await col('coupons').findOne({
-      restaurant_id: waAccount.restaurant_id,
-      code,
-      is_active: true,
-    });
-
-    if (!coupon) return res.json({ valid: false, error: 'Invalid coupon code' });
-
-    // Check validity period
-    const now = new Date();
-    if (coupon.valid_from && now < new Date(coupon.valid_from)) {
-      return res.json({ valid: false, error: 'Coupon not yet active' });
-    }
-    if (coupon.valid_until && now > new Date(coupon.valid_until)) {
-      return res.json({ valid: false, error: 'Coupon has expired' });
-    }
-
-    // Check minimum order
-    if (coupon.min_order_rs && subtotalRs < coupon.min_order_rs) {
-      return res.json({ valid: false, error: `Minimum order ₹${coupon.min_order_rs} required` });
-    }
-
-    // Check usage limit
-    if (coupon.usage_limit && coupon.usage_count >= coupon.usage_limit) {
-      return res.json({ valid: false, error: 'Coupon usage limit reached' });
-    }
-
-    // Calculate discount
-    let discountRs = 0;
-    if (coupon.discount_type === 'percent') {
-      discountRs = subtotalRs * (coupon.discount_value / 100);
-      if (coupon.max_discount_rs) discountRs = Math.min(discountRs, coupon.max_discount_rs);
-    } else {
-      discountRs = coupon.discount_value;
-    }
-    discountRs = Math.min(discountRs, subtotalRs); // Can't exceed subtotal
-
-    res.json({
-      valid: true,
-      discount: {
-        amount: Math.round(discountRs * 100),
-        currency: 'INR',
-        description: coupon.description || `${coupon.discount_type === 'percent' ? coupon.discount_value + '% off' : '₹' + coupon.discount_value + ' off'}`,
-      },
-    });
-  } catch (err) {
-    log.error({ err }, 'Coupon error');
-    res.json({ valid: false, error: 'Could not validate coupon' });
   }
 }
 
@@ -297,8 +279,21 @@ async function handleOrder(value) {
   const deliveryFeeRs = (shippingOption.price?.amount || 0) / 100;
   const isPickup = shippingOption.id === 'pickup';
 
-  // Discount
-  const discountRs = (data.discount?.amount || 0) / 100;
+  // Discount — RE-VALIDATED below after customer creation. Never trust
+  // `data.discount.amount` from the Meta payload: the coupon may have
+  // been deactivated, hit its usage cap, or expired between apply_coupon
+  // and the final order callback. The discount that lands on the order
+  // must come from a live `validateCoupon()` against current DB state,
+  // matching the conversational flow's behaviour.
+  const couponCode = (data.coupon_code || '').toUpperCase().trim();
+  let discountRs = 0;
+  // Set to the rejected code if revalidation fails — used after the
+  // order is inserted to send the customer a "no longer valid" notice.
+  let invalidCouponCode = null;
+  // Captured from validateCoupon when re-validation succeeds so the
+  // order doc can record coupon_id / coupon_code / coupon_scope and
+  // the platform-funded paise figure (settlement attribution).
+  let appliedCoupon = null;
 
   // Customer info
   const customerPhone = data.customer_phone || data.phone;
@@ -336,6 +331,33 @@ async function handleOrder(value) {
         log.info(`[BSUID] Detected on checkout for customer ${sightedBsuidCheckout.slice(0, 12)}…`);
       }).catch(err => log.warn({ err }, '[BSUID] checkout stamp failed'));
     });
+  }
+
+  // Live coupon revalidation — runs AFTER customer creation so the
+  // service can enforce per-user-limit and first-order-only checks.
+  // A rejection here zeroes the discount; the customer is messaged
+  // after the order is inserted (further down).
+  if (couponCode) {
+    const isFirstOrder = await couponSvc
+      .isCustomerFirstOrder(customer.id, waAccount.restaurant_id)
+      .catch(() => false);
+    const result = await couponSvc
+      .validateCoupon(couponCode, waAccount.restaurant_id, subtotalRs, {
+        customerId: customer.id,
+        branchId,
+        isFirstOrder,
+      })
+      .catch(err => {
+        log.warn({ err, couponCode }, 'validateCoupon threw — treating coupon as invalid');
+        return { valid: false, reason: 'service_error' };
+      });
+    if (result.valid) {
+      discountRs = result.discountRs || 0;
+      appliedCoupon = result.coupon || null;
+    } else {
+      invalidCouponCode = couponCode;
+      log.info({ couponCode, reason: result.reason }, 'Coupon no longer valid at order finalization — discount cleared');
+    }
   }
 
   const charges = calculateOrderCharges(
@@ -390,6 +412,20 @@ async function handleOrder(value) {
     log.warn({ err: err?.message, restaurantId: waAccount.restaurant_id }, 'display_order_id generation failed — falling back to order_number');
   }
 
+  // Coupon attribution captured from the LIVE validateCoupon result
+  // (not from the Meta payload). Mirrors services/order.js so both
+  // entry points produce the same shape on the order doc.
+  const couponScope = appliedCoupon
+    ? (appliedCoupon.restaurant_id == null ? 'platform' : 'restaurant')
+    : null;
+  const platformDiscountPaise = couponScope === 'platform'
+    ? Math.round((Number(discountRs) || 0) * 100)
+    : 0;
+  const orderCouponId = appliedCoupon
+    ? String(appliedCoupon._id || appliedCoupon.id || '')
+    : null;
+  const orderCouponCode = appliedCoupon ? (appliedCoupon.code || null) : null;
+
   const order = {
     _id: orderId,
     order_number: orderNumber,
@@ -405,6 +441,10 @@ async function handleOrder(value) {
     delivery_lng: data.shipping_address?.longitude ? parseFloat(data.shipping_address.longitude) : null,
     order_type: isPickup ? 'pickup' : 'delivery',
     source: 'wa_checkout',
+    coupon_id: orderCouponId,
+    coupon_code: orderCouponCode,
+    coupon_scope: couponScope,
+    platform_discount_paise: platformDiscountPaise,
     ...charges,
     total_rs: charges.customer_total_rs,
     item_count: orderItems.reduce((s, i) => s + i.quantity, 0),
@@ -434,6 +474,62 @@ async function handleOrder(value) {
   }
 
   log.info({ orderNumber, totalRs: charges.customer_total_rs, itemCount: orderItems.length }, 'Order created');
+
+  // ─── COUPON REDEMPTION TRACKING ─────────────────────────────
+  // The conversational path runs incrementUsage + recordRedemption
+  // inside the order-creation transaction (services/order.js). This
+  // webhook inserts the order directly without a session, so we mirror
+  // the calls here, post-insert. Both are wrapped — a redemption
+  // tracking failure must NEVER fail the order (Meta has already
+  // accepted the customer's payment / order intent).
+  //
+  // discount_paise stores the actual customer-facing discount on the
+  // redemption row regardless of scope, matching services/order.js. The
+  // funding source is captured separately via coupon_scope so reporting
+  // can attribute platform spend without ambiguity.
+  if (appliedCoupon) {
+    const couponDiscountPaise = Math.round((Number(discountRs) || 0) * 100);
+    const couponDocId = String(appliedCoupon._id || appliedCoupon.id || '');
+    try {
+      await couponSvc.incrementUsage(couponDocId);
+    } catch (err) {
+      log.warn({ err, orderNumber, couponId: couponDocId }, 'incrementUsage failed — non-fatal');
+    }
+    try {
+      await couponSvc.recordRedemption(
+        couponDocId,
+        customer.id,
+        String(orderId),
+        null, // no transactional session in this path
+        couponDiscountPaise,
+        couponScope,
+      );
+    } catch (err) {
+      log.warn({ err, orderNumber, couponId: couponDocId }, 'recordRedemption failed — non-fatal');
+    }
+  }
+
+  // Coupon-invalid notice — sent only when revalidation rejected the
+  // applied code. Fire-and-forget: Meta has already accepted the order,
+  // so a WA send failure here must never propagate.
+  if (invalidCouponCode) {
+    try {
+      const wa = require('../services/whatsapp');
+      const metaConfig = require('../config/meta');
+      const pid = waAccount.phone_number_id;
+      const token = metaConfig.systemUserToken || waAccount.access_token;
+      if (pid && token && customerPhone) {
+        await wa.sendText(
+          pid,
+          token,
+          customerPhone,
+          `⚠️ The coupon *${invalidCouponCode}* is no longer valid. Your order has been placed at the full price of ₹${(charges.customer_total_rs || 0).toFixed(0)}.`
+        );
+      }
+    } catch (err) {
+      log.warn({ err, orderNumber, invalidCouponCode }, 'Coupon-invalid notice send failed');
+    }
+  }
 
   // ─── POST-ORDER HOOKS (fire-and-forget, must never fail the webhook) ──
   // The HTTP 200 was already sent before handleOrder ran, so these hooks
@@ -511,7 +607,14 @@ async function handleOrder(value) {
       if (flip.matchedCount === 1) {
         const ord = await col('orders').findOne(
           { _id: orderId },
-          { projection: { restaurant_id: 1, total_rs: 1, order_number: 1 } }
+          { projection: {
+              restaurant_id: 1,
+              total_rs: 1,
+              order_number: 1,
+              coupon_scope: 1,
+              coupon_code: 1,
+              platform_discount_paise: 1,
+          } }
         );
         if (ord?.restaurant_id) {
           const ledger = require('../services/ledger.service');
@@ -524,6 +627,27 @@ async function handleOrder(value) {
             notes: `WA Native Checkout payment — order ${ord.order_number}`,
           });
           log.info({ orderId, orderNumber: ord.order_number }, 'wa_checkout ledger credit written');
+
+          // ─── PLATFORM COUPON COMPENSATION ─────────────────────────
+          // Mirrors the razorpay.js path: when a customer redeems a
+          // platform-wide coupon, GullyBite funds the discount so the
+          // restaurant doesn't absorb it. The unique
+          // (restaurant_id, ref_type, ref_id) index in restaurant_ledger
+          // makes this idempotent across duplicate webhooks; the outer
+          // flip-guard above already serializes the broader block.
+          if (
+            ord.coupon_scope === 'platform'
+            && Number(ord.platform_discount_paise) > 0
+          ) {
+            await ledger.credit({
+              restaurantId: ord.restaurant_id,
+              amountPaise: Number(ord.platform_discount_paise),
+              refType: 'platform_coupon_credit',
+              refId: String(orderId),
+              status: 'completed',
+              notes: `Platform coupon compensation — ${ord.coupon_code || ''}`.trim(),
+            });
+          }
         }
       } else {
         log.info({ orderId }, 'wa_checkout: payment_status already paid — ledger credit skipped (race lost)');

@@ -183,17 +183,17 @@ function DropoffRow({ item, onRecovered }: DropoffRowProps) {
           <span className="text-dim text-[0.72rem]">—</span>
         ) : confirming ? (
           <div className="inline-flex gap-1">
-            <button type="button" className="btn-g btn-sm text-[0.7rem] py-[0.2rem] px-2" onClick={() => setConfirming(false)} disabled={busy}>
+            <button type="button" className="btn-g btn-xs" onClick={() => setConfirming(false)} disabled={busy}>
               Cancel
             </button>
-            <button type="button" className="btn-p btn-sm text-[0.7rem] py-[0.2rem] px-2" onClick={handleRecover} disabled={busy}>
+            <button type="button" className="btn-p btn-xs" onClick={handleRecover} disabled={busy}>
               {busy ? '…' : 'Send'}
             </button>
           </div>
         ) : (
           <button
             type="button"
-            className="btn-p btn-sm text-[0.72rem] py-1 px-[0.6rem]"
+            className="btn-p btn-xs"
             onClick={() => setConfirming(true)}
           >
             Send Recovery

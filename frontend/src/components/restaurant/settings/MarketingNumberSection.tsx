@@ -109,7 +109,7 @@ export default function MarketingNumberSection() {
             </div>
             <button
               type="button"
-              className="btn-g btn-sm text-[#dc2626] border-[#dc2626]"
+              className="btn-del"
               onClick={handleDisconnect}
               disabled={saving}
             >

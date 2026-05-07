@@ -429,7 +429,15 @@ const confirmPaidOrder = async (orderId, event) => {
       // Credit ledger keyed by rp_payment_id (Phase 3.1 convention).
       try {
         const ledger = require('../services/ledger.service');
-        const ord = await col('orders').findOne({ _id: String(orderId) }, { projection: { restaurant_id: 1 } });
+        const ord = await col('orders').findOne(
+          { _id: String(orderId) },
+          { projection: {
+              restaurant_id: 1,
+              coupon_scope: 1,
+              coupon_code: 1,
+              platform_discount_paise: 1,
+          } },
+        );
         if (ord?.restaurant_id && netPaise > 0) {
           await ledger.credit({
             restaurantId: ord.restaurant_id,
@@ -438,6 +446,33 @@ const confirmPaidOrder = async (orderId, event) => {
             refId: String(paymentEntity.id),  // rp_payment_id
             status: 'completed',
             notes: `Razorpay payment ${paymentEntity.id} (gross ${amountPaise}p − fee ${feePaise}p − tax ${taxPaise}p)`,
+          });
+        }
+
+        // ─── PLATFORM COUPON COMPENSATION ─────────────────────────
+        // When the customer redeemed a platform-wide coupon (coupons
+        // .restaurant_id === null), the customer paid (and Razorpay
+        // captured) a discounted total. Without this credit the
+        // restaurant would silently absorb the discount via a smaller
+        // payment-credit ledger entry. We reverse that by writing a
+        // GullyBite-funded credit for the discount value.
+        //
+        // Idempotency: the unique (restaurant_id, ref_type, ref_id)
+        // index in restaurant_ledger no-ops a duplicate insert, and
+        // the outer flip-guard above already serializes the surrounding
+        // confirmation block — replays are safe end-to-end.
+        if (
+          ord?.restaurant_id
+          && ord.coupon_scope === 'platform'
+          && Number(ord.platform_discount_paise) > 0
+        ) {
+          await ledger.credit({
+            restaurantId: ord.restaurant_id,
+            amountPaise: Number(ord.platform_discount_paise),
+            refType: 'platform_coupon_credit',
+            refId: String(orderId),
+            status: 'completed',
+            notes: `Platform coupon compensation — ${ord.coupon_code || ''}`.trim(),
           });
         }
       } catch (ledgerErr) {

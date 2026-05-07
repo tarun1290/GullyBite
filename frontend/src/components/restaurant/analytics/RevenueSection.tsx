@@ -43,6 +43,7 @@ interface OverviewData {
 interface RevenueDataPoint {
   date: string;
   revenue_rs: number;
+  gross_revenue_rs?: number;
   order_count: number;
 }
 
@@ -176,6 +177,23 @@ export default function RevenueSection({ dateRange }: RevenueSectionProps) {
 
   const d: OverviewData = overviewQ.data || {};
 
+  // Period-total discount = sum(gross) − sum(net) across the rows
+  // /analytics/revenue returned. Granularity (day/week/month) doesn't
+  // matter — the row sums are the same period total either way. Older
+  // backend versions may not return gross_revenue_rs; treat missing as
+  // equal to net (zero diff → no banner).
+  const discountTotalRs = useMemo(() => {
+    const rows = revenueQ.data;
+    if (!Array.isArray(rows) || rows.length === 0) return 0;
+    let net = 0;
+    let gross = 0;
+    for (const r of rows) {
+      net += Number(r.revenue_rs) || 0;
+      gross += Number(r.gross_revenue_rs ?? r.revenue_rs) || 0;
+    }
+    return Math.max(0, Math.round(gross - net));
+  }, [revenueQ.data]);
+
   return (
     <>
       <div className="stats" id="an-overview">
@@ -188,6 +206,9 @@ export default function RevenueSection({ dateRange }: RevenueSectionProps) {
           <div className="stat-l">Revenue</div>
           <div className="stat-v">{d.total_revenue_rs != null ? formatINR(d.total_revenue_rs) : '—'}</div>
           <div className="stat-s"><PctChange value={d.changes?.revenue_pct} /></div>
+          {discountTotalRs > 0 && (
+            <div className="stat-s text-dim">Incl. {formatINR(discountTotalRs)} discount</div>
+          )}
         </div>
         <div className="stat">
           <div className="stat-l">Avg Order Value</div>

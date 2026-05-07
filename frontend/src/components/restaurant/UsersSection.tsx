@@ -216,7 +216,7 @@ export default function UsersSection() {
                               />
                               <button
                                 type="button"
-                                className="btn-p btn-sm text-[0.7rem]"
+                                className="btn-p btn-xs"
                                 onClick={() => handleResetPin(u)}
                                 disabled={pinBusy}
                               >
@@ -224,7 +224,7 @@ export default function UsersSection() {
                               </button>
                               <button
                                 type="button"
-                                className="btn-g btn-sm text-[0.7rem]"
+                                className="btn-g btn-xs"
                                 onClick={cancelPinReset}
                                 disabled={pinBusy}
                               >
@@ -243,7 +243,7 @@ export default function UsersSection() {
                               </button>
                               <button
                                 type="button"
-                                className="btn-g btn-sm text-[0.72rem]"
+                                className="btn-g btn-xs"
                                 onClick={() => setPendingDeactivate(null)}
                                 disabled={rowBusy === u.id}
                               >

@@ -244,14 +244,14 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
                     <span className="font-semibold text-[0.84rem] flex-1">{s.name}</span>
                     <span className="badge bd text-[0.62rem]">{s.type}</span>
                     {syncBadge}
-                    <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => openEdit(s)}>✏ Edit</button>
+                    <button type="button" className="btn-g btn-xs" onClick={() => openEdit(s)}>✏ Edit</button>
                     {pendingDelete === s.id ? (
                       <>
                         <button type="button" className="btn-del btn-sm" onClick={() => handleDelete(s.id)}>Delete</button>
-                        <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => setPendingDelete(null)}>Cancel</button>
+                        <button type="button" className="btn-g btn-xs" onClick={() => setPendingDelete(null)}>Cancel</button>
                       </>
                     ) : (
-                      <button type="button" className="btn-g btn-sm text-[0.72rem] text-[#dc2626]" onClick={() => setPendingDelete(s.id)}>🗑</button>
+                      <button type="button" className="btn-del" onClick={() => setPendingDelete(s.id)}>🗑</button>
                     )}
                   </div>
                 );

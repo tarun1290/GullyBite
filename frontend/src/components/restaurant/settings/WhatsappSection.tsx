@@ -173,7 +173,7 @@ export default function WhatsappSection() {
               <WaConnectBanner compact onConnected={refetch} />
               <button
                 type="button"
-                className="btn-g btn-sm flex-1 min-w-[140px] justify-center text-[#dc2626] border-[#dc2626]"
+                className="btn-del flex-1 min-w-[140px] justify-center"
                 onClick={() => setConfirmOpen(true)}
                 disabled={disconnecting}
               >

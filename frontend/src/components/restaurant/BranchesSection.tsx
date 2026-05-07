@@ -534,7 +534,7 @@ export default function BranchesSection() {
                         </span>
                         <button
                           type="button"
-                          className="btn-p btn-sm text-[0.7rem] py-[0.15rem] px-2"
+                          className="btn-p btn-xs"
                           onClick={(e) => { e.stopPropagation(); handleRetryBilling(b); }}
                           disabled={retryingBranchId === b.id}
                         >

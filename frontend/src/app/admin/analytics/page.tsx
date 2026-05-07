@@ -59,6 +59,10 @@ interface OverviewData {
   completion_rate?: number;
   repeat_rate?: number;
   platform_revenue?: number | string;
+  // Platform-funded coupon spend across the requested window. Sourced
+  // from restaurant_ledger entries where ref_type='platform_coupon_credit'.
+  platform_coupon_spend_paise?: number;
+  platform_coupon_redemptions_count?: number;
   change?: OverviewChange;
 }
 
@@ -274,6 +278,11 @@ function OverviewKpis({ params }: ParamsProps): ReactNode {
       <StatCard label="Completion"       value={d ? `${d.completion_rate ?? 0}%` : '—'} />
       <StatCard label="Repeat Rate"      value={d ? `${d.repeat_rate ?? 0}%` : '—'} />
       <StatCard label="Platform Revenue" value={d ? fmtRs(d.platform_revenue) : '—'} />
+      <StatCard
+        label="Platform Coupon Spend"
+        value={d ? fmtRs((d.platform_coupon_spend_paise ?? 0) / 100) : '—'}
+        delta={d ? `${d.platform_coupon_redemptions_count ?? 0} redemptions` : ''}
+      />
     </div>
   );
 }

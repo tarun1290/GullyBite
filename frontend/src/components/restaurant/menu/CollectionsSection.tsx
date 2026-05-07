@@ -297,14 +297,14 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
                     </div>
                     {c.is_active === false && <span className="text-[0.65rem] text-mute">⚪ inactive</span>}
                     {syncBadge}
-                    <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => openEdit(c)}>✏ Edit</button>
+                    <button type="button" className="btn-g btn-xs" onClick={() => openEdit(c)}>✏ Edit</button>
                     {pendingDelete === c.id ? (
                       <>
                         <button type="button" className="btn-del btn-sm" onClick={() => handleDelete(c.id)}>Delete</button>
-                        <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => setPendingDelete(null)}>Cancel</button>
+                        <button type="button" className="btn-g btn-xs" onClick={() => setPendingDelete(null)}>Cancel</button>
                       </>
                     ) : (
-                      <button type="button" className="btn-g btn-sm text-[0.72rem] text-[#dc2626]" onClick={() => setPendingDelete(c.id)}>🗑</button>
+                      <button type="button" className="btn-del" onClick={() => setPendingDelete(c.id)}>🗑</button>
                     )}
                   </div>
                 );

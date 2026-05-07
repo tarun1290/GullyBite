@@ -298,7 +298,7 @@ export default function CampaignsSection() {
         </div>
       </div>
 
-      <div className="bg-[#eff6ff] border border-[#93c5fd] rounded-lg py-[0.85rem] px-4 mb-[1.2rem] text-[0.8rem] leading-relaxed text-[#1e3a5f]">
+      <div className="bg-[#eff6ff] border border-[#93c5fd] rounded-lg py-[0.85rem] px-4 mb-[1.2rem] text-[0.8rem] leading-relaxed text-[#1e3a5f] shadow-sm-token">
         <strong>Campaign Best Practices (Meta 2026):</strong>
         <br />
         • Segment your audience — targeted messages get better engagement

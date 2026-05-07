@@ -479,7 +479,7 @@ export default function MenuEditorSection({
               </button>
               <button
                 type="button"
-                className="btn-g btn-sm ml-[0.15rem] text-[0.7rem] py-1 px-[0.4rem]"
+                className="btn-g btn-xs ml-[0.15rem]"
                 onClick={() => setPendingDeleteId(null)}
               >
                 No
@@ -590,7 +590,7 @@ export default function MenuEditorSection({
                 </button>
                 <button
                   type="button"
-                  className="btn-g btn-sm ml-[0.15rem] text-[0.7rem] py-1 px-[0.4rem]"
+                  className="btn-g btn-xs ml-[0.15rem]"
                   onClick={() => setPendingDeleteId(null)}
                 >
                   No
@@ -647,7 +647,7 @@ export default function MenuEditorSection({
         {isSpecificBranch && hasCatalog && (
           <button
             type="button"
-            className="btn-g btn-sm text-[0.7rem]"
+            className="btn-g btn-xs"
             onClick={handleFixCatalog}
             disabled={fixingCatalog}
           >
@@ -731,7 +731,7 @@ export default function MenuEditorSection({
                 <button type="button" className="btn-g btn-sm" onClick={() => setPendingBulkDelete(false)}>Cancel</button>
               </>
             ) : (
-              <button type="button" className="btn-g btn-sm text-[#dc2626]" onClick={() => setPendingBulkDelete(true)}>
+              <button type="button" className="btn-del" onClick={() => setPendingBulkDelete(true)}>
                 🗑 Delete {checked.size}
               </button>
             )

@@ -6483,11 +6483,26 @@ router.get('/analytics/revenue', requirePermission('view_analytics'), async (req
     else if (gran === 'month') dateExpr = { $dateToString: { format: '%Y-%m', date: '$created_at' } };
     else dateExpr = { $dateToString: { format: '%Y-%m-%d', date: '$created_at' } };
 
+    // revenue_rs    — post-discount (what the customer paid; matches total_rs)
+    // gross_revenue_rs — pre-discount subtotal. Lets the dashboard show
+    //                    the discount delta when platform / restaurant
+    //                    coupons were applied without joining coupons.
     const data = await col('orders').aggregate([
       { $match: { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } } },
-      { $group: { _id: dateExpr, revenue_rs: { $sum: { $toDouble: '$total_rs' } }, order_count: { $sum: 1 } } },
+      { $group: {
+          _id: dateExpr,
+          revenue_rs: { $sum: { $toDouble: '$total_rs' } },
+          gross_revenue_rs: { $sum: { $toDouble: '$subtotal_rs' } },
+          order_count: { $sum: 1 },
+      } },
       { $sort: { _id: 1 } },
-      { $project: { _id: 0, date: '$_id', revenue_rs: { $round: ['$revenue_rs', 2] }, order_count: 1 } },
+      { $project: {
+          _id: 0,
+          date: '$_id',
+          revenue_rs: { $round: ['$revenue_rs', 2] },
+          gross_revenue_rs: { $round: ['$gross_revenue_rs', 2] },
+          order_count: 1,
+      } },
     ]).toArray();
 
     res.json(data);
@@ -7325,13 +7340,14 @@ router.post('/coupons', requirePermission('manage_coupons'), express.json(), asy
 
 router.patch('/coupons/:id', requirePermission('manage_coupons'), express.json(), async (req, res) => {
   try {
-    const { isActive, description, validUntil, usageLimit, maxDiscountRs } = req.body;
+    const { isActive, description, validUntil, usageLimit, maxDiscountRs, minOrderRs } = req.body;
     const $set = { updated_at: new Date() };
     if (isActive      !== undefined) $set.is_active      = isActive;
     if (description   !== undefined) $set.description    = description;
     if (validUntil    !== undefined) $set.valid_until    = validUntil ? new Date(validUntil) : null;
     if (usageLimit    !== undefined) $set.usage_limit    = usageLimit;
     if (maxDiscountRs !== undefined) $set.max_discount_rs= maxDiscountRs;
+    if (minOrderRs    !== undefined) $set.min_order_rs   = minOrderRs;
 
     const updated = await col('coupons').findOneAndUpdate(
       { _id: req.params.id, restaurant_id: req.restaurantId },

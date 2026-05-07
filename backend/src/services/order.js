@@ -303,6 +303,33 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
   const referralId    = referral?.id || null;
   const referralFeeRs = referral ? calculateReferralCommission(subtotalRs).commission_amount : 0;
 
+  // ─── COUPON SCOPE & PLATFORM-FUNDED PAISE ─────────────────
+  // The conversational flow passes `couponId` (a string) here, not the
+  // full coupon doc, so we look up `restaurant_id` to determine scope.
+  // Platform coupons are coupons.restaurant_id === null; their discount
+  // value (in paise) is captured separately so settlement reporting can
+  // attribute the spend to the platform rather than the restaurant.
+  // Failure to load the doc leaves both fields at null/0 — non-fatal.
+  let couponScope = null;
+  let platformDiscountPaise = 0;
+  if (couponId) {
+    try {
+      const couponDoc = await col('coupons').findOne(
+        { _id: couponId },
+        { projection: { restaurant_id: 1 } },
+      );
+      if (couponDoc) {
+        couponScope = couponDoc.restaurant_id == null ? 'platform' : 'restaurant';
+        if (couponScope === 'platform') {
+          platformDiscountPaise = Math.round((Number(discountRs) || 0) * 100);
+        }
+      }
+    } catch (err) {
+      log.warn({ err, couponId }, 'coupon scope lookup failed — leaving fields null');
+    }
+  }
+  const couponDiscountPaise = couponId ? Math.round((Number(discountRs) || 0) * 100) : 0;
+
   const effectiveTotal = charges ? charges.customer_total_rs : totalRs;
 
   // ─── CAMPAIGN ATTRIBUTION ─────────────────────────────────
@@ -354,6 +381,8 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
     platform_fee_rs: platformFeeRs,
     coupon_id: couponId,
     coupon_code: couponCode,
+    coupon_scope: couponScope,
+    platform_discount_paise: platformDiscountPaise,
     referral_id: referralId,
     referral_fee_rs: referralFeeRs,
     delivery_address: deliveryAddress,
@@ -437,7 +466,14 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
 
     if (couponId) {
       await couponSvc.incrementUsage(couponId, session);
-      await couponSvc.recordRedemption(couponId, customerId, String(order._id), session);
+      await couponSvc.recordRedemption(
+        couponId,
+        customerId,
+        String(order._id),
+        session,
+        couponDiscountPaise,
+        couponScope,
+      );
     }
 
     if (referralId) {

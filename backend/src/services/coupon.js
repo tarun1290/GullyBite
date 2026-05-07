@@ -106,14 +106,17 @@ function calculateDiscount(coupon, subtotalRs) {
   let discountRs;
   if (coupon.discount_type === 'percent') {
     discountRs = subtotalRs * (parseFloat(coupon.discount_value) / 100);
-    if (coupon.max_discount_rs) {
-      discountRs = Math.min(discountRs, parseFloat(coupon.max_discount_rs));
-    }
   } else if (coupon.discount_type === 'free_delivery') {
     discountRs = 0; // Delivery zeroed out separately in charge calculation
   } else {
     // flat
     discountRs = parseFloat(coupon.discount_value);
+  }
+  // max_discount_rs caps both percent and flat. free_delivery's discountRs
+  // is 0 here (delivery is zeroed in charges.js), so the comparison is a
+  // safe no-op for that case — no need for a type-specific guard.
+  if (coupon.max_discount_rs && discountRs > parseFloat(coupon.max_discount_rs)) {
+    discountRs = parseFloat(coupon.max_discount_rs);
   }
   discountRs = Math.min(discountRs, subtotalRs);
   return parseFloat(discountRs.toFixed(2));
@@ -221,8 +224,16 @@ const incrementUsage = async (couponId, session = null) => {
 };
 
 // ─── RECORD REDEMPTION ───────────────────────────────────────
-// Tracks per-user coupon usage for per_user_limit enforcement.
-const recordRedemption = async (couponId, customerId, orderId, session = null) => {
+// Tracks per-user coupon usage for per_user_limit enforcement, and
+// captures the discount value + scope at redemption time so platform-
+// vs restaurant-funded coupon spend can be aggregated downstream
+// without re-deriving via a join back to the coupons doc (which may
+// have been edited or deleted by the time reporting runs).
+//
+// `discountPaise` and `couponScope` are passed positionally for
+// back-compat with existing callers; both default to null when a
+// caller hasn't been updated yet.
+const recordRedemption = async (couponId, customerId, orderId, session = null, discountPaise = null, couponScope = null) => {
   if (!couponId || !customerId) return;
   const opts = session ? { session } : {};
   await col('coupon_redemptions').insertOne({
@@ -230,6 +241,8 @@ const recordRedemption = async (couponId, customerId, orderId, session = null) =
     coupon_id: couponId,
     customer_id: customerId,
     order_id: orderId,
+    discount_paise: discountPaise,
+    coupon_scope: couponScope,
     redeemed_at: new Date(),
   }, opts).catch(e => log.warn({ err: e }, 'Redemption tracking failed'));
 };
@@ -271,7 +284,11 @@ async function createCoupon(input) {
     _id: newId(),
     restaurant_id: restaurant_id ? String(restaurant_id) : null,
     code: normCode,
-    coupon_id: coupon_id || normCode.toLowerCase(),
+    // Display slug — lower-cased + non-alphanumerics collapsed to '-'.
+    // Uniqueness isn't enforced here; the (restaurant_id, code) unique
+    // index is the canonical guard. Honours an explicit input.coupon_id
+    // when supplied so callers can override the auto-derivation.
+    coupon_id: coupon_id || normCode.toLowerCase().replace(/[^a-z0-9]/g, '-'),
     description: description || '',
     discount_type,
     discount_value: Number(discount_value) || 0,
@@ -355,15 +372,20 @@ async function applyCoupon({ restaurantId, code, subtotalPaise, customerId = nul
   let discountPaise;
   if (coupon.discount_type === 'percent') {
     discountPaise = Math.round(subtotalPaise * (Number(coupon.discount_value) / 100));
-    const capPaise = coupon.max_discount_paise != null
-      ? coupon.max_discount_paise
-      : (coupon.max_discount_rs != null ? Math.round(Number(coupon.max_discount_rs) * 100) : null);
-    if (capPaise != null) discountPaise = Math.min(discountPaise, capPaise);
   } else if (coupon.discount_type === 'flat') {
     discountPaise = Math.round(Number(coupon.discount_value) * 100);
   } else {
     // free_delivery: no line-item discount; delivery is zeroed at the order layer.
     discountPaise = 0;
+  }
+  // max_discount cap applies to both percent and flat — operators frequently
+  // use it as a per-order ceiling on flat coupons too. free_delivery's
+  // discountPaise is 0 here so the comparison is a safe no-op for that case.
+  const capPaise = coupon.max_discount_paise != null
+    ? coupon.max_discount_paise
+    : (coupon.max_discount_rs != null ? Math.round(Number(coupon.max_discount_rs) * 100) : null);
+  if (capPaise != null && discountPaise > capPaise) {
+    discountPaise = capPaise;
   }
   discountPaise = Math.min(discountPaise, subtotalPaise);
 

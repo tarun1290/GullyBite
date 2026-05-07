@@ -86,21 +86,30 @@ body { font-family: var(--font-body); background: var(--ink); color: var(--tx); 
 /* ── CARDS ─────────────────────────────── */
 .card { background: var(--ink2); border: 1px solid var(--rim); border-radius: var(--r); overflow: hidden; margin-bottom: 1.2rem; box-shadow: var(--shadow-sm); transition: box-shadow .14s; }
 .card:hover { box-shadow: var(--shadow); }
-.ch { padding: .9rem 1.3rem; border-bottom: 1px solid var(--rim); display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--ink2); }
+/* Branch tiles in BranchesSection — surface chrome (background, border,
+   radius) is set via Tailwind utilities on the JSX; only the depth
+   token is centralised here so all card-like surfaces match. */
+.bcard { box-shadow: var(--shadow-sm); }
+.ch { padding: 1rem 1.5rem; border-bottom: 1px solid var(--rim); display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--ink2); }
 .ch h3 { font-size: .85rem; font-weight: 700; color: var(--tx); letter-spacing: -.01em; }
-.cb { padding: 1.3rem; }
+.cb { padding: 1.4rem 1.5rem; }
 
 /* ── BUTTONS ───────────────────────────── */
-.btn, .btn-p { display: inline-flex; align-items: center; gap: .38rem; background: var(--acc); color: var(--gb-neutral-0); font-weight: 600; font-size: .8rem; padding: .52rem 1.1rem; border-radius: var(--radius-md); border: none; white-space: nowrap; transition: all .16s ease; cursor: pointer; letter-spacing: .01em; }
-.btn:hover, .btn-p:hover { background: var(--acc2); box-shadow: 0 2px 8px rgba(67, 56, 202, .28); transform: translateY(-1px); }
+.btn, .btn-p { display: inline-flex; align-items: center; gap: .38rem; background: var(--acc); color: var(--gb-neutral-0); font-weight: 600; font-size: .8rem; line-height: 1; min-height: 2rem; padding: .52rem 1.1rem; border-radius: var(--radius-md); border: none; white-space: nowrap; transition: all .16s ease; cursor: pointer; letter-spacing: .01em; }
+.btn:hover, .btn-p:hover { background: var(--acc2); box-shadow: 0 2px 8px var(--gb-teal-700-glow); transform: translateY(-1px); }
 .btn:active, .btn-p:active { transform: translateY(0); box-shadow: none; }
 .btn:disabled, .btn-p:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; transform: none; }
-.btn-g { display: inline-flex; align-items: center; gap: .38rem; background: var(--gb-neutral-0); border: 1px solid var(--rim); color: var(--dim); font-weight: 500; font-size: .78rem; padding: .48rem .95rem; border-radius: var(--radius-md); white-space: nowrap; transition: all .14s ease; cursor: pointer; }
+.btn-g { display: inline-flex; align-items: center; gap: .38rem; background: var(--gb-neutral-0); border: 1px solid var(--rim); color: var(--dim); font-weight: 500; font-size: .78rem; line-height: 1; min-height: 1.9rem; padding: .48rem .95rem; border-radius: var(--radius-md); white-space: nowrap; transition: all .14s ease; cursor: pointer; }
 .btn-g:hover { background: var(--ink4); border-color: var(--rim2); color: var(--tx); }
 .btn-g:disabled { opacity: .4; cursor: not-allowed; }
 .btn-del { background: transparent; border: 1px solid rgba(220, 38, 38, .2); color: var(--red); font-size: .76rem; font-weight: 500; padding: .4rem .75rem; border-radius: 7px; transition: all .14s; cursor: pointer; }
 .btn-del:hover { background: rgba(220, 38, 38, .06); border-color: var(--red); }
+.btn-wa { background: #25D366; color: #fff; border: none; }
+.btn-wa:hover { background: #1fbd5a; }
+.btn-success { background: var(--gb-green-600); color: #fff; border: none; }
+.btn-success:hover { background: var(--gb-green-700); }
 .btn-sm { font-size: .73rem; padding: .3rem .65rem; }
+.btn-xs { font-size: .7rem; padding: .2rem .55rem; min-height: 1.5rem; }
 .btn-gold { background: var(--gold); color: var(--gb-neutral-0); }
 .btn-gold:hover { background: var(--gold2); }
 
@@ -126,7 +135,7 @@ textarea { resize: vertical; min-height: 66px; }
 .tsl input:disabled + .tsl-track { opacity: .5; cursor: not-allowed; }
 
 /* ── CHIPS / TAB BAR ───────────────────── */
-.chips { display: flex; gap: .35rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
+.chips { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
 .chip { padding: .28rem .8rem; border-radius: 100px; border: 1px solid var(--rim); background: var(--gb-neutral-0); color: var(--dim); font-size: .74rem; font-weight: 500; transition: all .14s; cursor: pointer; }
 .chip.on { border-color: var(--acc); color: var(--acc); background: var(--acc-glow); font-weight: 600; }
 .chip:hover:not(.on) { border-color: var(--rim2); color: var(--tx); background: var(--gb-neutral-50); }

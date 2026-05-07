@@ -246,7 +246,7 @@ function DeliverySection({ orderId, delivery, deliveryFeeTotalRs, onDispatch, on
             href={delivery.tracking_url}
             target="_blank"
             rel="noreferrer"
-            className="btn-p btn-sm no-underline text-[0.75rem]"
+            className="btn-p btn-xs no-underline"
           >
             📍 Track Delivery
           </a>
@@ -254,7 +254,7 @@ function DeliverySection({ orderId, delivery, deliveryFeeTotalRs, onDispatch, on
         {(status === 'failed' || status === 'cancelled') && (
           <button
             type="button"
-            className="btn-g btn-sm text-[0.75rem]"
+            className="btn-g btn-xs"
             onClick={() => onDispatch(orderId)}
             disabled={busy}
           >
@@ -274,7 +274,7 @@ function DeliverySection({ orderId, delivery, deliveryFeeTotalRs, onDispatch, on
         {status === 'pending' && (
           <button
             type="button"
-            className="btn-p btn-sm text-[0.75rem]"
+            className="btn-p btn-xs"
             onClick={() => onDispatch(orderId)}
             disabled={busy}
           >

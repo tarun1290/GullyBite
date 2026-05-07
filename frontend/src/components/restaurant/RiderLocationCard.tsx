@@ -70,7 +70,7 @@ export default function RiderLocationCard({ orderId }: RiderLocationCardProps) {
             href={trackingUrl}
             target="_blank"
             rel="noreferrer"
-            className="btn-p btn-sm ml-auto no-underline text-[0.75rem]"
+            className="btn-p btn-xs ml-auto no-underline"
           >
             📍 Track Rider
           </a>

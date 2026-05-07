@@ -17,6 +17,7 @@ const router = express.Router();
 const { decryptWithKey, encryptWithFlippedIv } = require('../services/checkout-crypto');
 const couponSvc = require('../services/coupon');
 const { col } = require('../config/database');
+const { getClient: getRedis } = require('../config/redis');
 const log = require('../utils/logger').child({ component: 'checkout-endpoint' });
 
 // Meta spec: return 421 when we cannot decrypt or version-negotiate.
@@ -146,6 +147,45 @@ async function handleApplyCoupon(payload) {
   const subtotalPaise = orderIn.subtotal?.value || 0;
   const customerPhone = body.input?.user_id || body.user_id || null;
 
+  // ─── IDEMPOTENCY GUARD (Meta retry safety) ──────────────────────
+  // Meta redrives apply_coupon when its earlier attempt didn't ack in
+  // time. Re-running validateCoupon on a retry races the per-user-limit
+  // and global-usage checks against any concurrent order create that
+  // already started using this coupon. Caching the prior valid response
+  // for the (reference_id, coupon_code) pair lets retries return the
+  // same answer without touching the DB.
+  //
+  // Only successful applies are cached — error responses must self-heal
+  // on retry (e.g. transient lookup failure → "Store not found").
+  // The cache is keyed on reference_id (per-checkout-session, fresh
+  // each MPM send) so a customer who removes and re-applies the same
+  // code in a future checkout still hits the live validator. Skip the
+  // cache when reference_id or code is missing — without a stable key
+  // the cache becomes a footgun (different sessions colliding).
+  const referenceId =
+    body.order_details?.reference_id
+    || orderIn?.reference_id
+    || payload?.reference_id
+    || '';
+  const cacheKey = referenceId && code ? `checkout:apply:${referenceId}:${code}` : null;
+  let redis = null;
+  if (cacheKey) {
+    try {
+      redis = await getRedis();
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch (parseErr) {
+          log.warn({ err: parseErr, cacheKey }, 'apply_coupon cache parse failed — falling through to live validate');
+        }
+      }
+    } catch (err) {
+      log.warn({ err, cacheKey }, 'apply_coupon cache read failed — proceeding without cache');
+      redis = null;
+    }
+  }
+
   const restaurantId = await _resolveRestaurantId(payload);
   if (!restaurantId) {
     return _applyCouponResponse(payload, orderIn, 0, { error: 'Store not found' });
@@ -159,9 +199,21 @@ async function handleApplyCoupon(payload) {
     return _applyCouponResponse(payload, orderIn, 0, { error: result.error });
   }
 
-  return _applyCouponResponse(payload, orderIn, result.discountPaise, {
+  const response = _applyCouponResponse(payload, orderIn, result.discountPaise, {
     description: result.description,
   });
+
+  // 5-minute TTL — covers Meta's retry window comfortably without
+  // pinning a stale answer past the natural checkout lifecycle.
+  if (cacheKey && redis) {
+    try {
+      await redis.set(cacheKey, JSON.stringify(response), { EX: 300 });
+    } catch (err) {
+      log.warn({ err, cacheKey }, 'apply_coupon cache write failed — non-fatal');
+    }
+  }
+
+  return response;
 }
 
 function _applyCouponResponse(payload, orderIn, discountPaise, extra = {}) {

@@ -153,7 +153,7 @@ export default function CategoriesManager({ branchId, onChange }: CategoriesMana
                   ) : (
                     <>
                       <button type="button" className="btn-g btn-sm" onClick={() => { setEditingId(c.id); setEditingName(c.name); }}>✏ Edit</button>
-                      <button type="button" className="btn-g btn-sm text-[#dc2626]" onClick={() => setPendingDelete(c.id)}>🗑</button>
+                      <button type="button" className="btn-del" onClick={() => setPendingDelete(c.id)}>🗑</button>
                     </>
                   )}
                 </div>

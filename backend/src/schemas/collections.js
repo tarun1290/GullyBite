@@ -319,6 +319,18 @@ const orders = {
     // for that reason. New shape — DO NOT migrate legacy rows.
     delivery_provider:         { type: 'string' },
     delivery_estimates:        { type: 'array' },
+    // Coupon attribution. Written by both order entry points (services/
+    // order.js for the conversational flow, webhooks/checkout.js for the
+    // WA Checkout endpoint). coupon_scope = 'platform' when the redeemed
+    // coupon's restaurant_id is null (platform-wide), 'restaurant'
+    // otherwise. platform_discount_paise carries the discount amount on
+    // platform-funded orders so settlement reporting can attribute the
+    // spend to the platform without joining back to the coupons doc
+    // (which may be edited or deleted by report-time).
+    coupon_id:                 { type: 'uuid' },
+    coupon_code:               { type: 'string' },
+    coupon_scope:              { type: 'string', enum: ['platform', 'restaurant'] },
+    platform_discount_paise:   { type: 'number' },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },
@@ -993,6 +1005,33 @@ const coupons = {
   ],
 };
 
+// ─── COUPON_REDEMPTIONS ──────────────────────────────────────
+// One row per coupon redemption. Backs per_user_limit enforcement
+// (services/coupon.js:validateCoupon counts existing rows by coupon_id +
+// customer_id) and platform-vs-restaurant coupon spend attribution.
+// Written by services/coupon.js:recordRedemption inside the order
+// creation transaction so a rolled-back order never leaves a phantom
+// redemption row. Indexes mirror config/indexes.js.
+const coupon_redemptions = {
+  collection: 'coupon_redemptions',
+  description: 'Per-redemption record for coupons. Captures the discount value and scope at redemption time so settlement reporting can attribute platform-funded spend without re-deriving via a join back to the coupons doc.',
+  fields: {
+    _id:            { type: 'uuid', required: true },
+    coupon_id:      { type: 'uuid', required: true },
+    customer_id:    { type: 'uuid', required: true },
+    order_id:       { type: 'uuid', required: true },
+    // Frozen at redemption time so a coupon edited or deleted after
+    // the order is placed doesn't disturb historical attribution.
+    discount_paise: { type: 'number' },
+    coupon_scope:   { type: 'string', enum: ['platform', 'restaurant'] },
+    redeemed_at:    { type: 'date', required: true },
+  },
+  indexes: [
+    { key: { coupon_id: 1, customer_id: 1 } },
+    { key: { order_id: 1 } },
+  ],
+};
+
 // ─── CHECKOUT_REFS ──────────────────────────────────────────
 // Short reference_id → restaurant_id mapping for the WhatsApp Checkout
 // endpoint. UUIDs don't fit in the 35-char reference_id limit, so the
@@ -1564,7 +1603,7 @@ const ALL_SCHEMAS = {
   customers, customer_metrics, customer_tags, customer_profiles, customer_addresses, cart_sessions, order_counters,
   conversations, payments, restaurant_ledger, settlements,
   whatsapp_accounts, referrals, menu_uploads, sync_logs, sync_summary, alerts,
-  brands, messages, catalog, catalog_sync_schedule, coupons, checkout_refs,
+  brands, messages, catalog, catalog_sync_schedule, coupons, coupon_redemptions, checkout_refs,
   wallet_transactions, customer_rfm_profiles, job_logs, campaign_templates,
   marketing_campaigns, campaign_message_map,
   auto_journey_config, journey_send_log,

@@ -145,7 +145,7 @@ function EscalateForm({ onSubmit, onCancel, busy }: EscalateFormProps) {
         <button type="button" className="btn-g btn-sm" onClick={onCancel} disabled={busy}>Cancel</button>
         <button
           type="button"
-          className="btn-p btn-sm bg-red-600 border-red-600"
+          className="btn-del"
           disabled={busy || !reason.trim()}
           onClick={() => onSubmit(reason.trim())}
         >
@@ -193,7 +193,7 @@ function ResolveForm({ onSubmit, onCancel, busy }: ResolveFormProps) {
         <button type="button" className="btn-g btn-sm" onClick={onCancel} disabled={busy}>Cancel</button>
         <button
           type="button"
-          className="btn-p btn-sm bg-green-600 border-green-600"
+          className="btn-p btn-sm btn-success"
           disabled={busy}
           onClick={() => onSubmit({ resolution_type: type, resolution_notes: notes })}
         >

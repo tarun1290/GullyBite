@@ -40,7 +40,16 @@ async function _insert({ restaurantId, type, amountPaise, refType, refId, status
   //                       Carries `branch_id` on the entry doc since the
   //                       fee is scoped to a specific branch, unlike the
   //                       restaurant-wide entries above.
-  if (!['payment', 'refund', 'payout', 'fee', 'platform_fee', 'platform_fee_gst', 'referral', 'referral_fee_gst', 'marketing', 'tds', 'branch_subscription'].includes(refType)) {
+  //   platform_coupon_credit — GullyBite-funded compensation when a
+  //                       customer redeems a platform-wide coupon
+  //                       (coupons.restaurant_id === null). Restores
+  //                       the discount the restaurant would otherwise
+  //                       absorb via a reduced payment credit
+  //                       (credit, refId = '<order_id>'). The unique
+  //                       (restaurant_id, ref_type, ref_id) index is
+  //                       the idempotency guard against duplicate
+  //                       webhook deliveries.
+  if (!['payment', 'refund', 'payout', 'fee', 'platform_fee', 'platform_fee_gst', 'referral', 'referral_fee_gst', 'marketing', 'tds', 'branch_subscription', 'platform_coupon_credit'].includes(refType)) {
     throw new Error(`ledger: bad ref_type=${refType}`);
   }
   if (!refId) throw new Error('ledger: ref_id required');
