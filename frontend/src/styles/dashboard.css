@@ -171,11 +171,23 @@ textarea { resize: vertical; min-height: 66px; }
 .empty h3 { font-size: .95rem; font-weight: 700; color: var(--tx); margin-bottom: .3rem; }
 .empty p { font-size: .8rem; color: var(--dim); max-width: 320px; margin: 0 auto; }
 
+/* Universal cell-padding floor for any <table> not opted out via the
+   .no-default-pad class. :where() keeps specificity at zero so the
+   .tbl rules below (and any per-cell utility classes) override
+   without !important. Lets raw <table> usages across admin pages
+   pick up the spacing floor without each file being migrated. */
+:where(table:not(.no-default-pad) th, table:not(.no-default-pad) td) {
+  padding: 0.75rem 1rem;
+}
+
 /* ── TABLE WRAPPER ─────────────────────── */
 .tbl { width: 100%; overflow-x: auto; }
 .tbl table { width: 100%; border-collapse: collapse; font-size: .83rem; }
 .tbl th {
-  padding: .55rem .9rem;
+  /* Spacing floor: 12px 16px (≈ Tailwind py-3 px-4). Bumped from
+     0.55rem 0.9rem (≈ 9px 14px) which was below the dashboard
+     readability floor and squeezed multi-line cells. */
+  padding: 0.75rem 1rem;
   text-align: left;
   font-size: .72rem;
   font-weight: 700;
@@ -190,7 +202,7 @@ textarea { resize: vertical; min-height: 66px; }
   z-index: 2;
 }
 .tbl td {
-  padding: .55rem .9rem;
+  padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--rim);
   vertical-align: middle;
   color: var(--tx);

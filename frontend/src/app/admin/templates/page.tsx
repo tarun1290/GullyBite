@@ -174,16 +174,16 @@ export default function AdminTemplatesPage() {
           ) : !templates.length ? (
             <p className="text-dim">No templates synced. Enter a WABA ID and click &quot;Sync from Meta&quot;.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="tbl">
+              <table>
                 <thead>
-                  <tr className="text-left text-[0.72rem] text-dim uppercase">
-                    <th className="p-[0.45rem]">Name</th>
-                    <th className="p-[0.45rem]">Category</th>
-                    <th className="p-[0.45rem]">Lang</th>
-                    <th className="p-[0.45rem]">Status</th>
-                    <th className="p-[0.45rem]">Components</th>
-                    <th className="p-[0.45rem] text-right">Actions</th>
+                  <tr>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Lang</th>
+                    <th>Status</th>
+                    <th>Components</th>
+                    <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -193,8 +193,8 @@ export default function AdminTemplatesPage() {
                     const pending = pendingDelete === t.name;
                     const busy = rowBusy === t.name;
                     return (
-                      <tr key={t.id || t.meta_id || t.name} className="border-b border-rim">
-                        <td className="p-[0.45rem] text-[0.84rem] font-medium">
+                      <tr key={t.id || t.meta_id || t.name}>
+                        <td className="text-[0.84rem] font-medium">
                           {t.name}
                           {t.status === 'REJECTED' && t.rejected_reason && (
                             <div className="text-[0.7rem] text-red-500 mt-[0.2rem]">
@@ -202,18 +202,18 @@ export default function AdminTemplatesPage() {
                             </div>
                           )}
                         </td>
-                        <td className="p-[0.45rem] text-[0.78rem]">{t.category}</td>
-                        <td className="p-[0.45rem] text-[0.78rem]">{t.language}</td>
-                        <td className="p-[0.45rem] text-[0.78rem]">
+                        <td className="text-[0.78rem]">{t.category}</td>
+                        <td className="text-[0.78rem]">{t.language}</td>
+                        <td className="text-[0.78rem]">
                           {/* dynamic color: STATUS_COLORS palette keyed by t.status at runtime */}
                           <span style={{ color: clr }} className="font-semibold">{t.status}</span>
                           {/* dynamic color: QUALITY_COLORS palette keyed by t.quality_score at runtime */}
                           {qclr && <span style={{ color: qclr }} className="ml-[0.35rem] text-[0.7rem]">{t.quality_score}</span>}
                         </td>
-                        <td className="p-[0.45rem] text-[0.72rem] text-dim">
+                        <td className="text-[0.72rem] text-dim">
                           {(t.components || []).map((c) => c.type).join(', ')}
                         </td>
-                        <td className="p-[0.45rem] text-right whitespace-nowrap">
+                        <td className="text-right whitespace-nowrap">
                           {pending ? (
                             <span className="inline-flex gap-1 items-center">
                               <span className="text-[0.72rem] text-dim mr-[0.2rem]">Delete &quot;{t.name}&quot;?</span>
@@ -251,35 +251,35 @@ export default function AdminTemplatesPage() {
           ) : !mappings.length ? (
             <p className="text-dim">No mappings yet. Click &quot;Seed Defaults&quot; to create.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="tbl">
+              <table>
                 <thead>
-                  <tr className="text-left text-[0.72rem] text-dim uppercase">
-                    <th className="p-[0.45rem]">Event</th>
-                    <th className="p-[0.45rem]">Template</th>
-                    <th className="p-[0.45rem]">Description</th>
-                    <th className="p-[0.45rem]">Variables</th>
-                    <th className="p-[0.45rem]">Active</th>
+                  <tr>
+                    <th>Event</th>
+                    <th>Template</th>
+                    <th>Description</th>
+                    <th>Variables</th>
+                    <th>Active</th>
                   </tr>
                 </thead>
                 <tbody>
                   {mappings.map((m) => (
-                    <tr key={m.event} className="border-b border-rim">
-                      <td className="p-[0.45rem] font-semibold text-[0.82rem]">{m.event}</td>
-                      <td className="p-[0.45rem]">
+                    <tr key={m.event}>
+                      <td className="font-semibold text-[0.82rem]">{m.event}</td>
+                      <td>
                         <code className="text-[0.78rem] bg-ink4 py-[0.1rem] px-[0.4rem] rounded-sm">
                           {m.template_name}
                         </code>
                       </td>
-                      <td className="p-[0.45rem] text-dim text-[0.78rem]">{m.description || '—'}</td>
-                      <td className="p-[0.45rem] text-[0.72rem]">
+                      <td className="text-dim text-[0.78rem]">{m.description || '—'}</td>
+                      <td className="text-[0.72rem]">
                         {(m.variables || []).map((v, i) => (
                           <span key={i} className="bg-ink4 py-[0.1rem] px-[0.3rem] rounded-[3px] mr-[0.2rem]">
                             {`{{${v.position}}}`} → {v.source}
                           </span>
                         ))}
                       </td>
-                      <td className="p-[0.45rem] text-[0.78rem]">
+                      <td className="text-[0.78rem]">
                         {m.is_active
                           ? <span className="text-wa-500">Active</span>
                           : <span className="text-dim">Off</span>}
@@ -301,29 +301,29 @@ export default function AdminTemplatesPage() {
           ) : !notifications.length ? (
             <p className="text-dim">No template sends yet.</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+            <div className="tbl">
+              <table>
                 <thead>
-                  <tr className="text-left text-[0.72rem] text-dim uppercase">
-                    <th className="p-[0.45rem]">Order</th>
-                    <th className="p-[0.45rem]">Event</th>
-                    <th className="p-[0.45rem]">Template</th>
-                    <th className="p-[0.45rem]">Status</th>
-                    <th className="p-[0.45rem]">Sent</th>
+                  <tr>
+                    <th>Order</th>
+                    <th>Event</th>
+                    <th>Template</th>
+                    <th>Status</th>
+                    <th>Sent</th>
                   </tr>
                 </thead>
                 <tbody>
                   {notifications.map((l, i) => (
-                    <tr key={i} className="border-b border-rim">
-                      <td className="p-[0.45rem] font-mono text-[0.76rem]">
+                    <tr key={i}>
+                      <td className="font-mono text-[0.76rem]">
                         {String(l.order_id || '').slice(-8) || '—'}
                       </td>
-                      <td className="p-[0.45rem] text-[0.78rem]">{l.event}</td>
-                      <td className="p-[0.45rem] text-[0.76rem]"><code>{l.template_name}</code></td>
-                      <td className={`p-[0.45rem] text-[0.78rem] ${l.status === 'sent' ? 'text-wa-500' : 'text-red-500'}`}>
+                      <td className="text-[0.78rem]">{l.event}</td>
+                      <td className="text-[0.76rem]"><code>{l.template_name}</code></td>
+                      <td className={`text-[0.78rem] ${l.status === 'sent' ? 'text-wa-500' : 'text-red-500'}`}>
                         {l.status}
                       </td>
-                      <td className="p-[0.45rem] text-[0.78rem] text-dim">
+                      <td className="text-[0.78rem] text-dim">
                         {l.sent_at ? new Date(l.sent_at).toLocaleString() : '—'}
                       </td>
                     </tr>
