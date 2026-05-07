@@ -1,5 +1,4 @@
 import type { NextConfig } from 'next';
-import path from 'path';
 import { validateEnv } from './src/lib/validateEnv';
 
 console.log('🔧 BUILD ENV:', process.env.NEXT_PUBLIC_API_BASE_URL);
@@ -17,13 +16,6 @@ if (process.env.NODE_ENV === 'production') {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // Pin both Turbopack's workspace root and Next.js's file-trace root to the
-  // frontend directory itself. Anchoring outputFileTracingRoot here (rather
-  // than the monorepo parent) keeps Vercel's bundling deterministic — the
-  // frontend has no source imports above this directory, so a tighter root
-  // matches reality and avoids module-resolution drift on deploy.
-  turbopack: { root: path.resolve(__dirname) },
-  outputFileTracingRoot: path.resolve(__dirname),
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**.cloudfront.net' },
