@@ -15,17 +15,15 @@ if (process.env.NODE_ENV === 'production') {
   validateEnv();
 }
 
-// Repo root — one level above frontend/. Used for both Turbopack's workspace
-// root (so it stops walking up to $HOME when it sees ancestor lockfiles) and
-// Next.js's file-trace root (so build output can reach shared assets and the
-// monorepo lockfile). Both must point to the same place to keep dev and build
-// in sync.
-const repoRoot = path.resolve(__dirname, '..');
-
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Pin both Turbopack's workspace root and Next.js's file-trace root to the
+  // frontend directory itself. Anchoring outputFileTracingRoot here (rather
+  // than the monorepo parent) keeps Vercel's bundling deterministic — the
+  // frontend has no source imports above this directory, so a tighter root
+  // matches reality and avoids module-resolution drift on deploy.
   turbopack: { root: path.resolve(__dirname) },
-  outputFileTracingRoot: repoRoot,
+  outputFileTracingRoot: path.resolve(__dirname),
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**.cloudfront.net' },
