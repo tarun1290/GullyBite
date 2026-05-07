@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
 import { getAdminLogs, getAdminLog } from '../../../api/admin';
@@ -46,18 +45,20 @@ function sourceBadge(src?: string) {
   const s = (src || 'other').toLowerCase();
   const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: 'var(--gb-slate-700)' };
   return (
-    <span style={{
-      display: 'inline-block', padding: '.1rem .5rem', borderRadius: 10,
-      fontSize: '.72rem', fontWeight: 600, background: cfg.bg, color: cfg.color,
-      textTransform: 'uppercase', letterSpacing: '.03em',
-    }}>{s}</span>
+    <span
+      className="inline-block py-[0.1rem] px-2 rounded-[10px] text-[0.72rem] font-semibold uppercase tracking-[0.03em]"
+      // bg / colour come from SOURCE_BADGE by source at runtime
+      // (whatsapp/razorpay/3pl/catalog + slate fallback — 5 distinct
+      // rgba/hex pairs).
+      style={{ background: cfg.bg, color: cfg.color }}
+    >{s}</span>
   );
 }
 
 function statusBadge(l: LogRow) {
-  if (l.error_message) return <span style={{ color: 'var(--gb-red-600)', fontSize: '.75rem', fontWeight: 600 }}>Error</span>;
-  if (l.processed) return <span style={{ color: '#047857', fontSize: '.75rem', fontWeight: 600 }}>Processed</span>;
-  return <span style={{ color: 'var(--dim)', fontSize: '.75rem' }}>Pending</span>;
+  if (l.error_message) return <span className="text-red-600 text-[0.75rem] font-semibold">Error</span>;
+  if (l.processed) return <span className="text-[#047857] text-[0.75rem] font-semibold">Processed</span>;
+  return <span className="text-dim text-[0.75rem]">Pending</span>;
 }
 
 function fmtTime(iso?: string): string {
@@ -67,10 +68,10 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const th: CSSProperties = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.5rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };
+const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.35rem] px-[0.55rem] text-[0.78rem]';
 
 export default function AdminLogsPage() {
   const [offset, setOffset] = useState<number>(0);
@@ -154,25 +155,25 @@ export default function AdminLogsPage() {
   return (
     <div id="pg-logs">
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.6rem' }}>
-          <h3 style={{ margin: 0 }}>Webhook Logs <span style={{ color: 'var(--dim)', fontSize: '.78rem', fontWeight: 500 }}>({total} total)</span></h3>
+        <div className="ch justify-between flex-wrap gap-[0.6rem]">
+          <h3 className="m-0">Webhook Logs <span className="text-dim text-[0.78rem] font-medium">({total} total)</span></h3>
           <button type="button" className="btn-g btn-sm" onClick={clearFilters} disabled={loading}>Clear Filters</button>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem', padding: '.75rem 1rem', borderBottom: '1px solid var(--rim)' }}>
-          <select value={source} onChange={(e) => { setSource(e.target.value); setOffset(0); }} style={input}>
+        <div className="flex flex-wrap gap-2 py-3 px-4 border-b border-rim">
+          <select value={source} onChange={(e) => { setSource(e.target.value); setOffset(0); }} className={INPUT_CLS}>
             <option value="">All sources</option>
             <option value="whatsapp">WhatsApp</option>
             <option value="razorpay">Razorpay</option>
             <option value="3pl">3PL</option>
             <option value="catalog">Catalog</option>
           </select>
-          <select value={processed} onChange={(e) => { setProcessed(e.target.value); setOffset(0); }} style={input}>
+          <select value={processed} onChange={(e) => { setProcessed(e.target.value); setOffset(0); }} className={INPUT_CLS}>
             <option value="">Processed: any</option>
             <option value="true">Processed</option>
             <option value="false">Unprocessed</option>
           </select>
-          <select value={hasError} onChange={(e) => { setHasError(e.target.value); setOffset(0); }} style={input}>
+          <select value={hasError} onChange={(e) => { setHasError(e.target.value); setOffset(0); }} className={INPUT_CLS}>
             <option value="">Errors: any</option>
             <option value="true">Has error</option>
             <option value="false">No error</option>
@@ -181,43 +182,43 @@ export default function AdminLogsPage() {
             value={eventType}
             onChange={(e) => { setEventType(e.target.value); setOffset(0); }}
             placeholder="Event type…"
-            style={{ ...input, width: 200 }}
+            className={`${INPUT_CLS} w-[200px]`}
           />
-          <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setOffset(0); }} style={input} />
-          <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setOffset(0); }} style={input} />
+          <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setOffset(0); }} className={INPUT_CLS} />
+          <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setOffset(0); }} className={INPUT_CLS} />
         </div>
 
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', textAlign: 'left', color: 'var(--dim)', fontSize: '.74rem' }}>
-                  <th style={th}>Time</th>
-                  <th style={th}>Source</th>
-                  <th style={th}>Event Type</th>
-                  <th style={th}>Phone ID</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Error</th>
-                  <th style={th}>Action</th>
+                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                  <th className={TH_CLS}>Time</th>
+                  <th className={TH_CLS}>Source</th>
+                  <th className={TH_CLS}>Event Type</th>
+                  <th className={TH_CLS}>Phone ID</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Error</th>
+                  <th className={TH_CLS}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={7} style={emptyCell}>No logs match the filters.</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>No logs match the filters.</td></tr>
                 ) : rows.map((l) => (
-                  <tr key={l.id} style={{ borderTop: '1px solid var(--rim)' }}>
-                    <td style={{ ...td, color: 'var(--dim)', fontSize: '.75rem' }}>{fmtTime(l.received_at)}</td>
-                    <td style={td}>{sourceBadge(l.source)}</td>
-                    <td style={td} className="mono">{l.event_type || '—'}</td>
-                    <td style={{ ...td, fontSize: '.72rem', color: 'var(--dim)' }} className="mono">{l.phone_number_id || '—'}</td>
-                    <td style={td}>{statusBadge(l)}</td>
-                    <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--gb-red-600)', fontSize: '.75rem' }}
+                  <tr key={l.id} className="border-t border-rim">
+                    <td className={`${TD_CLS} text-dim text-[0.75rem]`}>{fmtTime(l.received_at)}</td>
+                    <td className={TD_CLS}>{sourceBadge(l.source)}</td>
+                    <td className={`${TD_CLS} mono`}>{l.event_type || '—'}</td>
+                    <td className={`${TD_CLS} text-[0.72rem] text-dim mono`}>{l.phone_number_id || '—'}</td>
+                    <td className={TD_CLS}>{statusBadge(l)}</td>
+                    <td className={`${TD_CLS} max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap text-red-600 text-[0.75rem]`}
                         title={l.error_message || ''}>{l.error_message || '—'}</td>
-                    <td style={td}>
+                    <td className={TD_CLS}>
                       <button type="button" className="btn-g btn-sm" onClick={() => openDetail(l.id)}>View</button>
                     </td>
                   </tr>
@@ -227,9 +228,9 @@ export default function AdminLogsPage() {
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '.6rem 1rem', borderTop: '1px solid var(--rim)' }}>
+        <div className="flex justify-between items-center py-[0.6rem] px-4 border-t border-rim">
           <button type="button" className="btn-g btn-sm" onClick={prev} disabled={offset === 0 || loading}>← Prev</button>
-          <span style={{ fontSize: '.8rem', color: 'var(--dim)' }}>Page {page} of {pages}</span>
+          <span className="text-[0.8rem] text-dim">Page {page} of {pages}</span>
           <button type="button" className="btn-g btn-sm" onClick={next} disabled={offset + LOGS_LIMIT >= total || loading}>Next →</button>
         </div>
       </div>
@@ -237,21 +238,15 @@ export default function AdminLogsPage() {
       {detail && (
         <div
           onClick={closeDetail}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem',
-          }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 720,
-              maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column',
-            }}
+            className="bg-neutral-0 rounded-[10px] w-full max-w-[720px] max-h-[85vh] overflow-hidden flex flex-col"
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
-              <h3 style={{ margin: 0, fontSize: '.95rem' }}>{detail.event_type || 'Log Detail'}</h3>
-              <div style={{ display: 'flex', gap: '.4rem' }}>
+            <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
+              <h3 className="m-0 text-[0.95rem]">{detail.event_type || 'Log Detail'}</h3>
+              <div className="flex gap-[0.4rem]">
                 <button
                   type="button"
                   className="btn-g btn-sm"
@@ -278,19 +273,19 @@ export default function AdminLogsPage() {
                 <button type="button" className="btn-g btn-sm" onClick={closeDetail}>✕</button>
               </div>
             </div>
-            <div style={{ padding: '.7rem 1rem', display: 'flex', gap: '.8rem', flexWrap: 'wrap', fontSize: '.78rem', color: 'var(--dim)', borderBottom: '1px solid var(--rim)' }}>
+            <div className="py-[0.7rem] px-4 flex gap-[0.8rem] flex-wrap text-[0.78rem] text-dim border-b border-rim">
               {detail.source && sourceBadge(detail.source)}
               {detail.received_at && <span>{fmtTime(detail.received_at)}</span>}
               {detail.phone_number_id && <span className="mono">{detail.phone_number_id}</span>}
-              {detail.error_message && <span style={{ color: 'var(--gb-red-600)' }}>{detail.error_message}</span>}
+              {detail.error_message && <span className="text-red-600">{detail.error_message}</span>}
             </div>
-            <div style={{ overflowY: 'auto', padding: '1rem', background: 'var(--ink)', flex: 1 }}>
+            <div className="overflow-y-auto p-4 bg-ink flex-1">
               {detailLoading ? (
-                <div style={{ color: 'var(--dim)' }}>Loading…</div>
+                <div className="text-dim">Loading…</div>
               ) : detailErr ? (
                 <SectionError message={detailErr} />
               ) : (
-                <pre style={{ margin: 0, fontSize: '.78rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} className="mono">
+                <pre className="m-0 text-[0.78rem] whitespace-pre-wrap break-all mono">
                   {detail.payload ? JSON.stringify(detail.payload, null, 2) : '—'}
                 </pre>
               )}

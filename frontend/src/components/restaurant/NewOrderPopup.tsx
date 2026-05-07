@@ -314,53 +314,19 @@ export default function NewOrderPopup() {
           surface. Lower z-index than the popup. Non-dismissive: clicking
           here intentionally does nothing because the merchant must
           Confirm or Decline; cycling without action goes via "Next →". */}
-      <div
-        aria-hidden
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.4)',
-          zIndex: 9998,
-        }}
-      />
+      <div aria-hidden className="fixed inset-0 bg-black/40 z-9998" />
       <div
         role="dialog"
         aria-label="New order"
-        style={{
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '100%',
-          maxWidth: 480,
-          maxHeight: '90vh',
-          zIndex: 9999,
-          background: 'var(--surface,#fff)',
-          border: '1px solid var(--rim,#e5e7eb)',
-          borderRadius: 12,
-          boxShadow: '0 20px 50px -10px rgba(15, 23, 42, .35), 0 6px 18px rgba(15, 23, 42, .2)',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[480px] max-h-[90vh] z-9999 bg-surface border border-rim rounded-xl shadow-[0_20px_50px_-10px_rgba(15,23,42,0.35),0_6px_18px_rgba(15,23,42,0.2)] overflow-hidden flex flex-col"
       >
       {/* Header */}
-      <div
-        style={{
-          padding: '.75rem 1rem',
-          borderBottom: '1px solid var(--rim,#e5e7eb)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '.6rem',
-          background: '#fef3c7',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', minWidth: 0 }}>
-          <span aria-hidden style={{ fontSize: '1rem' }}>🔔</span>
-          <strong style={{ fontSize: '.88rem', color: '#92400e' }}>New Order</strong>
+      <div className="py-3 px-4 border-b border-rim flex items-center justify-between gap-[0.6rem] bg-[#fef3c7]">
+        <div className="flex items-center gap-2 min-w-0">
+          <span aria-hidden className="text-base">🔔</span>
+          <strong className="text-[0.88rem] text-[#92400e]">New Order</strong>
           {total > 1 && (
-            <span style={{ fontSize: '.72rem', color: '#92400e', opacity: 0.85 }}>· {positionLabel}</span>
+            <span className="text-[0.72rem] text-[#92400e] opacity-85">· {positionLabel}</span>
           )}
         </div>
         {total > 1 && (
@@ -368,15 +334,7 @@ export default function NewOrderPopup() {
             type="button"
             onClick={handleNext}
             disabled={!!busy}
-            style={{
-              background: 'transparent',
-              border: '1px solid #fde68a',
-              color: '#92400e',
-              padding: '.2rem .55rem',
-              borderRadius: 6,
-              fontSize: '.74rem',
-              cursor: busy ? 'not-allowed' : 'pointer',
-            }}
+            className="bg-transparent border border-[#fde68a] text-[#92400e] py-[0.2rem] px-[0.55rem] rounded-md text-[0.74rem] cursor-pointer disabled:cursor-not-allowed"
             aria-label="Show next pending order"
           >
             Next →
@@ -385,50 +343,43 @@ export default function NewOrderPopup() {
       </div>
 
       {/* Body */}
-      <div
-        style={{
-          padding: '.9rem 1rem',
-          maxHeight: '60vh',
-          overflowY: 'auto',
-          fontSize: '.84rem',
-        }}
-      >
+      <div className="py-[0.9rem] px-4 max-h-[60vh] overflow-y-auto text-[0.84rem]">
         {detailLoading || !o ? (
-          <div style={{ padding: '1.2rem', textAlign: 'center', color: 'var(--dim)' }}>
+          <div className="p-[1.2rem] text-center text-dim">
             Loading order details…
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.6rem', marginBottom: '.6rem' }}>
+            <div className="flex justify-between gap-[0.6rem] mb-[0.6rem]">
               <div>
-                <div style={{ fontWeight: 700 }}>#{orderRef}</div>
-                <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>
+                <div className="font-bold">#{orderRef}</div>
+                <div className="text-[0.72rem] text-dim">
                   {fmtTime(o.created_at)}
                 </div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>{o.branch_name || ''}</div>
-                <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>{customerLabel(o)}</div>
+              <div className="text-right">
+                <div className="text-[0.72rem] text-dim">{o.branch_name || ''}</div>
+                <div className="text-[0.72rem] text-dim">{customerLabel(o)}</div>
               </div>
             </div>
 
-            <div style={{ borderTop: '1px dashed var(--rim2,#e5e7eb)', paddingTop: '.4rem', marginBottom: '.6rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.78rem' }}>
-                <span style={{ color: 'var(--dim)' }}>Subtotal</span>
+            <div className="border-t border-dashed border-rim2 pt-[0.4rem] mb-[0.6rem]">
+              <div className="flex justify-between text-[0.78rem]">
+                <span className="text-dim">Subtotal</span>
                 <span>{formatRs(o.subtotal_rs)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '.78rem' }}>
-                <span style={{ color: 'var(--dim)' }}>Delivery</span>
+              <div className="flex justify-between text-[0.78rem]">
+                <span className="text-dim">Delivery</span>
                 <span>{formatRs(o.delivery_fee_total_rs ?? o.delivery_fee_rs)}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '.2rem', fontWeight: 700 }}>
+              <div className="flex justify-between mt-[0.2rem] font-bold">
                 <span>Total</span>
                 <span>{formatRs(o.total_rs)}</span>
               </div>
             </div>
 
             {o.delivery_address ? (
-              <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.6rem' }}>
+              <div className="text-[0.74rem] text-dim mb-[0.6rem]">
                 📍 {o.delivery_address}
               </div>
             ) : null}
@@ -438,8 +389,8 @@ export default function NewOrderPopup() {
                 leader is a flex spacer with a dotted bottom border —
                 expands to fill horizontal slack between name and price. */}
             {items.length > 0 ? (
-              <div style={{ marginBottom: '.6rem' }}>
-                <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginBottom: '.25rem' }}>Items</div>
+              <div className="mb-[0.6rem]">
+                <div className="text-[0.72rem] text-dim mb-1">Items</div>
                 {items.map((it, idx) => {
                   const name = it.item_name || it.name || '—';
                   const qty = Number(it.quantity || 1);
@@ -448,29 +399,15 @@ export default function NewOrderPopup() {
                   return (
                     <div
                       key={(it as { id?: string }).id || idx}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'flex-end',
-                        gap: '.4rem',
-                        fontSize: '.82rem',
-                        padding: '.18rem 0',
-                      }}
+                      className="flex items-end gap-[0.4rem] text-[0.82rem] py-[0.18rem]"
                     >
-                      <span style={{ whiteSpace: 'nowrap' }}>
-                        <span style={{ color: 'var(--dim)' }}>{qty}×</span>{' '}
-                        <span style={{ fontWeight: 500 }}>{name}</span>
-                        {it.size ? <span style={{ color: 'var(--dim)' }}>{` (${it.size})`}</span> : null}
+                      <span className="whitespace-nowrap">
+                        <span className="text-dim">{qty}×</span>{' '}
+                        <span className="font-medium">{name}</span>
+                        {it.size ? <span className="text-dim">{` (${it.size})`}</span> : null}
                       </span>
-                      <span
-                        aria-hidden
-                        style={{
-                          flex: 1,
-                          minWidth: '.4rem',
-                          borderBottom: '1px dotted var(--rim2,#cbd5e1)',
-                          marginBottom: '.32em',
-                        }}
-                      />
-                      <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                      <span aria-hidden className="flex-1 min-w-[0.4rem] border-b border-dotted border-rim2 mb-[0.32em]" />
+                      <span className="whitespace-nowrap tabular-nums">
                         {Number.isFinite(priceVal) ? formatRs(priceVal) : '—'}
                       </span>
                     </div>
@@ -482,24 +419,11 @@ export default function NewOrderPopup() {
             {/* Instructions row — conditional on a non-empty value
                 across any of the three accepted field names. */}
             {hasInstructions ? (
-              <div
-                style={{
-                  marginBottom: '.4rem',
-                  padding: '.45rem .65rem',
-                  background: '#fef3c7',
-                  border: '1px solid #fde68a',
-                  borderRadius: 6,
-                  fontSize: '.78rem',
-                  color: '#92400e',
-                  display: 'flex',
-                  gap: '.45rem',
-                  alignItems: 'flex-start',
-                }}
-              >
+              <div className="mb-[0.4rem] py-[0.45rem] px-[0.65rem] bg-[#fef3c7] border border-[#fde68a] rounded-md text-[0.78rem] text-[#92400e] flex gap-[0.45rem] items-start">
                 <span aria-hidden>📝</span>
                 <div>
-                  <div style={{ fontWeight: 600, marginBottom: '.1rem' }}>Instructions</div>
-                  <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{instructionsText}</div>
+                  <div className="font-semibold mb-[0.1rem]">Instructions</div>
+                  <div className="whitespace-pre-wrap wrap-break-word">{instructionsText}</div>
                 </div>
               </div>
             ) : null}
@@ -508,30 +432,12 @@ export default function NewOrderPopup() {
       </div>
 
       {/* Actions */}
-      <div
-        style={{
-          padding: '.7rem 1rem',
-          borderTop: '1px solid var(--rim,#e5e7eb)',
-          display: 'flex',
-          gap: '.5rem',
-        }}
-      >
+      <div className="py-[0.7rem] px-4 border-t border-rim flex gap-2">
         <button
           type="button"
           onClick={handleConfirm}
           disabled={!o || !!busy}
-          style={{
-            flex: 1,
-            padding: '.55rem .8rem',
-            background: '#16a34a',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 8,
-            fontWeight: 700,
-            fontSize: '.84rem',
-            cursor: !o || !!busy ? 'not-allowed' : 'pointer',
-            opacity: !o || !!busy ? 0.7 : 1,
-          }}
+          className="flex-1 py-[0.55rem] px-[0.8rem] bg-green-600 text-white border-0 rounded-lg font-bold text-[0.84rem] cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
         >
           {busy === 'confirm' ? '…' : '✓ Confirm Order'}
         </button>
@@ -539,18 +445,7 @@ export default function NewOrderPopup() {
           type="button"
           onClick={handleDecline}
           disabled={!o || !!busy}
-          style={{
-            flex: 1,
-            padding: '.55rem .8rem',
-            background: 'transparent',
-            color: '#dc2626',
-            border: '1.5px solid #dc2626',
-            borderRadius: 8,
-            fontWeight: 700,
-            fontSize: '.84rem',
-            cursor: !o || !!busy ? 'not-allowed' : 'pointer',
-            opacity: !o || !!busy ? 0.6 : 1,
-          }}
+          className="flex-1 py-[0.55rem] px-[0.8rem] bg-transparent text-red-600 border-[1.5px] border-red-600 rounded-lg font-bold text-[0.84rem] cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
         >
           {busy === 'decline' ? '…' : '✗ Decline Order'}
         </button>

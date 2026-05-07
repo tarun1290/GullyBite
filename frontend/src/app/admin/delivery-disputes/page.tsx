@@ -11,7 +11,6 @@
 // here. Refresh on mount; admin can refresh manually for now since
 // disputes don't change minute-by-minute.
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
 import { getAdminOrdersWithIssues } from '../../../api/admin';
@@ -37,13 +36,9 @@ interface DisputesResponse {
   total?: number;
 }
 
-const th: CSSProperties = {
-  padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem',
-  color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700,
-  letterSpacing: '.04em',
-};
-const td: CSSProperties = { padding: '.6rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '2rem', textAlign: 'center', color: 'var(--dim)' };
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-8 text-center text-dim';
 
 function fmtTime(iso?: string): string {
   if (!iso) return '—';
@@ -98,15 +93,14 @@ export default function AdminDeliveryDisputesPage() {
   return (
     <div id="pg-disputes">
       <div className="card">
-        <div className="ch" style={{ gap: '.6rem', flexWrap: 'wrap' }}>
+        <div className="ch gap-[0.6rem] flex-wrap">
           <h3>Delivery Disputes</h3>
-          <span style={{ color: 'var(--dim)', fontSize: '.75rem' }}>
+          <span className="text-dim text-[0.75rem]">
             {loading ? '' : `${total} dispute${total === 1 ? '' : 's'}`}
           </span>
           <button
             type="button"
-            className="btn-g btn-sm"
-            style={{ marginLeft: 'auto' }}
+            className="btn-g btn-sm ml-auto"
             onClick={load}
             disabled={loading}
           >
@@ -117,37 +111,37 @@ export default function AdminDeliveryDisputesPage() {
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={th}>Order #</th>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Branch</th>
-                  <th style={th}>Issue ID</th>
-                  <th style={th}>State</th>
-                  <th style={th}>Raised</th>
-                  <th style={th}>Delivery State</th>
-                  <th style={th}>Delivered</th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={TH_CLS}>Order #</th>
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Branch</th>
+                  <th className={TH_CLS}>Issue ID</th>
+                  <th className={TH_CLS}>State</th>
+                  <th className={TH_CLS}>Raised</th>
+                  <th className={TH_CLS}>Delivery State</th>
+                  <th className={TH_CLS}>Delivered</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={8} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : orders.length === 0 ? (
-                  <tr><td colSpan={8} style={emptyCell}>No disputes raised yet</td></tr>
+                  <tr><td colSpan={8} className={EMPTY_CLS}>No disputes raised yet</td></tr>
                 ) : (
                   orders.map((o) => {
                     const issueState = o.prorouting_issue_state || 'OPEN';
                     const stateColor = ISSUE_STATE_COLORS[issueState] || 'var(--gb-slate-500)';
                     return (
-                      <tr key={o.id || o._id || o.order_number} style={{ borderBottom: '1px solid var(--rim)' }}>
-                        <td style={td}>
+                      <tr key={o.id || o._id || o.order_number} className="border-b border-rim">
+                        <td className={TD_CLS}>
                           {o.display_order_id ? (
                             <>
                               <div className="mono">{o.display_order_id}</div>
                               {o.order_number && (
-                                <div style={{ fontSize: '.68rem', color: 'var(--mute,var(--dim))', fontFamily: 'monospace' }}>
+                                <div className="text-[0.68rem] text-mute font-mono">
                                   {o.order_number}
                                 </div>
                               )}
@@ -156,34 +150,30 @@ export default function AdminDeliveryDisputesPage() {
                             <span className="mono">#{o.order_number || '—'}</span>
                           )}
                         </td>
-                        <td style={td}>{o.business_name || '—'}</td>
-                        <td style={td}>{o.branch_name || '—'}</td>
-                        <td style={{ ...td, fontSize: '.74rem' }} className="mono">
+                        <td className={TD_CLS}>{o.business_name || '—'}</td>
+                        <td className={TD_CLS}>{o.branch_name || '—'}</td>
+                        <td className={`${TD_CLS} text-[0.74rem] mono`}>
                           {o.prorouting_issue_id || '—'}
                         </td>
-                        <td style={td}>
+                        <td className={TD_CLS}>
                           <span
-                            style={{
-                              background: `${stateColor}22`,
-                              color: stateColor,
-                              padding: '.15rem .5rem',
-                              borderRadius: 4,
-                              fontWeight: 700,
-                              fontSize: '.7rem',
-                              textTransform: 'uppercase',
-                              letterSpacing: '.04em',
-                            }}
+                            className="py-[0.15rem] px-2 rounded-sm font-bold text-[0.7rem] uppercase tracking-[0.04em]"
+                            // bg/colour come from ISSUE_STATE_COLORS by
+                            // o.prorouting_issue_state at runtime
+                            // (OPEN/PROCESSING/IN-PROGRESS/RESOLVED/CLOSED
+                            // — 5 distinct values; bg uses `${color}22` tint).
+                            style={{ background: `${stateColor}22`, color: stateColor }}
                           >
                             {issueState}
                           </span>
                         </td>
-                        <td style={{ ...td, color: 'var(--dim)', fontSize: '.74rem' }}>
+                        <td className={`${TD_CLS} text-dim text-[0.74rem]`}>
                           {fmtTime(o.prorouting_issue_raised_at)}
                         </td>
-                        <td style={{ ...td, fontSize: '.74rem' }}>
+                        <td className={`${TD_CLS} text-[0.74rem]`}>
                           {o.prorouting_state || '—'}
                         </td>
-                        <td style={{ ...td, color: 'var(--dim)', fontSize: '.74rem' }}>
+                        <td className={`${TD_CLS} text-dim text-[0.74rem]`}>
                           {fmtTime(o.delivered_at)}
                         </td>
                       </tr>

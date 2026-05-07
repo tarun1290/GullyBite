@@ -107,26 +107,25 @@ interface ToggleProps {
 
 function Toggle({ checked, disabled, onChange }: ToggleProps) {
   return (
-    <label style={{
-      display: 'inline-flex', alignItems: 'center',
-      cursor: disabled ? 'not-allowed' : 'pointer',
-      opacity: disabled ? 0.55 : 1,
-    }}>
-      <span style={{
-        width: 36, height: 20, borderRadius: 12, position: 'relative',
-        background: checked ? '#4f46e5' : '#cbd5e1',
-        transition: 'background 120ms',
-      }}>
-        <span style={{
-          position: 'absolute', top: 2, left: checked ? 18 : 2,
-          width: 16, height: 16, borderRadius: '50%', background: 'white',
-          transition: 'left 120ms',
-        }} />
+    <label
+      className={`inline-flex items-center ${disabled ? 'cursor-not-allowed opacity-[0.55]' : 'cursor-pointer opacity-100'}`}
+    >
+      <span
+        className={`w-9 h-5 rounded-xl relative transition-[background] duration-120 ${
+          checked ? 'bg-[#4f46e5]' : 'bg-[#cbd5e1]'
+        }`}
+      >
+        <span
+          className="absolute top-[2px] w-4 h-4 rounded-full bg-white transition-[left] duration-120"
+          // left position is the toggle thumb's slide animation — runtime
+          // boolean → 18px (on) or 2px (off).
+          style={{ left: checked ? 18 : 2 }}
+        />
       </span>
       <input
         type="checkbox" checked={checked} disabled={disabled}
         onChange={(e) => onChange?.(e.target.checked)}
-        style={{ display: 'none' }}
+        className="hidden"
       />
     </label>
   );
@@ -137,8 +136,8 @@ interface StatProps { label: string; value: ReactNode }
 function Stat({ label, value }: StatProps) {
   return (
     <div>
-      <div style={{ fontSize: '.7rem', color: 'var(--dim)' }}>{label}</div>
-      <div style={{ fontWeight: 500, fontSize: '.92rem' }}>{value ?? '—'}</div>
+      <div className="text-[0.7rem] text-dim">{label}</div>
+      <div className="font-medium text-[0.92rem]">{value ?? '—'}</div>
     </div>
   );
 }
@@ -147,10 +146,10 @@ interface FieldProps { label: string; children: ReactNode; hint?: string }
 
 function Field({ label, children, hint }: FieldProps) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: '.2rem' }}>
-      <span style={{ fontSize: '.78rem', color: '#334155' }}>{label}</span>
+    <label className="flex flex-col gap-[0.2rem]">
+      <span className="text-[0.78rem] text-[#334155]">{label}</span>
       {children}
-      {hint && <span style={{ fontSize: '.72rem', color: 'var(--dim)' }}>{hint}</span>}
+      {hint && <span className="text-[0.72rem] text-dim">{hint}</span>}
     </label>
   );
 }
@@ -204,13 +203,13 @@ function JourneyCard({
 
   return (
     <div className="card">
-      <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.55rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.5rem', alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: '.5rem', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: '1.2rem' }}>{meta.icon}</div>
+      <div className="cb flex flex-col gap-[0.55rem]">
+        <div className="flex justify-between gap-2 items-start flex-wrap">
+          <div className="flex gap-2 items-start flex-1 min-w-0">
+            <div className="text-[1.2rem]">{meta.icon}</div>
             <div>
               <strong>{meta.label}</strong>
-              <div style={{ fontSize: '.78rem', color: 'var(--dim)' }}>{meta.description}</div>
+              <div className="text-[0.78rem] text-dim">{meta.description}</div>
             </div>
           </div>
           <Toggle
@@ -221,21 +220,17 @@ function JourneyCard({
         </div>
 
         {meta.lockedUntilLoyalty && (
-          <div className="notice" style={{ margin: 0 }}>
+          <div className="notice m-0">
             <div className="notice-ico">📍</div>
             <div className="notice-body">
-              <p style={{ margin: 0, fontSize: '.78rem' }}>
+              <p className="m-0 text-[0.78rem]">
                 Activates automatically when the Loyalty program is set up.
               </p>
             </div>
           </div>
         )}
 
-        <div style={{
-          display: 'grid', gap: '.4rem',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-          fontSize: '.82rem',
-        }}>
+        <div className="grid gap-[0.4rem] grid-cols-[repeat(auto-fill,minmax(120px,1fr))] text-[0.82rem]">
           <Stat label="Sent (30d)"  value={showStats ? (stats?.total_sent ?? 0) : '—'} />
           <Stat label="Converted"   value={showStats ? (stats?.total_converted ?? 0) : '—'} />
           <Stat label="Conv rate"   value={showStats ? `${Number(stats?.conversion_rate || 0).toFixed(1)}%` : '—'} />
@@ -243,21 +238,20 @@ function JourneyCard({
         </div>
 
         <button
-          className="btn-g btn-sm"
+          className="btn-g btn-sm self-start"
           onClick={() => setExpanded((v) => !v)}
           disabled={customiseDisabled}
-          style={{ alignSelf: 'flex-start' }}
         >
           {expanded ? 'Hide customise' : 'Customise'}
         </button>
 
         {expanded && !customiseDisabled && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '.55rem', marginTop: '.25rem' }}>
+          <div className="flex flex-col gap-[0.55rem] mt-1">
             <Field label="Template">
               <select
                 value={local.template_id || ''}
                 onChange={(e) => updateLocal({ template_id: e.target.value || null })}
-                style={{ padding: '.35rem .5rem', border: '1px solid #e5e7eb', borderRadius: 6 }}
+                className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md"
               >
                 <option value="">(System default)</option>
                 {matchingTemplates.map((t) => (
@@ -272,7 +266,7 @@ function JourneyCard({
                   type="number" min={1}
                   value={local.trigger_day ?? (key === 'winback_short' ? 14 : 30)}
                   onChange={(e) => updateLocal({ trigger_day: Number(e.target.value) })}
-                  style={{ padding: '.35rem .5rem', border: '1px solid #e5e7eb', borderRadius: 6, width: 120 }}
+                  className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md w-[120px]"
                 />
               </Field>
             )}
@@ -283,7 +277,7 @@ function JourneyCard({
                   type="number" min={0} max={23}
                   value={local.send_hour_ist ?? 10}
                   onChange={(e) => updateLocal({ send_hour_ist: Number(e.target.value) })}
-                  style={{ padding: '.35rem .5rem', border: '1px solid #e5e7eb', borderRadius: 6, width: 120 }}
+                  className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md w-[120px]"
                 />
               </Field>
             )}
@@ -297,7 +291,7 @@ function JourneyCard({
                   type="text"
                   value={Array.isArray(local.trigger_orders) ? local.trigger_orders.join(', ') : (local.trigger_orders || '')}
                   onChange={(e) => updateLocal({ trigger_orders: e.target.value })}
-                  style={{ padding: '.35rem .5rem', border: '1px solid #e5e7eb', borderRadius: 6 }}
+                  className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md"
                 />
               </Field>
             )}
@@ -330,8 +324,8 @@ function TemplateVarOverrides({ template, values, onChange }: TemplateVarOverrid
   const inputs = (template?.variables || []).filter((v) => v.source === 'restaurant_input');
   if (!template || inputs.length === 0) return null;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '.35rem', paddingTop: '.3rem' }}>
-      <div style={{ fontSize: '.78rem', color: '#334155' }}>Template variables</div>
+    <div className="flex flex-col gap-[0.35rem] pt-[0.3rem]">
+      <div className="text-[0.78rem] text-[#334155]">Template variables</div>
       {inputs.map((v) => (
         <Field key={v.name} label={`${v.name}${v.required ? ' *' : ''}`}>
           <input
@@ -339,7 +333,7 @@ function TemplateVarOverrides({ template, values, onChange }: TemplateVarOverrid
             placeholder={v.example || ''}
             value={values[v.name] || ''}
             onChange={(e) => onChange({ ...values, [v.name]: e.target.value })}
-            style={{ padding: '.35rem .5rem', border: '1px solid #e5e7eb', borderRadius: 6 }}
+            className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md"
           />
         </Field>
       ))}
@@ -399,22 +393,22 @@ export default function AutoJourneysSection({ campaignsEnabled }: AutoJourneysSe
   };
 
   if (loading || !config) {
-    return <div style={{ color: 'var(--dim)', padding: '1rem' }}>Loading auto journeys…</div>;
+    return <div className="text-dim p-4">Loading auto journeys…</div>;
   }
 
   const disabled = !campaignsEnabled;
 
   return (
     <div>
-      <div style={{ marginBottom: '1rem' }}>
-        <h2 style={{ margin: 0 }}>Auto Journeys</h2>
-        <div style={{ fontSize: '.84rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+      <div className="mb-4">
+        <h2 className="m-0">Auto Journeys</h2>
+        <div className="text-[0.84rem] text-dim mt-[0.2rem]">
           Set-and-forget messages triggered by customer behaviour.
         </div>
       </div>
 
       {disabled && (
-        <div className="notice wa" style={{ marginBottom: '1rem' }}>
+        <div className="notice wa mb-4">
           <div className="notice-ico">✨</div>
           <div className="notice-body">
             <h4>Coming Soon</h4>
@@ -427,11 +421,7 @@ export default function AutoJourneysSection({ campaignsEnabled }: AutoJourneysSe
       )}
 
       <div
-        style={{
-          display: 'grid', gap: '.8rem',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-          opacity: disabled ? 0.75 : 1,
-        }}
+        className={`grid gap-[0.8rem] grid-cols-[repeat(auto-fill,minmax(320px,1fr))] ${disabled ? 'opacity-75' : 'opacity-100'}`}
       >
         {JOURNEY_META.map((meta) => (
           <JourneyCard

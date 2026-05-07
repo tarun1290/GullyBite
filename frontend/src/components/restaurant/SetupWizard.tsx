@@ -31,7 +31,7 @@ export default function SetupWizard({ steps, onWaConnected }: SetupWizardProps) 
           return (
             <div className="wz" key={step.id || i}>
               <div className={`wz-n ${cls}`}>{step.done ? '✓' : n}</div>
-              <div style={{ flex: 1 }}>
+              <div className="flex-1">
                 <b>{step.label}</b>
                 <p>{step.description}</p>
               </div>
@@ -41,8 +41,7 @@ export default function SetupWizard({ steps, onWaConnected }: SetupWizardProps) 
               {showAction && step.cta !== 'wa-connect' && step.onAction && (
                 <button
                   type="button"
-                  className="btn-g btn-sm"
-                  style={{ flexShrink: 0 }}
+                  className="btn-g btn-sm shrink-0"
                   onClick={step.onAction}
                 >
                   Go →

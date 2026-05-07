@@ -191,20 +191,17 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
 
   return (
     <div
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 999,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
-      }}
+      className="fixed inset-0 bg-black/45 z-999 flex items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="card" style={{ width: 440, maxWidth: '95vw', background: 'var(--surface,#fff)' }}>
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+      <div className="card w-[440px] max-w-[95vw] bg-surface">
+        <div className="ch justify-between">
           <h3>{created ? 'Team member added!' : (isEdit ? 'Edit Team Member' : 'Add Team Member')}</h3>
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            style={{ background: 'none', border: 'none', fontSize: '1.3rem', cursor: 'pointer' }}
+            className="bg-none border-0 text-[1.3rem] cursor-pointer"
           >
             ×
           </button>
@@ -213,86 +210,56 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
           {created ? (
             // ── Post-creation success screen ───────────────────────
             <>
-              <div style={{ marginBottom: '.8rem', padding: '.6rem .75rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8 }}>
-                <div style={{ fontWeight: 700, color: '#15803d', fontSize: '.92rem' }}>
+              <div className="mb-[0.8rem] py-[0.6rem] px-3 bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg">
+                <div className="font-bold text-[#15803d] text-[0.92rem]">
                   ✓ {created.name}
                 </div>
-                <div style={{ fontSize: '.78rem', color: '#166534', textTransform: 'capitalize' }}>
+                <div className="text-[0.78rem] text-[#166534] capitalize">
                   {created.role}
                 </div>
               </div>
 
-              <div className="fg" style={{ marginBottom: '.7rem' }}>
+              <div className="fg mb-[0.7rem]">
                 <label>Branch Login URLs</label>
                 {created.branchIds.length === 0 ? (
-                  <div style={{ marginTop: '.3rem', padding: '.55rem .7rem', background: 'var(--ink2,#f4f4f5)', border: '1px solid var(--rim)', borderRadius: 6, fontSize: '.78rem', color: 'var(--dim)' }}>
+                  <div className="mt-[0.3rem] py-[0.55rem] px-[0.7rem] bg-ink2 border border-rim rounded-md text-[0.78rem] text-dim">
                     Share the branch login URL with your team member from the Branches tab.
                   </div>
                 ) : (
-                  <div
-                    style={{
-                      marginTop: '.3rem',
-                      maxHeight: 220,
-                      overflowY: 'auto',
-                      border: '1px solid var(--rim)',
-                      borderRadius: 6,
-                    }}
-                  >
+                  <div className="mt-[0.3rem] max-h-[220px] overflow-y-auto border border-rim rounded-md">
                     {branchLinks.map((row) => (
                       <div
                         key={row.branchId}
-                        style={{
-                          padding: '.55rem .7rem',
-                          borderBottom: '1px solid var(--bdr,#e5e7eb)',
-                          fontSize: '.8rem',
-                        }}
+                        className="py-[0.55rem] px-[0.7rem] border-b border-bdr text-[0.8rem]"
                       >
-                        <div style={{ fontWeight: 600, marginBottom: '.2rem' }}>{row.branchName}</div>
+                        <div className="font-semibold mb-[0.2rem]">{row.branchName}</div>
                         {row.status === 'loading' && (
-                          <div style={{ fontSize: '.74rem', color: 'var(--dim)' }}>Loading…</div>
+                          <div className="text-[0.74rem] text-dim">Loading…</div>
                         )}
                         {row.status === 'ready' && row.url && (
-                          <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+                          <div className="flex gap-[0.4rem] items-center">
                             <input
                               value={row.url}
                               readOnly
                               onFocus={(e) => e.currentTarget.select()}
-                              style={{
-                                flex: 1,
-                                fontFamily: 'monospace',
-                                fontSize: '.74rem',
-                                background: 'var(--ink2,#f4f4f5)',
-                                border: '1px solid var(--rim)',
-                                borderRadius: 4,
-                                padding: '.25rem .4rem',
-                                color: 'var(--dim)',
-                              }}
+                              className="flex-1 font-mono text-[0.74rem] bg-ink2 border border-rim rounded-sm py-1 px-[0.4rem] text-dim"
                             />
                             <button
                               type="button"
                               onClick={() => copyLink(row.branchId, row.url || '')}
-                              style={{
-                                background: 'transparent',
-                                border: '1px solid var(--bdr,#e5e7eb)',
-                                color: 'var(--dim)',
-                                fontSize: '.7rem',
-                                padding: '.2rem .5rem',
-                                borderRadius: 4,
-                                cursor: 'pointer',
-                                flexShrink: 0,
-                              }}
+                              className="bg-transparent border border-bdr text-dim text-[0.7rem] py-[0.2rem] px-2 rounded-sm cursor-pointer shrink-0"
                             >
                               {copiedBranchId === row.branchId ? 'Copied!' : 'Copy'}
                             </button>
                           </div>
                         )}
                         {row.status === 'ready' && !row.url && (
-                          <div style={{ fontSize: '.72rem', color: '#92400e' }}>
+                          <div className="text-[0.72rem] text-[#92400e]">
                             ⚠ {row.errorMessage || 'No login link yet — generate one from the Branches tab.'}
                           </div>
                         )}
                         {row.status === 'error' && (
-                          <div style={{ fontSize: '.72rem', color: 'var(--red,#dc2626)' }}>
+                          <div className="text-[0.72rem] text-red">
                             Could not load — {row.errorMessage}
                           </div>
                         )}
@@ -302,14 +269,14 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                 )}
               </div>
 
-              <div style={{ display: 'flex', gap: '.5rem', marginTop: '.8rem' }}>
+              <div className="flex gap-2 mt-[0.8rem]">
                 <button type="button" className="btn-p" onClick={onClose}>Done</button>
               </div>
             </>
           ) : (
             // ── Form (create / edit) ───────────────────────────────
             <>
-              <div className="fg" style={{ marginBottom: '.7rem' }}>
+              <div className="fg mb-[0.7rem]">
                 <label>Name ★</label>
                 <input
                   value={form.name}
@@ -317,23 +284,23 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   placeholder="Rahul Sharma"
                 />
               </div>
-              <div className="fg" style={{ marginBottom: '.7rem' }}>
+              <div className="fg mb-[0.7rem]">
                 <label>Phone {isEdit ? '' : '★'}</label>
                 <input
                   value={form.phone}
                   onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
                   placeholder="+91 98765 43210"
                   disabled={isEdit}
-                  style={isEdit ? { opacity: 0.6 } : undefined}
+                  className={isEdit ? 'opacity-60' : ''}
                 />
                 {isEdit && (
-                  <div style={{ fontSize: '.7rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+                  <div className="text-[0.7rem] text-dim mt-[0.2rem]">
                     Phone is locked after creation.
                   </div>
                 )}
               </div>
               {!isEdit && (
-                <div className="fg" style={{ marginBottom: '.7rem' }}>
+                <div className="fg mb-[0.7rem]">
                   <label>PIN (4-6 digits) ★</label>
                   <input
                     type="password"
@@ -344,18 +311,18 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   />
                 </div>
               )}
-              <div className="fg" style={{ marginBottom: '.7rem' }}>
+              <div className="fg mb-[0.7rem]">
                 <label>Role ★</label>
                 <select
                   value={form.role}
                   onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                  style={{ padding: '.5rem', border: '1px solid var(--rim)', borderRadius: 'var(--r,6px)', width: '100%' }}
+                  className="p-2 border border-rim rounded-r w-full"
                 >
                   {ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
-              <div className="fg" style={{ marginBottom: '.7rem' }}>
-                <label>Branches <small style={{ color: 'var(--dim)' }}>(leave empty for all)</small></label>
+              <div className="fg mb-[0.7rem]">
+                <label>Branches <small className="text-dim">(leave empty for all)</small></label>
                 {(branches || []).length > 0 ? (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {(branches || []).map((b) => {
@@ -378,10 +345,10 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                     })}
                   </div>
                 ) : (
-                  <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>No branches yet.</span>
+                  <span className="text-[0.78rem] text-dim">No branches yet.</span>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: '.5rem', marginTop: '.8rem' }}>
+              <div className="flex gap-2 mt-[0.8rem]">
                 <button type="button" className="btn-p" onClick={handleSave} disabled={saving}>
                   {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Member')}
                 </button>

@@ -51,13 +51,9 @@ interface PillProps { on: boolean; label: string }
 function Pill({ on, label }: PillProps) {
   return (
     <span
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: '.2rem',
-        fontSize: '.72rem', fontWeight: 600, padding: '.2rem .5rem',
-        borderRadius: 99,
-        background: on ? '#dcfce7' : 'var(--ink2)',
-        color: on ? '#15803d' : 'var(--dim)',
-      }}
+      className={`inline-flex items-center gap-[0.2rem] text-[0.72rem] font-semibold py-[0.2rem] px-2 rounded-full ${
+        on ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-ink2 text-dim'
+      }`}
     >
       {on ? '✅ ' : ''}
       {label}
@@ -104,7 +100,7 @@ export default function NotificationSection() {
     return (
       <div className="card">
         <div className="ch"><h3>🔔 Notification Settings</h3></div>
-        <div className="cb"><div style={{ color: 'var(--dim)', padding: '.5rem' }}>Loading…</div></div>
+        <div className="cb"><div className="text-dim p-2">Loading…</div></div>
       </div>
     );
   }
@@ -116,8 +112,8 @@ export default function NotificationSection() {
   const ns: NotificationSettings = r.notification_settings || {};
 
   return (
-    <div className="card" style={{ marginBottom: '1.2rem' }}>
-      <div className="ch" style={{ justifyContent: 'space-between' }}>
+    <div className="card mb-[1.2rem]">
+      <div className="ch justify-between">
         <h3>🔔 Notification Settings</h3>
         {!editing && (
           <button type="button" className="btn-g btn-sm" onClick={() => setEditing(true)}>
@@ -128,30 +124,22 @@ export default function NotificationSection() {
       <div className="cb">
         {!editing ? (
           <div>
-            <div style={{
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '.45rem 0', borderBottom: '1px solid var(--rim,#f0f0f0)',
-            }}
-            >
-              <span style={{ color: 'var(--dim)', fontSize: '.78rem', minWidth: 130 }}>
+            <div className="flex justify-between items-center py-[0.45rem] border-b border-rim">
+              <span className="text-dim text-[0.78rem] min-w-[130px]">
                 Notification Phones
               </span>
-              <span style={{
-                fontWeight: 500, textAlign: 'right', fontSize: '.84rem',
-                color: phones ? 'inherit' : 'var(--mute,var(--dim))',
-                fontStyle: phones ? 'normal' : 'italic',
-              }}
+              <span
+                className={`font-medium text-right text-[0.84rem] ${
+                  phones ? 'not-italic' : 'text-mute italic'
+                }`}
               >
                 {phones || 'Not configured'}
               </span>
             </div>
-            <p style={{
-              fontSize: '.78rem', fontWeight: 600, color: 'var(--dim)', margin: '.5rem 0 .4rem',
-            }}
-            >
+            <p className="text-[0.78rem] font-semibold text-dim mt-2 mb-[0.4rem]">
               Events:
             </p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem' }}>
+            <div className="flex flex-wrap gap-[0.4rem]">
               <Pill on={ns.new_order !== false} label="New Orders" />
               <Pill on={ns.payment !== false} label="Payments" />
               <Pill on={ns.cancelled !== false} label="Cancellations" />
@@ -174,20 +162,14 @@ export default function NotificationSection() {
               </Field>
             </div>
             <hr className="dv" />
-            <p style={{ fontSize: '.84rem', fontWeight: 600, color: 'var(--dim)', marginBottom: '.7rem' }}>
+            <p className="text-[0.84rem] font-semibold text-dim mb-[0.7rem]">
               Notify me when:
             </p>
-            <div style={{
-              display: 'flex', flexWrap: 'wrap', gap: '1.2rem', marginBottom: '.5rem',
-            }}
-            >
+            <div className="flex flex-wrap gap-[1.2rem] mb-2">
               {EVENTS.map(([key, label]) => (
                 <label
                   key={key}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '.4rem',
-                    fontSize: '.84rem', cursor: 'pointer',
-                  }}
+                  className="flex items-center gap-[0.4rem] text-[0.84rem] cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -199,7 +181,7 @@ export default function NotificationSection() {
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: '.5rem', marginTop: '.8rem' }}>
+            <div className="flex gap-2 mt-[0.8rem]">
               <button
                 type="button"
                 className="btn-p"

@@ -519,15 +519,11 @@ export default function BranchFormModal({
 
   return (
     <div
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100,
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        padding: '2rem 1rem', overflowY: 'auto',
-      }}
+      className="fixed inset-0 bg-black/50 z-100 flex items-start justify-center py-8 px-4 overflow-y-auto"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="card" style={{ maxWidth: 560, width: '100%', background: 'var(--surface,#fff)' }}>
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+      <div className="card max-w-[560px] w-full bg-surface">
+        <div className="ch justify-between">
           <h3>{isEdit ? 'Edit Branch' : '+ Add Branch'}</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>✕</button>
         </div>
@@ -541,20 +537,13 @@ export default function BranchFormModal({
             {isEdit && existingBranch?.id && (
               <div className="fg span2">
                 <label>Branch ID</label>
-                <div style={{ display: 'flex', gap: '.4rem', alignItems: 'stretch' }}>
+                <div className="flex gap-[0.4rem] items-stretch">
                   <input
                     value={existingBranch.id}
                     readOnly
                     aria-readonly="true"
                     onFocus={(e) => e.currentTarget.select()}
-                    style={{
-                      flex: 1,
-                      fontFamily: 'monospace',
-                      fontSize: '.78rem',
-                      background: 'var(--ink2,#f4f4f5)',
-                      color: 'var(--dim,#6b7280)',
-                      cursor: 'text',
-                    }}
+                    className="flex-1 font-mono text-[0.78rem] bg-ink2 text-dim cursor-text"
                   />
                   <button
                     type="button"
@@ -575,10 +564,9 @@ export default function BranchFormModal({
                         showToast('Could not copy — select the field and copy manually', 'error');
                       }
                     }}
-                    className="btn-g btn-sm"
+                    className="btn-g btn-sm shrink-0"
                     aria-label="Copy branch ID to clipboard"
                     title="Copy branch ID"
-                    style={{ flexShrink: 0 }}
                   >
                     📋 Copy
                   </button>
@@ -602,7 +590,7 @@ export default function BranchFormModal({
               />
             </div>
 
-            <div className="fg span2" style={{ position: 'relative' }}>
+            <div className="fg span2 relative">
               <label>Search Address ★</label>
               <input
                 value={form.addrSearch}
@@ -611,29 +599,18 @@ export default function BranchFormModal({
                 autoComplete="off"
               />
               {searching && (
-                <div style={{ position: 'absolute', right: 10, top: 34, fontSize: '.7rem', color: 'var(--dim)' }}>⏳</div>
+                <div className="absolute right-[10px] top-[34px] text-[0.7rem] text-dim">⏳</div>
               )}
               {showSuggest && suggestions.length > 0 && (
-                <div
-                  style={{
-                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
-                    background: 'var(--surface,#fff)', border: '1px solid var(--rim)', borderRadius: 6,
-                    maxHeight: 240, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,.12)',
-                  }}
-                >
+                <div className="absolute top-full left-0 right-0 z-10 bg-surface border border-rim rounded-md max-h-[240px] overflow-y-auto shadow-[0_4px_12px_rgba(0,0,0,0.12)]">
                   {suggestions.map((s, i) => (
                     <div
                       key={`${s.place_id}-${i}`}
                       onClick={() => pickSuggestion(s)}
-                      style={{
-                        padding: '.65rem .9rem', cursor: 'pointer',
-                        fontSize: '.83rem', borderBottom: '1px solid var(--bdr,#e5e7eb)', lineHeight: 1.4,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--ink2,#f4f4f5)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      className="py-[0.65rem] px-[0.9rem] cursor-pointer text-[0.83rem] border-b border-bdr leading-[1.4] hover:bg-ink2"
                     >
-                      <div style={{ fontWeight: 600 }}>{s.mainText}</div>
-                      <div style={{ fontSize: '.77rem', color: 'var(--dim)', marginTop: '.15rem' }}>
+                      <div className="font-semibold">{s.mainText}</div>
+                      <div className="text-[0.77rem] text-dim mt-[0.15rem]">
                         {s.secondaryText}
                       </div>
                     </div>
@@ -641,32 +618,26 @@ export default function BranchFormModal({
                 </div>
               )}
               {form.addrConfirm && (
-                <div style={{ fontSize: '.74rem', color: 'var(--wa,#16a34a)', marginTop: '.3rem' }}>
+                <div className="text-[0.74rem] text-wa mt-[0.3rem]">
                   ✅ {form.addrConfirm}
                 </div>
               )}
-              <div style={{ marginTop: '.55rem' }}>
-                <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.25rem' }}>
+              <div className="mt-[0.55rem]">
+                <div className="text-[0.74rem] text-dim mb-1">
                   Drag the pin to fine-tune your branch location
                 </div>
                 {mapLoading ? (
-                  <div style={{
-                    width: '100%', height: 280, borderRadius: 8,
-                    border: '1px solid var(--rim)', background: 'var(--ink2,#f4f4f5)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '.82rem', color: 'var(--dim)',
-                  }}
-                  >
+                  <div className="w-full h-[280px] rounded-lg border border-rim bg-ink2 flex items-center justify-center text-[0.82rem] text-dim">
                     Loading map…
                   </div>
                 ) : (
                   <div
                     id="gb-branch-map"
-                    style={{ width: '100%', height: 280, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--rim)' }}
+                    className="w-full h-[280px] rounded-lg overflow-hidden border border-rim"
                   />
                 )}
                 {geocoding && (
-                  <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.3rem' }}>
+                  <div className="text-[0.74rem] text-dim mt-[0.3rem]">
                     📍 Getting address…
                   </div>
                 )}
@@ -684,7 +655,7 @@ export default function BranchFormModal({
 
             <div className="fg">
               <label>Delivery Radius</label>
-              <div style={{ fontSize: '.74rem', color: 'var(--dim)', padding: '.4rem 0' }}>
+              <div className="text-[0.74rem] text-dim py-[0.4rem]">
                 Delivery radius is managed platform-wide by GullyBite.
               </div>
             </div>
@@ -730,7 +701,7 @@ export default function BranchFormModal({
                 onChange={(e) => setField('gst', e.target.value.toUpperCase())}
                 placeholder="15-char GSTIN (optional)"
                 maxLength={15}
-                style={{ textTransform: 'uppercase' }}
+                className="uppercase"
               />
             </div>
           </div>
@@ -745,16 +716,12 @@ export default function BranchFormModal({
           {pendingPaymentBranchId && (
             <div
               role="status"
-              style={{
-                marginTop: '.6rem', padding: '.55rem .75rem',
-                background: '#fef3c7', border: '1px solid #fde68a',
-                borderRadius: 8, fontSize: '.78rem', color: '#92400e',
-              }}
+              className="mt-[0.6rem] py-[0.55rem] px-3 bg-[#fef3c7] border border-[#fde68a] rounded-lg text-[0.78rem] text-[#92400e]"
             >
               Payment in progress — complete the Razorpay checkout to activate this branch.
             </div>
           )}
-          <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
+          <div className="flex gap-2 mt-4">
             <button
               type="button"
               className="btn-p"

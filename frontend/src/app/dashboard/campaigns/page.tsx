@@ -185,7 +185,8 @@ function StatusChip({ status }: StatusChipProps) {
   const fallback: StatusStyle = { bg: '#e5e7eb', fg: '#374151', label: status || '—' };
   const s = STATUS_STYLE[status || ''] || fallback;
   return (
-    <span className="chip" style={{ background: s.bg, color: s.fg, fontSize: '.7rem' }}>
+    // bg/fg from STATUS_STYLE map keyed by status at runtime
+    <span className="chip text-[0.7rem]" style={{ background: s.bg, color: s.fg }}>
       {s.label}
     </span>
   );
@@ -193,7 +194,7 @@ function StatusChip({ status }: StatusChipProps) {
 
 function SegmentBadge({ label }: { label: string }) {
   return (
-    <span className="chip" style={{ background: '#eef2ff', color: '#3730a3', fontSize: '.7rem' }}>
+    <span className="chip bg-[#eef2ff] text-[#3730a3] text-[0.7rem]">
       {label === 'all' ? 'All customers' : label}
     </span>
   );
@@ -230,26 +231,19 @@ function FestivalNudgeBanner({ festival, onCreate }: FestivalNudgeBannerProps) {
   const days = festival.days_until ?? 0;
   const daysLabel = days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '.75rem',
-      padding: '.85rem 1rem', marginBottom: '1rem',
-      background: 'linear-gradient(135deg, #fff7ed 0%, #fef3c7 100%)',
-      border: '1px solid #fbbf24',
-      borderRadius: 'var(--r, 8px)',
-    }}>
-      <span style={{ fontSize: '1.6rem' }}>{emoji}</span>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, color: '#78350f' }}>
+    <div className="flex items-center gap-3 py-[0.85rem] px-4 mb-4 bg-[linear-gradient(135deg,#fff7ed_0%,#fef3c7_100%)] border border-[#fbbf24] rounded-r">
+      <span className="text-[1.6rem]">{emoji}</span>
+      <div className="flex-1 min-w-0">
+        <div className="font-semibold text-[#78350f]">
           {festival.name} is {daysLabel}!
         </div>
-        <div style={{ fontSize: '.82rem', color: '#92400e' }}>
+        <div className="text-[0.82rem] text-[#92400e]">
           {festival.suggested_message_hint || 'Send a campaign to your customers.'}
         </div>
       </div>
       <button
-        className="btn-p btn-sm"
+        className="btn-p btn-sm whitespace-nowrap"
         onClick={onCreate}
-        style={{ whiteSpace: 'nowrap' }}
       >
         Create Festival Campaign
       </button>
@@ -271,25 +265,21 @@ interface HistoryListProps {
 function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabled }: HistoryListProps) {
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '.5rem' }}>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
         <div>
-          <h2 style={{ margin: 0 }}>Marketing Campaigns</h2>
-          <div style={{ fontSize: '.84rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+          <h2 className="m-0">Marketing Campaigns</h2>
+          <div className="text-[0.84rem] text-dim mt-[0.2rem]">
             One-time blasts to a customer segment using approved templates.
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '.5rem' }}>
+        <div className="flex gap-2">
           <button className="btn-g btn-sm" onClick={onRefresh} disabled={disabled}>Refresh</button>
           <button className="btn-p btn-sm" onClick={onCreate} disabled={disabled}>+ Create Campaign</button>
         </div>
       </div>
 
       {summary && (
-        <div style={{
-          display: 'grid', gap: '.6rem',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-          marginBottom: '1rem',
-        }}>
+        <div className="grid gap-[0.6rem] grid-cols-[repeat(auto-fill,minmax(180px,1fr))] mb-4">
           <SummaryCard label="Campaigns" value={summary.total_campaigns} />
           <SummaryCard label="This month" value={summary.campaigns_this_month} />
           <SummaryCard label="Messages sent" value={summary.total_sent} />
@@ -303,30 +293,26 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
 
       {campaigns.length === 0 ? (
         <div className="card">
-          <div className="cb" style={{ color: 'var(--dim)' }}>
+          <div className="cb text-dim">
             No campaigns yet. Click <strong>Create Campaign</strong> to blast your first template.
           </div>
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: '.6rem' }}>
+        <div className="grid gap-[0.6rem]">
           {campaigns.map((c) => (
             <div key={c.id} className="card">
-              <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.5rem', flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="cb flex flex-col gap-2">
+                <div className="flex justify-between gap-2 flex-wrap">
+                  <div className="flex gap-2 items-center flex-wrap">
                     <strong>{c.display_name}</strong>
                     <StatusChip status={c.status} />
                     <SegmentBadge label={c.target_segment} />
                   </div>
-                  <div style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+                  <div className="text-[0.78rem] text-dim">
                     {fmtDateTime(c.created_at)}
                   </div>
                 </div>
-                <div style={{
-                  display: 'grid', gap: '.4rem',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-                  fontSize: '.82rem',
-                }}>
+                <div className="grid gap-[0.4rem] grid-cols-[repeat(auto-fill,minmax(120px,1fr))] text-[0.82rem]">
                   <Stat label="Target" value={c.target_count} />
                   <Stat label="Sent" value={c.actual_sent_count || c.stats?.sent || 0} />
                   <Stat label="Delivered" value={c.stats?.delivered || 0} />
@@ -336,12 +322,12 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
                   <Stat label="Spend" value={formatRs(c.actual_cost_rs)} />
                 </div>
                 {c.send_at && c.status === 'scheduled' && (
-                  <div style={{ fontSize: '.82rem', color: '#1e40af' }}>
+                  <div className="text-[0.82rem] text-[#1e40af]">
                     Scheduled for {fmtDateTime(c.send_at)}
                   </div>
                 )}
                 {c.error_message && (
-                  <div style={{ fontSize: '.82rem', color: '#991b1b' }}>
+                  <div className="text-[0.82rem] text-[#991b1b]">
                     Error: {c.error_message}
                   </div>
                 )}
@@ -370,9 +356,9 @@ interface SummaryCardProps { label: string; value: ReactNode }
 function SummaryCard({ label, value }: SummaryCardProps) {
   return (
     <div className="card">
-      <div className="cb" style={{ padding: '.55rem .7rem' }}>
-        <div style={{ fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '.03em' }}>{label}</div>
-        <div style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '.15rem' }}>{value ?? 0}</div>
+      <div className="cb py-[0.55rem] px-[0.7rem]">
+        <div className="text-[0.72rem] text-dim uppercase tracking-[0.03em]">{label}</div>
+        <div className="text-[1.1rem] font-semibold mt-[0.15rem]">{value ?? 0}</div>
       </div>
     </div>
   );
@@ -383,8 +369,8 @@ interface StatProps { label: string; value: ReactNode }
 function Stat({ label, value }: StatProps) {
   return (
     <div>
-      <div style={{ fontSize: '.7rem', color: 'var(--dim)' }}>{label}</div>
-      <div style={{ fontWeight: 500 }}>{value ?? 0}</div>
+      <div className="text-[0.7rem] text-dim">{label}</div>
+      <div className="font-medium">{value ?? 0}</div>
     </div>
   );
 }
@@ -489,29 +475,27 @@ function Wizard({
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '.5rem' }}>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
-          <h2 style={{ margin: 0 }}>Create Campaign</h2>
-          <div style={{ fontSize: '.84rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+          <h2 className="m-0">Create Campaign</h2>
+          <div className="text-[0.84rem] text-dim mt-[0.2rem]">
             Step {step} of 3 — {step === 1 ? 'Choose audience' : step === 2 ? 'Pick template' : 'Schedule & confirm'}
           </div>
         </div>
         <button className="btn-g btn-sm" onClick={onCancel}>← Back to history</button>
       </div>
 
-      <div style={{ display: 'flex', gap: '.3rem', marginBottom: '1rem' }}>
+      <div className="flex gap-[0.3rem] mb-4">
         {[1, 2, 3].map((n) => (
           <div
             key={n}
-            style={{
-              flex: 1, height: 4, borderRadius: 2,
-              background: n <= step ? '#4f46e5' : '#e5e7eb',
-            }}
+            // background colour conditional on whether the step is active vs inactive at runtime
+            className={`flex-1 h-1 rounded-xs ${n <= step ? 'bg-[#4f46e5]' : 'bg-[#e5e7eb]'}`}
           />
         ))}
       </div>
 
-      <div style={{ opacity: disabled ? 0.6 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
+      <div className={disabled ? 'opacity-60 pointer-events-none' : 'opacity-100 pointer-events-auto'}>
         {step === 1 && (
           <Step1Audience
             segments={segments}
@@ -555,13 +539,13 @@ function Wizard({
         )}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1.2rem', gap: '.5rem' }}>
+      <div className="flex justify-between mt-[1.2rem] gap-2">
         <div>
           {step > 1 && (
             <button className="btn-g" onClick={() => setStep(step - 1)} disabled={submitting}>Back</button>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '.5rem' }}>
+        <div className="flex gap-2">
           {step === 1 && (
             <button className="btn-p" onClick={() => setStep(2)} disabled={!canAdvanceStep1 || disabled}>
               Next: Template →
@@ -589,7 +573,7 @@ function Wizard({
       </div>
 
       {step === 3 && confirming && (
-        <div className="notice" style={{ marginTop: '.8rem' }}>
+        <div className="notice mt-[0.8rem]">
           <div className="notice-ico">⚠️</div>
           <div className="notice-body">
             <h4>Confirm campaign</h4>
@@ -619,11 +603,8 @@ function Step1Audience({ segments, segment, onPick }: Step1AudienceProps) {
 
   return (
     <div>
-      <h3 style={{ fontSize: '.95rem', margin: '0 0 .6rem 0' }}>Who should receive this?</h3>
-      <div style={{
-        display: 'grid', gap: '.6rem',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-      }}>
+      <h3 className="text-[0.95rem] mt-0 mb-[0.6rem] mx-0">Who should receive this?</h3>
+      <div className="grid gap-[0.6rem] grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
         <SegmentCard
           active={segment === 'all'}
           onClick={() => onPick('all')}
@@ -661,22 +642,16 @@ function SegmentCard({ active, onClick, label, count, copy }: SegmentCardProps) 
       type="button"
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      className="card"
-      style={{
-        textAlign: 'left', padding: 0, cursor: disabled ? 'not-allowed' : 'pointer',
-        border: active ? '2px solid #4f46e5' : '1px solid var(--line, #e5e7eb)',
-        background: disabled ? '#f9fafb' : 'white',
-        opacity: disabled ? 0.55 : 1,
-      }}
+      className={`card text-left p-0 ${disabled ? 'cursor-not-allowed bg-[#f9fafb] opacity-55' : 'cursor-pointer bg-white opacity-100'} ${active ? 'border-2 border-[#4f46e5]' : 'border border-line'}`}
     >
-      <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.35rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="cb flex flex-col gap-[0.35rem]">
+        <div className="flex justify-between items-center">
           <strong>{label}</strong>
-          <span className="chip" style={{ background: active ? '#4f46e5' : '#eef2ff', color: active ? 'white' : '#3730a3', fontSize: '.72rem' }}>
+          <span className={`chip text-[0.72rem] ${active ? 'bg-[#4f46e5] text-white' : 'bg-[#eef2ff] text-[#3730a3]'}`}>
             {count || 0}
           </span>
         </div>
-        <div style={{ fontSize: '.78rem', color: '#475569' }}>{copy}</div>
+        <div className="text-[0.78rem] text-[#475569]">{copy}</div>
       </div>
     </button>
   );
@@ -714,34 +689,31 @@ function Step2Template({
   }, [templates]);
 
   return (
-    <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: template ? '1fr 1fr' : '1fr' }}>
+    // grid columns conditional on whether a template is selected at runtime
+    <div className="grid gap-4" style={{ gridTemplateColumns: template ? '1fr 1fr' : '1fr' }}>
       <div>
-        <h3 style={{ fontSize: '.95rem', margin: '0 0 .6rem 0' }}>Pick a template</h3>
+        <h3 className="text-[0.95rem] mt-0 mb-[0.6rem] mx-0">Pick a template</h3>
         {grouped.length === 0 ? (
-          <div className="card"><div className="cb" style={{ color: 'var(--dim)' }}>No approved templates available.</div></div>
+          <div className="card"><div className="cb text-dim">No approved templates available.</div></div>
         ) : grouped.map(([group, items]) => (
-          <section key={group} style={{ marginBottom: '1rem' }}>
-            <h4 style={{ fontSize: '.82rem', margin: '0 0 .4rem 0', color: '#475569' }}>{group}</h4>
-            <div style={{ display: 'grid', gap: '.5rem' }}>
+          <section key={group} className="mb-4">
+            <h4 className="text-[0.82rem] mt-0 mb-[0.4rem] mx-0 text-[#475569]">{group}</h4>
+            <div className="grid gap-2">
               {items.map((t) => (
                 <button
                   type="button"
                   key={t.template_id}
                   onClick={() => onPickTemplate(t.template_id)}
-                  className="card"
-                  style={{
-                    textAlign: 'left', padding: 0, cursor: 'pointer',
-                    border: templateId === t.template_id ? '2px solid #4f46e5' : '1px solid var(--line, #e5e7eb)',
-                  }}
+                  className={`card text-left p-0 cursor-pointer ${templateId === t.template_id ? 'border-2 border-[#4f46e5]' : 'border border-line'}`}
                 >
-                  <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '.4rem' }}>
-                      <strong style={{ fontSize: '.9rem' }}>{t.display_name}</strong>
-                      <span style={{ fontSize: '.74rem', color: 'var(--dim)' }}>
+                  <div className="cb flex flex-col gap-[0.3rem]">
+                    <div className="flex justify-between items-center flex-wrap gap-[0.4rem]">
+                      <strong className="text-[0.9rem]">{t.display_name}</strong>
+                      <span className="text-[0.74rem] text-dim">
                         {formatRs(t.per_message_cost_rs)} / msg
                       </span>
                     </div>
-                    <div style={{ fontSize: '.78rem', color: '#475569', whiteSpace: 'pre-wrap' }}>
+                    <div className="text-[0.78rem] text-[#475569] whitespace-pre-wrap">
                       {(t.preview_text || t.body_template || '').slice(0, 140)}
                       {(t.body_template || '').length > 140 ? '…' : ''}
                     </div>
@@ -754,23 +726,23 @@ function Step2Template({
       </div>
 
       {template && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '.8rem' }}>
+        <div className="flex flex-col gap-[0.8rem]">
           {restaurantInputVars.length > 0 && (
             <div className="card">
               <div className="ch"><strong>Fill template variables</strong></div>
-              <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.55rem' }}>
+              <div className="cb flex flex-col gap-[0.55rem]">
                 {restaurantInputVars.map((v) => (
-                  <label key={v.name} style={{ display: 'flex', flexDirection: 'column', gap: '.2rem' }}>
-                    <span style={{ fontSize: '.78rem', color: '#334155' }}>
+                  <label key={v.name} className="flex flex-col gap-[0.2rem]">
+                    <span className="text-[0.78rem] text-[#334155]">
                       {v.name}{v.required ? ' *' : ''}
-                      {v.description ? <span style={{ color: 'var(--dim)', marginLeft: '.3rem' }}>— {v.description}</span> : null}
+                      {v.description ? <span className="text-dim ml-[0.3rem]">— {v.description}</span> : null}
                     </span>
                     <input
                       type="text"
                       value={vars[v.name] || ''}
                       placeholder={v.default_value || ''}
                       onChange={(e) => onVarsChange({ ...vars, [v.name]: e.target.value })}
-                      style={{ padding: '.4rem .55rem', border: '1px solid #e5e7eb', borderRadius: 6 }}
+                      className="py-[0.4rem] px-[0.55rem] border border-[#e5e7eb] rounded-md"
                     />
                   </label>
                 ))}
@@ -781,38 +753,34 @@ function Step2Template({
           <div className="card">
             <div className="ch"><strong>Preview</strong></div>
             <div className="cb">
-              <div style={{
-                fontSize: '.82rem', color: '#334155',
-                background: 'var(--ink3,#f4f4f5)', padding: '.6rem .75rem',
-                borderRadius: 6, whiteSpace: 'pre-wrap', minHeight: 80,
-              }}>
+              <div className="text-[0.82rem] text-[#334155] bg-ink3 py-[0.6rem] px-3 rounded-md whitespace-pre-wrap min-h-[80px]">
                 {preview || '—'}
               </div>
             </div>
           </div>
 
           <div className="card">
-            <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.3rem', fontSize: '.82rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--dim)' }}>Recipients</span>
+            <div className="cb flex flex-col gap-[0.3rem] text-[0.82rem]">
+              <div className="flex justify-between">
+                <span className="text-dim">Recipients</span>
                 <strong>{recipientCount}</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--dim)' }}>Per-message</span>
+              <div className="flex justify-between">
+                <span className="text-dim">Per-message</span>
                 <strong>{formatRs(template.per_message_cost_rs)}</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--dim)' }}>Estimated total</span>
+              <div className="flex justify-between">
+                <span className="text-dim">Estimated total</span>
                 <strong>{formatRs(estimatedCost)}</strong>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--dim)' }}>Wallet balance</span>
-                <strong style={{ color: enoughBalance ? '#166534' : '#991b1b' }}>
+              <div className="flex justify-between">
+                <span className="text-dim">Wallet balance</span>
+                <strong className={enoughBalance ? 'text-[#166534]' : 'text-[#991b1b]'}>
                   {formatRs(walletBalance)}
                 </strong>
               </div>
               {!enoughBalance && (
-                <div style={{ color: '#991b1b', fontSize: '.78rem' }}>
+                <div className="text-[#991b1b] text-[0.78rem]">
                   Wallet balance is below the estimated cost. Top up before sending.
                 </div>
               )}
@@ -858,33 +826,30 @@ function Step3Schedule({
   })();
 
   return (
-    <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: '1fr 1fr' }}>
+    <div className="grid gap-4 grid-cols-[1fr_1fr]">
       <div className="card">
         <div className="ch"><strong>Campaign name</strong></div>
-        <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.55rem' }}>
+        <div className="cb flex flex-col gap-[0.55rem]">
           <input
             type="text"
             placeholder="e.g. New menu launch — June"
             value={displayName}
             onChange={(e) => onDisplayNameChange(e.target.value)}
-            style={{ padding: '.5rem .6rem', border: '1px solid #e5e7eb', borderRadius: 6 }}
+            className="py-2 px-[0.6rem] border border-[#e5e7eb] rounded-md"
           />
-          <div style={{ fontSize: '.76rem', color: 'var(--dim)' }}>
+          <div className="text-[0.76rem] text-dim">
             Only shown to you in the campaign history.
           </div>
         </div>
 
-        <div className="ch" style={{ marginTop: '.5rem' }}><strong>When to send</strong></div>
-        <div className="cb" style={{ display: 'grid', gap: '.5rem' }}>
-          <label className="card" style={{
-            padding: 0, cursor: 'pointer',
-            border: sendMode === 'now' ? '2px solid #4f46e5' : '1px solid var(--line, #e5e7eb)',
-          }}>
-            <div className="cb" style={{ display: 'flex', gap: '.5rem', alignItems: 'flex-start' }}>
+        <div className="ch mt-2"><strong>When to send</strong></div>
+        <div className="cb grid gap-2">
+          <label className={`card p-0 cursor-pointer ${sendMode === 'now' ? 'border-2 border-[#4f46e5]' : 'border border-line'}`}>
+            <div className="cb flex gap-2 items-start">
               <input type="radio" checked={sendMode === 'now'} onChange={() => onSendModeChange('now')} />
               <div>
                 <div><strong>Send now</strong></div>
-                <div style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+                <div className="text-[0.78rem] text-dim">
                   Start the blast immediately in the background.
                 </div>
               </div>
@@ -892,29 +857,25 @@ function Step3Schedule({
           </label>
 
           {smartAvailable && smartSend && (
-            <label className="card" style={{
-              padding: 0, cursor: 'pointer',
-              border: sendMode === 'smart' ? '2px solid #059669' : '1px solid var(--line, #e5e7eb)',
-              background: sendMode === 'smart' ? '#ecfdf5' : '#fff',
-            }}>
-              <div className="cb" style={{ display: 'flex', gap: '.5rem', alignItems: 'flex-start' }}>
+            <label className={`card p-0 cursor-pointer ${sendMode === 'smart' ? 'border-2 border-[#059669] bg-[#ecfdf5]' : 'border border-line bg-white'}`}>
+              <div className="cb flex gap-2 items-start">
                 <input type="radio" checked={sendMode === 'smart'} onChange={() => onSendModeChange('smart')} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem', flexWrap: 'wrap' }}>
+                <div className="flex-1">
+                  <div className="flex items-center gap-[0.4rem] flex-wrap">
                     <strong>Smart Send</strong>
-                    <span className="chip" style={{ background: '#059669', color: '#fff', fontSize: '.65rem', padding: '.1rem .4rem' }}>
+                    <span className="chip bg-[#059669] text-white text-[0.65rem] py-[0.1rem] px-[0.4rem]">
                       Recommended
                     </span>
-                    <span style={{ fontSize: '.76rem', color: 'var(--dim)' }}>
+                    <span className="text-[0.76rem] text-dim">
                       Best time based on your customers
                     </span>
                   </div>
-                  <div style={{ fontSize: '.78rem', color: '#065f46', marginTop: '.25rem' }}>
+                  <div className="text-[0.78rem] text-[#065f46] mt-1">
                     We&apos;ll send at <strong>{smartSend.peak_hour_label}</strong> — when your customers are most
                     active ({smartSend.order_count_at_peak} orders typically placed around this time).
                   </div>
                   {sendMode === 'smart' && (
-                    <div style={{ fontSize: '.75rem', color: 'var(--dim)', marginTop: '.25rem' }}>
+                    <div className="text-[0.75rem] text-dim mt-1">
                       Scheduled for {fmtDateTime(smartSend.next_occurrence)}
                     </div>
                   )}
@@ -923,15 +884,12 @@ function Step3Schedule({
             </label>
           )}
 
-          <label className="card" style={{
-            padding: 0, cursor: 'pointer',
-            border: sendMode === 'later' ? '2px solid #4f46e5' : '1px solid var(--line, #e5e7eb)',
-          }}>
-            <div className="cb" style={{ display: 'flex', gap: '.5rem', alignItems: 'flex-start' }}>
+          <label className={`card p-0 cursor-pointer ${sendMode === 'later' ? 'border-2 border-[#4f46e5]' : 'border border-line'}`}>
+            <div className="cb flex gap-2 items-start">
               <input type="radio" checked={sendMode === 'later'} onChange={() => onSendModeChange('later')} />
-              <div style={{ flex: 1 }}>
+              <div className="flex-1">
                 <div><strong>Schedule for later</strong></div>
-                <div style={{ fontSize: '.78rem', color: 'var(--dim)', marginBottom: '.4rem' }}>
+                <div className="text-[0.78rem] text-dim mb-[0.4rem]">
                   Picks up on the next minute tick after the scheduled time.
                 </div>
                 {sendMode === 'later' && (
@@ -940,10 +898,10 @@ function Step3Schedule({
                       type="datetime-local"
                       value={sendAt}
                       onChange={(e) => onSendAtChange(e.target.value)}
-                      style={{ padding: '.35rem .5rem', border: '1px solid #e5e7eb', borderRadius: 6 }}
+                      className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md"
                     />
                     {!sendAtValid && sendAt && (
-                      <div style={{ fontSize: '.76rem', color: '#991b1b', marginTop: '.3rem' }}>
+                      <div className="text-[0.76rem] text-[#991b1b] mt-[0.3rem]">
                         Pick a time in the future.
                       </div>
                     )}
@@ -957,7 +915,7 @@ function Step3Schedule({
 
       <div className="card">
         <div className="ch"><strong>Summary</strong></div>
-        <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.4rem', fontSize: '.85rem' }}>
+        <div className="cb flex flex-col gap-[0.4rem] text-[0.85rem]">
           <Row k="Audience" v={segment === 'all' ? 'All customers' : segment || '—'} />
           <Row k="Recipients" v={recipientCount} />
           <Row k="Template" v={template?.display_name || '—'} />
@@ -966,7 +924,7 @@ function Step3Schedule({
           <Row k="Wallet" v={formatRs(walletBalance)} />
           <Row k="When" v={whenLabel} />
           {!enoughBalance && (
-            <div style={{ color: '#991b1b', fontSize: '.8rem', marginTop: '.3rem' }}>
+            <div className="text-[#991b1b] text-[0.8rem] mt-[0.3rem]">
               Wallet balance is below the estimated cost.
             </div>
           )}
@@ -980,8 +938,8 @@ interface RowProps { k: string; v: ReactNode }
 
 function Row({ k, v }: RowProps) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '.5rem' }}>
-      <span style={{ color: 'var(--dim)' }}>{k}</span>
+    <div className="flex justify-between gap-2">
+      <span className="text-dim">{k}</span>
       <strong>{v}</strong>
     </div>
   );
@@ -1093,37 +1051,23 @@ export default function CampaignsPage() {
   };
 
   if (loading) {
-    return <div style={{ color: 'var(--dim)', padding: '1rem' }}>Loading campaigns…</div>;
+    return <div className="text-dim p-4">Loading campaigns…</div>;
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '.4rem', marginBottom: '1rem', borderBottom: '1px solid #e5e7eb' }}>
+      <div className="flex gap-[0.4rem] mb-4 border-b border-[#e5e7eb]">
         <button
           type="button"
           onClick={() => setTab('manual')}
-          className="btn-sm"
-          style={{
-            background: 'transparent', border: 'none',
-            padding: '.5rem .8rem', cursor: 'pointer',
-            borderBottom: tab === 'manual' ? '2px solid #4f46e5' : '2px solid transparent',
-            color: tab === 'manual' ? '#4f46e5' : 'var(--dim)',
-            fontWeight: tab === 'manual' ? 600 : 400,
-          }}
+          className={`btn-sm bg-transparent border-none py-2 px-[0.8rem] cursor-pointer ${tab === 'manual' ? 'border-b-2 border-b-[#4f46e5] text-[#4f46e5] font-semibold' : 'border-b-2 border-b-transparent text-dim font-normal'}`}
         >
           Manual Campaigns
         </button>
         <button
           type="button"
           onClick={() => setTab('journeys')}
-          className="btn-sm"
-          style={{
-            background: 'transparent', border: 'none',
-            padding: '.5rem .8rem', cursor: 'pointer',
-            borderBottom: tab === 'journeys' ? '2px solid #4f46e5' : '2px solid transparent',
-            color: tab === 'journeys' ? '#4f46e5' : 'var(--dim)',
-            fontWeight: tab === 'journeys' ? 600 : 400,
-          }}
+          className={`btn-sm bg-transparent border-none py-2 px-[0.8rem] cursor-pointer ${tab === 'journeys' ? 'border-b-2 border-b-[#4f46e5] text-[#4f46e5] font-semibold' : 'border-b-2 border-b-transparent text-dim font-normal'}`}
         >
           Auto Journeys
         </button>
@@ -1134,7 +1078,7 @@ export default function CampaignsPage() {
       ) : (
       <>
       {disabled && (
-        <div className="notice wa" style={{ marginBottom: '1rem' }}>
+        <div className="notice wa mb-4">
           <div className="notice-ico">✨</div>
           <div className="notice-body">
             <h4>Coming Soon</h4>

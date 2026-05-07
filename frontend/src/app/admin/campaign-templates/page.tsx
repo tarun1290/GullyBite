@@ -106,13 +106,19 @@ function ApprovalBadge({ status }: ApprovalBadgeProps) {
   };
   const b = map[status || ''] || map.pending!;
   return (
-    <span style={{
-      padding: '.15rem .5rem', borderRadius: 999, fontSize: '.7rem',
-      fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase',
-      background: b.bg, color: b.fg, border: `1px solid ${b.border}`,
-    }}>{status || 'pending'}</span>
+    <span
+      className="py-[0.15rem] px-2 rounded-full text-[0.7rem] font-bold tracking-[0.03em] uppercase border"
+      // bg / fg / border from the per-status palette by status at runtime
+      // (approved/pending/rejected/paused — 4 distinct triplets).
+      style={{ background: b.bg, color: b.fg, borderColor: b.border }}
+    >{status || 'pending'}</span>
   );
 }
+
+const INPUT_CLS = 'w-full py-[0.45rem] px-[0.6rem] border border-rim rounded-md';
+const INPUT_SM_CLS = 'py-[0.35rem] px-[0.55rem] border border-rim rounded-md';
+const LBL_CLS = 'text-[0.78rem] font-semibold';
+const ERR_CLS = 'text-red-500 text-[0.72rem]';
 
 function renderBodyPreview(body: string, variables: TemplateVariable[]): string {
   if (!body) return '';
@@ -271,37 +277,34 @@ export default function AdminCampaignTemplatesPage() {
 
   return (
     <div>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexWrap: 'wrap', gap: '.75rem', marginBottom: '1rem',
-      }}>
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <div>
-          <h2 style={{ margin: 0 }}>Campaign Template Library</h2>
-          <div style={{ fontSize: '.82rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+          <h2 className="m-0">Campaign Template Library</h2>
+          <div className="text-[0.82rem] text-dim mt-[0.2rem]">
             Curated catalog of campaign templates available to restaurants.
           </div>
         </div>
         <button className="btn-p" onClick={openCreate}>+ Add Template</button>
       </div>
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="cb" style={{ display: 'flex', gap: '.75rem', flexWrap: 'wrap' }}>
+      <div className="card mb-4">
+        <div className="cb flex gap-3 flex-wrap">
           <div>
-            <label style={{ fontSize: '.75rem', color: 'var(--dim)', display: 'block' }}>Use case</label>
+            <label className="text-[0.75rem] text-dim block">Use case</label>
             <select value={filterUseCase} onChange={(e) => setFilterUseCase(e.target.value)}>
               <option value="">All</option>
               {USE_CASES.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ fontSize: '.75rem', color: 'var(--dim)', display: 'block' }}>Approval</label>
+            <label className="text-[0.75rem] text-dim block">Approval</label>
             <select value={filterApproval} onChange={(e) => setFilterApproval(e.target.value)}>
               <option value="">All</option>
               {APPROVAL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
-            <label style={{ fontSize: '.75rem', color: 'var(--dim)', display: 'block' }}>Active</label>
+            <label className="text-[0.75rem] text-dim block">Active</label>
             <select value={filterActive} onChange={(e) => setFilterActive(e.target.value)}>
               <option value="">All</option>
               <option value="true">Active</option>
@@ -312,39 +315,32 @@ export default function AdminCampaignTemplatesPage() {
       </div>
 
       {loading ? (
-        <div style={{ color: 'var(--dim)', padding: '1rem' }}>Loading…</div>
+        <div className="text-dim p-4">Loading…</div>
       ) : rows.length === 0 ? (
-        <div className="card"><div className="cb" style={{ color: 'var(--dim)' }}>No templates found.</div></div>
+        <div className="card"><div className="cb text-dim">No templates found.</div></div>
       ) : (
-        <div style={{ display: 'grid', gap: '.75rem' }}>
+        <div className="grid gap-3">
           {rows.map((doc) => (
             <div key={doc.template_id} className="card">
               <div className="cb">
-                <div style={{
-                  display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '.6rem',
-                  justifyContent: 'space-between', marginBottom: '.5rem',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
-                    <strong style={{ fontSize: '1rem' }}>{doc.display_name || doc.template_id}</strong>
-                    <span className="chip" style={{ background: '#eef2ff', color: 'var(--gb-indigo-800)' }}>{doc.use_case}</span>
-                    <span className="chip" style={{ background: '#f0fdf4', color: '#166534' }}>{doc.category}</span>
+                <div className="flex items-center flex-wrap gap-[0.6rem] justify-between mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <strong className="text-base">{doc.display_name || doc.template_id}</strong>
+                    <span className="chip bg-[#eef2ff] text-indigo-800">{doc.use_case}</span>
+                    <span className="chip bg-[#f0fdf4] text-[#166534]">{doc.category}</span>
                     <ApprovalBadge status={doc.meta_approval_status} />
                     {!doc.is_active && (
-                      <span className="chip" style={{ background: 'var(--gb-red-100)', color: 'var(--gb-red-900)' }}>INACTIVE</span>
+                      <span className="chip bg-red-100 text-red-900">INACTIVE</span>
                     )}
                   </div>
-                  <div style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+                  <div className="text-[0.78rem] text-dim">
                     ₹{Number(doc.per_message_cost_rs || 0).toFixed(2)} / msg
                   </div>
                 </div>
-                <div style={{
-                  fontSize: '.8rem', color: 'var(--gb-slate-700)', background: 'var(--ink3,#f4f4f5)',
-                  padding: '.55rem .7rem', borderRadius: 6, whiteSpace: 'pre-wrap',
-                  fontFamily: 'ui-monospace,Menlo,monospace',
-                }}>
+                <div className="text-[0.8rem] text-slate-700 bg-ink3 py-[0.55rem] px-[0.7rem] rounded-md whitespace-pre-wrap font-mono">
                   {doc.body_template || '(no body)'}
                 </div>
-                <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginTop: '.4rem' }}>
+                <div className="text-[0.72rem] text-dim mt-[0.4rem]">
                   <code>{doc.template_id}</code>
                   {' • '}
                   {doc.language || 'en'}
@@ -352,11 +348,11 @@ export default function AdminCampaignTemplatesPage() {
                   {Array.isArray(doc.variables) ? doc.variables.length : 0} variable(s)
                 </div>
                 {doc.meta_rejection_reason && (
-                  <div style={{ fontSize: '.75rem', color: 'var(--gb-red-600)', marginTop: '.3rem' }}>
+                  <div className="text-[0.75rem] text-red-600 mt-[0.3rem]">
                     Rejection: {doc.meta_rejection_reason}
                   </div>
                 )}
-                <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', marginTop: '.7rem' }}>
+                <div className="flex gap-2 flex-wrap mt-[0.7rem]">
                   <button className="btn-g btn-sm" onClick={() => openEdit(doc)}>Edit</button>
                   <button className="btn-g btn-sm" onClick={() => toggleActive(doc)}>
                     {doc.is_active ? 'Deactivate' : 'Activate'}
@@ -372,7 +368,7 @@ export default function AdminCampaignTemplatesPage() {
                     placeholder="Rejection reason…"
                     value={rejectReasonByTid[doc.template_id] || ''}
                     onChange={(e) => setRejectReasonByTid((prev) => ({ ...prev, [doc.template_id]: e.target.value }))}
-                    style={{ flex: 1, minWidth: 180, padding: '.35rem .55rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                    className="flex-1 min-w-[180px] py-[0.35rem] px-[0.55rem] border border-rim rounded-md"
                   />
                   <button className="btn-g btn-sm" onClick={() => setApproval(doc, 'rejected')}>Reject</button>
                 </div>
@@ -386,165 +382,151 @@ export default function AdminCampaignTemplatesPage() {
         <div
           role="dialog"
           aria-modal="true"
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', zIndex: 1000,
-            display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '2rem 1rem',
-            overflowY: 'auto',
-          }}
+          className="fixed inset-0 bg-[rgba(15,23,42,0.45)] z-1000 flex items-start justify-center py-8 px-4 overflow-y-auto"
           onClick={(e) => { if (e.target === e.currentTarget) closeForm(); }}
         >
-          <div className="card" style={{ width: 'min(960px, 100%)', marginBottom: '2rem' }}>
-            <div className="ch" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="card w-[min(960px,100%)] mb-8">
+            <div className="ch flex justify-between items-center">
               <h3>{editingIsNew ? 'New Campaign Template' : `Edit: ${editingTemplateId}`}</h3>
               <button className="btn-g btn-sm" onClick={closeForm}>Close</button>
             </div>
-            <div className="cb" style={{ display: 'grid', gap: '.9rem', gridTemplateColumns: '1fr 1fr' }}>
+            <div className="cb grid gap-[0.9rem] grid-cols-2">
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Template ID (Meta name)</label>
+                <label className={LBL_CLS}>Template ID (Meta name)</label>
                 <input
                   type="text"
                   value={form.template_id}
                   onChange={(e) => setF('template_id', e.target.value)}
                   disabled={!editingIsNew}
                   placeholder="e.g. gb_welcome_v1"
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
-                {formErrors.template_id && <div style={{ color: 'var(--gb-red-500)', fontSize: '.72rem' }}>{formErrors.template_id}</div>}
+                {formErrors.template_id && <div className={ERR_CLS}>{formErrors.template_id}</div>}
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Display name</label>
+                <label className={LBL_CLS}>Display name</label>
                 <input
                   type="text"
                   value={form.display_name}
                   onChange={(e) => setF('display_name', e.target.value)}
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
-                {formErrors.display_name && <div style={{ color: 'var(--gb-red-500)', fontSize: '.72rem' }}>{formErrors.display_name}</div>}
+                {formErrors.display_name && <div className={ERR_CLS}>{formErrors.display_name}</div>}
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Category</label>
-                <select value={form.category} onChange={(e) => setF('category', e.target.value)} style={{ width: '100%' }}>
+                <label className={LBL_CLS}>Category</label>
+                <select value={form.category} onChange={(e) => setF('category', e.target.value)} className="w-full">
                   {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Use case</label>
-                <select value={form.use_case} onChange={(e) => setF('use_case', e.target.value)} style={{ width: '100%' }}>
+                <label className={LBL_CLS}>Use case</label>
+                <select value={form.use_case} onChange={(e) => setF('use_case', e.target.value)} className="w-full">
                   {USE_CASES.map((u) => <option key={u} value={u}>{u}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Language</label>
+                <label className={LBL_CLS}>Language</label>
                 <input
                   type="text"
                   value={form.language}
                   onChange={(e) => setF('language', e.target.value)}
                   placeholder="en"
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Per-message cost (₹)</label>
+                <label className={LBL_CLS}>Per-message cost (₹)</label>
                 <input
                   type="number"
                   step="0.01"
                   min="0"
                   value={form.per_message_cost_rs}
                   onChange={(e) => setF('per_message_cost_rs', e.target.value)}
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Header type</label>
-                <select value={form.header_type} onChange={(e) => setF('header_type', e.target.value)} style={{ width: '100%' }}>
+                <label className={LBL_CLS}>Header type</label>
+                <select value={form.header_type} onChange={(e) => setF('header_type', e.target.value)} className="w-full">
                   {HEADER_TYPES.map((h) => <option key={h} value={h}>{h}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Header text (if text)</label>
+                <label className={LBL_CLS}>Header text (if text)</label>
                 <input
                   type="text"
                   value={form.header_text}
                   onChange={(e) => setF('header_text', e.target.value)}
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
               </div>
 
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Body template</label>
+              <div className="col-span-2">
+                <label className={LBL_CLS}>Body template</label>
                 <textarea
                   rows={5}
                   value={form.body_template}
                   onChange={(e) => setF('body_template', e.target.value)}
                   placeholder="Hi {{customer_name}}, your order from {{restaurant_name}} is ready!"
-                  style={{
-                    width: '100%', padding: '.55rem .7rem', border: '1px solid var(--rim)',
-                    borderRadius: 6, fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '.82rem',
-                  }}
+                  className="w-full py-[0.55rem] px-[0.7rem] border border-rim rounded-md font-mono text-[0.82rem]"
                 />
-                {formErrors.body_template && <div style={{ color: 'var(--gb-red-500)', fontSize: '.72rem' }}>{formErrors.body_template}</div>}
+                {formErrors.body_template && <div className={ERR_CLS}>{formErrors.body_template}</div>}
               </div>
 
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Footer text</label>
+                <label className={LBL_CLS}>Footer text</label>
                 <input
                   type="text"
                   value={form.footer_text}
                   onChange={(e) => setF('footer_text', e.target.value)}
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>CTA button text</label>
+                <label className={LBL_CLS}>CTA button text</label>
                 <input
                   type="text"
                   value={form.cta_button_text}
                   onChange={(e) => setF('cta_button_text', e.target.value)}
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
               </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Preview text (restaurant-facing summary)</label>
+              <div className="col-span-2">
+                <label className={LBL_CLS}>Preview text (restaurant-facing summary)</label>
                 <input
                   type="text"
                   value={form.preview_text}
                   onChange={(e) => setF('preview_text', e.target.value)}
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
               </div>
 
-              <div style={{ gridColumn: '1 / -1' }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  marginBottom: '.35rem',
-                }}>
-                  <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Variables</label>
+              <div className="col-span-2">
+                <div className="flex items-center justify-between mb-[0.35rem]">
+                  <label className={LBL_CLS}>Variables</label>
                   <button className="btn-g btn-sm" onClick={addVar}>+ Add variable</button>
                 </div>
                 {form.variables.length === 0 ? (
-                  <div style={{ fontSize: '.75rem', color: 'var(--dim)' }}>No variables defined.</div>
+                  <div className="text-[0.75rem] text-dim">No variables defined.</div>
                 ) : (
-                  <div style={{ display: 'grid', gap: '.45rem' }}>
+                  <div className="grid gap-[0.45rem]">
                     {form.variables.map((v, idx) => (
-                      <div key={idx} style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1.2fr 1.2fr 1.2fr .7fr 1.5fr auto',
-                        gap: '.4rem', alignItems: 'center',
-                      }}>
+                      <div key={idx} className="grid grid-cols-[1.2fr_1.2fr_1.2fr_0.7fr_1.5fr_auto] gap-[0.4rem] items-center">
                         <input
                           type="text" placeholder="name" value={v.name}
                           onChange={(e) => setVar(idx, 'name', e.target.value)}
-                          style={{ padding: '.35rem .55rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                          className={INPUT_SM_CLS}
                         />
                         <input
                           type="text" placeholder="label" value={v.label}
                           onChange={(e) => setVar(idx, 'label', e.target.value)}
-                          style={{ padding: '.35rem .55rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                          className={INPUT_SM_CLS}
                         />
                         <select value={v.source} onChange={(e) => setVar(idx, 'source', e.target.value)}>
                           {VARIABLE_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
-                        <label style={{ fontSize: '.75rem', display: 'flex', alignItems: 'center', gap: '.3rem' }}>
+                        <label className="text-[0.75rem] flex items-center gap-[0.3rem]">
                           <input type="checkbox" checked={!!v.required}
                             onChange={(e) => setVar(idx, 'required', e.target.checked)} />
                           required
@@ -552,38 +534,36 @@ export default function AdminCampaignTemplatesPage() {
                         <input
                           type="text" placeholder="example" value={v.example || ''}
                           onChange={(e) => setVar(idx, 'example', e.target.value)}
-                          style={{ padding: '.35rem .55rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                          className={INPUT_SM_CLS}
                         />
                         <button className="btn-g btn-sm" onClick={() => removeVar(idx)}>×</button>
                       </div>
                     ))}
                   </div>
                 )}
-                {formErrors.variables && <div style={{ color: 'var(--gb-red-500)', fontSize: '.72rem' }}>{formErrors.variables}</div>}
+                {formErrors.variables && <div className={ERR_CLS}>{formErrors.variables}</div>}
               </div>
 
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Live preview</label>
-                <div style={{
-                  padding: '.7rem .85rem', border: '1px solid #bbf7d0', background: '#f0fdf4',
-                  borderRadius: 8, whiteSpace: 'pre-wrap', fontSize: '.85rem', color: '#14532d',
-                  minHeight: 70,
-                }}>{preview || '(empty)'}</div>
+              <div className="col-span-2">
+                <label className={LBL_CLS}>Live preview</label>
+                <div className="py-[0.7rem] px-[0.85rem] border border-[#bbf7d0] bg-[#f0fdf4] rounded-lg whitespace-pre-wrap text-[0.85rem] text-[#14532d] min-h-[70px]">
+                  {preview || '(empty)'}
+                </div>
               </div>
 
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Applicable restaurant types (csv, empty = all)</label>
+                <label className={LBL_CLS}>Applicable restaurant types (csv, empty = all)</label>
                 <input
                   type="text"
                   value={form.applicable_restaurant_types}
                   onChange={(e) => setF('applicable_restaurant_types', e.target.value)}
                   placeholder="veg, non_veg"
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Active</label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.85rem' }}>
+                <label className={LBL_CLS}>Active</label>
+                <label className="flex items-center gap-[0.4rem] text-[0.85rem]">
                   <input
                     type="checkbox"
                     checked={!!form.is_active}
@@ -594,22 +574,22 @@ export default function AdminCampaignTemplatesPage() {
               </div>
 
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Approval status</label>
-                <select value={form.meta_approval_status} onChange={(e) => setF('meta_approval_status', e.target.value)} style={{ width: '100%' }}>
+                <label className={LBL_CLS}>Approval status</label>
+                <select value={form.meta_approval_status} onChange={(e) => setF('meta_approval_status', e.target.value)} className="w-full">
                   {APPROVAL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: '.78rem', fontWeight: 600 }}>Rejection reason</label>
+                <label className={LBL_CLS}>Rejection reason</label>
                 <input
                   type="text"
                   value={form.meta_rejection_reason}
                   onChange={(e) => setF('meta_rejection_reason', e.target.value)}
-                  style={{ width: '100%', padding: '.45rem .6rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                  className={INPUT_CLS}
                 />
               </div>
 
-              <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+              <div className="col-span-2 flex gap-2 justify-end">
                 <button className="btn-g" onClick={closeForm} disabled={saving}>Cancel</button>
                 <button className="btn-p" onClick={submit} disabled={saving}>
                   {saving ? 'Saving…' : (editingIsNew ? 'Create' : 'Save changes')}

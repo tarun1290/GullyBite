@@ -101,27 +101,23 @@ export default function WabaTokenExpiryBanner() {
   return (
     <div
       role="alert"
+      className="flex items-center gap-3 py-3 px-6 border-b text-[0.85rem]"
+      // bg / borderColor / text colour come from the STYLES palette by
+      // level (info/warning/critical) at runtime — three distinct sets.
       style={{
-        display: 'flex', alignItems: 'center', gap: '.75rem',
-        padding: '0.75rem 1.5rem',
         background: palette.background,
-        borderBottom: `1px solid ${palette.borderColor}`,
+        borderBottomColor: palette.borderColor,
         color: palette.textColor,
-        fontSize: '.85rem',
       }}
     >
-      <span style={{ fontSize: '1.05rem', flexShrink: 0 }} aria-hidden="true">{icon}</span>
-      <span style={{ flex: 1, lineHeight: 1.4 }}>{messageFor(level, daysSinceIssued)}</span>
+      <span className="text-[1.05rem] shrink-0" aria-hidden="true">{icon}</span>
+      <span className="flex-1 leading-[1.4]">{messageFor(level, daysSinceIssued)}</span>
       <button
         type="button"
         onClick={() => router.push('/dashboard/settings?section=whatsapp')}
-        style={{
-          flexShrink: 0,
-          background: palette.btnBackground, color: '#fff', border: 'none',
-          padding: '0.5rem 1rem', borderRadius: 6,
-          fontWeight: 600, fontSize: '.8rem', cursor: 'pointer',
-          whiteSpace: 'nowrap',
-        }}
+        className="shrink-0 text-white border-0 py-2 px-4 rounded-md font-semibold text-[0.8rem] cursor-pointer whitespace-nowrap"
+        // btnBackground from the same level-keyed palette.
+        style={{ background: palette.btnBackground }}
       >
         Reconnect WhatsApp
       </button>

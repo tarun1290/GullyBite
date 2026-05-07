@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
 import {
@@ -59,10 +58,10 @@ function fmtDate(iso?: string): string {
   } catch { return '—'; }
 }
 
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.6rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const sel: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const SEL_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.55rem] text-[0.78rem]';
 
 export default function AdminCustomersPage() {
   const [search, setSearch] = useState<string>('');
@@ -147,10 +146,10 @@ export default function AdminCustomersPage() {
 
   return (
     <div id="pg-customers">
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="ch" style={{ gap: '.6rem', flexWrap: 'wrap' }}>
+      <div className="card mb-4">
+        <div className="ch gap-[0.6rem] flex-wrap">
           <h3>Customers</h3>
-          <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '.3rem', color: 'var(--dim)', fontSize: '.72rem' }}>
+          <label className="ml-auto inline-flex items-center gap-[0.3rem] text-dim text-[0.72rem]">
             <input type="checkbox" checked={showBsuid} onChange={(e) => setShowBsuid(e.target.checked)} />
             Show WhatsApp Username (BSUID)
           </label>
@@ -159,44 +158,44 @@ export default function AdminCustomersPage() {
             placeholder="Search phone / name…"
             value={pendingSearch}
             onChange={(e) => setPendingSearch(e.target.value)}
-            style={{ ...sel, width: 200 }}
+            className={`${SEL_CLS} w-[200px]`}
           />
         </div>
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={th}>Phone</th>
-                  <th style={th}>Name</th>
-                  {showBsuid && <th style={th}>WhatsApp Username (BSUID)</th>}
-                  <th style={th}>Orders</th>
-                  <th style={th}>Lifetime Value</th>
-                  <th style={th}>Joined</th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={TH_CLS}>Phone</th>
+                  <th className={TH_CLS}>Name</th>
+                  {showBsuid && <th className={TH_CLS}>WhatsApp Username (BSUID)</th>}
+                  <th className={TH_CLS}>Orders</th>
+                  <th className={TH_CLS}>Lifetime Value</th>
+                  <th className={TH_CLS}>Joined</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={colSpan} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={colSpan} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={colSpan} style={emptyCell}>No customers found</td></tr>
+                  <tr><td colSpan={colSpan} className={EMPTY_CLS}>No customers found</td></tr>
                 ) : (
                   rows.map((c, i) => (
-                    <tr key={c._id || c.wa_phone || c.bsuid || i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td style={td} className="mono">
+                    <tr key={c._id || c.wa_phone || c.bsuid || i} className="border-b border-rim">
+                      <td className={`${TD_CLS} mono`}>
                         {c.wa_phone || (c.bsuid ? `${String(c.bsuid).slice(0, 12)}…` : '—')}
                       </td>
-                      <td style={td}>{c.name || '—'}</td>
+                      <td className={TD_CLS}>{c.name || '—'}</td>
                       {showBsuid && (
-                        <td style={{ ...td, fontSize: '.72rem', color: 'var(--dim)' }} className="mono" title={c.bsuid || ''}>
+                        <td className={`${TD_CLS} text-[0.72rem] text-dim mono`} title={c.bsuid || ''}>
                           {c.bsuid ? `${String(c.bsuid).slice(0, 8)}…` : '—'}
                         </td>
                       )}
-                      <td style={{ ...td, textAlign: 'center' }}>{c.order_count}</td>
-                      <td style={td}>₹{fmtNum(c.lifetime_rs)}</td>
-                      <td style={{ ...td, color: 'var(--dim)', fontSize: '.74rem' }}>{fmtDate(c.created_at)}</td>
+                      <td className={`${TD_CLS} text-center`}>{c.order_count}</td>
+                      <td className={TD_CLS}>₹{fmtNum(c.lifetime_rs)}</td>
+                      <td className={`${TD_CLS} text-dim text-[0.74rem]`}>{fmtDate(c.created_at)}</td>
                     </tr>
                   ))
                 )}
@@ -204,14 +203,14 @@ export default function AdminCustomersPage() {
             </table>
           </div>
         )}
-        <div style={{ padding: '.7rem 1rem', display: 'flex', gap: '.6rem', alignItems: 'center', borderTop: '1px solid var(--rim)' }}>
+        <div className="py-[0.7rem] px-4 flex gap-[0.6rem] items-center border-t border-rim">
           <button
             type="button"
             className="btn-g btn-sm"
             onClick={() => setOffset(Math.max(0, offset - CUST_LIMIT))}
             disabled={loading || offset === 0}
           >← Prev</button>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Page {page}</span>
+          <span className="text-[0.78rem] text-dim">Page {page}</span>
           <button
             type="button"
             className="btn-g btn-sm"
@@ -222,17 +221,17 @@ export default function AdminCustomersPage() {
       </div>
 
       <div className="card">
-        <div className="ch" style={{ gap: '.6rem', flexWrap: 'wrap' }}>
+        <div className="ch gap-[0.6rem] flex-wrap">
           <h3>Global Identity</h3>
-          <span style={{ color: 'var(--dim)', fontSize: '.72rem' }}>Cross-restaurant totals</span>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+          <span className="text-dim text-[0.72rem]">Cross-restaurant totals</span>
+          <div className="ml-auto flex gap-2 flex-wrap">
             <input
               placeholder="Restaurant ID"
               value={gRestaurant}
               onChange={(e) => setGRestaurant(e.target.value)}
-              style={{ ...sel, width: '13rem' }}
+              className={`${SEL_CLS} w-52`}
             />
-            <select value={gType} onChange={(e) => setGType(e.target.value)} style={sel}>
+            <select value={gType} onChange={(e) => setGType(e.target.value)} className={SEL_CLS}>
               <option value="">All Types</option>
               <option value="new">New</option>
               <option value="repeat">Repeat</option>
@@ -245,9 +244,9 @@ export default function AdminCustomersPage() {
               placeholder="Min Orders"
               value={gMinOrders}
               onChange={(e) => setGMinOrders(e.target.value)}
-              style={{ ...sel, width: '7rem' }}
+              className={`${SEL_CLS} w-28`}
             />
-            <select value={gSort} onChange={(e) => setGSort(e.target.value)} style={sel}>
+            <select value={gSort} onChange={(e) => setGSort(e.target.value)} className={SEL_CLS}>
               <option value="orders">Sort: Total Orders</option>
               <option value="spent">Sort: Total Spend</option>
               <option value="last_order">Sort: Last Order</option>
@@ -258,23 +257,23 @@ export default function AdminCustomersPage() {
         {gErr ? (
           <div className="cb"><SectionError message={gErr} onRetry={loadGlobal} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={th} />
-                  <th style={th}>Name</th>
-                  <th style={th}>Phone</th>
-                  <th style={th}>Total Orders</th>
-                  <th style={th}>Total Spend</th>
-                  <th style={th}>Type</th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={TH_CLS} />
+                  <th className={TH_CLS}>Name</th>
+                  <th className={TH_CLS}>Phone</th>
+                  <th className={TH_CLS}>Total Orders</th>
+                  <th className={TH_CLS}>Total Spend</th>
+                  <th className={TH_CLS}>Type</th>
                 </tr>
               </thead>
               <tbody>
                 {gLoading ? (
-                  <tr><td colSpan={6} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={6} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : gRows.length === 0 ? (
-                  <tr><td colSpan={6} style={emptyCell}>No customers match</td></tr>
+                  <tr><td colSpan={6} className={EMPTY_CLS}>No customers match</td></tr>
                 ) : (
                   gRows.map((c, i) => {
                     const color = TYPE_COLOR[c.customer_type || ''] || 'var(--dim)';
@@ -282,23 +281,27 @@ export default function AdminCustomersPage() {
                     const expanded = gExpanded.has(i);
                     return (
                       <Fragment key={c.phone || c.name || i}>
-                        <tr style={{ borderBottom: '1px solid var(--rim)' }}>
-                          <td style={td}>
+                        <tr className="border-b border-rim">
+                          <td className={TD_CLS}>
                             <button
                               type="button"
-                              className="btn-g btn-sm"
-                              style={{ padding: '.1rem .4rem' }}
+                              className="btn-g btn-sm py-[0.1rem] px-[0.4rem]"
                               onClick={() => toggleExpand(i)}
                             >{expanded ? '▾' : '▸'}</button>
                           </td>
-                          <td style={td}>{c.name || '—'}</td>
-                          <td style={td} className="mono">{c.phone || '—'}</td>
-                          <td style={{ ...td, textAlign: 'center' }}>{c.total_orders || 0}</td>
-                          <td style={td}>₹{fmtNum(c.total_spent_rs)}</td>
-                          <td style={{ ...td, textTransform: 'uppercase', fontWeight: 700, color, fontSize: '.72rem' }}>
+                          <td className={TD_CLS}>{c.name || '—'}</td>
+                          <td className={`${TD_CLS} mono`}>{c.phone || '—'}</td>
+                          <td className={`${TD_CLS} text-center`}>{c.total_orders || 0}</td>
+                          <td className={TD_CLS}>₹{fmtNum(c.total_spent_rs)}</td>
+                          <td
+                            className={`${TD_CLS} uppercase font-bold text-[0.72rem]`}
+                            // colour comes from TYPE_COLOR by customer_type
+                            // at runtime (new/repeat/loyal/dormant — 4 distinct).
+                            style={{ color }}
+                          >
                             {c.customer_type || '—'}
                             {highValue && (
-                              <span style={{ marginLeft: '.35rem', fontSize: '.6rem', padding: '.05rem .3rem', borderRadius: 3, background: '#f5a62322', color: '#f5a623' }}>
+                              <span className="ml-[0.35rem] text-[0.6rem] py-[0.05rem] px-[0.3rem] rounded-[3px] bg-[#f5a62322] text-[#f5a623]">
                                 HIGH VALUE
                               </span>
                             )}
@@ -307,13 +310,13 @@ export default function AdminCustomersPage() {
                         {expanded && (
                           <tr>
                             <td></td>
-                            <td colSpan={5} style={{ background: 'var(--ink3)', padding: '.6rem .8rem' }}>
+                            <td colSpan={5} className="bg-ink3 py-[0.6rem] px-[0.8rem]">
                               {(c.restaurant_breakdown || []).length === 0 ? (
-                                <div style={{ color: 'var(--dim)', fontSize: '.72rem' }}>No restaurant breakdown</div>
+                                <div className="text-dim text-[0.72rem]">No restaurant breakdown</div>
                               ) : (
                                 (c.restaurant_breakdown || []).map((b, j) => (
-                                  <div key={j} className="mono" style={{ fontSize: '.72rem' }}>
-                                    <span style={{ color: 'var(--dim)' }}>{String(b.restaurant_id)}</span>
+                                  <div key={j} className="mono text-[0.72rem]">
+                                    <span className="text-dim">{String(b.restaurant_id)}</span>
                                     {' — '}
                                     {b.order_count} orders, ₹{fmtNum(b.total_spent_rs)}
                                   </div>

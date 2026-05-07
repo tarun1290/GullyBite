@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, ChangeEvent } from 'react';
+import type { ChangeEvent } from 'react';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
 import DeliveryProofPhotos from '../../../components/shared/DeliveryProofPhotos';
@@ -81,11 +81,13 @@ interface StatusBadgeProps { status?: string }
 function StatusBadge({ status }: StatusBadgeProps) {
   const bg = STATUS_COLOR[status || ''] || 'var(--gb-slate-500)';
   return (
-    <span style={{
-      background: bg, color: 'var(--gb-neutral-0)', fontSize: '.68rem', fontWeight: 700,
-      padding: '.1rem .45rem', borderRadius: 4, textTransform: 'uppercase',
-      letterSpacing: '.04em',
-    }}>{status || '—'}</span>
+    <span
+      className="text-neutral-0 text-[0.68rem] font-bold py-[0.1rem] px-[0.45rem] rounded-sm uppercase tracking-[0.04em]"
+      // background colour comes from STATUS_COLOR by status at runtime
+      // (PENDING/CONFIRMED/PREPARING/PACKED/DISPATCHED/DELIVERED/CANCELLED
+      // — 7 distinct values plus a slate-500 fallback).
+      style={{ background: bg }}
+    >{status || '—'}</span>
   );
 }
 
@@ -102,10 +104,10 @@ function customerLabel(o: AdminOrderRow): string {
   return '—';
 }
 
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.6rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const sel: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const SEL_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.55rem] text-[0.78rem]';
 
 export default function AdminOrdersPage() {
   const { showToast } = useToast();
@@ -193,52 +195,49 @@ export default function AdminOrdersPage() {
   return (
     <div id="pg-orders">
       <div className="card">
-        <div className="ch" style={{ gap: '.6rem', flexWrap: 'wrap' }}>
+        <div className="ch gap-[0.6rem] flex-wrap">
           <h3>All Orders</h3>
-          <span style={{ color: 'var(--dim)', fontSize: '.75rem' }}>
+          <span className="text-dim text-[0.75rem]">
             {loading ? '' : `${total} total`}
           </span>
-          <button type="button" className="btn-g btn-sm" style={{ marginLeft: 'auto' }} onClick={load} disabled={loading}>
+          <button type="button" className="btn-g btn-sm ml-auto" onClick={load} disabled={loading}>
             {loading ? 'Loading…' : '↻ Refresh'}
           </button>
         </div>
 
-        <div
-          className="cb"
-          style={{ display: 'flex', gap: '.6rem', flexWrap: 'wrap', alignItems: 'center', borderBottom: '1px solid var(--rim)' }}
-        >
-          <span style={{ fontSize: '.74rem', color: 'var(--dim)' }}>Status:</span>
-          <select value={status} onChange={onFilterChange(setStatus)} style={sel}>
+        <div className="cb flex gap-[0.6rem] flex-wrap items-center border-b border-rim">
+          <span className="text-[0.74rem] text-dim">Status:</span>
+          <select value={status} onChange={onFilterChange(setStatus)} className={SEL_CLS}>
             {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <input type="date" value={dateFrom} onChange={onFilterChange(setDateFrom)} style={sel} />
-          <input type="date" value={dateTo} onChange={onFilterChange(setDateTo)} style={sel} />
+          <input type="date" value={dateFrom} onChange={onFilterChange(setDateFrom)} className={SEL_CLS} />
+          <input type="date" value={dateTo} onChange={onFilterChange(setDateTo)} className={SEL_CLS} />
           <button type="button" className="btn-g btn-sm" onClick={clearFilters}>Clear</button>
         </div>
 
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={{ ...th, width: 28 }} aria-label="Expand timeline" />
-                  <th style={th}>Order #</th>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Branch</th>
-                  <th style={th}>Customer</th>
-                  <th style={th}>Total</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Time</th>
-                  <th style={th}>Proofs</th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={`${TH_CLS} w-7`} aria-label="Expand timeline" />
+                  <th className={TH_CLS}>Order #</th>
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Branch</th>
+                  <th className={TH_CLS}>Customer</th>
+                  <th className={TH_CLS}>Total</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Time</th>
+                  <th className={TH_CLS}>Proofs</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={9} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={9} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : orders.length === 0 ? (
-                  <tr><td colSpan={9} style={emptyCell}>No orders found</td></tr>
+                  <tr><td colSpan={9} className={EMPTY_CLS}>No orders found</td></tr>
                 ) : (
                   orders.map((o) => {
                     const id = o._id || String(o.order_number || '');
@@ -246,36 +245,26 @@ export default function AdminOrdersPage() {
                     const hasTimeline = !!o.prorouting_state;
                     return (
                       <Fragment key={id || o.order_number}>
-                        <tr style={{ borderBottom: isOpen ? 'none' : '1px solid var(--rim)' }}>
-                          <td style={{ ...td, padding: '.4rem .3rem .4rem .7rem' }}>
+                        <tr className={isOpen ? 'border-b-0' : 'border-b border-rim'}>
+                          <td className="py-[0.4rem] pr-[0.3rem] pl-[0.7rem] align-top">
                             {hasTimeline ? (
                               <button
                                 type="button"
                                 onClick={() => toggleExpanded(id)}
                                 aria-expanded={isOpen}
                                 aria-label={isOpen ? 'Hide delivery timeline' : 'Show delivery timeline'}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  padding: '.15rem .3rem',
-                                  cursor: 'pointer',
-                                  color: 'var(--dim)',
-                                  fontSize: '.7rem',
-                                  lineHeight: 1,
-                                  transform: isOpen ? 'rotate(90deg)' : 'rotate(0)',
-                                  transition: 'transform .15s ease',
-                                }}
+                                className={`bg-none border-0 py-[0.15rem] px-[0.3rem] cursor-pointer text-dim text-[0.7rem] leading-none transition-transform duration-150 ease-in-out ${isOpen ? 'rotate-90' : 'rotate-0'}`}
                               >
                                 ▶
                               </button>
                             ) : null}
                           </td>
-                          <td style={td}>
+                          <td className={TD_CLS}>
                             {o.display_order_id ? (
                               <>
                                 <div className="mono">{o.display_order_id}</div>
                                 {o.order_number && (
-                                  <div style={{ fontSize: '.68rem', color: 'var(--mute,var(--dim))', fontFamily: 'monospace' }}>
+                                  <div className="text-[0.68rem] text-mute font-mono">
                                     {o.order_number}
                                   </div>
                                 )}
@@ -284,17 +273,17 @@ export default function AdminOrdersPage() {
                               <span className="mono">#{o.order_number || '—'}</span>
                             )}
                           </td>
-                          <td style={td}>{o.business_name || '—'}</td>
-                          <td style={td}>{o.branch_name || '—'}</td>
-                          <td style={{ ...td, fontSize: '.76rem' }} className="mono">
+                          <td className={TD_CLS}>{o.business_name || '—'}</td>
+                          <td className={TD_CLS}>{o.branch_name || '—'}</td>
+                          <td className={`${TD_CLS} text-[0.76rem] mono`}>
                             {customerLabel(o)}
                           </td>
-                          <td style={td}><strong>₹{o.total_rs}</strong></td>
-                          <td style={td}><StatusBadge status={o.status} /></td>
-                          <td style={{ ...td, color: 'var(--dim)', fontSize: '.74rem' }}>
+                          <td className={TD_CLS}><strong>₹{o.total_rs}</strong></td>
+                          <td className={TD_CLS}><StatusBadge status={o.status} /></td>
+                          <td className={`${TD_CLS} text-dim text-[0.74rem]`}>
                             {fmtTime(o.created_at)}
                           </td>
-                          <td style={td}>
+                          <td className={TD_CLS}>
                             <DeliveryProofPhotos
                               pickupProof={o.prorouting_pickup_proof}
                               deliveryProof={o.prorouting_delivery_proof}
@@ -304,10 +293,10 @@ export default function AdminOrdersPage() {
                           </td>
                         </tr>
                         {isOpen && hasTimeline && (
-                          <tr style={{ borderBottom: '1px solid var(--rim)', background: 'var(--ink2)' }}>
+                          <tr className="border-b border-rim bg-ink2">
                             <td />
-                            <td colSpan={8} style={{ padding: '.6rem 1rem 1rem' }}>
-                              <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.3rem', fontWeight: 600 }}>
+                            <td colSpan={8} className="pt-[0.6rem] pr-4 pb-4 pl-4">
+                              <div className="text-[0.74rem] text-dim mb-[0.3rem] font-semibold">
                                 Delivery Timeline
                               </div>
                               <DeliveryTimeline order={o} />
@@ -316,13 +305,12 @@ export default function AdminOrdersPage() {
                                 raisedAt={o.prorouting_issue_raised_at}
                               />
                               {o.status === 'DELIVERED' && !o.prorouting_issue_id && (
-                                <div style={{ marginTop: '.6rem' }}>
+                                <div className="mt-[0.6rem]">
                                   <button
                                     type="button"
-                                    className="btn-del btn-sm"
+                                    className="btn-del btn-sm text-[0.78rem]"
                                     onClick={() => handleReportFakeDelivery(id)}
                                     disabled={reporting.has(id)}
-                                    style={{ fontSize: '.78rem' }}
                                   >
                                     {reporting.has(id) ? '…' : '⚠ Report Fake Delivery'}
                                   </button>
@@ -340,14 +328,14 @@ export default function AdminOrdersPage() {
           </div>
         )}
 
-        <div style={{ padding: '.7rem 1rem', display: 'flex', gap: '.6rem', alignItems: 'center', borderTop: '1px solid var(--rim)' }}>
+        <div className="py-[0.7rem] px-4 flex gap-[0.6rem] items-center border-t border-rim">
           <button
             type="button"
             className="btn-g btn-sm"
             onClick={() => setOffset(Math.max(0, offset - ORDERS_LIMIT))}
             disabled={loading || offset === 0}
           >← Prev</button>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+          <span className="text-[0.78rem] text-dim">
             Page {page} / {pages}
           </span>
           <button
@@ -356,7 +344,7 @@ export default function AdminOrdersPage() {
             onClick={() => setOffset(offset + ORDERS_LIMIT)}
             disabled={loading || offset + ORDERS_LIMIT >= total}
           >Next →</button>
-          <span style={{ marginLeft: 'auto', fontSize: '.78rem', color: 'var(--dim)' }}>
+          <span className="ml-auto text-[0.78rem] text-dim">
             {total} orders
           </span>
         </div>

@@ -149,7 +149,7 @@ export default function MessagesPage() {
 
   return (
     <div id="tab-messages">
-      <div style={{ display: 'flex', gap: '.5rem', marginBottom: '.8rem', alignItems: 'center' }}>
+      <div className="flex gap-2 mb-[0.8rem] items-center">
         <button
           type="button"
           className={activeView === 'messages' ? 'chip on' : 'chip'}
@@ -166,43 +166,19 @@ export default function MessagesPage() {
         </button>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: '1rem',
-          height: 'calc(100vh - 180px)',
-          minHeight: 500,
-        }}
-      >
-        <div
-          style={{
-            width: 340,
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'var(--ink2)',
-            borderRadius: 'var(--r)',
-            border: '1px solid var(--rim)',
-            overflow: 'hidden',
-          }}
-        >
+      <div className="flex gap-4 h-[calc(100vh-180px)] min-h-[500px]">
+        <div className="w-[340px] shrink-0 flex flex-col bg-ink2 rounded-r border border-rim overflow-hidden">
           {activeView === 'messages' ? (
             <>
-              <div style={{ padding: '.7rem', borderBottom: '1px solid var(--rim)' }}>
+              <div className="p-[0.7rem] border-b border-rim">
                 <input
                   id="msg-search"
                   placeholder="Search messages…"
                   value={msgSearchInput}
                   onChange={(e) => onMsgSearchChange(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '.4rem .6rem',
-                    border: '1px solid var(--rim)',
-                    borderRadius: 8,
-                    fontSize: '.82rem',
-                  }}
+                  className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-lg text-[0.82rem]"
                 />
-                <div style={{ display: 'flex', gap: '.3rem', marginTop: '.5rem', flexWrap: 'wrap' }}>
+                <div className="flex gap-[0.3rem] mt-2 flex-wrap">
                   {MSG_FILTERS.map(([value, label]) => (
                     <button
                       key={value}
@@ -218,7 +194,7 @@ export default function MessagesPage() {
               </div>
               <div
                 id="msg-thread-list"
-                style={{ flex: 1, overflowY: 'auto', padding: '.4rem' }}
+                className="flex-1 overflow-y-auto p-[0.4rem]"
               >
                 <ConversationList
                   conversations={conversations}
@@ -230,21 +206,15 @@ export default function MessagesPage() {
             </>
           ) : (
             <>
-              <div style={{ padding: '.7rem', borderBottom: '1px solid var(--rim)' }}>
+              <div className="p-[0.7rem] border-b border-rim">
                 <input
                   id="iss-search"
                   placeholder="Search issues…"
                   value={issSearchInput}
                   onChange={(e) => onIssSearchChange(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '.4rem .6rem',
-                    border: '1px solid var(--rim)',
-                    borderRadius: 8,
-                    fontSize: '.82rem',
-                  }}
+                  className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-lg text-[0.82rem]"
                 />
-                <div style={{ display: 'flex', gap: '.3rem', marginTop: '.5rem', flexWrap: 'wrap' }}>
+                <div className="flex gap-[0.3rem] mt-2 flex-wrap">
                   {ISS_FILTERS.map(([value, label]) => (
                     <button
                       key={value || 'all'}
@@ -258,7 +228,7 @@ export default function MessagesPage() {
                   ))}
                 </div>
               </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '.4rem' }}>
+              <div className="flex-1 overflow-y-auto p-[0.4rem]">
                 <IssueList
                   issues={issues}
                   selectedId={selectedIssue}
@@ -270,17 +240,7 @@ export default function MessagesPage() {
           )}
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            background: 'var(--ink2)',
-            borderRadius: 'var(--r)',
-            border: '1px solid var(--rim)',
-            overflow: 'hidden',
-          }}
-        >
+        <div className="flex-1 flex flex-col bg-ink2 rounded-r border border-rim overflow-hidden">
           {activeView === 'messages' ? (
             <ThreadPanel
               customerId={selectedConversation}

@@ -323,18 +323,11 @@ export default function ItemFormModal({
 
   return (
     <div
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100,
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        padding: '2rem 1rem', overflowY: 'auto',
-      }}
+      className="fixed inset-0 bg-black/50 z-100 flex items-start justify-center py-8 px-4 overflow-y-auto"
       onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div
-        className="card"
-        style={{ maxWidth: 680, width: '100%', background: 'var(--surface,#fff)' }}
-      >
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+      <div className="card max-w-[680px] w-full bg-surface">
+        <div className="ch justify-between">
           <h3>{isEdit ? '✏️ Edit Menu Item' : '➕ Add Menu Item'}</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>✕</button>
         </div>
@@ -351,7 +344,7 @@ export default function ItemFormModal({
                 onChange={(e) => setDesc(e.target.value)}
                 rows={2}
                 placeholder="Optional short description"
-                style={{ fontFamily: 'inherit' }}
+                className="font-[inherit]"
               />
             </div>
             <div className="fg">
@@ -382,7 +375,7 @@ export default function ItemFormModal({
             )}
 
             <div className="fg span2">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '.5rem' }}>
+              <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   checked={hasVariants}
@@ -432,46 +425,46 @@ export default function ItemFormModal({
                 <select value={variantType} onChange={(e) => handleVariantTypeChange(e.target.value)}>
                   {Object.keys(VARIANT_PRESETS).map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
-                <div style={{ marginTop: '.6rem', display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
+                <div className="mt-[0.6rem] flex flex-col gap-[0.4rem]">
                   {variants.map((v, i) => (
-                    <div key={i} style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+                    <div key={i} className="flex gap-[0.4rem] items-center">
                       <input
                         value={v.name}
                         onChange={(e) => handleVariantChange(i, 'name', e.target.value)}
                         placeholder="Variant name"
-                        style={{ flex: 1.4, padding: '.42rem .6rem', border: '1px solid var(--rim)', borderRadius: 7, fontSize: '.84rem' }}
+                        className="flex-[1.4] py-[0.42rem] px-[0.6rem] border border-rim rounded-[7px] text-[0.84rem]"
                       />
                       <input
                         type="number"
                         value={v.price}
                         onChange={(e) => handleVariantChange(i, 'price', e.target.value)}
                         placeholder="Price ₹"
-                        style={{ flex: 1, padding: '.42rem .6rem', border: '1px solid var(--rim)', borderRadius: 7, fontSize: '.84rem' }}
+                        className="flex-1 py-[0.42rem] px-[0.6rem] border border-rim rounded-[7px] text-[0.84rem]"
                       />
                       <button
                         type="button"
                         onClick={() => handleVariantRemove(i)}
-                        style={{ background: 'none', border: 'none', color: '#dc2626', fontSize: '1.1rem', cursor: 'pointer' }}
+                        className="bg-none border-0 text-[#dc2626] text-[1.1rem] cursor-pointer"
                         title="Remove"
                       >
                         ×
                       </button>
                     </div>
                   ))}
-                  <button type="button" className="btn-g btn-sm" onClick={handleVariantAdd} style={{ alignSelf: 'flex-start' }}>+ Add variant</button>
+                  <button type="button" className="btn-g btn-sm self-start" onClick={handleVariantAdd}>+ Add variant</button>
                 </div>
               </div>
             )}
 
             <div className="fg span2">
               <label>Image</label>
-              <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center' }}>
+              <div className="flex gap-2 items-center">
                 {imageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={imageUrl}
                     alt=""
-                    style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 7, border: '1px solid var(--rim)' }}
+                    className="w-14 h-14 object-cover rounded-[7px] border border-rim"
                   />
                 )}
                 <input
@@ -481,18 +474,18 @@ export default function ItemFormModal({
                   onChange={handleImgFile}
                   disabled={imgBusy || !formBranchId}
                 />
-                {imgBusy && <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Uploading…</span>}
+                {imgBusy && <span className="text-[0.78rem] text-dim">Uploading…</span>}
               </div>
               <input
                 value={imageUrl}
                 onChange={(e) => setImageUrl(e.target.value)}
                 placeholder="Or paste image URL"
-                style={{ marginTop: '.4rem' }}
+                className="mt-[0.4rem]"
               />
             </div>
           </div>
 
-          <div style={{ marginTop: '.9rem' }}>
+          <div className="mt-[0.9rem]">
             <button
               type="button"
               className="btn-g btn-sm"
@@ -503,7 +496,7 @@ export default function ItemFormModal({
           </div>
 
           {showAdv && (
-            <div className="fgrid" style={{ marginTop: '.7rem' }}>
+            <div className="fgrid mt-[0.7rem]">
               <div className="fg">
                 <label>Item Group ID</label>
                 <input value={advGroupId} onChange={(e) => setAdvGroupId(e.target.value)} placeholder="GRP-…" />
@@ -527,7 +520,7 @@ export default function ItemFormModal({
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
+          <div className="flex gap-2 mt-4">
             <button type="button" className="btn-p" onClick={handleSave} disabled={saving || !formBranchId}>
               {saving ? (isEdit ? 'Saving…' : 'Adding…') : (isEdit ? 'Save Changes' : 'Add Item')}
             </button>

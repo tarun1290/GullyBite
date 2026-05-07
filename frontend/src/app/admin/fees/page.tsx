@@ -170,32 +170,32 @@ export default function AdminFeesPage() {
   }, [restaurants]);
 
   return (
-    <div id="tab-admin-fees" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div id="tab-admin-fees" className="flex flex-col gap-4">
       <div>
-        <h2 style={{ margin: 0 }}>Fees</h2>
-        <p style={{ margin: '.25rem 0 0', color: 'var(--dim)', fontSize: '.85rem' }}>
+        <h2 className="m-0">Fees</h2>
+        <p className="mt-1 mb-0 text-dim text-[0.85rem]">
           Cancellation-fault and platform-absorbed fee accounting across all restaurants.
         </p>
       </div>
 
       {/* Shared date filter */}
       <div className="card">
-        <div className="ch" style={{ flexWrap: 'wrap', gap: '.5rem' }}>
-          <h3 style={{ margin: 0 }}>Date range</h3>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+        <div className="ch flex-wrap gap-2">
+          <h3 className="m-0">Date range</h3>
+          <div className="ml-auto flex gap-[0.4rem] items-center">
             <input
               type="date"
               id="admin-fees-from"
               value={fromInput}
               onChange={(e) => setFromInput(e.target.value)}
-              style={{ fontSize: '.75rem', padding: '.28rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+              className="text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
             />
             <input
               type="date"
               id="admin-fees-to"
               value={toInput}
               onChange={(e) => setToInput(e.target.value)}
-              style={{ fontSize: '.75rem', padding: '.28rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+              className="text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
             />
             <button type="button" className="btn-g btn-sm" onClick={applyFilter} disabled={summaryLoading}>Filter</button>
             {(from || to) && (
@@ -206,7 +206,7 @@ export default function AdminFeesPage() {
       </div>
 
       {/* Two summary stat cards side by side */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
         <SummaryCard
           label="Restaurant Fault Fees"
           amount={summary?.totalRestaurantFaultFees}
@@ -226,8 +226,8 @@ export default function AdminFeesPage() {
 
       {/* Tabs */}
       <div className="card">
-        <div className="ch" style={{ flexWrap: 'wrap', gap: '.5rem' }}>
-          <div style={{ display: 'flex', gap: '.4rem' }}>
+        <div className="ch flex-wrap gap-2">
+          <div className="flex gap-[0.4rem]">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -241,11 +241,11 @@ export default function AdminFeesPage() {
             ))}
           </div>
           {tab === 'restaurant_faults' && (
-            <div style={{ marginLeft: 'auto' }}>
+            <div className="ml-auto">
               <select
                 value={restaurantId}
                 onChange={onRestaurantChange}
-                style={{ fontSize: '.78rem', padding: '.3rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                className="text-[0.78rem] py-[0.3rem] px-2 border border-rim rounded-md"
               >
                 <option value="">All restaurants</option>
                 {restaurantOptions.map((r) => (
@@ -287,19 +287,25 @@ interface SummaryCardProps {
 
 function SummaryCard({ label, amount, count, loading, color, note }: SummaryCardProps) {
   return (
-    <div className="card" style={{ marginBottom: 0 }}>
+    <div className="card mb-0">
       <div className="cb">
-        <div style={{ fontSize: '.75rem', color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+        <div className="text-[0.75rem] text-dim uppercase tracking-wider">
           {label}
         </div>
-        <div style={{ fontSize: '1.6rem', fontWeight: 700, color, marginTop: '.3rem' }}>
+        <div
+          className="text-[1.6rem] font-bold mt-[0.3rem]"
+          // colour is the per-card amount tint passed by the parent at
+          // runtime (red for restaurant faults, amber for platform
+          // absorbed). Hex/var fallback strings — kept inline.
+          style={{ color }}
+        >
           {loading ? '…' : formatINR(amount)}
         </div>
-        <div style={{ fontSize: '.8rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+        <div className="text-[0.8rem] text-dim mt-[0.2rem]">
           {loading ? 'Loading…' : `${Number(count) || 0} ${Number(count) === 1 ? 'incident' : 'incidents'}`}
         </div>
         {note && (
-          <div style={{ fontSize: '.7rem', color: 'var(--dim)', marginTop: '.4rem', fontStyle: 'italic' }}>
+          <div className="text-[0.7rem] text-dim mt-[0.4rem] italic">
             {note}
           </div>
         )}
@@ -316,46 +322,46 @@ interface RestaurantFaultsTableProps {
 
 function RestaurantFaultsTable({ rows, loading, error }: RestaurantFaultsTableProps) {
   if (loading && !rows.length) {
-    return <p style={{ padding: '1rem', color: 'var(--dim)' }}>Loading…</p>;
+    return <p className="p-4 text-dim">Loading…</p>;
   }
   if (error) {
-    return <p style={{ padding: '1rem', color: 'var(--gb-red-500,#dc2626)' }}>{error}</p>;
+    return <p className="p-4 text-red-500">{error}</p>;
   }
   if (!rows.length) {
     return (
-      <div className="empty" style={{ padding: '1.5rem 1rem', textAlign: 'center' }}>
-        <div className="ei" style={{ fontSize: '1.5rem' }}>✅</div>
-        <h3 style={{ margin: '.4rem 0 .2rem' }}>No restaurant-fault fees in this period</h3>
-        <p style={{ color: 'var(--dim)', fontSize: '.85rem', margin: 0 }}>
+      <div className="empty py-6 px-4 text-center">
+        <div className="ei text-[1.5rem]">✅</div>
+        <h3 className="mt-[0.4rem] mb-[0.2rem]">No restaurant-fault fees in this period</h3>
+        <p className="text-dim text-[0.85rem] m-0">
           Fees appear when an order is rejected or times out before acceptance.
         </p>
       </div>
     );
   }
   return (
-    <div className="tbl" style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div className="tbl overflow-x-auto">
+      <table className="w-full border-collapse">
         <thead>
-          <tr style={{ textAlign: 'left', fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-            <th style={{ padding: '.4rem .2rem' }}>Date</th>
-            <th style={{ padding: '.4rem .2rem' }}>Order #</th>
-            <th style={{ padding: '.4rem .2rem' }}>Restaurant</th>
-            <th style={{ padding: '.4rem .2rem', textAlign: 'right' }}>Order Value</th>
-            <th style={{ padding: '.4rem .2rem' }}>Reason</th>
-            <th style={{ padding: '.4rem .2rem', textAlign: 'right' }}>Fee Charged</th>
+          <tr className="text-left text-[0.72rem] text-dim uppercase tracking-wider">
+            <th className="py-[0.4rem] px-[0.2rem]">Date</th>
+            <th className="py-[0.4rem] px-[0.2rem]">Order #</th>
+            <th className="py-[0.4rem] px-[0.2rem]">Restaurant</th>
+            <th className="py-[0.4rem] px-[0.2rem] text-right">Order Value</th>
+            <th className="py-[0.4rem] px-[0.2rem]">Reason</th>
+            <th className="py-[0.4rem] px-[0.2rem] text-right">Fee Charged</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r.orderId} style={{ borderTop: '1px solid var(--bd)' }}>
-              <td style={{ padding: '.5rem .2rem', fontSize: '.82rem' }}>{formatDate(r.createdAt)}</td>
-              <td style={{ padding: '.5rem .2rem', fontFamily: 'monospace', fontSize: '.82rem' }}>{r.orderNumber}</td>
-              <td style={{ padding: '.5rem .2rem', fontSize: '.82rem' }}>{r.restaurantName || '—'}</td>
-              <td style={{ padding: '.5rem .2rem', fontSize: '.82rem', textAlign: 'right' }}>{formatINR(r.orderTotal)}</td>
-              <td style={{ padding: '.5rem .2rem', fontSize: '.82rem' }}>
+            <tr key={r.orderId} className="border-t border-bd">
+              <td className="py-2 px-[0.2rem] text-[0.82rem]">{formatDate(r.createdAt)}</td>
+              <td className="py-2 px-[0.2rem] font-mono text-[0.82rem]">{r.orderNumber}</td>
+              <td className="py-2 px-[0.2rem] text-[0.82rem]">{r.restaurantName || '—'}</td>
+              <td className="py-2 px-[0.2rem] text-[0.82rem] text-right">{formatINR(r.orderTotal)}</td>
+              <td className="py-2 px-[0.2rem] text-[0.82rem]">
                 {RESTAURANT_FAULT_REASON_LABEL[r.reason] || r.reason || '—'}
               </td>
-              <td style={{ padding: '.5rem .2rem', fontSize: '.82rem', textAlign: 'right', color: 'var(--gb-red-500,#dc2626)', fontWeight: 600 }}>
+              <td className="py-2 px-[0.2rem] text-[0.82rem] text-right text-red-500 font-semibold">
                 {formatINR(r.amount)}
               </td>
             </tr>
@@ -375,49 +381,41 @@ interface PlatformAbsorbedTableProps {
 function PlatformAbsorbedTable({ rows, loading, error }: PlatformAbsorbedTableProps) {
   return (
     <>
-      <div style={{
-        background: 'rgba(217,119,6,0.08)',
-        border: '1px solid rgba(217,119,6,0.25)',
-        borderRadius: 8,
-        padding: '.6rem .8rem',
-        marginBottom: '.8rem',
-        fontSize: '.8rem',
-        color: 'var(--fg)',
-      }}>
+      <div className="bg-[rgba(217,119,6,0.08)] border border-[rgba(217,119,6,0.25)] rounded-lg py-[0.6rem] px-[0.8rem] mb-[0.8rem] text-[0.8rem] text-fg">
         These fees will be discussed for compensation with Prorouting.
       </div>
       {loading && !rows.length ? (
-        <p style={{ padding: '1rem', color: 'var(--dim)' }}>Loading…</p>
+        <p className="p-4 text-dim">Loading…</p>
       ) : error ? (
-        <p style={{ padding: '1rem', color: 'var(--gb-red-500,#dc2626)' }}>{error}</p>
+        <p className="p-4 text-red-500">{error}</p>
       ) : !rows.length ? (
-        <div className="empty" style={{ padding: '1.5rem 1rem', textAlign: 'center' }}>
-          <div className="ei" style={{ fontSize: '1.5rem' }}>✅</div>
-          <h3 style={{ margin: '.4rem 0 .2rem' }}>No platform-absorbed fees in this period</h3>
-          <p style={{ color: 'var(--dim)', fontSize: '.85rem', margin: 0 }}>
+        <div className="empty py-6 px-4 text-center">
+          <div className="ei text-[1.5rem]">✅</div>
+          <h3 className="mt-[0.4rem] mb-[0.2rem]">No platform-absorbed fees in this period</h3>
+          <p className="text-dim text-[0.85rem] m-0">
             Fees appear when Prorouting can&apos;t allocate a rider after the restaurant accepts.
           </p>
         </div>
       ) : (
-        <div className="tbl" style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="tbl overflow-x-auto">
+          <table className="w-full border-collapse">
             <thead>
-              <tr style={{ textAlign: 'left', fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
-                <th style={{ padding: '.4rem .2rem' }}>Date</th>
-                <th style={{ padding: '.4rem .2rem' }}>Order #</th>
-                <th style={{ padding: '.4rem .2rem' }}>Restaurant</th>
-                <th style={{ padding: '.4rem .2rem', textAlign: 'right' }}>Order Value</th>
-                <th style={{ padding: '.4rem .2rem', textAlign: 'right' }}>Fee Amount</th>
+              <tr className="text-left text-[0.72rem] text-dim uppercase tracking-wider">
+                <th className="py-[0.4rem] px-[0.2rem]">Date</th>
+                <th className="py-[0.4rem] px-[0.2rem]">Order #</th>
+                <th className="py-[0.4rem] px-[0.2rem]">Restaurant</th>
+                <th className="py-[0.4rem] px-[0.2rem] text-right">Order Value</th>
+                <th className="py-[0.4rem] px-[0.2rem] text-right">Fee Amount</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.orderId} style={{ borderTop: '1px solid var(--bd)' }}>
-                  <td style={{ padding: '.5rem .2rem', fontSize: '.82rem' }}>{formatDate(r.createdAt)}</td>
-                  <td style={{ padding: '.5rem .2rem', fontFamily: 'monospace', fontSize: '.82rem' }}>{r.orderNumber}</td>
-                  <td style={{ padding: '.5rem .2rem', fontSize: '.82rem' }}>{r.restaurantName || '—'}</td>
-                  <td style={{ padding: '.5rem .2rem', fontSize: '.82rem', textAlign: 'right' }}>{formatINR(r.orderTotal)}</td>
-                  <td style={{ padding: '.5rem .2rem', fontSize: '.82rem', textAlign: 'right', color: 'var(--gb-amber-500,#d97706)', fontWeight: 600 }}>
+                <tr key={r.orderId} className="border-t border-bd">
+                  <td className="py-2 px-[0.2rem] text-[0.82rem]">{formatDate(r.createdAt)}</td>
+                  <td className="py-2 px-[0.2rem] font-mono text-[0.82rem]">{r.orderNumber}</td>
+                  <td className="py-2 px-[0.2rem] text-[0.82rem]">{r.restaurantName || '—'}</td>
+                  <td className="py-2 px-[0.2rem] text-[0.82rem] text-right">{formatINR(r.orderTotal)}</td>
+                  <td className="py-2 px-[0.2rem] text-[0.82rem] text-right text-amber-600 font-semibold">
                     {formatINR(r.amount)}
                   </td>
                 </tr>

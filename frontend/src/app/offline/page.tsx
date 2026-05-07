@@ -6,30 +6,11 @@ export const dynamic = 'force-static';
 
 export default function OfflinePage() {
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '2rem',
-        background: '#FAF8F3',
-        color: '#1c1c1c',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-      }}
-    >
-      <div
-        className="card"
-        style={{
-          maxWidth: 420,
-          width: '100%',
-          padding: '2rem 1.5rem',
-          textAlign: 'center',
-        }}
-      >
-        <div style={{ fontSize: '2.4rem', marginBottom: '.6rem' }}>📡</div>
-        <h1 style={{ fontSize: '1.2rem', margin: '0 0 .4rem' }}>You&rsquo;re offline</h1>
-        <p style={{ fontSize: '.9rem', color: '#5b5b5b', margin: 0 }}>
+    <div className="min-h-screen flex items-center justify-center p-8 bg-[#FAF8F3] text-[#1c1c1c] font-[system-ui,-apple-system,sans-serif]">
+      <div className="card max-w-[420px] w-full py-8 px-6 text-center">
+        <div className="text-[2.4rem] mb-[0.6rem]">📡</div>
+        <h1 className="text-[1.2rem] mt-0 mb-[0.4rem]">You&rsquo;re offline</h1>
+        <p className="text-[0.9rem] text-[#5b5b5b] m-0">
           Please check your connection and try again.
         </p>
       </div>

@@ -95,41 +95,35 @@ export default function CategoriesManager({ branchId, onChange }: CategoriesMana
   if (!branchId) return null;
 
   return (
-    <div className="card" style={{ marginBottom: '1rem' }}>
-      <div className="ch" style={{ justifyContent: 'space-between' }}>
-        <h3 style={{ fontSize: '.92rem' }}>📁 Categories</h3>
+    <div className="card mb-4">
+      <div className="ch justify-between">
+        <h3 className="text-[0.92rem]">📁 Categories</h3>
         <button type="button" className="btn-g btn-sm" onClick={() => setOpen((v) => !v)}>
           {open ? '▲ collapse' : '▼ expand'}
         </button>
       </div>
       {open && (
         <div className="cb">
-          <div style={{ display: 'flex', gap: '.5rem', marginBottom: '.7rem' }}>
+          <div className="flex gap-2 mb-[0.7rem]">
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="New category name"
-              style={{
-                flex: 1, padding: '.4rem .6rem', border: '1px solid var(--rim)',
-                borderRadius: 6, fontSize: '.85rem',
-              }}
+              className="flex-1 py-[0.4rem] px-[0.6rem] border border-rim rounded-md text-[0.85rem]"
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
             />
             <button type="button" className="btn-p btn-sm" onClick={handleCreate}>+ Add</button>
           </div>
           {loading ? (
-            <p style={{ color: 'var(--dim)', fontSize: '.82rem' }}>Loading…</p>
+            <p className="text-dim text-[0.82rem]">Loading…</p>
           ) : !cats.length ? (
-            <p style={{ color: 'var(--dim)', fontSize: '.82rem' }}>No categories yet.</p>
+            <p className="text-dim text-[0.82rem]">No categories yet.</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
+            <div className="flex flex-col gap-[0.4rem]">
               {cats.map((c) => (
                 <div
                   key={c.id}
-                  style={{
-                    display: 'flex', gap: '.5rem', alignItems: 'center',
-                    padding: '.38rem .5rem', background: 'var(--ink2)', borderRadius: 7,
-                  }}
+                  className="flex gap-2 items-center py-[0.38rem] px-2 bg-ink2 rounded-[7px]"
                 >
                   {editingId === c.id ? (
                     <input
@@ -139,14 +133,11 @@ export default function CategoriesManager({ branchId, onChange }: CategoriesMana
                         if (e.key === 'Enter') handleSave(c.id);
                         if (e.key === 'Escape') { setEditingId(null); setEditingName(''); }
                       }}
-                      style={{
-                        flex: 1, padding: '.28rem .5rem', border: '1px solid var(--bdr)',
-                        borderRadius: 6, fontSize: '.84rem',
-                      }}
+                      className="flex-1 py-[0.28rem] px-2 border border-bdr rounded-md text-[0.84rem]"
                       autoFocus
                     />
                   ) : (
-                    <span style={{ flex: 1, fontSize: '.84rem' }}>{c.name}</span>
+                    <span className="flex-1 text-[0.84rem]">{c.name}</span>
                   )}
                   {editingId === c.id ? (
                     <>
@@ -155,14 +146,14 @@ export default function CategoriesManager({ branchId, onChange }: CategoriesMana
                     </>
                   ) : pendingDelete === c.id ? (
                     <>
-                      <span style={{ fontSize: '.72rem', color: '#b91c1c' }}>Delete?</span>
+                      <span className="text-[0.72rem] text-[#b91c1c]">Delete?</span>
                       <button type="button" className="btn-del btn-sm" onClick={() => handleDelete(c.id)}>Yes</button>
                       <button type="button" className="btn-g btn-sm" onClick={() => setPendingDelete(null)}>No</button>
                     </>
                   ) : (
                     <>
                       <button type="button" className="btn-g btn-sm" onClick={() => { setEditingId(c.id); setEditingName(c.name); }}>✏ Edit</button>
-                      <button type="button" className="btn-g btn-sm" style={{ color: '#dc2626' }} onClick={() => setPendingDelete(c.id)}>🗑</button>
+                      <button type="button" className="btn-g btn-sm text-[#dc2626]" onClick={() => setPendingDelete(c.id)}>🗑</button>
                     </>
                   )}
                 </div>

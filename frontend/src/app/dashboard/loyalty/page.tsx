@@ -91,16 +91,15 @@ function ProgramOverview({ stats, loading, err, onRetry, onToggleActive, config,
   if (err) return <SectionError message={err} onRetry={onRetry} />;
   const redemptionRatePct = Math.round(((stats?.redemption_rate || 0) * 100) * 10) / 10;
   return (
-    <div style={{ marginBottom: '1rem' }}>
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="ch" style={{ alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>Program Overview</h3>
+    <div className="mb-4">
+      <div className="card mb-4">
+        <div className="ch items-center">
+          <h3 className="m-0">Program Overview</h3>
           <button
             type="button"
-            className={config?.is_active ? 'btn-g btn-sm' : 'btn-p btn-sm'}
+            className={config?.is_active ? 'btn-g btn-sm ml-auto' : 'btn-p btn-sm ml-auto'}
             disabled={savingActive || !config}
             onClick={() => onToggleActive(!config?.is_active)}
-            style={{ marginLeft: 'auto' }}
           >
             {savingActive
               ? 'Saving…'
@@ -108,7 +107,7 @@ function ProgramOverview({ stats, loading, err, onRetry, onToggleActive, config,
           </button>
         </div>
         <div className="cb">
-          <div style={{ fontSize: '.84rem', color: 'var(--dim)' }}>
+          <div className="text-[0.84rem] text-dim">
             {config?.is_active
               ? 'Points are being issued on paid orders and redeemed pre-checkout.'
               : 'Program is paused. No earn or redeem activity will occur until activated.'}
@@ -178,46 +177,30 @@ function ProgramSettings({ config, onSave, saving, disabled }: ProgramSettingsPr
 
   return (
     <form
-      className="card"
+      className={`card mb-4 ${disabled ? 'opacity-60 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}
       onSubmit={submit}
-      style={{
-        marginBottom: '1rem',
-        opacity: disabled ? 0.6 : 1,
-        pointerEvents: disabled ? 'none' : 'auto',
-      }}
     >
       <div className="ch"><h3>Program Settings</h3></div>
-      <div
-        className="cb"
-        style={{
-          display: 'grid', gap: '.8rem',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-        }}
-      >
+      <div className="cb grid gap-[0.8rem] grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
         {CONFIG_FIELDS.map((f) => {
           const raw = draft[f.key];
           const valueStr = raw === undefined || raw === null ? '' : String(raw);
           return (
-            <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-              <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>{f.label}</span>
+            <label key={f.key} className="flex flex-col gap-1">
+              <span className="text-[0.78rem] text-dim">{f.label}</span>
               <input
                 type={f.type}
                 step={f.step || undefined}
                 value={valueStr}
                 onChange={(e) => update(f.key, e.target.value)}
                 disabled={disabled}
-                style={{
-                  padding: '.45rem .55rem',
-                  border: '1px solid var(--rim)',
-                  borderRadius: 'var(--r)',
-                  background: '#fff',
-                }}
+                className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
               />
             </label>
           );
         })}
       </div>
-      <div className="cb" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="cb flex justify-end">
         <button
           type="submit"
           className="btn-p btn-sm"
@@ -286,24 +269,14 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
 
   return (
     <form
-      className="card"
+      className={`card ${disabled ? 'opacity-60 pointer-events-none' : 'opacity-100 pointer-events-auto'}`}
       onSubmit={onSubmit}
-      style={{
-        opacity: disabled ? 0.6 : 1,
-        pointerEvents: disabled ? 'none' : 'auto',
-      }}
     >
       <div className="ch"><h3>Dine-in Points Entry</h3></div>
-      <div
-        className="cb"
-        style={{
-          display: 'grid', gap: '.8rem',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        }}
-      >
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Customer phone</span>
-          <div style={{ display: 'flex', gap: '.35rem' }}>
+      <div className="cb grid gap-[0.8rem] grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
+        <label className="flex flex-col gap-1">
+          <span className="text-[0.78rem] text-dim">Customer phone</span>
+          <div className="flex gap-[0.35rem]">
             <input
               type="tel"
               inputMode="numeric"
@@ -312,13 +285,7 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
               onChange={(e) => setPhone(e.target.value)}
               onBlur={onLookup}
               disabled={disabled}
-              style={{
-                flex: 1,
-                padding: '.45rem .55rem',
-                border: '1px solid var(--rim)',
-                borderRadius: 'var(--r)',
-                background: '#fff',
-              }}
+              className="flex-1 py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
             />
             <button
               type="button"
@@ -331,8 +298,8 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
           </div>
         </label>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Points to credit</span>
+        <label className="flex flex-col gap-1">
+          <span className="text-[0.78rem] text-dim">Points to credit</span>
           <input
             type="number"
             min="1"
@@ -340,29 +307,19 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
             value={points}
             onChange={(e) => setPoints(e.target.value)}
             disabled={disabled}
-            style={{
-              padding: '.45rem .55rem',
-              border: '1px solid var(--rim)',
-              borderRadius: 'var(--r)',
-              background: '#fff',
-            }}
+            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
           />
         </label>
 
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Description (optional)</span>
+        <label className="flex flex-col gap-1">
+          <span className="text-[0.78rem] text-dim">Description (optional)</span>
           <input
             type="text"
             placeholder="e.g. Walk-in order #24"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             disabled={disabled}
-            style={{
-              padding: '.45rem .55rem',
-              border: '1px solid var(--rim)',
-              borderRadius: 'var(--r)',
-              background: '#fff',
-            }}
+            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
           />
         </label>
       </div>
@@ -370,22 +327,14 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
       {(lookupResult || lookupErr) && (
         <div className="cb">
           {lookupErr ? (
-            <div style={{ color: 'var(--red)', fontSize: '.82rem' }}>{lookupErr}</div>
+            <div className="text-red text-[0.82rem]">{lookupErr}</div>
           ) : lookupResult ? (
-            <div
-              style={{
-                padding: '.55rem .65rem',
-                border: '1px solid var(--rim)',
-                borderRadius: 'var(--r)',
-                fontSize: '.82rem',
-                background: 'var(--panel)',
-              }}
-            >
+            <div className="py-[0.55rem] px-[0.65rem] border border-rim rounded-r text-[0.82rem] bg-panel">
               <strong>{lookupResult.customer?.name || 'Customer'}</strong>
-              <span style={{ color: 'var(--dim)', marginLeft: '.4rem' }}>
+              <span className="text-dim ml-[0.4rem]">
                 {lookupResult.customer?.wa_phone_masked || ''}
               </span>
-              <div style={{ marginTop: '.25rem' }}>
+              <div className="mt-1">
                 Balance: <strong>{lookupResult.balance}</strong> pts · Earned: {lookupResult.total_earned} · Redeemed: {lookupResult.total_redeemed}
               </div>
             </div>
@@ -395,17 +344,13 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
 
       {msg && (
         <div
-          className="cb"
-          style={{
-            color: msg.kind === 'ok' ? 'var(--wa)' : 'var(--red)',
-            fontSize: '.82rem',
-          }}
+          className={`cb text-[0.82rem] ${msg.kind === 'ok' ? 'text-wa' : 'text-red'}`}
         >
           {msg.text}
         </div>
       )}
 
-      <div className="cb" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="cb flex justify-end">
         <button type="submit" className="btn-p btn-sm" disabled={busy || disabled}>
           {busy ? 'Crediting…' : 'Credit points'}
         </button>
@@ -497,15 +442,15 @@ export default function LoyaltyPage() {
 
   return (
     <div id="tab-loyalty" className="tab on">
-      <div style={{ marginBottom: '1rem' }}>
-        <h2 style={{ margin: 0 }}>Loyalty</h2>
-        <div style={{ fontSize: '.84rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+      <div className="mb-4">
+        <h2 className="m-0">Loyalty</h2>
+        <div className="text-[0.84rem] text-dim mt-[0.2rem]">
           Points earn automatically on paid orders; customers can redeem pre-checkout.
         </div>
       </div>
 
       {!campaignsEnabled && (
-        <div className="notice wa" style={{ marginBottom: '1rem' }}>
+        <div className="notice wa mb-4">
           <div className="notice-ico">✨</div>
           <div className="notice-body">
             <h4>Coming Soon</h4>
@@ -518,7 +463,7 @@ export default function LoyaltyPage() {
       )}
 
       {configErr ? (
-        <div style={{ marginBottom: '1rem' }}>
+        <div className="mb-4">
           <SectionError message={configErr} onRetry={loadConfig} />
         </div>
       ) : (

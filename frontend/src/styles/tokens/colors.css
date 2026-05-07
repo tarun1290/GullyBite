@@ -51,6 +51,11 @@
   --gb-indigo-800: #3730a3;
   --gb-violet-600: #7c3aed;
 
+  /* Teal (dashboard action color — replaces indigo for owner dashboard) */
+  --gb-teal-700:      #0F766E;
+  --gb-teal-800:      #0D5F58;
+  --gb-teal-700-glow: rgba(15, 118, 110, 0.18);
+
   /* Fresh Leaf green (landing brand palette) */
   --gb-green-50:  #E6F5EC;
   --gb-green-100: #C7E8D5;
@@ -85,6 +90,13 @@
   --gb-cream: #FAF8F3;
   --gb-sand:  #F3EFE6;
 
+  /* GullyBite brand palette (landing surfaces) */
+  --gb-brand-yellow:       #F9C303;
+  --gb-brand-red:          #E42623;
+  --gb-brand-green:        #0D5F3C;
+  --gb-brand-green-hover:  #0A4A2E;
+  --gb-brand-cream:        #F9F8F1;
+
   /* ── Semantic tokens — landing/auth defaults ─────────────
      Existing short names are preserved so no JSX/CSS rename is
      required. dashboard.css :root overrides these with neutral
@@ -113,9 +125,9 @@
   --accent-color-soft: #fee4e2;        /* coral-100 — subtle highlight bg */
 
   /* ── Fresh Leaf landing semantic tokens ─────────────────── */
-  /* Hero and primary section backgrounds — warm cream, food-appropriate */
-  --landing-hero-bg:        var(--gb-cream);
-  --landing-section-bg:     var(--gb-cream);
+  /* Hero and primary section backgrounds — GullyBite brand cream */
+  --landing-hero-bg:        var(--gb-brand-cream);
+  --landing-section-bg:     var(--gb-brand-cream);
   /* Alternating section bg — slightly warmer sand tone */
   --landing-section-alt-bg: var(--gb-sand);
   /* Dark-mode sections (CTA block, footer) */
@@ -128,11 +140,17 @@
   --landing-mute:           var(--gb-slate-500);
   /* Hairline dividers between sections */
   --landing-line:           var(--gb-neutral-200);
-  /* Primary CTA ("Get Started Free") */
-  --cta-primary-bg:         var(--gb-green-500);
-  --cta-primary-hover:      var(--gb-green-600);
+  /* Primary CTA ("Get Started Free") — brand green */
+  --cta-primary-bg:         var(--gb-brand-green);
+  --cta-primary-hover:      var(--gb-brand-green-hover);
   --cta-primary-text:       var(--gb-neutral-0);
   /* Ghost / secondary CTA ("Sign In", "See How It Works") */
   --cta-ghost-border:       var(--landing-ink);
   --cta-ghost-text:         var(--landing-ink);
+  /* Secondary CTA — brand yellow on dark green text */
+  --cta-secondary-bg:       var(--gb-brand-yellow);
+  --cta-secondary-text:     var(--gb-green-900);
+  /* Brand accent highlights for landing */
+  --landing-accent-yellow:  var(--gb-brand-yellow);
+  --landing-accent-red:     var(--gb-brand-red);
 }

@@ -85,12 +85,9 @@ interface DailyUsageProps { data: DailyUsageData | null }
 function DailyUsage({ data }: DailyUsageProps) {
   if (!data) {
     return (
-      <div
-        className="card"
-        style={{ marginBottom: '1rem', padding: '.8rem 1rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}
-      >
-        <span style={{ fontWeight: 600 }}>Daily sends:</span>
-        <span style={{ color: 'var(--dim)' }}>usage unavailable</span>
+      <div className="card mb-4 py-[0.8rem] px-4 flex items-center gap-4 flex-wrap">
+        <span className="font-semibold">Daily sends:</span>
+        <span className="text-dim">usage unavailable</span>
       </div>
     );
   }
@@ -104,16 +101,13 @@ function DailyUsage({ data }: DailyUsageProps) {
       : 'Resets at midnight IST.')
     : '';
   return (
-    <div
-      className="card"
-      style={{ marginBottom: '1rem', padding: '.8rem 1rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}
-    >
-      <span style={{ fontWeight: 600 }}>Daily sends:</span>
-      <span style={{ color: atCap ? 'var(--red,#dc2626)' : 'var(--dim)' }}>
+    <div className="card mb-4 py-[0.8rem] px-4 flex items-center gap-4 flex-wrap">
+      <span className="font-semibold">Daily sends:</span>
+      <span className={atCap ? 'text-red' : 'text-dim'}>
         <strong>{sent}</strong> of <strong>{cap}</strong> campaigns sent today
       </span>
       {resetLabel && (
-        <span style={{ color: 'var(--dim)', fontSize: '.78rem' }}>{resetLabel}</span>
+        <span className="text-dim text-[0.78rem]">{resetLabel}</span>
       )}
     </div>
   );
@@ -165,14 +159,13 @@ function CampaignActions({ campaign, onChanged }: CampaignActionsProps) {
 
   if (confirm) {
     return (
-      <div style={{ display: 'inline-flex', gap: '.3rem', whiteSpace: 'nowrap' }}>
+      <div className="inline-flex gap-[0.3rem] whitespace-nowrap">
         <button type="button" className="btn-g btn-sm" disabled={busy} onClick={() => setConfirm(null)}>
           Cancel
         </button>
         <button
           type="button"
-          className={confirm === 'delete' ? 'btn-sm' : 'btn-p btn-sm'}
-          style={confirm === 'delete' ? { color: 'var(--red,#dc2626)', fontWeight: 600 } : undefined}
+          className={confirm === 'delete' ? 'btn-sm text-red font-semibold' : 'btn-p btn-sm'}
           disabled={busy}
           onClick={() => run(confirm)}
         >
@@ -183,7 +176,7 @@ function CampaignActions({ campaign, onChanged }: CampaignActionsProps) {
   }
 
   return (
-    <div style={{ whiteSpace: 'nowrap', display: 'inline-flex', gap: '.3rem' }}>
+    <div className="whitespace-nowrap inline-flex gap-[0.3rem]">
       {showSend && (
         <button type="button" className="btn-g btn-sm" onClick={() => setConfirm('send')}>Send</button>
       )}
@@ -232,38 +225,30 @@ function CampaignRowItem({ campaign, onChanged }: CampaignRowItemProps) {
       <td>
         <strong>{campaign.name}</strong>
         {isBatched && (
-          <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+          <div className="text-[0.72rem] text-dim mt-[0.2rem]">
             Batch {campaign.current_batch || 0} / {campaign.total_batches} · {sentCount} / {total} sent
           </div>
         )}
         {sentCount > 0 && (
-          <div style={{ fontSize: '.72rem', marginTop: '.2rem' }}>
-            <span style={{ color: '#22c55e' }}>
+          <div className="text-[0.72rem] mt-[0.2rem]">
+            <span className="text-[#22c55e]">
               Delivered: {deliveredCount} ({total > 0 ? Math.round((deliveredCount / sentCount) * 100) : 0}%)
             </span>{' '}
-            <span style={{ color: '#3b82f6' }}>
+            <span className="text-[#3b82f6]">
               Read: {readCount} ({sentCount > 0 ? Math.round((readCount / sentCount) * 100) : 0}%)
             </span>{' '}
-            <span style={{ color: 'var(--red,#dc2626)' }}>
+            <span className="text-red">
               Failed: {failedCount} ({sentCount > 0 ? Math.round((failedCount / sentCount) * 100) : 0}%)
             </span>
           </div>
         )}
         {highFail && (
-          <div style={{
-            background: '#fef2f2', color: '#991b1b', fontSize: '.72rem',
-            padding: '.25rem .5rem', borderRadius: 4, marginTop: '.3rem',
-          }}
-          >
+          <div className="bg-[#fef2f2] text-[#991b1b] text-[0.72rem] py-1 px-2 rounded-[4px] mt-[0.3rem]">
             High failure rate — Meta may be pacing this campaign
           </div>
         )}
         {campaign.status === 'paused' && campaign.pause_reason && (
-          <div style={{
-            background: '#fef9c3', color: '#854d0e', fontSize: '.72rem',
-            padding: '.25rem .5rem', borderRadius: 4, marginTop: '.3rem',
-          }}
-          >
+          <div className="bg-[#fef9c3] text-[#854d0e] text-[0.72rem] py-1 px-2 rounded-[4px] mt-[0.3rem]">
             {campaign.pause_reason}
           </div>
         )}
@@ -275,7 +260,7 @@ function CampaignRowItem({ campaign, onChanged }: CampaignRowItemProps) {
       <td>
         <span className={`badge ${STATUS_BADGE[campaign.status || ''] || 'bd'}`}>{campaign.status}</span>
       </td>
-      <td style={{ fontSize: '.78rem', color: 'var(--dim)' }}>{timeAgo(campaign.created_at)}</td>
+      <td className="text-[0.78rem] text-dim">{timeAgo(campaign.created_at)}</td>
       <td><CampaignActions campaign={campaign} onChanged={onChanged} /></td>
     </tr>
   );
@@ -302,7 +287,7 @@ export default function CampaignsSection() {
 
   return (
     <div>
-      <div className="notice wa" style={{ marginBottom: '1.3rem' }}>
+      <div className="notice wa mb-[1.3rem]">
         <div className="notice-ico">📢</div>
         <div className="notice-body">
           <h4>WhatsApp Product Campaigns</h4>
@@ -313,12 +298,7 @@ export default function CampaignsSection() {
         </div>
       </div>
 
-      <div style={{
-        background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 8,
-        padding: '.85rem 1rem', marginBottom: '1.2rem', fontSize: '.8rem',
-        lineHeight: 1.6, color: '#1e3a5f',
-      }}
-      >
+      <div className="bg-[#eff6ff] border border-[#93c5fd] rounded-lg py-[0.85rem] px-4 mb-[1.2rem] text-[0.8rem] leading-relaxed text-[#1e3a5f]">
         <strong>Campaign Best Practices (Meta 2026):</strong>
         <br />
         • Segment your audience — targeted messages get better engagement
@@ -340,7 +320,7 @@ export default function CampaignsSection() {
         <div className="ch"><h3>Campaign History</h3></div>
         <div className="tbl">
           {campaignsQ.error ? (
-            <div style={{ padding: '1rem' }}>
+            <div className="p-4">
               <SectionError message={campaignsQ.error} onRetry={campaignsQ.refetch} />
             </div>
           ) : (
@@ -359,7 +339,7 @@ export default function CampaignsSection() {
               </thead>
               <tbody>
                 {campaignsQ.loading && !campaignsQ.data ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '1.2rem', color: 'var(--dim)' }}>Loading…</td></tr>
+                  <tr><td colSpan={8} className="text-center p-[1.2rem] text-dim">Loading…</td></tr>
                 ) : campaigns.length === 0 ? (
                   <tr><td colSpan={8}>
                     <div className="empty">

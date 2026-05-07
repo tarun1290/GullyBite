@@ -71,37 +71,13 @@ export default function AdminMessageButton() {
         type="button"
         onClick={() => setOpen(true)}
         title="Messages from GullyBite"
-        style={{
-          position: 'relative',
-          background: 'transparent',
-          border: '1px solid var(--rim,#e5e7eb)',
-          borderRadius: 6,
-          padding: '.35rem .55rem',
-          cursor: 'pointer',
-          fontSize: '.78rem',
-          color: 'var(--fg, inherit)',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '.3rem',
-        }}
+        className="relative bg-transparent border border-rim rounded-md py-[0.35rem] px-[0.55rem] cursor-pointer text-[0.78rem] text-fg inline-flex items-center gap-[0.3rem]"
       >
         💬 Messages
         {unread > 0 && (
           <span
             aria-label={`${unread} unread`}
-            style={{
-              minWidth: 18,
-              height: 18,
-              padding: '0 .35rem',
-              borderRadius: 9,
-              background: 'var(--gb-red-500,#dc2626)',
-              color: 'white',
-              fontSize: '.65rem',
-              fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            className="min-w-[18px] h-[18px] py-0 px-[0.35rem] rounded-full bg-red-500 text-white text-[0.65rem] font-bold inline-flex items-center justify-center"
           >
             {unread > 99 ? '99+' : unread}
           </span>

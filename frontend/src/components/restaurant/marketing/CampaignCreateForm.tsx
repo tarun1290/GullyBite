@@ -214,15 +214,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
   const productRows = useMemo(() => products.map((item) => (
     <label
       key={item.id}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '.5rem',
-        padding: '.3rem .4rem',
-        borderRadius: 6,
-        cursor: 'pointer',
-        fontSize: '.82rem',
-      }}
+      className="flex items-center gap-2 py-[0.3rem] px-[0.4rem] rounded-md cursor-pointer text-[0.82rem]"
     >
       <input
         type="checkbox"
@@ -230,18 +222,18 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
         onChange={() => toggleProduct(item.id)}
       />
       <span>{item.food_type === 'veg' ? '🟢' : '🔴'}</span>
-      <span style={{ flex: 1 }}>
+      <span className="flex-1">
         {item.name}{item.variant_value ? ` — ${item.variant_value}` : ''}
       </span>
-      <span style={{ color: 'var(--dim)' }}>₹{((item.price_paise || 0) / 100).toFixed(0)}</span>
+      <span className="text-dim">₹{((item.price_paise || 0) / 100).toFixed(0)}</span>
     </label>
   )), [products, form.productIds]);
 
   return (
-    <div className="card" style={{ marginBottom: '1.2rem' }}>
+    <div className="card mb-[1.2rem]">
       <div className="ch"><h3>New Campaign</h3></div>
       <div className="cb">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="lbl">Campaign Name *</label>
             <input
@@ -264,42 +256,34 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
               ))}
             </select>
             {branchesErr && (
-              <div style={{ color: '#b91c1c', fontSize: '.72rem', marginTop: '.3rem' }}>
+              <div className="text-[#b91c1c] text-[0.72rem] mt-[0.3rem]">
                 {branchesErr}
               </div>
             )}
           </div>
         </div>
 
-        <div style={{ marginBottom: '1rem' }}>
+        <div className="mb-4">
           <label className="lbl">Select Products * (max 30)</label>
-          <div style={{
-            maxHeight: 200,
-            overflowY: 'auto',
-            border: '1px solid var(--rim)',
-            borderRadius: 8,
-            padding: '.6rem',
-            background: 'var(--ink4)',
-          }}
-          >
+          <div className="max-h-[200px] overflow-y-auto border border-rim rounded-lg p-[0.6rem] bg-ink4">
             {!form.branchId ? (
-              <span style={{ color: 'var(--dim)', fontSize: '.82rem' }}>Select a branch first</span>
+              <span className="text-dim text-[0.82rem]">Select a branch first</span>
             ) : productsErr ? (
-              <span style={{ color: 'var(--red,#b91c1c)', fontSize: '.82rem' }}>{productsErr}</span>
+              <span className="text-red text-[0.82rem]">{productsErr}</span>
             ) : productsLoading ? (
-              <span style={{ color: 'var(--dim)', fontSize: '.82rem' }}>Loading products…</span>
+              <span className="text-dim text-[0.82rem]">Loading products…</span>
             ) : products.length === 0 ? (
-              <span style={{ color: 'var(--dim)', fontSize: '.82rem' }}>
+              <span className="text-dim text-[0.82rem]">
                 No menu items found for this branch
               </span>
             ) : productRows}
           </div>
-          <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginTop: '.3rem' }}>
+          <div className="text-[0.72rem] text-dim mt-[0.3rem]">
             {selectedCount}/30 selected
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+        <div className="grid grid-cols-3 gap-4 mb-4">
           <div>
             <label className="lbl">Customer Segment</label>
             <select
@@ -319,11 +303,10 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
               onChange={(e) => set('scheduleAt', e.target.value)}
             />
           </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '.5rem' }}>
+          <div className="flex items-end gap-2">
             <button
               type="button"
-              className="btn"
-              style={{ flex: 1 }}
+              className="btn flex-1"
               disabled={creating || sending}
               onClick={handleCreate}
             >
@@ -331,8 +314,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
             </button>
             <button
               type="button"
-              className="btn-g"
-              style={{ flex: 1, opacity: atCap ? 0.5 : 1, cursor: atCap ? 'not-allowed' : 'pointer' }}
+              className={`btn-g flex-1 ${atCap ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               disabled={creating || sending || atCap}
               title={atCap ? 'Daily limit reached. Resets at midnight.' : ''}
               onClick={handleCreateAndSend}
@@ -343,40 +325,22 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
         </div>
 
         {needsTags && (
-          <div style={{ marginBottom: '1rem' }}>
+          <div className="mb-4">
             <label className="lbl">Tags</label>
-            <div style={{
-              border: '1px solid var(--rim)',
-              borderRadius: 8,
-              padding: '.6rem',
-              background: 'var(--ink4)',
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '.5rem',
-            }}
-            >
+            <div className="border border-rim rounded-lg p-[0.6rem] bg-ink4 flex flex-wrap gap-2">
               {tagsErr ? (
-                <span style={{ color: '#b91c1c', fontSize: '.82rem' }}>Failed to load tags: {tagsErr}</span>
+                <span className="text-[#b91c1c] text-[0.82rem]">Failed to load tags: {tagsErr}</span>
               ) : tagsLoading ? (
-                <span style={{ color: 'var(--dim)', fontSize: '.82rem' }}>Loading tags…</span>
+                <span className="text-dim text-[0.82rem]">Loading tags…</span>
               ) : !tags || tags.length === 0 ? (
-                <span style={{ color: 'var(--dim)', fontSize: '.82rem' }}>
+                <span className="text-dim text-[0.82rem]">
                   No tags yet — customers are tagged automatically after their first order.
                 </span>
               ) : (
                 tags.map((t) => (
                   <label
                     key={t}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '.4rem',
-                      padding: '.3rem .6rem',
-                      border: '1px solid var(--rim)',
-                      borderRadius: 999,
-                      cursor: 'pointer',
-                      fontSize: '.82rem',
-                    }}
+                    className="inline-flex items-center gap-[0.4rem] py-[0.3rem] px-[0.6rem] border border-rim rounded-full cursor-pointer text-[0.82rem]"
                   >
                     <input
                       type="checkbox"
@@ -387,13 +351,13 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
                 ))
               )}
             </div>
-            <div style={{ fontSize: '.72rem', color: 'var(--dim)', marginTop: '.3rem' }}>
+            <div className="text-[0.72rem] text-dim mt-[0.3rem]">
               Tags are assigned automatically from order history (e.g. <em>loyal</em>, <em>repeat</em>, <em>dormant</em>, <em>high_value</em>).
             </div>
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="lbl">Header Text</label>
             <input

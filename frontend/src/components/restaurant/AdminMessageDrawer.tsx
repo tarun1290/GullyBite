@@ -94,21 +94,11 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
 
   return (
     <SlideOverDrawer open={open} onClose={onClose} title="Messages from GullyBite">
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          padding: '.8rem 1rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '.5rem',
-        }}
-      >
+      <div className="flex-1 min-h-0 overflow-y-auto py-[0.8rem] px-4 flex flex-col gap-2">
         {loading && messages.length === 0 ? (
-          <p style={{ color: 'var(--dim,#6b7280)', fontSize: '.85rem' }}>Loading…</p>
+          <p className="text-dim text-[0.85rem]">Loading…</p>
         ) : messages.length === 0 ? (
-          <p style={{ color: 'var(--dim,#6b7280)', fontSize: '.85rem' }}>
+          <p className="text-dim text-[0.85rem]">
             No messages yet. The GullyBite team will reach out here when needed — and you can
             reply at any time.
           </p>
@@ -118,19 +108,16 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
             return (
               <div
                 key={m.id}
-                style={{
-                  alignSelf: mine ? 'flex-end' : 'flex-start',
-                  maxWidth: '78%',
-                  background: mine ? 'var(--brand-50, #ecfdf5)' : 'var(--ink2, #f4f4f5)',
-                  border: `1px solid ${mine ? 'var(--brand-300, #6ee7b7)' : 'var(--rim, #e5e7eb)'}`,
-                  borderRadius: 10,
-                  padding: '.45rem .65rem',
-                }}
+                className={`max-w-[78%] rounded-[10px] py-[0.45rem] px-[0.65rem] border ${
+                  mine
+                    ? 'self-end bg-brand-50 border-brand-300'
+                    : 'self-start bg-ink2 border-rim'
+                }`}
               >
-                <div style={{ fontSize: '.86rem', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                <div className="text-[0.86rem] whitespace-pre-wrap wrap-break-word">
                   {m.message}
                 </div>
-                <div style={{ fontSize: '.66rem', color: 'var(--dim,#6b7280)', marginTop: '.25rem' }}>
+                <div className="text-[0.66rem] text-dim mt-1">
                   {mine ? 'You' : 'GullyBite'} · {fmtTime(m.created_at)}
                 </div>
               </div>
@@ -138,14 +125,7 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
           })
         )}
       </div>
-      <div
-        style={{
-          borderTop: '1px solid var(--rim, #e5e7eb)',
-          padding: '.6rem .75rem',
-          display: 'flex',
-          gap: '.4rem',
-        }}
-      >
+      <div className="border-t border-rim py-[0.6rem] px-3 flex gap-[0.4rem]">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -161,33 +141,17 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
           placeholder="Type a reply…"
           rows={2}
           disabled={sending}
-          style={{
-            flex: 1,
-            resize: 'none',
-            padding: '.5rem .6rem',
-            border: '1px solid var(--rim, #e5e7eb)',
-            borderRadius: 8,
-            fontSize: '.86rem',
-            fontFamily: 'inherit',
-            background: 'var(--ink, #fff)',
-            color: 'var(--fg, inherit)',
-          }}
+          className="flex-1 resize-none py-2 px-[0.6rem] border border-rim rounded-lg text-[0.86rem] font-[inherit] bg-ink text-fg"
         />
         <button
           type="button"
           onClick={onSend}
           disabled={sending || !text.trim()}
-          style={{
-            padding: '.5rem .9rem',
-            background: sending || !text.trim() ? 'var(--rim,#e5e7eb)' : 'var(--brand-600,#059669)',
-            color: 'white',
-            border: 'none',
-            borderRadius: 8,
-            cursor: sending || !text.trim() ? 'default' : 'pointer',
-            fontSize: '.85rem',
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-          }}
+          className={`py-2 px-[0.9rem] text-white border-0 rounded-lg text-[0.85rem] font-semibold whitespace-nowrap ${
+            sending || !text.trim()
+              ? 'bg-rim cursor-default'
+              : 'bg-brand-600 cursor-pointer'
+          }`}
         >
           {sending ? 'Sending…' : 'Send'}
         </button>

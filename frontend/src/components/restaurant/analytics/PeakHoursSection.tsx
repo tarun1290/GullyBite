@@ -95,28 +95,28 @@ export default function PeakHoursSection({ dateRange }: PeakHoursSectionProps) {
 
   return (
     <>
-      <div className="card" style={{ margin: 0 }}>
+      <div className="card m-0">
         <div className="ch"><h3>Peak Order Hours</h3></div>
-        <div className="cb" style={{ height: 300, position: 'relative' }}>
+        <div className="cb h-[300px] relative">
           {error ? (
             <SectionError message={error} onRetry={refetch} />
           ) : hoursConfig ? (
             <ChartCanvas type="bar" data={hoursConfig.data} options={hoursConfig.options} height={300} />
           ) : (
-            <div style={{ textAlign: 'center', color: 'var(--dim)', padding: '3rem 0', fontSize: '.85rem' }}>
+            <div className="text-center text-dim py-12 text-[0.85rem]">
               {loading ? 'Loading…' : 'No hourly data'}
             </div>
           )}
         </div>
       </div>
 
-      <div className="card" style={{ margin: 0 }}>
+      <div className="card m-0">
         <div className="ch"><h3>Orders by Day of Week</h3></div>
-        <div className="cb" style={{ height: 250, position: 'relative' }}>
+        <div className="cb h-[250px] relative">
           {error ? null : daysConfig ? (
             <ChartCanvas type="bar" data={daysConfig.data} options={daysConfig.options} height={250} />
           ) : (
-            <div style={{ textAlign: 'center', color: 'var(--dim)', padding: '3rem 0', fontSize: '.85rem' }}>
+            <div className="text-center text-dim py-12 text-[0.85rem]">
               {loading ? 'Loading…' : 'No day-of-week data'}
             </div>
           )}

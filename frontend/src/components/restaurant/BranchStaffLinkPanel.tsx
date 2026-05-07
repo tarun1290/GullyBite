@@ -92,22 +92,22 @@ export default function BranchStaffLinkPanel({ branchId }: BranchStaffLinkPanelP
   const hasLink = !loading && !!link?.staff_access_token && !!link?.staff_login_url;
 
   return (
-    <div className="card" style={{ marginTop: '1rem' }}>
+    <div className="card mt-4">
       <div className="ch">
-        <h3 style={{ margin: 0 }}>Staff Login Link</h3>
+        <h3 className="m-0">Staff Login Link</h3>
       </div>
       <div className="cb">
         {loading ? (
-          <p style={{ color: 'var(--dim)', fontSize: '.85rem', margin: 0 }}>Loading…</p>
+          <p className="text-dim text-[0.85rem] m-0">Loading…</p>
         ) : !hasLink ? (
           // ── State A: no link yet ──
           <>
-            <p style={{ color: 'var(--dim)', fontSize: '.85rem', marginTop: 0 }}>
+            <p className="text-dim text-[0.85rem] mt-0">
               Generate a secure login link for your branch staff. Share this
               link with staff members — they sign in using their name and PIN.
             </p>
             {error && (
-              <p style={{ color: 'var(--gb-red-500,#dc2626)', fontSize: '.82rem', marginBottom: '.5rem' }}>
+              <p className="text-red-500 text-[0.82rem] mb-2">
                 {error}
               </p>
             )}
@@ -123,7 +123,7 @@ export default function BranchStaffLinkPanel({ branchId }: BranchStaffLinkPanelP
         ) : (
           // ── State B: link exists ──
           <>
-            <p style={{ color: 'var(--dim)', fontSize: '.78rem', marginTop: 0, marginBottom: '.6rem' }}>
+            <p className="text-dim text-[0.78rem] mt-0 mb-[0.6rem]">
               Generated {formatGeneratedAt(link!.generated_at)}
             </p>
             <input
@@ -131,25 +131,15 @@ export default function BranchStaffLinkPanel({ branchId }: BranchStaffLinkPanelP
               value={link!.staff_login_url || ''}
               readOnly
               onFocus={(e) => e.target.select()}
-              style={{
-                width: '100%',
-                padding: '.5rem .6rem',
-                border: '1px solid var(--rim)',
-                borderRadius: 6,
-                fontSize: '.82rem',
-                fontFamily: 'ui-monospace, SFMono-Regular, monospace',
-                background: 'var(--ink2)',
-                color: 'var(--fg)',
-                marginBottom: '.7rem',
-              }}
+              className="w-full py-2 px-[0.6rem] border border-rim rounded-md text-[0.82rem] font-mono bg-ink2 text-fg mb-[0.7rem]"
               aria-label="Staff login URL"
             />
             {error && (
-              <p style={{ color: 'var(--gb-red-500,#dc2626)', fontSize: '.82rem', marginBottom: '.5rem' }}>
+              <p className="text-red-500 text-[0.82rem] mb-2">
                 {error}
               </p>
             )}
-            <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap', marginBottom: '.6rem' }}>
+            <div className="flex gap-[0.4rem] flex-wrap mb-[0.6rem]">
               <button
                 type="button"
                 className="btn-p btn-sm"
@@ -167,7 +157,7 @@ export default function BranchStaffLinkPanel({ branchId }: BranchStaffLinkPanelP
                 {busy ? 'Regenerating…' : 'Regenerate'}
               </button>
             </div>
-            <p style={{ color: 'var(--dim)', fontSize: '.78rem', margin: 0, lineHeight: 1.5 }}>
+            <p className="text-dim text-[0.78rem] m-0 leading-normal">
               Staff open this link on their device and sign in with their name
               and PIN. Works on Android (with the GullyBite Staff app) and
               iOS/browser.

@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StatCard from '../../../components/StatCard';
@@ -80,8 +79,8 @@ function fmtNum(n: number | string | null | undefined): string { return n == nul
 function fmtDec(n: number | string | null | undefined): string { return n == null ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 1 }); }
 function fmtRs(n: number | string | null | undefined): string { return n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
 
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .5rem', fontSize: '.78rem' };
-const lbl: CSSProperties = { fontSize: '.68rem', color: 'var(--dim)', display: 'block', marginBottom: '.2rem' };
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-2 text-[0.78rem]';
+const LBL_CLS = 'text-[0.68rem] text-dim block mb-[0.2rem]';
 
 export default function AdminLogisticsPage() {
   const today = todayIST();
@@ -216,37 +215,37 @@ export default function AdminLogisticsPage() {
 
   return (
     <div id="pg-logistics">
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.6rem', padding: '.75rem 1rem', alignItems: 'flex-end' }}>
+      <div className="card mb-4">
+        <div className="flex flex-wrap gap-[0.6rem] py-3 px-4 items-end">
           <div>
-            <label style={lbl}>From</label>
-            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={input} />
+            <label className={LBL_CLS}>From</label>
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className={INPUT_CLS} />
           </div>
           <div>
-            <label style={lbl}>To</label>
-            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={input} />
+            <label className={LBL_CLS}>To</label>
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className={INPUT_CLS} />
           </div>
           <div>
-            <label style={lbl}>Restaurant</label>
-            <select value={rid} onChange={(e) => setRid(e.target.value)} style={{ ...input, minWidth: 180 }}>
+            <label className={LBL_CLS}>Restaurant</label>
+            <select value={rid} onChange={(e) => setRid(e.target.value)} className={`${INPUT_CLS} min-w-[180px]`}>
               <option value="">All restaurants</option>
               {restaurants.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={lbl}>Branch</label>
-            <select value={bid} onChange={(e) => setBid(e.target.value)} style={{ ...input, minWidth: 160 }} disabled={!rid}>
+            <label className={LBL_CLS}>Branch</label>
+            <select value={bid} onChange={(e) => setBid(e.target.value)} className={`${INPUT_CLS} min-w-[160px]`} disabled={!rid}>
               <option value="">All branches</option>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </div>
           <div>
-            <label style={lbl}>LSP</label>
+            <label className={LBL_CLS}>LSP</label>
             <input
               value={lsp}
               onChange={(e) => setLsp(e.target.value)}
               placeholder="e.g. Prorouting"
-              style={{ ...input, width: 140 }}
+              className={`${INPUT_CLS} w-[140px]`}
             />
           </div>
           <button type="button" className="btn-p btn-sm" onClick={load} disabled={loading}>Apply</button>
@@ -255,17 +254,10 @@ export default function AdminLogisticsPage() {
       </div>
 
       {err ? (
-        <div style={{ marginBottom: '1rem' }}><SectionError message={err} onRetry={load} /></div>
+        <div className="mb-4"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-              gap: '.6rem',
-              marginBottom: '1.2rem',
-            }}
-          >
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-[0.6rem] mb-[1.2rem]">
             <StatCard label="Delivered Orders" value={loading ? '…' : fmtNum(s.deliveredOrders)} />
             <StatCard label="Cancelled By Client" value={loading ? '…' : fmtNum(s.cancelledByClient)} />
             <StatCard label="Cancelled By System" value={loading ? '…' : fmtNum(s.cancelledBySystem)} />
@@ -283,14 +275,14 @@ export default function AdminLogisticsPage() {
             <StatCard label="Liability Accepted" value={loading ? '…' : fmtNum(s.liabilityAccepted)} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1rem' }}>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(420px,1fr))] gap-4">
             <div className="card">
-              <div className="ch"><h3 style={{ margin: 0, fontSize: '.9rem' }}>Daily Delivered by LSP</h3></div>
+              <div className="ch"><h3 className="m-0 text-[0.9rem]">Daily Delivered by LSP</h3></div>
               <div className="cb">
                 {loading ? (
-                  <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--dim)' }}>Loading…</div>
+                  <div className="h-[260px] flex items-center justify-center text-dim">Loading…</div>
                 ) : !lspChart ? (
-                  <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--dim)' }}>No delivery data yet</div>
+                  <div className="h-[260px] flex items-center justify-center text-dim">No delivery data yet</div>
                 ) : (
                   <ChartCanvas
                     type="bar"
@@ -303,12 +295,12 @@ export default function AdminLogisticsPage() {
             </div>
 
             <div className="card">
-              <div className="ch"><h3 style={{ margin: 0, fontSize: '.9rem' }}>Daily by Status</h3></div>
+              <div className="ch"><h3 className="m-0 text-[0.9rem]">Daily by Status</h3></div>
               <div className="cb">
                 {loading ? (
-                  <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--dim)' }}>Loading…</div>
+                  <div className="h-[260px] flex items-center justify-center text-dim">Loading…</div>
                 ) : !statusChart ? (
-                  <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--dim)' }}>No order data for this period</div>
+                  <div className="h-[260px] flex items-center justify-center text-dim">No order data for this period</div>
                 ) : (
                   <ChartCanvas
                     type="bar"

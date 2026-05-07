@@ -45,14 +45,14 @@ function SectionCard({ title, subtitle, children, empty, loading }: SectionCardP
   return (
     <Card title={title} className="marketing-analytics-section">
       {subtitle && (
-        <div style={{ fontSize: '.78rem', color: '#64748b', marginBottom: '.8rem' }}>
+        <div className="text-[0.78rem] text-[#64748b] mb-[0.8rem]">
           {subtitle}
         </div>
       )}
       {loading ? (
-        <div style={{ padding: '1rem 0', color: '#94a3b8', fontSize: '.85rem' }}>Loading…</div>
+        <div className="py-4 px-0 text-[#94a3b8] text-[0.85rem]">Loading…</div>
       ) : empty ? (
-        <div style={{ padding: '1rem 0', color: '#94a3b8', fontSize: '.85rem' }}>{empty}</div>
+        <div className="py-4 px-0 text-[#94a3b8] text-[0.85rem]">{empty}</div>
       ) : (
         children
       )}
@@ -65,10 +65,10 @@ interface StatGridProps { children?: ReactNode; cols?: number }
 function StatGrid({ children, cols = 4 }: StatGridProps) {
   return (
     <div
+      className="grid gap-[0.7rem]"
+      // dynamic gridTemplateColumns: number of columns (`cols`) is a runtime prop
       style={{
-        display: 'grid',
         gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-        gap: '.7rem',
       }}
     >
       {children}
@@ -243,13 +243,13 @@ function CampaignSection({ data, loading }: CampaignSectionProps) {
           </StatGrid>
           {Array.isArray(data.top_templates) && data.top_templates.length > 0 && (
             <>
-              <div style={{ fontSize: '.78rem', color: '#64748b', margin: '1.2rem 0 .5rem' }}>
+              <div className="text-[0.78rem] text-[#64748b] mt-[1.2rem] mb-2">
                 Top templates by ROI
               </div>
-              <table className="data-table" style={{ width: '100%', fontSize: '.82rem' }}>
+              <table className="data-table w-full text-[0.82rem]">
                 <thead>
                   <tr>
-                    <th style={{ textAlign: 'left' }}>Template</th>
+                    <th className="text-left">Template</th>
                     <th>Campaigns</th>
                     <th>Sent</th>
                     <th>Conv.</th>
@@ -261,10 +261,10 @@ function CampaignSection({ data, loading }: CampaignSectionProps) {
                 <tbody>
                   {data.top_templates.map((t) => (
                     <tr key={t.template_id}>
-                      <td style={{ textAlign: 'left' }}>
-                        <code style={{ fontSize: '.76rem' }}>{t.template_id}</code>
+                      <td className="text-left">
+                        <code className="text-[0.76rem]">{t.template_id}</code>
                         {t.use_case && (
-                          <span style={{ color: '#94a3b8', marginLeft: '.3rem' }}>({t.use_case})</span>
+                          <span className="text-[#94a3b8] ml-[0.3rem]">({t.use_case})</span>
                         )}
                       </td>
                       <td>{fmtNum(t.campaigns)}</td>
@@ -308,42 +308,42 @@ function CustomerSection({ data, loading }: CustomerSectionProps) {
               value={fmtNum(data.rfm_distribution?.length || 0)}
             />
           </StatGrid>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.1rem', marginTop: '1rem' }}>
+          <div className="grid grid-cols-2 gap-[1.1rem] mt-4">
             <div>
-              <div style={{ fontSize: '.78rem', color: '#64748b', marginBottom: '.4rem' }}>
+              <div className="text-[0.78rem] text-[#64748b] mb-[0.4rem]">
                 RFM distribution
               </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '.82rem' }}>
+              <ul className="list-none p-0 m-0 text-[0.82rem]">
                 {(data.rfm_distribution || []).map((r) => (
                   <li
                     key={r.label}
-                    style={{ display: 'flex', justifyContent: 'space-between', padding: '.25rem 0' }}
+                    className="flex justify-between py-1 px-0"
                   >
                     <span>{r.label}</span>
                     <strong>{fmtNum(r.count)}</strong>
                   </li>
                 ))}
                 {(data.rfm_distribution || []).length === 0 && (
-                  <li style={{ color: '#94a3b8' }}>No data.</li>
+                  <li className="text-[#94a3b8]">No data.</li>
                 )}
               </ul>
             </div>
             <div>
-              <div style={{ fontSize: '.78rem', color: '#64748b', marginBottom: '.4rem' }}>
+              <div className="text-[0.78rem] text-[#64748b] mb-[0.4rem]">
                 Acquisition sources
               </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '.82rem' }}>
+              <ul className="list-none p-0 m-0 text-[0.82rem]">
                 {(data.acquisition_sources || []).slice(0, 8).map((r) => (
                   <li
                     key={r.source}
-                    style={{ display: 'flex', justifyContent: 'space-between', padding: '.25rem 0' }}
+                    className="flex justify-between py-1 px-0"
                   >
                     <span>{r.source}</span>
                     <strong>{fmtNum(r.count)}</strong>
                   </li>
                 ))}
                 {(data.acquisition_sources || []).length === 0 && (
-                  <li style={{ color: '#94a3b8' }}>No data.</li>
+                  <li className="text-[#94a3b8]">No data.</li>
                 )}
               </ul>
             </div>
@@ -404,16 +404,16 @@ function FeedbackSection({ data, loading }: FeedbackSectionProps) {
             <StatCard label="Positive" value={fmtPct(data.positive_share)} />
             <StatCard label="Review-link CTR" value={fmtPct(data.review_link_ctr)} />
           </StatGrid>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.1rem', marginTop: '1rem' }}>
+          <div className="grid grid-cols-2 gap-[1.1rem] mt-4">
             <div>
-              <div style={{ fontSize: '.78rem', color: '#64748b', marginBottom: '.4rem' }}>
+              <div className="text-[0.78rem] text-[#64748b] mb-[0.4rem]">
                 Rating distribution
               </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '.82rem' }}>
+              <ul className="list-none p-0 m-0 text-[0.82rem]">
                 {(data.rating_distribution || []).map((r) => (
                   <li
                     key={r.rating}
-                    style={{ display: 'flex', justifyContent: 'space-between', padding: '.25rem 0' }}
+                    className="flex justify-between py-1 px-0"
                   >
                     <span>{'★'.repeat(Number(r.rating))}</span>
                     <strong>{fmtNum(r.count)}</strong>
@@ -422,19 +422,19 @@ function FeedbackSection({ data, loading }: FeedbackSectionProps) {
               </ul>
             </div>
             <div>
-              <div style={{ fontSize: '.78rem', color: '#64748b', marginBottom: '.4rem' }}>
+              <div className="text-[0.78rem] text-[#64748b] mb-[0.4rem]">
                 By source
               </div>
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '.82rem' }}>
+              <ul className="list-none p-0 m-0 text-[0.82rem]">
                 {(data.by_source || []).map((r) => (
                   <li
                     key={r.source}
-                    style={{ display: 'flex', justifyContent: 'space-between', padding: '.25rem 0' }}
+                    className="flex justify-between py-1 px-0"
                   >
                     <span>
                       {r.source}
                       {r.avg_rating != null && (
-                        <span style={{ color: '#94a3b8', marginLeft: '.3rem' }}>
+                        <span className="text-[#94a3b8] ml-[0.3rem]">
                           ({r.avg_rating}★)
                         </span>
                       )}
@@ -470,10 +470,10 @@ function JourneysSection({ data, loading }: JourneysSectionProps) {
             <StatCard label="Total sends" value={fmtNum(data.total_sends)} />
             <StatCard label="Journey types active" value={fmtNum((data.by_type || []).length)} />
           </StatGrid>
-          <table className="data-table" style={{ width: '100%', marginTop: '1rem', fontSize: '.82rem' }}>
+          <table className="data-table w-full mt-4 text-[0.82rem]">
             <thead>
               <tr>
-                <th style={{ textAlign: 'left' }}>Journey</th>
+                <th className="text-left">Journey</th>
                 <th>Sends</th>
                 <th>Enabled</th>
               </tr>
@@ -481,7 +481,7 @@ function JourneysSection({ data, loading }: JourneysSectionProps) {
             <tbody>
               {(data.by_type || []).map((r) => (
                 <tr key={r.journey_type}>
-                  <td style={{ textAlign: 'left' }}>{r.journey_type}</td>
+                  <td className="text-left">{r.journey_type}</td>
                   <td>{fmtNum(r.sends)}</td>
                   <td>{r.enabled ? '✅' : '⏸'}</td>
                 </tr>
@@ -531,23 +531,13 @@ export default function MarketingAnalyticsPage() {
   return (
     <div id="tab-marketing-analytics">
       {!campaignsEnabled && !loading && (
-        <div
-          style={{
-            background: '#fef3c7',
-            border: '1px solid #fde68a',
-            borderRadius: '.5rem',
-            padding: '.75rem 1rem',
-            fontSize: '.85rem',
-            color: '#92400e',
-            marginBottom: '1.1rem',
-          }}
-        >
+        <div className="bg-[#fef3c7] border border-[#fde68a] rounded-lg py-3 px-4 text-[0.85rem] text-[#92400e] mb-[1.1rem]">
           <strong>Marketing is not enabled yet.</strong> Top up your wallet and enable campaigns
           from the Campaigns tab to populate these insights.
         </div>
       )}
 
-      <div className="chips" style={{ marginBottom: '1.1rem' }}>
+      <div className="chips mb-[1.1rem]">
         {PERIODS.map(([val, label]) => (
           <button
             key={val}
@@ -561,22 +551,12 @@ export default function MarketingAnalyticsPage() {
       </div>
 
       {error && (
-        <div
-          style={{
-            background: '#fee2e2',
-            border: '1px solid #fecaca',
-            borderRadius: '.5rem',
-            padding: '.75rem 1rem',
-            fontSize: '.85rem',
-            color: '#991b1b',
-            marginBottom: '1.1rem',
-          }}
-        >
+        <div className="bg-[#fee2e2] border border-[#fecaca] rounded-lg py-3 px-4 text-[0.85rem] text-[#991b1b] mb-[1.1rem]">
           {error}
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+      <div className="flex flex-col gap-[1.1rem]">
         <RevenueSection data={data?.revenue} loading={loading} />
         <CampaignSection data={data?.campaigns} loading={loading} />
         <CustomerSection data={data?.customers} loading={loading} />

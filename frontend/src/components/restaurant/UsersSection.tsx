@@ -131,7 +131,7 @@ export default function UsersSection() {
   return (
     <div>
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+        <div className="ch justify-between">
           <h3>👥 Team</h3>
           <button type="button" className="btn-p btn-sm" onClick={openAdd}>
             + Add Team Member
@@ -139,27 +139,27 @@ export default function UsersSection() {
         </div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)' }}>Loading team…</p>
+            <p className="text-dim">Loading team…</p>
           ) : !users.length ? (
-            <div className="empty" style={{ textAlign: 'center', padding: '2rem 0' }}>
-              <div className="ei" style={{ fontSize: '2.5rem' }}>👥</div>
+            <div className="empty text-center py-8">
+              <div className="ei text-[2.5rem]">👥</div>
               <h3>No team members yet</h3>
-              <p style={{ color: 'var(--dim)', fontSize: '.84rem' }}>
+              <p className="text-dim text-[0.84rem]">
                 Add managers, kitchen staff or delivery partners.
               </p>
             </div>
           ) : (
-            <div className="tbl" style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="tbl overflow-x-auto">
+              <table className="w-full border-collapse">
                 <thead>
-                  <tr style={{ textAlign: 'left', fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                    <th style={{ padding: '.5rem' }}>Name</th>
-                    <th style={{ padding: '.5rem' }}>Phone</th>
-                    <th style={{ padding: '.5rem', textAlign: 'center' }}>Role</th>
-                    <th style={{ padding: '.5rem' }}>Branches</th>
-                    <th style={{ padding: '.5rem', textAlign: 'center' }}>Active</th>
-                    <th style={{ padding: '.5rem' }}>Last Login</th>
-                    <th style={{ padding: '.5rem', textAlign: 'center' }}>Actions</th>
+                  <tr className="text-left text-[0.72rem] text-dim uppercase tracking-[0.5px]">
+                    <th className="p-2">Name</th>
+                    <th className="p-2">Phone</th>
+                    <th className="p-2 text-center">Role</th>
+                    <th className="p-2">Branches</th>
+                    <th className="p-2 text-center">Active</th>
+                    <th className="p-2">Last Login</th>
+                    <th className="p-2 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -174,34 +174,37 @@ export default function UsersSection() {
                     return (
                       <tr
                         key={u.id}
-                        style={{
-                          borderBottom: '1px solid var(--rim)',
-                          opacity: u.is_active ? 1 : 0.55,
-                        }}
+                        className={`border-b border-rim ${u.is_active ? 'opacity-100' : 'opacity-55'}`}
                       >
-                        <td style={{ padding: '.5rem', fontSize: '.86rem' }}>{u.name}</td>
-                        <td style={{ padding: '.5rem', fontSize: '.75rem', color: 'var(--dim)' }}>{u.phone}</td>
-                        <td style={{ padding: '.5rem', textAlign: 'center' }}>
-                          <span style={{ color: rb.color, fontWeight: 600, fontSize: '.8rem' }}>
+                        <td className="p-2 text-[0.86rem]">{u.name}</td>
+                        <td className="p-2 text-[0.75rem] text-dim">{u.phone}</td>
+                        <td className="p-2 text-center">
+                          <span
+                            className="font-semibold text-[0.8rem]"
+                            // role badge colour from ROLE_BADGE by u.role at
+                            // runtime (owner/manager/kitchen/delivery — 4
+                            // distinct CSS vars, plus a dim fallback).
+                            style={{ color: rb.color }}
+                          >
                             {rb.emoji} {rb.label}
                           </span>
                         </td>
-                        <td style={{ padding: '.5rem', fontSize: '.75rem' }}>{brNames}</td>
-                        <td style={{ padding: '.5rem', textAlign: 'center' }}>
+                        <td className="p-2 text-[0.75rem]">{brNames}</td>
+                        <td className="p-2 text-center">
                           {u.is_active ? (
-                            <span style={{ color: 'var(--wa,#22c55e)' }}>✓</span>
+                            <span className="text-wa">✓</span>
                           ) : (
-                            <span style={{ color: 'var(--red,#dc2626)' }}>✗</span>
+                            <span className="text-red">✗</span>
                           )}
                         </td>
-                        <td style={{ padding: '.5rem', fontSize: '.75rem', color: 'var(--dim)' }}>
+                        <td className="p-2 text-[0.75rem] text-dim">
                           {formatLastLogin(u.last_login_at)}
                         </td>
-                        <td style={{ padding: '.5rem', textAlign: 'center' }}>
+                        <td className="p-2 text-center">
                           {isOwner ? (
-                            <span style={{ color: 'var(--dim)', fontSize: '.72rem' }}>Owner</span>
+                            <span className="text-dim text-[0.72rem]">Owner</span>
                           ) : showingPinRow ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '.3rem', justifyContent: 'flex-end' }}>
+                            <div className="flex items-center gap-[0.3rem] justify-end">
                               <input
                                 type="password"
                                 placeholder="New PIN"
@@ -209,12 +212,11 @@ export default function UsersSection() {
                                 value={pinValue}
                                 autoFocus
                                 onChange={(e) => setPinValue(e.target.value.replace(/\D/g, ''))}
-                                style={{ width: 80, padding: '.2rem .4rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.78rem' }}
+                                className="w-20 py-[0.2rem] px-[0.4rem] border border-rim rounded-sm text-[0.78rem]"
                               />
                               <button
                                 type="button"
-                                className="btn-p btn-sm"
-                                style={{ fontSize: '.7rem' }}
+                                className="btn-p btn-sm text-[0.7rem]"
                                 onClick={() => handleResetPin(u)}
                                 disabled={pinBusy}
                               >
@@ -222,8 +224,7 @@ export default function UsersSection() {
                               </button>
                               <button
                                 type="button"
-                                className="btn-g btn-sm"
-                                style={{ fontSize: '.7rem' }}
+                                className="btn-g btn-sm text-[0.7rem]"
                                 onClick={cancelPinReset}
                                 disabled={pinBusy}
                               >
@@ -231,7 +232,7 @@ export default function UsersSection() {
                               </button>
                             </div>
                           ) : showingDeactivateRow ? (
-                            <div style={{ display: 'flex', gap: '.3rem', justifyContent: 'flex-end' }}>
+                            <div className="flex gap-[0.3rem] justify-end">
                               <button
                                 type="button"
                                 className="btn-del btn-sm"
@@ -242,8 +243,7 @@ export default function UsersSection() {
                               </button>
                               <button
                                 type="button"
-                                className="btn-g btn-sm"
-                                style={{ fontSize: '.72rem' }}
+                                className="btn-g btn-sm text-[0.72rem]"
                                 onClick={() => setPendingDeactivate(null)}
                                 disabled={rowBusy === u.id}
                               >
@@ -251,11 +251,10 @@ export default function UsersSection() {
                               </button>
                             </div>
                           ) : (
-                            <div style={{ display: 'flex', gap: '.25rem', justifyContent: 'flex-end' }}>
+                            <div className="flex gap-1 justify-end">
                               <button
                                 type="button"
-                                className="btn-outline btn-sm"
-                                style={{ fontSize: '.72rem' }}
+                                className="btn-outline btn-sm text-[0.72rem]"
                                 onClick={() => openEdit(u)}
                                 disabled={rowBusy === u.id}
                               >
@@ -263,8 +262,7 @@ export default function UsersSection() {
                               </button>
                               <button
                                 type="button"
-                                className="btn-outline btn-sm"
-                                style={{ fontSize: '.72rem', color: 'var(--gold,#f59e0b)' }}
+                                className="btn-outline btn-sm text-[0.72rem] text-gold"
                                 onClick={() => startPinReset(u)}
                                 disabled={rowBusy === u.id}
                               >
@@ -273,8 +271,7 @@ export default function UsersSection() {
                               {u.is_active ? (
                                 <button
                                   type="button"
-                                  className="btn-outline btn-sm"
-                                  style={{ fontSize: '.72rem', color: 'var(--red,#dc2626)' }}
+                                  className="btn-outline btn-sm text-[0.72rem] text-red"
                                   onClick={() => setPendingDeactivate(u.id)}
                                   disabled={rowBusy === u.id}
                                 >
@@ -283,8 +280,7 @@ export default function UsersSection() {
                               ) : (
                                 <button
                                   type="button"
-                                  className="btn-outline btn-sm"
-                                  style={{ fontSize: '.72rem', color: 'var(--wa,#16a34a)' }}
+                                  className="btn-outline btn-sm text-[0.72rem] text-wa"
                                   onClick={() => handleToggleActive(u)}
                                   disabled={rowBusy === u.id}
                                 >

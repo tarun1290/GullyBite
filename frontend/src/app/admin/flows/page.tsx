@@ -258,7 +258,7 @@ export default function AdminFlowsPage() {
         <div className="ch"><h3>🔗 Flow Assignments</h3></div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)' }}>Loading…</p>
+            <p className="text-dim">Loading…</p>
           ) : (
             <>
               <AssignmentRow label="Delivery Address" a={assignments.delivery || {}} />
@@ -268,10 +268,10 @@ export default function AdminFlowsPage() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+      <div className="card mt-4">
+        <div className="ch justify-between">
           <h3>📚 Flow Library</h3>
-          <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+          <div className="flex gap-[0.4rem] items-center">
             <button type="button" className="btn-g btn-sm" onClick={handleSyncFromMeta} disabled={syncing}>
               {syncing ? 'Syncing…' : '🔄 Sync from Meta'}
             </button>
@@ -280,20 +280,20 @@ export default function AdminFlowsPage() {
         </div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)' }}>Loading from Meta…</p>
+            <p className="text-dim">Loading from Meta…</p>
           ) : !flows.length ? (
-            <p style={{ color: 'var(--dim)' }}>No Flows found on this WABA.</p>
+            <p className="text-dim">No Flows found on this WABA.</p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
                 <thead>
-                  <tr style={{ textAlign: 'left', fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase' }}>
-                    <th style={{ padding: '.45rem' }}>Name</th>
-                    <th style={{ padding: '.45rem' }}>Flow ID</th>
-                    <th style={{ padding: '.45rem' }}>Status</th>
-                    <th style={{ padding: '.45rem' }}>Version</th>
-                    <th style={{ padding: '.45rem' }}>Updated</th>
-                    <th style={{ padding: '.45rem', textAlign: 'right' }}>Actions</th>
+                  <tr className="text-left text-[0.72rem] text-dim uppercase">
+                    <th className="p-[0.45rem]">Name</th>
+                    <th className="p-[0.45rem]">Flow ID</th>
+                    <th className="p-[0.45rem]">Status</th>
+                    <th className="p-[0.45rem]">Version</th>
+                    <th className="p-[0.45rem]">Updated</th>
+                    <th className="p-[0.45rem] text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -302,17 +302,21 @@ export default function AdminFlowsPage() {
                     const busy = rowBusy === f.id;
                     const pending = pendingAction && pendingAction.id === f.id ? pendingAction : null;
                     return (
-                      <tr key={f.id} style={{ borderBottom: '1px solid var(--rim)' }}>
-                        <td style={{ padding: '.45rem', fontSize: '.84rem', fontWeight: 500 }}>{f.name || '—'}</td>
-                        <td style={{ padding: '.45rem', fontSize: '.72rem', color: 'var(--dim)', fontFamily: 'monospace' }}>{f.id}</td>
-                        <td style={{ padding: '.45rem' }}>
-                          <span style={{ display: 'inline-block', padding: '.15rem .45rem', borderRadius: 99, fontSize: '.68rem', fontWeight: 600, background: `${color}15`, color, border: `1px solid ${color}30` }}>
+                      <tr key={f.id} className="border-b border-rim">
+                        <td className="p-[0.45rem] text-[0.84rem] font-medium">{f.name || '—'}</td>
+                        <td className="p-[0.45rem] text-[0.72rem] text-dim font-mono">{f.id}</td>
+                        <td className="p-[0.45rem]">
+                          <span
+                            // background, color and border tint computed at runtime from STATUS_COLORS by f.status
+                            style={{ background: `${color}15`, color, border: `1px solid ${color}30` }}
+                            className="inline-block py-[0.15rem] px-[0.45rem] rounded-full text-[0.68rem] font-semibold"
+                          >
                             {f.status}
                           </span>
                         </td>
-                        <td style={{ padding: '.45rem', fontSize: '.76rem' }}>{f.json_version || '—'}</td>
-                        <td style={{ padding: '.45rem', fontSize: '.76rem', color: 'var(--dim)' }}>{formatUpdated(f.updated_at)}</td>
-                        <td style={{ padding: '.45rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <td className="p-[0.45rem] text-[0.76rem]">{f.json_version || '—'}</td>
+                        <td className="p-[0.45rem] text-[0.76rem] text-dim">{formatUpdated(f.updated_at)}</td>
+                        <td className="p-[0.45rem] text-right whitespace-nowrap">
                           {pending ? (
                             <InlineConfirm
                               pending={pending}
@@ -344,7 +348,7 @@ export default function AdminFlowsPage() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
+      <div className="card mt-4">
         <div className="ch"><h3>✨ Create New Flow</h3></div>
         <div className="cb">
           <div className="fgrid">
@@ -357,7 +361,7 @@ export default function AdminFlowsPage() {
               <select
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
-                style={{ padding: '.45rem', border: '1px solid var(--rim)', borderRadius: 6, width: '100%' }}
+                className="p-[0.45rem] border border-rim rounded-md w-full"
               >
                 {['OTHER', 'SIGN_UP', 'SIGN_IN', 'APPOINTMENT_BOOKING', 'LEAD_GENERATION', 'SHOPPING', 'SURVEY', 'CONTACT_US', 'CUSTOMER_SUPPORT'].map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -366,7 +370,7 @@ export default function AdminFlowsPage() {
               <label>Starter Template</label>
               <select
                 onChange={(e) => loadTemplate(e.target.value)}
-                style={{ padding: '.45rem', border: '1px solid var(--rim)', borderRadius: 6, width: '100%' }}
+                className="p-[0.45rem] border border-rim rounded-md w-full"
                 defaultValue=""
               >
                 <option value="">-- Blank --</option>
@@ -374,18 +378,18 @@ export default function AdminFlowsPage() {
               </select>
             </div>
             <div className="fg span2">
-              <label>Flow JSON <small style={{ color: 'var(--dim)' }}>(optional)</small></label>
+              <label>Flow JSON <small className="text-dim">(optional)</small></label>
               <textarea
                 value={newJson}
                 onChange={(e) => setNewJson(e.target.value)}
                 rows={8}
                 placeholder='{ "version": "6.2", "screens": [ ... ] }'
-                style={{ width: '100%', fontFamily: 'monospace', fontSize: '.78rem', padding: '.5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+                className="w-full font-mono text-[0.78rem] p-2 border border-rim rounded-md"
               />
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '.5rem', marginTop: '.7rem' }}>
+          <div className="flex gap-2 mt-[0.7rem]">
             <button type="button" className="btn-p" onClick={doCreate} disabled={creating}>
               {creating ? 'Creating…' : '+ Create Flow'}
             </button>
@@ -396,12 +400,12 @@ export default function AdminFlowsPage() {
 
           {newResult && (
             <div
+              // background and color depend on newResult.ok at runtime (success vs error tints)
               style={{
-                marginTop: '.6rem', padding: '.5rem .7rem', borderRadius: 6,
                 background: newResult.ok ? '#f0fdf4' : '#fff1f2',
                 color: newResult.ok ? 'var(--gb-wa-600)' : 'var(--gb-red-500)',
-                fontSize: '.82rem',
               }}
+              className="mt-[0.6rem] py-2 px-[0.7rem] rounded-md text-[0.82rem]"
             >
               {newResult.msg}
             </div>
@@ -418,21 +422,25 @@ function AssignmentRow({ label, a }: AssignmentRowProps): ReactNode {
   const colorMap: Record<string, string> = { PUBLISHED: '#22c55e', DRAFT: '#3b82f6' };
   const color = colorMap[a.flow_status || ''] || 'var(--gb-neutral-500)';
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '.5rem 0', borderBottom: '1px solid var(--rim)' }}>
-      <span style={{ fontWeight: 600, minWidth: 140 }}>{label}</span>
+    <div className="flex justify-between items-center py-2 border-b border-rim">
+      <span className="font-semibold min-w-[140px]">{label}</span>
       <span>
         {a.flow_id ? (
           <>
-            <span style={{ fontFamily: 'monospace', fontSize: '.78rem' }}>{a.flow_id}</span>
-            {a.flow_name && <span style={{ fontSize: '.78rem' }}> ({a.flow_name})</span>}
+            <span className="font-mono text-[0.78rem]">{a.flow_id}</span>
+            {a.flow_name && <span className="text-[0.78rem]"> ({a.flow_name})</span>}
             {a.flow_status && (
-              <span style={{ fontSize: '.66rem', padding: '.1rem .35rem', borderRadius: 99, background: `${color}15`, color, marginLeft: '.4rem' }}>
+              <span
+                // background and color tint computed at runtime from colorMap by flow_status
+                style={{ background: `${color}15`, color }}
+                className="text-[0.66rem] py-[0.1rem] px-[0.35rem] rounded-full ml-[0.4rem]"
+              >
                 {a.flow_status}
               </span>
             )}
           </>
         ) : (
-          <span style={{ color: 'var(--mute,#94a3b8)', fontStyle: 'italic' }}>Not assigned</span>
+          <span className="text-mute italic">Not assigned</span>
         )}
       </span>
     </div>
@@ -452,19 +460,19 @@ function RowActions({ flow, busy, onEdit, onAsk }: RowActionsProps): ReactNode {
       <button type="button" className="btn-g btn-sm" onClick={onEdit} disabled={busy}>Edit</button>
       {flow.status === 'DRAFT' && (
         <>
-          <button type="button" className="btn-p btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('publish')} disabled={busy}>Publish</button>
-          <button type="button" className="btn-del btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('delete')} disabled={busy}>Delete</button>
+          <button type="button" className="btn-p btn-sm ml-1" onClick={() => onAsk('publish')} disabled={busy}>Publish</button>
+          <button type="button" className="btn-del btn-sm ml-1" onClick={() => onAsk('delete')} disabled={busy}>Delete</button>
         </>
       )}
       {flow.status === 'PUBLISHED' && (
         <>
-          <button type="button" className="btn-g btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('assign', { assignType: 'delivery' })} disabled={busy}>Assign Delivery</button>
-          <button type="button" className="btn-g btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('assign', { assignType: 'feedback' })} disabled={busy}>Assign Feedback</button>
-          <button type="button" className="btn-g btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('deprecate')} disabled={busy}>Deprecate</button>
+          <button type="button" className="btn-g btn-sm ml-1" onClick={() => onAsk('assign', { assignType: 'delivery' })} disabled={busy}>Assign Delivery</button>
+          <button type="button" className="btn-g btn-sm ml-1" onClick={() => onAsk('assign', { assignType: 'feedback' })} disabled={busy}>Assign Feedback</button>
+          <button type="button" className="btn-g btn-sm ml-1" onClick={() => onAsk('deprecate')} disabled={busy}>Deprecate</button>
         </>
       )}
       {flow.status === 'DEPRECATED' && (
-        <button type="button" className="btn-del btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => onAsk('delete')} disabled={busy}>Delete</button>
+        <button type="button" className="btn-del btn-sm ml-1" onClick={() => onAsk('delete')} disabled={busy}>Delete</button>
       )}
     </>
   );
@@ -485,12 +493,19 @@ function InlineConfirm({ pending, busy, onConfirm, onCancel }: InlineConfirmProp
   else if (pending.kind === 'delete') { label = `Delete "${pending.name || pending.id}"?`; bg = 'var(--gb-red-500)'; }
   else if (pending.kind === 'assign') { label = `Assign as ${pending.assignType}?`; bg = 'var(--gb-indigo-600)'; }
   return (
-    <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
-      <span style={{ fontSize: '.7rem', color: 'var(--dim)', marginRight: '.2rem' }}>{label}</span>
-      <button type="button" className="btn-p btn-sm" style={{ background: bg }} onClick={onConfirm} disabled={busy}>
+    <span className="inline-flex gap-1 items-center">
+      <span className="text-[0.7rem] text-dim mr-[0.2rem]">{label}</span>
+      <button
+        type="button"
+        className="btn-p btn-sm"
+        // bg colour computed above at runtime from pending.kind
+        style={{ background: bg }}
+        onClick={onConfirm}
+        disabled={busy}
+      >
         {busy ? '…' : 'Confirm'}
       </button>
-      <button type="button" className="btn-g btn-sm" style={{ fontSize: '.7rem' }} onClick={onCancel} disabled={busy}>Cancel</button>
+      <button type="button" className="btn-g btn-sm text-[0.7rem]" onClick={onCancel} disabled={busy}>Cancel</button>
     </span>
   );
 }

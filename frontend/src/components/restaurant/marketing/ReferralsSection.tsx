@@ -145,7 +145,7 @@ export default function ReferralsSection() {
 
   if (error) {
     return (
-      <div className="card" style={{ marginTop: '.4rem' }}>
+      <div className="card mt-[0.4rem]">
         <div className="cb">
           <SectionError message={error} onRetry={refetch} />
         </div>
@@ -163,80 +163,60 @@ export default function ReferralsSection() {
   return (
     <div>
       {/* ── GBREF Link Card ────────────────────────────────────── */}
-      <div className="card" style={{ marginBottom: '1.2rem' }}>
+      <div className="card mb-[1.2rem]">
         <div className="ch"><h3>Your GBREF Link</h3></div>
         <div className="cb">
           {linksError ? (
             <SectionError message={linksError} onRetry={loadLinks} />
           ) : linksLoading ? (
-            <div style={{ color: 'var(--dim)', fontSize: '.85rem' }}>Loading…</div>
+            <div className="text-dim text-[0.85rem]">Loading…</div>
           ) : links.length === 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '.6rem' }}>
-              <p style={{ margin: 0, color: 'var(--dim)', fontSize: '.85rem' }}>
+            <div className="flex flex-col gap-[0.6rem]">
+              <p className="m-0 text-dim text-[0.85rem]">
                 You don&apos;t have a referral link yet. Once admin generates one, share it with
                 customers — every order placed within 8 hours of clicking earns you tracked credit.
               </p>
               <div>
                 <button
                   type="button"
-                  className="btn-p btn-sm"
+                  className="btn-p btn-sm bg-acc text-neutral-0"
                   onClick={onRequestLink}
                   disabled={requesting || requestPending}
-                  style={{ background: 'var(--gb-violet-600)', color: 'var(--gb-neutral-0)' }}
                 >
                   {requestPending ? 'Request pending' : requesting ? 'Submitting…' : 'Request Referral Link'}
                 </button>
               </div>
             </div>
           ) : (
-            <div style={{ display: 'grid', gap: '.8rem' }}>
+            <div className="grid gap-[0.8rem]">
               {links.map((link) => {
                 const wa = link.wa_link || '';
                 const label = link.campaign_name || 'Default link';
                 return (
                   <div
                     key={link.id || link._id || link.code}
-                    style={{
-                      border: '1px solid var(--rim)',
-                      borderRadius: 8,
-                      padding: '.85rem 1rem',
-                      background: 'var(--ink)',
-                    }}
+                    className="border border-rim rounded-lg py-[0.85rem] px-4 bg-ink"
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.5rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
-                        <strong style={{ fontSize: '.9rem' }}>{label}</strong>
-                        <span style={{
-                          background: '#22c55e22', color: '#22c55e',
-                          fontSize: '.68rem', padding: '.15rem .5rem', borderRadius: 99,
-                          textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em',
-                        }}>
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <strong className="text-[0.9rem]">{label}</strong>
+                        <span className="bg-[#22c55e22] text-[#22c55e] text-[0.68rem] py-[0.15rem] px-2 rounded-full uppercase font-bold tracking-[0.04em]">
                           {link.status || 'active'}
                         </span>
                       </div>
-                      <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+                      <span className="text-[0.78rem] text-dim">
                         Clicked {link.click_count ?? 0} times
                       </span>
                     </div>
-                    <code
-                      className="mono"
-                      style={{
-                        display: 'block',
-                        marginTop: '.5rem',
-                        fontSize: '.78rem',
-                        wordBreak: 'break-all',
-                        color: 'var(--dim)',
-                      }}
-                    >
+                    <code className="mono block mt-2 text-[0.78rem] break-all text-dim">
                       {wa}
                     </code>
-                    <div style={{ display: 'flex', gap: '.5rem', marginTop: '.7rem', flexWrap: 'wrap' }}>
+                    <div className="flex gap-2 mt-[0.7rem] flex-wrap">
                       <a
                         href={wa}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="btn-p btn-sm"
-                        style={{ background: '#25D366', color: '#fff', textDecoration: 'none' }}
+                        className="btn-p btn-sm bg-[#25D366] text-white no-underline"
                       >
                         📲 Share via WhatsApp
                       </a>
@@ -257,28 +237,28 @@ export default function ReferralsSection() {
       </div>
 
       {/* ── Headline stats ─────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: '1rem', marginBottom: '1.4rem' }}>
-        <div className="card" style={{ padding: '1rem 1.2rem' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{loading && !data ? '…' : total}</div>
-          <div style={{ fontSize: '.78rem', color: 'var(--dim)', marginTop: '.2rem' }}>Total Referrals</div>
+      <div className="grid grid-cols-4 gap-4 mb-[1.4rem]">
+        <div className="card py-4 px-[1.2rem]">
+          <div className="text-[1.5rem] font-bold">{loading && !data ? '…' : total}</div>
+          <div className="text-[0.78rem] text-dim mt-[0.2rem]">Total Referrals</div>
         </div>
-        <div className="card" style={{ padding: '1rem 1.2rem' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
+        <div className="card py-4 px-[1.2rem]">
+          <div className="text-[1.5rem] font-bold">
             {loading && !data ? '…' : `${converted}${total > 0 ? ` (${convertedPct}%)` : ''}`}
           </div>
-          <div style={{ fontSize: '.78rem', color: 'var(--dim)', marginTop: '.2rem' }}>Converted to Orders</div>
+          <div className="text-[0.78rem] text-dim mt-[0.2rem]">Converted to Orders</div>
         </div>
-        <div className="card" style={{ padding: '1rem 1.2rem' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
+        <div className="card py-4 px-[1.2rem]">
+          <div className="text-[1.5rem] font-bold">
             {loading && !data ? '…' : `₹${formatINR(summary.total_order_value_rs)}`}
           </div>
-          <div style={{ fontSize: '.78rem', color: 'var(--dim)', marginTop: '.2rem' }}>Total Order Value</div>
+          <div className="text-[0.78rem] text-dim mt-[0.2rem]">Total Order Value</div>
         </div>
-        <div className="card" style={{ padding: '1rem 1.2rem' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#a78bfa' }}>
+        <div className="card py-4 px-[1.2rem]">
+          <div className="text-[1.5rem] font-bold text-[#a78bfa]">
             {loading && !data ? '…' : `₹${formatINR(feeWithGst)}`}
           </div>
-          <div style={{ fontSize: '.78rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+          <div className="text-[0.78rem] text-dim mt-[0.2rem]">
             Referral Fees Owed (7.5% + GST)
           </div>
         </div>
@@ -287,8 +267,8 @@ export default function ReferralsSection() {
       {/* ── Info banner ─────────────────────────────────────────
           Tightened the wording per the GBREF spec — explicit on the
           7.5% + GST rate and the settlement deduction. */}
-      <div className="card" style={{ marginBottom: '1.2rem', padding: '.85rem 1.2rem', background: '#1e1b4b', border: '1px solid #4c1d9544' }}>
-        <p style={{ fontSize: '.82rem', color: '#c4b5fd', margin: 0 }}>
+      <div className="card mb-[1.2rem] py-[0.85rem] px-[1.2rem] bg-[#1e1b4b] border border-[#4c1d9544]">
+        <p className="text-[0.82rem] text-[#c4b5fd] m-0">
           Customers who click your GBREF link and order within <strong>8 hours</strong> generate a{' '}
           <strong>7.5% + GST</strong> referral fee, deducted from your weekly settlement.
         </p>
@@ -296,63 +276,69 @@ export default function ReferralsSection() {
 
       <div className="card">
         <div className="ch"><h3>Referrals Received</h3></div>
-        <div className="cb" style={{ padding: 0 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+        <div className="cb p-0">
+          <table className="w-full border-collapse text-[0.82rem]">
             <thead>
-              <tr style={{ borderBottom: '1px solid var(--rim)' }}>
-                <th style={{ padding: '.6rem 1rem', textAlign: 'left', color: 'var(--dim)', fontWeight: 500 }}>Customer</th>
-                <th style={{ padding: '.6rem 1rem', textAlign: 'left', color: 'var(--dim)', fontWeight: 500 }}>Status</th>
-                <th style={{ padding: '.6rem 1rem', textAlign: 'left', color: 'var(--dim)', fontWeight: 500 }}>Orders</th>
-                <th style={{ padding: '.6rem 1rem', textAlign: 'left', color: 'var(--dim)', fontWeight: 500 }}>Order Value</th>
-                <th style={{ padding: '.6rem 1rem', textAlign: 'left', color: 'var(--dim)', fontWeight: 500 }}>Referral Fee</th>
-                <th style={{ padding: '.6rem 1rem', textAlign: 'left', color: 'var(--dim)', fontWeight: 500 }}>Commission</th>
-                <th style={{ padding: '.6rem 1rem', textAlign: 'left', color: 'var(--dim)', fontWeight: 500 }}>Referred On</th>
+              <tr className="border-b border-rim">
+                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Customer</th>
+                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Status</th>
+                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Orders</th>
+                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Order Value</th>
+                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Referral Fee</th>
+                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Commission</th>
+                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Referred On</th>
               </tr>
             </thead>
             <tbody>
               {loading && !data ? (
-                <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--dim)' }}>Loading…</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-dim">Loading…</td></tr>
               ) : referrals.length === 0 ? (
-                <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--dim)' }}>No referrals received yet</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-dim">No referrals received yet</td></tr>
               ) : (
                 referrals.map((r, idx) => (
-                  <tr key={r.id || r._id || idx} style={{ borderBottom: '1px solid var(--rim)' }}>
-                    <td style={{ padding: '.6rem 1rem' }}>
-                      <div style={{ fontFamily: 'monospace', fontSize: '.8rem' }}>
+                  <tr key={r.id || r._id || idx} className="border-b border-rim">
+                    <td className="py-[0.6rem] px-4">
+                      <div className="font-mono text-[0.8rem]">
                         {r.customer_wa_phone || shortBsuid(r.customer_bsuid) || '—'}
                       </div>
                       {r.customer_name && (
-                        <div style={{ fontSize: '.74rem', color: 'var(--dim)' }}>{r.customer_name}</div>
+                        <div className="text-[0.74rem] text-dim">{r.customer_name}</div>
                       )}
                     </td>
-                    <td style={{ padding: '.6rem 1rem' }}>
-                      <span style={{ color: STATUS_COLOR[r.status || ''] || '#6b7280', fontWeight: 600, textTransform: 'capitalize', fontSize: '.8rem' }}>
+                    <td className="py-[0.6rem] px-4">
+                      <span
+                        className="font-semibold capitalize text-[0.8rem]"
+                        // colour comes from the per-status STATUS_COLOR
+                        // palette at runtime — Tailwind can't pre-bake
+                        // the dynamic hex.
+                        style={{ color: STATUS_COLOR[r.status || ''] || '#6b7280' }}
+                      >
                         {r.status}
                       </span>
                       {r.attribution_window_hours ? (
-                        <span style={{ fontSize: '.65rem', color: 'var(--dim)', marginLeft: '.3rem' }}>
+                        <span className="text-[0.65rem] text-dim ml-[0.3rem]">
                           {r.attribution_window_hours}h window
                         </span>
                       ) : null}
                     </td>
-                    <td style={{ padding: '.6rem 1rem' }}>{r.orders_count}</td>
-                    <td style={{ padding: '.6rem 1rem' }}>₹{formatINR(r.total_order_value_rs)}</td>
-                    <td style={{ padding: '.6rem 1rem', color: '#a78bfa', fontWeight: 600 }}>₹{formatINR(r.referral_fee_rs)}</td>
-                    <td style={{ padding: '.6rem 1rem' }}>
+                    <td className="py-[0.6rem] px-4">{r.orders_count}</td>
+                    <td className="py-[0.6rem] px-4">₹{formatINR(r.total_order_value_rs)}</td>
+                    <td className="py-[0.6rem] px-4 text-[#a78bfa] font-semibold">₹{formatINR(r.referral_fee_rs)}</td>
+                    <td className="py-[0.6rem] px-4">
                       {r.commission_status ? (
-                        <span style={{
-                          color: COMMISSION_COLOR[r.commission_status] || '#6b7280',
-                          fontWeight: 600,
-                          textTransform: 'capitalize',
-                          fontSize: '.8rem',
-                        }}>
+                        <span
+                          className="font-semibold capitalize text-[0.8rem]"
+                          // colour comes from the per-state
+                          // COMMISSION_COLOR palette at runtime.
+                          style={{ color: COMMISSION_COLOR[r.commission_status] || '#6b7280' }}
+                        >
                           {r.commission_status}
                         </span>
                       ) : (
-                        <span style={{ color: 'var(--dim)', fontSize: '.8rem' }}>—</span>
+                        <span className="text-dim text-[0.8rem]">—</span>
                       )}
                     </td>
-                    <td style={{ padding: '.6rem 1rem', fontSize: '.78rem', color: 'var(--dim)' }}>
+                    <td className="py-[0.6rem] px-4 text-[0.78rem] text-dim">
                       {formatDate(r.created_at)}
                     </td>
                   </tr>

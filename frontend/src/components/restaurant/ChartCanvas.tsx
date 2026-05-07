@@ -54,7 +54,12 @@ export default function ChartCanvas({ type, data, options, height = 300 }: Chart
   }, [type, data, options]);
 
   return (
-    <div style={{ height, position: 'relative' }}>
+    <div
+      className="relative"
+      // height is a runtime prop — Tailwind arbitrary values must be
+      // statically analyzable at build time, so we keep it inline.
+      style={{ height }}
+    >
       <canvas ref={canvasRef} />
     </div>
   );

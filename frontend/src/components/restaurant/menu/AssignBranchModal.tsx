@@ -49,20 +49,16 @@ export default function AssignBranchModal({ productId, productName, branches, on
 
   return (
     <div
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100,
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        padding: '2rem 1rem',
-      }}
+      className="fixed inset-0 bg-black/50 z-100 flex items-start justify-center py-8 px-4"
       onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="card" style={{ maxWidth: 480, width: '100%', background: 'var(--surface,#fff)' }}>
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+      <div className="card max-w-[480px] w-full bg-surface">
+        <div className="ch justify-between">
           <h3>📌 Assign to Branch</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>✕</button>
         </div>
         <div className="cb">
-          <p style={{ fontSize: '.82rem', color: 'var(--dim)', marginBottom: '.7rem' }}>
+          <p className="text-[0.82rem] text-dim mb-[0.7rem]">
             Assigning <strong>{productName}</strong> to a branch. Set the per-branch price so customers
             at that outlet see the right amount.
           </p>
@@ -88,13 +84,13 @@ export default function AssignBranchModal({ productId, productName, branches, on
               <input type="number" value={tax} onChange={(e) => setTax(e.target.value)} />
             </div>
             <div className="fg span2">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }}>
+              <label className="flex items-center gap-[0.4rem]">
                 <input type="checkbox" checked={avail} onChange={(e) => setAvail(e.target.checked)} />
                 Available at this branch
               </label>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
+          <div className="flex gap-2 mt-4">
             <button type="button" className="btn-p" onClick={handleSave} disabled={busy}>
               {busy ? 'Assigning…' : 'Assign'}
             </button>

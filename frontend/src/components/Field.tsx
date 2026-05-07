@@ -15,10 +15,10 @@ export default function Field({ label, error, hint, children, className = '' }: 
       {label && <label>{label}</label>}
       {children}
       {hint && !error && (
-        <small style={{ fontSize: '0.7rem', color: 'var(--mute)' }}>{hint}</small>
+        <small className="text-[0.7rem] text-mute">{hint}</small>
       )}
       {error && (
-        <small style={{ fontSize: '0.72rem', color: 'var(--red)' }}>{error}</small>
+        <small className="text-[0.72rem] text-red">{error}</small>
       )}
     </div>
   );

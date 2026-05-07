@@ -112,9 +112,9 @@ export default function OverviewPage() {
   if (error) {
     return (
       <div id="tab-overview" className="tab on">
-        <div className="card" style={{ padding: '1.2rem', textAlign: 'center' }}>
-          <h3 style={{ marginBottom: '.5rem' }}>Could not load overview</h3>
-          <p style={{ color: 'var(--dim)', marginBottom: '.8rem' }}>{error}</p>
+        <div className="card p-[1.2rem] text-center">
+          <h3 className="mb-2">Could not load overview</h3>
+          <p className="text-dim mb-[0.8rem]">{error}</p>
           <button type="button" className="btn-g btn-sm" onClick={loadAll}>Retry</button>
         </div>
       </div>

@@ -1,6 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
 /*
  * Global stylesheet — loaded first (before dashboard.css / admin.css)
@@ -9,7 +7,105 @@
  * primitives for those surfaces (preserves current look exactly).
  */
 
-@import './tokens/index.css';
+@import './tokens/index.css' layer(utilities);
+
+@theme {
+  --color-rim: var(--rim);
+  --color-dim: var(--dim);
+  --color-tx: var(--tx);
+  --color-acc: var(--acc);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-rim2: var(--rim2);
+  --color-green: var(--green);
+  --color-red: var(--red);
+  --color-red-500: var(--gb-red-500);
+  --color-neutral-0: var(--gb-neutral-0);
+  --color-wa-500: var(--gb-wa-500);
+  --color-wa-600: var(--gb-wa-600);
+  --color-ink: var(--ink);
+  --color-ink2: var(--ink2);
+  --color-ink3: var(--ink3);
+  --color-ink4: var(--ink4);
+  --color-brand-50: var(--brand-50);
+  --color-brand-300: var(--brand-300);
+  --color-brand-600: var(--brand-600);
+  --color-mute: var(--mute);
+  --color-wa: var(--wa);
+  --color-bdr: var(--bdr);
+  --color-gold: var(--gold);
+  --color-bd: var(--bd);
+  --color-violet-600: var(--gb-violet-600);
+  --color-surface2: var(--surface2);
+  --color-panel: var(--panel);
+  --color-green-600: var(--gb-green-600);
+  --color-amber-600: var(--gb-amber-600);
+  --color-red-600: var(--gb-red-600);
+  --color-primary: var(--primary);
+  --color-amber-100: var(--gb-amber-100);
+  --color-amber-500: var(--gb-amber-500);
+  --color-red-100: var(--gb-red-100);
+  --color-red-200: var(--gb-red-200);
+  --color-red-900: var(--gb-red-900);
+  --color-neutral-200: var(--gb-neutral-200);
+  --color-neutral-300: var(--gb-neutral-300);
+  --color-neutral-700: var(--gb-neutral-700);
+  --color-slate-100: var(--gb-slate-100);
+  --color-slate-700: var(--gb-slate-700);
+  --color-slate-800: var(--gb-slate-800);
+  --color-blue-600: var(--gb-blue-600);
+  --color-indigo-800: var(--gb-indigo-800);
+  --color-slate-400: var(--gb-slate-400);
+  --color-indigo-500: var(--gb-indigo-500);
+  --color-indigo-600: var(--gb-indigo-600);
+  --color-neutral-500: var(--gb-neutral-500);
+  --color-wa-light: var(--gb-wa-light);
+  --color-bg2: var(--bg2);
+  --color-bg-soft: var(--bg-soft);
+  --color-line: var(--line);
+
+  /* Anchor Tailwind default-palette shades that landing/onboarding components
+     consume directly (PgConnect, PgPending). Locking them here protects
+     against future @theme overrides silently dropping these utilities. */
+  --color-green-50:  #f0fdf4;
+  --color-green-200: #bbf7d0;
+  --color-green-300: #86efac;
+  --color-green-500: var(--gb-green-500);
+  --color-amber-50:  #fffbeb;
+  --color-amber-300: #fcd34d;
+
+  --radius-r: var(--r);
+
+  --font-body: var(--font-body), sans-serif;
+
+  --shadow-sm-token: var(--shadow-sm);
+  --shadow-default: var(--shadow);
+
+  --breakpoint-xs: 480px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 900px;
+  --breakpoint-xl: 1024px;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { scroll-behavior: smooth; }

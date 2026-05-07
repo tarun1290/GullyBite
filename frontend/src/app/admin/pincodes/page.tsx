@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, ChangeEvent, ReactNode, RefObject } from 'react';
+import type { ChangeEvent, ReactNode, RefObject } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import Toggle from '../../../components/Toggle';
@@ -689,12 +689,9 @@ export default function AdminPincodesPage() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <div className="flex flex-col gap-4">
       <div className="card">
-        <div
-          className="cb"
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: '1rem' }}
-        >
+        <div className="cb grid grid-cols-3 gap-4">
           <StatBlock label="Total pincodes" value={fmtNum(stats.total)} color="var(--fg)" />
           <StatBlock label="Enabled" value={fmtNum(stats.enabled)} color="var(--gb-wa-500)" />
           <StatBlock label="Disabled" value={fmtNum(stats.disabled)} color="var(--gb-red-500)" />
@@ -702,8 +699,8 @@ export default function AdminPincodesPage() {
       </div>
 
       <div className="card">
-        <div className="cb" style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '.8rem', color: 'var(--dim)' }}>View:</span>
+        <div className="cb flex gap-[0.4rem] items-center flex-wrap">
+          <span className="text-[0.8rem] text-dim">View:</span>
           <button
             type="button"
             className={view === 'pincode' ? 'btn-p btn-sm' : 'btn-g btn-sm'}
@@ -720,7 +717,7 @@ export default function AdminPincodesPage() {
           >
             By City
           </button>
-          <span style={{ marginLeft: 'auto', fontSize: '.75rem', color: 'var(--dim)' }}>
+          <span className="ml-auto text-[0.75rem] text-dim">
             Changes apply platform-wide.
           </span>
         </div>
@@ -823,27 +820,27 @@ interface PincodeViewProps {
 function PincodeView(p: PincodeViewProps) {
   return (
     <div className="card">
-      <div className="ch" style={{ flexWrap: 'wrap', gap: '.5rem' }}>
+      <div className="ch flex-wrap gap-2">
         <h3>📍 Pincode Serviceability</h3>
-        <div style={{ display: 'flex', gap: '.4rem', marginLeft: 'auto', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="flex gap-[0.4rem] ml-auto flex-wrap items-center">
           <input
             value={p.search}
             onChange={(e) => p.setSearch(e.target.value)}
             placeholder="Search pincode, city, state, area…"
-            style={{ padding: '.35rem .5rem' }}
+            className="py-[0.35rem] px-2"
           />
           <select
             value={p.statusFilter}
             onChange={p.onStatusChange}
-            style={{ padding: '.35rem .5rem' }}
+            className="py-[0.35rem] px-2"
           >
             <option value="all">All</option>
             <option value="enabled">Enabled only</option>
             <option value="disabled">Disabled only</option>
           </select>
           {p.bulkConfirm ? (
-            <span style={{ display: 'inline-flex', gap: '.4rem', alignItems: 'center' }}>
-              <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>
+            <span className="inline-flex gap-[0.4rem] items-center">
+              <span className="text-[0.75rem] text-dim">
                 {p.bulkConfirm.enabled ? 'Enable' : 'Disable'} all {fmtNum(p.total)} filtered?
               </span>
               <button
@@ -881,7 +878,7 @@ function PincodeView(p: PincodeViewProps) {
                 ref={p.fileRef}
                 type="file"
                 accept=".csv,text/csv"
-                style={{ display: 'none' }}
+                className="hidden"
                 onChange={p.handleFile}
               />
             </>
@@ -890,24 +887,13 @@ function PincodeView(p: PincodeViewProps) {
       </div>
 
       {p.importPreview && (
-        <div
-          className="cb"
-          style={{
-            borderBottom: '1px solid var(--bd)',
-            background: 'rgba(253, 224, 71, 0.12)',
-            display: 'flex',
-            gap: '.5rem',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-          }}
-        >
-          <span style={{ fontSize: '.85rem' }}>
+        <div className="cb border-b border-bd bg-[rgba(253,224,71,0.12)] flex gap-2 items-center flex-wrap">
+          <span className="text-[0.85rem]">
             Found <strong>{fmtNum(p.importPreview.total)}</strong> valid pincodes in CSV.
             New rows start enabled; existing rows keep their current toggle.
           </span>
           <button
-            className="btn-sm btn-p"
-            style={{ marginLeft: 'auto' }}
+            className="btn-sm btn-p ml-auto"
             onClick={p.confirmImport}
             disabled={p.importBusy}
           >
@@ -942,18 +928,18 @@ function renderPincodeBody(p: PincodeViewProps): ReactNode {
       return <p>Loading states…</p>;
     }
     if (!p.stateSummaries.length) {
-      return <p style={{ color: 'var(--dim)' }}>No pincodes loaded yet. Import a CSV to get started.</p>;
+      return <p className="text-dim">No pincodes loaded yet. Import a CSV to get started.</p>;
     }
     return (
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table className="w-full border-collapse">
         <thead>
-          <tr style={{ textAlign: 'left', fontSize: '.75rem', color: 'var(--dim)' }}>
-            <th style={{ padding: '.4rem .2rem' }}>Pincode</th>
-            <th style={{ padding: '.4rem .2rem' }}>City</th>
-            <th style={{ padding: '.4rem .2rem' }}>Area</th>
-            <th style={{ padding: '.4rem .2rem' }}>State</th>
-            <th style={{ padding: '.4rem .2rem' }}>Status</th>
-            <th style={{ padding: '.4rem .2rem' }}>Last Updated</th>
+          <tr className="text-left text-[0.75rem] text-dim">
+            <th className="py-[0.4rem] px-[0.2rem]">Pincode</th>
+            <th className="py-[0.4rem] px-[0.2rem]">City</th>
+            <th className="py-[0.4rem] px-[0.2rem]">Area</th>
+            <th className="py-[0.4rem] px-[0.2rem]">State</th>
+            <th className="py-[0.4rem] px-[0.2rem]">Status</th>
+            <th className="py-[0.4rem] px-[0.2rem]">Last Updated</th>
           </tr>
         </thead>
         <tbody>{renderSummaryRows(p)}</tbody>
@@ -963,17 +949,17 @@ function renderPincodeBody(p: PincodeViewProps): ReactNode {
 
   // Search mode — original flat-list flow.
   if (p.loading) return <p>Loading…</p>;
-  if (!p.rows.length) return <p style={{ color: 'var(--dim)' }}>No pincodes match the current filter.</p>;
+  if (!p.rows.length) return <p className="text-dim">No pincodes match the current filter.</p>;
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <table className="w-full border-collapse">
       <thead>
-        <tr style={{ textAlign: 'left', fontSize: '.75rem', color: 'var(--dim)' }}>
-          <th style={{ padding: '.4rem .2rem' }}>Pincode</th>
-          <th style={{ padding: '.4rem .2rem' }}>City</th>
-          <th style={{ padding: '.4rem .2rem' }}>Area</th>
-          <th style={{ padding: '.4rem .2rem' }}>State</th>
-          <th style={{ padding: '.4rem .2rem' }}>Status</th>
-          <th style={{ padding: '.4rem .2rem' }}>Last Updated</th>
+        <tr className="text-left text-[0.75rem] text-dim">
+          <th className="py-[0.4rem] px-[0.2rem]">Pincode</th>
+          <th className="py-[0.4rem] px-[0.2rem]">City</th>
+          <th className="py-[0.4rem] px-[0.2rem]">Area</th>
+          <th className="py-[0.4rem] px-[0.2rem]">State</th>
+          <th className="py-[0.4rem] px-[0.2rem]">Status</th>
+          <th className="py-[0.4rem] px-[0.2rem]">Last Updated</th>
         </tr>
       </thead>
       <tbody>{renderPincodeRows(p)}</tbody>
@@ -986,14 +972,14 @@ function renderFooter(p: PincodeViewProps): ReactNode {
   if (summaryMode) {
     const totalPincodes = p.stateSummaries.reduce((s, r) => s + (r.total_pincodes || 0), 0);
     return (
-      <div style={{ marginTop: '.8rem', fontSize: '.75rem', color: 'var(--dim)' }}>
+      <div className="mt-[0.8rem] text-[0.75rem] text-dim">
         {fmtNum(p.stateSummaries.length)} state{p.stateSummaries.length === 1 ? '' : 's'} ·{' '}
         {fmtNum(totalPincodes)} pincode{totalPincodes === 1 ? '' : 's'} total. Click a state to expand.
       </div>
     );
   }
   return (
-    <div style={{ marginTop: '.8rem', fontSize: '.75rem', color: 'var(--dim)' }}>
+    <div className="mt-[0.8rem] text-[0.75rem] text-dim">
       Showing {fmtNum(p.rows.length)} of {fmtNum(p.total)} pincodes matching “{p.debounced}”.
     </div>
   );
@@ -1035,7 +1021,7 @@ function renderSummaryRows(p: PincodeViewProps): ReactNode[] {
       if (rowsLoading && !rowsForState) {
         out.push(
           <tr key={`load-${st}`}>
-            <td colSpan={6} style={{ padding: '.6rem .75rem', fontSize: '.8rem', color: 'var(--dim)' }}>
+            <td colSpan={6} className="py-[0.6rem] px-3 text-[0.8rem] text-dim">
               Loading pincodes for {st}…
             </td>
           </tr>
@@ -1067,7 +1053,7 @@ function renderSummaryRows(p: PincodeViewProps): ReactNode[] {
       } else if (rowsForState && !rowsForState.length) {
         out.push(
           <tr key={`empty-${st}`}>
-            <td colSpan={6} style={{ padding: '.6rem .75rem', fontSize: '.8rem', color: 'var(--dim)' }}>
+            <td colSpan={6} className="py-[0.6rem] px-3 text-[0.8rem] text-dim">
               No pincodes returned for {st}.
             </td>
           </tr>
@@ -1208,43 +1194,24 @@ function StateHeaderRow({
       <td
         colSpan={6}
         onClick={onToggleExpand}
-        style={{
-          background: 'var(--ink2)',
-          padding: '.5rem .75rem',
-          fontSize: '.78rem',
-          fontWeight: 700,
-          textTransform: 'uppercase',
-          letterSpacing: '.05em',
-          color: 'var(--fg)',
-          cursor: 'pointer',
-          userSelect: 'none',
-        }}
+        className="bg-ink2 py-2 px-3 text-[0.78rem] font-bold uppercase tracking-wider text-fg cursor-pointer select-none"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
-          <span style={{ display: 'inline-block', width: '1ch', textAlign: 'center' }} aria-hidden>
+        <div className="flex items-center gap-[0.6rem] flex-wrap">
+          <span className="inline-block w-[1ch] text-center" aria-hidden>
             {expanded ? '▼' : '▶'}
           </span>
           <span>{state}</span>
-          <span style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+          <span className="text-[0.7rem] text-dim font-medium normal-case tracking-normal">
             {fmtNum(count)} pincodes
           </span>
           {summary && (
-            <span
-              style={{
-                fontSize: '.65rem',
-                color: 'var(--dim)',
-                fontWeight: 500,
-                textTransform: 'none',
-                letterSpacing: 0,
-              }}
-            >
+            <span className="text-[0.65rem] text-dim font-medium normal-case tracking-normal">
               ({fmtNum(summary.enabled_count)} on · {fmtNum(summary.disabled_count)} off)
             </span>
           )}
           <button
             type="button"
-            className={btnClass}
-            style={{ marginLeft: 'auto' }}
+            className={`${btnClass} ml-auto`}
             disabled={busy}
             onClick={(e) => { e.stopPropagation(); doInlineBulkToggle(state, undefined, nextActive); }}
             title={
@@ -1284,23 +1251,16 @@ function CityHeaderRow({ state, city, rowsForCity, inlineGroupBusy, doInlineBulk
     <tr>
       <td
         colSpan={6}
-        style={{
-          background: 'rgba(127,127,127,0.08)',
-          padding: '.4rem .75rem',
-          fontSize: '.78rem',
-          fontWeight: 600,
-          color: 'var(--fg)',
-        }}
+        className="bg-[rgba(127,127,127,0.08)] py-[0.4rem] px-3 text-[0.78rem] font-semibold text-fg"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
+        <div className="flex items-center gap-[0.6rem] flex-wrap">
           <span>{city}</span>
-          <span style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 500 }}>
+          <span className="text-[0.7rem] text-dim font-medium">
             {fmtNum(rowsForCity.length)} pincodes
           </span>
           <button
             type="button"
-            className={btnClass}
-            style={{ marginLeft: 'auto' }}
+            className={`${btnClass} ml-auto`}
             disabled={busy}
             onClick={() => doInlineBulkToggle(state, city, nextActive)}
             title={
@@ -1320,9 +1280,9 @@ function CityHeaderRow({ state, city, rowsForCity, inlineGroupBusy, doInlineBulk
 // Full-width visual break between state (or city) groups in the table.
 function GroupSpacerRow({ subtle = false }: { subtle?: boolean }) {
   return (
-    <tr style={{ background: 'transparent', pointerEvents: 'none', height: '1.5rem' }}>
-      <td colSpan={6} style={{ padding: 0 }}>
-        <div style={{ borderTop: subtle ? '1px solid var(--bd)' : '2px solid var(--bd)' }} />
+    <tr className="bg-transparent pointer-events-none h-6">
+      <td colSpan={6} className="p-0">
+        <div className={subtle ? 'border-t border-bd' : 'border-t-2 border-bd'} />
       </td>
     </tr>
   );
@@ -1332,32 +1292,26 @@ interface PincodeTableRowProps { r: PincodeRow; p: PincodeViewProps }
 
 function PincodeTableRow({ r, p }: PincodeTableRowProps) {
   return (
-    <tr style={{ borderTop: '1px solid var(--bd)' }}>
-      <td style={{ padding: '.4rem .2rem', fontFamily: 'monospace' }}>{r.pincode}</td>
-      <td style={{ padding: '.4rem .2rem', fontSize: '.85rem' }}>{r.city || '—'}</td>
-      <td style={{ padding: '.4rem .2rem', fontSize: '.85rem', color: r.area ? 'inherit' : 'var(--dim)' }}>
+    <tr className="border-t border-bd">
+      <td className="py-[0.4rem] px-[0.2rem] font-mono">{r.pincode}</td>
+      <td className="py-[0.4rem] px-[0.2rem] text-[0.85rem]">{r.city || '—'}</td>
+      <td className={`py-[0.4rem] px-[0.2rem] text-[0.85rem] ${r.area ? '' : 'text-dim'}`}>
         {r.area || '—'}
       </td>
-      <td style={{ padding: '.4rem .2rem', fontSize: '.85rem', color: 'var(--dim)' }}>{r.state || '—'}</td>
-      <td style={{ padding: '.4rem .2rem' }}>
-        <span style={{ display: 'inline-flex', gap: '.4rem', alignItems: 'center' }}>
+      <td className="py-[0.4rem] px-[0.2rem] text-[0.85rem] text-dim">{r.state || '—'}</td>
+      <td className="py-[0.4rem] px-[0.2rem]">
+        <span className="inline-flex gap-[0.4rem] items-center">
           <Toggle
             checked={!!r.enabled}
             disabled={p.rowBusy === r.pincode}
             onChange={() => p.handleToggle(r.pincode, !!r.enabled)}
           />
-          <span
-            style={{
-              fontSize: '.75rem',
-              color: r.enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)',
-              fontWeight: 500,
-            }}
-          >
+          <span className={`text-[0.75rem] font-medium ${r.enabled ? 'text-wa-500' : 'text-red-500'}`}>
             {r.enabled ? 'Enabled' : 'Disabled'}
           </span>
         </span>
       </td>
-      <td style={{ padding: '.4rem .2rem', fontSize: '.8rem', color: 'var(--dim)' }}>
+      <td className="py-[0.4rem] px-[0.2rem] text-[0.8rem] text-dim">
         {fmtDate(r.updated_at)}
       </td>
     </tr>
@@ -1392,13 +1346,13 @@ function CityView(p: CityViewProps) {
   if (!p.groupedByState.length) {
     return (
       <div className="card">
-        <div className="cb"><p style={{ color: 'var(--dim)' }}>No city data yet. Import pincodes to get started.</p></div>
+        <div className="cb"><p className="text-dim">No city data yet. Import pincodes to get started.</p></div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '.6rem' }}>
+    <div className="flex flex-col gap-[0.6rem]">
       {p.groupedByState.map((st) => (
         <StateAccordion
           key={st.state}
@@ -1459,35 +1413,27 @@ function StateAccordion({
   return (
     <div className="card">
       <div
-        className="ch"
-        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}
+        className="ch cursor-pointer flex items-center gap-[0.6rem] flex-wrap"
         onClick={onToggle}
       >
-        <span style={{ fontSize: '.9rem' }}>{isOpen ? '▾' : '▸'}</span>
-        <h3 style={{ margin: 0 }}>{bucket.state}</h3>
-        <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>
+        <span className="text-[0.9rem]">{isOpen ? '▾' : '▸'}</span>
+        <h3 className="m-0">{bucket.state}</h3>
+        <span className="text-[0.75rem] text-dim">
           {bucket.cities.length} {bucket.cities.length === 1 ? 'city' : 'cities'} • {fmtNum(bucket.total)} pincodes
         </span>
-        <span
-          style={{
-            fontSize: '.75rem',
-            color: 'var(--gb-wa-500)',
-            fontWeight: 500,
-            marginLeft: '.4rem',
-          }}
-        >
+        <span className="text-[0.75rem] text-wa-500 font-medium ml-[0.4rem]">
           {fmtNum(bucket.enabled)} enabled
         </span>
-        <span style={{ fontSize: '.75rem', color: 'var(--gb-red-500)', fontWeight: 500 }}>
+        <span className="text-[0.75rem] text-red-500 font-medium">
           {fmtNum(bucket.disabled)} disabled
         </span>
         <div
-          style={{ marginLeft: 'auto', display: 'flex', gap: '.4rem', alignItems: 'center' }}
+          className="ml-auto flex gap-[0.4rem] items-center"
           onClick={(e) => e.stopPropagation()}
         >
           {stateConfirm ? (
             <>
-              <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>
+              <span className="text-[0.75rem] text-dim">
                 {stateConfirm.enabled ? 'Enable' : 'Disable'} all {bucket.cities.length} cities?
               </span>
               <button
@@ -1531,7 +1477,7 @@ function StateAccordion({
       </div>
 
       {isOpen && (
-        <div className="cb" style={{ display: 'flex', flexDirection: 'column', gap: '.6rem' }}>
+        <div className="cb flex flex-col gap-[0.6rem]">
           <ProgressBar pct={pct} />
           {bucket.cities.map((c) => (
             <CityCard
@@ -1580,27 +1526,17 @@ function CityCard({
   const pct = row.total > 0 ? Math.round((row.enabled / row.total) * 100) : 0;
 
   return (
-    <div
-      style={{
-        border: '1px solid var(--bd)',
-        borderRadius: 6,
-        padding: '.6rem .7rem',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '.5rem',
-        background: 'var(--bg2, transparent)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
+    <div className="border border-bd rounded-md py-[0.6rem] px-[0.7rem] flex flex-col gap-2 bg-bg2">
+      <div className="flex items-center gap-[0.6rem] flex-wrap">
         <strong>{row.city}</strong>
-        <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>
+        <span className="text-[0.75rem] text-dim">
           {fmtNum(row.enabled)} / {fmtNum(row.total)} enabled
         </span>
-        <span style={{ fontSize: '.7rem', color: 'var(--dim)' }}>({pct}%)</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className="text-[0.7rem] text-dim">({pct}%)</span>
+        <div className="ml-auto flex gap-[0.4rem] items-center flex-wrap">
           {confirm ? (
             <>
-              <span style={{ fontSize: '.7rem', color: 'var(--dim)' }}>
+              <span className="text-[0.7rem] text-dim">
                 {confirm.enabled ? 'Enable' : 'Disable'} {fmtNum(row.total)}?
               </span>
               <button
@@ -1645,19 +1581,13 @@ function CityCard({
       <ProgressBar pct={pct} />
 
       {expanded && (
-        <div
-          style={{
-            borderTop: '1px dashed var(--bd)',
-            paddingTop: '.5rem',
-            marginTop: '.2rem',
-          }}
-        >
+        <div className="border-t border-dashed border-bd pt-2 mt-[0.2rem]">
           {pinsLoading && !pins ? (
-            <p style={{ fontSize: '.8rem', color: 'var(--dim)' }}>Loading pincodes…</p>
+            <p className="text-[0.8rem] text-dim">Loading pincodes…</p>
           ) : !pins || !pins.length ? (
-            <p style={{ fontSize: '.8rem', color: 'var(--dim)' }}>No pincodes in this city.</p>
+            <p className="text-[0.8rem] text-dim">No pincodes in this city.</p>
           ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem' }}>
+            <div className="flex flex-wrap gap-[0.4rem]">
               {pins.map((pc) => (
                 <PincodeChip
                   key={pc.pincode}
@@ -1683,17 +1613,13 @@ function PincodeChip({ pincode, enabled, disabled, onToggle }: PincodeChipProps)
       onClick={onToggle}
       disabled={disabled}
       title={enabled ? 'Click to disable' : 'Click to enable'}
-      style={{
-        fontFamily: 'monospace',
-        fontSize: '.8rem',
-        padding: '.25rem .5rem',
-        borderRadius: 4,
-        border: `1px solid ${enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)'}`,
-        background: enabled ? 'rgba(22,163,74,0.1)' : 'rgba(220,38,38,0.1)',
-        color: enabled ? 'var(--gb-wa-500)' : 'var(--gb-red-500)',
-        cursor: disabled ? 'wait' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-      }}
+      className={[
+        'font-mono text-[0.8rem] py-1 px-2 rounded-xs border',
+        enabled
+          ? 'border-wa-500 bg-[rgba(22,163,74,0.1)] text-wa-500'
+          : 'border-red-500 bg-[rgba(220,38,38,0.1)] text-red-500',
+        disabled ? 'cursor-wait opacity-50' : 'cursor-pointer opacity-100',
+      ].join(' ')}
     >
       {pincode}
     </button>
@@ -1704,21 +1630,11 @@ interface ProgressBarProps { pct: number }
 
 function ProgressBar({ pct }: ProgressBarProps) {
   return (
-    <div
-      style={{
-        height: 6,
-        background: 'rgba(220,38,38,0.15)',
-        borderRadius: 3,
-        overflow: 'hidden',
-      }}
-    >
+    <div className="h-[6px] bg-[rgba(220,38,38,0.15)] rounded-[3px] overflow-hidden">
+      {/* width is dynamic — driven by runtime pct (0–100) so cannot be a static class */}
       <div
-        style={{
-          width: `${pct}%`,
-          height: '100%',
-          background: 'var(--gb-wa-500)',
-          transition: 'width .25s ease',
-        }}
+        className="h-full bg-wa-500 transition-[width] duration-250 ease-in-out"
+        style={{ width: `${pct}%` }}
       />
     </div>
   );
@@ -1727,12 +1643,11 @@ function ProgressBar({ pct }: ProgressBarProps) {
 interface StatBlockProps { label: string; value: string; color: string }
 
 function StatBlock({ label, value, color }: StatBlockProps) {
-  const labelStyle: CSSProperties = { fontSize: '.75rem', color: 'var(--dim)', marginBottom: '.2rem' };
-  const valStyle: CSSProperties = { fontSize: '1.6rem', fontWeight: 600, color };
   return (
     <div>
-      <div style={labelStyle}>{label}</div>
-      <div style={valStyle}>{value}</div>
+      <div className="text-[0.75rem] text-dim mb-[0.2rem]">{label}</div>
+      {/* color is dynamic — passed in from caller based on stat type */}
+      <div className="text-[1.6rem] font-semibold" style={{ color }}>{value}</div>
     </div>
   );
 }

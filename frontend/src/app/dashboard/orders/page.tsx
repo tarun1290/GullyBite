@@ -242,60 +242,30 @@ export default function OrdersPage() {
 
   return (
     <div id="tab-orders">
-      <div
-        style={{
-          display: 'flex',
-          gap: '.6rem',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          marginBottom: '.6rem',
-        }}
-      >
-        <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', fontSize: '.78rem', color: 'var(--dim)' }}>
+      <div className="flex gap-[0.6rem] items-center flex-wrap mb-[0.6rem]">
+        <label className="flex items-center gap-[0.35rem] text-[0.78rem] text-dim">
           From
           <input
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            style={{
-              padding: '.3rem .5rem',
-              border: '1px solid var(--rim,#e5e7eb)',
-              borderRadius: 6,
-              fontSize: '.84rem',
-              background: 'var(--ink2,#fff)',
-              color: 'var(--tx,inherit)',
-            }}
+            className="py-[0.3rem] px-2 border border-rim rounded-md text-[0.84rem] bg-ink2 text-tx"
           />
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '.35rem', fontSize: '.78rem', color: 'var(--dim)' }}>
+        <label className="flex items-center gap-[0.35rem] text-[0.78rem] text-dim">
           To
           <input
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            style={{
-              padding: '.3rem .5rem',
-              border: '1px solid var(--rim,#e5e7eb)',
-              borderRadius: 6,
-              fontSize: '.84rem',
-              background: 'var(--ink2,#fff)',
-              color: 'var(--tx,inherit)',
-            }}
+            className="py-[0.3rem] px-2 border border-rim rounded-md text-[0.84rem] bg-ink2 text-tx"
           />
         </label>
         {(fromDate || toDate) && (
           <button
             type="button"
             onClick={() => { setFromDate(''); setToDate(''); }}
-            style={{
-              padding: '.3rem .6rem',
-              border: '1px solid var(--rim,#e5e7eb)',
-              borderRadius: 6,
-              fontSize: '.74rem',
-              color: 'var(--dim)',
-              background: 'transparent',
-              cursor: 'pointer',
-            }}
+            className="py-[0.3rem] px-[0.6rem] border border-rim rounded-md text-[0.74rem] text-dim bg-transparent cursor-pointer"
           >
             Clear dates
           </button>
@@ -315,18 +285,7 @@ export default function OrdersPage() {
               {label}
               {count > 0 && (
                 <span
-                  style={{
-                    background: active ? 'var(--acc)' : 'var(--rim2)',
-                    color: active ? '#fff' : 'var(--dim)',
-                    fontSize: '.65rem',
-                    fontWeight: 700,
-                    borderRadius: 100,
-                    padding: '.05rem .4rem',
-                    marginLeft: '.2rem',
-                    minWidth: 16,
-                    textAlign: 'center',
-                    display: 'inline-block',
-                  }}
+                  className={`text-[0.65rem] font-bold rounded-full py-[0.05rem] px-[0.4rem] ml-[0.2rem] min-w-[16px] text-center inline-block ${active ? 'bg-acc text-white' : 'bg-rim2 text-dim'}`}
                 >
                   {count}
                 </span>
@@ -336,7 +295,7 @@ export default function OrdersPage() {
         })}
       </div>
       {!loading && orders.length > 0 && (
-        <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginBottom: '.6rem', padding: '0 .1rem' }}>
+        <div className="text-[0.74rem] text-dim mb-[0.6rem] py-0 px-[0.1rem]">
           Showing {orders.length} orders · Last refreshed {refreshedLabel}
         </div>
       )}
@@ -358,7 +317,7 @@ export default function OrdersPage() {
             <tbody id="orders-body">
               {loading ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '2rem' }}>
+                  <td colSpan={8} className="text-center p-8">
                     <div className="spin" />
                   </td>
                 </tr>

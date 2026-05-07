@@ -43,13 +43,7 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
   if (compact) {
     if (connected) {
       return (
-        <span
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: '.35rem',
-            background: '#dcfce7', color: '#15803d', fontSize: '.72rem', fontWeight: 600,
-            padding: '.25rem .55rem', borderRadius: 6, flexShrink: 0,
-          }}
-        >
+        <span className="inline-flex items-center gap-[0.35rem] bg-[#dcfce7] text-[#15803d] text-[0.72rem] font-semibold py-1 px-[0.55rem] rounded-md shrink-0">
           ✓ Connected
         </span>
       );
@@ -57,8 +51,7 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
     return (
       <button
         type="button"
-        className="btn-wa-connect btn-sm"
-        style={{ flexShrink: 0 }}
+        className="btn-wa-connect btn-sm shrink-0"
         onClick={handleClick}
         disabled={loading}
       >
@@ -71,18 +64,14 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
     return (
       <div
         id="wa-connect-banner"
-        style={{
-          display: 'flex', alignItems: 'center', gap: '.75rem',
-          background: '#f0fdf4', borderBottom: '2px solid #22c55e',
-          padding: '1rem 2rem',
-        }}
+        className="flex items-center gap-3 bg-[#f0fdf4] border-b-2 border-[#22c55e] py-4 px-8"
       >
-        <span style={{ fontSize: '1.4rem' }}>✅</span>
+        <span className="text-[1.4rem]">✅</span>
         <div>
-          <div style={{ fontWeight: 700, fontSize: '.9rem', color: '#15803d' }}>
+          <div className="font-bold text-[0.9rem] text-[#15803d]">
             WhatsApp Business connected
           </div>
-          <div style={{ fontSize: '.8rem', color: '#166534', marginTop: '.15rem' }}>
+          <div className="text-[0.8rem] text-[#166534] mt-[0.15rem]">
             You&apos;re ready to receive orders.
           </div>
         </div>
@@ -93,25 +82,20 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
   return (
     <div
       id="wa-connect-banner"
-      style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: '1rem', flexWrap: 'wrap',
-        background: '#fffbeb', borderBottom: '2px solid #f59e0b',
-        padding: '1rem 2rem',
-      }}
+      className="flex items-center justify-between gap-4 flex-wrap bg-[#fffbeb] border-b-2 border-[#f59e0b] py-4 px-8"
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem' }}>
-        <span style={{ fontSize: '1.4rem' }}>📵</span>
+      <div className="flex items-center gap-3">
+        <span className="text-[1.4rem]">📵</span>
         <div>
-          <div style={{ fontWeight: 700, fontSize: '.9rem', color: '#92400e' }}>
+          <div className="font-bold text-[0.9rem] text-[#92400e]">
             WhatsApp Business not connected
           </div>
-          <div style={{ fontSize: '.8rem', color: '#b45309', marginTop: '.15rem' }}>
+          <div className="text-[0.8rem] text-[#b45309] mt-[0.15rem]">
             Connect WhatsApp to start receiving orders. All selling features are locked until connected.
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', flexWrap: 'wrap' }}>
+      <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
           className="btn-wa-connect"

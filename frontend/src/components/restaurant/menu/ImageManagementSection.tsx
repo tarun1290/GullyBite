@@ -91,46 +91,43 @@ export default function ImageManagementSection() {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: '1rem' }}>
+      <div className="card mb-4">
         <div className="ch"><h3>📷 Image Coverage</h3></div>
         <div className="cb">
           {stats ? (
             <>
-              <div style={{ fontSize: '.84rem', marginBottom: '.5rem' }}>
+              <div className="text-[0.84rem] mb-2">
                 <strong>{stats.withImages}</strong> of <strong>{stats.totalItems}</strong> items
-                have photos <span style={{ color: 'var(--dim)' }}>({pct}%)</span>
+                have photos <span className="text-dim">({pct}%)</span>
               </div>
-              <div
-                style={{
-                  height: 8, background: 'var(--ink2,#f4f4f5)', borderRadius: 4, overflow: 'hidden',
-                }}
-              >
+              <div className="h-2 bg-ink2 rounded-[4px] overflow-hidden">
                 <div
-                  style={{
-                    width: `${pct}%`, height: '100%',
-                    background: pct >= 80 ? 'var(--wa,#16a34a)' : pct >= 40 ? 'var(--gold,#f59e0b)' : 'var(--red,#dc2626)',
-                    transition: 'width .3s',
-                  }}
+                  className={`h-full transition-[width] duration-300 ${
+                    pct >= 80 ? 'bg-wa' : pct >= 40 ? 'bg-gold' : 'bg-red'
+                  }`}
+                  // width is the runtime image-coverage percentage —
+                  // Tailwind can't pre-bake the per-render value.
+                  style={{ width: `${pct}%` }}
                 />
               </div>
-              <p style={{ fontSize: '.76rem', color: 'var(--dim)', marginTop: '.6rem', lineHeight: 1.5 }}>
+              <p className="text-[0.76rem] text-dim mt-[0.6rem] leading-normal">
                 Meta requires every catalog item to have a photo (min 500×500 px). Items without
                 images will be skipped on sync.
               </p>
             </>
           ) : (
-            <p style={{ color: 'var(--dim)', fontSize: '.84rem' }}>Image stats unavailable.</p>
+            <p className="text-dim text-[0.84rem]">Image stats unavailable.</p>
           )}
         </div>
       </div>
 
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+        <div className="ch justify-between">
           <h3>🖼️ Bulk Image Upload</h3>
-          <span style={{ fontSize: '.72rem', color: 'var(--dim)' }}>Max {MAX_FILES} files</span>
+          <span className="text-[0.72rem] text-dim">Max {MAX_FILES} files</span>
         </div>
         <div className="cb">
-          <p style={{ fontSize: '.82rem', color: 'var(--dim)', marginBottom: '.7rem', lineHeight: 1.5 }}>
+          <p className="text-[0.82rem] text-dim mb-[0.7rem] leading-normal">
             Drop product photos here — the server will match each filename (e.g.{' '}
             <code>masala-dosa.jpg</code>) against your menu item names and attach them
             automatically. Unmatched files will be listed so you can rename and retry.
@@ -142,26 +139,21 @@ export default function ImageManagementSection() {
             accept="image/*"
             multiple
             onChange={handlePick}
-            style={{ marginBottom: '.6rem' }}
+            className="mb-[0.6rem]"
           />
 
           {files.length > 0 && (
-            <div
-              style={{
-                background: 'var(--ink2,#f4f4f5)', borderRadius: 8, padding: '.5rem .7rem',
-                marginBottom: '.6rem', maxHeight: 180, overflowY: 'auto',
-              }}
-            >
+            <div className="bg-ink2 rounded-lg py-2 px-[0.7rem] mb-[0.6rem] max-h-[180px] overflow-y-auto">
               {files.map((f, i) => (
-                <div key={`${f.name}-${i}`} style={{ fontSize: '.8rem', padding: '.15rem 0' }}>
+                <div key={`${f.name}-${i}`} className="text-[0.8rem] py-[0.15rem]">
                   {i + 1}. {f.name}{' '}
-                  <span style={{ color: 'var(--dim)' }}>({(f.size / 1024).toFixed(0)} KB)</span>
+                  <span className="text-dim">({(f.size / 1024).toFixed(0)} KB)</span>
                 </div>
               ))}
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '.5rem' }}>
+          <div className="flex gap-2">
             <button
               type="button"
               className="btn-p"
@@ -178,38 +170,33 @@ export default function ImageManagementSection() {
           </div>
 
           {results && (
-            <div
-              style={{
-                marginTop: '.9rem', background: 'var(--ink2,#f4f4f5)', borderRadius: 8,
-                padding: '.7rem .85rem',
-              }}
-            >
+            <div className="mt-[0.9rem] bg-ink2 rounded-lg py-[0.7rem] px-[0.85rem]">
               {results.matched.length > 0 && (
-                <div style={{ marginBottom: '.5rem' }}>
-                  <strong style={{ color: 'var(--wa,#16a34a)', fontSize: '.82rem' }}>
+                <div className="mb-2">
+                  <strong className="text-wa text-[0.82rem]">
                     Matched {results.matched.length} item{results.matched.length === 1 ? '' : 's'}:
                   </strong>
                   {results.matched.map((m, i) => (
-                    <div key={`m-${i}`} style={{ fontSize: '.8rem', padding: '.15rem 0' }}>
+                    <div key={`m-${i}`} className="text-[0.8rem] py-[0.15rem]">
                       ✅ {m.fileName} → {m.itemName}
                     </div>
                   ))}
                 </div>
               )}
               {results.unmatched.length > 0 && (
-                <div style={{ marginTop: results.matched.length ? '.5rem' : 0 }}>
-                  <strong style={{ color: 'var(--gold,#f59e0b)', fontSize: '.82rem' }}>
+                <div className={results.matched.length ? 'mt-2' : ''}>
+                  <strong className="text-gold text-[0.82rem]">
                     {results.unmatched.length} unmatched image{results.unmatched.length === 1 ? '' : 's'}:
                   </strong>
                   {results.unmatched.map((u, i) => (
-                    <div key={`u-${i}`} style={{ fontSize: '.8rem', padding: '.15rem 0', color: 'var(--dim)' }}>
+                    <div key={`u-${i}`} className="text-[0.8rem] py-[0.15rem] text-dim">
                       ⚠️ {u.fileName}
                     </div>
                   ))}
                 </div>
               )}
               {!results.matched.length && !results.unmatched.length && (
-                <div style={{ fontSize: '.82rem', color: 'var(--dim)' }}>
+                <div className="text-[0.82rem] text-dim">
                   Upload complete. {results.uploaded} image{results.uploaded === 1 ? '' : 's'} processed.
                 </div>
               )}

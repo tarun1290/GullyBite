@@ -109,37 +109,28 @@ export default function BranchMenuSection({ branch, onCatalogChange }: BranchMen
 
   return (
     <div>
-      <div
-        className="cat-strip"
-        style={{
-          padding: '.7rem .85rem',
-          background: 'var(--ink2,#f4f4f5)',
-          border: '1px solid var(--bdr,#e5e7eb)',
-          borderRadius: 8,
-          marginBottom: '.8rem',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.6rem', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '.55rem' }}>
-            <span className="cat-ico" style={{ fontSize: '1.1rem' }}>
+      <div className="cat-strip py-[0.7rem] px-[0.85rem] bg-ink2 border border-bdr rounded-lg mb-[0.8rem]">
+        <div className="flex items-center justify-between gap-[0.6rem] flex-wrap">
+          <div className="flex items-center gap-[0.55rem]">
+            <span className="cat-ico text-[1.1rem]">
               {branch.catalog_id ? '🟢' : '🟡'}
             </span>
             <div>
-              <div style={{ fontSize: '.85rem', fontWeight: 600 }}>
+              <div className="text-[0.85rem] font-semibold">
                 {branch.catalog_id ? 'Catalog Connected' : 'No Catalog Yet'}
               </div>
               {branch.catalog_id ? (
-                <div style={{ fontSize: '.72rem', color: 'var(--dim)', fontFamily: 'monospace' }}>
+                <div className="text-[0.72rem] text-dim font-mono">
                   {branch.catalog_id}
                 </div>
               ) : (
-                <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>
+                <div className="text-[0.72rem] text-dim">
                   Create one to start syncing this branch&apos;s menu to WhatsApp.
                 </div>
               )}
             </div>
           </div>
-          <div className="cat-acts" style={{ display: 'flex', gap: '.4rem' }}>
+          <div className="cat-acts flex gap-[0.4rem]">
             {!branch.catalog_id && (
               <button
                 type="button"
@@ -166,52 +157,39 @@ export default function BranchMenuSection({ branch, onCatalogChange }: BranchMen
 
       <CategoriesManager branchId={branch.id} />
 
-      <div className="card" style={{ marginTop: '.8rem' }}>
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
-          <h4 style={{ margin: 0 }}>Menu Items <span style={{ fontSize: '.72rem', color: 'var(--dim)' }}>({items.length})</span></h4>
-          <span style={{ fontSize: '.72rem', color: 'var(--dim)' }}>
+      <div className="card mt-[0.8rem]">
+        <div className="ch justify-between">
+          <h4 className="m-0">Menu Items <span className="text-[0.72rem] text-dim">({items.length})</span></h4>
+          <span className="text-[0.72rem] text-dim">
             Add/edit items in the Menu tab
           </span>
         </div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)', fontSize: '.84rem' }}>Loading…</p>
+            <p className="text-dim text-[0.84rem]">Loading…</p>
           ) : !items.length ? (
-            <div className="empty" style={{ textAlign: 'center', padding: '1rem 0' }}>
-              <div className="ei" style={{ fontSize: '2rem' }}>🍽️</div>
-              <p style={{ fontSize: '.82rem', color: 'var(--dim)', marginTop: '.4rem' }}>
+            <div className="empty text-center py-4">
+              <div className="ei text-[2rem]">🍽️</div>
+              <p className="text-[0.82rem] text-dim mt-[0.4rem]">
                 No items for this branch yet. Head to the Menu tab to add items or assign existing ones.
               </p>
             </div>
           ) : (
             Object.entries(itemsByCategory).map(([catName, its]) => (
-              <div key={catName} style={{ marginBottom: '.8rem' }}>
-                <div
-                  style={{
-                    fontSize: '.78rem', fontWeight: 600, color: 'var(--dim)',
-                    textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: '.3rem',
-                  }}
-                >
+              <div key={catName} className="mb-[0.8rem]">
+                <div className="text-[0.78rem] font-semibold text-dim uppercase tracking-[0.5px] mb-[0.3rem]">
                   {catName}
                 </div>
                 {its.map((it) => (
                   <div
                     key={it.id}
-                    className="mi"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '.6rem',
-                      padding: '.35rem .6rem', borderBottom: '1px solid var(--bdr,#e5e7eb)',
-                      fontSize: '.84rem',
-                    }}
+                    className="mi flex items-center gap-[0.6rem] py-[0.35rem] px-[0.6rem] border-b border-bdr text-[0.84rem]"
                   >
-                    <span className="mi-name" style={{ flex: 1 }}>{it.name}</span>
-                    <span className="mi-price" style={{ color: 'var(--dim)' }}>
+                    <span className="mi-name flex-1">{it.name}</span>
+                    <span className="mi-price text-dim">
                       ₹{((it.price_paise || 0) / 100).toFixed(0)}
                     </span>
-                    <span
-                      className={`badge ${it.is_available ? 'bg' : 'br'}`}
-                      style={{ fontSize: '.65rem' }}
-                    >
+                    <span className={`badge ${it.is_available ? 'bg' : 'br'} text-[0.65rem]`}>
                       {it.is_available ? 'On' : 'Off'}
                     </span>
                   </div>

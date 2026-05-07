@@ -229,55 +229,30 @@ export default function StaffOrdersPage({ params }: PageProps) {
   };
 
   return (
-    <main style={{ flex: 1, padding: '1rem 1rem 2rem', maxWidth: 720, margin: '0 auto', width: '100%' }}>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '1rem',
-        }}
-      >
-        <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600 }}>Live Orders</h1>
+    <main className="flex-1 pt-4 px-4 pb-8 max-w-[720px] mx-auto w-full">
+      <header className="flex items-center justify-between mb-4">
+        <h1 className="m-0 text-[1.1rem] font-semibold">Live Orders</h1>
         <button
           type="button"
           onClick={onSignOut}
-          style={{
-            padding: '.4rem .7rem',
-            fontSize: '.78rem',
-            background: 'transparent',
-            border: '1px solid var(--rim,#1f2a3d)',
-            color: 'var(--dim,#94a3b8)',
-            borderRadius: 6,
-            cursor: 'pointer',
-          }}
+          className="py-[0.4rem] px-[0.7rem] text-[0.78rem] bg-transparent border border-rim text-dim rounded-md cursor-pointer"
         >
           Sign out
         </button>
       </header>
 
       {error && (
-        <div
-          style={{
-            padding: '.5rem .7rem',
-            marginBottom: '.8rem',
-            background: 'rgba(220,38,38,0.12)',
-            border: '1px solid rgba(220,38,38,0.4)',
-            color: '#fca5a5',
-            borderRadius: 8,
-            fontSize: '.82rem',
-          }}
-        >
+        <div className="py-2 px-[0.7rem] mb-[0.8rem] bg-[rgba(220,38,38,0.12)] border border-[rgba(220,38,38,0.4)] text-[#fca5a5] rounded-lg text-[0.82rem]">
           {error}
         </div>
       )}
 
       {loading && orders.length === 0 ? (
-        <p style={{ color: 'var(--dim,#94a3b8)', fontSize: '.9rem' }}>Loading orders…</p>
+        <p className="text-dim text-[0.9rem]">Loading orders…</p>
       ) : orders.length === 0 ? (
-        <p style={{ color: 'var(--dim,#94a3b8)', fontSize: '.9rem' }}>No active orders right now.</p>
+        <p className="text-dim text-[0.9rem]">No active orders right now.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '.8rem' }}>
+        <div className="flex flex-col gap-[0.8rem]">
           {orders.map((o) => (
             <OrderCard
               key={o.id}
@@ -310,39 +285,24 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
   const isPreparing = order.status === 'PREPARING';
 
   return (
-    <div
-      style={{
-        background: isPaid ? 'rgba(220,38,38,0.08)' : 'var(--ink2,#0f1729)',
-        border: `1px solid ${isPaid ? 'rgba(220,38,38,0.5)' : 'var(--rim,#1f2a3d)'}`,
-        borderRadius: 10,
-        padding: '.8rem',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '.5rem' }}>
+    <div className={`rounded-[10px] p-[0.8rem] border ${isPaid ? 'bg-[rgba(220,38,38,0.08)] border-[rgba(220,38,38,0.5)]' : 'bg-ink2 border-rim'}`}>
+      <div className="flex justify-between items-baseline gap-2">
         <div>
-          <div style={{ fontSize: '.95rem', fontWeight: 600 }}>#{order.order_number}</div>
-          <div style={{ fontSize: '.78rem', color: 'var(--dim,#94a3b8)' }}>
+          <div className="text-[0.95rem] font-semibold">#{order.order_number}</div>
+          <div className="text-[0.78rem] text-dim">
             {order.customer_name} · {order.customer_phone_masked}
           </div>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '.9rem', fontWeight: 600 }}>₹{order.total_rs}</div>
-          <div style={{ fontSize: '.7rem', color: 'var(--dim,#94a3b8)' }}>
+        <div className="text-right">
+          <div className="text-[0.9rem] font-semibold">₹{order.total_rs}</div>
+          <div className="text-[0.7rem] text-dim">
             {fmtTime(order.created_at)} · {order.status}
           </div>
         </div>
       </div>
 
       {order.items.length > 0 && (
-        <ul
-          style={{
-            margin: '.6rem 0 .3rem',
-            padding: 0,
-            listStyle: 'none',
-            fontSize: '.82rem',
-            color: 'var(--fg,#e6edf3)',
-          }}
-        >
+        <ul className="mt-[0.6rem] mb-[0.3rem] p-0 list-none text-[0.82rem] text-fg">
           {order.items.map((it, i) => (
             <li key={`${order.id}-${i}`}>
               {it.quantity}× {it.name}
@@ -351,14 +311,14 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
         </ul>
       )}
 
-      <div style={{ display: 'flex', gap: '.4rem', flexWrap: 'wrap', marginTop: '.6rem' }}>
+      <div className="flex gap-[0.4rem] flex-wrap mt-[0.6rem]">
         {isPaid && (
           <>
             <button
               type="button"
               disabled={busy}
               onClick={onAccept}
-              style={btnStyle('var(--gb-green-600,#059669)', busy)}
+              className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-green-600 cursor-pointer'}`}
             >
               {busy ? 'Working…' : 'Accept'}
             </button>
@@ -366,7 +326,7 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
               type="button"
               disabled={busy}
               onClick={onDecline}
-              style={btnStyle('var(--gb-red-600,#dc2626)', busy)}
+              className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-red-600 cursor-pointer'}`}
             >
               Decline
             </button>
@@ -377,7 +337,7 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
             type="button"
             disabled={busy}
             onClick={onPreparing}
-            style={btnStyle('var(--gb-amber-600,#d97706)', busy)}
+            className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-amber-600 cursor-pointer'}`}
           >
             {busy ? 'Working…' : 'Start preparing'}
           </button>
@@ -387,7 +347,7 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
             type="button"
             disabled={busy}
             onClick={onPacked}
-            style={btnStyle('var(--gb-blue-600,#2563eb)', busy)}
+            className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-blue-600 cursor-pointer'}`}
           >
             {busy ? 'Working…' : 'Mark packed'}
           </button>
@@ -397,15 +357,5 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
   );
 }
 
-function btnStyle(bg: string, busy: boolean): React.CSSProperties {
-  return {
-    padding: '.5rem .9rem',
-    fontSize: '.85rem',
-    background: busy ? 'var(--rim,#1f2a3d)' : bg,
-    color: 'white',
-    border: 'none',
-    borderRadius: 6,
-    cursor: busy ? 'default' : 'pointer',
-    fontWeight: 600,
-  };
-}
+const BTN_BASE_CLS = 'py-2 px-[0.9rem] text-[0.85rem] text-white border-0 rounded-md font-semibold';
+const BTN_BUSY_CLS = 'bg-rim cursor-default';

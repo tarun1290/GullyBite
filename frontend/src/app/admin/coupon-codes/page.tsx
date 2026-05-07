@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
@@ -56,14 +55,14 @@ function discLabel(c: CouponCode): string {
   return `₹${c.discount_value}`;
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' };
-const trHead: CSSProperties = { background: 'var(--ink)', borderBottom: '1px solid var(--rim)' };
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.55rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
-const lbl: CSSProperties = { fontSize: '.75rem', color: 'var(--dim)', fontWeight: 600, display: 'block', marginBottom: '.25rem' };
-const star: CSSProperties = { color: 'var(--gb-red-500)' };
+const TABLE_CLS = 'w-full border-collapse text-[0.82rem]';
+const TR_HEAD_CLS = 'bg-ink border-b border-rim';
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.45rem] px-[0.7rem] text-[0.85rem]';
+const LBL_CLS = 'text-[0.75rem] text-dim font-semibold block mb-1';
+const STAR_CLS = 'text-red-500';
 
 export default function AdminCouponCodesPage() {
   const { showToast } = useToast();
@@ -181,14 +180,18 @@ export default function AdminCouponCodesPage() {
     }
   };
 
+  const msgCls = msg
+    ? msg.type === 'error' ? 'text-red-500' : msg.type === 'success' ? 'text-[#059669]' : 'text-dim'
+    : '';
+
   return (
     <div id="pg-coupon-codes">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        <label style={{ fontSize: '.8rem', color: 'var(--dim)' }}>Restaurant:</label>
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <label className="text-[0.8rem] text-dim">Restaurant:</label>
         <select
           value={restaurantId}
           onChange={(e) => setRestaurantId(e.target.value)}
-          style={{ ...input, flex: 1, maxWidth: 340 }}
+          className={`${INPUT_CLS} flex-1 max-w-[340px]`}
         >
           <option value="">— Select restaurant —</option>
           {restaurants.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -199,58 +202,53 @@ export default function AdminCouponCodesPage() {
       </div>
 
       {restaurantsErr && (
-        <div style={{ marginBottom: '1rem' }}>
+        <div className="mb-4">
           <SectionError message={restaurantsErr} onRetry={loadRestaurants} />
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
+      <div className="card mb-4">
         <div className="ch"><h3>Coupons</h3></div>
         {listErr ? (
           <div className="cb"><SectionError message={listErr} onRetry={loadCoupons} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={tableStyle}>
+          <div className="overflow-x-auto">
+            <table className={TABLE_CLS}>
               <thead>
-                <tr style={trHead}>
-                  <th style={th}>Code</th>
-                  <th style={th}>Description</th>
-                  <th style={th}>Discount</th>
-                  <th style={th}>Validity</th>
-                  <th style={th}>Uses</th>
-                  <th style={th}>Active</th>
-                  <th style={th}></th>
+                <tr className={TR_HEAD_CLS}>
+                  <th className={TH_CLS}>Code</th>
+                  <th className={TH_CLS}>Description</th>
+                  <th className={TH_CLS}>Discount</th>
+                  <th className={TH_CLS}>Validity</th>
+                  <th className={TH_CLS}>Uses</th>
+                  <th className={TH_CLS}>Active</th>
+                  <th className={TH_CLS}></th>
                 </tr>
               </thead>
               <tbody>
                 {!restaurantId ? (
-                  <tr><td colSpan={7} style={emptyCell}>Select a restaurant to view coupons</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>Select a restaurant to view coupons</td></tr>
                 ) : loading ? (
-                  <tr><td colSpan={7} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={7} style={emptyCell}>No coupons yet</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>No coupons yet</td></tr>
                 ) : rows.map((c) => {
                   const active = Boolean(c.is_active);
                   return (
-                    <tr key={c.id} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td style={{ ...td, fontWeight: 600 }} className="mono">{c.code}</td>
-                      <td style={{ ...td, fontSize: '.8rem' }}>{c.description || '—'}</td>
-                      <td style={{ ...td, fontSize: '.8rem' }}>{discLabel(c)}</td>
-                      <td style={{ ...td, fontSize: '.75rem', color: 'var(--dim)' }}>
+                    <tr key={c.id} className="border-b border-rim">
+                      <td className={`${TD_CLS} font-semibold mono`}>{c.code}</td>
+                      <td className={`${TD_CLS} text-[0.8rem]`}>{c.description || '—'}</td>
+                      <td className={`${TD_CLS} text-[0.8rem]`}>{discLabel(c)}</td>
+                      <td className={`${TD_CLS} text-[0.75rem] text-dim`}>
                         {fmtDateISO(c.valid_from)} → {fmtDateISO(c.valid_until)}
                       </td>
-                      <td style={{ ...td, fontSize: '.8rem' }}>
+                      <td className={`${TD_CLS} text-[0.8rem]`}>
                         {c.usage_count || 0}{c.usage_limit ? ` / ${c.usage_limit}` : ''}
                       </td>
-                      <td style={td}>
-                        <span style={{
-                          display: 'inline-block', padding: '.15rem .55rem', borderRadius: 10,
-                          fontSize: '.72rem', fontWeight: 600,
-                          background: active ? '#d1fae5' : 'var(--gb-red-100)',
-                          color: active ? '#059669' : 'var(--gb-red-500)',
-                        }}>{active ? 'ACTIVE' : 'INACTIVE'}</span>
+                      <td className={TD_CLS}>
+                        <span className={`inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] text-[0.72rem] font-semibold ${active ? 'bg-[#d1fae5] text-[#059669]' : 'bg-red-100 text-red-500'}`}>{active ? 'ACTIVE' : 'INACTIVE'}</span>
                       </td>
-                      <td style={td}>
+                      <td className={TD_CLS}>
                         <button
                           type="button"
                           className="btn-g btn-sm"
@@ -271,27 +269,27 @@ export default function AdminCouponCodesPage() {
 
       <div className="card">
         <div className="ch"><h3>Create Coupon</h3></div>
-        <div className="cb" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '.85rem' }}>
+        <div className="cb grid grid-cols-3 gap-[0.85rem]">
           <div>
-            <label style={lbl}>Code <span style={star}>*</span></label>
+            <label className={LBL_CLS}>Code <span className={STAR_CLS}>*</span></label>
             <input
               value={code}
               onChange={(e) => setCode(e.target.value)}
               maxLength={20}
               placeholder="SAVE20"
-              style={{ ...input, width: '100%', textTransform: 'uppercase' }}
+              className={`${INPUT_CLS} w-full uppercase`}
             />
           </div>
           <div>
-            <label style={lbl}>Discount Type <span style={star}>*</span></label>
-            <select value={type} onChange={(e) => setType(e.target.value)} style={{ ...input, width: '100%' }}>
+            <label className={LBL_CLS}>Discount Type <span className={STAR_CLS}>*</span></label>
+            <select value={type} onChange={(e) => setType(e.target.value)} className={`${INPUT_CLS} w-full`}>
               <option value="flat">Flat (₹)</option>
               <option value="percent">Percent (%)</option>
               <option value="free_delivery">Free Delivery</option>
             </select>
           </div>
           <div>
-            <label style={lbl}>Value <span style={star}>*</span></label>
+            <label className={LBL_CLS}>Value <span className={STAR_CLS}>*</span></label>
             <input
               value={value}
               onChange={(e) => setValue(e.target.value)}
@@ -299,80 +297,77 @@ export default function AdminCouponCodesPage() {
               min={0}
               step={1}
               disabled={type === 'free_delivery'}
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={lbl}>Description (shown to customer)</label>
+          <div className="col-span-3">
+            <label className={LBL_CLS}>Description (shown to customer)</label>
             <input
               value={desc}
               onChange={(e) => setDesc(e.target.value)}
               placeholder="₹50 off on orders above ₹299"
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
           <div>
-            <label style={lbl}>Min Order (₹)</label>
+            <label className={LBL_CLS}>Min Order (₹)</label>
             <input
               value={min}
               onChange={(e) => setMin(e.target.value)}
               type="number"
               min={0}
               step={1}
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
           <div>
-            <label style={lbl}>Max Discount Cap (₹, percent only)</label>
+            <label className={LBL_CLS}>Max Discount Cap (₹, percent only)</label>
             <input
               value={cap}
               onChange={(e) => setCap(e.target.value)}
               type="number"
               min={0}
               step={1}
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
           <div>
-            <label style={lbl}>Usage Limit</label>
+            <label className={LBL_CLS}>Usage Limit</label>
             <input
               value={limit}
               onChange={(e) => setLimit(e.target.value)}
               type="number"
               min={0}
               step={1}
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
           <div>
-            <label style={lbl}>Valid From</label>
+            <label className={LBL_CLS}>Valid From</label>
             <input
               value={validFrom}
               onChange={(e) => setValidFrom(e.target.value)}
               type="date"
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
           <div>
-            <label style={lbl}>Valid Until</label>
+            <label className={LBL_CLS}>Valid Until</label>
             <input
               value={validUntil}
               onChange={(e) => setValidUntil(e.target.value)}
               type="date"
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '.5rem' }}>
+          <div className="col-span-3 flex justify-end gap-2">
             <button type="button" className="btn-g btn-sm" onClick={resetForm} disabled={submitting}>Reset</button>
             <button type="button" className="btn-p btn-sm" onClick={submit} disabled={submitting}>
               {submitting ? 'Creating…' : 'Create Coupon'}
             </button>
           </div>
           {msg && (
-            <div style={{
-              gridColumn: '1 / -1', fontSize: '.8rem',
-              color: msg.type === 'error' ? 'var(--gb-red-500)' : msg.type === 'success' ? '#059669' : 'var(--dim)',
-            }}>
+            <div className={`col-span-3 text-[0.8rem] ${msgCls}`}>
               {msg.text}
             </div>
           )}

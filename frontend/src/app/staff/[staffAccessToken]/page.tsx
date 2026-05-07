@@ -85,71 +85,34 @@ export default function StaffLoginPage({ params }: PageProps) {
   };
 
   return (
-    <main
-      style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1.5rem',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 380,
-          background: 'var(--ink2, #0f1729)',
-          border: '1px solid var(--rim, #1f2a3d)',
-          borderRadius: 12,
-          padding: '1.5rem',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.18)',
-        }}
-      >
-        <h1 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 600 }}>
+    <main className="flex-1 flex items-center justify-center p-6">
+      <div className="w-full max-w-[380px] bg-ink2 border border-rim rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
+        <h1 className="m-0 text-[1.25rem] font-semibold">
           GullyBite Staff
         </h1>
-        <p style={{ marginTop: '.4rem', marginBottom: '1.2rem', color: 'var(--dim, #94a3b8)', fontSize: '.85rem' }}>
+        <p className="mt-[0.4rem] mb-[1.2rem] text-dim text-[0.85rem]">
           Sign in with your name and 4-digit PIN.
         </p>
 
         {showAndroid && (
-          <div style={{ marginBottom: '1rem' }}>
+          <div className="mb-4">
             <button
               type="button"
               onClick={onOpenInApp}
-              style={{
-                width: '100%',
-                padding: '.7rem',
-                fontSize: '.95rem',
-                background: 'var(--gb-green-600,#059669)',
-                color: 'white',
-                border: 'none',
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontWeight: 600,
-              }}
+              className="w-full py-[0.7rem] text-[0.95rem] bg-green-600 text-white border-0 rounded-lg cursor-pointer font-semibold"
             >
               Open in GullyBite Staff App
             </button>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '.5rem',
-                margin: '1rem 0',
-                color: 'var(--dim, #94a3b8)',
-                fontSize: '.75rem',
-              }}
-            >
-              <div style={{ flex: 1, height: 1, background: 'var(--rim, #1f2a3d)' }} />
+            <div className="flex items-center gap-2 my-4 text-dim text-[0.75rem]">
+              <div className="flex-1 h-px bg-rim" />
               <span>or sign in here</span>
-              <div style={{ flex: 1, height: 1, background: 'var(--rim, #1f2a3d)' }} />
+              <div className="flex-1 h-px bg-rim" />
             </div>
           </div>
         )}
 
         <form onSubmit={onSubmit}>
-          <label style={{ display: 'block', fontSize: '.78rem', color: 'var(--dim,#94a3b8)', marginBottom: '.3rem' }}>
+          <label className="block text-[0.78rem] text-dim mb-[0.3rem]">
             Name
           </label>
           <input
@@ -158,19 +121,10 @@ export default function StaffLoginPage({ params }: PageProps) {
             onChange={(e) => setName(e.target.value)}
             autoComplete="name"
             disabled={submitting}
-            style={{
-              width: '100%',
-              padding: '.6rem .7rem',
-              fontSize: '.95rem',
-              background: 'var(--ink,#0b1220)',
-              border: '1px solid var(--rim,#1f2a3d)',
-              borderRadius: 8,
-              color: 'var(--fg,#e6edf3)',
-              marginBottom: '.9rem',
-            }}
+            className="w-full py-[0.6rem] px-[0.7rem] text-[0.95rem] bg-ink border border-rim rounded-lg text-fg mb-[0.9rem]"
           />
 
-          <label style={{ display: 'block', fontSize: '.78rem', color: 'var(--dim,#94a3b8)', marginBottom: '.3rem' }}>
+          <label className="block text-[0.78rem] text-dim mb-[0.3rem]">
             PIN
           </label>
           <input
@@ -182,32 +136,11 @@ export default function StaffLoginPage({ params }: PageProps) {
             maxLength={4}
             placeholder="••••"
             disabled={submitting}
-            style={{
-              width: '100%',
-              padding: '.6rem .7rem',
-              fontSize: '1.2rem',
-              letterSpacing: '.4em',
-              textAlign: 'center',
-              background: 'var(--ink,#0b1220)',
-              border: '1px solid var(--rim,#1f2a3d)',
-              borderRadius: 8,
-              color: 'var(--fg,#e6edf3)',
-              marginBottom: '.9rem',
-            }}
+            className="w-full py-[0.6rem] px-[0.7rem] text-[1.2rem] tracking-[0.4em] text-center bg-ink border border-rim rounded-lg text-fg mb-[0.9rem]"
           />
 
           {error && (
-            <div
-              style={{
-                padding: '.5rem .7rem',
-                marginBottom: '.8rem',
-                background: 'rgba(220,38,38,0.12)',
-                border: '1px solid rgba(220,38,38,0.4)',
-                color: '#fca5a5',
-                borderRadius: 8,
-                fontSize: '.82rem',
-              }}
-            >
+            <div className="py-2 px-[0.7rem] mb-[0.8rem] bg-[rgba(220,38,38,0.12)] border border-[rgba(220,38,38,0.4)] text-[#fca5a5] rounded-lg text-[0.82rem]">
               {error}
             </div>
           )}
@@ -215,17 +148,7 @@ export default function StaffLoginPage({ params }: PageProps) {
           <button
             type="submit"
             disabled={submitting}
-            style={{
-              width: '100%',
-              padding: '.7rem',
-              fontSize: '.95rem',
-              background: submitting ? 'var(--rim,#1f2a3d)' : 'var(--gb-green-600,#059669)',
-              color: 'white',
-              border: 'none',
-              borderRadius: 8,
-              cursor: submitting ? 'default' : 'pointer',
-              fontWeight: 600,
-            }}
+            className={`w-full py-[0.7rem] text-[0.95rem] text-white border-0 rounded-lg font-semibold ${submitting ? 'bg-rim cursor-default' : 'bg-green-600 cursor-pointer'}`}
           >
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>

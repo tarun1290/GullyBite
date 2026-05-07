@@ -63,15 +63,15 @@ export default function TopItemsSection({ dateRange }: TopItemsSectionProps) {
   }, [data]);
 
   return (
-    <div className="card" style={{ margin: 0 }}>
+    <div className="card m-0">
       <div className="ch"><h3>Top Selling Items</h3></div>
-      <div className="cb" style={{ height: 300, position: 'relative' }}>
+      <div className="cb h-[300px] relative">
         {error ? (
           <SectionError message={error} onRetry={refetch} />
         ) : chartConfig ? (
           <ChartCanvas type="bar" data={chartConfig.data} options={chartConfig.options} height={300} />
         ) : (
-          <div style={{ textAlign: 'center', color: 'var(--dim)', padding: '3rem 0', fontSize: '.85rem' }}>
+          <div className="text-center text-dim py-12 text-[0.85rem]">
             {loading ? 'Loading…' : 'No items sold in this period'}
           </div>
         )}

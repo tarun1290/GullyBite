@@ -44,9 +44,9 @@ function formatRoi(r?: number | null): string {
   return `${label}x`;
 }
 
-function roiColor(r?: number | null): string {
-  if (r == null) return 'var(--dim)';
-  return r >= 1 ? 'var(--wa)' : 'var(--red,#dc2626)';
+function roiColorClass(r?: number | null): string {
+  if (r == null) return 'text-dim';
+  return r >= 1 ? 'text-wa' : 'text-red';
 }
 
 export default function CampaignRoiCard() {
@@ -81,30 +81,27 @@ export default function CampaignRoiCard() {
   }, [data, sort]);
 
   return (
-    <div className="card" style={{ marginTop: '1.2rem' }}>
-      <div className="ch" style={{ display: 'flex', alignItems: 'center', gap: '.8rem', flexWrap: 'wrap' }}>
-        <h3 style={{ margin: 0 }}>Campaign ROI</h3>
-        <span style={{ color: 'var(--dim)', fontSize: '.78rem' }}>
+    <div className="card mt-[1.2rem]">
+      <div className="ch flex items-center gap-[0.8rem] flex-wrap">
+        <h3 className="m-0">Campaign ROI</h3>
+        <span className="text-dim text-[0.78rem]">
           Revenue attributed from orders within 24h of send
         </span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+        <div className="ml-auto flex gap-[0.4rem] items-center">
           <input
             type="date"
-            className="inp"
-            style={{ width: 'auto', padding: '.3rem .5rem' }}
+            className="inp w-auto py-[0.3rem] px-2"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
           />
           <input
             type="date"
-            className="inp"
-            style={{ width: 'auto', padding: '.3rem .5rem' }}
+            className="inp w-auto py-[0.3rem] px-2"
             value={to}
             onChange={(e) => setTo(e.target.value)}
           />
           <select
-            className="inp"
-            style={{ width: 'auto', padding: '.3rem .5rem' }}
+            className="inp w-auto py-[0.3rem] px-2"
             value={sort}
             onChange={(e) => setSort(e.target.value)}
           >
@@ -115,7 +112,7 @@ export default function CampaignRoiCard() {
       </div>
       <div className="tbl">
         {error ? (
-          <div style={{ padding: '1rem' }}>
+          <div className="p-4">
             <SectionError message={error} onRetry={refetch} />
           </div>
         ) : (
@@ -132,7 +129,7 @@ export default function CampaignRoiCard() {
             </thead>
             <tbody>
               {loading && !data ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: '1rem', color: 'var(--dim)' }}>Loading…</td></tr>
+                <tr><td colSpan={6} className="text-center p-4 text-dim">Loading…</td></tr>
               ) : rows.length === 0 ? (
                 <tr><td colSpan={6}>
                   <div className="empty">
@@ -147,13 +144,12 @@ export default function CampaignRoiCard() {
                     <td>
                       {r.campaign_name}
                       <br />
-                      <span style={{ fontSize: '.7rem', color: 'var(--dim)' }}>{r.type || ''}</span>
+                      <span className="text-[0.7rem] text-dim">{r.type || ''}</span>
                     </td>
                     <td>{r.messages_sent || 0}</td>
                     <td>₹{Number(r.cost || 0).toFixed(2)}</td>
                     <td>{r.orders_generated || 0}</td>
-                    <td>₹{Number(r.revenue || 0).toFixed(0)}</td>
-                    <td style={{ fontWeight: 700, color: roiColor(r.roi) }}>{formatRoi(r.roi)}</td>
+                    <td className={`font-bold ${roiColorClass(r.roi)}`}>{formatRoi(r.roi)}</td>
                   </tr>
                 ))
               )}

@@ -63,7 +63,7 @@ interface StatusBreakdownProps { breakdown?: Record<string, number> | undefined 
 function StatusBreakdown({ breakdown }: StatusBreakdownProps) {
   const entries = breakdown ? Object.entries(breakdown) : [];
   if (!entries.length) {
-    return <span style={{ color: 'var(--dim)', fontSize: '.82rem' }}>No data</span>;
+    return <span className="text-dim text-[0.82rem]">No data</span>;
   }
   return (
     <>
@@ -72,20 +72,21 @@ function StatusBreakdown({ breakdown }: StatusBreakdownProps) {
         return (
           <span
             key={s}
+            className="inline-flex items-center gap-[0.35rem] py-[0.3rem] px-[0.7rem] rounded-full text-[0.75rem] font-medium"
+            // background/border/text colour come from the per-status
+            // STATUS_COLORS palette at runtime — Tailwind can't pre-bake
+            // the 8% / 19% alpha tints (`${color}15` / `${color}30`).
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '.35rem',
-              padding: '.3rem .7rem',
-              borderRadius: 100,
-              fontSize: '.75rem',
-              fontWeight: 500,
               background: `${color}15`,
               color,
               border: `1px solid ${color}30`,
             }}
           >
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />
+            <span
+              className="w-[7px] h-[7px] rounded-full"
+              // Same runtime-palette reason as the parent span.
+              style={{ background: color }}
+            />
             {s.replace(/_/g, ' ')} ({c})
           </span>
         );
@@ -198,9 +199,9 @@ export default function RevenueSection({ dateRange }: RevenueSectionProps) {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: '1.1rem' }}>
+      <div className="card mb-[1.1rem]">
         <div className="ch"><h3>Order Status Breakdown</h3></div>
-        <div className="cb" style={{ display: 'flex', gap: '.6rem', flexWrap: 'wrap' }}>
+        <div className="cb flex gap-[0.6rem] flex-wrap">
           {overviewQ.error ? (
             <SectionError message={overviewQ.error} onRetry={overviewQ.refetch} />
           ) : (
@@ -209,10 +210,10 @@ export default function RevenueSection({ dateRange }: RevenueSectionProps) {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: '1.1rem' }}>
+      <div className="card mb-[1.1rem]">
         <div className="ch">
           <h3>Revenue &amp; Orders</h3>
-          <div className="chips" style={{ margin: 0 }}>
+          <div className="chips m-0">
             {GRANULARITY_OPTIONS.map(([value, label]) => (
               <button
                 key={value}
@@ -225,13 +226,13 @@ export default function RevenueSection({ dateRange }: RevenueSectionProps) {
             ))}
           </div>
         </div>
-        <div className="cb" style={{ height: 320, position: 'relative' }}>
+        <div className="cb h-[320px] relative">
           {revenueQ.error ? (
             <SectionError message={revenueQ.error} onRetry={revenueQ.refetch} />
           ) : chartConfig ? (
             <ChartCanvas type="bar" data={chartConfig.data} options={chartConfig.options} height={320} />
           ) : (
-            <div style={{ textAlign: 'center', color: 'var(--dim)', padding: '3rem 0', fontSize: '.85rem' }}>
+            <div className="text-center text-dim py-12 text-[0.85rem]">
               {revenueQ.loading ? 'Loading…' : 'No revenue data for this period'}
             </div>
           )}

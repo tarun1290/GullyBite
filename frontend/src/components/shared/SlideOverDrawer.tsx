@@ -46,14 +46,14 @@ export default function SlideOverDrawer({ open, onClose, title, children }: Slid
       {/* Backdrop */}
       <div
         onClick={open ? onClose : undefined}
-        className={`fixed inset-0 bg-black/35 z-[1000] transition-opacity duration-[180ms] ease ${
+        className={`fixed inset-0 bg-black/35 z-1000 transition-opacity duration-180 ease ${
           open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       />
       {/* Panel */}
       <aside
         aria-hidden={!open}
-        className={`fixed top-0 right-0 h-screen w-[min(420px,100vw)] bg-surface text-fg shadow-[-12px_0_32px_rgba(0,0,0,0.12)] transition-transform duration-[220ms] ease z-[1001] flex flex-col ${
+        className={`fixed top-0 right-0 h-screen w-[min(420px,100vw)] bg-surface text-fg shadow-[-12px_0_32px_rgba(0,0,0,0.12)] transition-transform duration-220 ease z-1001 flex flex-col ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >

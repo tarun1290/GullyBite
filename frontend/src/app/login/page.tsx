@@ -177,7 +177,7 @@ function LoginForm() {
 
   return (
     <div id={mode === 'signup' ? 'pg-signup' : 'pg-signin'} className="auth-wrap">
-      <nav className="nav" style={{ position: 'relative' }}>
+      <nav className="nav relative">
         <div className="logo"><div className="logo-ring">🍜</div>GullyBite</div>
       </nav>
       <div className="auth-body">
@@ -259,7 +259,7 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh' }} />}>
+    <Suspense fallback={<div className="min-h-screen" />}>
       <LoginForm />
     </Suspense>
   );

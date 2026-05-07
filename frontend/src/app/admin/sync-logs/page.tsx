@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
@@ -72,10 +71,10 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const th: CSSProperties = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.5rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };
+const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.35rem] px-[0.55rem] text-[0.78rem]';
 
 export default function AdminSyncLogsPage() {
   const { showToast } = useToast();
@@ -176,10 +175,10 @@ export default function AdminSyncLogsPage() {
 
   return (
     <div id="pg-sync-logs">
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.6rem' }}>
-          <h3 style={{ margin: 0 }}>⚠ Active Alerts
-            <span style={{ color: 'var(--dim)', fontSize: '.78rem', fontWeight: 500, marginLeft: '.6rem' }}>
+      <div className="card mb-4">
+        <div className="ch justify-between flex-wrap gap-[0.6rem]">
+          <h3 className="m-0">⚠ Active Alerts
+            <span className="text-dim text-[0.78rem] font-medium ml-[0.6rem]">
               {alertsLoading ? '…' : alerts.length ? `${alerts.length} active` : 'all clear'}
             </span>
           </h3>
@@ -188,29 +187,29 @@ export default function AdminSyncLogsPage() {
         {alertsErr ? (
           <div className="cb"><SectionError message={alertsErr} onRetry={loadAlerts} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', textAlign: 'left', color: 'var(--dim)', fontSize: '.74rem' }}>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Message</th>
-                  <th style={th}>Failure Rate</th>
-                  <th style={th}>Time</th>
-                  <th style={th}>Action</th>
+                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Message</th>
+                  <th className={TH_CLS}>Failure Rate</th>
+                  <th className={TH_CLS}>Time</th>
+                  <th className={TH_CLS}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {alertsLoading ? (
-                  <tr><td colSpan={5} style={emptyCell}>Loading alerts…</td></tr>
+                  <tr><td colSpan={5} className={EMPTY_CLS}>Loading alerts…</td></tr>
                 ) : alerts.length === 0 ? (
-                  <tr><td colSpan={5} style={emptyCell}>No active alerts</td></tr>
+                  <tr><td colSpan={5} className={EMPTY_CLS}>No active alerts</td></tr>
                 ) : alerts.map((a) => (
-                  <tr key={a.id} style={{ background: '#fef2f2', borderTop: '1px solid var(--rim)' }}>
-                    <td style={{ ...td, color: 'var(--gb-red-900)', fontWeight: 600 }}>{a.restaurant_name || a.restaurant_id || '—'}</td>
-                    <td style={{ ...td, color: '#7f1d1d' }}>{a.message}</td>
-                    <td style={{ ...td, color: 'var(--gb-red-600)', fontWeight: 600 }}>{a.failure_rate != null ? Math.round(a.failure_rate * 100) + '%' : '—'}</td>
-                    <td style={{ ...td, color: 'var(--dim)', fontSize: '.75rem', whiteSpace: 'nowrap' }}>{fmtTime(a.timestamp)}</td>
-                    <td style={td}>
+                  <tr key={a.id} className="bg-[#fef2f2] border-t border-rim">
+                    <td className={`${TD_CLS} text-red-900 font-semibold`}>{a.restaurant_name || a.restaurant_id || '—'}</td>
+                    <td className={`${TD_CLS} text-[#7f1d1d]`}>{a.message}</td>
+                    <td className={`${TD_CLS} text-red-600 font-semibold`}>{a.failure_rate != null ? Math.round(a.failure_rate * 100) + '%' : '—'}</td>
+                    <td className={`${TD_CLS} text-dim text-[0.75rem] whitespace-nowrap`}>{fmtTime(a.timestamp)}</td>
+                    <td className={TD_CLS}>
                       <button type="button" className="btn-g btn-sm" onClick={() => resolveAlert(a.id)} disabled={resolvingId === a.id}>
                         {resolvingId === a.id ? 'Resolving…' : 'Resolve'}
                       </button>
@@ -224,71 +223,66 @@ export default function AdminSyncLogsPage() {
       </div>
 
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.6rem' }}>
-          <h3 style={{ margin: 0 }}>Catalog Sync Audit <span style={{ color: 'var(--dim)', fontSize: '.78rem', fontWeight: 500 }}>({rows.length} entries)</span></h3>
-          <div style={{ display: 'flex', gap: '.4rem' }}>
+        <div className="ch justify-between flex-wrap gap-[0.6rem]">
+          <h3 className="m-0">Catalog Sync Audit <span className="text-dim text-[0.78rem] font-medium">({rows.length} entries)</span></h3>
+          <div className="flex gap-[0.4rem]">
             <button type="button" className="btn-g btn-sm" onClick={resetFilters}>Reset</button>
             <button type="button" className="btn-p btn-sm" onClick={loadLogs} disabled={loading}>Refresh</button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem', padding: '.75rem 1rem', borderBottom: '1px solid var(--rim)' }}>
-          <select value={rid} onChange={(e) => setRid(e.target.value)} style={{ ...input, minWidth: 180 }}>
+        <div className="flex flex-wrap gap-2 py-3 px-4 border-b border-rim">
+          <select value={rid} onChange={(e) => setRid(e.target.value)} className={`${INPUT_CLS} min-w-[180px]`}>
             <option value="">All restaurants</option>
             {restaurants.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} style={input}>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className={INPUT_CLS}>
             <option value="">All statuses</option>
             <option value="synced">Synced</option>
             <option value="skipped">Skipped</option>
           </select>
-          <select value={reason} onChange={(e) => setReason(e.target.value)} style={input}>
+          <select value={reason} onChange={(e) => setReason(e.target.value)} className={INPUT_CLS}>
             {REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
-          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} style={input} />
-          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} style={input} />
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className={INPUT_CLS} />
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className={INPUT_CLS} />
         </div>
 
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={loadLogs} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', textAlign: 'left', color: 'var(--dim)', fontSize: '.74rem' }}>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Product</th>
-                  <th style={th}>Branch</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Reason</th>
-                  <th style={th}>Time</th>
+                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Product</th>
+                  <th className={TH_CLS}>Branch</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Reason</th>
+                  <th className={TH_CLS}>Time</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={6} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={6} style={emptyCell}>No sync logs match the filters.</td></tr>
+                  <tr><td colSpan={6} className={EMPTY_CLS}>No sync logs match the filters.</td></tr>
                 ) : rows.map((r, i) => {
                   const isSynced = r.status === 'synced';
                   return (
-                    <tr key={r.id || i} style={{ borderTop: '1px solid var(--rim)' }}>
-                      <td style={td}>{r.restaurant_name || r.restaurant_id || '—'}</td>
-                      <td style={td}>{r.product_name || r.product_id || '—'}</td>
-                      <td style={td}>{r.branch_name || r.branch_id || '—'}</td>
-                      <td style={td}>
-                        <span style={{
-                          display: 'inline-block', padding: '.1rem .5rem', borderRadius: 99,
-                          fontSize: '.72rem', fontWeight: 600,
-                          background: isSynced ? '#d1fae5' : 'var(--gb-red-100)',
-                          color: isSynced ? '#047857' : 'var(--gb-red-600)',
-                        }}>{r.status || '—'}</span>
+                    <tr key={r.id || i} className="border-t border-rim">
+                      <td className={TD_CLS}>{r.restaurant_name || r.restaurant_id || '—'}</td>
+                      <td className={TD_CLS}>{r.product_name || r.product_id || '—'}</td>
+                      <td className={TD_CLS}>{r.branch_name || r.branch_id || '—'}</td>
+                      <td className={TD_CLS}>
+                        <span className={`inline-block py-[0.1rem] px-2 rounded-full text-[0.72rem] font-semibold ${isSynced ? 'bg-[#d1fae5] text-[#047857]' : 'bg-red-100 text-red-600'}`}>{r.status || '—'}</span>
                       </td>
-                      <td style={{ ...td, fontSize: '.78rem', color: 'var(--dim)' }}>
+                      <td className={`${TD_CLS} text-[0.78rem] text-dim`}>
                         {r.reason || ''}
-                        {r.suggestion && <div style={{ marginTop: '.2rem', fontSize: '.7rem', color: 'var(--gb-indigo-600)' }}>💡 {r.suggestion}</div>}
+                        {r.suggestion && <div className="mt-[0.2rem] text-[0.7rem] text-indigo-600">💡 {r.suggestion}</div>}
                       </td>
-                      <td style={{ ...td, fontSize: '.75rem', color: 'var(--dim)', whiteSpace: 'nowrap' }}>{fmtTime(r.timestamp)}</td>
+                      <td className={`${TD_CLS} text-[0.75rem] text-dim whitespace-nowrap`}>{fmtTime(r.timestamp)}</td>
                     </tr>
                   );
                 })}

@@ -61,13 +61,13 @@ interface SettlementsTableProps {
 function SettlementsTable({ settlementsQ, onView }: SettlementsTableProps) {
   const rows = settlementsQ.data?.settlements || [];
   if (settlementsQ.error) {
-    return <div style={{ padding: '1rem' }}><SectionError message={settlementsQ.error} onRetry={settlementsQ.refetch} /></div>;
+    return <div className="p-4"><SectionError message={settlementsQ.error} onRetry={settlementsQ.refetch} /></div>;
   }
   if (settlementsQ.loading && !settlementsQ.data) {
     return (
       <table>
         <thead><tr><th>Period</th><th>Gross</th><th>Deductions</th><th>TDS</th><th>Net</th><th>Status</th><th>UTR</th><th /></tr></thead>
-        <tbody><tr><td colSpan={8} style={{ textAlign: 'center', padding: '1.2rem', color: 'var(--dim)' }}>Loading…</td></tr></tbody>
+        <tbody><tr><td colSpan={8} className="text-center p-[1.2rem] text-dim">Loading…</td></tr></tbody>
       </table>
     );
   }
@@ -87,13 +87,13 @@ function SettlementsTable({ settlementsQ, onView }: SettlementsTableProps) {
           const cls = STATUS_CLS[s.payout_status?.toUpperCase?.() || ''] || 'bd';
           return (
             <tr key={s.id}>
-              <td style={{ fontSize: '.8rem' }}>{s.period_start || ''} → {s.period_end || ''}</td>
+              <td className="text-[0.8rem]">{s.period_start || ''} → {s.period_end || ''}</td>
               <td>{formatINR(s.gross_revenue)}</td>
-              <td style={{ color: 'var(--red,#dc2626)' }}>{formatINR(s.total_deductions)}</td>
+              <td className="text-red">{formatINR(s.total_deductions)}</td>
               <td>{formatINR(s.tds)}</td>
               <td><strong>{formatINR(s.net_payout)}</strong></td>
               <td><span className={`badge ${cls}`}>{s.payout_status || 'N/A'}</span></td>
-              <td style={{ fontSize: '.72rem', color: 'var(--dim)', fontFamily: 'monospace' }}>{s.utr || '—'}</td>
+              <td className="text-[0.72rem] text-dim font-mono">{s.utr || '—'}</td>
               <td><button type="button" className="btn-g btn-sm" onClick={() => onView(s.id)}>View</button></td>
             </tr>
           );
@@ -110,13 +110,13 @@ interface PaymentsLogTableProps {
 function PaymentsLogTable({ paymentsQ }: PaymentsLogTableProps) {
   const rows = paymentsQ.data?.payments || [];
   if (paymentsQ.error) {
-    return <div style={{ padding: '1rem' }}><SectionError message={paymentsQ.error} onRetry={paymentsQ.refetch} /></div>;
+    return <div className="p-4"><SectionError message={paymentsQ.error} onRetry={paymentsQ.refetch} /></div>;
   }
   if (paymentsQ.loading && !paymentsQ.data) {
     return (
       <table>
         <thead><tr><th>Date</th><th>Order #</th><th>Amount</th><th>Method</th><th>Razorpay ID</th><th>Status</th></tr></thead>
-        <tbody><tr><td colSpan={6} style={{ textAlign: 'center', padding: '1.2rem', color: 'var(--dim)' }}>Loading…</td></tr></tbody>
+        <tbody><tr><td colSpan={6} className="text-center p-[1.2rem] text-dim">Loading…</td></tr></tbody>
       </table>
     );
   }
@@ -136,11 +136,11 @@ function PaymentsLogTable({ paymentsQ }: PaymentsLogTableProps) {
           const cls = PAY_STATUS_CLS[p.status?.toUpperCase?.() || ''] || 'bd';
           return (
             <tr key={p.id || p.razorpay_id || idx}>
-              <td style={{ fontSize: '.78rem' }}>{p.date || ''}</td>
-              <td style={{ fontFamily: 'monospace', fontSize: '.75rem' }}>{p.display_order_id || '—'}</td>
+              <td className="text-[0.78rem]">{p.date || ''}</td>
+              <td className="font-mono text-[0.75rem]">{p.display_order_id || '—'}</td>
               <td>{formatINR(p.amount)}</td>
-              <td style={{ fontSize: '.78rem' }}>{p.method || '—'}</td>
-              <td style={{ fontFamily: 'monospace', fontSize: '.72rem', color: 'var(--dim)' }}>{p.razorpay_id || '—'}</td>
+              <td className="text-[0.78rem]">{p.method || '—'}</td>
+              <td className="font-mono text-[0.72rem] text-dim">{p.razorpay_id || '—'}</td>
               <td><span className={`badge ${cls}`}>{p.status || 'N/A'}</span></td>
             </tr>
           );
@@ -164,12 +164,12 @@ function Pager({ page, totalPages, hasMore, onChange, loading, idPrefix }: Pager
   return (
     <div
       id={`${idPrefix}-pag`}
-      style={{ padding: '.7rem 1.2rem', borderTop: '1px solid var(--rim)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+      className="py-[0.7rem] px-[1.2rem] border-t border-rim flex items-center justify-between"
     >
-      <span id={`${idPrefix}-info`} style={{ fontSize: '.75rem', color: 'var(--dim)' }}>
+      <span id={`${idPrefix}-info`} className="text-[0.75rem] text-dim">
         Page {page}{totalPages ? ` of ${totalPages}` : ''}
       </span>
-      <div style={{ display: 'flex', gap: '.3rem' }}>
+      <div className="flex gap-[0.3rem]">
         <button
           type="button"
           id={`${idPrefix}-prev`}
@@ -248,7 +248,7 @@ export default function SettlementsSection() {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: '1.2rem' }}>
+      <div className="card mb-[1.2rem]">
         <div className="ch"><h3>Settlements</h3></div>
         <div className="tbl">
           <SettlementsTable settlementsQ={settlementsQ} onView={setOpenId} />
@@ -265,10 +265,10 @@ export default function SettlementsSection() {
         )}
       </div>
 
-      <div className="card" style={{ marginBottom: '1.2rem' }}>
+      <div className="card mb-[1.2rem]">
         <div className="ch">
           <h3>Payments Log</h3>
-          <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="flex gap-[0.4rem] items-center flex-wrap">
             <select
               id="fin-pay-branch"
               value={selectedBranchId ?? ''}
@@ -276,7 +276,7 @@ export default function SettlementsSection() {
                 setSelectedBranchId(e.target.value || null);
                 setPayPage(1);
               }}
-              style={{ fontSize: '.75rem', padding: '.28rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+              className="text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
             >
               <option value="">All Branches</option>
               {branches.map((b) => (
@@ -288,14 +288,14 @@ export default function SettlementsSection() {
               id="fin-pay-from"
               value={payFromInput}
               onChange={(e) => setPayFromInput(e.target.value)}
-              style={{ fontSize: '.75rem', padding: '.28rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+              className="text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
             />
             <input
               type="date"
               id="fin-pay-to"
               value={payToInput}
               onChange={(e) => setPayToInput(e.target.value)}
-              style={{ fontSize: '.75rem', padding: '.28rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+              className="text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
             />
             <button type="button" className="btn-g btn-sm" onClick={applyPayFilter}>Filter</button>
           </div>

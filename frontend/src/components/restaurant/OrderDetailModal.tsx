@@ -89,8 +89,8 @@ interface DeliveryDetailLineProps {
 function DeliveryDetailLine({ label, value, bold }: DeliveryDetailLineProps) {
   return (
     <tr>
-      <td style={{ padding: '.25rem 0', color: 'var(--dim)' }}>{label}</td>
-      <td style={{ textAlign: 'right', fontWeight: bold ? 700 : undefined }}>₹{f(value)}</td>
+      <td className="py-1 text-dim">{label}</td>
+      <td className={`text-right ${bold ? 'font-bold' : ''}`}>₹{f(value)}</td>
     </tr>
   );
 }
@@ -102,13 +102,13 @@ interface ItemsTableProps {
 function ItemsTable({ items }: ItemsTableProps) {
   if (!items?.length) return null;
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '.3rem' }}>
+    <table className="w-full border-collapse mt-[0.3rem]">
       <tbody>
         {items.map((i, idx) => (
           <tr key={i.id || idx}>
-            <td style={{ padding: '.35rem 0' }}>{i.item_name}</td>
-            <td style={{ textAlign: 'center' }}>×{i.quantity}</td>
-            <td style={{ textAlign: 'right' }}>₹{f(i.line_total_rs)}</td>
+            <td className="py-[0.35rem]">{i.item_name}</td>
+            <td className="text-center">×{i.quantity}</td>
+            <td className="text-right">₹{f(i.line_total_rs)}</td>
           </tr>
         ))}
       </tbody>
@@ -148,10 +148,10 @@ function ChargeBreakdown({ order }: ChargeBreakdownProps) {
   if (parseFloat(String(order.discount_rs || 0)) > 0) {
     rows.push(
       <tr key="dis">
-        <td style={{ padding: '.25rem 0', color: 'var(--dim)' }}>
+        <td className="py-1 text-dim">
           Discount {order.coupon_code ? `(${order.coupon_code})` : ''}
         </td>
-        <td style={{ textAlign: 'right', color: '#16a34a' }}>−₹{f(order.discount_rs)}</td>
+        <td className="text-right text-green-600">−₹{f(order.discount_rs)}</td>
       </tr>
     );
   }
@@ -159,14 +159,14 @@ function ChargeBreakdown({ order }: ChargeBreakdownProps) {
   rows.push(
     <tr key="sep">
       <td colSpan={2}>
-        <hr style={{ border: 'none', borderTop: '1px dashed var(--rim2)', margin: '.3rem 0' }} />
+        <hr className="border-0 border-t border-dashed border-rim2 my-[0.3rem]" />
       </td>
     </tr>
   );
   rows.push(<DeliveryDetailLine key="tot" label="Customer Total" value={order.total_rs} bold />);
 
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '.3rem' }}>
+    <table className="w-full border-collapse mt-[0.3rem]">
       <tbody>{rows}</tbody>
     </table>
   );
@@ -181,7 +181,7 @@ function DynamicPricingNote({ order }: ChargeBreakdownProps) {
   if ((bd.effectiveMultiplier ?? 0) > 1.0) parts.push(`${bd.effectiveMultiplier}x${bd.reason ? ' (' + bd.reason + ')' : ''}`);
   if (bd.capped) parts.push('Capped');
   return (
-    <div style={{ marginTop: '.4rem', fontSize: '.72rem', color: 'var(--dim)' }}>
+    <div className="mt-[0.4rem] text-[0.72rem] text-dim">
       ⚡ {parts.join(' · ')}
     </div>
   );
@@ -191,13 +191,7 @@ function SettlementNote({ order }: ChargeBreakdownProps) {
   if (!(parseFloat(String(order.restaurant_delivery_rs || 0)) > 0)) return null;
   const deduction = parseFloat(String(order.restaurant_delivery_rs || 0)) + parseFloat(String(order.restaurant_delivery_gst_rs || 0));
   return (
-    <div
-      style={{
-        marginTop: '.8rem', padding: '.65rem .9rem',
-        background: '#fef9ec', border: '1px solid #fde68a',
-        borderRadius: 8, fontSize: '.78rem', color: '#92400e',
-      }}
-    >
+    <div className="mt-[0.8rem] py-[0.65rem] px-[0.9rem] bg-[#fef9ec] border border-[#fde68a] rounded-lg text-[0.78rem] text-[#92400e]">
       Settlement deduction: <strong>₹{deduction.toFixed(2)}</strong> (restaurant delivery share + GST)
     </div>
   );
@@ -222,43 +216,37 @@ function DeliverySection({ orderId, delivery, deliveryFeeTotalRs, onDispatch, on
   const color = DELIVERY_STATUS_COLORS[status] || '#6b7280';
 
   return (
-    <div
-      style={{
-        marginTop: '.8rem', padding: '.65rem .9rem',
-        background: 'var(--ink2)', border: '1px solid var(--bdr)',
-        borderRadius: 8,
-      }}
-    >
-      <div style={{ fontSize: '.75rem', color: 'var(--dim)', marginBottom: '.4rem' }}>🚴 Delivery</div>
-      <div style={{ display: 'flex', gap: '.8rem', alignItems: 'center', flexWrap: 'wrap', fontSize: '.82rem' }}>
+    <div className="mt-[0.8rem] py-[0.65rem] px-[0.9rem] bg-ink2 border border-bdr rounded-lg">
+      <div className="text-[0.75rem] text-dim mb-[0.4rem]">🚴 Delivery</div>
+      <div className="flex gap-[0.8rem] items-center flex-wrap text-[0.82rem]">
         <span
-          style={{
-            background: `${color}22`, color,
-            padding: '.15rem .5rem', borderRadius: 4, fontWeight: 600, fontSize: '.75rem',
-          }}
+          className="py-[0.15rem] px-2 rounded-sm font-semibold text-[0.75rem]"
+          // bg/colour come from DELIVERY_STATUS_COLORS by delivery.status
+          // at runtime (delivered/picked_up/.../cancelled — 6 hex). The
+          // bg is the same hex with `22` alpha appended for a tint.
+          style={{ background: `${color}22`, color }}
         >
           {status.toUpperCase()}
         </span>
-        {delivery.provider && <span style={{ color: 'var(--dim)' }}>{delivery.provider}</span>}
+        {delivery.provider && <span className="text-dim">{delivery.provider}</span>}
         {delivery.driver_name && <span>👤 {delivery.driver_name}</span>}
         {delivery.driver_phone && (
-          <a href={`tel:${delivery.driver_phone}`} style={{ color: 'var(--wa)' }}>
+          <a href={`tel:${delivery.driver_phone}`} className="text-wa">
             📞 {delivery.driver_phone}
           </a>
         )}
         {delivery.estimated_mins && <span>⏱ ~{delivery.estimated_mins} min</span>}
         {deliveryFeeTotalRs != null && parseFloat(String(deliveryFeeTotalRs)) > 0 && (
-          <span style={{ color: 'var(--dim)' }}>₹{parseFloat(String(deliveryFeeTotalRs)).toFixed(0)} 3PL cost</span>
+          <span className="text-dim">₹{parseFloat(String(deliveryFeeTotalRs)).toFixed(0)} 3PL cost</span>
         )}
       </div>
-      <div style={{ marginTop: '.5rem', display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+      <div className="mt-2 flex gap-2 flex-wrap">
         {delivery.tracking_url && (
           <a
             href={delivery.tracking_url}
             target="_blank"
             rel="noreferrer"
-            className="btn-p btn-sm"
-            style={{ textDecoration: 'none', fontSize: '.75rem' }}
+            className="btn-p btn-sm no-underline text-[0.75rem]"
           >
             📍 Track Delivery
           </a>
@@ -266,8 +254,7 @@ function DeliverySection({ orderId, delivery, deliveryFeeTotalRs, onDispatch, on
         {(status === 'failed' || status === 'cancelled') && (
           <button
             type="button"
-            className="btn-g btn-sm"
-            style={{ fontSize: '.75rem' }}
+            className="btn-g btn-sm text-[0.75rem]"
             onClick={() => onDispatch(orderId)}
             disabled={busy}
           >
@@ -287,8 +274,7 @@ function DeliverySection({ orderId, delivery, deliveryFeeTotalRs, onDispatch, on
         {status === 'pending' && (
           <button
             type="button"
-            className="btn-p btn-sm"
-            style={{ fontSize: '.75rem' }}
+            className="btn-p btn-sm text-[0.75rem]"
             onClick={() => onDispatch(orderId)}
             disabled={busy}
           >
@@ -419,36 +405,17 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
     <div
       id="ord-modal"
       onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose?.(); }}
-      style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(15,23,42,.55)',
-        backdropFilter: 'blur(4px)',
-        zIndex: 200,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '1.5rem',
-      }}
+      className="fixed inset-0 bg-[rgba(15,23,42,0.55)] backdrop-blur-xs z-200 flex items-center justify-center p-6"
     >
-      <div
-        style={{
-          background: '#fff', border: '1px solid var(--rim)',
-          borderRadius: 14, width: '100%', maxWidth: 520,
-          overflow: 'hidden',
-          boxShadow: 'var(--shadow)',
-        }}
-      >
-        <div
-          style={{
-            padding: '1.1rem 1.3rem', borderBottom: '1px solid var(--rim)',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          }}
-        >
-          <span id="ord-modal-title" style={{ fontWeight: 700, fontSize: '.95rem', color: 'var(--tx)' }}>
+      <div className="bg-white border border-rim rounded-[14px] w-full max-w-[520px] overflow-hidden shadow-default">
+        <div className="py-[1.1rem] px-[1.3rem] border-b border-rim flex items-center justify-between">
+          <span id="ord-modal-title" className="font-bold text-[0.95rem] text-tx">
             {title}
           </span>
           <button
             type="button"
             onClick={onClose}
-            style={{ background: 'none', border: 'none', color: 'var(--dim)', fontSize: '1.1rem', cursor: 'pointer' }}
+            className="bg-none border-0 text-dim text-[1.1rem] cursor-pointer"
             aria-label="Close"
           >
             ✕
@@ -457,35 +424,35 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
 
         <div
           id="ord-modal-body"
-          style={{ padding: '1.3rem', maxHeight: '70vh', overflowY: 'auto', fontSize: '.84rem' }}
+          className="p-[1.3rem] max-h-[70vh] overflow-y-auto text-[0.84rem]"
         >
           {loading && (
-            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)' }}>Loading…</div>
+            <div className="text-center p-8 text-dim">Loading…</div>
           )}
           {error && !loading && (
-            <div style={{ padding: '1rem', textAlign: 'center' }}>
-              <p style={{ color: 'var(--red)' }}>{error}</p>
+            <div className="p-4 text-center">
+              <p className="text-red">{error}</p>
               <button type="button" className="btn-g btn-sm" onClick={fetchAll}>Retry</button>
             </div>
           )}
           {order && !loading && !error && (
             <>
-              <div style={{ marginBottom: '.8rem' }}>
-                <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>Customer</span>
-                <div style={{ fontWeight: 600 }}>
+              <div className="mb-[0.8rem]">
+                <span className="text-[0.75rem] text-dim">Customer</span>
+                <div className="font-semibold">
                   {order.customer_name || '—'} · {customerSecondary}
                 </div>
                 {order.delivery_address ? (
-                  <div style={{ fontSize: '.75rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+                  <div className="text-[0.75rem] text-dim mt-[0.2rem]">
                     📍 {order.delivery_address}
                   </div>
                 ) : (order.delivery_lat && order.delivery_lng) ? (
-                  <div style={{ fontSize: '.75rem', marginTop: '.2rem' }}>
+                  <div className="text-[0.75rem] mt-[0.2rem]">
                     <a
                       href={`https://www.google.com/maps?q=${order.delivery_lat},${order.delivery_lng}`}
                       target="_blank"
                       rel="noreferrer"
-                      style={{ color: 'var(--acc)', textDecoration: 'none' }}
+                      className="text-acc no-underline"
                     >
                       📍 View on Maps
                     </a>
@@ -493,13 +460,13 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
                 ) : null}
               </div>
 
-              <div style={{ marginBottom: '.8rem' }}>
-                <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>Items</span>
+              <div className="mb-[0.8rem]">
+                <span className="text-[0.75rem] text-dim">Items</span>
                 <ItemsTable items={order.items} />
               </div>
 
               <div>
-                <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>Charge Breakdown</span>
+                <span className="text-[0.75rem] text-dim">Charge Breakdown</span>
                 <ChargeBreakdown order={order} />
               </div>
 
@@ -520,56 +487,30 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
               )}
 
               {order.prorouting_state && (
-                <div
-                  style={{
-                    marginTop: '.6rem',
-                    border: '1px solid var(--rim)',
-                    borderRadius: 8,
-                    background: 'var(--ink2)',
-                    overflow: 'hidden',
-                  }}
-                >
+                <div className="mt-[0.6rem] border border-rim rounded-lg bg-ink2 overflow-hidden">
                   <button
                     type="button"
                     onClick={() => setTimelineOpen((v) => !v)}
                     aria-expanded={timelineOpen}
-                    style={{
-                      width: '100%',
-                      background: 'none',
-                      border: 'none',
-                      padding: '.55rem .8rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '.5rem',
-                      cursor: 'pointer',
-                      fontSize: '.8rem',
-                      fontWeight: 600,
-                      color: 'var(--tx)',
-                    }}
+                    className="w-full bg-none border-0 py-[0.55rem] px-[0.8rem] flex items-center gap-2 cursor-pointer text-[0.8rem] font-semibold text-tx"
                   >
                     <span
                       aria-hidden
-                      style={{
-                        display: 'inline-block',
-                        transition: 'transform .15s ease',
-                        transform: timelineOpen ? 'rotate(90deg)' : 'rotate(0)',
-                        fontSize: '.7rem',
-                        color: 'var(--dim)',
-                      }}
+                      className={`inline-block transition-transform duration-150 ease-in-out text-[0.7rem] text-dim ${timelineOpen ? 'rotate-90' : 'rotate-0'}`}
                     >
                       ▶
                     </span>
                     Delivery Timeline
                   </button>
                   {timelineOpen && (
-                    <div style={{ padding: '.4rem .9rem .8rem 1.6rem' }}>
+                    <div className="pt-[0.4rem] pr-[0.9rem] pb-[0.8rem] pl-[1.6rem]">
                       <DeliveryTimeline order={order} />
                     </div>
                   )}
                 </div>
               )}
 
-              <div style={{ marginTop: '.6rem' }}>
+              <div className="mt-[0.6rem]">
                 <DeliveryProofPhotos
                   pickupProof={order.prorouting_pickup_proof}
                   deliveryProof={order.prorouting_delivery_proof}
@@ -582,13 +523,12 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
               />
 
               {order.status === 'DELIVERED' && !order.prorouting_issue_id && (
-                <div style={{ marginTop: '.6rem' }}>
+                <div className="mt-[0.6rem]">
                   <button
                     type="button"
-                    className="btn-del btn-sm"
+                    className="btn-del btn-sm text-[0.78rem]"
                     onClick={handleReportFakeDelivery}
                     disabled={busy}
-                    style={{ fontSize: '.78rem' }}
                   >
                     {busy ? '…' : '⚠ Report Fake Delivery'}
                   </button>
@@ -596,16 +536,9 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
               )}
 
               {confirmCancelDelivery && (
-                <div
-                  style={{
-                    marginTop: '.6rem', padding: '.65rem .9rem',
-                    background: '#fef2f2', border: '1px solid #fecaca',
-                    borderRadius: 8, fontSize: '.8rem', color: '#991b1b',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.6rem', flexWrap: 'wrap',
-                  }}
-                >
+                <div className="mt-[0.6rem] py-[0.65rem] px-[0.9rem] bg-[#fef2f2] border border-[#fecaca] rounded-lg text-[0.8rem] text-[#991b1b] flex items-center justify-between gap-[0.6rem] flex-wrap">
                   <span>Cancel the active delivery?</span>
-                  <div style={{ display: 'flex', gap: '.4rem' }}>
+                  <div className="flex gap-[0.4rem]">
                     <button
                       type="button"
                       className="btn-outline btn-sm"

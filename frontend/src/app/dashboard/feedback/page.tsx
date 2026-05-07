@@ -72,11 +72,11 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }
   const positive = stats?.positive_ratings || 0;
   const positivePct = totalRatings ? Math.round((positive / totalRatings) * 100) : 0;
   return (
-    <div style={{ marginBottom: '1rem' }}>
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="ch" style={{ alignItems: 'center' }}>
-          <h3 style={{ margin: 0 }}>Unified Rating Overview</h3>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '.35rem' }}>
+    <div className="mb-4">
+      <div className="card mb-4">
+        <div className="ch items-center">
+          <h3 className="m-0">Unified Rating Overview</h3>
+          <div className="ml-auto flex gap-[0.35rem]">
             <button
               type="button"
               className={window === '30d' ? 'btn-p btn-sm' : 'btn-g btn-sm'}
@@ -93,7 +93,7 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }
             </button>
           </div>
         </div>
-        <div className="cb" style={{ fontSize: '.82rem', color: 'var(--dim)' }}>
+        <div className="cb text-[0.82rem] text-dim">
           Combines post-delivery ratings and merchant-triggered dine-in feedback into one view.
         </div>
       </div>
@@ -121,34 +121,24 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }
         />
       </div>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
+      <div className="card mt-4">
         <div className="ch"><h3>By source</h3></div>
         <div
-          className="cb"
-          style={{
-            display: 'grid',
-            gap: '.6rem',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          }}
+          className="cb grid gap-[0.6rem] grid-cols-[repeat(auto-fit,minmax(180px,1fr))]"
         >
           {(['delivery', 'dine_in'] as const).map((src) => (
             <div
               key={src}
-              style={{
-                padding: '.7rem .8rem',
-                border: '1px solid var(--rim)',
-                borderRadius: 'var(--r)',
-                background: 'var(--panel)',
-              }}
+              className="py-[0.7rem] px-[0.8rem] border border-rim rounded-r bg-panel"
             >
-              <div style={{ fontSize: '.76rem', color: 'var(--dim)', textTransform: 'capitalize' }}>
+              <div className="text-[0.76rem] text-dim capitalize">
                 {src.replace('_', '-')}
               </div>
-              <div style={{ marginTop: '.25rem' }}>
-                <strong style={{ fontSize: '1.1rem' }}>
+              <div className="mt-1">
+                <strong className="text-[1.1rem]">
                   {bySource[src]?.avg ?? '—'} ⭐
                 </strong>
-                <span style={{ marginLeft: '.5rem', fontSize: '.8rem', color: 'var(--dim)' }}>
+                <span className="ml-2 text-[0.8rem] text-dim">
                   {bySource[src]?.count || 0} ratings
                 </span>
               </div>
@@ -174,23 +164,23 @@ function EscalationInbox({ escalations, loading, err, onRetry, includeResolved, 
   if (err) return <SectionError message={err} onRetry={onRetry} />;
   const rows = escalations || [];
   return (
-    <div className="card" style={{ marginBottom: '1rem' }}>
-      <div className="ch" style={{ alignItems: 'center' }}>
-        <h3 style={{ margin: 0 }}>Escalation Inbox</h3>
-        <label style={{ marginLeft: 'auto', fontSize: '.78rem', color: 'var(--dim)', display: 'inline-flex', gap: '.35rem', alignItems: 'center' }}>
+    <div className="card mb-4">
+      <div className="ch items-center">
+        <h3 className="m-0">Escalation Inbox</h3>
+        <label className="ml-auto text-[0.78rem] text-dim inline-flex gap-[0.35rem] items-center">
           <input type="checkbox" checked={includeResolved} onChange={(e) => onToggleResolved(e.target.checked)} />
           Show resolved
         </label>
       </div>
       <div className="cb">
         {loading ? (
-          <div style={{ fontSize: '.82rem', color: 'var(--dim)' }}>Loading…</div>
+          <div className="text-[0.82rem] text-dim">Loading…</div>
         ) : rows.length === 0 ? (
-          <div style={{ fontSize: '.82rem', color: 'var(--dim)' }}>
+          <div className="text-[0.82rem] text-dim">
             No open escalations — nice work.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '.5rem' }}>
+          <div className="flex flex-col gap-2">
             {rows.map((e) => (
               <EscalationRow key={e._id} item={e} onResolve={onResolve} />
             ))}
@@ -225,39 +215,34 @@ function EscalationRow({ item, onResolve }: EscalationRowProps) {
 
   return (
     <div
-      style={{
-        padding: '.65rem .75rem',
-        border: '1px solid var(--rim)',
-        borderRadius: 'var(--r)',
-        background: isOpen ? '#fff7ed' : '#f8fafc',
-      }}
+      className={`py-[0.65rem] px-3 border border-rim rounded-r ${isOpen ? 'bg-[#fff7ed]' : 'bg-[#f8fafc]'}`}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.45rem', flexWrap: 'wrap' }}>
-        <strong style={{ fontSize: '.9rem' }}>
+      <div className="flex items-center gap-[0.45rem] flex-wrap">
+        <strong className="text-[0.9rem]">
           {item.rating ? `${item.rating}⭐` : '—'}
         </strong>
-        <span style={{ fontSize: '.76rem', color: 'var(--dim)' }}>
+        <span className="text-[0.76rem] text-dim">
           {item.source ? item.source.replace('_', '-') : ''}
         </span>
         {item.customer_phone && (
-          <span style={{ fontSize: '.76rem', color: 'var(--dim)' }}>
+          <span className="text-[0.76rem] text-dim">
             {item.customer_phone}
           </span>
         )}
-        <span style={{ marginLeft: 'auto', fontSize: '.72rem', color: 'var(--dim)' }}>
+        <span className="ml-auto text-[0.72rem] text-dim">
           {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
         </span>
       </div>
       {item.feedback_text && (
-        <div style={{ fontSize: '.82rem', marginTop: '.35rem' }}>{item.feedback_text}</div>
+        <div className="text-[0.82rem] mt-[0.35rem]">{item.feedback_text}</div>
       )}
       {item.status === 'resolved' && item.escalation_note && (
-        <div style={{ fontSize: '.76rem', color: 'var(--dim)', marginTop: '.25rem' }}>
+        <div className="text-[0.76rem] text-dim mt-1">
           Resolved note: {item.escalation_note}
         </div>
       )}
       {isOpen && (
-        <div style={{ marginTop: '.45rem', display: 'flex', gap: '.35rem', alignItems: 'center' }}>
+        <div className="mt-[0.45rem] flex gap-[0.35rem] items-center">
           {showNote ? (
             <>
               <input
@@ -265,7 +250,7 @@ function EscalationRow({ item, onResolve }: EscalationRowProps) {
                 value={note}
                 placeholder="Optional note"
                 onChange={(ev) => setNote(ev.target.value)}
-                style={{ flex: 1, padding: '.35rem .5rem', border: '1px solid var(--rim)', borderRadius: 'var(--r)' }}
+                className="flex-1 py-[0.35rem] px-2 border border-rim rounded-r"
               />
               <button type="button" className="btn-p btn-sm" disabled={busy} onClick={doResolve}>
                 {busy ? 'Saving…' : 'Mark resolved'}
@@ -323,53 +308,48 @@ function SendDineIn({ onSend }: SendDineInProps) {
   }
 
   return (
-    <form className="card" onSubmit={submit} style={{ marginBottom: '1rem' }}>
+    <form className="card mb-4" onSubmit={submit}>
       <div className="ch"><h3>Send Dine-in Feedback</h3></div>
       <div
-        className="cb"
-        style={{
-          display: 'grid',
-          gap: '.8rem',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-        }}
+        className="cb grid gap-[0.8rem] grid-cols-[repeat(auto-fit,minmax(220px,1fr))]"
       >
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Customer phone</span>
+        <label className="flex flex-col gap-1">
+          <span className="text-[0.78rem] text-dim">Customer phone</span>
           <input
             type="tel"
             inputMode="numeric"
             placeholder="91XXXXXXXXXX"
             value={phone}
             onChange={(ev) => setPhone(ev.target.value)}
-            style={{ padding: '.45rem .55rem', border: '1px solid var(--rim)', borderRadius: 'var(--r)', background: '#fff' }}
+            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
           />
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Customer name (optional)</span>
+        <label className="flex flex-col gap-1">
+          <span className="text-[0.78rem] text-dim">Customer name (optional)</span>
           <input
             type="text"
             value={customerName}
             onChange={(ev) => setCustomerName(ev.target.value)}
-            style={{ padding: '.45rem .55rem', border: '1px solid var(--rim)', borderRadius: 'var(--r)', background: '#fff' }}
+            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
           />
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Order / table ref (optional)</span>
+        <label className="flex flex-col gap-1">
+          <span className="text-[0.78rem] text-dim">Order / table ref (optional)</span>
           <input
             type="text"
             placeholder="e.g. T4-bill-1288"
             value={orderRef}
             onChange={(ev) => setOrderRef(ev.target.value)}
-            style={{ padding: '.45rem .55rem', border: '1px solid var(--rim)', borderRadius: 'var(--r)', background: '#fff' }}
+            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
           />
         </label>
       </div>
       {msg && (
-        <div className="cb" style={{ color: msg.kind === 'ok' ? 'var(--wa)' : 'var(--red)', fontSize: '.82rem' }}>
+        <div className={`cb text-[0.82rem] ${msg.kind === 'ok' ? 'text-wa' : 'text-red'}`}>
           {msg.text}
         </div>
       )}
-      <div className="cb" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="cb flex justify-end">
         <button type="submit" className="btn-p btn-sm" disabled={busy}>
           {busy ? 'Sending…' : 'Send prompt'}
         </button>
@@ -416,44 +396,39 @@ function ReviewLinksSettings({ links, onSave }: ReviewLinksSettingsProps) {
   return (
     <form className="card" onSubmit={submit}>
       <div className="ch"><h3>Review Links</h3></div>
-      <div className="cb" style={{ fontSize: '.82rem', color: 'var(--dim)' }}>
+      <div className="cb text-[0.82rem] text-dim">
         Positive ratings trigger a WhatsApp nudge with these links (tracked via a short redirect).
       </div>
       <div
-        className="cb"
-        style={{
-          display: 'grid',
-          gap: '.8rem',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-        }}
+        className="cb grid gap-[0.8rem] grid-cols-[repeat(auto-fit,minmax(260px,1fr))]"
       >
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Google review URL</span>
+        <label className="flex flex-col gap-1">
+          <span className="text-[0.78rem] text-dim">Google review URL</span>
           <input
             type="url"
             placeholder="https://g.page/r/…/review"
             value={google}
             onChange={(ev) => setGoogle(ev.target.value)}
-            style={{ padding: '.45rem .55rem', border: '1px solid var(--rim)', borderRadius: 'var(--r)', background: '#fff' }}
+            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
           />
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: '.25rem' }}>
-          <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Zomato review URL</span>
+        <label className="flex flex-col gap-1">
+          <span className="text-[0.78rem] text-dim">Zomato review URL</span>
           <input
             type="url"
             placeholder="https://www.zomato.com/…"
             value={zomato}
             onChange={(ev) => setZomato(ev.target.value)}
-            style={{ padding: '.45rem .55rem', border: '1px solid var(--rim)', borderRadius: 'var(--r)', background: '#fff' }}
+            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
           />
         </label>
       </div>
       {msg && (
-        <div className="cb" style={{ color: msg.kind === 'ok' ? 'var(--wa)' : 'var(--red)', fontSize: '.82rem' }}>
+        <div className={`cb text-[0.82rem] ${msg.kind === 'ok' ? 'text-wa' : 'text-red'}`}>
           {msg.text}
         </div>
       )}
-      <div className="cb" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="cb flex justify-end">
         <button type="submit" className="btn-p btn-sm" disabled={saving}>
           {saving ? 'Saving…' : 'Save links'}
         </button>
@@ -533,9 +508,9 @@ export default function FeedbackPage() {
 
   return (
     <div id="tab-feedback" className="tab on">
-      <div style={{ marginBottom: '1rem' }}>
-        <h2 style={{ margin: 0 }}>Feedback</h2>
-        <div style={{ fontSize: '.84rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+      <div className="mb-4">
+        <h2 className="m-0">Feedback</h2>
+        <div className="text-[0.84rem] text-dim mt-[0.2rem]">
           Every rating from delivery and dine-in, plus the review funnel that follows.
         </div>
       </div>

@@ -9,8 +9,6 @@
 // any order detail surface; only renders when there's actually a live
 // rider feed for THIS order.
 //
-// Codebase doesn't use Tailwind utility classes — inline `style={{...}}`
-// matches the existing convention (see LiveIndicator.tsx, OrderDetailModal.tsx).
 // The pulsing dot animation is a one-off `<style>` block with a uniquely-named
 // keyframes (gb-rider-pulse) to avoid global collisions.
 
@@ -55,34 +53,16 @@ export default function RiderLocationCard({ orderId }: RiderLocationCardProps) {
         0%, 100% { opacity: 1; transform: scale(1); }
         50%      { opacity: 0.45; transform: scale(0.85); }
       }`}</style>
-      <div
-        style={{
-          marginTop: '.6rem',
-          padding: '.6rem .8rem',
-          background: '#f0fdf4',
-          border: '1px solid #bbf7d0',
-          borderRadius: 8,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '.7rem',
-          flexWrap: 'wrap',
-          fontSize: '.82rem',
-        }}
-      >
+      <div className="mt-[0.6rem] py-[0.6rem] px-[0.8rem] bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg flex items-center gap-[0.7rem] flex-wrap text-[0.82rem]">
         <span
           aria-hidden
-          style={{
-            display: 'inline-block',
-            width: 9,
-            height: 9,
-            borderRadius: '50%',
-            background: '#16a34a',
-            animation: 'gb-rider-pulse 1.5s ease-in-out infinite',
-            flexShrink: 0,
-          }}
+          className="inline-block w-[9px] h-[9px] rounded-full bg-green-600 shrink-0"
+          // animation references the gb-rider-pulse keyframes injected
+          // above — Tailwind's animate-* utilities can't bind to it.
+          style={{ animation: 'gb-rider-pulse 1.5s ease-in-out infinite' }}
         />
-        <span style={{ fontWeight: 600, color: '#15803d' }}>Rider is live</span>
-        <span style={{ color: 'var(--dim)', fontSize: '.76rem' }}>
+        <span className="font-semibold text-[#15803d]">Rider is live</span>
+        <span className="text-dim text-[0.76rem]">
           updated {relativeTime(lastRiderLocation.updated_at)}
         </span>
         {trackingUrl && (
@@ -90,12 +70,7 @@ export default function RiderLocationCard({ orderId }: RiderLocationCardProps) {
             href={trackingUrl}
             target="_blank"
             rel="noreferrer"
-            className="btn-p btn-sm"
-            style={{
-              marginLeft: 'auto',
-              textDecoration: 'none',
-              fontSize: '.75rem',
-            }}
+            className="btn-p btn-sm ml-auto no-underline text-[0.75rem]"
           >
             📍 Track Rider
           </a>

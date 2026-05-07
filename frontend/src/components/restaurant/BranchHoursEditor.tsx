@@ -153,28 +153,21 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
   })), [hours]);
 
   return (
-    <div
-      style={{
-        padding: '.8rem',
-        background: 'var(--ink2,#f4f4f5)',
-        border: '1px solid var(--bdr,#e5e7eb)',
-        borderRadius: 8,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '.6rem' }}>
-        <h4 style={{ margin: 0, fontSize: '.88rem', color: 'var(--txt)' }}>Operating Hours</h4>
-        <label style={{ display: 'flex', alignItems: 'center', gap: '.4rem', fontSize: '.78rem', color: 'var(--dim)', cursor: 'pointer' }}>
+    <div className="p-[0.8rem] bg-ink2 border border-bdr rounded-lg">
+      <div className="flex items-center justify-between mb-[0.6rem]">
+        <h4 className="m-0 text-[0.88rem] text-tx">Operating Hours</h4>
+        <label className="flex items-center gap-[0.4rem] text-[0.78rem] text-dim cursor-pointer">
           <input
             type="checkbox"
             checked={sameHours}
             onChange={(e) => handleSameToggle(e.target.checked)}
-            style={{ accentColor: 'var(--wa,#22c55e)' }}
+            className="accent-wa"
           />
           Same hours every day
         </label>
       </div>
 
-      <div style={{ display: 'flex', gap: '.4rem', marginBottom: '.6rem', flexWrap: 'wrap' }}>
+      <div className="flex gap-[0.4rem] mb-[0.6rem] flex-wrap">
         <button type="button" className="btn-g btn-sm" onClick={() => applyPreset('standard')} disabled={saving || loading}>
           Standard (10–22)
         </button>
@@ -187,29 +180,21 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
       </div>
 
       {sameHours && (
-        <div
-          style={{
-            marginBottom: '.5rem',
-            padding: '.5rem .6rem',
-            background: 'var(--bg)',
-            border: '1px solid var(--bdr,#e5e7eb)',
-            borderRadius: 6,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', fontSize: '.82rem' }}>
-            <span style={{ color: 'var(--dim)', width: 50 }}>All days</span>
+        <div className="mb-2 py-2 px-[0.6rem] bg-bg border border-bdr rounded-md">
+          <div className="flex items-center gap-[0.6rem] text-[0.82rem]">
+            <span className="text-dim w-[50px]">All days</span>
             <input
               type="time"
               value={uniOpen}
               onChange={(e) => setUniOpen(e.target.value)}
-              style={{ padding: '.25rem .4rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.78rem' }}
+              className="py-1 px-[0.4rem] border border-rim rounded-[4px] text-[0.78rem]"
             />
-            <span style={{ color: 'var(--dim)' }}>to</span>
+            <span className="text-dim">to</span>
             <input
               type="time"
               value={uniClose}
               onChange={(e) => setUniClose(e.target.value)}
-              style={{ padding: '.25rem .4rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.78rem' }}
+              className="py-1 px-[0.4rem] border border-rim rounded-[4px] text-[0.78rem]"
             />
           </div>
         </div>
@@ -221,23 +206,15 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
           return (
             <div
               key={r.day}
-              className="hours-row"
+              className="hours-row flex items-center gap-2 py-[0.35rem] text-[0.82rem] border-b border-bdr"
               data-day={r.day}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '.5rem',
-                padding: '.35rem 0',
-                fontSize: '.82rem',
-                borderBottom: '1px solid var(--bdr,#e5e7eb)',
-              }}
             >
-              <span style={{ width: 80, color: 'var(--dim)', fontWeight: 500 }}>{r.label}</span>
+              <span className="w-20 text-dim font-medium">{r.label}</span>
               <Toggle
                 checked={!r.is_closed}
                 onChange={(next) => updateDay(r.day, { is_closed: !next })}
               />
-              <span style={{ fontSize: '.72rem', color: 'var(--dim)', width: 44 }}>
+              <span className="text-[0.72rem] text-dim w-11">
                 {r.is_closed ? 'Closed' : 'Open'}
               </span>
               {!sameHours && (
@@ -247,21 +224,15 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
                     value={r.open}
                     disabled={disabled}
                     onChange={(e) => updateDay(r.day, { open: e.target.value })}
-                    style={{
-                      padding: '.2rem .35rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.78rem',
-                      opacity: disabled ? 0.45 : 1,
-                    }}
+                    className={`py-[0.2rem] px-[0.35rem] border border-rim rounded-[4px] text-[0.78rem] ${disabled ? 'opacity-[0.45]' : 'opacity-100'}`}
                   />
-                  <span style={{ color: 'var(--dim)', opacity: disabled ? 0.45 : 1 }}>to</span>
+                  <span className={`text-dim ${disabled ? 'opacity-[0.45]' : 'opacity-100'}`}>to</span>
                   <input
                     type="time"
                     value={r.close}
                     disabled={disabled}
                     onChange={(e) => updateDay(r.day, { close: e.target.value })}
-                    style={{
-                      padding: '.2rem .35rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.78rem',
-                      opacity: disabled ? 0.45 : 1,
-                    }}
+                    className={`py-[0.2rem] px-[0.35rem] border border-rim rounded-[4px] text-[0.78rem] ${disabled ? 'opacity-[0.45]' : 'opacity-100'}`}
                   />
                 </>
               )}
@@ -270,13 +241,13 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
         })}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', marginTop: '.6rem' }}>
+      <div className="flex items-center gap-[0.6rem] mt-[0.6rem]">
         <button type="button" className="btn-p btn-sm" onClick={handleSave} disabled={saving || loading}>
           {saving ? 'Saving…' : 'Save Hours'}
         </button>
-        <span style={{ fontSize: '.75rem', color: 'var(--dim)' }}>{status}</span>
+        <span className="text-[0.75rem] text-dim">{status}</span>
       </div>
-      <div style={{ marginTop: '.4rem', fontSize: '.72rem', color: 'var(--dim)' }}>
+      <div className="mt-[0.4rem] text-[0.72rem] text-dim">
         Changes take effect immediately. Customers see updated hours on WhatsApp.
       </div>
     </div>

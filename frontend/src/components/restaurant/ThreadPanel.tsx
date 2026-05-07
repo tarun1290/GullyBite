@@ -43,26 +43,15 @@ function isWindowOpen(messages: Message[]): boolean {
 function MessageBubble({ message }: { message: Message }) {
   const isInbound = message.direction === 'inbound';
   const type = message.message_type || 'text';
-  const bg = isInbound ? 'var(--ink3)' : 'rgba(37,211,102,.15)';
-  const border = isInbound ? undefined : '1px solid rgba(37,211,102,.3)';
+  const bubbleBg = isInbound ? 'bg-ink3' : 'bg-[rgba(37,211,102,0.15)]';
+  const bubbleBorder = isInbound ? '' : 'border border-[rgba(37,211,102,0.3)]';
+  const align = isInbound ? 'self-start' : 'self-end';
 
   let content: React.ReactNode;
   if (type === 'image') {
     content = (
       <>
-        <div
-          style={{
-            width: 200,
-            height: 140,
-            background: 'var(--ink2)',
-            borderRadius: 8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '2rem',
-            marginBottom: '.3rem',
-          }}
-        >
+        <div className="w-[200px] h-[140px] bg-ink2 rounded-lg flex items-center justify-center text-[2rem] mb-[0.3rem]">
           📷
         </div>
         {message.caption && <div>{message.caption}</div>}
@@ -70,8 +59,8 @@ function MessageBubble({ message }: { message: Message }) {
     );
   } else if (type === 'document') {
     content = (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }}>
-        <span style={{ fontSize: '1.1rem' }}>📎</span>
+      <div className="flex items-center gap-[0.4rem]">
+        <span className="text-[1.1rem]">📎</span>
         <span>{message.caption || 'Document'}</span>
       </div>
     );
@@ -85,26 +74,10 @@ function MessageBubble({ message }: { message: Message }) {
 
   return (
     <div
-      style={{
-        alignSelf: isInbound ? 'flex-start' : 'flex-end',
-        maxWidth: '75%',
-        padding: '.5rem .7rem',
-        borderRadius: 12,
-        background: bg,
-        border,
-        fontSize: '.83rem',
-        lineHeight: 1.45,
-      }}
+      className={`max-w-[75%] py-2 px-[0.7rem] rounded-xl text-[0.83rem] leading-[1.45] ${align} ${bubbleBg} ${bubbleBorder}`}
     >
       <div>{content}</div>
-      <div
-        style={{
-          fontSize: '.62rem',
-          color: 'var(--dim)',
-          textAlign: 'right',
-          marginTop: '.2rem',
-        }}
-      >
+      <div className="text-[0.62rem] text-dim text-right mt-[0.2rem]">
         {formatTime(message.created_at)}
         {!isInbound && ` · ${message.status || 'sent'}`}
       </div>
@@ -208,14 +181,7 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
 
   if (!customerId) {
     return (
-      <div
-        style={{
-          textAlign: 'center',
-          color: 'var(--dim)',
-          padding: '3rem 0',
-          fontSize: '.85rem',
-        }}
-      >
+      <div className="text-center text-dim py-12 text-[0.85rem]">
         Select a conversation to view messages
       </div>
     );
@@ -225,14 +191,14 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
     <>
       <div
         id="msg-thread-header"
-        style={{ padding: '.7rem 1rem', borderBottom: '1px solid var(--rim)' }}
+        className="py-[0.7rem] px-4 border-b border-rim"
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '.7rem' }}>
-          <div style={{ flex: 1 }}>
-            <div id="msg-thread-name" style={{ fontWeight: 600, fontSize: '.9rem' }}>
+        <div className="flex items-center gap-[0.7rem]">
+          <div className="flex-1">
+            <div id="msg-thread-name" className="font-semibold text-[0.9rem]">
               {displayName}
             </div>
-            <div id="msg-thread-info" style={{ fontSize: '.72rem', color: 'var(--dim)' }}>
+            <div id="msg-thread-info" className="text-[0.72rem] text-dim">
               {displayPhone}
             </div>
           </div>
@@ -251,14 +217,7 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
         {!windowOpen && (
           <div
             id="msg-window-warning"
-            style={{
-              marginTop: '.4rem',
-              padding: '.3rem .6rem',
-              background: '#fef3c7',
-              borderRadius: 6,
-              fontSize: '.72rem',
-              color: '#92400e',
-            }}
+            className="mt-[0.4rem] py-[0.3rem] px-[0.6rem] bg-[#fef3c7] rounded-md text-[0.72rem] text-[#92400e]"
           >
             ⚠️ 24-hour reply window has expired. Use template messages to contact this customer.
           </div>
@@ -267,26 +226,12 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
       <div
         id="msg-thread-body"
         ref={bodyRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '1rem',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '.4rem',
-        }}
+        className="flex-1 overflow-y-auto p-4 flex flex-col gap-[0.4rem]"
       >
         {loading ? (
-          <div className="spin" style={{ margin: '2rem auto', display: 'block', width: 22, height: 22 }} />
+          <div className="spin my-8 mx-auto block w-[22px] h-[22px]" />
         ) : messages.length === 0 ? (
-          <div
-            style={{
-              textAlign: 'center',
-              color: 'var(--dim)',
-              padding: '2rem 0',
-              fontSize: '.82rem',
-            }}
-          >
+          <div className="text-center text-dim py-8 text-[0.82rem]">
             No messages in this thread
           </div>
         ) : (
@@ -296,7 +241,7 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
       <form
         id="msg-reply-bar"
         onSubmit={handleSend}
-        style={{ display: 'flex', padding: '.6rem', borderTop: '1px solid var(--rim)', gap: '.4rem' }}
+        className="flex p-[0.6rem] border-t border-rim gap-[0.4rem]"
       >
         <input
           id="msg-reply-input"
@@ -304,13 +249,7 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
           onChange={(e) => setReplyText(e.target.value)}
           placeholder={windowOpen ? 'Type a reply…' : '24h window expired'}
           disabled={!windowOpen || sending}
-          style={{
-            flex: 1,
-            padding: '.5rem .7rem',
-            border: '1px solid var(--rim)',
-            borderRadius: 8,
-            fontSize: '.85rem',
-          }}
+          className="flex-1 py-2 px-[0.7rem] border border-rim rounded-lg text-[0.85rem]"
         />
         <button
           type="submit"

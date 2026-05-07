@@ -86,8 +86,7 @@ export default function Sidebar({
           {onLogout && (
             <button
               type="button"
-              className="sb-btn"
-              style={{ marginTop: '0.75rem' }}
+              className="sb-btn mt-3"
               onClick={onLogout}
             >
               <span className="ic">⇥</span>

@@ -170,7 +170,7 @@ export default function RestaurantMessageDrawer({ open, onClose, onThreadLoaded 
                     : 'self-start bg-ink2 border-rim'
                 }`}
               >
-                <div className="text-[0.86rem] whitespace-pre-wrap break-words">
+                <div className="text-[0.86rem] whitespace-pre-wrap wrap-break-word">
                   {m.message}
                 </div>
                 <div className="text-[0.66rem] text-dim mt-1">

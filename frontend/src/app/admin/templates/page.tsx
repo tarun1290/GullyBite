@@ -150,9 +150,9 @@ export default function AdminTemplatesPage() {
   return (
     <div>
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.4rem' }}>
+        <div className="ch justify-between flex-wrap gap-[0.4rem]">
           <h3>📄 WhatsApp Templates</h3>
-          <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="flex gap-[0.4rem] items-center flex-wrap">
             <button type="button" className="btn-g btn-sm" onClick={doSync} disabled={syncing}>
               {syncing ? 'Syncing…' : '🔄 Sync from Meta'}
             </button>
@@ -166,24 +166,24 @@ export default function AdminTemplatesPage() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
-        <div className="ch"><h3>Templates <span style={{ fontSize: '.72rem', color: 'var(--dim)' }}>({templates.length})</span></h3></div>
+      <div className="card mt-4">
+        <div className="ch"><h3>Templates <span className="text-[0.72rem] text-dim">({templates.length})</span></h3></div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)' }}>Loading…</p>
+            <p className="text-dim">Loading…</p>
           ) : !templates.length ? (
-            <p style={{ color: 'var(--dim)' }}>No templates synced. Enter a WABA ID and click &quot;Sync from Meta&quot;.</p>
+            <p className="text-dim">No templates synced. Enter a WABA ID and click &quot;Sync from Meta&quot;.</p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
                 <thead>
-                  <tr style={{ textAlign: 'left', fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase' }}>
-                    <th style={{ padding: '.45rem' }}>Name</th>
-                    <th style={{ padding: '.45rem' }}>Category</th>
-                    <th style={{ padding: '.45rem' }}>Lang</th>
-                    <th style={{ padding: '.45rem' }}>Status</th>
-                    <th style={{ padding: '.45rem' }}>Components</th>
-                    <th style={{ padding: '.45rem', textAlign: 'right' }}>Actions</th>
+                  <tr className="text-left text-[0.72rem] text-dim uppercase">
+                    <th className="p-[0.45rem]">Name</th>
+                    <th className="p-[0.45rem]">Category</th>
+                    <th className="p-[0.45rem]">Lang</th>
+                    <th className="p-[0.45rem]">Status</th>
+                    <th className="p-[0.45rem]">Components</th>
+                    <th className="p-[0.45rem] text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -193,39 +193,41 @@ export default function AdminTemplatesPage() {
                     const pending = pendingDelete === t.name;
                     const busy = rowBusy === t.name;
                     return (
-                      <tr key={t.id || t.meta_id || t.name} style={{ borderBottom: '1px solid var(--rim)' }}>
-                        <td style={{ padding: '.45rem', fontSize: '.84rem', fontWeight: 500 }}>
+                      <tr key={t.id || t.meta_id || t.name} className="border-b border-rim">
+                        <td className="p-[0.45rem] text-[0.84rem] font-medium">
                           {t.name}
                           {t.status === 'REJECTED' && t.rejected_reason && (
-                            <div style={{ fontSize: '.7rem', color: 'var(--gb-red-500)', marginTop: '.2rem' }}>
+                            <div className="text-[0.7rem] text-red-500 mt-[0.2rem]">
                               {t.rejected_reason}
                             </div>
                           )}
                         </td>
-                        <td style={{ padding: '.45rem', fontSize: '.78rem' }}>{t.category}</td>
-                        <td style={{ padding: '.45rem', fontSize: '.78rem' }}>{t.language}</td>
-                        <td style={{ padding: '.45rem', fontSize: '.78rem' }}>
-                          <span style={{ color: clr, fontWeight: 600 }}>{t.status}</span>
-                          {qclr && <span style={{ color: qclr, marginLeft: '.35rem', fontSize: '.7rem' }}>{t.quality_score}</span>}
+                        <td className="p-[0.45rem] text-[0.78rem]">{t.category}</td>
+                        <td className="p-[0.45rem] text-[0.78rem]">{t.language}</td>
+                        <td className="p-[0.45rem] text-[0.78rem]">
+                          {/* dynamic color: STATUS_COLORS palette keyed by t.status at runtime */}
+                          <span style={{ color: clr }} className="font-semibold">{t.status}</span>
+                          {/* dynamic color: QUALITY_COLORS palette keyed by t.quality_score at runtime */}
+                          {qclr && <span style={{ color: qclr }} className="ml-[0.35rem] text-[0.7rem]">{t.quality_score}</span>}
                         </td>
-                        <td style={{ padding: '.45rem', fontSize: '.72rem', color: 'var(--dim)' }}>
+                        <td className="p-[0.45rem] text-[0.72rem] text-dim">
                           {(t.components || []).map((c) => c.type).join(', ')}
                         </td>
-                        <td style={{ padding: '.45rem', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <td className="p-[0.45rem] text-right whitespace-nowrap">
                           {pending ? (
-                            <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
-                              <span style={{ fontSize: '.72rem', color: 'var(--dim)', marginRight: '.2rem' }}>Delete &quot;{t.name}&quot;?</span>
-                              <button type="button" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 4, padding: '.15rem .5rem', fontSize: '.72rem' }} onClick={() => doDelete(t.name)} disabled={busy}>
+                            <span className="inline-flex gap-1 items-center">
+                              <span className="text-[0.72rem] text-dim mr-[0.2rem]">Delete &quot;{t.name}&quot;?</span>
+                              <button type="button" className="bg-red-500 text-neutral-0 border-0 rounded-sm py-[0.15rem] px-2 text-[0.72rem]" onClick={() => doDelete(t.name)} disabled={busy}>
                                 {busy ? '…' : 'Confirm'}
                               </button>
-                              <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={() => setPendingDelete(null)} disabled={busy}>Cancel</button>
+                              <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => setPendingDelete(null)} disabled={busy}>Cancel</button>
                             </span>
                           ) : (
                             <>
                               <button type="button" className="btn-g btn-sm" onClick={() => setEditing({ metaId: (t.meta_id || t.id) || '' })}>
                                 Edit
                               </button>
-                              <button type="button" className="btn-del btn-sm" style={{ marginLeft: '.25rem' }} onClick={() => setPendingDelete(t.name)}>
+                              <button type="button" className="btn-del btn-sm ml-1" onClick={() => setPendingDelete(t.name)}>
                                 Delete
                               </button>
                             </>
@@ -241,46 +243,46 @@ export default function AdminTemplatesPage() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
+      <div className="card mt-4">
         <div className="ch"><h3>📌 Event → Template Mappings</h3></div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)' }}>Loading…</p>
+            <p className="text-dim">Loading…</p>
           ) : !mappings.length ? (
-            <p style={{ color: 'var(--dim)' }}>No mappings yet. Click &quot;Seed Defaults&quot; to create.</p>
+            <p className="text-dim">No mappings yet. Click &quot;Seed Defaults&quot; to create.</p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
                 <thead>
-                  <tr style={{ textAlign: 'left', fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase' }}>
-                    <th style={{ padding: '.45rem' }}>Event</th>
-                    <th style={{ padding: '.45rem' }}>Template</th>
-                    <th style={{ padding: '.45rem' }}>Description</th>
-                    <th style={{ padding: '.45rem' }}>Variables</th>
-                    <th style={{ padding: '.45rem' }}>Active</th>
+                  <tr className="text-left text-[0.72rem] text-dim uppercase">
+                    <th className="p-[0.45rem]">Event</th>
+                    <th className="p-[0.45rem]">Template</th>
+                    <th className="p-[0.45rem]">Description</th>
+                    <th className="p-[0.45rem]">Variables</th>
+                    <th className="p-[0.45rem]">Active</th>
                   </tr>
                 </thead>
                 <tbody>
                   {mappings.map((m) => (
-                    <tr key={m.event} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td style={{ padding: '.45rem', fontWeight: 600, fontSize: '.82rem' }}>{m.event}</td>
-                      <td style={{ padding: '.45rem' }}>
-                        <code style={{ fontSize: '.78rem', background: 'var(--ink4,#f4f4f5)', padding: '.1rem .4rem', borderRadius: 4 }}>
+                    <tr key={m.event} className="border-b border-rim">
+                      <td className="p-[0.45rem] font-semibold text-[0.82rem]">{m.event}</td>
+                      <td className="p-[0.45rem]">
+                        <code className="text-[0.78rem] bg-ink4 py-[0.1rem] px-[0.4rem] rounded-sm">
                           {m.template_name}
                         </code>
                       </td>
-                      <td style={{ padding: '.45rem', color: 'var(--dim)', fontSize: '.78rem' }}>{m.description || '—'}</td>
-                      <td style={{ padding: '.45rem', fontSize: '.72rem' }}>
+                      <td className="p-[0.45rem] text-dim text-[0.78rem]">{m.description || '—'}</td>
+                      <td className="p-[0.45rem] text-[0.72rem]">
                         {(m.variables || []).map((v, i) => (
-                          <span key={i} style={{ background: 'var(--ink4,#f4f4f5)', padding: '.1rem .3rem', borderRadius: 3, marginRight: '.2rem' }}>
+                          <span key={i} className="bg-ink4 py-[0.1rem] px-[0.3rem] rounded-[3px] mr-[0.2rem]">
                             {`{{${v.position}}}`} → {v.source}
                           </span>
                         ))}
                       </td>
-                      <td style={{ padding: '.45rem', fontSize: '.78rem' }}>
+                      <td className="p-[0.45rem] text-[0.78rem]">
                         {m.is_active
-                          ? <span style={{ color: 'var(--gb-wa-500)' }}>Active</span>
-                          : <span style={{ color: 'var(--dim)' }}>Off</span>}
+                          ? <span className="text-wa-500">Active</span>
+                          : <span className="text-dim">Off</span>}
                       </td>
                     </tr>
                   ))}
@@ -291,37 +293,37 @@ export default function AdminTemplatesPage() {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
+      <div className="card mt-4">
         <div className="ch"><h3>🔔 Recent Template Sends</h3></div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)' }}>Loading…</p>
+            <p className="text-dim">Loading…</p>
           ) : !notifications.length ? (
-            <p style={{ color: 'var(--dim)' }}>No template sends yet.</p>
+            <p className="text-dim">No template sends yet.</p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
                 <thead>
-                  <tr style={{ textAlign: 'left', fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase' }}>
-                    <th style={{ padding: '.45rem' }}>Order</th>
-                    <th style={{ padding: '.45rem' }}>Event</th>
-                    <th style={{ padding: '.45rem' }}>Template</th>
-                    <th style={{ padding: '.45rem' }}>Status</th>
-                    <th style={{ padding: '.45rem' }}>Sent</th>
+                  <tr className="text-left text-[0.72rem] text-dim uppercase">
+                    <th className="p-[0.45rem]">Order</th>
+                    <th className="p-[0.45rem]">Event</th>
+                    <th className="p-[0.45rem]">Template</th>
+                    <th className="p-[0.45rem]">Status</th>
+                    <th className="p-[0.45rem]">Sent</th>
                   </tr>
                 </thead>
                 <tbody>
                   {notifications.map((l, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td style={{ padding: '.45rem', fontFamily: 'monospace', fontSize: '.76rem' }}>
+                    <tr key={i} className="border-b border-rim">
+                      <td className="p-[0.45rem] font-mono text-[0.76rem]">
                         {String(l.order_id || '').slice(-8) || '—'}
                       </td>
-                      <td style={{ padding: '.45rem', fontSize: '.78rem' }}>{l.event}</td>
-                      <td style={{ padding: '.45rem', fontSize: '.76rem' }}><code>{l.template_name}</code></td>
-                      <td style={{ padding: '.45rem', fontSize: '.78rem', color: l.status === 'sent' ? 'var(--gb-wa-500)' : 'var(--gb-red-500)' }}>
+                      <td className="p-[0.45rem] text-[0.78rem]">{l.event}</td>
+                      <td className="p-[0.45rem] text-[0.76rem]"><code>{l.template_name}</code></td>
+                      <td className={`p-[0.45rem] text-[0.78rem] ${l.status === 'sent' ? 'text-wa-500' : 'text-red-500'}`}>
                         {l.status}
                       </td>
-                      <td style={{ padding: '.45rem', fontSize: '.78rem', color: 'var(--dim)' }}>
+                      <td className="p-[0.45rem] text-[0.78rem] text-dim">
                         {l.sent_at ? new Date(l.sent_at).toLocaleString() : '—'}
                       </td>
                     </tr>

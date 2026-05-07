@@ -34,15 +34,17 @@ const QUALITY_PILL_COLORS: Record<string, PillMeta> = {
 interface QualityValueProps { value?: string }
 
 function QualityValue({ value }: QualityValueProps) {
-  if (!value) return <span style={{ color: 'var(--dim)' }}>—</span>;
+  if (!value) return <span className="text-dim">—</span>;
   const upper = String(value).toUpperCase();
   const pill = QUALITY_PILL_COLORS[upper];
   if (!pill) return <span>{value}</span>;
   return (
-    <span style={{
-      display: 'inline-block', padding: '.15rem .5rem', borderRadius: 6,
-      fontSize: '.75rem', fontWeight: 600, background: pill.bg, color: pill.fg,
-    }}
+    <span
+      className="inline-block py-[0.15rem] px-2 rounded-md text-[0.75rem] font-semibold"
+      // GREEN/YELLOW/RED Meta quality-rating palette comes from the
+      // QUALITY_PILL_COLORS map at runtime — Tailwind can't pre-bake the
+      // alpha-tinted backgrounds.
+      style={{ background: pill.bg, color: pill.fg }}
     >
       {pill.label}
     </span>
@@ -53,20 +55,16 @@ interface StatusBoxProps { dot: string; label: string; sub: string }
 
 function StatusBox({ dot, label, sub }: StatusBoxProps) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '.8rem',
-      padding: '.7rem 1rem', borderRadius: 8,
-      background: 'var(--surface2,#f4f4f5)', marginBottom: '1rem',
-    }}
-    >
-      <span style={{
-        width: 10, height: 10, borderRadius: '50%',
-        background: dot, flexShrink: 0,
-      }}
+    <div className="flex items-center gap-[0.8rem] py-[0.7rem] px-4 rounded-lg bg-surface2 mb-4">
+      <span
+        className="w-[10px] h-[10px] rounded-full shrink-0"
+        // dot colour comes from the caller (ef4444 / f59e0b / 22c55e
+        // depending on connection state) — runtime value.
+        style={{ background: dot }}
       />
       <div>
-        <div style={{ fontWeight: 600, fontSize: '.88rem' }}>{label}</div>
-        <div style={{ fontSize: '.78rem', color: 'var(--dim)' }}>{sub}</div>
+        <div className="font-semibold text-[0.88rem]">{label}</div>
+        <div className="text-[0.78rem] text-dim">{sub}</div>
       </div>
     </div>
   );
@@ -106,7 +104,7 @@ export default function WhatsappSection() {
     return (
       <div className="card">
         <div className="ch"><h3>WhatsApp Connection</h3></div>
-        <div className="cb"><div style={{ color: 'var(--dim)', padding: '.5rem' }}>Loading…</div></div>
+        <div className="cb"><div className="text-dim p-2">Loading…</div></div>
       </div>
     );
   }
@@ -133,52 +131,36 @@ export default function WhatsappSection() {
 
   return (
     <>
-    <div className="card" style={{ marginBottom: '1.2rem' }}>
+    <div className="card mb-[1.2rem]">
       <div className="ch"><h3>WhatsApp Connection</h3></div>
       <div className="cb">
         <StatusBox dot={dot} label={label} sub={sub} />
 
         {fullyConnected && waAccounts.length > 0 && (
-          <div
-            style={{
-              marginBottom: '1rem',
-              border: '1px solid var(--rim)',
-              borderRadius: 8,
-              background: 'var(--panel, #fff)',
-            }}
-          >
+          <div className="mb-4 border border-rim rounded-lg bg-panel">
             {waAccounts.map((a, i) => (
               <div
                 key={a.waba_id || i}
-                style={{
-                  padding: '.7rem 1rem',
-                  borderTop: i === 0 ? 'none' : '1px solid var(--rim)',
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(120px, 28%) 1fr',
-                  rowGap: '.35rem',
-                  columnGap: '.8rem',
-                  fontSize: '.82rem',
-                }}
+                className={`py-[0.7rem] px-4 grid grid-cols-[minmax(120px,28%)_1fr] gap-x-[0.8rem] gap-y-[0.35rem] text-[0.82rem] ${
+                  i === 0 ? '' : 'border-t border-rim'
+                }`}
               >
-                <span style={{ color: 'var(--dim)' }}>WABA ID</span>
+                <span className="text-dim">WABA ID</span>
                 <span
                   title={a.waba_id || ''}
-                  style={{
-                    fontFamily: 'monospace',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}
+                  className="font-mono whitespace-nowrap overflow-hidden text-ellipsis"
                 >
                   {a.waba_id || '—'}
                 </span>
-                <span style={{ color: 'var(--dim)' }}>Phone Number</span>
+                <span className="text-dim">Phone Number</span>
                 <span>{a.phone || a.phone_display || '—'}</span>
                 {a.name ? (
                   <>
-                    <span style={{ color: 'var(--dim)' }}>Display Name</span>
+                    <span className="text-dim">Display Name</span>
                     <span>{a.name}</span>
                   </>
                 ) : null}
-                <span style={{ color: 'var(--dim)' }}>Quality Rating</span>
+                <span className="text-dim">Quality Rating</span>
                 <span><QualityValue value={a.quality_rating} /></span>
               </div>
             ))}
@@ -187,15 +169,11 @@ export default function WhatsappSection() {
 
         {fullyConnected && (
           <>
-            <div style={{
-              display: 'flex', gap: '.5rem', flexWrap: 'wrap', marginTop: '.5rem',
-            }}
-            >
+            <div className="flex gap-2 flex-wrap mt-2">
               <WaConnectBanner compact onConnected={refetch} />
               <button
                 type="button"
-                className="btn-g btn-sm"
-                style={{ flex: 1, minWidth: 140, justifyContent: 'center', color: '#dc2626', borderColor: '#dc2626' }}
+                className="btn-g btn-sm flex-1 min-w-[140px] justify-center text-[#dc2626] border-[#dc2626]"
                 onClick={() => setConfirmOpen(true)}
                 disabled={disconnecting}
               >
@@ -204,21 +182,11 @@ export default function WhatsappSection() {
             </div>
 
             {confirmOpen && (
-              <div style={{
-                marginTop: '.7rem', background: '#fef2f2', border: '1px solid #fecaca',
-                borderRadius: 8, padding: '.85rem',
-              }}
-              >
-                <div style={{
-                  fontSize: '.85rem', fontWeight: 600, color: '#dc2626', marginBottom: '.4rem',
-                }}
-                >
+              <div className="mt-[0.7rem] bg-[#fef2f2] border border-[#fecaca] rounded-lg p-[0.85rem]">
+                <div className="text-[0.85rem] font-semibold text-[#dc2626] mb-[0.4rem]">
                   ⚠️ Disconnect WhatsApp Business?
                 </div>
-                <p style={{
-                  fontSize: '.78rem', color: '#7f1d1d', marginBottom: '.6rem', lineHeight: 1.45,
-                }}
-                >
+                <p className="text-[0.78rem] text-[#7f1d1d] mb-[0.6rem] leading-[1.45]">
                   Customers will <strong>stop being able to message your business</strong>. Incoming
                   WhatsApp messages will be ignored and no new orders will be received until you
                   reconnect.
@@ -227,7 +195,7 @@ export default function WhatsappSection() {
                   Your menu, catalog, and customer history are preserved. You can reconnect to the
                   same number or a different one anytime.
                 </p>
-                <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+                <div className="flex gap-2 justify-end">
                   <button
                     type="button"
                     className="btn-g btn-sm"
@@ -251,7 +219,7 @@ export default function WhatsappSection() {
         )}
 
         {!fullyConnected && (
-          <div style={{ marginTop: '.4rem' }}>
+          <div className="mt-[0.4rem]">
             <WaConnectBanner onConnected={refetch} />
           </div>
         )}

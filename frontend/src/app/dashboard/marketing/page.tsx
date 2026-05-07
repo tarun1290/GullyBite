@@ -20,7 +20,7 @@ export default function MarketingPage() {
 
   return (
     <div id="tab-marketing-wrap">
-      <div className="chips" style={{ marginBottom: '1rem' }}>
+      <div className="chips mb-4">
         {SECTIONS.map(([value, label]) => (
           <button
             key={value}

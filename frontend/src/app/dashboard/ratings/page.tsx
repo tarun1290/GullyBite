@@ -59,7 +59,8 @@ function ratingColor(v: number | undefined | null): string {
 
 function RatingBadge({ value }: { value?: number | undefined }) {
   return (
-    <span style={{ color: ratingColor(value), fontWeight: 600 }}>
+    // colour from ratingColor() at runtime based on numeric rating
+    <span className="font-semibold" style={{ color: ratingColor(value) }}>
       {value || '—'}
     </span>
   );
@@ -157,18 +158,15 @@ export default function RatingsPage() {
 
   return (
     <div id="tab-ratings" className="tab on">
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div
-          className="ch"
-          style={{ display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}
-        >
-          <h3 style={{ marginRight: 'auto' }}>Customer Ratings</h3>
-          <label className="lbl" htmlFor="rt-branch" style={{ margin: 0 }}>Branch</label>
+      <div className="card mb-4">
+        <div className="ch flex items-center gap-[0.6rem] flex-wrap">
+          <h3 className="mr-auto">Customer Ratings</h3>
+          <label className="lbl m-0" htmlFor="rt-branch">Branch</label>
           <select
             id="rt-branch"
             value={branchId}
             onChange={handleBranchChange}
-            style={{ minWidth: 180 }}
+            className="min-w-[180px]"
           >
             <option value="">All branches</option>
             {branches.map((b) => (
@@ -178,7 +176,7 @@ export default function RatingsPage() {
         </div>
 
         {summaryErr ? (
-          <div style={{ padding: '.8rem 0' }}>
+          <div className="py-[0.8rem]">
             <SectionError message={summaryErr} onRetry={loadSummary} />
           </div>
         ) : (
@@ -217,30 +215,31 @@ export default function RatingsPage() {
         )}
       </div>
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
+      <div className="card mb-4">
         <div className="ch">
           <h3>Recent Comments</h3>
         </div>
         <div id="rt-comments">
           {summaryLoading ? (
-            <span style={{ color: 'var(--dim)' }}>Loading…</span>
+            <span className="text-dim">Loading…</span>
           ) : summary?.recent_comments?.length ? (
             summary.recent_comments.map((c, i) => (
               <div
                 key={i}
-                style={{ padding: '.5rem 0', borderBottom: '1px solid var(--rim)' }}
+                className="py-2 border-b border-rim"
               >
-                <span style={{ fontWeight: 600, color: ratingColor(c.overall_rating || 0) }}>
+                {/* colour from ratingColor() at runtime based on numeric rating */}
+                <span className="font-semibold" style={{ color: ratingColor(c.overall_rating || 0) }}>
                   {c.overall_rating || 0}⭐
                 </span>{' '}
                 <span>{c.comment || ''}</span>{' '}
-                <span style={{ color: 'var(--dim)', fontSize: '.72rem', float: 'right' }}>
+                <span className="text-dim text-[0.72rem] float-right">
                   {formatShortDate(c.created_at)}
                 </span>
               </div>
             ))
           ) : (
-            <span style={{ color: 'var(--mute)' }}>No comments yet</span>
+            <span className="text-mute">No comments yet</span>
           )}
         </div>
       </div>
@@ -248,7 +247,7 @@ export default function RatingsPage() {
       <div className="card">
         <div className="ch">
           <h3>All Ratings</h3>
-          <span id="rt-count" style={{ color: 'var(--dim)', fontSize: '.8rem' }}>
+          <span id="rt-count" className="text-dim text-[0.8rem]">
             {list ? `${list.total} total` : ''}
           </span>
         </div>
@@ -263,11 +262,11 @@ export default function RatingsPage() {
                   <th>Order</th>
                   <th>Customer</th>
                   <th>Branch</th>
-                  <th style={{ textAlign: 'center' }}>Taste</th>
-                  <th style={{ textAlign: 'center' }}>Packing</th>
-                  <th style={{ textAlign: 'center' }}>Delivery</th>
-                  <th style={{ textAlign: 'center' }}>Value</th>
-                  <th style={{ textAlign: 'center' }}>Overall</th>
+                  <th className="text-center">Taste</th>
+                  <th className="text-center">Packing</th>
+                  <th className="text-center">Delivery</th>
+                  <th className="text-center">Value</th>
+                  <th className="text-center">Overall</th>
                   <th>Comment</th>
                   <th>Date</th>
                 </tr>
@@ -275,34 +274,34 @@ export default function RatingsPage() {
               <tbody id="rt-tbody">
                 {listLoading ? (
                   <tr>
-                    <td colSpan={10} style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)' }}>
+                    <td colSpan={10} className="text-center p-8 text-dim">
                       Loading…
                     </td>
                   </tr>
                 ) : !list?.ratings?.length ? (
                   <tr>
-                    <td colSpan={10} style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)' }}>
+                    <td colSpan={10} className="text-center p-8 text-dim">
                       No ratings yet. Ratings will appear here after customers rate their orders.
                     </td>
                   </tr>
                 ) : (
                   list.ratings.map((r, i) => (
-                    <tr key={r.id || `${r.order_number}-${i}`} style={{ borderBottom: '1px solid var(--rim)' }}>
+                    <tr key={r.id || `${r.order_number}-${i}`} className="border-b border-rim">
                       <td><span className="mono">#{r.order_number}</span></td>
                       <td>{r.customer_name || ''}</td>
                       <td>{r.branch_name}</td>
-                      <td style={{ textAlign: 'center' }}><RatingBadge value={r.taste_rating} /></td>
-                      <td style={{ textAlign: 'center' }}><RatingBadge value={r.packing_rating} /></td>
-                      <td style={{ textAlign: 'center' }}><RatingBadge value={r.delivery_rating} /></td>
-                      <td style={{ textAlign: 'center' }}><RatingBadge value={r.value_rating} /></td>
-                      <td style={{ textAlign: 'center' }}><RatingBadge value={r.overall_rating} /></td>
+                      <td className="text-center"><RatingBadge value={r.taste_rating} /></td>
+                      <td className="text-center"><RatingBadge value={r.packing_rating} /></td>
+                      <td className="text-center"><RatingBadge value={r.delivery_rating} /></td>
+                      <td className="text-center"><RatingBadge value={r.value_rating} /></td>
+                      <td className="text-center"><RatingBadge value={r.overall_rating} /></td>
                       <td
-                        style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        className="max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap"
                         title={r.comment || ''}
                       >
-                        {r.comment || <span style={{ color: 'var(--mute)' }}>—</span>}
+                        {r.comment || <span className="text-mute">—</span>}
                       </td>
-                      <td style={{ color: 'var(--dim)' }}>{formatDate(r.created_at)}</td>
+                      <td className="text-dim">{formatDate(r.created_at)}</td>
                     </tr>
                   ))
                 )}
@@ -314,24 +313,18 @@ export default function RatingsPage() {
         {list && list.pages > 1 && (
           <div
             id="rt-pager"
-            style={{ display: 'flex', gap: '.3rem', flexWrap: 'wrap', marginTop: '.8rem' }}
+            className="flex gap-[0.3rem] flex-wrap mt-[0.8rem]"
           >
             {Array.from({ length: list.pages }, (_, i) => i + 1).map((p) => {
               const active = p === page;
+              const borderCls = active ? 'border border-acc' : 'border border-rim';
+              const bgCls = active ? 'bg-acc text-white' : 'bg-white text-tx';
               return (
                 <button
                   key={p}
                   type="button"
                   onClick={() => setPage(p)}
-                  style={{
-                    padding: '.3rem .6rem',
-                    border: `1px solid ${active ? 'var(--acc)' : 'var(--rim)'}`,
-                    borderRadius: 'var(--r)',
-                    background: active ? 'var(--acc)' : '#fff',
-                    color: active ? '#fff' : 'var(--tx)',
-                    cursor: 'pointer',
-                    fontSize: '.75rem',
-                  }}
+                  className={`py-[0.3rem] px-[0.6rem] rounded-r cursor-pointer text-[0.75rem] ${borderCls} ${bgCls}`}
                 >
                   {p}
                 </button>

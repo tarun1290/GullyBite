@@ -34,13 +34,9 @@ interface TileProps { label: string; value: string }
 
 function Tile({ label, value }: TileProps) {
   return (
-    <div style={{
-      background: 'var(--ink2)', borderRadius: 8,
-      padding: '.65rem .8rem', textAlign: 'center',
-    }}
-    >
-      <div style={{ fontSize: '.7rem', color: 'var(--dim)', marginBottom: '.2rem' }}>{label}</div>
-      <div style={{ fontSize: '.88rem', fontWeight: 600 }}>{value}</div>
+    <div className="bg-ink2 rounded-lg py-[0.65rem] px-[0.8rem] text-center">
+      <div className="text-[0.7rem] text-dim mb-[0.2rem]">{label}</div>
+      <div className="text-[0.88rem] font-semibold">{value}</div>
     </div>
   );
 }
@@ -80,7 +76,7 @@ export default function PricingSection() {
     return (
       <div className="card">
         <div className="ch"><h3>Pricing &amp; Charges</h3></div>
-        <div className="cb"><div style={{ color: 'var(--dim)', padding: '.5rem' }}>Loading…</div></div>
+        <div className="cb"><div className="text-dim p-2">Loading…</div></div>
       </div>
     );
   }
@@ -94,8 +90,8 @@ export default function PricingSection() {
   const hintPct = Math.min(100, Math.max(0, parseInt(String(form.deliveryFeeCustomerPct), 10) || 0));
 
   return (
-    <div className="card" style={{ marginBottom: '1.2rem' }}>
-      <div className="ch" style={{ justifyContent: 'space-between' }}>
+    <div className="card mb-[1.2rem]">
+      <div className="ch justify-between">
         <h3>Pricing &amp; Charges</h3>
         {!editing && (
           <button type="button" className="btn-g btn-sm" onClick={() => setEditing(true)}>
@@ -105,10 +101,7 @@ export default function PricingSection() {
       </div>
       <div className="cb">
         {!editing ? (
-          <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: '.8rem',
-          }}
-          >
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-[0.8rem]">
             <Tile label="GST Mode" value={gstLabel} />
             <Tile
               label="Delivery Split"
@@ -129,13 +122,13 @@ export default function PricingSection() {
                   <option value="extra">Add 5% food GST at checkout</option>
                 </select>
                 {form.menuGstMode === 'extra' && (
-                  <div style={{ fontSize: '.75rem', color: 'var(--dim)', marginTop: '.3rem' }}>
+                  <div className="text-[0.75rem] text-dim mt-[0.3rem]">
                     Customers will see a &quot;Food GST (5%)&quot; line item.
                   </div>
                 )}
               </Field>
               <Field label="Delivery Fee — Customer Pays (%)" className="span2">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+                <div className="flex items-center gap-[0.6rem]">
                   <input
                     type="number"
                     min={0}
@@ -143,21 +136,15 @@ export default function PricingSection() {
                     step={1}
                     value={form.deliveryFeeCustomerPct}
                     onChange={(e) => setForm((p) => ({ ...p, deliveryFeeCustomerPct: e.target.value }))}
-                    style={{ width: 100 }}
+                    className="w-[100px]"
                   />
-                  <span style={{ fontSize: '.82rem', color: 'var(--dim)' }}>% charged to customer</span>
+                  <span className="text-[0.82rem] text-dim">% charged to customer</span>
                 </div>
-                <div
-                  style={{
-                    fontSize: '.78rem', color: 'var(--dim)', marginTop: '.45rem', lineHeight: 1.55,
-                    background: 'var(--ink4)', borderRadius: 7, padding: '.45rem .7rem',
-                    border: '1px solid var(--rim)',
-                  }}
-                >
+                <div className="text-[0.78rem] text-dim mt-[0.45rem] leading-[1.55] bg-ink4 rounded-[7px] py-[0.45rem] px-[0.7rem] border border-rim">
                   Customer pays <strong>{hintPct}%</strong> of the delivery fee. Your restaurant
                   absorbs <strong>{100 - hintPct}%</strong>.
                   <br />
-                  <span style={{ color: 'var(--mute,var(--dim))' }}>
+                  <span className="text-mute">
                     Example: if delivery costs ₹40 and you set {hintPct}%, customer pays ₹{((40 * hintPct) / 100).toFixed(0)} and restaurant absorbs ₹{((40 * (100 - hintPct)) / 100).toFixed(0)}.
                   </span>
                 </div>
@@ -186,7 +173,7 @@ export default function PricingSection() {
               </Field>
             </div>
 
-            <div style={{ display: 'flex', gap: '.5rem', marginTop: '1.1rem' }}>
+            <div className="flex gap-2 mt-[1.1rem]">
               <button
                 type="button"
                 className="btn-p"

@@ -134,7 +134,7 @@ interface NoPinViewProps { onGenerate: () => void; isGenerating: boolean }
 function NoPinView({ onGenerate, isGenerating }: NoPinViewProps): ReactNode {
   return (
     <>
-      <p className="text-dim text-[0.85rem] leading-[1.5]">
+      <p className="text-dim text-[0.85rem] leading-normal">
         No staff PIN set. Generate one to give your kitchen staff access to the GullyBite Staff app.
       </p>
       <div>

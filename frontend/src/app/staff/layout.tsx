@@ -22,15 +22,7 @@ export default function StaffLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--ink, #0b1220)',
-        color: 'var(--fg, #e6edf3)',
-      }}
-    >
+    <div className="min-h-screen flex flex-col bg-ink text-fg">
       {children}
     </div>
   );

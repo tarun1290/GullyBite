@@ -14,16 +14,7 @@ export default function RestaurantPage() {
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          gap: '.35rem',
-          flexWrap: 'wrap',
-          marginBottom: '1.1rem',
-          padding: '.5rem 0',
-          borderBottom: '1px solid var(--rim)',
-        }}
-      >
+      <div className="flex gap-[0.35rem] flex-wrap mb-[1.1rem] py-2 border-b border-rim">
         {SECTIONS.map(([v, l]) => (
           <button
             key={v}

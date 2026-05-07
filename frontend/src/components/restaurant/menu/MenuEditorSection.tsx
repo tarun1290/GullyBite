@@ -39,12 +39,16 @@ function foodTypeIcon(ft?: FoodType | string) {
   return (
     <span
       title={c.title}
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: 14, height: 14, border: `2px solid ${c.color}`, borderRadius: 2, boxSizing: 'border-box',
-      }}
+      className="inline-flex items-center justify-center w-[14px] h-[14px] border-2 rounded-[2px] box-border"
+      // border colour is per-food-type from FOOD_TYPE_CFG (veg / non_veg /
+      // egg / vegan) at runtime — Tailwind can't pre-bake the palette.
+      style={{ borderColor: c.color }}
     >
-      <span style={{ width: 7, height: 7, borderRadius: '50%', background: c.color, display: 'block' }} />
+      <span
+        className="w-[7px] h-[7px] rounded-full block"
+        // Same runtime-palette reason as the parent.
+        style={{ background: c.color }}
+      />
     </span>
   );
 }
@@ -101,25 +105,15 @@ function branchStatusCell(item: LooseItem): ReactNode {
   if (unassigned) {
     return (
       <>
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: '.3rem',
-          background: '#fef2f2', color: '#b91c1c', padding: '.15rem .55rem',
-          borderRadius: 99, fontSize: '.7rem', fontWeight: 600, border: '1px solid #fecaca',
-        }}
-        >
+        <span className="inline-flex items-center gap-[0.3rem] bg-[#fef2f2] text-[#b91c1c] py-[0.15rem] px-[0.55rem] rounded-full text-[0.7rem] font-semibold border border-[#fecaca]">
           ❌ Unassigned
         </span>
-        <div style={{ fontSize: '.65rem', color: '#b91c1c', marginTop: '.15rem' }}>Not visible to customers</div>
+        <div className="text-[0.65rem] text-[#b91c1c] mt-[0.15rem]">Not visible to customers</div>
       </>
     );
   }
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: '.3rem',
-      background: '#dcfce7', color: '#15803d', padding: '.15rem .55rem',
-      borderRadius: 99, fontSize: '.7rem', fontWeight: 600, border: '1px solid #bbf7d0',
-    }}
-    >
+    <span className="inline-flex items-center gap-[0.3rem] bg-[#dcfce7] text-[#15803d] py-[0.15rem] px-[0.55rem] rounded-full text-[0.7rem] font-semibold border border-[#bbf7d0]">
       ✅ {count} Branch{count !== 1 ? 'es' : ''}
     </span>
   );
@@ -381,88 +375,76 @@ export default function MenuEditorSection({
 
   const renderItemRow = (item: LooseItem, idx: number, opts: RenderOpts = {}): ReactNode => {
     const isVariantChild = Boolean(opts.isVariantChild);
-    const dim = item.is_available ? {} : { opacity: 0.55 };
     const variantLabel = item.size || item.variant_value || 'Variant';
     const displayName: ReactNode = isVariantChild
       ? (
-        <span style={{ paddingLeft: '1.5rem', color: 'var(--acc)', fontSize: '.78rem', fontWeight: 500 }}>
+        <span className="pl-6 text-acc text-[0.78rem] font-medium">
           · {variantLabel}
         </span>
       )
       : item.item_group_id
         ? (<>
-          {item.name} <span style={{ fontSize: '.72rem', color: 'var(--acc)', fontWeight: 500 }}>· {variantLabel}</span>
+          {item.name} <span className="text-[0.72rem] text-acc font-medium">· {variantLabel}</span>
         </>)
         : item.name;
     const pricePaise = item.price_paise || 0;
     const salePaise = item.sale_price_paise || 0;
     const priceCell: ReactNode = salePaise ? (
       <>
-        <span style={{ textDecoration: 'line-through', color: 'var(--mute)', fontSize: '.75rem' }}>₹{pricePaise / 100}</span>
+        <span className="line-through text-mute text-[0.75rem]">₹{pricePaise / 100}</span>
         {' '}
-        <span style={{ color: '#dc2626', fontWeight: 600 }}>₹{salePaise / 100}</span>
+        <span className="text-[#dc2626] font-semibold">₹{salePaise / 100}</span>
       </>
     ) : `₹${pricePaise / 100}`;
     return (
-      <tr key={item.id} style={{ background: idx % 2 ? 'var(--ink4,#f9fafb)' : '', ...dim }}>
-        <td style={{ padding: '.45rem .4rem', textAlign: 'center' }}>
+      <tr
+        key={item.id}
+        className={`${idx % 2 ? 'bg-ink4' : ''} ${item.is_available ? 'opacity-100' : 'opacity-[0.55]'}`}
+      >
+        <td className="py-[0.45rem] px-[0.4rem] text-center">
           <input
             type="checkbox"
             checked={checked.has(item.id)}
             onChange={() => toggleChecked(item.id)}
           />
         </td>
-        <td style={{ padding: '.45rem .7rem', textAlign: 'center', color: 'var(--dim)', fontSize: '.78rem' }}>
+        <td className="py-[0.45rem] px-[0.7rem] text-center text-dim text-[0.78rem]">
           {isVariantChild ? '' : idx + 1}
         </td>
-        <td style={{ padding: '.45rem .7rem', fontSize: '.82rem', fontWeight: 500 }}>
+        <td className="py-[0.45rem] px-[0.7rem] text-[0.82rem] font-medium">
           {displayName}
-          {item.is_bestseller && <span style={{ fontSize: '.6rem', color: '#f59e0b', marginLeft: '.25rem' }}>⭐</span>}
-          {!item.is_available && <span style={{ fontSize: '.65rem', color: '#9ca3af', marginLeft: '.25rem' }}>(unavailable)</span>}
+          {item.is_bestseller && <span className="text-[0.6rem] text-[#f59e0b] ml-1">⭐</span>}
+          {!item.is_available && <span className="text-[0.65rem] text-[#9ca3af] ml-1">(unavailable)</span>}
         </td>
-        <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{item._categoryName || '—'}</td>
+        <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim">{item._categoryName || '—'}</td>
         {showBranchBadge && (
-          <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{item.branch_name || '—'}</td>
+          <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim">{item.branch_name || '—'}</td>
         )}
-        <td style={{ padding: '.45rem .7rem' }}>
+        <td className="py-[0.45rem] px-[0.7rem]">
           {branchStatusCell(item)}
           {item.meta_status === 'incomplete' && (
-            <div style={{
-              marginTop: '.2rem', display: 'inline-flex', alignItems: 'center', gap: '.25rem',
-              background: '#fef3c7', color: '#92400e', padding: '.1rem .45rem',
-              borderRadius: 99, fontSize: '.65rem', fontWeight: 600, border: '1px solid #fde68a',
-            }}
-            >
+            <div className="mt-[0.2rem] inline-flex items-center gap-1 bg-[#fef3c7] text-[#92400e] py-[0.1rem] px-[0.45rem] rounded-full text-[0.65rem] font-semibold border border-[#fde68a]">
               ⚠ Incomplete
             </div>
           )}
           {item.meta_status === 'ready' && (
-            <div style={{
-              marginTop: '.2rem', display: 'inline-flex', alignItems: 'center', gap: '.25rem',
-              background: '#dbeafe', color: '#1d4ed8', padding: '.1rem .45rem',
-              borderRadius: 99, fontSize: '.65rem', fontWeight: 600, border: '1px solid #bfdbfe',
-            }}
-            >
+            <div className="mt-[0.2rem] inline-flex items-center gap-1 bg-[#dbeafe] text-[#1d4ed8] py-[0.1rem] px-[0.45rem] rounded-full text-[0.65rem] font-semibold border border-[#bfdbfe]">
               ✔ Ready
             </div>
           )}
         </td>
-        <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>{foodTypeIcon(item.food_type)}</td>
-        <td style={{ padding: '.45rem .7rem', textAlign: 'right', fontWeight: 500 }}>{priceCell}</td>
-        <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>
+        <td className="py-[0.45rem] px-[0.7rem] text-center">{foodTypeIcon(item.food_type)}</td>
+        <td className="py-[0.45rem] px-[0.7rem] text-right font-medium">{priceCell}</td>
+        <td className="py-[0.45rem] px-[0.7rem] text-center">
           <Toggle
             checked={Boolean(item.is_available)}
             onChange={(next) => handleToggle(item.id, next, item.name)}
           />
         </td>
-        <td style={{ padding: '.45rem .7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+        <td className="py-[0.45rem] px-[0.7rem] text-center whitespace-nowrap">
           <button
             type="button"
-            style={{
-              background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
-              padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.85rem',
-              color: 'var(--dim)', marginRight: '.25rem',
-            }}
+            className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.85rem] text-dim mr-1"
             onClick={() => setEditingItem(item as MenuItem)}
             title="Edit item"
           >
@@ -470,11 +452,7 @@ export default function MenuEditorSection({
           </button>
           <button
             type="button"
-            style={{
-              background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
-              padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.7rem',
-              color: 'var(--wa)', marginRight: '.25rem',
-            }}
+            className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.7rem] text-wa mr-1"
             onClick={() => setAssignFor({ id: item.id, name: item.name })}
             title="Assign to a branch"
           >
@@ -483,11 +461,7 @@ export default function MenuEditorSection({
           {Array.isArray(item.branch_ids) && item.branch_ids.length > 1 && (
             <button
               type="button"
-              style={{
-                background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
-                padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.7rem',
-                color: 'var(--dim)', marginRight: '.25rem',
-              }}
+              className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.7rem] text-dim mr-1"
               onClick={() => handleApplyAllBranches(item.id, !item.is_available, item.name)}
               title="Apply toggle to all branches"
             >
@@ -505,8 +479,7 @@ export default function MenuEditorSection({
               </button>
               <button
                 type="button"
-                className="btn-g btn-sm"
-                style={{ marginLeft: '.15rem', fontSize: '.7rem', padding: '.2rem .4rem' }}
+                className="btn-g btn-sm ml-[0.15rem] text-[0.7rem] py-1 px-[0.4rem]"
                 onClick={() => setPendingDeleteId(null)}
               >
                 No
@@ -515,7 +488,7 @@ export default function MenuEditorSection({
           ) : (
             <button
               type="button"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '.85rem', color: '#9ca3af' }}
+              className="bg-none border-0 cursor-pointer text-[0.85rem] text-[#9ca3af]"
               onClick={() => setPendingDeleteId(item.id)}
               title="Delete"
             >
@@ -545,8 +518,8 @@ export default function MenuEditorSection({
       const maxP = Math.max(...prices);
       const priceCell: ReactNode = minP === maxP ? `₹${minP / 100}` : `₹${minP / 100} – ₹${maxP / 100}`;
       rows.push(
-        <tr key={`group-${entry._groupId}`} style={{ background: '#f0fdf4', borderTop: '1px solid var(--rim,#e5e7eb)' }}>
-          <td style={{ padding: '.45rem .4rem', textAlign: 'center' }}>
+        <tr key={`group-${entry._groupId}`} className="bg-[#f0fdf4] border-t border-rim">
+          <td className="py-[0.45rem] px-[0.4rem] text-center">
             <input
               type="checkbox"
               checked={allChecked}
@@ -560,46 +533,39 @@ export default function MenuEditorSection({
               }}
             />
           </td>
-          <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>
+          <td className="py-[0.45rem] px-[0.7rem] text-center">
             <button
               type="button"
               onClick={() => toggleGroupExpanded(entry._groupId)}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: '.78rem', color: 'var(--dim)', padding: '.1rem .25rem',
-              }}
+              className="bg-none border-0 cursor-pointer text-[0.78rem] text-dim py-[0.1rem] px-1"
               aria-label={isExpanded ? 'Collapse variants' : 'Expand variants'}
             >
               {isExpanded ? '▼' : '▶'}
             </button>
           </td>
-          <td style={{ padding: '.45rem .7rem', fontSize: '.84rem', fontWeight: 700 }}>
+          <td className="py-[0.45rem] px-[0.7rem] text-[0.84rem] font-bold">
             {entry.name}
-            <span style={{ fontSize: '.7rem', color: 'var(--dim)', fontWeight: 500, marginLeft: '.4rem' }}>
+            <span className="text-[0.7rem] text-dim font-medium ml-[0.4rem]">
               · {entry.variants.length} variant{entry.variants.length === 1 ? '' : 's'}
             </span>
           </td>
-          <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{first._categoryName || '—'}</td>
+          <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim">{first._categoryName || '—'}</td>
           {showBranchBadge && (
-            <td style={{ padding: '.45rem .7rem', fontSize: '.78rem', color: 'var(--dim)' }}>{first.branch_name || '—'}</td>
+            <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim">{first.branch_name || '—'}</td>
           )}
-          <td style={{ padding: '.45rem .7rem' }}>{branchStatusCell(first)}</td>
-          <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>{foodTypeIcon(first.food_type)}</td>
-          <td style={{ padding: '.45rem .7rem', textAlign: 'right', fontWeight: 600 }}>{priceCell}</td>
-          <td style={{ padding: '.45rem .7rem', textAlign: 'center' }}>
+          <td className="py-[0.45rem] px-[0.7rem]">{branchStatusCell(first)}</td>
+          <td className="py-[0.45rem] px-[0.7rem] text-center">{foodTypeIcon(first.food_type)}</td>
+          <td className="py-[0.45rem] px-[0.7rem] text-right font-semibold">{priceCell}</td>
+          <td className="py-[0.45rem] px-[0.7rem] text-center">
             <Toggle
               checked={Boolean(first.is_available)}
               onChange={(next) => entry.variants.forEach((v) => handleToggle(v.id, next, v.name))}
             />
           </td>
-          <td style={{ padding: '.45rem .7rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <td className="py-[0.45rem] px-[0.7rem] text-center whitespace-nowrap">
             <button
               type="button"
-              style={{
-                background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
-                padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.85rem',
-                color: 'var(--dim)', marginRight: '.25rem',
-              }}
+              className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.85rem] text-dim mr-1"
               onClick={() => setEditingItem(first as MenuItem)}
               title="Edit first variant — expand the group to edit other variants individually"
             >
@@ -607,11 +573,7 @@ export default function MenuEditorSection({
             </button>
             <button
               type="button"
-              style={{
-                background: 'none', border: '1px solid var(--rim,#e5e7eb)', borderRadius: 6,
-                padding: '.18rem .42rem', cursor: 'pointer', fontSize: '.7rem',
-                color: 'var(--wa)', marginRight: '.25rem',
-              }}
+              className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.7rem] text-wa mr-1"
               onClick={() => setAssignFor({ id: first.id, name: first.name })}
               title="Assign group's first variant to a branch"
             >
@@ -628,8 +590,7 @@ export default function MenuEditorSection({
                 </button>
                 <button
                   type="button"
-                  className="btn-g btn-sm"
-                  style={{ marginLeft: '.15rem', fontSize: '.7rem', padding: '.2rem .4rem' }}
+                  className="btn-g btn-sm ml-[0.15rem] text-[0.7rem] py-1 px-[0.4rem]"
                   onClick={() => setPendingDeleteId(null)}
                 >
                   No
@@ -638,7 +599,7 @@ export default function MenuEditorSection({
             ) : (
               <button
                 type="button"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '.85rem', color: '#9ca3af' }}
+                className="bg-none border-0 cursor-pointer text-[0.85rem] text-[#9ca3af]"
                 onClick={() => setPendingDeleteId(first.id)}
                 title="Delete first variant"
               >
@@ -660,18 +621,12 @@ export default function MenuEditorSection({
   return (
     <div>
       {/* Branch selector */}
-      <div
-        className="card"
-        style={{
-          marginBottom: '.8rem', display: 'flex', flexWrap: 'wrap',
-          gap: '.5rem', alignItems: 'center', padding: '.7rem .9rem',
-        }}
-      >
-        <label style={{ fontSize: '.82rem', color: 'var(--dim)', marginRight: '.3rem' }}>Branch:</label>
+      <div className="card mb-[0.8rem] flex flex-wrap gap-2 items-center py-[0.7rem] px-[0.9rem]">
+        <label className="text-[0.82rem] text-dim mr-[0.3rem]">Branch:</label>
         <select
           value={selectedBranchId}
           onChange={(e) => setSelectedBranchId(e.target.value)}
-          style={{ padding: '.4rem .6rem', borderRadius: 7, border: '1px solid var(--rim)', fontSize: '.85rem' }}
+          className="py-[0.4rem] px-[0.6rem] rounded-[7px] border border-rim text-[0.85rem]"
           disabled={branchesLoading}
         >
           <option value="__all__">All Products ({totalCount})</option>
@@ -692,8 +647,7 @@ export default function MenuEditorSection({
         {isSpecificBranch && hasCatalog && (
           <button
             type="button"
-            className="btn-g btn-sm"
-            style={{ fontSize: '.7rem' }}
+            className="btn-g btn-sm text-[0.7rem]"
             onClick={handleFixCatalog}
             disabled={fixingCatalog}
           >
@@ -701,7 +655,7 @@ export default function MenuEditorSection({
           </button>
         )}
 
-        <div style={{ flex: 1 }} />
+        <div className="flex-1" />
 
         <button
           type="button"
@@ -724,19 +678,16 @@ export default function MenuEditorSection({
 
       {/* Manual catalog ID prompt (replaces window.prompt) */}
       {manualCatalogPrompt && (
-        <div
-          className="card"
-          style={{ marginBottom: '.8rem', padding: '.7rem .9rem', background: '#fffbeb', borderColor: '#fde68a' }}
-        >
-          <p style={{ fontSize: '.82rem', marginBottom: '.5rem', color: '#92400e' }}>
+        <div className="card mb-[0.8rem] py-[0.7rem] px-[0.9rem] bg-[#fffbeb] border-[#fde68a]">
+          <p className="text-[0.82rem] mb-2 text-[#92400e]">
             Auto-discovery failed. Paste your Meta Catalog ID (find it in Meta Business Suite → Commerce Manager → your catalog → Settings):
           </p>
-          <div style={{ display: 'flex', gap: '.4rem' }}>
+          <div className="flex gap-[0.4rem]">
             <input
               value={manualCatalogId}
               onChange={(e) => setManualCatalogId(e.target.value)}
               placeholder="numeric catalog id"
-              style={{ flex: 1, padding: '.4rem .6rem', borderRadius: 6, border: '1px solid var(--rim)', fontSize: '.85rem' }}
+              className="flex-1 py-[0.4rem] px-[0.6rem] rounded-md border border-rim text-[0.85rem]"
             />
             <button type="button" className="btn-p btn-sm" onClick={handleManualCatalog}>Save</button>
             <button type="button" className="btn-g btn-sm" onClick={() => { setManualCatalogPrompt(false); setManualCatalogId(''); }}>Cancel</button>
@@ -746,19 +697,14 @@ export default function MenuEditorSection({
 
       {/* Bulk action bar */}
       {items.length > 0 && (
-        <div
-          style={{
-            display: 'flex', gap: '.5rem', flexWrap: 'wrap', alignItems: 'center',
-            marginBottom: '.7rem', fontSize: '.82rem',
-          }}
-        >
-          <span style={{ color: 'var(--dim)' }}>
+        <div className="flex gap-2 flex-wrap items-center mb-[0.7rem] text-[0.82rem]">
+          <span className="text-dim">
             {isAll ? `Showing all ${totalCount} items${unassignedCount ? ` · ${unassignedCount} unassigned` : ''}` :
               isUnassigned ? `${totalCount} unassigned items` :
                 totalCount ? `${totalCount} items` : ''}
             {groupedItemCount > 0 ? ` (${groupedItemCount} grouped)` : ''}
           </span>
-          <div style={{ flex: 1 }} />
+          <div className="flex-1" />
           {pendingBulkAvail === null ? (
             <button
               type="button"
@@ -769,7 +715,7 @@ export default function MenuEditorSection({
             </button>
           ) : (
             <>
-              <span style={{ fontSize: '.78rem', color: '#b45309' }}>
+              <span className="text-[0.78rem] text-[#b45309]">
                 {allClosing ? 'Mark all items unavailable?' : 'Bring all items back online?'}
               </span>
               <button type="button" className="btn-p btn-sm" onClick={handleBulkAvail}>Confirm</button>
@@ -780,12 +726,12 @@ export default function MenuEditorSection({
           {checked.size > 0 && (
             pendingBulkDelete ? (
               <>
-                <span style={{ fontSize: '.78rem', color: '#b91c1c' }}>Delete {checked.size} item{checked.size > 1 ? 's' : ''}?</span>
+                <span className="text-[0.78rem] text-[#b91c1c]">Delete {checked.size} item{checked.size > 1 ? 's' : ''}?</span>
                 <button type="button" className="btn-del btn-sm" onClick={handleBulkDelete}>Yes, delete</button>
                 <button type="button" className="btn-g btn-sm" onClick={() => setPendingBulkDelete(false)}>Cancel</button>
               </>
             ) : (
-              <button type="button" className="btn-g btn-sm" style={{ color: '#dc2626' }} onClick={() => setPendingBulkDelete(true)}>
+              <button type="button" className="btn-g btn-sm text-[#dc2626]" onClick={() => setPendingBulkDelete(true)}>
                 🗑 Delete {checked.size}
               </button>
             )
@@ -799,40 +745,40 @@ export default function MenuEditorSection({
       )}
 
       {/* Items table */}
-      <div className="card" style={{ overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
+      <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
           {loading ? (
-            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--dim)' }}>Loading…</div>
+            <div className="p-8 text-center text-dim">Loading…</div>
           ) : !items.length ? (
-            <div className="empty" style={{ padding: '2rem', textAlign: 'center' }}>
-              <div className="ei" style={{ fontSize: '2rem' }}>{isUnassigned ? '✅' : '🍽️'}</div>
-              <h3 style={{ marginTop: '.4rem' }}>
+            <div className="empty p-8 text-center">
+              <div className="ei text-[2rem]">{isUnassigned ? '✅' : '🍽️'}</div>
+              <h3 className="mt-[0.4rem]">
                 {isUnassigned ? 'No unassigned items' : 'No menu items yet'}
               </h3>
-              <p style={{ color: 'var(--dim)', fontSize: '.85rem' }}>
+              <p className="text-dim text-[0.85rem]">
                 {isUnassigned ? 'All items are assigned to branches' : 'Add items using the "+ Add" button above'}
               </p>
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.84rem' }}>
+            <table className="w-full border-collapse text-[0.84rem]">
               <thead>
-                <tr style={{ background: '#f9fafb', borderBottom: '2px solid var(--rim,#e5e7eb)' }}>
-                  <th style={{ padding: '.55rem .4rem', textAlign: 'center', width: 32 }}>
+                <tr className="bg-[#f9fafb] border-b-2 border-rim">
+                  <th className="py-[0.55rem] px-[0.4rem] text-center w-8">
                     <input
                       type="checkbox"
                       checked={checked.size > 0 && checked.size === items.length}
                       onChange={(e) => toggleAll(e.target.checked)}
                     />
                   </th>
-                  <th style={{ padding: '.55rem .7rem', textAlign: 'center', fontSize: '.77rem', color: 'var(--dim)', width: 40 }}>#</th>
-                  <th style={{ padding: '.55rem .7rem', textAlign: 'left', fontSize: '.77rem', color: 'var(--dim)' }}>Item Name</th>
-                  <th style={{ padding: '.55rem .7rem', textAlign: 'left', fontSize: '.77rem', color: 'var(--dim)' }}>Category</th>
-                  {showBranchBadge && <th style={{ padding: '.55rem .7rem', textAlign: 'left', fontSize: '.77rem', color: 'var(--dim)' }}>Branch</th>}
-                  <th style={{ padding: '.55rem .7rem', textAlign: 'left', fontSize: '.77rem', color: 'var(--dim)', width: 140 }}>Branch Status</th>
-                  <th style={{ padding: '.55rem .7rem', textAlign: 'center', fontSize: '.77rem', color: 'var(--dim)', width: 60 }}>Type</th>
-                  <th style={{ padding: '.55rem .7rem', textAlign: 'right', fontSize: '.77rem', color: 'var(--dim)', width: 90 }}>Price</th>
-                  <th style={{ padding: '.55rem .7rem', textAlign: 'center', fontSize: '.77rem', color: 'var(--dim)', width: 70 }}>Status</th>
-                  <th style={{ padding: '.55rem .7rem', textAlign: 'center', fontSize: '.77rem', color: 'var(--dim)', width: 130 }}>Actions</th>
+                  <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] text-dim w-10">#</th>
+                  <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] text-dim">Item Name</th>
+                  <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] text-dim">Category</th>
+                  {showBranchBadge && <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] text-dim">Branch</th>}
+                  <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] text-dim w-[140px]">Branch Status</th>
+                  <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] text-dim w-[60px]">Type</th>
+                  <th className="py-[0.55rem] px-[0.7rem] text-right text-[0.77rem] text-dim w-[90px]">Price</th>
+                  <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] text-dim w-[70px]">Status</th>
+                  <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] text-dim w-[130px]">Actions</th>
                 </tr>
               </thead>
               <tbody>

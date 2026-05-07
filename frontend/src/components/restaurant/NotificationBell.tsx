@@ -82,93 +82,37 @@ export default function NotificationBell() {
   }
 
   return (
-    <div ref={wrapperRef} style={{ position: 'relative' }}>
+    <div ref={wrapperRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label="Notifications"
-        style={{
-          position: 'relative',
-          border: '1px solid var(--rim)',
-          background: '#fff',
-          borderRadius: '999px',
-          width: 36, height: 36,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-        }}
+        className="relative border border-rim bg-white rounded-full w-9 h-9 inline-flex items-center justify-center cursor-pointer"
       >
-        <span style={{ fontSize: '1.05rem' }}>🔔</span>
+        <span className="text-[1.05rem]">🔔</span>
         {state.unread > 0 && (
-          <span
-            style={{
-              position: 'absolute',
-              top: -4, right: -4,
-              background: '#ef4444',
-              color: '#fff',
-              borderRadius: '999px',
-              fontSize: '.65rem',
-              fontWeight: 700,
-              minWidth: 18, height: 18,
-              padding: '0 4px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
+          <span className="absolute -top-1 -right-1 bg-[#ef4444] text-white rounded-full text-[0.65rem] font-bold min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center">
             {state.unread > 99 ? '99+' : state.unread}
           </span>
         )}
       </button>
 
       {open && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            right: 0,
-            width: 320,
-            background: '#fff',
-            border: '1px solid var(--rim)',
-            borderRadius: 'var(--r)',
-            boxShadow: '0 8px 22px rgba(0,0,0,.08)',
-            zIndex: 50,
-            maxHeight: 420,
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <div
-            style={{
-              padding: '.65rem .8rem',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              borderBottom: '1px solid var(--rim)',
-              background: 'var(--panel)',
-            }}
-          >
-            <strong style={{ fontSize: '.88rem' }}>Notifications</strong>
+        <div className="absolute top-[calc(100%+6px)] right-0 w-80 bg-white border border-rim rounded-r shadow-[0_8px_22px_rgba(0,0,0,0.08)] z-50 max-h-[420px] overflow-hidden flex flex-col">
+          <div className="py-[0.65rem] px-[0.8rem] flex items-center justify-between border-b border-rim bg-panel">
+            <strong className="text-[0.88rem]">Notifications</strong>
             <button
               type="button"
               disabled={busy || state.unread === 0}
               onClick={handleReadAll}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: state.unread === 0 ? 'var(--dim)' : 'var(--primary, #0369a1)',
-                fontSize: '.76rem',
-                cursor: state.unread === 0 ? 'default' : 'pointer',
-              }}
+              className={`bg-none border-0 text-[0.76rem] ${state.unread === 0 ? 'text-dim cursor-default' : 'text-primary cursor-pointer'}`}
             >
               Mark all read
             </button>
           </div>
-          <div style={{ overflowY: 'auto' }}>
+          <div className="overflow-y-auto">
             {state.notifications.length === 0 && (
-              <div style={{ padding: '1rem', fontSize: '.84rem', color: 'var(--dim)' }}>
+              <div className="p-4 text-[0.84rem] text-dim">
                 No notifications yet.
               </div>
             )}
@@ -179,36 +123,22 @@ export default function NotificationBell() {
                   key={n._id}
                   type="button"
                   onClick={() => handleItemClick(n)}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '.65rem .8rem',
-                    border: 'none',
-                    borderBottom: '1px solid var(--rim)',
-                    background: n.is_read ? '#fff' : '#fff7ed',
-                    cursor: 'pointer',
-                  }}
+                  className={`block w-full text-left py-[0.65rem] px-[0.8rem] border-0 border-b border-rim cursor-pointer ${n.is_read ? 'bg-white' : 'bg-[#fff7ed]'}`}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }}>
-                    <span style={{ fontSize: '.95rem' }}>
+                  <div className="flex items-center gap-[0.4rem]">
+                    <span className="text-[0.95rem]">
                       {isEscalation ? '⚠️' : '⭐'}
                     </span>
-                    <strong
-                      style={{
-                        fontSize: '.82rem',
-                        color: isEscalation ? '#b45309' : 'inherit',
-                      }}
-                    >
+                    <strong className={`text-[0.82rem] ${isEscalation ? 'text-[#b45309]' : 'text-inherit'}`}>
                       {n.title}
                     </strong>
                   </div>
                   {n.body && (
-                    <div style={{ fontSize: '.76rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+                    <div className="text-[0.76rem] text-dim mt-[0.2rem]">
                       {n.body.length > 120 ? `${n.body.slice(0, 120)}…` : n.body}
                     </div>
                   )}
-                  <div style={{ fontSize: '.7rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+                  <div className="text-[0.7rem] text-dim mt-[0.2rem]">
                     {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
                   </div>
                 </button>

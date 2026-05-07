@@ -75,7 +75,7 @@ export default function PasswordSection() {
 
   return (
     <>
-      <div className="card" style={{ marginBottom: '1.2rem' }}>
+      <div className="card mb-[1.2rem]">
         <div className="ch"><h3>Change Password</h3></div>
         <div className="cb">
           <form onSubmit={handleSubmit}>
@@ -116,28 +116,24 @@ export default function PasswordSection() {
         </div>
       </div>
 
-      <hr style={{ border: 0, borderTop: '1px solid var(--rim)', margin: '1.6rem 0 1.2rem' }} />
+      <hr className="border-0 border-t border-rim mt-[1.6rem] mb-[1.2rem]" />
 
-      <div className="card" style={{ marginBottom: '1.2rem', borderColor: 'var(--rim)' }}>
-        <div className="ch" style={{ background: '#fff1f2' }}>
-          <h3 style={{ color: '#dc2626' }}>Delete Account</h3>
+      <div className="card mb-[1.2rem] border-rim">
+        <div className="ch bg-[#fff1f2]">
+          <h3 className="text-[#dc2626]">Delete Account</h3>
         </div>
         <div className="cb">
-          <p style={{
-            fontSize: '.84rem', color: 'var(--dim)', marginBottom: '.8rem', lineHeight: 1.65,
-          }}
-          >
+          <p className="text-[0.84rem] text-dim mb-[0.8rem] leading-[1.65]">
             Permanently delete your GullyBite account, all restaurant data, branches, menu items,
             orders and WhatsApp connections.
             {' '}
-            <strong style={{ color: '#dc2626' }}>This action cannot be undone.</strong>
+            <strong className="text-[#dc2626]">This action cannot be undone.</strong>
           </p>
 
           {!deleteOpened && (
             <button
               type="button"
-              className="btn-g"
-              style={{ color: '#dc2626', borderColor: '#fecaca' }}
+              className="btn-g text-[#dc2626] border-[#fecaca]"
               onClick={() => setDeleteOpened(true)}
             >
               Delete Account
@@ -145,12 +141,8 @@ export default function PasswordSection() {
           )}
 
           {deleteOpened && (
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{
-                fontSize: '.78rem', fontWeight: 600, color: '#dc2626',
-                marginBottom: '.35rem', display: 'block',
-              }}
-              >
+            <div className="mb-4">
+              <label className="text-[0.78rem] font-semibold text-[#dc2626] mb-[0.35rem] block">
                 Type your email address to confirm deletion:
               </label>
               <input
@@ -158,16 +150,12 @@ export default function PasswordSection() {
                 value={deleteEmail}
                 onChange={(e) => setDeleteEmail(e.target.value)}
                 placeholder={restaurant?.email || 'your-email@example.com'}
-                style={{
-                  width: '100%', padding: '.5rem .75rem', border: '1px solid #fecaca',
-                  borderRadius: 7, fontSize: '.85rem', outline: 'none', marginBottom: '.6rem',
-                }}
+                className="w-full py-2 px-3 border border-[#fecaca] rounded-[7px] text-[0.85rem] outline-hidden mb-[0.6rem]"
               />
-              <div style={{ display: 'flex', gap: '.6rem' }}>
+              <div className="flex gap-[0.6rem]">
                 <button
                   type="button"
-                  className="btn-p"
-                  style={{ background: '#dc2626', flex: 1, opacity: emailMatches ? 1 : 0.5 }}
+                  className={`btn-p bg-[#dc2626] flex-1 ${emailMatches ? 'opacity-100' : 'opacity-50'}`}
                   onClick={handleDelete}
                   disabled={deleting || !emailMatches}
                 >
@@ -175,8 +163,7 @@ export default function PasswordSection() {
                 </button>
                 <button
                   type="button"
-                  className="btn-g"
-                  style={{ flexShrink: 0 }}
+                  className="btn-g shrink-0"
                   onClick={() => { setDeleteOpened(false); setDeleteEmail(''); }}
                   disabled={deleting}
                 >
@@ -186,7 +173,7 @@ export default function PasswordSection() {
             </div>
           )}
 
-          <p style={{ fontSize: '.72rem', color: 'var(--dim)', marginTop: '.5rem' }}>
+          <p className="text-[0.72rem] text-dim mt-2">
             This permanently deletes your restaurant, menu, and all order history. This cannot be
             undone.
           </p>

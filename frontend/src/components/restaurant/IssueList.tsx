@@ -52,35 +52,31 @@ function IssueRow({ issue, active, onSelect }: IssueRowProps) {
   return (
     <div
       onClick={() => onSelect?.(id)}
-      style={{
-        padding: '.6rem .7rem',
-        borderRadius: 8,
-        cursor: 'pointer',
-        border: `1px solid ${active ? 'var(--wa)' : 'transparent'}`,
-        background: active ? 'rgba(37,211,102,.08)' : 'transparent',
-        transition: 'all .15s',
-      }}
+      className={`py-[0.6rem] px-[0.7rem] rounded-lg cursor-pointer border transition-all duration-150 ${
+        active ? 'border-wa bg-[rgba(37,211,102,0.08)]' : 'border-transparent bg-transparent'
+      }`}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '.4rem' }}>
-        <span style={{ fontWeight: 600, fontSize: '.8rem', whiteSpace: 'nowrap' }}>{issue.issue_number}</span>
-        <span style={{ fontSize: '.68rem', color: 'var(--dim)' }}>{timeAgo(issue.created_at)}</span>
+      <div className="flex justify-between items-center gap-[0.4rem]">
+        <span className="font-semibold text-[0.8rem] whitespace-nowrap">{issue.issue_number}</span>
+        <span className="text-[0.68rem] text-dim">{timeAgo(issue.created_at)}</span>
       </div>
-      <div style={{ fontSize: '.76rem', color: 'var(--dim)', marginTop: '.15rem' }}>
+      <div className="text-[0.76rem] text-dim mt-[0.15rem]">
         {CAT_LABEL[issue.category || ''] || issue.category} · {issue.customer_name || '—'}
       </div>
-      <div style={{ display: 'flex', gap: '.3rem', marginTop: '.3rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ color: priClr, fontWeight: 600, fontSize: '.62rem', textTransform: 'uppercase' }}>
+      <div className="flex gap-[0.3rem] mt-[0.3rem] items-center flex-wrap">
+        <span
+          className="font-semibold text-[0.62rem] uppercase"
+          // priority colour comes from PRI_CLR by issue.priority at
+          // runtime (critical/high/medium/low — 4 distinct hex).
+          style={{ color: priClr }}
+        >
           {issue.priority}
         </span>
         <span
-          style={{
-            background: stClr,
-            color: '#fff',
-            fontSize: '.6rem',
-            padding: '.1rem .4rem',
-            borderRadius: 4,
-            fontWeight: 600,
-          }}
+          className="text-white text-[0.6rem] py-[0.1rem] px-[0.4rem] rounded-[4px] font-semibold"
+          // status colour comes from ST_CLR by issue.status at runtime
+          // (open/assigned/in_progress/.../closed — 8 distinct hex).
+          style={{ background: stClr }}
         >
           {(issue.status || '').replace(/_/g, ' ')}
         </span>
@@ -91,7 +87,7 @@ function IssueRow({ issue, active, onSelect }: IssueRowProps) {
             Backend follow-up: join issues to orders.display_order_id in
             the issue serializer so the fallback rarely fires. */}
         {issue.display_order_id ? (
-          <span style={{ fontSize: '.62rem', color: 'var(--dim)' }}>{issue.display_order_id}</span>
+          <span className="text-[0.62rem] text-dim">{issue.display_order_id}</span>
         ) : null}
       </div>
     </div>
@@ -108,21 +104,14 @@ interface IssueListProps {
 export default function IssueList({ issues, selectedId, onSelect, loading }: IssueListProps) {
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem .5rem' }}>
-        <div className="spin" style={{ margin: '0 auto' }} />
+      <div className="text-center py-8 px-2">
+        <div className="spin mx-auto" />
       </div>
     );
   }
   if (!issues || issues.length === 0) {
     return (
-      <div
-        style={{
-          textAlign: 'center',
-          color: 'var(--dim)',
-          padding: '2rem .5rem',
-          fontSize: '.82rem',
-        }}
-      >
+      <div className="text-center text-dim py-8 px-2 text-[0.82rem]">
         No issues found
       </div>
     );

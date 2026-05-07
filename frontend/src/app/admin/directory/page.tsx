@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import StatCard from '../../../components/StatCard';
@@ -41,10 +40,10 @@ function fmtNum(n: number | string | null | undefined): string {
   try { return v.toLocaleString('en-IN'); } catch { return String(v); }
 }
 
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.6rem .7rem', verticalAlign: 'top' };
-const sub: CSSProperties = { fontSize: '.72rem', color: 'var(--dim)' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const SUB_CLS = 'text-[0.72rem] text-dim';
+const EMPTY_CLS = 'p-6 text-center text-dim';
 
 export default function AdminDirectoryPage() {
   const { showToast } = useToast();
@@ -120,7 +119,7 @@ export default function AdminDirectoryPage() {
   return (
     <div id="pg-directory">
       {statsErr ? (
-        <div style={{ marginBottom: '1rem' }}>
+        <div className="mb-4">
           <SectionError message={statsErr} onRetry={loadStats} />
         </div>
       ) : (
@@ -132,15 +131,15 @@ export default function AdminDirectoryPage() {
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="ch" style={{ gap: '.6rem', flexWrap: 'wrap' }}>
+      <div className="card mb-4">
+        <div className="ch gap-[0.6rem] flex-wrap">
           <h3>Sync</h3>
-          <span style={{ color: 'var(--dim)', fontSize: '.78rem', marginRight: 'auto' }}>
+          <span className="text-dim text-[0.78rem] mr-auto">
             Re-syncs all approved restaurants into the directory.
           </span>
           {confirmSync ? (
             <>
-              <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>Are you sure?</span>
+              <span className="text-[0.78rem] text-dim">Are you sure?</span>
               <button type="button" className="btn-p btn-sm" onClick={doSyncAll} disabled={syncBusy}>
                 {syncBusy ? 'Syncing…' : 'Yes, sync'}
               </button>
@@ -157,7 +156,7 @@ export default function AdminDirectoryPage() {
       </div>
 
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+        <div className="ch justify-between">
           <h3>Directory Listings</h3>
           <button type="button" className="btn-g btn-sm" onClick={loadList} disabled={loading}>
             {loading ? 'Loading…' : '↻ Refresh'}
@@ -166,24 +165,24 @@ export default function AdminDirectoryPage() {
         {listErr ? (
           <div className="cb"><SectionError message={listErr} onRetry={loadList} /></div>
         ) : (
-          <div className="cb" style={{ overflowX: 'auto', padding: 0 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="cb overflow-x-auto p-0">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>City</th>
-                  <th style={th}>Type</th>
-                  <th style={th}>Views</th>
-                  <th style={th}>Orders</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Actions</th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>City</th>
+                  <th className={TH_CLS}>Type</th>
+                  <th className={TH_CLS}>Views</th>
+                  <th className={TH_CLS}>Orders</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : listings.length === 0 ? (
-                  <tr><td colSpan={7} style={emptyCell}>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>
                     No directory listings yet. Approve restaurants to auto-list them.
                   </td></tr>
                 ) : (
@@ -191,27 +190,32 @@ export default function AdminDirectoryPage() {
                     const type = l.restaurant_type || 'both';
                     const busy = rowBusy === l._id;
                     return (
-                      <tr key={l._id} style={{ borderBottom: '1px solid var(--rim)' }}>
-                        <td style={td}>
+                      <tr key={l._id} className="border-b border-rim">
+                        <td className={TD_CLS}>
                           <strong>{l.brand_name || l.business_name}</strong>
-                          <div style={sub}>{String(l.restaurant_id || '').slice(0, 8)}</div>
+                          <div className={SUB_CLS}>{String(l.restaurant_id || '').slice(0, 8)}</div>
                         </td>
-                        <td style={td}>{l.city || '—'}</td>
-                        <td style={td}>
-                          <span style={{ color: TYPE_COLOR[type], fontWeight: 600, fontSize: '.72rem' }}>
+                        <td className={TD_CLS}>{l.city || '—'}</td>
+                        <td className={TD_CLS}>
+                          <span
+                            className="font-semibold text-[0.72rem]"
+                            // colour comes from TYPE_COLOR by restaurant_type
+                            // at runtime (veg/non_veg/both — 3 distinct).
+                            style={{ color: TYPE_COLOR[type] }}
+                          >
                             {TYPE_LABEL[type]}
                           </span>
                         </td>
-                        <td style={td}>{l.view_count || 0}</td>
-                        <td style={td}>{l.order_count || 0}</td>
-                        <td style={td}>
+                        <td className={TD_CLS}>{l.view_count || 0}</td>
+                        <td className={TD_CLS}>{l.order_count || 0}</td>
+                        <td className={TD_CLS}>
                           {l.is_active ? (
-                            <span style={{ color: 'var(--gb-wa-500)', fontWeight: 600, fontSize: '.72rem' }}>Active</span>
+                            <span className="text-wa-500 font-semibold text-[0.72rem]">Active</span>
                           ) : (
-                            <span style={{ color: 'var(--dim)', fontWeight: 600, fontSize: '.72rem' }}>Inactive</span>
+                            <span className="text-dim font-semibold text-[0.72rem]">Inactive</span>
                           )}
                         </td>
-                        <td style={td}>
+                        <td className={TD_CLS}>
                           <label className="tsl">
                             <input
                               type="checkbox"

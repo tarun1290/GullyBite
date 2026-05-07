@@ -179,13 +179,13 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch"><h3>📂 Product Sets</h3></div>
         <div className="cb">
-          <p style={{ color: 'var(--dim)', fontSize: '.86rem', marginBottom: '.7rem' }}>
+          <p className="text-dim text-[0.86rem] mb-[0.7rem]">
             Select a specific branch to manage its product sets.
           </p>
           <select
             value={selectedBranchId}
             onChange={(e) => setSelectedBranchId(e.target.value)}
-            style={{ padding: '.4rem .6rem', borderRadius: 7, border: '1px solid var(--rim)', fontSize: '.85rem' }}
+            className="py-[0.4rem] px-[0.6rem] rounded-[7px] border border-rim text-[0.85rem]"
           >
             <option value="">Select branch…</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -200,7 +200,7 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch"><h3>📂 Product Sets</h3></div>
         <div className="cb">
-          <p style={{ color: 'var(--dim)', fontSize: '.86rem' }}>
+          <p className="text-dim text-[0.86rem]">
             &quot;{branch?.name}&quot; has no catalog yet. Create one from the Branches tab first — product
             sets only sync to Meta once a catalog exists.
           </p>
@@ -212,9 +212,9 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
   return (
     <div>
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+        <div className="ch justify-between">
           <h3>📂 Product Sets — {branch?.name}</h3>
-          <div style={{ display: 'flex', gap: '.4rem' }}>
+          <div className="flex gap-[0.4rem]">
             <button type="button" className="btn-g btn-sm" onClick={handleAuto}>✨ Auto-Create</button>
             <button type="button" className="btn-g btn-sm" onClick={handleSync}>🔄 Sync to Meta</button>
             <button type="button" className="btn-p btn-sm" onClick={openCreate}>+ Create Set</button>
@@ -222,39 +222,36 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
         </div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)' }}>Loading…</p>
+            <p className="text-dim">Loading…</p>
           ) : !sets.length ? (
-            <p style={{ color: 'var(--dim)', fontSize: '.82rem' }}>
+            <p className="text-dim text-[0.82rem]">
               No product sets yet. Click <strong>Auto-Create</strong> to generate from your menu
               categories, or <strong>Create Set</strong> to add manually.
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
+            <div className="flex flex-col gap-[0.4rem]">
               {sets.map((s) => {
                 const syncBadge = s.meta_product_set_id ? (
-                  <span style={{ fontSize: '.65rem', color: 'var(--wa)' }}>🟢 synced</span>
+                  <span className="text-[0.65rem] text-wa">🟢 synced</span>
                 ) : (
-                  <span style={{ fontSize: '.65rem', color: 'var(--gold)' }}>🟡 pending</span>
+                  <span className="text-[0.65rem] text-gold">🟡 pending</span>
                 );
                 return (
                   <div
                     key={s.id}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '.6rem',
-                      padding: '.5rem .7rem', background: 'var(--ink2,#f4f4f5)', borderRadius: 8,
-                    }}
+                    className="flex items-center gap-[0.6rem] py-2 px-[0.7rem] bg-ink2 rounded-lg"
                   >
-                    <span style={{ fontWeight: 600, fontSize: '.84rem', flex: 1 }}>{s.name}</span>
-                    <span className="badge bd" style={{ fontSize: '.62rem' }}>{s.type}</span>
+                    <span className="font-semibold text-[0.84rem] flex-1">{s.name}</span>
+                    <span className="badge bd text-[0.62rem]">{s.type}</span>
                     {syncBadge}
-                    <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={() => openEdit(s)}>✏ Edit</button>
+                    <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => openEdit(s)}>✏ Edit</button>
                     {pendingDelete === s.id ? (
                       <>
                         <button type="button" className="btn-del btn-sm" onClick={() => handleDelete(s.id)}>Delete</button>
-                        <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={() => setPendingDelete(null)}>Cancel</button>
+                        <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => setPendingDelete(null)}>Cancel</button>
                       </>
                     ) : (
-                      <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem', color: '#dc2626' }} onClick={() => setPendingDelete(s.id)}>🗑</button>
+                      <button type="button" className="btn-g btn-sm text-[0.72rem] text-[#dc2626]" onClick={() => setPendingDelete(s.id)}>🗑</button>
                     )}
                   </div>
                 );
@@ -266,15 +263,11 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
 
       {modalOpen && (
         <div
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100,
-            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-            padding: '2rem 1rem', overflowY: 'auto',
-          }}
+          className="fixed inset-0 bg-black/50 z-100 flex items-start justify-center py-8 px-4 overflow-y-auto"
           onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) setModalOpen(false); }}
         >
-          <div className="card" style={{ maxWidth: 480, width: '100%', background: 'var(--surface,#fff)' }}>
-            <div className="ch" style={{ justifyContent: 'space-between' }}>
+          <div className="card max-w-[480px] w-full bg-surface">
+            <div className="ch justify-between">
               <h3>{editingId ? '✏ Edit Product Set' : '+ Create Product Set'}</h3>
               <button type="button" className="btn-g btn-sm" onClick={() => setModalOpen(false)} disabled={saving}>✕</button>
             </div>
@@ -315,7 +308,7 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
+              <div className="flex gap-2 mt-4">
                 <button type="button" className="btn-p" onClick={handleSave} disabled={saving}>
                   {saving ? 'Saving…' : (editingId ? 'Save' : 'Create')}
                 </button>

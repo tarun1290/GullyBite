@@ -63,28 +63,28 @@ interface RecoveryStatsBlockProps {
 function RecoveryStatsBlock({ stats, loading, error, onRetry }: RecoveryStatsBlockProps) {
   if (error) return <SectionError message={error} onRetry={onRetry} />;
   if (loading && !stats) {
-    return <div style={{ color: 'var(--dim)' }}>Loading…</div>;
+    return <div className="text-dim">Loading…</div>;
   }
   if (!stats || !stats.total_sent) {
     return (
-      <span style={{ color: 'var(--dim)' }}>
+      <span className="text-dim">
         No recovery messages sent yet. Use the &quot;Send Recovery&quot; button above to win back abandoned carts.
       </span>
     );
   }
   return (
-    <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+    <div className="flex gap-8 flex-wrap">
       <div>
-        <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{stats.total_sent}</span>{' '}
-        <span style={{ color: 'var(--dim)' }}>messages sent</span>
+        <span className="font-bold text-[1.1rem]">{stats.total_sent}</span>{' '}
+        <span className="text-dim">messages sent</span>
       </div>
       <div>
-        <span style={{ fontWeight: 700, fontSize: '1.1rem', color: 'var(--wa)' }}>{stats.recovered}</span>{' '}
-        <span style={{ color: 'var(--dim)' }}>orders recovered</span>
+        <span className="font-bold text-[1.1rem] text-wa">{stats.recovered}</span>{' '}
+        <span className="text-dim">orders recovered</span>
       </div>
       <div>
-        <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{stats.recovery_rate}%</span>{' '}
-        <span style={{ color: 'var(--dim)' }}>conversion rate</span>
+        <span className="font-bold text-[1.1rem]">{stats.recovery_rate}%</span>{' '}
+        <span className="text-dim">conversion rate</span>
       </div>
     </div>
   );
@@ -98,12 +98,12 @@ interface CartRecoveryFunnelProps {
 
 function CartRecoveryFunnel({ data, loading, error }: CartRecoveryFunnelProps) {
   if (error) {
-    return <div style={{ color: 'var(--dim)' }}>Failed to load cart recovery data</div>;
+    return <div className="text-dim">Failed to load cart recovery data</div>;
   }
   if (loading && !data) {
-    return <div style={{ color: 'var(--dim)' }}>Loading…</div>;
+    return <div className="text-dim">Loading…</div>;
   }
-  if (!data) return <div style={{ color: 'var(--dim)' }}>No data yet</div>;
+  if (!data) return <div className="text-dim">No data yet</div>;
   const stages = data.by_stage || {};
   const rows = ['address_pending', 'review_pending', 'payment_pending', 'payment_failed'].map((s) => {
     const st = stages[s] || { abandoned: 0, recovered: 0 };
@@ -111,14 +111,19 @@ function CartRecoveryFunnel({ data, loading, error }: CartRecoveryFunnelProps) {
     const recovered = st.recovered || 0;
     const pct = abandoned ? Math.round((recovered / abandoned) * 100) : 0;
     return (
-      <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '.6rem', padding: '.35rem 0', borderBottom: '1px solid var(--bdr,#e5e7eb)' }}>
-        <span style={{ width: 100 }}>{STAGE_LABELS[s] || s}</span>
-        <span style={{ flex: 1 }}>
-          <div style={{ height: 6, background: 'var(--rim,#e5e7eb)', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${pct}%`, background: 'var(--wa)', borderRadius: 3 }} />
+      <div key={s} className="flex items-center gap-[0.6rem] py-[0.35rem] border-b border-bdr">
+        <span className="w-[100px]">{STAGE_LABELS[s] || s}</span>
+        <span className="flex-1">
+          <div className="h-[6px] bg-rim rounded-[3px] overflow-hidden">
+            <div
+              className="h-full bg-wa rounded-[3px]"
+              // width is the recovery percentage for this funnel stage —
+              // a runtime value the caller computes per stage.
+              style={{ width: `${pct}%` }}
+            />
           </div>
         </span>
-        <span style={{ width: 70, textAlign: 'right', fontSize: '.76rem' }}>
+        <span className="w-[70px] text-right text-[0.76rem]">
           {recovered}/{abandoned}
         </span>
       </div>
@@ -137,7 +142,7 @@ function CartRecoveryFunnel({ data, loading, error }: CartRecoveryFunnelProps) {
     <>
       {rows}
       {reminderLines.length > 0 && (
-        <div style={{ marginTop: '.6rem', fontSize: '.76rem', color: 'var(--dim)' }}>
+        <div className="mt-[0.6rem] text-[0.76rem] text-dim">
           {reminderLines.join(' · ')}
         </div>
       )}
@@ -167,9 +172,9 @@ export default function RecoverySection({ dateRange }: RecoverySectionProps) {
 
   return (
     <>
-      <div className="card" style={{ marginTop: '1rem' }}>
+      <div className="card mt-4">
         <div className="ch"><h3>Recovery Performance</h3></div>
-        <div style={{ fontSize: '.85rem', color: 'var(--dim)', padding: '.5rem 0' }}>
+        <div className="text-[0.85rem] text-dim py-2">
           <RecoveryStatsBlock
             stats={statsQ.data}
             loading={statsQ.loading}
@@ -179,39 +184,32 @@ export default function RecoverySection({ dateRange }: RecoverySectionProps) {
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
+      <div className="card mt-4">
         <div className="ch"><h3>Cart Recovery</h3></div>
         <div className="cb">
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))',
-              gap: '.8rem',
-              marginBottom: '1rem',
-            }}
-          >
-            <div className="card" style={{ textAlign: 'center', padding: '.8rem' }}>
-              <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>Abandoned</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{cr.total_abandoned ?? '—'}</div>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-[0.8rem] mb-4">
+            <div className="card text-center p-[0.8rem]">
+              <div className="text-[0.72rem] text-dim">Abandoned</div>
+              <div className="text-[1.5rem] font-bold">{cr.total_abandoned ?? '—'}</div>
             </div>
-            <div className="card" style={{ textAlign: 'center', padding: '.8rem' }}>
-              <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>Recovered</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#22c55e' }}>{cr.total_recovered ?? '—'}</div>
+            <div className="card text-center p-[0.8rem]">
+              <div className="text-[0.72rem] text-dim">Recovered</div>
+              <div className="text-[1.5rem] font-bold text-[#22c55e]">{cr.total_recovered ?? '—'}</div>
             </div>
-            <div className="card" style={{ textAlign: 'center', padding: '.8rem' }}>
-              <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>Recovery Rate</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--wa)' }}>
+            <div className="card text-center p-[0.8rem]">
+              <div className="text-[0.72rem] text-dim">Recovery Rate</div>
+              <div className="text-[1.5rem] font-bold text-wa">
                 {cr.recovery_rate != null ? `${cr.recovery_rate}%` : '—'}
               </div>
             </div>
-            <div className="card" style={{ textAlign: 'center', padding: '.8rem' }}>
-              <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>Revenue Recovered</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--gold,#eab308)' }}>
+            <div className="card text-center p-[0.8rem]">
+              <div className="text-[0.72rem] text-dim">Revenue Recovered</div>
+              <div className="text-[1.5rem] font-bold text-gold">
                 {cr.revenue_recovered != null ? formatINR(cr.revenue_recovered) : '—'}
               </div>
             </div>
           </div>
-          <div style={{ fontSize: '.82rem', color: 'var(--dim)' }}>
+          <div className="text-[0.82rem] text-dim">
             <CartRecoveryFunnel data={crQ.data} loading={crQ.loading} error={crQ.error} />
           </div>
         </div>

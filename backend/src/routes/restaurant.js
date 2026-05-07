@@ -829,6 +829,7 @@ router.post('/menu/upload-image', upload.single('image'), async (req, res) => {
           updated_at: new Date(),
         }}
       );
+      if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
     }
 
     res.json(result);
@@ -896,6 +897,11 @@ router.post('/images/bulk-upload', upload.array('images', 20), async (req, res) 
       }
     }
 
+    // All matched items live in the same branch (loop sources from
+    // `find({ branch_id: branchId })` above), so a single del covers
+    // every mutation made in this loop.
+    if (matched > 0) memcache.del(`branch:${branchId}:menu`);
+
     res.json({ uploaded: results.length, matched, unmatched, results });
   } catch (err) {
     res.status(500).json({ success: false, message: "Internal server error" });
@@ -944,6 +950,7 @@ router.post('/images/from-url', async (req, res) => {
           updated_at: new Date(),
         }}
       );
+      if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
     }
 
     res.json(result);
@@ -976,6 +983,7 @@ router.delete('/images/:itemId', async (req, res) => {
         updated_at: new Date(),
       }}
     );
+    if (item.branch_id) memcache.del(`branch:${item.branch_id}:menu`);
 
     res.json({ success: true });
   } catch (err) {
@@ -2212,6 +2220,7 @@ router.delete('/branches/:id/permanent', async (req, res) => {
     const token = process.env.META_SYSTEM_USER_TOKEN;
 
     await col('menu_items').deleteMany({ branch_id: branchId });
+    memcache.del(`branch:${branchId}:menu`);
 
     if (retailerIds.length > 0 && catalogId && token) {
       // Fire-and-forget Meta purge. Direct items_batch DELETE — no second
@@ -2500,6 +2509,7 @@ router.delete('/branches/:branchId/categories/:catId', async (req, res) => {
       { branch_id: req.params.branchId, category_id: req.params.catId },
       { $set: { category_id: null } }
     );
+    memcache.del(`branch:${req.params.branchId}:menu`);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
@@ -2795,6 +2805,7 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
       { returnDocument: 'after' }
     );
     if (updated) {
+      if (updated.branch_id) memcache.del(`branch:${updated.branch_id}:menu`);
       queueSync(req.restaurantId, 'branch', [updated.branch_id]);
 
       // Mark compressed catalog as stale if commerce-identity fields changed
@@ -3307,6 +3318,7 @@ router.post('/branches/:branchId/menu/csv', async (req, res) => {
     if (branchId && branchId !== '__all__' && branchId !== '__unassigned__') {
       catalog.autoCreateProductSets(branchId)
         .catch(err => logger.error({ err, branchId }, 'Auto-create product sets after CSV upload failed'));
+      memcache.del(`branch:${branchId}:menu`);
       queueSync(req.restaurantId, 'branch', [branchId]);
     }
 
@@ -3468,6 +3480,10 @@ router.post('/menu/csv', async (req, res) => {
     const perBranch = [];
     let totalAdded = 0, totalSkipped = 0;
     const allErrors = [];
+    // Dedup affected branches across the per-branch CSV loop AND the
+    // post-loop stale-detection pass below — one menu-cache del per
+    // branch regardless of how many menu_items writes touched it.
+    const affectedBranchIds = new Set();
 
     for (const [bid, branchItems] of Object.entries(branchGroups)) {
       const isUnassigned = bid === UNASSIGNED_BUCKET;
@@ -3616,6 +3632,12 @@ router.post('/menu/csv', async (req, res) => {
         if (variantOps.length) await col('menu_items').bulkWrite(variantOps, { ordered: false });
       } catch (e) { logger.warn({ err: e, branchId: bid }, 'CSV auto-group variants failed'); }
 
+      // Record this branch as affected — covers both the chunked
+      // bulkWrite above AND the variant auto-group bulkWrite. Skip
+      // the Unassigned bucket (actualBranchId === null), which has
+      // no real branch:*:menu cache key.
+      if (actualBranchId) affectedBranchIds.add(actualBranchId);
+
       totalAdded += branchResult.added;
       totalSkipped += branchResult.skipped;
       allErrors.push(...branchResult.errors);
@@ -3662,6 +3684,7 @@ router.post('/menu/csv', async (req, res) => {
           { _id: { $in: staleItems.map(s => s._id) } },
           { $set: { is_available: false, stale_reason: 'not_in_upload', stale_marked_at: new Date(), catalog_sync_status: 'pending', updated_at: new Date() } }
         );
+        if (br.branchId) affectedBranchIds.add(br.branchId);
         const itemList = staleItems.slice(0, 20).map(s => ({ name: s.name, retailer_id: s.retailer_id }));
         staleResult.per_branch.push({ branchId: br.branchId, branchName: br.branchName, count: staleItems.length, items: itemList, more: staleItems.length > 20 ? staleItems.length - 20 : 0 });
         staleResult.total += staleItems.length;
@@ -3674,6 +3697,7 @@ router.post('/menu/csv', async (req, res) => {
     // Queue debounced sync for all affected branches. The Unassigned
     // sentinel isn't a real branch — drop it before queueing.
     const syncBranchIds = Object.keys(branchGroups).filter((id) => id !== UNASSIGNED_BUCKET);
+    affectedBranchIds.forEach(bid => memcache.del(`branch:${bid}:menu`));
     if (syncBranchIds.length) queueSync(req.restaurantId, 'branch', syncBranchIds);
 
     await col('restaurants').updateOne(
@@ -3837,6 +3861,7 @@ router.post('/menu/:itemId/variants', async (req, res) => {
       { upsert: true, returnDocument: 'after' }
     );
 
+    if (srcItem.branch_id) memcache.del(`branch:${srcItem.branch_id}:menu`);
     queueSync(req.restaurantId, 'branch', [srcItem.branch_id]);
 
     res.status(201).json(mapId(newItem));
@@ -4250,6 +4275,7 @@ router.post('/menu/variant', requirePermission('manage_menu'), async (req, res) 
       { upsert: true, returnDocument: 'after' }
     );
 
+    memcache.del(`branch:${branchId}:menu`);
     queueSync(req.restaurantId, 'branch', [branchId]);
 
     res.status(201).json(mapId(newItem));
@@ -4848,6 +4874,9 @@ router.post('/catalog/reverse-sync', async (req, res) => {
 
     const stats = { total_in_meta: allProducts.length, new_items_added: 0, existing_items_updated: 0, errors: [] };
     const now = new Date();
+    // Dedup affected branches across the import loop so we issue at
+    // most one menu-cache del per branch regardless of import size.
+    const affectedBranchIds = new Set();
 
     for (const product of allProducts) {
       try {
@@ -4892,10 +4921,13 @@ router.post('/catalog/reverse-sync', async (req, res) => {
 
         if (result.upsertedCount) stats.new_items_added++;
         else stats.existing_items_updated++;
+        affectedBranchIds.add(String(targetBranch._id));
       } catch (err) {
         stats.errors.push(`${product.name || product.id}: ${err.message}`);
       }
     }
+
+    affectedBranchIds.forEach(bid => memcache.del(`branch:${bid}:menu`));
 
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { last_catalog_pull_at: new Date() } });
     req.log.info({ stats }, 'Reverse sync complete');
@@ -5309,6 +5341,15 @@ router.post('/menu/bulk-assign-branch', requirePermission('manage_menu'), async 
     const branch = await col('branches').findOne({ _id: branch_id, restaurant_id: req.restaurantId });
     if (!branch) return res.status(404).json({ error: 'Branch not found' });
 
+    // Capture the old branches the items are currently in BEFORE the
+    // updateMany overwrites them, so the menu cache for those branches
+    // can also be invalidated (the moved items will no longer appear
+    // in their listings).
+    const oldBranchIds = await col('menu_items').distinct(
+      'branch_id',
+      { _id: { $in: item_ids }, restaurant_id: req.restaurantId }
+    );
+
     const result = await col('menu_items').updateMany(
       { _id: { $in: item_ids }, restaurant_id: req.restaurantId },
       { $set: { branch_id, updated_at: new Date(), catalog_sync_status: 'pending' } }
@@ -5316,6 +5357,8 @@ router.post('/menu/bulk-assign-branch', requirePermission('manage_menu'), async 
 
     req.log.info({ assignedCount: result.modifiedCount, branchName: branch.name, branchId: branch_id }, 'Bulk assigned items to branch');
 
+    memcache.del(`branch:${branch_id}:menu`);
+    oldBranchIds.forEach(bid => { if (bid && bid !== branch_id) memcache.del(`branch:${bid}:menu`); });
     queueSync(req.restaurantId, 'branch', [branch_id]);
 
     res.json({ success: true, assigned: result.modifiedCount, branch_name: branch.name });
@@ -5342,6 +5385,8 @@ router.put('/menu/:itemId/branch', requirePermission('manage_menu'), async (req,
 
     req.log.info({ itemName: item.name, oldBranchId, newBranchName: branch.name, newBranchId: branch_id }, 'Moved item to different branch');
 
+    memcache.del(`branch:${branch_id}:menu`);
+    if (oldBranchId && oldBranchId !== branch_id) memcache.del(`branch:${oldBranchId}:menu`);
     // No Meta catalog change needed — one catalog for all branches
     // Just re-sync to update product_tags/retailer_id if branch-encoded
     queueSync(req.restaurantId, 'branch', [branch_id, oldBranchId].filter(Boolean));

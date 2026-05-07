@@ -61,10 +61,10 @@ function GstPanel({ rows, loading }: GstPanelProps) {
         </thead>
         <tbody id="fin-gst-body">
           {loading ? (
-            <tr><td colSpan={6} style={{ textAlign: 'center', padding: '1.2rem', color: 'var(--dim)' }}>Loading…</td></tr>
+            <tr><td colSpan={6} className="text-center p-[1.2rem] text-dim">Loading…</td></tr>
           ) : !rows.length ? (
             <tr><td colSpan={6}>
-              <div className="empty" style={{ padding: '1.5rem' }}>
+              <div className="empty p-6">
                 <h3>No GST data yet</h3>
                 <p>GST breakdown appears after your first orders</p>
               </div>
@@ -72,7 +72,7 @@ function GstPanel({ rows, loading }: GstPanelProps) {
           ) : (
             rows.map((m, idx) => (
               <tr key={m.month || idx}>
-                <td style={{ fontWeight: 600, fontSize: '.8rem' }}>{m.month}</td>
+                <td className="font-semibold text-[0.8rem]">{m.month}</td>
                 <td>{formatINR(m.food_gst)}</td>
                 <td>{formatINR(m.packaging_gst)}</td>
                 <td>{formatINR(m.delivery_gst)}</td>
@@ -105,10 +105,10 @@ function TdsPanel({ rows, loading }: TdsPanelProps) {
         </thead>
         <tbody id="fin-tds-body">
           {loading ? (
-            <tr><td colSpan={6} style={{ textAlign: 'center', padding: '1.2rem', color: 'var(--dim)' }}>Loading…</td></tr>
+            <tr><td colSpan={6} className="text-center p-[1.2rem] text-dim">Loading…</td></tr>
           ) : !rows.length ? (
             <tr><td colSpan={6}>
-              <div className="empty" style={{ padding: '1.5rem' }}>
+              <div className="empty p-6">
                 <h3>No TDS records yet</h3>
                 <p>TDS is deducted from settlements</p>
               </div>
@@ -116,8 +116,8 @@ function TdsPanel({ rows, loading }: TdsPanelProps) {
           ) : (
             rows.map((t, idx) => (
               <tr key={t.settlement_id || idx}>
-                <td style={{ fontFamily: 'monospace', fontSize: '.75rem' }}>{t.settlement_id || '—'}</td>
-                <td style={{ fontSize: '.8rem' }}>{t.period || ''}</td>
+                <td className="font-mono text-[0.75rem]">{t.settlement_id || '—'}</td>
+                <td className="text-[0.8rem]">{t.period || ''}</td>
                 <td>{formatINR(t.gross)}</td>
                 <td>{t.tds_rate || '1%'}</td>
                 <td><strong>{formatINR(t.tds_amount)}</strong></td>
@@ -127,13 +127,12 @@ function TdsPanel({ rows, loading }: TdsPanelProps) {
                       href={t.certificate_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn-g btn-sm"
-                      style={{ textDecoration: 'none' }}
+                      className="btn-g btn-sm no-underline"
                     >
                       📄 Download
                     </a>
                   ) : (
-                    <span style={{ color: 'var(--mute,var(--dim))', fontSize: '.75rem' }}>Pending</span>
+                    <span className="text-mute text-[0.75rem]">Pending</span>
                   )}
                 </td>
               </tr>
@@ -150,26 +149,26 @@ interface InfoPanelProps { data: TaxSummary | null; loading: boolean }
 function InfoPanel({ data, loading }: InfoPanelProps) {
   return (
     <div className="cb">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.2rem' }}>
-        <div style={{ background: 'var(--ink4)', border: '1px solid var(--rim)', borderRadius: 8, padding: '1rem 1.2rem' }}>
-          <div style={{ fontSize: '.72rem', fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '.5rem' }}>
+      <div className="grid grid-cols-2 gap-4 mb-[1.2rem]">
+        <div className="bg-ink4 border border-rim rounded-lg py-4 px-[1.2rem]">
+          <div className="text-[0.72rem] font-semibold text-dim uppercase tracking-wider mb-2">
             GSTIN on File
           </div>
-          <div id="fin-tax-gstin" style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: "'SF Mono',monospace", color: 'var(--tx)' }}>
+          <div id="fin-tax-gstin" className="text-[1.05rem] font-bold font-mono text-tx">
             {loading ? '…' : (data?.gstin || '—')}
           </div>
-          <div id="fin-tax-gst-status" style={{ fontSize: '.72rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+          <div id="fin-tax-gst-status" className="text-[0.72rem] text-dim mt-[0.2rem]">
             {data?.gstin_status ? `Status: ${data.gstin_status}` : ''}
           </div>
         </div>
-        <div style={{ background: 'var(--ink4)', border: '1px solid var(--rim)', borderRadius: 8, padding: '1rem 1.2rem' }}>
-          <div style={{ fontSize: '.72rem', fontWeight: 600, color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '.5rem' }}>
+        <div className="bg-ink4 border border-rim rounded-lg py-4 px-[1.2rem]">
+          <div className="text-[0.72rem] font-semibold text-dim uppercase tracking-wider mb-2">
             PAN on File
           </div>
-          <div id="fin-tax-pan" style={{ fontSize: '1.05rem', fontWeight: 700, fontFamily: "'SF Mono',monospace", color: 'var(--tx)' }}>
+          <div id="fin-tax-pan" className="text-[1.05rem] font-bold font-mono text-tx">
             {loading ? '…' : (data?.pan || '—')}
           </div>
-          <div id="fin-tax-pan-status" style={{ fontSize: '.72rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+          <div id="fin-tax-pan-status" className="text-[0.72rem] text-dim mt-[0.2rem]">
             {data?.pan_status ? `Status: ${data.pan_status}` : ''}
           </div>
         </div>
@@ -191,7 +190,7 @@ export default function TaxSummarySection() {
   return (
     <div className="card">
       <div className="ch"><h3>Tax Compliance</h3></div>
-      <div style={{ padding: '.7rem 1.2rem', borderBottom: '1px solid var(--rim)', display: 'flex', gap: '.3rem' }}>
+      <div className="py-[0.7rem] px-[1.2rem] border-b border-rim flex gap-[0.3rem]">
         {TABS.map(([v, l]) => (
           <button
             key={v}

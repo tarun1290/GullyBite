@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
@@ -125,15 +125,15 @@ interface IssueStats {
 interface RefundResp { issue?: { refund_amount_rs?: number | string } }
 
 function slaLabel(issue: AdminIssue): ReactNode {
-  if (['resolved', 'closed'].includes(issue.status || '')) return <span style={{ color: 'var(--gb-wa-500)' }}>✓</span>;
+  if (['resolved', 'closed'].includes(issue.status || '')) return <span className="text-wa-500">✓</span>;
   if (!issue.sla_deadline) return '—';
   const rem = new Date(issue.sla_deadline).getTime() - Date.now();
-  if (rem <= 0) return <span style={{ color: 'var(--gb-red-500)', fontWeight: 600 }}>🔴 Breached</span>;
+  if (rem <= 0) return <span className="text-red-500 font-semibold">🔴 Breached</span>;
   const h = Math.floor(rem / 3600000);
   const m = Math.floor((rem % 3600000) / 60000);
-  if (rem < 3600000) return <span style={{ color: 'var(--gb-red-500)' }}>🟡 {m}m</span>;
-  if (h < 6) return <span style={{ color: '#f59e0b' }}>🟡 {h}h{m}m</span>;
-  return <span style={{ color: 'var(--gb-wa-500)' }}>🟢 {h}h</span>;
+  if (rem < 3600000) return <span className="text-red-500">🟡 {m}m</span>;
+  if (h < 6) return <span className="text-[#f59e0b]">🟡 {h}h{m}m</span>;
+  return <span className="text-wa-500">🟢 {h}h</span>;
 }
 
 function timeAgo(ts?: string): string {
@@ -149,24 +149,22 @@ interface StatCardProps { label: string; value?: number | string; color?: string
 
 function StatCard({ label, value, color }: StatCardProps): ReactNode {
   return (
-    <div style={{
-      background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 10,
-      padding: '.65rem .8rem', boxShadow: 'var(--shadow-sm)',
-    }}>
-      <div style={{ fontSize: '.65rem', color: 'var(--dim)', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600 }}>
+    <div className="bg-neutral-0 border border-rim rounded-[10px] py-[0.65rem] px-[0.8rem] shadow-sm-token">
+      <div className="text-[0.65rem] text-dim uppercase tracking-[0.04em] font-semibold">
         {label}
       </div>
-      <div style={{ fontSize: '1.4rem', fontWeight: 700, color }}>{value || 0}</div>
+      {/* color is dynamic — passed in from caller based on stat type */}
+      <div className="text-[1.4rem] font-bold" style={{ color }}>{value || 0}</div>
     </div>
   );
 }
 
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.6rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const sel: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .55rem', fontSize: '.78rem' };
-const lbl: CSSProperties = { fontSize: '.72rem', color: 'var(--dim)', display: 'block', marginBottom: '.2rem' };
-const inlineForm: CSSProperties = { padding: '.8rem 1.2rem', borderTop: '1px solid var(--rim)', background: 'var(--ink3)' };
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const EMPTY_CELL_CLS = 'p-6 text-center text-dim';
+const SEL_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.55rem] text-[0.78rem]';
+const LBL_CLS = 'text-[0.72rem] text-dim block mb-[0.2rem]';
+const INLINE_FORM_CLS = 'py-[0.8rem] px-[1.2rem] border-t border-rim bg-ink3';
 
 export default function AdminIssuesPage() {
   const { showToast } = useToast();
@@ -361,11 +359,11 @@ export default function AdminIssuesPage() {
   return (
     <div id="pg-issues">
       {statsErr ? (
-        <div style={{ marginBottom: '.8rem' }}>
+        <div className="mb-[0.8rem]">
           <SectionError message={statsErr} onRetry={loadStats} />
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '.65rem', marginBottom: '1rem' }}>
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-[0.65rem] mb-4">
           <StatCard label="Open" value={stats?.open} color="#3b82f6" />
           <StatCard label="In Progress" value={stats?.in_progress} color="#f59e0b" />
           <StatCard label="Escalated" value={stats?.escalated} color="var(--gb-red-500)" />
@@ -375,7 +373,7 @@ export default function AdminIssuesPage() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '.4rem', marginBottom: '.7rem', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="flex gap-[0.4rem] mb-[0.7rem] flex-wrap items-center">
         {TABS.map((t) => (
           <button
             key={t.key || 'all'}
@@ -387,18 +385,18 @@ export default function AdminIssuesPage() {
         <select
           value={category}
           onChange={(e) => { setCategory(e.target.value); setPage(1); }}
-          style={{ ...sel, marginLeft: 'auto' }}
+          className={`${SEL_CLS} ml-auto`}
         >
           {CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select value={priority} onChange={(e) => { setPriority(e.target.value); setPage(1); }} style={sel}>
+        <select value={priority} onChange={(e) => { setPriority(e.target.value); setPage(1); }} className={SEL_CLS}>
           {PRIORITIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
         <input
           placeholder="Search…"
           value={pendingSearch}
           onChange={(e) => setPendingSearch(e.target.value)}
-          style={{ ...sel, width: 180 }}
+          className={`${SEL_CLS} w-[180px]`}
         />
       </div>
 
@@ -406,28 +404,28 @@ export default function AdminIssuesPage() {
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={loadList} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={th}>Issue #</th>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Category</th>
-                  <th style={th}>Customer</th>
-                  <th style={th}>Order</th>
-                  <th style={th}>Priority</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Routed To</th>
-                  <th style={th}>SLA</th>
-                  <th style={th}>Age</th>
-                  <th style={th}></th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={TH_CLS}>Issue #</th>
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Category</th>
+                  <th className={TH_CLS}>Customer</th>
+                  <th className={TH_CLS}>Order</th>
+                  <th className={TH_CLS}>Priority</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Routed To</th>
+                  <th className={TH_CLS}>SLA</th>
+                  <th className={TH_CLS}>Age</th>
+                  <th className={TH_CLS}></th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={11} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={11} className={EMPTY_CELL_CLS}>Loading…</td></tr>
                 ) : issues.length === 0 ? (
-                  <tr><td colSpan={11} style={emptyCell}>No issues</td></tr>
+                  <tr><td colSpan={11} className={EMPTY_CELL_CLS}>No issues</td></tr>
                 ) : (
                   issues.map((i) => {
                     const priClr = PRI_CLR[i.priority || ''] || 'var(--gb-slate-400)';
@@ -435,21 +433,21 @@ export default function AdminIssuesPage() {
                     return (
                       <tr
                         key={i._id}
-                        style={{ borderBottom: '1px solid var(--rim)', cursor: 'pointer' }}
+                        className="border-b border-rim cursor-pointer"
                         onClick={() => openDetail(i._id)}
                       >
-                        <td style={{ ...td, fontWeight: 600, whiteSpace: 'nowrap' }}>{i.issue_number}</td>
-                        <td style={{ ...td, fontSize: '.78rem' }}>
+                        <td className={`${TD_CLS} font-semibold whitespace-nowrap`}>{i.issue_number}</td>
+                        <td className={`${TD_CLS} text-[0.78rem]`}>
                           {i.restaurant_id ? String(i.restaurant_id).slice(-6) : '—'}
                         </td>
-                        <td style={{ ...td, fontSize: '.78rem' }}>{CAT_LABEL[i.category || ''] || i.category}</td>
-                        <td style={{ ...td, fontSize: '.8rem' }}>{i.customer_name || '—'}</td>
-                        <td style={{ ...td, fontSize: '.76rem', color: 'var(--dim)' }}>
+                        <td className={`${TD_CLS} text-[0.78rem]`}>{CAT_LABEL[i.category || ''] || i.category}</td>
+                        <td className={`${TD_CLS} text-[0.8rem]`}>{i.customer_name || '—'}</td>
+                        <td className={`${TD_CLS} text-[0.76rem] text-dim`}>
                           {i.display_order_id ? (
                             <>
                               <div>{i.display_order_id}</div>
                               {i.order_number && (
-                                <div style={{ fontSize: '.66rem', color: 'var(--mute,var(--dim))' }}>
+                                <div className="text-[0.66rem] text-mute">
                                   {i.order_number}
                                 </div>
                               )}
@@ -458,24 +456,25 @@ export default function AdminIssuesPage() {
                             <>{i.order_number || '—'}</>
                           )}
                         </td>
-                        <td style={td}>
-                          <span style={{ color: priClr, fontWeight: 600, fontSize: '.72rem', textTransform: 'uppercase' }}>
+                        <td className={TD_CLS}>
+                          {/* color from PRI_CLR palette by priority key at runtime */}
+                          <span className="font-semibold text-[0.72rem] uppercase" style={{ color: priClr }}>
                             {i.priority}
                           </span>
                         </td>
-                        <td style={td}>
-                          <span style={{ background: stClr, color: 'var(--gb-neutral-0)', fontSize: '.68rem', padding: '.1rem .35rem', borderRadius: 4, fontWeight: 600 }}>
+                        <td className={TD_CLS}>
+                          {/* background from ST_CLR palette by status key at runtime */}
+                          <span className="text-neutral-0 text-[0.68rem] py-[0.1rem] px-[0.35rem] rounded-xs font-semibold" style={{ background: stClr }}>
                             {String(i.status).replace(/_/g, ' ')}
                           </span>
                         </td>
-                        <td style={{ ...td, fontSize: '.72rem', color: 'var(--dim)' }}>{i.routed_to || '—'}</td>
-                        <td style={{ ...td, fontSize: '.72rem' }}>{slaLabel(i)}</td>
-                        <td style={{ ...td, fontSize: '.72rem', color: 'var(--dim)' }}>{timeAgo(i.created_at)}</td>
-                        <td style={td}>
+                        <td className={`${TD_CLS} text-[0.72rem] text-dim`}>{i.routed_to || '—'}</td>
+                        <td className={`${TD_CLS} text-[0.72rem]`}>{slaLabel(i)}</td>
+                        <td className={`${TD_CLS} text-[0.72rem] text-dim`}>{timeAgo(i.created_at)}</td>
+                        <td className={TD_CLS}>
                           <button
                             type="button"
-                            className="btn-g btn-sm"
-                            style={{ fontSize: '.7rem', padding: '.12rem .35rem' }}
+                            className="btn-g btn-sm text-[0.7rem] py-[0.12rem] px-[0.35rem]"
                             onClick={(e) => { e.stopPropagation(); openDetail(i._id); }}
                           >View</button>
                         </td>
@@ -488,11 +487,11 @@ export default function AdminIssuesPage() {
           </div>
         )}
         {pages > 1 && (
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '.4rem', padding: '.7rem' }}>
+          <div className="flex justify-center gap-[0.4rem] p-[0.7rem]">
             {curPage > 1 && (
               <button type="button" className="btn-g btn-sm" onClick={() => setPage(curPage - 1)}>« Prev</button>
             )}
-            <span style={{ fontSize: '.78rem', color: 'var(--dim)', padding: '.3rem .5rem' }}>
+            <span className="text-[0.78rem] text-dim py-[0.3rem] px-2">
               Page {curPage} of {pages}
             </span>
             {curPage < pages && (
@@ -504,50 +503,46 @@ export default function AdminIssuesPage() {
 
       {activeId && (
         <div
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)',
-            zIndex: 999, overflowY: 'auto',
-          }}
+          className="fixed inset-0 bg-black/40 z-999 overflow-y-auto"
           onClick={closeDetail}
         >
           <div
-            style={{
-              margin: '1.5rem auto', maxWidth: 850, background: 'var(--gb-neutral-0)',
-              borderRadius: 12, boxShadow: 'var(--shadow)', overflow: 'hidden',
-            }}
+            className="my-6 mx-auto max-w-[850px] bg-neutral-0 rounded-xl shadow-default overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {detailLoading || !detail ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--dim)' }}>Loading…</div>
+              <div className="p-8 text-center text-dim">Loading…</div>
             ) : (
               <>
-                <div style={{ padding: '1rem 1.2rem', borderBottom: '1px solid var(--rim)', display: 'flex', alignItems: 'center', gap: '.6rem', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 700, fontSize: '.95rem' }}>{detail.issue_number}</span>
-                  <span style={{ fontSize: '.78rem', padding: '.12rem .5rem', borderRadius: 6, background: 'var(--ink)' }}>
+                <div className="py-4 px-[1.2rem] border-b border-rim flex items-center gap-[0.6rem] flex-wrap">
+                  <span className="font-bold text-[0.95rem]">{detail.issue_number}</span>
+                  <span className="text-[0.78rem] py-[0.12rem] px-2 rounded-md bg-ink">
                     {CAT_LABEL[detail.category || ''] || detail.category}
                   </span>
-                  <span style={{
-                    fontSize: '.72rem', fontWeight: 700, padding: '.12rem .4rem', borderRadius: 4,
-                    color: PRI_CLR[detail.priority || ''] || 'var(--gb-slate-400)', textTransform: 'uppercase',
-                  }}>{detail.priority}</span>
-                  <span style={{
-                    fontSize: '.72rem', fontWeight: 600, padding: '.12rem .4rem', borderRadius: 4,
-                    color: 'var(--gb-neutral-0)', background: ST_CLR[detail.status || ''] || 'var(--gb-slate-500)',
-                  }}>{String(detail.status).replace(/_/g, ' ')}</span>
-                  <span style={{ fontSize: '.72rem', marginLeft: 'auto' }}>{slaLabel(detail)}</span>
+                  {/* color from PRI_CLR palette by priority key at runtime */}
+                  <span
+                    className="text-[0.72rem] font-bold py-[0.12rem] px-[0.4rem] rounded-xs uppercase"
+                    style={{ color: PRI_CLR[detail.priority || ''] || 'var(--gb-slate-400)' }}
+                  >{detail.priority}</span>
+                  {/* background from ST_CLR palette by status key at runtime */}
+                  <span
+                    className="text-[0.72rem] font-semibold py-[0.12rem] px-[0.4rem] rounded-xs text-neutral-0"
+                    style={{ background: ST_CLR[detail.status || ''] || 'var(--gb-slate-500)' }}
+                  >{String(detail.status).replace(/_/g, ' ')}</span>
+                  <span className="text-[0.72rem] ml-auto">{slaLabel(detail)}</span>
                   <button type="button" className="btn-g btn-sm" onClick={closeDetail}>Close</button>
                 </div>
 
-                <div style={{ padding: '.7rem 1.2rem', borderBottom: '1px solid var(--rim)', display: 'flex', gap: '1.5rem', fontSize: '.82rem', flexWrap: 'wrap' }}>
-                  <div><span style={{ color: 'var(--dim)' }}>Customer:</span> <strong>{detail.customer_name || 'Unknown'}</strong></div>
-                  <div><span style={{ color: 'var(--dim)' }}>Phone:</span> {detail.customer_phone || '—'}</div>
+                <div className="py-[0.7rem] px-[1.2rem] border-b border-rim flex gap-6 text-[0.82rem] flex-wrap">
+                  <div><span className="text-dim">Customer:</span> <strong>{detail.customer_name || 'Unknown'}</strong></div>
+                  <div><span className="text-dim">Phone:</span> {detail.customer_phone || '—'}</div>
                   <div>
-                    <span style={{ color: 'var(--dim)' }}>Order:</span>{' '}
+                    <span className="text-dim">Order:</span>{' '}
                     {detail.display_order_id ? (
                       <>
                         <strong>{detail.display_order_id}</strong>
                         {detail.order_number && (
-                          <span style={{ fontSize: '.7rem', color: 'var(--mute,var(--dim))', marginLeft: '.4rem' }}>
+                          <span className="text-[0.7rem] text-mute ml-[0.4rem]">
                             ({detail.order_number})
                           </span>
                         )}
@@ -556,25 +551,25 @@ export default function AdminIssuesPage() {
                       detail.order_number || '—'
                     )}
                   </div>
-                  <div><span style={{ color: 'var(--dim)' }}>Restaurant:</span> {detail.restaurant_id || '—'}</div>
-                  <div><span style={{ color: 'var(--dim)' }}>Routed:</span> {detail.routed_to || '—'}</div>
+                  <div><span className="text-dim">Restaurant:</span> {detail.restaurant_id || '—'}</div>
+                  <div><span className="text-dim">Routed:</span> {detail.routed_to || '—'}</div>
                 </div>
 
                 {(detail._payment || detail._delivery || detail._order) && (
-                  <div style={{ padding: '.6rem 1.2rem', borderBottom: '1px solid var(--rim)', fontSize: '.8rem', background: 'var(--ink4)' }}>
+                  <div className="py-[0.6rem] px-[1.2rem] border-b border-rim text-[0.8rem] bg-ink4">
                     {detail._payment && (
-                      <span style={{ marginRight: '1rem' }}>
+                      <span className="mr-4">
                         💳 Razorpay: <strong>{detail._payment.rp_payment_id}</strong>
                         {' · '}₹{detail._payment.amount_rs}
                         {detail._payment.method ? ` · ${detail._payment.method}` : ''}
                       </span>
                     )}
                     {detail._delivery && (
-                      <span style={{ marginRight: '1rem' }}>
+                      <span className="mr-4">
                         🛵 {detail._delivery.provider}: {detail._delivery.provider_order_id || '—'}
                         {' · '}{detail._delivery.status}
                         {detail._delivery.tracking_url && (
-                          <> · <a href={detail._delivery.tracking_url} target="_blank" rel="noreferrer" style={{ color: 'var(--acc)' }}>Track</a></>
+                          <> · <a href={detail._delivery.tracking_url} target="_blank" rel="noreferrer" className="text-acc">Track</a></>
                         )}
                       </span>
                     )}
@@ -584,18 +579,18 @@ export default function AdminIssuesPage() {
                   </div>
                 )}
 
-                <div style={{ padding: '.7rem 1.2rem', borderBottom: '1px solid var(--rim)' }}>
-                  <div style={{ fontSize: '.7rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 600, marginBottom: '.25rem' }}>Description</div>
-                  <div style={{ fontSize: '.85rem', lineHeight: 1.5 }}>{detail.description || ''}</div>
+                <div className="py-[0.7rem] px-[1.2rem] border-b border-rim">
+                  <div className="text-[0.7rem] text-dim uppercase font-semibold mb-1">Description</div>
+                  <div className="text-[0.85rem] leading-normal">{detail.description || ''}</div>
                 </div>
 
-                <div style={{ padding: '.7rem 1.2rem', borderBottom: '1px solid var(--rim)' }}>
-                  <div style={{ fontSize: '.7rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 600, marginBottom: '.4rem' }}>Thread</div>
-                  <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '.3rem' }}>
+                <div className="py-[0.7rem] px-[1.2rem] border-b border-rim">
+                  <div className="text-[0.7rem] text-dim uppercase font-semibold mb-[0.4rem]">Thread</div>
+                  <div className="max-h-[280px] overflow-y-auto flex flex-col gap-[0.3rem]">
                     {(detail.messages || []).map((m, i) => {
                       if (m.sender_type === 'system') {
                         return (
-                          <div key={i} style={{ textAlign: 'center', fontSize: '.72rem', color: 'var(--dim)', padding: '.15rem 0' }}>
+                          <div key={i} className="text-center text-[0.72rem] text-dim py-[0.15rem]">
                             {m.text}
                           </div>
                         );
@@ -606,32 +601,29 @@ export default function AdminIssuesPage() {
                       const border = m.internal ? '1px dashed rgba(79,70,229,.25)' : '1px solid transparent';
                       const when = m.created_at ? new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
                       return (
-                        <div key={i} style={{
-                          alignSelf: align, maxWidth: '80%', padding: '.4rem .6rem',
-                          borderRadius: 10, background: bg, border,
-                          fontSize: '.82rem', lineHeight: 1.4,
-                        }}>
-                          <div style={{ fontSize: '.65rem', fontWeight: 600, color: 'var(--dim)', marginBottom: '.1rem' }}>
+                        // alignSelf, background, border are dynamic per-message based on sender_type/internal
+                        <div key={i} style={{ alignSelf: align, background: bg, border }} className="max-w-[80%] py-[0.4rem] px-[0.6rem] rounded-[10px] text-[0.82rem] leading-[1.4]">
+                          <div className="text-[0.65rem] font-semibold text-dim mb-[0.1rem]">
                             {m.sender_name}{m.internal ? ' (internal)' : ''}
                           </div>
                           <div>{m.text}</div>
-                          <div style={{ fontSize: '.6rem', color: 'var(--dim)', textAlign: 'right', marginTop: '.1rem' }}>
+                          <div className="text-[0.6rem] text-dim text-right mt-[0.1rem]">
                             {when}
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                  <div style={{ marginTop: '.5rem', display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+                  <div className="mt-2 flex gap-[0.4rem] items-center">
                     <input
                       placeholder="Reply…"
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') doSend(); }}
-                      style={{ flex: 1, padding: '.4rem .6rem', border: '1px solid var(--rim)', borderRadius: 7, fontSize: '.82rem' }}
+                      className="flex-1 py-[0.4rem] px-[0.6rem] border border-rim rounded-[7px] text-[0.82rem]"
                       disabled={replyBusy}
                     />
-                    <label style={{ fontSize: '.72rem', display: 'flex', alignItems: 'center', gap: '.2rem', color: 'var(--dim)', whiteSpace: 'nowrap' }}>
+                    <label className="text-[0.72rem] flex items-center gap-[0.2rem] text-dim whitespace-nowrap">
                       <input type="checkbox" checked={replyInternal} onChange={(e) => setReplyInternal(e.target.checked)} />
                       Internal
                     </label>
@@ -641,7 +633,7 @@ export default function AdminIssuesPage() {
                   </div>
                 </div>
 
-                <div style={{ padding: '.7rem 1.2rem', display: 'flex', gap: '.4rem', flexWrap: 'wrap' }}>
+                <div className="py-[0.7rem] px-[1.2rem] flex gap-[0.4rem] flex-wrap">
                   {['open', 'escalated_to_admin', 'reopened'].includes(detail.status || '') && (
                     <button type="button" className="btn-p btn-sm" onClick={() => doStatus('in_progress')}>
                       Start Working
@@ -651,15 +643,13 @@ export default function AdminIssuesPage() {
                     <>
                       <button
                         type="button"
-                        className="btn-g btn-sm"
-                        style={{ color: 'var(--gb-wa-500)', borderColor: 'var(--gb-wa-500)' }}
+                        className="btn-g btn-sm text-wa-500 border-wa-500"
                         onClick={() => setResolveOpen(true)}
                       >Resolve</button>
                       {detail.order_id && detail._payment && (
                         <button
                           type="button"
-                          className="btn-g btn-sm"
-                          style={{ color: 'var(--gb-red-500)', borderColor: 'var(--gb-red-500)' }}
+                          className="btn-g btn-sm text-red-500 border-red-500"
                           onClick={() => setRefundOpen(true)}
                         >💰 Issue Refund</button>
                       )}
@@ -676,17 +666,16 @@ export default function AdminIssuesPage() {
                       href={detail._delivery.tracking_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="btn-g btn-sm"
-                      style={{ textDecoration: 'none' }}
+                      className="btn-g btn-sm no-underline"
                     >🛵 Track Delivery</a>
                   )}
                 </div>
 
                 {resolveOpen && (
-                  <div style={inlineForm}>
-                    <div style={{ fontWeight: 600, marginBottom: '.4rem' }}>Resolve issue</div>
-                    <label style={lbl}>Resolution type</label>
-                    <select value={resolveType} onChange={(e) => setResolveType(e.target.value)} style={{ ...sel, width: '100%' }}>
+                  <div className={INLINE_FORM_CLS}>
+                    <div className="font-semibold mb-[0.4rem]">Resolve issue</div>
+                    <label className={LBL_CLS}>Resolution type</label>
+                    <select value={resolveType} onChange={(e) => setResolveType(e.target.value)} className={`${SEL_CLS} w-full`}>
                       <option value="refund_full">Refund (full)</option>
                       <option value="refund_partial">Refund (partial)</option>
                       <option value="credit">Credit</option>
@@ -696,14 +685,14 @@ export default function AdminIssuesPage() {
                       <option value="explanation">Explanation</option>
                       <option value="no_action">No action</option>
                     </select>
-                    <label style={{ ...lbl, marginTop: '.5rem' }}>Notes (optional)</label>
+                    <label className={`${LBL_CLS} mt-2`}>Notes (optional)</label>
                     <textarea
                       rows={2}
                       value={resolveNotes}
                       onChange={(e) => setResolveNotes(e.target.value)}
-                      style={{ width: '100%', padding: '.4rem .6rem', border: '1px solid var(--rim)', borderRadius: 6, fontFamily: 'inherit', fontSize: '.82rem', resize: 'vertical' }}
+                      className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-md font-[inherit] text-[0.82rem] resize-y"
                     />
-                    <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end', marginTop: '.5rem' }}>
+                    <div className="flex gap-2 justify-end mt-2">
                       <button type="button" className="btn-g btn-sm" onClick={() => setResolveOpen(false)}>Cancel</button>
                       <button type="button" className="btn-p btn-sm" onClick={doResolve}>Resolve</button>
                     </div>
@@ -711,17 +700,17 @@ export default function AdminIssuesPage() {
                 )}
 
                 {refundOpen && (
-                  <div style={inlineForm}>
-                    <div style={{ fontWeight: 600, marginBottom: '.4rem' }}>Issue refund</div>
-                    <label style={lbl}>Refund amount (₹) — leave blank for full order</label>
+                  <div className={INLINE_FORM_CLS}>
+                    <div className="font-semibold mb-[0.4rem]">Issue refund</div>
+                    <label className={LBL_CLS}>Refund amount (₹) — leave blank for full order</label>
                     <input
                       type="number"
                       min="0"
                       value={refundAmount}
                       onChange={(e) => setRefundAmount(e.target.value)}
-                      style={{ width: '100%', padding: '.4rem .6rem', border: '1px solid var(--rim)', borderRadius: 6, fontSize: '.82rem' }}
+                      className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-md text-[0.82rem]"
                     />
-                    <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end', marginTop: '.5rem' }}>
+                    <div className="flex gap-2 justify-end mt-2">
                       <button type="button" className="btn-g btn-sm" onClick={() => setRefundOpen(false)}>Cancel</button>
                       <button
                         type="button"
@@ -733,23 +722,23 @@ export default function AdminIssuesPage() {
                 )}
 
                 {flagOpen && (
-                  <div style={inlineForm}>
-                    <div style={{ fontWeight: 600, marginBottom: '.4rem' }}>Flag for settlement</div>
-                    <label style={lbl}>Deduct from</label>
-                    <select value={flagFrom} onChange={(e) => setFlagFrom(e.target.value)} style={{ ...sel, width: '100%' }}>
+                  <div className={INLINE_FORM_CLS}>
+                    <div className="font-semibold mb-[0.4rem]">Flag for settlement</div>
+                    <label className={LBL_CLS}>Deduct from</label>
+                    <select value={flagFrom} onChange={(e) => setFlagFrom(e.target.value)} className={`${SEL_CLS} w-full`}>
                       <option value="restaurant">Restaurant</option>
                       <option value="platform">Platform</option>
                       <option value="3pl">3PL</option>
                     </select>
-                    <label style={{ ...lbl, marginTop: '.5rem' }}>Amount (₹)</label>
+                    <label className={`${LBL_CLS} mt-2`}>Amount (₹)</label>
                     <input
                       type="number"
                       min="0"
                       value={flagAmount}
                       onChange={(e) => setFlagAmount(e.target.value)}
-                      style={{ width: '100%', padding: '.4rem .6rem', border: '1px solid var(--rim)', borderRadius: 6, fontSize: '.82rem' }}
+                      className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-md text-[0.82rem]"
                     />
-                    <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end', marginTop: '.5rem' }}>
+                    <div className="flex gap-2 justify-end mt-2">
                       <button type="button" className="btn-g btn-sm" onClick={() => setFlagOpen(false)}>Cancel</button>
                       <button type="button" className="btn-p btn-sm" onClick={doFlag} disabled={!flagAmount}>Flag</button>
                     </div>

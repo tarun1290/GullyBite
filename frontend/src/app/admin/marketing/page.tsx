@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
 import { getAdminMarketingMessages } from '../../../api/admin';
@@ -36,10 +35,10 @@ function fmtDateTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const th: CSSProperties = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.5rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.4rem .6rem', fontSize: '.8rem' };
+const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.4rem] px-[0.6rem] text-[0.8rem]';
 
 export default function AdminMarketingPage() {
   const [page, setPage] = useState<number>(1);
@@ -95,26 +94,26 @@ export default function AdminMarketingPage() {
   return (
     <div id="pg-marketing">
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.6rem' }}>
-          <h3 style={{ margin: 0 }}>Marketing Messages</h3>
-          <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="ch justify-between flex-wrap gap-[0.6rem]">
+          <h3 className="m-0">Marketing Messages</h3>
+          <div className="flex gap-2 items-center flex-wrap">
             <input
               value={pendingRid}
               onChange={(e) => setPendingRid(e.target.value)}
               placeholder="Restaurant ID (optional)"
-              style={{ ...input, width: 220 }}
+              className={`${INPUT_CLS} w-[220px]`}
             />
             <input
               type="date"
               value={pendingFrom}
               onChange={(e) => setPendingFrom(e.target.value)}
-              style={input}
+              className={INPUT_CLS}
             />
             <input
               type="date"
               value={pendingTo}
               onChange={(e) => setPendingTo(e.target.value)}
-              style={input}
+              className={INPUT_CLS}
             />
             <button type="button" className="btn-p btn-sm" onClick={applyFilters} disabled={loading}>
               Apply
@@ -122,17 +121,13 @@ export default function AdminMarketingPage() {
           </div>
         </div>
 
-        <div style={{
-          display: 'flex', gap: '1rem', padding: '.8rem 1rem',
-          borderBottom: '1px solid var(--rim)', background: 'var(--ink)',
-          fontSize: '.82rem',
-        }}>
+        <div className="flex gap-4 py-[0.8rem] px-4 border-b border-rim bg-ink text-[0.82rem]">
           <div>
-            <span style={{ color: 'var(--dim)' }}>Total revenue from messages:</span>{' '}
+            <span className="text-dim">Total revenue from messages:</span>{' '}
             <strong>₹{Number(totalRevenue || 0).toFixed(2)}</strong>
           </div>
           <div>
-            <span style={{ color: 'var(--dim)' }}>Count:</span>{' '}
+            <span className="text-dim">Count:</span>{' '}
             <strong>{totalCount}</strong>
           </div>
         </div>
@@ -140,35 +135,35 @@ export default function AdminMarketingPage() {
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', textAlign: 'left', color: 'var(--dim)', fontSize: '.75rem' }}>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>WABA ID</th>
-                  <th style={th}>Customer</th>
-                  <th style={th}>Phone</th>
-                  <th style={th}>Type</th>
-                  <th style={th}>Category</th>
-                  <th style={th}>Cost</th>
-                  <th style={th}>Sent</th>
+                <tr className="bg-ink text-left text-dim text-[0.75rem]">
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>WABA ID</th>
+                  <th className={TH_CLS}>Customer</th>
+                  <th className={TH_CLS}>Phone</th>
+                  <th className={TH_CLS}>Type</th>
+                  <th className={TH_CLS}>Category</th>
+                  <th className={TH_CLS}>Cost</th>
+                  <th className={TH_CLS}>Sent</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={8} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={8} style={emptyCell}>No marketing messages in this range.</td></tr>
+                  <tr><td colSpan={8} className={EMPTY_CLS}>No marketing messages in this range.</td></tr>
                 ) : rows.map((m, i) => (
-                  <tr key={m.id || i} style={{ borderTop: '1px solid var(--rim)' }}>
-                    <td style={{ ...td, fontSize: '.75rem' }} className="mono">{m.restaurant_id || '—'}</td>
-                    <td style={{ ...td, fontSize: '.75rem' }} className="mono">{m.waba_id || '—'}</td>
-                    <td style={td}>{m.customer_name || '—'}</td>
-                    <td style={td} className="mono">{m.phone || '—'}</td>
-                    <td style={td}>{m.message_type || '—'}</td>
-                    <td style={td}>{m.category || '—'}</td>
-                    <td style={td}>₹{Number(m.cost || 0).toFixed(2)}</td>
-                    <td style={{ ...td, color: 'var(--dim)', fontSize: '.78rem' }}>{fmtDateTime(m.sent_at)}</td>
+                  <tr key={m.id || i} className="border-t border-rim">
+                    <td className={`${TD_CLS} text-[0.75rem] mono`}>{m.restaurant_id || '—'}</td>
+                    <td className={`${TD_CLS} text-[0.75rem] mono`}>{m.waba_id || '—'}</td>
+                    <td className={TD_CLS}>{m.customer_name || '—'}</td>
+                    <td className={`${TD_CLS} mono`}>{m.phone || '—'}</td>
+                    <td className={TD_CLS}>{m.message_type || '—'}</td>
+                    <td className={TD_CLS}>{m.category || '—'}</td>
+                    <td className={TD_CLS}>₹{Number(m.cost || 0).toFixed(2)}</td>
+                    <td className={`${TD_CLS} text-dim text-[0.78rem]`}>{fmtDateTime(m.sent_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -176,14 +171,11 @@ export default function AdminMarketingPage() {
           </div>
         )}
 
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '.6rem 1rem', borderTop: '1px solid var(--rim)',
-        }}>
+        <div className="flex justify-between items-center py-[0.6rem] px-4 border-t border-rim">
           <button type="button" className="btn-g btn-sm" onClick={prevPage} disabled={page <= 1 || loading}>
             ← Prev
           </button>
-          <span style={{ fontSize: '.8rem', color: 'var(--dim)' }}>Page {page} of {totalPages}</span>
+          <span className="text-[0.8rem] text-dim">Page {page} of {totalPages}</span>
           <button type="button" className="btn-g btn-sm" onClick={nextPage} disabled={page >= totalPages || loading}>
             Next →
           </button>

@@ -177,20 +177,20 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
             </div>
           </div>
 
-          <div className="bg-[#f0fdf4] border border-[#bbf7d0] rounded-[10px] py-4 px-[1.2rem] mb-[1.1rem]">
-            <p className="text-[0.72rem] font-bold tracking-[0.06em] text-[#15803d] mb-[0.3rem]">
+          <div className="bg-green-50 border border-green-200 rounded-[10px] py-4 px-[1.2rem] mb-[1.1rem]">
+            <p className="text-[0.72rem] font-bold tracking-[0.06em] text-wa-600 mb-[0.3rem]">
               YOUR STORE URL — copy this, you'll need it below
             </p>
             <div className="flex items-center gap-2">
               <input
                 readOnly
                 value={storeUrl}
-                className="flex-1 bg-white border border-[#bbf7d0] rounded-[7px] py-[0.4rem] px-[0.7rem] text-[0.8rem] text-[#0f172a] outline-none font-mono"
+                className="flex-1 bg-white border border-green-200 rounded-[7px] py-[0.4rem] px-[0.7rem] text-[0.8rem] text-tx outline-hidden font-mono"
               />
               <button
                 type="button"
                 onClick={handleCopy}
-                className="bg-[#16a34a] text-white border-0 rounded-[7px] py-[0.4rem] px-[0.9rem] text-[0.78rem] font-semibold cursor-pointer whitespace-nowrap"
+                className="bg-wa-500 text-white border-0 rounded-[7px] py-[0.4rem] px-[0.9rem] text-[0.78rem] font-semibold cursor-pointer whitespace-nowrap"
               >
                 Copy
               </button>
@@ -201,8 +201,8 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
             <p className="text-[0.82rem] font-bold mb-[0.8rem]">
               Setting up for the first time? Follow these steps:
             </p>
-            <ol className="pl-[1.1rem] flex flex-col gap-[0.6rem] text-[0.8rem] text-[#334155] leading-[1.55]">
-              <li><strong>Open Meta Business Manager</strong> → <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="text-[#4f46e5]">business.facebook.com</a> → create a Business Portfolio if you don't have one yet.</li>
+            <ol className="pl-[1.1rem] flex flex-col gap-[0.6rem] text-[0.8rem] text-dim leading-[1.55]">
+              <li><strong>Open Meta Business Manager</strong> → <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="text-indigo-600">business.facebook.com</a> → create a Business Portfolio if you don't have one yet.</li>
               <li><strong>Create a WhatsApp Business Account (WABA)</strong> → inside your Portfolio → Accounts → WhatsApp Accounts → Add.</li>
               <li><strong>Add a phone number</strong> to your WABA. Use a number that is NOT already on the regular WhatsApp app. Verify it via OTP.</li>
               <li><strong>Set Privacy Policy &amp; Website URL</strong> → Business Settings → WhatsApp Accounts → your account → Settings → paste your Store URL (green box above) into both fields.</li>
@@ -211,7 +211,7 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
           </div>
 
           <div className="bg-white border border-rim rounded-[10px] p-[1.2rem] text-center">
-            <p className="text-[0.8rem] text-[#64748b] mb-[0.9rem]">
+            <p className="text-[0.8rem] text-mute mb-[0.9rem]">
               Done with the steps above? Connect now.
             </p>
             <button
@@ -234,7 +234,7 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
             <p className="mt-[0.6rem] text-[0.72rem] text-dim">
               Takes about 2 minutes. You'll be redirected back automatically.
             </p>
-            <div className="mt-4 pt-[0.9rem] border-t border-[#f1f5f9]">
+            <div className="mt-4 pt-[0.9rem] border-t border-rim">
               <p className="text-[0.75rem] text-dim mb-[0.4rem]">
                 Not ready yet? You can always connect later from your dashboard.
               </p>

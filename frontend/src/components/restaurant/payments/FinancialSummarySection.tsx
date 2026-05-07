@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { ChartData, ChartOptions, ChartDataset } from 'chart.js';
 import ChartCanvas from '../ChartCanvas';
 import StatCard from '../../StatCard';
@@ -97,17 +97,17 @@ interface BreakdownLineProps {
 }
 
 function BreakdownLine({ label, value, sign, tip }: BreakdownLineProps) {
-  const color = sign === '-' ? 'var(--red,#dc2626)' : sign === '+' ? 'var(--wa)' : 'var(--tx)';
+  const colorClass = sign === '-' ? 'text-red' : sign === '+' ? 'text-wa' : 'text-tx';
   const signChar = sign === '+' ? '+' : sign === '-' ? '-' : ' ';
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '.15rem 0' }}>
-      <span style={{ color: 'var(--dim)' }}>
+    <div className="flex justify-between items-center py-[0.15rem]">
+      <span className="text-dim">
         {label}
         {tip && (
-          <span title={tip} style={{ cursor: 'help', color: 'var(--mute,var(--dim))', fontSize: '.72rem', marginLeft: '.3rem' }}>ⓘ</span>
+          <span title={tip} className="cursor-help text-mute text-[0.72rem] ml-[0.3rem]">ⓘ</span>
         )}
       </span>
-      <span style={{ color, fontWeight: 500 }}>
+      <span className={`${colorClass} font-medium`}>
         {signChar} {formatINR(Math.abs(Number(value) || 0))}
       </span>
     </div>
@@ -117,7 +117,7 @@ function BreakdownLine({ label, value, sign, tip }: BreakdownLineProps) {
 interface BreakdownTotalProps {
   label: string;
   value: number | string | null | undefined;
-  color?: string;
+  colorClass?: string;
 }
 
 // Indented, dim, no-sign row that sits under a BreakdownLine to show a
@@ -126,27 +126,18 @@ interface BreakdownTotalProps {
 // contribute to any total — the parent BreakdownLine above it does.
 function BreakdownSubLine({ label, value }: { label: string; value: number }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '.1rem 0',
-        paddingLeft: '1.5rem',
-        fontSize: '.82em',
-      }}
-    >
-      <span style={{ color: 'var(--mute,var(--dim))' }}>↳ {label}</span>
-      <span style={{ color: 'var(--mute,var(--dim))' }}>{formatINR(value)}</span>
+    <div className="flex justify-between items-center py-[0.1rem] pl-6 text-[0.82em]">
+      <span className="text-mute">↳ {label}</span>
+      <span className="text-mute">{formatINR(value)}</span>
     </div>
   );
 }
 
-function BreakdownTotal({ label, value, color }: BreakdownTotalProps) {
+function BreakdownTotal({ label, value, colorClass = 'text-tx' }: BreakdownTotalProps) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '.25rem 0' }}>
-      <span style={{ fontWeight: 700, color: color || 'var(--tx)' }}>{label}</span>
-      <span style={{ fontWeight: 700, color: color || 'var(--tx)', fontSize: '.95rem' }}>
+    <div className="flex justify-between items-center py-1">
+      <span className={`font-bold ${colorClass}`}>{label}</span>
+      <span className={`font-bold text-[0.95rem] ${colorClass}`}>
         {formatINR(Number(value) || 0)}
       </span>
     </div>
@@ -154,20 +145,12 @@ function BreakdownTotal({ label, value, color }: BreakdownTotalProps) {
 }
 
 const DIVIDER: ReactNode = (
-  <div style={{ borderTop: '1px solid var(--rim)', margin: '.5rem 0' }} />
+  <div className="border-t border-rim my-2" />
 );
 
-function sectionHeader(txt: string, style: CSSProperties = {}): ReactNode {
+function sectionHeader(txt: string, extraClass: string = ''): ReactNode {
   return (
-    <div style={{
-      fontSize: '.72rem',
-      fontWeight: 700,
-      letterSpacing: '.08em',
-      textTransform: 'uppercase',
-      color: 'var(--mute,var(--dim))',
-      ...style,
-    }}
-    >
+    <div className={`text-[0.72rem] font-bold tracking-[0.08em] uppercase text-mute ${extraClass}`}>
       {txt}
     </div>
   );
@@ -293,8 +276,8 @@ export default function FinancialSummarySection() {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '.7rem', marginBottom: '1rem' }}>
-        <div style={{ display: 'flex', gap: '.35rem', flexWrap: 'wrap' }}>
+      <div className="flex items-center justify-between flex-wrap gap-[0.7rem] mb-4">
+        <div className="flex gap-[0.35rem] flex-wrap">
           {PERIODS.map(([v, l]) => (
             <button
               key={v}
@@ -315,19 +298,19 @@ export default function FinancialSummarySection() {
           </button>
         </div>
         {customOpen && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '.4rem' }}>
+          <div className="flex items-center gap-[0.4rem]">
             <input
               type="date"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              style={{ fontSize: '.78rem', padding: '.3rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+              className="text-[0.78rem] py-[0.3rem] px-2 border border-rim rounded-md"
             />
-            <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>to</span>
+            <span className="text-[0.78rem] text-dim">to</span>
             <input
               type="date"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              style={{ fontSize: '.78rem', padding: '.3rem .5rem', border: '1px solid var(--rim)', borderRadius: 6 }}
+              className="text-[0.78rem] py-[0.3rem] px-2 border border-rim rounded-md"
             />
             <button type="button" className="btn-p btn-sm" onClick={handleApplyCustom}>Apply</button>
           </div>
@@ -335,11 +318,11 @@ export default function FinancialSummarySection() {
       </div>
 
       {summaryQ.error ? (
-        <div style={{ marginBottom: '1rem' }}>
+        <div className="mb-4">
           <SectionError message={summaryQ.error} onRetry={summaryQ.refetch} />
         </div>
       ) : (
-        <div className="stats" style={{ marginBottom: '1.2rem' }}>
+        <div className="stats mb-[1.2rem]">
           <StatCard
             label="Total Revenue"
             value={summaryQ.loading && !summaryQ.data ? '…' : formatINR(summary.total_revenue)}
@@ -363,13 +346,13 @@ export default function FinancialSummarySection() {
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: '1.2rem' }}>
+      <div className="card mb-[1.2rem]">
         <div className="ch"><h3>Revenue &amp; Earnings Trend</h3></div>
-        <div className="cb" style={{ padding: '1rem 1.1rem' }}>
+        <div className="cb py-4 px-[1.1rem]">
           {dailyQ.error ? (
             <SectionError message={dailyQ.error} onRetry={dailyQ.refetch} />
           ) : !days.length ? (
-            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)', fontSize: '.84rem' }}>
+            <div className="text-center p-8 text-dim text-[0.84rem]">
               {dailyQ.loading ? 'Loading…' : 'No data for the selected period'}
             </div>
           ) : chartConfig ? (
@@ -378,25 +361,20 @@ export default function FinancialSummarySection() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: '1.2rem' }}>
+      <div className="card mb-[1.2rem]">
         <div className="ch"><h3>Earnings Breakdown</h3></div>
-        <div className="cb" style={{ padding: 0 }}>
+        <div className="cb p-0">
           <div
             id="fin-breakdown"
-            style={{
-              fontFamily: "'SF Mono',SFMono-Regular,Consolas,'Liberation Mono',Menlo,monospace",
-              fontSize: '.82rem',
-              padding: '1.2rem 1.5rem',
-              lineHeight: 2,
-            }}
+            className="font-mono text-[0.82rem] py-[1.2rem] px-6 leading-loose"
           >
             {summaryQ.loading && !summaryQ.data ? (
-              <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)', fontFamily: 'var(--font-body)' }}>
+              <div className="text-center p-8 text-dim font-body">
                 Loading breakdown…
               </div>
             ) : (
               <>
-                {sectionHeader('EARNINGS SUMMARY', { marginBottom: '.4rem', fontFamily: 'var(--font-body)' })}
+                {sectionHeader('EARNINGS SUMMARY', 'mb-[0.4rem] font-body')}
                 {DIVIDER}
                 <BreakdownLine label="Food Revenue" value={breakdown.food_revenue_rs} sign="" tip="Revenue from food items sold" />
                 <BreakdownLine label="Food GST (5%)" value={breakdown.food_gst_collected_rs} sign="+" tip="GST collected on food orders" />
@@ -405,9 +383,9 @@ export default function FinancialSummarySection() {
                 <BreakdownLine label="Delivery Fee (Customer)" value={breakdown.delivery_fee_collected_rs} sign="+" tip="Delivery charges paid by customers" />
                 <BreakdownLine label="Customer Delivery GST" value={breakdown.delivery_fee_cust_gst_rs} sign="+" tip="GST collected on the customer's delivery share" />
                 {DIVIDER}
-                <BreakdownTotal label="GROSS COLLECTIONS" value={breakdown.gross_collections_rs} color="var(--acc)" />
+                <BreakdownTotal label="GROSS COLLECTIONS" value={breakdown.gross_collections_rs} colorClass="text-acc" />
                 {DIVIDER}
-                {sectionHeader('DEDUCTIONS', { margin: '.5rem 0 .3rem', fontFamily: 'var(--font-body)' })}
+                {sectionHeader('DEDUCTIONS', 'mt-2 mb-[0.3rem] font-body')}
                 <BreakdownLine label="Platform Fee" value={breakdown.platform_fee_rs} sign="-" tip="GullyBite platform commission" />
                 <BreakdownLine label="Platform Fee GST (18%)" value={breakdown.platform_fee_gst_rs} sign="-" tip="GST charged on platform fee" />
                 {/* Full 3PL delivery fee — GullyBite paid the rider upfront, so
@@ -430,9 +408,9 @@ export default function FinancialSummarySection() {
                 <BreakdownLine label="Referral Fee" value={breakdown.referral_fee_rs} sign="-" tip="Referral commission for referred customers" />
                 <BreakdownLine label="Referral Fee GST" value={breakdown.referral_fee_gst_rs} sign="-" tip="GST on referral fees" />
                 {DIVIDER}
-                <BreakdownTotal label="TOTAL DEDUCTIONS" value={breakdown.total_deductions_rs} color="var(--red,#dc2626)" />
+                <BreakdownTotal label="TOTAL DEDUCTIONS" value={breakdown.total_deductions_rs} colorClass="text-red" />
                 {DIVIDER}
-                <BreakdownTotal label="NET PAYOUT" value={breakdown.net_earnings_rs} color="var(--wa)" />
+                <BreakdownTotal label="NET PAYOUT" value={breakdown.net_earnings_rs} colorClass="text-wa" />
               </>
             )}
           </div>

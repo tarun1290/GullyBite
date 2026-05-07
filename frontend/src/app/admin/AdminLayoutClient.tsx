@@ -61,7 +61,7 @@ function AdminShell({ children }: AdminShellProps) {
   const title = TITLE_BY_PATH[pathname || ''] || 'Admin';
 
   return (
-    <div id="pg-admin" style={{ display: 'flex', minHeight: '100vh' }}>
+    <div id="pg-admin" className="flex min-h-screen">
       <Sidebar
         navItems={NAV_ITEMS}
         onLogout={logout}
@@ -76,7 +76,7 @@ function AdminShell({ children }: AdminShellProps) {
           subtitle="Platform administration"
           onMenuClick={() => setSidebarOpen(true)}
           actions={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+            <div className="flex items-center gap-[0.6rem]">
               <LiveIndicator />
               <RestaurantMessageButton />
             </div>

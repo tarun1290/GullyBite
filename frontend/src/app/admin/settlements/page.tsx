@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import StatCard from '../../../components/StatCard';
@@ -103,10 +102,10 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.55rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .6rem', fontSize: '.78rem' };
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.6rem] text-[0.78rem]';
 
 export default function AdminSettlementsPage() {
   const { showToast } = useToast();
@@ -227,57 +226,56 @@ export default function AdminSettlementsPage() {
   return (
     <div id="pg-settlements">
       {statsErr ? (
-        <div style={{ marginBottom: '1rem' }}>
+        <div className="mb-4">
           <SectionError message={statsErr} onRetry={loadStats} />
         </div>
       ) : (
         <>
-          <div className="stats" style={{ marginBottom: '1rem' }}>
+          <div className="stats mb-4">
             <StatCard label="Total Settlements" value={stats ? (stats.total ?? '—') : '—'} />
             <StatCard label="Pending Payout"    value={stats ? (stats.pending ?? '—') : '—'} />
             <StatCard label="Processing"        value={stats ? (stats.processing ?? '—') : '—'} />
             <StatCard label="Completed"         value={stats ? (stats.completed ?? '—') : '—'} />
             <StatCard label="Failed"            value={stats ? (stats.failed ?? '—') : '—'} />
           </div>
-          <div className="stats" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: '1rem' }}>
+          <div className="stats grid-cols-2 mb-4">
             <StatCard label="Total Payouts"        value={stats ? `₹${fmtCompact(stats.total_payout_rs)}` : '—'} delta="To restaurants" />
             <StatCard label="Platform Fees Earned" value={stats ? `₹${fmtCompact(stats.total_fee_rs)}`    : '—'} delta="Platform revenue" />
           </div>
         </>
       )}
 
-      <div style={{ marginBottom: '1rem', display: 'flex', gap: '.8rem', alignItems: 'center', flexWrap: 'wrap' }}>
+      <div className="mb-4 flex gap-[0.8rem] items-center flex-wrap">
         <button
           type="button"
-          className="btn-p btn-sm"
+          className="btn-p btn-sm py-2 px-[1.2rem]"
           onClick={doRun}
           disabled={running}
-          style={{ padding: '.5rem 1.2rem' }}
         >
           {running ? 'Running…' : confirmRun ? 'Confirm — Run Now' : 'Run Settlement Now'}
         </button>
         {confirmRun && (
           <button type="button" className="btn-g btn-sm" onClick={() => setConfirmRun(false)}>Cancel</button>
         )}
-        <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+        <span className="text-[0.78rem] text-dim">
           Auto-runs every Monday 9:00 AM IST. Use this button for manual runs.
         </span>
       </div>
 
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.5rem' }}>
-          <h3 style={{ margin: 0 }}>Settlement History</h3>
-          <span style={{ color: 'var(--dim)', fontSize: '.75rem' }}>{total} total</span>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+        <div className="ch justify-between flex-wrap gap-2">
+          <h3 className="m-0">Settlement History</h3>
+          <span className="text-dim text-[0.75rem]">{total} total</span>
+          <div className="ml-auto flex gap-2 flex-wrap">
             <input
               value={restaurantId}
               onChange={(e) => { setRestaurantId(e.target.value); setOffset(0); }}
               placeholder="Restaurant ID"
-              style={{ ...input, width: '13rem' }}
+              className={`${INPUT_CLS} w-52`}
             />
-            <input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setOffset(0); }} style={input} title="From" />
-            <input type="date" value={toDate}   onChange={(e) => { setToDate(e.target.value);   setOffset(0); }} style={input} title="To" />
-            <select value={status} onChange={(e) => { setStatus(e.target.value); setOffset(0); }} style={input}>
+            <input type="date" value={fromDate} onChange={(e) => { setFromDate(e.target.value); setOffset(0); }} className={INPUT_CLS} title="From" />
+            <input type="date" value={toDate}   onChange={(e) => { setToDate(e.target.value);   setOffset(0); }} className={INPUT_CLS} title="To" />
+            <select value={status} onChange={(e) => { setStatus(e.target.value); setOffset(0); }} className={INPUT_CLS}>
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>
               <option value="processing">Processing</option>
@@ -292,90 +290,83 @@ export default function AdminSettlementsPage() {
         {listErr ? (
           <div className="cb"><SectionError message={listErr} onRetry={loadList} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Period</th>
-                  <th style={th}>Orders</th>
-                  <th style={th}>Gross Revenue</th>
-                  <th style={th}>Platform Fee</th>
-                  <th style={th}>Delivery</th>
-                  <th style={th}>Refunds</th>
-                  <th style={th}>Meta Cost</th>
-                  <th style={th}>Net Payout</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Payout ID</th>
-                  <th style={th}>Created</th>
-                  <th style={th}></th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Period</th>
+                  <th className={TH_CLS}>Orders</th>
+                  <th className={TH_CLS}>Gross Revenue</th>
+                  <th className={TH_CLS}>Platform Fee</th>
+                  <th className={TH_CLS}>Delivery</th>
+                  <th className={TH_CLS}>Refunds</th>
+                  <th className={TH_CLS}>Meta Cost</th>
+                  <th className={TH_CLS}>Net Payout</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Payout ID</th>
+                  <th className={TH_CLS}>Created</th>
+                  <th className={TH_CLS}></th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={13} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={13} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={13} style={emptyCell}>No settlements yet. Click &quot;Run Settlement Now&quot; to generate.</td></tr>
+                  <tr><td colSpan={13} className={EMPTY_CLS}>No settlements yet. Click &quot;Run Settlement Now&quot; to generate.</td></tr>
                 ) : rows.map((s) => {
                   const badge = STATUS_BADGE[s.payout_status || ''] || { bg: 'var(--ink3)', color: 'var(--dim)', label: s.payout_status || '' };
                   const metaCount = s.meta_message_count || 0;
                   const metaRs = (s.meta_cost_total_paise || 0) / 100;
                   return (
-                    <tr key={s.id} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td style={td}>
+                    <tr key={s.id} className="border-b border-rim">
+                      <td className={TD_CLS}>
                         <strong>{s.business_name}</strong>
-                        <div style={{ fontSize: '.72rem', color: 'var(--dim)' }} className="mono">
+                        <div className="text-[0.72rem] text-dim mono">
                           {String(s.restaurant_id || '').slice(0, 8)}
                         </div>
                       </td>
-                      <td style={{ ...td, fontSize: '.78rem', whiteSpace: 'nowrap' }}>
+                      <td className={`${TD_CLS} text-[0.78rem] whitespace-nowrap`}>
                         {fmtDate(s.period_start)}<br />→ {fmtDate(s.period_end)}
                       </td>
-                      <td style={{ ...td, textAlign: 'center' }}>{s.orders_count}</td>
-                      <td style={td}>₹{fmtCompact(s.gross_revenue_rs)}</td>
-                      <td style={{ ...td, color: 'var(--acc)' }}>₹{fmtCompact(s.platform_fee_rs)}</td>
-                      <td style={td}>₹{fmtCompact(s.delivery_costs_rs)}</td>
-                      <td style={td}>
+                      <td className={`${TD_CLS} text-center`}>{s.orders_count}</td>
+                      <td className={TD_CLS}>₹{fmtCompact(s.gross_revenue_rs)}</td>
+                      <td className={`${TD_CLS} text-acc`}>₹{fmtCompact(s.platform_fee_rs)}</td>
+                      <td className={TD_CLS}>₹{fmtCompact(s.delivery_costs_rs)}</td>
+                      <td className={TD_CLS}>
                         {s.refunds_rs && s.refunds_rs > 0
-                          ? <span style={{ color: 'var(--gb-red-500)' }}>₹{fmtCompact(s.refunds_rs)}</span>
+                          ? <span className="text-red-500">₹{fmtCompact(s.refunds_rs)}</span>
                           : '—'}
                       </td>
-                      <td style={td}>
+                      <td className={TD_CLS}>
                         {metaCount > 0 ? (
                           <button
                             type="button"
-                            className="btn-g btn-sm"
+                            className="btn-g btn-sm py-[0.2rem] px-2 text-[0.75rem] text-red-600"
                             onClick={() => openBreakdown(s.id)}
                             title={`View ${metaCount} messages`}
-                            style={{ padding: '.2rem .5rem', fontSize: '.75rem', color: 'var(--gb-red-600)' }}
                           >
                             ₹{fmtCompact(metaRs)} · {metaCount}
                           </button>
-                        ) : <span style={{ color: 'var(--dim)' }}>—</span>}
+                        ) : <span className="text-dim">—</span>}
                       </td>
-                      <td style={td}><strong>₹{fmtCompact(s.net_payout_rs)}</strong></td>
-                      <td style={td}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '.15rem .55rem',
-                          borderRadius: 10,
-                          background: badge.bg,
-                          color: badge.color,
-                          fontWeight: 600,
-                          fontSize: '.72rem',
-                          textTransform: 'capitalize',
-                        }}>{badge.label}</span>
+                      <td className={TD_CLS}><strong>₹{fmtCompact(s.net_payout_rs)}</strong></td>
+                      <td className={TD_CLS}>
+                        {/* Dynamic: bg/color come from a runtime palette map keyed by payout_status. */}
+                        <span
+                          className="inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] font-semibold text-[0.72rem] capitalize"
+                          style={{ background: badge.bg, color: badge.color }}
+                        >{badge.label}</span>
                       </td>
-                      <td style={{ ...td, fontSize: '.72rem', color: 'var(--dim)' }} className="mono">
+                      <td className={`${TD_CLS} text-[0.72rem] text-dim mono`}>
                         {s.rp_payout_id ? `${s.rp_payout_id.slice(0, 14)}…` : '—'}
                       </td>
-                      <td style={{ ...td, color: 'var(--dim)', fontSize: '.75rem' }}>{fmtTime(s.created_at)}</td>
-                      <td style={td}>
+                      <td className={`${TD_CLS} text-dim text-[0.75rem]`}>{fmtTime(s.created_at)}</td>
+                      <td className={TD_CLS}>
                         <button
                           type="button"
-                          className="btn-g btn-sm"
+                          className="btn-g btn-sm py-[0.2rem] px-2 text-[0.75rem]"
                           onClick={() => doDownload(s.id)}
-                          style={{ padding: '.2rem .5rem', fontSize: '.75rem' }}
                           title="Download Excel"
                         >
                           Excel
@@ -389,7 +380,7 @@ export default function AdminSettlementsPage() {
           </div>
         )}
         {total > 0 && (
-          <div className="cb" style={{ display: 'flex', gap: '.6rem', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="cb flex gap-[0.6rem] items-center justify-center">
             <button
               type="button"
               className="btn-g btn-sm"
@@ -398,7 +389,7 @@ export default function AdminSettlementsPage() {
             >
               ← Prev
             </button>
-            <span style={{ fontSize: '.8rem', color: 'var(--dim)' }}>Page {page} / {pages}</span>
+            <span className="text-[0.8rem] text-dim">Page {page} / {pages}</span>
             <button
               type="button"
               className="btn-g btn-sm"
@@ -407,7 +398,7 @@ export default function AdminSettlementsPage() {
             >
               Next →
             </button>
-            <span style={{ fontSize: '.75rem', color: 'var(--dim)', marginLeft: '.6rem' }}>
+            <span className="text-[0.75rem] text-dim ml-[0.6rem]">
               {total} settlements
             </span>
           </div>
@@ -417,79 +408,69 @@ export default function AdminSettlementsPage() {
       {breakdown && (
         <div
           onClick={closeBreakdown}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000, padding: '1.4rem',
-          }}
+          className="fixed inset-0 bg-black/55 flex items-center justify-center z-1000 p-[1.4rem]"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--gb-neutral-0)', borderRadius: 10, width: 'min(960px, 100%)',
-              maxHeight: '86vh', overflow: 'auto', padding: '1.2rem 1.4rem', position: 'relative',
-            }}
+            className="bg-neutral-0 rounded-[10px] w-[min(960px,100%)] max-h-[86vh] overflow-auto py-[1.2rem] px-[1.4rem] relative"
           >
             <button
               type="button"
               onClick={closeBreakdown}
-              style={{
-                position: 'absolute', top: '.6rem', right: '.8rem', background: 'transparent',
-                border: 0, fontSize: '1.4rem', cursor: 'pointer', color: 'var(--dim)',
-              }}
+              className="absolute top-[0.6rem] right-[0.8rem] bg-transparent border-0 text-[1.4rem] cursor-pointer text-dim"
               aria-label="Close"
             >
               ×
             </button>
-            <h2 style={{ margin: '0 0 .3rem 0' }}>Meta Messaging Charges</h2>
-            <div style={{ color: 'var(--dim)', fontSize: '.8rem', marginBottom: '.8rem' }}>
+            <h2 className="m-0 mb-[0.3rem]">Meta Messaging Charges</h2>
+            <div className="text-dim text-[0.8rem] mb-[0.8rem]">
               Settlement <span className="mono">{breakdown.id}</span>
               {breakdown.data && (
                 <>
                   {' · '}{breakdown.data.meta_message_count || 0} messages{' · '}
-                  <strong style={{ color: 'var(--gb-red-600)' }}>
+                  <strong className="text-red-600">
                     − ₹{((breakdown.data.meta_cost_total_paise || 0) / 100).toFixed(2)}
                   </strong>
                 </>
               )}
             </div>
             {breakdownLoading ? (
-              <div style={{ padding: '1rem 0', color: 'var(--dim)' }}>Loading…</div>
+              <div className="py-4 text-dim">Loading…</div>
             ) : breakdownErr ? (
               <SectionError message={breakdownErr} onRetry={() => openBreakdown(breakdown.id)} />
             ) : (breakdown.data?.items || []).length === 0 ? (
-              <div style={{ color: 'var(--dim)', padding: '1rem 0' }}>
+              <div className="text-dim py-4">
                 No marketing messages deducted from this settlement.
               </div>
             ) : (
-              <table style={{ width: '100%', fontSize: '.8rem', borderCollapse: 'collapse' }}>
+              <table className="w-full text-[0.8rem] border-collapse">
                 <thead>
-                  <tr style={{ background: 'var(--ink)' }}>
-                    <th style={th}>Restaurant</th>
-                    <th style={th}>WABA</th>
-                    <th style={th}>Customer</th>
-                    <th style={th}>Phone</th>
-                    <th style={th}>Type</th>
-                    <th style={th}>Category</th>
-                    <th style={th}>Cost</th>
-                    <th style={th}>Sent</th>
+                  <tr className="bg-ink">
+                    <th className={TH_CLS}>Restaurant</th>
+                    <th className={TH_CLS}>WABA</th>
+                    <th className={TH_CLS}>Customer</th>
+                    <th className={TH_CLS}>Phone</th>
+                    <th className={TH_CLS}>Type</th>
+                    <th className={TH_CLS}>Category</th>
+                    <th className={TH_CLS}>Cost</th>
+                    <th className={TH_CLS}>Sent</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(breakdown.data?.items || []).map((m, i) => (
-                    <tr key={m.id || i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td style={{ ...td, fontSize: '.72rem', color: 'var(--dim)' }} className="mono">
+                    <tr key={m.id || i} className="border-b border-rim">
+                      <td className={`${TD_CLS} text-[0.72rem] text-dim mono`}>
                         {String(m.restaurant_id || '').slice(0, 8) || '—'}
                       </td>
-                      <td style={{ ...td, fontSize: '.72rem', color: 'var(--dim)' }} className="mono">
+                      <td className={`${TD_CLS} text-[0.72rem] text-dim mono`}>
                         {m.waba_id || '—'}
                       </td>
-                      <td style={td}>{m.customer_name || '—'}</td>
-                      <td style={{ ...td, color: 'var(--dim)' }} className="mono">{m.phone || '—'}</td>
-                      <td style={td}>{m.message_type || '—'}</td>
-                      <td style={td}>{m.category || '—'}</td>
-                      <td style={td}>₹{Number(m.cost || 0).toFixed(2)}</td>
-                      <td style={{ ...td, color: 'var(--dim)', fontSize: '.75rem' }}>{fmtTime(m.sent_at)}</td>
+                      <td className={TD_CLS}>{m.customer_name || '—'}</td>
+                      <td className={`${TD_CLS} text-dim mono`}>{m.phone || '—'}</td>
+                      <td className={TD_CLS}>{m.message_type || '—'}</td>
+                      <td className={TD_CLS}>{m.category || '—'}</td>
+                      <td className={TD_CLS}>₹{Number(m.cost || 0).toFixed(2)}</td>
+                      <td className={`${TD_CLS} text-dim text-[0.75rem]`}>{fmtTime(m.sent_at)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -453,7 +453,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '.35rem', marginBottom: '.9rem' }}>
+      <div className="flex gap-[0.35rem] mb-[0.9rem]">
         <button
           type="button"
           className={mode === 'inline' ? 'chip on' : 'chip'}
@@ -472,31 +472,31 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
 
       {mode === 'inline' && (
         <div className="card">
-          <div className="ch" style={{ justifyContent: 'space-between' }}>
+          <div className="ch justify-between">
             <h3>📋 Menu import — CSV / XLSX</h3>
             <button type="button" className="btn-g btn-sm" onClick={downloadSample}>⬇ Sample CSV</button>
           </div>
           <div className="cb">
-            <p style={{ fontSize: '.84rem', color: 'var(--dim)', marginBottom: '.6rem', lineHeight: 1.5 }}>
+            <p className="text-[0.84rem] text-dim mb-[0.6rem] leading-normal">
               Drop a file or pick one to map columns and preview rows. Include a <strong>branch</strong>
               column to split rows across branches — otherwise items are added to the branch you
               pick below.
             </p>
 
             {parsed.length > 0 && (
-              <div style={{ marginBottom: '.6rem' }}>
-                <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
-                  <label style={{ fontSize: '.82rem', color: 'var(--dim)' }}>Target branch:</label>
+              <div className="mb-[0.6rem]">
+                <div className="flex gap-[0.4rem] items-center">
+                  <label className="text-[0.82rem] text-dim">Target branch:</label>
                   <select
                     value={selectedBranchId}
                     onChange={(e) => setSelectedBranchId(e.target.value)}
-                    style={{ padding: '.4rem .6rem', borderRadius: 7, border: '1px solid var(--rim)', fontSize: '.85rem' }}
+                    className="py-[0.4rem] px-[0.6rem] rounded-[7px] border border-rim text-[0.85rem]"
                   >
                     <option value="">Select…</option>
                     {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
-                <div style={{ fontSize: '.74rem', color: 'var(--dim)', marginTop: '.3rem' }}>
+                <div className="text-[0.74rem] text-dim mt-[0.3rem]">
                   Required — pick the target branch where these items should be imported. If your file has a branch column, only matching rows will be imported.
                 </div>
               </div>
@@ -507,42 +507,34 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
               type="file"
               accept=".csv,.xlsx,.xls"
               onChange={handleFile}
-              style={{ marginBottom: '.7rem' }}
+              className="mb-[0.7rem]"
             />
 
             {raw && (
               <>
-                <p style={{ fontSize: '.82rem', color: 'var(--dim)', marginBottom: '.5rem' }}>
+                <p className="text-[0.82rem] text-dim mb-2">
                   <strong>{fileName}</strong> · {raw.rows.length} rows
                   {multiBranch && ' · 🏪 Branch column detected — only rows matching the selected branch below will be imported'}
                 </p>
 
-                <h4 style={{ fontSize: '.84rem', margin: '.5rem 0' }}>🗂️ Map columns</h4>
+                <h4 className="text-[0.84rem] my-2">🗂️ Map columns</h4>
                 {mappingError && (
                   <div
-                    style={{
-                      padding: '.5rem .7rem',
-                      marginBottom: '.5rem',
-                      background: 'rgba(220,38,38,0.08)',
-                      border: '1px solid rgba(220,38,38,0.4)',
-                      color: '#dc2626',
-                      borderRadius: 6,
-                      fontSize: '.8rem',
-                    }}
+                    className="py-2 px-[0.7rem] mb-2 bg-[rgba(220,38,38,0.08)] border border-[rgba(220,38,38,0.4)] text-[#dc2626] rounded-md text-[0.8rem]"
                     role="alert"
                   >
                     ⚠️ {mappingError}
                   </div>
                 )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '.4rem', marginBottom: '.7rem' }}>
+                <div className="grid grid-cols-[1fr_auto_1fr] gap-[0.4rem] mb-[0.7rem]">
                   {raw.headers.map((h, i) => (
-                    <div key={i} style={{ display: 'contents' }}>
-                      <div style={{ fontSize: '.8rem', padding: '.35rem .5rem', background: 'var(--ink2,#f4f4f5)', borderRadius: 6 }}>{h || '(empty)'}</div>
-                      <div style={{ alignSelf: 'center', color: 'var(--dim)' }}>→</div>
+                    <div key={i} className="contents">
+                      <div className="text-[0.8rem] py-[0.35rem] px-2 bg-ink2 rounded-md">{h || '(empty)'}</div>
+                      <div className="self-center text-dim">→</div>
                       <select
                         value={mapping[i] || '__skip__'}
                         onChange={(e) => updateMapping(i, e.target.value)}
-                        style={{ padding: '.35rem .5rem', borderRadius: 6, border: '1px solid var(--rim)', fontSize: '.82rem' }}
+                        className="py-[0.35rem] px-2 rounded-md border border-rim text-[0.82rem]"
                       >
                         <option value="__skip__">(skip this column)</option>
                         {MENU_FIELDS.map((f) => (
@@ -555,38 +547,38 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                   ))}
                 </div>
 
-                <h4 style={{ fontSize: '.84rem', margin: '.6rem 0 .3rem' }}>Preview (first 8 rows)</h4>
-                <div style={{ overflowX: 'auto', marginBottom: '.7rem' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.8rem' }}>
+                <h4 className="text-[0.84rem] mt-[0.6rem] mb-[0.3rem]">Preview (first 8 rows)</h4>
+                <div className="overflow-x-auto mb-[0.7rem]">
+                  <table className="w-full border-collapse text-[0.8rem]">
                     <thead>
                       <tr>
-                        <th style={{ textAlign: 'left', padding: '.3rem', color: 'var(--dim)' }}>#</th>
-                        {multiBranch && <th style={{ textAlign: 'left', padding: '.3rem', color: 'var(--dim)' }}>🏪</th>}
-                        <th style={{ textAlign: 'left', padding: '.3rem', color: 'var(--dim)' }}>Name</th>
-                        <th style={{ textAlign: 'left', padding: '.3rem', color: 'var(--dim)' }}>Category</th>
-                        <th style={{ textAlign: 'left', padding: '.3rem', color: 'var(--dim)' }}>Price</th>
-                        <th style={{ textAlign: 'left', padding: '.3rem', color: 'var(--dim)' }}>Type</th>
+                        <th className="text-left p-[0.3rem] text-dim">#</th>
+                        {multiBranch && <th className="text-left p-[0.3rem] text-dim">🏪</th>}
+                        <th className="text-left p-[0.3rem] text-dim">Name</th>
+                        <th className="text-left p-[0.3rem] text-dim">Category</th>
+                        <th className="text-left p-[0.3rem] text-dim">Price</th>
+                        <th className="text-left p-[0.3rem] text-dim">Type</th>
                       </tr>
                     </thead>
                     <tbody>
                       {parsed.slice(0, 8).map((r, i) => (
                         <tr key={i}>
-                          <td style={{ color: 'var(--dim)', padding: '.25rem .3rem' }}>{i + 1}</td>
-                          {multiBranch && <td style={{ color: 'var(--wa)', padding: '.25rem .3rem' }}>{r.branch || r.outlet || r.location || '—'}</td>}
-                          <td style={{ padding: '.25rem .3rem' }}>{r.name || <span style={{ color: '#dc2626' }}>missing</span>}</td>
-                          <td style={{ padding: '.25rem .3rem' }}>{r.category || '—'}</td>
-                          <td style={{ padding: '.25rem .3rem' }}>{r.price ? `₹${r.price}` : <span style={{ color: '#dc2626' }}>missing</span>}</td>
-                          <td style={{ padding: '.25rem .3rem' }}>{r.food_type || 'veg'}</td>
+                          <td className="text-dim py-1 px-[0.3rem]">{i + 1}</td>
+                          {multiBranch && <td className="text-wa py-1 px-[0.3rem]">{r.branch || r.outlet || r.location || '—'}</td>}
+                          <td className="py-1 px-[0.3rem]">{r.name || <span className="text-[#dc2626]">missing</span>}</td>
+                          <td className="py-1 px-[0.3rem]">{r.category || '—'}</td>
+                          <td className="py-1 px-[0.3rem]">{r.price ? `₹${r.price}` : <span className="text-[#dc2626]">missing</span>}</td>
+                          <td className="py-1 px-[0.3rem]">{r.food_type || 'veg'}</td>
                         </tr>
                       ))}
                       {parsed.length > 8 && (
-                        <tr><td colSpan={multiBranch ? 6 : 5} style={{ textAlign: 'center', color: 'var(--dim)', padding: '.3rem' }}>+ {parsed.length - 8} more rows…</td></tr>
+                        <tr><td colSpan={multiBranch ? 6 : 5} className="text-center text-dim p-[0.3rem]">+ {parsed.length - 8} more rows…</td></tr>
                       )}
                     </tbody>
                   </table>
                 </div>
 
-                <div style={{ display: 'flex', gap: '.5rem' }}>
+                <div className="flex gap-2">
                   <button type="button" className="btn-p" onClick={handleUpload} disabled={uploading || !canUpload}>
                     {uploading ? 'Uploading…' : '⬆ Upload & Sync'}
                   </button>
@@ -596,16 +588,11 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
             )}
 
             {result && (
-              <div
-                style={{
-                  marginTop: '.8rem', padding: '.7rem', background: '#ecfccb',
-                  border: '1px solid #bef264', borderRadius: 8, fontSize: '.82rem',
-                }}
-              >
+              <div className="mt-[0.8rem] p-[0.7rem] bg-[#ecfccb] border border-[#bef264] rounded-lg text-[0.82rem]">
                 ✅ <strong>{result.added || 0}</strong> items added/updated
                 {result.skipped ? <> · ⚠️ <strong>{result.skipped}</strong> skipped</> : null}
                 {result.errors?.length ? (
-                  <div style={{ marginTop: '.5rem', color: '#991b1b', fontSize: '.76rem' }}>
+                  <div className="mt-2 text-[#991b1b] text-[0.76rem]">
                     {result.errors.slice(0, 5).join(' · ')}
                   </div>
                 ) : null}
@@ -619,21 +606,18 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
         <div className="card">
           <div className="ch"><h3>🧙 XLSX Import Wizard</h3></div>
           <div className="cb">
-            <p style={{ fontSize: '.84rem', color: 'var(--dim)', marginBottom: '.7rem' }}>
+            <p className="text-[0.84rem] text-dim mb-[0.7rem]">
               Uploads your .xlsx to the server, which auto-maps columns. Good for bigger files.
               New products land in <strong>Unassigned</strong> — assign them to a branch in the
               Menu Editor after import.
             </p>
-            <div style={{ display: 'flex', gap: '.35rem', marginBottom: '.7rem' }}>
+            <div className="flex gap-[0.35rem] mb-[0.7rem]">
               {(['upload', 'map', 'done'] as const).map((step, i) => (
                 <span
                   key={step}
-                  style={{
-                    padding: '.25rem .6rem', borderRadius: 99, fontSize: '.72rem',
-                    background: wStep === step ? '#4f46e5' : 'var(--ink2,#f4f4f5)',
-                    color: wStep === step ? '#fff' : 'var(--dim)',
-                    fontWeight: 600,
-                  }}
+                  className={`py-1 px-[0.6rem] rounded-full text-[0.72rem] font-semibold ${
+                    wStep === step ? 'bg-[#4f46e5] text-white' : 'bg-ink2 text-dim'
+                  }`}
                 >
                   {i + 1}. {step}
                 </span>
@@ -643,7 +627,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
             {wStep === 'upload' && (
               <div>
                 <input type="file" accept=".xlsx" onChange={handleWFile} />
-                <div style={{ marginTop: '.7rem', display: 'flex', gap: '.5rem' }}>
+                <div className="mt-[0.7rem] flex gap-2">
                   <button type="button" className="btn-p" onClick={doWUpload} disabled={wUploading || !wFile}>
                     {wUploading ? 'Uploading…' : 'Upload & preview'}
                   </button>
@@ -653,17 +637,17 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
 
             {wStep === 'map' && (
               <div>
-                <h4 style={{ fontSize: '.84rem', margin: '.3rem 0 .5rem' }}>Review mapping</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '.4rem .6rem', marginBottom: '.7rem' }}>
+                <h4 className="text-[0.84rem] mt-[0.3rem] mb-2">Review mapping</h4>
+                <div className="grid grid-cols-[140px_1fr] gap-y-[0.4rem] gap-x-[0.6rem] mb-[0.7rem]">
                   {wTargetFields.map((f) => (
-                    <div key={f} style={{ display: 'contents' }}>
-                      <label style={{ fontWeight: 600, fontSize: '.82rem', alignSelf: 'center', textTransform: 'capitalize' }}>
+                    <div key={f} className="contents">
+                      <label className="font-semibold text-[0.82rem] self-center capitalize">
                         {f.replace('_', ' ')}
                       </label>
                       <select
                         value={wOverrides[f] || ''}
                         onChange={(e) => setWOverrides((o) => ({ ...o, [f]: e.target.value }))}
-                        style={{ padding: '.35rem .5rem', borderRadius: 6, border: '1px solid var(--rim)', fontSize: '.82rem' }}
+                        className="py-[0.35rem] px-2 rounded-md border border-rim text-[0.82rem]"
                       >
                         <option value="">— none —</option>
                         {wHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
@@ -674,19 +658,19 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
 
                 {wSample.length > 0 && (
                   <>
-                    <h4 style={{ fontSize: '.84rem', margin: '.5rem 0 .3rem' }}>Sample rows</h4>
-                    <div style={{ overflowX: 'auto', marginBottom: '.7rem', border: '1px solid var(--rim)', borderRadius: 6 }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.78rem' }}>
+                    <h4 className="text-[0.84rem] mt-2 mb-[0.3rem]">Sample rows</h4>
+                    <div className="overflow-x-auto mb-[0.7rem] border border-rim rounded-md">
+                      <table className="w-full border-collapse text-[0.78rem]">
                         <thead>
-                          <tr style={{ background: '#f3f4f6' }}>
-                            {wHeaders.map((h) => <th key={h} style={{ textAlign: 'left', padding: '.3rem .5rem' }}>{h}</th>)}
+                          <tr className="bg-[#f3f4f6]">
+                            {wHeaders.map((h) => <th key={h} className="text-left py-[0.3rem] px-2">{h}</th>)}
                           </tr>
                         </thead>
                         <tbody>
                           {wSample.slice(0, 8).map((r, i) => (
                             <tr key={i}>
                               {wHeaders.map((h) => (
-                                <td key={h} style={{ padding: '.25rem .5rem', borderTop: '1px solid #f1f5f9' }}>
+                                <td key={h} className="py-1 px-2 border-t border-[#f1f5f9]">
                                   {r[h] == null ? '' : String(r[h])}
                                 </td>
                               ))}
@@ -698,7 +682,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                   </>
                 )}
 
-                <div style={{ display: 'flex', gap: '.5rem' }}>
+                <div className="flex gap-2">
                   <button type="button" className="btn-p" onClick={doWImport} disabled={wImporting}>
                     {wImporting ? 'Importing…' : 'Import products'}
                   </button>
@@ -709,18 +693,18 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
 
             {wStep === 'done' && wResult && (
               <div>
-                <div style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '.4rem' }}>✅ Import complete</div>
+                <div className="text-base font-semibold mb-[0.4rem]">✅ Import complete</div>
                 <div>Total rows: <strong>{wResult.total}</strong></div>
-                <div>Inserted: <strong style={{ color: '#059669' }}>{wResult.inserted}</strong></div>
-                <div>Skipped: <strong style={{ color: '#b45309' }}>{wResult.skipped}</strong></div>
-                <div style={{ fontSize: '.82rem', color: 'var(--dim)', marginTop: '.4rem' }}>
+                <div>Inserted: <strong className="text-[#059669]">{wResult.inserted}</strong></div>
+                <div>Skipped: <strong className="text-[#b45309]">{wResult.skipped}</strong></div>
+                <div className="text-[0.82rem] text-dim mt-[0.4rem]">
                   Ready: {wResult.ready} · Incomplete (Meta): {wResult.incomplete}
                 </div>
-                <div style={{ fontSize: '.78rem', color: 'var(--dim)', marginTop: '.5rem' }}>
+                <div className="text-[0.78rem] text-dim mt-2">
                   New products start as <strong>Unassigned</strong>. Assign them to a branch to
                   make them visible.
                 </div>
-                <button type="button" className="btn-g btn-sm" style={{ marginTop: '.6rem' }} onClick={resetWizard}>
+                <button type="button" className="btn-g btn-sm mt-[0.6rem]" onClick={resetWizard}>
                   Start another import
                 </button>
               </div>

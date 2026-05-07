@@ -10,20 +10,7 @@ interface SectionErrorProps {
 // is stale.
 export default function SectionError({ message, onRetry }: SectionErrorProps) {
   return (
-    <div
-      style={{
-        padding: '.6rem .8rem',
-        background: '#fef2f2',
-        border: '1px solid #fecaca',
-        borderRadius: 8,
-        color: '#b91c1c',
-        fontSize: '.82rem',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        gap: '.6rem',
-      }}
-    >
+    <div className="py-[0.6rem] px-[0.8rem] bg-[#fef2f2] border border-[#fecaca] rounded-lg text-[#b91c1c] text-[0.82rem] flex justify-between items-center gap-[0.6rem]">
       <span>Failed to load: {message}</span>
       {onRetry && (
         <button type="button" className="btn-g btn-sm" onClick={onRetry}>

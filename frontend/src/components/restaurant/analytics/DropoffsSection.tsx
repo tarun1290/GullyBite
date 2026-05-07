@@ -72,7 +72,7 @@ interface FunnelBarsProps { funnel: FunnelStage[] }
 function FunnelBars({ funnel }: FunnelBarsProps) {
   if (!Array.isArray(funnel) || funnel.length === 0) {
     return (
-      <p style={{ color: 'var(--dim)', textAlign: 'center', padding: '1rem' }}>
+      <p className="text-dim text-center p-4">
         No data for this period
       </p>
     );
@@ -82,13 +82,22 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
     const pct = Math.max(f.pct, 2);
     const color = FUNNEL_COLORS[i] || '#64748b';
     rows.push(
-      <div key={`stage-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '.6rem', marginBottom: '.35rem' }}>
-        <span style={{ width: 110, fontSize: '.78rem', fontWeight: 500, color: 'var(--dim)', textAlign: 'right', flexShrink: 0 }}>
+      <div key={`stage-${i}`} className="flex items-center gap-[0.6rem] mb-[0.35rem]">
+        <span className="w-[110px] text-[0.78rem] font-medium text-dim text-right shrink-0">
           {f.stage}
         </span>
-        <div style={{ flex: 1, background: 'var(--ink4,#f1f5f9)', borderRadius: 6, overflow: 'hidden', height: 26, position: 'relative' }}>
-          <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 6, transition: 'width .4s ease' }} />
-          <span style={{ position: 'absolute', left: '.6rem', top: '50%', transform: 'translateY(-50%)', fontSize: '.72rem', fontWeight: 600, color: pct > 15 ? '#fff' : 'var(--tx)' }}>
+        <div className="flex-1 bg-ink4 rounded-md overflow-hidden h-[26px] relative">
+          <div
+            className="h-full rounded-md transition-[width] duration-400 ease-linear"
+            // width is the funnel-stage percentage and background is
+            // picked from FUNNEL_COLORS by stage index — both runtime.
+            style={{ width: `${pct}%`, background: color }}
+          />
+          <span
+            className={`absolute left-[0.6rem] top-1/2 -translate-y-1/2 text-[0.72rem] font-semibold ${
+              pct > 15 ? 'text-white' : 'text-tx'
+            }`}
+          >
             {f.count} ({f.pct}%)
           </span>
         </div>
@@ -102,9 +111,9 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
       const dropPct = cur.count ? Math.round((drop / cur.count) * 100) : 0;
       if (drop > 0) {
         rows.push(
-          <div key={`drop-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '.6rem', marginBottom: '.35rem' }}>
-            <span style={{ width: 110 }} />
-            <span style={{ fontSize: '.68rem', color: '#dc2626', paddingLeft: '.4rem' }}>
+          <div key={`drop-${i}`} className="flex items-center gap-[0.6rem] mb-[0.35rem]">
+            <span className="w-[110px]" />
+            <span className="text-[0.68rem] text-[#dc2626] pl-[0.4rem]">
               ↓ -{dropPct}% ({drop} dropped)
             </span>
           </div>
@@ -153,40 +162,39 @@ function DropoffRow({ item, onRecovered }: DropoffRowProps) {
   };
 
   return (
-    <tr style={{ borderBottom: '1px solid var(--rim)' }}>
-      <td style={{ padding: '.5rem .7rem', fontWeight: 500 }}>{item.customer_name || 'Unknown'}</td>
-      <td style={{ padding: '.5rem .7rem', fontFamily: 'monospace', fontSize: '.78rem', color: 'var(--dim)' }}>
+    <tr className="border-b border-rim">
+      <td className="py-2 px-[0.7rem] font-medium">{item.customer_name || 'Unknown'}</td>
+      <td className="py-2 px-[0.7rem] font-mono text-[0.78rem] text-dim">
         {maskPhone(item.customer_phone)}
       </td>
-      <td style={{ padding: '.5rem .7rem', textAlign: 'center' }}>
-        <span style={{ fontSize: '.72rem', padding: '.2rem .5rem', borderRadius: 100, background: 'var(--ink4)' }}>
+      <td className="py-2 px-[0.7rem] text-center">
+        <span className="text-[0.72rem] py-[0.2rem] px-2 rounded-full bg-ink4">
           {icon} {label}
         </span>
       </td>
-      <td style={{ padding: '.5rem .7rem', textAlign: 'right', fontWeight: 500 }}>{cartVal}</td>
-      <td style={{ padding: '.5rem .7rem', textAlign: 'right', fontSize: '.78rem', color: 'var(--dim)' }}>
+      <td className="py-2 px-[0.7rem] text-right font-medium">{cartVal}</td>
+      <td className="py-2 px-[0.7rem] text-right text-[0.78rem] text-dim">
         {lastActiveLabel(item.hours_since_activity)}
       </td>
-      <td style={{ padding: '.5rem .7rem', textAlign: 'center' }}>
+      <td className="py-2 px-[0.7rem] text-center">
         {recovered ? (
-          <span style={{ color: 'var(--wa)', fontSize: '.72rem', fontWeight: 600 }}>✓ Sent</span>
+          <span className="text-wa text-[0.72rem] font-semibold">✓ Sent</span>
         ) : !canRecover ? (
-          <span style={{ color: 'var(--dim)', fontSize: '.72rem' }}>—</span>
+          <span className="text-dim text-[0.72rem]">—</span>
         ) : confirming ? (
-          <div style={{ display: 'inline-flex', gap: '.25rem' }}>
-            <button type="button" className="btn-g btn-sm" onClick={() => setConfirming(false)} disabled={busy} style={{ fontSize: '.7rem', padding: '.2rem .5rem' }}>
+          <div className="inline-flex gap-1">
+            <button type="button" className="btn-g btn-sm text-[0.7rem] py-[0.2rem] px-2" onClick={() => setConfirming(false)} disabled={busy}>
               Cancel
             </button>
-            <button type="button" className="btn-p btn-sm" onClick={handleRecover} disabled={busy} style={{ fontSize: '.7rem', padding: '.2rem .5rem' }}>
+            <button type="button" className="btn-p btn-sm text-[0.7rem] py-[0.2rem] px-2" onClick={handleRecover} disabled={busy}>
               {busy ? '…' : 'Send'}
             </button>
           </div>
         ) : (
           <button
             type="button"
-            className="btn-p btn-sm"
+            className="btn-p btn-sm text-[0.72rem] py-1 px-[0.6rem]"
             onClick={() => setConfirming(true)}
-            style={{ fontSize: '.72rem', padding: '.25rem .6rem' }}
           >
             Send Recovery
           </button>
@@ -216,7 +224,7 @@ export default function DropoffsSection({ dateRange }: DropoffsSectionProps) {
 
   return (
     <>
-      <div className="card" style={{ marginTop: '1.2rem' }}>
+      <div className="card mt-[1.2rem]">
         <div className="ch"><h3>Customer Drop-off Funnel</h3></div>
         {error ? (
           <div className="cb">
@@ -231,46 +239,46 @@ export default function DropoffsSection({ dateRange }: DropoffsSectionProps) {
               </div>
               <div className="stat">
                 <div className="stat-l">Cart Abandonment</div>
-                <div className="stat-v" style={{ color: '#d97706' }}>{summary.dropped_at_cart || 0}</div>
+                <div className="stat-v text-[#d97706]">{summary.dropped_at_cart || 0}</div>
               </div>
               <div className="stat">
                 <div className="stat-l">Payment Failures</div>
-                <div className="stat-v" style={{ color: '#dc2626' }}>{summary.payment_failed || 0}</div>
+                <div className="stat-v text-[#dc2626]">{summary.payment_failed || 0}</div>
               </div>
               <div className="stat">
                 <div className="stat-l">Recoverable</div>
-                <div className="stat-v" style={{ color: '#2563eb' }}>{recoverable}</div>
+                <div className="stat-v text-[#2563eb]">{recoverable}</div>
               </div>
             </div>
-            <div id="df-funnel" style={{ marginTop: '1rem' }}>
+            <div id="df-funnel" className="mt-4">
               <FunnelBars funnel={funnel} />
             </div>
           </>
         )}
       </div>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
+      <div className="card mt-4">
         <div className="ch">
           <h3>Incomplete Orders</h3>
-          <span style={{ fontSize: '.82rem', color: 'var(--dim)' }}>{list.length} incomplete</span>
+          <span className="text-[0.82rem] text-dim">{list.length} incomplete</span>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.84rem' }}>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[0.84rem]">
             <thead>
-              <tr style={{ background: '#f9fafb', borderBottom: '2px solid var(--rim)' }}>
-                <th style={{ padding: '.55rem .7rem', textAlign: 'left', fontSize: '.77rem', fontWeight: 600, color: 'var(--dim)' }}>Customer</th>
-                <th style={{ padding: '.55rem .7rem', textAlign: 'left', fontSize: '.77rem', fontWeight: 600, color: 'var(--dim)' }}>Phone</th>
-                <th style={{ padding: '.55rem .7rem', textAlign: 'center', fontSize: '.77rem', fontWeight: 600, color: 'var(--dim)' }}>Stage</th>
-                <th style={{ padding: '.55rem .7rem', textAlign: 'right', fontSize: '.77rem', fontWeight: 600, color: 'var(--dim)' }}>Cart Value</th>
-                <th style={{ padding: '.55rem .7rem', textAlign: 'right', fontSize: '.77rem', fontWeight: 600, color: 'var(--dim)' }}>Last Active</th>
-                <th style={{ padding: '.55rem .7rem', textAlign: 'center', fontSize: '.77rem', fontWeight: 600, color: 'var(--dim)' }}>Action</th>
+              <tr className="bg-[#f9fafb] border-b-2 border-rim">
+                <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] font-semibold text-dim">Customer</th>
+                <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] font-semibold text-dim">Phone</th>
+                <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] font-semibold text-dim">Stage</th>
+                <th className="py-[0.55rem] px-[0.7rem] text-right text-[0.77rem] font-semibold text-dim">Cart Value</th>
+                <th className="py-[0.55rem] px-[0.7rem] text-right text-[0.77rem] font-semibold text-dim">Last Active</th>
+                <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] font-semibold text-dim">Action</th>
               </tr>
             </thead>
             <tbody>
               {loading && !data ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)' }}>Loading…</td></tr>
+                <tr><td colSpan={6} className="text-center p-8 text-dim">Loading…</td></tr>
               ) : list.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)' }}>
+                <tr><td colSpan={6} className="text-center p-8 text-dim">
                   No abandoned sessions in this period
                 </td></tr>
               ) : (

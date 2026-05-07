@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
@@ -49,33 +48,29 @@ function bodyOf(t: CouponTemplate): string {
 interface StatusBadgeProps { status?: string }
 
 function StatusBadge({ status }: StatusBadgeProps) {
-  const color = status === 'APPROVED' ? '#059669'
-    : status === 'PENDING' ? 'var(--gb-amber-500)'
-    : status === 'REJECTED' ? 'var(--gb-red-500)'
-    : 'var(--dim)';
-  const bg = status === 'APPROVED' ? '#d1fae5'
-    : status === 'PENDING' ? 'var(--gb-amber-100)'
-    : status === 'REJECTED' ? 'var(--gb-red-100)'
-    : 'var(--ink3)';
+  const cls = status === 'APPROVED'
+    ? 'bg-[#d1fae5] text-[#059669]'
+    : status === 'PENDING'
+      ? 'bg-amber-100 text-amber-500'
+      : status === 'REJECTED'
+        ? 'bg-red-100 text-red-500'
+        : 'bg-ink3 text-dim';
   return (
-    <span style={{
-      background: bg, color, padding: '.15rem .55rem',
-      borderRadius: 10, fontSize: '.7rem', fontWeight: 600,
-    }}>
+    <span className={`py-[0.15rem] px-[0.55rem] rounded-[10px] text-[0.7rem] font-semibold ${cls}`}>
       {status || '—'}
     </span>
   );
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' };
-const trHead: CSSProperties = { background: 'var(--ink)', borderBottom: '1px solid var(--rim)' };
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.55rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
-const lbl: CSSProperties = { fontSize: '.75rem', color: 'var(--dim)', fontWeight: 600, display: 'block', marginBottom: '.25rem' };
-const hint: CSSProperties = { fontSize: '.7rem', color: 'var(--dim)', marginTop: '.25rem' };
-const codeChip: CSSProperties = { background: '#dbeafe', padding: '.05rem .3rem', borderRadius: 3 };
+const TABLE_CLS = 'w-full border-collapse text-[0.82rem]';
+const TR_HEAD_CLS = 'bg-ink border-b border-rim';
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.45rem] px-[0.7rem] text-[0.85rem]';
+const LBL_CLS = 'text-[0.75rem] text-dim font-semibold block mb-1';
+const HINT_CLS = 'text-[0.7rem] text-dim mt-1';
+const CODE_CHIP_CLS = 'bg-[#dbeafe] py-[0.05rem] px-[0.3rem] rounded-[3px]';
 
 export default function AdminCouponsPage() {
   const { showToast } = useToast();
@@ -175,14 +170,18 @@ export default function AdminCouponsPage() {
     }
   };
 
+  const msgCls = msg
+    ? msg.type === 'error' ? 'text-red-500' : msg.type === 'success' ? 'text-[#059669]' : 'text-dim'
+    : '';
+
   return (
     <div id="pg-coupons">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        <label style={{ fontSize: '.8rem', color: 'var(--dim)' }}>Restaurant:</label>
+      <div className="flex items-center gap-3 mb-4 flex-wrap">
+        <label className="text-[0.8rem] text-dim">Restaurant:</label>
         <select
           value={restaurantId}
           onChange={(e) => setRestaurantId(e.target.value)}
-          style={{ ...input, flex: 1, maxWidth: 340 }}
+          className={`${INPUT_CLS} flex-1 max-w-[340px]`}
         >
           <option value="">— Select restaurant —</option>
           {restaurants.map((r) => (
@@ -195,51 +194,47 @@ export default function AdminCouponsPage() {
       </div>
 
       {restaurantsErr && (
-        <div style={{ marginBottom: '1rem' }}>
+        <div className="mb-4">
           <SectionError message={restaurantsErr} onRetry={loadRestaurants} />
         </div>
       )}
 
-      <div style={{
-        background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8,
-        padding: '.75rem .95rem', marginBottom: '1rem', fontSize: '.8rem',
-        lineHeight: 1.5, color: '#1e40af',
-      }}>
+      <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-lg py-3 px-[0.95rem] mb-4 text-[0.8rem] leading-normal text-[#1e40af]">
         <strong>How coupon templates work:</strong> Meta treats these as <em>marketing</em> templates
-        with a <code style={codeChip}>copy_code</code> button.{' '}
-        <code style={codeChip}>{'{{1}}'}</code> is the coupon code,{' '}
-        <code style={codeChip}>{'{{2}}'}</code> (optional) is the discount amount. Approval by Meta
+        with a <code className={CODE_CHIP_CLS}>copy_code</code> button.{' '}
+        <code className={CODE_CHIP_CLS}>{'{{1}}'}</code> is the coupon code,{' '}
+        <code className={CODE_CHIP_CLS}>{'{{2}}'}</code> (optional) is the discount amount. Approval by Meta
         usually takes a few minutes.
       </div>
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
+      <div className="card mb-4">
         <div className="ch"><h3>Existing Coupon Templates</h3></div>
         {listErr ? (
           <div className="cb"><SectionError message={listErr} onRetry={loadTemplates} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={tableStyle}>
+          <div className="overflow-x-auto">
+            <table className={TABLE_CLS}>
               <thead>
-                <tr style={trHead}>
-                  <th style={th}>Name</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Language</th>
-                  <th style={th}>Body Preview</th>
+                <tr className={TR_HEAD_CLS}>
+                  <th className={TH_CLS}>Name</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Language</th>
+                  <th className={TH_CLS}>Body Preview</th>
                 </tr>
               </thead>
               <tbody>
                 {!restaurantId ? (
-                  <tr><td colSpan={4} style={emptyCell}>Select a restaurant to view templates</td></tr>
+                  <tr><td colSpan={4} className={EMPTY_CLS}>Select a restaurant to view templates</td></tr>
                 ) : loading ? (
-                  <tr><td colSpan={4} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={4} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : templates.length === 0 ? (
-                  <tr><td colSpan={4} style={emptyCell}>No coupon templates yet</td></tr>
+                  <tr><td colSpan={4} className={EMPTY_CLS}>No coupon templates yet</td></tr>
                 ) : templates.map((t, i) => (
-                  <tr key={t.id || t.name || i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                    <td style={{ ...td, fontWeight: 600 }}>{t.name}</td>
-                    <td style={td}><StatusBadge status={t.status} /></td>
-                    <td style={{ ...td, fontSize: '.8rem', color: 'var(--dim)' }}>{t.language || '—'}</td>
-                    <td style={{ ...td, fontSize: '.8rem', maxWidth: 420 }}>
+                  <tr key={t.id || t.name || i} className="border-b border-rim">
+                    <td className={`${TD_CLS} font-semibold`}>{t.name}</td>
+                    <td className={TD_CLS}><StatusBadge status={t.status} /></td>
+                    <td className={`${TD_CLS} text-[0.8rem] text-dim`}>{t.language || '—'}</td>
+                    <td className={`${TD_CLS} text-[0.8rem] max-w-[420px]`}>
                       {bodyOf(t).slice(0, 140)}
                     </td>
                   </tr>
@@ -252,58 +247,55 @@ export default function AdminCouponsPage() {
 
       <div className="card">
         <div className="ch"><h3>Create New Coupon Template</h3></div>
-        <div className="cb" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '.85rem' }}>
+        <div className="cb grid grid-cols-2 gap-[0.85rem]">
           <div>
-            <label style={lbl}>Template Name <span style={{ color: 'var(--gb-red-500)' }}>*</span></label>
+            <label className={LBL_CLS}>Template Name <span className="text-red-500">*</span></label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. festive_coupon_2026"
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
-            <div style={hint}>Lowercase, numbers, underscores only</div>
+            <div className={HINT_CLS}>Lowercase, numbers, underscores only</div>
           </div>
           <div>
-            <label style={lbl}>Example Coupon Code <span style={{ color: 'var(--gb-red-500)' }}>*</span></label>
+            <label className={LBL_CLS}>Example Coupon Code <span className="text-red-500">*</span></label>
             <input
               value={example}
               onChange={(e) => setExample(e.target.value)}
               placeholder="e.g. SAVE20"
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
-            <div style={hint}>Shown to Meta as a sample; not the actual code you&apos;ll send</div>
+            <div className={HINT_CLS}>Shown to Meta as a sample; not the actual code you&apos;ll send</div>
           </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={lbl}>Header Text (optional)</label>
+          <div className="col-span-2">
+            <label className={LBL_CLS}>Header Text (optional)</label>
             <input
               value={header}
               onChange={(e) => setHeader(e.target.value)}
               placeholder="e.g. Your Special Offer!"
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={lbl}>Body Text <span style={{ color: 'var(--gb-red-500)' }}>*</span></label>
+          <div className="col-span-2">
+            <label className={LBL_CLS}>Body Text <span className="text-red-500">*</span></label>
             <textarea
               value={body}
               onChange={(e) => setBody(e.target.value)}
               rows={4}
               placeholder="Use code {{1}} to get {{2}} off your next order."
-              style={{ ...input, width: '100%', fontFamily: 'inherit', resize: 'vertical' }}
+              className={`${INPUT_CLS} w-full font-[inherit] resize-y`}
             />
-            <div style={hint}>{'{{1}} = coupon code · {{2}} = discount amount (optional)'}</div>
+            <div className={HINT_CLS}>{'{{1}} = coupon code · {{2}} = discount amount (optional)'}</div>
           </div>
-          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', gap: '.5rem' }}>
+          <div className="col-span-2 flex justify-end gap-2">
             <button type="button" className="btn-g btn-sm" onClick={resetForm} disabled={submitting}>Reset</button>
             <button type="button" className="btn-p btn-sm" onClick={submit} disabled={submitting}>
               {submitting ? 'Submitting…' : 'Submit to Meta'}
             </button>
           </div>
           {msg && (
-            <div style={{
-              gridColumn: '1 / -1', fontSize: '.8rem',
-              color: msg.type === 'error' ? 'var(--gb-red-500)' : msg.type === 'success' ? '#059669' : 'var(--dim)',
-            }}>
+            <div className={`col-span-2 text-[0.8rem] ${msgCls}`}>
               {msg.text}
             </div>
           )}

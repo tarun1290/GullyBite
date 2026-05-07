@@ -90,31 +90,26 @@ export default function MarketingNumberSection() {
   };
 
   return (
-    <div className="card" style={{ marginBottom: '1.2rem' }}>
+    <div className="card mb-[1.2rem]">
       <div className="ch"><h3>Marketing &amp; Campaign Number (optional)</h3></div>
       <div className="cb">
-        <p style={{ fontSize: '.78rem', color: 'var(--dim)', marginTop: 0, marginBottom: '.9rem', lineHeight: 1.5 }}>
+        <p className="text-[0.78rem] text-dim mt-0 mb-[0.9rem] leading-normal">
           Choose a WABA phone number to use as the sender for marketing campaigns. Leave unset to
           fall back to your primary WhatsApp number.
         </p>
 
         {currentId ? (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '.8rem', padding: '.7rem 1rem',
-            borderRadius: 8, background: 'var(--surface2,#f4f4f5)', marginBottom: '.9rem',
-          }}
-          >
-            <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: '.88rem' }}>Connected</div>
-              <div style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+          <div className="flex items-center gap-[0.8rem] py-[0.7rem] px-4 rounded-lg bg-surface2 mb-[0.9rem]">
+            <span className="w-[10px] h-[10px] rounded-full bg-[#22c55e] shrink-0" />
+            <div className="flex-1">
+              <div className="font-semibold text-[0.88rem]">Connected</div>
+              <div className="text-[0.78rem] text-dim">
                 {currentName || currentId}
               </div>
             </div>
             <button
               type="button"
-              className="btn-g btn-sm"
-              style={{ color: '#dc2626', borderColor: '#dc2626' }}
+              className="btn-g btn-sm text-[#dc2626] border-[#dc2626]"
               onClick={handleDisconnect}
               disabled={saving}
             >
@@ -122,12 +117,12 @@ export default function MarketingNumberSection() {
             </button>
           </div>
         ) : (
-          <div style={{ fontSize: '.78rem', color: 'var(--dim)', marginBottom: '.9rem' }}>
+          <div className="text-[0.78rem] text-dim mb-[0.9rem]">
             No marketing number set.
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="flex gap-2 flex-wrap items-center">
           <button
             type="button"
             className="btn-g btn-sm"
@@ -143,10 +138,7 @@ export default function MarketingNumberSection() {
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
                 disabled={saving}
-                style={{
-                  padding: '.35rem .55rem', border: '1px solid var(--rim)',
-                  borderRadius: 6, fontSize: '.82rem', minWidth: 260,
-                }}
+                className="py-[0.35rem] px-[0.55rem] border border-rim rounded-md text-[0.82rem] min-w-[260px]"
               >
                 <option value="">— Select a number —</option>
                 {numbers.map((n) => (
@@ -167,7 +159,7 @@ export default function MarketingNumberSection() {
           )}
 
           {numbers && numbers.length === 0 && (
-            <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+            <span className="text-[0.78rem] text-dim">
               No numbers returned by Meta.
             </span>
           )}

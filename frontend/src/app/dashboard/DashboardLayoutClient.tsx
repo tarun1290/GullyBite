@@ -86,7 +86,7 @@ function DashboardShell({ children }: DashboardShellProps) {
   const showPendingBanner = !loading && waConnected && approvalStatus !== 'approved';
 
   return (
-    <div id="pg-dash" style={{ display: 'flex', minHeight: '100vh' }}>
+    <div id="pg-dash" className="flex min-h-screen">
       <Sidebar
         navItems={NAV_ITEMS}
         onLogout={logout}
@@ -100,7 +100,7 @@ function DashboardShell({ children }: DashboardShellProps) {
           subtitle="Welcome back"
           onMenuClick={() => setSidebarOpen(true)}
           actions={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
+            <div className="flex items-center gap-[0.6rem]">
               <LiveIndicator />
               <AdminMessageButton />
               <NotificationBell />
@@ -112,14 +112,10 @@ function DashboardShell({ children }: DashboardShellProps) {
         {showPendingBanner && (
           <div
             id="pending-banner"
-            style={{
-              display: 'flex', alignItems: 'center', gap: '.7rem',
-              background: '#f0f9ff', borderBottom: '1px solid #bae6fd',
-              padding: '.75rem 2rem',
-            }}
+            className="flex items-center gap-[0.7rem] bg-[#f0f9ff] border-b border-[#bae6fd] py-3 px-8"
           >
-            <span style={{ fontSize: '1.1rem' }}>⏳</span>
-            <span style={{ fontSize: '.82rem', color: '#0369a1' }}>
+            <span className="text-[1.1rem]">⏳</span>
+            <span className="text-[0.82rem] text-[#0369a1]">
               <strong>Account under review</strong> — Our team will activate your account within 1–2 business days. You can explore the dashboard in the meantime.
             </span>
           </div>

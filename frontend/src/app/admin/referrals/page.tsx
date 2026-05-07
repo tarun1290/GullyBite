@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import StatCard from '../../../components/StatCard';
@@ -105,11 +104,11 @@ function timeAgo(ts?: string): string {
   return `${d}d ago`;
 }
 
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.6rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const lbl: CSSProperties = { fontSize: '.72rem', color: 'var(--dim)', display: 'block', marginBottom: '.25rem' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.4rem .6rem', fontSize: '.82rem' };
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const LBL_CLS = 'text-[0.72rem] text-dim block mb-1';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.4rem] px-[0.6rem] text-[0.82rem]';
 
 export default function AdminReferralsPage() {
   const { showToast } = useToast();
@@ -260,7 +259,7 @@ export default function AdminReferralsPage() {
   return (
     <div id="pg-referrals">
       {statsErr ? (
-        <div style={{ marginBottom: '1rem' }}>
+        <div className="mb-4">
           <SectionError message={statsErr} onRetry={loadStats} />
         </div>
       ) : (
@@ -276,15 +275,15 @@ export default function AdminReferralsPage() {
         </div>
       )}
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
+      <div className="card mb-4">
         <div className="ch"><h3>Send a Referral</h3></div>
-        <div className="cb" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '.8rem', alignItems: 'end' }}>
+        <div className="cb grid grid-cols-[1fr_1fr_1fr_auto] gap-[0.8rem] items-end">
           <div>
-            <label style={lbl}>Restaurant</label>
+            <label className={LBL_CLS}>Restaurant</label>
             <select
               value={restaurantId}
               onChange={(e) => setRestaurantId(e.target.value)}
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             >
               <option value="">Select restaurant…</option>
               {restaurants.map((r) => {
@@ -294,51 +293,47 @@ export default function AdminReferralsPage() {
             </select>
           </div>
           <div>
-            <label style={lbl}>Customer WhatsApp Number</label>
+            <label className={LBL_CLS}>Customer WhatsApp Number</label>
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="919876543210"
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
           <div>
-            <label style={lbl}>Customer Name (optional)</label>
+            <label className={LBL_CLS}>Customer Name (optional)</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Rahul Sharma"
-              style={{ ...input, width: '100%' }}
+              className={`${INPUT_CLS} w-full`}
             />
           </div>
           <button
             type="button"
-            className="btn-p btn-sm"
+            className="btn-p btn-sm bg-violet-600 text-neutral-0 whitespace-nowrap"
             onClick={doCreate}
             disabled={creating}
-            style={{ background: 'var(--gb-violet-600)', color: 'var(--gb-neutral-0)', whiteSpace: 'nowrap' }}
           >
             {creating ? 'Creating…' : '+ Create Referral'}
           </button>
         </div>
-        <div className="cb" style={{ paddingTop: 0 }}>
-          <label style={lbl}>Notes (optional)</label>
+        <div className="cb pt-0">
+          <label className={LBL_CLS}>Notes (optional)</label>
           <input
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="e.g. Customer asked about biryanis on Instagram"
-            style={{ ...input, width: '100%' }}
+            className={`${INPUT_CLS} w-full`}
           />
           {linkBox && (
-            <div style={{
-              marginTop: '.9rem', background: 'var(--ink3)',
-              border: '1px solid rgba(124,58,237,.26)', borderRadius: 8, padding: '.8rem 1rem',
-            }}>
-              <div style={{ fontSize: '.76rem', color: 'var(--gb-violet-600)', marginBottom: '.4rem' }}>
+            <div className="mt-[0.9rem] bg-ink3 border border-[rgba(124,58,237,0.26)] rounded-lg py-[0.8rem] px-4">
+              <div className="text-[0.76rem] text-violet-600 mb-[0.4rem]">
                 Referral created — share this restaurant&apos;s WhatsApp link with the customer. Attribution is live for 8 hours.
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem' }}>
-                <code className="mono" style={{ flex: 1, fontSize: '.8rem', wordBreak: 'break-all' }}>{linkBox}</code>
+              <div className="flex items-center gap-[0.6rem]">
+                <code className="mono flex-1 text-[0.8rem] break-all">{linkBox}</code>
                 <button type="button" className="btn-g btn-sm" onClick={copyLink}>Copy Link</button>
               </div>
             </div>
@@ -349,42 +344,41 @@ export default function AdminReferralsPage() {
       {/* ── Pending GBREF link requests ─────────────────────────
           Restaurants self-serve a request for a shareable GBREF link via
           the dashboard; admin generates and the request collapses. */}
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+      <div className="card mb-4">
+        <div className="ch justify-between">
           <h3>Pending Link Requests</h3>
           <button type="button" className="btn-g btn-sm" onClick={loadLinkRequests} disabled={loading}>↻ Refresh</button>
         </div>
         {linkRequestsErr ? (
           <div className="cb"><SectionError message={linkRequestsErr} onRetry={loadLinkRequests} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Campaign</th>
-                  <th style={th}>Requested</th>
-                  <th style={th}>Action</th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Campaign</th>
+                  <th className={TH_CLS}>Requested</th>
+                  <th className={TH_CLS}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && linkRequests.length === 0 ? (
-                  <tr><td colSpan={4} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={4} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : linkRequests.length === 0 ? (
-                  <tr><td colSpan={4} style={emptyCell}>No pending link requests</td></tr>
+                  <tr><td colSpan={4} className={EMPTY_CLS}>No pending link requests</td></tr>
                 ) : (
                   linkRequests.map((req) => (
-                    <tr key={req._id || req.id} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td style={td}>{req.restaurant_name || req.restaurant_id || '—'}</td>
-                      <td style={td}>{req.campaign_name || <span style={{ color: 'var(--dim)' }}>—</span>}</td>
-                      <td style={{ ...td, fontSize: '.78rem', color: 'var(--dim)' }}>{timeAgo(req.created_at)}</td>
-                      <td style={td}>
+                    <tr key={req._id || req.id} className="border-b border-rim">
+                      <td className={TD_CLS}>{req.restaurant_name || req.restaurant_id || '—'}</td>
+                      <td className={TD_CLS}>{req.campaign_name || <span className="text-dim">—</span>}</td>
+                      <td className={`${TD_CLS} text-[0.78rem] text-dim`}>{timeAgo(req.created_at)}</td>
+                      <td className={TD_CLS}>
                         <button
                           type="button"
-                          className="btn-p btn-sm"
+                          className="btn-p btn-sm bg-violet-600 text-neutral-0"
                           onClick={() => generateForRequest(req)}
                           disabled={!!generating[req._id || '']}
-                          style={{ background: 'var(--gb-violet-600)', color: 'var(--gb-neutral-0)' }}
                         >
                           {generating[req._id || ''] ? 'Generating…' : 'Generate Link'}
                         </button>
@@ -399,7 +393,7 @@ export default function AdminReferralsPage() {
       </div>
 
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+        <div className="ch justify-between">
           <h3>All Referrals</h3>
           <button type="button" className="btn-g btn-sm" onClick={loadList} disabled={loading}>
             {loading ? 'Loading…' : '↻ Refresh'}
@@ -408,50 +402,55 @@ export default function AdminReferralsPage() {
         {listErr ? (
           <div className="cb"><SectionError message={listErr} onRetry={loadList} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={th}>Customer Phone</th>
-                  <th style={th}>Customer Name</th>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Expires / Expired</th>
-                  <th style={th}>Orders</th>
-                  <th style={th}>Order Value</th>
-                  <th style={th}>Referral Fee (7.5%)</th>
-                  <th style={th}>Created</th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={TH_CLS}>Customer Phone</th>
+                  <th className={TH_CLS}>Customer Name</th>
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Expires / Expired</th>
+                  <th className={TH_CLS}>Orders</th>
+                  <th className={TH_CLS}>Order Value</th>
+                  <th className={TH_CLS}>Referral Fee (7.5%)</th>
+                  <th className={TH_CLS}>Created</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={9} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={9} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={9} style={emptyCell}>No referrals yet</td></tr>
+                  <tr><td colSpan={9} className={EMPTY_CLS}>No referrals yet</td></tr>
                 ) : (
                   rows.map((r) => {
                     const color = STATUS_COLOR[r.status || ''] || 'var(--gb-neutral-500)';
                     return (
-                      <tr key={r._id || r.id || `${r.customer_wa_phone}-${r.created_at}`} style={{ borderBottom: '1px solid var(--rim)' }}>
-                        <td style={td} className="mono">{r.customer_wa_phone}</td>
-                        <td style={td}>{r.customer_name || '—'}</td>
-                        <td style={td}>{r.restaurant_name}</td>
-                        <td style={td}>
-                          <span style={{ color, fontWeight: 600, textTransform: 'capitalize' }}>{r.status}</span>
+                      <tr key={r._id || r.id || `${r.customer_wa_phone}-${r.created_at}`} className="border-b border-rim">
+                        <td className={`${TD_CLS} mono`}>{r.customer_wa_phone}</td>
+                        <td className={TD_CLS}>{r.customer_name || '—'}</td>
+                        <td className={TD_CLS}>{r.restaurant_name}</td>
+                        <td className={TD_CLS}>
+                          <span
+                            className="font-semibold capitalize"
+                            // colour from STATUS_COLOR by status at runtime
+                            // (active/converted/expired — 3 distinct).
+                            style={{ color }}
+                          >{r.status}</span>
                         </td>
-                        <td style={{ ...td, fontSize: '.78rem' }}>
+                        <td className={`${TD_CLS} text-[0.78rem]`}>
                           {r.status === 'active' ? (
-                            <span style={{ color: '#22c55e' }}>Expires {timeUntil(r.expires_at)}</span>
+                            <span className="text-[#22c55e]">Expires {timeUntil(r.expires_at)}</span>
                           ) : (
                             fmtDate(r.expires_at)
                           )}
                         </td>
-                        <td style={td}>{r.orders_count}</td>
-                        <td style={td}>₹{fmtInr(r.total_order_value_rs)}</td>
-                        <td style={{ ...td, fontWeight: 600, color: '#a78bfa' }}>
+                        <td className={TD_CLS}>{r.orders_count}</td>
+                        <td className={TD_CLS}>₹{fmtInr(r.total_order_value_rs)}</td>
+                        <td className={`${TD_CLS} font-semibold text-[#a78bfa]`}>
                           ₹{fmtInr(r.referral_fee_rs)}
                         </td>
-                        <td style={{ ...td, fontSize: '.78rem' }}>{fmtDate(r.created_at)}</td>
+                        <td className={`${TD_CLS} text-[0.78rem]`}>{fmtDate(r.created_at)}</td>
                       </tr>
                     );
                   })

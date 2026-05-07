@@ -51,7 +51,7 @@ const INT_DEFS: ReadonlyArray<IntDef> = [
 export default function IntegrationsSection() {
   return (
     <div>
-      <div className="notice wa" style={{ marginBottom: '1.3rem' }}>
+      <div className="notice wa mb-[1.3rem]">
         <div className="notice-ico">🔗</div>
         <div className="notice-body">
           <h4>POS &amp; Platform Integrations — Coming Soon</h4>
@@ -66,23 +66,14 @@ export default function IntegrationsSection() {
         {INT_DEFS.map((d) => (
           <div
             key={d.key}
-            className="int-tile"
-            style={{
-              opacity: 0.5,
-              cursor: 'not-allowed',
-              pointerEvents: 'none',
-              position: 'relative',
-            }}
+            className="int-tile opacity-50 cursor-not-allowed pointer-events-none relative"
           >
             <div className="int-tile-hd">
               <div className={`int-logo ${d.cls}`}>{d.emoji}</div>
               <div>
                 <div className="int-tile-name">{d.name}</div>
                 <div>
-                  <span
-                    className="badge bd"
-                    style={{ background: 'var(--ink4)', color: 'var(--mute,var(--dim))' }}
-                  >
+                  <span className="badge bd bg-ink4 text-mute">
                     Coming soon
                   </span>
                 </div>
@@ -94,7 +85,7 @@ export default function IntegrationsSection() {
         ))}
       </div>
 
-      <div className="card" style={{ marginTop: '1.2rem' }}>
+      <div className="card mt-[1.2rem]">
         <div className="ch"><h3>Sync Log</h3></div>
         <div className="tbl">
           <table>
@@ -111,7 +102,7 @@ export default function IntegrationsSection() {
             </thead>
             <tbody>
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: 'var(--dim)' }}>
+                <td colSpan={7} className="text-center p-8 text-dim">
                   POS integrations are not yet active. Contact GullyBite support for early access.
                 </td>
               </tr>

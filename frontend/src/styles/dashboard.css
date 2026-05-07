@@ -1,5 +1,5 @@
 /*
- * Ported verbatim from the legacy frontend/dashboard.html <style> block.
+ * Ported verbatim from the legacy frontend/dashboard.html \3c style> block.
  * Keep in sync with the legacy file until the HTML app is retired.
  */
 
@@ -21,9 +21,9 @@
   --tx:    var(--gb-neutral-900);    /* Primary text */
   --dim:   var(--gb-neutral-500);    /* Secondary text */
   --mute:  var(--gb-neutral-400);    /* Muted text */
-  --acc:   var(--gb-indigo-700);     /* Dashboard action color (#4338ca) */
-  --acc2:  var(--gb-indigo-800);     /* Dashboard action hover (#3730a3) */
-  --acc-glow: rgba(67, 56, 202, .12);
+  --acc:   var(--gb-teal-700);       /* Dashboard action color (#0F766E) */
+  --acc2:  var(--gb-teal-800);       /* Dashboard action hover (#0D5F58) */
+  --acc-glow: var(--gb-teal-700-glow);
   --wa:    var(--gb-wa-500);
   --wa2:   var(--gb-wa-600);
   --wa-glow: rgba(22, 163, 74, .1);
@@ -53,7 +53,7 @@ body { font-family: var(--font-body); background: var(--ink); color: var(--tx); 
 .sb-btn.act .ic { opacity: 1; }
 .sb-foot { margin-top: auto; padding: 1rem; border-top: 1px solid var(--rim); background: #f5f6f8; }
 .sb-user { display: flex; align-items: center; gap: .6rem; }
-.sb-av { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; background: linear-gradient(135deg, var(--acc), var(--gb-violet-600)); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .82rem; color: var(--gb-neutral-0); box-shadow: 0 2px 6px rgba(67, 56, 202, .2); }
+.sb-av { width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0; background: linear-gradient(135deg, var(--acc), var(--gb-teal-700)); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .82rem; color: var(--gb-neutral-0); box-shadow: 0 2px 6px rgba(67, 56, 202, .2); }
 .sb-nm { font-size: .82rem; font-weight: 600; color: var(--tx); line-height: 1.2; }
 .sb-rl { font-size: .65rem; color: var(--mute); }
 
@@ -147,7 +147,7 @@ textarea { resize: vertical; min-height: 66px; }
 .bd { background: var(--ink4); color: var(--dim); border-color: var(--rim); }
 .bb { background: rgba(37, 99, 235, .1); color: var(--blue); border-color: var(--blue); }
 .bg { background: var(--wa-glow); color: var(--wa); border-color: var(--wa); }
-.bv { background: rgba(124, 58, 237, .1); color: var(--gb-violet-600); border-color: var(--gb-violet-600); }
+.bv { background: var(--gb-teal-700-glow); color: var(--gb-teal-700); border-color: var(--gb-teal-700); }
 
 /* ── EMPTY STATE ───────────────────────── */
 .empty {

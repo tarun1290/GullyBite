@@ -51,50 +51,50 @@ export default function MarketingMessagesSection() {
 
   return (
     <div className="card">
-      <div className="ch" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="ch flex justify-between items-center">
         <h3>📣 Marketing Messages</h3>
-        <div style={{ display: 'flex', gap: '.6rem', alignItems: 'center', fontSize: '.8rem' }}>
-          <span style={{ color: 'var(--dim)' }}>Total cost:</span>
+        <div className="flex gap-[0.6rem] items-center text-[0.8rem]">
+          <span className="text-dim">Total cost:</span>
           <strong>₹{(Math.round(totalCost * 100) / 100).toFixed(2)}</strong>
-          <span style={{ color: 'var(--dim)' }}>{total} messages</span>
+          <span className="text-dim">{total} messages</span>
         </div>
       </div>
-      <div className="cb" style={{ overflowX: 'auto' }}>
+      <div className="cb overflow-x-auto">
         {error ? (
           <SectionError message={error} onRetry={refetch} />
         ) : (
           <>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.86rem' }}>
+            <table className="w-full border-collapse text-[0.86rem]">
               <thead>
-                <tr style={{ borderBottom: '1px solid var(--rim)', textAlign: 'left', color: 'var(--dim)', fontSize: '.78rem' }}>
-                  <th style={{ padding: '.5rem .7rem' }}>Customer</th>
-                  <th style={{ padding: '.5rem .7rem' }}>Phone</th>
-                  <th style={{ padding: '.5rem .7rem' }}>Type</th>
-                  <th style={{ padding: '.5rem .7rem' }}>Category</th>
-                  <th style={{ padding: '.5rem .7rem' }}>Cost</th>
-                  <th style={{ padding: '.5rem .7rem' }}>Status</th>
-                  <th style={{ padding: '.5rem .7rem' }}>Sent</th>
+                <tr className="border-b border-rim text-left text-dim text-[0.78rem]">
+                  <th className="py-2 px-[0.7rem]">Customer</th>
+                  <th className="py-2 px-[0.7rem]">Phone</th>
+                  <th className="py-2 px-[0.7rem]">Type</th>
+                  <th className="py-2 px-[0.7rem]">Category</th>
+                  <th className="py-2 px-[0.7rem]">Cost</th>
+                  <th className="py-2 px-[0.7rem]">Status</th>
+                  <th className="py-2 px-[0.7rem]">Sent</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && !data ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '1.2rem', color: 'var(--dim)' }}>Loading…</td></tr>
+                  <tr><td colSpan={7} className="text-center p-[1.2rem] text-dim">Loading…</td></tr>
                 ) : items.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '1.2rem', color: 'var(--dim)' }}>
+                  <tr><td colSpan={7} className="text-center p-[1.2rem] text-dim">
                     No marketing messages in this range.
                   </td></tr>
                 ) : (
                   items.map((m, idx) => (
                     <tr key={m.id || m._id || idx}>
-                      <td style={{ padding: '.5rem .7rem' }}>{m.customer_name || '—'}</td>
-                      <td style={{ padding: '.5rem .7rem', fontFamily: 'monospace', color: 'var(--dim)' }}>
+                      <td className="py-2 px-[0.7rem]">{m.customer_name || '—'}</td>
+                      <td className="py-2 px-[0.7rem] font-mono text-dim">
                         {m.phone || '—'}
                       </td>
-                      <td style={{ padding: '.5rem .7rem' }}>{m.message_type || '—'}</td>
-                      <td style={{ padding: '.5rem .7rem' }}>{m.category || '—'}</td>
-                      <td style={{ padding: '.5rem .7rem' }}>₹{Number(m.cost || 0).toFixed(2)}</td>
-                      <td style={{ padding: '.5rem .7rem' }}>{m.status || '—'}</td>
-                      <td style={{ padding: '.5rem .7rem', color: 'var(--dim)', fontSize: '.8rem' }}>
+                      <td className="py-2 px-[0.7rem]">{m.message_type || '—'}</td>
+                      <td className="py-2 px-[0.7rem]">{m.category || '—'}</td>
+                      <td className="py-2 px-[0.7rem]">₹{Number(m.cost || 0).toFixed(2)}</td>
+                      <td className="py-2 px-[0.7rem]">{m.status || '—'}</td>
+                      <td className="py-2 px-[0.7rem] text-dim text-[0.8rem]">
                         {formatDate(m.sent_at)}
                       </td>
                     </tr>
@@ -103,7 +103,7 @@ export default function MarketingMessagesSection() {
               </tbody>
             </table>
             {pageCount > 1 && (
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '.5rem', marginTop: '1rem' }}>
+              <div className="flex justify-center gap-2 mt-4">
                 <button
                   type="button"
                   className="btn-g btn-sm"
@@ -112,7 +112,7 @@ export default function MarketingMessagesSection() {
                 >
                   ← Prev
                 </button>
-                <span style={{ fontSize: '.82rem', color: 'var(--dim)', alignSelf: 'center' }}>
+                <span className="text-[0.82rem] text-dim self-center">
                   Page {page} / {pageCount}
                 </span>
                 <button

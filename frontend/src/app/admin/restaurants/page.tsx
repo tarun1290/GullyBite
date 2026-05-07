@@ -147,14 +147,14 @@ export default function AdminRestaurantsPage() {
   return (
     <div>
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.4rem' }}>
+        <div className="ch justify-between flex-wrap gap-[0.4rem]">
           <h3>🏪 Restaurant Directory</h3>
-          <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
+          <div className="flex gap-[0.4rem] items-center">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, owner, ID…"
-              style={{ padding: '.3rem .55rem', border: '1px solid var(--rim)', borderRadius: 6, fontSize: '.8rem', width: 240 }}
+              className="py-[0.3rem] px-[0.55rem] border border-rim rounded-md text-[0.8rem] w-[240px]"
             />
             <button type="button" className="btn-g btn-sm" onClick={load} disabled={loading}>
               {loading ? '…' : '↻ Refresh'}
@@ -163,26 +163,26 @@ export default function AdminRestaurantsPage() {
         </div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)' }}>Loading…</p>
+            <p className="text-dim">Loading…</p>
           ) : !filtered.length ? (
-            <p style={{ color: 'var(--dim)' }}>
+            <p className="text-dim">
               {rows.length ? 'No restaurants match your search.' : 'No restaurants yet.'}
             </p>
           ) : (
-            <div className="tbl-card" style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div className="tbl-card overflow-x-auto">
+              <table className="w-full border-collapse">
                 <thead>
-                  <tr style={{ textAlign: 'left', fontSize: '.72rem', color: 'var(--dim)', textTransform: 'uppercase' }}>
-                    <th style={{ padding: '.5rem' }}>Business</th>
-                    <th style={{ padding: '.5rem' }}>Owner</th>
-                    <th style={{ padding: '.5rem', textAlign: 'center' }}>Branches</th>
-                    <th style={{ padding: '.5rem', textAlign: 'center' }}>Catalogs</th>
-                    <th style={{ padding: '.5rem', textAlign: 'center' }}>Orders</th>
-                    <th style={{ padding: '.5rem', textAlign: 'center' }}>Fulfil%</th>
-                    <th style={{ padding: '.5rem', textAlign: 'center' }}>Issues</th>
-                    <th style={{ padding: '.5rem' }}>Revenue</th>
-                    <th style={{ padding: '.5rem' }}>Status</th>
-                    <th style={{ padding: '.5rem', textAlign: 'right' }}>Actions</th>
+                  <tr className="text-left text-[0.72rem] text-dim uppercase">
+                    <th className="p-2">Business</th>
+                    <th className="p-2">Owner</th>
+                    <th className="p-2 text-center">Branches</th>
+                    <th className="p-2 text-center">Catalogs</th>
+                    <th className="p-2 text-center">Orders</th>
+                    <th className="p-2 text-center">Fulfil%</th>
+                    <th className="p-2 text-center">Issues</th>
+                    <th className="p-2">Revenue</th>
+                    <th className="p-2">Status</th>
+                    <th className="p-2 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -238,45 +238,48 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
 
   return (
     <>
+    {/* dynamic borderBottom: hidden when staff PIN row expands below */}
     <tr style={{ borderBottom: staffPinOpen ? 'none' : '1px solid var(--rim)' }}>
-      <td data-label="Business" style={{ padding: '.5rem' }}>
-        <div style={{ fontWeight: 600, fontSize: '.84rem' }}>{r.business_name}</div>
+      <td data-label="Business" className="p-2">
+        <div className="font-semibold text-[0.84rem]">{r.business_name}</div>
         {r.registered_business_name ? (
-          <div style={{ color: 'var(--dim)', fontSize: '.74rem' }}>{r.registered_business_name}</div>
+          <div className="text-dim text-[0.74rem]">{r.registered_business_name}</div>
         ) : null}
-        <div style={{ color: 'var(--dim)', fontSize: '.7rem', fontFamily: 'monospace' }}>{(r.id || '').slice(0, 8)}</div>
+        <div className="text-dim text-[0.7rem] font-mono">{(r.id || '').slice(0, 8)}</div>
         {(() => {
           if (!r.created_at) return null;
           const d = new Date(r.created_at);
           if (Number.isNaN(d.getTime())) return null;
           const formatted = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
           return (
-            <div style={{ color: 'var(--dim)', fontSize: '.68rem', opacity: 0.75 }}>Created: {formatted}</div>
+            <div className="text-dim text-[0.68rem] opacity-75">Created: {formatted}</div>
           );
         })()}
       </td>
-      <td data-label="Owner" style={{ padding: '.5rem', fontSize: '.8rem' }}>{r.owner_name || '—'}</td>
-      <td data-label="Branches" style={{ padding: '.5rem', textAlign: 'center', fontSize: '.82rem' }}>{r.branch_count ?? 0}</td>
-      <td data-label="Catalogs" style={{ padding: '.5rem', textAlign: 'center', fontSize: '.82rem' }}>{r.catalog_count ?? 0}</td>
-      <td data-label="Orders" style={{ padding: '.5rem', textAlign: 'center', cursor: 'help' }} title={orderTip}>
-        <div style={{ fontWeight: 600, fontSize: '.84rem' }}>{o.total ?? 0}</div>
-        <div style={{ color: 'var(--gb-wa-500)', fontSize: '.7rem' }}>{o.delivered ?? 0} del</div>
+      <td data-label="Owner" className="p-2 text-[0.8rem]">{r.owner_name || '—'}</td>
+      <td data-label="Branches" className="p-2 text-center text-[0.82rem]">{r.branch_count ?? 0}</td>
+      <td data-label="Catalogs" className="p-2 text-center text-[0.82rem]">{r.catalog_count ?? 0}</td>
+      <td data-label="Orders" className="p-2 text-center cursor-help" title={orderTip}>
+        <div className="font-semibold text-[0.84rem]">{o.total ?? 0}</div>
+        <div className="text-wa-500 text-[0.7rem]">{o.delivered ?? 0} del</div>
       </td>
-      <td data-label="Fulfil%" style={{ padding: '.5rem', textAlign: 'center' }}>
-        <span style={{ color: fColor, fontWeight: 600 }}>{fpct}%</span>
+      <td data-label="Fulfil%" className="p-2 text-center">
+        {/* dynamic color: runtime threshold-based fulfilment color */}
+        <span style={{ color: fColor }} className="font-semibold">{fpct}%</span>
       </td>
-      <td data-label="Issues" style={{ padding: '.5rem', textAlign: 'center' }}>
+      <td data-label="Issues" className="p-2 text-center">
         {r.issues
-          ? <span style={{ color: 'var(--gb-red-500)', fontWeight: 600 }}>{r.issues}</span>
-          : <span style={{ color: 'var(--mute,#94a3b8)' }}>0</span>}
+          ? <span className="text-red-500 font-semibold">{r.issues}</span>
+          : <span className="text-mute">0</span>}
       </td>
-      <td data-label="Revenue" style={{ padding: '.5rem', fontSize: '.82rem' }}>₹{fmtInr(r.revenue_rs)}</td>
-      <td data-label="Status" style={{ padding: '.5rem' }}>
-        <span style={{ display: 'inline-block', padding: '.1rem .4rem', borderRadius: 99, background: `${badge.color}15`, color: badge.color, border: `1px solid ${badge.color}30`, fontSize: '.7rem', fontWeight: 600 }}>
+      <td data-label="Revenue" className="p-2 text-[0.82rem]">₹{fmtInr(r.revenue_rs)}</td>
+      <td data-label="Status" className="p-2">
+        {/* dynamic palette: badge tint/border/text derived from runtime status color */}
+        <span style={{ background: `${badge.color}15`, color: badge.color, border: `1px solid ${badge.color}30` }} className="inline-block py-[0.1rem] px-[0.4rem] rounded-full text-[0.7rem] font-semibold">
           {badge.label}
         </span>
       </td>
-      <td data-label="Actions" style={{ padding: '.5rem', textAlign: 'right', whiteSpace: 'normal' }}>
+      <td data-label="Actions" className="p-2 text-right whitespace-normal">
         {pending?.kind === 'status' ? (
           <InlineConfirm
             label={`${pending.target === 'suspended' ? 'Suspend' : 'Activate'} "${r.business_name}"?`}
@@ -300,7 +303,7 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
             onCancel={onCancel}
           />
         ) : (
-          <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '.25rem', justifyContent: 'flex-end' }}>
+          <div className="inline-flex flex-wrap gap-1 justify-end">
             {r.status === 'active' ? (
               <button type="button" className="btn-del btn-sm" onClick={() => onAsk('status', { target: 'suspended' })} disabled={busy}>
                 Suspend
@@ -330,8 +333,8 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
       </td>
     </tr>
     {staffPinOpen && (
-      <tr style={{ borderBottom: '1px solid var(--rim)', background: 'var(--bg-soft, #f8fafc)' }}>
-        <td colSpan={10} style={{ padding: '.5rem .75rem 1rem' }}>
+      <tr className="border-b border-rim bg-bg-soft">
+        <td colSpan={10} className="pt-2 px-3 pb-4">
           <StaffAccess restaurantId={r.id} slug={r.slug} />
         </td>
       </tr>
@@ -350,12 +353,13 @@ interface InlineConfirmProps {
 
 function InlineConfirm({ label, busy, onConfirm, onCancel, confirmColor = 'var(--gb-red-500)' }: InlineConfirmProps) {
   return (
-    <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
-      <span style={{ fontSize: '.72rem', color: 'var(--dim)', marginRight: '.2rem' }}>{label}</span>
-      <button type="button" style={{ background: confirmColor, color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 4, padding: '.15rem .5rem', fontSize: '.72rem' }} onClick={onConfirm} disabled={busy}>
+    <span className="inline-flex gap-1 items-center">
+      <span className="text-[0.72rem] text-dim mr-[0.2rem]">{label}</span>
+      {/* dynamic background: confirm button tint depends on action (suspend vs activate) */}
+      <button type="button" style={{ background: confirmColor }} className="text-neutral-0 border-0 rounded-sm py-[0.15rem] px-2 text-[0.72rem]" onClick={onConfirm} disabled={busy}>
         {busy ? '…' : 'Confirm'}
       </button>
-      <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={onCancel} disabled={busy}>Cancel</button>
+      <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={onCancel} disabled={busy}>Cancel</button>
     </span>
   );
 }
@@ -370,8 +374,8 @@ interface CapEditorProps {
 function CapEditor({ current, busy, onConfirm, onCancel }: CapEditorProps) {
   const [val, setVal] = useState<string>(current == null ? '' : String(current));
   return (
-    <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
-      <span style={{ fontSize: '.7rem', color: 'var(--dim)' }}>
+    <span className="inline-flex gap-1 items-center">
+      <span className="text-[0.7rem] text-dim">
         Current: {current == null ? '(default)' : current} — new:
       </span>
       <input
@@ -380,12 +384,12 @@ function CapEditor({ current, busy, onConfirm, onCancel }: CapEditorProps) {
         onChange={(e) => setVal(e.target.value)}
         placeholder="blank = default"
         autoFocus
-        style={{ width: 110, padding: '.15rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}
+        className="w-[110px] py-[0.15rem] px-[0.3rem] border border-rim rounded-sm text-[0.72rem]"
       />
-      <button type="button" className="btn-p btn-sm" style={{ fontSize: '.72rem' }} onClick={() => onConfirm(val)} disabled={busy}>
+      <button type="button" className="btn-p btn-sm text-[0.72rem]" onClick={() => onConfirm(val)} disabled={busy}>
         {busy ? '…' : 'Save'}
       </button>
-      <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={onCancel} disabled={busy}>Cancel</button>
+      <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={onCancel} disabled={busy}>Cancel</button>
     </span>
   );
 }
@@ -401,8 +405,8 @@ function DeleteEditor({ name, busy, onConfirm, onCancel }: DeleteEditorProps) {
   const [typed, setTyped] = useState<string>('');
   const match = typed.trim().toLowerCase() === (name || '').trim().toLowerCase();
   return (
-    <span style={{ display: 'inline-flex', gap: '.25rem', alignItems: 'center' }}>
-      <span style={{ fontSize: '.7rem', color: 'var(--gb-red-500)' }}>
+    <span className="inline-flex gap-1 items-center">
+      <span className="text-[0.7rem] text-red-500">
         Type &quot;{name}&quot; to confirm:
       </span>
       <input
@@ -410,12 +414,12 @@ function DeleteEditor({ name, busy, onConfirm, onCancel }: DeleteEditorProps) {
         onChange={(e) => setTyped(e.target.value)}
         placeholder={name}
         autoFocus
-        style={{ width: 140, padding: '.15rem .3rem', border: '1px solid var(--rim)', borderRadius: 4, fontSize: '.72rem' }}
+        className="w-[140px] py-[0.15rem] px-[0.3rem] border border-rim rounded-sm text-[0.72rem]"
       />
-      <button type="button" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none', borderRadius: 4, padding: '.15rem .5rem', fontSize: '.72rem', opacity: match ? 1 : 0.5 }} onClick={() => onConfirm(typed)} disabled={busy || !match}>
+      <button type="button" className={`bg-red-500 text-neutral-0 border-0 rounded-sm py-[0.15rem] px-2 text-[0.72rem] ${match ? 'opacity-100' : 'opacity-50'}`} onClick={() => onConfirm(typed)} disabled={busy || !match}>
         {busy ? '…' : 'Delete'}
       </button>
-      <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={onCancel} disabled={busy}>Cancel</button>
+      <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={onCancel} disabled={busy}>Cancel</button>
     </span>
   );
 }

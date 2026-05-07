@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useAdminAuth } from '../../../contexts/AdminAuthContext';
 import { useToast } from '../../../components/Toast';
@@ -20,9 +19,9 @@ interface AdminUserRow {
   permissions?: AdminPermissions;
 }
 
-const th: CSSProperties = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.5rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
+const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
 
 export default function AdminAdminsPage() {
   const { user } = useAdminAuth();
@@ -72,7 +71,7 @@ export default function AdminAdminsPage() {
     return (
       <div id="pg-admins">
         <div className="card">
-          <div className="cb" style={{ padding: '2rem', textAlign: 'center', color: 'var(--dim)' }}>
+          <div className="cb p-8 text-center text-dim">
             Super admin access required.
           </div>
         </div>
@@ -83,41 +82,41 @@ export default function AdminAdminsPage() {
   return (
     <div id="pg-admins">
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0 }}>Admin Users</h3>
-          <span style={{ color: 'var(--dim)', fontSize: '.78rem' }}>Only super admins see this page.</span>
+        <div className="ch justify-between">
+          <h3 className="m-0">Admin Users</h3>
+          <span className="text-dim text-[0.78rem]">Only super admins see this page.</span>
         </div>
 
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', textAlign: 'left', color: 'var(--dim)', fontSize: '.74rem' }}>
-                  <th style={th}>Name</th>
-                  <th style={th}>Email</th>
-                  <th style={th}>Role</th>
-                  <th style={th}>Active</th>
-                  <th style={th}>Can view full phone numbers</th>
+                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                  <th className={TH_CLS}>Name</th>
+                  <th className={TH_CLS}>Email</th>
+                  <th className={TH_CLS}>Role</th>
+                  <th className={TH_CLS}>Active</th>
+                  <th className={TH_CLS}>Can view full phone numbers</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={5} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={5} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={5} style={emptyCell}>No admin users yet.</td></tr>
+                  <tr><td colSpan={5} className={EMPTY_CLS}>No admin users yet.</td></tr>
                 ) : rows.map((u) => {
                   const canSee = !!(u.permissions && u.permissions.customer_full_phone) || u.role === 'super_admin';
                   const lockedSuper = u.role === 'super_admin';
                   return (
-                    <tr key={u.id} style={{ borderTop: '1px solid var(--rim)' }}>
-                      <td style={td}>{u.name || '—'}</td>
-                      <td style={td}>{u.email || ''}</td>
-                      <td style={td}>{u.role || 'admin'}</td>
-                      <td style={td}>{u.is_active === false ? <span style={{ color: 'var(--gb-red-600)' }}>disabled</span> : 'yes'}</td>
-                      <td style={td}>
-                        <label title="Can view full customer phone numbers" style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem', fontSize: '.78rem' }}>
+                    <tr key={u.id} className="border-t border-rim">
+                      <td className={TD_CLS}>{u.name || '—'}</td>
+                      <td className={TD_CLS}>{u.email || ''}</td>
+                      <td className={TD_CLS}>{u.role || 'admin'}</td>
+                      <td className={TD_CLS}>{u.is_active === false ? <span className="text-red-600">disabled</span> : 'yes'}</td>
+                      <td className={TD_CLS}>
+                        <label title="Can view full customer phone numbers" className="inline-flex items-center gap-[0.4rem] text-[0.78rem]">
                           <input
                             type="checkbox"
                             checked={canSee}

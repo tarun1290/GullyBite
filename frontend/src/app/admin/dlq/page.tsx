@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import StatCard from '../../../components/StatCard';
@@ -55,11 +54,12 @@ function sourceBadge(src?: string) {
   const s = (src || '').toLowerCase();
   const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: 'var(--gb-slate-700)' };
   return (
-    <span style={{
-      display: 'inline-block', padding: '.1rem .5rem', borderRadius: 10,
-      fontSize: '.72rem', fontWeight: 600, background: cfg.bg, color: cfg.color,
-      textTransform: 'uppercase', letterSpacing: '.03em',
-    }}>{s || '—'}</span>
+    <span
+      className="inline-block py-[0.1rem] px-2 rounded-[10px] text-[0.72rem] font-semibold uppercase tracking-[0.03em]"
+      // bg / colour from SOURCE_BADGE by source at runtime
+      // (whatsapp/razorpay + slate fallback — 3 distinct rgba/hex pairs).
+      style={{ background: cfg.bg, color: cfg.color }}
+    >{s || '—'}</span>
   );
 }
 
@@ -70,10 +70,10 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const th: CSSProperties = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.5rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.35rem .55rem', fontSize: '.78rem' };
+const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.35rem] px-[0.55rem] text-[0.78rem]';
 
 export default function AdminDlqPage() {
   const { showToast } = useToast();
@@ -182,18 +182,18 @@ export default function AdminDlqPage() {
 
   return (
     <div id="pg-dlq">
-      <div className="stats" style={{ marginBottom: '1rem' }}>
+      <div className="stats mb-4">
         <StatCard label="Pending Retries" value={stats?.pending_retries ?? 0} />
         <StatCard label="In DLQ" value={stats?.in_dlq ?? 0} />
         <StatCard label="Success Rate (24h)" value={`${stats?.success_rate_24h ?? 0}%`} />
         <StatCard label="Avg Retries" value={stats?.avg_retries_before_success ?? '—'} />
       </div>
-      {statsErr && <div style={{ marginBottom: '1rem' }}><SectionError message={statsErr} onRetry={loadStats} /></div>}
+      {statsErr && <div className="mb-4"><SectionError message={statsErr} onRetry={loadStats} /></div>}
 
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.6rem' }}>
-          <h3 style={{ margin: 0 }}>Dead Letter Queue <span style={{ color: 'var(--dim)', fontSize: '.78rem', fontWeight: 500 }}>({total} entries)</span></h3>
-          <select value={source} onChange={(e) => { setSource(e.target.value); setOffset(0); }} style={input}>
+        <div className="ch justify-between flex-wrap gap-[0.6rem]">
+          <h3 className="m-0">Dead Letter Queue <span className="text-dim text-[0.78rem] font-medium">({total} entries)</span></h3>
+          <select value={source} onChange={(e) => { setSource(e.target.value); setOffset(0); }} className={INPUT_CLS}>
             <option value="">All sources</option>
             <option value="whatsapp">WhatsApp</option>
             <option value="razorpay">Razorpay</option>
@@ -203,53 +203,53 @@ export default function AdminDlqPage() {
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={loadTable} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', textAlign: 'left', color: 'var(--dim)', fontSize: '.74rem' }}>
-                  <th style={th}>Failed At</th>
-                  <th style={th}>Source</th>
-                  <th style={th}>Event</th>
-                  <th style={th}>Retries</th>
-                  <th style={th}>Last Error</th>
-                  <th style={th}>History</th>
-                  <th style={th}>Actions</th>
+                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                  <th className={TH_CLS}>Failed At</th>
+                  <th className={TH_CLS}>Source</th>
+                  <th className={TH_CLS}>Event</th>
+                  <th className={TH_CLS}>Retries</th>
+                  <th className={TH_CLS}>Last Error</th>
+                  <th className={TH_CLS}>History</th>
+                  <th className={TH_CLS}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={7} style={emptyCell}>No entries in DLQ.</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>No entries in DLQ.</td></tr>
                 ) : rows.map((e) => (
-                  <tr key={e.id} style={{ borderTop: '1px solid var(--rim)' }}>
-                    <td style={{ ...td, color: 'var(--dim)', fontSize: '.75rem' }}>{fmtTime(e.dlq_at || e.received_at)}</td>
-                    <td style={td}>{sourceBadge(e.source)}</td>
-                    <td style={{ ...td, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="mono">{e.event_type || '—'}</td>
-                    <td style={{ ...td, textAlign: 'center', fontWeight: 600 }}>{(e.retry_count || 0)} / {(e.max_retries || 5)}</td>
-                    <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--gb-red-600)', fontSize: '.75rem' }}
+                  <tr key={e.id} className="border-t border-rim">
+                    <td className={`${TD_CLS} text-dim text-[0.75rem]`}>{fmtTime(e.dlq_at || e.received_at)}</td>
+                    <td className={TD_CLS}>{sourceBadge(e.source)}</td>
+                    <td className={`${TD_CLS} max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap mono`}>{e.event_type || '—'}</td>
+                    <td className={`${TD_CLS} text-center font-semibold`}>{(e.retry_count || 0)} / {(e.max_retries || 5)}</td>
+                    <td className={`${TD_CLS} max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap text-red-600 text-[0.75rem]`}
                         title={e.last_error || ''}>{e.last_error || '—'}</td>
-                    <td style={td}>
+                    <td className={TD_CLS}>
                       <button type="button" className="btn-g btn-sm" onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
                         {expanded === e.id ? 'Hide' : 'Show'}
                       </button>
                       {expanded === e.id && (
-                        <div style={{ marginTop: '.4rem', maxHeight: 160, overflowY: 'auto', fontSize: '.72rem' }}>
+                        <div className="mt-[0.4rem] max-h-[160px] overflow-y-auto text-[0.72rem]">
                           {(e.error_history || []).length === 0 ? (
-                            <span style={{ color: 'var(--dim)' }}>No history</span>
+                            <span className="text-dim">No history</span>
                           ) : (e.error_history || []).map((h, i) => (
-                            <div key={i} style={{ color: 'var(--dim)', padding: '.15rem 0', borderBottom: '1px solid var(--rim)' }}>
+                            <div key={i} className="text-dim py-[0.15rem] border-b border-rim">
                               #{i + 1} {fmtTime(h.attempted_at)}: {h.error}
                             </div>
                           ))}
                         </div>
                       )}
                     </td>
-                    <td style={{ ...td, whiteSpace: 'nowrap', display: 'flex', gap: '.3rem', alignItems: 'flex-start' }}>
+                    <td className={`${TD_CLS} whitespace-nowrap flex gap-[0.3rem] items-start`}>
                       <button type="button" className="btn-p btn-sm" onClick={() => doRetry(e.id)} disabled={busy === e.id}>Retry</button>
                       {confirmDismiss === e.id ? (
                         <>
-                          <button type="button" className="btn-g btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }} onClick={() => doDismiss(e.id)} disabled={busy === e.id}>Confirm</button>
+                          <button type="button" className="btn-g btn-sm bg-red-500 text-neutral-0" onClick={() => doDismiss(e.id)} disabled={busy === e.id}>Confirm</button>
                           <button type="button" className="btn-g btn-sm" onClick={() => setConfirmDismiss(null)} disabled={busy === e.id}>Cancel</button>
                         </>
                       ) : (
@@ -264,9 +264,9 @@ export default function AdminDlqPage() {
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '.6rem 1rem', borderTop: '1px solid var(--rim)' }}>
+        <div className="flex justify-between items-center py-[0.6rem] px-4 border-t border-rim">
           <button type="button" className="btn-g btn-sm" onClick={prev} disabled={offset === 0 || loading}>← Prev</button>
-          <span style={{ fontSize: '.8rem', color: 'var(--dim)' }}>Page {page} of {pages}</span>
+          <span className="text-[0.8rem] text-dim">Page {page} of {pages}</span>
           <button type="button" className="btn-g btn-sm" onClick={next} disabled={offset + DLQ_LIMIT >= total || loading}>Next →</button>
         </div>
       </div>
@@ -274,26 +274,23 @@ export default function AdminDlqPage() {
       {detail && (
         <div
           onClick={closeDetail}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem',
-          }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 720, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            className="bg-neutral-0 rounded-[10px] w-full max-w-[720px] max-h-[85vh] overflow-hidden flex flex-col"
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
-              <h3 style={{ margin: 0, fontSize: '.95rem' }}>{detail.event_type || 'DLQ Entry'}</h3>
+            <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
+              <h3 className="m-0 text-[0.95rem]">{detail.event_type || 'DLQ Entry'}</h3>
               <button type="button" className="btn-g btn-sm" onClick={closeDetail}>✕</button>
             </div>
-            <div style={{ overflowY: 'auto', padding: '1rem', background: 'var(--ink)', flex: 1 }}>
+            <div className="overflow-y-auto p-4 bg-ink flex-1">
               {detailLoading ? (
-                <div style={{ color: 'var(--dim)' }}>Loading…</div>
+                <div className="text-dim">Loading…</div>
               ) : detailErr ? (
                 <SectionError message={detailErr} />
               ) : (
-                <pre style={{ margin: 0, fontSize: '.78rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }} className="mono">
+                <pre className="m-0 text-[0.78rem] whitespace-pre-wrap break-all mono">
                   {detail.payload ? JSON.stringify(detail.payload, null, 2) : '—'}
                 </pre>
               )}

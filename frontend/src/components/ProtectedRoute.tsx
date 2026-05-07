@@ -13,14 +13,7 @@ interface ProtectedRouteProps {
 
 function LoadingSpinner() {
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
+    <div className="min-h-screen flex items-center justify-center">
       <span className="spin" aria-label="Loading" />
     </div>
   );

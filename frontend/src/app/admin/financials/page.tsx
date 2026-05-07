@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import StatCard from '../../../components/StatCard';
@@ -176,20 +176,20 @@ interface StatusBadgeProps { status?: string; type?: 'settlement' | 'payment' | 
 function StatusBadge({ status, type }: StatusBadgeProps): ReactNode {
   const c = pickStatusColor(status, type);
   return (
-    <span style={{
-      display: 'inline-block', padding: '.15rem .55rem', borderRadius: 10,
-      background: c.bg, color: c.color, fontWeight: 600,
-      fontSize: '.72rem', textTransform: 'capitalize',
-    }}>{status || '-'}</span>
+    <span
+      // bg + color come from pickStatusColor() palette by status/type at runtime
+      style={{ background: c.bg, color: c.color }}
+      className="inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] font-semibold text-[0.72rem] capitalize"
+    >{status || '-'}</span>
   );
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' };
-const trHead: CSSProperties = { background: 'var(--ink)', borderBottom: '1px solid var(--rim)' };
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.55rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.3rem .6rem', fontSize: '.78rem' };
+const TABLE_CLS = 'w-full border-collapse text-[0.82rem]';
+const TR_HEAD_CLS = 'bg-ink border-b border-rim';
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const EMPTY_CELL_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.6rem] text-[0.78rem]';
 
 type ToastFn = (text: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 
@@ -212,7 +212,7 @@ export default function AdminFinancialsPage() {
     <div id="pg-financials">
       <OverviewStats period={period} />
 
-      <div style={{ display: 'flex', gap: '.4rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div className="flex gap-[0.4rem] mb-4 flex-wrap items-center">
         {SUBS.map((t) => (
           <button
             key={t.id}
@@ -226,7 +226,7 @@ export default function AdminFinancialsPage() {
         <select
           value={period}
           onChange={(e) => setPeriod(e.target.value)}
-          style={{ marginLeft: 'auto', ...input }}
+          className={`ml-auto ${INPUT_CLS}`}
         >
           {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
         </select>
@@ -262,14 +262,15 @@ function OverviewStats({ period }: PeriodProps): ReactNode {
 
   if (err) {
     return (
-      <div style={{ marginBottom: '1rem' }}>
+      <div className="mb-4">
         <SectionError message={err} onRetry={load} />
       </div>
     );
   }
 
   return (
-    <div className="stats" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', marginBottom: '1rem' }}>
+    // gridTemplateColumns uses an auto-fit minmax pattern not expressible as a static Tailwind class
+    <div className="stats mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
       <StatCard label="Total GMV"        value={data ? fmtINR(data.gmv_rs) : '—'} />
       <StatCard label="Platform Revenue" value={data ? fmtINR(data.platform_fee_rs) : '—'} />
       <StatCard label="GST Liability"    value={data ? fmtINR(data.platform_fee_gst_rs) : '—'} />
@@ -334,21 +335,21 @@ function OverviewSection({ period, restaurants }: OverviewSectionProps): ReactNo
 
   return (
     <>
-      <div className="card" style={{ marginBottom: '1rem' }}>
+      <div className="card mb-4">
         <div className="ch"><h3>Cash Flow Summary</h3></div>
         <div className="cb">
           {err ? (
             <SectionError message={err} onRetry={loadCashflow} />
           ) : !data ? (
-            <div style={{ color: 'var(--dim)' }}>Loading…</div>
+            <div className="text-dim">Loading…</div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', fontSize: '.85rem' }}>
+            <div className="grid grid-cols-2 gap-4 text-[0.85rem]">
               <div>
-                <strong style={{ color: '#047857' }}>Money In</strong><br />
+                <strong className="text-[#047857]">Money In</strong><br />
                 GMV Collected: {fmtINR(data.gmv_rs)}
               </div>
               <div>
-                <strong style={{ color: 'var(--gb-red-600)' }}>Money Out</strong><br />
+                <strong className="text-red-600">Money Out</strong><br />
                 Restaurant Payouts: {fmtINR(data.total_payouts_rs)}<br />
                 Refunds: {fmtINR(data.total_refunds_rs)}<br />
                 3PL Costs: {fmtINR(data.delivery_costs_rs)}<br />
@@ -360,13 +361,13 @@ function OverviewSection({ period, restaurants }: OverviewSectionProps): ReactNo
       </div>
 
       <div className="card">
-        <div className="ch" style={{ flexWrap: 'wrap', gap: '.5rem' }}>
-          <h3 style={{ margin: 0 }}>Settlement Tracker</h3>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '.4rem', flexWrap: 'wrap' }}>
+        <div className="ch flex-wrap gap-2">
+          <h3 className="m-0">Settlement Tracker</h3>
+          <div className="ml-auto flex gap-[0.4rem] flex-wrap">
             <select
               value={trackerRest}
               onChange={(e) => { setTrackerRest(e.target.value); setTrackerPage(1); }}
-              style={input}
+              className={INPUT_CLS}
             >
               <option value="">All Restaurants</option>
               {restaurants.map((r) => {
@@ -377,7 +378,7 @@ function OverviewSection({ period, restaurants }: OverviewSectionProps): ReactNo
             <select
               value={trackerStatus}
               onChange={(e) => { setTrackerStatus(e.target.value); setTrackerPage(1); }}
-              style={input}
+              className={INPUT_CLS}
             >
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>
@@ -390,35 +391,35 @@ function OverviewSection({ period, restaurants }: OverviewSectionProps): ReactNo
           <div className="cb"><SectionError message={trackerErr} onRetry={loadTracker} /></div>
         ) : (
           <>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={tableStyle}>
+            <div className="overflow-x-auto">
+              <table className={TABLE_CLS}>
                 <thead>
-                  <tr style={trHead}>
-                    <th style={th}>Restaurant</th>
-                    <th style={th}>Period</th>
-                    <th style={th}>Gross</th>
-                    <th style={th}>Platform Fee</th>
-                    <th style={th}>TDS</th>
-                    <th style={th}>Net</th>
-                    <th style={th}>Status</th>
-                    <th style={th}>UTR</th>
+                  <tr className={TR_HEAD_CLS}>
+                    <th className={TH_CLS}>Restaurant</th>
+                    <th className={TH_CLS}>Period</th>
+                    <th className={TH_CLS}>Gross</th>
+                    <th className={TH_CLS}>Platform Fee</th>
+                    <th className={TH_CLS}>TDS</th>
+                    <th className={TH_CLS}>Net</th>
+                    <th className={TH_CLS}>Status</th>
+                    <th className={TH_CLS}>UTR</th>
                   </tr>
                 </thead>
                 <tbody>
                   {trackerLoading ? (
-                    <tr><td colSpan={8} style={emptyCell}>Loading…</td></tr>
+                    <tr><td colSpan={8} className={EMPTY_CELL_CLS}>Loading…</td></tr>
                   ) : trackerRows.length === 0 ? (
-                    <tr><td colSpan={8} style={emptyCell}>No settlements found</td></tr>
+                    <tr><td colSpan={8} className={EMPTY_CELL_CLS}>No settlements found</td></tr>
                   ) : trackerRows.map((s, i) => (
-                    <tr key={s.id || i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                      <td style={td}>{s.restaurant_name || s.restaurant_id || '-'}</td>
-                      <td style={td}>{s.period || '-'}</td>
-                      <td style={td}>{fmtINR(s.gross_rs)}</td>
-                      <td style={td}>{fmtINR(s.platform_fee_rs)}</td>
-                      <td style={td}>{fmtINR(s.tds_rs)}</td>
-                      <td style={td}>{fmtINR(s.net_rs)}</td>
-                      <td style={td}><StatusBadge status={s.status} type="settlement" /></td>
-                      <td style={{ ...td, fontSize: '.75rem' }} className="mono">{s.utr || '-'}</td>
+                    <tr key={s.id || i} className="border-b border-rim">
+                      <td className={TD_CLS}>{s.restaurant_name || s.restaurant_id || '-'}</td>
+                      <td className={TD_CLS}>{s.period || '-'}</td>
+                      <td className={TD_CLS}>{fmtINR(s.gross_rs)}</td>
+                      <td className={TD_CLS}>{fmtINR(s.platform_fee_rs)}</td>
+                      <td className={TD_CLS}>{fmtINR(s.tds_rs)}</td>
+                      <td className={TD_CLS}>{fmtINR(s.net_rs)}</td>
+                      <td className={TD_CLS}><StatusBadge status={s.status} type="settlement" /></td>
+                      <td className={`${TD_CLS} text-[0.75rem] mono`}>{s.utr || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -497,43 +498,42 @@ function SettlementsSection({ showToast }: SettlementsSectionProps): ReactNode {
         <div className="cb"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={tableStyle}>
+          <div className="overflow-x-auto">
+            <table className={TABLE_CLS}>
               <thead>
-                <tr style={trHead}>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Period</th>
-                  <th style={th}>Gross</th>
-                  <th style={th}>Fees</th>
-                  <th style={th}>TDS</th>
-                  <th style={th}>Net</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Actions</th>
+                <tr className={TR_HEAD_CLS}>
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Period</th>
+                  <th className={TH_CLS}>Gross</th>
+                  <th className={TH_CLS}>Fees</th>
+                  <th className={TH_CLS}>TDS</th>
+                  <th className={TH_CLS}>Net</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={8} className={EMPTY_CELL_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={8} style={emptyCell}>No settlements</td></tr>
+                  <tr><td colSpan={8} className={EMPTY_CELL_CLS}>No settlements</td></tr>
                 ) : rows.map((s, i) => (
-                  <tr key={s.id || i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                    <td style={td}>{s.restaurant_name || s.restaurant_id || '-'}</td>
-                    <td style={td}>{s.period || '-'}</td>
-                    <td style={td}>{fmtINR(s.gross_rs)}</td>
-                    <td style={td}>{fmtINR(s.platform_fee_rs)}</td>
-                    <td style={td}>{fmtINR(s.tds_rs)}</td>
-                    <td style={td}>{fmtINR(s.net_rs)}</td>
-                    <td style={td}><StatusBadge status={s.status} type="settlement" /></td>
-                    <td style={td}>
+                  <tr key={s.id || i} className="border-b border-rim">
+                    <td className={TD_CLS}>{s.restaurant_name || s.restaurant_id || '-'}</td>
+                    <td className={TD_CLS}>{s.period || '-'}</td>
+                    <td className={TD_CLS}>{fmtINR(s.gross_rs)}</td>
+                    <td className={TD_CLS}>{fmtINR(s.platform_fee_rs)}</td>
+                    <td className={TD_CLS}>{fmtINR(s.tds_rs)}</td>
+                    <td className={TD_CLS}>{fmtINR(s.net_rs)}</td>
+                    <td className={TD_CLS}><StatusBadge status={s.status} type="settlement" /></td>
+                    <td className={TD_CLS}>
                       <button type="button" className="btn-g btn-sm" onClick={() => s.id && doView(s.id)}>View</button>
                       {s.status !== 'paid' && (
                         <button
                           type="button"
-                          className="btn-p btn-sm"
+                          className="btn-p btn-sm ml-[0.35rem]"
                           onClick={() => s.id && doPay(s.id)}
                           disabled={payingId === s.id}
-                          style={{ marginLeft: '.35rem' }}
                         >
                           {payingId === s.id ? 'Paying…' : confirmId === s.id ? 'Confirm?' : 'Pay'}
                         </button>
@@ -551,44 +551,32 @@ function SettlementsSection({ showToast }: SettlementsSectionProps): ReactNode {
       {detail && (
         <div
           onClick={() => setDetail(null)}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 1000, padding: '1.4rem',
-          }}
+          className="fixed inset-0 bg-[rgba(0,0,0,0.55)] flex items-center justify-center z-1000 p-[1.4rem]"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{
-              background: 'var(--gb-neutral-0)', borderRadius: 10, width: 'min(720px, 100%)',
-              maxHeight: '86vh', overflow: 'auto', padding: '1.2rem 1.4rem', position: 'relative',
-            }}
+            // width uses min(720px, 100%) which is not expressible as a static Tailwind class
+            style={{ width: 'min(720px, 100%)' }}
+            className="bg-neutral-0 rounded-lg max-h-[86vh] overflow-auto py-[1.2rem] px-[1.4rem] relative"
           >
             <button
               type="button"
               onClick={() => setDetail(null)}
-              style={{
-                position: 'absolute', top: '.6rem', right: '.8rem', background: 'transparent',
-                border: 0, fontSize: '1.4rem', cursor: 'pointer', color: 'var(--dim)',
-              }}
+              className="absolute top-[0.6rem] right-[0.8rem] bg-transparent border-0 text-[1.4rem] cursor-pointer text-dim"
               aria-label="Close"
             >
               ×
             </button>
-            <h2 style={{ margin: '0 0 .5rem 0' }}>Settlement Details</h2>
-            <div style={{ fontSize: '.78rem', color: 'var(--dim)', marginBottom: '.8rem' }} className="mono">
+            <h2 className="m-0 mb-2">Settlement Details</h2>
+            <div className="text-[0.78rem] text-dim mb-[0.8rem] mono">
               {detail.id}
             </div>
             {detail.loading ? (
-              <div style={{ color: 'var(--dim)' }}>Loading…</div>
+              <div className="text-dim">Loading…</div>
             ) : detail.err ? (
               <SectionError message={detail.err} onRetry={() => doView(detail.id)} />
             ) : (
-              <pre style={{
-                margin: 0, fontSize: '.75rem', lineHeight: 1.5,
-                background: 'var(--ink3)', padding: '1rem', borderRadius: 6,
-                overflow: 'auto', maxHeight: '60vh',
-              }}>
+              <pre className="m-0 text-[0.75rem] leading-normal bg-ink3 p-4 rounded-md overflow-auto max-h-[60vh]">
                 {JSON.stringify(detail.data, null, 2)}
               </pre>
             )}
@@ -632,33 +620,33 @@ function PaymentsSection(): ReactNode {
         <div className="cb"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={tableStyle}>
+          <div className="overflow-x-auto">
+            <table className={TABLE_CLS}>
               <thead>
-                <tr style={trHead}>
-                  <th style={th}>Date</th>
-                  <th style={th}>Order #</th>
-                  <th style={th}>Amount</th>
-                  <th style={th}>Method</th>
-                  <th style={th}>Razorpay ID</th>
-                  <th style={th}>Status</th>
+                <tr className={TR_HEAD_CLS}>
+                  <th className={TH_CLS}>Date</th>
+                  <th className={TH_CLS}>Order #</th>
+                  <th className={TH_CLS}>Amount</th>
+                  <th className={TH_CLS}>Method</th>
+                  <th className={TH_CLS}>Razorpay ID</th>
+                  <th className={TH_CLS}>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={6} className={EMPTY_CELL_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={6} style={emptyCell}>No payments</td></tr>
+                  <tr><td colSpan={6} className={EMPTY_CELL_CLS}>No payments</td></tr>
                 ) : rows.map((p, i) => (
-                  <tr key={p.id || i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                    <td style={td}>{fmtDate(p.date || p.created_at)}</td>
-                    <td style={td} className="mono">{p.order_id || '-'}</td>
-                    <td style={td}>{fmtINR(p.amount_rs)}</td>
-                    <td style={td}>{p.method || '-'}</td>
-                    <td style={{ ...td, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="mono">
+                  <tr key={p.id || i} className="border-b border-rim">
+                    <td className={TD_CLS}>{fmtDate(p.date || p.created_at)}</td>
+                    <td className={`${TD_CLS} mono`}>{p.order_id || '-'}</td>
+                    <td className={TD_CLS}>{fmtINR(p.amount_rs)}</td>
+                    <td className={TD_CLS}>{p.method || '-'}</td>
+                    <td className={`${TD_CLS} max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap mono`}>
                       {p.razorpay_payment_id || '-'}
                     </td>
-                    <td style={td}><StatusBadge status={p.status} type="payment" /></td>
+                    <td className={TD_CLS}><StatusBadge status={p.status} type="payment" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -704,35 +692,35 @@ function RefundsSection(): ReactNode {
         <div className="cb"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={tableStyle}>
+          <div className="overflow-x-auto">
+            <table className={TABLE_CLS}>
               <thead>
-                <tr style={trHead}>
-                  <th style={th}>Date</th>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>Order #</th>
-                  <th style={th}>Amount</th>
-                  <th style={th}>Reason</th>
-                  <th style={th}>Razorpay Refund ID</th>
-                  <th style={th}>Status</th>
+                <tr className={TR_HEAD_CLS}>
+                  <th className={TH_CLS}>Date</th>
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>Order #</th>
+                  <th className={TH_CLS}>Amount</th>
+                  <th className={TH_CLS}>Reason</th>
+                  <th className={TH_CLS}>Razorpay Refund ID</th>
+                  <th className={TH_CLS}>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CELL_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={7} style={emptyCell}>No refunds</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CELL_CLS}>No refunds</td></tr>
                 ) : rows.map((r, i) => (
-                  <tr key={r.id || i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                    <td style={td}>{fmtDate(r.date || r.created_at)}</td>
-                    <td style={td}>{r.restaurant_name || '-'}</td>
-                    <td style={td} className="mono">{r.order_id || '-'}</td>
-                    <td style={td}>{fmtINR(r.amount_rs)}</td>
-                    <td style={td}>{r.reason || '-'}</td>
-                    <td style={{ ...td, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} className="mono">
+                  <tr key={r.id || i} className="border-b border-rim">
+                    <td className={TD_CLS}>{fmtDate(r.date || r.created_at)}</td>
+                    <td className={TD_CLS}>{r.restaurant_name || '-'}</td>
+                    <td className={`${TD_CLS} mono`}>{r.order_id || '-'}</td>
+                    <td className={TD_CLS}>{fmtINR(r.amount_rs)}</td>
+                    <td className={TD_CLS}>{r.reason || '-'}</td>
+                    <td className={`${TD_CLS} max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap mono`}>
                       {r.razorpay_refund_id || '-'}
                     </td>
-                    <td style={td}><StatusBadge status={r.status} type="refund" /></td>
+                    <td className={TD_CLS}><StatusBadge status={r.status} type="refund" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -800,9 +788,9 @@ function TaxSection({ period, showToast }: TaxSectionProps): ReactNode {
 
   return (
     <>
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0 }}>TDS Filing</h3>
+      <div className="card mb-4">
+        <div className="ch justify-between">
+          <h3 className="m-0">TDS Filing</h3>
           <button
             type="button"
             className="btn-g btn-sm"
@@ -812,35 +800,35 @@ function TaxSection({ period, showToast }: TaxSectionProps): ReactNode {
             {downloading === 'tds' ? 'Downloading…' : 'Download TDS Report'}
           </button>
         </div>
-        <div className="cb" style={{ fontSize: '.85rem' }}>
+        <div className="cb text-[0.85rem]">
           <strong>Quarterly TDS Summary:</strong>{' '}
           Total Gross Payouts: {fmtINR(tds.total_gross_rs)} |{' '}
           TDS Deducted (@1%): {fmtINR(tds.total_tds_rs)} |{' '}
           Restaurants: {tds.restaurant_count || 0}
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={tableStyle}>
+        <div className="overflow-x-auto">
+          <table className={TABLE_CLS}>
             <thead>
-              <tr style={trHead}>
-                <th style={th}>Restaurant</th>
-                <th style={th}>PAN</th>
-                <th style={th}>Gross Payouts</th>
-                <th style={th}>TDS @1%</th>
-                <th style={th}>Net Paid</th>
+              <tr className={TR_HEAD_CLS}>
+                <th className={TH_CLS}>Restaurant</th>
+                <th className={TH_CLS}>PAN</th>
+                <th className={TH_CLS}>Gross Payouts</th>
+                <th className={TH_CLS}>TDS @1%</th>
+                <th className={TH_CLS}>Net Paid</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} style={emptyCell}>Loading…</td></tr>
+                <tr><td colSpan={5} className={EMPTY_CELL_CLS}>Loading…</td></tr>
               ) : tdsRows.length === 0 ? (
-                <tr><td colSpan={5} style={emptyCell}>No TDS data</td></tr>
+                <tr><td colSpan={5} className={EMPTY_CELL_CLS}>No TDS data</td></tr>
               ) : tdsRows.map((r, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                  <td style={td}>{r.restaurant_name || '-'}</td>
-                  <td style={td} className="mono">{r.pan || '-'}</td>
-                  <td style={td}>{fmtINR(r.gross_rs)}</td>
-                  <td style={td}>{fmtINR(r.tds_rs)}</td>
-                  <td style={td}>{fmtINR(r.net_rs)}</td>
+                <tr key={i} className="border-b border-rim">
+                  <td className={TD_CLS}>{r.restaurant_name || '-'}</td>
+                  <td className={`${TD_CLS} mono`}>{r.pan || '-'}</td>
+                  <td className={TD_CLS}>{fmtINR(r.gross_rs)}</td>
+                  <td className={TD_CLS}>{fmtINR(r.tds_rs)}</td>
+                  <td className={TD_CLS}>{fmtINR(r.net_rs)}</td>
                 </tr>
               ))}
             </tbody>
@@ -849,8 +837,8 @@ function TaxSection({ period, showToast }: TaxSectionProps): ReactNode {
       </div>
 
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0 }}>GST Filing</h3>
+        <div className="ch justify-between">
+          <h3 className="m-0">GST Filing</h3>
           <button
             type="button"
             className="btn-g btn-sm"
@@ -860,36 +848,36 @@ function TaxSection({ period, showToast }: TaxSectionProps): ReactNode {
             {downloading === 'gst' ? 'Downloading…' : 'Download GSTR-1 Data'}
           </button>
         </div>
-        <div className="cb" style={{ fontSize: '.85rem' }}>
+        <div className="cb text-[0.85rem]">
           <strong>Monthly Platform Fee GST:</strong>{' '}
           Total Platform Fees: {fmtINR(gst.total_fees_rs)} |{' '}
           CGST (9%): {fmtINR(gst.cgst_rs)} |{' '}
           SGST (9%): {fmtINR(gst.sgst_rs)} |{' '}
           Total GST: {fmtINR(gst.total_gst_rs)}
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={tableStyle}>
+        <div className="overflow-x-auto">
+          <table className={TABLE_CLS}>
             <thead>
-              <tr style={trHead}>
-                <th style={th}>Month</th>
-                <th style={th}>Platform Fees</th>
-                <th style={th}>CGST (9%)</th>
-                <th style={th}>SGST (9%)</th>
-                <th style={th}>Total GST</th>
+              <tr className={TR_HEAD_CLS}>
+                <th className={TH_CLS}>Month</th>
+                <th className={TH_CLS}>Platform Fees</th>
+                <th className={TH_CLS}>CGST (9%)</th>
+                <th className={TH_CLS}>SGST (9%)</th>
+                <th className={TH_CLS}>Total GST</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={5} style={emptyCell}>Loading…</td></tr>
+                <tr><td colSpan={5} className={EMPTY_CELL_CLS}>Loading…</td></tr>
               ) : gstMonths.length === 0 ? (
-                <tr><td colSpan={5} style={emptyCell}>No GST data</td></tr>
+                <tr><td colSpan={5} className={EMPTY_CELL_CLS}>No GST data</td></tr>
               ) : gstMonths.map((m, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                  <td style={td}>{m.month || '-'}</td>
-                  <td style={td}>{fmtINR(m.fees_rs)}</td>
-                  <td style={td}>{fmtINR(m.cgst_rs)}</td>
-                  <td style={td}>{fmtINR(m.sgst_rs)}</td>
-                  <td style={td}>{fmtINR(m.total_gst_rs)}</td>
+                <tr key={i} className="border-b border-rim">
+                  <td className={TD_CLS}>{m.month || '-'}</td>
+                  <td className={TD_CLS}>{fmtINR(m.fees_rs)}</td>
+                  <td className={TD_CLS}>{fmtINR(m.cgst_rs)}</td>
+                  <td className={TD_CLS}>{fmtINR(m.sgst_rs)}</td>
+                  <td className={TD_CLS}>{fmtINR(m.total_gst_rs)}</td>
                 </tr>
               ))}
             </tbody>
@@ -912,7 +900,7 @@ interface PagerProps {
 function Pager({ page, rows, total, onPage, limit, disabled }: PagerProps): ReactNode {
   const pages = useMemo(() => Math.max(1, Math.ceil((total || 0) / limit)), [total, limit]);
   return (
-    <div className="cb" style={{ display: 'flex', gap: '.6rem', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="cb flex gap-[0.6rem] items-center justify-center">
       <button
         type="button"
         className="btn-g btn-sm"
@@ -921,7 +909,7 @@ function Pager({ page, rows, total, onPage, limit, disabled }: PagerProps): Reac
       >
         ← Prev
       </button>
-      <span style={{ fontSize: '.8rem', color: 'var(--dim)' }}>Page {page} / {pages}</span>
+      <span className="text-[0.8rem] text-dim">Page {page} / {pages}</span>
       <button
         type="button"
         className="btn-g btn-sm"
@@ -930,7 +918,7 @@ function Pager({ page, rows, total, onPage, limit, disabled }: PagerProps): Reac
       >
         Next →
       </button>
-      <span style={{ fontSize: '.75rem', color: 'var(--dim)', marginLeft: '.6rem' }}>{total} total</span>
+      <span className="text-[0.75rem] text-dim ml-[0.6rem]">{total} total</span>
     </div>
   );
 }

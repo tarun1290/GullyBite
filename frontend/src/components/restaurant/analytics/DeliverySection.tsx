@@ -44,7 +44,7 @@ export default function DeliverySection({ dateRange }: DeliverySectionProps) {
           <SectionError message={error} onRetry={refetch} />
         ) : (
           <>
-            <div className="stats" style={{ marginBottom: '1rem' }}>
+            <div className="stats mb-4">
               <div className="stat">
                 <div className="stat-l">Avg Delivery Time</div>
                 <div className="stat-v">
@@ -62,14 +62,14 @@ export default function DeliverySection({ dateRange }: DeliverySectionProps) {
                 <div className="stat-v">{data?.delivered_count ?? (loading ? '…' : 0)}</div>
               </div>
             </div>
-            <table className="tbl" style={{ fontSize: '.8rem' }}>
+            <table className="tbl text-[0.8rem]">
               <thead>
                 <tr><th>Branch</th><th>Orders</th><th>Revenue</th></tr>
               </thead>
               <tbody>
                 {branches.length === 0 ? (
                   <tr>
-                    <td colSpan={3} style={{ color: 'var(--dim)', textAlign: 'center' }}>No data yet</td>
+                    <td colSpan={3} className="text-dim text-center">No data yet</td>
                   </tr>
                 ) : (
                   branches.map((b, idx) => (

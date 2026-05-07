@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
@@ -40,28 +39,20 @@ interface PendingAction {
   name: string;
 }
 
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.6rem .7rem', verticalAlign: 'top' };
-const sub: CSSProperties = { fontSize: '.72rem', color: 'var(--dim)' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const SUB_CLS = 'text-[0.72rem] text-dim';
+const EMPTY_CLS = 'p-6 text-center text-dim';
 
 interface StatusBadgeProps { status?: string }
 
 function StatusBadge({ status }: StatusBadgeProps) {
-  const common: CSSProperties = {
-    fontSize: '.68rem',
-    fontWeight: 700,
-    padding: '.12rem .45rem',
-    borderRadius: 6,
-    textTransform: 'uppercase',
-    letterSpacing: '.03em',
-    color: 'var(--gb-neutral-0)',
-  };
+  const COMMON = 'text-[0.68rem] font-bold py-[0.12rem] px-[0.45rem] rounded-md uppercase tracking-[0.03em] text-neutral-0';
   if (status === 'approved')
-    return <span style={{ ...common, background: 'var(--gb-wa-500)' }}>Approved</span>;
+    return <span className={`${COMMON} bg-wa-500`}>Approved</span>;
   if (status === 'rejected')
-    return <span style={{ ...common, background: 'var(--gb-red-500)' }}>Rejected</span>;
-  return <span style={{ ...common, background: 'var(--gb-amber-500)' }}>Pending</span>;
+    return <span className={`${COMMON} bg-red-500`}>Rejected</span>;
+  return <span className={`${COMMON} bg-amber-500`}>Pending</span>;
 }
 
 interface VerifiedPillProps { verified?: boolean }
@@ -69,7 +60,7 @@ interface VerifiedPillProps { verified?: boolean }
 function VerifiedPill({ verified }: VerifiedPillProps) {
   if (verified) {
     return (
-      <span style={{ fontSize: '.66rem', color: 'var(--gb-wa-500)', fontWeight: 700 }}>
+      <span className="text-[0.66rem] text-wa-500 font-bold">
         ✓ Verified
       </span>
     );
@@ -158,15 +149,14 @@ export default function AdminApplicationsPage() {
   return (
     <div id="pg-applications">
       <div className="card">
-        <div className="ch" style={{ gap: '.6rem', flexWrap: 'wrap' }}>
+        <div className="ch gap-[0.6rem] flex-wrap">
           <h3>Restaurant Applications</h3>
-          <span style={{ color: 'var(--dim)', fontSize: '.75rem' }}>
+          <span className="text-dim text-[0.75rem]">
             {loading ? '' : `${rows.length} record(s)${pendingCount ? ` · ${pendingCount} pending` : ''}`}
           </span>
           <button
             type="button"
-            className="btn-g btn-sm"
-            style={{ marginLeft: 'auto' }}
+            className="btn-g btn-sm ml-auto"
             onClick={load}
             disabled={loading}
           >
@@ -179,114 +169,110 @@ export default function AdminApplicationsPage() {
             <SectionError message={err} onRetry={load} />
           </div>
         ) : (
-          <div className="cb" style={{ overflowX: 'auto', padding: 0 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="cb overflow-x-auto p-0">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', borderBottom: '1px solid var(--rim)' }}>
-                  <th style={th}>Brand / Business</th>
-                  <th style={th}>Contact</th>
-                  <th style={th}>GST</th>
-                  <th style={th}>FSSAI</th>
-                  <th style={th}>Type</th>
-                  <th style={th}>Submitted</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Actions</th>
+                <tr className="bg-ink border-b border-rim">
+                  <th className={TH_CLS}>Brand / Business</th>
+                  <th className={TH_CLS}>Contact</th>
+                  <th className={TH_CLS}>GST</th>
+                  <th className={TH_CLS}>FSSAI</th>
+                  <th className={TH_CLS}>Type</th>
+                  <th className={TH_CLS}>Submitted</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={8} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={8} style={emptyCell}>No applications</td></tr>
+                  <tr><td colSpan={8} className={EMPTY_CLS}>No applications</td></tr>
                 ) : (
                   rows.map((r) => {
                     const isPendingRow = pending?.id === r.id;
                     const busy = rowBusy === r.id;
                     return (
                       <Fragment key={r.id}>
-                        <tr style={{ borderBottom: '1px solid var(--rim)' }}>
-                          <td style={td}>
+                        <tr className="border-b border-rim">
+                          <td className={TD_CLS}>
                             <strong>{r.brand_name || r.business_name || '—'}</strong>
                             {r.registered_business_name && (
-                              <div style={sub}>{r.registered_business_name}</div>
+                              <div className={SUB_CLS}>{r.registered_business_name}</div>
                             )}
                             {r.store_url && (
                               <a
                                 href={r.store_url}
                                 target="_blank"
                                 rel="noreferrer"
-                                style={{ fontSize: '.72rem', color: 'var(--acc)' }}
+                                className="text-[0.72rem] text-acc"
                               >Store ↗</a>
                             )}
                           </td>
-                          <td style={td}>
+                          <td className={TD_CLS}>
                             <div>{r.owner_name || '—'}</div>
-                            <div style={sub}>{r.phone || ''}</div>
-                            <div style={sub}>{r.email || ''}</div>
+                            <div className={SUB_CLS}>{r.phone || ''}</div>
+                            <div className={SUB_CLS}>{r.email || ''}</div>
                           </td>
-                          <td style={td}>
+                          <td className={TD_CLS}>
                             {r.gst_number ? (
                               <>
-                                <div style={{ fontSize: '.8rem' }}>{r.gst_number}</div>
+                                <div className="text-[0.8rem]">{r.gst_number}</div>
                                 {r.gst_verified ? (
                                   <VerifiedPill verified />
                                 ) : (
                                   <button
                                     type="button"
-                                    className="btn-p btn-sm"
-                                    style={{ fontSize: '.66rem', padding: '.18rem .5rem', marginTop: '.2rem' }}
+                                    className="btn-p btn-sm text-[0.66rem] py-[0.18rem] px-2 mt-[0.2rem]"
                                     disabled={busy}
                                     onClick={() => doVerify(r, 'gst')}
                                   >Verify</button>
                                 )}
                               </>
                             ) : (
-                              <span style={{ color: 'var(--dim)' }}>—</span>
+                              <span className="text-dim">—</span>
                             )}
                           </td>
-                          <td style={td}>
+                          <td className={TD_CLS}>
                             {r.fssai_license ? (
                               <>
-                                <div style={{ fontSize: '.8rem' }}>{r.fssai_license}</div>
-                                <div style={sub}>Exp: {fmtDate(r.fssai_expiry)}</div>
+                                <div className="text-[0.8rem]">{r.fssai_license}</div>
+                                <div className={SUB_CLS}>Exp: {fmtDate(r.fssai_expiry)}</div>
                                 {r.fssai_verified ? (
                                   <VerifiedPill verified />
                                 ) : (
                                   <button
                                     type="button"
-                                    className="btn-p btn-sm"
-                                    style={{ fontSize: '.66rem', padding: '.18rem .5rem', marginTop: '.2rem' }}
+                                    className="btn-p btn-sm text-[0.66rem] py-[0.18rem] px-2 mt-[0.2rem]"
                                     disabled={busy}
                                     onClick={() => doVerify(r, 'fssai')}
                                   >Verify</button>
                                 )}
                               </>
                             ) : (
-                              <span style={{ color: 'var(--dim)' }}>—</span>
+                              <span className="text-dim">—</span>
                             )}
                           </td>
-                          <td style={td}>{TYPE_LABEL[r.restaurant_type || ''] || '—'}</td>
-                          <td style={td}>{fmtDate(r.submitted_at)}</td>
-                          <td style={td}>
+                          <td className={TD_CLS}>{TYPE_LABEL[r.restaurant_type || ''] || '—'}</td>
+                          <td className={TD_CLS}>{fmtDate(r.submitted_at)}</td>
+                          <td className={TD_CLS}>
                             <StatusBadge status={r.approval_status} />
                             {r.approval_notes && (
-                              <div style={sub}>{r.approval_notes}</div>
+                              <div className={SUB_CLS}>{r.approval_notes}</div>
                             )}
                           </td>
-                          <td style={td}>
+                          <td className={TD_CLS}>
                             {r.approval_status === 'pending' ? (
                               <>
                                 <button
                                   type="button"
-                                  className="btn-p btn-sm"
-                                  style={{ fontSize: '.72rem' }}
+                                  className="btn-p btn-sm text-[0.72rem]"
                                   disabled={busy}
                                   onClick={() => openConfirm(r, 'approve')}
                                 >Approve</button>
                                 <button
                                   type="button"
-                                  className="btn-del btn-sm"
-                                  style={{ marginLeft: '.3rem' }}
+                                  className="btn-del btn-sm ml-[0.3rem]"
                                   disabled={busy}
                                   onClick={() => openConfirm(r, 'reject')}
                                 >Reject</button>
@@ -294,8 +280,7 @@ export default function AdminApplicationsPage() {
                             ) : (
                               <button
                                 type="button"
-                                className="btn-g btn-sm"
-                                style={{ fontSize: '.72rem' }}
+                                className="btn-g btn-sm text-[0.72rem]"
                                 disabled={busy}
                                 onClick={() => openConfirm(r, 'approve')}
                               >Re-approve</button>
@@ -304,13 +289,13 @@ export default function AdminApplicationsPage() {
                         </tr>
                         {isPendingRow && pending && (
                           <tr>
-                            <td colSpan={8} style={{ background: 'var(--ink3)', padding: '.9rem 1rem' }}>
-                              <div style={{ fontWeight: 600, marginBottom: '.4rem' }}>
+                            <td colSpan={8} className="bg-ink3 py-[0.9rem] px-4">
+                              <div className="font-semibold mb-[0.4rem]">
                                 {pending.action === 'approve'
                                   ? `Approve "${pending.name}"?`
                                   : `Reject "${pending.name}"?`}
                               </div>
-                              <label style={{ fontSize: '.74rem', color: 'var(--dim)', display: 'block', marginBottom: '.3rem' }}>
+                              <label className="text-[0.74rem] text-dim block mb-[0.3rem]">
                                 {pending.action === 'approve'
                                   ? 'Notes (optional)'
                                   : 'Rejection reason (required)'}
@@ -324,17 +309,9 @@ export default function AdminApplicationsPage() {
                                     ? 'Welcome message or any notes…'
                                     : 'e.g. GST number invalid, FSSAI expired…'
                                 }
-                                style={{
-                                  width: '100%',
-                                  padding: '.5rem .7rem',
-                                  border: '1px solid var(--rim)',
-                                  borderRadius: 6,
-                                  fontSize: '.82rem',
-                                  fontFamily: 'inherit',
-                                  resize: 'vertical',
-                                }}
+                                className="w-full py-2 px-[0.7rem] border border-rim rounded-md text-[0.82rem] font-[inherit] resize-y"
                               />
-                              <div style={{ marginTop: '.6rem', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+                              <div className="mt-[0.6rem] flex gap-2 justify-end">
                                 <button
                                   type="button"
                                   className="btn-g btn-sm"
@@ -343,10 +320,7 @@ export default function AdminApplicationsPage() {
                                 >Cancel</button>
                                 <button
                                   type="button"
-                                  className={pending.action === 'approve' ? 'btn-p btn-sm' : 'btn-sm'}
-                                  style={pending.action === 'reject'
-                                    ? { background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }
-                                    : undefined}
+                                  className={pending.action === 'approve' ? 'btn-p btn-sm' : 'btn-sm bg-red-500 text-neutral-0'}
                                   onClick={doConfirm}
                                   disabled={busy}
                                 >

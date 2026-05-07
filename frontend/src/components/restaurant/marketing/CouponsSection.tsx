@@ -117,30 +117,25 @@ function CouponRow({ coupon, onChanged }: CouponRowProps) {
     : `${coupon.usage_count ?? 0} / ∞`;
 
   return (
-    <tr style={{ borderBottom: '1px solid var(--rim)' }}>
-      <td style={{ padding: '.65rem 1rem', fontFamily: 'monospace', fontWeight: 700, letterSpacing: '.05em' }}>
+    <tr className="border-b border-rim">
+      <td className="py-[0.65rem] px-4 font-mono font-bold tracking-wider">
         {coupon.code}
       </td>
-      <td style={{ padding: '.65rem 1rem' }}>{discountLabel(coupon)}</td>
-      <td style={{ padding: '.65rem 1rem' }}>₹{parseFloat(String(coupon.min_order_rs || 0)).toFixed(0)}</td>
-      <td style={{ padding: '.65rem 1rem' }}>{usedLabel}</td>
-      <td style={{ padding: '.65rem 1rem', fontSize: '.8rem' }}>
+      <td className="py-[0.65rem] px-4">{discountLabel(coupon)}</td>
+      <td className="py-[0.65rem] px-4">₹{parseFloat(String(coupon.min_order_rs || 0)).toFixed(0)}</td>
+      <td className="py-[0.65rem] px-4">{usedLabel}</td>
+      <td className="py-[0.65rem] px-4 text-[0.8rem]">
         {validFrom} → {validUntil}
       </td>
-      <td style={{ padding: '.65rem 1rem' }}>
-        <span style={{ fontSize: '.78rem', fontWeight: 600, color: isActive ? '#22c55e' : '#6b7280' }}>
+      <td className="py-[0.65rem] px-4">
+        <span className={`text-[0.78rem] font-semibold ${isActive ? 'text-[#22c55e]' : 'text-[#6b7280]'}`}>
           {isActive ? 'Active' : 'Inactive'}
         </span>
       </td>
-      <td style={{ padding: '.65rem 1rem', display: 'flex', gap: '.5rem' }}>
+      <td className="py-[0.65rem] px-4 flex gap-2">
         <button
           type="button"
-          className="btn btn-sm"
-          style={{
-            padding: '.25rem .6rem',
-            fontSize: '.78rem',
-            background: isActive ? '#374151' : 'var(--acc)',
-          }}
+          className={`btn btn-sm py-1 px-[0.6rem] text-[0.78rem] ${isActive ? 'bg-[#374151]' : 'bg-acc'}`}
           disabled={toggling}
           onClick={handleToggle}
         >
@@ -150,8 +145,7 @@ function CouponRow({ coupon, onChanged }: CouponRowProps) {
           <>
             <button
               type="button"
-              className="btn-g btn-sm"
-              style={{ padding: '.25rem .5rem', fontSize: '.76rem' }}
+              className="btn-g btn-sm py-1 px-2 text-[0.76rem]"
               disabled={deleting}
               onClick={() => setConfirmDel(false)}
             >
@@ -159,8 +153,7 @@ function CouponRow({ coupon, onChanged }: CouponRowProps) {
             </button>
             <button
               type="button"
-              className="btn btn-sm"
-              style={{ padding: '.25rem .6rem', fontSize: '.78rem', background: '#7f1d1d', color: '#fca5a5' }}
+              className="btn btn-sm py-1 px-[0.6rem] text-[0.78rem] bg-[#7f1d1d] text-[#fca5a5]"
               disabled={deleting}
               onClick={handleDelete}
             >
@@ -170,8 +163,7 @@ function CouponRow({ coupon, onChanged }: CouponRowProps) {
         ) : (
           <button
             type="button"
-            className="btn btn-sm"
-            style={{ padding: '.25rem .6rem', fontSize: '.78rem', background: '#7f1d1d', color: '#fca5a5' }}
+            className="btn btn-sm py-1 px-[0.6rem] text-[0.78rem] bg-[#7f1d1d] text-[#fca5a5]"
             onClick={() => setConfirmDel(true)}
           >
             Delete
@@ -231,16 +223,15 @@ export default function CouponsSection() {
 
   return (
     <div>
-      <div className="card" style={{ marginBottom: '1.2rem' }}>
+      <div className="card mb-[1.2rem]">
         <div className="ch"><h3>Create Coupon</h3></div>
         <div className="cb">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
               <label className="lbl">Coupon Code *</label>
               <input
-                className="inp"
+                className="inp uppercase"
                 placeholder="e.g. WELCOME20"
-                style={{ textTransform: 'uppercase' }}
                 value={form.code}
                 onChange={set('code')}
               />
@@ -264,7 +255,7 @@ export default function CouponsSection() {
               />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
               <label className="lbl">Min Order Amount (₹)</label>
               <input
@@ -301,7 +292,7 @@ export default function CouponsSection() {
               />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+          <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
               <label className="lbl">Valid From</label>
               <input className="inp" type="date" value={form.from} onChange={set('from')} />
@@ -310,11 +301,10 @@ export default function CouponsSection() {
               <label className="lbl">Valid Until</label>
               <input className="inp" type="date" value={form.until} onChange={set('until')} />
             </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <div className="flex items-end">
               <button
                 type="button"
-                className="btn"
-                style={{ width: '100%' }}
+                className="btn w-full"
                 disabled={submitting}
                 onClick={handleCreate}
               >
@@ -335,35 +325,35 @@ export default function CouponsSection() {
       </div>
 
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="ch justify-between items-center">
           <h3>Active Coupons</h3>
-          <span style={{ fontSize: '.8rem', color: 'var(--dim)' }}>
+          <span className="text-[0.8rem] text-dim">
             Customers apply these during WhatsApp checkout
           </span>
         </div>
-        <div className="cb" style={{ padding: 0 }}>
+        <div className="cb p-0">
           {error ? (
-            <div style={{ padding: '1rem' }}>
+            <div className="p-4">
               <SectionError message={error} onRetry={refetch} />
             </div>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.88rem' }}>
+            <table className="w-full border-collapse text-[0.88rem]">
               <thead>
-                <tr style={{ background: 'var(--rim)', textAlign: 'left' }}>
-                  <th style={{ padding: '.7rem 1rem' }}>Code</th>
-                  <th style={{ padding: '.7rem 1rem' }}>Discount</th>
-                  <th style={{ padding: '.7rem 1rem' }}>Min Order</th>
-                  <th style={{ padding: '.7rem 1rem' }}>Used / Limit</th>
-                  <th style={{ padding: '.7rem 1rem' }}>Validity</th>
-                  <th style={{ padding: '.7rem 1rem' }}>Status</th>
-                  <th style={{ padding: '.7rem 1rem' }}>Actions</th>
+                <tr className="bg-rim text-left">
+                  <th className="py-[0.7rem] px-4">Code</th>
+                  <th className="py-[0.7rem] px-4">Discount</th>
+                  <th className="py-[0.7rem] px-4">Min Order</th>
+                  <th className="py-[0.7rem] px-4">Used / Limit</th>
+                  <th className="py-[0.7rem] px-4">Validity</th>
+                  <th className="py-[0.7rem] px-4">Status</th>
+                  <th className="py-[0.7rem] px-4">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && !data ? (
-                  <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--dim)' }}>Loading…</td></tr>
+                  <tr><td colSpan={7} className="p-8 text-center text-dim">Loading…</td></tr>
                 ) : coupons.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: '2rem', textAlign: 'center', color: 'var(--dim)' }}>
+                  <tr><td colSpan={7} className="p-8 text-center text-dim">
                     No coupons yet — create one above
                   </td></tr>
                 ) : (

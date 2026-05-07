@@ -103,9 +103,11 @@ export default function AdminPlatformAnalyticsPage() {
   const counts: SnapshotCounts = snapshot?.counts || {};
   const top: TopRestaurant[] = snapshot?.top_restaurants_by_roi || [];
 
+  const LOAD_CLS = 'py-4 text-slate-400 text-[0.85rem]';
+
   return (
     <div id="tab-platform-marketing">
-      <div className="chips" style={{ marginBottom: '1.1rem' }}>
+      <div className="chips mb-[1.1rem]">
         {PERIODS.map(([val, label]) => (
           <button
             key={val}
@@ -119,32 +121,16 @@ export default function AdminPlatformAnalyticsPage() {
       </div>
 
       {error && (
-        <div
-          style={{
-            background: 'var(--gb-red-100)',
-            border: '1px solid var(--gb-red-200)',
-            borderRadius: '.5rem',
-            padding: '.75rem 1rem',
-            fontSize: '.85rem',
-            color: 'var(--gb-red-900)',
-            marginBottom: '1.1rem',
-          }}
-        >
+        <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-[0.85rem] text-red-900 mb-[1.1rem]">
           {error}
         </div>
       )}
 
       <Card title="Platform headline">
         {loading ? (
-          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>Loading…</div>
+          <div className={LOAD_CLS}>Loading…</div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-              gap: '.7rem',
-            }}
-          >
+          <div className="grid grid-cols-3 gap-[0.7rem]">
             <StatCard label="Campaigns sent" value={fmtNum(t.campaigns)} />
             <StatCard label="Messages delivered" value={fmtPct(t.delivery_rate)} />
             <StatCard label="Conversions" value={fmtNum(t.conversions)} />
@@ -158,19 +144,13 @@ export default function AdminPlatformAnalyticsPage() {
         )}
       </Card>
 
-      <div style={{ height: '1.1rem' }} />
+      <div className="h-[1.1rem]" />
 
       <Card title="Marketplace activity">
         {loading ? (
-          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>Loading…</div>
+          <div className={LOAD_CLS}>Loading…</div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-              gap: '.7rem',
-            }}
-          >
+          <div className="grid grid-cols-3 gap-[0.7rem]">
             <StatCard label="Paid orders" value={fmtNum(t.paid_orders)} />
             <StatCard label="Paid revenue" value={fmtRs(t.paid_revenue_rs)} />
             <StatCard label="Transacting restaurants" value={fmtNum(t.transacting_restaurants)} />
@@ -181,20 +161,20 @@ export default function AdminPlatformAnalyticsPage() {
         )}
       </Card>
 
-      <div style={{ height: '1.1rem' }} />
+      <div className="h-[1.1rem]" />
 
       <Card title="Top 5 restaurants by ROI">
         {loading ? (
-          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>Loading…</div>
+          <div className={LOAD_CLS}>Loading…</div>
         ) : top.length === 0 ? (
-          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>
+          <div className={LOAD_CLS}>
             No restaurants with marketing spend in this period.
           </div>
         ) : (
-          <table className="data-table" style={{ width: '100%', fontSize: '.85rem' }}>
+          <table className="data-table w-full text-[0.85rem]">
             <thead>
               <tr>
-                <th style={{ textAlign: 'left' }}>Restaurant</th>
+                <th className="text-left">Restaurant</th>
                 <th>Campaigns</th>
                 <th>Revenue</th>
                 <th>Spend</th>
@@ -204,9 +184,9 @@ export default function AdminPlatformAnalyticsPage() {
             <tbody>
               {top.map((r) => (
                 <tr key={r.restaurant_id}>
-                  <td style={{ textAlign: 'left' }}>
+                  <td className="text-left">
                     {r.restaurant_name}
-                    <div style={{ fontSize: '.7rem', color: 'var(--gb-slate-400)' }}>
+                    <div className="text-[0.7rem] text-slate-400">
                       <code>{r.restaurant_id}</code>
                     </div>
                   </td>
@@ -221,19 +201,13 @@ export default function AdminPlatformAnalyticsPage() {
         )}
       </Card>
 
-      <div style={{ height: '1.1rem' }} />
+      <div className="h-[1.1rem]" />
 
       <Card title="Adoption">
         {loading ? (
-          <div style={{ padding: '1rem 0', color: 'var(--gb-slate-400)', fontSize: '.85rem' }}>Loading…</div>
+          <div className={LOAD_CLS}>Loading…</div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              gap: '.7rem',
-            }}
-          >
+          <div className="grid grid-cols-2 gap-[0.7rem]">
             <StatCard
               label="Restaurants with campaigns enabled"
               value={fmtNum(counts.restaurants_with_campaigns_enabled)}

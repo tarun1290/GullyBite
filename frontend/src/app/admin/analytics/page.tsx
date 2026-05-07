@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { ChartData, ChartOptions, ChartDataset } from 'chart.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StatCard from '../../../components/StatCard';
@@ -109,19 +109,19 @@ function ChangePill({ value }: ChangePillProps): ReactNode {
   if (value == null || value === 0) return null;
   const pos = value >= 0;
   return (
-    <span style={{ color: pos ? 'var(--gb-wa-500)' : 'var(--gb-red-500)' }}>
+    <span className={pos ? 'text-wa-500' : 'text-red-500'}>
       {' '}{pos ? '▲' : '▼'} {Math.abs(value)}%
     </span>
   );
 }
 
-const tableStyle: CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' };
-const trHead: CSSProperties = { background: 'var(--ink)', borderBottom: '1px solid var(--rim)' };
-const th: CSSProperties = { padding: '.6rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.55rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.28rem .5rem', fontSize: '.78rem' };
-const filterLbl: CSSProperties = { fontSize: '.68rem', color: 'var(--dim)', display: 'block', marginBottom: '.2rem' };
+const TABLE_CLS = 'w-full border-collapse text-[0.82rem]';
+const TR_HEAD_CLS = 'bg-ink border-b border-rim';
+const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.28rem] px-2 text-[0.78rem]';
+const FILTER_LBL_CLS = 'text-[0.68rem] text-dim block mb-[0.2rem]';
 
 export default function AdminAnalyticsPage() {
   const [periodDays, setPeriodDays] = useState<number>(7);
@@ -162,14 +162,10 @@ export default function AdminAnalyticsPage() {
 
   return (
     <div id="pg-analytics">
-      <div style={{
-        display: 'flex', gap: '.5rem', flexWrap: 'wrap', alignItems: 'end',
-        marginBottom: '1.2rem', padding: '.75rem 1rem',
-        background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 8,
-      }}>
+      <div className="flex gap-2 flex-wrap items-end mb-[1.2rem] py-3 px-4 bg-neutral-0 border border-rim rounded-lg">
         <div>
-          <label style={filterLbl}>Period</label>
-          <div style={{ display: 'flex', gap: '.3rem' }}>
+          <label className={FILTER_LBL_CLS}>Period</label>
+          <div className="flex gap-[0.3rem]">
             {PERIODS.map((d) => (
               <button
                 key={d}
@@ -183,40 +179,40 @@ export default function AdminAnalyticsPage() {
           </div>
         </div>
         <div>
-          <label style={filterLbl}>From</label>
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={input} />
+          <label className={FILTER_LBL_CLS}>From</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className={INPUT_CLS} />
         </div>
         <div>
-          <label style={filterLbl}>To</label>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={input} />
+          <label className={FILTER_LBL_CLS}>To</label>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className={INPUT_CLS} />
         </div>
         <div>
-          <label style={filterLbl}>City</label>
-          <select value={city} onChange={(e) => { setCity(e.target.value); setArea(''); }} style={input}>
+          <label className={FILTER_LBL_CLS}>City</label>
+          <select value={city} onChange={(e) => { setCity(e.target.value); setArea(''); }} className={INPUT_CLS}>
             <option value="">All Cities</option>
             {cities.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div>
-          <label style={filterLbl}>Area</label>
-          <select value={area} onChange={(e) => setArea(e.target.value)} style={input} disabled={!city}>
+          <label className={FILTER_LBL_CLS}>Area</label>
+          <select value={area} onChange={(e) => setArea(e.target.value)} className={INPUT_CLS} disabled={!city}>
             <option value="">All Areas</option>
             {areas.map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
         </div>
-        <button type="button" className="btn-g btn-sm" onClick={resetFilters} style={{ marginLeft: 'auto' }}>
+        <button type="button" className="btn-g btn-sm ml-auto" onClick={resetFilters}>
           Reset
         </button>
       </div>
 
       <OverviewKpis params={params} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem', marginBottom: '1.2rem' }}>
+      <div className="grid grid-cols-[2fr_1fr] gap-4 mb-[1.2rem]">
         <TimeseriesCard params={params} />
         <StatusCard params={params} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.2rem' }}>
+      <div className="grid grid-cols-2 gap-4 mb-[1.2rem]">
         <ByHourCard params={params} />
         <ByDayCard params={params} />
       </div>
@@ -225,7 +221,7 @@ export default function AdminAnalyticsPage() {
 
       <RestaurantRankingCard params={params} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.2rem' }}>
+      <div className="grid grid-cols-2 gap-4 mb-[1.2rem]">
         <SegmentsCard />
         <DeliveryCard params={params} />
       </div>
@@ -256,12 +252,12 @@ function OverviewKpis({ params }: ParamsProps): ReactNode {
 
   useEffect(() => { load(); }, [load]);
 
-  if (err) return <div style={{ marginBottom: '1.2rem' }}><SectionError message={err} onRetry={load} /></div>;
+  if (err) return <div className="mb-[1.2rem]"><SectionError message={err} onRetry={load} /></div>;
 
   const chg = d?.change || {};
 
   return (
-    <div className="stats" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', marginBottom: '1.2rem' }}>
+    <div className="stats grid-cols-[repeat(auto-fit,minmax(170px,1fr))] mb-[1.2rem]">
       <StatCard
         label="Total Orders"
         value={d ? (d.order_count ?? '—') : '—'}
@@ -300,10 +296,10 @@ function TimeseriesCard({ params }: ParamsProps): ReactNode {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card" style={{ padding: '1rem' }}>
-      <h3 style={{ fontSize: '.85rem', marginBottom: '.6rem' }}>Order Volume &amp; GMV</h3>
+    <div className="card p-4">
+      <h3 className="text-[0.85rem] mb-[0.6rem]">Order Volume &amp; GMV</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
-        <div style={{ color: 'var(--dim)' }}>Loading…</div>
+        <div className="text-dim">Loading…</div>
       ) : (
         <ChartCanvas
           type="bar"
@@ -349,10 +345,10 @@ function StatusCard({ params }: ParamsProps): ReactNode {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card" style={{ padding: '1rem' }}>
-      <h3 style={{ fontSize: '.85rem', marginBottom: '.6rem' }}>Order Status</h3>
+    <div className="card p-4">
+      <h3 className="text-[0.85rem] mb-[0.6rem]">Order Status</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
-        <div style={{ color: 'var(--dim)' }}>Loading…</div>
+        <div className="text-dim">Loading…</div>
       ) : (
         <ChartCanvas
           type="doughnut"
@@ -392,10 +388,10 @@ function ByHourCard({ params }: ParamsProps): ReactNode {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card" style={{ padding: '1rem' }}>
-      <h3 style={{ fontSize: '.85rem', marginBottom: '.6rem' }}>Orders by Hour</h3>
+    <div className="card p-4">
+      <h3 className="text-[0.85rem] mb-[0.6rem]">Orders by Hour</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
-        <div style={{ color: 'var(--dim)' }}>Loading…</div>
+        <div className="text-dim">Loading…</div>
       ) : (
         <ChartCanvas
           type="bar"
@@ -433,10 +429,10 @@ function ByDayCard({ params }: ParamsProps): ReactNode {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card" style={{ padding: '1rem' }}>
-      <h3 style={{ fontSize: '.85rem', marginBottom: '.6rem' }}>Orders by Day</h3>
+    <div className="card p-4">
+      <h3 className="text-[0.85rem] mb-[0.6rem]">Orders by Day</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
-        <div style={{ color: 'var(--dim)' }}>Loading…</div>
+        <div className="text-dim">Loading…</div>
       ) : (
         <ChartCanvas
           type="bar"
@@ -475,45 +471,42 @@ function CitiesCard({ params, onCityClick }: CitiesCardProps): ReactNode {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card" style={{ marginBottom: '1.2rem' }}>
+    <div className="card mb-[1.2rem]">
       <div className="ch"><h3>City Performance</h3></div>
       {err ? <div className="cb"><SectionError message={err} onRetry={load} /></div> : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={tableStyle}>
+        <div className="overflow-x-auto">
+          <table className={TABLE_CLS}>
             <thead>
-              <tr style={trHead}>
-                <th style={th}>City</th>
-                <th style={th}>Orders</th>
-                <th style={th}>GMV</th>
-                <th style={th}>Customers</th>
-                <th style={th}>Restaurants</th>
-                <th style={th}>AOV</th>
+              <tr className={TR_HEAD_CLS}>
+                <th className={TH_CLS}>City</th>
+                <th className={TH_CLS}>Orders</th>
+                <th className={TH_CLS}>GMV</th>
+                <th className={TH_CLS}>Customers</th>
+                <th className={TH_CLS}>Restaurants</th>
+                <th className={TH_CLS}>AOV</th>
               </tr>
             </thead>
             <tbody>
               {!rows ? (
-                <tr><td colSpan={6} style={emptyCell}>Loading…</td></tr>
+                <tr><td colSpan={6} className={EMPTY_CLS}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={6} style={emptyCell}>No data</td></tr>
+                <tr><td colSpan={6} className={EMPTY_CLS}>No data</td></tr>
               ) : rows.map((d, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                  <td style={td}>
+                <tr key={i} className="border-b border-rim">
+                  <td className={TD_CLS}>
                     <button
                       type="button"
                       onClick={() => onCityClick(d.city || '')}
-                      style={{
-                        background: 'transparent', border: 0, padding: 0, cursor: 'pointer',
-                        color: 'var(--acc)', fontWeight: 600,
-                      }}
+                      className="bg-transparent border-0 p-0 cursor-pointer text-acc font-semibold"
                     >
                       {d.city || '—'}
                     </button>
                   </td>
-                  <td style={td}>{d.order_count}</td>
-                  <td style={td}>{fmtRs(d.gmv)}</td>
-                  <td style={td}>{d.customer_count}</td>
-                  <td style={td}>{d.restaurant_count}</td>
-                  <td style={td}>{fmtRs(d.avg_order_value)}</td>
+                  <td className={TD_CLS}>{d.order_count}</td>
+                  <td className={TD_CLS}>{fmtRs(d.gmv)}</td>
+                  <td className={TD_CLS}>{d.customer_count}</td>
+                  <td className={TD_CLS}>{d.restaurant_count}</td>
+                  <td className={TD_CLS}>{fmtRs(d.avg_order_value)}</td>
                 </tr>
               ))}
             </tbody>
@@ -542,36 +535,36 @@ function RestaurantRankingCard({ params }: ParamsProps): ReactNode {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card" style={{ marginBottom: '1.2rem' }}>
+    <div className="card mb-[1.2rem]">
       <div className="ch"><h3>Restaurant Ranking</h3></div>
       {err ? <div className="cb"><SectionError message={err} onRetry={load} /></div> : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={tableStyle}>
+        <div className="overflow-x-auto">
+          <table className={TABLE_CLS}>
             <thead>
-              <tr style={trHead}>
-                <th style={th}>#</th>
-                <th style={th}>Restaurant</th>
-                <th style={th}>City</th>
-                <th style={th}>Orders</th>
-                <th style={th}>GMV</th>
-                <th style={th}>AOV</th>
-                <th style={th}>Customers</th>
+              <tr className={TR_HEAD_CLS}>
+                <th className={TH_CLS}>#</th>
+                <th className={TH_CLS}>Restaurant</th>
+                <th className={TH_CLS}>City</th>
+                <th className={TH_CLS}>Orders</th>
+                <th className={TH_CLS}>GMV</th>
+                <th className={TH_CLS}>AOV</th>
+                <th className={TH_CLS}>Customers</th>
               </tr>
             </thead>
             <tbody>
               {!rows ? (
-                <tr><td colSpan={7} style={emptyCell}>Loading…</td></tr>
+                <tr><td colSpan={7} className={EMPTY_CLS}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={7} style={emptyCell}>No data</td></tr>
+                <tr><td colSpan={7} className={EMPTY_CLS}>No data</td></tr>
               ) : rows.map((d, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                  <td style={{ ...td, fontWeight: 600 }}>{i + 1}</td>
-                  <td style={{ ...td, fontWeight: 600 }}>{d.name || '—'}</td>
-                  <td style={{ ...td, color: 'var(--dim)' }}>{d.city || '—'}</td>
-                  <td style={td}>{d.order_count}</td>
-                  <td style={{ ...td, fontWeight: 600, color: 'var(--gb-wa-500)' }}>{fmtRs(d.gmv)}</td>
-                  <td style={td}>{fmtRs(d.avg_order_value)}</td>
-                  <td style={td}>{d.customer_count}</td>
+                <tr key={i} className="border-b border-rim">
+                  <td className={`${TD_CLS} font-semibold`}>{i + 1}</td>
+                  <td className={`${TD_CLS} font-semibold`}>{d.name || '—'}</td>
+                  <td className={`${TD_CLS} text-dim`}>{d.city || '—'}</td>
+                  <td className={TD_CLS}>{d.order_count}</td>
+                  <td className={`${TD_CLS} font-semibold text-wa-500`}>{fmtRs(d.gmv)}</td>
+                  <td className={TD_CLS}>{fmtRs(d.avg_order_value)}</td>
+                  <td className={TD_CLS}>{d.customer_count}</td>
                 </tr>
               ))}
             </tbody>
@@ -600,10 +593,10 @@ function SegmentsCard(): ReactNode {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card" style={{ padding: '1rem' }}>
-      <h3 style={{ fontSize: '.85rem', marginBottom: '.6rem' }}>Customer Segments</h3>
+    <div className="card p-4">
+      <h3 className="text-[0.85rem] mb-[0.6rem]">Customer Segments</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
-        <div style={{ color: 'var(--dim)' }}>Loading…</div>
+        <div className="text-dim">Loading…</div>
       ) : (
         <ChartCanvas
           type="doughnut"
@@ -645,10 +638,10 @@ function DeliveryCard({ params }: ParamsProps): ReactNode {
   const hist = data?.histogram || [];
 
   return (
-    <div className="card" style={{ padding: '1rem' }}>
-      <h3 style={{ fontSize: '.85rem', marginBottom: '.6rem' }}>Delivery Time Distribution</h3>
+    <div className="card p-4">
+      <h3 className="text-[0.85rem] mb-[0.6rem]">Delivery Time Distribution</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
-        <div style={{ color: 'var(--dim)' }}>Loading…</div>
+        <div className="text-dim">Loading…</div>
       ) : (
         <ChartCanvas
           type="bar"
@@ -691,29 +684,29 @@ function TopCustomersCard({ params }: ParamsProps): ReactNode {
     <div className="card">
       <div className="ch"><h3>Top Customers by Spend</h3></div>
       {err ? <div className="cb"><SectionError message={err} onRetry={load} /></div> : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={tableStyle}>
+        <div className="overflow-x-auto">
+          <table className={TABLE_CLS}>
             <thead>
-              <tr style={trHead}>
-                <th style={th}>#</th>
-                <th style={th}>Customer</th>
-                <th style={th}>Phone</th>
-                <th style={th}>Orders</th>
-                <th style={th}>Total Spent</th>
+              <tr className={TR_HEAD_CLS}>
+                <th className={TH_CLS}>#</th>
+                <th className={TH_CLS}>Customer</th>
+                <th className={TH_CLS}>Phone</th>
+                <th className={TH_CLS}>Orders</th>
+                <th className={TH_CLS}>Total Spent</th>
               </tr>
             </thead>
             <tbody>
               {!rows ? (
-                <tr><td colSpan={5} style={emptyCell}>Loading…</td></tr>
+                <tr><td colSpan={5} className={EMPTY_CLS}>Loading…</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={5} style={emptyCell}>No data</td></tr>
+                <tr><td colSpan={5} className={EMPTY_CLS}>No data</td></tr>
               ) : rows.map((c, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                  <td style={{ ...td, fontWeight: 600 }}>{i + 1}</td>
-                  <td style={td}>{c.name || '—'}</td>
-                  <td style={{ ...td, fontSize: '.78rem', color: 'var(--dim)' }} className="mono">{c.phone || '—'}</td>
-                  <td style={td}>{c.order_count}</td>
-                  <td style={{ ...td, fontWeight: 600, color: 'var(--gb-wa-500)' }}>{fmtRs(c.total_spent)}</td>
+                <tr key={i} className="border-b border-rim">
+                  <td className={`${TD_CLS} font-semibold`}>{i + 1}</td>
+                  <td className={TD_CLS}>{c.name || '—'}</td>
+                  <td className={`${TD_CLS} text-[0.78rem] text-dim mono`}>{c.phone || '—'}</td>
+                  <td className={TD_CLS}>{c.order_count}</td>
+                  <td className={`${TD_CLS} font-semibold text-wa-500`}>{fmtRs(c.total_spent)}</td>
                 </tr>
               ))}
             </tbody>
@@ -761,34 +754,37 @@ function FunnelCard(): ReactNode {
   };
 
   return (
-    <div className="card" style={{ marginTop: '1.2rem' }}>
+    <div className="card mt-[1.2rem]">
       <div className="ch"><h3>Platform Conversion Funnel</h3></div>
       <div className="cb">
         {err ? <SectionError message={err} onRetry={load} /> : (
           <>
-            <div style={{ marginBottom: '1rem' }}>
+            <div className="mb-4">
               {!funnel ? (
-                <div style={{ color: 'var(--dim)' }}>Loading…</div>
+                <div className="text-dim">Loading…</div>
               ) : funnel.length === 0 ? (
-                <div style={{ color: 'var(--dim)' }}>No data</div>
+                <div className="text-dim">No data</div>
               ) : funnel.map((f, i) => {
                 const pct = Math.max(Number(f.pct) || 0, 2);
                 return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '.6rem', marginBottom: '.4rem' }}>
-                    <span style={{ width: 110, fontSize: '.78rem', fontWeight: 500, color: 'var(--dim)', textAlign: 'right' }}>
+                  <div key={i} className="flex items-center gap-[0.6rem] mb-[0.4rem]">
+                    <span className="w-[110px] text-[0.78rem] font-medium text-dim text-right">
                       {f.stage}
                     </span>
-                    <div style={{ flex: 1, background: 'var(--gb-slate-100)', borderRadius: 6, overflow: 'hidden', height: 28, position: 'relative' }}>
-                      <div style={{
-                        width: `${pct}%`, height: '100%',
-                        background: FUNNEL_COLORS[i] || 'var(--gb-slate-500)', borderRadius: 6,
-                        transition: 'width .4s',
-                      }} />
-                      <span style={{
-                        position: 'absolute', left: '.6rem', top: '50%',
-                        transform: 'translateY(-50%)', fontSize: '.72rem', fontWeight: 600,
-                        color: pct > 15 ? 'var(--gb-neutral-0)' : 'var(--gb-slate-800)',
-                      }}>
+                    <div className="flex-1 bg-slate-100 rounded-md overflow-hidden h-7 relative">
+                      <div
+                        className="h-full rounded-md transition-[width] duration-400"
+                        // width = stage % (clamped ≥2 for visibility); bg
+                        // is the per-stage colour from FUNNEL_COLORS by
+                        // index — both runtime-driven.
+                        style={{
+                          width: `${pct}%`,
+                          background: FUNNEL_COLORS[i] || 'var(--gb-slate-500)',
+                        }}
+                      />
+                      <span
+                        className={`absolute left-[0.6rem] top-1/2 -translate-y-1/2 text-[0.72rem] font-semibold ${pct > 15 ? 'text-neutral-0' : 'text-slate-800'}`}
+                      >
                         {f.count} ({f.pct}%)
                       </span>
                     </div>
@@ -797,33 +793,33 @@ function FunnelCard(): ReactNode {
               })}
             </div>
 
-            <h3 style={{ fontSize: '.88rem', margin: '1.2rem 0 .6rem' }}>Restaurant Comparison</h3>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={tableStyle}>
+            <h3 className="text-[0.88rem] mt-[1.2rem] mb-[0.6rem]">Restaurant Comparison</h3>
+            <div className="overflow-x-auto">
+              <table className={TABLE_CLS}>
                 <thead>
-                  <tr style={trHead}>
-                    <th style={th}>Restaurant</th>
-                    <th style={th}>Initiated</th>
-                    <th style={th}>Completed</th>
-                    <th style={th}>Rate</th>
-                    <th style={th}>Top Drop-off</th>
+                  <tr className={TR_HEAD_CLS}>
+                    <th className={TH_CLS}>Restaurant</th>
+                    <th className={TH_CLS}>Initiated</th>
+                    <th className={TH_CLS}>Completed</th>
+                    <th className={TH_CLS}>Rate</th>
+                    <th className={TH_CLS}>Top Drop-off</th>
                   </tr>
                 </thead>
                 <tbody>
                   {!restData ? (
-                    <tr><td colSpan={5} style={emptyCell}>Loading…</td></tr>
+                    <tr><td colSpan={5} className={EMPTY_CLS}>Loading…</td></tr>
                   ) : restData.length === 0 ? (
-                    <tr><td colSpan={5} style={emptyCell}>No data</td></tr>
+                    <tr><td colSpan={5} className={EMPTY_CLS}>No data</td></tr>
                   ) : restData.map((r, i) => {
                     const rate = r.completion_rate || 0;
-                    const color = rate >= 50 ? 'var(--gb-wa-500)' : rate >= 25 ? 'var(--gb-amber-500)' : 'var(--gb-red-500)';
+                    const rateCls = rate >= 50 ? 'text-wa-500' : rate >= 25 ? 'text-amber-500' : 'text-red-500';
                     return (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--rim)' }}>
-                        <td style={{ ...td, fontWeight: 500 }}>{r.restaurant_name || '—'}</td>
-                        <td style={td}>{r.total_initiated || 0}</td>
-                        <td style={td}>{r.completed || 0}</td>
-                        <td style={{ ...td, fontWeight: 700, color }}>{rate}%</td>
-                        <td style={{ ...td, fontSize: '.8rem', color: 'var(--dim)' }}>{topDropoff(r)}</td>
+                      <tr key={i} className="border-b border-rim">
+                        <td className={`${TD_CLS} font-medium`}>{r.restaurant_name || '—'}</td>
+                        <td className={TD_CLS}>{r.total_initiated || 0}</td>
+                        <td className={TD_CLS}>{r.completed || 0}</td>
+                        <td className={`${TD_CLS} font-bold ${rateCls}`}>{rate}%</td>
+                        <td className={`${TD_CLS} text-[0.8rem] text-dim`}>{topDropoff(r)}</td>
                       </tr>
                     );
                   })}

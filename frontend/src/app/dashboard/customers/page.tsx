@@ -79,19 +79,10 @@ interface TileProps {
 
 function Tile({ title, value, hint }: TileProps) {
   return (
-    <div
-      className="card"
-      style={{
-        padding: '1rem 1.1rem',
-        display: 'flex', flexDirection: 'column', gap: '.25rem',
-      }}
-    >
-      <div style={{
-        fontSize: '.72rem', color: 'var(--mute, #6b7280)',
-        fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em',
-      }}>{title}</div>
-      <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827' }}>{value}</div>
-      {hint && <div style={{ fontSize: '.78rem', color: 'var(--mute, #6b7280)' }}>{hint}</div>}
+    <div className="card py-4 px-[1.1rem] flex flex-col gap-1">
+      <div className="text-[0.72rem] text-mute font-semibold uppercase tracking-wider">{title}</div>
+      <div className="text-2xl font-bold text-[#111827]">{value}</div>
+      {hint && <div className="text-[0.78rem] text-mute">{hint}</div>}
     </div>
   );
 }
@@ -105,37 +96,24 @@ interface SegmentCardProps {
 }
 
 function SegmentCard({ seg, count, disabled, selected, onClick }: SegmentCardProps) {
+  const borderCls = selected ? 'border-2 border-[#059669]' : 'border border-[#e5e7eb]';
+  const bgCls = disabled ? 'bg-[#f9fafb]' : 'bg-white';
+  const cursorCls = disabled ? 'cursor-not-allowed opacity-[0.65]' : 'cursor-pointer';
   return (
     <button
       type="button"
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      style={{
-        textAlign: 'left',
-        padding: '1rem',
-        borderRadius: 10,
-        border: selected ? '2px solid #059669' : '1px solid #e5e7eb',
-        background: disabled ? '#f9fafb' : '#fff',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.65 : 1,
-        position: 'relative',
-        display: 'flex', flexDirection: 'column', gap: '.35rem',
-      }}
+      className={`text-left p-4 rounded-[10px] ${borderCls} ${bgCls} ${cursorCls} relative flex flex-col gap-[0.35rem]`}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '.55rem' }}>
-        <span style={{ fontSize: '1.25rem' }} aria-hidden="true">{seg.emoji}</span>
-        <span style={{ fontWeight: 700, fontSize: '.92rem', color: '#111827' }}>{seg.label}</span>
+      <div className="flex items-center gap-[0.55rem]">
+        <span className="text-xl" aria-hidden="true">{seg.emoji}</span>
+        <span className="font-bold text-[0.92rem] text-[#111827]">{seg.label}</span>
       </div>
-      <div style={{ fontSize: '1.3rem', fontWeight: 800, color: '#059669' }}>{count}</div>
-      <div style={{ fontSize: '.75rem', color: 'var(--mute, #6b7280)' }}>{seg.desc}</div>
+      <div className="text-[1.3rem] font-extrabold text-[#059669]">{count}</div>
+      <div className="text-xs text-mute">{seg.desc}</div>
       {disabled && (
-        <span style={{
-          position: 'absolute', top: '.55rem', right: '.65rem',
-          fontSize: '.65rem', fontWeight: 700,
-          background: '#fef3c7', color: '#92400e',
-          padding: '.12rem .45rem', borderRadius: 999,
-          textTransform: 'uppercase', letterSpacing: '.04em',
-        }}>
+        <span className="absolute top-[0.55rem] right-[0.65rem] text-[0.65rem] font-bold bg-[#fef3c7] text-[#92400e] py-[0.12rem] px-[0.45rem] rounded-full uppercase tracking-[0.04em]">
           Soon
         </span>
       )}
@@ -199,14 +177,14 @@ export default function CustomersPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: '1.25rem' }}>
-        <div style={{ color: '#6b7280' }}>Loading customers…</div>
+      <div className="p-5">
+        <div className="text-[#6b7280]">Loading customers…</div>
       </div>
     );
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div className="flex flex-col gap-5">
       {!campaignsEnabled && (
         <div className="notice wa">
           <div className="notice-ico">✨</div>
@@ -222,16 +200,12 @@ export default function CustomersPage() {
       )}
 
       {error && (
-        <div className="notice" style={{ background: '#fef2f2', borderColor: '#fecaca' }}>
+        <div className="notice bg-[#fef2f2] border-[#fecaca]">
           <div className="notice-body"><p>{error}</p></div>
         </div>
       )}
 
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-        gap: '.9rem',
-      }}>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-[0.9rem]">
         <Tile
           title="Total customers"
           value={stats?.total_customers ?? 0}
@@ -257,11 +231,7 @@ export default function CustomersPage() {
       <div className="card">
         <div className="ch"><h3>Segments</h3></div>
         <div className="cb">
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-            gap: '.8rem',
-          }}>
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-[0.8rem]">
             {SEGMENTS.map((seg) => (
               <SegmentCard
                 key={seg.label}
@@ -293,7 +263,7 @@ export default function CustomersPage() {
               </thead>
               <tbody>
                 {topRows.length === 0 && (
-                  <tr><td colSpan={6} style={{ color: '#6b7280', padding: '1rem' }}>No customers in this segment.</td></tr>
+                  <tr><td colSpan={6} className="text-[#6b7280] p-4">No customers in this segment.</td></tr>
                 )}
                 {topRows.map((r) => (
                   <tr key={r.customer_id}>

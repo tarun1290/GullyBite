@@ -46,7 +46,7 @@ const STATUS_ROW_COLOR: Record<string, string> = {
   CONFIRMED:       'var(--wa)',
   DELIVERED:       'var(--wa)',
   PAID_OUT:        'var(--wa)',
-  DISPATCHED:      'var(--gb-violet-600)',
+  DISPATCHED:      'var(--gb-teal-700)',
 };
 
 interface StatusBadgeProps {
@@ -67,14 +67,14 @@ function EtaCell({ order }: EtaCellProps) {
   if (order.status === 'DELIVERED') {
     if (order.created_at && order.delivered_at) {
       const mins = Math.round((new Date(order.delivered_at).getTime() - new Date(order.created_at).getTime()) / 60000);
-      return <span style={{ color: 'var(--wa)' }}>Delivered in {mins} min</span>;
+      return <span className="text-wa">Delivered in {mins} min</span>;
     }
-    return <span style={{ color: 'var(--wa)' }}>Delivered</span>;
+    return <span className="text-wa">Delivered</span>;
   }
   if (ACTIVE_ETA_STATUSES.has(order.status) && order.eta_text) {
-    return <span style={{ color: 'var(--gold)', fontWeight: 600 }}>⏱ {order.eta_text}</span>;
+    return <span className="text-gold font-semibold">⏱ {order.eta_text}</span>;
   }
-  return <span style={{ color: 'var(--mute)' }}>—</span>;
+  return <span className="text-mute">—</span>;
 }
 
 function timeAgo(ts?: string): string {
@@ -134,21 +134,25 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, onDecli
   const statusColor = STATUS_ROW_COLOR[order.status] || 'transparent';
 
   return (
-    <tr style={{ borderLeft: `3px solid ${statusColor}` }}>
+    <tr
+      // borderLeft colour comes from STATUS_ROW_COLOR by order.status at
+      // runtime (gold/red/mute/blue/wa/teal — 7 distinct CSS vars).
+      style={{ borderLeft: `3px solid ${statusColor}` }}
+    >
       <td><span className="mono">{order.display_order_id || `#${(order.id || '').slice(-6) || '????'}`}</span></td>
       <td>
         <div>{order.customer_name || '—'}</div>
-        <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>
+        <div className="text-[0.72rem] text-dim">
           {customerSecondary(order)}
         </div>
       </td>
       <td>{order.branch_name || ''}</td>
       <td>₹{order.total_rs}</td>
       <td><StatusBadge status={order.status} /></td>
-      <td style={{ fontSize: '.73rem' }}><EtaCell order={order} /></td>
-      <td style={{ fontSize: '.73rem', color: 'var(--dim)' }}>{timeAgo(order.created_at)}</td>
+      <td className="text-[0.73rem]"><EtaCell order={order} /></td>
+      <td className="text-[0.73rem] text-dim">{timeAgo(order.created_at)}</td>
       <td>
-        <div style={{ display: 'flex', gap: '.35rem', alignItems: 'center', justifyContent: 'flex-end' }}>
+        <div className="flex gap-[0.35rem] items-center justify-end">
           {next && (
             <button
               type="button"
@@ -166,15 +170,9 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, onDecli
           {order.status === 'PAID' && onDecline && (
             <button
               type="button"
-              className="btn-sm"
+              className="btn-sm bg-transparent text-red-600 border-[1.5px] border-red-600 font-semibold"
               onClick={handleDecline}
               disabled={disabled}
-              style={{
-                background: 'transparent',
-                color: '#dc2626',
-                border: '1.5px solid #dc2626',
-                fontWeight: 600,
-              }}
             >
               {decliningLocal ? (<><span className="spin" /> …</>) : '✗ Decline'}
             </button>

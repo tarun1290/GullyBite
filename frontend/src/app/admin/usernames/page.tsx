@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
@@ -49,18 +48,19 @@ interface SuggestResult { suggestions?: string[] }
 function statusBadge(s?: string) {
   const cfg = STATUS_COLORS[s || ''] || STATUS_COLORS.not_claimed;
   return (
-    <span style={{
-      display: 'inline-block', padding: '.1rem .5rem', borderRadius: 10,
-      fontSize: '.72rem', fontWeight: 600, background: cfg?.bg, color: cfg?.fg,
-    }}>{(s || 'not_claimed').replace(/_/g, ' ')}</span>
+    // Dynamic: bg/fg come from a runtime palette map keyed by status.
+    <span
+      className="inline-block py-[0.1rem] px-2 rounded-[10px] text-[0.72rem] font-semibold"
+      style={{ background: cfg?.bg, color: cfg?.fg }}
+    >{(s || 'not_claimed').replace(/_/g, ' ')}</span>
   );
 }
 
-const th: CSSProperties = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.5rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
-const lbl: CSSProperties = { fontSize: '.78rem', color: 'var(--dim)', display: 'block', marginBottom: '.3rem' };
+const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.45rem] px-[0.7rem] text-[0.85rem]';
+const LBL_CLS = 'text-[0.78rem] text-dim block mb-[0.3rem]';
 
 export default function AdminUsernamesPage() {
   const { showToast } = useToast();
@@ -132,16 +132,16 @@ export default function AdminUsernamesPage() {
   return (
     <div id="pg-usernames">
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between', flexWrap: 'wrap', gap: '.5rem' }}>
-          <h3 style={{ margin: 0 }}>Business Usernames</h3>
-          <div style={{ display: 'flex', gap: '.4rem' }}>
+        <div className="ch justify-between flex-wrap gap-2">
+          <h3 className="m-0">Business Usernames</h3>
+          <div className="flex gap-[0.4rem]">
             <button type="button" className="btn-p btn-sm" onClick={doAutoSuggestAll} disabled={busyBulk}>Auto-Suggest All</button>
             <button type="button" className="btn-g btn-sm" onClick={doSyncAll} disabled={busyBulk}>Sync All from Meta</button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem', padding: '.75rem 1rem', borderBottom: '1px solid var(--rim)' }}>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} style={input}>
+        <div className="flex flex-wrap gap-2 py-3 px-4 border-b border-rim">
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className={INPUT_CLS}>
             <option value="all">All Statuses</option>
             <option value="active">Active</option>
             <option value="pending_claim">Pending Claim</option>
@@ -153,47 +153,47 @@ export default function AdminUsernamesPage() {
             value={pendingSearch}
             onChange={(e) => setPendingSearch(e.target.value)}
             placeholder="Search restaurant or username…"
-            style={{ ...input, flex: 1, maxWidth: 280 }}
+            className={`${INPUT_CLS} flex-1 max-w-[280px]`}
           />
         </div>
 
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', textAlign: 'left', color: 'var(--dim)', fontSize: '.74rem' }}>
-                  <th style={th}>Restaurant</th>
-                  <th style={th}>WABA Display</th>
-                  <th style={th}>Username</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>wa.me Link</th>
-                  <th style={th}>Actions</th>
+                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                  <th className={TH_CLS}>Restaurant</th>
+                  <th className={TH_CLS}>WABA Display</th>
+                  <th className={TH_CLS}>Username</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>wa.me Link</th>
+                  <th className={TH_CLS}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={6} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={6} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={6} style={emptyCell}>No usernames found.</td></tr>
+                  <tr><td colSpan={6} className={EMPTY_CLS}>No usernames found.</td></tr>
                 ) : rows.map((u) => {
                   const waLink = (u.business_username && u.username_status === 'active')
                     ? `wa.me/${u.business_username}`
                     : u.wa_phone_number ? `wa.me/${u.wa_phone_number}` : '';
                   return (
-                    <tr key={u._id} style={{ borderTop: '1px solid var(--rim)' }}>
-                      <td style={td}>
+                    <tr key={u._id} className="border-t border-rim">
+                      <td className={TD_CLS}>
                         {u.restaurant_name || '—'}
-                        {u.city && <><br /><span style={{ fontSize: '.72rem', color: 'var(--dim)' }}>{u.city}</span></>}
+                        {u.city && <><br /><span className="text-[0.72rem] text-dim">{u.city}</span></>}
                       </td>
-                      <td style={td}>{u.display_name || '—'}</td>
-                      <td style={td} className="mono">{u.business_username ? '@' + u.business_username : <span style={{ color: 'var(--dim)' }}>—</span>}</td>
-                      <td style={td}>{statusBadge(u.username_status)}</td>
-                      <td style={{ ...td, fontSize: '.78rem' }}>
-                        {waLink ? <a href={`https://${waLink}`} target="_blank" rel="noreferrer" style={{ color: 'var(--acc, #4f46e5)' }}>{waLink}</a> : '—'}
+                      <td className={TD_CLS}>{u.display_name || '—'}</td>
+                      <td className={`${TD_CLS} mono`}>{u.business_username ? '@' + u.business_username : <span className="text-dim">—</span>}</td>
+                      <td className={TD_CLS}>{statusBadge(u.username_status)}</td>
+                      <td className={`${TD_CLS} text-[0.78rem]`}>
+                        {waLink ? <a href={`https://${waLink}`} target="_blank" rel="noreferrer" className="text-acc">{waLink}</a> : '—'}
                       </td>
-                      <td style={td}><button type="button" className="btn-g btn-sm" onClick={() => setActive(u)}>Manage</button></td>
+                      <td className={TD_CLS}><button type="button" className="btn-g btn-sm" onClick={() => setActive(u)}>Manage</button></td>
                     </tr>
                   );
                 })}
@@ -390,64 +390,63 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
   return (
     <div
       onClick={onClose}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem' }}
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
-          <h3 style={{ margin: 0, fontSize: '.95rem' }}>Username: {u.restaurant_name || 'Restaurant'}</h3>
+      <div onClick={(e) => e.stopPropagation()} className="bg-neutral-0 rounded-[10px] w-full max-w-[560px] max-h-[90vh] overflow-auto">
+        <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
+          <h3 className="m-0 text-[0.95rem]">Username: {u.restaurant_name || 'Restaurant'}</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose}>✕</button>
         </div>
-        <div style={{ padding: '1rem' }}>
-          <div style={{ marginBottom: '1rem' }}>
+        <div className="p-4">
+          <div className="mb-4">
             {isActive ? (
-              <div style={{ background: 'var(--gb-wa-light)', border: '1px solid #86efac', borderRadius: 8, padding: '.7rem', fontSize: '.85rem' }}>
-                Active: <strong>@{u.business_username}</strong> — <a href={`https://wa.me/${u.business_username}`} target="_blank" rel="noreferrer" style={{ color: 'var(--acc, #4f46e5)' }}>wa.me/{u.business_username}</a>
+              <div className="bg-wa-light border border-[#86efac] rounded-lg p-[0.7rem] text-[0.85rem]">
+                Active: <strong>@{u.business_username}</strong> — <a href={`https://wa.me/${u.business_username}`} target="_blank" rel="noreferrer" className="text-acc">wa.me/{u.business_username}</a>
               </div>
             ) : isPending ? (
-              <div style={{ background: '#fef9c3', border: '1px solid #fcd34d', borderRadius: 8, padding: '.7rem', fontSize: '.85rem' }}>
+              <div className="bg-[#fef9c3] border border-[#fcd34d] rounded-lg p-[0.7rem] text-[0.85rem]">
                 Pending claim: <strong>@{u.business_username}</strong>
               </div>
             ) : (
-              <div style={{ background: 'var(--ink)', border: '1px solid var(--rim)', borderRadius: 8, padding: '.7rem', fontSize: '.85rem', color: 'var(--dim)' }}>
+              <div className="bg-ink border border-rim rounded-lg p-[0.7rem] text-[0.85rem] text-dim">
                 No username claimed
               </div>
             )}
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={lbl}>Suggested Usernames</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.4rem' }}>
+          <div className="mb-4">
+            <label className={LBL_CLS}>Suggested Usernames</label>
+            <div className="flex flex-wrap gap-[0.4rem]">
               {suggestions.length === 0 ? (
-                <span style={{ fontSize: '.8rem', color: 'var(--dim)' }}>No suggestions yet — click &quot;Regenerate&quot;</span>
+                <span className="text-[0.8rem] text-dim">No suggestions yet — click &quot;Regenerate&quot;</span>
               ) : suggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
-                  className="btn-g btn-sm"
-                  style={{ fontSize: '.78rem' }}
+                  className="btn-g btn-sm text-[0.78rem]"
                   onClick={() => pickSuggestion(s)}
                 >@{s}</button>
               ))}
             </div>
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
-            <label style={lbl}>Custom Username</label>
-            <div style={{ display: 'flex', gap: '.4rem', alignItems: 'center' }}>
-              <span style={{ fontSize: '.9rem', color: 'var(--dim)' }}>@</span>
+          <div className="mb-4">
+            <label className={LBL_CLS}>Custom Username</label>
+            <div className="flex gap-[0.4rem] items-center">
+              <span className="text-[0.9rem] text-dim">@</span>
               <input
                 value={custom}
                 onChange={onCustomChange}
                 maxLength={30}
                 placeholder="beyondsnacks"
-                style={{ ...input, flex: 1 }}
+                className={`${INPUT_CLS} flex-1`}
               />
-              <span style={{ fontSize: '.85rem' }}>{checkState.status}</span>
+              <span className="text-[0.85rem]">{checkState.status}</span>
             </div>
-            <div style={{ fontSize: '.72rem', color: 'var(--gb-red-600)', minHeight: '1em', marginTop: '.2rem' }}>{checkState.error}</div>
+            <div className="text-[0.72rem] text-red-600 min-h-[1em] mt-[0.2rem]">{checkState.error}</div>
           </div>
 
-          <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+          <div className="flex gap-2 flex-wrap">
             <button type="button" className="btn-p btn-sm" disabled={!canSet || busy === 'set'} onClick={setTarget}>
               {busy === 'set' ? '…' : 'Set as Target Username'}
             </button>
@@ -465,18 +464,18 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
             {(isActive || isPending) && (
               confirmRelease ? (
                 <>
-                  <button type="button" className="btn-g btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }} onClick={doRelease} disabled={busy === 'release'}>Confirm Release</button>
+                  <button type="button" className="btn-g btn-sm bg-red-500 text-neutral-0" onClick={doRelease} disabled={busy === 'release'}>Confirm Release</button>
                   <button type="button" className="btn-g btn-sm" onClick={() => setConfirmRelease(false)}>Cancel</button>
                 </>
               ) : (
-                <button type="button" className="btn-g btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }} onClick={() => setConfirmRelease(true)}>Release</button>
+                <button type="button" className="btn-g btn-sm bg-red-500 text-neutral-0" onClick={() => setConfirmRelease(true)}>Release</button>
               )
             )}
             <button type="button" className="btn-g btn-sm" onClick={doRegenerate} disabled={busy === 'suggest'}>Regenerate Suggestions</button>
           </div>
 
           {isPending && (
-            <div style={{ marginTop: '1rem', background: 'var(--ink)', border: '1px solid var(--rim)', borderRadius: 8, padding: '.85rem', fontSize: '.8rem', lineHeight: 1.5 }}>
+            <div className="mt-4 bg-ink border border-rim rounded-lg p-[0.85rem] text-[0.8rem] leading-normal">
               <strong>How to claim in Meta Business Suite:</strong><br />
               1. Open Meta Business Suite for this WABA<br />
               2. Go to WhatsApp Manager → Settings → Username<br />
@@ -486,14 +485,14 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
           )}
 
           {showManual && (
-            <div style={{ marginTop: '.75rem' }}>
-              <label style={lbl}>Manual entry (if Meta sync unavailable):</label>
-              <div style={{ display: 'flex', gap: '.4rem' }}>
+            <div className="mt-3">
+              <label className={LBL_CLS}>Manual entry (if Meta sync unavailable):</label>
+              <div className="flex gap-[0.4rem]">
                 <input
                   value={manual}
                   onChange={(e) => setManual(e.target.value)}
                   placeholder="username claimed in Meta"
-                  style={{ ...input, flex: 1 }}
+                  className={`${INPUT_CLS} flex-1`}
                 />
                 <button type="button" className="btn-p btn-sm" onClick={doManualConfirm} disabled={busy === 'manual'}>Confirm</button>
               </div>

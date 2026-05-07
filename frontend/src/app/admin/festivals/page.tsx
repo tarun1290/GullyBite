@@ -1,6 +1,6 @@
 'use client';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import Toggle from '../../../components/Toggle';
@@ -84,9 +84,9 @@ const EMPTY_FORM: FestivalFormState = {
   year: '',
 };
 
-const thStyle: CSSProperties = { padding: '.55rem .7rem', textAlign: 'left', fontWeight: 600, fontSize: '.78rem', color: 'var(--gb-neutral-700)' };
-const tdStyle: CSSProperties = { padding: '.55rem .7rem', verticalAlign: 'middle' };
-const inputStyle: CSSProperties = { padding: '.4rem .55rem', border: '1px solid var(--gb-neutral-200)', borderRadius: 6, width: '100%' };
+const TH_CLS = 'py-[0.55rem] px-[0.7rem] text-left font-semibold text-[0.78rem] text-neutral-700';
+const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-middle';
+const INPUT_CLS = 'py-[0.4rem] px-[0.55rem] border border-neutral-200 rounded-md w-full';
 
 export default function AdminFestivalsPage() {
   const { showToast } = useToast();
@@ -209,18 +209,18 @@ export default function AdminFestivalsPage() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '.5rem', flexWrap: 'wrap' }}>
+      <div className="flex justify-between items-center mb-4 gap-2 flex-wrap">
         <div>
-          <h2 style={{ margin: 0 }}>Festival Calendar</h2>
-          <div style={{ fontSize: '.84rem', color: 'var(--dim)', marginTop: '.2rem' }}>
+          <h2 className="m-0">Festival Calendar</h2>
+          <div className="text-[0.84rem] text-dim mt-[0.2rem]">
             Platform-wide Indian occasions. Restaurants are nudged 48h before each festival to send a campaign.
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+        <div className="flex gap-2 flex-wrap">
           <select
             value={yearFilter}
             onChange={(e) => setYearFilter(e.target.value)}
-            style={{ padding: '.4rem .6rem', border: '1px solid var(--gb-neutral-200)', borderRadius: 6 }}
+            className="py-[0.4rem] px-[0.6rem] border border-neutral-200 rounded-md"
           >
             <option value="">All years</option>
             {Array.from(new Set(rows.map((r) => r.year ?? 0))).sort((a, b) => b - a).map((y) => (
@@ -235,46 +235,46 @@ export default function AdminFestivalsPage() {
       </div>
 
       {loading ? (
-        <div style={{ color: 'var(--dim)', padding: '1rem' }}>Loading festivals…</div>
+        <div className="text-dim p-4">Loading festivals…</div>
       ) : rows.length === 0 ? (
         <div className="card">
-          <div className="cb" style={{ color: 'var(--dim)' }}>
+          <div className="cb text-dim">
             No festivals yet. Click <strong>Seed Current + Next Year</strong> to bootstrap the calendar.
           </div>
         </div>
       ) : (
         grouped.map(([year, list]) => (
-          <div key={year} className="card" style={{ marginBottom: '1rem' }}>
-            <div className="ch" style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <div key={year} className="card mb-4">
+            <div className="ch flex justify-between">
               <strong>{year}</strong>
-              <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>{list.length} festivals</span>
+              <span className="text-[0.78rem] text-dim">{list.length} festivals</span>
             </div>
-            <div className="cb" style={{ padding: 0, overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.85rem' }}>
-                <thead style={{ background: 'var(--panel, #f9fafb)' }}>
+            <div className="cb p-0 overflow-x-auto">
+              <table className="w-full border-collapse text-[0.85rem]">
+                <thead className="bg-panel">
                   <tr>
-                    <th style={thStyle}>Festival</th>
-                    <th style={thStyle}>Date</th>
-                    <th style={thStyle}>Notify</th>
-                    <th style={thStyle}>Applicable</th>
-                    <th style={{ ...thStyle, textAlign: 'center' }}>Active</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
+                    <th className={TH_CLS}>Festival</th>
+                    <th className={TH_CLS}>Date</th>
+                    <th className={TH_CLS}>Notify</th>
+                    <th className={TH_CLS}>Applicable</th>
+                    <th className={`${TH_CLS} text-center`}>Active</th>
+                    <th className={`${TH_CLS} text-right`}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {list.map((r) => (
-                    <tr key={r.slug} style={{ borderTop: '1px solid var(--gb-neutral-200)' }}>
-                      <td style={tdStyle}>
-                        <div style={{ fontWeight: 500 }}>{r.name}</div>
-                        <div style={{ fontSize: '.72rem', color: 'var(--dim)' }}>{r.slug}</div>
+                    <tr key={r.slug} className="border-t border-neutral-200">
+                      <td className={TD_CLS}>
+                        <div className="font-medium">{r.name}</div>
+                        <div className="text-[0.72rem] text-dim">{r.slug}</div>
                       </td>
-                      <td style={tdStyle}>{fmtDate(r.date)}</td>
-                      <td style={tdStyle}>{fmtDate(r.notification_date)}</td>
-                      <td style={tdStyle}>{r.applicable_to}</td>
-                      <td style={{ ...tdStyle, textAlign: 'center' }}>
+                      <td className={TD_CLS}>{fmtDate(r.date)}</td>
+                      <td className={TD_CLS}>{fmtDate(r.notification_date)}</td>
+                      <td className={TD_CLS}>{r.applicable_to}</td>
+                      <td className={`${TD_CLS} text-center`}>
                         <Toggle checked={r.is_active !== false} onChange={() => handleToggle(r.slug)} />
                       </td>
-                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                      <td className={`${TD_CLS} text-right`}>
                         <button className="btn-g btn-sm" onClick={() => openEdit(r)}>Edit</button>
                       </td>
                     </tr>
@@ -288,13 +288,13 @@ export default function AdminFestivalsPage() {
 
       {modal && (
         <Modal onClose={closeModal} title={modal.mode === 'create' ? 'Add Festival' : 'Edit Festival'}>
-          <div style={{ display: 'grid', gap: '.6rem' }}>
+          <div className="grid gap-[0.6rem]">
             <FormRow label="Name">
               <input
                 type="text"
                 value={modal.form.name}
                 onChange={(e) => updateForm({ name: e.target.value })}
-                style={inputStyle}
+                className={INPUT_CLS}
               />
             </FormRow>
             <FormRow label="Slug">
@@ -304,7 +304,7 @@ export default function AdminFestivalsPage() {
                 onChange={(e) => updateForm({ slug: e.target.value })}
                 disabled={modal.mode === 'edit'}
                 placeholder="e.g. diwali_2026"
-                style={{ ...inputStyle, opacity: modal.mode === 'edit' ? 0.6 : 1 }}
+                className={`${INPUT_CLS} ${modal.mode === 'edit' ? 'opacity-60' : 'opacity-100'}`}
               />
             </FormRow>
             <FormRow label="Date">
@@ -312,7 +312,7 @@ export default function AdminFestivalsPage() {
                 type="date"
                 value={modal.form.date}
                 onChange={(e) => updateForm({ date: e.target.value })}
-                style={inputStyle}
+                className={INPUT_CLS}
               />
             </FormRow>
             <FormRow label="Notification date">
@@ -321,7 +321,7 @@ export default function AdminFestivalsPage() {
                 value={modal.form.notification_date}
                 onChange={(e) => updateForm({ notification_date: e.target.value })}
                 placeholder="Auto = date − 48h"
-                style={inputStyle}
+                className={INPUT_CLS}
               />
             </FormRow>
             <FormRow label="Year">
@@ -329,14 +329,14 @@ export default function AdminFestivalsPage() {
                 type="number"
                 value={modal.form.year}
                 onChange={(e) => updateForm({ year: e.target.value })}
-                style={inputStyle}
+                className={INPUT_CLS}
               />
             </FormRow>
             <FormRow label="Applicable to">
               <select
                 value={modal.form.applicable_to}
                 onChange={(e) => updateForm({ applicable_to: e.target.value })}
-                style={inputStyle}
+                className={INPUT_CLS}
               >
                 {APPLICABLE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
@@ -346,7 +346,7 @@ export default function AdminFestivalsPage() {
                 type="text"
                 value={modal.form.default_template_use_case}
                 onChange={(e) => updateForm({ default_template_use_case: e.target.value })}
-                style={inputStyle}
+                className={INPUT_CLS}
               />
             </FormRow>
             <FormRow label="Suggested hint">
@@ -354,7 +354,7 @@ export default function AdminFestivalsPage() {
                 rows={2}
                 value={modal.form.suggested_message_hint}
                 onChange={(e) => updateForm({ suggested_message_hint: e.target.value })}
-                style={{ ...inputStyle, resize: 'vertical' }}
+                className={`${INPUT_CLS} resize-y`}
               />
             </FormRow>
             <FormRow label="Active">
@@ -364,7 +364,7 @@ export default function AdminFestivalsPage() {
               />
             </FormRow>
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '.4rem', marginTop: '1rem' }}>
+          <div className="flex justify-end gap-[0.4rem] mt-4">
             <button className="btn-g btn-sm" onClick={closeModal} disabled={busy}>Cancel</button>
             <button className="btn-p btn-sm" onClick={saveModal} disabled={busy}>
               {busy ? 'Saving…' : 'Save'}
@@ -380,8 +380,8 @@ interface FormRowProps { label: string; children: ReactNode }
 
 function FormRow({ label, children }: FormRowProps): ReactNode {
   return (
-    <label style={{ display: 'grid', gridTemplateColumns: '140px 1fr', alignItems: 'center', gap: '.6rem' }}>
-      <span style={{ fontSize: '.82rem', color: 'var(--dim)' }}>{label}</span>
+    <label className="grid grid-cols-[140px_1fr] items-center gap-[0.6rem]">
+      <span className="text-[0.82rem] text-dim">{label}</span>
       <div>{children}</div>
     </label>
   );
@@ -393,25 +393,17 @@ function Modal({ title, onClose, children }: ModalProps): ReactNode {
   return (
     <div
       onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 100, padding: '1rem',
-      }}
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-100 p-4"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: 'var(--gb-neutral-0)', borderRadius: 'var(--r, 8px)',
-          width: '100%', maxWidth: 520, maxHeight: '90vh', overflow: 'auto',
-          padding: '1.25rem',
-        }}
+        className="bg-neutral-0 rounded-r w-full max-w-[520px] max-h-[90vh] overflow-auto p-5"
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <h3 style={{ margin: 0 }}>{title}</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="m-0">{title}</h3>
           <button
             onClick={onClose}
-            style={{ background: 'none', border: 'none', fontSize: '1.1rem', cursor: 'pointer' }}
+            className="bg-none border-0 text-[1.1rem] cursor-pointer"
             aria-label="Close"
           >×</button>
         </div>

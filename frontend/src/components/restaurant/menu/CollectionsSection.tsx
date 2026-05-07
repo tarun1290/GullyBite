@@ -219,13 +219,13 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch"><h3>📚 Collections</h3></div>
         <div className="cb">
-          <p style={{ color: 'var(--dim)', fontSize: '.86rem', marginBottom: '.7rem' }}>
+          <p className="text-dim text-[0.86rem] mb-[0.7rem]">
             Select a specific branch to manage its collections.
           </p>
           <select
             value={selectedBranchId}
             onChange={(e) => setSelectedBranchId(e.target.value)}
-            style={{ padding: '.4rem .6rem', borderRadius: 7, border: '1px solid var(--rim)', fontSize: '.85rem' }}
+            className="py-[0.4rem] px-[0.6rem] rounded-[7px] border border-rim text-[0.85rem]"
           >
             <option value="">Select branch…</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -240,7 +240,7 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch"><h3>📚 Collections</h3></div>
         <div className="cb">
-          <p style={{ color: 'var(--dim)', fontSize: '.86rem' }}>
+          <p className="text-dim text-[0.86rem]">
             &quot;{branch?.name}&quot; has no catalog yet. Create one from the Branches tab first.
           </p>
         </div>
@@ -251,9 +251,9 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
   return (
     <div>
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
+        <div className="ch justify-between">
           <h3>📚 Collections — {branch?.name}</h3>
-          <div style={{ display: 'flex', gap: '.4rem' }}>
+          <div className="flex gap-[0.4rem]">
             <button type="button" className="btn-g btn-sm" onClick={handleAuto}>✨ Auto-Create</button>
             <button type="button" className="btn-g btn-sm" onClick={handleSync}>🔄 Sync to Meta</button>
             <button type="button" className="btn-p btn-sm" onClick={openCreate}>+ Create</button>
@@ -261,21 +261,21 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
         </div>
         <div className="cb">
           {loading ? (
-            <p style={{ color: 'var(--dim)' }}>Loading…</p>
+            <p className="text-dim">Loading…</p>
           ) : !colls.length ? (
-            <p style={{ color: 'var(--dim)', fontSize: '.82rem' }}>
+            <p className="text-dim text-[0.82rem]">
               No collections yet. Click <strong>Auto-Create</strong> to generate from product sets,
               or <strong>Create</strong> to add manually.
             </p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '.4rem' }}>
+            <div className="flex flex-col gap-[0.4rem]">
               {colls.map((c, idx) => {
                 const setCount = c.product_sets?.length || 0;
                 const setNames = c.product_sets?.map((s) => s.name).join(', ') || '—';
                 const syncBadge = c.synced ? (
-                  <span style={{ fontSize: '.65rem', color: 'var(--wa)' }}>🟢 synced</span>
+                  <span className="text-[0.65rem] text-wa">🟢 synced</span>
                 ) : (
-                  <span style={{ fontSize: '.65rem', color: 'var(--gold)' }}>🟡 pending</span>
+                  <span className="text-[0.65rem] text-gold">🟡 pending</span>
                 );
                 return (
                   <div
@@ -284,29 +284,27 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
                     onDragStart={() => setDragIdx(idx)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => handleDrop(idx)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '.6rem',
-                      padding: '.55rem .7rem', background: 'var(--ink2,#f4f4f5)', borderRadius: 8,
-                      opacity: dragIdx === idx ? 0.4 : 1,
-                    }}
+                    className={`flex items-center gap-[0.6rem] py-[0.55rem] px-[0.7rem] bg-ink2 rounded-lg ${
+                      dragIdx === idx ? 'opacity-40' : 'opacity-100'
+                    }`}
                   >
-                    <span style={{ cursor: 'grab', color: 'var(--mute,var(--dim))', fontSize: '1rem' }} title="Drag to reorder">⠿</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: '.84rem' }}>{c.name}</div>
-                      <div style={{ fontSize: '.7rem', color: 'var(--dim)' }}>
+                    <span className="cursor-grab text-mute text-base" title="Drag to reorder">⠿</span>
+                    <div className="flex-1">
+                      <div className="font-semibold text-[0.84rem]">{c.name}</div>
+                      <div className="text-[0.7rem] text-dim">
                         {setCount} set{setCount !== 1 ? 's' : ''}: {setNames}
                       </div>
                     </div>
-                    {c.is_active === false && <span style={{ fontSize: '.65rem', color: 'var(--mute,var(--dim))' }}>⚪ inactive</span>}
+                    {c.is_active === false && <span className="text-[0.65rem] text-mute">⚪ inactive</span>}
                     {syncBadge}
-                    <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={() => openEdit(c)}>✏ Edit</button>
+                    <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => openEdit(c)}>✏ Edit</button>
                     {pendingDelete === c.id ? (
                       <>
                         <button type="button" className="btn-del btn-sm" onClick={() => handleDelete(c.id)}>Delete</button>
-                        <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem' }} onClick={() => setPendingDelete(null)}>Cancel</button>
+                        <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => setPendingDelete(null)}>Cancel</button>
                       </>
                     ) : (
-                      <button type="button" className="btn-g btn-sm" style={{ fontSize: '.72rem', color: '#dc2626' }} onClick={() => setPendingDelete(c.id)}>🗑</button>
+                      <button type="button" className="btn-g btn-sm text-[0.72rem] text-[#dc2626]" onClick={() => setPendingDelete(c.id)}>🗑</button>
                     )}
                   </div>
                 );
@@ -318,15 +316,11 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
 
       {modalOpen && (
         <div
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100,
-            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-            padding: '2rem 1rem', overflowY: 'auto',
-          }}
+          className="fixed inset-0 bg-black/50 z-100 flex items-start justify-center py-8 px-4 overflow-y-auto"
           onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) setModalOpen(false); }}
         >
-          <div className="card" style={{ maxWidth: 540, width: '100%', background: 'var(--surface,#fff)' }}>
-            <div className="ch" style={{ justifyContent: 'space-between' }}>
+          <div className="card max-w-[540px] w-full bg-surface">
+            <div className="ch justify-between">
               <h3>{editingId ? '✏ Edit Collection' : '+ Create Collection'}</h3>
               <button type="button" className="btn-g btn-sm" onClick={() => setModalOpen(false)} disabled={saving}>✕</button>
             </div>
@@ -342,7 +336,7 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
                     value={form.description}
                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                     rows={2}
-                    style={{ fontFamily: 'inherit' }}
+                    className="font-[inherit]"
                   />
                 </div>
                 <div className="fg">
@@ -356,24 +350,24 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
                 <div className="fg span2">
                   <label>Product sets</label>
                   {!sets.length ? (
-                    <p style={{ fontSize: '.78rem', color: 'var(--dim)' }}>No product sets. Create them in the Product Sets tab first.</p>
+                    <p className="text-[0.78rem] text-dim">No product sets. Create them in the Product Sets tab first.</p>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '.2rem', maxHeight: 180, overflowY: 'auto' }}>
+                    <div className="flex flex-col gap-[0.2rem] max-h-[180px] overflow-y-auto">
                       {sets.map((s) => (
-                        <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '.4rem', padding: '.25rem 0', fontSize: '.84rem', cursor: 'pointer' }}>
+                        <label key={s.id} className="flex items-center gap-[0.4rem] py-1 text-[0.84rem] cursor-pointer">
                           <input
                             type="checkbox"
                             checked={form.productSetIds.includes(s.id)}
                             onChange={() => toggleSet(s.id)}
                           />
-                          {s.name} <span style={{ fontSize: '.65rem', color: 'var(--dim)' }}>({s.type})</span>
+                          {s.name} <span className="text-[0.65rem] text-dim">({s.type})</span>
                         </label>
                       ))}
                     </div>
                   )}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: '.5rem', marginTop: '1rem' }}>
+              <div className="flex gap-2 mt-4">
                 <button type="button" className="btn-p" onClick={handleSave} disabled={saving}>
                   {saving ? 'Saving…' : (editingId ? 'Save' : 'Create')}
                 </button>

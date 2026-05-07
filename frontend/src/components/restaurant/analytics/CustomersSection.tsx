@@ -73,20 +73,20 @@ export default function CustomersSection({ dateRange }: CustomersSectionProps) {
   const topCustomers = data?.top_customers || [];
 
   return (
-    <div className="card" style={{ margin: 0 }}>
+    <div className="card m-0">
       <div className="ch"><h3>Customer Insights</h3></div>
       <div className="cb">
         {error ? (
           <SectionError message={error} onRetry={refetch} />
         ) : (
           <>
-            <div style={{ display: 'flex', gap: '1.2rem', alignItems: 'center', marginBottom: '1rem' }}>
-              <div style={{ width: 160, height: 160, position: 'relative' }}>
+            <div className="flex gap-[1.2rem] items-center mb-4">
+              <div className="w-[160px] h-[160px] relative">
                 {donutConfig && (
                   <ChartCanvas type="doughnut" data={donutConfig.data} options={donutConfig.options} height={160} />
                 )}
               </div>
-              <div id="an-cust-stats" style={{ fontSize: '.82rem', color: 'var(--dim)', lineHeight: 1.8 }}>
+              <div id="an-cust-stats" className="text-[0.82rem] text-dim leading-[1.8]">
                 {loading && !data ? (
                   <div>Loading…</div>
                 ) : data ? (
@@ -99,14 +99,14 @@ export default function CustomersSection({ dateRange }: CustomersSectionProps) {
                 ) : null}
               </div>
             </div>
-            <table className="tbl" style={{ fontSize: '.8rem' }}>
+            <table className="tbl text-[0.8rem]">
               <thead>
                 <tr><th>Customer</th><th>Phone</th><th>Orders</th><th>Spent</th></tr>
               </thead>
               <tbody>
                 {topCustomers.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={{ color: 'var(--dim)', textAlign: 'center' }}>No data yet</td>
+                    <td colSpan={4} className="text-dim text-center">No data yet</td>
                   </tr>
                 ) : (
                   topCustomers.map((c, idx) => (

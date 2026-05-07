@@ -42,65 +42,27 @@ interface ConversationRowProps {
 function ConversationRow({ thread, active, onSelect }: ConversationRowProps) {
   const unread = thread.unread_count || 0;
   const name = thread.customer_name || thread.customer_phone || 'Unknown';
-  const style = {
-    padding: '.6rem .7rem',
-    borderRadius: 8,
-    cursor: 'pointer',
-    border: `1px solid ${active ? 'var(--wa)' : 'transparent'}`,
-    background: active ? 'rgba(37,211,102,.08)' : 'transparent',
-    transition: 'all .15s',
-  };
   return (
     <div
       onClick={() => onSelect?.(thread.customer_id)}
-      style={style}
+      className={`py-[0.6rem] px-[0.7rem] rounded-lg cursor-pointer border transition-all duration-150 ${
+        active ? 'border-wa bg-[rgba(37,211,102,0.08)]' : 'border-transparent bg-transparent'
+      }`}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontWeight: unread ? 700 : 500, fontSize: '.84rem' }}>{name}</span>
-        <span style={{ fontSize: '.68rem', color: 'var(--dim)' }}>{timeAgo(thread.last_message_at)}</span>
+      <div className="flex justify-between items-center">
+        <span className={`text-[0.84rem] ${unread ? 'font-bold' : 'font-medium'}`}>{name}</span>
+        <span className="text-[0.68rem] text-dim">{timeAgo(thread.last_message_at)}</span>
       </div>
-      <div
-        style={{
-          fontSize: '.76rem',
-          color: 'var(--dim)',
-          marginTop: '.15rem',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
+      <div className="text-[0.76rem] text-dim mt-[0.15rem] truncate">
         {previewText(thread)}
       </div>
       {unread > 0 && (
-        <span
-          style={{
-            display: 'inline-block',
-            marginTop: '.25rem',
-            background: 'var(--wa)',
-            color: '#fff',
-            fontSize: '.6rem',
-            padding: '.1rem .4rem',
-            borderRadius: 9,
-            fontWeight: 600,
-          }}
-        >
+        <span className="inline-block mt-1 bg-wa text-white text-[0.6rem] py-[0.1rem] px-[0.4rem] rounded-full font-semibold">
           {unread} new
         </span>
       )}
       {thread.has_active_order && (
-        <span
-          style={{
-            display: 'inline-block',
-            marginTop: '.25rem',
-            marginLeft: '.3rem',
-            fontSize: '.6rem',
-            padding: '.1rem .4rem',
-            borderRadius: 9,
-            background: 'var(--gold)',
-            color: '#000',
-            fontWeight: 600,
-          }}
-        >
+        <span className="inline-block mt-1 ml-[0.3rem] text-[0.6rem] py-[0.1rem] px-[0.4rem] rounded-full bg-gold text-black font-semibold">
           Active Order
         </span>
       )}
@@ -118,21 +80,14 @@ interface ConversationListProps {
 export default function ConversationList({ conversations, selectedId, onSelect, loading }: ConversationListProps) {
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '2rem .5rem' }}>
-        <div className="spin" style={{ margin: '0 auto' }} />
+      <div className="text-center py-8 px-2">
+        <div className="spin mx-auto" />
       </div>
     );
   }
   if (!conversations || conversations.length === 0) {
     return (
-      <div
-        style={{
-          textAlign: 'center',
-          color: 'var(--dim)',
-          padding: '2rem .5rem',
-          fontSize: '.82rem',
-        }}
-      >
+      <div className="text-center text-dim py-8 px-2 text-[0.82rem]">
         No conversations found
       </div>
     );

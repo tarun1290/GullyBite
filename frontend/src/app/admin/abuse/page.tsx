@@ -1,6 +1,5 @@
 'use client';
 
-import type { CSSProperties } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '../../../components/Toast';
 import StatCard from '../../../components/StatCard';
@@ -38,11 +37,11 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const th: CSSProperties = { padding: '.5rem .7rem', textAlign: 'left', fontSize: '.74rem', color: 'var(--dim)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '.04em' };
-const td: CSSProperties = { padding: '.5rem .7rem', verticalAlign: 'top' };
-const emptyCell: CSSProperties = { padding: '1.5rem', textAlign: 'center', color: 'var(--dim)' };
-const input: CSSProperties = { background: 'var(--gb-neutral-0)', border: '1px solid var(--rim)', borderRadius: 6, padding: '.45rem .7rem', fontSize: '.85rem' };
-const lbl: CSSProperties = { fontSize: '.78rem', color: 'var(--dim)', display: 'block', marginBottom: '.3rem' };
+const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const EMPTY_CLS = 'p-6 text-center text-dim';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.45rem] px-[0.7rem] text-[0.85rem]';
+const LBL_CLS = 'text-[0.78rem] text-dim block mb-[0.3rem]';
 
 export default function AdminAbusePage() {
   const { showToast } = useToast();
@@ -144,36 +143,35 @@ export default function AdminAbusePage() {
 
   return (
     <div id="pg-abuse">
-      <div className="stats" style={{ marginBottom: '1rem' }}>
+      <div className="stats mb-4">
         <StatCard label="Rate Limited Today" value={stats?.rate_limited_today ?? 0} />
         <StatCard label="Auto-Blocked Today" value={stats?.auto_blocked_today ?? 0} />
         <StatCard label="Active Blocks" value={stats?.active_blocks ?? 0} />
       </div>
-      {statsErr && <div style={{ marginBottom: '1rem' }}><SectionError message={statsErr} onRetry={loadStats} /></div>}
+      {statsErr && <div className="mb-4"><SectionError message={statsErr} onRetry={loadStats} /></div>}
 
-      <div className="card" style={{ marginBottom: '1rem' }}>
-        <div className="ch"><h3 style={{ margin: 0 }}>Top Rate-Limited Phones (Today)</h3></div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+      <div className="card mb-4">
+        <div className="ch"><h3 className="m-0">Top Rate-Limited Phones (Today)</h3></div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-[0.82rem]">
             <thead>
-              <tr style={{ background: 'var(--ink)', textAlign: 'left', color: 'var(--dim)', fontSize: '.74rem' }}>
-                <th style={th}>Phone</th>
-                <th style={th}>Hits</th>
-                <th style={th}>Action</th>
+              <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                <th className={TH_CLS}>Phone</th>
+                <th className={TH_CLS}>Hits</th>
+                <th className={TH_CLS}>Action</th>
               </tr>
             </thead>
             <tbody>
               {topRows.length === 0 ? (
-                <tr><td colSpan={3} style={emptyCell}>No rate-limited phones today.</td></tr>
+                <tr><td colSpan={3} className={EMPTY_CLS}>No rate-limited phones today.</td></tr>
               ) : topRows.map((p, i) => (
-                <tr key={i} style={{ borderTop: '1px solid var(--rim)' }}>
-                  <td style={td} className="mono">{p.phone}</td>
-                  <td style={{ ...td, fontWeight: 600 }}>{p.count}</td>
-                  <td style={td}>
+                <tr key={i} className="border-t border-rim">
+                  <td className={`${TD_CLS} mono`}>{p.phone}</td>
+                  <td className={`${TD_CLS} font-semibold`}>{p.count}</td>
+                  <td className={TD_CLS}>
                     <button
                       type="button"
-                      className="btn-g btn-sm"
-                      style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)' }}
+                      className="btn-g btn-sm bg-red-500 text-neutral-0"
                       onClick={() => openBlock(p.phone, 'Excessive rate-limit violations')}
                     >Block</button>
                   </td>
@@ -185,12 +183,11 @@ export default function AdminAbusePage() {
       </div>
 
       <div className="card">
-        <div className="ch" style={{ justifyContent: 'space-between' }}>
-          <h3 style={{ margin: 0 }}>Blocked Phones</h3>
+        <div className="ch justify-between">
+          <h3 className="m-0">Blocked Phones</h3>
           <button
             type="button"
-            className="btn-p btn-sm"
-            style={{ background: 'var(--gb-red-500)' }}
+            className="btn-p btn-sm bg-red-500"
             onClick={() => openBlock()}
           >+ Block Phone</button>
         </div>
@@ -198,50 +195,47 @@ export default function AdminAbusePage() {
         {blockedErr ? (
           <div className="cb"><SectionError message={blockedErr} onRetry={loadBlocked} /></div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-[0.82rem]">
               <thead>
-                <tr style={{ background: 'var(--ink)', textAlign: 'left', color: 'var(--dim)', fontSize: '.74rem' }}>
-                  <th style={th}>Phone</th>
-                  <th style={th}>Reason</th>
-                  <th style={th}>Blocked By</th>
-                  <th style={th}>Blocked At</th>
-                  <th style={th}>Expires</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Action</th>
+                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                  <th className={TH_CLS}>Phone</th>
+                  <th className={TH_CLS}>Reason</th>
+                  <th className={TH_CLS}>Blocked By</th>
+                  <th className={TH_CLS}>Blocked At</th>
+                  <th className={TH_CLS}>Expires</th>
+                  <th className={TH_CLS}>Status</th>
+                  <th className={TH_CLS}>Action</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} style={emptyCell}>Loading…</td></tr>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>Loading…</td></tr>
                 ) : blocked.length === 0 ? (
-                  <tr><td colSpan={7} style={emptyCell}>No blocked phones.</td></tr>
-                ) : blocked.map((b) => (
-                  <tr key={b.id} style={{ borderTop: '1px solid var(--rim)' }}>
-                    <td style={td} className="mono">{b.wa_phone}</td>
-                    <td style={{ ...td, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={b.reason || ''}>{b.reason || '—'}</td>
-                    <td style={td}>
-                      <span style={{
-                        display: 'inline-block', padding: '.1rem .45rem', borderRadius: 10,
-                        fontSize: '.7rem', fontWeight: 600,
-                        background: b.blocked_by === 'auto' ? 'rgba(245,158,11,.18)' : 'rgba(59,130,246,.18)',
-                        color: b.blocked_by === 'auto' ? 'var(--gb-amber-600)' : 'var(--gb-blue-600)',
-                      }}>{b.blocked_by === 'auto' ? 'Auto' : 'Admin'}</span>
+                  <tr><td colSpan={7} className={EMPTY_CLS}>No blocked phones.</td></tr>
+                ) : blocked.map((b) => {
+                  const byCls = b.blocked_by === 'auto'
+                    ? 'bg-[rgba(245,158,11,0.18)] text-amber-600'
+                    : 'bg-[rgba(59,130,246,0.18)] text-blue-600';
+                  const stCls = b.is_active
+                    ? 'bg-[rgba(239,68,68,0.18)] text-red-600'
+                    : 'bg-[rgba(100,116,139,0.18)] text-slate-700';
+                  return (
+                  <tr key={b.id} className="border-t border-rim">
+                    <td className={`${TD_CLS} mono`}>{b.wa_phone}</td>
+                    <td className={`${TD_CLS} max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap`} title={b.reason || ''}>{b.reason || '—'}</td>
+                    <td className={TD_CLS}>
+                      <span className={`inline-block py-[0.1rem] px-[0.45rem] rounded-[10px] text-[0.7rem] font-semibold ${byCls}`}>{b.blocked_by === 'auto' ? 'Auto' : 'Admin'}</span>
                     </td>
-                    <td style={{ ...td, fontSize: '.75rem', color: 'var(--dim)' }}>{fmtTime(b.blocked_at)}</td>
-                    <td style={{ ...td, fontSize: '.75rem' }}>{b.expires_at ? fmtTime(b.expires_at) : <span style={{ color: 'var(--gb-red-600)' }}>Never</span>}</td>
-                    <td style={td}>
-                      <span style={{
-                        display: 'inline-block', padding: '.1rem .45rem', borderRadius: 10,
-                        fontSize: '.7rem', fontWeight: 600,
-                        background: b.is_active ? 'rgba(239,68,68,.18)' : 'rgba(100,116,139,.18)',
-                        color: b.is_active ? 'var(--gb-red-600)' : 'var(--gb-slate-700)',
-                      }}>{b.is_active ? 'Active' : 'Expired'}</span>
+                    <td className={`${TD_CLS} text-[0.75rem] text-dim`}>{fmtTime(b.blocked_at)}</td>
+                    <td className={`${TD_CLS} text-[0.75rem]`}>{b.expires_at ? fmtTime(b.expires_at) : <span className="text-red-600">Never</span>}</td>
+                    <td className={TD_CLS}>
+                      <span className={`inline-block py-[0.1rem] px-[0.45rem] rounded-[10px] text-[0.7rem] font-semibold ${stCls}`}>{b.is_active ? 'Active' : 'Expired'}</span>
                     </td>
-                    <td style={td}>
+                    <td className={TD_CLS}>
                       {confirmUnblock === b.id ? (
                         <>
-                          <button type="button" className="btn-g btn-sm" style={{ background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', marginRight: '.3rem' }} onClick={() => doUnblock(b.id)} disabled={busyId === b.id}>Confirm</button>
+                          <button type="button" className="btn-g btn-sm bg-red-500 text-neutral-0 mr-[0.3rem]" onClick={() => doUnblock(b.id)} disabled={busyId === b.id}>Confirm</button>
                           <button type="button" className="btn-g btn-sm" onClick={() => setConfirmUnblock(null)}>Cancel</button>
                         </>
                       ) : (
@@ -249,7 +243,8 @@ export default function AdminAbusePage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -259,39 +254,39 @@ export default function AdminAbusePage() {
       {modalOpen && (
         <div
           onClick={closeModal}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem' }}
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: 'var(--gb-neutral-0)', borderRadius: 10, width: '100%', maxWidth: 420 }}
+            className="bg-neutral-0 rounded-[10px] w-full max-w-[420px]"
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '.8rem 1rem', borderBottom: '1px solid var(--rim)' }}>
-              <h3 style={{ margin: 0, fontSize: '.95rem' }}>Block Phone Number</h3>
+            <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
+              <h3 className="m-0 text-[0.95rem]">Block Phone Number</h3>
               <button type="button" className="btn-g btn-sm" onClick={closeModal}>✕</button>
             </div>
-            <div style={{ padding: '1rem' }}>
-              <div style={{ marginBottom: '.8rem' }}>
-                <label style={lbl}>WhatsApp Phone Number</label>
+            <div className="p-4">
+              <div className="mb-[0.8rem]">
+                <label className={LBL_CLS}>WhatsApp Phone Number</label>
                 <input
                   value={fPhone}
                   onChange={(e) => setFPhone(e.target.value)}
                   placeholder="919876543210"
-                  style={{ ...input, width: '100%' }}
+                  className={`${INPUT_CLS} w-full`}
                 />
-                <span style={{ fontSize: '.7rem', color: 'var(--dim)' }}>Country code + number, no + prefix</span>
+                <span className="text-[0.7rem] text-dim">Country code + number, no + prefix</span>
               </div>
-              <div style={{ marginBottom: '.8rem' }}>
-                <label style={lbl}>Reason</label>
+              <div className="mb-[0.8rem]">
+                <label className={LBL_CLS}>Reason</label>
                 <input
                   value={fReason}
                   onChange={(e) => setFReason(e.target.value)}
                   placeholder="Spam, abuse, etc."
-                  style={{ ...input, width: '100%' }}
+                  className={`${INPUT_CLS} w-full`}
                 />
               </div>
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={lbl}>Duration</label>
-                <select value={fDuration} onChange={(e) => setFDuration(e.target.value)} style={{ ...input, width: '100%' }}>
+              <div className="mb-4">
+                <label className={LBL_CLS}>Duration</label>
+                <select value={fDuration} onChange={(e) => setFDuration(e.target.value)} className={`${INPUT_CLS} w-full`}>
                   <option value="1">1 hour</option>
                   <option value="24">24 hours</option>
                   <option value="168">7 days</option>
@@ -302,10 +297,7 @@ export default function AdminAbusePage() {
                 type="button"
                 onClick={submitBlock}
                 disabled={submitting}
-                style={{
-                  width: '100%', background: 'var(--gb-red-500)', color: 'var(--gb-neutral-0)', border: 'none',
-                  borderRadius: 6, padding: '.55rem', fontSize: '.88rem', fontWeight: 600, cursor: 'pointer',
-                }}
+                className="w-full bg-red-500 text-neutral-0 border-0 rounded-md py-[0.55rem] text-[0.88rem] font-semibold cursor-pointer"
               >{submitting ? 'Blocking…' : 'Block Phone'}</button>
             </div>
           </div>

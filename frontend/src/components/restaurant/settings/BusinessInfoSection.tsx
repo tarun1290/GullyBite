@@ -57,18 +57,12 @@ interface ViewRowProps {
 function ViewRow({ label, value, mono, badge }: ViewRowProps) {
   const notSet = !value && value !== 0;
   return (
-    <div style={{
-      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '.45rem 0', borderBottom: '1px solid var(--rim,#f0f0f0)',
-    }}
-    >
-      <span style={{ color: 'var(--dim)', fontSize: '.78rem', minWidth: 130 }}>{label}</span>
-      <span style={{
-        fontWeight: 500, textAlign: 'right', fontSize: '.84rem',
-        fontFamily: mono ? 'monospace' : 'inherit',
-        color: notSet ? 'var(--mute,var(--dim))' : 'inherit',
-        fontStyle: notSet ? 'italic' : 'normal',
-      }}
+    <div className="flex justify-between items-center py-[0.45rem] border-b border-rim">
+      <span className="text-dim text-[0.78rem] min-w-[130px]">{label}</span>
+      <span
+        className={`font-medium text-right text-[0.84rem] ${mono ? 'font-mono' : ''} ${
+          notSet ? 'text-mute italic' : 'not-italic'
+        }`}
       >
         {notSet ? 'Not set' : value}
         {badge}
@@ -82,22 +76,14 @@ interface VerifBadgeProps { verified?: boolean; hasValue: boolean }
 function VerifBadge({ verified, hasValue }: VerifBadgeProps) {
   if (verified) {
     return (
-      <span style={{
-        marginLeft: '.4rem', fontSize: '.65rem', padding: '.1rem .4rem',
-        borderRadius: 99, background: '#dcfce7', color: '#15803d', fontWeight: 700,
-      }}
-      >
+      <span className="ml-[0.4rem] text-[0.65rem] py-[0.1rem] px-[0.4rem] rounded-full bg-[#dcfce7] text-[#15803d] font-bold">
         ✓ Verified
       </span>
     );
   }
   if (hasValue) {
     return (
-      <span style={{
-        marginLeft: '.4rem', fontSize: '.65rem', padding: '.1rem .4rem',
-        borderRadius: 99, background: '#fef3c7', color: '#92400e', fontWeight: 600,
-      }}
-      >
+      <span className="ml-[0.4rem] text-[0.65rem] py-[0.1rem] px-[0.4rem] rounded-full bg-[#fef3c7] text-[#92400e] font-semibold">
         Pending
       </span>
     );
@@ -242,7 +228,7 @@ export default function BusinessInfoSection() {
     return (
       <div className="card">
         <div className="ch"><h3>Business Information</h3></div>
-        <div className="cb"><div style={{ color: 'var(--dim)', padding: '.5rem' }}>Loading…</div></div>
+        <div className="cb"><div className="text-dim p-2">Loading…</div></div>
       </div>
     );
   }
@@ -252,8 +238,8 @@ export default function BusinessInfoSection() {
   const isExpired = fssaiExpiryDate && fssaiExpiryDate < new Date();
 
   return (
-    <div className="card" style={{ marginBottom: '1.2rem' }}>
-      <div className="ch" style={{ justifyContent: 'space-between' }}>
+    <div className="card mb-[1.2rem]">
+      <div className="ch justify-between">
         <h3>Business Information</h3>
         {!editing && (
           <button type="button" className="btn-g btn-sm" onClick={() => setEditing(true)}>
@@ -273,15 +259,10 @@ export default function BusinessInfoSection() {
                   label="Restaurant ID"
                   mono
                   value={(
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '.4rem' }}>
+                    <span className="inline-flex items-center gap-[0.4rem]">
                       <span
                         title={fullId}
-                        style={{
-                          padding: '.15rem .5rem',
-                          background: 'var(--ink2)',
-                          borderRadius: 5,
-                          fontSize: '.78rem',
-                        }}
+                        className="py-[0.15rem] px-2 bg-ink2 rounded-[5px] text-[0.78rem]"
                       >
                         {shortId}
                       </span>
@@ -289,16 +270,7 @@ export default function BusinessInfoSection() {
                         type="button"
                         onClick={handleCopyRestaurantId}
                         title="Copy full ID for support"
-                        style={{
-                          background: 'var(--wa)',
-                          color: '#fff',
-                          border: 'none',
-                          borderRadius: 4,
-                          padding: '.15rem .45rem',
-                          fontSize: '.66rem',
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                        }}
+                        className="bg-wa text-white border-0 rounded-[4px] py-[0.15rem] px-[0.45rem] text-[0.66rem] font-semibold cursor-pointer"
                       >
                         Copy
                       </button>
@@ -317,14 +289,11 @@ export default function BusinessInfoSection() {
             {r.logo_url && (
               <ViewRow
                 label="Logo"
-                value={<img src={r.logo_url} alt="" style={{ height: 28, borderRadius: 4 }} />}
+                value={<img src={r.logo_url} alt="" className="h-7 rounded-[4px]" />}
               />
             )}
 
-            <p style={{
-              fontSize: '.82rem', fontWeight: 600, color: 'var(--dim)', margin: '.8rem 0 .4rem',
-            }}
-            >
+            <p className="text-[0.82rem] font-semibold text-dim mt-[0.8rem] mb-[0.4rem]">
               Legal &amp; Compliance
             </p>
             <ViewRow
@@ -343,7 +312,7 @@ export default function BusinessInfoSection() {
               <ViewRow
                 label="FSSAI Expiry"
                 value={
-                  <span style={{ color: isExpired ? 'var(--red,#dc2626)' : 'inherit' }}>
+                  <span className={isExpired ? 'text-red' : ''}>
                     {fssaiExpiryDate.toLocaleDateString('en-IN', {
                       day: 'numeric', month: 'short', year: 'numeric',
                     })}
@@ -353,47 +322,30 @@ export default function BusinessInfoSection() {
               />
             )}
 
-            <p style={{
-              fontSize: '.82rem', fontWeight: 600, color: 'var(--dim)', margin: '.8rem 0 .4rem',
-            }}
-            >
+            <p className="text-[0.82rem] font-semibold text-dim mt-[0.8rem] mb-[0.4rem]">
               Store URL
             </p>
             {r.store_url ? (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '.5rem',
-                padding: '.4rem .6rem', background: 'var(--ink2)', borderRadius: 6, marginBottom: '.3rem',
-              }}
-              >
+              <div className="flex items-center gap-2 py-[0.4rem] px-[0.6rem] bg-ink2 rounded-md mb-[0.3rem]">
                 <a
                   href={r.store_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{
-                    flex: 1, fontFamily: 'monospace', fontSize: '.8rem',
-                    color: 'var(--acc)', wordBreak: 'break-all',
-                  }}
+                  className="flex-1 font-mono text-[0.8rem] text-acc break-all"
                 >
                   {r.store_url}
                 </a>
                 <button
                   type="button"
                   onClick={handleCopyUrl}
-                  style={{
-                    background: 'var(--wa)', color: '#fff', border: 'none',
-                    borderRadius: 5, padding: '.25rem .6rem', fontSize: '.72rem',
-                    fontWeight: 600, cursor: 'pointer',
-                  }}
+                  className="bg-wa text-white border-0 rounded-[5px] py-1 px-[0.6rem] text-[0.72rem] font-semibold cursor-pointer"
                 >
                   Copy
                 </button>
               </div>
             ) : <ViewRow label="Store URL" value={null} />}
 
-            <p style={{
-              fontSize: '.82rem', fontWeight: 600, color: 'var(--dim)', margin: '.8rem 0 .4rem',
-            }}
-            >
+            <p className="text-[0.82rem] font-semibold text-dim mt-[0.8rem] mb-[0.4rem]">
               Bank Account
             </p>
             {r.bank_name || r.bank_account_number ? (
@@ -406,11 +358,7 @@ export default function BusinessInfoSection() {
                 <ViewRow label="IFSC" value={r.bank_ifsc} mono />
               </>
             ) : (
-              <div style={{
-                fontSize: '.8rem', color: 'var(--mute,var(--dim))',
-                fontStyle: 'italic', padding: '.3rem 0',
-              }}
-              >
+              <div className="text-[0.8rem] text-mute italic py-[0.3rem]">
                 No bank details — add in Edit mode
               </div>
             )}
@@ -434,7 +382,7 @@ export default function BusinessInfoSection() {
                 <input value={form.phone} onChange={update('phone')} placeholder="+91 98765 43210" />
               </Field>
               <Field label="Email">
-                <input value={form.email} readOnly disabled style={{ background: 'var(--ink2)', color: 'var(--dim)' }} />
+                <input value={form.email} readOnly disabled className="bg-ink2 text-dim" />
               </Field>
               <Field label="City">
                 <input value={form.city} onChange={update('city')} placeholder="Mumbai" />
@@ -452,7 +400,7 @@ export default function BusinessInfoSection() {
             </div>
 
             <hr className="dv" />
-            <p style={{ fontSize: '.84rem', fontWeight: 600, color: 'var(--dim)', marginBottom: '.85rem' }}>
+            <p className="text-[0.84rem] font-semibold text-dim mb-[0.85rem]">
               Legal &amp; Compliance
             </p>
             <div className="fgrid">
@@ -461,7 +409,7 @@ export default function BusinessInfoSection() {
                   value={form.gstNumber}
                   onChange={(e) => setForm((p) => ({ ...p, gstNumber: e.target.value.toUpperCase() }))}
                   placeholder="22AAAAA0000A1Z5"
-                  style={{ textTransform: 'uppercase' }}
+                  className="uppercase"
                 />
               </Field>
               <Field label={<>FSSAI License <VerifBadge verified={r.fssai_verified} hasValue={!!form.fssaiLicense} /></>}>
@@ -471,63 +419,47 @@ export default function BusinessInfoSection() {
                 <input type="date" value={form.fssaiExpiry} onChange={update('fssaiExpiry')} />
               </Field>
             </div>
-            <div style={{
-              background: '#fefce8', border: '1px solid #fde68a', borderRadius: 8,
-              padding: '.6rem .9rem', marginTop: '.7rem', fontSize: '.75rem', color: '#92400e',
-            }}
-            >
+            <div className="bg-[#fefce8] border border-[#fde68a] rounded-lg py-[0.6rem] px-[0.9rem] mt-[0.7rem] text-[0.75rem] text-[#92400e]">
               GST and FSSAI details are manually verified by the GullyBite team.
             </div>
 
             <hr className="dv" />
-            <p style={{ fontSize: '.84rem', fontWeight: 600, color: 'var(--dim)', marginBottom: '.5rem' }}>
+            <p className="text-[0.84rem] font-semibold text-dim mb-2">
               Store URL
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '.5rem', marginBottom: '.3rem' }}>
-              <span style={{
-                fontSize: '.8rem', color: 'var(--dim)', fontFamily: 'monospace', whiteSpace: 'nowrap',
-              }}
-              >
+            <div className="flex items-center gap-2 mb-[0.3rem]">
+              <span className="text-[0.8rem] text-dim font-mono whitespace-nowrap">
                 {storeBase}
               </span>
               <input
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
-                style={{
-                  flex: 1, background: 'var(--ink4)', border: '1px solid var(--rim)',
-                  borderRadius: 7, padding: '.38rem .7rem', fontSize: '.8rem',
-                  color: 'var(--tx)', outline: 'none', fontFamily: 'monospace',
-                }}
+                className="flex-1 bg-ink4 border border-rim rounded-[7px] py-[0.38rem] px-[0.7rem] text-[0.8rem] text-tx outline-hidden font-mono"
                 placeholder={slugPlaceholder}
               />
               <button
                 type="button"
-                className="btn-g btn-sm"
+                className="btn-g btn-sm whitespace-nowrap"
                 onClick={handleSaveSlug}
                 disabled={savingSlug}
-                style={{ whiteSpace: 'nowrap' }}
               >
                 {savingSlug ? 'Saving…' : 'Save Slug'}
               </button>
               <button
                 type="button"
                 onClick={handleCopyUrl}
-                style={{
-                  background: 'var(--wa)', color: '#fff', border: 'none',
-                  borderRadius: 7, padding: '.38rem .85rem', fontSize: '.77rem',
-                  fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-                }}
+                className="bg-wa text-white border-0 rounded-[7px] py-[0.38rem] px-[0.85rem] text-[0.77rem] font-semibold cursor-pointer whitespace-nowrap"
               >
                 Copy
               </button>
             </div>
-            <p style={{ fontSize: '.72rem', color: 'var(--dim)', marginBottom: '1rem' }}>
+            <p className="text-[0.72rem] text-dim mb-4">
               Lowercase letters, numbers, hyphens only.
             </p>
 
             <hr className="dv" />
-            <p style={{ fontSize: '.84rem', fontWeight: 600, color: 'var(--dim)', marginBottom: '.85rem' }}>
-              Bank Account <span style={{ fontWeight: 400, fontSize: '.78rem' }}>(for settlements)</span>
+            <p className="text-[0.84rem] font-semibold text-dim mb-[0.85rem]">
+              Bank Account <span className="font-normal text-[0.78rem]">(for settlements)</span>
             </p>
             <div className="fgrid">
               <Field label="Bank Name">
@@ -541,7 +473,7 @@ export default function BusinessInfoSection() {
               </Field>
             </div>
 
-            <div style={{ display: 'flex', gap: '.5rem', marginTop: '1.1rem' }}>
+            <div className="flex gap-2 mt-[1.1rem]">
               <button
                 type="button"
                 className="btn-p"

@@ -77,39 +77,27 @@ function Modal({ open, onClose, title, children, busy = false }: ModalProps) {
       aria-modal="true"
       aria-label={title}
       onClick={busy ? undefined : onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)',
-        zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: '1rem',
-      }}
+      className="fixed inset-0 bg-black/45 z-9999 flex items-center justify-center p-4"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#fff', borderRadius: 10, maxWidth: 500, width: '100%',
-          boxShadow: '0 12px 40px rgba(0,0,0,.18)', overflow: 'hidden',
-        }}
+        className="bg-white rounded-[10px] max-w-[500px] w-full shadow-[0_12px_40px_rgba(0,0,0,0.18)] overflow-hidden"
       >
-        <div style={{
-          padding: '.85rem 1rem', borderBottom: '1px solid var(--rim)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        }}
-        >
-          <h3 style={{ margin: 0, fontSize: '1rem' }}>{title}</h3>
+        <div className="py-[0.85rem] px-4 border-b border-rim flex items-center justify-between">
+          <h3 className="m-0 text-base">{title}</h3>
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            style={{
-              background: 'transparent', border: 'none', fontSize: '1.2rem',
-              color: 'var(--dim)', cursor: busy ? 'not-allowed' : 'pointer', padding: '.2rem .4rem',
-            }}
+            className={`bg-transparent border-0 text-[1.2rem] text-dim py-[0.2rem] px-[0.4rem] ${
+              busy ? 'cursor-not-allowed' : 'cursor-pointer'
+            }`}
             aria-label="Close"
           >
             ×
           </button>
         </div>
-        <div style={{ padding: '1rem' }}>{children}</div>
+        <div className="p-4">{children}</div>
       </div>
     </div>
   );
@@ -150,7 +138,7 @@ export default function CatalogManagementCard() {
 
   return (
     <>
-      <div className="card" style={{ marginBottom: '1.2rem' }}>
+      <div className="card mb-[1.2rem]">
         <div className="ch"><h3>Meta Catalog</h3></div>
         <div className="cb">
           {loading && !catalogState ? (
@@ -240,7 +228,7 @@ export default function CatalogManagementCard() {
 
 function LoadingState() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '.6rem', padding: '1rem 0', color: 'var(--dim)' }}>
+    <div className="flex items-center gap-[0.6rem] py-4 text-dim">
       <span className="spin" aria-hidden="true" />
       <span>Loading catalog state…</span>
     </div>
@@ -251,12 +239,7 @@ interface ErrorStateProps { message: string; onRetry: () => void }
 
 function ErrorState({ message, onRetry }: ErrorStateProps) {
   return (
-    <div style={{
-      padding: '.75rem .9rem', background: '#fef2f2', border: '1px solid #fecaca',
-      borderRadius: 8, color: '#b91c1c', fontSize: '.84rem',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '.6rem',
-    }}
-    >
+    <div className="py-3 px-[0.9rem] bg-[#fef2f2] border border-[#fecaca] rounded-lg text-[#b91c1c] text-[0.84rem] flex items-center justify-between gap-[0.6rem]">
       <span>Failed to load: {message}</span>
       <button type="button" className="btn-g btn-sm" onClick={onRetry}>Retry</button>
     </div>
@@ -268,13 +251,13 @@ interface EmptyStateProps { onConnect: () => void; onCreate: () => void }
 function EmptyState({ onConnect, onCreate }: EmptyStateProps) {
   return (
     <div>
-      <div style={{ fontWeight: 600, fontSize: '.92rem', marginBottom: '.3rem' }}>
+      <div className="font-semibold text-[0.92rem] mb-[0.3rem]">
         No catalog connected
       </div>
-      <div style={{ color: 'var(--dim)', fontSize: '.82rem', marginBottom: '.9rem' }}>
+      <div className="text-dim text-[0.82rem] mb-[0.9rem]">
         Connect a Meta Product Catalog to enable WhatsApp ordering.
       </div>
-      <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+      <div className="flex gap-2 flex-wrap">
         <button type="button" className="btn-g btn-sm" onClick={onConnect}>
           Connect existing catalog
         </button>
@@ -303,23 +286,20 @@ function ConnectedState({ state, syncStatus, onSwitch, onCreate, onDelete, onDis
 
   return (
     <div>
-      <div style={{ marginBottom: '.85rem' }}>
-        <div style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--tx)', marginBottom: '.3rem' }}>
+      <div className="mb-[0.85rem]">
+        <div className="font-bold text-base text-tx mb-[0.3rem]">
           {state.catalogName || 'Menu Catalog'}
         </div>
         <div
           title={state.catalogId}
-          style={{
-            fontFamily: 'monospace', fontSize: '.78rem', color: 'var(--dim)', marginBottom: '.45rem',
-            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}
+          className="font-mono text-[0.78rem] text-dim mb-[0.45rem] whitespace-nowrap overflow-hidden text-ellipsis"
         >
           {state.catalogId}
         </div>
-        <div style={{ fontSize: '.82rem', color: 'var(--tx)', marginBottom: '.2rem' }}>
+        <div className="text-[0.82rem] text-tx mb-[0.2rem]">
           {itemCount == null ? 'Item count unavailable' : `${itemCount} item${itemCount === 1 ? '' : 's'} in catalog`}
         </div>
-        <div style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+        <div className="text-[0.78rem] text-dim">
           {lastSyncStatus === 'failed'
             ? `Last sync failed${lastSync ? ` (${formatRelativeTime(lastSync)})` : ''}`
             : lastSync
@@ -327,17 +307,19 @@ function ConnectedState({ state, syncStatus, onSwitch, onCreate, onDelete, onDis
               : 'Never synced'}
         </div>
         {!state.catalogLinkedToWhatsapp && (
-          <div style={{ marginTop: '.45rem', fontSize: '.78rem', color: 'var(--gold, #d97706)' }}>
+          <div className="mt-[0.45rem] text-[0.78rem] text-gold">
             ⚠ Catalog exists but is not linked to WhatsApp.
           </div>
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap' }}>
+      <div className="flex gap-2 flex-wrap">
         <button type="button" className="btn-g btn-sm" onClick={onSwitch}>Switch catalog</button>
         <button type="button" className="btn-g btn-sm" onClick={onCreate}>Create new catalog</button>
-        <button type="button" className="btn-g btn-sm" onClick={onDisconnect}
-          style={{ color: '#dc2626', borderColor: '#dc2626' }}
+        <button
+          type="button"
+          className="btn-g btn-sm text-[#dc2626] border-[#dc2626]"
+          onClick={onDisconnect}
         >
           Disconnect from WhatsApp
         </button>
@@ -409,8 +391,8 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
 
   return (
     <Modal open={open} onClose={onClose} title="Select a catalog" busy={busy}>
-      <div style={{ marginBottom: '.7rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '.78rem', color: 'var(--dim)' }}>
+      <div className="mb-[0.7rem] flex justify-between items-center">
+        <span className="text-[0.78rem] text-dim">
           {list.length} {list.length === 1 ? 'catalog' : 'catalogs'} available
         </span>
         <button type="button" className="btn-g btn-sm" onClick={handleRefresh} disabled={refreshing || busy}>
@@ -419,28 +401,21 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
       </div>
 
       {list.length === 0 ? (
-        <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--dim)', fontSize: '.84rem' }}>
+        <div className="p-4 text-center text-dim text-[0.84rem]">
           No catalogs found. Try refreshing, or create a new one.
         </div>
       ) : (
-        <div style={{
-          maxHeight: 320, overflowY: 'auto', overflowX: 'hidden',
-          border: '1px solid var(--rim)', borderRadius: 6,
-        }}
-        >
+        <div className="max-h-[320px] overflow-y-auto overflow-x-hidden border border-rim rounded-md">
           {list.map((c) => {
             const isCurrent = c.id === currentCatalogId;
             return (
               <label
                 key={c.id}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '.6rem',
-                  padding: '.6rem .75rem', borderBottom: '1px solid var(--rim)',
-                  cursor: isCurrent ? 'default' : 'pointer',
-                  background: selected === c.id ? 'rgba(79,70,229,.06)' : 'transparent',
-                  opacity: isCurrent ? 0.7 : 1,
-                  width: '100%', boxSizing: 'border-box',
-                }}
+                className={`flex items-center gap-[0.6rem] py-[0.6rem] px-3 border-b border-rim w-full box-border ${
+                  isCurrent ? 'cursor-default opacity-70' : 'cursor-pointer opacity-100'
+                } ${
+                  selected === c.id ? 'bg-[rgba(79,70,229,0.06)]' : 'bg-transparent'
+                }`}
               >
                 <input
                   type="radio"
@@ -449,59 +424,35 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
                   checked={selected === c.id}
                   disabled={isCurrent || busy}
                   onChange={() => setSelected(c.id)}
-                  style={{ flexShrink: 0 }}
+                  className="shrink-0"
                 />
-                <div style={{
-                  flex: 1, minWidth: 0,
-                  display: 'flex', flexDirection: 'column', gap: '0.2rem',
-                }}
-                >
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '0.5rem',
-                    fontSize: '.86rem',
-                  }}
-                  >
+                <div className="flex-1 min-w-0 flex flex-col gap-[0.2rem]">
+                  <div className="flex items-center gap-2 text-[0.86rem]">
                     <span
                       title={c.name || 'Unnamed catalog'}
-                      style={{
-                        flex: 1, minWidth: 0, fontWeight: 600,
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}
+                      className="flex-1 min-w-0 font-semibold whitespace-nowrap overflow-hidden text-ellipsis"
                     >
                       {c.name || 'Unnamed catalog'}
                     </span>
                     {isCurrent && (
-                      <span style={{
-                        flexShrink: 0, fontSize: '.7rem', fontWeight: 500,
-                        color: 'var(--wa, #16a34a)', background: 'rgba(22,163,74,.1)',
-                        padding: '.05rem .4rem', borderRadius: 999,
-                      }}
-                      >
+                      <span className="shrink-0 text-[0.7rem] font-medium text-wa bg-[rgba(22,163,74,0.1)] py-[0.05rem] px-[0.4rem] rounded-full">
                         Connected
                       </span>
                     )}
                     {!isCurrent && c.connected && (
-                      <span style={{
-                        flexShrink: 0, fontSize: '.7rem', fontWeight: 500,
-                        color: 'var(--dim)', background: 'var(--surface2,#f4f4f5)',
-                        padding: '.05rem .4rem', borderRadius: 999,
-                      }}
-                      >
+                      <span className="shrink-0 text-[0.7rem] font-medium text-dim bg-surface2 py-[0.05rem] px-[0.4rem] rounded-full">
                         Linked to WhatsApp
                       </span>
                     )}
                   </div>
                   <div
                     title={c.id}
-                    style={{
-                      fontFamily: 'monospace', fontSize: '.7rem', color: 'var(--dim)',
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}
+                    className="font-mono text-[0.7rem] text-dim whitespace-nowrap overflow-hidden text-ellipsis"
                   >
                     {c.id}
                   </div>
                   {c.product_count != null && (
-                    <div style={{ fontSize: '.74rem', color: 'var(--dim)' }}>
+                    <div className="text-[0.74rem] text-dim">
                       {c.product_count} item{c.product_count === 1 ? '' : 's'}
                     </div>
                   )}
@@ -513,10 +464,10 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
       )}
 
       {err && (
-        <div style={{ marginTop: '.6rem', color: '#b91c1c', fontSize: '.8rem' }}>{err}</div>
+        <div className="mt-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>
       )}
 
-      <div style={{ marginTop: '.9rem', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+      <div className="mt-[0.9rem] flex gap-2 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"
@@ -563,7 +514,7 @@ function CreateModal({ open, onClose, onCreated }: CreateModalProps) {
 
   return (
     <Modal open={open} onClose={onClose} title="Create new catalog" busy={busy}>
-      <label style={{ display: 'block', fontSize: '.82rem', color: 'var(--dim)', marginBottom: '.3rem' }}>
+      <label className="block text-[0.82rem] text-dim mb-[0.3rem]">
         Catalog name
       </label>
       <input
@@ -573,18 +524,15 @@ function CreateModal({ open, onClose, onCreated }: CreateModalProps) {
         placeholder="e.g. Beyond Snacks - Main Menu"
         maxLength={60}
         disabled={busy}
-        style={{
-          width: '100%', padding: '.55rem .75rem', border: '1px solid var(--rim)',
-          borderRadius: 6, fontSize: '.88rem', background: '#fff',
-        }}
+        className="w-full py-[0.55rem] px-3 border border-rim rounded-md text-[0.88rem] bg-white"
       />
-      <div style={{ marginTop: '.3rem', fontSize: '.72rem', color: 'var(--dim)' }}>
+      <div className="mt-[0.3rem] text-[0.72rem] text-dim">
         3–50 characters.{trimmed.length > 0 && ` (${trimmed.length})`}
       </div>
 
-      {err && <div style={{ marginTop: '.6rem', color: '#b91c1c', fontSize: '.8rem' }}>{err}</div>}
+      {err && <div className="mt-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>}
 
-      <div style={{ marginTop: '.9rem', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+      <div className="mt-[0.9rem] flex gap-2 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button type="button" className="btn-p btn-sm" onClick={handleCreate} disabled={!valid || busy}>
           {busy ? 'Creating…' : 'Create catalog'}
@@ -628,12 +576,8 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
 
   return (
     <Modal open={open} onClose={onClose} title="Delete this catalog?" busy={busy}>
-      <div style={{
-        background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6,
-        padding: '.75rem .85rem', color: '#7f1d1d', fontSize: '.82rem', marginBottom: '.85rem',
-      }}
-      >
-        <div style={{ fontWeight: 700, color: '#b91c1c', marginBottom: '.3rem' }}>
+      <div className="bg-[#fef2f2] border border-[#fecaca] rounded-md py-3 px-[0.85rem] text-[#7f1d1d] text-[0.82rem] mb-[0.85rem]">
+        <div className="font-bold text-[#b91c1c] mb-[0.3rem]">
           ⚠ This cannot be undone
         </div>
         This will permanently delete the catalog from your Meta business account.
@@ -647,8 +591,8 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
         )}
       </div>
 
-      <label style={{ display: 'block', fontSize: '.78rem', color: 'var(--dim)', marginBottom: '.25rem' }}>
-        Type the catalog name to confirm: <code style={{ color: 'var(--tx)' }}>{catalogName || '(unknown)'}</code>
+      <label className="block text-[0.78rem] text-dim mb-1">
+        Type the catalog name to confirm: <code className="text-tx">{catalogName || '(unknown)'}</code>
       </label>
       <input
         type="text"
@@ -656,15 +600,12 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
         onChange={(e) => setTyped(e.target.value)}
         disabled={busy}
         placeholder={catalogName || ''}
-        style={{
-          width: '100%', padding: '.5rem .7rem', border: '1px solid var(--rim)',
-          borderRadius: 6, fontSize: '.85rem', background: '#fff',
-        }}
+        className="w-full py-2 px-[0.7rem] border border-rim rounded-md text-[0.85rem] bg-white"
       />
 
-      {err && <div style={{ marginTop: '.6rem', color: '#b91c1c', fontSize: '.8rem' }}>{err}</div>}
+      {err && <div className="mt-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>}
 
-      <div style={{ marginTop: '.9rem', display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+      <div className="mt-[0.9rem] flex gap-2 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"
@@ -707,19 +648,15 @@ function DisconnectModal({ open, onClose, catalogName, onDisconnected }: Disconn
 
   return (
     <Modal open={open} onClose={onClose} title="Disconnect catalog from WhatsApp?" busy={busy}>
-      <div style={{
-        background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6,
-        padding: '.75rem .85rem', color: '#92400e', fontSize: '.82rem', marginBottom: '.85rem',
-      }}
-      >
+      <div className="bg-[#fffbeb] border border-[#fde68a] rounded-md py-3 px-[0.85rem] text-[#92400e] text-[0.82rem] mb-[0.85rem]">
         The catalog{catalogName ? ` "${catalogName}"` : ''} will remain in your Meta
         business account but will no longer be available to customers through WhatsApp.
         You can reconnect it later.
       </div>
 
-      {err && <div style={{ marginBottom: '.6rem', color: '#b91c1c', fontSize: '.8rem' }}>{err}</div>}
+      {err && <div className="mb-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>}
 
-      <div style={{ display: 'flex', gap: '.5rem', justifyContent: 'flex-end' }}>
+      <div className="flex gap-2 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"

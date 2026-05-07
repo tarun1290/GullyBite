@@ -118,11 +118,11 @@ export default function AdminLogin() {
   if (statusLoading) {
     return (
       <div className="auth-wrap">
-        <nav className="nav" style={{ position: 'relative' }}>
+        <nav className="nav relative">
           <div className="logo"><div className="logo-ring">🍜</div>GullyBite</div>
         </nav>
         <div className="auth-body">
-          <div className="auth-card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
+          <div className="auth-card text-center py-12 px-6">
             <span className="spin" aria-label="Loading" />
           </div>
         </div>
@@ -132,7 +132,7 @@ export default function AdminLogin() {
 
   return (
     <div id={needsSetup ? 'pg-admin-setup' : 'pg-admin-signin'} className="auth-wrap">
-      <nav className="nav" style={{ position: 'relative' }}>
+      <nav className="nav relative">
         <div className="logo"><div className="logo-ring">🍜</div>GullyBite</div>
       </nav>
       <div className="auth-body">
@@ -162,7 +162,7 @@ export default function AdminLogin() {
                   <input type="password" autoComplete="new-password" required value={confirmPw} onChange={onChange(setConfirmPw)} />
                 </div>
                 {err && (
-                  <div style={{ color: '#b91c1c', fontSize: '.82rem', marginBottom: '.6rem' }}>
+                  <div className="text-red-600 text-[0.82rem] mb-[0.6rem]">
                     {err}
                   </div>
                 )}
@@ -185,7 +185,7 @@ export default function AdminLogin() {
                   <input type="password" autoComplete="current-password" required value={password} onChange={onChange(setPassword)} />
                 </div>
                 {err && (
-                  <div style={{ color: '#b91c1c', fontSize: '.82rem', marginBottom: '.6rem' }}>
+                  <div className="text-red-600 text-[0.82rem] mb-[0.6rem]">
                     {err}
                   </div>
                 )}
