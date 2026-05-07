@@ -24,6 +24,21 @@ const DEFAULT_JOURNEY_CONFIG = {
   birthday:       { enabled: false, template_id: null, custom_variable_values: {}, send_hour_ist: 10 },
   loyalty_expiry: { enabled: false, days_before_expiry: 5, template_id: null, custom_variable_values: {} },
   milestone:      { enabled: false, trigger_orders: [5, 10, 25], template_id: null, custom_variable_values: {} },
+  // Event-driven (no trigger_day): fired by queue/postPaymentJobs.js
+  // CART_RECOVERY handler 30 min after an order transitions to EXPIRED
+  // (in core/orderStateEngine.js). Defaults to enabled so restaurants
+  // with campaigns_enabled get cart-recovery for free; the per-restaurant
+  // executeJourney gates (campaigns_enabled, marketing_wa_status,
+  // wallet balance, approved template) still apply.
+  cart_recovery:  { enabled: true, template_id: null, custom_variable_values: {} },
+  // 7-day reorder reminder. Time-window-driven via the same
+  // days_since_last_order pattern as winback_short/winback_long, but
+  // adds a per-customer top-item lookup so the message can name the
+  // customer's most-ordered dish at this restaurant (passed as the
+  // `top_item` restaurant_input variable). Default enabled on
+  // onboarding for parity with cart_recovery — same gating chain
+  // applies inside executeJourney.
+  reorder_suggestion: { enabled: true, trigger_day: 7, template_id: null, custom_variable_values: {} },
 };
 
 const JOURNEY_TYPES = Object.keys(DEFAULT_JOURNEY_CONFIG);
@@ -94,6 +109,27 @@ async function executeJourney(restaurantId, customerId, journeyType, overrideVar
     if (restaurant.marketing_wa_status !== 'active') {
       log.debug({ restaurantId, journeyType }, 'journey: marketing_wa_status not active');
       return { ok: false, reason: 'marketing_wa_not_active' };
+    }
+    // WABA quality gate. Meta downgrades quality_rating to 'RED' when a
+    // restaurant's templates draw enough block/report signals; sending
+    // through a RED-rated number risks the number being suspended
+    // entirely. Skip silently — the dashboard surfaces the rating so
+    // the operator can fix root cause (template content, audience).
+    if (restaurant.marketing_wa_quality_rating === 'RED') {
+      log.debug({ restaurantId, journeyType }, 'journey: waba quality red');
+      return { ok: false, reason: 'waba_quality_red' };
+    }
+    // Marketing block-list: customer has texted STOP / UNSUBSCRIBE for
+    // this restaurant, or admin tooling explicitly blocked them. The
+    // unique (restaurant_id, customer_id) index makes this a single
+    // indexed point lookup — cheap to do per-journey-fire.
+    const blocked = await col('marketing_blocklist').findOne(
+      { restaurant_id: String(restaurantId), customer_id: String(customerId) },
+      { projection: { _id: 1 } },
+    );
+    if (blocked) {
+      log.debug({ restaurantId, customerId, journeyType }, 'journey: customer blocked');
+      return { ok: false, reason: 'customer_blocked' };
     }
 
     const config = await getConfig(restaurantId);

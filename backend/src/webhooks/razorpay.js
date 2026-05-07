@@ -240,6 +240,72 @@ const confirmPaidOrder = async (orderId, event) => {
   }
   if (validation.alreadyPaid) return; // Idempotent — already processed
 
+  // ─── PAYMENT-EXPIRY GATE ────────────────────────────────────
+  // Razorpay captured the customer's money but the order's payment
+  // window may have elapsed (default 20 min, set on order creation
+  // via expires_at). When expired we refund the captured amount in
+  // full, transition to EXPIRED_PAYMENT, and notify the customer —
+  // then return so the rest of the confirmation path (PAID flip,
+  // ledger credit, fulfillment fan-out) doesn't run. Wrapped so a
+  // refund / WA-send blip never blocks the webhook 200.
+  try {
+    const ordExp = await col('orders').findOne(
+      { _id: String(orderId) },
+      { projection: { expires_at: 1, total_rs: 1, restaurant_id: 1, order_number: 1 } },
+    );
+    if (ordExp?.expires_at && new Date() > new Date(ordExp.expires_at)) {
+      log.warn({ orderId, expiresAt: ordExp.expires_at }, 'Payment captured past expiry — initiating refund');
+
+      let refundOk = false;
+      try {
+        const refund = await paymentSvc.issueRefund(orderId, 'order_expired_post_payment');
+        refundOk = !!refund?.id;
+      } catch (refundErr) {
+        log.error({ err: refundErr, orderId }, 'Refund failed for expired-payment order — manual ops follow-up required');
+      }
+
+      try {
+        await orderSvc.updateStatus(orderId, 'EXPIRED_PAYMENT', { cancelReason: 'expired_post_payment' });
+      } catch (statusErr) {
+        log.warn({ err: statusErr, orderId }, 'EXPIRED_PAYMENT status flip failed');
+      }
+
+      // Customer WA notice — best-effort. Uses orderSvc.getOrderDetails
+      // to denormalise phone_number_id + access_token onto the doc, same
+      // pattern queue/postPaymentJobs.js:_handleCustomerNotification.
+      try {
+        const fullOrder = await orderSvc.getOrderDetails(orderId);
+        if (fullOrder?.phone_number_id && fullOrder?.access_token) {
+          const totalRs = Number(fullOrder.total_rs) || 0;
+          await wa.sendText(
+            fullOrder.phone_number_id,
+            fullOrder.access_token,
+            resolveRecipient(fullOrder),
+            `⚠️ Your order timed out before payment was confirmed. A full refund of ₹${totalRs.toFixed(2)} has been initiated and will reflect in 3–5 business days. Please place a fresh order.`,
+          );
+        }
+      } catch (waErr) {
+        log.warn({ err: waErr, orderId }, 'WA notice for expired-payment failed');
+      }
+
+      logActivity({
+        actorType: 'system', actorId: null, actorName: 'Razorpay',
+        action: 'order_expired_post_payment', category: 'payment',
+        description: `Order ${ordExp.order_number || orderId} expired before payment confirmation; full refund ${refundOk ? 'initiated' : 'FAILED'}`,
+        restaurantId: ordExp.restaurant_id || null,
+        resourceType: 'order', resourceId: orderId, severity: 'warning',
+        metadata: { totalRs: ordExp.total_rs, expiresAt: ordExp.expires_at, refundOk },
+      });
+
+      return; // Skip PAID flip, ledger credit, and fulfillment fan-out
+    }
+  } catch (gateErr) {
+    // Gate itself crashed (Mongo blip etc.) — fall through to normal
+    // flow rather than holding the customer's money in limbo. Logged so
+    // ops sees the gate failed even if payment confirmed normally.
+    log.error({ err: gateErr, orderId }, 'Payment-expiry gate crashed — falling through');
+  }
+
   await orderSvc.updateStatus(orderId, 'PAID');
 
   // Phase 3.1: atomic "flip + credit". The orders row is the lock — we

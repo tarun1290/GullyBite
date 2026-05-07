@@ -442,6 +442,10 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
     delivered_at: null,
     cancelled_at: null,
     cancel_reason: null,
+    // 20-minute payment window — the order_details message builder reads
+    // this to render the "Pay by HH:MM IST" disclaimer, and the payment
+    // gate reads it to refuse Razorpay captures past expiry.
+    expires_at: new Date(now.getTime() + 20 * 60 * 1000),
     created_at: now,
     updated_at: now,
   };

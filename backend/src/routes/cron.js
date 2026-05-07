@@ -315,6 +315,77 @@ router.post('/rating-requests', async (req, res) => {
   }
 });
 
+// ─── FEEDBACK ROUTING RECONCILIATION (every 5 minutes) ─────
+// Defense-in-depth for the FEEDBACK_ROUTING durable job. The primary
+// path is enqueue from feedbackService.recordRating with a 3-min delay;
+// this cron catches feedback_events whose job never persisted (e.g.
+// the enqueue itself crashed, or a pre-deploy code path used setTimeout
+// instead). Two queues:
+//   • rated_positive + review_link_sent_at:null  — review link not sent
+//   • rated_negative + escalated_at:null         — escalation not stamped
+// Cutoff = ROUTING_DELAY_MS + 60s grace so we never race ahead of the
+// in-flight job's own delay window.
+//
+// Dedup: skip rows whose payload.feedbackEventId is already held by a
+// pending/processing FEEDBACK_ROUTING job. Same shape as the
+// rating-requests sweep above.
+router.post('/feedback-routing', async (req, res) => {
+  try {
+    const feedbackService = require('../services/feedbackService');
+    const cutoff = new Date(Date.now() - feedbackService.ROUTING_DELAY_MS - 60 * 1000);
+
+    const [positives, negatives] = await Promise.all([
+      col('feedback_events').find({
+        status: 'rated_positive',
+        review_link_sent_at: null,
+        updated_at: { $lte: cutoff },
+      }).limit(20).toArray(),
+      col('feedback_events').find({
+        status: 'rated_negative',
+        escalated_at: null,
+        updated_at: { $lte: cutoff },
+      }).limit(20).toArray(),
+    ]);
+
+    const candidates = [...positives, ...negatives];
+    if (!candidates.length) {
+      return res.json({ ok: true, processed: 0, skipped: 0, errors: 0 });
+    }
+
+    const candidateIds = candidates.map((r) => String(r._id));
+    const liveJobs = await col('message_jobs').find({
+      type: 'FEEDBACK_ROUTING',
+      status: { $in: ['pending', 'processing'] },
+      'payload.feedbackEventId': { $in: candidateIds },
+    }, { projection: { 'payload.feedbackEventId': 1 } }).toArray();
+    const heldByJob = new Set(liveJobs.map((j) => j.payload?.feedbackEventId));
+
+    let processed = 0, skipped = 0, errors = 0;
+    for (const row of candidates) {
+      const id = String(row._id);
+      if (heldByJob.has(id)) { skipped++; continue; }
+      try {
+        await feedbackService.handleRatingRouting(id);
+        processed++;
+      } catch (err) {
+        log.warn({ err, feedbackEventId: id }, 'feedback-routing reconciliation failed');
+        errors++;
+      }
+    }
+
+    log.info({
+      processed, skipped, errors,
+      candidates: candidates.length,
+      positives: positives.length,
+      negatives: negatives.length,
+    }, 'feedback-routing cron complete');
+    res.json({ ok: true, processed, skipped, errors });
+  } catch (e) {
+    log.error({ err: e }, 'feedback-routing cron error');
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ─── OWNER DAILY SUMMARY (17:30 UTC = 23:00 IST daily) ───────
 // Sends each restaurant's owner mobile devices a roll-up of today's
 // orders + revenue. "Today" is server-local midnight (EC2 runs UTC,

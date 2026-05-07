@@ -106,6 +106,10 @@ async function createOrder({ restaurantId, customerId, cart, options = {} } = {}
 
     menu_version: options.menuVersion || null,
 
+    // 20-minute payment window — mirrors services/order.js. The Razorpay
+    // and WA Checkout payment webhooks check expires_at and refund the
+    // captured amount if a payment confirmation arrives past the window.
+    expires_at: new Date(now.getTime() + 20 * 60 * 1000),
     created_at: now,
     updated_at: now,
   };

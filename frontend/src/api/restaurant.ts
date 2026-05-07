@@ -413,8 +413,62 @@ export async function getCampaignTemplate(templateId: string): Promise<unknown> 
 
 // ── Marketing campaigns (manual blasts) ─────────────────────────────
 
-export async function createMarketingCampaign(body: RequestBody): Promise<unknown> {
-  const { data } = await client.post('/api/restaurant/marketing-campaigns/create', body);
+// Two-step create→confirm flow. /create now returns the estimate but
+// does NOT dispatch — the operator must call /:campaignId/confirm
+// within the 24h window for the campaign to actually send. Drafts that
+// time out are swept to status:'cancelled' by the hourly auto-journey
+// runner. See backend/src/routes/marketingCampaigns.js.
+export interface MarketingCampaignEstimate {
+  recipient_count: number;
+  cost_per_message_rs: number;
+  total_cost_rs: number;
+  wallet_balance_rs: number;
+  wallet_sufficient: boolean;
+}
+
+export interface CreateMarketingCampaignResponse {
+  campaignId: string;
+  estimate: MarketingCampaignEstimate;
+}
+
+export async function createMarketingCampaign(body: RequestBody): Promise<CreateMarketingCampaignResponse> {
+  const { data } = await client.post<CreateMarketingCampaignResponse>(
+    '/api/restaurant/marketing-campaigns/create',
+    body,
+  );
+  return data;
+}
+
+// Triggers the actual send (immediate or scheduled, depending on the
+// draft's send_at). Returns 'sending' for immediate or 'scheduled'
+// for future send_at. See routes/marketingCampaigns.js POST /confirm.
+export async function confirmMarketingCampaign(campaignId: string): Promise<{ status: string; send_at?: string }> {
+  const { data } = await client.post<{ status: string; send_at?: string }>(
+    `/api/restaurant/marketing-campaigns/${encodeURIComponent(campaignId)}/confirm`,
+  );
+  return data;
+}
+
+// Cost + audience preview for the auto-journey settings UI. Mirrors the
+// hourly cron's audience filter so the number shown matches what the
+// next tick would actually dispatch to. Event-driven journeys
+// (welcome / milestone / cart_recovery) return audience=0 + note.
+export interface JourneyEstimate {
+  journey_type: string;
+  estimated_audience: number;
+  cost_per_message_rs: number;
+  estimated_cost_rs: number;
+  wallet_balance_rs: number;
+  wallet_sufficient: boolean;
+  journey_enabled: boolean;
+  note?: string;
+}
+
+export async function getJourneyEstimate(journeyType: string): Promise<JourneyEstimate> {
+  const { data } = await client.get<JourneyEstimate>(
+    '/api/restaurant/marketing-campaigns/journey-estimate',
+    { params: { journey_type: journeyType } },
+  );
   return data;
 }
 

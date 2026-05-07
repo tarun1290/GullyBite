@@ -7,6 +7,8 @@ import {
   updateAutoJourneyConfig,
   getAutoJourneyStats,
   getCampaignTemplates,
+  getJourneyEstimate,
+  type JourneyEstimate,
 } from '../../api/restaurant';
 
 // Auto journeys dashboard surface. Six journey cards, each with an
@@ -36,9 +38,9 @@ const JOURNEY_META: ReadonlyArray<JourneyMeta> = [
     icon: '🔗',
   },
   {
-    key: 'reactivation',
-    label: 'Reactivation',
-    description: 'Last attempt to win back customers inactive for 30 days',
+    key: 'winback_long',
+    label: '30-Day Winback',
+    description: "Last attempt to re-engage customers who haven't ordered in 30 days",
     icon: '🚀',
   },
   {
@@ -165,6 +167,11 @@ interface JourneyCardProps {
   showStats: boolean;
 }
 
+// Event-driven journeys have no time-window cohort — backend returns
+// audience=0 + note:'event-driven'. The card renders "Event-driven"
+// instead of the audience count for these.
+const EVENT_DRIVEN_JOURNEYS = new Set(['welcome', 'milestone', 'cart_recovery']);
+
 function JourneyCard({
   meta, config, stats, templates, onSave, savingKey, disabled, showStats,
 }: JourneyCardProps) {
@@ -172,8 +179,21 @@ function JourneyCard({
   const key = meta.key;
   const entry = config[key] || {};
   const [local, setLocal] = useState<JourneyEntry>(() => ({ ...entry }));
+  // Fetched once on mount. The route 400s for journey types not in
+  // the backend's JOURNEY_TYPES allowlist; we swallow the error and
+  // just skip the estimate display so future metadata drift doesn't
+  // hard-break the card.
+  const [estimate, setEstimate] = useState<JourneyEstimate | null>(null);
 
   useEffect(() => { setLocal({ ...entry }); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [JSON.stringify(entry)]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getJourneyEstimate(key)
+      .then((e) => { if (!cancelled) setEstimate(e); })
+      .catch(() => { if (!cancelled) setEstimate(null); });
+    return () => { cancelled = true; };
+  }, [key]);
 
   const matchingTemplates = useMemo(
     () => (templates || []).filter((t) => t.use_case === key),
@@ -210,6 +230,23 @@ function JourneyCard({
             <div>
               <strong>{meta.label}</strong>
               <div className="text-[0.78rem] text-dim">{meta.description}</div>
+              {estimate && (
+                <div className="text-[0.74rem] text-dim mt-[0.2rem] flex items-center gap-1.5">
+                  {!estimate.wallet_sufficient && (
+                    <span
+                      className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0"
+                      title="Wallet balance below estimated cost"
+                    />
+                  )}
+                  <span>
+                    {EVENT_DRIVEN_JOURNEYS.has(key) || estimate.note === 'event-driven'
+                      ? 'Event-driven'
+                      : `~${estimate.estimated_audience.toLocaleString('en-IN')} customers eligible`}
+                    {' · '}
+                    ₹{Number(estimate.cost_per_message_rs).toFixed(2)}/msg
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           <Toggle
@@ -260,7 +297,7 @@ function JourneyCard({
               </select>
             </Field>
 
-            {(key === 'winback_short' || key === 'reactivation') && (
+            {(key === 'winback_short' || key === 'winback_long') && (
               <Field label="Inactivity trigger (days)">
                 <input
                   type="number" min={1}

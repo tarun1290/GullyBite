@@ -132,12 +132,20 @@ async function recordRating({ feedbackEventId, rating, feedbackText = null }) {
   const doc = row?.value || row; // driver compat
   if (!doc) return null;
 
-  // Fire-and-forget routing — do not block the webhook response.
-  setTimeout(() => {
-    handleRatingRouting(doc._id).catch((err) => {
-      log.warn({ err, feedbackEventId: doc._id }, 'rating routing failed');
-    });
-  }, ROUTING_DELAY_MS);
+  // Durable routing — enqueue a delayed FEEDBACK_ROUTING job so the
+  // 3-min wait survives a server restart. The previous in-process
+  // timer was lost on restart and the routing silently dropped. The
+  // deterministic jobId collapses duplicate enqueues (e.g. customer
+  // re-rating, double webhook fires) onto the same row via the
+  // _id-based dedup in postPaymentJobs.enqueue. routes/cron.js's
+  // /feedback-routing sweep is the second-line defence for jobs lost
+  // before they were ever persisted.
+  const postPaymentJobs = require('../queue/postPaymentJobs');
+  postPaymentJobs.enqueue(
+    'FEEDBACK_ROUTING',
+    { feedbackEventId: doc._id },
+    { delayMs: ROUTING_DELAY_MS, jobId: `feedback-routing-${doc._id}`, maxAttempts: 3 },
+  ).catch((err) => log.warn({ err, feedbackEventId: doc._id }, 'feedback routing enqueue failed'));
 
   return doc;
 }
@@ -194,8 +202,13 @@ async function _sendReviewLink(row, restaurant) {
 
   try {
     await wa.sendText(wa_acc.phone_number_id, wa_acc.access_token, row.customer_phone, lines.join('\n'));
+    // Conditional write — first run stamps review_link_sent_at, any
+    // subsequent run (cron sweep, retried durable job) finds the field
+    // populated and the updateOne becomes a no-op. This is the only
+    // idempotency guard on the positive branch; without it a duplicate
+    // fire would re-send the review link.
     await col('feedback_events').updateOne(
-      { _id: row._id },
+      { _id: row._id, review_link_sent_at: null },
       { $set: { review_link_sent_at: new Date(), updated_at: new Date() } }
     );
     // Lightweight positive-feedback ping for the bell — helpful so
@@ -354,4 +367,5 @@ module.exports = {
   getEscalations,
   resolveEscalation,
   isPositiveScore,
+  ROUTING_DELAY_MS,
 };

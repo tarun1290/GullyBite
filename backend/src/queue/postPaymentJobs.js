@@ -45,6 +45,18 @@ const JOB_TYPES = {
   // delivery and the rating prompt only after they've eaten. Owned by
   // services/order.js → LOYALTY_AWARD; no other site enqueues this.
   FEEDBACK_REQUEST: 'FEEDBACK_REQUEST',
+  // Cart-recovery — enqueued by core/orderStateEngine.js when an order
+  // transitions to EXPIRED, with a 30-min delay so the customer has
+  // time to retry payment on their own first. Sends the
+  // marketing_cart_recovery_v1 template via journeyExecutor.
+  CART_RECOVERY: 'CART_RECOVERY',
+  // Feedback routing — durable replacement for the in-process
+  // setTimeout in services/feedbackService.recordRating. Fires 3 min
+  // after a customer replies with a rating, then dispatches to the
+  // positive (review link) or negative (escalation) branch.
+  // routes/cron.js /feedback-routing sweeps for any rows whose job
+  // was lost before persistence.
+  FEEDBACK_ROUTING: 'FEEDBACK_ROUTING',
 };
 
 const MAX_ATTEMPTS = 5;
@@ -358,10 +370,10 @@ async function _handleSettlementTrigger(payload) {
 
 async function _handleLoyaltyAward(payload) {
   const loyalty = require('../services/loyaltyEngine');
-  const wa = require('../services/whatsapp');
   const { resolveRecipient } = require('../services/customerIdentity');
   const orderSvc = require('../services/order');
   const metaConfig = require('../config/meta');
+  const journeyExecutor = require('../services/journeyExecutor');
 
   const order = await orderSvc.getOrderDetails(payload.orderId);
   if (!order) throw new Error('order not found');
@@ -396,18 +408,17 @@ async function _handleLoyaltyAward(payload) {
 
   const reward = await loyalty.earnPoints(order.customer_id, order.restaurant_id, payload.orderId, order.total_rs, isFirstOrder, isBirthdayWeek);
   if (reward?.pointsEarned > 0 && toId && waAcc?.phone_number_id && waToken) {
-    let msg = `🎉 You earned *${reward.pointsEarned} loyalty points*!\n💰 Balance: ${reward.newBalance} points\n🏅 Tier: ${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}\n\nRedeem points on your next order!`;
-    if (reward.tierUpgraded) {
-      msg = `🎊 *Congratulations!* You've been upgraded to *${reward.newTier.charAt(0).toUpperCase() + reward.newTier.slice(1)}*!\n\n` + msg;
-    }
-    // Loyalty messaging is promotional — route via the restaurant's
-    // marketing number when set. Rating request below stays transactional.
-    const restaurant = await col('restaurants').findOne({ _id: order.restaurant_id });
-    const loyaltyPid = wa.getOutboundNumberId({
-      ...restaurant,
-      phoneNumberId: waAcc.phone_number_id,
-    });
-    await wa.sendText(loyaltyPid, waToken, toId, msg);
+    // Promotional loyalty notification — must go through an approved
+    // marketing template (use_case 'milestone') to stay inside the 24h
+    // CSW rule. Free-form sends are forbidden outside CSW and the prior
+    // wa.sendText was a CSW violation in production. executeJourney
+    // handles: approved-template lookup, wallet debit, 48h cap, WABA
+    // quality gate. No manual guards needed here.
+    await journeyExecutor.executeJourney(
+      String(order.restaurant_id),
+      String(order.customer_id),
+      'milestone',
+    ).catch((err) => log.warn({ err, orderId: payload.orderId }, 'milestone journey dispatch failed'));
   }
 
   // Rating ask — chained as a FEEDBACK_REQUEST job 30 min from now so
@@ -545,6 +556,80 @@ async function _handleCatalogSync(payload) {
   }
 }
 
+// Cart-recovery — fires 30 min after an order transitions to EXPIRED.
+// The handler re-checks the order's status at fire time so a customer
+// who completes payment after this job was enqueued (race / restored
+// payment) doesn't get a stale recovery message. executeJourney never
+// throws — it returns { ok, reason } — so retries here are pointless;
+// the call site in core/orderStateEngine.js enqueues with maxAttempts: 1.
+//
+// Skipped silently when:
+//   • order doc is gone (cleaned up before the fire)
+//   • status moved off 'EXPIRED' (most commonly because payment landed)
+//   • customer_id or restaurant_id is missing (guest / anonymous order)
+async function _handleCartRecovery(payload) {
+  const orderId = payload?.orderId;
+  if (!orderId) {
+    log.warn({ payload }, 'CART_RECOVERY: missing orderId — skipping');
+    return;
+  }
+  const order = await col('orders').findOne(
+    { _id: orderId },
+    { projection: { status: 1, restaurant_id: 1, customer_id: 1, order_number: 1, subtotal_rs: 1 } },
+  );
+  if (!order) {
+    log.info({ orderId }, 'CART_RECOVERY: order not found — skipping');
+    return;
+  }
+  if (order.status !== 'EXPIRED') {
+    log.info({ orderId, status: order.status }, 'CART_RECOVERY: order not in EXPIRED — skipping');
+    return;
+  }
+  if (!order.customer_id || !order.restaurant_id) {
+    log.info({ orderId }, 'CART_RECOVERY: missing customer_id or restaurant_id — skipping');
+    return;
+  }
+  // Belt-and-suspenders: pass the abandoned-cart subtotal under both
+  // names the template might declare, so the body can render
+  // "You left ₹{{order_amount}} behind" regardless of which variable
+  // name marketing_cart_recovery_v1 uses.
+  const subtotalRs = Number(order.subtotal_rs) || 0;
+  const journeyExecutor = require('../services/journeyExecutor');
+  const result = await journeyExecutor.executeJourney(
+    String(order.restaurant_id),
+    String(order.customer_id),
+    'cart_recovery',
+    { order_amount: subtotalRs, subtotal_rs: subtotalRs },
+  );
+  log.info({
+    orderId, orderNumber: order.order_number,
+    ok: result?.ok || false,
+    reason: result?.reason || null,
+    campaignId: result?.campaignId || null,
+  }, 'CART_RECOVERY: executed');
+}
+
+// Feedback routing — fires 3 min after recordRating updates the
+// feedback_events row to rated_positive / rated_negative. Delegates the
+// branch logic (review link send vs escalation) to
+// feedbackService.handleRatingRouting which carries its own status
+// guard and is safe to call multiple times. Errors are logged and
+// swallowed so retries on permanent failures (deleted row, missing
+// restaurant) don't burn the attempts budget.
+async function _handleFeedbackRouting(payload) {
+  const feedbackEventId = payload?.feedbackEventId;
+  if (!feedbackEventId) {
+    log.warn({ payload }, 'FEEDBACK_ROUTING: missing feedbackEventId — skipping');
+    return;
+  }
+  try {
+    const feedbackService = require('../services/feedbackService');
+    await feedbackService.handleRatingRouting(feedbackEventId);
+  } catch (err) {
+    log.warn({ err, feedbackEventId }, 'FEEDBACK_ROUTING: handler error — swallowing');
+  }
+}
+
 const HANDLERS = {
   [JOB_TYPES.CUSTOMER_NOTIFICATION]: _handleCustomerNotification,
   [JOB_TYPES.ORDER_DISPATCH]: _handleOrderDispatch,
@@ -554,6 +639,8 @@ const HANDLERS = {
   [JOB_TYPES.CATALOG_SYNC]: _handleCatalogSync,
   [JOB_TYPES.WELCOME_JOURNEY]: _handleWelcomeJourney,
   [JOB_TYPES.FEEDBACK_REQUEST]: _handleFeedbackRequest,
+  [JOB_TYPES.CART_RECOVERY]: _handleCartRecovery,
+  [JOB_TYPES.FEEDBACK_ROUTING]: _handleFeedbackRouting,
 };
 
 // ─── WORKER LOOP ──────────────────────────────────────────────

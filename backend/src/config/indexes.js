@@ -114,6 +114,37 @@ const INDEXES = [
   // ROI attribution — quick "latest campaign send to this phone" lookup.
   { collection: 'campaign_messages', index: { campaign_id: 1 } },
   { collection: 'campaign_messages', index: { phone_hash: 1, sent_at: -1 }, options: { sparse: true } },
+
+  // ─── campaign_message_map (Meta message_id → marketing_campaign) ──
+  // Webhook attribution lookup is by message_id; the monthly-blast
+  // cap aggregate (services/marketingCampaigns.MONTHLY_BLAST_CAP)
+  // groups by customer_id over a restricted set of campaign_ids.
+  // TTL: 35 days. Bumped from the original 7-day window so the
+  // monthly cap has visibility across the full current calendar
+  // month even on day 31. NOTE: ensureIndexes() swallows any
+  // "already exists" error — if a prior 7-day TTL exists in prod
+  // it will NOT be auto-replaced and needs a one-shot drop. New
+  // environments are unaffected.
+  { collection: 'campaign_message_map', index: { message_id: 1 }, options: { unique: true } },
+  { collection: 'campaign_message_map', index: { campaign_id: 1 } },
+  { collection: 'campaign_message_map', index: { created_at: 1 }, options: { expireAfterSeconds: 35 * 24 * 60 * 60 } },
+  { collection: 'campaign_message_map', index: { customer_id: 1, campaign_id: 1 } },
+
+  // ─── marketing_blocklist (per-tenant STOP / unsubscribe list) ───
+  // Unique on (restaurant_id, customer_id) so the STOP handler in
+  // webhooks/whatsapp.js can upsert idempotently under duplicate
+  // inbound webhooks. Phone-first lookup powers the inbound-STOP
+  // path which sees wa_phone + restaurant_id from the conversation.
+  { collection: 'marketing_blocklist', index: { restaurant_id: 1, customer_id: 1 }, options: { unique: true } },
+  { collection: 'marketing_blocklist', index: { wa_phone: 1, restaurant_id: 1 } },
+
+  // ─── feedback_events sweep (cron /feedback-routing) ──────────
+  // Two-pronged sweep — positive branch (review link not sent yet)
+  // and negative branch (escalation not stamped yet). Both filter
+  // on status + null-state + updated_at, so the composite shape
+  // matches the query order exactly.
+  { collection: 'feedback_events', index: { status: 1, review_link_sent_at: 1, updated_at: 1 } },
+  { collection: 'feedback_events', index: { status: 1, escalated_at: 1, updated_at: 1 } },
   // marketing_messages → campaigns linkage (populated once Meta webhook lands).
   { collection: 'marketing_messages', index: { campaign_id: 1 }, options: { sparse: true } },
   { collection: 'marketing_messages', index: { phone_hash: 1, sent_at: -1 }, options: { sparse: true } },

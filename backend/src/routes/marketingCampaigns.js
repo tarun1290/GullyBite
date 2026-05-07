@@ -12,6 +12,7 @@ const { col, newId } = require('../config/database');
 const log = require('../utils/logger');
 const { requireAuth } = require('./auth');
 const marketingCampaigns = require('../services/marketingCampaigns');
+const { JOURNEY_TYPES } = require('../services/journeyExecutor');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -101,14 +102,21 @@ router.post('/create', async (req, res) => {
   }
 
   const now = new Date();
-  const initialStatus = sendAtDate ? 'scheduled' : 'draft';
+  // Two-step create→confirm flow. /create always lands a 'draft' that
+  // does NOT dispatch; the operator must POST /:campaignId/confirm
+  // within 24h to actually trigger send (or schedule). Drafts that
+  // miss the confirmation window get cancelled by the auto-expiry
+  // scanner in jobs/autoJourneyRunner.js. send_at is captured here as
+  // intent — the confirm route reads it to decide between immediate
+  // send and scheduled send.
+  const CONFIRMATION_WINDOW_MS = 24 * 60 * 60 * 1000;
   const doc = {
     _id: newId(),
     restaurant_id: restaurantId,
     template_id: template.template_id,
     display_name: String(display_name).trim(),
     use_case: template.use_case,
-    status: initialStatus,
+    status: 'draft',
     target_segment: String(target_segment),
     target_count: targetCount,
     actual_sent_count: 0,
@@ -124,19 +132,73 @@ router.post('/create', async (req, res) => {
     estimated_cost_rs: estimatedCostRs,
     actual_cost_rs: 0,
     per_message_cost_rs: perMessageCostRs,
+    confirmed_before: new Date(now.getTime() + CONFIRMATION_WINDOW_MS),
     created_at: now,
     updated_at: now,
   };
   await col('marketing_campaigns').insertOne(doc);
 
-  if (!sendAtDate) {
-    // Fire-and-forget immediate send.
-    marketingCampaigns.sendCampaign(doc._id).catch((err) => {
-      log.error({ err, campaignId: doc._id }, 'sendCampaign failed in background');
-    });
-    return res.status(202).json(projectCampaign(doc));
+  return res.status(201).json({
+    campaignId: doc._id,
+    estimate: {
+      recipient_count: targetCount,
+      cost_per_message_rs: perMessageCostRs,
+      total_cost_rs: estimatedCostRs,
+      wallet_balance_rs: balanceRs,
+      wallet_sufficient: balanceRs >= estimatedCostRs,
+    },
+  });
+});
+
+// POST /api/restaurant/marketing-campaigns/:campaignId/confirm
+// Step 2 of the two-step create→confirm flow. Loads the draft, checks
+// the 24h confirmation window, and either:
+//   • flips to 'scheduled' when send_at is in the future (the
+//     scanScheduledCampaigns sweep in jobs/autoJourneyRunner.js will
+//     pick it up at send_at), or
+//   • fires sendCampaign now for an immediate dispatch.
+//
+// Idempotency: status guard at the top — a second /confirm on the
+// same campaign sees status !== 'draft' and returns 409. Belt-and-
+// suspenders for double-clicks; sendCampaign also enforces its own
+// guard against re-entry.
+router.post('/:campaignId/confirm', async (req, res) => {
+  const restaurantId = req.restaurantId;
+  const campaign = await col('marketing_campaigns').findOne({
+    _id: req.params.campaignId,
+    restaurant_id: restaurantId,
+  });
+  if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
+
+  if (campaign.status !== 'draft') {
+    return res.status(409).json({ error: 'campaign_not_in_draft', status: campaign.status });
   }
-  return res.status(201).json(projectCampaign(doc));
+  if (campaign.confirmed_before && new Date(campaign.confirmed_before) < new Date()) {
+    return res.status(410).json({ error: 'campaign_confirmation_expired' });
+  }
+
+  const now = new Date();
+  const sendAt = campaign.send_at ? new Date(campaign.send_at) : null;
+  if (sendAt && sendAt > now) {
+    // Schedule for future — the scanScheduledCampaigns sweep dispatches.
+    // confirmed_before cleared so the expired-drafts scanner ignores
+    // this row from now on (status === 'scheduled' would already gate it
+    // out, but clearing the field keeps the doc shape clean).
+    await col('marketing_campaigns').updateOne(
+      { _id: campaign._id },
+      { $set: { status: 'scheduled', updated_at: now }, $unset: { confirmed_before: '' } },
+    );
+    return res.status(200).json({ status: 'scheduled', send_at: sendAt });
+  }
+
+  // Immediate dispatch. Fire-and-forget — sendCampaign flips status to
+  // 'sending' on entry and runs to terminal 'sent'/'failed'. Its own
+  // guard at services/marketingCampaigns.js prevents re-entry on a
+  // duplicate /confirm racing this one.
+  marketingCampaigns.sendCampaign(campaign._id).catch((err) => {
+    log.error({ err, campaignId: campaign._id }, 'sendCampaign failed in background');
+  });
+  return res.status(202).json({ status: 'sending' });
 });
 
 // POST /api/restaurant/marketing-campaigns/:campaignId/cancel
@@ -151,6 +213,107 @@ router.post('/:campaignId/cancel', async (req, res) => {
     return res.status(404).json({ error: 'Campaign not found or not cancellable' });
   }
   res.json(projectCampaign(result));
+});
+
+// GET /api/restaurant/marketing-campaigns/journey-estimate?journey_type=...
+// Cost + audience preview for the auto-journey settings UI. The audience
+// queries mirror jobs/autoJourneyRunner.js exactly so the number shown
+// to the operator matches what the next hourly tick would actually
+// dispatch to. Event-driven journeys (welcome / milestone / cart_recovery)
+// have no time-window cohort to count — they fire from webhooks /
+// orderStateEngine — so audience is 0 with a `note: 'event-driven'`.
+//
+// Registered before GET '/' so the literal /journey-estimate path
+// matches before the list route's pagination handler.
+router.get('/journey-estimate', async (req, res) => {
+  const restaurantId = req.restaurantId;
+  const journeyType = String(req.query.journey_type || '').trim();
+
+  if (!JOURNEY_TYPES.includes(journeyType)) {
+    return res.status(400).json({ error: 'invalid journey_type', allowed: JOURNEY_TYPES });
+  }
+
+  // Per-restaurant journey config — drives the loyalty_expiry window
+  // and the journey_enabled flag in the response.
+  const cfg = (await col('auto_journey_config').findOne({ restaurant_id: restaurantId })) || {};
+
+  // Approved template for the cost-per-message lookup. Absent template
+  // means the audience would never get a send anyway — return 0 cost
+  // and let the frontend surface the missing-template state.
+  const template = await col('campaign_templates').findOne({
+    use_case: journeyType,
+    is_active: true,
+    meta_approval_status: 'approved',
+  });
+  const costPerMessageRs = Number(template?.per_message_cost_rs) || 0;
+
+  // Audience estimate. Window patterns match runWindowJourney /
+  // runBirthday / loyalty_expiry paths in jobs/autoJourneyRunner.js
+  // and the loyaltyEngine.findCustomersWithExpiringPoints filter.
+  const EVENT_DRIVEN = new Set(['welcome', 'milestone', 'cart_recovery']);
+  let estimatedAudience = 0;
+  let note = null;
+
+  if (EVENT_DRIVEN.has(journeyType)) {
+    note = 'event-driven';
+  } else if (journeyType === 'winback_short') {
+    estimatedAudience = await col('customer_rfm_profiles').countDocuments({
+      restaurant_id: restaurantId,
+      days_since_last_order: { $gt: 13, $lte: 14 },
+    });
+  } else if (journeyType === 'winback_long') {
+    estimatedAudience = await col('customer_rfm_profiles').countDocuments({
+      restaurant_id: restaurantId,
+      days_since_last_order: { $gt: 29, $lte: 30 },
+    });
+  } else if (journeyType === 'reorder_suggestion') {
+    estimatedAudience = await col('customer_rfm_profiles').countDocuments({
+      restaurant_id: restaurantId,
+      days_since_last_order: { $gt: 6, $lte: 7 },
+    });
+  } else if (journeyType === 'birthday') {
+    // Today's DD/MM in IST — mirrors autoJourneyRunner.js:istDayMonth.
+    const fmt = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+    });
+    const parts = fmt.formatToParts(new Date());
+    const dd = parts.find((p) => p.type === 'day')?.value || '';
+    const mm = parts.find((p) => p.type === 'month')?.value || '';
+    estimatedAudience = await col('customer_rfm_profiles').countDocuments({
+      restaurant_id: restaurantId,
+      birthday: `${dd}/${mm}`,
+    });
+  } else if (journeyType === 'loyalty_expiry') {
+    // Mirrors loyaltyEngine.findCustomersWithExpiringPoints: counts
+    // loyalty_points rows expiring in the configured window. Default
+    // daysBeforeExpiry = 5; per-restaurant config can override.
+    const daysBefore = Number(cfg?.loyalty_expiry?.days_before_expiry) || 5;
+    const now = new Date();
+    const windowEnd = new Date(now.getTime() + daysBefore * 24 * 60 * 60 * 1000);
+    estimatedAudience = await col('loyalty_points').countDocuments({
+      restaurant_id: restaurantId,
+      expires_at: { $gt: now, $lte: windowEnd },
+    });
+  }
+
+  // Wallet balance — same source the actual journey send checks against
+  // before debiting (services/journeyExecutor.js:wallet pre-check).
+  const wallet = await col('waba_wallets').findOne({ restaurant_id: restaurantId });
+  const walletBalanceRs = Number(wallet?.balance_rs) || 0;
+  const estimatedCostRs = Number((estimatedAudience * costPerMessageRs).toFixed(2));
+
+  return res.json({
+    journey_type: journeyType,
+    estimated_audience: estimatedAudience,
+    cost_per_message_rs: costPerMessageRs,
+    estimated_cost_rs: estimatedCostRs,
+    wallet_balance_rs: walletBalanceRs,
+    wallet_sufficient: walletBalanceRs >= estimatedCostRs,
+    journey_enabled: cfg?.[journeyType]?.enabled ?? false,
+    ...(note && { note }),
+  });
 });
 
 // GET /api/restaurant/marketing-campaigns?page=&limit=&status=

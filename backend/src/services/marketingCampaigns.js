@@ -28,6 +28,12 @@ const { hashPhone } = require('../utils/phoneHash');
 
 const BATCH_SIZE = 50;
 const BATCH_DELAY_MS = 500;
+// Per-customer monthly send cap for manual blasts. Window is the
+// current calendar month in IST (resets at midnight on the 1st). Auto
+// journeys are gated separately by the 48h cap inside journeyExecutor —
+// this cap covers operator-initiated blasts only and is bypassed when
+// target_segment === 'journey_trigger'.
+const MONTHLY_BLAST_CAP = 4;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -127,6 +133,14 @@ async function sendCampaign(campaignId) {
       await finalize(campaignId, 'failed', { error_message: 'Marketing WhatsApp number not active' });
       return { ok: false, reason: 'marketing_wa_not_active' };
     }
+    // WABA quality gate. RED rating means Meta has flagged the number
+    // for excessive block/report signals; another mass blast through it
+    // could push the number to suspension. Abort the whole campaign and
+    // tag the failure so the dashboard can surface the reason.
+    if (restaurant.marketing_wa_quality_rating === 'RED') {
+      await finalize(campaignId, 'failed', { error_message: 'WABA quality rating red' });
+      return { ok: false, reason: 'waba_quality_red' };
+    }
     if (!restaurant.campaigns_enabled) {
       await finalize(campaignId, 'failed', { error_message: 'Campaigns not enabled' });
       return { ok: false, reason: 'campaigns_not_enabled' };
@@ -219,9 +233,81 @@ async function sendCampaign(campaignId) {
     let failedCount = 0;
     let actualCostRs = 0;
 
+    // Pre-load the marketing block-list for this restaurant. One query
+    // up front beats per-recipient findOne by orders of magnitude on
+    // segment-of-thousands sends. The blocked set is small (tens to
+    // low-hundreds typically) so loading the full set into memory is
+    // bounded. journey_trigger sends still consult this — a single
+    // findOne for one recipient is the same cost as a Set lookup.
+    const blockedSet = new Set();
+    {
+      const blocked = await col('marketing_blocklist').find(
+        { restaurant_id: restaurantId },
+        { projection: { customer_id: 1 } },
+      ).toArray();
+      for (const b of blocked) blockedSet.add(String(b.customer_id));
+    }
+
+    // Pre-compute per-customer manual-blast send count for the current
+    // calendar month (IST). Skipped for journey_trigger campaigns —
+    // those are auto-journey single-recipient sends that have their
+    // own 48h cap inside journeyExecutor. We aggregate the map once up
+    // front so the inner loop is O(1) per recipient instead of N
+    // round-trips to Mongo.
+    const sendCountByCustomer = new Map();
+    if (campaign.target_segment !== 'journey_trigger') {
+      const now = new Date();
+      // First-of-month at 00:00 IST, expressed as UTC. IST is UTC+5:30,
+      // so subtracting 5h30m from IST midnight yields the correct UTC
+      // instant (e.g. Mar 1 00:00 IST = Feb 28 18:30 UTC).
+      const istShiftMs = 5.5 * 60 * 60 * 1000;
+      const istNow = new Date(now.getTime() + istShiftMs);
+      const istMonthStartUtc = new Date(
+        Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), 1, 0, 0, 0) - istShiftMs,
+      );
+      const monthCampaignIds = (await col('marketing_campaigns').find(
+        {
+          restaurant_id: restaurantId,
+          status: 'sent',
+          sent_at: { $gte: istMonthStartUtc },
+        },
+        { projection: { _id: 1 } },
+      ).toArray()).map((c) => c._id);
+      if (monthCampaignIds.length > 0) {
+        const sends = await col('campaign_message_map').aggregate([
+          { $match: { campaign_id: { $in: monthCampaignIds }, customer_id: { $ne: null } } },
+          { $group: { _id: '$customer_id', n: { $sum: 1 } } },
+        ]).toArray();
+        for (const s of sends) sendCountByCustomer.set(s._id, s.n);
+      }
+    }
+
     for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
       const batch = recipients.slice(i, i + BATCH_SIZE);
       for (const { customer, profile } of batch) {
+        // Marketing block-list — STOP / UNSUBSCRIBE recipients. Hard
+        // line ahead of the cap check: blocked customers never receive
+        // any manual blast regardless of frequency window.
+        if (blockedSet.has(String(customer._id))) {
+          await col('marketing_campaigns').updateOne(
+            { _id: campaignId },
+            { $inc: { 'stats.skipped': 1 }, $set: { updated_at: new Date() } },
+          ).catch(() => {});
+          log.debug({ restaurantId, customerId: customer._id }, 'customer blocked');
+          continue;
+        }
+        // Per-customer monthly cap. Cumulative across all manual blasts
+        // this calendar month (IST). journey_trigger sends bypass this
+        // — skip-list was empty in that branch so the count is 0.
+        const priorCount = sendCountByCustomer.get(customer._id) || 0;
+        if (priorCount >= MONTHLY_BLAST_CAP) {
+          await col('marketing_campaigns').updateOne(
+            { _id: campaignId },
+            { $inc: { 'stats.skipped': 1 }, $set: { updated_at: new Date() } },
+          ).catch(() => {});
+          log.debug({ restaurantId, customerId: customer._id, priorCount }, 'monthly cap reached customerId');
+          continue;
+        }
         const resolved = resolveVariables({
           variables: template.variables || [],
           campaign, customer, rfmProfile: profile, restaurant,
@@ -242,9 +328,15 @@ async function sendCampaign(campaignId) {
               message_id: String(messageId),
               campaign_id: campaignId,
               restaurant_id: restaurantId,
+              // Stored so the monthly-cap aggregate above can group sends
+              // by customer without re-joining via campaign metadata.
+              customer_id: customer._id ? String(customer._id) : null,
               created_at: new Date(),
             }).catch(() => {}); // unique index collision = already mapped
           }
+          // Bump the in-memory month counter so subsequent recipients in
+          // this same campaign run respect the cap without re-querying.
+          sendCountByCustomer.set(customer._id, (sendCountByCustomer.get(customer._id) || 0) + 1);
 
           await col('marketing_campaigns').updateOne(
             { _id: campaignId },

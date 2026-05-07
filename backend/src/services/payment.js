@@ -61,9 +61,17 @@ const getRzp = () => {
 
 // ─── 1. CREATE RAZORPAY ORDER (WhatsApp Pay) ──────────────────
 const createRazorpayOrder = async (order, customer) => {
-  const expiryMins = parseInt(process.env.PAYMENT_LINK_EXPIRY_MINS) || 15;
+  // 20-minute payment window — matches the order doc's expires_at set
+  // at order creation (services/order.js, services/orderCreate.service.js,
+  // webhooks/checkout.js). Razorpay rejects payment attempts past
+  // expire_by, so the customer's payment UI shows the failure before
+  // the transaction is initiated rather than capturing-then-refunding
+  // via the expiry gate in webhooks/razorpay.js. The local payments-row
+  // expires_at is derived from the same source so the two windows can
+  // never drift.
+  const EXPIRY_MS = 20 * 60 * 1000;
+  const expireByUnix = Math.floor((Date.now() + EXPIRY_MS) / 1000);
 
-  const expireByUnix = Math.floor(Date.now() / 1000) + expiryMins * 60;
   const rzpOrder = await getRzp().orders.create({
     amount  : Math.round(order.total_rs * 100),
     currency: 'INR',
@@ -76,7 +84,7 @@ const createRazorpayOrder = async (order, customer) => {
     },
   });
 
-  const expiresAt = new Date(Date.now() + expiryMins * 60 * 1000);
+  const expiresAt = new Date(Date.now() + EXPIRY_MS);
   await col('payments').insertOne({
     _id: newId(),
     order_id: order.id,
@@ -114,12 +122,18 @@ const createRazorpayOrder = async (order, customer) => {
 // degrade gracefully (continue without rp_order_id) or fail the flow.
 const createRazorpayOrderRaw = async ({ amountRs, currency = 'INR', receipt, notes = {} } = {}) => {
   if (!amountRs || amountRs <= 0) throw new Error('createRazorpayOrderRaw: amountRs must be > 0');
+  // 20-minute payment window — matches createRazorpayOrder above and the
+  // order doc's expires_at. Razorpay rejects late payment attempts at
+  // the gateway before they reach our webhook, so the customer's UI
+  // shows the failure inline.
+  const expireByUnix = Math.floor((Date.now() + 20 * 60 * 1000) / 1000);
   const rzpOrder = await getRzp().orders.create({
     amount: Math.round(Number(amountRs) * 100), // paise
     currency,
     // Razorpay caps receipt at 40 chars — clamp defensively in case
     // a caller hands us something longer.
     ...(receipt ? { receipt: String(receipt).slice(0, 40) } : {}),
+    expire_by: expireByUnix,
     notes: notes || {},
   });
   return rzpOrder; // { id: 'order_…', amount, currency, status, ... }

@@ -244,7 +244,12 @@ const orders = {
     delivery_fee_rs:       { type: 'number' },
     discount_rs:           { type: 'number' },
     total_rs:              { type: 'number', required: true },
-    status:                { type: 'string', required: true, enum: ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'NO_DELIVERY_AVAILABLE', 'RTO_IN_PROGRESS', 'RTO_COMPLETE'] },
+    status:                { type: 'string', required: true, enum: ['PENDING_PAYMENT', 'PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'NO_DELIVERY_AVAILABLE', 'EXPIRED_PAYMENT', 'RTO_IN_PROGRESS', 'RTO_COMPLETE'] },
+    // 20-minute payment window stamped at order create. Read by the
+    // payment-expiry gate in webhooks/razorpay.js + webhooks/checkout.js
+    // to refund late captures, and by the order_details message builder
+    // in services/whatsapp.js to render the "Pay by HH:MM IST" line.
+    expires_at:            { type: 'date' },
     // Phase 1: denormalized payment state on the order row so status
     // transitions don't require a payments lookup.
     payment_status:        { type: 'string', enum: ['unpaid', 'pending', 'paid', 'failed', 'refunded'] },
@@ -407,6 +412,17 @@ const customers = {
     captain_acquired_at:   { type: 'date' },
     captain_referral_id:   { type: 'uuid' },
     captain_referral_code: { type: 'string' },
+    // Marketing consent. Default true on insert — existing rows are
+    // assumed opted-in unless they explicitly opt out (DLT/India SMS-style
+    // soft-consent). Flips to false the moment the customer texts STOP /
+    // UNSUBSCRIBE; both gates (services/marketingCampaigns.sendCampaign
+    // and services/journeyExecutor.executeJourney) also consult
+    // marketing_blocklist for explicit per-restaurant blocks.
+    // marketing_opted_in_source records who flipped it ('customer_stop',
+    // 'admin', 'signup', etc.) so audit traces can attribute the change.
+    marketing_opted_in:        { type: 'boolean', default: true },
+    marketing_opted_in_at:     { type: 'date' },
+    marketing_opted_in_source: { type: 'string' },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },
@@ -1300,6 +1316,17 @@ const marketing_campaigns = {
     // Locked-in copy — avoid history rewrites on template edits.
     per_message_cost_rs: { type: 'number', required: true },
     error_message:  { type: 'string' },
+    // Two-step create→confirm flow (routes/marketingCampaigns.js).
+    // POST /create lands a 'draft' with confirmed_before = now + 24h;
+    // POST /:campaignId/confirm flips it to 'sending' or 'scheduled'
+    // and clears the field. Drafts that miss the window are swept to
+    // 'cancelled' by jobs/autoJourneyRunner.js:scanExpiredDrafts.
+    confirmed_before: { type: 'date' },
+    // Set when a campaign is cancelled — either via the explicit
+    // /cancel route or by the expired-draft sweep. cancellation_reason
+    // distinguishes operator-initiated cancels from auto-sweeps.
+    cancelled_at:    { type: 'date' },
+    cancellation_reason: { type: 'string' },
     created_at:     { type: 'date', required: true },
     updated_at:     { type: 'date' },
   },
@@ -1307,6 +1334,8 @@ const marketing_campaigns = {
     { key: { restaurant_id: 1, created_at: -1 } },
     { key: { restaurant_id: 1, status: 1 } },
     { key: { status: 1, send_at: 1 } },
+    // Expired-draft sweep query: { status: 'draft', confirmed_before: { $lte: now } }
+    { key: { status: 1, confirmed_before: 1 } },
   ],
 };
 
@@ -1323,13 +1352,64 @@ const campaign_message_map = {
     message_id:    { type: 'string', required: true },
     campaign_id:   { type: 'string', required: true },
     restaurant_id: { type: 'string', required: true },
+    // Recorded so services/marketingCampaigns.sendCampaign can compute
+    // a per-customer monthly send count for the manual-blast cap. Old
+    // rows (pre-cap) carry null — month-window aggregate filters them.
+    customer_id:   { type: 'string' },
     created_at:    { type: 'date', required: true },
   },
   indexes: [
     { key: { message_id: 1 }, options: { unique: true } },
     { key: { campaign_id: 1 } },
-    // TTL: 7 days. Matches attribution window.
-    { key: { created_at: 1 }, options: { expireAfterSeconds: 7 * 24 * 60 * 60 } },
+    // TTL: 35 days. Original 7-day window matched the conversion
+    // attribution lookback, but the per-customer monthly blast cap
+    // (services/marketingCampaigns.MONTHLY_BLAST_CAP) needs to count
+    // sends across the full current calendar month — up to ~31 days
+    // back when running on the last day of the month. 35 covers that
+    // with a small buffer; storage cost is bounded by active campaign
+    // volume.
+    { key: { created_at: 1 }, options: { expireAfterSeconds: 35 * 24 * 60 * 60 } },
+    // Supports the monthly-cap aggregate (group by customer over a
+    // restricted set of campaign ids).
+    { key: { customer_id: 1, campaign_id: 1 } },
+  ],
+};
+
+// Per-restaurant marketing block-list. Populated by:
+//   • the inbound STOP / UNSUBSCRIBE handler in webhooks/whatsapp.js
+//     (blocked_by: 'customer_stop')
+//   • admin tooling that flags abusive recipients (blocked_by: 'admin')
+//   • automated quality bumps when a customer hits N reports/blocks
+//     (blocked_by: 'system')
+// Both send paths consult this collection before dispatching:
+//   - services/marketingCampaigns.sendCampaign (manual blasts)
+//   - services/journeyExecutor.executeJourney (auto journeys)
+// A row is per (restaurant, customer) — one tenant's block doesn't
+// silence the customer across other tenants. Unblock = delete the row
+// (handled by future admin tooling, not this schema cut).
+const marketing_blocklist = {
+  collection: 'marketing_blocklist',
+  description: 'Per-(restaurant, customer) marketing send block list.',
+  fields: {
+    _id:           { type: 'uuid', required: true },
+    restaurant_id: { type: 'uuid', required: true },
+    customer_id:   { type: 'uuid', required: true },
+    wa_phone:      { type: 'string', required: true },
+    blocked_at:    { type: 'date', required: true },
+    blocked_by:    { type: 'string', enum: ['customer_stop', 'admin', 'system'] },
+    notes:         { type: 'string' },
+    created_at:    { type: 'date', required: true },
+  },
+  indexes: [
+    // One block per customer per restaurant — the STOP handler upserts
+    // on this composite, so the unique constraint guarantees the upsert
+    // is idempotent under duplicate webhooks.
+    { key: { restaurant_id: 1, customer_id: 1 }, options: { unique: true } },
+    // Inbound-STOP path resolves customer_id by phone+restaurant first,
+    // and then upserts. The lookup order (phone before tenant) matches
+    // the way the WA webhook sees an inbound message: the phone is
+    // known, the restaurant_id is derived from the conversation.
+    { key: { wa_phone: 1, restaurant_id: 1 } },
   ],
 };
 
@@ -1357,6 +1437,15 @@ const auto_journey_config = {
     winback_long: { type: 'object', default: {
       enabled: false,
       trigger_day: 30,
+      template_id: null,
+      custom_variable_values: {},
+    } },
+    // 7-day reorder reminder. Personalised with the customer's most
+    // ordered item at this restaurant via the `top_item` variable.
+    // Default enabled — gated by restaurant.campaigns_enabled at send.
+    reorder_suggestion: { type: 'object', default: {
+      enabled: true,
+      trigger_day: 7,
       template_id: null,
       custom_variable_values: {},
     } },
@@ -1630,7 +1719,7 @@ const ALL_SCHEMAS = {
   whatsapp_accounts, referrals, menu_uploads, sync_logs, sync_summary, alerts,
   brands, messages, catalog, catalog_sync_schedule, coupons, coupon_redemptions, checkout_refs,
   wallet_transactions, customer_rfm_profiles, job_logs, campaign_templates,
-  marketing_campaigns, campaign_message_map,
+  marketing_campaigns, campaign_message_map, marketing_blocklist,
   auto_journey_config, journey_send_log,
   loyalty_config, loyalty_points, loyalty_transactions, pending_loyalty_redemptions,
   feedback_events, restaurant_notifications,

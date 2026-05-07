@@ -30,6 +30,13 @@ const ORDER_STATES = [
   'PENDING_PAYMENT',
   'PAYMENT_FAILED',
   'EXPIRED',
+  // Customer paid but the order's expires_at had already elapsed when
+  // the payment webhook arrived. The captured amount is refunded in
+  // full and the row stays terminal here for audit / analytics.
+  // Distinct from EXPIRED (no payment captured): we owe the customer
+  // their money back, and settlement reporting needs to see this row
+  // as a refunded sale, not a missed sale.
+  'EXPIRED_PAYMENT',
   'PAID',
   'CONFIRMED',
   'PREPARING',
@@ -56,12 +63,17 @@ const CONFIRMED_ORDER_STATES = ['PAID', 'CONFIRMED', 'PREPARING', 'PACKED', 'DIS
 // ─── ALLOWED TRANSITIONS ────────────────────────────────────
 // Map of currentState → Set of allowed nextStates.
 const TRANSITIONS = {
-  PENDING_PAYMENT: new Set(['PAID', 'PAYMENT_FAILED', 'EXPIRED', 'CANCELLED']),
+  // EXPIRED_PAYMENT may be reached from PENDING_PAYMENT (gate fired
+  // before the PAID flip) OR from PAID (gate fired after the flip but
+  // before fulfillment) — both are valid landing points for the
+  // payment-expiry gate in webhooks/razorpay.js + webhooks/checkout.js.
+  PENDING_PAYMENT: new Set(['PAID', 'PAYMENT_FAILED', 'EXPIRED', 'EXPIRED_PAYMENT', 'CANCELLED']),
   PAYMENT_FAILED:  new Set(['PAID', 'EXPIRED', 'CANCELLED']),  // Retry allowed → PAID
   EXPIRED:         new Set([]),  // Terminal — missed sale, no further transitions
+  EXPIRED_PAYMENT: new Set([]),  // Terminal — refunded post-capture
   // PAID → REJECTED_BY_RESTAURANT (manual /decline) or RESTAURANT_TIMEOUT
   // (BullMQ acceptance-timeout job fires) before the restaurant accepts.
-  PAID:            new Set(['CONFIRMED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT']),
+  PAID:            new Set(['CONFIRMED', 'CANCELLED', 'REJECTED_BY_RESTAURANT', 'RESTAURANT_TIMEOUT', 'EXPIRED_PAYMENT']),
   // CONFIRMED → NO_DELIVERY_AVAILABLE when Prorouting can't allocate a rider
   // (webhook fires before any agent-assigned event).
   CONFIRMED:       new Set(['PREPARING', 'CANCELLED', 'NO_DELIVERY_AVAILABLE']),
@@ -83,6 +95,7 @@ const TRANSITIONS = {
 const STATE_TIMESTAMP = {
   PAYMENT_FAILED:  'payment_failed_at',
   EXPIRED:         'expired_at',
+  EXPIRED_PAYMENT: 'expired_payment_at',
   PAID:            'paid_at',
   CONFIRMED:       'confirmed_at',
   PREPARING:       'preparing_at',
@@ -238,6 +251,47 @@ async function transitionOrder(orderId, nextState, opts = {}) {
     emitToRestaurant(updated.restaurant_id, 'order:updated', updatedPayload);
     emitToAdmin('order:updated', updatedPayload);
   } catch (_) { /* socket failures must never block the transition */ }
+
+  // ─── CART_RECOVERY ENQUEUE ON EXPIRED ──────────────────────
+  // Single chokepoint: every EXPIRED write site funnels through this
+  // function (jobs/recovery.js × 3, webhooks/razorpay.js × 2,
+  // routes/cron.js order-cleanup × 1, all either calling transitionOrder
+  // directly or via orderSvc.updateStatus → transitionOrder). Enqueueing
+  // here instead of at each call site means a future EXPIRED writer
+  // automatically gets cart-recovery without a code change.
+  //
+  // 30-min delay gives the customer a window to retry payment on their
+  // own first (the cart-recovery template should treat the failure as
+  // a friendly nudge, not an immediate ping). The handler in
+  // queue/postPaymentJobs.js re-checks status at fire time so a
+  // late-arriving payment cancels the send.
+  //
+  // Guest / anonymous orders skip — no customer_id means no recipient.
+  // jobId is deterministic per order so a retry of the EXPIRED transition
+  // (e.g. cron pass picks up a row already mid-transition) doesn't
+  // double-enqueue.
+  if (nextState === 'EXPIRED' && updated?.customer_id) {
+    try {
+      const { enqueue, JOB_TYPES: JOBS } = require('../queue/postPaymentJobs');
+      enqueue(
+        JOBS.CART_RECOVERY,
+        {
+          orderId: String(orderId),
+          restaurantId: updated.restaurant_id ? String(updated.restaurant_id) : null,
+        },
+        {
+          delayMs: 30 * 60 * 1000,
+          jobId: `cart-recovery-${orderId}`,
+          // executeJourney never throws, so retries cannot recover from
+          // any failure — keep it to a single attempt to avoid noise in
+          // the queue's retry/failure logs.
+          maxAttempts: 1,
+        },
+      ).catch((err) => log.warn({ err, orderId }, 'CART_RECOVERY enqueue failed'));
+    } catch (err) {
+      log.warn({ err, orderId }, 'CART_RECOVERY enqueue dispatch failed');
+    }
+  }
 
   // ─── CONVERSATION RESET ON TERMINAL-FAILURE (defense in depth) ─
   // When an order dies (EXPIRED, CANCELLED, REJECTED_BY_RESTAURANT,

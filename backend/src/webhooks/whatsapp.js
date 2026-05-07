@@ -1110,6 +1110,100 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
     msg.text.body = rawText;
   }
 
+  // ── STOP / UNSUBSCRIBE keyword (marketing block-list) ────────────
+  // Hard line for marketing-CSW compliance: the moment a customer texts
+  // STOP (in any case) or UNSUBSCRIBE, we drop a row in
+  // marketing_blocklist for this (restaurant, customer) pair and flip
+  // marketing_opted_in=false on the global customers doc. Both gates
+  // are then enforced before send by services/marketingCampaigns.js
+  // (manual blasts) and services/journeyExecutor.js (auto journeys).
+  // Idempotent — re-sending STOP collapses into the same row via
+  // unique (restaurant_id, customer_id). cart-recovery's narrower
+  // opt-out is preserved so the abandoned_carts side-state stays
+  // consistent. We then short-circuit so the rest of the text
+  // pipeline (greetings, intent routing) does NOT run on a STOP.
+  if (/^(STOP|UNSUBSCRIBE)$/i.test(rawText.trim())) {
+    const restaurantId = waAccount.restaurant_id;
+    const customerId = customer._id || customer.id;
+    const waPhone = customer.wa_phone || customer.bsuid;
+    const now = new Date();
+    try {
+      await col('marketing_blocklist').updateOne(
+        { restaurant_id: restaurantId, customer_id: customerId },
+        {
+          $setOnInsert: {
+            _id: require('../config/database').newId(),
+            restaurant_id: restaurantId,
+            customer_id: customerId,
+            wa_phone: waPhone,
+            blocked_at: now,
+            blocked_by: 'customer_stop',
+            created_at: now,
+          },
+        },
+        { upsert: true },
+      );
+      // Flip the global opt-in flag too. _at + _source give an audit
+      // trail for compliance reviews.
+      await col('customers').updateOne(
+        { _id: customerId },
+        { $set: {
+            marketing_opted_in: false,
+            marketing_opted_in_at: now,
+            marketing_opted_in_source: 'customer_stop',
+            updated_at: now,
+        } },
+      ).catch(() => {});
+      // Preserve the narrower cart-recovery opt-out side-effect — it
+      // updates abandoned_carts rows that the marketing block-list
+      // gate would otherwise leave in 'pending' state.
+      try {
+        const cartRecovery = require('../services/cart-recovery');
+        await cartRecovery.optOut(waPhone, restaurantId);
+      } catch (e) { log.warn({ err: e }, 'cart recovery opt-out failed during STOP'); }
+    } catch (err) {
+      log.error({ err, restaurantId, customerId }, 'STOP keyword: blocklist write failed');
+    }
+    await wa.sendText(
+      pid, token, to,
+      "You've been unsubscribed from marketing messages from this restaurant. Reply START to re-subscribe.",
+    );
+    return;
+  }
+
+  // ── START keyword (re-subscribe to marketing) ────────────────────
+  // Inverse of the STOP handler above. Removes the marketing_blocklist
+  // row for this (restaurant, customer) pair and flips the global
+  // marketing_opted_in flag back on so journeyExecutor + manual blasts
+  // start sending again. Source 'whatsapp_start' distinguishes this
+  // re-opt from signup-time opt-in for compliance audits.
+  if (/^START$/i.test(rawText.trim())) {
+    const restaurantId = waAccount.restaurant_id;
+    const customerId = customer._id || customer.id;
+    const now = new Date();
+    try {
+      await col('marketing_blocklist').deleteOne(
+        { restaurant_id: restaurantId, customer_id: customerId },
+      );
+      await col('customers').updateOne(
+        { _id: customerId },
+        { $set: {
+            marketing_opted_in: true,
+            marketing_opted_in_at: now,
+            marketing_opted_in_source: 'whatsapp_start',
+            updated_at: now,
+        } },
+      ).catch(() => {});
+    } catch (err) {
+      log.error({ err, restaurantId, customerId }, 'START keyword: blocklist removal failed');
+    }
+    await wa.sendText(
+      pid, token, to,
+      "You've been re-subscribed to marketing messages from this restaurant. You'll receive offers and updates again.",
+    );
+    return;
+  }
+
   const text = rawText.toUpperCase();
 
   // ── Google Maps URL detection ─────────────────────────────
@@ -1139,14 +1233,6 @@ const handleTextMessage = async (msg, customer, conv, waAccount) => {
       "✍️ *Type your full address* — e.g., 123 Main St, Banjara Hills, Hyderabad 500034\n\n" +
       "All options work — pick whichever is easiest!"
     );
-    return;
-  }
-
-  // ── Recovery opt-out ──
-  if (['STOP', 'UNSUBSCRIBE'].includes(text)) {
-    const cartRecovery = require('../services/cart-recovery');
-    await cartRecovery.optOut(customer.wa_phone || customer.bsuid, waAccount.restaurant_id);
-    await wa.sendText(pid, token, to, "No worries! We won't send you cart reminders. You can always message us when you're ready to order. 😊");
     return;
   }
 

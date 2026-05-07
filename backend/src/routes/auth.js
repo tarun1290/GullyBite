@@ -88,6 +88,7 @@ async function seedAutoJourneyConfig(restaurantId) {
           welcome:        { enabled: false, template_id: null, custom_variable_values: {} },
           winback_short:  { enabled: false, trigger_day: 14, template_id: null, custom_variable_values: {} },
           winback_long:   { enabled: false, trigger_day: 30, template_id: null, custom_variable_values: {} },
+          reorder_suggestion: { enabled: true, trigger_day: 7, template_id: null, custom_variable_values: {} },
           birthday:       { enabled: false, template_id: null, custom_variable_values: {}, send_hour_ist: 10 },
           loyalty_expiry: { enabled: false, days_before_expiry: 5, template_id: null, custom_variable_values: {} },
           milestone:      { enabled: false, trigger_orders: [5, 10, 25], template_id: null, custom_variable_values: {} },

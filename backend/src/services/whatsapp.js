@@ -253,6 +253,27 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
   const refId = (order.order_number || order.id || 'ORD-' + Date.now()).toString().substring(0, 35);
   log.info({ to: to?.slice(-4), refId, totalRs: order.total_rs }, 'Sending order_details payment request');
 
+  // Customer-facing payment-window disclaimer. Renders the order's
+  // expires_at as a localised IST clock time so the disclaimer reads
+  // "Pay by 7:35 PM IST — order holds your items for 20 mins". Falls
+  // back to the bare "20 mins" copy when expires_at is absent (legacy
+  // orders pre-dating Part A of this fix; cheap defensive default).
+  let expirationDescription = 'Pay before the order expires — order holds your items for 20 mins';
+  if (order.expires_at) {
+    try {
+      const istClock = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Kolkata',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      }).format(new Date(order.expires_at));
+      expirationDescription = `Pay by ${istClock} IST — order holds your items for 20 mins`;
+    } catch (_err) {
+      // Intl format failed (extremely rare — invalid Date or unsupported
+      // locale on a hostile runtime). Fall through to the static copy.
+    }
+  }
+
   const msgPayload = {
     type: 'interactive',
     interactive: {
@@ -264,6 +285,10 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
         name: 'review_and_pay',
         parameters: {
           reference_id: refId,
+          // Meta-documented field on the review_and_pay CTA. Surfaces
+          // alongside the order summary in the WA UI so the customer
+          // sees the cutoff time before tapping Pay.
+          expiration_description: expirationDescription,
           type: 'digital-goods',
           // Meta requires payment_settings (an array of payment gateway
           // objects) on review_and_pay CTAs — payment_configuration was

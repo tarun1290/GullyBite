@@ -14,6 +14,8 @@ import {
   getCampaignSmartSendTime,
 } from '../../../api/restaurant';
 import AutoJourneysSection from '../../../components/restaurant/AutoJourneysSection';
+import CostConfirmCard from '../../../components/restaurant/marketing/CostConfirmCard';
+import type { MarketingCampaignEstimate } from '../../../api/restaurant';
 
 const FESTIVAL_EMOJI: Record<string, string> = {
   diwali: '🪔',
@@ -964,6 +966,11 @@ export default function CampaignsPage() {
   const [festivals, setFestivals] = useState<Festival[]>([]);
   const [smartSend, setSmartSend] = useState<SmartSend | null>(null);
   const [wizardPrefill, setWizardPrefill] = useState<WizardPrefill | null>(null);
+  // After POST /create returns { campaignId, estimate }, hold here so
+  // the CostConfirmCard renders as an overlay over the wizard. Cleared
+  // on confirm (→ history) or cancel (→ stay on wizard, draft expires
+  // in 24h via the auto-journey runner sweep).
+  const [pendingConfirm, setPendingConfirm] = useState<{ campaignId: string; estimate: MarketingCampaignEstimate } | null>(null);
 
   const campaignsEnabled = Boolean(wallet?.campaigns_enabled);
   const walletBalance = Number(wallet?.balance_rs || 0);
@@ -1037,10 +1044,12 @@ export default function CampaignsPage() {
   const handleSubmit = async (payload: CampaignPayload) => {
     setSubmitting(true);
     try {
-      await createMarketingCampaign(payload as unknown as Record<string, unknown>);
-      showToast(payload.send_at ? 'Campaign scheduled' : 'Campaign sending now', 'success');
-      setView('history');
-      loadAll();
+      // Two-step flow: /create returns the server-computed estimate;
+      // the operator must then click Proceed in CostConfirmCard which
+      // calls /:id/confirm to actually start the send. Drafts that
+      // sit unconfirmed for 24h are auto-cancelled by the cron sweep.
+      const res = await createMarketingCampaign(payload as unknown as Record<string, unknown>);
+      setPendingConfirm({ campaignId: res.campaignId, estimate: res.estimate });
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       const msg = e?.response?.data?.error || e?.message || 'Create failed';
@@ -1048,6 +1057,29 @@ export default function CampaignsPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // CostConfirmCard's Proceed handler — campaign is now sending /
+  // scheduled. Clear the modal, go back to history, refresh.
+  const handleConfirm = (status: string, sendAt?: string) => {
+    setPendingConfirm(null);
+    showToast(
+      status === 'scheduled'
+        ? `Campaign scheduled${sendAt ? ` for ${new Date(sendAt).toLocaleString()}` : ''}`
+        : 'Campaign sending now',
+      'success',
+    );
+    setView('history');
+    setWizardPrefill(null);
+    loadAll();
+  };
+
+  // CostConfirmCard's Cancel handler — operator chose not to send.
+  // Just dismiss the modal; the draft sits as status:'draft' with
+  // confirmed_before set, and the autoJourneyRunner sweep will flip
+  // it to 'cancelled' after 24h. No explicit DELETE call needed.
+  const handleConfirmCancel = () => {
+    setPendingConfirm(null);
   };
 
   if (loading) {
@@ -1118,6 +1150,15 @@ export default function CampaignsPage() {
         />
       )}
       </>
+      )}
+
+      {pendingConfirm && (
+        <CostConfirmCard
+          campaignId={pendingConfirm.campaignId}
+          estimate={pendingConfirm.estimate}
+          onConfirm={handleConfirm}
+          onCancel={handleConfirmCancel}
+        />
       )}
     </div>
   );

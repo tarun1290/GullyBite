@@ -458,6 +458,12 @@ async function handleOrder(value) {
     status: 'PENDING_PAYMENT',
     payment_status: 'pending',
     settlement_id: null,
+    // 20-minute payment window — mirrors services/order.js. The
+    // order_details message builder reads this to render the "Pay by
+    // HH:MM IST" disclaimer; the WA Native checkout already runs through
+    // Meta's own checkout UI so the field doubles as a server-side guard
+    // against late captures rather than a customer-facing countdown.
+    expires_at: new Date(Date.now() + 20 * 60 * 1000),
     created_at: new Date(),
   };
 
@@ -568,6 +574,83 @@ async function handleOrder(value) {
 
   // If already paid, confirm the order
   if (data.payment_status === 'paid') {
+    // ─── PAYMENT-EXPIRY GATE ────────────────────────────────────
+    // The customer paid via WA Native Checkout but the order's
+    // payment window may have elapsed (20 min, set at creation).
+    // Mirrors the Razorpay-webhook gate in webhooks/razorpay.js:
+    // refund the captured amount, transition to EXPIRED_PAYMENT,
+    // notify the customer, log the activity, then RETURN so the
+    // PAID transition + ledger credit + fulfillment fan-out below
+    // never run. Wrapped so a refund / WA-send blip never blocks
+    // the webhook 200.
+    //
+    // Note: WA Native Checkout payments don't insert into the
+    // `payments` collection the way the hosted-Razorpay path does,
+    // so paymentSvc.issueRefund may return null (no payment row to
+    // refund against). We log that case loudly — ops needs to
+    // initiate a manual refund through the Meta/Razorpay native
+    // checkout console for those orders.
+    try {
+      const ordExp = order; // in-memory order doc just inserted above
+      if (ordExp?.expires_at && new Date() > new Date(ordExp.expires_at)) {
+        const paymentSvc = require('../services/payment');
+        const wa = require('../services/whatsapp');
+        const { logActivity } = require('../services/activityLog');
+        log.warn({ orderId, expiresAt: ordExp.expires_at }, 'WA Checkout payment captured past expiry — initiating refund');
+
+        let refundOk = false;
+        try {
+          const refund = await paymentSvc.issueRefund(orderId, 'order_expired_post_payment');
+          refundOk = !!refund?.id;
+          if (!refundOk) {
+            log.warn({ orderId }, 'No refundable payment row found for WA Native Checkout — manual refund required');
+          }
+        } catch (refundErr) {
+          log.error({ err: refundErr, orderId }, 'Refund failed for expired-payment order — manual ops follow-up required');
+        }
+
+        try {
+          const { transitionOrder } = require('../core/orderStateEngine');
+          await transitionOrder(orderId, 'EXPIRED_PAYMENT', {
+            actor: 'wa_checkout',
+            actorType: 'system',
+            metadata: { reason: 'expired_post_payment' },
+          });
+        } catch (statusErr) {
+          log.warn({ err: statusErr, orderId }, 'EXPIRED_PAYMENT status flip failed');
+        }
+
+        // Customer WA notice — best-effort.
+        try {
+          const metaConfig = require('../config/meta');
+          const pid = waAccount.phone_number_id;
+          const token = metaConfig.systemUserToken || waAccount.access_token;
+          if (pid && token && customerPhone) {
+            const totalRs = Number(order.total_rs) || 0;
+            await wa.sendText(
+              pid, token, customerPhone,
+              `⚠️ Your order timed out before payment was confirmed. A full refund of ₹${totalRs.toFixed(2)} has been initiated and will reflect in 3–5 business days. Please place a fresh order.`,
+            );
+          }
+        } catch (waErr) {
+          log.warn({ err: waErr, orderId }, 'WA notice for expired-payment failed');
+        }
+
+        logActivity({
+          actorType: 'system', actorId: null, actorName: 'WA Checkout',
+          action: 'order_expired_post_payment', category: 'payment',
+          description: `Order ${order.order_number || orderId} expired before WA Native Checkout payment confirmation; full refund ${refundOk ? 'initiated' : 'FAILED'}`,
+          restaurantId: waAccount.restaurant_id || null,
+          resourceType: 'order', resourceId: orderId, severity: 'warning',
+          metadata: { totalRs: order.total_rs, expiresAt: ordExp.expires_at, refundOk },
+        });
+
+        return; // Skip PAID flip, ledger credit, and fulfillment fan-out
+      }
+    } catch (gateErr) {
+      log.error({ err: gateErr, orderId }, 'WA Checkout payment-expiry gate crashed — falling through');
+    }
+
     // Drive the PENDING_PAYMENT → PAID transition through the strict
     // state engine so order_state_log + the order.updated event bus
     // fire correctly. The previous orderSvc.updateStatus call did the
@@ -611,6 +694,7 @@ async function handleOrder(value) {
               restaurant_id: 1,
               total_rs: 1,
               order_number: 1,
+              customer_id: 1,
               coupon_scope: 1,
               coupon_code: 1,
               platform_discount_paise: 1,
@@ -647,6 +731,92 @@ async function handleOrder(value) {
               status: 'completed',
               notes: `Platform coupon compensation — ${ord.coupon_code || ''}`.trim(),
             });
+          }
+
+          // ─── PAYMENTS-ROW INSERT (refund-traceability fix) ──────
+          // services/payment.js:issueRefund finds the row to refund via
+          // payments.findOne({ order_id, status: 'paid' }) and calls
+          // Razorpay's refund API with payment.rp_payment_id +
+          // payment.amount_rs. Without a row here, every refund attempt
+          // for a WA Native Checkout order returned null — the prompt-33
+          // expiry gate logged "manual refund required" and ops had to
+          // refund through Meta's console by hand.
+          //
+          // WA Native Checkout DOES route through Razorpay underneath
+          // (per services/whatsapp.js's payment_settings.payment_gateway
+          // .type: 'razorpay'), so when Meta forwards the captured
+          // payment id we can refund it the same way the hosted-checkout
+          // flow does. Meta's exact field shape varies by API version;
+          // we read defensively from every plausible path. If none yield
+          // a `pay_…`-shaped id, rp_payment_id stays null — issueRefund
+          // will throw on null and the gate's catch records the manual-
+          // refund-required state with the wa_payment_ref preserved for
+          // ops follow-up.
+          //
+          // Idempotency: the outer flip-guard (line 686-689) already
+          // serializes this entire block to one execution per order, so
+          // a duplicate webhook can't double-insert. Belt-and-suspenders
+          // duplicate-key catch below handles a hypothetical concurrent
+          // run anyway.
+          try {
+            const candidates = [
+              data?.payment?.transaction_id,
+              data?.payment?.id,
+              data?.payment?.reference_id,
+              data?.payment_reference,
+              data?.transaction_id,
+              data?.razorpay_payment_id,
+            ].filter(Boolean).map(String);
+            const waPaymentRef = candidates[0] || null;
+            const rzpId = candidates.find((c) => /^pay_/.test(c)) || null;
+
+            const totalRs = Number(ord.total_rs) || 0;
+            const paymentDoc = {
+              _id: newId(),
+              order_id: String(orderId),
+              restaurant_id: ord.restaurant_id,
+              customer_id: ord.customer_id || null,
+              amount_rs: totalRs,
+              // Paise mirror — present alongside amount_rs because (a) the
+              // user-spec'd field name and (b) downstream paise-native
+              // consumers (ledger reconciliation, settlement-export) can
+              // read it without re-multiplying.
+              amount_paise: Math.round(totalRs * 100),
+              status: 'paid',
+              payment_type: 'wa_native_checkout',
+              payment_method: data?.payment?.method || null,
+              // Razorpay payment id when Meta surfaces it; otherwise null
+              // and issueRefund will throw → ops handles via console.
+              rp_payment_id: rzpId,
+              // Original Meta-side reference, regardless of shape. Lets
+              // ops trace back to the WA checkout session even when Meta
+              // didn't echo a Razorpay-shaped id.
+              wa_payment_ref: waPaymentRef,
+              paid_at: new Date(),
+              created_at: new Date(),
+              updated_at: new Date(),
+            };
+            try {
+              await col('payments').insertOne(paymentDoc);
+              log.info({
+                orderId, orderNumber: ord.order_number,
+                rzpId: rzpId || null,
+                waPaymentRef: waPaymentRef || null,
+                refundable: !!rzpId,
+              }, 'wa_checkout payments row inserted');
+            } catch (dupErr) {
+              if (dupErr?.code === 11000 || /duplicate key/i.test(dupErr?.message || '')) {
+                log.info({ orderId }, 'wa_checkout payments row already present — duplicate insert ignored');
+              } else {
+                throw dupErr;
+              }
+            }
+          } catch (payErr) {
+            // Insert failure must never block the credit flow above —
+            // ops dashboard surfaces orders without payments rows via
+            // the same reconciliation job that catches missing ledger
+            // entries.
+            log.warn({ err: payErr, orderId }, 'wa_checkout payments row insert failed — refunds will require manual ops');
           }
         }
       } else {
