@@ -652,7 +652,22 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
       bankName, bankAccountNumber, bankIfsc,
       menuGstMode, deliveryFeeCustomerPct, packagingChargeRs, packagingGstPct,
       notificationPhones, notificationSettings,
+      cartRecoveryDiscountPct,
     } = req.body;
+
+    // Validate cart_recovery_discount_pct (0-100, integer/decimal both
+    // accepted). Reject the whole PUT with 400 on out-of-range so the
+    // operator gets immediate feedback rather than silently writing
+    // garbage that {{3}} would render in customer messages.
+    if (cartRecoveryDiscountPct != null) {
+      const n = Number(cartRecoveryDiscountPct);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        return res.status(400).json({
+          success: false,
+          message: 'cartRecoveryDiscountPct must be a number between 0 and 100',
+        });
+      }
+    }
 
     const $set = {};
     if (businessName            != null) $set.business_name             = businessName;
@@ -674,6 +689,7 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
     if (packagingGstPct         != null) $set.packaging_gst_pct         = parseFloat(packagingGstPct);
     if (notificationPhones     != null) $set.notification_phones       = Array.isArray(notificationPhones) ? notificationPhones.filter(Boolean) : [];
     if (notificationSettings   != null) $set.notification_settings     = notificationSettings;
+    if (cartRecoveryDiscountPct != null) $set.cart_recovery_discount_pct = Number(cartRecoveryDiscountPct);
 
     await col('restaurants').updateOne(
       { _id: req.restaurantId },

@@ -575,7 +575,7 @@ async function _handleCartRecovery(payload) {
   }
   const order = await col('orders').findOne(
     { _id: orderId },
-    { projection: { status: 1, restaurant_id: 1, customer_id: 1, order_number: 1, subtotal_rs: 1 } },
+    { projection: { status: 1, restaurant_id: 1, customer_id: 1, order_number: 1 } },
   );
   if (!order) {
     log.info({ orderId }, 'CART_RECOVERY: order not found — skipping');
@@ -589,17 +589,21 @@ async function _handleCartRecovery(payload) {
     log.info({ orderId }, 'CART_RECOVERY: missing customer_id or restaurant_id — skipping');
     return;
   }
-  // Belt-and-suspenders: pass the abandoned-cart subtotal under both
-  // names the template might declare, so the body can render
-  // "You left ₹{{order_amount}} behind" regardless of which variable
-  // name marketing_cart_recovery_v1 uses.
-  const subtotalRs = Number(order.subtotal_rs) || 0;
+  // marketing_cart_recovery_v1 declares discount_pct as variable {{3}}
+  // (restaurant_input). Pull the per-tenant override; null/missing
+  // falls back to 10 so existing restaurants render without an
+  // operator action. Stringified because every Meta template
+  // parameter is sent as text.
+  const restaurant = await col('restaurants').findOne(
+    { _id: String(order.restaurant_id) },
+    { projection: { cart_recovery_discount_pct: 1 } },
+  );
   const journeyExecutor = require('../services/journeyExecutor');
   const result = await journeyExecutor.executeJourney(
     String(order.restaurant_id),
     String(order.customer_id),
     'cart_recovery',
-    { order_amount: subtotalRs, subtotal_rs: subtotalRs },
+    { discount_pct: String(restaurant?.cart_recovery_discount_pct ?? 10) },
   );
   log.info({
     orderId, orderNumber: order.order_number,

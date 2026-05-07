@@ -80,6 +80,12 @@ const restaurants = {
     marketing_wa_last_checked_at: { type: 'date', default: null },
     // Admin-only; never returned from the restaurant-facing GET.
     marketing_wa_error_message:   { type: 'string', default: null },
+    // Cart-recovery template discount percentage. Plumbed through
+    // queue/postPaymentJobs._handleCartRecovery as the {{3}} variable
+    // for marketing_cart_recovery_v1. Validated 0..100 at the settings
+    // PUT and read by the journey runner; null falls back to 10 in the
+    // handler so existing rows render without operator action.
+    cart_recovery_discount_pct:   { type: 'number', default: 10 },
     // Review redirect targets sent to customers after a 4-5 star rating.
     // When set, positive feedback_events surface a Google/Zomato review
     // nudge with a tracked /api/review-redirect/:id hop.

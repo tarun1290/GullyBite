@@ -100,6 +100,7 @@ export interface Restaurant {
   catalog_id?: string;
   waba_accounts?: WabaAccount[];
   campaign_daily_cap?: number | null;
+  cart_recovery_discount_pct?: number | null;
   status?: string;
   created_at?: string;
   updated_at?: string;

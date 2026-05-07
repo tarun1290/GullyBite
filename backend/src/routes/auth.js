@@ -1974,10 +1974,13 @@ async function _registerPhoneNumber(phoneNumberId, _accessToken) {
 }
 
 // ─── REGISTER WA-CHECKOUT ENDPOINT WITH META ─────────────────
-// Two-step handshake required before Meta will deliver order_details
-// callbacks to /api/checkout-endpoint:
-//   1. Upload our RSA public key to /<phone_number_id>/whatsapp_business_encryption
-//   2. Set checkout_endpoint_url on the phone number itself
+// Single-call handshake required before Meta will deliver order_details
+// callbacks to /api/checkout-endpoint: POST both the RSA public key
+// and the checkout_endpoint_url to
+// /<phone_number_id>/whatsapp_business_encryption in one request.
+// Earlier shape used a separate follow-up POST to /<phone_number_id>
+// for the URL — that path is not a valid Meta endpoint, so the URL
+// never actually got set despite the previous success log line.
 //
 // The public key is DERIVED from WA_CHECKOUT_PRIVATE_KEY_B64 at call time
 // — no separate WA_CHECKOUT_PUBLIC_KEY env var, so the two artefacts can
@@ -2016,58 +2019,36 @@ async function _registerCheckoutEndpoint(phoneNumberId) {
       return;
     }
 
-    // ── Step 1: upload public key ──────────────────────────────
-    // Meta returns 80007 / sub-2388053 on duplicate uploads — same
-    // already-registered codes _registerPhoneNumber treats as success.
+    // ── Single POST: public key + checkout endpoint URL ──────
+    // Meta accepts both fields in one request to
+    // /whatsapp_business_encryption. Returns 80007 / sub-2388053 when
+    // the same key is re-uploaded — treat as success because the URL
+    // half of the body is still applied on duplicate-key responses.
     try {
       await axios.post(
         `${META_GRAPH_URL}/${phoneNumberId}/whatsapp_business_encryption`,
-        { business_public_key: publicKeyPem },
+        {
+          business_public_key: publicKeyPem,
+          checkout_endpoint_url: endpointUrl,
+        },
         {
           headers: { Authorization: `Bearer ${sysToken}`, 'Content-Type': 'application/json' },
           timeout: 10000,
         },
       );
-      log.info({ phoneNumberId }, 'Checkout public key uploaded to Meta');
+      log.info({ phoneNumberId, endpointUrl }, 'Checkout key + endpoint URL registered with Meta');
     } catch (err) {
       const apiErr = err.response?.data?.error;
       if (apiErr?.code === 80007 || apiErr?.error_subcode === 2388053) {
-        log.info({ phoneNumberId }, 'Checkout public key already registered with Meta');
+        log.info({ phoneNumberId, endpointUrl }, 'Checkout key already registered with Meta — endpoint URL re-applied');
       } else {
         log.error({
           err: apiErr || err?.message,
           phoneNumberId,
-        }, 'Checkout public key upload failed');
-        return; // Don't try step 2 if step 1 failed for a non-idempotent reason
+          endpointUrl,
+        }, 'Checkout endpoint registration failed');
+        return; // Skip the row stamp on non-idempotent failures
       }
-    }
-
-    // ── Step 2: set checkout_endpoint_url on the phone number ──
-    // Meta's exact verb / param shape for setting checkout_endpoint_url
-    // has shifted across API versions. Using POST + JSON body here per
-    // current docs; a non-2xx is logged at warn level and swallowed so
-    // a one-off integration drift doesn't block onboarding. The full
-    // upstream response is included in the log for ops debugging.
-    try {
-      await axios.post(
-        `${META_GRAPH_URL}/${phoneNumberId}`,
-        { checkout_endpoint_url: endpointUrl },
-        {
-          headers: { Authorization: `Bearer ${sysToken}`, 'Content-Type': 'application/json' },
-          timeout: 10000,
-        },
-      );
-      log.info({ phoneNumberId, endpointUrl }, 'checkout_endpoint_url set on phone number');
-    } catch (err) {
-      log.warn({
-        err: err.response?.data || err?.message,
-        upstreamStatus: err.response?.status,
-        phoneNumberId,
-        endpointUrl,
-      }, 'Setting checkout_endpoint_url failed — continuing (verify Meta API version + param shape)');
-      // Don't return here — still stamp the row below if step 1 succeeded,
-      // because that's the half of the handshake that actually rotates
-      // the encryption secret. Operator can re-run step 2 manually.
     }
 
     // ── Stamp the row ──────────────────────────────────────────

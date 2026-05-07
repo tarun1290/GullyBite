@@ -22,6 +22,7 @@ interface RestaurantWithBusinessInfo extends Restaurant {
   restaurant_type?: string;
   gst_number?: string;
   fssai_license?: string;
+  cart_recovery_discount_pct?: number | null;
 }
 
 interface FormState {
@@ -39,6 +40,7 @@ interface FormState {
   bankName: string;
   bankAccountNumber: string;
   bankIfsc: string;
+  cartRecoveryDiscountPct: string;
 }
 
 interface SlugUpdateResponse {
@@ -107,6 +109,8 @@ function buildForm(r: RestaurantWithBusinessInfo | null): FormState {
     bankName: r?.bank_name || '',
     bankAccountNumber: r?.bank_account_number || '',
     bankIfsc: r?.bank_ifsc || '',
+    cartRecoveryDiscountPct:
+      r?.cart_recovery_discount_pct == null ? '' : String(r.cart_recovery_discount_pct),
   };
 }
 
@@ -173,6 +177,12 @@ export default function BusinessInfoSection() {
         bankName: form.bankName,
         bankAccountNumber: form.bankAccountNumber,
         bankIfsc: form.bankIfsc,
+        // Send null when blank so the backend's `!= null` guard skips the
+        // update and the existing value is preserved. A numeric value
+        // (including 0) is sent as a number so the backend's 0..100
+        // validator gets the right shape.
+        cartRecoveryDiscountPct:
+          form.cartRecoveryDiscountPct === '' ? null : Number(form.cartRecoveryDiscountPct),
       });
       showToast('Profile saved', 'success');
       await refetch();
@@ -362,6 +372,18 @@ export default function BusinessInfoSection() {
                 No bank details — add in Edit mode
               </div>
             )}
+
+            <p className="text-[0.82rem] font-semibold text-dim mt-[0.8rem] mb-[0.4rem]">
+              Marketing
+            </p>
+            <ViewRow
+              label="Cart Recovery Discount"
+              value={
+                r.cart_recovery_discount_pct == null
+                  ? null
+                  : `${r.cart_recovery_discount_pct}%`
+              }
+            />
           </div>
         ) : (
           <div>
@@ -470,6 +492,27 @@ export default function BusinessInfoSection() {
               </Field>
               <Field label="IFSC Code">
                 <input value={form.bankIfsc} onChange={update('bankIfsc')} placeholder="HDFC0001234" />
+              </Field>
+            </div>
+
+            <hr className="dv" />
+            <p className="text-[0.84rem] font-semibold text-dim mb-[0.85rem]">
+              Marketing
+            </p>
+            <div className="fgrid">
+              <Field label="Cart Recovery Discount (%)">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={form.cartRecoveryDiscountPct}
+                  onChange={update('cartRecoveryDiscountPct')}
+                  placeholder="10"
+                />
+                <p className="text-[0.72rem] text-dim mt-[0.3rem]">
+                  Discount shown to customers who abandon their cart. Default: 10%.
+                </p>
               </Field>
             </div>
 

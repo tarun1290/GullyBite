@@ -61,15 +61,22 @@ function derivePublicKey() {
   return crypto.createPublicKey(privKeyObj).export({ type: 'spki', format: 'pem' });
 }
 
-// ── Step 1: upload public key ────────────────────────────────
-// Meta returns 80007 / sub-2388053 on duplicate uploads — treat as
-// success (handshake already done from a prior run or a fresh onboarding
-// fired by routes/auth.js:savePhone).
-async function uploadPublicKey(phoneNumberId, publicKeyPem) {
+// ── Single POST: public key + checkout endpoint URL ──────────
+// Meta accepts both fields in one request to
+// /whatsapp_business_encryption. The earlier two-call shape (separate
+// POST to /<phone_number_id> for the URL) targeted a non-existent
+// endpoint, so the URL never actually took. Meta returns 80007 /
+// sub-2388053 when the same key is re-uploaded — treated as success
+// because the URL half of the body is still applied on the duplicate
+// response.
+async function registerCheckoutEndpoint(phoneNumberId, publicKeyPem) {
   try {
     await axios.post(
       `${META_GRAPH_URL}/${phoneNumberId}/whatsapp_business_encryption`,
-      { business_public_key: publicKeyPem },
+      {
+        business_public_key: publicKeyPem,
+        checkout_endpoint_url: WA_CHECKOUT_ENDPOINT_URL,
+      },
       {
         headers: { Authorization: `Bearer ${META_SYSTEM_USER_TOKEN}`, 'Content-Type': 'application/json' },
         timeout: 10000,
@@ -84,31 +91,6 @@ async function uploadPublicKey(phoneNumberId, publicKeyPem) {
     return {
       ok: false,
       error: apiErr || err?.message,
-      status: err.response?.status,
-    };
-  }
-}
-
-// ── Step 2: set checkout_endpoint_url on the phone number ────
-// Meta's verb / param shape for this endpoint has shifted across API
-// versions. Failure here is logged and the row is still stamped because
-// step 1 already rotated the encryption secret on Meta's side; operator
-// can re-run step 2 manually if the URL didn't take.
-async function setCheckoutUrl(phoneNumberId) {
-  try {
-    await axios.post(
-      `${META_GRAPH_URL}/${phoneNumberId}`,
-      { checkout_endpoint_url: WA_CHECKOUT_ENDPOINT_URL },
-      {
-        headers: { Authorization: `Bearer ${META_SYSTEM_USER_TOKEN}`, 'Content-Type': 'application/json' },
-        timeout: 10000,
-      },
-    );
-    return { ok: true };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.response?.data || err?.message,
       status: err.response?.status,
     };
   }
@@ -168,35 +150,22 @@ async function main() {
         continue;
       }
 
-      // Step 1
-      const step1 = await uploadPublicKey(phoneNumberId, publicKeyPem);
-      if (!step1.ok) {
-        console.log('  FAIL step 1 (public key upload):', step1.error);
+      // Single-call register: public key + checkout endpoint URL
+      const result = await registerCheckoutEndpoint(phoneNumberId, publicKeyPem);
+      if (!result.ok) {
+        console.log('  FAIL register (public key + checkout URL):', result.error);
         failed.push({
           phoneNumberId,
           restaurantId,
-          reason: 'pub_key_upload_failed',
-          detail: step1.error,
-          status: step1.status,
+          reason: 'register_failed',
+          detail: result.error,
+          status: result.status,
         });
         continue;
       }
       console.log(
-        `  step 1: ${step1.alreadyRegistered ? 'public key already registered (idempotent)' : 'public key uploaded'}`,
+        `  register: ${result.alreadyRegistered ? 'key already registered (URL re-applied)' : 'key + checkout URL registered'}`,
       );
-
-      // Step 2
-      const step2 = await setCheckoutUrl(phoneNumberId);
-      if (!step2.ok) {
-        console.log(
-          `  WARN step 2 (set checkout_endpoint_url) failed — stamping anyway, retry manually:`,
-          step2.error,
-        );
-        // Don't fail the row — step 1 succeeded so the encryption secret
-        // is in place; operator can re-run step 2 with curl if needed.
-      } else {
-        console.log('  step 2: checkout_endpoint_url set');
-      }
 
       // Stamp
       await col.updateOne(
