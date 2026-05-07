@@ -397,6 +397,16 @@ const customers = {
     merged_at:             { type: 'date' },
     first_seen_at:         { type: 'date' },
     last_seen_at:          { type: 'date' },
+    // GBREF (City Captain) referral attribution. Stamped at order-create
+    // time when an active referral converts on this customer's first
+    // attributed order through services/order.js. Enables CRM segments
+    // like "captain-acquired in last 90 days" without joining
+    // referrals → orders → customers. All three nullable; absent on
+    // customers acquired through any non-GBREF channel (directory,
+    // direct, admin add).
+    captain_acquired_at:   { type: 'date' },
+    captain_referral_id:   { type: 'uuid' },
+    captain_referral_code: { type: 'string' },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },
@@ -722,6 +732,11 @@ const whatsapp_accounts = {
     catalog_id:            { type: 'string' },
     catalog_linked:        { type: 'boolean' },
     is_active:             { type: 'boolean', required: true },
+    // Stamped by routes/auth.js:_registerCheckoutEndpoint after the
+    // public key + checkout_endpoint_url have been (re-)registered with
+    // Meta on this phone_number_id. Sparse — pre-handshake rows + rows
+    // created before the handshake helper landed are absent.
+    checkout_endpoint_registered_at: { type: 'date' },
     created_at:            { type: 'date', required: true },
   },
 };
@@ -1180,6 +1195,13 @@ const campaign_templates = {
     _id:                 { type: 'uuid', required: true },
     // The exact Meta template name — used as the WhatsApp API `name` field.
     template_id:         { type: 'string', required: true },
+    // Meta-assigned numeric template id, captured by jobs/templateSync.js
+    // when it mirrors Meta's catalog into the local `templates` collection.
+    // The auto-glue sweep at templateSync.js:115 joins on this field, so
+    // it must exist on the schema for that updateOne to ever match.
+    // Nullable: rows created by admin BEFORE Meta returns an id leave it
+    // null; the sync job populates it in-place once Meta responds.
+    meta_template_id:    { type: 'string' },
     display_name:        { type: 'string', required: true },
     category:            { type: 'string', required: true, enum: ['marketing', 'utility'] },
     use_case: {
@@ -1188,6 +1210,7 @@ const campaign_templates = {
         'welcome',
         'winback_short',
         'winback_long',
+        'reactivation',
         'birthday',
         'loyalty_expiry',
         'milestone',
@@ -1195,6 +1218,8 @@ const campaign_templates = {
         'festival',
         'new_dish',
         'general',
+        'cart_recovery',
+        'reorder_suggestion',
       ],
     },
     language:            { type: 'string', required: true, default: 'en' },
@@ -1329,7 +1354,7 @@ const auto_journey_config = {
       template_id: null,
       custom_variable_values: {},
     } },
-    reactivation: { type: 'object', default: {
+    winback_long: { type: 'object', default: {
       enabled: false,
       trigger_day: 30,
       template_id: null,

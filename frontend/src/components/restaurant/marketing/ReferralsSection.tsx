@@ -164,7 +164,7 @@ export default function ReferralsSection() {
     <div>
       {/* ── GBREF Link Card ────────────────────────────────────── */}
       <div className="card mb-[1.2rem]">
-        <div className="ch"><h3>Your GBREF Link</h3></div>
+        <div className="ch"><h3>Your City Captain Link</h3></div>
         <div className="cb">
           {linksError ? (
             <SectionError message={linksError} onRetry={loadLinks} />
@@ -269,7 +269,7 @@ export default function ReferralsSection() {
           7.5% + GST rate and the settlement deduction. */}
       <div className="card mb-[1.2rem] py-[0.85rem] px-[1.2rem] bg-[#1e1b4b] border border-[#4c1d9544]">
         <p className="text-[0.82rem] text-[#c4b5fd] m-0">
-          Customers who click your GBREF link and order within <strong>8 hours</strong> generate a{' '}
+          Customers who click your City Captain link and order within <strong>8 hours</strong> generate a{' '}
           <strong>7.5% + GST</strong> referral fee, deducted from your weekly settlement.
         </p>
       </div>

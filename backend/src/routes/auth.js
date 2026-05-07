@@ -87,7 +87,7 @@ async function seedAutoJourneyConfig(restaurantId) {
           restaurant_id: String(restaurantId),
           welcome:        { enabled: false, template_id: null, custom_variable_values: {} },
           winback_short:  { enabled: false, trigger_day: 14, template_id: null, custom_variable_values: {} },
-          reactivation:   { enabled: false, trigger_day: 30, template_id: null, custom_variable_values: {} },
+          winback_long:   { enabled: false, trigger_day: 30, template_id: null, custom_variable_values: {} },
           birthday:       { enabled: false, template_id: null, custom_variable_values: {}, send_hour_ist: 10 },
           loyalty_expiry: { enabled: false, days_before_expiry: 5, template_id: null, custom_variable_values: {} },
           milestone:      { enabled: false, trigger_orders: [5, 10, 25], template_id: null, custom_variable_values: {} },
@@ -1586,6 +1586,9 @@ async function _saveWabaAccounts(restaurantId, wabaData, longToken, sessionInfo 
     _registerPhoneNumber(phone.id, longToken).catch(err =>
       log.error({ err, phoneId: phone.id }, 'Phone registration failed')
     );
+    _registerCheckoutEndpoint(phone.id).catch(err =>
+      log.error({ err, phoneId: phone.id }, 'Checkout endpoint registration failed')
+    );
     return true;
   };
 
@@ -1966,6 +1969,113 @@ async function _registerPhoneNumber(phoneNumberId, _accessToken) {
     }
     log.error({ err, phoneNumberId }, 'Phone registration failed');
     throw err;
+  }
+}
+
+// ─── REGISTER WA-CHECKOUT ENDPOINT WITH META ─────────────────
+// Two-step handshake required before Meta will deliver order_details
+// callbacks to /api/checkout-endpoint:
+//   1. Upload our RSA public key to /<phone_number_id>/whatsapp_business_encryption
+//   2. Set checkout_endpoint_url on the phone number itself
+//
+// The public key is DERIVED from WA_CHECKOUT_PRIVATE_KEY_B64 at call time
+// — no separate WA_CHECKOUT_PUBLIC_KEY env var, so the two artefacts can
+// never drift. Skipped silently when either env var is unset (local dev,
+// or before the operator has run the key-generation step).
+//
+// Like _registerPhoneNumber, this never throws — caller is fire-and-forget.
+async function _registerCheckoutEndpoint(phoneNumberId) {
+  try {
+    const privKeyB64 = process.env.WA_CHECKOUT_PRIVATE_KEY_B64;
+    const endpointUrl = process.env.WA_CHECKOUT_ENDPOINT_URL;
+    if (!privKeyB64) {
+      log.warn({ phoneNumberId }, 'WA_CHECKOUT_PRIVATE_KEY_B64 not set — skipping checkout endpoint registration');
+      return;
+    }
+    if (!endpointUrl) {
+      log.warn({ phoneNumberId }, 'WA_CHECKOUT_ENDPOINT_URL not set — skipping checkout endpoint registration');
+      return;
+    }
+    const sysToken = metaConfig.systemUserToken;
+    if (!sysToken) {
+      log.warn({ phoneNumberId }, 'systemUserToken not set — skipping checkout endpoint registration');
+      return;
+    }
+
+    // Derive the public key PEM from the private key. crypto.createPrivateKey
+    // accepts the unencrypted PEM stored in env (base64-wrapped to fit a
+    // single env var). Same shape services/checkout-crypto.js loads.
+    let publicKeyPem;
+    try {
+      const privPem = Buffer.from(privKeyB64, 'base64').toString('utf8');
+      const privKeyObj = crypto.createPrivateKey(privPem);
+      publicKeyPem = crypto.createPublicKey(privKeyObj).export({ type: 'spki', format: 'pem' });
+    } catch (err) {
+      log.error({ err: err?.message, phoneNumberId }, 'Failed to derive public key from WA_CHECKOUT_PRIVATE_KEY_B64');
+      return;
+    }
+
+    // ── Step 1: upload public key ──────────────────────────────
+    // Meta returns 80007 / sub-2388053 on duplicate uploads — same
+    // already-registered codes _registerPhoneNumber treats as success.
+    try {
+      await axios.post(
+        `${META_GRAPH_URL}/${phoneNumberId}/whatsapp_business_encryption`,
+        { business_public_key: publicKeyPem },
+        {
+          headers: { Authorization: `Bearer ${sysToken}`, 'Content-Type': 'application/json' },
+          timeout: 10000,
+        },
+      );
+      log.info({ phoneNumberId }, 'Checkout public key uploaded to Meta');
+    } catch (err) {
+      const apiErr = err.response?.data?.error;
+      if (apiErr?.code === 80007 || apiErr?.error_subcode === 2388053) {
+        log.info({ phoneNumberId }, 'Checkout public key already registered with Meta');
+      } else {
+        log.error({
+          err: apiErr || err?.message,
+          phoneNumberId,
+        }, 'Checkout public key upload failed');
+        return; // Don't try step 2 if step 1 failed for a non-idempotent reason
+      }
+    }
+
+    // ── Step 2: set checkout_endpoint_url on the phone number ──
+    // Meta's exact verb / param shape for setting checkout_endpoint_url
+    // has shifted across API versions. Using POST + JSON body here per
+    // current docs; a non-2xx is logged at warn level and swallowed so
+    // a one-off integration drift doesn't block onboarding. The full
+    // upstream response is included in the log for ops debugging.
+    try {
+      await axios.post(
+        `${META_GRAPH_URL}/${phoneNumberId}`,
+        { checkout_endpoint_url: endpointUrl },
+        {
+          headers: { Authorization: `Bearer ${sysToken}`, 'Content-Type': 'application/json' },
+          timeout: 10000,
+        },
+      );
+      log.info({ phoneNumberId, endpointUrl }, 'checkout_endpoint_url set on phone number');
+    } catch (err) {
+      log.warn({
+        err: err.response?.data || err?.message,
+        upstreamStatus: err.response?.status,
+        phoneNumberId,
+        endpointUrl,
+      }, 'Setting checkout_endpoint_url failed — continuing (verify Meta API version + param shape)');
+      // Don't return here — still stamp the row below if step 1 succeeded,
+      // because that's the half of the handshake that actually rotates
+      // the encryption secret. Operator can re-run step 2 manually.
+    }
+
+    // ── Stamp the row ──────────────────────────────────────────
+    await col('whatsapp_accounts').updateOne(
+      { phone_number_id: phoneNumberId },
+      { $set: { checkout_endpoint_registered_at: new Date(), updated_at: new Date() } },
+    );
+  } catch (err) {
+    log.error({ err: err?.message, phoneNumberId }, '_registerCheckoutEndpoint crashed');
   }
 }
 

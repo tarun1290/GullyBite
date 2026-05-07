@@ -14,7 +14,7 @@ const adminRouter = express.Router();
 const restaurantRouter = express.Router();
 
 const USE_CASES = new Set([
-  'welcome', 'winback_short', 'winback_long', 'birthday',
+  'welcome', 'winback_short', 'winback_long', 'reactivation', 'birthday',
   'loyalty_expiry', 'milestone', 'manual_blast',
   'festival', 'new_dish', 'general',
   // Added for the Phase-2 marketing template seed (cart-recovery + reorder

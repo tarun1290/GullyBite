@@ -1465,6 +1465,59 @@ router.get('/referrals/commission-report', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// GET /api/admin/referrals/analytics — combined commission summary + daily timeseries
+// Returns:
+//   summary: getCommissionReport output (counts by status, commission totals)
+//   daily:   [{ date: 'YYYY-MM-DD', created, converted, expired, commission_rs }]
+// "converted" / "expired" / commission_rs count referrals CREATED on that
+// IST day that have since reached that status — the natural "what came in
+// this day and how did it perform" view that backs the line + bar charts.
+// Defaults: from = now-30d, to = now (so unparameterised calls don't scan
+// the full collection). Placed before /referrals/conflict-audit/:phone so
+// the literal path resolves first if route ordering ever drifts.
+router.get('/referrals/analytics', async (req, res) => {
+  try {
+    const refAttr = require('../services/referralAttribution');
+    const restaurantId = req.query.restaurant_id;
+    const fromStr = req.query.from;
+    const toStr = req.query.to;
+
+    const summary = await refAttr.getCommissionReport({
+      from: fromStr, to: toStr, restaurantId,
+    });
+
+    const fromDate = fromStr ? new Date(fromStr) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const toDate = toStr ? new Date(toStr) : new Date();
+    const match = { created_at: { $gte: fromDate, $lte: toDate } };
+    if (restaurantId) match.restaurant_id = String(restaurantId);
+
+    const daily = await col('referrals').aggregate([
+      { $match: match },
+      { $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$created_at', timezone: 'Asia/Kolkata' } },
+          created:   { $sum: 1 },
+          converted: { $sum: { $cond: [{ $eq: ['$status', 'converted'] }, 1, 0] } },
+          expired:   { $sum: { $cond: [{ $eq: ['$status', 'expired']   }, 1, 0] } },
+          commission_rs: { $sum: { $cond: [
+              { $eq: ['$status', 'converted'] },
+              { $ifNull: ['$referral_fee_rs', 0] },
+              0,
+          ] } },
+      } },
+      { $sort: { _id: 1 } },
+      { $project: {
+          _id: 0, date: '$_id',
+          created: 1, converted: 1, expired: 1,
+          commission_rs: { $round: ['$commission_rs', 2] },
+      } },
+    ]).toArray();
+
+    res.json({ summary, daily });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // GET /api/admin/referrals/conflict-audit/:phone — attribution conflict audit
 router.get('/referrals/conflict-audit/:phone', async (req, res) => {
   try {

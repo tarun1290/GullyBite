@@ -382,6 +382,35 @@ export async function getReferrals(): Promise<unknown> {
   return data;
 }
 
+// Combined commission summary + daily timeseries for the admin charts.
+// Backend: GET /api/admin/referrals/analytics (admin.js).
+export interface ReferralAnalyticsDay {
+  date: string;          // 'YYYY-MM-DD' (IST)
+  created: number;
+  converted: number;
+  expired: number;
+  commission_rs: number;
+}
+export interface ReferralAnalyticsSummary {
+  total_referrals: number;
+  by_status: { active?: number; converted?: number; expired?: number; superseded?: number; reversed?: number };
+  total_attributed_orders: number;
+  total_attributed_subtotal: number;
+  commission: { pending: number; confirmed: number; reversed: number; settled: number; net_total: number };
+  commission_percent: number;
+}
+export interface ReferralAnalyticsResponse {
+  summary: ReferralAnalyticsSummary;
+  daily: ReferralAnalyticsDay[];
+}
+
+export async function getReferralAnalytics(params: { from: string; to: string; restaurantId?: string }): Promise<ReferralAnalyticsResponse> {
+  const query: Record<string, string> = { from: params.from, to: params.to };
+  if (params.restaurantId) query.restaurant_id = params.restaurantId;
+  const { data } = await client.get<ReferralAnalyticsResponse>('/api/admin/referrals/analytics', { params: query });
+  return data;
+}
+
 export async function createReferral(body: RequestBody): Promise<unknown> {
   const { data } = await client.post('/api/admin/referrals', body);
   return data;

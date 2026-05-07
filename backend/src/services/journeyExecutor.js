@@ -1,7 +1,7 @@
 'use strict';
 
 // Auto-journey executor. Single entry point for all six journeys
-// (welcome, winback_short, reactivation, birthday, loyalty_expiry,
+// (welcome, winback_short, winback_long, birthday, loyalty_expiry,
 // milestone). The event hooks (Razorpay webhook) and cron runner both
 // call into executeJourney — they never build the campaign doc or
 // dispatch messages themselves.
@@ -20,7 +20,7 @@ const marketingCampaigns = require('./marketingCampaigns');
 const DEFAULT_JOURNEY_CONFIG = {
   welcome:        { enabled: false, template_id: null, custom_variable_values: {} },
   winback_short:  { enabled: false, trigger_day: 14, template_id: null, custom_variable_values: {} },
-  reactivation:   { enabled: false, trigger_day: 30, template_id: null, custom_variable_values: {} },
+  winback_long:   { enabled: false, trigger_day: 30, template_id: null, custom_variable_values: {} },
   birthday:       { enabled: false, template_id: null, custom_variable_values: {}, send_hour_ist: 10 },
   loyalty_expiry: { enabled: false, days_before_expiry: 5, template_id: null, custom_variable_values: {} },
   milestone:      { enabled: false, trigger_orders: [5, 10, 25], template_id: null, custom_variable_values: {} },

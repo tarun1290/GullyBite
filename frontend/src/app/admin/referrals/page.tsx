@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Chart, registerables, type ChartOptions } from 'chart.js';
 import { useToast } from '../../../components/Toast';
 import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
@@ -8,11 +9,24 @@ import {
   createReferral,
   createReferralLink,
   getAdminRestaurants,
+  getReferralAnalytics,
   getReferralLinkRequests,
   getReferralStats,
   getReferrals,
   resolveReferralLinkRequest,
+  type ReferralAnalyticsResponse,
 } from '../../../api/admin';
+
+// One-shot Chart.js registration. Idempotent — safe across HMR.
+Chart.register(...registerables);
+
+function isoDateNDaysAgo(n: number): string {
+  const d = new Date(Date.now() - n * 24 * 60 * 60 * 1000);
+  return d.toISOString().slice(0, 10);
+}
+function isoDateToday(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 const STATUS_COLOR: Record<string, string> = {
   active: '#22c55e',
@@ -132,6 +146,17 @@ export default function AdminReferralsPage() {
   // shows a spinner without disabling the others.
   const [generating, setGenerating] = useState<Record<string, boolean>>({});
 
+  // ── Analytics: date-range pickers + chart data ────────────────
+  const [from, setFrom] = useState<string>(isoDateNDaysAgo(30));
+  const [to, setTo] = useState<string>(isoDateToday());
+  const [analytics, setAnalytics] = useState<ReferralAnalyticsResponse | null>(null);
+  const [analyticsErr, setAnalyticsErr] = useState<string | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState<boolean>(false);
+  const lineCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const barCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lineChartRef = useRef<Chart | null>(null);
+  const barChartRef = useRef<Chart | null>(null);
+
   const loadStats = useCallback(async () => {
     try {
       const s = (await getReferralStats()) as ReferralStats | null;
@@ -175,13 +200,131 @@ export default function AdminReferralsPage() {
     }
   }, []);
 
+  const loadAnalytics = useCallback(async () => {
+    setAnalyticsLoading(true);
+    try {
+      const data = await getReferralAnalytics({ from, to });
+      setAnalytics(data);
+      setAnalyticsErr(null);
+    } catch (e: unknown) {
+      const er = e as { response?: { data?: { error?: string } }; message?: string };
+      setAnalytics(null);
+      setAnalyticsErr(er?.response?.data?.error || er?.message || 'Analytics failed');
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [from, to]);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
-    await Promise.all([loadStats(), loadList(), loadRestaurants(), loadLinkRequests()]);
+    await Promise.all([loadStats(), loadList(), loadRestaurants(), loadLinkRequests(), loadAnalytics()]);
     setLoading(false);
-  }, [loadStats, loadList, loadRestaurants, loadLinkRequests]);
+  }, [loadStats, loadList, loadRestaurants, loadLinkRequests, loadAnalytics]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Render / re-render the line chart whenever analytics changes.
+  // Each pass destroys the prior chart instance so Chart.js never sees
+  // a re-used canvas (which throws "Canvas is already in use").
+  useEffect(() => {
+    const ctx = lineCanvasRef.current?.getContext('2d');
+    if (!ctx) return undefined;
+    if (lineChartRef.current) {
+      lineChartRef.current.destroy();
+      lineChartRef.current = null;
+    }
+    const daily = analytics?.daily || [];
+    if (!daily.length) return undefined;
+    const opts: ChartOptions<'line'> = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
+      },
+    };
+    lineChartRef.current = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: daily.map((d) => d.date),
+        datasets: [
+          {
+            label: 'Created',
+            data: daily.map((d) => d.created),
+            borderColor: '#4f46e5',
+            backgroundColor: 'rgba(79,70,229,.12)',
+            tension: 0.3,
+            fill: true,
+            pointRadius: 2,
+          },
+          {
+            label: 'Converted',
+            data: daily.map((d) => d.converted),
+            borderColor: 'var(--gb-wa-500)',
+            backgroundColor: 'rgba(22,163,74,.12)',
+            tension: 0.3,
+            fill: true,
+            pointRadius: 2,
+          },
+        ],
+      },
+      options: opts,
+    });
+    return () => {
+      if (lineChartRef.current) {
+        lineChartRef.current.destroy();
+        lineChartRef.current = null;
+      }
+    };
+  }, [analytics]);
+
+  // Same lifecycle for the bar chart — commission earned per day.
+  useEffect(() => {
+    const ctx = barCanvasRef.current?.getContext('2d');
+    if (!ctx) return undefined;
+    if (barChartRef.current) {
+      barChartRef.current.destroy();
+      barChartRef.current = null;
+    }
+    const daily = analytics?.daily || [];
+    if (!daily.length) return undefined;
+    const opts: ChartOptions<'bar'> = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (item) => `₹${Number(item.raw).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          },
+        },
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { callback: (v) => `₹${Number(v).toLocaleString('en-IN')}` } },
+        x: { ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
+      },
+    };
+    barChartRef.current = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: daily.map((d) => d.date),
+        datasets: [{
+          label: 'Commission (₹)',
+          data: daily.map((d) => d.commission_rs),
+          backgroundColor: 'rgba(167,139,250,.6)',
+          borderRadius: 4,
+        }],
+      },
+      options: opts,
+    });
+    return () => {
+      if (barChartRef.current) {
+        barChartRef.current.destroy();
+        barChartRef.current = null;
+      }
+    };
+  }, [analytics]);
 
   const doCreate = async () => {
     if (!restaurantId) { showToast('Select a restaurant', 'error'); return; }
@@ -390,6 +533,108 @@ export default function AdminReferralsPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* ── Referral Analytics ─────────────────────────────────
+          Date-range filtered chart section backed by
+          GET /api/admin/referrals/analytics. Charts re-render on
+          analytics state change; the useEffects above destroy the
+          prior Chart instance before each rebuild. */}
+      <div className="card mb-4">
+        <div className="ch justify-between flex-wrap gap-3">
+          <h3>Referral Analytics</h3>
+          <div className="flex items-end gap-3 flex-wrap">
+            <div>
+              <label className={LBL_CLS}>From</label>
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                className={INPUT_CLS}
+              />
+            </div>
+            <div>
+              <label className={LBL_CLS}>To</label>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                className={INPUT_CLS}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn-g btn-sm"
+              onClick={loadAnalytics}
+              disabled={analyticsLoading}
+            >
+              {analyticsLoading ? 'Loading…' : '↻ Refresh'}
+            </button>
+          </div>
+        </div>
+        <div className="cb">
+          {analyticsErr ? (
+            <SectionError message={analyticsErr} onRetry={loadAnalytics} />
+          ) : (
+            <>
+              {(() => {
+                const totalCreated = analytics?.summary?.total_referrals ?? 0;
+                const converted = analytics?.summary?.by_status?.converted ?? 0;
+                const commissionEarnedRs = Number(analytics?.summary?.commission?.confirmed ?? 0)
+                  + Number(analytics?.summary?.commission?.pending ?? 0);
+                const avgConvRate = totalCreated > 0 ? (converted * 100 / totalCreated) : 0;
+                return (
+                  <div className="stats mb-4">
+                    <StatCard
+                      label="Total Referrals Created"
+                      value={analyticsLoading && !analytics ? '—' : totalCreated}
+                      delta="In selected range"
+                    />
+                    <StatCard
+                      label="Converted"
+                      value={analyticsLoading && !analytics ? '—' : converted}
+                      delta="Placed an order"
+                    />
+                    <StatCard
+                      label="Commission Earned"
+                      value={analyticsLoading && !analytics ? '—' : `₹${fmtInr(commissionEarnedRs)}`}
+                      delta="Confirmed + pending"
+                    />
+                    <StatCard
+                      label="Avg Conversion Rate"
+                      value={analyticsLoading && !analytics ? '—' : `${avgConvRate.toFixed(1)}%`}
+                      delta="Created → converted"
+                    />
+                  </div>
+                );
+              })()}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="border border-rim rounded-lg p-3">
+                  <div className="text-[0.82rem] text-tx mb-2 font-semibold">Daily: Created vs Converted</div>
+                  <div className="relative h-[260px]">
+                    <canvas ref={lineCanvasRef} />
+                    {!analyticsLoading && (analytics?.daily?.length ?? 0) === 0 && (
+                      <div className="absolute inset-0 flex items-center justify-center text-dim text-[0.85rem]">
+                        No data in selected range
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="border border-rim rounded-lg p-3">
+                  <div className="text-[0.82rem] text-tx mb-2 font-semibold">Commission Earned per Day (₹)</div>
+                  <div className="relative h-[260px]">
+                    <canvas ref={barCanvasRef} />
+                    {!analyticsLoading && (analytics?.daily?.length ?? 0) === 0 && (
+                      <div className="absolute inset-0 flex items-center justify-center text-dim text-[0.85rem]">
+                        No data in selected range
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="card">

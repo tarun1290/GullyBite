@@ -477,14 +477,46 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
     }
 
     if (referralId) {
+      // attributed_order_id + commission_status='pending' are required by
+      // referralAttribution.confirmCommission's query at payment time —
+      // without them the GBREF commission + GST ledger debits silently
+      // never write. See services/referralAttribution.js:160-163.
       await col('referrals').updateOne(
         { _id: referralId },
         {
-          $set:  { status: 'converted', updated_at: now },
-          $inc:  { orders_count: 1, total_order_value_rs: subtotalRs, referral_fee_rs: referralFeeRs },
+          $set: {
+            status: 'converted',
+            attributed_order_id: orderId,
+            attributed_order_subtotal: subtotalRs,
+            commission_amount: Number(((subtotalRs * 7.5) / 100).toFixed(2)),
+            commission_status: 'pending',
+            updated_at: now,
+          },
+          $inc: { orders_count: 1, total_order_value_rs: subtotalRs, referral_fee_rs: referralFeeRs },
         },
         sOpt
       );
+
+      // GBREF (City Captain) attribution stamp on the customer doc.
+      // Fire-and-forget — never await, never throw. Powers CRM segments
+      // like "captain-acquired in last 90 days" without joining
+      // referrals → orders → customers. Outside the order transaction
+      // (no sOpt) since a customer-update failure must not roll back
+      // the order; the order row + referrals row already carry the
+      // canonical attribution and can be replayed if needed.
+      try {
+        col('customers').updateOne(
+          { _id: customerId },
+          { $set: {
+              captain_acquired_at: now,
+              captain_referral_id: referralId,
+              captain_referral_code: referral?.referral_code || null,
+            } },
+          { upsert: false },
+        ).catch((err) => log.warn({ err, customerId, referralId }, 'captain stamp on customer failed'));
+      } catch (err) {
+        log.warn({ err, customerId, referralId }, 'captain stamp dispatch failed');
+      }
     }
 
     if (cart.length) {

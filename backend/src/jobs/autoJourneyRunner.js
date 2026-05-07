@@ -3,7 +3,7 @@
 // Hourly auto-journey scan. Handles three journeys whose triggers are
 // time-based rather than event-based:
 //   - winback_short: customer hit the configured day-of-inactivity
-//   - reactivation:  same idea, default 30 days
+//   - winback_long:  same idea, default 30 days
 //   - birthday:      customer's birthday matches today in the
 //                    restaurant's configured send hour
 // Event-driven journeys (welcome, milestone) are fired from the
@@ -99,7 +99,7 @@ async function run() {
       { projection: { _id: 1 } },
     ).toArray();
 
-    let totals = { winback_short: 0, reactivation: 0, birthday: 0, loyalty_expiry: 0, expired: 0 };
+    let totals = { winback_short: 0, winback_long: 0, birthday: 0, loyalty_expiry: 0, expired: 0 };
 
     for (const r of restaurants) {
       const cfg = await col('auto_journey_config').findOne({ restaurant_id: r._id });
@@ -109,9 +109,9 @@ async function run() {
         const triggerDay = Number(cfg.winback_short.trigger_day) || 14;
         totals.winback_short += await runWindowJourney(r, 'winback_short', triggerDay);
       }
-      if (cfg.reactivation?.enabled) {
-        const triggerDay = Number(cfg.reactivation.trigger_day) || 30;
-        totals.reactivation += await runWindowJourney(r, 'reactivation', triggerDay);
+      if (cfg.winback_long?.enabled) {
+        const triggerDay = Number(cfg.winback_long.trigger_day) || 30;
+        totals.winback_long += await runWindowJourney(r, 'winback_long', triggerDay);
       }
       // Birthday runs when the current IST hour matches this
       // restaurant's configured send_hour_ist.

@@ -19,7 +19,7 @@ function projectConfig(doc) {
     restaurant_id: doc.restaurant_id,
     welcome:        doc.welcome        || { ...DEFAULT_JOURNEY_CONFIG.welcome },
     winback_short:  doc.winback_short  || { ...DEFAULT_JOURNEY_CONFIG.winback_short },
-    reactivation:   doc.reactivation   || { ...DEFAULT_JOURNEY_CONFIG.reactivation },
+    winback_long:   doc.winback_long   || { ...DEFAULT_JOURNEY_CONFIG.winback_long },
     birthday:       doc.birthday       || { ...DEFAULT_JOURNEY_CONFIG.birthday },
     loyalty_expiry: doc.loyalty_expiry || { ...DEFAULT_JOURNEY_CONFIG.loyalty_expiry },
     milestone:      doc.milestone      || { ...DEFAULT_JOURNEY_CONFIG.milestone },
@@ -70,7 +70,7 @@ router.put('/config', async (req, res) => {
       return res.status(400).json({ error: `${key}.enabled must be a boolean` });
     }
 
-    if (key === 'winback_short' || key === 'reactivation') {
+    if (key === 'winback_short' || key === 'winback_long') {
       if ('trigger_day' in entry) {
         const n = Number(entry.trigger_day);
         if (!isPosInt(n)) return res.status(400).json({ error: `${key}.trigger_day must be a positive integer` });
