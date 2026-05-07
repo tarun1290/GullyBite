@@ -24,7 +24,7 @@ const repoRoot = path.resolve(__dirname, '..');
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  turbopack: { root: repoRoot },
+  turbopack: { root: path.resolve(__dirname) },
   outputFileTracingRoot: repoRoot,
   images: {
     remotePatterns: [
