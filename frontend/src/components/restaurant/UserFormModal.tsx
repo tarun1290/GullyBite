@@ -269,7 +269,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                 )}
               </div>
 
-              <div className="flex gap-2 mt-[0.8rem]">
+              <div className="flex gap-3 mt-[0.8rem]">
                 <button type="button" className="btn-p" onClick={onClose}>Done</button>
               </div>
             </>
@@ -324,7 +324,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
               <div className="fg mb-[0.7rem]">
                 <label>Branches <small className="text-dim">(leave empty for all)</small></label>
                 {(branches || []).length > 0 ? (
-                  <div className="flex flex-wrap gap-2 mt-2">
+                  <div className="flex flex-wrap gap-3 mt-2">
                     {(branches || []).map((b) => {
                       const on = form.branchIds.includes(b.id);
                       return (
@@ -333,11 +333,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                           type="button"
                           onClick={() => toggleBranch(b.id)}
                           aria-pressed={on}
-                          className={
-                            on
-                              ? 'px-4 py-1.5 rounded-full border border-indigo-600 bg-indigo-600 text-white text-sm cursor-pointer'
-                              : 'px-4 py-1.5 rounded-full border border-gray-300 text-sm text-gray-700 bg-white hover:border-indigo-400 transition-colors cursor-pointer'
-                          }
+                          className={on ? 'chip on' : 'chip'}
                         >
                           {b.name}
                         </button>
@@ -348,7 +344,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   <span className="text-[0.78rem] text-dim">No branches yet.</span>
                 )}
               </div>
-              <div className="flex gap-2 mt-[0.8rem]">
+              <div className="flex gap-3 mt-[0.8rem]">
                 <button type="button" className="btn-p" onClick={handleSave} disabled={saving}>
                   {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Member')}
                 </button>

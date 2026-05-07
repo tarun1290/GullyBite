@@ -257,7 +257,7 @@ function EmptyState({ onConnect, onCreate }: EmptyStateProps) {
       <div className="text-dim text-[0.82rem] mb-[0.9rem]">
         Connect a Meta Product Catalog to enable WhatsApp ordering.
       </div>
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-3 flex-wrap">
         <button type="button" className="btn-g btn-sm" onClick={onConnect}>
           Connect existing catalog
         </button>
@@ -313,7 +313,7 @@ function ConnectedState({ state, syncStatus, onSwitch, onCreate, onDelete, onDis
         )}
       </div>
 
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-3 flex-wrap">
         <button type="button" className="btn-g btn-sm" onClick={onSwitch}>Switch catalog</button>
         <button type="button" className="btn-g btn-sm" onClick={onCreate}>Create new catalog</button>
         <button
@@ -427,7 +427,7 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
                   className="shrink-0"
                 />
                 <div className="flex-1 min-w-0 flex flex-col gap-[0.2rem]">
-                  <div className="flex items-center gap-2 text-[0.86rem]">
+                  <div className="flex items-center gap-3 text-[0.86rem]">
                     <span
                       title={c.name || 'Unnamed catalog'}
                       className="flex-1 min-w-0 font-semibold whitespace-nowrap overflow-hidden text-ellipsis"
@@ -467,7 +467,7 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
         <div className="mt-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>
       )}
 
-      <div className="mt-[0.9rem] flex gap-2 justify-end">
+      <div className="mt-[0.9rem] flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"
@@ -532,7 +532,7 @@ function CreateModal({ open, onClose, onCreated }: CreateModalProps) {
 
       {err && <div className="mt-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>}
 
-      <div className="mt-[0.9rem] flex gap-2 justify-end">
+      <div className="mt-[0.9rem] flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button type="button" className="btn-p btn-sm" onClick={handleCreate} disabled={!valid || busy}>
           {busy ? 'Creating…' : 'Create catalog'}
@@ -605,7 +605,7 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
 
       {err && <div className="mt-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>}
 
-      <div className="mt-[0.9rem] flex gap-2 justify-end">
+      <div className="mt-[0.9rem] flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"
@@ -656,7 +656,7 @@ function DisconnectModal({ open, onClose, catalogName, onDisconnected }: Disconn
 
       {err && <div className="mb-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>}
 
-      <div className="flex gap-2 justify-end">
+      <div className="flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"

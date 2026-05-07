@@ -158,7 +158,7 @@ function CouponRow({ coupon, onChanged, onEdit }: CouponRowProps) {
           {isActive ? 'Active' : 'Inactive'}
         </span>
       </td>
-      <td className="py-[0.65rem] px-4 flex gap-2">
+      <td className="py-[0.65rem] px-4 flex gap-3">
         <button
           type="button"
           className="btn-g btn-xs"
@@ -491,7 +491,7 @@ export default function CouponsSection() {
               />
             </div>
             <div className="flex items-end pb-[0.4rem]">
-              <label className="flex items-center gap-2 text-[0.85rem] select-none">
+              <label className="flex items-center gap-3 text-[0.85rem] select-none">
                 <input
                   type="checkbox"
                   className="h-4 w-4 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -510,11 +510,11 @@ export default function CouponsSection() {
               <div className="text-[0.75rem] text-dim mb-2">
                 Leave blank to apply to all your branches
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {branches.map((b) => (
                   <label
                     key={b.id}
-                    className="flex items-center gap-2 text-[0.85rem] py-1 px-2 rounded border border-rim cursor-pointer hover:bg-rim/40"
+                    className="flex items-center gap-3 text-[0.85rem] py-1 px-2 rounded border border-rim cursor-pointer hover:bg-rim/40"
                   >
                     <input
                       type="checkbox"

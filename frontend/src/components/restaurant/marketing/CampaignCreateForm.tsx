@@ -214,7 +214,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
   const productRows = useMemo(() => products.map((item) => (
     <label
       key={item.id}
-      className="flex items-center gap-2 py-[0.3rem] px-[0.4rem] rounded-md cursor-pointer text-[0.82rem]"
+      className="flex items-center gap-3 py-[0.3rem] px-[0.4rem] rounded-md cursor-pointer text-[0.82rem]"
     >
       <input
         type="checkbox"
@@ -303,7 +303,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
               onChange={(e) => set('scheduleAt', e.target.value)}
             />
           </div>
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-3">
             <button
               type="button"
               className="btn flex-1"
@@ -327,7 +327,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
         {needsTags && (
           <div className="mb-4">
             <label className="lbl">Tags</label>
-            <div className="border border-rim rounded-lg p-[0.6rem] bg-ink4 flex flex-wrap gap-2">
+            <div className="border border-rim rounded-lg p-[0.6rem] bg-ink4 flex flex-wrap gap-3">
               {tagsErr ? (
                 <span className="text-[#b91c1c] text-[0.82rem]">Failed to load tags: {tagsErr}</span>
               ) : tagsLoading ? (

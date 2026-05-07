@@ -89,7 +89,7 @@ body { font-family: var(--font-body); background: var(--ink); color: var(--tx); 
 /* Branch tiles in BranchesSection — surface chrome (background, border,
    radius) is set via Tailwind utilities on the JSX; only the depth
    token is centralised here so all card-like surfaces match. */
-.bcard { box-shadow: var(--shadow-sm); }
+.bcard { box-shadow: var(--shadow-sm); margin-bottom: 0.85rem; }
 .ch { padding: 1rem 1.5rem; border-bottom: 1px solid var(--rim); display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--ink2); }
 .ch h3 { font-size: .85rem; font-weight: 700; color: var(--tx); letter-spacing: -.01em; }
 .cb { padding: 1.4rem 1.5rem; }
@@ -115,7 +115,7 @@ body { font-family: var(--font-body); background: var(--ink); color: var(--tx); 
 
 /* ── FORMS ─────────────────────────────── */
 .lbl, .fg label { font-size: .72rem; font-weight: 600; color: var(--dim); letter-spacing: .025em; display: block; margin-bottom: .25rem; }
-.fg { display: flex; flex-direction: column; gap: .26rem; }
+.fg { display: flex; flex-direction: column; gap: 0.4rem; }
 .fg.span2 { grid-column: 1 / -1; }
 .fg label small { font-weight: 400; color: var(--mute); }
 .inp, input, select, textarea { background: var(--gb-neutral-0); border: 1px solid var(--rim); color: var(--tx); padding: .52rem .8rem; border-radius: var(--radius-md); font-family: var(--font-body); font-size: .82rem; outline: none; width: 100%; transition: border-color .16s, box-shadow .16s; }

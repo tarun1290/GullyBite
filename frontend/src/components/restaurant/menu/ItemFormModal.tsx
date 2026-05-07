@@ -375,7 +375,7 @@ export default function ItemFormModal({
             )}
 
             <div className="fg span2">
-              <label className="flex items-center gap-2">
+              <label className="flex items-center gap-3">
                 <input
                   type="checkbox"
                   checked={hasVariants}
@@ -458,7 +458,7 @@ export default function ItemFormModal({
 
             <div className="fg span2">
               <label>Image</label>
-              <div className="flex gap-2 items-center">
+              <div className="flex gap-3 items-center">
                 {imageUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -520,7 +520,7 @@ export default function ItemFormModal({
             </div>
           )}
 
-          <div className="flex gap-2 mt-4">
+          <div className="flex gap-3 mt-4">
             <button type="button" className="btn-p" onClick={handleSave} disabled={saving || !formBranchId}>
               {saving ? (isEdit ? 'Saving…' : 'Adding…') : (isEdit ? 'Save Changes' : 'Add Item')}
             </button>

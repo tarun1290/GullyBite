@@ -326,7 +326,7 @@ export default function BusinessInfoSection() {
               Store URL
             </p>
             {r.store_url ? (
-              <div className="flex items-center gap-2 py-[0.4rem] px-[0.6rem] bg-ink2 rounded-md mb-[0.3rem]">
+              <div className="flex items-center gap-3 py-[0.4rem] px-[0.6rem] bg-ink2 rounded-md mb-[0.3rem]">
                 <a
                   href={r.store_url}
                   target="_blank"
@@ -427,7 +427,7 @@ export default function BusinessInfoSection() {
             <p className="text-[0.84rem] font-semibold text-dim mb-2">
               Store URL
             </p>
-            <div className="flex items-center gap-2 mb-[0.3rem]">
+            <div className="flex items-center gap-3 mb-[0.3rem]">
               <span className="text-[0.8rem] text-dim font-mono whitespace-nowrap">
                 {storeBase}
               </span>
@@ -473,7 +473,7 @@ export default function BusinessInfoSection() {
               </Field>
             </div>
 
-            <div className="flex gap-2 mt-[1.1rem]">
+            <div className="flex gap-3 mt-[1.1rem]">
               <button
                 type="button"
                 className="btn-p"
