@@ -161,12 +161,19 @@ async function sendCampaign(campaignId) {
       return { ok: false, reason: 'template_not_found' };
     }
 
-    // Build recipient list. Two paths:
+    // Build recipient list. Three paths:
     //   1. 'journey_trigger' — auto-journey single-customer dispatch.
     //      Targets exactly one customer via campaign.journey_customer_id;
     //      RFM profile is optional (welcome may fire before nightly RFM
     //      rebuild has materialised a profile for a brand-new customer).
-    //   2. Manual blast — 'all' or an RFM label joins profiles→customers.
+    //   2. 'captain_acquired_90d' — GBREF (City Captain) acquisition cohort:
+    //      customers stamped with captain_acquired_at in the last 90 days
+    //      whose converting referral belongs to THIS restaurant. customers
+    //      is global identity (no restaurant_id), so scope via referrals
+    //      → customers join on captain_referral_id. Avoids the orders-join
+    //      over-include where a customer captain-acquired by restaurant A
+    //      who later ordered at B would otherwise show up in B's segment.
+    //   3. Manual blast — 'all' or an RFM label joins profiles→customers.
     let recipients;
     if (campaign.target_segment === 'journey_trigger' && campaign.journey_customer_id) {
       const cid = String(campaign.journey_customer_id);
@@ -175,6 +182,39 @@ async function sendCampaign(campaignId) {
         col('customer_rfm_profiles').findOne({ restaurant_id: restaurantId, customer_id: cid }),
       ]);
       recipients = (customer?.wa_phone) ? [{ customer, profile: profile || { customer_id: cid } }] : [];
+    } else if (campaign.target_segment === 'captain_acquired_90d') {
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      const restaurantReferrals = await col('referrals').find(
+        { restaurant_id: restaurantId, source: 'gbref' },
+        { projection: { _id: 1 } },
+      ).toArray();
+      const referralIds = restaurantReferrals.map((r) => r._id);
+      let captainCustomers = [];
+      if (referralIds.length) {
+        captainCustomers = await col('customers').find(
+          {
+            captain_referral_id: { $in: referralIds },
+            captain_acquired_at: { $gte: ninetyDaysAgo },
+            wa_phone: { $exists: true, $ne: null },
+          },
+          { projection: { _id: 1, wa_phone: 1, name: 1 } },
+        ).toArray();
+      }
+      // RFM profile is best-effort — captain-acquired customers newer
+      // than the nightly RFM rebuild may not have one yet (mirrors the
+      // journey_trigger branch's profile-optional treatment).
+      const profileMap = new Map();
+      if (captainCustomers.length) {
+        const profs = await col('customer_rfm_profiles').find({
+          restaurant_id: restaurantId,
+          customer_id: { $in: captainCustomers.map((c) => c._id) },
+        }).toArray();
+        for (const p of profs) profileMap.set(p.customer_id, p);
+      }
+      recipients = captainCustomers.map((c) => ({
+        customer: c,
+        profile: profileMap.get(c._id) || { customer_id: c._id },
+      }));
     } else {
       const profileFilter = { restaurant_id: restaurantId };
       if (campaign.target_segment && campaign.target_segment !== 'all') {

@@ -28,7 +28,7 @@ const metaConfig = require('../config/meta');
 const { getCached, invalidateCache } = require('../config/cache');
 const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
 const customerSvc = require('../services/customer.service');
-const { invalidateRestaurant } = require('../utils/cachedLookup');
+const { invalidateRestaurant, invalidateWaAccount } = require('../utils/cachedLookup');
 const logger = require('../utils/logger').child({ component: 'restaurant' });
 
 // ── CSV input guards (shared across CSV import handlers) ─────
@@ -578,7 +578,9 @@ router.post('/catalog-diagnosis/fix', async (req, res) => {
     if (!found) return res.status(404).json({ error: 'No catalogs found on WABA or Business — create one from the dashboard' });
 
     await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_catalog_id: found.id, meta_catalog_name: found.name, updated_at: new Date() } });
+    invalidateRestaurant(req.restaurantId);
     if (wa_acc) await col('whatsapp_accounts').updateOne({ _id: wa_acc._id }, { $set: { catalog_id: found.id, catalog_linked: true, catalog_linked_at: new Date(), updated_at: new Date() } });
+    if (wa_acc?.phone_number_id) invalidateWaAccount(wa_acc.phone_number_id);
     await col('branches').updateMany({ restaurant_id: req.restaurantId }, { $set: { catalog_id: found.id, updated_at: new Date() } });
 
     req.log.info({ catalogId: found.id, catalogName: found.name, restaurantId: req.restaurantId }, 'Linked catalog to restaurant');
@@ -4527,6 +4529,7 @@ router.get('/catalog/details', async (req, res) => {
     if (e.response?.status === 404 || e.response?.data?.error?.code === 100) {
       // Catalog no longer exists on Meta — clean up DB
       await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_catalog_id: null, meta_catalog_name: null } });
+      invalidateRestaurant(req.restaurantId);
       return res.status(404).json({ error: 'Catalog no longer exists on Meta. It may have been deleted externally.', cleaned: true });
     }
     req.log.error({ err: e, metaResponse: e.response?.data }, 'Catalog details fetch failed');
@@ -4810,10 +4813,12 @@ router.get('/catalog/visibility-status', async (req, res) => {
       if (Object.keys(healUpdate).length) {
         healUpdate.updated_at = new Date();
         await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: healUpdate });
+        invalidateWaAccount(wa.phone_number_id);
         for (const h of healed) logger.info({ heal: h }, 'Catalog auto-heal applied');
         // Also heal restaurant meta_catalog_id if needed
         if (metaCatalogId && metaCatalogId !== restaurant?.meta_catalog_id) {
           await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { meta_catalog_id: metaCatalogId, updated_at: new Date() } });
+          invalidateRestaurant(req.restaurantId);
           logger.info({ oldCatalogId: restaurant?.meta_catalog_id, newCatalogId: metaCatalogId }, 'Auto-heal restaurant meta_catalog_id');
         }
       }
@@ -5058,6 +5063,7 @@ router.post('/catalog/create-new', requireApproved, async (req, res) => {
       { _id: req.restaurantId },
       { $set: { meta_catalog_id: catalogId, meta_catalog_name: catName, catalog_created_at: new Date(), updated_at: new Date() } }
     );
+    invalidateRestaurant(req.restaurantId);
     await col('whatsapp_accounts').updateMany(
       { restaurant_id: req.restaurantId },
       { $set: { catalog_id: catalogId, catalog_linked: true, catalog_linked_at: new Date(), updated_at: new Date() } }
@@ -5156,6 +5162,7 @@ router.delete('/catalog/:catalogId', requireApproved, async (req, res) => {
         { _id: req.restaurantId },
         { $set: { meta_catalog_id: null, meta_catalog_name: null, meta_available_catalogs: [], catalog_fetched_at: null, meta_feed_id: null, catalog_feed_url: null, catalog_feed_token: null, updated_at: new Date() } }
       );
+      invalidateRestaurant(req.restaurantId);
       await col('whatsapp_accounts').updateMany(
         { restaurant_id: req.restaurantId },
         { $set: { catalog_id: null, catalog_linked: false, cart_enabled: false, catalog_visible: false, updated_at: new Date() } }
@@ -5201,10 +5208,12 @@ router.post('/catalog/connect-waba', async (req, res) => {
       { _id: wa._id },
       { $set: { catalog_id, catalog_linked: true, updated_at: new Date() } }
     );
+    invalidateWaAccount(wa.phone_number_id);
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
       { $set: { meta_catalog_id: catalog_id, updated_at: new Date() } }
     );
+    invalidateRestaurant(req.restaurantId);
     await col('branches').updateMany(
       { restaurant_id: req.restaurantId },
       { $set: { catalog_id, updated_at: new Date() } }
@@ -5232,6 +5241,7 @@ router.post('/catalog/connect-waba', async (req, res) => {
           { headers: { Authorization: `Bearer ${metaConfig.getCatalogToken()}` }, timeout: 15000 }
         );
         await col('whatsapp_accounts').updateOne({ _id: wa._id }, { $set: { catalog_visible: true, cart_enabled: true } });
+        invalidateWaAccount(wa.phone_number_id);
         logger.info('Auto-enabled commerce settings after connect');
         metaSyncOk = true;
       } catch (csErr) {
@@ -5308,10 +5318,12 @@ router.post('/catalog/disconnect-waba', async (req, res) => {
       { _id: wa._id },
       { $set: { catalog_id: null, catalog_linked: false, cart_enabled: false, catalog_visible: false, updated_at: new Date() } }
     );
+    invalidateWaAccount(wa.phone_number_id);
     await col('restaurants').updateOne(
       { _id: req.restaurantId },
       { $set: { meta_catalog_id: null, meta_catalog_name: null, updated_at: new Date() } }
     );
+    invalidateRestaurant(req.restaurantId);
     await col('branches').updateMany(
       { restaurant_id: req.restaurantId },
       { $set: { catalog_id: null, updated_at: new Date() } }
@@ -5533,6 +5545,7 @@ router.post('/catalog/merge', requireApproved, async (req, res) => {
       { _id: req.restaurantId },
       { $set: { meta_catalog_id: primaryId, updated_at: new Date() } }
     );
+    invalidateRestaurant(req.restaurantId);
     await col('whatsapp_accounts').updateMany(
       { restaurant_id: req.restaurantId },
       { $set: { catalog_id: primaryId, catalog_linked: true, updated_at: new Date() } }
@@ -5679,6 +5692,7 @@ router.put('/catalog', async (req, res) => {
       { _id: req.restaurantId },
       { $set: { meta_catalog_id: catalog_id, meta_catalog_name: catalog_name || '', updated_at: new Date() } }
     );
+    invalidateRestaurant(req.restaurantId);
 
     // Update all whatsapp accounts
     await col('whatsapp_accounts').updateMany(
@@ -6320,7 +6334,8 @@ router.post('/orders/:orderId/report-fake-delivery', async (req, res) => {
     }
 
     log({
-      actorType: 'restaurant', actorId: req.restaurantId, actorName: 'restaurant',
+      actorType: 'restaurant', actorId: req.restaurantId,
+      actorName: req.user?.name || req.user?.email || req.userRole || null,
       action: 'prorouting.fake_delivery_reported', category: 'delivery',
       description: `Reported fake delivery for order #${o.order_number}`,
       resourceType: 'order', resourceId: String(o._id), severity: 'warning',
@@ -7772,6 +7787,7 @@ router.post('/catalog/register-feed', async (req, res) => {
     if (!feedToken) {
       feedToken = crypto.randomBytes(24).toString('hex');
       await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { catalog_feed_token: feedToken } });
+      invalidateRestaurant(req.restaurantId);
     }
 
     const baseUrl = process.env.BASE_URL;
@@ -7794,6 +7810,7 @@ router.post('/catalog/register-feed', async (req, res) => {
           { headers: { Authorization: `Bearer ${catToken}` }, timeout: 15000 }
         );
         await col('restaurants').updateOne({ _id: req.restaurantId }, { $set: { catalog_feed_url: feedUrl, catalog_feed_updated_at: new Date() } });
+        invalidateRestaurant(req.restaurantId);
         return res.json({ success: true, feedId: restaurant.meta_feed_id, feedUrl, updated: true });
       } catch (e) {
         // Feed no longer exists on Meta — fall through to create new
@@ -7817,6 +7834,7 @@ router.post('/catalog/register-feed', async (req, res) => {
       { _id: req.restaurantId },
       { $set: { meta_feed_id: feedId, catalog_feed_token: feedToken, catalog_feed_url: feedUrl, catalog_feed_registered_at: new Date() } }
     );
+    invalidateRestaurant(req.restaurantId);
 
     res.json({ success: true, feedId, feedUrl });
   } catch (e) {
@@ -8869,7 +8887,7 @@ router.post('/issues', requireAuth, requireApproved, async (req, res) => {
 
     res.status(201).json(maskIssue(issue));
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: (req.restaurant?.business_name || 'Restaurant'), action: 'issue.created', category: 'issue', description: `Issue created by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'issue.created', category: 'issue', description: `Issue created by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -8882,7 +8900,7 @@ router.put('/issues/:id/status', requireAuth, requireApproved, async (req, res) 
     if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
 
     const updated = await issueSvc.updateStatus(req.params.id, status, {
-      actorType: 'restaurant', actorName: (req.restaurant?.business_name || 'Restaurant') || 'Restaurant',
+      actorType: 'restaurant', actorName: req.user?.name || req.user?.email || req.userRole || null,
       actorId: req.restaurantId,
     });
 
@@ -8987,7 +9005,7 @@ router.post('/issues/:id/escalate', requireAuth, requireApproved, async (req, re
 
     res.json(maskIssue(updated));
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: (req.restaurant?.business_name || 'Restaurant'), action: 'issue.escalated', category: 'issue', description: `Issue escalated to admin by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'warning' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'issue.escalated', category: 'issue', description: `Issue escalated to admin by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'warning' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -9001,7 +9019,7 @@ router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res
     const updated = await issueSvc.resolveIssue(req.params.id, {
       resolutionType: resolution_type || 'no_action',
       resolutionNotes: resolution_notes || null,
-      actorType: 'restaurant', actorName: (req.restaurant?.business_name || 'Restaurant') || 'Restaurant',
+      actorType: 'restaurant', actorName: req.user?.name || req.user?.email || req.userRole || null,
       actorId: req.restaurantId,
     });
 
@@ -9024,7 +9042,7 @@ router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res
 
     res.json(maskIssue(updated));
 
-    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: (req.restaurant?.business_name || 'Restaurant'), action: 'issue.resolved', category: 'issue', description: `Issue resolved by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'info' });
+    log({ actorType: 'restaurant', actorId: String(req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null, action: 'issue.resolved', category: 'issue', description: `Issue resolved by ${(req.restaurant?.business_name || 'Restaurant')}`, restaurantId: String(req.restaurantId), severity: 'info' });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
@@ -9035,7 +9053,7 @@ router.post('/issues/:id/reopen', requireAuth, requireApproved, async (req, res)
     if (!issue || issue.restaurant_id !== req.restaurantId) return res.status(404).json({ error: 'Issue not found' });
 
     const updated = await issueSvc.reopenIssue(req.params.id, {
-      actorType: 'restaurant', actorName: (req.restaurant?.business_name || 'Restaurant') || 'Restaurant',
+      actorType: 'restaurant', actorName: req.user?.name || req.user?.email || req.userRole || null,
       actorId: req.restaurantId, reason: req.body.reason,
     });
     res.json(maskIssue(updated));

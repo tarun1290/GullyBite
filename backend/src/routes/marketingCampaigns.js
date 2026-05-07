@@ -77,14 +77,34 @@ router.post('/create', async (req, res) => {
     if (sendAtDate.getTime() <= Date.now()) return res.status(400).json({ error: 'send_at must be in the future' });
   }
 
-  // Recipient count for cost estimation.
-  const recipFilter = { restaurant_id: restaurantId };
-  if (target_segment !== 'all') recipFilter.rfm_label = target_segment;
-  const profiles = await col('customer_rfm_profiles').find(recipFilter, { projection: { customer_id: 1 } }).toArray();
-  const customerIds = profiles.map((p) => p.customer_id).filter(Boolean);
+  // Recipient count for cost estimation. captain_acquired_90d is the
+  // one segment that does NOT key off customer_rfm_profiles — it joins
+  // referrals (for restaurant scoping) → customers (for the date filter).
+  // Mirrors the equivalent branch in services/marketingCampaigns.sendCampaign
+  // so the operator's pre-confirm estimate matches the actual dispatch.
   let targetCount = 0;
-  if (customerIds.length) {
-    targetCount = await col('customers').countDocuments({ _id: { $in: customerIds }, wa_phone: { $exists: true, $ne: null } });
+  if (target_segment === 'captain_acquired_90d') {
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const restaurantReferrals = await col('referrals').find(
+      { restaurant_id: restaurantId, source: 'gbref' },
+      { projection: { _id: 1 } },
+    ).toArray();
+    const referralIds = restaurantReferrals.map((r) => r._id);
+    if (referralIds.length) {
+      targetCount = await col('customers').countDocuments({
+        captain_referral_id: { $in: referralIds },
+        captain_acquired_at: { $gte: ninetyDaysAgo },
+        wa_phone: { $exists: true, $ne: null },
+      });
+    }
+  } else {
+    const recipFilter = { restaurant_id: restaurantId };
+    if (target_segment !== 'all') recipFilter.rfm_label = target_segment;
+    const profiles = await col('customer_rfm_profiles').find(recipFilter, { projection: { customer_id: 1 } }).toArray();
+    const customerIds = profiles.map((p) => p.customer_id).filter(Boolean);
+    if (customerIds.length) {
+      targetCount = await col('customers').countDocuments({ _id: { $in: customerIds }, wa_phone: { $exists: true, $ne: null } });
+    }
   }
 
   const perMessageCostRs = Number(template.per_message_cost_rs) || 0;

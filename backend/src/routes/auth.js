@@ -2476,6 +2476,13 @@ function requireOwnerAuth(req, res, next) {
   }
   req.restaurantId = decoded.restaurantId;
   req.userRole = 'owner';
+  // Mirror requireAuth's req.user attach so activity-log sites that
+  // resolve actorName via `req.user?.name || req.user?.email || ...`
+  // get the owner's real name on owner-mobile routes too. The owner
+  // JWT is signed at /owner/login with { name } in the payload — no DB
+  // round-trip needed. email may be undefined on legacy tokens; the
+  // fallback chain handles that.
+  req.user = { name: decoded.name, email: decoded.email, role: 'owner' };
   next();
 }
 

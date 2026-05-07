@@ -285,10 +285,14 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
         name: 'review_and_pay',
         parameters: {
           reference_id: refId,
-          // Meta-documented field on the review_and_pay CTA. Surfaces
-          // alongside the order summary in the WA UI so the customer
-          // sees the cutoff time before tapping Pay.
-          expiration_description: expirationDescription,
+          // FUTURE FEATURE — Meta-documented field on the review_and_pay
+          // CTA. Surfaces alongside the order summary in the WA UI so
+          // the customer sees the cutoff time before tapping Pay.
+          // Temporarily disabled — re-enable once the upstream rejection
+          // is resolved. expires_at on the order doc is untouched so the
+          // expirationDescription string above keeps building correctly
+          // and can be re-introduced here without further wiring.
+          // expiration_description: expirationDescription,
           type: 'digital-goods',
           // Meta requires payment_settings (an array of payment gateway
           // objects) on review_and_pay CTAs — payment_configuration was
