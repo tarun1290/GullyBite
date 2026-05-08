@@ -345,7 +345,7 @@ const sendStatusUpdate = (pid, token, to, status, { orderNumber, eta, trackingUr
     PREPARING: `👨‍🍳 *Being Prepared*\nOrder #${orderNumber} is in the kitchen!\nEstimated ready: ${eta || '20-25'} mins`,
     PACKED: `📦 *Packed & Ready!*\nOrder #${orderNumber} is packed and waiting for pickup!`,
     DISPATCHED: `🚴 *Out for Delivery!*\nOrder #${orderNumber} is on its way!\n${trackingUrl ? `Track: ${trackingUrl}` : ''}`,
-    DELIVERED: `🎉 *Delivered!*\nOrder #${orderNumber} delivered successfully.\nEnjoy your meal! Bon appétit 🙏`,
+    DELIVERED: `✅ Order #${orderNumber} delivered. Enjoy your meal! 🍽️`,
     CANCELLED: `❌ *Order Cancelled*\nOrder #${orderNumber} has been cancelled.\nAny payment will be refunded in 3-5 business days.`,
   };
   return sendText(pid, token, to, msgs[status] || `Order #${orderNumber}: ${status}`);

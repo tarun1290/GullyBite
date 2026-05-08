@@ -231,8 +231,45 @@ const sendRefundProcessedMessage = async (orderId, orderContext = null) => {
   }
 };
 
+// ─── NOTIFY ORDER STATUS — FREE-FORM ONLY ──────────────────
+// Thin wrapper around wa.sendStatusUpdate. Inside the 24h customer
+// service window Meta accepts the free-form lifecycle copy from
+// STATUS_MESSAGES (services/whatsapp.js); outside the CSW it rejects
+// with errors 131047 / 131056 and we log + return silently.
+//
+// Deliberate policy: NO template fallback. Pre-fix code cascaded
+// into sendOrderTemplateMessage / whatsapp_template_mappings on
+// failure, which billed a utility-template send for every customer
+// who hadn't replied within 24h. The tradeoff is accepted: customers
+// outside the CSW miss the status ping rather than the platform
+// burning template fees on every silent recipient.
+//
+// `restaurantId` is retained in the signature for log context only
+// (no DB lookup happens here anymore). Callers in routes/restaurant.js
+// already pass it and changing the signature would ripple unnecessarily.
+const notifyOrderStatus = async (restaurantId, pid, _token, waPhone, status, orderData) => {
+  const wa = require('./whatsapp');
+  const metaConfig = require('../config/meta');
+  const token = metaConfig.systemUserToken || _token;
+
+  try {
+    await wa.sendStatusUpdate(pid, token, waPhone, status, {
+      orderNumber: orderData?.order_number,
+      eta:         orderData?.eta,
+      trackingUrl: orderData?.tracking_url,
+    });
+  } catch (e) {
+    const errCode = e?.response?.data?.error?.code || null;
+    log.warn(
+      { err: e?.message, errCode, status, orderId: orderData?._orderId, restaurantId },
+      'sendStatusUpdate failed; skipping (no template fallback per policy)',
+    );
+  }
+};
+
 module.exports = {
   sendOrderTemplateMessage,
+  notifyOrderStatus,
   sendRefundProcessedMessage,
   buildOrderContext,
   STATUS_TO_EVENT,

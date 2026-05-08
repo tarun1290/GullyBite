@@ -5846,7 +5846,7 @@ router.patch('/orders/:orderId/status', requireApproved, requirePermission('mana
     if (order) {
       const fullOrder = await orderSvc.getOrderDetails(order.id);
       if (fullOrder?.phone_number_id) {
-        await notifyOrderStatus(
+        await orderNotify.notifyOrderStatus(
           req.restaurantId,
           fullOrder.phone_number_id, fullOrder.access_token, fullOrder.wa_phone,
           status,
@@ -6005,7 +6005,7 @@ router.post('/orders/:orderId/accept', requireApproved, requirePermission('manag
     try {
       const fullOrder = await orderSvc.getOrderDetails(orderId);
       if (fullOrder?.phone_number_id) {
-        notifyOrderStatus(
+        orderNotify.notifyOrderStatus(
           req.restaurantId,
           fullOrder.phone_number_id, fullOrder.access_token, fullOrder.wa_phone,
           'CONFIRMED',
@@ -7747,47 +7747,10 @@ router.delete('/whatsapp/template-mappings/:eventName', requireApproved, async (
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-// ─── SHARED: SEND STATUS NOTIFICATION (template → text fallback) ──────────
-async function notifyOrderStatus(restaurantId, pid, _token, waPhone, status, orderData) {
-  const token = metaConfig.systemUserToken || _token;
-
-  // Try new centralized template system first (orderNotify.js → template_mappings)
-  if (orderData._orderId) {
-    try {
-      const sent = await orderNotify.sendOrderTemplateMessage(orderData._orderId, status);
-      if (sent) return; // Template sent successfully
-    } catch (e) {
-      logger.error({ err: e, status, orderId: orderData._orderId }, 'orderNotify failed, trying legacy');
-    }
-  }
-
-  // Legacy: per-restaurant template mapping (whatsapp_template_mappings collection)
-  const mapping = await col('whatsapp_template_mappings').findOne({
-    restaurant_id: restaurantId,
-    event_name: status,
-  });
-
-  if (mapping) {
-    const { template_name, template_language, variable_map: varMap } = mapping;
-    try {
-      const slots = Object.keys(varMap || {}).sort((a, b) => parseInt(a) - parseInt(b));
-      const components = slots.length
-        ? [{ type: 'body', parameters: slots.map(s => ({ type: 'text', text: String(orderData[varMap[s]] ?? '') })) }]
-        : [];
-      await wa.sendTemplate(pid, token, waPhone, { name: template_name, language: template_language || 'en', components });
-      return;
-    } catch (e) {
-      logger.error({ err: e, status, templateName: template_name }, 'WA template send failed, falling back to text');
-    }
-  }
-
-  // Final fallback: plain text status update
-  await wa.sendStatusUpdate(pid, token, waPhone, status, {
-    orderNumber: orderData.order_number,
-    eta:         orderData.eta,
-    trackingUrl: orderData.tracking_url,
-  });
-}
+// notifyOrderStatus moved to services/orderNotify.js so post-payment
+// queue handlers (queue/postPaymentJobs.js) can route through the same
+// inverted cascade. Three call sites in this file already updated to
+// orderNotify.notifyOrderStatus(...).
 
 // POST /api/restaurant/catalog/register-feed
 // Registers a live feed URL with Meta's Catalog API (schedule: daily at 2AM)

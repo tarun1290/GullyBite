@@ -117,6 +117,27 @@ body { font-family: var(--font-body); background: var(--ink); color: var(--tx); 
 .btn-g:disabled { opacity: .4; cursor: not-allowed; }
 .btn-del { background: transparent; border: 1px solid rgba(220, 38, 38, .2); color: var(--red); font-size: .76rem; font-weight: 500; padding: .4rem .75rem; border-radius: 7px; transition: all .14s; cursor: pointer; }
 .btn-del:hover { background: rgba(220, 38, 38, .06); border-color: var(--red); }
+/* Filled-red sibling of .btn-del. Use ONLY in paired Confirm/Decline
+   layouts (OrderCard row, NewOrderPopup actions) where the Confirm
+   button is .btn-success (filled green) and the soft-bordered .btn-del
+   reads too light next to it. Standalone destructive actions stay on
+   .btn-del so the dashboard's overall destructive treatment stays
+   uniform. */
+.btn-del-solid {
+  background: #dc2626;
+  border: 1px solid #dc2626;
+  color: #fff;
+  font-size: .76rem;
+  font-weight: 600;
+  padding: .4rem .75rem;
+  border-radius: 7px;
+  transition: all .14s;
+  cursor: pointer;
+}
+.btn-del-solid:hover {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
 .btn-wa { background: #25D366; color: #fff; border: none; }
 .btn-wa:hover { background: #1fbd5a; }
 .btn-success { background: var(--gb-green-600); color: #fff; border: none; }

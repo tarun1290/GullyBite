@@ -433,10 +433,11 @@ export default function NewOrderPopup() {
         )}
       </div>
 
-      {/* Actions — canonical .btn-success / .btn-del so the popup
-          inherits the same hover/focus/disabled states as the rest of
-          the dashboard's Confirm/Decline pairs. flex-1 + justify-center
-          stretches each across half the row width. */}
+      {/* Actions — paired Confirm/Decline. Confirm uses .btn-success
+          (filled green); Decline uses the matching filled-red sibling
+          .btn-del-solid so the two buttons read at the same visual
+          weight. flex-1 + justify-center stretches each across half
+          the row width. */}
       <div className="py-[0.7rem] px-4 border-t border-rim flex gap-2">
         <button
           type="button"
@@ -450,7 +451,7 @@ export default function NewOrderPopup() {
           type="button"
           onClick={handleDecline}
           disabled={!o || !!busy}
-          className="btn-del flex-1 justify-center"
+          className="btn-del-solid flex-1 justify-center"
         >
           {busy === 'decline' ? '…' : '✗ Decline Order'}
         </button>

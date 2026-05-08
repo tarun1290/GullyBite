@@ -25,6 +25,8 @@
 
 const { col } = require('../config/database');
 const orderSvc = require('./order');
+const wa = require('./whatsapp');
+const { resolveRecipient } = require('./customerIdentity');
 const log = require('../utils/logger').child({ component: 'orderCancellationService' });
 
 // Razorpay processing fee approximation. Real fee depends on payment
@@ -75,10 +77,21 @@ async function _sendFaultNotifications(orderId, refundAmountRs) {
     const ctx = await orderNotify.buildOrderContext(orderId);
     if (!ctx) return;
 
-    // Order cancelled template — fires first so the customer sees the
-    // cancellation reason before the separate refund confirmation.
+    // Order cancelled — free-form lifecycle copy from
+    // STATUS_MESSAGES.CANCELLED. fresh.status here is the fault state
+    // (REJECTED_BY_RESTAURANT / RESTAURANT_TIMEOUT / NO_DELIVERY_AVAILABLE);
+    // STATUS_MESSAGES doesn't carry per-fault entries, so we map them
+    // all to the customer-facing 'CANCELLED' message which already
+    // mentions the refund window. Fires first so the customer sees the
+    // cancellation before the separate refund confirmation.
     fireAndForget(
-      orderNotify.sendOrderTemplateMessage(orderId, fresh.status, ctx),
+      wa.sendStatusUpdate(
+        ctx.order.phone_number_id,
+        ctx.order.access_token,
+        resolveRecipient(ctx.order),
+        'CANCELLED',
+        { orderNumber: ctx.order.order_number },
+      ),
       { orderId, event: 'order_cancelled' },
     );
 

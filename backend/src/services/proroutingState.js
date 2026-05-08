@@ -352,9 +352,13 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       log.warn({ err: e?.message, orderId: order._id, orderStatus: order.status }, 'updateStatus DELIVERED failed — skipping customer notification + rating flow');
     }
     if (deliveredOk && ctx) {
-      await wa.sendText(ctx.pid, ctx.token, ctx.to,
-        `✅ Order #${order.display_order_id || order.order_number} delivered. Enjoy your meal! 🍽️`
-      ).catch((e) => log.warn({ err: e?.message }, 'order-delivered sendText failed'));
+      // Customer-facing delivered notification. Wording lives in
+      // services/whatsapp.js's STATUS_MESSAGES.DELIVERED so the
+      // CONFIRMED → PREPARING → PACKED → DISPATCHED → DELIVERED
+      // sequence is owned by a single map.
+      await wa.sendStatusUpdate(ctx.pid, ctx.token, ctx.to, 'DELIVERED', {
+        orderNumber: order.display_order_id || order.order_number,
+      }).catch((e) => log.warn({ err: e?.message }, 'order-delivered sendStatusUpdate failed'));
 
       // Rating ask is owned end-to-end by the LOYALTY_AWARD →
       // FEEDBACK_REQUEST chain in queue/postPaymentJobs.js, scheduled

@@ -271,7 +271,7 @@ export default function OrdersPage() {
           </button>
         )}
       </div>
-      <div className="chips" id="ochips">
+      <div className="chips mt-3" id="ochips">
         {FILTER_CHIPS.map(([value, label]) => {
           const active = filter === value;
           const count = countMap[value] || 0;

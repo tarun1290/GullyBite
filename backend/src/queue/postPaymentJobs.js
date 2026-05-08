@@ -160,16 +160,24 @@ async function _claim() {
 // ─── HANDLERS ─────────────────────────────────────────────────
 async function _handleCustomerNotification(payload) {
   const orderSvc = require('../services/order');
-  const orderNotify = require('../services/orderNotify');
   const wa = require('../services/whatsapp');
   const { resolveRecipient } = require('../services/customerIdentity');
   const order = await orderSvc.getOrderDetails(payload.orderId);
   if (!order) throw new Error('order not found');
-  const templateSent = await orderNotify.sendOrderTemplateMessage(payload.orderId, 'PAID').catch(() => false);
-  if (!templateSent) {
+  // Direct free-form sendStatusUpdate. NO template fallback per the
+  // 2026-05-09 policy — outside the 24h CSW Meta rejects with
+  // 131047/131056 and we log + skip rather than burn a utility
+  // template fee on every silent recipient.
+  try {
     await wa.sendStatusUpdate(
       order.phone_number_id, order.access_token, resolveRecipient(order),
-      'CONFIRMED', { orderNumber: order.order_number }
+      'CONFIRMED', { orderNumber: order.order_number },
+    );
+  } catch (e) {
+    const errCode = e?.response?.data?.error?.code || null;
+    log.warn(
+      { err: e?.message, errCode, orderId: payload.orderId },
+      'CONFIRMED sendStatusUpdate failed; skipping (no template fallback per policy)',
     );
   }
   const ws = require('../services/websocket');

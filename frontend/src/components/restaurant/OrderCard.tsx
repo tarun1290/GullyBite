@@ -165,12 +165,14 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, onDecli
           )}
           {/* Decline button — PAID rows only. Hits /decline (refund +
               REJECTED_BY_RESTAURANT) via the parent-supplied onDecline.
-              Canonical .btn-del variant (outlined red) pairs with the
-              filled green .btn-success Confirm button above. */}
+              .btn-del-solid (filled red) is used here so the visual
+              weight matches the filled-green .btn-success Confirm
+              button above. Standalone destructive actions elsewhere
+              continue to use the soft-bordered .btn-del. */}
           {order.status === 'PAID' && onDecline && (
             <button
               type="button"
-              className="btn-del btn-sm"
+              className="btn-del-solid btn-sm"
               onClick={handleDecline}
               disabled={disabled}
             >

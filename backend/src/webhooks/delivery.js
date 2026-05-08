@@ -118,25 +118,52 @@ router.post('/', express.json(), async (req, res) => {
     if (newStatus === 'picked_up') {
       logActivity({ actorType: 'webhook', action: 'delivery.picked_up', category: 'delivery', description: `Order picked up by rider`, resourceType: 'delivery', resourceId: String(delivery._id), severity: 'info' });
       await orderSvc.updateStatus(delivery.order_id, 'DISPATCHED');
-      // Try template, fall back to plain text
-      const dispatched = await orderNotify.sendOrderTemplateMessage(delivery.order_id, 'DISPATCHED').catch(() => false);
-      if (!dispatched && wa_acc && customer) {
-        const eta = $set.estimated_mins || delivery.estimated_mins;
-        await wa.sendText(wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
-          `📦 *Your order has been picked up!*\n\n` +
-          `🏍️ ${$set.driver_name || delivery.driver_name || 'Your rider'} is on the way.\n` +
-          (eta ? `⏱ ETA: ~${eta} minutes\n` : '') +
-          ($set.tracking_url || delivery.tracking_url ? `📍 Track: ${$set.tracking_url || delivery.tracking_url}` : '')
-        );
+      // Customer notification — canonical lifecycle copy from
+      // STATUS_MESSAGES.DISPATCHED in services/whatsapp.js. The map
+      // already guards trackingUrl via `${trackingUrl ? \`Track: ${trackingUrl}\` : ''}`,
+      // so passing null when no URL is present renders cleanly.
+      // No template fallback per the 2026-05-09 policy — log + skip
+      // if Meta rejects (CSW closed or other API error).
+      if (wa_acc && customer) {
+        const trackingUrl = $set.tracking_url || delivery.tracking_url || null;
+        try {
+          await wa.sendStatusUpdate(
+            wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
+            'DISPATCHED',
+            { orderNumber: order.order_number, trackingUrl },
+          );
+        } catch (e) {
+          const errCode = e?.response?.data?.error?.code || null;
+          log.warn(
+            { err: e?.message, errCode, orderId: delivery.order_id },
+            'DISPATCHED sendStatusUpdate failed; skipping (no template fallback per policy)',
+          );
+        }
       }
     }
 
     if (newStatus === 'delivered') {
       logActivity({ actorType: 'webhook', action: 'delivery.delivered', category: 'delivery', description: `Order delivered successfully`, resourceType: 'delivery', resourceId: String(delivery._id), severity: 'info' });
       await orderSvc.updateStatus(delivery.order_id, 'DELIVERED');
-      // Try template for delivered notification
-      orderNotify.sendOrderTemplateMessage(delivery.order_id, 'DELIVERED').catch(() => {});
-      // DELIVERED handler in order service triggers rating request + loyalty points
+      // Customer notification — STATUS_MESSAGES.DELIVERED renders
+      // "✅ Order #{n} delivered. Enjoy your meal! 🍽️" (added 2026-05-09).
+      // Fire-and-forget; rating request + loyalty points are queued by
+      // the DELIVERED transition inside orderSvc.updateStatus above.
+      // No template fallback per the 2026-05-09 policy — log + skip
+      // if Meta rejects.
+      if (wa_acc && customer) {
+        wa.sendStatusUpdate(
+          wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
+          'DELIVERED',
+          { orderNumber: order.order_number },
+        ).catch((e) => {
+          const errCode = e?.response?.data?.error?.code || null;
+          log.warn(
+            { err: e?.message, errCode, orderId: delivery.order_id },
+            'DELIVERED sendStatusUpdate failed; skipping (no template fallback per policy)',
+          );
+        });
+      }
     }
 
     if (newStatus === 'cancelled' || newStatus === 'failed') {
