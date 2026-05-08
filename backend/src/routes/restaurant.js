@@ -1722,6 +1722,15 @@ router.post('/branches', async (req, res) => {
     const branchId = newId();
     const now = new Date();
     const branchSlug = slugify(name, 20) || branchId.slice(0, 8);
+    // Seed the staff-link UUID at create time so the staff_login_url
+    // surfaced by GET /branches/:branchId/staff-link is usable
+    // immediately — no separate "generate" step required during
+    // onboarding. Regeneration still flows through the existing
+    // /branches/:branchId/staff-link/generate endpoint, which is the
+    // single canonical regenerator (one source of truth + one
+    // activity-log entry per rotation).
+    const crypto = require('crypto');
+    const staffToken = crypto.randomUUID();
     const branch = {
       _id: branchId,
       restaurant_id: req.restaurantId,
@@ -1749,6 +1758,8 @@ router.post('/branches', async (req, res) => {
       paid_through_date: null,
       catalog_id: null,
       delivery_fee_rs: null,
+      staff_access_token: staffToken,
+      staff_access_token_generated_at: now,
       created_at: now,
       updated_at: now,
     };

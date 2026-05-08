@@ -2,17 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { useToast } from '../Toast';
-import { createUser, updateUser, getBranchStaffLink } from '../../api/restaurant';
+import { createUser, updateUser, getBranchStaffLink, generateBranchStaffLink } from '../../api/restaurant';
 import type { Branch, BranchStaffLink } from '../../types';
 
 // Per-branch login-link row used by the post-creation success screen.
 // `status` distinguishes a still-loading fetch from a resolved value or
 // an outright fetch failure so each row can render its own state
 // without blocking the others (Promise.allSettled wires this).
+// `generating` covers the inline "Generate Link" click — branches that
+// pre-date the auto-seed in routes/restaurant.js POST /branches carry
+// no staff_access_token, so the operator clicks "Generate Link" inline
+// instead of being redirected to the Branches tab.
 interface BranchLink {
   branchId: string;
   branchName: string;
-  status: 'loading' | 'ready' | 'error';
+  status: 'loading' | 'ready' | 'generating' | 'error';
   url: string | null;
   errorMessage?: string;
 }
@@ -136,9 +140,41 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
       setCopiedBranchId(branchId);
       setTimeout(() => {
         setCopiedBranchId((cur) => (cur === branchId ? null : cur));
-      }, 1500);
+      }, 2000);
     } catch {
       showToast('Could not copy — select the link and copy manually', 'error');
+    }
+  };
+
+  // Inline regeneration for branches that came back null on the initial
+  // GET (typically pre-auto-seed branches that never had a token
+  // generated). POST /staff-link/generate returns the freshly built URL
+  // in the response, so no follow-up GET is needed — we apply the
+  // returned shape directly to the row.
+  const regenerateLink = async (branchId: string) => {
+    setBranchLinks((prev) => prev.map((r) =>
+      r.branchId === branchId ? { ...r, status: 'generating', errorMessage: undefined } : r,
+    ));
+    try {
+      const link = await generateBranchStaffLink(branchId);
+      setBranchLinks((prev) => prev.map((r) =>
+        r.branchId === branchId
+          ? {
+              ...r,
+              status: 'ready',
+              url: link?.staff_login_url || null,
+              errorMessage: link?.staff_login_url ? undefined : 'Link generated but URL is empty — check FRONTEND_URL on the backend',
+            }
+          : r,
+      ));
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      const reason = e?.response?.data?.error || e?.message || 'Generate failed';
+      setBranchLinks((prev) => prev.map((r) =>
+        r.branchId === branchId
+          ? { ...r, status: 'error', url: null, errorMessage: reason }
+          : r,
+      ));
     }
   };
 
@@ -236,6 +272,9 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                         {row.status === 'loading' && (
                           <div className="text-[0.74rem] text-dim">Loading…</div>
                         )}
+                        {row.status === 'generating' && (
+                          <div className="text-[0.74rem] text-dim">Generating…</div>
+                        )}
                         {row.status === 'ready' && row.url && (
                           <div className="flex gap-[0.4rem] items-center">
                             <input
@@ -254,13 +293,31 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                           </div>
                         )}
                         {row.status === 'ready' && !row.url && (
-                          <div className="text-[0.72rem] text-[#92400e]">
-                            ⚠ {row.errorMessage || 'No login link yet — generate one from the Branches tab.'}
+                          <div className="flex flex-col gap-[0.3rem]">
+                            <div className="text-[0.72rem] text-[#92400e]">
+                              ⚠ No login link yet for this branch.
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => regenerateLink(row.branchId)}
+                              className="self-start btn-g btn-sm"
+                            >
+                              Generate Link
+                            </button>
                           </div>
                         )}
                         {row.status === 'error' && (
-                          <div className="text-[0.72rem] text-red">
-                            Could not load — {row.errorMessage}
+                          <div className="flex flex-col gap-[0.3rem]">
+                            <div className="text-[0.72rem] text-red">
+                              {row.errorMessage || 'Failed to load'}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => regenerateLink(row.branchId)}
+                              className="self-start btn-g btn-sm"
+                            >
+                              Generate Link
+                            </button>
                           </div>
                         )}
                       </div>

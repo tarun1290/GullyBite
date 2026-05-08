@@ -12,6 +12,25 @@
 import staffClient from '../lib/staffApiClient';
 import type { StaffAuthResult, StaffOrder } from '../types';
 
+// Public branch-info lookup — no JWT required. The login page calls
+// this on mount to display "{restaurant_name} — {branch_name}" before
+// the operator types their PIN. staffClient's request interceptor
+// skips the Authorization header when no token is in localStorage, so
+// this call goes out unauthenticated as expected.
+export interface StaffBranchInfo {
+  branch_name: string | null;
+  restaurant_name: string | null;
+}
+
+export async function getStaffBranchInfo(
+  staffAccessToken: string,
+): Promise<StaffBranchInfo> {
+  const { data } = await staffClient.get<StaffBranchInfo>('/api/staff/branch-info', {
+    params: { token: staffAccessToken },
+  });
+  return data;
+}
+
 export async function staffWebLogin(
   staffAccessToken: string,
   name: string,

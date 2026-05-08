@@ -5,19 +5,25 @@
 // dashboard's BranchStaffLinkPanel).
 //
 // Flow:
-//   1. If a 'staff_web_token' is already in localStorage, redirect to
+//   1. On mount, hit GET /api/staff/branch-info to resolve the token
+//      to its display context. While the lookup is in flight we render
+//      a centered loading state. A 404 means the token is not on any
+//      branch — render "This link is invalid or expired" and stop.
+//   2. If a 'staff_web_token' is already in localStorage, redirect to
 //      ./orders. (Token expiry is handled there — orders page sees a
 //      401, clears the token, and bounces the user back here.)
-//   2. On Android, surface an "Open in App" button that uses the
+//   3. On Android, surface an "Open in App" button that uses the
 //      gullybite-staff:// scheme handed off to the native APK. The
 //      web form stays visible underneath as the fallback for users
 //      who don't have the app installed.
-//   3. Submit name + 4-digit PIN to POST /api/staff/auth, store the
-//      returned JWT, navigate to ./orders.
+//   4. Submit name + 4-digit PIN to POST /api/staff/auth, store the
+//      returned JWT, navigate to ./orders. Auto-submits the moment a
+//      4th PIN digit is entered (only when the name field is also
+//      filled — otherwise the inline name validation fires instead).
 
-import { use, useEffect, useState } from 'react';
+import { use, useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { staffWebLogin } from '../../../api/staff';
+import { staffWebLogin, getStaffBranchInfo, type StaffBranchInfo } from '../../../api/staff';
 import {
   getStaffToken,
   setStaffToken,
@@ -27,6 +33,15 @@ interface PageProps {
   // Next.js 16: dynamic route params come in as a Promise.
   params: Promise<{ staffAccessToken: string }>;
 }
+
+// Discriminated union for the branch-info lookup. `idle` is the
+// pre-fetch transient state, `invalid` is a 404 from the backend
+// (token doesn't match any branch), `error` is anything else.
+type BranchInfoState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; data: StaffBranchInfo }
+  | { kind: 'invalid' }
+  | { kind: 'error'; message: string };
 
 function isAndroid(): boolean {
   if (typeof navigator === 'undefined') return false;
@@ -42,6 +57,7 @@ export default function StaffLoginPage({ params }: PageProps) {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [showAndroid, setShowAndroid] = useState<boolean>(false);
+  const [branchInfo, setBranchInfo] = useState<BranchInfoState>({ kind: 'loading' });
 
   // Already-signed-in short-circuit + Android deep-link surfacing.
   useEffect(() => {
@@ -52,6 +68,40 @@ export default function StaffLoginPage({ params }: PageProps) {
     setShowAndroid(isAndroid());
   }, [router, staffAccessToken]);
 
+  // localStorage key note: the JWT is persisted under 'staff_web_token'
+  // via setStaffToken (see lib/staffApiClient.ts). The original spec
+  // suggested 'staff_token', renamed here so the staff orders/menu
+  // pages — which consume the same key through staffClient — keep
+  // working without a parallel migration. Single source of truth =
+  // STAFF_TOKEN_KEY in staffApiClient.
+
+  // Fetch branch context. 404 → invalid-link surface (the rest of the
+  // form is hidden in that branch); other failures fall through to
+  // generic-error and still let the user attempt PIN entry — better
+  // than locking them out on a transient 5xx if their token IS valid.
+  useEffect(() => {
+    let cancelled = false;
+    setBranchInfo({ kind: 'loading' });
+    getStaffBranchInfo(staffAccessToken)
+      .then((data) => {
+        if (cancelled) return;
+        setBranchInfo({ kind: 'ready', data });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
+        if (e?.response?.status === 404) {
+          setBranchInfo({ kind: 'invalid' });
+          return;
+        }
+        setBranchInfo({
+          kind: 'error',
+          message: e?.response?.data?.error || e?.message || 'Could not load branch info',
+        });
+      });
+    return () => { cancelled = true; };
+  }, [staffAccessToken]);
+
   const onOpenInApp = () => {
     // Mirror the URL shape the staff-app's expo-linking handler reads
     // (see staff-app/app/_layout.tsx). The native app strips its scheme
@@ -60,35 +110,98 @@ export default function StaffLoginPage({ params }: PageProps) {
     window.location.href = deepLink;
   };
 
-  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  // Pure submit logic — accepts explicit name+pin so auto-submit can
+  // call it with the freshly-entered PIN value before React's state
+  // batch has flushed (relying on `pin` state inside an onChange would
+  // see the previous value).
+  const submitLogin = useCallback(async (submittedName: string, submittedPin: string) => {
     if (submitting) return;
-    if (!name.trim()) {
+    if (!submittedName.trim()) {
       setError('Please enter your name');
       return;
     }
-    if (!/^\d{4}$/.test(pin)) {
+    if (!/^\d{4}$/.test(submittedPin)) {
       setError('PIN must be exactly 4 digits');
       return;
     }
     setError(null);
     setSubmitting(true);
     try {
-      const res = await staffWebLogin(staffAccessToken, name.trim(), pin);
+      const res = await staffWebLogin(staffAccessToken, submittedName.trim(), submittedPin);
       setStaffToken(res.token);
       router.replace(`/staff/${encodeURIComponent(staffAccessToken)}/orders`);
     } catch (err: unknown) {
-      const e2 = err as { userMessage?: string | null; response?: { data?: { error?: string } }; message?: string };
-      setError(e2?.userMessage || e2?.response?.data?.error || e2?.message || 'Login failed');
+      const e2 = err as { response?: { status?: number }; message?: string };
+      if (e2?.response?.status === 401) {
+        setError('Invalid name or PIN');
+      } else {
+        setError('Something went wrong, try again.');
+      }
       setSubmitting(false);
+    }
+  }, [router, staffAccessToken, submitting]);
+
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void submitLogin(name, pin);
+  };
+
+  // PIN onChange normaliser. Strips non-digits and caps at 4. When the
+  // 4th digit lands and the name is filled, auto-submits — eliminates
+  // a final tap on tablets where the operator's hands are full. If
+  // name is empty we leave the PIN value set and let the operator
+  // either type their name or hit Sign in (which surfaces the inline
+  // name-required error).
+  const onPinChange = (raw: string) => {
+    const digits = raw.replace(/\D/g, '').slice(0, 4);
+    setPin(digits);
+    if (digits.length === 4 && name.trim() && !submitting) {
+      void submitLogin(name, digits);
     }
   };
 
+  // ── Invalid link: surface a single-line message and bail. We
+  // deliberately don't render the form so a stale link can't be used
+  // as a brute-force surface against the (already rate-limited) PIN
+  // endpoint.
+  if (branchInfo.kind === 'invalid') {
+    return (
+      <main className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm bg-ink2 border border-rim rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.18)] text-center">
+          <h1 className="m-0 mb-3 text-[1.1rem] font-semibold text-fg">
+            This link is invalid or expired
+          </h1>
+          <p className="text-dim text-[0.85rem] m-0">
+            Ask your manager to re-share the staff login link from the GullyBite dashboard.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  // ── Loading: keep the surface stable so the operator doesn't see
+  // form fields flash before the heading appears.
+  if (branchInfo.kind === 'loading') {
+    return (
+      <main className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm bg-ink2 border border-rim rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.18)] text-center">
+          <p className="text-dim text-[0.9rem] m-0">Loading…</p>
+        </div>
+      </main>
+    );
+  }
+
+  // ── Ready (or transient error during info fetch — we still render
+  // the form because a working PIN POST means their token is valid).
+  const heading = branchInfo.kind === 'ready'
+    ? [branchInfo.data.restaurant_name, branchInfo.data.branch_name].filter(Boolean).join(' — ')
+    : null;
+
   return (
     <main className="flex-1 flex items-center justify-center p-6">
-      <div className="w-full max-w-[380px] bg-ink2 border border-rim rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
+      <div className="w-full max-w-sm bg-ink2 border border-rim rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
         <h1 className="m-0 text-[1.25rem] font-semibold">
-          GullyBite Staff
+          {heading || 'GullyBite Staff'}
         </h1>
         <p className="mt-[0.4rem] mb-[1.2rem] text-dim text-[0.85rem]">
           Sign in with your name and 4-digit PIN.
@@ -130,7 +243,7 @@ export default function StaffLoginPage({ params }: PageProps) {
           <input
             type="password"
             value={pin}
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            onChange={(e) => onPinChange(e.target.value)}
             inputMode="numeric"
             autoComplete="one-time-code"
             maxLength={4}
@@ -150,7 +263,7 @@ export default function StaffLoginPage({ params }: PageProps) {
             disabled={submitting}
             className={`w-full py-[0.7rem] text-[0.95rem] text-white border-0 rounded-lg font-semibold ${submitting ? 'bg-rim cursor-default' : 'bg-green-600 cursor-pointer'}`}
           >
-            {submitting ? 'Signing in…' : 'Sign in'}
+            {submitting ? 'Signing in…' : 'Log in'}
           </button>
         </form>
       </div>

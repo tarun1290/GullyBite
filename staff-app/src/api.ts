@@ -128,6 +128,28 @@ export async function login(
   });
 }
 
+// Public lookup — no JWT. Resolves the per-branch staff_access_token
+// to display context so the login screen can show the operator
+// "{restaurant_name} — {branch_name}" before they type their PIN.
+// Backend route: backend/src/routes/staff.js GET /branch-info.
+export type BranchInfo = {
+  branch_name: string | null;
+  restaurant_name: string | null;
+};
+
+export async function getBranchInfo(
+  staffAccessToken: string,
+): Promise<BranchInfo> {
+  // Embed the token into the path manually so the existing `request`
+  // helper (which doesn't take a `params` option) doesn't need a new
+  // shape. encodeURIComponent guards against any URL-special chars
+  // that might land in a future token format.
+  return request<BranchInfo>(
+    `/api/staff/branch-info?token=${encodeURIComponent(staffAccessToken)}`,
+    { auth: false },
+  );
+}
+
 export async function getOrders(): Promise<{ orders: StaffOrder[] }> {
   return request<{ orders: StaffOrder[] }>('/api/staff/orders');
 }
