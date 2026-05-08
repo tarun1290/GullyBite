@@ -3,7 +3,7 @@
 import type { ChartData, ChartOptions } from 'chart.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StatCard from '../../../components/StatCard';
-import ChartCanvas from '../../../components/restaurant/ChartCanvas';
+import ChartCanvas from '../../../components/shared/ChartCanvas';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
 import {
   getLogisticsAnalytics,

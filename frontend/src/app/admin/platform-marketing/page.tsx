@@ -107,7 +107,7 @@ export default function AdminPlatformMarketingPage() {
 
   return (
     <div id="tab-platform-marketing">
-      <div className="chips mb-[1.1rem]">
+      <div className="chips chips--divided mb-[1.1rem]">
         {PERIODS.map(([val, label]) => (
           <button
             key={val}

@@ -22,7 +22,7 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <div className="flex gap-2 flex-wrap mb-[1.1rem] py-2 border-b border-rim">
+      <div className="flex gap-2 flex-wrap pb-4 mb-4 border-b border-rim">
         {SECTIONS.map(([v, l]) => (
           <button
             key={v}

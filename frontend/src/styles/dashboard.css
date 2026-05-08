@@ -148,10 +148,71 @@ textarea { resize: vertical; min-height: 66px; }
 .tsl input:disabled + .tsl-track { opacity: .5; cursor: not-allowed; }
 
 /* ── CHIPS / TAB BAR ───────────────────── */
-.chips { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.1rem; }
-.chip { padding: .28rem .8rem; border-radius: 100px; border: 1px solid var(--rim); background: var(--gb-neutral-0); color: var(--dim); font-size: .74rem; font-weight: 500; transition: all .14s; cursor: pointer; }
+/* Wrapper spacing: gap-2 between pills, pb-4 to the divider line below
+   (when a border-b is layered on by the consumer), mb-4 to the content
+   wrapper that follows. Single source of truth — every consumer
+   (Settings tabs, Restaurant tabs, admin tabs) inherits this without
+   per-page padding overrides. */
+.chips { display: flex; gap: 0.5rem; flex-wrap: wrap; padding-bottom: 1rem; margin-bottom: 1rem; }
+/* Pill padding: px-4 py-2 (≈ 8px × 16px). Bumped from 0.28rem 0.8rem
+   so each pill has visible breathing room around its label. The pill
+   class is shared across every tab-bar in the app, so changing it
+   here cascades. */
+.chip { padding: 0.5rem 1rem; border-radius: 100px; border: 1px solid var(--rim); background: var(--gb-neutral-0); color: var(--dim); font-size: .74rem; font-weight: 500; transition: all .14s; cursor: pointer; }
 .chip.on { border-color: var(--acc); color: var(--acc); background: var(--acc-glow); font-weight: 600; }
 .chip:hover:not(.on) { border-color: var(--rim2); color: var(--tx); background: var(--gb-neutral-50); }
+/* Divider modifier — opt-in border-bottom for tab bars that want a
+   visual separator from the content below. Layered on top of the base
+   .chips wrapper (which already provides padding-bottom + gap +
+   margin-bottom), so consumers add this when they want the line. */
+.chips--divided {
+  border-bottom: 1px solid var(--rim);
+}
+
+/* ── NOTICE CALLOUT ─────────────────────
+   Inline-flex callout used across dashboard sections to surface a
+   short heads-up to the operator (e.g. "Coming Soon", WhatsApp
+   product callouts). Without these rules `.notice-ico` collapses to
+   a default block-level div, which is what produced the
+   emoji-on-its-own-row bug seen in AutoJourneysSection,
+   IntegrationsSection, MarketingWaNumberSection, CampaignsSection
+   and the four dashboard pages that share the pattern. The .wa /
+   .warn / .danger modifiers tint the surface using the brand
+   palette tokens. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--rim);
+  border-radius: 0.625rem;
+  background: var(--surface, #fff);
+}
+.notice-ico {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  font-size: 1.25rem;
+  line-height: 1.5rem;
+  text-align: center;
+}
+.notice-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.notice-body > :first-child { margin-top: 0; }
+.notice-body > :last-child { margin-bottom: 0; }
+.notice.wa {
+  border-color: #0F766E;
+  background: rgba(15, 118, 110, 0.06);
+}
+.notice.warn {
+  border-color: #F9C303;
+  background: rgba(249, 195, 3, 0.08);
+}
+.notice.danger {
+  border-color: #E42623;
+  background: rgba(228, 38, 35, 0.06);
+}
 
 /* ── BADGES ────────────────────────────── */
 .badge {

@@ -298,18 +298,18 @@ export default function CampaignsSection() {
         </div>
       </div>
 
-      <div className="bg-[#eff6ff] border border-[#93c5fd] rounded-lg py-[0.85rem] px-4 mb-[1.2rem] text-[0.8rem] leading-relaxed text-[#1e3a5f] shadow-sm-token">
-        <strong>Campaign Best Practices (Meta 2026):</strong>
-        <br />
-        • Segment your audience — targeted messages get better engagement
-        <br />
-        • Avoid sending the same template to 10K+ users at once
-        <br />
-        • Meta monitors customer feedback (blocks, reports) and may pause delivery
-        <br />
-        • Start with a small test batch before sending to your full audience
-        <br />
-        • Use &quot;Recent&quot; audience (ordered in last 30 days) for best results
+      <div className="notice mb-[1.2rem]">
+        <div className="notice-ico">💡</div>
+        <div className="notice-body text-[0.8rem] leading-relaxed">
+          <strong>Campaign Best Practices (Meta 2026)</strong>
+          <ul className="pl-4 list-disc mt-[0.4rem] mb-0">
+            <li>Segment your audience — targeted messages get better engagement</li>
+            <li>Avoid sending the same template to 10K+ users at once</li>
+            <li>Meta monitors customer feedback (blocks, reports) and may pause delivery</li>
+            <li>Start with a small test batch before sending to your full audience</li>
+            <li>Use &quot;Recent&quot; audience (ordered in last 30 days) for best results</li>
+          </ul>
+        </div>
       </div>
 
       <DailyUsage data={usage} />

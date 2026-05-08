@@ -278,7 +278,7 @@ interface HistoryListProps {
 function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabled }: HistoryListProps) {
   return (
     <div>
-      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
           <h2 className="m-0">Marketing Campaigns</h2>
           <div className="text-[0.84rem] text-dim mt-[0.2rem]">
@@ -292,7 +292,7 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
       </div>
 
       {summary && (
-        <div className="grid gap-[0.6rem] grid-cols-[repeat(auto-fill,minmax(180px,1fr))] mb-4">
+        <div className="grid grid-cols-4 gap-4 mb-4">
           <SummaryCard label="Campaigns" value={summary.total_campaigns} />
           <SummaryCard label="This month" value={summary.campaigns_this_month} />
           <SummaryCard label="Messages sent" value={summary.total_sent} />
@@ -1454,18 +1454,18 @@ export default function CampaignsPage() {
 
   return (
     <div>
-      <div className="flex gap-[0.4rem] mb-4 border-b border-[#e5e7eb]">
+      <div className="chips chips--divided mb-4">
         <button
           type="button"
           onClick={() => setTab('manual')}
-          className={`btn-sm bg-transparent border-none py-2 px-[0.8rem] cursor-pointer ${tab === 'manual' ? 'border-b-2 border-b-[#4f46e5] text-[#4f46e5] font-semibold' : 'border-b-2 border-b-transparent text-dim font-normal'}`}
+          className={tab === 'manual' ? 'chip on' : 'chip'}
         >
           Manual Campaigns
         </button>
         <button
           type="button"
           onClick={() => setTab('journeys')}
-          className={`btn-sm bg-transparent border-none py-2 px-[0.8rem] cursor-pointer ${tab === 'journeys' ? 'border-b-2 border-b-[#4f46e5] text-[#4f46e5] font-semibold' : 'border-b-2 border-b-transparent text-dim font-normal'}`}
+          className={tab === 'journeys' ? 'chip on' : 'chip'}
         >
           Auto Journeys
         </button>

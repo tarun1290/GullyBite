@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { ChartData, ChartOptions, ChartDataset } from 'chart.js';
-import ChartCanvas from '../ChartCanvas';
+import ChartCanvas from '../../shared/ChartCanvas';
 import StatCard from '../../StatCard';
 import SectionError from '../analytics/SectionError';
 import useAnalyticsFetch from '../analytics/useAnalyticsFetch';

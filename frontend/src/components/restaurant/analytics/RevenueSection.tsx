@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import type { ChartData, ChartOptions, ChartDataset } from 'chart.js';
-import ChartCanvas from '../ChartCanvas';
+import ChartCanvas from '../../shared/ChartCanvas';
 import SectionError from './SectionError';
 import useAnalyticsFetch from './useAnalyticsFetch';
 import { getAnalyticsOverview, getRevenueAnalytics } from '../../../api/restaurant';

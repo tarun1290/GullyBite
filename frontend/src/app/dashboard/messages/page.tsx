@@ -149,7 +149,7 @@ export default function MessagesPage() {
 
   return (
     <div id="tab-messages">
-      <div className="flex gap-2 mb-[0.8rem] items-center">
+      <div className="chips chips--divided">
         <button
           type="button"
           className={activeView === 'messages' ? 'chip on' : 'chip'}
@@ -178,12 +178,12 @@ export default function MessagesPage() {
                   onChange={(e) => onMsgSearchChange(e.target.value)}
                   className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-lg text-[0.82rem]"
                 />
-                <div className="flex gap-[0.3rem] mt-2 flex-wrap">
+                <div className="flex gap-2 mb-3 mt-2">
                   {MSG_FILTERS.map(([value, label]) => (
                     <button
                       key={value}
                       type="button"
-                      className={msgFilter === value ? 'btn-p btn-sm' : 'btn-g btn-sm'}
+                      className={`${msgFilter === value ? 'chip on' : 'chip'} text-sm py-1 px-3`}
                       aria-pressed={msgFilter === value}
                       onClick={() => setMsgFilter(value)}
                     >
@@ -214,12 +214,12 @@ export default function MessagesPage() {
                   onChange={(e) => onIssSearchChange(e.target.value)}
                   className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-lg text-[0.82rem]"
                 />
-                <div className="flex gap-[0.3rem] mt-2 flex-wrap">
+                <div className="flex gap-2 mb-3 mt-2">
                   {ISS_FILTERS.map(([value, label]) => (
                     <button
                       key={value || 'all'}
                       type="button"
-                      className={issFilter === value ? 'btn-p btn-sm' : 'btn-g btn-sm'}
+                      className={`${issFilter === value ? 'chip on' : 'chip'} text-sm py-1 px-3`}
                       aria-pressed={issFilter === value}
                       onClick={() => setIssFilter(value)}
                     >

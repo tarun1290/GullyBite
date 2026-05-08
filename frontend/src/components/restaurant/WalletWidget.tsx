@@ -50,7 +50,7 @@ export default function WalletWidget() {
         type="button"
         onClick={() => setPanelOpen(true)}
         title="Wallet — earnings, top-ups, and charges"
-        className="inline-flex items-center gap-[0.4rem] border rounded-full py-[0.35rem] px-3 text-[0.82rem] font-bold cursor-pointer leading-none"
+        className="inline-flex items-center gap-1.5 border rounded-full py-1.5 px-3 text-[0.82rem] font-bold cursor-pointer leading-none"
         // bg / color / border-color are runtime-driven by wallet balance
         // (negative → red, low → amber, otherwise green) — matches the
         // balanceColor helper in WalletSection.

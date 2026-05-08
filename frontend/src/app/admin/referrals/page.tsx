@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Chart, registerables, type ChartOptions } from 'chart.js';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { ChartData, ChartOptions } from 'chart.js';
 import { useToast } from '../../../components/Toast';
 import StatCard from '../../../components/StatCard';
 import SectionError from '../../../components/restaurant/analytics/SectionError';
+import ChartCanvas from '../../../components/shared/ChartCanvas';
 import {
   createReferral,
   createReferralLink,
@@ -16,9 +17,6 @@ import {
   resolveReferralLinkRequest,
   type ReferralAnalyticsResponse,
 } from '../../../api/admin';
-
-// One-shot Chart.js registration. Idempotent — safe across HMR.
-Chart.register(...registerables);
 
 function isoDateNDaysAgo(n: number): string {
   const d = new Date(Date.now() - n * 24 * 60 * 60 * 1000);
@@ -152,11 +150,6 @@ export default function AdminReferralsPage() {
   const [analytics, setAnalytics] = useState<ReferralAnalyticsResponse | null>(null);
   const [analyticsErr, setAnalyticsErr] = useState<string | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState<boolean>(false);
-  const lineCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const barCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const lineChartRef = useRef<Chart | null>(null);
-  const barChartRef = useRef<Chart | null>(null);
-
   const loadStats = useCallback(async () => {
     try {
       const s = (await getReferralStats()) as ReferralStats | null;
@@ -223,29 +216,12 @@ export default function AdminReferralsPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  // Render / re-render the line chart whenever analytics changes.
-  // Each pass destroys the prior chart instance so Chart.js never sees
-  // a re-used canvas (which throws "Canvas is already in use").
-  useEffect(() => {
-    const ctx = lineCanvasRef.current?.getContext('2d');
-    if (!ctx) return undefined;
-    if (lineChartRef.current) {
-      lineChartRef.current.destroy();
-      lineChartRef.current = null;
-    }
+  // Daily Created vs Converted line chart. Declarative config the
+  // shared ChartCanvas mounts as a chart.js instance — no
+  // imperative new Chart() / destroy() lifecycle in this file.
+  const lineConfig = useMemo<{ data: ChartData<'line'>; options: ChartOptions<'line'> }>(() => {
     const daily = analytics?.daily || [];
-    if (!daily.length) return undefined;
-    const opts: ChartOptions<'line'> = {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } },
-      scales: {
-        y: { beginAtZero: true, ticks: { precision: 0 } },
-        x: { ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
-      },
-    };
-    lineChartRef.current = new Chart(ctx, {
-      type: 'line',
+    return {
       data: {
         labels: daily.map((d) => d.date),
         datasets: [
@@ -269,44 +245,24 @@ export default function AdminReferralsPage() {
           },
         ],
       },
-      options: opts,
-    });
-    return () => {
-      if (lineChartRef.current) {
-        lineChartRef.current.destroy();
-        lineChartRef.current = null;
-      }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } },
+        scales: {
+          y: { beginAtZero: true, ticks: { precision: 0 } },
+          x: { ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
+        },
+      },
     };
   }, [analytics]);
 
-  // Same lifecycle for the bar chart — commission earned per day.
-  useEffect(() => {
-    const ctx = barCanvasRef.current?.getContext('2d');
-    if (!ctx) return undefined;
-    if (barChartRef.current) {
-      barChartRef.current.destroy();
-      barChartRef.current = null;
-    }
+  // Commission Earned per Day bar chart. Same declarative pattern as
+  // lineConfig above — labels + dataset shape unchanged from the
+  // pre-migration imperative version.
+  const barConfig = useMemo<{ data: ChartData<'bar'>; options: ChartOptions<'bar'> }>(() => {
     const daily = analytics?.daily || [];
-    if (!daily.length) return undefined;
-    const opts: ChartOptions<'bar'> = {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (item) => `₹${Number(item.raw).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          },
-        },
-      },
-      scales: {
-        y: { beginAtZero: true, ticks: { callback: (v) => `₹${Number(v).toLocaleString('en-IN')}` } },
-        x: { ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
-      },
-    };
-    barChartRef.current = new Chart(ctx, {
-      type: 'bar',
+    return {
       data: {
         labels: daily.map((d) => d.date),
         datasets: [{
@@ -316,13 +272,22 @@ export default function AdminReferralsPage() {
           borderRadius: 4,
         }],
       },
-      options: opts,
-    });
-    return () => {
-      if (barChartRef.current) {
-        barChartRef.current.destroy();
-        barChartRef.current = null;
-      }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (item) => `₹${Number(item.raw).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+            },
+          },
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: (v) => `₹${Number(v).toLocaleString('en-IN')}` } },
+          x: { ticks: { font: { size: 10 }, maxTicksLimit: 12 } },
+        },
+      },
     };
   }, [analytics]);
 
@@ -612,7 +577,7 @@ export default function AdminReferralsPage() {
                 <div className="border border-rim rounded-lg p-3">
                   <div className="text-[0.82rem] text-tx mb-2 font-semibold">Daily: Created vs Converted</div>
                   <div className="relative h-[260px]">
-                    <canvas ref={lineCanvasRef} />
+                    <ChartCanvas type="line" data={lineConfig.data} options={lineConfig.options} height={260} />
                     {!analyticsLoading && (analytics?.daily?.length ?? 0) === 0 && (
                       <div className="absolute inset-0 flex items-center justify-center text-dim text-[0.85rem]">
                         No data in selected range
@@ -623,7 +588,7 @@ export default function AdminReferralsPage() {
                 <div className="border border-rim rounded-lg p-3">
                   <div className="text-[0.82rem] text-tx mb-2 font-semibold">Commission Earned per Day (₹)</div>
                   <div className="relative h-[260px]">
-                    <canvas ref={barCanvasRef} />
+                    <ChartCanvas type="bar" data={barConfig.data} options={barConfig.options} height={260} />
                     {!analyticsLoading && (analytics?.daily?.length ?? 0) === 0 && (
                       <div className="absolute inset-0 flex items-center justify-center text-dim text-[0.85rem]">
                         No data in selected range

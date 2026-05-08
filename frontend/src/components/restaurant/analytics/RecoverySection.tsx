@@ -111,10 +111,10 @@ function CartRecoveryFunnel({ data, loading, error }: CartRecoveryFunnelProps) {
     const recovered = st.recovered || 0;
     const pct = abandoned ? Math.round((recovered / abandoned) * 100) : 0;
     return (
-      <div key={s} className="flex items-center gap-[0.6rem] py-[0.35rem] border-b border-bdr">
-        <span className="w-[100px]">{STAGE_LABELS[s] || s}</span>
+      <div key={s} className="flex items-center gap-[0.6rem] py-2 border-b border-bdr">
+        <span className="w-[100px] pl-3 pr-3">{STAGE_LABELS[s] || s}</span>
         <span className="flex-1">
-          <div className="h-[6px] bg-rim rounded-[3px] overflow-hidden">
+          <div className="h-2 bg-rim rounded-[3px] overflow-hidden">
             <div
               className="h-full bg-wa rounded-[3px]"
               // width is the recovery percentage for this funnel stage —
@@ -123,7 +123,7 @@ function CartRecoveryFunnel({ data, loading, error }: CartRecoveryFunnelProps) {
             />
           </div>
         </span>
-        <span className="w-[70px] text-right text-[0.76rem]">
+        <span className="w-[70px] text-right text-[0.76rem] pr-3">
           {recovered}/{abandoned}
         </span>
       </div>

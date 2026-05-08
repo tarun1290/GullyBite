@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from 'react';
 import type { ChartData, ChartOptions } from 'chart.js';
-import ChartCanvas from '../ChartCanvas';
+import ChartCanvas from '../../shared/ChartCanvas';
 import SectionError from './SectionError';
 import useAnalyticsFetch from './useAnalyticsFetch';
 import { getPeakHours } from '../../../api/restaurant';

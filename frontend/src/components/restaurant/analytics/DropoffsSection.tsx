@@ -82,7 +82,7 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
     const pct = Math.max(f.pct, 2);
     const color = FUNNEL_COLORS[i] || '#64748b';
     rows.push(
-      <div key={`stage-${i}`} className="flex items-center gap-[0.6rem] mb-[0.35rem]">
+      <div key={`stage-${i}`} className="flex items-center gap-[0.6rem] my-2">
         <span className="w-[110px] text-[0.78rem] font-medium text-dim text-right shrink-0">
           {f.stage}
         </span>
@@ -94,7 +94,7 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
             style={{ width: `${pct}%`, background: color }}
           />
           <span
-            className={`absolute left-[0.6rem] top-1/2 -translate-y-1/2 text-[0.72rem] font-semibold ${
+            className={`absolute left-3 top-1/2 -translate-y-1/2 text-[0.72rem] font-semibold ${
               pct > 15 ? 'text-white' : 'text-tx'
             }`}
           >
@@ -111,9 +111,9 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
       const dropPct = cur.count ? Math.round((drop / cur.count) * 100) : 0;
       if (drop > 0) {
         rows.push(
-          <div key={`drop-${i}`} className="flex items-center gap-[0.6rem] mb-[0.35rem]">
+          <div key={`drop-${i}`} className="flex items-center gap-[0.6rem] my-2">
             <span className="w-[110px]" />
-            <span className="text-[0.68rem] text-[#dc2626] pl-[0.4rem]">
+            <span className="text-[0.68rem] text-[#dc2626] pl-3">
               ↓ -{dropPct}% ({drop} dropped)
             </span>
           </div>
@@ -121,7 +121,7 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
       }
     }
   });
-  return <>{rows}</>;
+  return <div className="p-4">{rows}</div>;
 }
 
 interface DropoffRowProps {

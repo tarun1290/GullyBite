@@ -45,7 +45,7 @@ export default function RestaurantMessageButton() {
         type="button"
         onClick={() => setOpen(true)}
         title="Message Restaurant"
-        className="relative bg-transparent border border-rim rounded-md py-[0.35rem] px-[0.55rem] cursor-pointer text-[0.78rem] text-fg inline-flex items-center gap-[0.3rem]"
+        className="relative bg-transparent border border-rim rounded-md py-1.5 px-3 cursor-pointer text-[0.78rem] text-fg inline-flex items-center gap-1.5"
       >
         💬 Message Restaurant
         {unread > 0 && (

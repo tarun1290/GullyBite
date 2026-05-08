@@ -80,7 +80,7 @@ export default function IntegrationsSection() {
               </div>
             </div>
             <div className="int-tile-desc">{d.desc}</div>
-            <div className="int-sync-info">POS integrations coming soon</div>
+            <span className="badge bd mt-2">POS integrations coming soon</span>
           </div>
         ))}
       </div>
