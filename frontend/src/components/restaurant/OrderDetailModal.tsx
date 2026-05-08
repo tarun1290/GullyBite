@@ -159,7 +159,7 @@ function ChargeBreakdown({ order }: ChargeBreakdownProps) {
   rows.push(
     <tr key="sep">
       <td colSpan={2}>
-        <hr className="border-0 border-t border-dashed border-rim2 my-[0.3rem]" />
+        <hr className="border-0 border-t border-rim my-[0.3rem]" />
       </td>
     </tr>
   );
@@ -216,7 +216,7 @@ function DeliverySection({ orderId, delivery, deliveryFeeTotalRs, onDispatch, on
   const color = DELIVERY_STATUS_COLORS[status] || '#6b7280';
 
   return (
-    <div className="mt-[0.8rem] py-[0.65rem] px-[0.9rem] bg-ink2 border border-bdr rounded-lg">
+    <div className="mt-3 py-[0.65rem] px-[0.9rem] bg-ink2 border border-bdr rounded-lg">
       <div className="text-[0.75rem] text-dim mb-[0.4rem]">🚴 Delivery</div>
       <div className="flex gap-[0.8rem] items-center flex-wrap text-[0.82rem]">
         <span

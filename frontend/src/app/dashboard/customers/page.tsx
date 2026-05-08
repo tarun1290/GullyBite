@@ -79,7 +79,7 @@ interface TileProps {
 
 function Tile({ title, value, hint }: TileProps) {
   return (
-    <div className="card py-4 px-[1.1rem] flex flex-col gap-1">
+    <div className="card py-4 px-[1.1rem] flex flex-col gap-1 min-w-0">
       <div className="text-[0.72rem] text-mute font-semibold uppercase tracking-wider">{title}</div>
       <div className="text-2xl font-bold text-[#111827]">{value}</div>
       {hint && <div className="text-[0.78rem] text-mute">{hint}</div>}
@@ -205,7 +205,7 @@ export default function CustomersPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-[0.9rem]">
+      <div className="grid grid-cols-4 gap-4">
         <Tile
           title="Total customers"
           value={stats?.total_customers ?? 0}

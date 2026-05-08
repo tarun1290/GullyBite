@@ -285,7 +285,7 @@ export default function OrdersPage() {
               {label}
               {count > 0 && (
                 <span
-                  className={`text-[0.65rem] font-bold rounded-full py-[0.05rem] px-1.5 ml-1.5 min-w-[16px] text-center inline-block ${active ? 'bg-acc text-white' : 'bg-rim2 text-dim'}`}
+                  className="text-[0.65rem] font-bold rounded-full py-[0.05rem] px-1.5 ml-1.5 min-w-[16px] text-center inline-block bg-[var(--acc-glow)] text-acc"
                 >
                   {count}
                 </span>

@@ -62,25 +62,20 @@ export default function IntegrationsSection() {
         </div>
       </div>
 
-      <div className="int-grid">
+      <div className="flex flex-col gap-3">
         {INT_DEFS.map((d) => (
           <div
             key={d.key}
-            className="int-tile opacity-50 cursor-not-allowed pointer-events-none relative"
+            className="notice opacity-60"
           >
-            <div className="int-tile-hd">
-              <div className={`int-logo ${d.cls}`}>{d.emoji}</div>
-              <div>
-                <div className="int-tile-name">{d.name}</div>
-                <div>
-                  <span className="badge bd bg-ink4 text-mute">
-                    Coming soon
-                  </span>
-                </div>
+            <div className="notice-ico">{d.emoji}</div>
+            <div className="notice-body">
+              <div className="flex items-center gap-2 flex-wrap">
+                <strong className="text-[0.92rem]">{d.name}</strong>
+                <span className="badge bd">Coming soon</span>
               </div>
+              <p className="text-[0.8rem] text-dim mt-1 mb-0">{d.desc}</p>
             </div>
-            <div className="int-tile-desc">{d.desc}</div>
-            <span className="badge bd mt-2">POS integrations coming soon</span>
           </div>
         ))}
       </div>

@@ -201,18 +201,13 @@ textarea { resize: vertical; min-height: 66px; }
 }
 .notice-body > :first-child { margin-top: 0; }
 .notice-body > :last-child { margin-bottom: 0; }
-.notice.wa {
-  border-color: #0F766E;
-  background: rgba(15, 118, 110, 0.06);
-}
-.notice.warn {
-  border-color: #F9C303;
-  background: rgba(249, 195, 3, 0.08);
-}
-.notice.danger {
-  border-color: #E42623;
-  background: rgba(228, 38, 35, 0.06);
-}
+.notice.wa { border-color: #0F766E; }
+.notice.warn { border-color: #F9C303; }
+.notice.danger { border-color: #E42623; }
+/* Same +1.25rem rhythm as `.card + .card`. Without this, .notice
+   blocks sat flush against the next card on Loyalty / Manual
+   Campaigns / others. */
+.notice + * { margin-top: 1.25rem; }
 
 /* ── BADGES ────────────────────────────── */
 .badge {

@@ -45,7 +45,7 @@ function ConversationRow({ thread, active, onSelect }: ConversationRowProps) {
   return (
     <div
       onClick={() => onSelect?.(thread.customer_id)}
-      className={`py-[0.6rem] px-[0.7rem] rounded-lg cursor-pointer border transition-all duration-150 ${
+      className={`py-[0.6rem] px-4 rounded-lg cursor-pointer border transition-all duration-150 ${
         active ? 'border-wa bg-[rgba(37,211,102,0.08)]' : 'border-transparent bg-transparent'
       }`}
     >

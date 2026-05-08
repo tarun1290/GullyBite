@@ -87,11 +87,11 @@ export default function NotificationBell() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label="Notifications"
-        className="relative border border-rim bg-white rounded-full w-9 h-9 inline-flex items-center justify-center cursor-pointer"
+        className="relative bg-transparent border border-rim rounded-md py-1.5 px-3 cursor-pointer text-[0.78rem] text-fg inline-flex items-center gap-1.5"
       >
-        <span className="text-[1.05rem]">🔔</span>
+        <span aria-hidden className="text-base">🔔</span>
         {state.unread > 0 && (
-          <span className="absolute -top-1 -right-1 bg-[#ef4444] text-white rounded-full text-[0.65rem] font-bold min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center">
+          <span className="min-w-[18px] h-[18px] py-0 px-[0.35rem] rounded-full bg-red-500 text-white text-[0.65rem] font-bold inline-flex items-center justify-center">
             {state.unread > 99 ? '99+' : state.unread}
           </span>
         )}

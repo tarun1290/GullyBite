@@ -14,7 +14,7 @@ export default function RestaurantPage() {
 
   return (
     <div>
-      <div className="flex gap-2 flex-wrap pb-4 mb-4 border-b border-rim">
+      <div className="chips chips--divided">
         {SECTIONS.map(([v, l]) => (
           <button
             key={v}

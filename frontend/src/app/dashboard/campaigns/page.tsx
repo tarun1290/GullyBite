@@ -368,10 +368,10 @@ interface SummaryCardProps { label: string; value: ReactNode }
 
 function SummaryCard({ label, value }: SummaryCardProps) {
   return (
-    <div className="card">
+    <div className="card min-w-0 mb-0">
       <div className="cb py-[0.55rem] px-[0.7rem]">
-        <div className="text-[0.72rem] text-dim uppercase tracking-[0.03em]">{label}</div>
-        <div className="text-[1.1rem] font-semibold mt-[0.15rem]">{value ?? 0}</div>
+        <div className="text-[0.72rem] text-dim uppercase tracking-[0.03em] truncate">{label}</div>
+        <div className="text-[1.1rem] font-semibold mt-[0.15rem] truncate">{value ?? 0}</div>
       </div>
     </div>
   );

@@ -183,7 +183,7 @@ export default function MessagesPage() {
                     <button
                       key={value}
                       type="button"
-                      className={`${msgFilter === value ? 'chip on' : 'chip'} text-sm py-1 px-3`}
+                      className={`${msgFilter === value ? 'chip on' : 'chip'} text-sm py-1 px-3 whitespace-nowrap`}
                       aria-pressed={msgFilter === value}
                       onClick={() => setMsgFilter(value)}
                     >
@@ -219,7 +219,7 @@ export default function MessagesPage() {
                     <button
                       key={value || 'all'}
                       type="button"
-                      className={`${issFilter === value ? 'chip on' : 'chip'} text-sm py-1 px-3`}
+                      className={`${issFilter === value ? 'chip on' : 'chip'} text-sm py-1 px-3 whitespace-nowrap`}
                       aria-pressed={issFilter === value}
                       onClick={() => setIssFilter(value)}
                     >

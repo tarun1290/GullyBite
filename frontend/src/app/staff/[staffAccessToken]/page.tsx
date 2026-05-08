@@ -166,12 +166,12 @@ export default function StaffLoginPage({ params }: PageProps) {
   // endpoint.
   if (branchInfo.kind === 'invalid') {
     return (
-      <main className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-ink2 border border-rim rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.18)] text-center">
-          <h1 className="m-0 mb-3 text-[1.1rem] font-semibold text-fg">
+      <main className="bg-white min-h-screen flex items-center justify-center px-4">
+        <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8 text-center">
+          <h1 className="text-gray-900 font-semibold text-xl mb-1">
             This link is invalid or expired
           </h1>
-          <p className="text-dim text-[0.85rem] m-0">
+          <p className="text-gray-500 text-sm mt-2">
             Ask your manager to re-share the staff login link from the GullyBite dashboard.
           </p>
         </div>
@@ -183,9 +183,9 @@ export default function StaffLoginPage({ params }: PageProps) {
   // form fields flash before the heading appears.
   if (branchInfo.kind === 'loading') {
     return (
-      <main className="flex-1 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-ink2 border border-rim rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.18)] text-center">
-          <p className="text-dim text-[0.9rem] m-0">Loading…</p>
+      <main className="bg-white min-h-screen flex items-center justify-center px-4">
+        <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8 text-center">
+          <p className="text-gray-500 text-sm">Loading…</p>
         </div>
       </main>
     );
@@ -198,12 +198,12 @@ export default function StaffLoginPage({ params }: PageProps) {
     : null;
 
   return (
-    <main className="flex-1 flex items-center justify-center p-6">
-      <div className="w-full max-w-sm bg-ink2 border border-rim rounded-xl p-6 shadow-[0_8px_24px_rgba(0,0,0,0.18)]">
-        <h1 className="m-0 text-[1.25rem] font-semibold">
+    <main className="bg-white min-h-screen flex items-center justify-center px-4">
+      <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8">
+        <h1 className="text-gray-900 font-semibold text-xl mb-1">
           {heading || 'GullyBite Staff'}
         </h1>
-        <p className="mt-[0.4rem] mb-[1.2rem] text-dim text-[0.85rem]">
+        <p className="text-gray-500 text-sm mb-6">
           Sign in with your name and 4-digit PIN.
         </p>
 
@@ -212,20 +212,20 @@ export default function StaffLoginPage({ params }: PageProps) {
             <button
               type="button"
               onClick={onOpenInApp}
-              className="w-full py-[0.7rem] text-[0.95rem] bg-green-600 text-white border-0 rounded-lg cursor-pointer font-semibold"
+              className="w-full py-3 text-sm bg-green-600 text-white border-0 rounded-lg cursor-pointer font-semibold"
             >
               Open in GullyBite Staff App
             </button>
-            <div className="flex items-center gap-2 my-4 text-dim text-[0.75rem]">
-              <div className="flex-1 h-px bg-rim" />
+            <div className="flex items-center gap-2 my-4 text-gray-500 text-xs">
+              <div className="flex-1 h-px bg-gray-200" />
               <span>or sign in here</span>
-              <div className="flex-1 h-px bg-rim" />
+              <div className="flex-1 h-px bg-gray-200" />
             </div>
           </div>
         )}
 
         <form onSubmit={onSubmit}>
-          <label className="block text-[0.78rem] text-dim mb-[0.3rem]">
+          <label className="block text-xs text-gray-700 mb-1">
             Name
           </label>
           <input
@@ -234,10 +234,10 @@ export default function StaffLoginPage({ params }: PageProps) {
             onChange={(e) => setName(e.target.value)}
             autoComplete="name"
             disabled={submitting}
-            className="w-full py-[0.6rem] px-[0.7rem] text-[0.95rem] bg-ink border border-rim rounded-lg text-fg mb-[0.9rem]"
+            className="border border-gray-300 rounded-lg px-4 py-3 w-full text-sm text-gray-900 mb-4"
           />
 
-          <label className="block text-[0.78rem] text-dim mb-[0.3rem]">
+          <label className="block text-xs text-gray-700 mb-1">
             PIN
           </label>
           <input
@@ -249,11 +249,11 @@ export default function StaffLoginPage({ params }: PageProps) {
             maxLength={4}
             placeholder="••••"
             disabled={submitting}
-            className="w-full py-[0.6rem] px-[0.7rem] text-[1.2rem] tracking-[0.4em] text-center bg-ink border border-rim rounded-lg text-fg mb-[0.9rem]"
+            className="border border-gray-300 rounded-lg px-4 py-3 w-full text-lg tracking-[0.4em] text-center text-gray-900 mb-4"
           />
 
           {error && (
-            <div className="py-2 px-[0.7rem] mb-[0.8rem] bg-[rgba(220,38,38,0.12)] border border-[rgba(220,38,38,0.4)] text-[#fca5a5] rounded-lg text-[0.82rem]">
+            <div className="py-2 px-3 mb-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
               {error}
             </div>
           )}
@@ -261,7 +261,7 @@ export default function StaffLoginPage({ params }: PageProps) {
           <button
             type="submit"
             disabled={submitting}
-            className={`w-full py-[0.7rem] text-[0.95rem] text-white border-0 rounded-lg font-semibold ${submitting ? 'bg-rim cursor-default' : 'bg-green-600 cursor-pointer'}`}
+            className={`w-full py-3 text-sm text-white border-0 rounded-lg font-semibold ${submitting ? 'bg-gray-400 cursor-default' : 'bg-green-600 cursor-pointer'}`}
           >
             {submitting ? 'Signing in…' : 'Log in'}
           </button>

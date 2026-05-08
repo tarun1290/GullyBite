@@ -522,7 +522,7 @@ export default function CouponsSection() {
                       checked={form.branchIds.includes(b.id)}
                       onChange={() => toggleBranch(b.id)}
                     />
-                    <span className="truncate">{b.name || b.id}</span>
+                    <span className="break-words">{b.name || b.id}</span>
                   </label>
                 ))}
               </div>
