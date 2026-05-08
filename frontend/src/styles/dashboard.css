@@ -100,6 +100,12 @@ body { font-family: var(--font-body); background: var(--ink); color: var(--tx); 
    the per-page mb-* utility on the heading card itself. */
 .card + .card { margin-top: 1.25rem; }
 .cb { padding: 1.4rem 1.5rem; }
+/* Inner padding for any direct card child that isn't the header (.ch)
+   or body (.cb). Catches custom slot wrappers (e.g. a card with only
+   a children div instead of the .ch + .cb pair) so they don't render
+   flush against the card border. Doesn't touch .ch / .cb — those
+   carry their own padding declared above. */
+.card > *:not(.ch):not(.cb) { padding: 1.25rem 1.5rem; }
 
 /* ── BUTTONS ───────────────────────────── */
 .btn, .btn-p { display: inline-flex; align-items: center; gap: .38rem; background: var(--acc); color: var(--gb-neutral-0); font-weight: 600; font-size: .8rem; line-height: 1; min-height: 2rem; padding: .52rem 1.1rem; border-radius: var(--radius-md); border: none; white-space: nowrap; transition: all .16s ease; cursor: pointer; letter-spacing: .01em; }
