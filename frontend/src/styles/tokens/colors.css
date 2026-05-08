@@ -104,6 +104,8 @@
 
   --bg:        var(--gb-slate-100);   /* Page body bg on landing/auth */
   --bg2:       var(--gb-neutral-0);    /* Card/surface bg */
+  --surface:   #fff;                   /* Card / modal surface bg (consumed via bg-surface) */
+  --surface2:  var(--gb-slate-100);    /* Subtle gray tile bg (consumed via bg-surface2) */
   --rim:       var(--gb-slate-200);    /* Subtle border */
   --rim2:      var(--gb-slate-300);    /* Stronger border / divider */
   --tx:        var(--gb-slate-900);    /* Primary text */

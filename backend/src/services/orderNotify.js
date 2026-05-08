@@ -82,7 +82,7 @@ const sendOrderTemplateMessage = async (orderId, newStatus, orderContext = null)
         context.order.phone_number_id,
         toIdentifier,
         mapping.template_name,
-        'en',
+        'en_US',
         componentParams
       );
       sent = true;
@@ -203,7 +203,7 @@ const sendRefundProcessedMessage = async (orderId, orderContext = null) => {
         context.order.phone_number_id,
         toIdentifier,
         mapping.template_name,
-        'en',
+        'en_US',
         componentParams,
       );
       sent = true;

@@ -318,7 +318,7 @@ export default function NewOrderPopup() {
       <div
         role="dialog"
         aria-label="New order"
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[480px] max-h-[90vh] z-9999 bg-surface border border-rim rounded-xl shadow-[0_20px_50px_-10px_rgba(15,23,42,0.35),0_6px_18px_rgba(15,23,42,0.2)] overflow-hidden flex flex-col"
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[480px] max-h-[90vh] z-9999 bg-white border border-rim rounded-xl shadow-[0_20px_50px_-10px_rgba(15,23,42,0.35),0_6px_18px_rgba(15,23,42,0.2)] overflow-hidden flex flex-col"
       >
       {/* Header */}
       <div className="py-3 px-4 border-b border-rim flex items-center justify-between gap-[0.6rem] bg-[#fef3c7]">

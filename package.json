@@ -22,6 +22,7 @@
     "mongodb": "^6.21.0",
     "multer": "^2.0.0",
     "node-cron": "^3.0.3",
+    "puppeteer": "^24.43.0",
     "razorpay": "^2.9.4",
     "sharp": "^0.34.5",
     "uuid": "^10.0.0",
