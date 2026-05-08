@@ -254,7 +254,12 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
-  if (status === 'picked-up') {
+  // Prorouting's canonical state name is "Order-picked-up" (lowercased
+  // to "order-picked-up" by _normaliseStatus). Pre-fix code matched
+  // "picked-up" only and silently dropped every real callback. The
+  // legacy short form is kept on the right of the OR for fixtures and
+  // any future doc tweak that shortens the name back.
+  if (status === 'order-picked-up' || status === 'picked-up') {
     // Late-webhook guard — same shape as agent-assigned above.
     if (POST_DISPATCH_TERMINAL.has(order.status)) {
       log.info({ orderId: order._id, orderStatus: order.status },
@@ -295,7 +300,9 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
-  if (status === 'delivered') {
+  // Same normalization gotcha as the picked-up branch above —
+  // Prorouting sends "Order-delivered". Accept both for fixture compat.
+  if (status === 'order-delivered' || status === 'delivered') {
     // Dual-write final logistics totals. totalFee mirrors lspFee since
     // the callback doesn't break out GST. codCollected defaults to 0
     // when the field is absent (prepaid orders don't surface cod_amount).

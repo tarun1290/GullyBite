@@ -11,11 +11,11 @@
 // Usage on EC2:
 //   cd /home/ubuntu/GullyBite/backend
 //   node --env-file=/home/ubuntu/GullyBite/.env scripts/inject-prorouting-state.js \
-//     --order_number=ZM-20260504-0013 --state=Picked-up
+//     --order_number=ZM-20260504-0013 --state=Order-picked-up
 //
 // CLI flags:
 //   --order_number=<string>   required (e.g. ZM-20260504-0013)
-//   --state=<string>          required: Picked-up | At-delivery | Delivered | Cancelled
+//   --state=<string>          required: Order-picked-up | At-delivery | Order-delivered | Cancelled
 //   --base_url=<string>       optional, default https://gullybite.duckdns.org
 //
 // Required env: PROROUTING_WEBHOOK_SECRET, MONGODB_URI.
@@ -41,7 +41,7 @@ function parseArgs(argv) {
   return out;
 }
 
-const VALID_STATES = ['Picked-up', 'At-delivery', 'Delivered', 'Cancelled'];
+const VALID_STATES = ['Order-picked-up', 'At-delivery', 'Order-delivered', 'Cancelled'];
 
 // Format a JS Date as Prorouting's wire format: "YYYY-MM-DD HH:MM:SS"
 // in IST. We shift the UTC instant by +5h30m, ISO-stringify it (the
@@ -83,7 +83,7 @@ function buildPayload(order, state, args) {
   let delivered_at = fwdTime(order, 'prorouting_delivered_at');
   let cancelled_at = fwdTime(order, 'prorouting_cancelled_at');
 
-  if (state === 'Picked-up') {
+  if (state === 'Order-picked-up') {
     // atpickup = rider arrived at restaurant; pickedup = rider left
     // with the order. Real flows have minutes between; we stamp both
     // at once because the state machine cares about the LATEST event.
@@ -96,7 +96,7 @@ function buildPayload(order, state, args) {
     // pickedup_at when transitioning to At-delivery.
     if (!pickedup_at) pickedup_at = nowStr;
     atdelivery_at = nowStr;
-  } else if (state === 'Delivered') {
+  } else if (state === 'Order-delivered') {
     if (!atpickup_at) atpickup_at = nowStr;
     if (!pickedup_at) pickedup_at = nowStr;
     if (!atdelivery_at) atdelivery_at = nowStr;
@@ -105,10 +105,10 @@ function buildPayload(order, state, args) {
     cancelled_at = nowStr;
   }
 
-  // last_location is null after Delivered/Cancelled (the rider session
-  // ends); populated mid-flight. Coords are a known Hyderabad point so
-  // the rider-location card has something plausible to render.
-  const lastLocation = (state === 'Picked-up' || state === 'At-delivery')
+  // last_location is null after Order-delivered/Cancelled (the rider
+  // session ends); populated mid-flight. Coords are a known Hyderabad
+  // point so the rider-location card has something plausible to render.
+  const lastLocation = (state === 'Order-picked-up' || state === 'At-delivery')
     ? { lat: 17.385, lng: 78.4867, updated_at: nowStr }
     : null;
 
