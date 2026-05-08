@@ -6117,6 +6117,15 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
       });
     }
 
+    // Petpooja POS cancel — fire-and-forget. cancelOrderOnPos guards
+    // internally on petpooja_order_id being set, so an unconditional
+    // call here is safe for orders that were never pushed.
+    setImmediate(() => {
+      require('../services/petpoojaOrderService')
+        .cancelOrderOnPos(orderId, reason)
+        .catch(() => {});
+    });
+
     res.json({ success: true, status: result?.status || 'REJECTED_BY_RESTAURANT', refundId: result?.refundId || null });
 
     log({

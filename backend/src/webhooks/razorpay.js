@@ -667,6 +667,7 @@ const confirmPaidOrder = async (orderId, event) => {
       orderId,
       restaurantId: order.restaurant_id,
       posEnabled: !!POS_INTEGRATIONS_ENABLED,
+      petpoojaEnabled: process.env.PETPOOJA_ENABLED === 'true',
     });
   } catch (enqueueErr) {
     log.error({ err: enqueueErr, orderId }, 'failed to enqueue post-payment jobs');

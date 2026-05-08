@@ -342,6 +342,18 @@ const orders = {
     coupon_code:               { type: 'string' },
     coupon_scope:              { type: 'string', enum: ['platform', 'restaurant'] },
     platform_discount_paise:   { type: 'number' },
+    // Petpooja POS integration. petpooja_order_id is the POS-side id
+    // returned by /save_order (or the literal 'pushed' fallback when
+    // their response omits it). petpooja_pushed_at stamps the success;
+    // petpooja_push_failed flags an outbound failure for ops sweep.
+    // petpooja_accepted_at is set by the inbound /webhooks/petpooja
+    // callback when the POS confirms the order. petpooja_pos_status
+    // mirrors the POS-side lifecycle code (4/5/10) for ops debugging.
+    petpooja_order_id:         { type: 'string' },
+    petpooja_pushed_at:        { type: 'date' },
+    petpooja_push_failed:      { type: 'boolean' },
+    petpooja_accepted_at:      { type: 'date' },
+    petpooja_pos_status:       { type: 'string' },
     created_at:            { type: 'date', required: true },
     updated_at:            { type: 'date' },
   },
@@ -356,6 +368,39 @@ const orders = {
     { key: { restaurant_id: 1, acknowledged_at: 1, status: 1 }, sparse: true },
     // Prorouting dispatch lookup — sparse, only orders with a 3PL order id.
     { key: { prorouting_order_id: 1 }, sparse: true },
+  ],
+};
+
+// Per-branch POS integration credentials and sync state. One row per
+// (branch_id, platform). Written by the petpooja admin route + by
+// posSync.js (when re-enabled). Read by the petpooja outbound order
+// service, the inbound POS callback, and the WhatsApp branch routing.
+const restaurant_integrations = {
+  collection: 'restaurant_integrations',
+  description: 'Per-branch POS integration credentials and sync state',
+  fields: {
+    _id:                { type: 'uuid', required: true },
+    platform:           { type: 'string', required: true, enum: ['petpooja', 'urbanpiper', 'dotpe'] },
+    branch_id:          { type: 'uuid', required: true },
+    restaurant_id:      { type: 'uuid' },
+    outlet_id:          { type: 'string' },
+    app_key:            { type: 'string' },
+    app_secret:         { type: 'string' },
+    access_token:       { type: 'string' },
+    is_active:          { type: 'boolean' },
+    sync_status:        { type: 'string' },
+    sync_error:         { type: 'string' },
+    last_synced_at:     { type: 'date' },
+    item_count:         { type: 'number' },
+    last_sync_result:   { type: 'object' },
+    created_at:         { type: 'date', required: true },
+    updated_at:         { type: 'date' },
+  },
+  indexes: [
+    // Primary lookup — admin CRUD by (platform, branch_id).
+    { key: { platform: 1, branch_id: 1 } },
+    // Inbound callbacks resolve a branch from Petpooja's restID via outlet_id.
+    { key: { platform: 1, outlet_id: 1 } },
   ],
 };
 
@@ -1844,6 +1889,7 @@ const ALL_SCHEMAS = {
   loyalty_config, loyalty_points, loyalty_transactions, pending_loyalty_redemptions,
   feedback_events, restaurant_notifications,
   festivals_calendar,
+  restaurant_integrations,
 };
 
 module.exports = { ALL_SCHEMAS, ...ALL_SCHEMAS };

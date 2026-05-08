@@ -20,7 +20,7 @@
 const { Worker } = require('bullmq');
 const connection = require('../queue/redis');
 const { col } = require('../config/database');
-const { QUEUE_NAME } = require('./orderAcceptanceQueue');
+const { QUEUE_NAME, removeAcceptanceTimeoutJob } = require('./orderAcceptanceQueue');
 const log = require('../utils/logger').child({ component: 'orderAcceptanceProcessor' });
 
 let _worker = null;
@@ -78,4 +78,35 @@ async function stop() {
   }
 }
 
-module.exports = { start, stop, processAcceptanceTimeout, QUEUE_NAME };
+// Cancel the in-flight acceptance-timeout job for a given order. Used
+// by the petpooja inbound callback when the POS confirms an order on
+// the restaurant's behalf — without this, the worker would still fault
+// the order at the timeout boundary.
+//
+// jobId is stamped on the order doc by orderStateEngine.js's PAID
+// side-effect block (acceptance_timeout_job_id). Resolving via the
+// order doc instead of computing jobId === orderId means a future
+// scheme change (e.g. multiple in-flight timeout jobs, salted ids)
+// works without touching this caller.
+//
+// Wrapped end-to-end so a Mongo blip or Redis hiccup never bubbles
+// into the petpooja webhook's outer error handler. Worker's existing
+// idempotency guard (status !== 'PAID' → no-op) is the backstop if
+// the cancel itself fails.
+async function cancelTimeoutJob(orderId) {
+  try {
+    if (!orderId) return { cancelled: false, reason: 'no orderId' };
+    const order = await col('orders').findOne(
+      { _id: orderId },
+      { projection: { acceptance_timeout_job_id: 1 } },
+    );
+    const jobId = order?.acceptance_timeout_job_id;
+    if (!jobId) return { cancelled: false, reason: 'no acceptance_timeout_job_id on order' };
+    return await removeAcceptanceTimeoutJob(jobId);
+  } catch (err) {
+    log.warn({ err: err.message, orderId }, 'cancelTimeoutJob failed (swallowed)');
+    return { cancelled: false, reason: err.message };
+  }
+}
+
+module.exports = { start, stop, processAcceptanceTimeout, cancelTimeoutJob, QUEUE_NAME };

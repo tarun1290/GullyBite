@@ -144,9 +144,10 @@ export default function NewOrderPopup() {
   // — already-known ids keep their slot; newly-detected ones append.
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const [currentIdx, setCurrentIdx] = useState<number>(0);
-  // Full-detail fetch for the currently-shown id only; refetch on cycle.
-  const [orderDetail, setOrderDetail] = useState<PopupOrder | null>(null);
-  const [detailLoading, setDetailLoading] = useState<boolean>(false);
+  // Full-detail fetch tagged with the id it belongs to. Tagging lets
+  // us derive orderDetail/detailLoading without writing them
+  // synchronously inside the fetch effect (react-hooks/set-state-in-effect).
+  const [fetchedDetail, setFetchedDetail] = useState<{ forId: string; data: PopupOrder | null } | null>(null);
   // Per-action busy lock — disables both buttons + Next while any API
   // call (accept/decline) is in flight to prevent double-fires.
   const [busy, setBusy] = useState<'confirm' | 'decline' | null>(null);
@@ -187,39 +188,41 @@ export default function NewOrderPopup() {
     };
   }, [syncWithOrders]);
 
-  // Keep currentIdx in range when the queue changes underneath us.
-  useEffect(() => {
-    if (pendingIds.length === 0) {
-      if (currentIdx !== 0) setCurrentIdx(0);
-      return;
-    }
-    if (currentIdx >= pendingIds.length) {
-      setCurrentIdx(pendingIds.length - 1);
-    }
-  }, [pendingIds, currentIdx]);
+  // Derived: clamp currentIdx into the queue's bounds at read time
+  // instead of normalizing it via a setState-in-effect. handleNext's
+  // functional setter `(i + 1) % pendingIds.length` self-corrects on
+  // the next click if currentIdx ever drifts past the end.
+  const safeIdx = pendingIds.length === 0
+    ? 0
+    : Math.min(currentIdx, pendingIds.length - 1);
 
-  const currentId = pendingIds[currentIdx] || null;
+  const currentId = pendingIds[safeIdx] || null;
 
   // ── Detail fetch for the currently-shown id ────────────────────
   // Same getOrderById call OrderDetailModal uses. Loading state is
   // shown inline inside the popup body rather than blocking the whole
   // popup, so the action buttons remain visible (still disabled until
-  // the detail lands).
+  // the detail lands). All setState happens inside async callbacks
+  // so the effect body itself stays free of synchronous setters.
   useEffect(() => {
-    if (!currentId) {
-      setOrderDetail(null);
-      setDetailLoading(false);
-      return undefined;
-    }
+    if (!currentId) return undefined;
     let cancelled = false;
-    setDetailLoading(true);
-    setOrderDetail(null);
     getOrderById(currentId)
-      .then((o) => { if (!cancelled) setOrderDetail(o as PopupOrder | null); })
-      .catch(() => { if (!cancelled) setOrderDetail(null); })
-      .finally(() => { if (!cancelled) setDetailLoading(false); });
+      .then((o) => {
+        if (!cancelled) setFetchedDetail({ forId: currentId, data: o as PopupOrder | null });
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedDetail({ forId: currentId, data: null });
+      });
     return () => { cancelled = true; };
   }, [currentId]);
+
+  // Derived display state. orderDetail is only the data whose forId
+  // matches the currently-shown id; otherwise treat as "still loading".
+  // detailLoading is true whenever we have a currentId but no
+  // detail tagged with it yet.
+  const orderDetail = fetchedDetail && fetchedDetail.forId === currentId ? fetchedDetail.data : null;
+  const detailLoading = !!currentId && (!fetchedDetail || fetchedDetail.forId !== currentId);
 
   const removeFromQueue = useCallback((id: string) => {
     setPendingIds((prev) => prev.filter((p) => p !== id));
@@ -241,7 +244,6 @@ export default function NewOrderPopup() {
       try {
         await updateOrderStatus(currentId, 'PREPARING');
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.warn('[NewOrderPopup] auto-advance to PREPARING failed:', err);
       }
       markOrderActioned(currentId);
@@ -284,8 +286,8 @@ export default function NewOrderPopup() {
 
   const total = pendingIds.length;
   const positionLabel = useMemo(
-    () => (total > 0 ? `Order ${currentIdx + 1} of ${total}` : ''),
-    [currentIdx, total],
+    () => (total > 0 ? `Order ${safeIdx + 1} of ${total}` : ''),
+    [safeIdx, total],
   );
 
   if (total === 0) return null;
@@ -318,7 +320,7 @@ export default function NewOrderPopup() {
       <div
         role="dialog"
         aria-label="New order"
-        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[480px] max-h-[90vh] z-9999 bg-white border border-rim rounded-xl shadow-[0_20px_50px_-10px_rgba(15,23,42,0.35),0_6px_18px_rgba(15,23,42,0.2)] overflow-hidden flex flex-col"
+        className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[560px] max-h-[90vh] z-9999 bg-white border border-rim rounded-xl shadow-[0_20px_50px_-10px_rgba(15,23,42,0.35),0_6px_18px_rgba(15,23,42,0.2)] overflow-hidden flex flex-col"
       >
       {/* Header */}
       <div className="py-3 px-4 border-b border-rim flex items-center justify-between gap-[0.6rem] bg-[#fef3c7]">
@@ -350,16 +352,16 @@ export default function NewOrderPopup() {
           </div>
         ) : (
           <>
-            <div className="flex justify-between gap-[0.6rem] mb-[0.6rem]">
-              <div>
-                <div className="font-bold">#{orderRef}</div>
-                <div className="text-[0.72rem] text-dim">
+            <div className="flex justify-between gap-3 mb-[0.6rem]">
+              <div className="min-w-0">
+                <div className="font-bold truncate">#{orderRef}</div>
+                <div className="text-[0.72rem] text-dim truncate">
                   {fmtTime(o.created_at)}
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-[0.72rem] text-dim">{o.branch_name || ''}</div>
-                <div className="text-[0.72rem] text-dim">{customerLabel(o)}</div>
+              <div className="text-right min-w-0">
+                <div className="text-[0.72rem] text-dim truncate">{o.branch_name || ''}</div>
+                <div className="text-[0.72rem] text-dim truncate">{customerLabel(o)}</div>
               </div>
             </div>
 
@@ -431,13 +433,16 @@ export default function NewOrderPopup() {
         )}
       </div>
 
-      {/* Actions */}
+      {/* Actions — canonical .btn-success / .btn-del so the popup
+          inherits the same hover/focus/disabled states as the rest of
+          the dashboard's Confirm/Decline pairs. flex-1 + justify-center
+          stretches each across half the row width. */}
       <div className="py-[0.7rem] px-4 border-t border-rim flex gap-2">
         <button
           type="button"
           onClick={handleConfirm}
           disabled={!o || !!busy}
-          className="flex-1 py-[0.55rem] px-[0.8rem] bg-green-600 text-white border-0 rounded-lg font-bold text-[0.84rem] cursor-pointer disabled:cursor-not-allowed disabled:opacity-70"
+          className="btn-p btn-success flex-1 justify-center"
         >
           {busy === 'confirm' ? '…' : '✓ Confirm Order'}
         </button>
@@ -445,7 +450,7 @@ export default function NewOrderPopup() {
           type="button"
           onClick={handleDecline}
           disabled={!o || !!busy}
-          className="flex-1 py-[0.55rem] px-[0.8rem] bg-transparent text-red-600 border-[1.5px] border-red-600 rounded-lg font-bold text-[0.84rem] cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+          className="btn-del flex-1 justify-center"
         >
           {busy === 'decline' ? '…' : '✗ Decline Order'}
         </button>

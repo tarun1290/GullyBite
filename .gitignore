@@ -102,3 +102,6 @@ GULLYBITE_INTERNGUIDE_PART5.md
 apiary-dump.txt
 scrape-apiary-debug.js
 scrape-apiary.js
+backend/scripts/test-harness/prorouting-docs-codeblocks.txt
+backend/scripts/test-harness/prorouting-docs.txt
+backend/scripts/test-harness/PROROUTING_GAP_ANALYSIS.md

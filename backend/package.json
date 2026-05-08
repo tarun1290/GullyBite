@@ -37,7 +37,8 @@
     "ws": "^8.20.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.4",
+    "puppeteer": "^24.43.0"
   },
   "engines": {
     "node": "20.x"

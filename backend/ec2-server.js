@@ -167,6 +167,7 @@ app.use('/webhooks/catalog', require('./src/webhooks/catalog'));
 app.use('/webhooks/delivery', require('./src/webhooks/delivery'));
 app.use('/webhooks/directory', require('./src/webhooks/directory'));
 app.use('/webhooks/checkout', require('./src/webhooks/checkout'));
+app.use('/webhooks/petpooja', require('./src/webhooks/petpoojaCallback'));
 
 // ─── PUBLIC INLINE HANDLERS ──────────────────────────────────
 // Placed before any /api/* mount so Express matches them first.
@@ -321,6 +322,13 @@ app.use('/api/admin/pincodes', jsonAndSanitize(), require('./src/routes/adminPin
 app.use('/api/customer', jsonAndSanitize(), require('./src/routes/customer'));
 app.use('/api/admin/analytics', jsonAndSanitize(), require('./src/routes/analytics'));
 app.use('/api/admin/platform-marketing', jsonAndSanitize(), _marketingAnalytics.adminRouter);
+
+// Petpooja integration. Single router covers both Section A (admin
+// CRUD — per-route gated by requireAdmin inside the router) and
+// Section B (store-status — public, called by Petpooja POS). Mounted
+// under /petpooja so Petpooja's own status callbacks can reach the
+// public endpoints without hitting the /api/admin auth wall.
+app.use('/petpooja', require('./src/routes/petpoojaIntegration'));
 
 // ─── ENCRYPTED / RAW-BODY ENDPOINTS ──────────────────────────
 // Each router owns its own parser — payloads are encrypted (ECDH+AES-GCM /

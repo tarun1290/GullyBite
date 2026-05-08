@@ -156,7 +156,7 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, onDecli
           {next && (
             <button
               type="button"
-              className="btn-g btn-sm"
+              className={next[0] === 'CONFIRMED' ? 'btn-p btn-sm btn-success' : 'btn-g btn-sm'}
               onClick={handleNextStatus}
               disabled={disabled}
             >
@@ -165,12 +165,12 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, onDecli
           )}
           {/* Decline button — PAID rows only. Hits /decline (refund +
               REJECTED_BY_RESTAURANT) via the parent-supplied onDecline.
-              Outlined red so it doesn't compete visually with the
-              filled green Confirm button. */}
+              Canonical .btn-del variant (outlined red) pairs with the
+              filled green .btn-success Confirm button above. */}
           {order.status === 'PAID' && onDecline && (
             <button
               type="button"
-              className="btn-sm bg-transparent text-red-600 border-[1.5px] border-red-600 font-semibold"
+              className="btn-del btn-sm"
               onClick={handleDecline}
               disabled={disabled}
             >

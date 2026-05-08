@@ -405,6 +405,13 @@ const INDEXES = [
   { collection: 'serviceable_pincodes', index: { enabled: 1 } },
   { collection: 'serviceable_pincodes', index: { city: 1 } },
   { collection: 'serviceable_pincodes', index: { state: 1 } },
+
+  // Per-branch POS integration credentials (petpooja / urbanpiper / dotpe).
+  // (platform, branch_id) is the admin-CRUD lookup; (platform, outlet_id)
+  // is how the inbound petpooja store-status webhook resolves a branch
+  // from Petpooja's restID.
+  { collection: 'restaurant_integrations', index: { platform: 1, branch_id: 1 } },
+  { collection: 'restaurant_integrations', index: { platform: 1, outlet_id: 1 } },
 ];
 
 async function ensureIndexes() {

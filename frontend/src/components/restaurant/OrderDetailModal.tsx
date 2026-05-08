@@ -100,17 +100,37 @@ interface ItemsTableProps {
 }
 
 function ItemsTable({ items }: ItemsTableProps) {
-  if (!items?.length) return null;
+  if (!items?.length) {
+    return (
+      <div className="mt-[0.3rem] py-[0.5rem] text-[0.78rem] text-dim italic">
+        No items recorded.
+      </div>
+    );
+  }
   return (
     <table className="w-full border-collapse mt-[0.3rem]">
       <tbody>
-        {items.map((i, idx) => (
-          <tr key={i.id || idx}>
-            <td className="py-[0.35rem]">{i.item_name}</td>
-            <td className="text-center">×{i.quantity}</td>
-            <td className="text-right">₹{f(i.line_total_rs)}</td>
-          </tr>
-        ))}
+        {items.map((i, idx) => {
+          // Field-name flexibility: routes/restaurant.js GET /orders/:id
+          // overrides o.items with order_items rows (item_name,
+          // line_total_rs). Older / denormalized rows on the order doc
+          // itself use {name, price_rs * quantity}. Accept both so a
+          // missing order_items row doesn't black-hole the table when
+          // the order doc itself still carries the line.
+          const ix = i as LooseItem & { name?: string; price_rs?: number | string };
+          const name = ix.item_name || ix.name || '—';
+          const qty = Number(ix.quantity || 0);
+          const lineTotal = ix.line_total_rs != null
+            ? Number(ix.line_total_rs)
+            : (Number(ix.price_rs ?? 0) * qty);
+          return (
+            <tr key={ix.id || idx}>
+              <td className="py-[0.35rem]">{name}</td>
+              <td className="text-center">×{qty}</td>
+              <td className="text-right">{Number.isFinite(lineTotal) ? `₹${f(lineTotal)}` : '—'}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -408,14 +428,14 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
       className="fixed inset-0 bg-[rgba(15,23,42,0.55)] backdrop-blur-xs z-200 flex items-center justify-center p-6"
     >
       <div className="bg-white border border-rim rounded-[14px] w-full max-w-[520px] overflow-hidden shadow-default">
-        <div className="py-[1.1rem] px-[1.3rem] border-b border-rim flex items-center justify-between">
+        <div className="py-4 px-6 border-b border-rim flex items-center justify-between">
           <span id="ord-modal-title" className="font-bold text-[0.95rem] text-tx">
             {title}
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="bg-none border-0 text-dim text-[1.1rem] cursor-pointer"
+            className="bg-transparent border-0 text-dim text-[1.1rem] cursor-pointer leading-none"
             aria-label="Close"
           >
             ✕
@@ -424,7 +444,7 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
 
         <div
           id="ord-modal-body"
-          className="p-[1.3rem] max-h-[70vh] overflow-y-auto text-[0.84rem]"
+          className="p-6 max-h-[70vh] overflow-y-auto text-[0.84rem]"
         >
           {loading && (
             <div className="text-center p-8 text-dim">Loading…</div>

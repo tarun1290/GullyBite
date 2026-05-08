@@ -57,6 +57,11 @@ const JOB_TYPES = {
   // routes/cron.js /feedback-routing sweeps for any rows whose job
   // was lost before persistence.
   FEEDBACK_ROUTING: 'FEEDBACK_ROUTING',
+  // Petpooja POS push — fires post-PAID alongside CUSTOMER_NOTIFICATION
+  // when the restaurant has an active petpooja integration on their
+  // branch. Handler is idempotent: petpoojaOrderService stamps
+  // petpooja_order_id on success, and re-runs short-circuit on that.
+  PETPOOJA_PUSH: 'petpooja_push',
 };
 
 const MAX_ATTEMPTS = 5;
@@ -123,12 +128,13 @@ async function enqueue(type, payload, { delayMs = 0, jobId = null, maxAttempts =
 // below carries a stale-job status guard so any in-flight ORDER_DISPATCH
 // job created by older code (pre-deploy) is skipped silently if the
 // order isn't in CONFIRMED.
-async function enqueueForOrder({ orderId, restaurantId, posEnabled }) {
+async function enqueueForOrder({ orderId, restaurantId, posEnabled, petpoojaEnabled }) {
   const payload = { orderId: String(orderId), restaurantId: restaurantId ? String(restaurantId) : null };
   const jobs = [
     enqueue(JOB_TYPES.CUSTOMER_NOTIFICATION, payload),
   ];
   if (posEnabled) jobs.push(enqueue(JOB_TYPES.POS_SYNC, payload));
+  if (petpoojaEnabled) jobs.push(enqueue(JOB_TYPES.PETPOOJA_PUSH, payload));
   return Promise.all(jobs);
 }
 
@@ -613,6 +619,19 @@ async function _handleCartRecovery(payload) {
   }, 'CART_RECOVERY: executed');
 }
 
+// Petpooja POS push — fires post-PAID for branches with an active
+// petpooja integration. The service handles all its own credential
+// lookup, payload construction, error logging, and stamping of
+// petpooja_order_id / petpooja_push_failed. This handler is the thin
+// queue adapter — no try/catch needed since the worker loop in
+// _processOne already wraps handlers and the service itself never
+// throws (per its contract).
+async function _handlePetpoojaPush(payload) {
+  if (!payload?.orderId) return;
+  const petpoojaService = require('../services/petpoojaOrderService');
+  await petpoojaService.pushOrderToPos(payload.orderId);
+}
+
 // Feedback routing — fires 3 min after recordRating updates the
 // feedback_events row to rated_positive / rated_negative. Delegates the
 // branch logic (review link send vs escalation) to
@@ -645,6 +664,7 @@ const HANDLERS = {
   [JOB_TYPES.FEEDBACK_REQUEST]: _handleFeedbackRequest,
   [JOB_TYPES.CART_RECOVERY]: _handleCartRecovery,
   [JOB_TYPES.FEEDBACK_ROUTING]: _handleFeedbackRouting,
+  [JOB_TYPES.PETPOOJA_PUSH]: _handlePetpoojaPush,
 };
 
 // ─── WORKER LOOP ──────────────────────────────────────────────
