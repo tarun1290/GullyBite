@@ -424,6 +424,12 @@ export interface MarketingCampaignEstimate {
   total_cost_rs: number;
   wallet_balance_rs: number;
   wallet_sufficient: boolean;
+  // Snapshot of the platform pricing multiplier at estimate-creation
+  // time. 1.0 = pass-through (no platform margin); higher values mean
+  // total_cost_rs already includes the margin. CostConfirmCard surfaces
+  // this as a "Includes platform fee" hint when > 1.0. May be undefined
+  // on legacy /create responses that pre-date the markup rollout.
+  markup_multiplier?: number;
 }
 
 export interface CreateMarketingCampaignResponse {
@@ -431,12 +437,87 @@ export interface CreateMarketingCampaignResponse {
   estimate: MarketingCampaignEstimate;
 }
 
+// One condition row in a compound segment definition. value is unknown
+// because its type depends on field (number, string, boolean, array,
+// or month integer) — runtime-validated by the backend's
+// services/segmentBuilder.validateConditions.
+export interface SegmentCondition {
+  field: string;
+  op: string;
+  value: unknown;
+}
+
+export interface CustomerSegment {
+  _id: string;
+  name: string;
+  conditions: SegmentCondition[];
+  created_at: string;
+}
+
+interface CreateSegmentResponse { segment: CustomerSegment }
+interface ListSegmentsResponse {
+  segments: CustomerSegment[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+interface PreviewSegmentResponse { count: number; segment_name: string }
+
 export async function createMarketingCampaign(body: RequestBody): Promise<CreateMarketingCampaignResponse> {
   const { data } = await client.post<CreateMarketingCampaignResponse>(
     '/api/restaurant/marketing-campaigns/create',
     body,
   );
   return data;
+}
+
+// Saved-segment CRUD. All four routes are restaurant-scoped + sit
+// under /api/restaurant/marketing-campaigns/segments so the
+// requireAuth middleware on the parent router applies automatically.
+export async function createSegment(
+  data: { name: string; conditions: SegmentCondition[] },
+): Promise<CustomerSegment> {
+  const { data: res } = await client.post<CreateSegmentResponse>(
+    '/api/restaurant/marketing-campaigns/segments',
+    data,
+  );
+  return res.segment;
+}
+
+export async function listSegments(page = 1): Promise<ListSegmentsResponse> {
+  const { data } = await client.get<ListSegmentsResponse>(
+    '/api/restaurant/marketing-campaigns/segments',
+    { params: { page } },
+  );
+  return data;
+}
+
+export async function previewSegment(segmentId: string): Promise<PreviewSegmentResponse> {
+  const { data } = await client.get<PreviewSegmentResponse>(
+    `/api/restaurant/marketing-campaigns/segments/${encodeURIComponent(segmentId)}/preview`,
+  );
+  return data;
+}
+
+// Ad-hoc preview — counts recipients for an unsaved conditions array.
+// Used by the ConditionBuilder while the operator is mid-build so the
+// audience size updates as conditions change without committing to a
+// saved segment first.
+export async function previewConditions(
+  conditions: SegmentCondition[],
+): Promise<{ count: number }> {
+  const { data } = await client.post<{ count: number }>(
+    '/api/restaurant/marketing-campaigns/segments/preview',
+    { conditions },
+  );
+  return data;
+}
+
+export async function deleteSegment(segmentId: string): Promise<void> {
+  await client.delete(
+    `/api/restaurant/marketing-campaigns/segments/${encodeURIComponent(segmentId)}`,
+  );
 }
 
 // Triggers the actual send (immediate or scheduled, depending on the

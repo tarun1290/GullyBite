@@ -25,9 +25,17 @@ const log = require('../utils/logger');
 const wa = require('./whatsapp');
 const wallet = require('./wallet');
 const { hashPhone } = require('../utils/phoneHash');
+const segmentBuilder = require('./segmentBuilder');
 
 const BATCH_SIZE = 50;
 const BATCH_DELAY_MS = 500;
+// Pass-through default — when no platform_settings.wa_pricing doc
+// exists (or markup_multiplier is unset), we charge the restaurant
+// exactly what Meta charges us. Admin UI tunes this upward to add a
+// platform margin on top of marketing sends. Stamped per-row on
+// marketing_messages.markup_multiplier_applied so a future change
+// doesn't rewrite historical billing.
+const DEFAULT_MARKUP_MULTIPLIER = 1.0;
 // Per-customer monthly send cap for manual blasts. Window is the
 // current calendar month in IST (resets at midnight on the 1st). Auto
 // journeys are gated separately by the 48h cap inside journeyExecutor —
@@ -215,6 +223,60 @@ async function sendCampaign(campaignId) {
         customer: c,
         profile: profileMap.get(c._id) || { customer_id: c._id },
       }));
+    } else if (campaign.target_segment === 'compound' || campaign.target_segment === 'saved') {
+      // Compound + saved segments both resolve through services/segmentBuilder.
+      // For 'saved' we first dereference saved_segment_id → conditions; for
+      // 'compound' the inline segment_conditions array IS the input. Both
+      // produce the same { customer, profile } recipient shape as the
+      // other branches so the send loop downstream is path-agnostic.
+      let conditions = [];
+      if (campaign.target_segment === 'saved') {
+        if (!campaign.saved_segment_id) {
+          await finalize(campaignId, 'failed', { error_message: 'Saved segment id missing' });
+          return { ok: false, reason: 'segment_not_found' };
+        }
+        const segmentDoc = await col('customer_segments').findOne({
+          _id: String(campaign.saved_segment_id),
+          restaurant_id: restaurantId,
+        });
+        if (!segmentDoc) {
+          log.warn({ campaignId, savedSegmentId: campaign.saved_segment_id }, 'sendCampaign: saved segment not found');
+          await finalize(campaignId, 'failed', { error_message: 'Saved segment not found' });
+          return { ok: false, reason: 'segment_not_found' };
+        }
+        conditions = Array.isArray(segmentDoc.conditions) ? segmentDoc.conditions : [];
+      } else {
+        conditions = Array.isArray(campaign.segment_conditions) ? campaign.segment_conditions : [];
+      }
+
+      const { customerIds } = await segmentBuilder.buildRecipients(restaurantId, conditions);
+      if (!customerIds.length) {
+        recipients = [];
+      } else {
+        const customers = await col('customers').find(
+          { _id: { $in: customerIds } },
+          { projection: { _id: 1, wa_phone: 1, name: 1 } },
+        ).toArray();
+        // RFM profiles are best-effort — same treatment as the
+        // captain_acquired_90d branch above. A customer that ended up in
+        // the segment via captain attribution alone may not have a
+        // profile row yet; resolveVariables handles the empty profile
+        // gracefully.
+        const profMap = new Map();
+        if (customers.length) {
+          const profs = await col('customer_rfm_profiles').find({
+            restaurant_id: restaurantId,
+            customer_id: { $in: customers.map((c) => c._id) },
+          }).toArray();
+          for (const p of profs) profMap.set(p.customer_id, p);
+        }
+        recipients = customers
+          .filter((c) => c.wa_phone)
+          .map((c) => ({
+            customer: c,
+            profile: profMap.get(c._id) || { customer_id: c._id },
+          }));
+      }
     } else {
       const profileFilter = { restaurant_id: restaurantId };
       if (campaign.target_segment && campaign.target_segment !== 'all') {
@@ -268,6 +330,18 @@ async function sendCampaign(campaignId) {
       await finalize(campaignId, 'failed', { error_message: 'Insufficient wallet balance' });
       return { ok: false, reason: 'insufficient_balance', balance_rs: balanceRs, estimated_cost_rs: estimatedCostRs };
     }
+
+    // Markup load — single query per campaign send, snapshotted into
+    // markupMultiplier so a mid-campaign admin change to platform_settings
+    // doesn't half-apply across the recipient loop. Falls back to the
+    // pass-through default when the doc / field is missing.
+    const pricingSettings = await col('platform_settings').findOne(
+      { _id: 'wa_pricing' },
+      { projection: { markup_multiplier: 1 } },
+    );
+    const markupMultiplier = Number.isFinite(Number(pricingSettings?.markup_multiplier))
+      ? Number(pricingSettings.markup_multiplier)
+      : DEFAULT_MARKUP_MULTIPLIER;
 
     let sentCount = 0;
     let failedCount = 0;
@@ -384,12 +458,24 @@ async function sendCampaign(campaignId) {
           );
           sentCount++;
 
+          // Compute per-message billing values from the snapshotted
+          // markupMultiplier. perMessageCostRs is Meta's raw rate
+          // (locked at campaign creation from template.per_message_cost_rs);
+          // platformChargeRs is what the restaurant actually pays;
+          // platformMarginRs is the platform's cut. Rounded to 4
+          // decimals to match the existing actualCostRs precision.
+          const platformChargeRs = Number((perMessageCostRs * markupMultiplier).toFixed(4));
+          const platformMarginRs = Number((platformChargeRs - perMessageCostRs).toFixed(4));
+
           // Debit wallet per message. Description leads with the literal
           // 'meta_marketing_charge' so ledger queries can classify these.
+          // Multiplier is appended so a ledger row's description carries
+          // enough context to reverse-derive the raw Meta cost from the
+          // billed amount without joining marketing_messages.
           const debit = await wallet.debit(
             restaurantId,
-            perMessageCostRs,
-            `meta_marketing_charge: campaign ${campaignId}`,
+            platformChargeRs,
+            `meta_marketing_charge: campaign ${campaignId} (x${markupMultiplier})`,
             campaignId,
             { isOrderLifecycle: false },
           ).catch((err) => {
@@ -397,11 +483,43 @@ async function sendCampaign(campaignId) {
             return { charged: false, reason: 'debit_error' };
           });
           if (debit?.charged) {
-            actualCostRs = Number((actualCostRs + perMessageCostRs).toFixed(4));
+            // actual_cost_rs reflects what the restaurant was charged,
+            // not what Meta charged us — the audit trail the dashboard's
+            // wallet view + history list both surface. Per-row Meta /
+            // platform / margin breakdown lives on marketing_messages.
+            actualCostRs = Number((actualCostRs + platformChargeRs).toFixed(4));
             await col('marketing_campaigns').updateOne(
               { _id: campaignId },
-              { $inc: { actual_cost_rs: perMessageCostRs }, $set: { updated_at: new Date() } },
+              { $inc: { actual_cost_rs: platformChargeRs }, $set: { updated_at: new Date() } },
             );
+
+            // Record the per-message billing trail. Fire-and-forget —
+            // a marketing_messages write failure must not block the
+            // send loop or revert the wallet debit. The capturePricing
+            // webhook later reconciles cost / category against Meta's
+            // own pricing payload by message_id.
+            if (messageId) {
+              try {
+                const msgTracking = require('./messageTracking');
+                msgTracking.logMarketingMessage({
+                  wamId: messageId,
+                  restaurantId,
+                  branchId: null,
+                  customerId: customer._id ? String(customer._id) : null,
+                  customerPhone: customer.wa_phone || null,
+                  customerName: customer.name || null,
+                  wabaId: waAccount?.waba_id || null,
+                  messageType: 'template',
+                  category: 'marketing',
+                  metaCostRs: perMessageCostRs,
+                  platformChargeRs,
+                  platformMarginRs,
+                  markupMultiplierApplied: markupMultiplier,
+                }).catch((err) => log.warn({ err, campaignId, wamId: messageId }, 'logMarketingMessage failed'));
+              } catch (err) {
+                log.warn({ err, campaignId }, 'logMarketingMessage require failed');
+              }
+            }
           }
         } catch (err) {
           failedCount++;

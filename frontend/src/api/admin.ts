@@ -997,3 +997,31 @@ export async function updateOwnerPushPrefs(
   );
   return data;
 }
+
+// ── Platform: WhatsApp Marketing Pricing ────────────────────────────
+// Single platform-wide markup multiplier applied to Meta's raw send
+// rate. Backed by platform_settings._id = 'wa_pricing'. Default 1.0
+// (pass-through); admin tunes upward to add a per-message platform
+// margin. Read by services/marketingCampaigns.sendCampaign at debit
+// time and by routes/marketingCampaigns POST /create at estimate time.
+
+export interface PlatformPricing {
+  markup_multiplier: number;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+export async function getPlatformPricing(): Promise<PlatformPricing> {
+  const { data } = await client.get<PlatformPricing>('/api/admin/platform/pricing');
+  return data;
+}
+
+export async function updatePlatformPricing(
+  body: { markup_multiplier: number },
+): Promise<PlatformPricing> {
+  const { data } = await client.patch<PlatformPricing>(
+    '/api/admin/platform/pricing',
+    body,
+  );
+  return data;
+}

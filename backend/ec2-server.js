@@ -503,6 +503,17 @@ connect().then(() => {
     { upsert: true },
   ).catch(e => console.warn('[DB] delivery_radius seed:', e.message));
 
+  // Marketing-message markup multiplier. Pass-through default (1.0) on
+  // first boot — admin UI tunes upward to add a platform margin on top
+  // of Meta's raw send rate. Same idempotent $setOnInsert pattern as
+  // delivery_radius — an admin-tuned value (e.g. 1.2 = 20% markup) is
+  // preserved on every redeploy.
+  require('./src/config/database').col('platform_settings').updateOne(
+    { _id: 'wa_pricing' },
+    { $setOnInsert: { markup_multiplier: 1.0, created_at: new Date() } },
+    { upsert: true },
+  ).catch(e => console.warn('[DB] wa_pricing seed:', e.message));
+
   const { scheduleSettlement } = require('./src/jobs/settlement');
   scheduleSettlement();
 

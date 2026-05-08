@@ -12,10 +12,16 @@ import {
   cancelMarketingCampaign,
   getUpcomingFestivals,
   getCampaignSmartSendTime,
+  createSegment,
+  listSegments,
+  previewSegment,
+  previewConditions,
+  deleteSegment,
 } from '../../../api/restaurant';
 import AutoJourneysSection from '../../../components/restaurant/AutoJourneysSection';
 import CostConfirmCard from '../../../components/restaurant/marketing/CostConfirmCard';
-import type { MarketingCampaignEstimate } from '../../../api/restaurant';
+import ConditionBuilder from '../../../components/restaurant/marketing/ConditionBuilder';
+import type { MarketingCampaignEstimate, SegmentCondition, CustomerSegment } from '../../../api/restaurant';
 
 const FESTIVAL_EMOJI: Record<string, string> = {
   diwali: '🪔',
@@ -179,6 +185,11 @@ interface CampaignPayload {
   target_segment: string | null;
   variable_values: Record<string, string>;
   send_at?: string | undefined;
+  // Compound mode: inline filter conditions; backend's segmentBuilder
+  // resolves to a recipient set at /create estimate time and at send time.
+  segment_conditions?: SegmentCondition[];
+  // Saved mode: pointer into customer_segments by id.
+  saved_segment_id?: string;
 }
 
 interface StatusChipProps { status?: string }
@@ -408,6 +419,75 @@ function Wizard({
   const [confirming, setConfirming] = useState<boolean>(false);
   const [templateFilter] = useState<string | null>(prefill?.templateUseCase || null);
 
+  // Compound-segment state. Active when segment === 'compound'. The
+  // count is fetched via a debounced previewSegment-shaped POST so the
+  // operator sees an audience size update as they type without one
+  // request per keystroke.
+  const [compoundConditions, setCompoundConditions] = useState<SegmentCondition[]>([]);
+  const [savedSegmentId, setSavedSegmentId] = useState<string>('');
+  const [customerSegments, setCustomerSegments] = useState<CustomerSegment[]>([]);
+  const [customCount, setCustomCount] = useState<number | null>(null);
+  const [loadingCount, setLoadingCount] = useState<boolean>(false);
+
+  // Load saved segments on mount so the 'saved' picker has data ready
+  // the moment the operator switches modes. listSegments is paginated;
+  // page 1 (limit default 20) covers the common case — restaurants
+  // with more saved segments can refresh from the manage panel.
+  useEffect(() => {
+    listSegments(1)
+      .then((res) => setCustomerSegments(res.segments || []))
+      .catch(() => setCustomerSegments([]));
+  }, []);
+
+  // Debounced preview call for compound + saved modes. 200ms debounce
+  // means a 5-character typing burst on a number condition fires ONE
+  // count request, not 5. Cleanup cancels the pending timer when the
+  // dependency array changes mid-debounce so a fast switch from
+  // compound→saved doesn't fire a stale compound preview.
+  useEffect(() => {
+    if (segment !== 'compound' && segment !== 'saved') {
+      // Reset stale count when switching away.
+      setCustomCount(null);
+      setLoadingCount(false);
+      return;
+    }
+    // Compound with empty conditions: nothing to preview yet.
+    if (segment === 'compound' && compoundConditions.length === 0) {
+      setCustomCount(null);
+      setLoadingCount(false);
+      return;
+    }
+    // Saved with no selection: nothing to preview yet.
+    if (segment === 'saved' && !savedSegmentId) {
+      setCustomCount(null);
+      setLoadingCount(false);
+      return;
+    }
+
+    setLoadingCount(true);
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        if (segment === 'saved') {
+          const res = await previewSegment(savedSegmentId);
+          if (!cancelled) setCustomCount(res.count);
+        } else {
+          // Compound mode — ad-hoc preview against the unsaved
+          // conditions array. The backend route validates conditions
+          // upfront, so a malformed builder state shows count: null
+          // (caught below) instead of crashing the wizard.
+          const res = await previewConditions(compoundConditions);
+          if (!cancelled) setCustomCount(res.count);
+        }
+      } catch {
+        if (!cancelled) setCustomCount(0);
+      } finally {
+        if (!cancelled) setLoadingCount(false);
+      }
+    }, 200);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [segment, compoundConditions, savedSegmentId]);
+
   const template = useMemo<CampaignTemplate | null>(
     () => templates.find((t) => t.template_id === templateId) || null,
     [templates, templateId],
@@ -415,10 +495,16 @@ function Wizard({
 
   const recipientCount = useMemo<number>(() => {
     if (!segment) return 0;
+    // Compound + saved both pull their count from the debounced
+    // preview effect above — fall through to customCount when set,
+    // 0 when still loading or no count available yet.
+    if (segment === 'compound' || segment === 'saved') {
+      return Number(customCount || 0);
+    }
     if (segment === 'all') return segments.reduce((sum, s) => sum + (s.count || 0), 0);
     const match = segments.find((s) => s.label === segment);
     return match?.count || 0;
-  }, [segment, segments]);
+  }, [segment, segments, customCount]);
 
   const perMsg = Number(template?.per_message_cost_rs || 0);
   const estimatedCost = Number((recipientCount * perMsg).toFixed(2));
@@ -462,6 +548,13 @@ function Wizard({
     target_segment: segment,
     variable_values: vars,
     send_at: payloadSendAt,
+    // Only set the audience-definition field that matches the active
+    // segment mode. The backend's POST /create gates 'compound' on a
+    // valid conditions array and 'saved' on saved_segment_id existing
+    // for this restaurant — sending the wrong one for the active mode
+    // would 400.
+    ...(segment === 'compound' ? { segment_conditions: compoundConditions } : {}),
+    ...(segment === 'saved' && savedSegmentId ? { saved_segment_id: savedSegmentId } : {}),
   };
 
   const visibleTemplates = templateFilter
@@ -503,6 +596,14 @@ function Wizard({
             segments={segments}
             segment={segment}
             onPick={setSegment}
+            compoundConditions={compoundConditions}
+            onCompoundChange={setCompoundConditions}
+            savedSegmentId={savedSegmentId}
+            onSavedSegmentChange={setSavedSegmentId}
+            customerSegments={customerSegments}
+            onCustomerSegmentsChange={setCustomerSegments}
+            customCount={customCount}
+            loadingCount={loadingCount}
           />
         )}
         {step === 2 && (
@@ -595,17 +696,50 @@ interface Step1AudienceProps {
   segments: SegmentRow[];
   segment: string | null;
   onPick: (label: string) => void;
+  compoundConditions: SegmentCondition[];
+  onCompoundChange: (c: SegmentCondition[]) => void;
+  savedSegmentId: string;
+  onSavedSegmentChange: (id: string) => void;
+  customerSegments: CustomerSegment[];
+  onCustomerSegmentsChange: (segs: CustomerSegment[]) => void;
+  customCount: number | null;
+  loadingCount: boolean;
 }
 
-function Step1Audience({ segments, segment, onPick }: Step1AudienceProps) {
+function Step1Audience({
+  segments, segment, onPick,
+  compoundConditions, onCompoundChange,
+  savedSegmentId, onSavedSegmentChange,
+  customerSegments, onCustomerSegmentsChange,
+  customCount, loadingCount,
+}: Step1AudienceProps) {
   const allCount = segments.reduce((sum, s) => sum + (s.count || 0), 0);
   const ordered = [...segments].sort(
     (a, b) => SEGMENT_ORDER.indexOf(a.label) - SEGMENT_ORDER.indexOf(b.label),
   );
 
+  const [managingPresets, setManagingPresets] = useState<boolean>(false);
+
   return (
     <div>
-      <h3 className="text-[0.95rem] mt-0 mb-[0.6rem] mx-0">Who should receive this?</h3>
+      <div className="flex items-center justify-between mb-[0.6rem] flex-wrap gap-2">
+        <h3 className="text-[0.95rem] mt-0 mb-0 mx-0">Who should receive this?</h3>
+        <button
+          type="button"
+          className="btn-g btn-xs"
+          onClick={() => setManagingPresets((v) => !v)}
+        >
+          {managingPresets ? 'Done' : 'Manage Presets'}
+        </button>
+      </div>
+
+      {managingPresets && (
+        <ManagePresetsPanel
+          customerSegments={customerSegments}
+          onCustomerSegmentsChange={onCustomerSegmentsChange}
+        />
+      )}
+
       <div className="grid gap-[0.6rem] grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
         <SegmentCard
           active={segment === 'all'}
@@ -623,6 +757,238 @@ function Step1Audience({ segments, segment, onPick }: Step1AudienceProps) {
             count={s.count}
             copy={SEGMENT_COPY[s.label] || ''}
           />
+        ))}
+        <SegmentCard
+          active={segment === 'compound'}
+          onClick={() => onPick('compound')}
+          label="Build custom audience"
+          // Count comes from the debounced live preview — only show
+          // a value when the operator has already committed to compound
+          // mode AND a count has resolved.
+          count={segment === 'compound' && typeof customCount === 'number' ? customCount : undefined}
+          copy="Combine RFM, spend, and order-history filters to reach exactly the cohort you want."
+        />
+        <SegmentCard
+          active={segment === 'saved'}
+          onClick={() => onPick('saved')}
+          label="Use saved preset"
+          count={segment === 'saved' && typeof customCount === 'number' ? customCount : undefined}
+          copy={`Reuse a previously-saved compound segment (${customerSegments.length} available).`}
+        />
+      </div>
+
+      {segment === 'compound' && (
+        <div className="mt-4 p-4 border border-rim rounded-md bg-white">
+          <div className="text-[0.84rem] font-semibold text-tx mb-2">
+            Build custom audience
+          </div>
+          <ConditionBuilder
+            conditions={compoundConditions}
+            onChange={onCompoundChange}
+            estimatedCount={customCount}
+            loadingCount={loadingCount}
+          />
+          <SaveAsPresetCollapsible
+            conditions={compoundConditions}
+            onSaved={(newSeg) => onCustomerSegmentsChange([newSeg, ...customerSegments])}
+          />
+        </div>
+      )}
+
+      {segment === 'saved' && (
+        <div className="mt-4 p-4 border border-rim rounded-md bg-white">
+          <div className="text-[0.84rem] font-semibold text-tx mb-2">
+            Pick a saved preset
+          </div>
+          {customerSegments.length === 0 ? (
+            <div className="text-[0.82rem] text-dim">
+              No presets saved yet. Switch to <strong>Build custom audience</strong> and use the &ldquo;Save as preset&rdquo; option.
+            </div>
+          ) : (
+            <select
+              value={savedSegmentId}
+              onChange={(e) => onSavedSegmentChange(e.target.value)}
+              className="w-full py-2 px-3 border border-rim rounded-md bg-white text-tx text-[0.85rem]"
+            >
+              <option value="">— Select a preset —</option>
+              {customerSegments.map((s) => (
+                <option key={s._id} value={s._id}>
+                  {s.name} ({s.conditions.length} condition{s.conditions.length === 1 ? '' : 's'})
+                </option>
+              ))}
+            </select>
+          )}
+          {savedSegmentId && (
+            <div className="mt-3 text-[0.82rem]">
+              {loadingCount
+                ? <span className="text-dim">Calculating audience…</span>
+                : customCount === null
+                  ? <span className="text-dim">Audience estimate unavailable.</span>
+                  : (
+                    <span className={customCount > 0 ? 'text-[#065f46] font-semibold' : 'text-[#92400e] font-semibold'}>
+                      ~{customCount.toLocaleString('en-IN')} customer{customCount === 1 ? '' : 's'} match
+                    </span>
+                  )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Save-as-preset collapsible — expands a single text input + Save
+// button under the ConditionBuilder. Disabled when there are no
+// conditions to save (saving an empty segment would be useless and
+// the backend's validateConditions would reject empty arrays anyway
+// only via the ad-hoc preview path; the persisted shape is allowed
+// since it's the operator's choice).
+interface SaveAsPresetCollapsibleProps {
+  conditions: SegmentCondition[];
+  onSaved: (seg: CustomerSegment) => void;
+}
+
+function SaveAsPresetCollapsible({ conditions, onSaved }: SaveAsPresetCollapsibleProps) {
+  const { showToast } = useToast();
+  const [open, setOpen] = useState<boolean>(false);
+  const [name, setName] = useState<string>('');
+  const [saving, setSaving] = useState<boolean>(false);
+
+  const onSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      showToast('Preset name is required', 'error');
+      return;
+    }
+    if (conditions.length === 0) {
+      showToast('Add at least one condition before saving', 'error');
+      return;
+    }
+    setSaving(true);
+    try {
+      const seg = await createSegment({ name: trimmed, conditions });
+      showToast(`Preset "${trimmed}" saved`, 'success');
+      onSaved(seg);
+      setName('');
+      setOpen(false);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Save failed', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <div className="mt-3">
+        <button
+          type="button"
+          className="btn-g btn-xs"
+          onClick={() => setOpen(true)}
+        >
+          Save as preset…
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 flex gap-2 items-center flex-wrap">
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Preset name (e.g., High-spenders)"
+        className="flex-1 min-w-[180px] py-2 px-3 border border-rim rounded-md bg-white text-tx text-[0.85rem]"
+      />
+      <button
+        type="button"
+        className="btn-p btn-sm"
+        onClick={onSave}
+        disabled={saving || !name.trim() || conditions.length === 0}
+      >
+        {saving ? 'Saving…' : 'Save'}
+      </button>
+      <button
+        type="button"
+        className="btn-g btn-sm"
+        onClick={() => { setOpen(false); setName(''); }}
+        disabled={saving}
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+// Inline saved-presets management. Lists every saved segment with a
+// delete button per row. Delete refuses (409) if any campaign
+// references the preset; the toast surfaces the exact error message.
+interface ManagePresetsPanelProps {
+  customerSegments: CustomerSegment[];
+  onCustomerSegmentsChange: (segs: CustomerSegment[]) => void;
+}
+
+function ManagePresetsPanel({ customerSegments, onCustomerSegmentsChange }: ManagePresetsPanelProps) {
+  const { showToast } = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const onDelete = async (id: string) => {
+    setBusy(id);
+    try {
+      await deleteSegment(id);
+      showToast('Preset deleted', 'success');
+      onCustomerSegmentsChange(customerSegments.filter((s) => s._id !== id));
+    } catch (err: unknown) {
+      const e = err as {
+        response?: { data?: { error?: string; campaign_count?: number } };
+        message?: string;
+      };
+      const errKey = e?.response?.data?.error;
+      if (errKey === 'segment_in_use') {
+        const count = e?.response?.data?.campaign_count ?? 0;
+        showToast(`Preset is used by ${count} campaign${count === 1 ? '' : 's'} — cannot delete`, 'error');
+      } else {
+        showToast(errKey || e?.message || 'Delete failed', 'error');
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (customerSegments.length === 0) {
+    return (
+      <div className="mb-3 p-3 border border-rim rounded-md bg-ink2 text-[0.82rem] text-dim">
+        No saved presets yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-3 p-3 border border-rim rounded-md bg-ink2">
+      <div className="text-[0.82rem] font-semibold text-tx mb-2">Saved presets</div>
+      <div className="flex flex-col gap-2">
+        {customerSegments.map((s) => (
+          <div
+            key={s._id}
+            className="flex items-center justify-between gap-2 py-2 px-3 border border-rim rounded-sm bg-white"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="text-[0.85rem] font-medium text-tx truncate">{s.name}</div>
+              <div className="text-[0.72rem] text-dim">
+                {s.conditions.length} condition{s.conditions.length === 1 ? '' : 's'}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-del btn-sm"
+              onClick={() => onDelete(s._id)}
+              disabled={busy === s._id}
+            >
+              {busy === s._id ? '…' : 'Delete'}
+            </button>
+          </div>
         ))}
       </div>
     </div>

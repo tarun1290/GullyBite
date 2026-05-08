@@ -60,6 +60,12 @@ export default function CostConfirmCard({ campaignId, estimate, onConfirm, onCan
           <Stat label="Wallet balance" value={fmtRs(estimate.wallet_balance_rs)} />
         </div>
 
+        {estimate.markup_multiplier !== undefined && estimate.markup_multiplier > 1.0 && (
+          <div className="text-[0.78rem] text-dim -mt-2">
+            Includes platform fee ({estimate.markup_multiplier}×)
+          </div>
+        )}
+
         {!estimate.wallet_sufficient && (
           <div className="flex items-start gap-2 py-2 px-3 bg-amber-50 border border-amber-300 rounded-lg text-[0.82rem] text-amber-900">
             <span className="text-[1rem] leading-none mt-[2px]">⚠️</span>

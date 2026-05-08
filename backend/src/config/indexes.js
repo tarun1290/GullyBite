@@ -138,6 +138,24 @@ const INDEXES = [
   { collection: 'marketing_blocklist', index: { restaurant_id: 1, customer_id: 1 }, options: { unique: true } },
   { collection: 'marketing_blocklist', index: { wa_phone: 1, restaurant_id: 1 } },
 
+  // ─── customer_rfm_profiles — compound segmentation indexes ─────
+  // The schema already declares (restaurant_id, customer_id) unique +
+  // (restaurant_id, rfm_label) + (restaurant_id, days_since_last_order).
+  // The three indexes below cover the additional fields the segment
+  // builder filters on (services/segmentBuilder.js) — without them,
+  // compound queries like "order_count > 5 AND total_spend_rs > 1000"
+  // do collection scans within a tenant.
+  { collection: 'customer_rfm_profiles', index: { restaurant_id: 1, total_spend_rs: -1 } },
+  { collection: 'customer_rfm_profiles', index: { restaurant_id: 1, order_count: -1 } },
+  { collection: 'customer_rfm_profiles', index: { restaurant_id: 1, first_order_at: 1 } },
+
+  // ─── customer_segments (saved compound segments) ───────────────
+  // Unique (restaurant_id, name) prevents duplicate segment names per
+  // restaurant; the dashboard's save dialog upserts on this composite.
+  // The list lookup is per-restaurant newest-first.
+  { collection: 'customer_segments', index: { restaurant_id: 1, name: 1 }, options: { unique: true } },
+  { collection: 'customer_segments', index: { restaurant_id: 1, created_at: -1 } },
+
   // ─── feedback_events sweep (cron /feedback-routing) ──────────
   // Two-pronged sweep — positive branch (review link not sent yet)
   // and negative branch (escalation not stamped yet). Both filter

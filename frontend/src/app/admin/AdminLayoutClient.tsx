@@ -41,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Logistics',     icon: '🚚', path: '/admin/logistics' },
   { label: 'Festivals',     icon: '🎉', path: '/admin/festivals' },
   { label: 'Platform Marketing', icon: '📈', path: '/admin/platform-marketing' },
+  { label: 'Platform Settings',  icon: '⚙️',  path: '/admin/settings' },
 ];
 
 const TITLE_BY_PATH: Record<string, string> = Object.fromEntries(

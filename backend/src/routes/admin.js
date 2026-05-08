@@ -210,6 +210,79 @@ router.patch('/owner-notifications', requireAdmin, express.json(), async (req, r
   } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
 });
 
+// ─── WHATSAPP MARKETING PRICING (platform-level) ─────────────
+// Single-doc collection at platform_settings._id = 'wa_pricing'.
+// Seeded at boot from ec2-server.js with markup_multiplier: 1.0
+// (pass-through). PATCH allows admin to add a platform margin on top
+// of Meta's raw send rate; the value is read once per campaign send
+// in services/marketingCampaigns.sendCampaign and once per cost
+// estimate in routes/marketingCampaigns POST /create — so a change
+// here takes effect on the next campaign create + send, retroactive
+// only for in-flight sends that haven't reached the recipient loop.
+const PRICING_MIN = 1.0;
+const PRICING_MAX = 3.0;
+
+router.get('/platform/pricing', requireAdmin, async (req, res) => {
+  try {
+    const doc = await col('platform_settings').findOne({ _id: 'wa_pricing' });
+    res.json({
+      // Fall back to 1.0 when the doc is missing — same default the
+      // sendCampaign path uses, so the UI shows a consistent value
+      // even before the boot-time seed runs.
+      markup_multiplier: Number.isFinite(Number(doc?.markup_multiplier))
+        ? Number(doc.markup_multiplier)
+        : 1.0,
+      updated_at: doc?.updated_at || null,
+      updated_by: doc?.updated_by || null,
+    });
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
+router.patch('/platform/pricing', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const raw = req.body?.markup_multiplier;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) {
+      return res.status(400).json({ error: 'markup_multiplier must be a number' });
+    }
+    // Min = 1.0 because the platform must charge at least Meta's rate.
+    // Max = 3.0 as a sanity ceiling — caps the blast-radius of a
+    // typo'd 30 vs 3 input. Operators with legitimate need above 3x
+    // can raise this in code review; cheaper than a runaway debit.
+    if (n < PRICING_MIN || n > PRICING_MAX) {
+      return res.status(400).json({
+        error: `markup_multiplier must be between ${PRICING_MIN} and ${PRICING_MAX}`,
+      });
+    }
+
+    const now = new Date();
+    const updatedBy = req.adminUser?.email || req.adminUser?.name || 'admin';
+    await col('platform_settings').updateOne(
+      { _id: 'wa_pricing' },
+      {
+        $set: { markup_multiplier: n, updated_at: now, updated_by: updatedBy },
+        $setOnInsert: { _id: 'wa_pricing', created_at: now },
+      },
+      { upsert: true },
+    );
+
+    logActivity({
+      actorType: 'admin',
+      actorId: String(req.adminUser?._id),
+      actorName: req.adminUser?.name || req.adminUser?.email,
+      action: 'admin.wa_pricing_updated',
+      category: 'platform',
+      description: `WhatsApp marketing markup multiplier set to ${n}x`,
+      resourceType: 'platform_settings',
+      resourceId: 'wa_pricing',
+      severity: 'info',
+      metadata: { markup_multiplier: n },
+    });
+
+    res.json({ markup_multiplier: n, updated_at: now, updated_by: updatedBy });
+  } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
 // ─── ADMIN USER MANAGEMENT (super_admin only) ────────────────
 router.get('/users', requireAdminAuth('admin_users', 'manage'), async (req, res) => {
   try {

@@ -1300,7 +1300,26 @@ const marketing_campaigns = {
       default: 'draft',
     },
     // Audience.
+    // target_segment values:
+    //   • 'all'                  — every customer with an RFM profile
+    //   • 'journey_trigger'      — auto-journey single-customer dispatch
+    //   • 'captain_acquired_90d' — GBREF-acquired in last 90 days
+    //   • 'compound'             — operator-built ad-hoc filter
+    //                              (conditions live on segment_conditions
+    //                              below; resolved by services/segmentBuilder)
+    //   • 'saved'                — references a customer_segments row
+    //                              by saved_segment_id (also resolved
+    //                              via segmentBuilder)
+    //   • <rfm_label>            — single-segment RFM filter (Champion,
+    //                              Loyal, At Risk, etc.)
     target_segment: { type: 'string', required: true },
+    // Inline conditions when target_segment === 'compound'. Array of
+    // { field, op, value } objects validated by
+    // services/segmentBuilder.validateConditions before insert.
+    segment_conditions: { type: 'array', default: [] },
+    // Pointer into customer_segments when target_segment === 'saved'.
+    // Null for every other target_segment.
+    saved_segment_id:   { type: 'uuid' },
     target_count:   { type: 'number', default: 0 },
     actual_sent_count: { type: 'number', default: 0 },
     // Schedule.
@@ -1416,6 +1435,101 @@ const marketing_blocklist = {
     // the way the WA webhook sees an inbound message: the phone is
     // known, the restaurant_id is derived from the conversation.
     { key: { wa_phone: 1, restaurant_id: 1 } },
+  ],
+};
+
+// Marketing-message ledger — one row per chargeable WhatsApp marketing
+// send. Distinct from message_statuses (every outgoing WA message,
+// transactional + marketing) and from campaign_message_map (campaign-
+// attribution lookup keyed on Meta's message_id). This collection is
+// the canonical billing-side trail used by:
+//   • settlement.service.js to sum platform_charge_rs for payouts
+//   • routes/marketingMessages.js + admin breakdown views
+//   • routes/admin.js settlements meta-breakdown
+//
+// Billing fields (added with the markup-billing rollout):
+//   meta_cost_rs           — Meta's raw rate in ₹
+//   platform_charge_rs     — what the restaurant was actually billed
+//                            (= meta_cost_rs × markup_multiplier_applied)
+//   platform_margin_rs     — platform_charge_rs − meta_cost_rs
+//   markup_multiplier_applied — snapshot of the multiplier at send time
+//                                so a future markup change doesn't
+//                                rewrite historical billing
+// All four are nullable on legacy rows that pre-date the billing
+// rollout. New rows from services/marketingCampaigns.sendCampaign
+// stamp them at write time.
+const marketing_messages = {
+  collection: 'marketing_messages',
+  description: 'Per-message marketing ledger — billing + delivery audit trail.',
+  fields: {
+    _id:           { type: 'uuid', required: true },
+    restaurant_id: { type: 'uuid', required: true },
+    branch_id:     { type: 'uuid' },
+    waba_id:       { type: 'string' },
+    customer_id:   { type: 'uuid', required: true },
+    phone_hash:    { type: 'string' },
+    customer_name: { type: 'string' },
+    message_id:    { type: 'string' },
+    message_type:  { type: 'string' },
+    category:      { type: 'string' },
+    // Meta's raw rate at send time. `cost` is the legacy field name
+    // (also present); meta_cost_rs is the explicit alias the billing
+    // rollout standardises on.
+    cost:                       { type: 'number' },
+    meta_cost_rs:               { type: 'number' },
+    platform_charge_rs:         { type: 'number' },
+    platform_margin_rs:         { type: 'number' },
+    markup_multiplier_applied:  { type: 'number' },
+    currency:      { type: 'string', default: 'INR' },
+    status:        { type: 'string', default: 'sent' },
+    sent_at:       { type: 'date', required: true },
+    delivered_at:  { type: 'date' },
+    raw_meta_payload: { type: 'object' },
+    // Settlement linkage — flipped to true when the row is rolled into
+    // a settlement row (see settlement.service.js). Pre-settlement rows
+    // carry settled:false + settlement_id:null.
+    settled:       { type: 'boolean', default: false },
+    settlement_id: { type: 'uuid' },
+    created_at:    { type: 'date' },
+    updated_at:    { type: 'date' },
+  },
+  // Indexes for this collection are declared in config/indexes.js
+  // (lines 148-162 at time of writing); kept there because they're
+  // operationally tuned alongside the rest of the messaging indexes
+  // and ensureIndexes() only honors that file.
+  indexes: [],
+};
+
+// Saved compound segments — operator-defined combinations of conditions
+// over customer_rfm_profiles + (optionally) captain-acquired status. The
+// recipient resolution lives in services/segmentBuilder.js; this schema
+// is just the persistence shape. Conditions are AND-only (every condition
+// must match). Each condition: { field, op, value } where field is one
+// of segmentBuilder's SUPPORTED_FIELDS, op is one of SUPPORTED_OPS, and
+// value's required type depends on the field — flexible 'object' typing
+// here, validated by services/segmentBuilder.validateConditions before
+// any write.
+const customer_segments = {
+  collection: 'customer_segments',
+  description: 'Per-restaurant saved segments — array of {field, op, value} conditions.',
+  fields: {
+    _id:           { type: 'uuid', required: true },
+    restaurant_id: { type: 'uuid', required: true },
+    name:          { type: 'string', required: true },
+    // Array of { field, op, value } objects. Stored as-is; validation
+    // happens at the service layer (segmentBuilder.validateConditions).
+    conditions:    { type: 'array', required: true, default: [] },
+    created_at:    { type: 'date', required: true },
+    created_by:    { type: 'string' },
+    updated_at:    { type: 'date' },
+  },
+  indexes: [
+    // One segment-name per restaurant. Lets the dashboard's "Save segment"
+    // dialog upsert on (restaurant_id, name) without race-creating
+    // duplicates.
+    { key: { restaurant_id: 1, name: 1 }, options: { unique: true } },
+    // Newest-first listing for the dashboard's segment picker.
+    { key: { restaurant_id: 1, created_at: -1 } },
   ],
 };
 
@@ -1725,7 +1839,7 @@ const ALL_SCHEMAS = {
   whatsapp_accounts, referrals, menu_uploads, sync_logs, sync_summary, alerts,
   brands, messages, catalog, catalog_sync_schedule, coupons, coupon_redemptions, checkout_refs,
   wallet_transactions, customer_rfm_profiles, job_logs, campaign_templates,
-  marketing_campaigns, campaign_message_map, marketing_blocklist,
+  marketing_campaigns, campaign_message_map, marketing_blocklist, customer_segments, marketing_messages,
   auto_journey_config, journey_send_log,
   loyalty_config, loyalty_points, loyalty_transactions, pending_loyalty_redemptions,
   feedback_events, restaurant_notifications,

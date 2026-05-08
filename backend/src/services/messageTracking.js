@@ -116,12 +116,28 @@ async function trackOutgoing({
 // ─── MARKETING MESSAGE LEDGER INSERT ────────────────────────
 // Separate collection for chargeable marketing sends. Phone numbers stored
 // hashed only — never raw. Best-effort enrichment from customers / wa_accounts.
+//
+// Billing fields (added with the markup-billing rollout):
+//   metaCostRs                  — Meta's raw rate at send time
+//   platformChargeRs            — what the restaurant was billed
+//                                 (= metaCostRs × markupMultiplierApplied)
+//   platformMarginRs            — platformChargeRs − metaCostRs
+//   markupMultiplierApplied     — snapshot for historical audit
+// All four default to null so existing callers (the trackOutgoing →
+// _logMarketingMessage chain from webhooks) continue working without
+// passing billing data. The campaign-send path stamps them at write
+// time; the rest of the codebase carries no billing context yet and
+// gets nulls until status webhooks reconcile via capturePricing.
 async function _logMarketingMessage({
   wamId, restaurantId, branchId, customerId, category, context,
-  cost, to, customerName, wabaId, messageType, rawMetaPayload,
+  cost, to, customerPhone, customerName, wabaId, messageType, rawMetaPayload,
+  metaCostRs = null, platformChargeRs = null,
+  platformMarginRs = null, markupMultiplierApplied = null,
 }) {
   // If we don't have phone/name/waba, enrich from existing docs.
-  let phone = to;
+  // customerPhone is the new param name (clearer); `to` stays as the
+  // legacy alias so existing trackOutgoing calls keep working.
+  let phone = customerPhone || to;
   let name = customerName;
   if ((!phone || !name) && customerId) {
     const customer = await col('customers').findOne(
@@ -144,6 +160,11 @@ async function _logMarketingMessage({
   const resolvedType = messageType
     || (context && /template|campaign|promotion/i.test(context) ? 'template' : 'freeform');
 
+  // Cost source: explicit metaCostRs wins (campaign send-time path),
+  // else fall back to the legacy `cost` arg (webhook / trackOutgoing
+  // path which derives it from MESSAGING_RATES).
+  const resolvedMetaCost = metaCostRs != null ? Number(metaCostRs) : (Number(cost) || 0);
+
   const now = new Date();
   await col('marketing_messages').insertOne({
     _id: newId(),
@@ -156,15 +177,37 @@ async function _logMarketingMessage({
     message_id: wamId,
     message_type: resolvedType,
     category: category || 'unknown',
-    cost: cost || 0,
+    // Legacy field — kept in sync with meta_cost_rs for back-compat
+    // with existing readers (settlement-export.js, admin/financials).
+    cost: resolvedMetaCost,
+    meta_cost_rs:               resolvedMetaCost,
+    platform_charge_rs:         platformChargeRs,
+    platform_margin_rs:         platformMarginRs,
+    markup_multiplier_applied:  markupMultiplierApplied,
     currency: 'INR',
     status: 'sent',
     sent_at: now,
     delivered_at: null,
     raw_meta_payload: rawMetaPayload || null,
+    settled: false,
+    settlement_id: null,
     created_at: now,
     updated_at: now,
   });
+}
+
+// Public writer for the marketing-messages ledger. Used by
+// services/marketingCampaigns.sendCampaign at send time, AFTER the
+// wallet debit has succeeded — distinct from the trackOutgoing →
+// _logMarketingMessage path which ALSO fires wallet.debit and would
+// double-charge the restaurant if reused here.
+//
+// The trackOutgoing path is for free-form / order-lifecycle messages
+// where the message tracker owns billing. The campaign path debits
+// the wallet itself (with markup applied) and just hands the billing
+// snapshot to this writer for the audit trail.
+async function logMarketingMessage(params) {
+  return _logMarketingMessage(params);
 }
 
 // ─── UPDATE STATUS FROM WEBHOOK ─────────────────────────────
@@ -436,6 +479,11 @@ module.exports = {
   categorizeMessage,
   estimateCost,
   trackOutgoing,
+  // Public writer for the campaign-send path. trackOutgoing also writes
+  // marketing_messages but ONLY as a side-effect after running its own
+  // wallet.debit — exposing this directly avoids the double-charge
+  // when the caller has already billed the wallet.
+  logMarketingMessage,
   updateStatus,
   updateMarketingCost,
   capturePricingFromWebhook,
