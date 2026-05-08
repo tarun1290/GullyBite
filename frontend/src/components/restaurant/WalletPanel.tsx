@@ -147,7 +147,7 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
           <div className="text-[2rem] font-extrabold text-[#064e3b] mt-1">
             {loading ? '…' : rupees(bal)}
           </div>
-          <div className="flex gap-5 mt-3 text-[0.78rem] text-[#065f46] flex-wrap">
+          <div className="flex gap-5 mt-4 text-[0.78rem] text-[#065f46] flex-wrap">
             <div>
               <div className="font-semibold">Earned this month</div>
               <div>{rupees(wallet?.current_month_earnings_rs as number | undefined)}</div>

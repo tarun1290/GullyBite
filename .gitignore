@@ -94,3 +94,6 @@ staff-app/*.keystore
 staff-app/**/*.keystore
 .DS_Store
 backend/AUDIT_DEAD_CODE.md
+GULLYBITE_INTERNGUIDE_PART1.md
+GULLYBITE_INTERNGUIDE_PART2.md
+GULLYBITE_INTERNGUIDE_PART3.md

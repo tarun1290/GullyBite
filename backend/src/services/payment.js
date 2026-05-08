@@ -120,7 +120,7 @@ const createRazorpayOrder = async (order, customer) => {
 //
 // Throws on Razorpay API errors so the caller can decide whether to
 // degrade gracefully (continue without rp_order_id) or fail the flow.
-const createRazorpayOrderRaw = async ({ amountRs, currency = 'INR', receipt, notes = {} } = {}) => {
+const createRazorpayOrderRaw = async ({ amountRs, currency = 'INR', receipt, notes = {}, close_by } = {}) => {
   if (!amountRs || amountRs <= 0) throw new Error('createRazorpayOrderRaw: amountRs must be > 0');
   // 20-minute payment window — matches createRazorpayOrder above and the
   // order doc's expires_at. Razorpay rejects late payment attempts at
@@ -134,6 +134,12 @@ const createRazorpayOrderRaw = async ({ amountRs, currency = 'INR', receipt, not
     // a caller hands us something longer.
     ...(receipt ? { receipt: String(receipt).slice(0, 40) } : {}),
     expire_by: expireByUnix,
+    // Optional close_by — when supplied (Unix seconds), Razorpay closes
+    // the order at that instant and rejects further payment attempts at
+    // the gateway. Caller passes the order doc's expires_at so the
+    // payment sheet shows "expired" instead of capturing then needing
+    // a refund. Pass-through; no conversion here.
+    ...(close_by ? { close_by } : {}),
     notes: notes || {},
   });
   return rzpOrder; // { id: 'order_…', amount, currency, status, ... }

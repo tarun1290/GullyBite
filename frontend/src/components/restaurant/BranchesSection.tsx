@@ -466,7 +466,7 @@ export default function BranchesSection() {
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-[0.7rem]">
+        <div className="flex flex-col gap-3">
           {sortedBranches.map((b) => {
             const isDeleted = !!b.deleted_at;
             const isExpanded = !isDeleted && expandedId === b.id;
@@ -482,7 +482,7 @@ export default function BranchesSection() {
                   </span>
                 )}
                 <div
-                  className={`bcard-hd flex items-start gap-[0.7rem] py-3 px-[0.95rem] ${isDeleted ? 'cursor-default' : 'cursor-pointer'} ${isExpanded ? 'bg-ink2' : 'bg-transparent'}`}
+                  className={`bcard-hd flex items-start gap-[0.7rem] p-4 ${isDeleted ? 'cursor-default' : 'cursor-pointer'} ${isExpanded ? 'bg-ink2' : 'bg-transparent'}`}
                   onClick={isDeleted ? undefined : () => setExpandedId(isExpanded ? null : b.id)}
                 >
                   <div className="flex-1 min-w-0">
@@ -494,7 +494,7 @@ export default function BranchesSection() {
                         copiedBranchId state, then reverts after 1.5s.
                         e.stopPropagation() on the click so the surrounding
                         row's setExpandedId toggle doesn't fire. */}
-                    <div className="flex items-center gap-[0.4rem] mt-[0.15rem] text-[0.72rem] text-dim">
+                    <div className="flex items-center gap-[0.4rem] mt-1 text-[0.72rem] text-dim">
                       <span>Branch ID:</span>
                       <span className="font-mono text-dim text-[0.72rem] break-all">
                         #{b.id}
@@ -519,11 +519,11 @@ export default function BranchesSection() {
                         {copiedBranchId === b.id ? 'Copied!' : 'Copy'}
                       </button>
                     </div>
-                    <div className="bcard-addr text-[0.8rem] text-dim mt-[0.15rem]">
+                    <div className="bcard-addr text-[0.8rem] text-dim mt-1">
                       {b.address || b.city || '—'}
                     </div>
                   </div>
-                  <div className="bcard-badges flex gap-1 flex-wrap justify-end items-center">
+                  <div className="bcard-badges flex gap-2 flex-wrap justify-end items-center ml-auto">
                     {b.subscription_status === 'paused' && (
                       <>
                         <span

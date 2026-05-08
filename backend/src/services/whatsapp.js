@@ -279,7 +279,7 @@ const sendPaymentRequest = (pid, token, to, { order, items, customerName, restau
     interactive: {
       type: 'order_details',
       header: { type: 'text', text: ('Your Order from ' + (restaurantName || order.business_name || order.branch_name || 'Restaurant')).substring(0, 60) },
-      body: { text: 'Hi ' + (customerName || 'there') + '! Review your order and pay securely.' + addressText },
+      body: { text: 'Hi ' + (customerName || 'there') + '! Review your order and pay securely.' + addressText + (order.expires_at ? '\n⏱ ' + expirationDescription : '') },
       footer: { text: 'Powered by GullyBite' },
       action: {
         name: 'review_and_pay',

@@ -94,7 +94,7 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
 
   return (
     <SlideOverDrawer open={open} onClose={onClose} title="Messages from GullyBite">
-      <div className="flex-1 min-h-0 overflow-y-auto py-[0.8rem] px-4 flex flex-col gap-2">
+      <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-2">
         {loading && messages.length === 0 ? (
           <p className="text-dim text-[0.85rem]">Loading…</p>
         ) : messages.length === 0 ? (
@@ -125,7 +125,7 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
           })
         )}
       </div>
-      <div className="border-t border-rim py-[0.6rem] px-3 flex gap-[0.4rem]">
+      <div className="mt-auto border-t border-rim pt-3 pb-3 px-3 flex gap-[0.4rem]">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}

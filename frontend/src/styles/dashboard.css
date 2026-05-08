@@ -92,6 +92,13 @@ body { font-family: var(--font-body); background: var(--ink); color: var(--tx); 
 .bcard { box-shadow: var(--shadow-sm); margin-bottom: 0.85rem; }
 .ch { padding: 1rem 1.5rem; border-bottom: 1px solid var(--rim); display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: var(--ink2); }
 .ch h3 { font-size: .85rem; font-weight: 700; color: var(--tx); letter-spacing: -.01em; }
+/* Sibling-card gap. Adds 1.25rem of separation between two stacked
+   cards on the same page so dashboards with multiple section cards
+   read with consistent rhythm. Targets sibling cards specifically so
+   the in-card header-to-body pair stays untouched. Heading-card →
+   non-card content (e.g. a list wrapper after a .card) is handled by
+   the per-page mb-* utility on the heading card itself. */
+.card + .card { margin-top: 1.25rem; }
 .cb { padding: 1.4rem 1.5rem; }
 
 /* ── BUTTONS ───────────────────────────── */

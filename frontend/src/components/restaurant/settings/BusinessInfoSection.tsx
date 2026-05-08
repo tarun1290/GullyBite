@@ -59,11 +59,11 @@ interface ViewRowProps {
 function ViewRow({ label, value, mono, badge }: ViewRowProps) {
   const notSet = !value && value !== 0;
   return (
-    <div className="flex justify-between items-center py-[0.45rem] border-b border-rim">
+    <div className="flex justify-between items-center py-2.5 px-4 border-b border-rim">
       <span className="text-dim text-[0.78rem] min-w-[130px]">{label}</span>
       <span
         className={`font-medium text-right text-[0.84rem] ${mono ? 'font-mono' : ''} ${
-          notSet ? 'text-mute italic' : 'not-italic'
+          notSet ? 'text-dim italic' : 'not-italic'
         }`}
       >
         {notSet ? 'Not set' : value}

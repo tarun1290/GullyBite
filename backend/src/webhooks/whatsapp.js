@@ -919,6 +919,11 @@ const _sendOrderCheckout = async (pid, token, to, { orderNumber, items, charges,
             gullybite_order_id: String(order.id),
             branch_id: String(session.branchId || ''),
           },
+          // close_by — instructs Razorpay to reject payment attempts
+          // after the order's expires_at. The post-capture expiry guard
+          // in webhooks/razorpay.js stays as a safety net for clock
+          // drift between our server and Razorpay's edge.
+          ...(order.expires_at ? { close_by: Math.floor(new Date(order.expires_at).getTime() / 1000) } : {}),
         });
         rpOrderId = rzpOrder?.id || null;
         log.info({ orderNumber: order.order_number, rpOrderId }, 'razorpay pre-create ok');

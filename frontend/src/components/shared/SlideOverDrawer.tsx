@@ -50,10 +50,13 @@ export default function SlideOverDrawer({ open, onClose, title, children }: Slid
           open ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
       />
-      {/* Panel */}
+      {/* Panel — opaque white surface (was bg-surface, which resolves
+          to a translucent value in the current theme and let the page
+          underneath bleed through). border-l + heavier shadow makes
+          the drawer's edge clearly readable against any backdrop. */}
       <aside
         aria-hidden={!open}
-        className={`fixed top-0 right-0 h-screen w-[min(420px,100vw)] bg-surface text-fg shadow-[-12px_0_32px_rgba(0,0,0,0.12)] transition-transform duration-220 ease z-1001 flex flex-col ${
+        className={`fixed top-0 right-0 h-screen w-[min(420px,100vw)] bg-white text-fg border-l border-rim shadow-[-12px_0_32px_rgba(0,0,0,0.18)] transition-transform duration-220 ease z-1001 flex flex-col ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
