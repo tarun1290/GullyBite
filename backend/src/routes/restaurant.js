@@ -9364,6 +9364,53 @@ router.delete('/staff-users/:userId', requireAuth, requirePermission('manage_sta
     }
   });
 
+// DELETE /api/restaurant/staff/:staffId — hard delete.
+// Distinct from /staff-users/:userId (which soft-deletes by flipping
+// is_active and bumping token_version). This path removes the row
+// outright and best-effort clears any rows in staff_sessions keyed
+// to the same id. Use the soft path for normal off-boarding so audit
+// references still resolve; reach for this when a row needs to be
+// physically expunged.
+router.delete('/staff/:staffId', requireAuth, requirePermission('manage_staff'),
+  async (req, res) => {
+    try {
+      const staffId = req.params.staffId;
+      const target = await col('restaurant_users').findOne({
+        _id: staffId,
+        restaurant_id: req.restaurantId,
+        role: 'staff',
+      });
+      if (!target) return res.status(404).json({ error: 'Staff user not found' });
+
+      await col('restaurant_users').deleteOne({ _id: staffId });
+
+      // staff_sessions is not a tracked collection in collections.js — the
+      // existing staff JWT flow invalidates via token_version bumps, not a
+      // session table. Best-effort cleanup here so this route stays correct
+      // if a future commit adds the collection. deleteMany on a missing
+      // collection returns deletedCount:0 without throwing.
+      try {
+        await col('staff_sessions').deleteMany({ staff_id: staffId });
+      } catch (sessionErr) {
+        req.log?.warn?.({ err: sessionErr, staffId }, 'staff_sessions cleanup failed');
+      }
+
+      log({
+        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
+        action: 'staff_deleted', category: 'settings',
+        description: `Staff user "${target.name}" hard-deleted`,
+        restaurantId: req.restaurantId,
+        resourceType: 'staff_user', resourceId: staffId,
+        severity: 'warning',
+      });
+
+      res.json({ success: true });
+    } catch (e) {
+      req.log?.error?.({ err: e, staffId: req.params.staffId }, 'staff hard delete failed');
+      res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  });
+
 // ─── FINANCIAL ENDPOINTS ────────────────────────────────────────
 
 // GET /api/restaurant/penalties

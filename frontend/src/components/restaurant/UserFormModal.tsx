@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useToast } from '../Toast';
-import { createUser, updateUser, getBranchStaffLink, generateBranchStaffLink } from '../../api/restaurant';
+import {
+  createUser,
+  updateUser,
+  getBranchStaffLink,
+  generateBranchStaffLink,
+  deleteStaffHard,
+} from '../../api/restaurant';
 import type { Branch, BranchStaffLink } from '../../types';
 
 // Per-branch login-link row used by the post-creation success screen.
@@ -69,6 +75,12 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
   const [created, setCreated] = useState<{ name: string; role: string; branchIds: string[] } | null>(null);
   const [branchLinks, setBranchLinks] = useState<BranchLink[]>([]);
   const [copiedBranchId, setCopiedBranchId] = useState<string | null>(null);
+  // Inline destructive-confirm state for the edit-mode "Delete Account"
+  // button. Kept in the modal (not the parent UsersSection) so the
+  // confirm copy can interpolate the staff name and the delete result
+  // can fire onSaved + onClose in one place.
+  const [deleteConfirming, setDeleteConfirming] = useState<boolean>(false);
+  const [deleteBusy, setDeleteBusy] = useState<boolean>(false);
 
   useEffect(() => {
     if (!open) {
@@ -77,6 +89,8 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
       setCreated(null);
       setBranchLinks([]);
       setCopiedBranchId(null);
+      setDeleteConfirming(false);
+      setDeleteBusy(false);
       return;
     }
     if (editing) {
@@ -91,6 +105,56 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
       setForm(emptyForm());
     }
   }, [open, editing]);
+
+  // Edit-mode parallel of the post-create branch-link fetcher below.
+  // Fires when an existing staff member is opened in the modal so the
+  // operator can copy/regen each assigned branch's login URL inline,
+  // without bouncing back to the post-create success screen.
+  // Sources branchIds from editing.branch_ids (the persisted assignment)
+  // not form.branchIds — the latter mutates as the user toggles chips
+  // before saving, and the link list should reflect what's actually
+  // assigned today, not the in-flight edit.
+  useEffect(() => {
+    if (!open || !editing) return;
+    const assigned = Array.isArray(editing.branch_ids) ? editing.branch_ids : [];
+    if (assigned.length === 0) {
+      setBranchLinks([]);
+      return;
+    }
+    const initial: BranchLink[] = assigned.map((bid) => {
+      const b = branches.find((x) => x.id === bid);
+      return {
+        branchId: bid,
+        branchName: b?.name || `Branch ${bid.slice(0, 8)}…`,
+        status: 'loading',
+        url: null,
+      };
+    });
+    setBranchLinks(initial);
+
+    let cancelled = false;
+    Promise.allSettled(
+      assigned.map((bid) => getBranchStaffLink(bid)),
+    ).then((results) => {
+      if (cancelled) return;
+      setBranchLinks((prev) => prev.map((row, idx) => {
+        const r: PromiseSettledResult<BranchStaffLink> | undefined = results[idx];
+        if (!r) return row;
+        if (r.status === 'fulfilled') {
+          const link = r.value;
+          return {
+            ...row,
+            status: 'ready',
+            url: link?.staff_login_url || null,
+            errorMessage: link?.staff_login_url ? undefined : 'No link generated yet for this branch',
+          };
+        }
+        const reason = (r.reason as { message?: string })?.message || 'Failed to load';
+        return { ...row, status: 'error', url: null, errorMessage: reason };
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [open, editing, branches]);
 
   // Fetch per-branch staff-login URLs for the just-created member.
   // Promise.allSettled so a single 404/500 on one branch doesn't keep
@@ -180,6 +244,70 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
 
   const isEdit = !!editing;
 
+  // Single-row renderer shared by the post-create success screen and the
+  // edit-mode "Branch Login URLs" section so the four status branches
+  // (loading / generating / ready+url / ready+empty / error) stay in one
+  // place.
+  const renderBranchLinkRow = (row: BranchLink) => (
+    <div
+      key={row.branchId}
+      className="py-[0.55rem] px-[0.7rem] border-b border-bdr text-[0.8rem]"
+    >
+      <div className="font-semibold mb-[0.2rem]">{row.branchName}</div>
+      {row.status === 'loading' && (
+        <div className="text-[0.74rem] text-dim">Loading…</div>
+      )}
+      {row.status === 'generating' && (
+        <div className="text-[0.74rem] text-dim">Generating…</div>
+      )}
+      {row.status === 'ready' && row.url && (
+        <div className="flex gap-[0.4rem] items-center">
+          <input
+            value={row.url}
+            readOnly
+            onFocus={(e) => e.currentTarget.select()}
+            className="flex-1 font-mono text-[0.74rem] bg-ink2 border border-rim rounded-sm py-1 px-[0.4rem] text-dim"
+          />
+          <button
+            type="button"
+            onClick={() => copyLink(row.branchId, row.url || '')}
+            className="bg-transparent border border-bdr text-dim text-[0.7rem] py-[0.2rem] px-2 rounded-sm cursor-pointer shrink-0"
+          >
+            {copiedBranchId === row.branchId ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+      )}
+      {row.status === 'ready' && !row.url && (
+        <div className="flex flex-col gap-[0.3rem]">
+          <div className="text-[0.72rem] text-[#92400e]">
+            ⚠ No login link yet for this branch.
+          </div>
+          <button
+            type="button"
+            onClick={() => regenerateLink(row.branchId)}
+            className="self-start btn-g btn-sm"
+          >
+            Generate Link
+          </button>
+        </div>
+      )}
+      {row.status === 'error' && (
+        <div className="flex flex-col gap-[0.3rem]">
+          <div className="text-[0.72rem] text-red">
+            {row.errorMessage || 'Failed to load'}
+          </div>
+          <button
+            type="button"
+            onClick={() => regenerateLink(row.branchId)}
+            className="self-start btn-g btn-sm"
+          >
+            Generate Link
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   const toggleBranch = (id: string) => {
     setForm((f) => ({
       ...f,
@@ -187,6 +315,27 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
         ? f.branchIds.filter((x) => x !== id)
         : [...f.branchIds, id],
     }));
+  };
+
+  // Hits DELETE /api/restaurant/staff/:staffId on the backend, which
+  // hard-deletes the row and writes an activity log with action
+  // 'staff_deleted'. Distinct from the row-level Deactivate in
+  // UsersSection (soft-delete via /users/:id flipping is_active).
+  const handleDeleteAccount = async () => {
+    if (!editing) return;
+    setDeleteBusy(true);
+    try {
+      await deleteStaffHard(editing.id);
+      showToast(`${editing.name || 'Staff'} deleted`, 'success');
+      if (onSaved) onSaved();
+      onClose();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Delete failed', 'error');
+    } finally {
+      setDeleteBusy(false);
+      setDeleteConfirming(false);
+    }
   };
 
   const handleSave = async () => {
@@ -263,65 +412,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   </div>
                 ) : (
                   <div className="mt-[0.3rem] max-h-[220px] overflow-y-auto border border-rim rounded-md">
-                    {branchLinks.map((row) => (
-                      <div
-                        key={row.branchId}
-                        className="py-[0.55rem] px-[0.7rem] border-b border-bdr text-[0.8rem]"
-                      >
-                        <div className="font-semibold mb-[0.2rem]">{row.branchName}</div>
-                        {row.status === 'loading' && (
-                          <div className="text-[0.74rem] text-dim">Loading…</div>
-                        )}
-                        {row.status === 'generating' && (
-                          <div className="text-[0.74rem] text-dim">Generating…</div>
-                        )}
-                        {row.status === 'ready' && row.url && (
-                          <div className="flex gap-[0.4rem] items-center">
-                            <input
-                              value={row.url}
-                              readOnly
-                              onFocus={(e) => e.currentTarget.select()}
-                              className="flex-1 font-mono text-[0.74rem] bg-ink2 border border-rim rounded-sm py-1 px-[0.4rem] text-dim"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => copyLink(row.branchId, row.url || '')}
-                              className="bg-transparent border border-bdr text-dim text-[0.7rem] py-[0.2rem] px-2 rounded-sm cursor-pointer shrink-0"
-                            >
-                              {copiedBranchId === row.branchId ? 'Copied!' : 'Copy'}
-                            </button>
-                          </div>
-                        )}
-                        {row.status === 'ready' && !row.url && (
-                          <div className="flex flex-col gap-[0.3rem]">
-                            <div className="text-[0.72rem] text-[#92400e]">
-                              ⚠ No login link yet for this branch.
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => regenerateLink(row.branchId)}
-                              className="self-start btn-g btn-sm"
-                            >
-                              Generate Link
-                            </button>
-                          </div>
-                        )}
-                        {row.status === 'error' && (
-                          <div className="flex flex-col gap-[0.3rem]">
-                            <div className="text-[0.72rem] text-red">
-                              {row.errorMessage || 'Failed to load'}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => regenerateLink(row.branchId)}
-                              className="self-start btn-g btn-sm"
-                            >
-                              Generate Link
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    {branchLinks.map(renderBranchLinkRow)}
                   </div>
                 )}
               </div>
@@ -401,6 +492,14 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   <span className="text-[0.78rem] text-dim">No branches yet.</span>
                 )}
               </div>
+              {isEdit && Array.isArray(editing?.branch_ids) && editing.branch_ids.length > 0 && (
+                <div className="fg mb-[0.7rem]">
+                  <label>Branch Login URLs</label>
+                  <div className="mt-[0.3rem] max-h-[220px] overflow-y-auto border border-rim rounded-md">
+                    {branchLinks.map(renderBranchLinkRow)}
+                  </div>
+                </div>
+              )}
               <div className="flex gap-3 mt-[0.8rem]">
                 <button type="button" className="btn-p" onClick={handleSave} disabled={saving}>
                   {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Member')}
@@ -409,6 +508,44 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   Cancel
                 </button>
               </div>
+              {isEdit && (
+                <div className="mt-[1.2rem] pt-[0.8rem] border-t border-rim">
+                  {deleteConfirming ? (
+                    <div className="flex flex-col gap-[0.5rem]">
+                      <div className="text-[0.82rem] text-red">
+                        This is permanent and cannot be undone. Delete {editing?.name || 'this staff member'}?
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          type="button"
+                          className="btn-del btn-sm"
+                          onClick={handleDeleteAccount}
+                          disabled={deleteBusy}
+                        >
+                          {deleteBusy ? '…' : 'Confirm Delete'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-g btn-sm"
+                          onClick={() => setDeleteConfirming(false)}
+                          disabled={deleteBusy}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn-del btn-sm"
+                      onClick={() => setDeleteConfirming(true)}
+                      disabled={saving}
+                    >
+                      Delete Account
+                    </button>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
