@@ -77,6 +77,16 @@ const createRazorpayOrder = async (order, customer) => {
     currency: 'INR',
     receipt : order.order_number,
     expire_by: expireByUnix,
+    // close_by — derived from order.expires_at when present so Razorpay
+    // closes the order at that instant and rejects payment attempts
+    // past it. Mirrors the pattern in createRazorpayOrderRaw + the
+    // webhooks/whatsapp.js call site. expires_at is set by
+    // services/order.js and webhooks/checkout.js at order creation;
+    // legacy orders predating the field fall through to the existing
+    // expire_by-only behavior.
+    ...(order?.expires_at
+      ? { close_by: Math.floor(new Date(order.expires_at).getTime() / 1000) }
+      : {}),
     notes: {
       order_id    : order.id,
       order_number: order.order_number,
