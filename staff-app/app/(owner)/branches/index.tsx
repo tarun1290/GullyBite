@@ -18,7 +18,7 @@ import { useRouter } from 'expo-router';
 
 import { getOwnerDashboard, toggleBranchOpen } from '@/api';
 import { useRole } from '@/hooks/useRole';
-import { colors, subscriptionBadgeFor } from '@/theme';
+import { colors, fontWeight, radius, space, subscriptionBadgeFor, text } from '@/theme';
 
 type BranchRow = {
   id: string;
@@ -169,28 +169,28 @@ export default function BranchesListScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: 16, gap: 12, paddingBottom: 32 },
-  flexCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16, backgroundColor: colors.ink },
+  scroll: { padding: space.px4, gap: space.px3, paddingBottom: space.px8 },
+  flexCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.px3, padding: space.px4, backgroundColor: colors.ink },
 
   branchCard: {
     backgroundColor: colors.ink2,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: radius['2xl'], // was 14, rounded to 16 (2xl)
+    padding: space.px4,
     borderWidth: 1,
     borderColor: colors.rim,
-    gap: 8,
+    gap: space.px2,
   },
-  branchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  branchName: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.tx },
-  subBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  subBadgeText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
+  branchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.px2 },
+  branchName: { flex: 1, fontSize: text.md, fontWeight: fontWeight.bold, color: colors.tx },
+  subBadge: { paddingHorizontal: space.px2, paddingVertical: space.px1, borderRadius: radius.sm }, // was paddingVertical 3, rounded to 4 (px1)
+  subBadgeText: { fontSize: text.xs, fontWeight: fontWeight.bold, textTransform: 'uppercase', letterSpacing: 0.3 }, // was 11, rounded to 11.5 (xs)
 
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  openLabel: { fontSize: 14, color: colors.tx, fontWeight: '600' },
-  branchStat: { fontSize: 12, color: colors.dim },
-  tapHint: { fontSize: 11, color: colors.acc, fontWeight: '600' },
+  openLabel: { fontSize: text.base, color: colors.tx, fontWeight: fontWeight.semibold },
+  branchStat: { fontSize: text.xs, color: colors.dim }, // was 12, rounded to 11.5 (xs)
+  tapHint: { fontSize: text.xs, color: colors.acc, fontWeight: fontWeight.semibold }, // was 11, rounded to 11.5 (xs)
 
-  errMsg: { color: colors.red, fontSize: 13, textAlign: 'center' },
-  retryBtn: { backgroundColor: colors.acc, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10 },
-  retryText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  errMsg: { color: colors.red, fontSize: text.sm, textAlign: 'center' },
+  retryBtn: { backgroundColor: colors.acc, paddingHorizontal: space.px5, paddingVertical: space.px3, borderRadius: radius.lg }, // was paddingHorizontal 18, rounded to 20 (px5); paddingVertical 10, rounded to 12 (px3)
+  retryText: { color: '#fff', fontSize: text.base, fontWeight: fontWeight.bold },
 });

@@ -10,7 +10,7 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 
 import BranchSelector from '@/components/BranchSelector';
 import { useAuth } from '@/store/authStore';
-import { colors } from '@/theme';
+import { colors, space, text, radius, fontWeight } from '@/theme';
 
 function LogoutButton() {
   const router = useRouter();
@@ -34,7 +34,7 @@ export default function OrdersStackLayout() {
     <Stack
       screenOptions={{
         headerStyle: { backgroundColor: colors.ink2 },
-        headerTitleStyle: { color: colors.tx, fontWeight: '700' },
+        headerTitleStyle: { color: colors.tx, fontWeight: fontWeight.bold },
         headerTintColor: colors.tx,
         headerLeft: () => <BranchSelector />,
         headerRight: () => <LogoutButton />,
@@ -48,12 +48,12 @@ export default function OrdersStackLayout() {
 
 const styles = StyleSheet.create({
   logoutBtn: {
-    marginRight: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    marginRight: space.px3,
+    paddingHorizontal: space.px3,
+    paddingVertical: space.px2,
     borderWidth: 1,
     borderColor: colors.rim,
-    borderRadius: 8,
+    borderRadius: radius.md,
   },
-  logoutText: { color: colors.dim, fontSize: 12, fontWeight: '600' },
+  logoutText: { color: colors.dim, fontSize: text.xs, fontWeight: fontWeight.semibold }, // was 12, rounded to 11.5 (xs)
 });

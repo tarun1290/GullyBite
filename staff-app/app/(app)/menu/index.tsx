@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StaffMenuItem, getMenu, updateItemAvailability } from '@/api';
 import { useAuth } from '@/store/authStore';
-import { colors, primitives } from '@/theme';
+import { colors, primitives, space, text, radius, fontWeight } from '@/theme';
 import { formatRs } from '@/time';
 
 type Section =
@@ -143,7 +143,7 @@ export default function MenuScreen() {
               />
             )
           }
-          contentContainerStyle={{ padding: 12, paddingBottom: 40 }}
+          contentContainerStyle={{ padding: space.px3, paddingBottom: space.px10 }}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.acc} />
           }
@@ -202,38 +202,38 @@ function MenuRow({
 }
 
 const styles = StyleSheet.create({
-  searchBar: { padding: 12, paddingBottom: 4, backgroundColor: colors.ink },
+  searchBar: { padding: space.px3, paddingBottom: space.px1, backgroundColor: colors.ink },
   search: {
     backgroundColor: colors.ink2, borderWidth: 1, borderColor: colors.rim,
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 16, color: colors.tx,
+    borderRadius: radius.xl, paddingHorizontal: space.px4, paddingVertical: space.px3, // was 14, rounded to 16 (px4)
+    fontSize: text.lg, color: colors.tx, // was 16, rounded to 17 (lg)
   },
 
   header: {
-    fontSize: 13, fontWeight: '800', letterSpacing: 1.2,
+    fontSize: text.sm, fontWeight: fontWeight.extrabold, letterSpacing: 1.2,
     color: colors.dim, textTransform: 'uppercase',
-    marginTop: 14, marginBottom: 4, paddingHorizontal: 4,
+    marginTop: space.px4, marginBottom: space.px1, paddingHorizontal: space.px1, // was 14, rounded to 16 (px4)
   },
   row: {
     backgroundColor: colors.ink2,
-    borderWidth: 1, borderColor: colors.rim, borderRadius: 12,
-    padding: 14, marginBottom: 8,
-    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderWidth: 1, borderColor: colors.rim, borderRadius: radius.xl,
+    padding: space.px4, marginBottom: space.px2, // was 14, rounded to 16 (px4)
+    flexDirection: 'row', alignItems: 'center', gap: space.px3,
   },
-  itemName: { fontSize: 16, fontWeight: '700', color: colors.tx },
-  itemPrice: { fontSize: 14, color: colors.dim, marginTop: 2 },
+  itemName: { fontSize: text.lg, fontWeight: fontWeight.bold, color: colors.tx }, // was 16, rounded to 17 (lg)
+  itemPrice: { fontSize: text.base, color: colors.dim, marginTop: space.px1 }, // was 2, rounded to 4 (px1)
 
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
-  errText: { color: colors.red, fontSize: 14, textAlign: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.px6, gap: space.px3 },
+  errText: { color: colors.red, fontSize: text.base, textAlign: 'center' },
   retry: {
-    backgroundColor: colors.acc, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: colors.acc, paddingHorizontal: space.px4, paddingVertical: space.px3, borderRadius: radius.lg, // was 18, rounded to 16 (px4); was 10, rounded to 12 (px3)
   },
-  retryText: { color: '#fff', fontWeight: '700' },
-  emptyTitle: { color: colors.dim, fontSize: 14 },
+  retryText: { color: '#fff', fontWeight: fontWeight.bold },
+  emptyTitle: { color: colors.dim, fontSize: text.base },
 
   toast: {
     position: 'absolute', left: 20, right: 20, bottom: 24,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
+    borderRadius: radius.lg, paddingHorizontal: space.px4, paddingVertical: space.px3, // was 14, rounded to 16 (px4); was 10, rounded to 12 (px3)
     borderWidth: 1,
   },
   // toastOk uses Tailwind green-50 (#f0fdf4) and green-200 (#bbf7d0) which
@@ -243,5 +243,5 @@ const styles = StyleSheet.create({
   // Tailwind-green primitives.
   toastOk: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
   toastErr: { backgroundColor: primitives.rose['50'], borderColor: primitives.red['200'] },
-  toastText: { fontSize: 13, fontWeight: '600' },
+  toastText: { fontSize: text.sm, fontWeight: fontWeight.semibold },
 });

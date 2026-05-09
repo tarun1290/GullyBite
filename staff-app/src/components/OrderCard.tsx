@@ -6,7 +6,7 @@ import { memo } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StaffOrder } from '@/api';
 import { useAuth } from '@/store/authStore';
-import { badgeFor, colors, primitives } from '@/theme';
+import { badgeFor, colors, fontWeight, primitives, radius, space, text } from '@/theme';
 import { formatRs, timeAgo } from '@/time';
 
 // PAID orders go through the dedicated /accept and /decline endpoints
@@ -35,9 +35,27 @@ type Props = {
   onAccept?: (orderId: string) => void;
   onDecline?: (orderId: string) => void;
   highlight?: Animated.Value;
+  // Permission gates (2026-05-09 staff-auth refactor). Each flag, when
+  // true, hides the corresponding action button without affecting any
+  // other layout. Defaults to false (button visible) to keep callers
+  // that haven't migrated to the permission-aware flow rendering as
+  // before.
+  hideAccept?: boolean;
+  hideDecline?: boolean;
+  hideNextStatus?: boolean;
 };
 
-function OrderCardBase({ order, busyStatus, onStatusChange, onAccept, onDecline, highlight }: Props) {
+function OrderCardBase({
+  order,
+  busyStatus,
+  onStatusChange,
+  onAccept,
+  onDecline,
+  highlight,
+  hideAccept,
+  hideDecline,
+  hideNextStatus,
+}: Props) {
   const { currentBranchId, staffUser } = useAuth();
   const badge = badgeFor(order.status);
   const phoneTail = (order.customer_phone_masked || '').slice(-4);
@@ -106,34 +124,38 @@ function OrderCardBase({ order, busyStatus, onStatusChange, onAccept, onDecline,
         <View style={styles.actions}>
           {isPaid ? (
             <>
-              <Pressable
-                onPress={() => onAccept?.(order.id)}
-                disabled={!!busyStatus}
-                style={({ pressed }) => [
-                  styles.btn, styles.btnPrimary,
-                  pressed && { opacity: 0.8 },
-                  !!busyStatus && { opacity: 0.6 },
-                ]}
-              >
-                <Text style={[styles.btnText, styles.btnTextInv]}>
-                  {busyStatus === 'accept' ? '…' : 'Accept'}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => onDecline?.(order.id)}
-                disabled={!!busyStatus}
-                style={({ pressed }) => [
-                  styles.btn, styles.btnDanger,
-                  pressed && { opacity: 0.8 },
-                  !!busyStatus && { opacity: 0.6 },
-                ]}
-              >
-                <Text style={[styles.btnText, styles.btnTextInv]}>
-                  {busyStatus === 'decline' ? '…' : 'Decline'}
-                </Text>
-              </Pressable>
+              {hideAccept ? null : (
+                <Pressable
+                  onPress={() => onAccept?.(order.id)}
+                  disabled={!!busyStatus}
+                  style={({ pressed }) => [
+                    styles.btn, styles.btnPrimary,
+                    pressed && { opacity: 0.8 },
+                    !!busyStatus && { opacity: 0.6 },
+                  ]}
+                >
+                  <Text style={[styles.btnText, styles.btnTextInv]}>
+                    {busyStatus === 'accept' ? '…' : 'Accept'}
+                  </Text>
+                </Pressable>
+              )}
+              {hideDecline ? null : (
+                <Pressable
+                  onPress={() => onDecline?.(order.id)}
+                  disabled={!!busyStatus}
+                  style={({ pressed }) => [
+                    styles.btn, styles.btnDanger,
+                    pressed && { opacity: 0.8 },
+                    !!busyStatus && { opacity: 0.6 },
+                  ]}
+                >
+                  <Text style={[styles.btnText, styles.btnTextInv]}>
+                    {busyStatus === 'decline' ? '…' : 'Decline'}
+                  </Text>
+                </Pressable>
+              )}
             </>
-          ) : (
+          ) : hideNextStatus ? null : (
             actions.map((a) => {
               const busy = busyStatus === a.to;
               return (
@@ -172,41 +194,41 @@ export const OrderCard = memo(OrderCardBase);
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.ink2,
-    borderWidth: 1, borderColor: colors.rim, borderRadius: 14,
-    padding: 14, marginBottom: 10,
+    borderWidth: 1, borderColor: colors.rim, borderRadius: radius['2xl'], // was 14, rounded to 16 (2xl)
+    padding: space.px4, marginBottom: space.px3, // was padding 14, rounded to 16 (px4); marginBottom 10, rounded to 12 (px3)
   },
-  headerRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 10 },
-  orderNum: { fontSize: 18, fontWeight: '800', color: colors.tx, letterSpacing: -0.3 },
-  meta: { fontSize: 12, color: colors.dim, fontWeight: '600', marginTop: 2 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: space.px3, gap: space.px3 }, // was marginBottom 10, rounded to 12 (px3); gap 10, rounded to 12 (px3)
+  orderNum: { fontSize: text.lg, fontWeight: fontWeight.extrabold, color: colors.tx, letterSpacing: -0.3 }, // was 18, rounded to 17 (lg)
+  meta: { fontSize: text.xs, color: colors.dim, fontWeight: fontWeight.semibold, marginTop: space.px1 }, // was fontSize 12, rounded to 11.5 (xs); marginTop 2, rounded to 4 (px1)
   // RN translation of `text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full`
   // from the brief. alignSelf: 'flex-start' keeps the chip from
   // stretching across the full card width when the order_number is short.
   branchTag: {
     alignSelf: 'flex-start',
     backgroundColor: primitives.neutral['100'],
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-    marginTop: 6,
+    paddingHorizontal: space.px2,
+    paddingVertical: space.px1, // was 2, rounded to 4 (px1)
+    borderRadius: radius.full, // fixes audit §3.5 typo: was 999 (intended 99 / pill); radius.full (9999) is the canonical pill token
+    marginTop: space.px2, // was 6, rounded to 8 (px2)
     maxWidth: '100%',
   },
-  branchTagText: { fontSize: 11, color: primitives.neutral['700'], fontWeight: '600' },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 },
-  badgeText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
-  items: { gap: 4, marginBottom: 10 },
-  item: { fontSize: 14, color: colors.tx },
-  itemDim: { fontSize: 13, color: colors.mute, fontStyle: 'italic' },
-  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 },
-  total: { fontSize: 22, fontWeight: '800', color: colors.tx },
-  actions: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  branchTagText: { fontSize: text.xs, color: primitives.neutral['700'], fontWeight: fontWeight.semibold }, // was 11, rounded to 11.5 (xs)
+  badge: { paddingHorizontal: space.px3, paddingVertical: space.px1, borderRadius: 99 }, // was paddingHorizontal 10, rounded to 12 (px3); paddingVertical 4 (px1, exact); off-scale radius: 99 (intentional pill, kept as-is)
+  badgeText: { fontSize: text.xs, fontWeight: fontWeight.bold, letterSpacing: 0.2 }, // was 11, rounded to 11.5 (xs)
+  items: { gap: space.px1, marginBottom: space.px3 }, // was marginBottom 10, rounded to 12 (px3)
+  item: { fontSize: text.base, color: colors.tx },
+  itemDim: { fontSize: text.sm, color: colors.mute, fontStyle: 'italic' },
+  footerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: space.px2 },
+  total: { fontSize: text.xl, fontWeight: fontWeight.extrabold, color: colors.tx }, // was 22, rounded to 20 (xl)
+  actions: { flexDirection: 'row', gap: space.px2, flexWrap: 'wrap' },
   btn: {
     backgroundColor: colors.ink2,
     borderWidth: 1, borderColor: colors.rim,
-    paddingHorizontal: 14, paddingVertical: 10,
-    borderRadius: 10, minHeight: 44, justifyContent: 'center',
+    paddingHorizontal: space.px4, paddingVertical: space.px3, // was paddingHorizontal 14, rounded to 16 (px4); paddingVertical 10, rounded to 12 (px3)
+    borderRadius: radius.lg, minHeight: 44, justifyContent: 'center',
   },
   btnPrimary: { backgroundColor: colors.acc, borderColor: colors.acc },
   btnDanger: { backgroundColor: colors.red, borderColor: colors.red },
-  btnText: { fontSize: 13, fontWeight: '700', color: colors.tx },
+  btnText: { fontSize: text.sm, fontWeight: fontWeight.bold, color: colors.tx },
   btnTextInv: { color: '#fff' },
 });

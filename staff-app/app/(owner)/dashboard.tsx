@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { getOwnerDashboard, toggleBranchOpen } from '@/api';
 import { useAuth } from '@/store/authStore';
 import { useRole } from '@/hooks/useRole';
-import { colors, subscriptionBadgeFor } from '@/theme';
+import { colors, fontWeight, radius, space, subscriptionBadgeFor, text } from '@/theme';
 
 type BranchRow = {
   id: string;
@@ -144,7 +144,7 @@ export default function OwnerDashboardScreen() {
       contentContainerStyle={styles.scroll}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.acc} />}
     >
-      <View style={{ gap: 4 }}>
+      <View style={{ gap: space.px1 }}>
         <Text style={styles.greeting}>{greeting}{ownerName ? `, ${ownerName}` : ''}</Text>
         {restaurantName ? <Text style={styles.subtitle}>{restaurantName}</Text> : null}
       </View>
@@ -224,43 +224,43 @@ function Tile({ label, value, valueColor }: { label: string; value: string; valu
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: 16, gap: 12, paddingBottom: 32 },
-  flexCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 16, backgroundColor: colors.ink },
+  scroll: { padding: space.px4, gap: space.px3, paddingBottom: space.px8 },
+  flexCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.px3, padding: space.px4, backgroundColor: colors.ink },
 
-  greeting: { fontSize: 20, fontWeight: '800', color: colors.tx },
-  subtitle: { fontSize: 13, color: colors.dim },
+  greeting: { fontSize: text.xl, fontWeight: fontWeight.extrabold, color: colors.tx },
+  subtitle: { fontSize: text.sm, color: colors.dim },
 
   totalsCard: {
     backgroundColor: colors.ink2,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: radius['2xl'], // was 14, rounded to 16 (2xl)
+    padding: space.px4,
     borderWidth: 1,
     borderColor: colors.rim,
-    gap: 12,
+    gap: space.px3,
   },
-  totalsRow: { flexDirection: 'row', gap: 12 },
-  tile: { flex: 1, backgroundColor: colors.ink, borderRadius: 10, padding: 12, gap: 4, borderWidth: 1, borderColor: colors.rim },
-  tileLabel: { fontSize: 11, color: colors.dim, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: '700' },
-  tileValue: { fontSize: 22, fontWeight: '800', color: colors.tx },
+  totalsRow: { flexDirection: 'row', gap: space.px3 },
+  tile: { flex: 1, backgroundColor: colors.ink, borderRadius: radius.lg, padding: space.px3, gap: space.px1, borderWidth: 1, borderColor: colors.rim },
+  tileLabel: { fontSize: text.xs, color: colors.dim, textTransform: 'uppercase', letterSpacing: 0.4, fontWeight: fontWeight.bold }, // was 11, rounded to 11.5 (xs)
+  tileValue: { fontSize: text.xl, fontWeight: fontWeight.extrabold, color: colors.tx }, // was 22, rounded to 20 (xl)
 
   branchCard: {
     backgroundColor: colors.ink2,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: radius['2xl'], // was 14, rounded to 16 (2xl)
+    padding: space.px4,
     borderWidth: 1,
     borderColor: colors.rim,
-    gap: 10,
+    gap: space.px3, // was 10, rounded to 12 (px3)
   },
-  branchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  branchName: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.tx },
-  subBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  subBadgeText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
+  branchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.px2 },
+  branchName: { flex: 1, fontSize: text.md, fontWeight: fontWeight.bold, color: colors.tx },
+  subBadge: { paddingHorizontal: space.px2, paddingVertical: space.px1, borderRadius: radius.sm }, // was paddingVertical 3, rounded to 4 (px1)
+  subBadgeText: { fontSize: text.xs, fontWeight: fontWeight.bold, textTransform: 'uppercase', letterSpacing: 0.3 }, // was 11, rounded to 11.5 (xs)
 
   toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  openLabel: { fontSize: 14, color: colors.tx, fontWeight: '600' },
-  branchStat: { fontSize: 12, color: colors.dim },
+  openLabel: { fontSize: text.base, color: colors.tx, fontWeight: fontWeight.semibold },
+  branchStat: { fontSize: text.xs, color: colors.dim }, // was 12, rounded to 11.5 (xs)
 
-  errMsg: { color: colors.red, fontSize: 13, textAlign: 'center' },
-  retryBtn: { backgroundColor: colors.acc, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10 },
-  retryText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  errMsg: { color: colors.red, fontSize: text.sm, textAlign: 'center' },
+  retryBtn: { backgroundColor: colors.acc, paddingHorizontal: space.px5, paddingVertical: space.px3, borderRadius: radius.lg }, // was paddingHorizontal 18, rounded to 20 (px5); paddingVertical 10, rounded to 12 (px3)
+  retryText: { color: '#fff', fontSize: text.base, fontWeight: fontWeight.bold },
 });

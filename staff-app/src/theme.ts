@@ -94,3 +94,75 @@ export function subscriptionBadgeFor(
   if (status === 'paused' || status === 'force_paused') return subGen.paused;
   return subGen.default;
 }
+
+// ─── Numeric scales (Part 5b) ───────────────────────────────────────
+//
+// Re-exports of the spacing / typography / radii scales for use in
+// StyleSheet.create blocks and inline styles. Keys are flattened to be
+// JS-identifier-safe — generated tokens use string keys like '4xl' /
+// '32' which can't be dotted into without bracket access.
+//
+// Generated scale → consumer API:
+//   spacing      tokens.spacing[N]      → space.pxN              (numeric px)
+//   font sizes   tokens.typography.sizes → text.{xs..4xl}         (numeric px)
+//   radii        tokens.radii           → radius.{none..full}     (numeric px)
+//   weights      tokens.typography.weights → fontWeight.{name}    (numeric)
+//   line heights tokens.typography.lineHeights → lineHeight.{name}
+//
+// One spec divergence to note: the user's Part 5b spec assumed
+// text.base === 16 but the generated module has text.base === 14
+// (derived from --text-base: 0.87rem ≈ 14px). This re-export uses the
+// real generated values; migrating consumers per the rounding policy
+// still works — `fontSize: 16` falls to text.lg (17) when "round to
+// nearest within 2px" applies.
+
+const sp = tokens.spacing;
+export const space = {
+  px0:   sp['0'],     // 0
+  px1:   sp['1'],     // 4
+  px2:   sp['2'],     // 8
+  px3:   sp['3'],     // 12
+  px4:   sp['4'],     // 16
+  px5:   sp['5'],     // 20
+  px6:   sp['6'],     // 24
+  px7:   sp['7'],     // 28
+  px8:   sp['8'],     // 32
+  px10:  sp['10'],    // 40
+  px12:  sp['12'],    // 48
+  px14:  sp['14'],    // 56
+  px16:  sp['16'],    // 64
+  px20:  sp['20'],    // 80
+  px24:  sp['24'],    // 96
+  px32:  sp['32'],    // 128
+} as const;
+
+const sz = tokens.typography.sizes;
+export const text = {
+  xs:     sz.xs,      // 11.5
+  sm:     sz.sm,      // 13
+  base:   sz.base,    // 14
+  md:     sz.md,      // 15
+  lg:     sz.lg,      // 17
+  xl:     sz.xl,      // 20
+  '2xl':  sz['2xl'],  // 26
+  '3xl':  sz['3xl'],  // 32
+  '4xl':  sz['4xl'],  // 58
+} as const;
+
+const r = tokens.radii;
+export const radius = {
+  none:   r.none,     // 0
+  sm:     r.sm,       // 6
+  md:     r.md,       // 8
+  lg:     r.lg,       // 10
+  xl:     r.xl,       // 12
+  '2xl':  r['2xl'],   // 16
+  '3xl':  r['3xl'],   // 20
+  full:   r.full,     // 9999
+  // Keep `r` as an alias of the dashboard `--r` (lg in landing,
+  // xl in dashboard); RN consumes the dashboard value.
+  r:      r.r,        // 12
+} as const;
+
+export const fontWeight = tokens.typography.weights;
+export const lineHeight = tokens.typography.lineHeights;

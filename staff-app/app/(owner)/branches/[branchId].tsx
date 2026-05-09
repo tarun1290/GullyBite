@@ -21,7 +21,7 @@ import {
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 
 import { getOwnerBranchMenu, toggleItemStock, type StaffMenuItem } from '@/api';
-import { colors } from '@/theme';
+import { colors, fontWeight, radius, space, text } from '@/theme';
 
 type Section = { title: string; data: StaffMenuItem[] };
 
@@ -162,29 +162,29 @@ export default function BranchDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  listContent: { padding: 16, paddingBottom: 32, gap: 4 },
-  flexCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: colors.ink },
+  listContent: { padding: space.px4, paddingBottom: space.px8, gap: space.px1 },
+  flexCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.px6, backgroundColor: colors.ink },
 
-  sectionHeader: { paddingTop: 12, paddingBottom: 6 },
-  sectionTitle: { fontSize: 13, fontWeight: '800', color: colors.dim, textTransform: 'uppercase', letterSpacing: 0.5 },
+  sectionHeader: { paddingTop: space.px3, paddingBottom: space.px2 }, // was paddingBottom 6, rounded to 8 (px2)
+  sectionTitle: { fontSize: text.sm, fontWeight: fontWeight.extrabold, color: colors.dim, textTransform: 'uppercase', letterSpacing: 0.5 },
 
   itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: colors.ink2,
-    borderRadius: 10,
-    padding: 12,
+    borderRadius: radius.lg,
+    padding: space.px3,
     borderWidth: 1,
     borderColor: colors.rim,
-    gap: 12,
-    marginBottom: 6,
+    gap: space.px3,
+    marginBottom: space.px2, // was 6, rounded to 8 (px2)
   },
-  itemTextWrap: { flex: 1, gap: 2 },
-  itemName: { fontSize: 14, fontWeight: '600', color: colors.tx },
-  itemPrice: { fontSize: 12, color: colors.dim },
-  itemErr: { fontSize: 11, color: colors.red, marginTop: 2 },
+  itemTextWrap: { flex: 1, gap: space.px1 }, // was 2, rounded to 4 (px1)
+  itemName: { fontSize: text.base, fontWeight: fontWeight.semibold, color: colors.tx },
+  itemPrice: { fontSize: text.xs, color: colors.dim }, // was 12, rounded to 11.5 (xs)
+  itemErr: { fontSize: text.xs, color: colors.red, marginTop: space.px1 }, // was fontSize 11, rounded to 11.5 (xs); marginTop 2, rounded to 4 (px1)
 
-  errMsg: { color: colors.red, fontSize: 13, textAlign: 'center' },
-  emptyText: { color: colors.dim, fontSize: 13, textAlign: 'center' },
+  errMsg: { color: colors.red, fontSize: text.sm, textAlign: 'center' },
+  emptyText: { color: colors.dim, fontSize: text.sm, textAlign: 'center' },
 });

@@ -8,7 +8,7 @@ import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 
 import { useAuth } from '@/store/authStore';
-import { colors } from '@/theme';
+import { colors, fontWeight, radius, space, text } from '@/theme';
 
 const FULL_DASHBOARD_URL = 'https://gullybite.duckdns.org';
 
@@ -59,38 +59,38 @@ export default function OwnerSettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: 16, gap: 16, paddingBottom: 40 },
+  scroll: { padding: space.px4, gap: space.px4, paddingBottom: space.px10 },
 
   profileCard: {
     backgroundColor: colors.ink2,
-    borderRadius: 14,
-    padding: 20,
+    borderRadius: radius['2xl'], // was 14, rounded to 16 (2xl)
+    padding: space.px5,
     borderWidth: 1,
     borderColor: colors.rim,
     alignItems: 'center',
-    gap: 8,
+    gap: space.px2,
   },
-  logoWrap: { marginBottom: 4 },
-  logoImg: { width: 84, height: 84, borderRadius: 42, backgroundColor: colors.ink },
+  logoWrap: { marginBottom: space.px1 },
+  logoImg: { width: 84, height: 84, borderRadius: 42, backgroundColor: colors.ink }, // off-scale: 84 (avatar size); off-scale radius: 42 (avatar)
   logoFallback: {
-    width: 84, height: 84, borderRadius: 42,
+    width: 84, height: 84, borderRadius: 42, // off-scale: 84 (avatar size); off-scale radius: 42 (avatar)
     backgroundColor: colors.ink,
     borderWidth: 1, borderColor: colors.rim,
     alignItems: 'center', justifyContent: 'center',
   },
-  logoEmoji: { fontSize: 38 },
-  restaurantName: { fontSize: 18, fontWeight: '800', color: colors.tx, textAlign: 'center' },
-  ownerName: { fontSize: 13, color: colors.dim },
-  versionText: { fontSize: 11, color: colors.mute, marginTop: 6 },
+  logoEmoji: { fontSize: 38 }, // off-scale font: 38 (large emoji)
+  restaurantName: { fontSize: text.lg, fontWeight: fontWeight.extrabold, color: colors.tx, textAlign: 'center' }, // was 18, rounded to 17 (lg)
+  ownerName: { fontSize: text.sm, color: colors.dim },
+  versionText: { fontSize: text.xs, color: colors.mute, marginTop: space.px2 }, // was fontSize 11, rounded to 11.5 (xs); marginTop 6, rounded to 8 (px2)
 
   logoutBtn: {
     backgroundColor: colors.red,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: space.px4, // was 14, rounded to 16 (px4)
+    borderRadius: radius.xl,
     alignItems: 'center',
   },
-  logoutBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  logoutBtnText: { color: '#fff', fontSize: text.md, fontWeight: fontWeight.bold },
 
-  linkWrap: { paddingHorizontal: 8, paddingVertical: 12 },
-  linkText: { fontSize: 12, color: colors.dim, textAlign: 'center', lineHeight: 18 },
+  linkWrap: { paddingHorizontal: space.px2, paddingVertical: space.px3 },
+  linkText: { fontSize: text.xs, color: colors.dim, textAlign: 'center', lineHeight: 18 }, // was 12, rounded to 11.5 (xs)
 });
