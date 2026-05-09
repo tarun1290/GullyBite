@@ -33,7 +33,7 @@ function getSecret() {
 // the branch-scoped staff_access_token. Old multi-branch `branchIds`
 // payloads are still accepted by the verifier for back-compat with any
 // in-flight tokens issued before this change.
-function signStaffToken({ userId, restaurantId, branchId, branchIds, permissions, restaurantSlug, tokenVersion }) {
+function signStaffToken({ userId, restaurantId, branchId, branchIds, permissions, restaurantSlug, tokenVersion, role }) {
   if (!userId) throw new Error('signStaffToken: userId required');
   if (!restaurantId) throw new Error('signStaffToken: restaurantId required');
   // Caller can pass either branchId (preferred, single-branch session)
@@ -41,6 +41,11 @@ function signStaffToken({ userId, restaurantId, branchId, branchIds, permissions
   const effectiveBranchId = branchId
     ? String(branchId)
     : (Array.isArray(branchIds) && branchIds.length === 1 ? String(branchIds[0]) : null);
+  // role on the token reflects the row in restaurant_users — currently
+  // 'staff' or 'manager' (post-2026-05-09 role-filter widening). Pinned
+  // to one of those two values; any other input (or absence) falls back
+  // to 'staff' so a misconfigured caller can't mint elevated tokens.
+  const effectiveRole = role === 'manager' ? 'manager' : 'staff';
   return jwt.sign(
     {
       userId: String(userId),
@@ -49,7 +54,7 @@ function signStaffToken({ userId, restaurantId, branchId, branchIds, permissions
       branchId: effectiveBranchId,
       permissions: permissions || {},
       token_version: typeof tokenVersion === 'number' ? tokenVersion : 0,
-      role: 'staff',
+      role: effectiveRole,
     },
     getSecret(),
     { expiresIn: '30d', algorithm: 'HS256' },

@@ -143,6 +143,10 @@ router.post('/auth', staffAuthLimiter, express.json(), async (req, res) => {
       branchId: String(branch._id),
       permissions: matched.permissions || {},
       tokenVersion: Number(matched.token_version || 0),
+      // Source of truth for role lives on restaurant_users — pass the
+      // matched row's value so manager sessions get role:'manager' on
+      // the JWT instead of the hardcoded 'staff' it used to mint.
+      role: matched.role,
     });
 
     return res.json({
