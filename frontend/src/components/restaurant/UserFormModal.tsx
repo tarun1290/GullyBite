@@ -500,50 +500,59 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   </div>
                 </div>
               )}
-              <div className="flex gap-3 mt-[0.8rem]">
-                <button type="button" className="btn-p" onClick={handleSave} disabled={saving}>
-                  {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Member')}
-                </button>
-                <button type="button" className="btn-g" onClick={onClose} disabled={saving}>
-                  Cancel
-                </button>
-              </div>
-              {isEdit && (
-                <div className="mt-[1.2rem] pt-[0.8rem] border-t border-rim">
-                  {deleteConfirming ? (
-                    <div className="flex flex-col gap-[0.5rem]">
-                      <div className="text-[0.82rem] text-red">
-                        This is permanent and cannot be undone. Delete {editing?.name || 'this staff member'}?
-                      </div>
-                      <div className="flex gap-3">
-                        <button
-                          type="button"
-                          className="btn-del btn-sm"
-                          onClick={handleDeleteAccount}
-                          disabled={deleteBusy}
-                        >
-                          {deleteBusy ? '…' : 'Confirm Delete'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-g btn-sm"
-                          onClick={() => setDeleteConfirming(false)}
-                          disabled={deleteBusy}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
+              {/* Action row — Save + Cancel on the left, Delete
+                  Account pushed right via ml-auto. All three on one
+                  line with btn-sm so they share the same height. The
+                  border-t divider that previously separated the
+                  Danger Zone is dropped — keeping everything on one
+                  row reads cleaner and the destructive action is
+                  already gated by the inline confirm below. */}
+              {!deleteConfirming && (
+                <div className="flex items-center gap-3 mt-4">
+                  <button type="button" className="btn-p btn-sm" onClick={handleSave} disabled={saving}>
+                    {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Member')}
+                  </button>
+                  <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>
+                    Cancel
+                  </button>
+                  {isEdit && (
                     <button
                       type="button"
-                      className="btn-del btn-sm"
+                      className="btn-del btn-sm ml-auto"
                       onClick={() => setDeleteConfirming(true)}
                       disabled={saving}
                     >
                       Delete Account
                     </button>
                   )}
+                </div>
+              )}
+              {isEdit && deleteConfirming && (
+                <div className="mt-4">
+                  <div className="text-[0.82rem] text-red">
+                    This is permanent and cannot be undone. Delete {editing?.name || 'this staff member'}?
+                  </div>
+                  {/* Confirm row — same flex pattern as the normal
+                      action row above, same btn-sm sizing across both
+                      buttons so the confirm doesn't visually jump. */}
+                  <div className="flex items-center gap-3 mt-2">
+                    <button
+                      type="button"
+                      className="btn-del btn-sm"
+                      onClick={handleDeleteAccount}
+                      disabled={deleteBusy}
+                    >
+                      {deleteBusy ? '…' : 'Confirm Delete'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-g btn-sm"
+                      onClick={() => setDeleteConfirming(false)}
+                      disabled={deleteBusy}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
             </>
