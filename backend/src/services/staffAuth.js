@@ -49,10 +49,14 @@
 //
 // Indexes (idempotent — created via ensureStaffIndexes() on boot):
 //
-//   { restaurant_id: 1, staff_id: 1 }   unique sparse
-//       Sparse so existing owner/manager rows without a staff_id are
-//       fine. Unique within the (restaurant, staff_id) pair so 'S001'
-//       can be re-used across restaurants but not within one.
+//   { restaurant_id: 1, staff_id: 1 }   unique partial
+//       Partial filter `{ staff_id: { $type: 'string' } }` so rows
+//       without a staff_id (owners, not-yet-assigned managers, etc.)
+//       are excluded from the index entirely — sparse alone wasn't
+//       enough because explicit `staff_id: null` still indexes and
+//       collides on the unique constraint. Unique within the
+//       (restaurant, staff_id) pair so 'S001' can be re-used across
+//       restaurants but not within one.
 //
 //   { restaurant_id: 1, is_active: 1 }
 //       Speeds up the staff-list page (Subagent B) and the active-only
@@ -215,16 +219,59 @@ function permissionsFromPreset(preset) {
 // Idempotent — Mongo's createIndex is a no-op when the same key/options
 // pair already exists. Safe to call on every boot.
 async function ensureStaffIndexes() {
+  const STAFF_ID_INDEX_NAME = 'restaurant_id_1_staff_id_1';
+  const STAFF_ID_PARTIAL_FILTER = { staff_id: { $type: 'string' } };
+
   try {
-    await col('restaurant_users').createIndex(
+    const c = col('restaurant_users');
+
+    // Reconcile the (restaurant_id, staff_id) index. Earlier deploys
+    // created it as `unique sparse` without a partial filter — sparse
+    // excludes missing fields but NOT explicit null, so multiple owner
+    // rows in the same restaurant (all with staff_id: null) collide on
+    // the unique constraint and the build aborts. Switching to a
+    // partial index filtered on `{ staff_id: { $type: 'string' } }`
+    // excludes missing AND null AND non-string entries cleanly.
+    //
+    // Mongo throws IndexOptionsConflict / IndexKeySpecsConflict if we
+    // try to re-create the same name with different options. Detect
+    // an existing-but-stale definition first, drop, then recreate.
+    let existingIndexes = [];
+    try {
+      existingIndexes = await c.listIndexes().toArray();
+    } catch (listErr) {
+      // listIndexes throws NamespaceNotFound on a fresh collection.
+      // Treat as empty — createIndex below will materialise the
+      // collection along with the index.
+      existingIndexes = [];
+    }
+    const existing = existingIndexes.find((i) => i.name === STAFF_ID_INDEX_NAME);
+    const hasCorrectFilter =
+      existing &&
+      existing.partialFilterExpression &&
+      existing.partialFilterExpression.staff_id &&
+      existing.partialFilterExpression.staff_id.$type === 'string';
+    if (existing && !hasCorrectFilter) {
+      await c.dropIndex(STAFF_ID_INDEX_NAME);
+      log.info({ name: STAFF_ID_INDEX_NAME }, 'ensureStaffIndexes: dropped legacy index restaurant_id_1_staff_id_1');
+    }
+    await c.createIndex(
       { restaurant_id: 1, staff_id: 1 },
-      { unique: true, sparse: true, name: 'restaurant_id_1_staff_id_1' },
+      {
+        unique: true,
+        partialFilterExpression: STAFF_ID_PARTIAL_FILTER,
+        name: STAFF_ID_INDEX_NAME,
+      },
     );
-    await col('restaurant_users').createIndex(
+    if (!existing || !hasCorrectFilter) {
+      log.info({ name: STAFF_ID_INDEX_NAME }, 'ensureStaffIndexes: created restaurant_id_1_staff_id_1 (partial)');
+    }
+
+    await c.createIndex(
       { restaurant_id: 1, is_active: 1 },
       { name: 'restaurant_id_1_is_active_1' },
     );
-    await col('restaurant_users').createIndex(
+    await c.createIndex(
       { legacy_access_token: 1 },
       { sparse: true, name: 'legacy_access_token_1' },
     );
