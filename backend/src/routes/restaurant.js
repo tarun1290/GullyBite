@@ -420,6 +420,15 @@ const {
   requireBranchAccess,
 } = require('../middleware/staffPermissions');
 router.use((req, res, next) => {
+  // Bypass auth entirely for the deprecated /staff-users surface — the
+  // 410 stubs registered later in the file (search for
+  // _STAFF_USERS_DEPRECATED) are an unconditional response that should
+  // reach any caller, including ones with stale or missing zm_tokens.
+  // Without this branch, requireAuth fires first and returns 401, hiding
+  // the deprecation signal from clients that most need to see it.
+  if (/^\/staff-users(\/.*)?$/.test(req.path)) {
+    return next();
+  }
   // Accept BOTH token types on shared accept/decline endpoints — owner
   // managing from the dashboard, staff acting on a tablet.
   if (/^\/orders\/[^/]+\/(accept|decline)$/.test(req.path)) {
