@@ -46,6 +46,16 @@ export default function UsersSection() {
   const [pendingDeactivate, setPendingDeactivate] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState<string | null>(null);
 
+  // Post-reset transient display. After a successful reset-pin call we
+  // briefly surface the PIN the owner just typed (NOT fetched from the
+  // server — the backend never persists plaintext, only bcrypt's
+  // pin_hash) so it can be copied/pasted into WhatsApp without retyping.
+  // Auto-clears after the timeout below or on the next reset/cancel.
+  const [recentResetPin, setRecentResetPin] = useState<{ userId: string; pin: string } | null>(null);
+  const [recentResetRevealed, setRecentResetRevealed] = useState<boolean>(false);
+  const [recentResetCopied, setRecentResetCopied] = useState<boolean>(false);
+  const RESET_DISPLAY_MS = 60_000;
+
   const load = async () => {
     setLoading(true);
     try {
@@ -109,12 +119,38 @@ export default function UsersSection() {
       showToast(`PIN reset for ${u.name}`, 'success');
       setPinRowId(null);
       setPinValue('');
+      // Surface the just-set PIN inline so the owner can copy/share it
+      // before it disappears. State only — never sent to the server,
+      // never stored in localStorage. Auto-clears after RESET_DISPLAY_MS.
+      setRecentResetPin({ userId: u.id, pin });
+      setRecentResetRevealed(false);
+      setRecentResetCopied(false);
+      window.setTimeout(() => {
+        setRecentResetPin((cur) => (cur && cur.userId === u.id ? null : cur));
+      }, RESET_DISPLAY_MS);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       showToast(e?.response?.data?.error || e?.message || 'PIN reset failed', 'error');
     } finally {
       setPinBusy(false);
     }
+  };
+
+  const copyRecentPin = async () => {
+    if (!recentResetPin) return;
+    try {
+      await navigator.clipboard.writeText(recentResetPin.pin);
+      setRecentResetCopied(true);
+      window.setTimeout(() => setRecentResetCopied(false), 2000);
+    } catch {
+      showToast('Could not copy — select and copy manually', 'error');
+    }
+  };
+
+  const dismissRecentPin = () => {
+    setRecentResetPin(null);
+    setRecentResetRevealed(false);
+    setRecentResetCopied(false);
   };
 
   const startPinReset = (u: RestaurantUser) => {
@@ -251,7 +287,43 @@ export default function UsersSection() {
                               </button>
                             </div>
                           ) : (
-                            <div className="flex gap-1 justify-end">
+                            <div className="flex gap-1 justify-end items-center flex-wrap">
+                              {/* Just-set PIN chip — appears for ~60s
+                                  after a successful reset so the owner
+                                  can copy/share before it auto-clears.
+                                  State-only; the value isn't fetched
+                                  back from the server. */}
+                              {recentResetPin && recentResetPin.userId === u.id && (
+                                <div className="inline-flex items-center gap-1 py-[0.15rem] px-[0.4rem] border border-rim rounded-md bg-acc-glow text-[0.7rem] font-mono">
+                                  <span className="text-dim">PIN:</span>
+                                  <span className="font-semibold text-tx tracking-wider">
+                                    {recentResetRevealed ? recentResetPin.pin : '••••'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setRecentResetRevealed((v) => !v)}
+                                    className="bg-transparent border-0 cursor-pointer text-[0.72rem] leading-none"
+                                    aria-label={recentResetRevealed ? 'Hide PIN' : 'Reveal PIN'}
+                                  >
+                                    {recentResetRevealed ? '🙈' : '👁'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={copyRecentPin}
+                                    className="bg-transparent border-0 cursor-pointer text-[0.7rem] text-acc font-semibold"
+                                  >
+                                    {recentResetCopied ? 'Copied!' : 'Copy'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={dismissRecentPin}
+                                    className="bg-transparent border-0 cursor-pointer text-[0.7rem] text-dim leading-none"
+                                    aria-label="Dismiss"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              )}
                               <button
                                 type="button"
                                 className="btn-outline btn-sm text-[0.72rem]"
@@ -266,7 +338,7 @@ export default function UsersSection() {
                                 onClick={() => startPinReset(u)}
                                 disabled={rowBusy === u.id}
                               >
-                                PIN
+                                Reset PIN
                               </button>
                               {u.is_active ? (
                                 <button
