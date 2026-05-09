@@ -13,7 +13,12 @@ const DEVICE_KEY = 'gb_staff_device_id';
 const ROLE_KEY = 'gb_user_role';
 const OWNER_KEY = 'gb_owner_info';
 
-export type UserRole = 'staff' | 'owner';
+// 'manager' was added 2026-05-09 alongside the backend /api/staff/auth
+// role-filter widening (role: { $in: ['staff', 'manager'] }). Managers
+// log in through the same staff-app flow as staff but see additional
+// sections (branch toggle, daily summary, etc.) gated by useRole.
+// 'owner' is the separate owner-login path.
+export type UserRole = 'staff' | 'manager' | 'owner';
 
 export type StoredRestaurant = {
   id: string;
@@ -26,6 +31,12 @@ export type StoredStaffUser = {
   userId: string;
   name: string;
   branchId: string;
+  // role is sourced from /api/staff/auth's staffUser response. Optional
+  // because legacy installs (pre-role-in-response) may have a staff_info
+  // row written before the field was added — authStore back-fills with
+  // the separately-stored gb_user_role key so existing sessions keep
+  // working without forcing a re-login.
+  role?: UserRole;
   permissions: Record<string, boolean>;
 };
 
@@ -66,7 +77,7 @@ export async function saveRole(role: UserRole): Promise<void> {
 
 export async function getRole(): Promise<UserRole | null> {
   const raw = await SecureStore.getItemAsync(ROLE_KEY);
-  if (raw === 'staff' || raw === 'owner') return raw;
+  if (raw === 'staff' || raw === 'manager' || raw === 'owner') return raw;
   return null;
 }
 

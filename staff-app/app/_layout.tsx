@@ -92,9 +92,14 @@ function RootInner() {
   // ─── Route guard ──────────────────────────────────────────
   // Re-runs on every segment change so a logout (which navigates to
   // /login) doesn't get bounced back into (app).
-  // Role-aware: owner JWTs route to (owner), staff JWTs (and legacy
-  // pre-role-key sessions where role hydrates as null but a staffUser
-  // exists — handled in authStore HYDRATED) route to (app).
+  // Role routing (2026-05-09 update — added 'manager'):
+  //   owner   → /(owner)/dashboard  (full management surface)
+  //   manager → /(owner)/dashboard  (same screens; manager-only
+  //                                   sub-sections gated via useRole
+  //                                   for future-proofing)
+  //   staff   → /(app)/orders       (operational subset only)
+  //   null    → /(app)/orders       (legacy session — authStore
+  //                                   HYDRATED defaults to 'staff')
   useEffect(() => {
     if (!ready || authLoading) return;
     const authed = !!token;
@@ -103,9 +108,10 @@ function RootInner() {
     const atLogin = segments[0] === 'login';
     const atOwnerLogin = segments[0] === 'owner-login';
     const atAuthScreen = atLogin || atOwnerLogin;
+    const isManagerLike = role === 'owner' || role === 'manager';
     if (!authed && !atAuthScreen) router.replace('/login');
-    else if (authed && role === 'owner' && !inOwnerGroup) router.replace('/(owner)/dashboard');
-    else if (authed && role !== 'owner' && !inAppGroup && !atLogin) router.replace('/(app)/orders');
+    else if (authed && isManagerLike && !inOwnerGroup) router.replace('/(owner)/dashboard');
+    else if (authed && !isManagerLike && !inAppGroup && !atLogin) router.replace('/(app)/orders');
   }, [ready, authLoading, token, role, segments, router]);
 
   // Tap-to-open routing. Five payload shapes today:

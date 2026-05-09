@@ -174,6 +174,11 @@ export default function LoginScreen() {
           userId: res.staffUser.id,
           name: res.staffUser.name,
           branchId: res.staffUser.branchId,
+          // Pass through the role from the auth response so manager
+          // sessions register as 'manager' (not the hardcoded 'staff'
+          // pre-fix). 'staff' fallback covers a legacy backend without
+          // the role field.
+          role: res.staffUser.role || 'staff',
           permissions: res.staffUser.permissions || {},
         },
         {

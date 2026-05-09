@@ -66,6 +66,10 @@ export type StaffLoginResponse = {
     id: string;
     name: string;
     branchId: string;
+    // Backend writes 'staff' or 'manager' (per the role-filter at
+    // routes/staff.js POST /auth). Optional for back-compat with a
+    // pre-2026-05-09 backend that hadn't shipped the field yet.
+    role?: 'staff' | 'manager';
     permissions: Record<string, boolean>;
   };
 };

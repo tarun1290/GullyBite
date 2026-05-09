@@ -5,10 +5,14 @@
 // in backend/ec2-server.js. All routes except POST /auth require a
 // staff JWT (per-user, hydrated by middleware/staffAuth.requireStaffAuth).
 //
-// Auth model: each staff member has their own row in restaurant_users
-// with role='staff', phone, bcrypt'd PIN, branch_ids, and permissions.
-// The legacy single shared restaurants.staff_pin is deprecated and no
-// longer consulted by /auth (Option A migration).
+// Auth model: each user has their own row in restaurant_users with
+// role in {staff, manager}, phone, bcrypt'd PIN, branch_ids, and
+// permissions. Managers log in through the same /auth flow as staff
+// — the role split is purely about feature gating in the staff app
+// (managers see branch-open/close, staff list, settlement, daily
+// summary; staff don't). Owners use a different login path entirely.
+// The legacy single shared restaurants.staff_pin is deprecated and
+// no longer consulted by /auth (Option A migration).
 
 const express = require('express');
 const router = express.Router();
@@ -88,13 +92,15 @@ router.post('/auth', staffAuthLimiter, express.json(), async (req, res) => {
     const safeName = String(name).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const nameRegex = new RegExp(`^${safeName}$`, 'i');
 
-    // Candidates: name match within this restaurant, role:'staff',
-    // active, and either scoped to this branch (branch_ids contains
-    // branchId) or unscoped (branch_ids is empty / missing — which
-    // means all branches).
+    // Candidates: name match within this restaurant, role in
+    // {staff, manager}, active, and either scoped to this branch
+    // (branch_ids contains branchId) or unscoped (branch_ids is
+    // empty / missing — which means all branches). Managers can log
+    // into the staff app the same way staff do; the role filter just
+    // excludes owners and any future kitchen/delivery-only roles.
     const candidates = await col('restaurant_users').find({
       restaurant_id: branch.restaurant_id,
-      role: 'staff',
+      role: { $in: ['staff', 'manager'] },
       is_active: true,
       name: { $regex: nameRegex },
       $or: [
@@ -152,6 +158,12 @@ router.post('/auth', staffAuthLimiter, express.json(), async (req, res) => {
         id: String(matched._id),
         name: matched.name,
         branchId: String(branch._id),
+        // role drives feature gating in the staff app — managers see
+        // branch open/close, staff list, daily summary, settlement;
+        // staff see the operational subset only. Sourced from the
+        // matched restaurant_users row (now in {staff, manager} since
+        // the role filter widened above).
+        role: matched.role,
         permissions: matched.permissions || {},
       },
     });

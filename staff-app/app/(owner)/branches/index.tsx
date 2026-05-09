@@ -17,6 +17,7 @@ import {
 import { useRouter } from 'expo-router';
 
 import { getOwnerDashboard, toggleBranchOpen } from '@/api';
+import { useRole } from '@/hooks/useRole';
 import { colors } from '@/theme';
 
 type BranchRow = {
@@ -53,6 +54,7 @@ function subscriptionBadgeColors(status: string | null | undefined): { bg: strin
 
 export default function BranchesListScreen() {
   const router = useRouter();
+  const { isManager } = useRole();
   const [branches, setBranches] = useState<BranchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -141,19 +143,25 @@ export default function BranchesListScreen() {
             </View>
             <View style={styles.toggleRow}>
               <Text style={styles.openLabel}>{b.is_open ? '🟢 Open' : '🔴 Closed'}</Text>
-              {/* Stop the Switch from triggering the row's Pressable. RN's
-                  Switch swallows its own touches, but wrapping in a View
-                  with onStartShouldSetResponder removes any accidental
-                  bubbling on Android. */}
-              <View onStartShouldSetResponder={() => true}>
-                <Switch
-                  value={b.is_open}
-                  onValueChange={(v) => onToggle(b.id, v)}
-                  disabled={inFlight}
-                  trackColor={{ false: colors.rim2, true: colors.acc }}
-                  thumbColor={colors.ink2}
-                />
-              </View>
+              {/* Branch open/close toggle — manager-only. Status text
+                  on the left stays visible so the row still reads as
+                  open/closed for everyone; only the Switch control is
+                  gated. */}
+              {isManager && (
+                /* Stop the Switch from triggering the row's Pressable.
+                   RN's Switch swallows its own touches, but wrapping
+                   in a View with onStartShouldSetResponder removes any
+                   accidental bubbling on Android. */
+                <View onStartShouldSetResponder={() => true}>
+                  <Switch
+                    value={b.is_open}
+                    onValueChange={(v) => onToggle(b.id, v)}
+                    disabled={inFlight}
+                    trackColor={{ false: colors.rim2, true: colors.acc }}
+                    thumbColor={colors.ink2}
+                  />
+                </View>
+              )}
             </View>
             <Text style={styles.branchStat}>
               Today: {b.today_orders} orders · ₹{formatRupees(b.today_revenue_rs)}

@@ -63,7 +63,12 @@ function reducer(state: AuthState, action: Action): AuthState {
         staffUser: action.staffUser,
         restaurant: action.restaurant,
         branchId: action.staffUser?.branchId || null,
-        role: 'staff',
+        // Role comes from the /api/staff/auth response (staffUser.role,
+        // populated 2026-05-09). Pre-fix the LOGIN action hardcoded
+        // 'staff' which silently demoted managers to staff feature
+        // gating. Fallback to 'staff' covers legacy backend that hasn't
+        // shipped the response field yet.
+        role: action.staffUser?.role || 'staff',
         ownerInfo: null,
         isLoading: false,
       };
@@ -87,10 +92,12 @@ function reducer(state: AuthState, action: Action): AuthState {
         staffUser: action.staffUser,
         restaurant: action.restaurant,
         branchId: action.staffUser?.branchId || null,
-        // Back-compat: pre-2.x installs have no role stored. If we see a
-        // staff token + no role we treat it as 'staff' so the existing
-        // session keeps working without forcing a re-login.
-        role: action.role || (action.staffUser ? 'staff' : null),
+        // Role precedence on hydrate:
+        //   1. staffUser.role (post-2026-05-09 logins persist it on the row).
+        //   2. separately-stored gb_user_role key (set by saveRole during login).
+        //   3. fallback to 'staff' if a staff token exists with neither (very
+        //      old install — keeps the session working without forced re-login).
+        role: action.staffUser?.role || action.role || (action.staffUser ? 'staff' : null),
         ownerInfo: action.ownerInfo,
         isLoading: false,
       };
@@ -130,7 +137,11 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
     ...state,
     async login(token, staffUser, restaurant) {
       await saveAuth(token, restaurant, staffUser);
-      await saveRole('staff');
+      // Persist the actual role so route guards + useRole resolve
+      // correctly across cold starts. staffUser.role is 'staff' or
+      // 'manager' from /api/staff/auth; default to 'staff' if a legacy
+      // backend skips the field.
+      await saveRole(staffUser.role || 'staff');
       dispatch({ type: 'LOGIN', token, staffUser, restaurant });
     },
     async loginAsOwner(token, restaurant, ownerInfo) {

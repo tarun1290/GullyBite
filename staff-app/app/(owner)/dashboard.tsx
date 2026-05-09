@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getOwnerDashboard, toggleBranchOpen } from '@/api';
 import { useAuth } from '@/store/authStore';
+import { useRole } from '@/hooks/useRole';
 import { colors } from '@/theme';
 
 type BranchRow = {
@@ -58,6 +59,7 @@ function formatRupees(n: number): string {
 
 export default function OwnerDashboardScreen() {
   const { ownerInfo, restaurant } = useAuth();
+  const { isManager } = useRole();
   const [data, setData] = useState<DashboardResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -147,7 +149,10 @@ export default function OwnerDashboardScreen() {
         {restaurantName ? <Text style={styles.subtitle}>{restaurantName}</Text> : null}
       </View>
 
-      {totals ? (
+      {/* Daily sales summary — manager-only. Hidden for plain staff
+          even if they ever reach this screen (defense-in-depth on top
+          of the route guard, which sends staff to /(app)/orders). */}
+      {isManager && totals ? (
         <View style={styles.totalsCard}>
           <View style={styles.totalsRow}>
             <Tile label="Today's Orders" value={String(totals.today_orders)} />
@@ -184,13 +189,19 @@ export default function OwnerDashboardScreen() {
               <Text style={styles.openLabel}>
                 {b.is_open ? '🟢 Open' : '🔴 Closed'}
               </Text>
-              <Switch
-                value={b.is_open}
-                onValueChange={(v) => onToggle(b.id, v)}
-                disabled={inFlight}
-                trackColor={{ false: colors.rim2, true: colors.acc }}
-                thumbColor={colors.ink2}
-              />
+              {/* Branch open/close toggle — manager-only. Status text
+                  on the left stays visible for everyone so the row
+                  still communicates the branch state; only the Switch
+                  control is gated. */}
+              {isManager && (
+                <Switch
+                  value={b.is_open}
+                  onValueChange={(v) => onToggle(b.id, v)}
+                  disabled={inFlight}
+                  trackColor={{ false: colors.rim2, true: colors.acc }}
+                  thumbColor={colors.ink2}
+                />
+              )}
             </View>
 
             <Text style={styles.branchStat}>
