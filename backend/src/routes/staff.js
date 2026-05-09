@@ -49,181 +49,12 @@ const staffBranchInfoLimiter = rateLimitFn(
   { message: 'Too many requests. Please try again later.' }
 );
 
-// POST /api/staff/auth — { staff_access_token, name, pin } → { token, restaurant, staffUser }
-//
-// Per-user, per-branch auth. The staff_access_token is a UUID stored
-// on a branch document (see /restaurant/branches/:id/staff-link/generate).
-// Resolving the token gives us restaurantId + branchId; we then find
-// staff users in restaurant_users whose name matches (case-insensitive)
-// AND whose branch_ids either contains this branch or is empty (= all
-// branches). PIN is bcrypt-compared against the matching candidates.
-//
-// Generic 401 on any failure — never reveal whether the token, name,
-// or PIN was wrong.
-router.post('/auth', staffAuthLimiter, express.json(), async (req, res) => {
-  try {
-    const { staff_access_token, name, pin } = req.body || {};
-    if (!staff_access_token || !name || !pin || !/^\d{4}$/.test(String(pin))) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    // Resolve branch from the token. Single doc lookup — staff_access_token
-    // should be unique across branches (UUID v4 collision space) so we
-    // don't bother indexing on it for now; if branches grow large enough
-    // to matter, a sparse unique index keeps this O(log n).
-    const branch = await col('branches').findOne(
-      { staff_access_token: String(staff_access_token) },
-      { projection: {
-          _id: 1, restaurant_id: 1, name: 1,
-      } },
-    );
-    if (!branch) return res.status(401).json({ error: 'Invalid credentials' });
-
-    const r = await col('restaurants').findOne(
-      { _id: branch.restaurant_id },
-      { projection: {
-          _id: 1, store_slug: 1, business_name: 1, brand_name: 1, logo_url: 1,
-      } },
-    );
-    if (!r) return res.status(401).json({ error: 'Invalid credentials' });
-
-    // Escape user input before regex compile so '.', '$', etc. in the
-    // submitted name can't broaden the match. Anchor + case-insensitive.
-    const safeName = String(name).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const nameRegex = new RegExp(`^${safeName}$`, 'i');
-
-    // Candidates: name match within this restaurant, role in
-    // {staff, manager}, active, and either scoped to this branch
-    // (branch_ids contains branchId) or unscoped (branch_ids is
-    // empty / missing — which means all branches). Managers can log
-    // into the staff app the same way staff do; the role filter just
-    // excludes owners and any future kitchen/delivery-only roles.
-    const candidates = await col('restaurant_users').find({
-      restaurant_id: branch.restaurant_id,
-      role: { $in: STAFF_APP_ROLES },
-      is_active: true,
-      name: { $regex: nameRegex },
-      $or: [
-        { branch_ids: branch._id },
-        { branch_ids: { $size: 0 } },
-        { branch_ids: { $exists: false } },
-      ],
-    }).toArray();
-
-    if (!candidates.length) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    // PIN match against each candidate. Stop at first match — there
-    // shouldn't be name collisions within a branch in practice, but
-    // even if there are, PIN uniqueness disambiguates.
-    let matched = null;
-    for (const c of candidates) {
-      if (!c.pin_hash) continue;
-      // eslint-disable-next-line no-await-in-loop
-      const ok = await bcrypt.compare(String(pin), c.pin_hash);
-      if (ok) { matched = c; break; }
-    }
-    if (!matched) return res.status(401).json({ error: 'Invalid credentials' });
-
-    const now = new Date();
-    await col('restaurant_users').updateOne(
-      { _id: matched._id },
-      { $set: { last_login_at: now } },
-    );
-
-    // Resolve the staff member's full assigned-branch set. Two cases:
-    //   (a) matched.branch_ids has entries → use those.
-    //   (b) matched.branch_ids is empty/missing → "unscoped" staff,
-    //       i.e. they have access to every branch of this restaurant.
-    //       Fetch the live branches list so the JWT and response carry
-    //       the explicit ids — the staff app's selector can't render
-    //       a useful dropdown from an empty array.
-    let assignedBranchIds = [];
-    if (Array.isArray(matched.branch_ids) && matched.branch_ids.length) {
-      assignedBranchIds = matched.branch_ids.map(String);
-    } else {
-      const allBranches = await col('branches')
-        .find({ restaurant_id: String(r._id) }, { projection: { _id: 1 } })
-        .toArray();
-      assignedBranchIds = allBranches.map((b) => String(b._id));
-    }
-    // Membership check — the branch the operator is logging in via
-    // (the staff_access_token's branch) must be in their access set.
-    // Catches misconfigurations (a token from a branch the staff
-    // member isn't actually assigned to). Defence-in-depth on top of
-    // the candidate filter at the top of this handler.
-    if (!assignedBranchIds.includes(String(branch._id))) {
-      log.warn(
-        { userId: matched._id, branchId: String(branch._id), assignedCount: assignedBranchIds.length },
-        'staff auth: login branch not in assigned access set',
-      );
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    // Hydrate {id, name} for every assigned branch so the staff app
-    // can populate the branch-selector dropdown without a follow-up
-    // request. Branches not found are dropped — that should be rare
-    // (deleted branch still referenced by a stale branch_ids entry).
-    const branchDocs = await col('branches')
-      .find({ _id: { $in: assignedBranchIds }, restaurant_id: String(r._id) },
-             { projection: { _id: 1, name: 1 } })
-      .toArray();
-    const branchSummaries = branchDocs.map((b) => ({ id: String(b._id), name: b.name || '' }));
-
-    // JWT carries branchId (the token-resolved primary) AND branchIds
-    // (the full assigned access set). Endpoints validate X-Branch-Id
-    // against branchIds; default scope is branchId when no header.
-    const token = signStaffToken({
-      userId: matched._id,
-      restaurantId: String(r._id),
-      restaurantSlug: r.store_slug || null,
-      branchId: String(branch._id),
-      branchIds: assignedBranchIds,
-      permissions: matched.permissions || {},
-      tokenVersion: Number(matched.token_version || 0),
-      // Source of truth for role lives on restaurant_users — pass the
-      // matched row's value so manager sessions get role:'manager' on
-      // the JWT instead of the hardcoded 'staff' it used to mint.
-      role: matched.role,
-    });
-
-    return res.json({
-      success: true,
-      token,
-      restaurant: {
-        id: String(r._id),
-        name: r.brand_name || r.business_name,
-        slug: r.store_slug || null,
-        logo_url: r.logo_url || null,
-      },
-      staffUser: {
-        id: String(matched._id),
-        name: matched.name,
-        branchId: String(branch._id),
-        // Full assigned access set — the staff app reads this to
-        // decide whether to render the branch-selector dropdown
-        // (hidden when length === 1) and to know which ids are valid
-        // for the X-Branch-Id header.
-        branch_ids: assignedBranchIds,
-        // {id, name} pairs for the dropdown labels. Sourced from the
-        // branches collection in the same /auth round-trip so the
-        // app doesn't need a follow-up GET /branches call.
-        branches: branchSummaries,
-        // role drives feature gating in the staff app — managers see
-        // branch open/close, staff list, daily summary, settlement;
-        // staff see the operational subset only. Sourced from the
-        // matched restaurant_users row (now in {staff, manager} since
-        // the role filter widened above).
-        role: matched.role,
-        permissions: matched.permissions || {},
-      },
-    });
-  } catch (e) {
-    log.error({ err: e }, 'staff auth failed');
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// NOTE: The legacy POST /auth handler (login via staff_access_token +
+// name + pin) was removed on 2026-05-09. The new staff-auth contract
+// owns POST /api/staff/auth → /, /logout, /me in routes/staffAuth.js,
+// mounted BEFORE this router in ec2-server.js so the new handler wins.
+// The /branch-info handler below stays — it's the public token →
+// branch-display lookup the staff login page hits on mount, unchanged.
 
 // GET /api/staff/branch-info?token=<staff_access_token> — public, no auth.
 //
@@ -537,8 +368,14 @@ const STAFF_ALLOWED_FROM = new Set(['CONFIRMED', 'PREPARING']);
 
 router.patch('/orders/:orderId/status', requireStaffAuth(), express.json(), async (req, res) => {
   try {
-    if (!req.staff.permissions?.manage_orders) {
-      return res.status(403).json({ error: 'Permission denied: manage_orders' });
+    // Permission-gated: requires mark_ready
+    // Per the patched 10-key staff permissions contract, the staff-side
+    // CONFIRMED→PREPARING→PACKED transitions are all governed by
+    // mark_ready (the legacy manage_orders key is retired on the staff
+    // side; owner JWTs continue to use manage_orders via routes/auth.js).
+    // No legacy fallback — staff rows must carry the new key shape.
+    if (!req.staff.permissions?.mark_ready) {
+      return res.status(403).json({ error: 'Permission denied: mark_ready' });
     }
     const incoming = String(req.body?.status || '').toLowerCase();
     const newStatus = STATUS_MAP[incoming];

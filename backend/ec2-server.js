@@ -309,11 +309,30 @@ app.use('/api/restaurant/loyalty-program', jsonAndSanitize(), require('./src/rou
 app.use('/api/restaurant/feedback', jsonAndSanitize(), require('./src/routes/dineInFeedback'));
 const _marketingAnalytics = require('./src/routes/marketingAnalytics');
 app.use('/api/restaurant/marketing-analytics', jsonAndSanitize(), _marketingAnalytics.restaurantRouter);
+// ─── Restaurant Staff CRUD ───
+// Owner-only (zm_token) per-staff CRUD endpoints. Mounted BEFORE the
+// catch-all /api/restaurant router below so the more-specific path
+// wins. Coordination: Subagent A's /api/staff/auth router lives further
+// down with the staff-app routes; A and B share services/staffAuth.js
+// (PIN gen + sanitizeStaff) but own different mount paths.
+app.use('/api/restaurant/staff', jsonAndSanitize(), require('./src/routes/restaurantStaff'));
 // Catch-all /api/restaurant router — must be LAST of the /api/restaurant/* group.
 app.use('/api/restaurant', jsonAndSanitize({ limit: '10mb' }), require('./src/routes/restaurant'));
 
 // ─── UPLOADS + STAFF + ADMIN PANEL + CUSTOMER ────────────────
 app.use('/api/upload', jsonAndSanitize(), require('./src/routes/upload'));
+
+// ─── Staff Auth ──────────────────────────────────────────────
+// New per-staff PIN-login router (post-2026-05-09 contract). MUST be
+// mounted BEFORE the legacy /api/staff catch-all so POST /api/staff/auth
+// → /, POST /api/staff/auth/logout, GET /api/staff/auth/me are owned
+// by the new handler and don't fall through to routes/staff.js.
+//
+// Coordination: Subagent B (staff CRUD) will mount /api/restaurant/staff
+// in its own clearly-marked block — that one belongs in the
+// /api/restaurant/* group above, not here.
+app.use('/api/staff/auth', require('./src/routes/staffAuth'));
+
 // Staff POS router applies body parsers per-route — /stream is SSE and must
 // not be consumed by a top-level express.json().
 app.use('/api/staff', require('./src/routes/staff'));
@@ -501,6 +520,13 @@ metaConfig.logStatus();
 
 connect().then(() => {
   require('./src/config/indexes').ensureIndexes().catch(e => console.warn('[DB] Index init:', e.message));
+
+  // Staff-auth indexes (post-2026-05-09 contract). Idempotent —
+  // createIndex is a no-op when an identical key/options pair already
+  // exists. Kept alongside the main ensureIndexes() call so all index
+  // bootstrap is in one place.
+  require('./src/services/staffAuth').ensureStaffIndexes()
+    .catch(e => console.warn('[DB] staff index init:', e.message));
 
   // Platform-wide delivery radius (km). Single source of truth for the
   // "we don't deliver to your area" gate inside findBestAvailableBranch.

@@ -41,7 +41,23 @@ function getSecret() {
 // the branch-scoped staff_access_token. Old multi-branch `branchIds`
 // payloads are still accepted by the verifier for back-compat with any
 // in-flight tokens issued before this change.
-function signStaffToken({ userId, restaurantId, branchId, branchIds, permissions, restaurantSlug, tokenVersion, role }) {
+function signStaffToken({
+  userId,
+  restaurantId,
+  branchId,
+  branchIds,
+  permissions,
+  restaurantSlug,
+  tokenVersion,
+  role,
+  // ── new claims (post-2026-05-09 staff-auth contract) ──────────────
+  // staff_id and role_preset are emitted ONLY for staff/manager rows;
+  // owner-flow tokens (issued by /auth/signin) don't pass these and
+  // they default to undefined → omitted from the JWT payload, keeping
+  // the owner token shape unchanged.
+  staff_id,
+  role_preset,
+}) {
   if (!userId) throw new Error('signStaffToken: userId required');
   if (!restaurantId) throw new Error('signStaffToken: restaurantId required');
   // Two complementary fields on the token now:
@@ -83,20 +99,24 @@ function signStaffToken({ userId, restaurantId, branchId, branchIds, permissions
   // falls back to STAFF_APP_ROLES[0] so a misconfigured caller can't
   // mint elevated tokens.
   const effectiveRole = STAFF_APP_ROLES.includes(role) ? role : STAFF_APP_ROLES[0];
-  return jwt.sign(
-    {
-      userId: String(userId),
-      restaurant_id: String(restaurantId),
-      restaurant_slug: restaurantSlug ? String(restaurantSlug) : null,
-      branchId: effectiveBranchId,
-      branchIds: effectiveBranchIds,
-      permissions: permissions || {},
-      token_version: typeof tokenVersion === 'number' ? tokenVersion : 0,
-      role: effectiveRole,
-    },
-    getSecret(),
-    { expiresIn: '30d', algorithm: 'HS256' },
-  );
+  // Build the payload incrementally so we only emit staff_id /
+  // role_preset when they were actually passed. Omitting the keys (vs.
+  // setting them to null) keeps the owner-flow token shape byte-for-byte
+  // identical to the pre-fix output, so any external verifier comparing
+  // payload keys doesn't see a churn.
+  const payload = {
+    userId: String(userId),
+    restaurant_id: String(restaurantId),
+    restaurant_slug: restaurantSlug ? String(restaurantSlug) : null,
+    branchId: effectiveBranchId,
+    branchIds: effectiveBranchIds,
+    permissions: permissions || {},
+    token_version: typeof tokenVersion === 'number' ? tokenVersion : 0,
+    role: effectiveRole,
+  };
+  if (staff_id != null && staff_id !== '') payload.staff_id = String(staff_id);
+  if (role_preset != null && role_preset !== '') payload.role_preset = String(role_preset);
+  return jwt.sign(payload, getSecret(), { expiresIn: '30d', algorithm: 'HS256' });
 }
 
 // Decode + verify a staff JWT and hydrate req.staff. Returns the
@@ -166,6 +186,15 @@ async function _verifyAndLoadStaff(token) {
       // demoted to 'staff' downstream — useRole on the staff app and
       // any role-aware backend gate reads this field.
       role: decoded.role,
+      // Post-2026-05-09 claims (staff-auth contract). Surfaced on
+      // req.staff so downstream handlers (audit logging in routes/
+      // staffAuth.js, permission gates in Subagent B's routers) can
+      // read the row's staff_id / role_preset without a follow-up
+      // findOne. Both default to null on legacy tokens minted before
+      // this change — verifyAndLoadStaff is the single back-compat
+      // seam.
+      staff_id: decoded.staff_id || null,
+      role_preset: decoded.role_preset || null,
     },
   };
 }
@@ -173,12 +202,20 @@ async function _verifyAndLoadStaff(token) {
 function requireStaffAuth() {
   return async function staffAuthMw(req, res, next) {
     try {
-      // EventSource cannot set the Authorization header, so the SSE
-      // /stream endpoint also accepts ?token=<jwt>. Header path is
-      // still preferred for POST/GET.
+      // Bearer-only (post-2026-05-09 staff-auth contract). No cookies,
+      // no query-string fallback. The web staff app reads the JWT from
+      // localStorage[staff_web_token] and attaches it as
+      // `Authorization: Bearer …`; the RN app reads it from
+      // expo-secure-store (gb_staff_token) and does the same.
+      //
+      // SSE caveat: EventSource cannot set custom headers. The /stream
+      // endpoint is the only legacy caller that historically passed
+      // ?token=<jwt>; if it needs to keep working under Bearer-only, it
+      // must be migrated to fetch+ReadableStream or to a tokenless
+      // session cookie (out of scope for this subagent — coordinate
+      // with Subagent C).
       const header = req.headers['authorization'] || '';
-      let token = header.startsWith('Bearer ') ? header.slice(7) : null;
-      if (!token && req.query && typeof req.query.token === 'string') token = req.query.token;
+      const token = header.startsWith('Bearer ') ? header.slice(7) : null;
       if (!token) return res.status(401).json({ error: 'Authentication required' });
 
       const result = await _verifyAndLoadStaff(token);

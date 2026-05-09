@@ -411,6 +411,14 @@ router.delete('/owner/push-token', requireOwnerAuth, express.json(), async (req,
 // work uniformly across token types.
 const { requireStaffOrRestaurantAuth } = require('../middleware/staffAuth');
 const _staffOrOwner = requireStaffOrRestaurantAuth(requireAuth);
+// Aliased to avoid collision with the legacy owner-side requirePermission
+// already imported from ./auth above. The staff variant uses the 10-key
+// contract (services/staffPermissions.js) and the new 403 response shape
+// `{ ok:false, error:'forbidden', missing_permission }`.
+const {
+  requirePermission: requireStaffPermission,
+  requireBranchAccess,
+} = require('../middleware/staffPermissions');
 router.use((req, res, next) => {
   // Accept BOTH token types on shared accept/decline endpoints — owner
   // managing from the dashboard, staff acting on a tablet.
@@ -5934,7 +5942,11 @@ router.get('/pending-order-notifications', async (req, res) => {
 // PAID → CONFIRMED. Stamps acknowledgement so the modal closes and
 // doesn't reappear on the next poll. The state-engine update is the
 // authoritative transition; ack fields are denormalized for the UI.
-router.post('/orders/:orderId/accept', requireApproved, requirePermission('manage_orders'), async (req, res) => {
+// Permission-gated: requires accept_orders
+router.post('/orders/:orderId/accept', requireApproved, requireStaffPermission('accept_orders'), requireBranchAccess(async (req) => {
+  const o = await col('orders').findOne({ _id: req.params.orderId }, { projection: { branch_id: 1 } });
+  return o?.branch_id;
+}), async (req, res) => {
   try {
     const orderId = req.params.orderId;
     const order = await col('orders').findOne({ _id: orderId });
@@ -6044,7 +6056,12 @@ router.post('/orders/:orderId/accept', requireApproved, requirePermission('manag
 // stays in PAID (with acknowledged_at set) on refund failure so ops
 // can retry — never trap the customer in limbo.
 // Body: { reason: string }
-router.post('/orders/:orderId/decline', express.json(), requireApproved, requirePermission('manage_orders'), async (req, res) => {
+// Permission-gated: requires reject_orders (existing path /decline maps
+// to the reject_orders permission per the patched contract)
+router.post('/orders/:orderId/decline', express.json(), requireApproved, requireStaffPermission('reject_orders'), requireBranchAccess(async (req) => {
+  const o = await col('orders').findOne({ _id: req.params.orderId }, { projection: { branch_id: 1 } });
+  return o?.branch_id;
+}), async (req, res) => {
   try {
     const orderId = req.params.orderId;
     const reason = (req.body?.reason || '').toString().trim().slice(0, 500) || 'Restaurant declined';
@@ -9054,6 +9071,12 @@ router.post('/issues/:id/reopen', requireAuth, requireApproved, async (req, res)
 // only ever returned ONCE (on create + reset) so the owner can hand it
 // off. Subsequent reads NEVER include pin_hash or the plain PIN.
 
+// DEPRECATED 2026-05-09 — see 410 stubs below. The helpers in this
+// section (_STAFF_BCRYPT, _STAFF_VALID_PERM_KEYS, _normalizeStaffPermissions,
+// _normalizeBranchIds, _staffUserPublic) backed the legacy /staff-users
+// CRUD that is now hard-deprecated. Helpers are no longer reachable;
+// kept in place to minimize churn for Part 7 cleanup, which will
+// remove the helpers and the route stubs together.
 const _STAFF_BCRYPT = require('bcryptjs');
 
 const _STAFF_VALID_PERM_KEYS = new Set([
@@ -9101,287 +9124,43 @@ function _staffUserPublic(u) {
   };
 }
 
-// POST /api/restaurant/staff-users
-// Body: { name, phone, pin (4-digit), branch_ids?, permissions? }
-// Returns: { staffUser: <public shape>, pin } — pin is the plain PIN
-// returned ONCE so the owner can hand it off.
-router.post('/staff-users', requireAuth, requirePermission('manage_staff'), express.json(),
-  async (req, res) => {
-    try {
-      const { name, phone, pin, branch_ids, permissions } = req.body || {};
-      if (!name || typeof name !== 'string' || !name.trim()) {
-        return res.status(400).json({ error: 'name is required' });
-      }
-      if (!phone || !/^[0-9]{10,15}$/.test(String(phone))) {
-        return res.status(400).json({ error: 'phone is required (10-15 digits)' });
-      }
-      if (!pin || !/^\d{4}$/.test(String(pin))) {
-        return res.status(400).json({ error: 'pin must be exactly 4 digits' });
-      }
-      // Phone uniqueness within the restaurant (across active rows).
-      // Soft-deleted (is_active=false) rows don't conflict so the same
-      // phone can be re-used after a staff member leaves and rejoins.
-      const dupe = await col('restaurant_users').findOne({
-        restaurant_id: req.restaurantId,
-        phone: String(phone),
-        is_active: true,
-      });
-      if (dupe) return res.status(409).json({ error: 'A staff user with this phone already exists' });
+// ─── DEPRECATED — Legacy /staff-users CRUD (410 Gone) ──────────────────
+//
+// Hard-deprecated 2026-05-09. The new contract lives at:
+//   /api/restaurant/staff       (CRUD, in routes/restaurantStaff.js)
+//   /api/staff/auth             (login/logout/me, in routes/staffAuth.js)
+//
+// These six routes used to validate against the legacy 7-key
+// permissions shape (manage_orders, view_analytics, manage_coupons,
+// manage_users, view_payments, manage_staff, view_menu) — incompatible
+// with the new 10-key contract that gates accept_orders / reject_orders /
+// mark_ready / etc. Leaving the handlers live would let a stale UI
+// write old-shape permission documents that the new gates ignore,
+// silently breaking every staff member that owner touched.
+//
+// We keep the route registrations (path + method preserved) so any
+// in-flight client receives a structured 410 with a pointer to the
+// new endpoint, rather than a confusing 404. Auth/permission
+// middleware is intentionally dropped — a 410 is an unconditional
+// response, not a security gate, and we want clients to see the
+// deprecation signal even with a missing/expired zm_token.
+//
+// Part 7 cleanup will remove these stubs and the orphaned helper
+// functions above (_STAFF_BCRYPT, _STAFF_VALID_PERM_KEYS,
+// _normalizeStaffPermissions, _normalizeBranchIds, _staffUserPublic).
 
-      const pinHash = await _STAFF_BCRYPT.hash(String(pin), 10);
-      const now = new Date();
-      const doc = {
-        _id: newId(),
-        restaurant_id: req.restaurantId,
-        name: name.trim(),
-        phone: String(phone),
-        email: null,
-        pin_hash: pinHash,
-        pin_attempts: 0,
-        pin_locked_until: null,
-        token_version: 0,
-        role: 'staff',
-        branch_ids: _normalizeBranchIds(branch_ids, req.restaurantId),
-        permissions: _normalizeStaffPermissions(permissions),
-        is_active: true,
-        last_login_at: null,
-        created_at: now,
-        updated_at: now,
-      };
-      await col('restaurant_users').insertOne(doc);
-
-      log({
-        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
-        action: 'staff_user.created', category: 'settings',
-        description: `Staff user "${doc.name}" (${doc.phone}) created`,
-        restaurantId: req.restaurantId,
-        resourceType: 'staff_user', resourceId: doc._id,
-        severity: 'info',
-      });
-
-      return res.status(201).json({
-        success: true,
-        staffUser: _staffUserPublic(doc),
-        // Plain PIN returned ONCE so the admin can give it to the staff
-        // member. Never persisted.
-        pin: String(pin),
-      });
-    } catch (e) {
-      req.log?.error?.({ err: e }, 'staff_user create failed');
-      res.status(500).json({ success: false, message: 'Internal server error' });
-    }
-  });
-
-// GET /api/restaurant/staff-users — list active staff for this restaurant.
-// Includes inactive too if ?include_inactive=true. Never returns pin_hash.
-router.get('/staff-users', requireAuth, requirePermission('manage_staff'), async (req, res) => {
-  try {
-    const filter = {
-      restaurant_id: req.restaurantId,
-      role: 'staff',
-    };
-    if (req.query.include_inactive !== 'true') filter.is_active = true;
-    const rows = await col('restaurant_users')
-      .find(filter, { projection: { pin_hash: 0 } })
-      .sort({ created_at: -1 })
-      .toArray();
-    res.json({ success: true, staffUsers: rows.map(_staffUserPublic) });
-  } catch (e) {
-    req.log?.error?.({ err: e }, 'staff_user list failed');
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+const _STAFF_USERS_DEPRECATED = (req, res) => res.status(410).json({
+  ok: false,
+  error: 'endpoint_deprecated',
+  use: '/api/restaurant/staff',
 });
 
-// PUT /api/restaurant/staff-users/:userId — update name, branch_ids,
-// permissions, is_active. PIN is updated via the dedicated /reset-pin
-// route below (separate concern, separate audit trail).
-router.put('/staff-users/:userId', requireAuth, requirePermission('manage_staff'), express.json(),
-  async (req, res) => {
-    try {
-      const userId = req.params.userId;
-      const target = await col('restaurant_users').findOne({
-        _id: userId,
-        restaurant_id: req.restaurantId,
-        role: 'staff',
-      });
-      if (!target) return res.status(404).json({ error: 'Staff user not found' });
-
-      const $set = { updated_at: new Date() };
-      if (typeof req.body?.name === 'string' && req.body.name.trim()) {
-        $set.name = req.body.name.trim();
-      }
-      if (Array.isArray(req.body?.branch_ids)) {
-        $set.branch_ids = _normalizeBranchIds(req.body.branch_ids, req.restaurantId);
-      }
-      if (req.body?.permissions && typeof req.body.permissions === 'object') {
-        $set.permissions = _normalizeStaffPermissions(req.body.permissions);
-      }
-      let bumpTokenVersion = false;
-      if (typeof req.body?.is_active === 'boolean') {
-        if (req.body.is_active === false && target.is_active) bumpTokenVersion = true;
-        $set.is_active = req.body.is_active;
-      }
-
-      const update = { $set };
-      // Bumping token_version invalidates every in-flight token for
-      // this staff user — used when the admin deactivates them so
-      // tablets log out immediately.
-      if (bumpTokenVersion) update.$inc = { token_version: 1 };
-
-      await col('restaurant_users').updateOne({ _id: userId }, update);
-      const fresh = await col('restaurant_users').findOne(
-        { _id: userId },
-        { projection: { pin_hash: 0 } },
-      );
-
-      log({
-        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
-        action: 'staff_user.updated', category: 'settings',
-        description: `Staff user "${target.name}" updated${bumpTokenVersion ? ' (deactivated — sessions revoked)' : ''}`,
-        restaurantId: req.restaurantId,
-        resourceType: 'staff_user', resourceId: userId,
-        severity: 'info',
-        metadata: { fields: Object.keys($set).filter(k => k !== 'updated_at') },
-      });
-
-      res.json({ success: true, staffUser: _staffUserPublic(fresh) });
-    } catch (e) {
-      req.log?.error?.({ err: e, userId: req.params.userId }, 'staff_user update failed');
-      res.status(500).json({ success: false, message: 'Internal server error' });
-    }
-  });
-
-// PUT /api/restaurant/staff-users/:userId/reset-pin
-// Body: { pin } — 4-digit. Re-hashes; bumps token_version so any
-// in-flight session for this user (e.g., a forgotten tablet) is
-// immediately invalidated and forced to re-PIN.
-router.put('/staff-users/:userId/reset-pin', requireAuth, requirePermission('manage_staff'), express.json(),
-  async (req, res) => {
-    try {
-      const userId = req.params.userId;
-      const { pin } = req.body || {};
-      if (!pin || !/^\d{4}$/.test(String(pin))) {
-        return res.status(400).json({ error: 'pin must be exactly 4 digits' });
-      }
-      const target = await col('restaurant_users').findOne({
-        _id: userId,
-        restaurant_id: req.restaurantId,
-        role: 'staff',
-      });
-      if (!target) return res.status(404).json({ error: 'Staff user not found' });
-
-      const pinHash = await _STAFF_BCRYPT.hash(String(pin), 10);
-      await col('restaurant_users').updateOne(
-        { _id: userId },
-        {
-          $set: { pin_hash: pinHash, updated_at: new Date() },
-          $inc: { token_version: 1 },
-        },
-      );
-
-      log({
-        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
-        action: 'staff_user.pin_reset', category: 'settings',
-        description: `Staff user "${target.name}" PIN reset (sessions revoked)`,
-        restaurantId: req.restaurantId,
-        resourceType: 'staff_user', resourceId: userId,
-        severity: 'warning',
-      });
-
-      res.json({ success: true, pin: String(pin) });
-    } catch (e) {
-      req.log?.error?.({ err: e, userId: req.params.userId }, 'staff_user reset-pin failed');
-      res.status(500).json({ success: false, message: 'Internal server error' });
-    }
-  });
-
-// DELETE /api/restaurant/staff-users/:userId — soft delete.
-// is_active: false + token_version bump so any in-flight tablet is
-// logged out immediately. Row is preserved so audit logs that reference
-// it still resolve.
-router.delete('/staff-users/:userId', requireAuth, requirePermission('manage_staff'),
-  async (req, res) => {
-    try {
-      const userId = req.params.userId;
-      const target = await col('restaurant_users').findOne({
-        _id: userId,
-        restaurant_id: req.restaurantId,
-        role: 'staff',
-      });
-      if (!target) return res.status(404).json({ error: 'Staff user not found' });
-      if (!target.is_active) {
-        return res.json({ success: true, alreadyInactive: true });
-      }
-      await col('restaurant_users').updateOne(
-        { _id: userId },
-        {
-          $set: { is_active: false, updated_at: new Date() },
-          $inc: { token_version: 1 },
-        },
-      );
-
-      log({
-        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
-        action: 'staff_user.deleted', category: 'settings',
-        description: `Staff user "${target.name}" deactivated (sessions revoked)`,
-        restaurantId: req.restaurantId,
-        resourceType: 'staff_user', resourceId: userId,
-        severity: 'warning',
-      });
-
-      res.json({ success: true });
-    } catch (e) {
-      req.log?.error?.({ err: e, userId: req.params.userId }, 'staff_user delete failed');
-      res.status(500).json({ success: false, message: 'Internal server error' });
-    }
-  });
-
-// DELETE /api/restaurant/staff/:staffId — hard delete.
-// Distinct from /staff-users/:userId (which soft-deletes by flipping
-// is_active and bumping token_version). This path removes the row
-// outright and best-effort clears any rows in staff_sessions keyed
-// to the same id. Use the soft path for normal off-boarding so audit
-// references still resolve; reach for this when a row needs to be
-// physically expunged.
-router.delete('/staff/:staffId', requireAuth, requirePermission('manage_staff'),
-  async (req, res) => {
-    try {
-      const staffId = req.params.staffId;
-      const target = await col('restaurant_users').findOne({
-        _id: staffId,
-        restaurant_id: req.restaurantId,
-        role: 'staff',
-      });
-      if (!target) return res.status(404).json({ error: 'Staff user not found' });
-
-      await col('restaurant_users').deleteOne({ _id: staffId });
-
-      // staff_sessions is not a tracked collection in collections.js — the
-      // existing staff JWT flow invalidates via token_version bumps, not a
-      // session table. Best-effort cleanup here so this route stays correct
-      // if a future commit adds the collection. deleteMany on a missing
-      // collection returns deletedCount:0 without throwing.
-      try {
-        await col('staff_sessions').deleteMany({ staff_id: staffId });
-      } catch (sessionErr) {
-        req.log?.warn?.({ err: sessionErr, staffId }, 'staff_sessions cleanup failed');
-      }
-
-      log({
-        actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
-        action: 'staff_deleted', category: 'settings',
-        description: `Staff user "${target.name}" hard-deleted`,
-        restaurantId: req.restaurantId,
-        resourceType: 'staff_user', resourceId: staffId,
-        severity: 'warning',
-      });
-
-      res.json({ success: true });
-    } catch (e) {
-      req.log?.error?.({ err: e, staffId: req.params.staffId }, 'staff hard delete failed');
-      res.status(500).json({ success: false, message: 'Internal server error' });
-    }
-  });
+router.post('/staff-users',                      _STAFF_USERS_DEPRECATED);
+router.get('/staff-users',                       _STAFF_USERS_DEPRECATED);
+router.put('/staff-users/:userId',               _STAFF_USERS_DEPRECATED);
+router.put('/staff-users/:userId/reset-pin',     _STAFF_USERS_DEPRECATED);
+router.delete('/staff-users/:userId',            _STAFF_USERS_DEPRECATED);
+router.delete('/staff/:staffId',                 _STAFF_USERS_DEPRECATED);
 
 // ─── FINANCIAL ENDPOINTS ────────────────────────────────────────
 
