@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../Toast';
 import UserFormModal, { type RestaurantUser } from './UserFormModal';
 import {
   getUsers,
   getBranches,
   deleteUser,
+  deleteStaffHard,
   updateUser,
   resetUserPin,
 } from '../../api/restaurant';
@@ -55,6 +56,34 @@ export default function UsersSection() {
   const [recentResetRevealed, setRecentResetRevealed] = useState<boolean>(false);
   const [recentResetCopied, setRecentResetCopied] = useState<boolean>(false);
   const RESET_DISPLAY_MS = 60_000;
+
+  // Kebab menu state — single open ID across all rows (only one menu
+  // can be open at a time). The ref below captures whichever row's
+  // wrapper is currently open so the document-level mousedown listener
+  // can detect outside clicks without per-row refs.
+  const [kebabOpenId, setKebabOpenId] = useState<string | null>(null);
+  const openKebabWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  // Hard-delete confirm row — distinct from pendingDeactivate (soft).
+  // Shown inline in the actions cell once the kebab "Delete Account"
+  // item is selected; calls deleteStaffHard via api/restaurant.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState<boolean>(false);
+
+  // Close the kebab on click outside. Only attaches the listener while
+  // a menu is open so we're not paying for it on every mousedown when
+  // no menu is up. Same pattern as NotificationBell.tsx.
+  useEffect(() => {
+    if (!kebabOpenId) return undefined;
+    const onMouseDown = (e: MouseEvent) => {
+      const wrap = openKebabWrapperRef.current;
+      if (wrap && !wrap.contains(e.target as Node)) {
+        setKebabOpenId(null);
+      }
+    };
+    window.addEventListener('mousedown', onMouseDown);
+    return () => window.removeEventListener('mousedown', onMouseDown);
+  }, [kebabOpenId]);
 
   const load = async () => {
     setLoading(true);
@@ -151,6 +180,25 @@ export default function UsersSection() {
     setRecentResetPin(null);
     setRecentResetRevealed(false);
     setRecentResetCopied(false);
+  };
+
+  // Hard delete — invoked from the kebab menu's "Delete Account" option
+  // after the inline confirm row's Confirm button. Hits the dedicated
+  // /staff/:staffId hard-delete endpoint (NOT the soft /users/:id path
+  // used by handleToggleActive's Deactivate flow).
+  const handleHardDelete = async (u: RestaurantUser) => {
+    setDeleteBusy(true);
+    try {
+      await deleteStaffHard(u.id);
+      showToast(`${u.name} deleted`, 'success');
+      setPendingDelete(null);
+      load();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Delete failed', 'error');
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const startPinReset = (u: RestaurantUser) => {
@@ -286,13 +334,43 @@ export default function UsersSection() {
                                 Cancel
                               </button>
                             </div>
+                          ) : pendingDelete === u.id ? (
+                            // Hard-delete confirm — distinct copy from
+                            // Deactivate so the operator can't conflate
+                            // the two destructive paths.
+                            <div className="flex flex-col gap-1 items-end">
+                              <span className="text-[0.7rem] text-red">
+                                Permanently delete {u.name}?
+                              </span>
+                              <div className="flex gap-[0.3rem] justify-end">
+                                <button
+                                  type="button"
+                                  className="btn-del-solid btn-sm"
+                                  onClick={() => handleHardDelete(u)}
+                                  disabled={deleteBusy}
+                                >
+                                  {deleteBusy ? '…' : 'Delete'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-g btn-xs"
+                                  onClick={() => setPendingDelete(null)}
+                                  disabled={deleteBusy}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
                           ) : (
                             <div className="flex gap-1 justify-end items-center flex-wrap">
                               {/* Just-set PIN chip — appears for ~60s
                                   after a successful reset so the owner
                                   can copy/share before it auto-clears.
                                   State-only; the value isn't fetched
-                                  back from the server. */}
+                                  back from the server. Stays inline
+                                  (NOT moved into the kebab) because
+                                  it's a transient surface, not a
+                                  persistent action. */}
                               {recentResetPin && recentResetPin.userId === u.id && (
                                 <div className="inline-flex items-center gap-1 py-[0.15rem] px-[0.4rem] border border-rim rounded-md bg-acc-glow text-[0.7rem] font-mono">
                                   <span className="text-dim">PIN:</span>
@@ -324,41 +402,78 @@ export default function UsersSection() {
                                   </button>
                                 </div>
                               )}
-                              <button
-                                type="button"
-                                className="btn-outline btn-sm text-[0.72rem]"
-                                onClick={() => openEdit(u)}
-                                disabled={rowBusy === u.id}
+                              {/* Kebab (vertical-ellipsis) action menu.
+                                  ref is "claimed" by whichever row is
+                                  currently open so the document-level
+                                  outside-click listener can detect
+                                  clicks landing outside this wrapper.
+                                  Other rows render with ref={null}. */}
+                              <div
+                                ref={kebabOpenId === u.id ? openKebabWrapperRef : null}
+                                className="relative inline-block"
                               >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-outline btn-sm text-[0.72rem] text-gold"
-                                onClick={() => startPinReset(u)}
-                                disabled={rowBusy === u.id}
-                              >
-                                Reset PIN
-                              </button>
-                              {u.is_active ? (
                                 <button
                                   type="button"
-                                  className="btn-outline btn-sm text-[0.72rem] text-red"
-                                  onClick={() => setPendingDeactivate(u.id)}
+                                  className="btn-g btn-sm"
+                                  onClick={() => setKebabOpenId((cur) => (cur === u.id ? null : u.id))}
                                   disabled={rowBusy === u.id}
+                                  aria-haspopup="menu"
+                                  aria-expanded={kebabOpenId === u.id}
+                                  aria-label="Row actions"
                                 >
-                                  Deactivate
+                                  ⋮
                                 </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="btn-outline btn-sm text-[0.72rem] text-wa"
-                                  onClick={() => handleToggleActive(u)}
-                                  disabled={rowBusy === u.id}
-                                >
-                                  {rowBusy === u.id ? '…' : 'Activate'}
-                                </button>
-                              )}
+                                {kebabOpenId === u.id && (
+                                  <div
+                                    role="menu"
+                                    className="absolute right-0 mt-1 min-w-[160px] bg-white border border-rim rounded-lg shadow-md py-1 z-10"
+                                  >
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                                      onClick={() => { setKebabOpenId(null); openEdit(u); }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                                      onClick={() => { setKebabOpenId(null); startPinReset(u); }}
+                                    >
+                                      Reset PIN
+                                    </button>
+                                    {u.is_active ? (
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                                        onClick={() => { setKebabOpenId(null); setPendingDeactivate(u.id); }}
+                                      >
+                                        Deactivate
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                                        onClick={() => { setKebabOpenId(null); handleToggleActive(u); }}
+                                      >
+                                        Activate
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer text-red-600"
+                                      onClick={() => { setKebabOpenId(null); setPendingDelete(u.id); }}
+                                    >
+                                      Delete Account
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           )}
                         </td>
