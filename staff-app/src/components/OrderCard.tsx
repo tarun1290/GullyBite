@@ -5,6 +5,7 @@
 import { memo } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StaffOrder } from '@/api';
+import { useAuth } from '@/store/authStore';
 import { badgeFor, colors } from '@/theme';
 import { formatRs, timeAgo } from '@/time';
 
@@ -37,12 +38,27 @@ type Props = {
 };
 
 function OrderCardBase({ order, busyStatus, onStatusChange, onAccept, onDecline, highlight }: Props) {
+  const { currentBranchId, staffUser } = useAuth();
   const badge = badgeFor(order.status);
   const phoneTail = (order.customer_phone_masked || '').slice(-4);
   const status = String(order.status || '').toUpperCase();
   const isPaid = status === 'PAID';
   const actions = isPaid ? [] : (NEXT_ACTIONS[order.status || ''] || []);
   const items = Array.isArray(order.items) ? order.items : [];
+
+  // Branch tag — only when the operator is in the multi-branch
+  // "All Branches" view AND has more than one branch assigned (a
+  // single-branch operator would never see anything else, so the chip
+  // would just be visual noise). Resolves the order's branch_id to a
+  // human-readable name from the staffUser.branches list (sourced in
+  // /api/staff/auth's response). Falls back to a short id slice if the
+  // branch was deleted but still referenced by the order.
+  const branches = staffUser?.branches || [];
+  const showBranchTag = currentBranchId === 'all' && branches.length > 1 && !!order.branch_id;
+  const branchName = showBranchTag
+    ? (branches.find((b) => b.id === order.branch_id)?.name
+        || (order.branch_id ? `${String(order.branch_id).slice(0, 6)}…` : ''))
+    : null;
 
   const bg = highlight
     ? highlight.interpolate({
@@ -62,6 +78,11 @@ function OrderCardBase({ order, busyStatus, onStatusChange, onAccept, onDecline,
             {timeAgo(order.created_at)}
             {phoneTail ? ` · Phone ****${phoneTail}` : ''}
           </Text>
+          {branchName ? (
+            <View style={styles.branchTag}>
+              <Text style={styles.branchTagText} numberOfLines={1}>📍 {branchName}</Text>
+            </View>
+          ) : null}
         </View>
         <View style={[styles.badge, { backgroundColor: badge.bg }]}>
           <Text style={[styles.badgeText, { color: badge.fg }]}>{badge.label}</Text>
@@ -157,6 +178,19 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 10 },
   orderNum: { fontSize: 18, fontWeight: '800', color: colors.tx, letterSpacing: -0.3 },
   meta: { fontSize: 12, color: colors.dim, fontWeight: '600', marginTop: 2 },
+  // RN translation of `text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full`
+  // from the brief. alignSelf: 'flex-start' keeps the chip from
+  // stretching across the full card width when the order_number is short.
+  branchTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    marginTop: 6,
+    maxWidth: '100%',
+  },
+  branchTagText: { fontSize: 11, color: '#374151', fontWeight: '600' },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 },
   badgeText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
   items: { gap: 4, marginBottom: 10 },

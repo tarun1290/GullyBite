@@ -3,7 +3,7 @@
 // `error` field when available.
 
 import Constants from 'expo-constants';
-import { getToken } from './storage';
+import { getToken, type CurrentBranchSelection } from './storage';
 
 const BASE =
   (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ||
@@ -14,11 +14,25 @@ export function apiBase(): string {
   return BASE.replace(/\/+$/, '');
 }
 
+// Module-level branch header — pushed in by AuthProvider on every
+// currentBranchId change so call sites don't have to thread the value
+// through. Null = no header (back-compat path; backend defaults to JWT
+// primary). Set via setBranchHeader, read on each request.
+let _currentBranchHeader: CurrentBranchSelection | null = null;
+
+export function setBranchHeader(value: CurrentBranchSelection | null): void {
+  _currentBranchHeader = value;
+}
+
 type FetchOpts = {
   method?: string;
   body?: unknown;
   auth?: boolean; // default true
   headers?: Record<string, string>;
+  // Per-request opt-out for endpoints that must NOT carry X-Branch-Id
+  // (e.g. /api/staff/auth itself — branch context doesn't exist yet).
+  // Defaults to true (header attached) for authed requests.
+  branchScoped?: boolean;
 };
 
 async function request<T = unknown>(path: string, opts: FetchOpts = {}): Promise<T> {
@@ -31,6 +45,14 @@ async function request<T = unknown>(path: string, opts: FetchOpts = {}): Promise
   if (opts.auth !== false) {
     const token = await getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
+    // Attach X-Branch-Id automatically on authed requests. Only when a
+    // value is set (post-login or post-hydrate) and the caller didn't
+    // explicitly opt out. Header was NOT in the request before
+    // 2026-05-09 — backend's resolveBranchScope falls back to the JWT
+    // primary when missing, so leaving it off is the safe default.
+    if (opts.branchScoped !== false && _currentBranchHeader) {
+      headers['X-Branch-Id'] = String(_currentBranchHeader);
+    }
   }
   const res = await fetch(url, {
     method: opts.method || 'GET',
@@ -70,6 +92,12 @@ export type StaffLoginResponse = {
     // routes/staff.js POST /auth). Optional for back-compat with a
     // pre-2026-05-09 backend that hadn't shipped the field yet.
     role?: 'staff' | 'manager';
+    // Multi-branch additions. branch_ids is the full assigned access
+    // set (used to validate X-Branch-Id values and to render the
+    // selector); branches[] carries {id, name} pairs sourced from the
+    // branches collection in the same /auth round-trip.
+    branch_ids?: string[];
+    branches?: Array<{ id: string; name: string }>;
     permissions: Record<string, boolean>;
   };
 };

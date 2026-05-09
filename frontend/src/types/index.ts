@@ -316,6 +316,16 @@ export interface Campaign {
   [k: string]: unknown;
 }
 
+export interface SegmentAnalytics {
+  customer_count: number;
+  opted_out_count: number;
+  opt_out_rate: number;
+  orders_30d: { count: number; revenue: number };
+  orders_90d: { count: number; revenue: number };
+  avg_order_value_90d: number;
+  messages_sent: number;
+}
+
 // ── Notifications ───────────────────────────────────────────────────
 
 export interface Notification {

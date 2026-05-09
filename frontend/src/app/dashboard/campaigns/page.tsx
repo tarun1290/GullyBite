@@ -17,11 +17,14 @@ import {
   previewSegment,
   previewConditions,
   deleteSegment,
+  getSegmentAnalytics,
 } from '../../../api/restaurant';
 import AutoJourneysSection from '../../../components/restaurant/AutoJourneysSection';
 import CostConfirmCard from '../../../components/restaurant/marketing/CostConfirmCard';
 import ConditionBuilder from '../../../components/restaurant/marketing/ConditionBuilder';
+import SlideOverDrawer from '../../../components/shared/SlideOverDrawer';
 import type { MarketingCampaignEstimate, SegmentCondition, CustomerSegment } from '../../../api/restaurant';
+import type { SegmentAnalytics } from '../../../types';
 
 const FESTIVAL_EMOJI: Record<string, string> = {
   diwali: '🪔',
@@ -933,6 +936,9 @@ interface ManagePresetsPanelProps {
 function ManagePresetsPanel({ customerSegments, onCustomerSegmentsChange }: ManagePresetsPanelProps) {
   const { showToast } = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  const [selectedSegment, setSelectedSegment] = useState<{ id: string; name: string } | null>(null);
+  const [analyticsData, setAnalyticsData] = useState<SegmentAnalytics | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState<boolean>(false);
 
   const onDelete = async (id: string) => {
     setBusy(id);
@@ -957,6 +963,26 @@ function ManagePresetsPanel({ customerSegments, onCustomerSegmentsChange }: Mana
     }
   };
 
+  const onViewAnalytics = async (id: string, name: string) => {
+    setSelectedSegment({ id, name });
+    setAnalyticsData(null);
+    setAnalyticsLoading(true);
+    try {
+      const data = await getSegmentAnalytics(id);
+      setAnalyticsData(data);
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Failed to load analytics', 'error');
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
+  const onDrawerClose = () => {
+    setSelectedSegment(null);
+    setAnalyticsData(null);
+  };
+
   if (customerSegments.length === 0) {
     return (
       <div className="mb-3 p-3 border border-rim rounded-md bg-ink2 text-[0.82rem] text-dim">
@@ -966,32 +992,101 @@ function ManagePresetsPanel({ customerSegments, onCustomerSegmentsChange }: Mana
   }
 
   return (
-    <div className="mb-3 p-3 border border-rim rounded-md bg-ink2">
-      <div className="text-[0.82rem] font-semibold text-tx mb-2">Saved presets</div>
-      <div className="flex flex-col gap-2">
-        {customerSegments.map((s) => (
-          <div
-            key={s._id}
-            className="flex items-center justify-between gap-2 py-2 px-3 border border-rim rounded-sm bg-white"
-          >
-            <div className="flex-1 min-w-0">
-              <div className="text-[0.85rem] font-medium text-tx truncate">{s.name}</div>
-              <div className="text-[0.72rem] text-dim">
-                {s.conditions.length} condition{s.conditions.length === 1 ? '' : 's'}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="btn-del btn-sm"
-              onClick={() => onDelete(s._id)}
-              disabled={busy === s._id}
+    <>
+      <div className="mb-3 p-3 border border-rim rounded-md bg-ink2">
+        <div className="text-[0.82rem] font-semibold text-tx mb-2">Saved presets</div>
+        <div className="flex flex-col gap-2">
+          {customerSegments.map((s) => (
+            <div
+              key={s._id}
+              className="flex items-center justify-between gap-2 py-2 px-3 border border-rim rounded-sm bg-white"
             >
-              {busy === s._id ? '…' : 'Delete'}
-            </button>
-          </div>
-        ))}
+              <div className="flex-1 min-w-0">
+                <div className="text-[0.85rem] font-medium text-tx truncate">{s.name}</div>
+                <div className="text-[0.72rem] text-dim">
+                  {s.conditions.length} condition{s.conditions.length === 1 ? '' : 's'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-g btn-sm"
+                onClick={() => onViewAnalytics(s._id, s.name)}
+              >
+                View Analytics
+              </button>
+              <button
+                type="button"
+                className="btn-del btn-sm"
+                onClick={() => onDelete(s._id)}
+                disabled={busy === s._id}
+              >
+                {busy === s._id ? '…' : 'Delete'}
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+      <SlideOverDrawer
+        open={selectedSegment !== null}
+        onClose={onDrawerClose}
+        title={selectedSegment?.name ?? ''}
+      >
+        <div className="p-4 overflow-y-auto">
+          {analyticsLoading || !analyticsData ? (
+            <div className="grid grid-cols-2 gap-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="bg-surface2 animate-pulse rounded-lg h-16" />
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg bg-surface2 p-4 flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-dim">Customers</span>
+                  <span className="text-xl font-semibold text-tx">
+                    {analyticsData.customer_count}
+                  </span>
+                </div>
+                <div className="rounded-lg bg-surface2 p-4 flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-dim">Opt-out Rate</span>
+                  <span className="text-xl font-semibold text-tx">
+                    {(analyticsData.opt_out_rate * 100).toFixed(1) + '%'}
+                  </span>
+                </div>
+                <div className="rounded-lg bg-surface2 p-4 flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-dim">Orders (30d)</span>
+                  <span className="text-xl font-semibold text-tx">
+                    {analyticsData.orders_30d.count}
+                  </span>
+                </div>
+                <div className="rounded-lg bg-surface2 p-4 flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-dim">Revenue (30d)</span>
+                  <span className="text-xl font-semibold text-tx">
+                    {'₹' + analyticsData.orders_30d.revenue.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="rounded-lg bg-surface2 p-4 flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-dim">Avg Order Value</span>
+                  <span className="text-xl font-semibold text-tx">
+                    {'₹' + analyticsData.avg_order_value_90d.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </span>
+                  <span className="text-dim text-xs">based on 90d</span>
+                </div>
+                <div className="rounded-lg bg-surface2 p-4 flex flex-col gap-1">
+                  <span className="text-xs uppercase tracking-wide text-dim">Messages Sent</span>
+                  <span className="text-xl font-semibold text-tx">
+                    {analyticsData.messages_sent}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs text-dim mt-3">
+                Revenue and order stats exclude cancelled and rejected orders.
+              </p>
+            </>
+          )}
+        </div>
+      </SlideOverDrawer>
+    </>
   );
 }
 

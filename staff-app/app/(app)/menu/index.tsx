@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StaffMenuItem, getMenu, updateItemAvailability } from '@/api';
+import { useAuth } from '@/store/authStore';
 import { colors } from '@/theme';
 import { formatRs } from '@/time';
 
@@ -22,6 +23,10 @@ type Section =
   | { kind: 'item'; key: string; item: StaffMenuItem };
 
 export default function MenuScreen() {
+  // Branch selection drives getMenu's X-Branch-Id header (set globally
+  // by authStore). Adding it to load's deps re-runs the fetch when the
+  // operator picks a different branch from the header selector.
+  const { currentBranchId } = useAuth();
   const [categories, setCategories] = useState<Array<{ name: string; items: StaffMenuItem[] }>>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,7 +45,8 @@ export default function MenuScreen() {
     } finally {
       setLoading(false);
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBranchId]);
 
   useEffect(() => { void load(); }, [load]);
 

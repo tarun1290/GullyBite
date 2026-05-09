@@ -7,25 +7,35 @@
 import { createContext, useContext, useEffect, useReducer, type ReactNode } from 'react';
 import {
   clearAuth,
+  getCurrentBranch,
   getOwnerInfo,
   getRestaurant,
   getRole,
   getStaffInfo,
   getToken,
   saveAuth,
+  saveCurrentBranch,
   saveOwnerInfo,
   saveRole,
+  type CurrentBranchSelection,
   type StoredOwnerInfo,
   type StoredRestaurant,
   type StoredStaffUser,
   type UserRole,
 } from '../storage';
+import { setBranchHeader } from '../api';
+import { setSseBranchFilter } from '../sse';
 
 interface AuthState {
   token: string | null;
   staffUser: StoredStaffUser | null;
   restaurant: StoredRestaurant | null;
   branchId: string | null;
+  // Multi-branch — `currentBranchId` is the operator's runtime
+  // selection (the branch their queries scope to). Defaults to the
+  // login `branchId` (the JWT primary). Can be 'all' for cross-branch
+  // views. Hidden from the UI when staffUser.branchIds.length === 1.
+  currentBranchId: CurrentBranchSelection | null;
   role: UserRole | null;
   ownerInfo: StoredOwnerInfo | null;
   isLoading: boolean;
@@ -36,6 +46,7 @@ type Action =
   | { type: 'LOGIN_OWNER'; token: string; restaurant: StoredRestaurant; ownerInfo: StoredOwnerInfo }
   | { type: 'LOGOUT' }
   | { type: 'SET_LOADING'; isLoading: boolean }
+  | { type: 'SET_CURRENT_BRANCH'; currentBranchId: CurrentBranchSelection }
   | {
       type: 'HYDRATED';
       token: string | null;
@@ -43,6 +54,7 @@ type Action =
       restaurant: StoredRestaurant | null;
       role: UserRole | null;
       ownerInfo: StoredOwnerInfo | null;
+      currentBranchId: CurrentBranchSelection | null;
     };
 
 const initialState: AuthState = {
@@ -50,6 +62,7 @@ const initialState: AuthState = {
   staffUser: null,
   restaurant: null,
   branchId: null,
+  currentBranchId: null,
   role: null,
   ownerInfo: null,
   isLoading: true,
@@ -63,6 +76,10 @@ function reducer(state: AuthState, action: Action): AuthState {
         staffUser: action.staffUser,
         restaurant: action.restaurant,
         branchId: action.staffUser?.branchId || null,
+        // Default the runtime selection to the JWT's primary branchId.
+        // The selector dropdown can flip this to 'all' or any other id
+        // in branchIds; the value gets persisted via saveCurrentBranch.
+        currentBranchId: action.staffUser?.branchId || null,
         // Role comes from the /api/staff/auth response (staffUser.role,
         // populated 2026-05-09). Pre-fix the LOGIN action hardcoded
         // 'staff' which silently demoted managers to staff feature
@@ -78,6 +95,7 @@ function reducer(state: AuthState, action: Action): AuthState {
         staffUser: null,
         restaurant: action.restaurant,
         branchId: null,
+        currentBranchId: null,
         role: 'owner',
         ownerInfo: action.ownerInfo,
         isLoading: false,
@@ -86,12 +104,18 @@ function reducer(state: AuthState, action: Action): AuthState {
       return { ...initialState, isLoading: false };
     case 'SET_LOADING':
       return { ...state, isLoading: action.isLoading };
+    case 'SET_CURRENT_BRANCH':
+      return { ...state, currentBranchId: action.currentBranchId };
     case 'HYDRATED':
       return {
         token: action.token,
         staffUser: action.staffUser,
         restaurant: action.restaurant,
         branchId: action.staffUser?.branchId || null,
+        // Selection precedence on hydrate:
+        //   1. persisted gb_current_branch_id (operator's last selection).
+        //   2. fall back to the JWT primary branchId.
+        currentBranchId: action.currentBranchId || action.staffUser?.branchId || null,
         // Role precedence on hydrate:
         //   1. staffUser.role (post-2026-05-09 logins persist it on the row).
         //   2. separately-stored gb_user_role key (set by saveRole during login).
@@ -110,6 +134,10 @@ interface AuthContextValue extends AuthState {
   login: (token: string, staffUser: StoredStaffUser, restaurant: StoredRestaurant) => Promise<void>;
   loginAsOwner: (token: string, restaurant: StoredRestaurant, ownerInfo: StoredOwnerInfo) => Promise<void>;
   logout: () => Promise<void>;
+  // Update the runtime branch selection. Persists to SecureStore so it
+  // survives app restarts and pushes the value into the api module so
+  // every subsequent request carries the new X-Branch-Id header.
+  setCurrentBranchId: (value: CurrentBranchSelection) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -120,18 +148,34 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [token, staff, rest, role, owner] = await Promise.all([
+      const [token, staff, rest, role, owner, currentBranch] = await Promise.all([
         getToken(),
         getStaffInfo(),
         getRestaurant(),
         getRole(),
         getOwnerInfo(),
+        getCurrentBranch(),
       ]);
       if (cancelled) return;
-      dispatch({ type: 'HYDRATED', token, staffUser: staff, restaurant: rest, role, ownerInfo: owner });
+      dispatch({
+        type: 'HYDRATED',
+        token, staffUser: staff, restaurant: rest, role, ownerInfo: owner,
+        currentBranchId: currentBranch,
+      });
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Push the current branch into the api module + SSE dispatcher on
+  // every change so REST requests get the right X-Branch-Id header AND
+  // the live order stream filters out other branches' events. Both
+  // setters are no-arg-list pure-write functions; their internal slots
+  // stay in sync with this React state. Re-runs on hydrate, login, and
+  // explicit setCurrentBranchId calls.
+  useEffect(() => {
+    setBranchHeader(state.currentBranchId);
+    setSseBranchFilter(state.currentBranchId);
+  }, [state.currentBranchId]);
 
   const value: AuthContextValue = {
     ...state,
@@ -155,6 +199,10 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
     async logout() {
       await clearAuth();
       dispatch({ type: 'LOGOUT' });
+    },
+    async setCurrentBranchId(value) {
+      await saveCurrentBranch(value);
+      dispatch({ type: 'SET_CURRENT_BRANCH', currentBranchId: value });
     },
   };
 

@@ -19,7 +19,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 
 const { col } = require('../config/database');
-const { requireStaffAuth, signStaffToken } = require('../middleware/staffAuth');
+const { requireStaffAuth, signStaffToken, resolveBranchScope, STAFF_APP_ROLES } = require('../middleware/staffAuth');
 const { rateLimitFn } = require('../middleware/rateLimit');
 const sse = require('../services/sseConnections');
 const expoPush = require('../services/expoPush');
@@ -100,7 +100,7 @@ router.post('/auth', staffAuthLimiter, express.json(), async (req, res) => {
     // excludes owners and any future kitchen/delivery-only roles.
     const candidates = await col('restaurant_users').find({
       restaurant_id: branch.restaurant_id,
-      role: { $in: ['staff', 'manager'] },
+      role: { $in: STAFF_APP_ROLES },
       is_active: true,
       name: { $regex: nameRegex },
       $or: [
@@ -132,15 +132,54 @@ router.post('/auth', staffAuthLimiter, express.json(), async (req, res) => {
       { $set: { last_login_at: now } },
     );
 
-    // JWT now carries branchId (singular) — the token-resolved branch
-    // is the staff session's working branch even if the user is
-    // actually authorised for multiple. Branch-filtered SSE / order /
-    // menu queries downstream all read this single value.
+    // Resolve the staff member's full assigned-branch set. Two cases:
+    //   (a) matched.branch_ids has entries → use those.
+    //   (b) matched.branch_ids is empty/missing → "unscoped" staff,
+    //       i.e. they have access to every branch of this restaurant.
+    //       Fetch the live branches list so the JWT and response carry
+    //       the explicit ids — the staff app's selector can't render
+    //       a useful dropdown from an empty array.
+    let assignedBranchIds = [];
+    if (Array.isArray(matched.branch_ids) && matched.branch_ids.length) {
+      assignedBranchIds = matched.branch_ids.map(String);
+    } else {
+      const allBranches = await col('branches')
+        .find({ restaurant_id: String(r._id) }, { projection: { _id: 1 } })
+        .toArray();
+      assignedBranchIds = allBranches.map((b) => String(b._id));
+    }
+    // Membership check — the branch the operator is logging in via
+    // (the staff_access_token's branch) must be in their access set.
+    // Catches misconfigurations (a token from a branch the staff
+    // member isn't actually assigned to). Defence-in-depth on top of
+    // the candidate filter at the top of this handler.
+    if (!assignedBranchIds.includes(String(branch._id))) {
+      log.warn(
+        { userId: matched._id, branchId: String(branch._id), assignedCount: assignedBranchIds.length },
+        'staff auth: login branch not in assigned access set',
+      );
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // Hydrate {id, name} for every assigned branch so the staff app
+    // can populate the branch-selector dropdown without a follow-up
+    // request. Branches not found are dropped — that should be rare
+    // (deleted branch still referenced by a stale branch_ids entry).
+    const branchDocs = await col('branches')
+      .find({ _id: { $in: assignedBranchIds }, restaurant_id: String(r._id) },
+             { projection: { _id: 1, name: 1 } })
+      .toArray();
+    const branchSummaries = branchDocs.map((b) => ({ id: String(b._id), name: b.name || '' }));
+
+    // JWT carries branchId (the token-resolved primary) AND branchIds
+    // (the full assigned access set). Endpoints validate X-Branch-Id
+    // against branchIds; default scope is branchId when no header.
     const token = signStaffToken({
       userId: matched._id,
       restaurantId: String(r._id),
       restaurantSlug: r.store_slug || null,
       branchId: String(branch._id),
+      branchIds: assignedBranchIds,
       permissions: matched.permissions || {},
       tokenVersion: Number(matched.token_version || 0),
       // Source of truth for role lives on restaurant_users — pass the
@@ -162,6 +201,15 @@ router.post('/auth', staffAuthLimiter, express.json(), async (req, res) => {
         id: String(matched._id),
         name: matched.name,
         branchId: String(branch._id),
+        // Full assigned access set — the staff app reads this to
+        // decide whether to render the branch-selector dropdown
+        // (hidden when length === 1) and to know which ids are valid
+        // for the X-Branch-Id header.
+        branch_ids: assignedBranchIds,
+        // {id, name} pairs for the dropdown labels. Sourced from the
+        // branches collection in the same /auth round-trip so the
+        // app doesn't need a follow-up GET /branches call.
+        branches: branchSummaries,
         // role drives feature gating in the staff app — managers see
         // branch open/close, staff list, daily summary, settlement;
         // staff see the operational subset only. Sourced from the
@@ -307,12 +355,14 @@ router.delete('/push-token', requireStaffAuth(), express.json(), async (req, res
 // branchIds. Masked customer phones.
 router.get('/orders', requireStaffAuth(), async (req, res) => {
   try {
+    const scope = resolveBranchScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
     const filter = {
       restaurant_id: req.staff.restaurantId,
       status: { $in: ['PAID', 'CONFIRMED', 'PREPARING', 'PACKED'] },
     };
-    if (Array.isArray(req.staff.branchIds) && req.staff.branchIds.length) {
-      filter.branch_id = { $in: req.staff.branchIds };
+    if (scope.branchIds.length) {
+      filter.branch_id = { $in: scope.branchIds };
     }
     const orders = await col('orders')
       .find(filter)
@@ -389,11 +439,16 @@ router.patch('/orders/:orderId/status', requireStaffAuth(), express.json(), asyn
     if (String(order.restaurant_id) !== String(req.staff.restaurantId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    // Branch guard: scoped staff can only act on their branches.
-    if (Array.isArray(req.staff.branchIds) && req.staff.branchIds.length) {
-      if (!req.staff.branchIds.map(String).includes(String(order.branch_id))) {
-        return res.status(403).json({ error: 'Forbidden — order not in your branch' });
-      }
+    // Branch guard: validate the order's branch is in the scope set
+    // (X-Branch-Id-resolved). For PATCH endpoints we don't strictly
+    // need the X-Branch-Id header — the resource itself carries the
+    // branch — but we still honour the header so a staff member who
+    // selected a single branch in the UI can't accidentally act on a
+    // different branch's order via a stale orderId in flight.
+    const scope = resolveBranchScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+    if (scope.branchIds.length && !scope.branchIds.includes(String(order.branch_id))) {
+      return res.status(403).json({ error: 'Forbidden — order not in your branch' });
     }
     // Restrict the FROM state. Staff can't kick a PAID order straight
     // to PREPARING — owner has to /accept first to move PAID → CONFIRMED.
@@ -447,9 +502,11 @@ router.patch('/orders/:orderId/status', requireStaffAuth(), express.json(), asyn
 // when the staff JWT carries non-empty branchIds.
 router.get('/menu', requireStaffAuth(), async (req, res) => {
   try {
+    const scope = resolveBranchScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
     const filter = { restaurant_id: req.staff.restaurantId };
-    if (Array.isArray(req.staff.branchIds) && req.staff.branchIds.length) {
-      filter.branch_id = { $in: req.staff.branchIds };
+    if (scope.branchIds.length) {
+      filter.branch_id = { $in: scope.branchIds };
     }
     const items = await col('menu_items')
       .find(
@@ -502,10 +559,12 @@ async function _setItemAvailability(req, res) {
     if (String(item.restaurant_id) !== String(req.staff.restaurantId)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    if (Array.isArray(req.staff.branchIds) && req.staff.branchIds.length) {
-      if (!req.staff.branchIds.map(String).includes(String(item.branch_id))) {
-        return res.status(403).json({ error: 'Forbidden — item not in your branch' });
-      }
+    // Branch guard via X-Branch-Id-resolved scope (same pattern as the
+    // orders/:id/status guard above).
+    const scope = resolveBranchScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+    if (scope.branchIds.length && !scope.branchIds.includes(String(item.branch_id))) {
+      return res.status(403).json({ error: 'Forbidden — item not in your branch' });
     }
     await col('menu_items').updateOne(
       { _id: req.params.itemId },

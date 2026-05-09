@@ -179,6 +179,16 @@ export default function LoginScreen() {
           // pre-fix). 'staff' fallback covers a legacy backend without
           // the role field.
           role: res.staffUser.role || 'staff',
+          // Multi-branch fields — fall back to a single-element list
+          // built from branchId for legacy backends that haven't shipped
+          // the arrays yet, so the selector still renders correctly.
+          branchIds: res.staffUser.branch_ids
+            && res.staffUser.branch_ids.length > 0
+            ? res.staffUser.branch_ids
+            : [res.staffUser.branchId],
+          branches: res.staffUser.branches || [
+            { id: res.staffUser.branchId, name: res.restaurant.name || 'Branch' },
+          ],
           permissions: res.staffUser.permissions || {},
         },
         {

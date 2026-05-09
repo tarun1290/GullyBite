@@ -12,6 +12,12 @@ const STAFF_KEY = 'gb_staff_info';
 const DEVICE_KEY = 'gb_staff_device_id';
 const ROLE_KEY = 'gb_user_role';
 const OWNER_KEY = 'gb_owner_info';
+// Per-session branch selection — survives app restarts so the
+// operator doesn't have to re-pick the branch on every cold start.
+// Distinct from the JWT's `branchId` (the LOGIN branch — the staff
+// access token's branch), which is the immutable primary. The selection
+// can be 'all' (multi-branch view) or any id from the JWT's branch_ids.
+const CURRENT_BRANCH_KEY = 'gb_current_branch_id';
 
 // 'manager' was added 2026-05-09 alongside the backend /api/staff/auth
 // role-filter widening (role: { $in: ['staff', 'manager'] }). Managers
@@ -27,6 +33,11 @@ export type StoredRestaurant = {
   logo_url?: string | null;
 };
 
+export type StoredBranch = {
+  id: string;
+  name: string;
+};
+
 export type StoredStaffUser = {
   userId: string;
   name: string;
@@ -37,8 +48,18 @@ export type StoredStaffUser = {
   // the separately-stored gb_user_role key so existing sessions keep
   // working without forcing a re-login.
   role?: UserRole;
+  // Multi-branch additions (2026-05-09). Both optional for back-compat
+  // with sessions persisted before the response started carrying the
+  // arrays — authStore falls back to [branchId] when absent so the
+  // selector still renders correctly even on legacy data.
+  branchIds?: string[];
+  branches?: StoredBranch[];
   permissions: Record<string, boolean>;
 };
+
+// Branch selector value. 'all' means multi-branch (every assigned
+// branch); any other string is a specific branch id from branchIds.
+export type CurrentBranchSelection = string | 'all';
 
 export type StoredOwnerInfo = {
   restaurantId: string;
@@ -91,14 +112,26 @@ export async function getOwnerInfo(): Promise<StoredOwnerInfo | null> {
   try { return JSON.parse(raw) as StoredOwnerInfo; } catch { return null; }
 }
 
+export async function saveCurrentBranch(value: CurrentBranchSelection): Promise<void> {
+  await SecureStore.setItemAsync(CURRENT_BRANCH_KEY, String(value));
+}
+
+export async function getCurrentBranch(): Promise<CurrentBranchSelection | null> {
+  const raw = await SecureStore.getItemAsync(CURRENT_BRANCH_KEY);
+  if (typeof raw === 'string' && raw.length > 0) return raw;
+  return null;
+}
+
 export async function clearAuth(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
   await SecureStore.deleteItemAsync(REST_KEY);
   await SecureStore.deleteItemAsync(STAFF_KEY);
-  // New role/owner keys may not have been written on first logout — catch
-  // so a clean install + immediate logout doesn't surface a SecureStore error.
+  // New role/owner/branch keys may not have been written on first logout —
+  // catch so a clean install + immediate logout doesn't surface a
+  // SecureStore error.
   await SecureStore.deleteItemAsync(ROLE_KEY).catch(() => {});
   await SecureStore.deleteItemAsync(OWNER_KEY).catch(() => {});
+  await SecureStore.deleteItemAsync(CURRENT_BRANCH_KEY).catch(() => {});
 }
 
 export async function getDeviceId(): Promise<string | null> {

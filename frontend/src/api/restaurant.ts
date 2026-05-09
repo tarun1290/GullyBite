@@ -12,6 +12,7 @@ import type {
   QueryParams,
   RequestBody,
   Restaurant,
+  SegmentAnalytics,
 } from '../types';
 
 // All endpoints below mirror frontend/src/api/restaurant.js (169 exports).
@@ -518,6 +519,13 @@ export async function deleteSegment(segmentId: string): Promise<void> {
   await client.delete(
     `/api/restaurant/marketing-campaigns/segments/${encodeURIComponent(segmentId)}`,
   );
+}
+
+export async function getSegmentAnalytics(segmentId: string): Promise<SegmentAnalytics> {
+  const { data } = await client.get<SegmentAnalytics>(
+    `/api/restaurant/marketing-campaigns/segments/${encodeURIComponent(segmentId)}/analytics`,
+  );
+  return data;
 }
 
 // Triggers the actual send (immediate or scheduled, depending on the

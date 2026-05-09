@@ -531,6 +531,120 @@ router.get('/segments/:segmentId/preview', async (req, res) => {
   res.json({ count, segment_name: segment.name });
 });
 
+// GET /api/restaurant/marketing-campaigns/segments/:segmentId/analytics
+// Performance + engagement snapshot for a saved segment. Resolves the
+// segment's recipient set via the same segmentBuilder path that
+// /preview and /create use, then fans out the count, opt-out, order,
+// and message-volume queries in parallel.
+//
+// marketing_messages has no segment_id field; we scope by
+// customer_id ∈ recipient set + restaurant_id + category:'marketing'
+// since customer_id is the authoritative identity on the row (phone
+// is stored hashed). Orders use total_rs (not total_amount) and the
+// status enum is uppercase (CANCELLED / REJECTED_BY_RESTAURANT).
+router.get('/segments/:segmentId/analytics', async (req, res) => {
+  const restaurantId = req.restaurantId;
+  const segmentId = String(req.params.segmentId);
+
+  const segment = await col('customer_segments').findOne({
+    _id: segmentId,
+    restaurant_id: restaurantId,
+  });
+  if (!segment) return res.status(404).json({ error: 'segment_not_found' });
+
+  const { customerIds } = await segmentBuilder.buildRecipients(
+    restaurantId,
+    segment.conditions || [],
+  );
+  const customerCount = customerIds.length;
+
+  const now = new Date();
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const EXCLUDED_STATUSES = ['CANCELLED', 'REJECTED_BY_RESTAURANT'];
+
+  // Empty recipient set short-circuit — skip the heavy aggregations and
+  // return a zeroed payload so the caller doesn't have to special-case
+  // it on the frontend.
+  if (customerCount === 0) {
+    return res.json({
+      customer_count: 0,
+      opted_out_count: 0,
+      opt_out_rate: 0,
+      orders_30d: { count: 0, revenue: 0 },
+      orders_90d: { count: 0, revenue: 0 },
+      avg_order_value_90d: 0,
+      messages_sent: 0,
+    });
+  }
+
+  const ordersAggPipeline = (since) => [
+    {
+      $match: {
+        customer_id: { $in: customerIds },
+        restaurant_id: restaurantId,
+        created_at: { $gte: since },
+        status: { $nin: EXCLUDED_STATUSES },
+      },
+    },
+    { $group: { _id: null, count: { $sum: 1 }, revenue: { $sum: '$total_rs' } } },
+  ];
+
+  const [
+    globallyOptedOutRows,
+    blocklistRows,
+    orders30dAgg,
+    orders90dAgg,
+    messagesSent,
+  ] = await Promise.all([
+    col('customers').find(
+      { _id: { $in: customerIds }, marketing_opted_in: false },
+      { projection: { _id: 1 } },
+    ).toArray(),
+    col('marketing_blocklist').find(
+      { restaurant_id: restaurantId, customer_id: { $in: customerIds } },
+      { projection: { customer_id: 1 } },
+    ).toArray(),
+    col('orders').aggregate(ordersAggPipeline(thirtyDaysAgo)).toArray(),
+    col('orders').aggregate(ordersAggPipeline(ninetyDaysAgo)).toArray(),
+    col('marketing_messages').countDocuments({
+      restaurant_id: restaurantId,
+      customer_id: { $in: customerIds },
+      category: 'marketing',
+    }),
+  ]);
+
+  // Per-restaurant opt-out = union of (a) global STOPs and (b)
+  // per-restaurant blocklist entries. Some customers appear in both
+  // (global STOP also writes the blocklist row), so unioning by id
+  // avoids double-counting.
+  const optedOutSet = new Set(globallyOptedOutRows.map((c) => c._id));
+  for (const row of blocklistRows) optedOutSet.add(row.customer_id);
+  const optedOutCount = optedOutSet.size;
+
+  const orders30 = orders30dAgg[0] || { count: 0, revenue: 0 };
+  const orders90 = orders90dAgg[0] || { count: 0, revenue: 0 };
+  const orders30Revenue = Number((orders30.revenue || 0).toFixed(2));
+  const orders90Revenue = Number((orders90.revenue || 0).toFixed(2));
+
+  const avgOrderValue90d = orders90.count > 0
+    ? Number((orders90Revenue / orders90.count).toFixed(2))
+    : 0;
+  const optOutRate = customerCount > 0
+    ? Number((optedOutCount / customerCount).toFixed(4))
+    : 0;
+
+  res.json({
+    customer_count: customerCount,
+    opted_out_count: optedOutCount,
+    opt_out_rate: optOutRate,
+    orders_30d: { count: orders30.count, revenue: orders30Revenue },
+    orders_90d: { count: orders90.count, revenue: orders90Revenue },
+    avg_order_value_90d: avgOrderValue90d,
+    messages_sent: messagesSent,
+  });
+});
+
 // DELETE /api/restaurant/marketing-campaigns/segments/:segmentId
 // Refuses if any marketing_campaigns row references this segment via
 // saved_segment_id — deleting it would leave those campaigns dangling

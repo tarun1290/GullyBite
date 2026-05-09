@@ -12,12 +12,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OrderCard } from '@/components/OrderCard';
 import { StaffOrder, getOrders, updateOrderStatus, acceptOrder, declineOrder } from '@/api';
+import { useAuth } from '@/store/authStore';
 import { StaffSse, SseState } from '@/sse';
 import { playNewOrderChime, unloadChime } from '@/sound';
 import { playLocalNewOrderNotification } from '@/push';
 import { colors } from '@/theme';
 
 export default function OrdersScreen() {
+  // currentBranchId is read from the auth store and threaded into the
+  // load callback's deps so changing the branch in the header selector
+  // re-runs getOrders with the updated X-Branch-Id header. The header
+  // itself is set globally via api.setBranchHeader (driven by the same
+  // authStore effect) — we don't need to pass branch into getOrders.
+  const { currentBranchId } = useAuth();
   const [orders, setOrders] = useState<StaffOrder[]>([]);
   const [sseState, setSseState] = useState<SseState>('connecting');
   const [refreshing, setRefreshing] = useState(false);
@@ -34,7 +41,8 @@ export default function OrdersScreen() {
     } catch (e) {
       setLoadErr((e as Error).message || 'Failed to load orders');
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBranchId]);
 
   useEffect(() => {
     void load();
