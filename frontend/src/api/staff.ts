@@ -10,7 +10,14 @@
 // only and lowercase-statused.
 
 import staffClient from '../lib/staffApiClient';
-import type { StaffAuthResult, StaffOrder } from '../types';
+import client from '../lib/apiClient';
+import type {
+  Permissions,
+  RolePreset,
+  Staff,
+  StaffAuthResult,
+  StaffOrder,
+} from '../types';
 
 // Public branch-info lookup — no JWT required. The login page calls
 // this on mount to display "{restaurant_name} — {branch_name}" before
@@ -88,4 +95,94 @@ export async function staffUpdateOrderStatus(
     { status },
   );
   return data;
+}
+
+// ── Owner staff management (zm_token) ──────────────────────────────
+// These hit /api/restaurant/staff* and use the OWNER apiClient (so they
+// carry zm_token, not staff_web_token). Returned shapes are typed
+// off the SanitizedStaff contract documented in types/index.ts.
+
+interface ListStaffResponse {
+  ok: true;
+  staff: Staff[];
+}
+
+export async function listStaff(): Promise<Staff[]> {
+  const { data } = await client.get<ListStaffResponse>('/api/restaurant/staff');
+  return Array.isArray(data?.staff) ? data.staff : [];
+}
+
+// Owner-side create payload. PIN is auto-generated server-side and
+// returned ONCE in `generated_pin` — the modal must surface it
+// immediately because no later API call will return it.
+export interface CreateStaffPayload {
+  display_name: string;
+  phone?: string;
+  role_preset: RolePreset;
+  branch_ids: string[];
+  permissions: Permissions;
+}
+
+export interface CreateStaffResponse {
+  ok: true;
+  staff: Staff;
+  generated_pin: string;
+}
+
+export async function createStaff(
+  payload: CreateStaffPayload,
+): Promise<CreateStaffResponse> {
+  const { data } = await client.post<CreateStaffResponse>(
+    '/api/restaurant/staff',
+    payload,
+  );
+  return data;
+}
+
+// Update payload shape. All fields optional so callers can do partial
+// updates (e.g. just toggling is_active). reset_pin: true tells the
+// backend to mint a new PIN; the response then carries `generated_pin`
+// the same way create does.
+export interface UpdateStaffPayload {
+  display_name?: string;
+  phone?: string;
+  role_preset?: RolePreset;
+  branch_ids?: string[];
+  permissions?: Permissions;
+  is_active?: boolean;
+  reset_pin?: boolean;
+}
+
+export interface UpdateStaffResponse {
+  ok: true;
+  staff: Staff;
+  generated_pin?: string;
+}
+
+export async function updateStaff(
+  id: string,
+  payload: UpdateStaffPayload,
+): Promise<UpdateStaffResponse> {
+  const { data } = await client.put<UpdateStaffResponse>(
+    `/api/restaurant/staff/${encodeURIComponent(id)}`,
+    payload,
+  );
+  return data;
+}
+
+interface DeactivateStaffResponse {
+  ok: true;
+}
+
+export async function deactivateStaff(id: string): Promise<DeactivateStaffResponse> {
+  const { data } = await client.delete<DeactivateStaffResponse>(
+    `/api/restaurant/staff/${encodeURIComponent(id)}`,
+  );
+  return data;
+}
+
+// Convenience wrapper around updateStaff with reset_pin: true. The
+// response is guaranteed to carry generated_pin in success cases.
+export async function resetStaffPin(id: string): Promise<UpdateStaffResponse> {
+  return updateStaff(id, { reset_pin: true });
 }

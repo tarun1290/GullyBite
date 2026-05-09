@@ -488,6 +488,88 @@ export interface AdminRestaurantMessagesResponse {
   messages: AdminRestaurantMessage[];
 }
 
+// ─── Staff Auth (PIN + Bearer) ────────────────────────────────
+// Patched contract (post-Part 5): staff log in via store_slug + staff_id
+// + 4-digit PIN, no per-branch URL token. Owners manage staff via
+// /api/restaurant/staff*. The backend returns SanitizedStaff rows.
+
+// 10 canonical permission keys. Constrain types so a typo in a caller
+// (e.g. permissions.acept_orders) is a compile error.
+export type Permission =
+  | 'view_orders'
+  | 'accept_orders'
+  | 'reject_orders'
+  | 'mark_ready'
+  | 'manage_menu'
+  | 'manage_stock'
+  | 'view_reports'
+  | 'manage_settings'
+  | 'refund_orders'
+  | 'view_customer_details';
+
+export const PERMISSION_KEYS: ReadonlyArray<Permission> = [
+  'view_orders',
+  'accept_orders',
+  'reject_orders',
+  'mark_ready',
+  'manage_menu',
+  'manage_stock',
+  'view_reports',
+  'manage_settings',
+  'refund_orders',
+  'view_customer_details',
+];
+
+// Friendly labels for each permission key — used by the management
+// modal toggles + the orders screen's denial copy.
+export const PERMISSION_LABELS: Record<Permission, string> = {
+  view_orders: 'View orders',
+  accept_orders: 'Accept orders',
+  reject_orders: 'Reject orders',
+  mark_ready: 'Mark ready / packed',
+  manage_menu: 'Manage menu',
+  manage_stock: 'Manage stock',
+  view_reports: 'View reports',
+  manage_settings: 'Manage settings',
+  refund_orders: 'Refund orders',
+  view_customer_details: 'View customer details',
+};
+
+export type Permissions = Record<Permission, boolean>;
+
+export type RolePreset = 'cashier' | 'kitchen' | 'branch_manager' | 'owner' | 'custom';
+
+// SanitizedStaff response shape. Backend serialises both `is_active` /
+// `active` and `branch_ids` / `branchIds` for compatibility with the
+// older mobile app. The dashboard prefers the snake_case canonical
+// fields but accepts either when reading.
+export interface Staff {
+  _id: string;
+  restaurant_id: string;
+  staff_id: string;
+  name: string;
+  display_name: string;
+  phone?: string;
+  role: string;
+  role_preset: RolePreset;
+  branch_ids: string[];
+  branchIds: string[];
+  permissions: Permissions;
+  is_active: boolean;
+  active: boolean;
+  created_at: string;
+  last_active_at?: string;
+}
+
+// Lightweight projection for the StaffEditModal branch picker. The
+// dashboard's full Branch type carries 30+ fields; this narrows to
+// the two the modal needs so calling code doesn't have to fabricate
+// the rest.
+export interface BranchSummary {
+  id: string;
+  name: string;
+}
+
 // ─── Pincode State Summary ────────────────────────────────────
 // Returned by GET /api/admin/pincodes/states. One row per state present
 // in the serviceable_pincodes collection — drives the admin pincodes
