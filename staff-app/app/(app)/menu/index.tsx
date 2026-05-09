@@ -15,7 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StaffMenuItem, getMenu, updateItemAvailability } from '@/api';
 import { useAuth } from '@/store/authStore';
-import { colors } from '@/theme';
+import { colors, primitives } from '@/theme';
 import { formatRs } from '@/time';
 
 type Section =
@@ -236,7 +236,12 @@ const styles = StyleSheet.create({
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
     borderWidth: 1,
   },
+  // toastOk uses Tailwind green-50 (#f0fdf4) and green-200 (#bbf7d0) which
+  // are NOT primitives in @gullybite/design-tokens (only the Fresh Leaf
+  // green ramp is — primitives.green.50 = '#E6F5EC' / .200 = '#C7E8D5').
+  // Left as inline literals; flagged for a Part 2 amendment to add
+  // Tailwind-green primitives.
   toastOk: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
-  toastErr: { backgroundColor: '#fff1f2', borderColor: '#fecaca' },
+  toastErr: { backgroundColor: primitives.rose['50'], borderColor: primitives.red['200'] },
   toastText: { fontSize: 13, fontWeight: '600' },
 });

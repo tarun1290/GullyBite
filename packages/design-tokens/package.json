@@ -1,0 +1,11 @@
+{
+  "name": "@gullybite/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Single source of truth for GullyBite design tokens (web + RN). Sources live in src/; generated outputs land in frontend/src/styles/_generated/ and staff-app/src/styling/_generated/.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "generate": "tsx scripts/generate.ts"
+  }
+}

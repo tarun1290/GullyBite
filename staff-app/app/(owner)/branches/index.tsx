@@ -18,7 +18,7 @@ import { useRouter } from 'expo-router';
 
 import { getOwnerDashboard, toggleBranchOpen } from '@/api';
 import { useRole } from '@/hooks/useRole';
-import { colors } from '@/theme';
+import { colors, subscriptionBadgeFor } from '@/theme';
 
 type BranchRow = {
   id: string;
@@ -44,12 +44,6 @@ type DashboardResp = {
 function formatRupees(n: number): string {
   try { return n.toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
   catch { return String(Math.round(n)); }
-}
-
-function subscriptionBadgeColors(status: string | null | undefined): { bg: string; fg: string } {
-  if (status === 'active') return { bg: '#dcfce7', fg: '#15803d' };
-  if (status === 'paused' || status === 'force_paused') return { bg: '#fee2e2', fg: '#b91c1c' };
-  return { bg: '#f3f4f6', fg: '#4b5563' };
 }
 
 export default function BranchesListScreen() {
@@ -125,7 +119,7 @@ export default function BranchesListScreen() {
     >
       {err ? <Text style={styles.errMsg}>{err}</Text> : null}
       {branches.map((b) => {
-        const subBadge = subscriptionBadgeColors(b.subscription_status);
+        const subBadge = subscriptionBadgeFor(b.subscription_status);
         const inFlight = togglingIds.has(b.id);
         return (
           <Pressable

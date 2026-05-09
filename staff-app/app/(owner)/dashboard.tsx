@@ -18,7 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { getOwnerDashboard, toggleBranchOpen } from '@/api';
 import { useAuth } from '@/store/authStore';
 import { useRole } from '@/hooks/useRole';
-import { colors } from '@/theme';
+import { colors, subscriptionBadgeFor } from '@/theme';
 
 type BranchRow = {
   id: string;
@@ -172,7 +172,7 @@ export default function OwnerDashboardScreen() {
       {err && data ? <Text style={styles.errMsg}>{err}</Text> : null}
 
       {branches.map((b) => {
-        const subBadge = subscriptionBadgeColors(b.subscription_status);
+        const subBadge = subscriptionBadgeFor(b.subscription_status);
         const inFlight = togglingIds.has(b.id);
         return (
           <View key={b.id} style={styles.branchCard}>
@@ -221,12 +221,6 @@ function Tile({ label, value, valueColor }: { label: string; value: string; valu
       <Text style={[styles.tileValue, valueColor ? { color: valueColor } : null]}>{value}</Text>
     </View>
   );
-}
-
-function subscriptionBadgeColors(status: string | null | undefined): { bg: string; fg: string } {
-  if (status === 'active') return { bg: '#dcfce7', fg: '#15803d' };
-  if (status === 'paused' || status === 'force_paused') return { bg: '#fee2e2', fg: '#b91c1c' };
-  return { bg: '#f3f4f6', fg: '#4b5563' };
 }
 
 const styles = StyleSheet.create({

@@ -33,7 +33,7 @@ import {
   type StaffOrderItem,
 } from '@/api';
 import { unloadChime } from '@/sound';
-import { colors } from '@/theme';
+import { badgeFor, colors } from '@/theme';
 
 type ActionKind = 'accept' | 'decline' | 'preparing' | 'packed' | null;
 
@@ -189,7 +189,7 @@ export default function OrderDetailScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.header}>
           <Text style={styles.orderNumber}>#{order.order_number || order.id}</Text>
-          <View style={[styles.badge, badgeStyleFor(status)]}>
+          <View style={[styles.badge, { backgroundColor: badgeFor(status).bg }]}>
             <Text style={styles.badgeText}>{status || '—'}</Text>
           </View>
         </View>
@@ -298,16 +298,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function badgeStyleFor(status: string) {
-  switch (status) {
-    case 'PAID':       return { backgroundColor: '#fef3c7' };
-    case 'CONFIRMED':  return { backgroundColor: '#dbeafe' };
-    case 'PREPARING':  return { backgroundColor: '#fed7aa' };
-    case 'PACKED':     return { backgroundColor: '#dcfce7' };
-    default:           return { backgroundColor: '#f3f4f6' };
-  }
-}
-
 const styles = StyleSheet.create({
   scroll: { padding: 16, paddingBottom: 40, gap: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.ink, gap: 12 },
@@ -335,11 +325,11 @@ const styles = StyleSheet.create({
   btnPrimary: {
     backgroundColor: colors.acc, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
   },
-  btnPrimaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  btnPrimaryText: { color: colors.ink2, fontSize: 16, fontWeight: '700' },
   btnDanger: {
     backgroundColor: colors.red, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
   },
-  btnDangerText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  btnDangerText: { color: colors.ink2, fontSize: 16, fontWeight: '700' },
   btnGhost: {
     paddingVertical: 12, paddingHorizontal: 18, borderRadius: 10,
     borderWidth: 1, borderColor: colors.rim,

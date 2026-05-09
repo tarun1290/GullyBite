@@ -22,7 +22,7 @@ export default function StaffLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <div className="min-h-screen flex flex-col bg-ink text-fg">
+    <div className="min-h-screen flex flex-col bg-ink text-tx">
       {children}
     </div>
   );

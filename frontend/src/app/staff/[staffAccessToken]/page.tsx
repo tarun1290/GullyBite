@@ -162,7 +162,7 @@ export default function StaffLoginPage({ params }: PageProps) {
 
   const apkUrl = process.env.NEXT_PUBLIC_STAFF_APK_URL;
   const banner = showAndroid && apkUrl ? (
-    <div className="w-full bg-[#25D366] flex items-center justify-between px-4 py-3">
+    <div className="w-full bg-wa-brand flex items-center justify-between px-4 py-3">
       <div className="font-semibold text-white text-sm">
         <span className="mr-2">📲</span>Get the GullyBite Staff App
       </div>
@@ -170,7 +170,7 @@ export default function StaffLoginPage({ params }: PageProps) {
         <a
           href={apkUrl}
           download
-          className="bg-white text-[#25D366] rounded-full px-3 py-1 text-xs font-semibold no-underline"
+          className="bg-white text-wa-brand rounded-full px-3 py-1 text-xs font-semibold no-underline"
         >
           Download App
         </a>
@@ -245,7 +245,7 @@ export default function StaffLoginPage({ params }: PageProps) {
               <button
                 type="button"
                 onClick={onOpenInApp}
-                className="w-full py-3 text-sm bg-green-600 text-white border-0 rounded-lg cursor-pointer font-semibold"
+                className="w-full py-3 text-sm bg-wa text-white border-0 rounded-lg cursor-pointer font-semibold"
               >
                 Open in GullyBite Staff App
               </button>
@@ -294,7 +294,7 @@ export default function StaffLoginPage({ params }: PageProps) {
             <button
               type="submit"
               disabled={submitting}
-              className={`w-full py-3 text-sm text-white border-0 rounded-lg font-semibold ${submitting ? 'bg-mute cursor-default' : 'bg-green-600 cursor-pointer'}`}
+              className={`w-full py-3 text-sm text-white border-0 rounded-lg font-semibold ${submitting ? 'bg-mute cursor-default' : 'bg-wa cursor-pointer'}`}
             >
               {submitting ? 'Signing in…' : 'Log in'}
             </button>

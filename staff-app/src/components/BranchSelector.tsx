@@ -18,7 +18,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useAuth } from '../store/authStore';
 import { colors } from '../theme';
 
-const ACTIVE_TINT = '#0F766E';
+const ACTIVE_TINT = colors.acc;
 
 export default function BranchSelector(): React.ReactElement | null {
   const { staffUser, currentBranchId, setCurrentBranchId } = useAuth();
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
   caret: { color: colors.dim, fontSize: 11 },
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.45)',
+    backgroundColor: colors.overlayModalTinted,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,

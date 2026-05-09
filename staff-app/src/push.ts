@@ -7,6 +7,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { registerOwnerPushToken, registerPushToken } from './api';
 import { ensureDeviceId } from './deviceId';
+import { colors } from './theme';
 
 export async function setupNotificationHandler(): Promise<void> {
   Notifications.setNotificationHandler({
@@ -25,7 +26,7 @@ export async function setupNotificationHandler(): Promise<void> {
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       sound: 'default',
-      lightColor: '#4338ca',
+      lightColor: colors.acc,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
     // Owner-only channels. Created on every device so a staff phone

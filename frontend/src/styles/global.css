@@ -47,7 +47,12 @@
   --color-amber-500: var(--gb-amber-500);
   --color-red-100: var(--gb-red-100);
   --color-red-200: var(--gb-red-200);
+  --color-red-300: var(--gb-red-300);
   --color-red-900: var(--gb-red-900);
+  /* Red status overlays — used by staff PWA orders page (PAID card bg,
+     error chip). Resolves to the package's --red-glow / --red-stroke. */
+  --color-red-glow: var(--red-glow);
+  --color-red-stroke: var(--red-stroke);
   --color-neutral-200: var(--gb-neutral-200);
   --color-neutral-300: var(--gb-neutral-300);
   --color-neutral-700: var(--gb-neutral-700);
@@ -61,6 +66,9 @@
   --color-indigo-600: var(--gb-indigo-600);
   --color-neutral-500: var(--gb-neutral-500);
   --color-wa-light: var(--gb-wa-light);
+  /* Official WhatsApp brand green — used by the staff PWA login Android
+     banner. Distinct from --color-wa (#16a34a, operational success green). */
+  --color-wa-brand: var(--gb-wa-brand);
   --color-bg2: var(--bg2);
   --color-bg-soft: var(--bg-soft);
   --color-line: var(--line);

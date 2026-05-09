@@ -478,7 +478,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   loginBtnDisabled: { backgroundColor: colors.rim2, shadowOpacity: 0, elevation: 0 },
-  loginBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  loginBtnText: { color: colors.ink2, fontSize: 16, fontWeight: '700' },
 
   noTokenWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
   noTokenSub: { fontSize: 13, color: colors.dim, textAlign: 'center' },

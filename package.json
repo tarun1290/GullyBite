@@ -4,7 +4,8 @@
   "description": "WhatsApp Restaurant Ordering Platform",
   "private": true,
   "scripts": {
-    "db:setup": "cd backend && node -e \"require('./src/config/database').connect()\""
+    "db:setup": "cd backend && node -e \"require('./src/config/database').connect()\"",
+    "tokens:gen": "tsx packages/design-tokens/scripts/generate.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1015.0",
@@ -30,7 +31,8 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "nodemon": "^3.1.4"
+    "nodemon": "^3.1.4",
+    "tsx": "^4.21.0"
   },
   "engines": {
     "node": "20.x"

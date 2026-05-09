@@ -9,7 +9,10 @@
 //   GET  /api/ota/manifest              — PUBLIC; staff app polls here
 //
 // Storage:
-//   S3 (via services/s3Storage.uploadBuffer) for bundle + assets.
+//   S3 via a dedicated OTA-scoped S3Client (see _getOtaS3 below) for
+//   bundle + assets. OTA uses its own IAM identity so credentials can
+//   be scoped narrowly to the `ota-updates/*` prefix; menu uploads
+//   continue through services/s3Storage on the default chain.
 //   Mongo collection `ota_updates` holds metadata + the precomputed
 //   manifest blob the staff app receives verbatim.
 //
@@ -23,16 +26,17 @@
 const express = require('express');
 const multer = require('multer');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 
 const { col } = require('../config/database');
-const s3Storage = require('../services/s3Storage');
 const { requireAdminAuth } = require('../middleware/adminAuth');
 const log = require('../utils/logger').child({ component: 'otaUpdates' });
 
 const requireAdmin = requireAdminAuth();
 
-// Memory storage — buffers go straight to s3Storage.uploadBuffer().
+// Memory storage — buffers go straight to _uploadOtaBuffer().
 // 25 MB per file ceiling matches the practical Hermes bundle size for
 // a JS-only OTA. Bundle itself is typically 1-3 MB; the cap exists
 // just to cut off a malformed/binary upload before it eats RAM.
@@ -40,6 +44,73 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 },
 });
+
+// ─── DEDICATED OTA S3 CLIENT ────────────────────────────────────
+// OTA uploads run under their own IAM identity, separate from the
+// shared client in services/s3Storage. When OTA_AWS_ACCESS_KEY_ID is
+// set we pass it explicitly; otherwise we leave `credentials` undefined
+// and the SDK falls back to its default chain (EC2 instance role in
+// prod, AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY env vars locally).
+const LOCAL_OTA_DIR = path.join(process.cwd(), 'ota-uploads');
+
+let _otaS3 = null;
+function _getOtaS3() {
+  if (_otaS3) return _otaS3;
+  if (!process.env.S3_BUCKET) return null;
+  try {
+    const { S3Client } = require('@aws-sdk/client-s3');
+    _otaS3 = new S3Client({
+      region: process.env.AWS_REGION || 'ap-south-1',
+      credentials: process.env.OTA_AWS_ACCESS_KEY_ID
+        ? {
+            accessKeyId: process.env.OTA_AWS_ACCESS_KEY_ID,
+            secretAccessKey: process.env.OTA_AWS_SECRET_ACCESS_KEY,
+          }
+        : undefined,
+    });
+    return _otaS3;
+  } catch (err) {
+    log.warn({ err: err && err.message }, 'ota s3 client init failed — falling back to local');
+    return null;
+  }
+}
+
+function _safeName(name) {
+  return (name || 'file').replace(/[^\w.\-]+/g, '_');
+}
+
+function _stamp(name) {
+  return `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${_safeName(name)}`;
+}
+
+// Mirrors s3Storage.uploadBuffer's return shape ({ url, storage, key })
+// so the rest of the upload route is unchanged. Local-disk fallback
+// keeps dev working when S3_BUCKET isn't configured.
+async function _uploadOtaBuffer({ buffer, prefix, originalName, contentType }) {
+  const key = `${prefix}/${_stamp(originalName)}`;
+  const s3 = _getOtaS3();
+
+  if (s3 && process.env.S3_BUCKET) {
+    const { PutObjectCommand } = require('@aws-sdk/client-s3');
+    await s3.send(new PutObjectCommand({
+      Bucket: process.env.S3_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: contentType || 'application/octet-stream',
+    }));
+    return {
+      url: `s3://${process.env.S3_BUCKET}/${key}`,
+      storage: 's3',
+      key,
+      bucket: process.env.S3_BUCKET,
+    };
+  }
+
+  if (!fs.existsSync(LOCAL_OTA_DIR)) fs.mkdirSync(LOCAL_OTA_DIR, { recursive: true });
+  const abs = path.join(LOCAL_OTA_DIR, _safeName(path.basename(key)));
+  fs.writeFileSync(abs, buffer);
+  return { url: `file://${abs}`, storage: 'local', key: abs };
+}
 
 // ─── HELPERS ────────────────────────────────────────────────────
 
@@ -112,10 +183,10 @@ router.post(
       const prefix = `ota-updates/${runtimeVersion}/${updateId}`;
 
       // Upload all files to S3 in parallel. Each upload returns
-      // { url, storage, key } from s3Storage.uploadBuffer; we keep
-      // `key` for both the manifest URL and the file_keys audit array.
+      // { url, storage, key } from _uploadOtaBuffer; we keep `key` for
+      // both the manifest URL and the file_keys audit array.
       const uploaded = await Promise.all(files.map(async (f) => {
-        const result = await s3Storage.uploadBuffer({
+        const result = await _uploadOtaBuffer({
           buffer: f.buffer,
           prefix,
           originalName: f.originalname,

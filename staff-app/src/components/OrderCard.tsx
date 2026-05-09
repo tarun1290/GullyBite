@@ -6,7 +6,7 @@ import { memo } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StaffOrder } from '@/api';
 import { useAuth } from '@/store/authStore';
-import { badgeFor, colors } from '@/theme';
+import { badgeFor, colors, primitives } from '@/theme';
 import { formatRs, timeAgo } from '@/time';
 
 // PAID orders go through the dedicated /accept and /decline endpoints
@@ -183,14 +183,14 @@ const styles = StyleSheet.create({
   // stretching across the full card width when the order_number is short.
   branchTag: {
     alignSelf: 'flex-start',
-    backgroundColor: '#F3F4F6',
+    backgroundColor: primitives.neutral['100'],
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 999,
     marginTop: 6,
     maxWidth: '100%',
   },
-  branchTagText: { fontSize: 11, color: '#374151', fontWeight: '600' },
+  branchTagText: { fontSize: 11, color: primitives.neutral['700'], fontWeight: '600' },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 },
   badgeText: { fontSize: 11, fontWeight: '700', letterSpacing: 0.2 },
   items: { gap: 4, marginBottom: 10 },

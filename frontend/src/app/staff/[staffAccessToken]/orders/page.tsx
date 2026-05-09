@@ -231,28 +231,28 @@ export default function StaffOrdersPage({ params }: PageProps) {
   return (
     <main className="flex-1 pt-4 px-4 pb-8 max-w-[720px] mx-auto w-full">
       <header className="flex items-center justify-between mb-4">
-        <h1 className="m-0 text-[1.1rem] font-semibold">Live Orders</h1>
+        <h1 className="m-0 text-lg font-semibold">Live Orders</h1>
         <button
           type="button"
           onClick={onSignOut}
-          className="py-[0.4rem] px-[0.7rem] text-[0.78rem] bg-transparent border border-rim text-dim rounded-md cursor-pointer"
+          className="py-1 px-3 text-xs bg-transparent border border-rim text-dim rounded-md cursor-pointer"
         >
           Sign out
         </button>
       </header>
 
       {error && (
-        <div className="py-2 px-[0.7rem] mb-[0.8rem] bg-[rgba(220,38,38,0.12)] border border-[rgba(220,38,38,0.4)] text-[#fca5a5] rounded-lg text-[0.82rem]">
+        <div className="py-2 px-3 mb-3 bg-red-glow border border-red-stroke text-red-300 rounded-lg text-xs">
           {error}
         </div>
       )}
 
       {loading && orders.length === 0 ? (
-        <p className="text-dim text-[0.9rem]">Loading orders…</p>
+        <p className="text-dim text-sm">Loading orders…</p>
       ) : orders.length === 0 ? (
-        <p className="text-dim text-[0.9rem]">No active orders right now.</p>
+        <p className="text-dim text-sm">No active orders right now.</p>
       ) : (
-        <div className="flex flex-col gap-[0.8rem]">
+        <div className="flex flex-col gap-3">
           {orders.map((o) => (
             <OrderCard
               key={o.id}
@@ -285,24 +285,24 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
   const isPreparing = order.status === 'PREPARING';
 
   return (
-    <div className={`rounded-[10px] p-[0.8rem] border ${isPaid ? 'bg-[rgba(220,38,38,0.08)] border-[rgba(220,38,38,0.5)]' : 'bg-ink2 border-rim'}`}>
+    <div className={`rounded-lg p-3 border ${isPaid ? 'bg-red-glow border-red-stroke' : 'bg-ink2 border-rim'}`}>
       <div className="flex justify-between items-baseline gap-2">
         <div>
-          <div className="text-[0.95rem] font-semibold">#{order.order_number}</div>
-          <div className="text-[0.78rem] text-dim">
+          <div className="text-base font-semibold">#{order.order_number}</div>
+          <div className="text-xs text-dim">
             {order.customer_name} · {order.customer_phone_masked}
           </div>
         </div>
         <div className="text-right">
-          <div className="text-[0.9rem] font-semibold">₹{order.total_rs}</div>
-          <div className="text-[0.7rem] text-dim">
+          <div className="text-sm font-semibold">₹{order.total_rs}</div>
+          <div className="text-xs text-dim">
             {fmtTime(order.created_at)} · {order.status}
           </div>
         </div>
       </div>
 
       {order.items.length > 0 && (
-        <ul className="mt-[0.6rem] mb-[0.3rem] p-0 list-none text-[0.82rem] text-fg">
+        <ul className="mt-2 mb-1 p-0 list-none text-xs text-tx">
           {order.items.map((it, i) => (
             <li key={`${order.id}-${i}`}>
               {it.quantity}× {it.name}
@@ -311,14 +311,14 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
         </ul>
       )}
 
-      <div className="flex gap-[0.4rem] flex-wrap mt-[0.6rem]">
+      <div className="flex gap-1 flex-wrap mt-2">
         {isPaid && (
           <>
             <button
               type="button"
               disabled={busy}
               onClick={onAccept}
-              className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-green-600 cursor-pointer'}`}
+              className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-wa cursor-pointer'}`}
             >
               {busy ? 'Working…' : 'Accept'}
             </button>
@@ -326,7 +326,7 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
               type="button"
               disabled={busy}
               onClick={onDecline}
-              className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-red-600 cursor-pointer'}`}
+              className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-red cursor-pointer'}`}
             >
               Decline
             </button>
@@ -337,7 +337,7 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
             type="button"
             disabled={busy}
             onClick={onPreparing}
-            className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-amber-600 cursor-pointer'}`}
+            className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-gold cursor-pointer'}`}
           >
             {busy ? 'Working…' : 'Start preparing'}
           </button>
@@ -347,7 +347,7 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
             type="button"
             disabled={busy}
             onClick={onPacked}
-            className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-blue-600 cursor-pointer'}`}
+            className={`${BTN_BASE_CLS} ${busy ? BTN_BUSY_CLS : 'bg-blue cursor-pointer'}`}
           >
             {busy ? 'Working…' : 'Mark packed'}
           </button>
@@ -357,5 +357,5 @@ function OrderCard({ order, busy, onAccept, onDecline, onPreparing, onPacked }: 
   );
 }
 
-const BTN_BASE_CLS = 'py-2 px-[0.9rem] text-[0.85rem] text-white border-0 rounded-md font-semibold';
+const BTN_BASE_CLS = 'py-2 px-4 text-sm text-white border-0 rounded-md font-semibold';
 const BTN_BUSY_CLS = 'bg-rim cursor-default';

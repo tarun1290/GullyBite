@@ -39,7 +39,7 @@ module.exports = ({ config }) => ({
   splash: {
     image: './assets/splash.png',
     resizeMode: 'contain',
-    backgroundColor: '#4338ca',
+    backgroundColor: '#0F766E',
   },
   assetBundlePatterns: ['**/*'],
   android: {
@@ -47,7 +47,7 @@ module.exports = ({ config }) => ({
     versionCode: 1,
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#4338ca',
+      backgroundColor: '#0F766E',
     },
     permissions: [
       'android.permission.INTERNET',
@@ -63,7 +63,7 @@ module.exports = ({ config }) => ({
       'expo-notifications',
       {
         icon: './assets/notification-icon.png',
-        color: '#4338ca',
+        color: '#0F766E',
       },
     ],
     // Pin Kotlin to 1.9.25 across all expo modules. Required because

@@ -23,10 +23,10 @@ function LogoutButton() {
   );
 }
 
-// Brand teal — pinned literal here (rather than colors.acc which is
-// the indigo-toned accent) to match the dashboard's primary action
-// color across both surfaces.
-const TAB_ACTIVE_TINT = '#0F766E';
+// Brand teal — sourced from theme.colors.acc (which now resolves to
+// '#0F766E' after the Part 5 brand-flip; the Part 2 design-tokens
+// package is the canonical source).
+const TAB_ACTIVE_TINT = colors.acc;
 
 export default function TabsLayout() {
   return (

@@ -23,7 +23,7 @@ import {
   getNotificationPermissionStatus,
   playLocalNewOrderNotification,
 } from '@/push';
-import { colors } from '@/theme';
+import { colors, primitives } from '@/theme';
 
 // IST calendar-day helpers. The staff app fetches past orders by
 // YYYY-MM-DD (IST) — these convert today/yesterday/etc. to the same
@@ -470,14 +470,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99,
   },
-  pillLive: { backgroundColor: '#dcfce7' },
-  pillAmber: { backgroundColor: '#fef3c7' },
-  pillDim: { backgroundColor: '#f3f4f6' },
-  pillPast: { backgroundColor: '#e0e7ff' },
+  pillLive: { backgroundColor: primitives.wa.light },
+  pillAmber: { backgroundColor: primitives.amber['100'] },
+  pillDim: { backgroundColor: primitives.neutral['100'] },
+  pillPast: { backgroundColor: primitives.indigo['100'] },
   dot: { width: 8, height: 8, borderRadius: 4 },
   pillText: { fontSize: 12, fontWeight: '700', color: colors.tx },
   errChip: {
-    backgroundColor: '#fee2e2', paddingHorizontal: 10, paddingVertical: 4,
+    backgroundColor: primitives.red['100'], paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: 8, flex: 1,
   },
   errText: { color: colors.red, fontSize: 12, fontWeight: '600' },
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   },
   clearBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
   modalBackdrop: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.5)',
+    flex: 1, backgroundColor: colors.overlayModal,
     alignItems: 'center', justifyContent: 'center', padding: 20,
   },
   modalCard: {
@@ -523,9 +523,12 @@ const styles = StyleSheet.create({
   permBanner: {
     marginHorizontal: 12, marginTop: 10,
     padding: 12, borderRadius: 12,
-    backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#fcd34d',
+    // borderColor: Tailwind amber-300 (#fcd34d) — NOT a primitive in
+    // @gullybite/design-tokens (it's only an @theme anchor in
+    // global.css). Left inline; flagged for a Part 2 amendment.
+    backgroundColor: primitives.amber['100'], borderWidth: 1, borderColor: '#fcd34d',
     gap: 4,
   },
-  permBannerTitle: { fontSize: 13, fontWeight: '800', color: '#92400e' },
-  permBannerBody: { fontSize: 12, color: '#92400e' },
+  permBannerTitle: { fontSize: 13, fontWeight: '800', color: primitives.amber['900'] },
+  permBannerBody: { fontSize: 12, color: primitives.amber['900'] },
 });
