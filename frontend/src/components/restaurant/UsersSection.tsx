@@ -426,12 +426,12 @@ export default function UsersSection() {
                                 {kebabOpenId === u.id && (
                                   <div
                                     role="menu"
-                                    className="absolute right-0 mt-1 min-w-[160px] bg-white border border-rim rounded-lg shadow-md py-1 z-10"
+                                    className="absolute right-0 mt-1 min-w-[160px] bg-white border border-rim rounded-md shadow-md py-1 z-50"
                                   >
                                     <button
                                       type="button"
                                       role="menuitem"
-                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
                                       onClick={() => { setKebabOpenId(null); openEdit(u); }}
                                     >
                                       Edit
@@ -439,7 +439,7 @@ export default function UsersSection() {
                                     <button
                                       type="button"
                                       role="menuitem"
-                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
                                       onClick={() => { setKebabOpenId(null); startPinReset(u); }}
                                     >
                                       Reset PIN
@@ -448,7 +448,7 @@ export default function UsersSection() {
                                       <button
                                         type="button"
                                         role="menuitem"
-                                        className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                                        className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer text-red"
                                         onClick={() => { setKebabOpenId(null); setPendingDeactivate(u.id); }}
                                       >
                                         Deactivate
@@ -457,7 +457,7 @@ export default function UsersSection() {
                                       <button
                                         type="button"
                                         role="menuitem"
-                                        className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer"
+                                        className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
                                         onClick={() => { setKebabOpenId(null); handleToggleActive(u); }}
                                       >
                                         Activate
@@ -466,7 +466,7 @@ export default function UsersSection() {
                                     <button
                                       type="button"
                                       role="menuitem"
-                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-gray-50 cursor-pointer text-red-600"
+                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer text-red"
                                       onClick={() => { setKebabOpenId(null); setPendingDelete(u.id); }}
                                     >
                                       Delete Account

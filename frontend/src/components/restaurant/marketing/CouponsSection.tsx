@@ -510,7 +510,7 @@ export default function CouponsSection() {
               <div className="text-[0.75rem] text-dim mb-2">
                 Leave blank to apply to all your branches
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 {branches.map((b) => (
                   <label
                     key={b.id}

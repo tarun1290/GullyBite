@@ -104,7 +104,7 @@ function SegmentCard({ seg, count, disabled, selected, onClick }: SegmentCardPro
       type="button"
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      className={`text-left p-4 rounded-[10px] ${borderCls} ${bgCls} ${cursorCls} relative flex flex-col gap-[0.35rem]`}
+      className={`text-left p-4 rounded-[10px] ${borderCls} ${bgCls} ${cursorCls} relative flex flex-col gap-[0.35rem] min-w-0`}
     >
       <div className="flex items-center gap-[0.55rem]">
         <span className="text-xl" aria-hidden="true">{seg.emoji}</span>
@@ -231,7 +231,7 @@ export default function CustomersPage() {
       <div className="card">
         <div className="ch"><h3>Segments</h3></div>
         <div className="cb">
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-[0.8rem]">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {SEGMENTS.map((seg) => (
               <SegmentCard
                 key={seg.label}

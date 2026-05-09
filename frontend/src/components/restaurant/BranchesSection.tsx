@@ -560,7 +560,18 @@ export default function BranchesSection() {
                       <span className="badge bg text-[0.65rem]" title={b.gst_number}>GST ✓</span>
                     )}
                     {!isDeleted && (
-                      <span className="text-[0.85rem] text-dim ml-[0.4rem]">
+                      // Chevron — purely decorative, the entire .bcard-hd
+                      // row is the click target. min-w/min-h hit the
+                      // ~2rem floor + p-2 internal padding so the visual
+                      // affordance is large enough on touch devices,
+                      // even though it doesn't carry its own onClick.
+                      // aria-hidden so screen readers skip the duplicate
+                      // expand/collapse signal — that's communicated by
+                      // the row's own state-change announcement.
+                      <span
+                        aria-hidden
+                        className="inline-flex items-center justify-center min-w-[2rem] min-h-[2rem] p-2 text-xl text-dim ml-[0.4rem]"
+                      >
                         {isExpanded ? '▾' : '▸'}
                       </span>
                     )}
@@ -568,7 +579,7 @@ export default function BranchesSection() {
                 </div>
 
                 {isDeleted && (
-                  <div className="pt-[0.6rem] px-[0.95rem] pb-3 border-t border-bdr flex justify-end gap-[0.4rem]">
+                  <div className="p-4 border-t border-bdr flex justify-end gap-[0.4rem]">
                     <button
                       type="button"
                       className="btn-g btn-sm opacity-100"
@@ -589,7 +600,7 @@ export default function BranchesSection() {
                 )}
 
                 {isExpanded && (
-                  <div className="bcard-body p-[0.9rem]">
+                  <div className="bcard-body p-4">
                     <div className="bcard-actions flex justify-end gap-[0.4rem] mb-[0.7rem]">
                       <button
                         type="button"

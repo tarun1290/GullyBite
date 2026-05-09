@@ -531,9 +531,12 @@ export default function MarketingAnalyticsPage() {
   return (
     <div id="tab-marketing-analytics">
       {!campaignsEnabled && !loading && (
-        <div className="bg-[#fef3c7] border border-[#fde68a] rounded-lg py-3 px-4 text-[0.85rem] text-[#92400e] mb-[1.1rem]">
-          <strong>Marketing is not enabled yet.</strong> Top up your wallet and enable campaigns
-          from the Campaigns tab to populate these insights.
+        <div className="notice warn">
+          <div className="notice-ico">⚠️</div>
+          <div className="notice-body">
+            <strong>Marketing is not enabled yet.</strong> Top up your wallet and enable
+            campaigns from the Campaigns tab to populate these insights.
+          </div>
         </div>
       )}
 

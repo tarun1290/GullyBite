@@ -626,7 +626,7 @@ export default function MenuEditorSection({
         <select
           value={selectedBranchId}
           onChange={(e) => setSelectedBranchId(e.target.value)}
-          className="py-[0.4rem] px-[0.6rem] rounded-[7px] border border-rim text-[0.85rem] min-w-[220px] bg-white"
+          className="h-9 px-3 rounded-md border border-rim2 text-[0.85rem] min-w-[220px] bg-white text-tx"
           disabled={branchesLoading}
         >
           <option value="__all__">All Products ({totalCount})</option>

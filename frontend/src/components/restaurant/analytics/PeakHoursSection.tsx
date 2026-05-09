@@ -38,6 +38,12 @@ export default function PeakHoursSection({ dateRange }: PeakHoursSectionProps) {
   const hoursConfig = useMemo<{ data: ChartData<'bar'>; options: ChartOptions<'bar'> } | null>(() => {
     const hours = data?.hours;
     if (!Array.isArray(hours) || hours.length === 0) return null;
+    // Backend always returns 24 hour buckets even for periods with no
+    // orders — every bucket carries order_count: 0. Without this sum
+    // guard hoursConfig is non-null for those days, the chart renders
+    // 24 zero-height bars, and the "No orders" empty state never shows.
+    const total = hours.reduce((s, h) => s + (Number(h.order_count) || 0), 0);
+    if (total === 0) return null;
     const maxVal = Math.max(...hours.map((h) => h.order_count));
     const bgColors = hours.map((h) => {
       if (h.order_count >= maxVal * 0.8) return 'rgba(220,38,38,.7)';
@@ -71,6 +77,10 @@ export default function PeakHoursSection({ dateRange }: PeakHoursSectionProps) {
   const daysConfig = useMemo<{ data: ChartData<'bar'>; options: ChartOptions<'bar'> } | null>(() => {
     const days = data?.days;
     if (!Array.isArray(days) || days.length === 0) return null;
+    // Same all-zero guard as hoursConfig above — backend may return
+    // 7 day buckets all with order_count: 0 for an empty period.
+    const total = days.reduce((s, d) => s + (Number(d.order_count) || 0), 0);
+    if (total === 0) return null;
     return {
       data: {
         labels: days.map((d) => (d.day || '').slice(0, 3)),

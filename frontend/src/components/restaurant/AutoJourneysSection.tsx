@@ -222,7 +222,7 @@ function JourneyCard({
   };
 
   return (
-    <div className="card">
+    <div className="card min-w-0">
       <div className="cb flex flex-col gap-[0.55rem]">
         <div className="flex justify-between gap-2 items-start flex-wrap">
           <div className="flex gap-2 items-start flex-1 min-w-0">
@@ -458,7 +458,7 @@ export default function AutoJourneysSection({ campaignsEnabled }: AutoJourneysSe
       )}
 
       <div
-        className={`grid gap-[0.8rem] grid-cols-[repeat(auto-fill,minmax(320px,1fr))] ${disabled ? 'opacity-75' : 'opacity-100'}`}
+        className={`grid gap-[0.8rem] grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ${disabled ? 'opacity-75' : 'opacity-100'}`}
       >
         {JOURNEY_META.map((meta) => (
           <JourneyCard

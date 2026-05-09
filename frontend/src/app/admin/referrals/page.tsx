@@ -371,7 +371,7 @@ export default function AdminReferralsPage() {
           <SectionError message={statsErr} onRetry={loadStats} />
         </div>
       ) : (
-        <div className="stats">
+        <div className="grid grid-cols-4 gap-4 mb-4">
           <StatCard label="Total Referrals"     value={loading ? '—' : (stats?.total ?? 0)} delta="All time" />
           <StatCard label="Active (within 8h)"  value={loading ? '—' : (stats?.active ?? 0)} delta="Attribution live" />
           <StatCard label="Converted"           value={loading ? '—' : (stats?.converted ?? 0)} delta="Placed an order" />
