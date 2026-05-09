@@ -160,22 +160,50 @@ export default function StaffLoginPage({ params }: PageProps) {
     }
   };
 
+  const apkUrl = process.env.NEXT_PUBLIC_STAFF_APK_URL;
+  const banner = showAndroid && apkUrl ? (
+    <div className="w-full bg-[#25D366] flex items-center justify-between px-4 py-3">
+      <div className="font-semibold text-white text-sm">
+        <span className="mr-2">📲</span>Get the GullyBite Staff App
+      </div>
+      <div className="flex flex-col items-end gap-1">
+        <a
+          href={apkUrl}
+          download
+          className="bg-white text-[#25D366] rounded-full px-3 py-1 text-xs font-semibold no-underline"
+        >
+          Download App
+        </a>
+        <button
+          type="button"
+          onClick={() => setShowAndroid(false)}
+          className="text-white/80 text-xs underline bg-transparent border-0 cursor-pointer p-0"
+        >
+          Continue in browser
+        </button>
+      </div>
+    </div>
+  ) : null;
+
   // ── Invalid link: surface a single-line message and bail. We
   // deliberately don't render the form so a stale link can't be used
   // as a brute-force surface against the (already rate-limited) PIN
   // endpoint.
   if (branchInfo.kind === 'invalid') {
     return (
-      <main className="bg-white min-h-screen flex items-center justify-center px-4">
-        <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8 text-center">
-          <h1 className="text-gray-900 font-semibold text-xl mb-1">
-            This link is invalid or expired
-          </h1>
-          <p className="text-gray-500 text-sm mt-2">
-            Ask your manager to re-share the staff login link from the GullyBite dashboard.
-          </p>
-        </div>
-      </main>
+      <>
+        {banner}
+        <main className="bg-white min-h-screen flex items-center justify-center px-4">
+          <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8 text-center">
+            <h1 className="text-gray-900 font-semibold text-xl mb-1">
+              This link is invalid or expired
+            </h1>
+            <p className="text-gray-500 text-sm mt-2">
+              Ask your manager to re-share the staff login link from the GullyBite dashboard.
+            </p>
+          </div>
+        </main>
+      </>
     );
   }
 
@@ -183,11 +211,14 @@ export default function StaffLoginPage({ params }: PageProps) {
   // form fields flash before the heading appears.
   if (branchInfo.kind === 'loading') {
     return (
-      <main className="bg-white min-h-screen flex items-center justify-center px-4">
-        <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8 text-center">
-          <p className="text-gray-500 text-sm">Loading…</p>
-        </div>
-      </main>
+      <>
+        {banner}
+        <main className="bg-white min-h-screen flex items-center justify-center px-4">
+          <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8 text-center">
+            <p className="text-gray-500 text-sm">Loading…</p>
+          </div>
+        </main>
+      </>
     );
   }
 
@@ -198,8 +229,10 @@ export default function StaffLoginPage({ params }: PageProps) {
     : null;
 
   return (
-    <main className="bg-white min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8">
+    <>
+      {banner}
+      <main className="bg-white min-h-screen flex items-center justify-center px-4">
+        <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8">
         <h1 className="text-gray-900 font-semibold text-xl mb-1">
           {heading || 'GullyBite Staff'}
         </h1>
@@ -266,7 +299,8 @@ export default function StaffLoginPage({ params }: PageProps) {
             {submitting ? 'Signing in…' : 'Log in'}
           </button>
         </form>
-      </div>
-    </main>
+        </div>
+      </main>
+    </>
   );
 }
