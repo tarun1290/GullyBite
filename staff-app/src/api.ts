@@ -118,10 +118,17 @@ export type StaffOrder = {
   customer_phone_masked?: string;
   total_rs?: number | null;
   total_amount?: number | null;
+  // Detail-only breakdown — populated by GET /api/staff/orders/:orderId,
+  // not by the list endpoint. Optional so list-shaped values still
+  // satisfy the type.
+  subtotal_rs?: number | null;
+  delivery_fee_rs?: number | null;
+  discount_rs?: number | null;
   status?: string;
   payment_status?: string | null;
   branch_id?: string | null;
   accepted_at?: string | null;
+  delivered_at?: string | null;
   created_at?: string;
   items?: StaffOrderItem[];
 };
@@ -182,8 +189,18 @@ export async function getBranchInfo(
   );
 }
 
-export async function getOrders(): Promise<{ orders: StaffOrder[] }> {
-  return request<{ orders: StaffOrder[] }>('/api/staff/orders');
+// `date` is an optional YYYY-MM-DD IST calendar day. When omitted, the
+// backend returns the live (non-terminal) set; when present, it returns
+// every order created on that day regardless of status.
+export async function getOrders(opts?: { date?: string }): Promise<{ orders: StaffOrder[] }> {
+  const qs = opts?.date ? `?date=${encodeURIComponent(opts.date)}` : '';
+  return request<{ orders: StaffOrder[] }>(`/api/staff/orders${qs}`);
+}
+
+// Single-order detail. Status-agnostic — works for past orders and
+// orders past PACKED that the live list endpoint no longer returns.
+export async function getOrder(orderId: string): Promise<{ order: StaffOrder }> {
+  return request<{ order: StaffOrder }>(`/api/staff/orders/${encodeURIComponent(orderId)}`);
 }
 
 // Accept and decline are RESTAURANT-side endpoints that the new

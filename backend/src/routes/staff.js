@@ -349,25 +349,76 @@ router.delete('/push-token', requireStaffAuth(), express.json(), async (req, res
   }
 });
 
-// GET /api/staff/orders — currently-actionable orders for this staff
-// member: status IN [PAID, CONFIRMED, PREPARING, PACKED], newest first,
-// limit 50. Branch-filtered when the staff JWT carries non-empty
-// branchIds. Masked customer phones.
+// GET /api/staff/orders — orders for this staff member's scope.
+//
+// Two modes:
+//   (a) no `date` param → "live" view: orders not in the terminal
+//       set [DELIVERED, CANCELLED, REJECTED_BY_RESTAURANT,
+//       RESTAURANT_TIMEOUT], newest first, limit 50. This includes
+//       PAID, CONFIRMED, PREPARING, PACKED, and DISPATCHED so a rider-
+//       picked-up order stays visible until it's actually delivered.
+//   (b) `?date=YYYY-MM-DD` → past-orders view: every order created on
+//       that calendar day in IST, regardless of status. Limit 200 so
+//       a busy day doesn't truncate but the response stays bounded.
+//
+// Branch-filtered via X-Branch-Id (resolveBranchScope) — defaults to
+// the JWT primary, "all" expands to the assigned set. Masked customer
+// phones in both modes.
+//
+// Terminal statuses excluded from the "live" view. Mirrors the user's
+// spec: live = NOT IN [DELIVERED, CANCELLED, REJECTED_BY_RESTAURANT,
+// RESTAURANT_TIMEOUT].
+const STAFF_LIVE_EXCLUDED_STATUSES = [
+  'DELIVERED',
+  'CANCELLED',
+  'REJECTED_BY_RESTAURANT',
+  'RESTAURANT_TIMEOUT',
+];
+
+// IST day boundary helper. Mirrors admin.js — dateStr is YYYY-MM-DD,
+// `end` toggles between start-of-day (00:00:00.000 IST) and
+// end-of-day (23:59:59.999 IST). Returns a UTC Date instance suitable
+// for direct use in Mongo `$gte` / `$lte` queries against `created_at`.
+const _STAFF_IST_OFFSET = '+05:30';
+function _staffIstBoundary(dateStr, end) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) return null;
+  const time = end ? 'T23:59:59.999' : 'T00:00:00.000';
+  const d = new Date(dateStr + time + _STAFF_IST_OFFSET);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 router.get('/orders', requireStaffAuth(), async (req, res) => {
   try {
     const scope = resolveBranchScope(req);
     if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
     const filter = {
       restaurant_id: req.staff.restaurantId,
-      status: { $in: ['PAID', 'CONFIRMED', 'PREPARING', 'PACKED'] },
     };
     if (scope.branchIds.length) {
       filter.branch_id = { $in: scope.branchIds };
     }
+
+    // Date filter — when present, scope to that IST calendar day and
+    // drop the status filter (past view returns every status). When
+    // absent, apply the live-view status exclusion list.
+    const dateRaw = typeof req.query?.date === 'string' ? req.query.date.trim() : '';
+    let limit = 50;
+    if (dateRaw) {
+      const start = _staffIstBoundary(dateRaw, false);
+      const end = _staffIstBoundary(dateRaw, true);
+      if (!start || !end) {
+        return res.status(400).json({ error: 'Invalid date — expected YYYY-MM-DD' });
+      }
+      filter.created_at = { $gte: start, $lte: end };
+      limit = 200;
+    } else {
+      filter.status = { $nin: STAFF_LIVE_EXCLUDED_STATUSES };
+    }
+
     const orders = await col('orders')
       .find(filter)
       .sort({ created_at: -1 })
-      .limit(50)
+      .limit(limit)
       .toArray();
 
     const customerIds = [...new Set(orders.map(o => o.customer_id).filter(Boolean))];
@@ -400,6 +451,70 @@ router.get('/orders', requireStaffAuth(), async (req, res) => {
     return res.json({ success: true, orders: payload });
   } catch (e) {
     log.error({ err: e, restaurantId: req.staff.restaurantId }, 'staff list orders failed');
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/staff/orders/:orderId — single-order detail for the staff app.
+//
+// Status-agnostic: returns the order regardless of where it sits in
+// the state machine, so the detail page works for past orders (date
+// view) and orders that have moved past PACKED. Branch-guarded the
+// same way as the list — the order's branch must be in the scope set
+// (X-Branch-Id-resolved). Cross-restaurant requests 404 to avoid
+// leaking whether an id exists in another tenant.
+router.get('/orders/:orderId', requireStaffAuth(), async (req, res) => {
+  try {
+    const scope = resolveBranchScope(req);
+    if (!scope.ok) return res.status(scope.status).json({ error: scope.error });
+
+    const order = await col('orders').findOne({ _id: req.params.orderId });
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (String(order.restaurant_id) !== String(req.staff.restaurantId)) {
+      // Treat as 404 — don't reveal cross-tenant existence.
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    if (scope.branchIds.length && !scope.branchIds.includes(String(order.branch_id))) {
+      return res.status(403).json({ error: 'Forbidden — order not in your branch' });
+    }
+
+    let customer = null;
+    if (order.customer_id) {
+      customer = await col('customers').findOne(
+        { _id: order.customer_id },
+        { projection: { _id: 1, name: 1, wa_phone: 1 } },
+      );
+    }
+
+    return res.json({
+      success: true,
+      order: {
+        id: String(order._id),
+        order_number: order.order_number,
+        customer_name: customer?.name || order.receiver_name || 'Customer',
+        customer_phone_masked: maskPhone(customer?.wa_phone || order.receiver_phone || ''),
+        total_rs: order.total_rs,
+        total_amount: order.total_rs,
+        subtotal_rs: order.subtotal_rs ?? null,
+        delivery_fee_rs: order.delivery_fee_rs ?? null,
+        discount_rs: order.discount_rs ?? null,
+        status: order.status,
+        payment_status: order.payment_status || null,
+        branch_id: order.branch_id || null,
+        accepted_at: order.confirmed_at || order.acknowledged_at || null,
+        delivered_at: order.delivered_at || null,
+        created_at: order.created_at,
+        items: Array.isArray(order.items)
+          ? order.items.map((i) => ({
+              name: i.name,
+              quantity: i.quantity ?? i.qty,
+              price_rs: i.unit_price_rs ?? i.price_rs ?? null,
+            }))
+          : [],
+      },
+    });
+  } catch (e) {
+    log.error({ err: e, orderId: req.params.orderId }, 'staff get order failed');
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

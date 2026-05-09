@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/store/authStore';
 import BranchSelector from '@/components/BranchSelector';
 import { colors } from '@/theme';
@@ -44,28 +45,26 @@ export default function TabsLayout() {
         headerRight: () => <LogoutButton />,
       }}
     >
-      {/* Orders folder = orders/index.tsx (list) + orders/[orderId].tsx
-          (detail). Without an inner _layout.tsx, expo-router auto-
-          discovers each .tsx as a sibling tab unless we explicitly
-          declare them. The detail screen gets href: null so it doesn't
-          show in the tab bar — it's reachable only via push from the
-          list screen or a deep link. */}
+      {/* Orders folder owns its own Stack (orders/_layout.tsx) so the
+          [orderId] detail screen doesn't surface as a sibling tab and
+          gets its own header title + back button. headerShown:false
+          here lets the inner Stack render the header without doubling
+          up. */}
       <Tabs.Screen
-        name="orders/index"
+        name="orders"
         options={{
           title: 'Orders',
-          tabBarIcon: ({ color, size }) => <Text style={{ color, fontSize: size }}>📦</Text>,
+          tabBarLabel: 'Orders',
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Ionicons name="receipt-outline" color={color} size={size} />,
         }}
-      />
-      <Tabs.Screen
-        name="orders/[orderId]"
-        options={{ href: null }}
       />
       <Tabs.Screen
         name="menu/index"
         options={{
           title: 'Menu',
-          tabBarIcon: ({ color, size }) => <Text style={{ color, fontSize: size }}>🍽️</Text>,
+          tabBarLabel: 'Menu',
+          tabBarIcon: ({ color, size }) => <Ionicons name="restaurant-outline" color={color} size={size} />,
         }}
       />
     </Tabs>

@@ -2,11 +2,14 @@
 //   PAID       → Accept (primary) + Decline (destructive)
 //   CONFIRMED  → Mark as Preparing
 //   PREPARING  → Mark as Packed
-//   PACKED     → text only ("Awaiting rider assignment")
+//   PACKED+    → text only (no action — DISPATCHED/DELIVERED/etc. are
+//                terminal-for-staff)
 //
 // Customer phone is masked — never show full digits. The order is
-// re-fetched via getOrders() on mount so the screen works after a deep
-// link or app restart, not just from the orders-list nav.
+// fetched via getOrder(id) on mount, which hits the dedicated
+// /api/staff/orders/:orderId endpoint so the screen works for past
+// orders (date view) and orders that have moved beyond PACKED, not
+// just for orders that are currently in the live list.
 
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -24,7 +27,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   acceptOrder,
   declineOrder,
-  getOrders,
+  getOrder,
   updateOrderStatus,
   type StaffOrder,
   type StaffOrderItem,
@@ -46,16 +49,6 @@ function formatTime(iso?: string): string {
   return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 }
 
-function maskPhone(p?: string): string {
-  if (!p) return '';
-  // Show only last 2 digits, mask the rest. Defensive: input may
-  // already be server-masked.
-  const digits = String(p).replace(/[^0-9]/g, '');
-  if (digits.length <= 2) return digits;
-  const tail = digits.slice(-2);
-  return `${'X'.repeat(digits.length - 2)}${tail}`;
-}
-
 export default function OrderDetailScreen() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const router = useRouter();
@@ -68,10 +61,9 @@ export default function OrderDetailScreen() {
     setLoading(true);
     setErr(null);
     try {
-      const res = await getOrders();
-      const found = res.orders.find((o) => String(o.id) === String(orderId));
-      setOrder(found || null);
-      if (!found) setErr('Order not found');
+      const res = await getOrder(String(orderId));
+      setOrder(res.order || null);
+      if (!res.order) setErr('Order not found');
     } catch (e) {
       setErr((e as Error).message || 'Failed to load order');
     } finally {
@@ -170,6 +162,27 @@ export default function OrderDetailScreen() {
   const items: StaffOrderItem[] = Array.isArray(order.items) ? order.items : [];
   const itemCount = items.reduce((s, i) => s + (Number(i.quantity ?? i.qty) || 0), 0);
   const total = order.total_amount ?? order.total_rs ?? null;
+  const subtotal = order.subtotal_rs ?? null;
+  const deliveryFee = order.delivery_fee_rs ?? null;
+  const discount = order.discount_rs ?? null;
+  const paymentStatus = order.payment_status ? String(order.payment_status) : null;
+  // Terminal states from the staff perspective — no actions, just a
+  // descriptive label. PACKED is the staff's last actionable state;
+  // anything past it (DISPATCHED, DELIVERED) or any fault state
+  // (CANCELLED, REJECTED_BY_RESTAURANT, etc.) renders as terminal.
+  const STAFF_TERMINAL_LABEL: Record<string, string> = {
+    PACKED: 'Awaiting rider assignment',
+    DISPATCHED: 'Out for delivery',
+    DELIVERED: 'Delivered',
+    CANCELLED: 'Cancelled',
+    REJECTED_BY_RESTAURANT: 'Rejected',
+    RESTAURANT_TIMEOUT: 'Timed out',
+    EXPIRED: 'Expired',
+    EXPIRED_PAYMENT: 'Expired (refunded)',
+    NO_DELIVERY_AVAILABLE: 'No delivery available',
+  };
+  const terminalLabel = STAFF_TERMINAL_LABEL[status] || null;
+  const isStaffActionable = status === 'PAID' || status === 'CONFIRMED' || status === 'PREPARING';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.ink }}>
@@ -202,8 +215,32 @@ export default function OrderDetailScreen() {
           )}
         </Section>
 
-        <Section title="Total">
-          <Text style={styles.totalText}>{formatRs(total)}</Text>
+        <Section title="Totals">
+          {subtotal != null ? (
+            <View style={styles.lineRow}>
+              <Text style={styles.lineLabel}>Subtotal</Text>
+              <Text style={styles.lineValue}>{formatRs(subtotal)}</Text>
+            </View>
+          ) : null}
+          {deliveryFee != null ? (
+            <View style={styles.lineRow}>
+              <Text style={styles.lineLabel}>Delivery</Text>
+              <Text style={styles.lineValue}>{formatRs(deliveryFee)}</Text>
+            </View>
+          ) : null}
+          {discount != null && Number(discount) > 0 ? (
+            <View style={styles.lineRow}>
+              <Text style={styles.lineLabel}>Discount</Text>
+              <Text style={styles.lineValue}>−{formatRs(discount)}</Text>
+            </View>
+          ) : null}
+          <View style={styles.lineRow}>
+            <Text style={styles.lineLabelStrong}>Total</Text>
+            <Text style={styles.totalText}>{formatRs(total)}</Text>
+          </View>
+          {paymentStatus ? (
+            <Text style={styles.rowDim}>Payment: {paymentStatus}</Text>
+          ) : null}
         </Section>
 
         {/* Action row — based on current status */}
@@ -244,9 +281,9 @@ export default function OrderDetailScreen() {
             <Text style={styles.btnPrimaryText}>{action === 'packed' ? 'Updating…' : 'Mark as Packed'}</Text>
           </Pressable>
         )}
-        {status === 'PACKED' && (
-          <Text style={styles.terminal}>Awaiting rider assignment</Text>
-        )}
+        {!isStaffActionable && terminalLabel ? (
+          <Text style={styles.terminal}>{terminalLabel}</Text>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -289,7 +326,11 @@ const styles = StyleSheet.create({
   itemRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 4 },
   itemQty: { fontSize: 13, color: colors.dim, fontWeight: '700', minWidth: 32 },
   itemName: { fontSize: 14, color: colors.tx, flex: 1 },
-  totalText: { fontSize: 22, fontWeight: '800', color: colors.tx },
+  totalText: { fontSize: 20, fontWeight: '800', color: colors.tx },
+  lineRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
+  lineLabel: { fontSize: 13, color: colors.dim },
+  lineLabelStrong: { fontSize: 14, color: colors.tx, fontWeight: '700' },
+  lineValue: { fontSize: 13, color: colors.tx, fontWeight: '600' },
   actionCol: { gap: 10 },
   btnPrimary: {
     backgroundColor: colors.acc, paddingVertical: 14, borderRadius: 12, alignItems: 'center',

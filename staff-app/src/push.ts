@@ -138,19 +138,43 @@ export async function requestOwnerPermissionsAndRegister(): Promise<string | nul
   return token;
 }
 
-export async function playLocalNewOrderNotification(title: string, body: string): Promise<void> {
+export async function playLocalNewOrderNotification(
+  title: string,
+  body: string,
+  // Optional extras merged into the notification's data payload — used
+  // by the SSE foreground handler to attach order_id (and any future
+  // branch_id) so the response listener in app/_layout.tsx deep-links
+  // to /orders/[orderId] just like the backend-pushed variant.
+  extras?: Record<string, unknown>,
+): Promise<void> {
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
         title,
         body,
         sound: 'default',
-        data: { type: 'new_order' },
+        data: { type: 'new_order', ...(extras || {}) },
         ...(Platform.OS === 'android' ? { channelId: 'orders' } : {}),
       },
       trigger: null,
     });
   } catch (err) {
     console.warn('[push] local notify failed:', (err as Error).message);
+  }
+}
+
+// Lightweight permission read for in-app banners. Returns 'granted',
+// 'denied', or 'undetermined'. Wrapped so callers don't need to import
+// expo-notifications directly.
+export async function getNotificationPermissionStatus(): Promise<
+  'granted' | 'denied' | 'undetermined'
+> {
+  try {
+    const res = await Notifications.getPermissionsAsync();
+    if (res.status === 'granted') return 'granted';
+    if (res.status === 'denied') return 'denied';
+    return 'undetermined';
+  } catch {
+    return 'undetermined';
   }
 }

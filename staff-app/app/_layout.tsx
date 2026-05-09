@@ -125,10 +125,24 @@ function RootInner() {
   // device shouldn't receive them in the first place.
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((resp) => {
-      const type = (resp?.notification?.request?.content?.data as any)?.type;
+      const data = (resp?.notification?.request?.content?.data as any) || {};
+      const type = data?.type;
       if (type === 'new_order') {
-        if (role === 'owner') router.navigate('/(owner)/dashboard');
-        else router.navigate('/(app)/orders');
+        if (role === 'owner') {
+          router.navigate('/(owner)/dashboard');
+        } else {
+          // Deep-link to the per-order detail when the push payload
+          // carries an order id (added 2026-05-09 — backend
+          // sseListener attaches order_id + branch_id on every
+          // order.created push). Falls back to the orders list for
+          // legacy payloads or test pushes that omit the id.
+          const orderId = typeof data?.order_id === 'string' ? data.order_id : '';
+          if (orderId) {
+            router.navigate(`/(app)/orders/${encodeURIComponent(orderId)}`);
+          } else {
+            router.navigate('/(app)/orders');
+          }
+        }
       } else if (type === 'settlement_paid') {
         router.navigate('/(owner)/dashboard');
       } else if (type === 'branch_paused') {

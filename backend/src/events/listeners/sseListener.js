@@ -60,7 +60,16 @@ function onOrderCreated(payload) {
           expoPush.sendPush(staffTokens, {
             title: 'New Order!',
             body: `Order #${orderNumber || ''} just came in${totalLabel ? ` — ${totalLabel}` : ''}`,
-            data: { type: 'new_order', order_id: String(o._id || orderId || '') },
+            // branch_id powers tap deep-linking on the staff app — the
+            // root-layout response listener routes to the per-order
+            // detail screen using order_id, branch_id is passed along
+            // for any future per-branch routing decisions.
+            data: {
+              type: 'new_order',
+              order_id: String(o._id || orderId || ''),
+              branch_id: o.branch_id ? String(o.branch_id) : null,
+            },
+            channelId: 'orders',
           }).catch(() => {});
         }
 
@@ -74,7 +83,11 @@ function onOrderCreated(payload) {
         expoPush.sendPush(ownerTokens, {
           title: '🛒 New Order!',
           body: `Order #${orderNumber || ''}${totalLabel ? ` — ${totalLabel}` : ''}`,
-          data: { type: 'new_order', order_id: String(o._id || orderId || '') },
+          data: {
+            type: 'new_order',
+            order_id: String(o._id || orderId || ''),
+            branch_id: o.branch_id ? String(o.branch_id) : null,
+          },
           channelId: 'orders',
         }).catch(() => {});
       } catch (err) {

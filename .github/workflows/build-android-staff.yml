@@ -109,5 +109,5 @@ jobs:
           aws-region: ap-south-1
 
       - name: Upload APK to S3
-        run: aws s3 cp staff-app/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk s3://gullybite-media-prod/staff-app/latest/staff-app.apk --acl public-read
+        run: aws s3 cp staff-app/android/app/build/outputs/apk/release/app-arm64-v8a-release.apk s3://gullybite-media-prod/staff-app/latest/staff-app.apk
         working-directory: .

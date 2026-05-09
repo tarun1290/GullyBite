@@ -193,12 +193,12 @@ export default function StaffLoginPage({ params }: PageProps) {
     return (
       <>
         {banner}
-        <main className="bg-white min-h-screen flex items-center justify-center px-4">
-          <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8 text-center">
-            <h1 className="text-gray-900 font-semibold text-xl mb-1">
+        <main className="bg-bg min-h-screen px-5 sm:px-6 pt-8 pb-12">
+          <div className="w-full max-w-md mx-auto bg-surface border border-rim rounded-2xl shadow-md p-6 sm:p-8 text-center">
+            <h1 className="text-tx font-semibold text-xl mb-1">
               This link is invalid or expired
             </h1>
-            <p className="text-gray-500 text-sm mt-2">
+            <p className="text-dim text-sm mt-2">
               Ask your manager to re-share the staff login link from the GullyBite dashboard.
             </p>
           </div>
@@ -213,9 +213,9 @@ export default function StaffLoginPage({ params }: PageProps) {
     return (
       <>
         {banner}
-        <main className="bg-white min-h-screen flex items-center justify-center px-4">
-          <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8 text-center">
-            <p className="text-gray-500 text-sm">Loading…</p>
+        <main className="bg-bg min-h-screen px-5 sm:px-6 pt-8 pb-12">
+          <div className="w-full max-w-md mx-auto bg-surface border border-rim rounded-2xl shadow-md p-6 sm:p-8 text-center">
+            <p className="text-dim text-sm">Loading…</p>
           </div>
         </main>
       </>
@@ -231,74 +231,74 @@ export default function StaffLoginPage({ params }: PageProps) {
   return (
     <>
       {banner}
-      <main className="bg-white min-h-screen flex items-center justify-center px-4">
-        <div className="w-full max-w-sm mx-auto bg-white rounded-2xl shadow-md p-8">
-        <h1 className="text-gray-900 font-semibold text-xl mb-1">
-          {heading || 'GullyBite Staff'}
-        </h1>
-        <p className="text-gray-500 text-sm mb-6">
-          Sign in with your name and 4-digit PIN.
-        </p>
+      <main className="bg-bg min-h-screen px-5 sm:px-6 pt-8 pb-12">
+        <div className="w-full max-w-md mx-auto bg-surface border border-rim rounded-2xl shadow-md p-6 sm:p-8">
+          <h1 className="text-tx font-semibold text-xl mb-1">
+            {heading || 'GullyBite Staff'}
+          </h1>
+          <p className="text-dim text-sm mb-6">
+            Sign in with your name and 4-digit PIN.
+          </p>
 
-        {showAndroid && (
-          <div className="mb-4">
-            <button
-              type="button"
-              onClick={onOpenInApp}
-              className="w-full py-3 text-sm bg-green-600 text-white border-0 rounded-lg cursor-pointer font-semibold"
-            >
-              Open in GullyBite Staff App
-            </button>
-            <div className="flex items-center gap-2 my-4 text-gray-500 text-xs">
-              <div className="flex-1 h-px bg-gray-200" />
-              <span>or sign in here</span>
-              <div className="flex-1 h-px bg-gray-200" />
-            </div>
-          </div>
-        )}
-
-        <form onSubmit={onSubmit}>
-          <label className="block text-xs text-gray-700 mb-1">
-            Name
-          </label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="name"
-            disabled={submitting}
-            className="border border-gray-300 rounded-lg px-4 py-3 w-full text-sm text-gray-900 mb-4"
-          />
-
-          <label className="block text-xs text-gray-700 mb-1">
-            PIN
-          </label>
-          <input
-            type="password"
-            value={pin}
-            onChange={(e) => onPinChange(e.target.value)}
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={4}
-            placeholder="••••"
-            disabled={submitting}
-            className="border border-gray-300 rounded-lg px-4 py-3 w-full text-lg tracking-[0.4em] text-center text-gray-900 mb-4"
-          />
-
-          {error && (
-            <div className="py-2 px-3 mb-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-              {error}
+          {showAndroid && (
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={onOpenInApp}
+                className="w-full py-3 text-sm bg-green-600 text-white border-0 rounded-lg cursor-pointer font-semibold"
+              >
+                Open in GullyBite Staff App
+              </button>
+              <div className="flex items-center gap-2 my-4 text-dim text-xs">
+                <div className="flex-1 h-px bg-rim" />
+                <span>or sign in here</span>
+                <div className="flex-1 h-px bg-rim" />
+              </div>
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className={`w-full py-3 text-sm text-white border-0 rounded-lg font-semibold ${submitting ? 'bg-gray-400 cursor-default' : 'bg-green-600 cursor-pointer'}`}
-          >
-            {submitting ? 'Signing in…' : 'Log in'}
-          </button>
-        </form>
+          <form onSubmit={onSubmit}>
+            <label className="block text-xs text-tx mb-1">
+              Name
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoComplete="name"
+              disabled={submitting}
+              className="border border-rim bg-surface rounded-lg px-4 py-3 w-full text-sm text-tx mb-4"
+            />
+
+            <label className="block text-xs text-tx mb-1">
+              PIN
+            </label>
+            <input
+              type="password"
+              value={pin}
+              onChange={(e) => onPinChange(e.target.value)}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={4}
+              placeholder="••••"
+              disabled={submitting}
+              className="border border-rim bg-surface rounded-lg px-4 py-3 w-full text-lg tracking-[0.4em] text-center text-tx mb-4"
+            />
+
+            {error && (
+              <div className="py-2 px-3 mb-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className={`w-full py-3 text-sm text-white border-0 rounded-lg font-semibold ${submitting ? 'bg-mute cursor-default' : 'bg-green-600 cursor-pointer'}`}
+            >
+              {submitting ? 'Signing in…' : 'Log in'}
+            </button>
+          </form>
         </div>
       </main>
     </>
