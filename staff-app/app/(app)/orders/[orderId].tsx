@@ -32,8 +32,9 @@ import {
   type StaffOrder,
   type StaffOrderItem,
 } from '@/api';
+import { useStaffPermissions } from '@/state/StaffContext';
 import { unloadChime } from '@/sound';
-import { badgeFor, colors } from '@/theme';
+import { badgeFor, colors, space, text, radius, fontWeight } from '@/theme';
 
 type ActionKind = 'accept' | 'decline' | 'preparing' | 'packed' | null;
 
@@ -56,6 +57,16 @@ export default function OrderDetailScreen() {
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
   const [action, setAction] = useState<ActionKind>(null);
+  // Permission gates (2026-05-09 staff-auth refactor). Each flag drives
+  // whether a specific action button is rendered. canViewOrders also
+  // flips the entire detail body off in favor of an inline "No access"
+  // surface to mirror the list screen's behavior.
+  const {
+    canViewOrders,
+    canAcceptOrders,
+    canRejectOrders,
+    canMarkReady,
+  } = useStaffPermissions();
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -157,6 +168,21 @@ export default function OrderDetailScreen() {
       </SafeAreaView>
     );
   }
+  if (!canViewOrders) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.ink }}>
+        <View style={styles.noAccessWrap}>
+          <View style={styles.noAccessCard}>
+            <Text style={styles.noAccessTitle}>No access</Text>
+            <Text style={styles.noAccessBody}>
+              Your account doesn’t have permission to view orders. Ask
+              your manager to enable “View orders” for your role.
+            </Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const status = String(order.status || '').toUpperCase();
   const items: StaffOrderItem[] = Array.isArray(order.items) ? order.items : [];
@@ -243,27 +269,34 @@ export default function OrderDetailScreen() {
           ) : null}
         </Section>
 
-        {/* Action row — based on current status */}
+        {/* Action row — based on current status. Buttons are
+            additionally gated by the 10-key permission set sourced from
+            useStaffPermissions(): Accept/Decline by accept_orders /
+            reject_orders, Mark Preparing/Packed by mark_ready. */}
         <View style={{ height: 16 }} />
-        {status === 'PAID' && (
+        {status === 'PAID' && (canAcceptOrders || canRejectOrders) && (
           <View style={styles.actionCol}>
-            <Pressable
-              onPress={onAccept}
-              disabled={!!action}
-              style={({ pressed }) => [styles.btnPrimary, action && styles.btnDisabled, pressed && { opacity: 0.85 }]}
-            >
-              <Text style={styles.btnPrimaryText}>{action === 'accept' ? 'Accepting…' : 'Accept'}</Text>
-            </Pressable>
-            <Pressable
-              onPress={onDecline}
-              disabled={!!action}
-              style={({ pressed }) => [styles.btnDanger, action && styles.btnDisabled, pressed && { opacity: 0.85 }]}
-            >
-              <Text style={styles.btnDangerText}>{action === 'decline' ? 'Declining…' : 'Decline'}</Text>
-            </Pressable>
+            {canAcceptOrders && (
+              <Pressable
+                onPress={onAccept}
+                disabled={!!action}
+                style={({ pressed }) => [styles.btnPrimary, action && styles.btnDisabled, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={styles.btnPrimaryText}>{action === 'accept' ? 'Accepting…' : 'Accept'}</Text>
+              </Pressable>
+            )}
+            {canRejectOrders && (
+              <Pressable
+                onPress={onDecline}
+                disabled={!!action}
+                style={({ pressed }) => [styles.btnDanger, action && styles.btnDisabled, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={styles.btnDangerText}>{action === 'decline' ? 'Declining…' : 'Decline'}</Text>
+              </Pressable>
+            )}
           </View>
         )}
-        {status === 'CONFIRMED' && (
+        {status === 'CONFIRMED' && canMarkReady && (
           <Pressable
             onPress={onMarkPreparing}
             disabled={!!action}
@@ -272,7 +305,7 @@ export default function OrderDetailScreen() {
             <Text style={styles.btnPrimaryText}>{action === 'preparing' ? 'Updating…' : 'Mark as Preparing'}</Text>
           </Pressable>
         )}
-        {status === 'PREPARING' && (
+        {status === 'PREPARING' && canMarkReady && (
           <Pressable
             onPress={onMarkPacked}
             disabled={!!action}
@@ -299,43 +332,50 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: 16, paddingBottom: 40, gap: 12 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.ink, gap: 12 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  orderNumber: { fontSize: 22, fontWeight: '800', color: colors.tx },
-  time: { fontSize: 12, color: colors.dim },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99 },
-  badgeText: { fontSize: 11, fontWeight: '800', color: colors.tx, letterSpacing: 0.4 },
+  scroll: { padding: space.px4, paddingBottom: space.px10, gap: space.px3 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.ink, gap: space.px3 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: space.px3 }, // was 10, rounded to 12 (px3)
+  orderNumber: { fontSize: text.xl, fontWeight: fontWeight.extrabold, color: colors.tx }, // was 22, rounded to 20 (xl)
+  time: { fontSize: text.xs, color: colors.dim }, // was 12, rounded to 11.5 (xs)
+  badge: { paddingHorizontal: space.px3, paddingVertical: space.px1, borderRadius: 99 }, // off-scale radius: 99 — was 10, rounded to 12 (px3)
+  badgeText: { fontSize: text.xs, fontWeight: fontWeight.extrabold, color: colors.tx, letterSpacing: 0.4 }, // was 11, rounded to 11.5 (xs)
   section: {
     backgroundColor: colors.ink2, borderWidth: 1, borderColor: colors.rim,
-    borderRadius: 12, padding: 12, gap: 6,
+    borderRadius: radius.xl, padding: space.px3, gap: space.px2, // was 6, rounded to 8 (px2)
   },
-  sectionTitle: { fontSize: 11, fontWeight: '700', color: colors.dim, textTransform: 'uppercase', letterSpacing: 0.5 },
-  row: { fontSize: 14, color: colors.tx, fontWeight: '600' },
-  rowDim: { fontSize: 13, color: colors.dim },
-  itemRow: { flexDirection: 'row', gap: 10, alignItems: 'center', paddingVertical: 4 },
-  itemQty: { fontSize: 13, color: colors.dim, fontWeight: '700', minWidth: 32 },
-  itemName: { fontSize: 14, color: colors.tx, flex: 1 },
-  totalText: { fontSize: 20, fontWeight: '800', color: colors.tx },
-  lineRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
-  lineLabel: { fontSize: 13, color: colors.dim },
-  lineLabelStrong: { fontSize: 14, color: colors.tx, fontWeight: '700' },
-  lineValue: { fontSize: 13, color: colors.tx, fontWeight: '600' },
-  actionCol: { gap: 10 },
+  sectionTitle: { fontSize: text.xs, fontWeight: fontWeight.bold, color: colors.dim, textTransform: 'uppercase', letterSpacing: 0.5 }, // was 11, rounded to 11.5 (xs)
+  row: { fontSize: text.base, color: colors.tx, fontWeight: fontWeight.semibold },
+  rowDim: { fontSize: text.sm, color: colors.dim },
+  itemRow: { flexDirection: 'row', gap: space.px3, alignItems: 'center', paddingVertical: space.px1 }, // was 10, rounded to 12 (px3)
+  itemQty: { fontSize: text.sm, color: colors.dim, fontWeight: fontWeight.bold, minWidth: 32 },
+  itemName: { fontSize: text.base, color: colors.tx, flex: 1 },
+  totalText: { fontSize: text.xl, fontWeight: fontWeight.extrabold, color: colors.tx },
+  lineRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: space.px1 }, // was 2, rounded to 4 (px1)
+  lineLabel: { fontSize: text.sm, color: colors.dim },
+  lineLabelStrong: { fontSize: text.base, color: colors.tx, fontWeight: fontWeight.bold },
+  lineValue: { fontSize: text.sm, color: colors.tx, fontWeight: fontWeight.semibold },
+  actionCol: { gap: space.px3 }, // was 10, rounded to 12 (px3)
   btnPrimary: {
-    backgroundColor: colors.acc, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
+    backgroundColor: colors.acc, paddingVertical: space.px4, borderRadius: radius.xl, alignItems: 'center', // was 14, rounded to 16 (px4)
   },
-  btnPrimaryText: { color: colors.ink2, fontSize: 16, fontWeight: '700' },
+  btnPrimaryText: { color: colors.ink2, fontSize: text.lg, fontWeight: fontWeight.bold }, // was 16, rounded to 17 (lg)
   btnDanger: {
-    backgroundColor: colors.red, paddingVertical: 14, borderRadius: 12, alignItems: 'center',
+    backgroundColor: colors.red, paddingVertical: space.px4, borderRadius: radius.xl, alignItems: 'center', // was 14, rounded to 16 (px4)
   },
-  btnDangerText: { color: colors.ink2, fontSize: 16, fontWeight: '700' },
+  btnDangerText: { color: colors.ink2, fontSize: text.lg, fontWeight: fontWeight.bold }, // was 16, rounded to 17 (lg)
   btnGhost: {
-    paddingVertical: 12, paddingHorizontal: 18, borderRadius: 10,
+    paddingVertical: space.px3, paddingHorizontal: space.px4, borderRadius: radius.lg, // was 18, rounded to 16 (px4)
     borderWidth: 1, borderColor: colors.rim,
   },
-  btnGhostText: { color: colors.tx, fontSize: 14, fontWeight: '600' },
+  btnGhostText: { color: colors.tx, fontSize: text.base, fontWeight: fontWeight.semibold },
   btnDisabled: { opacity: 0.6 },
-  errText: { color: colors.red, fontSize: 14, fontWeight: '600' },
-  terminal: { textAlign: 'center', fontSize: 13, color: colors.dim, fontStyle: 'italic' },
+  errText: { color: colors.red, fontSize: text.base, fontWeight: fontWeight.semibold },
+  terminal: { textAlign: 'center', fontSize: text.sm, color: colors.dim, fontStyle: 'italic' },
+  noAccessWrap: { flex: 1, padding: space.px4, justifyContent: 'flex-start' },
+  noAccessCard: {
+    backgroundColor: colors.ink2, borderWidth: 1, borderColor: colors.rim,
+    borderRadius: radius.xl, padding: space.px4, gap: space.px2,
+  },
+  noAccessTitle: { fontSize: text.lg, fontWeight: fontWeight.extrabold, color: colors.tx },
+  noAccessBody: { fontSize: text.sm, color: colors.dim, lineHeight: 20 },
 });

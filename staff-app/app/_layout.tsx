@@ -20,6 +20,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AuthProvider, useAuth } from '@/store/authStore';
+import { StaffProvider } from '@/state/StaffContext';
 import { setupNotificationHandler } from '@/push';
 import { colors } from '@/theme';
 
@@ -205,9 +206,17 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
-        <AuthProvider>
-          <RootInner />
-        </AuthProvider>
+        {/* StaffProvider sits outside AuthProvider so useStaff() is
+            available everywhere (including the login surface, which
+            needs refresh() after a successful POST /auth). The two
+            providers manage independent state: AuthProvider owns
+            multi-branch + role + owner-info; StaffProvider owns the
+            sanitized staff record + 10-key permission set. */}
+        <StaffProvider>
+          <AuthProvider>
+            <RootInner />
+          </AuthProvider>
+        </StaffProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

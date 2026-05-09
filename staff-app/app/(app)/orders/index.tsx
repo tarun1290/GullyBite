@@ -17,13 +17,14 @@ import { useRouter } from 'expo-router';
 import { OrderCard } from '@/components/OrderCard';
 import { StaffOrder, getOrders, updateOrderStatus, acceptOrder, declineOrder } from '@/api';
 import { useAuth } from '@/store/authStore';
+import { useStaffPermissions } from '@/state/StaffContext';
 import { StaffSse, SseState } from '@/sse';
 import { playNewOrderChime, unloadChime } from '@/sound';
 import {
   getNotificationPermissionStatus,
   playLocalNewOrderNotification,
 } from '@/push';
-import { colors, primitives } from '@/theme';
+import { colors, primitives, space, text, radius, fontWeight } from '@/theme';
 
 // IST calendar-day helpers. The staff app fetches past orders by
 // YYYY-MM-DD (IST) — these convert today/yesterday/etc. to the same
@@ -56,6 +57,16 @@ export default function OrdersScreen() {
   // itself is set globally via api.setBranchHeader (driven by the same
   // authStore effect) — we don't need to pass branch into getOrders.
   const { currentBranchId } = useAuth();
+  // Permission gates (2026-05-09 staff-auth refactor). Each flag drives
+  // whether a specific action button is visible — see the contract for
+  // the 10-key permission set. canViewOrders also flips the entire
+  // FlatList off in favor of an inline "No access" card.
+  const {
+    canViewOrders,
+    canAcceptOrders,
+    canRejectOrders,
+    canMarkReady,
+  } = useStaffPermissions();
   const router = useRouter();
   const [orders, setOrders] = useState<StaffOrder[]>([]);
   const [sseState, setSseState] = useState<SseState>('connecting');
@@ -328,43 +339,62 @@ export default function OrdersScreen() {
           </Text>
         </Pressable>
       ) : null}
-      <FlatList
-        data={orders}
-        keyExtractor={(o) => o.id}
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => openOrder(item.id)}
-            android_ripple={{ color: colors.rim }}
-            style={({ pressed }) => [pressed && { opacity: 0.85 }]}
-            accessibilityLabel={`Open order ${item.order_number || item.id}`}
-          >
-            <OrderCard
-              order={item}
-              busyStatus={busy[item.id] || null}
-              onStatusChange={handleStatus}
-              onAccept={handleAccept}
-              onDecline={handleDecline}
-              highlight={highlightMap.current.get(item.id)}
-            />
-          </Pressable>
-        )}
-        contentContainerStyle={styles.list}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.acc} />
-        }
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>
-              {isLive ? 'No active orders' : 'No orders for this day'}
-            </Text>
-            <Text style={styles.emptySub}>
-              {isLive
-                ? 'New orders will appear here instantly.'
-                : 'Pick a different date or switch back to Live.'}
+      {canViewOrders ? (
+        <FlatList
+          data={orders}
+          keyExtractor={(o) => o.id}
+          renderItem={({ item }) => (
+            <Pressable
+              onPress={() => openOrder(item.id)}
+              android_ripple={{ color: colors.rim }}
+              style={({ pressed }) => [pressed && { opacity: 0.85 }]}
+              accessibilityLabel={`Open order ${item.order_number || item.id}`}
+            >
+              <OrderCard
+                order={item}
+                busyStatus={busy[item.id] || null}
+                onStatusChange={handleStatus}
+                onAccept={handleAccept}
+                onDecline={handleDecline}
+                highlight={highlightMap.current.get(item.id)}
+                hideAccept={!canAcceptOrders}
+                hideDecline={!canRejectOrders}
+                hideNextStatus={!canMarkReady}
+              />
+            </Pressable>
+          )}
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.acc} />
+          }
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>
+                {isLive ? 'No active orders' : 'No orders for this day'}
+              </Text>
+              <Text style={styles.emptySub}>
+                {isLive
+                  ? 'New orders will appear here instantly.'
+                  : 'Pick a different date or switch back to Live.'}
+              </Text>
+            </View>
+          }
+        />
+      ) : (
+        // Defensive — staff routed here without view_orders shouldn't
+        // be reachable through normal nav, but render a clear "No
+        // access" surface instead of a possibly-stale list. Mirrors the
+        // contract requirement on §gating.
+        <View style={styles.noAccessWrap}>
+          <View style={styles.noAccessCard}>
+            <Text style={styles.noAccessTitle}>No access</Text>
+            <Text style={styles.noAccessBody}>
+              Your account doesn’t have permission to view orders. Ask
+              your manager to enable “View orders” for your role.
             </Text>
           </View>
-        }
-      />
+        </View>
+      )}
       <DatePickerModal
         visible={datePickerOpen}
         options={datePickerOptions}
@@ -461,74 +491,82 @@ function statusDbFor(to: string): string {
 
 const styles = StyleSheet.create({
   statusBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'center', gap: space.px2,
+    paddingHorizontal: space.px4, paddingVertical: space.px2, // was 14, rounded to 16 (px4)
     borderBottomWidth: 1, borderBottomColor: colors.rim,
     backgroundColor: colors.ink2,
   },
   pill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99,
+    flexDirection: 'row', alignItems: 'center', gap: space.px2, // was 6, rounded to 8 (px2)
+    paddingHorizontal: space.px3, paddingVertical: space.px1, borderRadius: 99, // off-scale radius: 99 — was 10, rounded to 12 (px3); was 5, rounded to 4 (px1)
   },
   pillLive: { backgroundColor: primitives.wa.light },
   pillAmber: { backgroundColor: primitives.amber['100'] },
   pillDim: { backgroundColor: primitives.neutral['100'] },
   pillPast: { backgroundColor: primitives.indigo['100'] },
+  // dot: borderRadius equals width/2 to maintain a circle — leave inline.
   dot: { width: 8, height: 8, borderRadius: 4 },
-  pillText: { fontSize: 12, fontWeight: '700', color: colors.tx },
+  pillText: { fontSize: text.xs, fontWeight: fontWeight.bold, color: colors.tx }, // was 12, rounded to 11.5 (xs)
   errChip: {
-    backgroundColor: primitives.red['100'], paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 8, flex: 1,
+    backgroundColor: primitives.red['100'], paddingHorizontal: space.px3, paddingVertical: space.px1, // was 10, rounded to 12 (px3)
+    borderRadius: radius.md, flex: 1,
   },
-  errText: { color: colors.red, fontSize: 12, fontWeight: '600' },
-  list: { padding: 12, paddingBottom: 40 },
-  empty: { alignItems: 'center', padding: 40, gap: 6 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.tx },
-  emptySub: { fontSize: 13, color: colors.dim, textAlign: 'center' },
+  errText: { color: colors.red, fontSize: text.xs, fontWeight: fontWeight.semibold }, // was 12, rounded to 11.5 (xs)
+  list: { padding: space.px3, paddingBottom: space.px10 },
+  empty: { alignItems: 'center', padding: space.px10, gap: space.px2 }, // was 6, rounded to 8 (px2)
+  emptyTitle: { fontSize: text.lg, fontWeight: fontWeight.bold, color: colors.tx }, // was 16, rounded to 17 (lg)
+  emptySub: { fontSize: text.sm, color: colors.dim, textAlign: 'center' },
   dateBtn: {
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99,
+    paddingHorizontal: space.px3, paddingVertical: space.px1, borderRadius: 99, // off-scale radius: 99 — was 10, rounded to 12 (px3); was 5, rounded to 4 (px1)
     borderWidth: 1, borderColor: colors.rim, backgroundColor: colors.ink,
   },
-  dateBtnText: { fontSize: 12, fontWeight: '700', color: colors.tx },
+  dateBtnText: { fontSize: text.xs, fontWeight: fontWeight.bold, color: colors.tx }, // was 12, rounded to 11.5 (xs)
   clearBtn: {
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99,
+    paddingHorizontal: space.px3, paddingVertical: space.px1, borderRadius: 99, // off-scale radius: 99 — was 10, rounded to 12 (px3); was 5, rounded to 4 (px1)
     backgroundColor: colors.acc,
   },
-  clearBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  clearBtnText: { fontSize: text.xs, fontWeight: fontWeight.bold, color: '#fff' }, // was 12, rounded to 11.5 (xs)
   modalBackdrop: {
     flex: 1, backgroundColor: colors.overlayModal,
-    alignItems: 'center', justifyContent: 'center', padding: 20,
+    alignItems: 'center', justifyContent: 'center', padding: space.px5,
   },
   modalCard: {
     width: '100%', maxWidth: 360,
-    backgroundColor: colors.ink2, borderRadius: 14,
+    backgroundColor: colors.ink2, borderRadius: radius['2xl'], // was 14, rounded to 16 (2xl)
     borderWidth: 1, borderColor: colors.rim,
-    padding: 14, gap: 4,
+    padding: space.px4, gap: space.px1, // was 14, rounded to 16 (px4)
   },
   modalTitle: {
-    fontSize: 16, fontWeight: '800', color: colors.tx,
-    marginBottom: 8, paddingHorizontal: 4,
+    fontSize: text.lg, fontWeight: fontWeight.extrabold, color: colors.tx, // was 16, rounded to 17 (lg)
+    marginBottom: space.px2, paddingHorizontal: space.px1,
   },
   modalRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 12, paddingHorizontal: 12,
-    borderRadius: 10,
+    flexDirection: 'row', alignItems: 'center', gap: space.px2,
+    paddingVertical: space.px3, paddingHorizontal: space.px3,
+    borderRadius: radius.lg,
   },
   modalRowActive: { backgroundColor: colors.accGlow },
-  modalRowText: { flex: 1, fontSize: 14, fontWeight: '600', color: colors.tx },
-  modalRowDate: { fontSize: 12, color: colors.dim },
-  modalCheck: { fontSize: 16, color: colors.acc, fontWeight: '800' },
-  modalCancel: { paddingVertical: 12, paddingHorizontal: 12, marginTop: 6, alignItems: 'center' },
-  modalCancelText: { fontSize: 14, color: colors.dim, fontWeight: '600' },
+  modalRowText: { flex: 1, fontSize: text.base, fontWeight: fontWeight.semibold, color: colors.tx },
+  modalRowDate: { fontSize: text.xs, color: colors.dim }, // was 12, rounded to 11.5 (xs)
+  modalCheck: { fontSize: text.lg, color: colors.acc, fontWeight: fontWeight.extrabold }, // was 16, rounded to 17 (lg)
+  modalCancel: { paddingVertical: space.px3, paddingHorizontal: space.px3, marginTop: space.px2, alignItems: 'center' }, // was 6, rounded to 8 (px2)
+  modalCancelText: { fontSize: text.base, color: colors.dim, fontWeight: fontWeight.semibold },
   permBanner: {
-    marginHorizontal: 12, marginTop: 10,
-    padding: 12, borderRadius: 12,
+    marginHorizontal: space.px3, marginTop: space.px3, // was 10, rounded to 12 (px3)
+    padding: space.px3, borderRadius: radius.xl,
     // borderColor: Tailwind amber-300 (#fcd34d) — NOT a primitive in
     // @gullybite/design-tokens (it's only an @theme anchor in
     // global.css). Left inline; flagged for a Part 2 amendment.
     backgroundColor: primitives.amber['100'], borderWidth: 1, borderColor: '#fcd34d',
-    gap: 4,
+    gap: space.px1,
   },
-  permBannerTitle: { fontSize: 13, fontWeight: '800', color: primitives.amber['900'] },
-  permBannerBody: { fontSize: 12, color: primitives.amber['900'] },
+  permBannerTitle: { fontSize: text.sm, fontWeight: fontWeight.extrabold, color: primitives.amber['900'] },
+  permBannerBody: { fontSize: text.xs, color: primitives.amber['900'] }, // was 12, rounded to 11.5 (xs)
+  noAccessWrap: { flex: 1, padding: space.px4, justifyContent: 'flex-start' },
+  noAccessCard: {
+    backgroundColor: colors.ink2, borderWidth: 1, borderColor: colors.rim,
+    borderRadius: radius.xl, padding: space.px4, gap: space.px2,
+  },
+  noAccessTitle: { fontSize: text.lg, fontWeight: fontWeight.extrabold, color: colors.tx },
+  noAccessBody: { fontSize: text.sm, color: colors.dim, lineHeight: 20 },
 });

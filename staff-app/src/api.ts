@@ -155,6 +155,12 @@ export type StaffMenuResponse = {
 // member then enters their name + PIN. Server resolves the token to a
 // branch, finds matching staff_users by name (case-insensitive),
 // bcrypt-compares the PIN, and signs a JWT carrying branchId.
+//
+// FUTURE FEATURE: legacy staff-link login. The new flow is
+// staffLogin(store_slug, staff_id, pin) below — this old helper is
+// retained only so transitional callers (if any) keep type-checking
+// while the refactor lands. Will be removed in a follow-up once we
+// confirm no callers remain.
 export async function login(
   staffAccessToken: string,
   name: string,
@@ -164,6 +170,93 @@ export async function login(
     method: 'POST',
     body: { staff_access_token: staffAccessToken, name, pin },
     auth: false,
+  });
+}
+
+// ─── New staff-auth flow (2026-05-09) ────────────────────────────────
+//
+// Backend contract (POST /api/staff/auth):
+//   Body:    { store_slug, staff_id, pin }
+//   200:     { ok: true, token, staff: SanitizedStaff }
+//   401:     { ok: false, error: 'invalid_credentials' }
+//   429:     { ok: false, error: 'rate_limited' }
+//   400:     { ok: false, error: 'deprecated_login_payload' }
+//
+// SanitizedStaff carries the 10 permission keys the UI gates against
+// — see useStaffPermissions in src/state/StaffContext.tsx.
+
+export type StaffPermissions = {
+  view_orders: boolean;
+  accept_orders: boolean;
+  reject_orders: boolean;
+  mark_ready: boolean;
+  manage_menu: boolean;
+  manage_stock: boolean;
+  view_reports: boolean;
+  manage_settings: boolean;
+  refund_orders: boolean;
+  view_customer_details: boolean;
+};
+
+export type SanitizedStaff = {
+  _id: string;
+  restaurant_id: string;
+  staff_id: string;
+  name: string;
+  display_name: string;
+  phone?: string;
+  role: string;
+  role_preset: string;
+  branch_ids: string[];
+  branchIds: string[];
+  permissions: StaffPermissions;
+  is_active: boolean;
+  active: boolean;
+  created_at: string;
+  last_active_at?: string;
+};
+
+export type StaffLoginV2Response = {
+  ok: true;
+  token: string;
+  staff: SanitizedStaff;
+};
+
+export type StaffMeResponse = {
+  ok: true;
+  staff: SanitizedStaff;
+  permissions: StaffPermissions;
+};
+
+export async function staffLogin(input: {
+  store_slug: string;
+  staff_id: string;
+  pin: string;
+}): Promise<StaffLoginV2Response> {
+  return request<StaffLoginV2Response>('/api/staff/auth', {
+    method: 'POST',
+    body: {
+      store_slug: input.store_slug,
+      staff_id: input.staff_id,
+      pin: input.pin,
+    },
+    auth: false,
+    // Pre-login: no branch context exists yet.
+    branchScoped: false,
+  });
+}
+
+export async function getStaffMe(): Promise<StaffMeResponse> {
+  return request<StaffMeResponse>('/api/staff/auth/me', {
+    method: 'GET',
+    branchScoped: false,
+  });
+}
+
+export async function staffLogout(): Promise<{ ok: true }> {
+  return request<{ ok: true }>('/api/staff/auth/logout', {
+    method: 'POST',
+    branchScoped: false,
   });
 }
 
