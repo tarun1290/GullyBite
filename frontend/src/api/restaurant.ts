@@ -1060,15 +1060,6 @@ export async function deleteUser(id: string): Promise<unknown> {
   return data;
 }
 
-// Hard-delete a staff row via DELETE /api/restaurant/staff/:staffId.
-// Distinct from deleteUser above (which soft-deletes via /users/:id by
-// flipping is_active). Use this when the row needs to be physically
-// expunged — UserFormModal's "Delete Account" button is the only caller.
-export async function deleteStaffHard(staffId: string): Promise<unknown> {
-  const { data } = await client.delete(`/api/restaurant/staff/${staffId}`);
-  return data;
-}
-
 export async function resetUserPin(id: string, pin: string): Promise<unknown> {
   const { data } = await client.put(`/api/restaurant/users/${id}/reset-pin`, { pin });
   return data;

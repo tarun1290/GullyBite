@@ -7,20 +7,53 @@ import {
   getUsers,
   getBranches,
   deleteUser,
-  deleteStaffHard,
   updateUser,
   resetUserPin,
 } from '../../api/restaurant';
-import type { Branch } from '../../types';
+import {
+  listStaff,
+  deactivateStaff,
+  resetStaffPin,
+  updateStaff,
+} from '../../api/staff';
+import type { Branch, Staff } from '../../types';
 
 interface RoleBadge { emoji: string; color: string; label: string }
 
 const ROLE_BADGE: Record<string, RoleBadge> = {
   owner: { emoji: '👑', color: 'var(--acc)', label: 'Owner' },
   manager: { emoji: '📋', color: 'var(--wa,#22c55e)', label: 'Manager' },
+  staff: { emoji: '🧑‍🍳', color: 'var(--gold,#f59e0b)', label: 'Staff' },
   kitchen: { emoji: '👨‍🍳', color: 'var(--gold,#f59e0b)', label: 'Kitchen' },
   delivery: { emoji: '🚴', color: 'var(--blue,#3b82f6)', label: 'Delivery' },
 };
+
+// Discriminated union: rows from getUsers() carry __source: 'legacy',
+// rows from listStaff() carry __source: 'staff-app'. Backend roles are
+// disjoint between the two endpoints (owner/kitchen/delivery on the
+// legacy side, manager/staff on the staff-app side), but we still
+// guard with a Set on row id below in case that ever drifts.
+type MergedRow =
+  | (RestaurantUser & { __source: 'legacy' })
+  | (Staff & { __source: 'staff-app'; id: string; branch_ids: string[]; last_login_at?: string });
+
+// Normalize a Staff row from listStaff() so all downstream rendering
+// can read `row.id`, `row.name`, `row.branch_ids`, `row.last_login_at`
+// without caring which API the row came from.
+function normalizeStaff(s: Staff): MergedRow {
+  return {
+    ...s,
+    id: s._id,
+    name: s.display_name || s.name,
+    branch_ids: (s.branch_ids?.length ? s.branch_ids : s.branchIds) || [],
+    last_login_at: s.last_active_at,
+    __source: 'staff-app',
+  } as MergedRow;
+}
+
+function isStaffAppRow(row: MergedRow): boolean {
+  return row.role === 'staff' || row.role === 'manager';
+}
 
 function formatLastLogin(ts?: string): string {
   if (!ts) return 'Never';
@@ -35,11 +68,11 @@ function formatLastLogin(ts?: string): string {
 
 export default function UsersSection() {
   const { showToast } = useToast();
-  const [users, setUsers] = useState<RestaurantUser[]>([]);
+  const [users, setUsers] = useState<MergedRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
-  const [editing, setEditing] = useState<RestaurantUser | null>(null);
+  const [editing, setEditing] = useState<MergedRow | null>(null);
 
   const [pinRowId, setPinRowId] = useState<string | null>(null);
   const [pinValue, setPinValue] = useState<string>('');
@@ -48,10 +81,10 @@ export default function UsersSection() {
   const [rowBusy, setRowBusy] = useState<string | null>(null);
 
   // Post-reset transient display. After a successful reset-pin call we
-  // briefly surface the PIN the owner just typed (NOT fetched from the
-  // server — the backend never persists plaintext, only bcrypt's
-  // pin_hash) so it can be copied/pasted into WhatsApp without retyping.
-  // Auto-clears after the timeout below or on the next reset/cancel.
+  // briefly surface the PIN — for legacy rows the value is whatever the
+  // owner just typed; for staff-app rows it's the server-generated PIN
+  // returned in the response.generated_pin field. State only — never
+  // sent to the server, never stored in localStorage. Auto-clears.
   const [recentResetPin, setRecentResetPin] = useState<{ userId: string; pin: string } | null>(null);
   const [recentResetRevealed, setRecentResetRevealed] = useState<boolean>(false);
   const [recentResetCopied, setRecentResetCopied] = useState<boolean>(false);
@@ -63,12 +96,6 @@ export default function UsersSection() {
   // can detect outside clicks without per-row refs.
   const [kebabOpenId, setKebabOpenId] = useState<string | null>(null);
   const openKebabWrapperRef = useRef<HTMLDivElement | null>(null);
-
-  // Hard-delete confirm row — distinct from pendingDeactivate (soft).
-  // Shown inline in the actions cell once the kebab "Delete Account"
-  // item is selected; calls deleteStaffHard via api/restaurant.
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState<boolean>(false);
 
   // Close the kebab on click outside. Only attaches the listener while
   // a menu is open so we're not paying for it on every mousedown when
@@ -88,9 +115,32 @@ export default function UsersSection() {
   const load = async () => {
     setLoading(true);
     try {
-      const [u, b] = await Promise.all([getUsers() as Promise<RestaurantUser[] | null>, getBranches()]);
-      setUsers(Array.isArray(u) ? u : []);
-      setBranches(Array.isArray(b) ? b : []);
+      const [staffList, legacyRaw, branchRaw] = await Promise.all([
+        listStaff(),
+        getUsers() as Promise<RestaurantUser[] | null>,
+        getBranches(),
+      ]);
+      const legacyList: RestaurantUser[] = Array.isArray(legacyRaw) ? legacyRaw : [];
+      // Defensive Set guard on id — backend role sets are disjoint, but
+      // if a row ever appears on both sides we keep the staff-app copy
+      // (it's the canonical source for managers/staff going forward).
+      const seen = new Set<string>();
+      const merged: MergedRow[] = [];
+      for (const s of Array.isArray(staffList) ? staffList : []) {
+        const row = normalizeStaff(s);
+        if (!row.id) continue;
+        if (seen.has(row.id)) continue;
+        seen.add(row.id);
+        merged.push(row);
+      }
+      for (const u of legacyList) {
+        if (!u || !u.id) continue;
+        if (seen.has(u.id)) continue;
+        seen.add(u.id);
+        merged.push({ ...u, __source: 'legacy' });
+      }
+      setUsers(merged);
+      setBranches(Array.isArray(branchRaw) ? branchRaw : []);
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } }; message?: string };
       showToast(e?.response?.data?.error || e?.message || 'Failed to load team', 'error');
@@ -114,19 +164,27 @@ export default function UsersSection() {
     setModalOpen(true);
   };
 
-  const openEdit = (u: RestaurantUser) => {
+  const openEdit = (u: MergedRow) => {
     setEditing(u);
     setModalOpen(true);
   };
 
-  const handleToggleActive = async (u: RestaurantUser) => {
+  const handleToggleActive = async (u: MergedRow) => {
     setRowBusy(u.id);
     try {
       if (u.is_active) {
-        await deleteUser(u.id);
+        if (isStaffAppRow(u)) {
+          await deactivateStaff(u.id);
+        } else {
+          await deleteUser(u.id);
+        }
         showToast(`${u.name} deactivated`, 'success');
       } else {
-        await updateUser(u.id, { isActive: true });
+        if (isStaffAppRow(u)) {
+          await updateStaff(u.id, { is_active: true });
+        } else {
+          await updateUser(u.id, { isActive: true });
+        }
         showToast(`${u.name} activated`, 'success');
       }
       setPendingDeactivate(null);
@@ -139,7 +197,10 @@ export default function UsersSection() {
     }
   };
 
-  const handleResetPin = async (u: RestaurantUser) => {
+  // Legacy-row PIN reset — the owner types the new PIN inline. The
+  // backend hashes and stores it; we surface the just-typed value in
+  // the recent-reset chip so it can be copied/shared before clearing.
+  const handleResetPin = async (u: MergedRow) => {
     const pin = pinValue.trim();
     if (!/^\d{4,6}$/.test(pin)) { showToast('PIN must be 4–6 digits', 'error'); return; }
     setPinBusy(true);
@@ -148,9 +209,6 @@ export default function UsersSection() {
       showToast(`PIN reset for ${u.name}`, 'success');
       setPinRowId(null);
       setPinValue('');
-      // Surface the just-set PIN inline so the owner can copy/share it
-      // before it disappears. State only — never sent to the server,
-      // never stored in localStorage. Auto-clears after RESET_DISPLAY_MS.
       setRecentResetPin({ userId: u.id, pin });
       setRecentResetRevealed(false);
       setRecentResetCopied(false);
@@ -162,6 +220,35 @@ export default function UsersSection() {
       showToast(e?.response?.data?.error || e?.message || 'PIN reset failed', 'error');
     } finally {
       setPinBusy(false);
+    }
+  };
+
+  // Staff-app PIN reset — backend mints the new PIN itself and returns
+  // it in the response. There's no inline-typed value to surface; the
+  // chip shows whatever the server generated. No PIN-input row is
+  // rendered for these rows; the kebab "Reset PIN" item triggers this
+  // helper directly.
+  const handleResetStaffApp = async (u: MergedRow) => {
+    setRowBusy(u.id);
+    try {
+      const res = await resetStaffPin(u.id);
+      const pin = res?.generated_pin;
+      if (pin) {
+        setRecentResetPin({ userId: u.id, pin });
+        setRecentResetRevealed(false);
+        setRecentResetCopied(false);
+        window.setTimeout(() => {
+          setRecentResetPin((cur) => (cur && cur.userId === u.id ? null : cur));
+        }, RESET_DISPLAY_MS);
+        showToast(`PIN reset for ${u.name}`, 'success');
+      } else {
+        showToast('Reset succeeded but server returned no PIN', 'error');
+      }
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'PIN reset failed', 'error');
+    } finally {
+      setRowBusy(null);
     }
   };
 
@@ -182,26 +269,7 @@ export default function UsersSection() {
     setRecentResetCopied(false);
   };
 
-  // Hard delete — invoked from the kebab menu's "Delete Account" option
-  // after the inline confirm row's Confirm button. Hits the dedicated
-  // /staff/:staffId hard-delete endpoint (NOT the soft /users/:id path
-  // used by handleToggleActive's Deactivate flow).
-  const handleHardDelete = async (u: RestaurantUser) => {
-    setDeleteBusy(true);
-    try {
-      await deleteStaffHard(u.id);
-      showToast(`${u.name} deleted`, 'success');
-      setPendingDelete(null);
-      load();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } }; message?: string };
-      showToast(e?.response?.data?.error || e?.message || 'Delete failed', 'error');
-    } finally {
-      setDeleteBusy(false);
-    }
-  };
-
-  const startPinReset = (u: RestaurantUser) => {
+  const startPinReset = (u: MergedRow) => {
     setPinRowId(u.id);
     setPinValue('');
     setPendingDeactivate(null);
@@ -249,8 +317,9 @@ export default function UsersSection() {
                 <tbody>
                   {users.map((u) => {
                     const rb = ROLE_BADGE[u.role || ''] || { emoji: '', color: 'var(--dim)', label: u.role || '' };
-                    const brNames = (u.branch_ids || []).length
-                      ? (u.branch_ids || []).map((id) => branchMap[id] || id).join(', ')
+                    const brIds = u.branch_ids || [];
+                    const brNames = brIds.length
+                      ? brIds.map((id) => branchMap[id] || id).join(', ')
                       : 'All';
                     const isOwner = u.role === 'owner';
                     const showingPinRow = pinRowId === u.id;
@@ -266,8 +335,8 @@ export default function UsersSection() {
                           <span
                             className="font-semibold text-sm"
                             // role badge colour from ROLE_BADGE by u.role at
-                            // runtime (owner/manager/kitchen/delivery — 4
-                            // distinct CSS vars, plus a dim fallback).
+                            // runtime (owner/manager/staff/kitchen/delivery —
+                            // 5 distinct CSS vars, plus a dim fallback).
                             style={{ color: rb.color }}
                           >
                             {rb.emoji} {rb.label}
@@ -333,33 +402,6 @@ export default function UsersSection() {
                               >
                                 Cancel
                               </button>
-                            </div>
-                          ) : pendingDelete === u.id ? (
-                            // Hard-delete confirm — distinct copy from
-                            // Deactivate so the operator can't conflate
-                            // the two destructive paths.
-                            <div className="flex flex-col gap-1 items-end">
-                              <span className="text-xs text-red">
-                                Permanently delete {u.name}?
-                              </span>
-                              <div className="flex gap-1 justify-end">
-                                <button
-                                  type="button"
-                                  className="btn-del-solid btn-sm"
-                                  onClick={() => handleHardDelete(u)}
-                                  disabled={deleteBusy}
-                                >
-                                  {deleteBusy ? '…' : 'Delete'}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn-g btn-xs"
-                                  onClick={() => setPendingDelete(null)}
-                                  disabled={deleteBusy}
-                                >
-                                  Cancel
-                                </button>
-                              </div>
                             </div>
                           ) : (
                             <div className="flex gap-1 justify-end items-center flex-wrap">
@@ -440,7 +482,14 @@ export default function UsersSection() {
                                       type="button"
                                       role="menuitem"
                                       className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
-                                      onClick={() => { setKebabOpenId(null); startPinReset(u); }}
+                                      onClick={() => {
+                                        setKebabOpenId(null);
+                                        if (isStaffAppRow(u)) {
+                                          handleResetStaffApp(u);
+                                        } else {
+                                          startPinReset(u);
+                                        }
+                                      }}
                                     >
                                       Reset PIN
                                     </button>
@@ -463,14 +512,6 @@ export default function UsersSection() {
                                         Activate
                                       </button>
                                     )}
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer text-red"
-                                      onClick={() => { setKebabOpenId(null); setPendingDelete(u.id); }}
-                                    >
-                                      Delete Account
-                                    </button>
                                   </div>
                                 )}
                               </div>
@@ -489,8 +530,9 @@ export default function UsersSection() {
 
       <UserFormModal
         open={modalOpen}
+        mode={!editing ? 'staff-app' : (isStaffAppRow(editing) ? 'staff-app' : 'legacy')}
         onClose={() => setModalOpen(false)}
-        editing={editing}
+        editing={editing as RestaurantUser | null}
         branches={branches}
         onSaved={load}
       />

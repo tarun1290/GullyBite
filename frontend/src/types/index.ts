@@ -561,7 +561,7 @@ export interface Staff {
   last_active_at?: string;
 }
 
-// Lightweight projection for the StaffEditModal branch picker. The
+// Lightweight projection for the staff branch picker. The
 // dashboard's full Branch type carries 30+ fields; this narrows to
 // the two the modal needs so calling code doesn't have to fabricate
 // the rest.

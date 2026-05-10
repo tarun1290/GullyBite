@@ -153,6 +153,14 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ─── HEALTH ENDPOINTS ───────────────────────────────────────
+// Mounted BEFORE ensureConnected so /api/health (shallow liveness)
+// keeps answering even when Mongo is unreachable. /api/health/ready
+// handles dependency failures internally and reports them in the
+// response body. No auth, no rate-limit — load balancers + uptime
+// monitors hit these unauthenticated.
+app.use('/api', require('./src/routes/health'));
+
 // ─── ENSURE DB CONNECTED ────────────────────────────────────
 const { ensureConnected, connect } = require('./src/config/database');
 app.use(ensureConnected);

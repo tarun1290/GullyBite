@@ -35,7 +35,6 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Penalties',           icon: '⚠️', path: '/dashboard/penalties' },
   { label: 'Settings',            icon: '⚙', path: '/dashboard/settings' },
   { label: 'Restaurant',          icon: '🏪', path: '/dashboard/restaurant' },
-  { label: 'Staff',               icon: '🧑‍🍳', path: '/dashboard/staff' },
 ];
 
 const TITLE_BY_PATH: Record<string, string> = Object.fromEntries(
