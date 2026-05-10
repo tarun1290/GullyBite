@@ -8252,12 +8252,14 @@ router.get('/staffed-branches', async (req, res) => {
 // TEAM / USER MANAGEMENT
 // ═══════════════════════════════════════════════════════════════
 
+// ─── /api/restaurant/users — legacy CRUD for kitchen + delivery roles only ─────
+// (manager + staff roles are managed via /api/restaurant/staff per Part 6d+)
 // GET /api/restaurant/users
 // 10-key contract has no equivalent — owner/manager-only by default
 router.get('/users', requirePermission('manage_users'), async (req, res) => {
   try {
     const users = await col('restaurant_users')
-      .find({ restaurant_id: req.restaurantId })
+      .find({ restaurant_id: req.restaurantId, role: { $in: ['kitchen', 'delivery', 'owner'] } })
       .sort({ role: 1, name: 1 })
       .toArray();
     res.json(users.map(u => ({
@@ -8282,8 +8284,8 @@ router.post('/users', requirePermission('manage_users'), express.json(), async (
     const { name, phone, pin, role, branchIds } = req.body;
     if (!name || !phone || !pin || !role)
       return res.status(400).json({ error: 'Name, phone, PIN and role are required' });
-    if (!['manager', 'kitchen', 'delivery'].includes(role))
-      return res.status(400).json({ error: 'Role must be manager, kitchen or delivery' });
+    if (!['kitchen', 'delivery'].includes(role))
+      return res.status(400).json({ error: 'Role must be kitchen or delivery (managers are managed via /api/restaurant/staff)' });
     if (pin.length < 4 || pin.length > 6)
       return res.status(400).json({ error: 'PIN must be 4-6 digits' });
 
@@ -8340,9 +8342,19 @@ router.put('/users/:id', requirePermission('manage_users'), express.json(), asyn
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.role === 'owner') return res.status(403).json({ error: 'Cannot edit owner account' });
 
+    // Manager + staff rows are managed via /api/restaurant/staff; PUT here
+    // rejects them outright instead of silently dropping the role change AND
+    // overwriting the permissions blob with the legacy 7-key template.
+    if (role !== undefined && !['kitchen', 'delivery'].includes(role)) {
+      if (role === 'manager' || role === 'staff') {
+        return res.status(400).json({ error: 'Manager rows are managed via /api/restaurant/staff' });
+      }
+      return res.status(400).json({ error: 'Invalid role: must be kitchen or delivery' });
+    }
+
     const $set = { updated_at: new Date() };
     if (name !== undefined)        $set.name        = name.trim();
-    if (role !== undefined && ['manager', 'kitchen', 'delivery'].includes(role)) $set.role = role;
+    if (role !== undefined)        $set.role        = role;
     if (branchIds !== undefined)   $set.branch_ids  = branchIds;
     if (permissions !== undefined)  $set.permissions = permissions;
     if (isActive !== undefined)    $set.is_active   = isActive;

@@ -25,7 +25,7 @@ const express = require('express');
 const router = express.Router();
 
 const { col, newId } = require('../config/database');
-const { requireAuth } = require('./auth');
+const { requireAuth, requirePermission } = require('./auth');
 const log = require('../utils/logger').child({ component: 'restaurantStaff' });
 
 const {
@@ -49,11 +49,13 @@ function _staffAuth() {
 
 // All routes below this line require a valid owner / restaurant JWT.
 router.use(requireAuth);
+router.use(requirePermission('manage_users'));
 
 // Valid presets accepted by POST/PUT. Note: 'owner' is intentionally
 // EXCLUDED from the user-facing preset list — owner permissions are
 // programmatic and the staff CRUD never creates owner rows.
 const VALID_PRESETS = ['cashier', 'kitchen', 'branch_manager', 'custom'];
+const VALID_ROLES = ['staff', 'manager'];
 
 // ─── Helpers ─────────────────────────────────────────────────────
 
@@ -126,7 +128,7 @@ function _resolvePermissions(preset, providedPermissions) {
 router.get('/', async (req, res) => {
   try {
     const rows = await col('restaurant_users')
-      .find({ restaurant_id: req.restaurantId, role: 'staff' })
+      .find({ restaurant_id: req.restaurantId, role: { $in: VALID_ROLES } })
       .sort({ created_at: -1 })
       .toArray();
     const { sanitizeStaff } = _staffAuth();
@@ -146,7 +148,10 @@ router.post('/', express.json(), async (req, res) => {
       role_preset,
       branch_ids,
       permissions,
+      role,
     } = req.body || {};
+
+    const effectiveRole = role === undefined ? 'staff' : role;
 
     const details = [];
     if (!display_name || typeof display_name !== 'string' || !display_name.trim()) {
@@ -154,6 +159,9 @@ router.post('/', express.json(), async (req, res) => {
     }
     if (!role_preset || !VALID_PRESETS.includes(role_preset)) {
       details.push(`role_preset must be one of: ${VALID_PRESETS.join(', ')}`);
+    }
+    if (!VALID_ROLES.includes(effectiveRole)) {
+      details.push(`role must be one of: ${VALID_ROLES.join(', ')}`);
     }
     if (!Array.isArray(branch_ids)) {
       details.push('branch_ids must be array');
@@ -182,14 +190,12 @@ router.post('/', express.json(), async (req, res) => {
     const generated_pin = await generatePin();
     const pin_hash = await hashPin(generated_pin);
 
-    const staffId = await _nextStaffId(req.restaurantId);
     const now = new Date();
     const userId = newId();
     const doc = {
       _id: userId,
       restaurant_id: req.restaurantId,
-      role: 'staff',
-      staff_id: staffId,
+      role: effectiveRole,
       name: display_name.trim(),
       phone: phone ? String(phone).trim() : null,
       pin_hash,
@@ -202,6 +208,9 @@ router.post('/', express.json(), async (req, res) => {
       created_at: now,
       updated_at: now,
     };
+    if (effectiveRole === 'staff') {
+      doc.staff_id = await _nextStaffId(req.restaurantId);
+    }
     await col('restaurant_users').insertOne(doc);
 
     const { sanitizeStaff } = _staffAuth();
@@ -217,7 +226,7 @@ router.put('/:id', express.json(), async (req, res) => {
   try {
     const id = req.params.id;
     const existing = await col('restaurant_users').findOne({ _id: id });
-    if (!existing || existing.role !== 'staff') {
+    if (!existing || !VALID_ROLES.includes(existing.role)) {
       return res.status(404).json({ ok: false, error: 'not_found' });
     }
     if (String(existing.restaurant_id) !== String(req.restaurantId)) {
@@ -346,7 +355,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const id = req.params.id;
     const existing = await col('restaurant_users').findOne({ _id: id });
-    if (!existing || existing.role !== 'staff') {
+    if (!existing || !VALID_ROLES.includes(existing.role)) {
       return res.status(404).json({ ok: false, error: 'not_found' });
     }
     if (String(existing.restaurant_id) !== String(req.restaurantId)) {
