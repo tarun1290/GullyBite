@@ -686,7 +686,7 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/restaurant — Update profile
-router.put('/', requirePermission('manage_settings'), async (req, res) => {
+router.put('/', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     const {
       businessName, registeredBusinessName, ownerName, phone, city,
@@ -753,7 +753,7 @@ router.put('/', requirePermission('manage_settings'), async (req, res) => {
 // cachedLookup memcache entry under restaurant:${id} is busted so
 // the next read picks up the new abbr immediately rather than waiting
 // for the 5-min TTL.
-router.put('/settings/order-abbr', requirePermission('manage_settings'), express.json(), async (req, res) => {
+router.put('/settings/order-abbr', requireStaffPermission('manage_settings'), express.json(), async (req, res) => {
   try {
     const raw = req.body?.order_abbr;
     if (typeof raw !== 'string' || !/^[A-Z]{2,3}$/.test(raw)) {
@@ -783,7 +783,7 @@ router.put('/settings/order-abbr', requirePermission('manage_settings'), express
 });
 
 // POST /api/restaurant/update-slug — Update store URL slug
-router.post('/update-slug', requirePermission('manage_settings'), async (req, res) => {
+router.post('/update-slug', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     let slug = (req.body.slug || '').trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
     if (!slug) return res.status(400).json({ error: 'Slug cannot be empty' });
@@ -1212,6 +1212,7 @@ router.post('/whatsapp/verify-connection', async (req, res) => {
 //
 // To reconnect: the user runs the existing /auth/meta/start flow which will
 // re-bind under the (now-empty) linkage fields.
+// 10-key contract has no equivalent — owner/manager-only by default
 router.post('/whatsapp/disconnect', requirePermission('manage_users'), async (req, res) => {
   try {
     const restaurant = await col('restaurants').findOne(
@@ -3933,7 +3934,7 @@ router.get('/product-sets', async (req, res) => {
 });
 
 // POST /api/restaurant/product-sets
-router.post('/product-sets', requirePermission('manage_menu'), async (req, res) => {
+router.post('/product-sets', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { branchId, name, type, filterValue, manualRetailerIds, sortOrder } = req.body;
     if (!branchId || !name || !type) return res.status(400).json({ error: 'branchId, name, type required' });
@@ -3973,7 +3974,7 @@ router.post('/product-sets', requirePermission('manage_menu'), async (req, res) 
 });
 
 // PUT /api/restaurant/product-sets/:id
-router.put('/product-sets/:id', requirePermission('manage_menu'), async (req, res) => {
+router.put('/product-sets/:id', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { name, type, filterValue, manualRetailerIds, sortOrder, isActive } = req.body;
     const $set = { updated_at: new Date() };
@@ -4002,7 +4003,7 @@ router.put('/product-sets/:id', requirePermission('manage_menu'), async (req, re
 });
 
 // DELETE /api/restaurant/product-sets/:id
-router.delete('/product-sets/:id', requirePermission('manage_menu'), async (req, res) => {
+router.delete('/product-sets/:id', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const set = await col('product_sets').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!set) return res.status(404).json({ error: 'Product set not found' });
@@ -4024,7 +4025,7 @@ router.delete('/product-sets/:id', requirePermission('manage_menu'), async (req,
 });
 
 // POST /api/restaurant/product-sets/auto-create — auto-create sets from menu categories/tags
-router.post('/product-sets/auto-create', requirePermission('manage_menu'), async (req, res) => {
+router.post('/product-sets/auto-create', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { branchId } = req.body;
     if (!branchId) return res.status(400).json({ error: 'branchId required' });
@@ -4040,7 +4041,7 @@ router.post('/product-sets/auto-create', requirePermission('manage_menu'), async
 });
 
 // POST /api/restaurant/product-sets/sync — sync all sets for a branch
-router.post('/product-sets/sync', requirePermission('manage_menu'), async (req, res) => {
+router.post('/product-sets/sync', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { branchId } = req.body;
     if (!branchId) return res.status(400).json({ error: 'branchId required' });
@@ -4078,7 +4079,7 @@ router.get('/collections', async (req, res) => {
 });
 
 // POST /api/restaurant/collections
-router.post('/collections', requirePermission('manage_menu'), async (req, res) => {
+router.post('/collections', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { branchId, name, description, productSetIds, coverImageUrl, sortOrder } = req.body;
     if (!branchId || !name) return res.status(400).json({ error: 'branchId and name required' });
@@ -4122,7 +4123,7 @@ router.post('/collections', requirePermission('manage_menu'), async (req, res) =
 });
 
 // PUT /api/restaurant/collections/:id
-router.put('/collections/:id', requirePermission('manage_menu'), async (req, res) => {
+router.put('/collections/:id', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { name, description, productSetIds, coverImageUrl, sortOrder, isActive } = req.body;
     const $set = { updated_at: new Date() };
@@ -4151,7 +4152,7 @@ router.put('/collections/:id', requirePermission('manage_menu'), async (req, res
 });
 
 // DELETE /api/restaurant/collections/:id
-router.delete('/collections/:id', requirePermission('manage_menu'), async (req, res) => {
+router.delete('/collections/:id', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const coll = await col('catalog_collections').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
     if (!coll) return res.status(404).json({ error: 'Collection not found' });
@@ -4172,7 +4173,7 @@ router.delete('/collections/:id', requirePermission('manage_menu'), async (req, 
 });
 
 // POST /api/restaurant/collections/auto-create
-router.post('/collections/auto-create', requirePermission('manage_menu'), async (req, res) => {
+router.post('/collections/auto-create', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { branchId } = req.body;
     if (!branchId) return res.status(400).json({ error: 'branchId required' });
@@ -4186,7 +4187,7 @@ router.post('/collections/auto-create', requirePermission('manage_menu'), async 
 });
 
 // PUT /api/restaurant/collections/reorder — bulk update sort_order
-router.put('/collections/reorder', requirePermission('manage_menu'), async (req, res) => {
+router.put('/collections/reorder', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { items } = req.body; // [{ id, sort_order }]
     if (!Array.isArray(items)) return res.status(400).json({ error: 'items array required' });
@@ -4202,7 +4203,7 @@ router.put('/collections/reorder', requirePermission('manage_menu'), async (req,
 });
 
 // POST /api/restaurant/collections/sync — sync all collections for a branch
-router.post('/collections/sync', requirePermission('manage_menu'), async (req, res) => {
+router.post('/collections/sync', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { branchId } = req.body;
     if (!branchId) return res.status(400).json({ error: 'branchId required' });
@@ -4237,7 +4238,7 @@ router.get('/collections/branch-status', async (req, res) => {
 });
 
 // POST /api/restaurant/collections/sync-branch-collections — sync branch-level Collections for all branches
-router.post('/collections/sync-branch-collections', requirePermission('manage_menu'), async (req, res) => {
+router.post('/collections/sync-branch-collections', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const result = await catalog.syncAllBranchCollections(req.restaurantId);
     res.json(result);
@@ -4289,7 +4290,14 @@ router.post('/menu/variant', requireStaffPermission('manage_menu'), requireBranc
     const itemName = name || existing?.name || 'Product';
 
     const newItem = await col('menu_items').findOneAndUpdate(
-      { retailer_id: retailerId },
+      // [TENANT] Filter pinned to restaurant_id so two restaurants whose
+      // retailer_id strings collide (theoretically possible — retailer_id
+      // is `${itemGroupId}-${slugify(size,15)}`, with itemGroupId per-
+      // restaurant) cannot upsert into the same doc. The pre-write
+      // _assertBranchOwnedBy guard already blocks cross-tenant *writes*,
+      // but adding the field here makes the upsert's idempotency key
+      // tenant-safe end-to-end.
+      { retailer_id: retailerId, restaurant_id: req.restaurantId },
       {
         $set: {
           price_paise: pricePaise,
@@ -4301,6 +4309,12 @@ router.post('/menu/variant', requireStaffPermission('manage_menu'), requireBranc
         },
         $setOnInsert: {
           _id: newId(),
+          // [TENANT] Stamp restaurant_id on insert. Without this every
+          // new variant doc was inserted restaurant_id-less, breaking
+          // downstream tenancy queries (e.g. GET /menu/variants/:itemGroupId
+          // explicitly pins restaurant_id). Backfill for pre-existing
+          // missing rows: backend/scripts/2026-05-12-backfill-variant-restaurant-id.js.
+          restaurant_id: req.restaurantId,
           branch_id: branchId,
           category_id: existing?.category_id || null,
           name: itemName,
@@ -5012,7 +5026,7 @@ router.get('/catalog/products', async (req, res) => {
 });
 
 // POST /api/restaurant/catalog/product — add single item to catalog
-router.post('/catalog/product', requirePermission('manage_menu'), async (req, res) => {
+router.post('/catalog/product', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { menuItemId } = req.body;
     if (!menuItemId) return res.status(400).json({ error: 'menuItemId required' });
@@ -5022,7 +5036,7 @@ router.post('/catalog/product', requirePermission('manage_menu'), async (req, re
 });
 
 // PUT /api/restaurant/catalog/product/:id — update single item in catalog
-router.put('/catalog/product/:id', requirePermission('manage_menu'), async (req, res) => {
+router.put('/catalog/product/:id', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const result = await catalog.updateProduct(req.params.id);
     res.json(result);
@@ -5030,7 +5044,7 @@ router.put('/catalog/product/:id', requirePermission('manage_menu'), async (req,
 });
 
 // DELETE /api/restaurant/catalog/product/:id — remove item from catalog
-router.delete('/catalog/product/:id', requirePermission('manage_menu'), async (req, res) => {
+router.delete('/catalog/product/:id', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     // [TENANT] catalog.deleteProduct propagates to Meta's catalog API — must
     // verify ownership BEFORE calling it, otherwise an attacker could delete
@@ -5869,7 +5883,10 @@ router.get('/orders/:orderId', async (req, res) => {
 });
 
 // Restaurant updates order status (CONFIRMED → PREPARING → PACKED)
-router.patch('/orders/:orderId/status', requireApproved, requirePermission('manage_orders'), async (req, res) => {
+router.patch('/orders/:orderId/status', requireApproved, requireStaffPermission('mark_ready'), requireBranchAccess(async (req) => {
+  const o = await col('orders').findOne({ _id: req.params.orderId }, { projection: { branch_id: 1 } });
+  return o?.branch_id;
+}), async (req, res) => {
   try {
     const { status } = req.body;
     // Role-based status restrictions
@@ -6542,7 +6559,7 @@ router.get(
 // ANALYTICS
 // ═══════════════════════════════════════════════════════════════
 
-router.get('/analytics', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const days = parseInt(req.query.days || 7);
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -6590,7 +6607,7 @@ async function _analyticsContext(req) {
 }
 
 // GET /api/restaurant/analytics/overview
-router.get('/analytics/overview', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/overview', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const { branchIds, since, prevSince, periodDays } = await _analyticsContext(req);
     const baseMatch = { branch_id: { $in: branchIds } };
@@ -6635,7 +6652,7 @@ router.get('/analytics/overview', requirePermission('view_analytics'), async (re
 });
 
 // GET /api/restaurant/analytics/revenue
-router.get('/analytics/revenue', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/revenue', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const { branchIds, since } = await _analyticsContext(req);
     const gran = req.query.granularity || 'day';
@@ -6672,7 +6689,7 @@ router.get('/analytics/revenue', requirePermission('view_analytics'), async (req
 });
 
 // GET /api/restaurant/analytics/top-items
-router.get('/analytics/top-items', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/top-items', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const { branchIds, since } = await _analyticsContext(req);
     const limit = Math.min(20, parseInt(req.query.limit) || 10);
@@ -6700,7 +6717,7 @@ router.get('/analytics/top-items', requirePermission('view_analytics'), async (r
 });
 
 // GET /api/restaurant/analytics/peak-hours
-router.get('/analytics/peak-hours', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/peak-hours', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const { branchIds, since } = await _analyticsContext(req);
 
@@ -6731,7 +6748,7 @@ router.get('/analytics/peak-hours', requirePermission('view_analytics'), async (
 });
 
 // GET /api/restaurant/analytics/customers
-router.get('/analytics/customers', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/customers', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const { branchIds, since } = await _analyticsContext(req);
     const baseMatch = { branch_id: { $in: branchIds }, created_at: { $gte: since }, status: { $in: CONFIRMED_ORDER_STATES } };
@@ -6775,7 +6792,7 @@ router.get('/analytics/customers', requirePermission('view_analytics'), async (r
 });
 
 // GET /api/restaurant/analytics/delivery
-router.get('/analytics/delivery', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/delivery', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const { branchIds, branchMap, since } = await _analyticsContext(req);
 
@@ -6840,7 +6857,7 @@ const _lgsR1 = (v) => v == null ? null : Math.round(v * 10) / 10;
 const _lgsR2 = (v) => v == null ? null : Math.round(v * 100) / 100;
 
 // GET /api/restaurant/logistics/stats
-router.get('/logistics/stats', requirePermission('view_analytics'), async (req, res) => {
+router.get('/logistics/stats', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const from = _lgsParseISTBoundary(req.query.from, false) || _lgsTodayISTBoundary(false);
     const to   = _lgsParseISTBoundary(req.query.to,   true)  || _lgsTodayISTBoundary(true);
@@ -6983,7 +7000,7 @@ router.get('/logistics/stats', requirePermission('view_analytics'), async (req, 
 const dropoff = require('../services/dropoff');
 
 // GET /api/restaurant/analytics/dropoffs — funnel + abandoned session list
-router.get('/analytics/dropoffs', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/dropoffs', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const from = req.query.from ? new Date(req.query.from) : undefined;
     const to = req.query.to ? new Date(req.query.to) : undefined;
@@ -6995,7 +7012,7 @@ router.get('/analytics/dropoffs', requirePermission('view_analytics'), async (re
 });
 
 // GET /api/restaurant/analytics/dropoffs/:conversationId — single abandoned session detail
-router.get('/analytics/dropoffs/:conversationId', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/dropoffs/:conversationId', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const detail = await dropoff.getDropoffDetails(req.params.conversationId);
     if (!detail) return res.status(404).json({ error: 'Conversation not found' });
@@ -7004,7 +7021,7 @@ router.get('/analytics/dropoffs/:conversationId', requirePermission('view_analyt
 });
 
 // POST /api/restaurant/dropoffs/:conversationId/recover — send recovery message
-router.post('/dropoffs/:conversationId/recover', requirePermission('manage_orders'), async (req, res) => {
+router.post('/dropoffs/:conversationId/recover', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     const conv = await col('conversations').findOne({ _id: req.params.conversationId });
     if (!conv) return res.status(404).json({ error: 'Conversation not found' });
@@ -7088,7 +7105,7 @@ router.post('/dropoffs/:conversationId/recover', requirePermission('manage_order
 });
 
 // GET /api/restaurant/analytics/recovery-stats — recovery message effectiveness
-router.get('/analytics/recovery-stats', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/recovery-stats', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const stats = await dropoff.getRecoveryStats(req.restaurantId, req.query.from, req.query.to);
     res.json(stats);
@@ -7096,7 +7113,7 @@ router.get('/analytics/recovery-stats', requirePermission('view_analytics'), asy
 });
 
 // GET /api/restaurant/analytics/cart-recovery — abandoned cart recovery analytics
-router.get('/analytics/cart-recovery', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/cart-recovery', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const cartRecovery = require('../services/cart-recovery');
     const periodDays = req.query.period === '30d' ? 30 : 7;
@@ -7106,7 +7123,7 @@ router.get('/analytics/cart-recovery', requirePermission('view_analytics'), asyn
 });
 
 // GET /api/restaurant/dropoffs/recoverable — high-intent abandoned carts for recovery
-router.get('/dropoffs/recoverable', requirePermission('manage_orders'), async (req, res) => {
+router.get('/dropoffs/recoverable', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const list = await dropoff.getRecoverableDropoffs(req.restaurantId);
     res.json(list);
@@ -7120,7 +7137,7 @@ router.get('/dropoffs/recoverable', requirePermission('manage_orders'), async (r
 // ═══════════════════════════════════════════════════════════════
 
 // GET /api/restaurant/analytics/conversations — WABA conversation stats from Meta + active conversations from DB
-router.get('/analytics/conversations', requirePermission('view_analytics'), async (req, res) => {
+router.get('/analytics/conversations', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const wa_acc = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId, is_active: true });
     if (!wa_acc?.waba_id) return res.json({ error: 'No WABA connected', conversations: null, active: [] });
@@ -7223,7 +7240,7 @@ router.get('/analytics/conversations', requirePermission('view_analytics'), asyn
 // SETTLEMENTS
 // ═══════════════════════════════════════════════════════════════
 
-router.get('/settlements', requirePermission('view_payments'), async (req, res) => {
+router.get('/settlements', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const docs = await col('settlements')
       .find({ restaurant_id: req.restaurantId })
@@ -7239,7 +7256,7 @@ router.get('/settlements', requirePermission('view_payments'), async (req, res) 
 // ═══════════════════════════════════════════════════════════════
 
 // GET /api/restaurant/ledger/summary
-router.get('/ledger/summary', requirePermission('view_payments'), async (req, res) => {
+router.get('/ledger/summary', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const svc = require('../services/ledgerDashboard.service');
     const data = await svc.getSummary(req.restaurantId);
@@ -7248,7 +7265,7 @@ router.get('/ledger/summary', requirePermission('view_payments'), async (req, re
 });
 
 // GET /api/restaurant/ledger/transactions?from&to&type&ref_type&page&limit
-router.get('/ledger/transactions', requirePermission('view_payments'), async (req, res) => {
+router.get('/ledger/transactions', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const svc = require('../services/ledgerDashboard.service');
     const data = await svc.getTransactions(req.restaurantId, {
@@ -7265,7 +7282,7 @@ router.get('/ledger/transactions', requirePermission('view_payments'), async (re
 
 // GET /api/restaurant/ledger/settlements — Phase 5 on-demand history.
 // (Legacy weekly rows remain at GET /settlements above.)
-router.get('/ledger/settlements', requirePermission('view_payments'), async (req, res) => {
+router.get('/ledger/settlements', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const svc = require('../services/ledgerDashboard.service');
     const data = await svc.getSettlements(req.restaurantId, {
@@ -7276,7 +7293,7 @@ router.get('/ledger/settlements', requirePermission('view_payments'), async (req
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-router.get('/settlements/:id/download', requirePermission('view_payments'), async (req, res) => {
+router.get('/settlements/:id/download', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const settlement = await col('settlements').findOne({ _id: req.params.id });
     if (!settlement) return res.status(404).json({ error: 'Settlement not found' });
@@ -7305,7 +7322,7 @@ router.get('/settlements/:id/download', requirePermission('view_payments'), asyn
 //     lookups (Mongo _ids in this codebase are UUID strings).
 //   • Unknown or cross-tenant ids → 404 (never 403; not-found is less
 //     information-leaky than access-denied).
-router.get('/settlements/:id/meta-breakdown', requirePermission('view_payments'), async (req, res) => {
+router.get('/settlements/:id/meta-breakdown', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     if (!req.restaurantId) return res.status(401).json({ error: 'Unauthorized' });
     const id = String(req.params.id || '').trim();
@@ -7355,7 +7372,7 @@ router.get('/settlements/:id/meta-breakdown', requirePermission('view_payments')
 
 const paymentSvc = require('../services/payment');
 
-router.post('/payout-account', requirePermission('manage_settings'), async (req, res) => {
+router.post('/payout-account', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     const result = await paymentSvc.registerPayoutAccount(req.restaurantId);
     if (result.alreadyRegistered) {
@@ -7408,7 +7425,7 @@ router.get('/wallet/transactions', async (req, res) => {
 // account shares the bucket, which is the desired behaviour (prevents one
 // staff member from burning through limits on everyone else's behalf).
 router.post('/wallet/topup',
-  requirePermission('manage_settings'),
+  requireStaffPermission('manage_settings'),
   rateLimitFn(req => `payment:${req.restaurantId}`, 3, 120, { message: 'Too many payment attempts, please try again shortly.' }),
   async (req, res) => {
   try {
@@ -7455,6 +7472,7 @@ router.get('/coupons', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// 10-key contract has no equivalent — owner/manager-only by default
 router.post('/coupons', requirePermission('manage_coupons'), express.json(), async (req, res) => {
   try {
     const { code, description, discountType, discountValue, minOrderRs, maxDiscountRs,
@@ -7500,6 +7518,7 @@ router.post('/coupons', requirePermission('manage_coupons'), express.json(), asy
   }
 });
 
+// 10-key contract has no equivalent — owner/manager-only by default
 router.patch('/coupons/:id', requirePermission('manage_coupons'), express.json(), async (req, res) => {
   try {
     const { isActive, description, validUntil, usageLimit, maxDiscountRs, minOrderRs } = req.body;
@@ -7521,6 +7540,7 @@ router.patch('/coupons/:id', requirePermission('manage_coupons'), express.json()
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
+// 10-key contract has no equivalent — owner/manager-only by default
 router.delete('/coupons/:id', requirePermission('manage_coupons'), async (req, res) => {
   try {
     const result = await col('coupons').deleteOne({ _id: req.params.id, restaurant_id: req.restaurantId });
@@ -8233,6 +8253,7 @@ router.get('/staffed-branches', async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 
 // GET /api/restaurant/users
+// 10-key contract has no equivalent — owner/manager-only by default
 router.get('/users', requirePermission('manage_users'), async (req, res) => {
   try {
     const users = await col('restaurant_users')
@@ -8255,6 +8276,7 @@ router.get('/users', requirePermission('manage_users'), async (req, res) => {
 });
 
 // POST /api/restaurant/users
+// 10-key contract has no equivalent — owner/manager-only by default
 router.post('/users', requirePermission('manage_users'), express.json(), async (req, res) => {
   try {
     const { name, phone, pin, role, branchIds } = req.body;
@@ -8310,6 +8332,7 @@ router.post('/users', requirePermission('manage_users'), express.json(), async (
 });
 
 // PUT /api/restaurant/users/:id
+// 10-key contract has no equivalent — owner/manager-only by default
 router.put('/users/:id', requirePermission('manage_users'), express.json(), async (req, res) => {
   try {
     const { name, role, branchIds, permissions, isActive } = req.body;
@@ -8342,6 +8365,7 @@ router.put('/users/:id', requirePermission('manage_users'), express.json(), asyn
 });
 
 // DELETE /api/restaurant/users/:id (soft-delete)
+// 10-key contract has no equivalent — owner/manager-only by default
 router.delete('/users/:id', requirePermission('manage_users'), async (req, res) => {
   try {
     const user = await col('restaurant_users').findOne({ _id: req.params.id, restaurant_id: req.restaurantId });
@@ -8358,6 +8382,7 @@ router.delete('/users/:id', requirePermission('manage_users'), async (req, res) 
 });
 
 // PUT /api/restaurant/users/:id/reset-pin
+// 10-key contract has no equivalent — owner/manager-only by default
 router.put('/users/:id/reset-pin', requirePermission('manage_users'), express.json(), async (req, res) => {
   try {
     const { pin } = req.body;
@@ -8408,7 +8433,7 @@ router.get('/campaigns', async (req, res) => {
 // GET /api/restaurant/customers?sort=orders|last_order|spent&limit&skip
 // Restaurant-scoped identity view. Phone always masked (dashboard ops
 // role, not an admin PII-access context).
-router.get('/customers', requirePermission('view_analytics'), async (req, res) => {
+router.get('/customers', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const svc = require('../services/customerView.service');
     const data = await svc.listCustomers({
@@ -8424,7 +8449,7 @@ router.get('/customers', requirePermission('view_analytics'), async (req, res) =
 // GET /api/restaurant/campaigns/analytics?from&to
 // Real-time ROI table keyed by campaign. Cost comes from marketing_messages;
 // revenue comes from orders.attributed_campaign_id. Scoped to this tenant.
-router.get('/campaigns/analytics', requirePermission('view_analytics'), async (req, res) => {
+router.get('/campaigns/analytics', requireStaffPermission('view_reports'), async (req, res) => {
   try {
     const roi = require('../services/campaignROI.service');
     const rows = await roi.getAnalytics({
@@ -8437,7 +8462,7 @@ router.get('/campaigns/analytics', requirePermission('view_analytics'), async (r
 });
 
 // Daily-usage gauge for the campaigns tab (CRIT-2B-10).
-router.get('/campaigns/daily-usage', requirePermission('manage_settings'), async (req, res) => {
+router.get('/campaigns/daily-usage', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     const usage = await campaignSvc.getDailyUsage(req.restaurantId);
     res.json(usage);
@@ -8455,7 +8480,7 @@ router.get('/customers/tags', requireStaffPermission('manage_settings'), async (
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-router.post('/campaigns', requirePermission('manage_settings'), async (req, res) => {
+router.post('/campaigns', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     const campaign = await campaignSvc.createCampaign(req.restaurantId, req.body);
     res.json(mapId(campaign));
@@ -8464,7 +8489,7 @@ router.post('/campaigns', requirePermission('manage_settings'), async (req, res)
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-router.post('/campaigns/:id/send', requirePermission('manage_settings'), async (req, res) => {
+router.post('/campaigns/:id/send', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     const result = await campaignSvc.sendCampaign(req.params.id);
     res.json(result);
@@ -8473,7 +8498,7 @@ router.post('/campaigns/:id/send', requirePermission('manage_settings'), async (
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-router.delete('/campaigns/:id', requirePermission('manage_settings'), async (req, res) => {
+router.delete('/campaigns/:id', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     await campaignSvc.deleteCampaign(req.params.id, req.restaurantId);
     res.json({ success: true });
@@ -8481,14 +8506,14 @@ router.delete('/campaigns/:id', requirePermission('manage_settings'), async (req
 });
 
 // [WhatsApp2026] Campaign pause / resume
-router.post('/campaigns/:id/pause', requirePermission('manage_settings'), async (req, res) => {
+router.post('/campaigns/:id/pause', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     const result = await campaignSvc.pauseCampaign(req.params.id, req.restaurantId);
     res.json(result);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-router.post('/campaigns/:id/resume', requirePermission('manage_settings'), async (req, res) => {
+router.post('/campaigns/:id/resume', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     const result = await campaignSvc.resumeCampaign(req.params.id, req.restaurantId);
     res.json(result);
