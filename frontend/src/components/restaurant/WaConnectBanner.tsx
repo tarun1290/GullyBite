@@ -71,7 +71,11 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
           <div className="font-bold text-base text-wa-600">
             WhatsApp Business connected
           </div>
-          <div className="text-sm text-wa-600 mt-0.5">
+          {/* Part 6d: body line uses the darker wa-700 shade for tier
+              hierarchy against the bolder title. Pre-6c had this as
+              text-green-800; that shade collapsed during the 6c
+              Tailwind-vs-Fresh-Leaf consolidation. */}
+          <div className="text-sm text-wa-700 mt-0.5">
             You&apos;re ready to receive orders.
           </div>
         </div>

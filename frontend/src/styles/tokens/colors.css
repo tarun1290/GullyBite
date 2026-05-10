@@ -92,6 +92,9 @@
   --gb-wa-light: #dcfce7;
   --gb-wa-500:   #16a34a;
   --gb-wa-600:   #15803d;
+  /* Part 6d: 700 tier restored after the 6c collapse dropped the
+     darker shade WaConnectBanner used for body-vs-title hierarchy. */
+  --gb-wa-700:   #166534;
 
   /* Status — red / amber / blue / orange */
   --gb-red-100: #fee2e2;
