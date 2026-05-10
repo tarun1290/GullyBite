@@ -36,11 +36,12 @@ function getSecret() {
   return 'staff:dev-insecure';
 }
 
-// Per-user staff token. Required: userId + restaurantId. The token now
-// carries `branchId` (singular string) — set by /api/staff/auth from
-// the branch-scoped staff_access_token. Old multi-branch `branchIds`
-// payloads are still accepted by the verifier for back-compat with any
-// in-flight tokens issued before this change.
+// Per-user staff token. Required: userId + restaurantId. The token
+// carries `branchId` (singular string) — the staff member's primary
+// branch as resolved by /api/staff/auth from the credential login
+// (store_slug + staff_id + pin). Old multi-branch `branchIds` payloads
+// are still accepted by the verifier for back-compat with any
+// in-flight tokens issued before the contract change.
 function signStaffToken({
   userId,
   restaurantId,
@@ -61,10 +62,9 @@ function signStaffToken({
   if (!userId) throw new Error('signStaffToken: userId required');
   if (!restaurantId) throw new Error('signStaffToken: restaurantId required');
   // Two complementary fields on the token now:
-  //   branchId (singular)  — the "primary" branch the operator logged
-  //                          in via (the staff_access_token's branch).
-  //                          Used as the default scope when no
-  //                          X-Branch-Id header is sent.
+  //   branchId (singular)  — the "primary" branch the operator is
+  //                          assigned to. Used as the default scope
+  //                          when no X-Branch-Id header is sent.
   //   branchIds (array)    — every branch the operator has access to.
   //                          The staff app reads this to populate the
   //                          branch-selector dropdown and the backend
