@@ -699,8 +699,8 @@ export default function AdminPincodesPage() {
       </div>
 
       <div className="card">
-        <div className="cb flex gap-[0.4rem] items-center flex-wrap">
-          <span className="text-[0.8rem] text-dim">View:</span>
+        <div className="cb flex gap-1.5 items-center flex-wrap">
+          <span className="text-sm text-dim">View:</span>
           <button
             type="button"
             className={view === 'pincode' ? 'btn-p btn-sm' : 'btn-g btn-sm'}
@@ -717,7 +717,7 @@ export default function AdminPincodesPage() {
           >
             By City
           </button>
-          <span className="ml-auto text-[0.75rem] text-dim">
+          <span className="ml-auto text-xs text-dim">
             Changes apply platform-wide.
           </span>
         </div>
@@ -822,25 +822,25 @@ function PincodeView(p: PincodeViewProps) {
     <div className="card">
       <div className="ch flex-wrap gap-2">
         <h3>📍 Pincode Serviceability</h3>
-        <div className="flex gap-[0.4rem] ml-auto flex-wrap items-center">
+        <div className="flex gap-1.5 ml-auto flex-wrap items-center">
           <input
             value={p.search}
             onChange={(e) => p.setSearch(e.target.value)}
             placeholder="Search pincode, city, state, area…"
-            className="py-[0.35rem] px-2"
+            className="py-1.5 px-2"
           />
           <select
             value={p.statusFilter}
             onChange={p.onStatusChange}
-            className="py-[0.35rem] px-2"
+            className="py-1.5 px-2"
           >
             <option value="all">All</option>
             <option value="enabled">Enabled only</option>
             <option value="disabled">Disabled only</option>
           </select>
           {p.bulkConfirm ? (
-            <span className="inline-flex gap-[0.4rem] items-center">
-              <span className="text-[0.75rem] text-dim">
+            <span className="inline-flex gap-1.5 items-center">
+              <span className="text-xs text-dim">
                 {p.bulkConfirm.enabled ? 'Enable' : 'Disable'} all {fmtNum(p.total)} filtered?
               </span>
               <button
@@ -888,7 +888,7 @@ function PincodeView(p: PincodeViewProps) {
 
       {p.importPreview && (
         <div className="cb border-b border-bd bg-[rgba(253,224,71,0.12)] flex gap-2 items-center flex-wrap">
-          <span className="text-[0.85rem]">
+          <span className="text-base">
             Found <strong>{fmtNum(p.importPreview.total)}</strong> valid pincodes in CSV.
             New rows start enabled; existing rows keep their current toggle.
           </span>
@@ -933,13 +933,13 @@ function renderPincodeBody(p: PincodeViewProps): ReactNode {
     return (
       <table className="w-full border-collapse">
         <thead>
-          <tr className="text-left text-[0.75rem] text-dim">
-            <th className="py-[0.4rem] px-[0.2rem]">Pincode</th>
-            <th className="py-[0.4rem] px-[0.2rem]">City</th>
-            <th className="py-[0.4rem] px-[0.2rem]">Area</th>
-            <th className="py-[0.4rem] px-[0.2rem]">State</th>
-            <th className="py-[0.4rem] px-[0.2rem]">Status</th>
-            <th className="py-[0.4rem] px-[0.2rem]">Last Updated</th>
+          <tr className="text-left text-xs text-dim">
+            <th className="py-1.5 px-1">Pincode</th>
+            <th className="py-1.5 px-1">City</th>
+            <th className="py-1.5 px-1">Area</th>
+            <th className="py-1.5 px-1">State</th>
+            <th className="py-1.5 px-1">Status</th>
+            <th className="py-1.5 px-1">Last Updated</th>
           </tr>
         </thead>
         <tbody>{renderSummaryRows(p)}</tbody>
@@ -953,13 +953,13 @@ function renderPincodeBody(p: PincodeViewProps): ReactNode {
   return (
     <table className="w-full border-collapse">
       <thead>
-        <tr className="text-left text-[0.75rem] text-dim">
-          <th className="py-[0.4rem] px-[0.2rem]">Pincode</th>
-          <th className="py-[0.4rem] px-[0.2rem]">City</th>
-          <th className="py-[0.4rem] px-[0.2rem]">Area</th>
-          <th className="py-[0.4rem] px-[0.2rem]">State</th>
-          <th className="py-[0.4rem] px-[0.2rem]">Status</th>
-          <th className="py-[0.4rem] px-[0.2rem]">Last Updated</th>
+        <tr className="text-left text-xs text-dim">
+          <th className="py-1.5 px-1">Pincode</th>
+          <th className="py-1.5 px-1">City</th>
+          <th className="py-1.5 px-1">Area</th>
+          <th className="py-1.5 px-1">State</th>
+          <th className="py-1.5 px-1">Status</th>
+          <th className="py-1.5 px-1">Last Updated</th>
         </tr>
       </thead>
       <tbody>{renderPincodeRows(p)}</tbody>
@@ -972,14 +972,14 @@ function renderFooter(p: PincodeViewProps): ReactNode {
   if (summaryMode) {
     const totalPincodes = p.stateSummaries.reduce((s, r) => s + (r.total_pincodes || 0), 0);
     return (
-      <div className="mt-[0.8rem] text-[0.75rem] text-dim">
+      <div className="mt-3 text-xs text-dim">
         {fmtNum(p.stateSummaries.length)} state{p.stateSummaries.length === 1 ? '' : 's'} ·{' '}
         {fmtNum(totalPincodes)} pincode{totalPincodes === 1 ? '' : 's'} total. Click a state to expand.
       </div>
     );
   }
   return (
-    <div className="mt-[0.8rem] text-[0.75rem] text-dim">
+    <div className="mt-3 text-xs text-dim">
       Showing {fmtNum(p.rows.length)} of {fmtNum(p.total)} pincodes matching “{p.debounced}”.
     </div>
   );
@@ -1021,7 +1021,7 @@ function renderSummaryRows(p: PincodeViewProps): ReactNode[] {
       if (rowsLoading && !rowsForState) {
         out.push(
           <tr key={`load-${st}`}>
-            <td colSpan={6} className="py-[0.6rem] px-3 text-[0.8rem] text-dim">
+            <td colSpan={6} className="py-2.5 px-3 text-sm text-dim">
               Loading pincodes for {st}…
             </td>
           </tr>
@@ -1053,7 +1053,7 @@ function renderSummaryRows(p: PincodeViewProps): ReactNode[] {
       } else if (rowsForState && !rowsForState.length) {
         out.push(
           <tr key={`empty-${st}`}>
-            <td colSpan={6} className="py-[0.6rem] px-3 text-[0.8rem] text-dim">
+            <td colSpan={6} className="py-2.5 px-3 text-sm text-dim">
               No pincodes returned for {st}.
             </td>
           </tr>
@@ -1194,18 +1194,18 @@ function StateHeaderRow({
       <td
         colSpan={6}
         onClick={onToggleExpand}
-        className="bg-ink2 py-2 px-3 text-[0.78rem] font-bold uppercase tracking-wider text-fg cursor-pointer select-none"
+        className="bg-ink2 py-2 px-3 text-sm font-bold uppercase tracking-wider text-fg cursor-pointer select-none"
       >
-        <div className="flex items-center gap-[0.6rem] flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <span className="inline-block w-[1ch] text-center" aria-hidden>
             {expanded ? '▼' : '▶'}
           </span>
           <span>{state}</span>
-          <span className="text-[0.7rem] text-dim font-medium normal-case tracking-normal">
+          <span className="text-xs text-dim font-medium normal-case tracking-normal">
             {fmtNum(count)} pincodes
           </span>
           {summary && (
-            <span className="text-[0.65rem] text-dim font-medium normal-case tracking-normal">
+            <span className="text-xs text-dim font-medium normal-case tracking-normal">
               ({fmtNum(summary.enabled_count)} on · {fmtNum(summary.disabled_count)} off)
             </span>
           )}
@@ -1251,11 +1251,11 @@ function CityHeaderRow({ state, city, rowsForCity, inlineGroupBusy, doInlineBulk
     <tr>
       <td
         colSpan={6}
-        className="bg-[rgba(127,127,127,0.08)] py-[0.4rem] px-3 text-[0.78rem] font-semibold text-fg"
+        className="bg-[rgba(127,127,127,0.08)] py-1.5 px-3 text-sm font-semibold text-fg"
       >
-        <div className="flex items-center gap-[0.6rem] flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <span>{city}</span>
-          <span className="text-[0.7rem] text-dim font-medium">
+          <span className="text-xs text-dim font-medium">
             {fmtNum(rowsForCity.length)} pincodes
           </span>
           <button
@@ -1293,25 +1293,25 @@ interface PincodeTableRowProps { r: PincodeRow; p: PincodeViewProps }
 function PincodeTableRow({ r, p }: PincodeTableRowProps) {
   return (
     <tr className="border-t border-bd">
-      <td className="py-[0.4rem] px-[0.2rem] font-mono">{r.pincode}</td>
-      <td className="py-[0.4rem] px-[0.2rem] text-[0.85rem]">{r.city || '—'}</td>
-      <td className={`py-[0.4rem] px-[0.2rem] text-[0.85rem] ${r.area ? '' : 'text-dim'}`}>
+      <td className="py-1.5 px-1 font-mono">{r.pincode}</td>
+      <td className="py-1.5 px-1 text-base">{r.city || '—'}</td>
+      <td className={`py-1.5 px-1 text-base ${r.area ? '' : 'text-dim'}`}>
         {r.area || '—'}
       </td>
-      <td className="py-[0.4rem] px-[0.2rem] text-[0.85rem] text-dim">{r.state || '—'}</td>
-      <td className="py-[0.4rem] px-[0.2rem]">
-        <span className="inline-flex gap-[0.4rem] items-center">
+      <td className="py-1.5 px-1 text-base text-dim">{r.state || '—'}</td>
+      <td className="py-1.5 px-1">
+        <span className="inline-flex gap-1.5 items-center">
           <Toggle
             checked={!!r.enabled}
             disabled={p.rowBusy === r.pincode}
             onChange={() => p.handleToggle(r.pincode, !!r.enabled)}
           />
-          <span className={`text-[0.75rem] font-medium ${r.enabled ? 'text-wa-500' : 'text-red-500'}`}>
+          <span className={`text-xs font-medium ${r.enabled ? 'text-wa-500' : 'text-red-500'}`}>
             {r.enabled ? 'Enabled' : 'Disabled'}
           </span>
         </span>
       </td>
-      <td className="py-[0.4rem] px-[0.2rem] text-[0.8rem] text-dim">
+      <td className="py-1.5 px-1 text-sm text-dim">
         {fmtDate(r.updated_at)}
       </td>
     </tr>
@@ -1352,7 +1352,7 @@ function CityView(p: CityViewProps) {
   }
 
   return (
-    <div className="flex flex-col gap-[0.6rem]">
+    <div className="flex flex-col gap-2.5">
       {p.groupedByState.map((st) => (
         <StateAccordion
           key={st.state}
@@ -1413,27 +1413,27 @@ function StateAccordion({
   return (
     <div className="card">
       <div
-        className="ch cursor-pointer flex items-center gap-[0.6rem] flex-wrap"
+        className="ch cursor-pointer flex items-center gap-2.5 flex-wrap"
         onClick={onToggle}
       >
-        <span className="text-[0.9rem]">{isOpen ? '▾' : '▸'}</span>
+        <span className="text-base">{isOpen ? '▾' : '▸'}</span>
         <h3 className="m-0">{bucket.state}</h3>
-        <span className="text-[0.75rem] text-dim">
+        <span className="text-xs text-dim">
           {bucket.cities.length} {bucket.cities.length === 1 ? 'city' : 'cities'} • {fmtNum(bucket.total)} pincodes
         </span>
-        <span className="text-[0.75rem] text-wa-500 font-medium ml-[0.4rem]">
+        <span className="text-xs text-wa-500 font-medium ml-1.5">
           {fmtNum(bucket.enabled)} enabled
         </span>
-        <span className="text-[0.75rem] text-red-500 font-medium">
+        <span className="text-xs text-red-500 font-medium">
           {fmtNum(bucket.disabled)} disabled
         </span>
         <div
-          className="ml-auto flex gap-[0.4rem] items-center"
+          className="ml-auto flex gap-1.5 items-center"
           onClick={(e) => e.stopPropagation()}
         >
           {stateConfirm ? (
             <>
-              <span className="text-[0.75rem] text-dim">
+              <span className="text-xs text-dim">
                 {stateConfirm.enabled ? 'Enable' : 'Disable'} all {bucket.cities.length} cities?
               </span>
               <button
@@ -1477,7 +1477,7 @@ function StateAccordion({
       </div>
 
       {isOpen && (
-        <div className="cb flex flex-col gap-[0.6rem]">
+        <div className="cb flex flex-col gap-2.5">
           <ProgressBar pct={pct} />
           {bucket.cities.map((c) => (
             <CityCard
@@ -1526,17 +1526,17 @@ function CityCard({
   const pct = row.total > 0 ? Math.round((row.enabled / row.total) * 100) : 0;
 
   return (
-    <div className="border border-bd rounded-md py-[0.6rem] px-[0.7rem] flex flex-col gap-2 bg-bg2">
-      <div className="flex items-center gap-[0.6rem] flex-wrap">
+    <div className="border border-bd rounded-md py-2.5 px-3 flex flex-col gap-2 bg-bg2">
+      <div className="flex items-center gap-2.5 flex-wrap">
         <strong>{row.city}</strong>
-        <span className="text-[0.75rem] text-dim">
+        <span className="text-xs text-dim">
           {fmtNum(row.enabled)} / {fmtNum(row.total)} enabled
         </span>
-        <span className="text-[0.7rem] text-dim">({pct}%)</span>
-        <div className="ml-auto flex gap-[0.4rem] items-center flex-wrap">
+        <span className="text-xs text-dim">({pct}%)</span>
+        <div className="ml-auto flex gap-1.5 items-center flex-wrap">
           {confirm ? (
             <>
-              <span className="text-[0.7rem] text-dim">
+              <span className="text-xs text-dim">
                 {confirm.enabled ? 'Enable' : 'Disable'} {fmtNum(row.total)}?
               </span>
               <button
@@ -1581,13 +1581,13 @@ function CityCard({
       <ProgressBar pct={pct} />
 
       {expanded && (
-        <div className="border-t border-dashed border-bd pt-2 mt-[0.2rem]">
+        <div className="border-t border-dashed border-bd pt-2 mt-1">
           {pinsLoading && !pins ? (
-            <p className="text-[0.8rem] text-dim">Loading pincodes…</p>
+            <p className="text-sm text-dim">Loading pincodes…</p>
           ) : !pins || !pins.length ? (
-            <p className="text-[0.8rem] text-dim">No pincodes in this city.</p>
+            <p className="text-sm text-dim">No pincodes in this city.</p>
           ) : (
-            <div className="flex flex-wrap gap-[0.4rem]">
+            <div className="flex flex-wrap gap-1.5">
               {pins.map((pc) => (
                 <PincodeChip
                   key={pc.pincode}
@@ -1614,7 +1614,7 @@ function PincodeChip({ pincode, enabled, disabled, onToggle }: PincodeChipProps)
       disabled={disabled}
       title={enabled ? 'Click to disable' : 'Click to enable'}
       className={[
-        'font-mono text-[0.8rem] py-1 px-2 rounded-xs border',
+        'font-mono text-sm py-1 px-2 rounded-xs border',
         enabled
           ? 'border-wa-500 bg-[rgba(22,163,74,0.1)] text-wa-500'
           : 'border-red-500 bg-[rgba(220,38,38,0.1)] text-red-500',
@@ -1630,7 +1630,7 @@ interface ProgressBarProps { pct: number }
 
 function ProgressBar({ pct }: ProgressBarProps) {
   return (
-    <div className="h-[6px] bg-[rgba(220,38,38,0.15)] rounded-[3px] overflow-hidden">
+    <div className="h-[6px] bg-[rgba(220,38,38,0.15)] rounded-sm overflow-hidden">
       {/* width is dynamic — driven by runtime pct (0–100) so cannot be a static class */}
       <div
         className="h-full bg-wa-500 transition-[width] duration-250 ease-in-out"
@@ -1645,9 +1645,9 @@ interface StatBlockProps { label: string; value: string; color: string }
 function StatBlock({ label, value, color }: StatBlockProps) {
   return (
     <div>
-      <div className="text-[0.75rem] text-dim mb-[0.2rem]">{label}</div>
+      <div className="text-xs text-dim mb-1">{label}</div>
       {/* color is dynamic — passed in from caller based on stat type */}
-      <div className="text-[1.6rem] font-semibold" style={{ color }}>{value}</div>
+      <div className="text-2xl font-semibold" style={{ color }}>{value}</div>
     </div>
   );
 }

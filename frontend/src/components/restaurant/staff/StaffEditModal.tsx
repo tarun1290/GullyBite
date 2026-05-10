@@ -371,7 +371,7 @@ export default function StaffEditModal({
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="bg-none border-0 text-[1.3rem] cursor-pointer"
+            className="bg-none border-0 text-xl cursor-pointer"
             aria-label="Close"
           >
             ×

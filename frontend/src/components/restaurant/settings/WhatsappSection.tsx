@@ -25,8 +25,12 @@ interface DisconnectResponse { success?: boolean; error?: string }
 
 interface PillMeta { bg: string; fg: string; label: string }
 
+// Dashboard "Meta quality rating" pill — operational green/amber/red, NOT
+// landing brand identity. Use Tailwind-aligned tokens so the swatch matches
+// the surrounding dashboard success/warn/error vocabulary. Fallback hexes
+// match the var() resolution exactly (no self-contradiction).
 const QUALITY_PILL_COLORS: Record<string, PillMeta> = {
-  GREEN:  { bg: 'rgba(22,163,74,.10)', fg: 'var(--gb-green-600, #15803d)', label: 'GREEN' },
+  GREEN:  { bg: 'rgba(22,163,74,.10)', fg: 'var(--color-green-700, #15803d)', label: 'GREEN' },
   YELLOW: { bg: 'rgba(217,119,6,.10)', fg: 'var(--gb-amber-600, #b45309)', label: 'YELLOW' },
   RED:    { bg: 'rgba(220,38,38,.10)', fg: 'var(--gb-red-600,   #b91c1c)', label: 'RED' },
 };
@@ -40,7 +44,7 @@ function QualityValue({ value }: QualityValueProps) {
   if (!pill) return <span>{value}</span>;
   return (
     <span
-      className="inline-block py-[0.15rem] px-2 rounded-md text-[0.75rem] font-semibold"
+      className="inline-block py-0.5 px-2 rounded-md text-xs font-semibold"
       // GREEN/YELLOW/RED Meta quality-rating palette comes from the
       // QUALITY_PILL_COLORS map at runtime — Tailwind can't pre-bake the
       // alpha-tinted backgrounds.
@@ -55,7 +59,7 @@ interface StatusBoxProps { dot: string; label: string; sub: string }
 
 function StatusBox({ dot, label, sub }: StatusBoxProps) {
   return (
-    <div className="flex items-center gap-[0.8rem] py-[0.7rem] px-4 rounded-lg bg-surface2 mb-4">
+    <div className="flex items-center gap-3 py-3 px-4 rounded-lg bg-surface2 mb-4">
       <span
         className="w-[10px] h-[10px] rounded-full shrink-0"
         // dot colour comes from the caller (ef4444 / f59e0b / 22c55e
@@ -63,8 +67,8 @@ function StatusBox({ dot, label, sub }: StatusBoxProps) {
         style={{ background: dot }}
       />
       <div>
-        <div className="font-semibold text-[0.88rem]">{label}</div>
-        <div className="text-[0.78rem] text-dim">{sub}</div>
+        <div className="font-semibold text-base">{label}</div>
+        <div className="text-sm text-dim">{sub}</div>
       </div>
     </div>
   );
@@ -131,7 +135,7 @@ export default function WhatsappSection() {
 
   return (
     <>
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch"><h3>WhatsApp Connection</h3></div>
       <div className="cb">
         <StatusBox dot={dot} label={label} sub={sub} />
@@ -141,7 +145,7 @@ export default function WhatsappSection() {
             {waAccounts.map((a, i) => (
               <div
                 key={a.waba_id || i}
-                className={`py-[0.7rem] px-4 grid grid-cols-[minmax(120px,28%)_1fr] gap-x-[0.8rem] gap-y-[0.35rem] text-[0.82rem] ${
+                className={`py-3 px-4 grid grid-cols-[minmax(120px,28%)_1fr] gap-x-3 gap-y-1.5 text-sm ${
                   i === 0 ? '' : 'border-t border-rim'
                 }`}
               >
@@ -182,11 +186,11 @@ export default function WhatsappSection() {
             </div>
 
             {confirmOpen && (
-              <div className="mt-[0.7rem] bg-red-50 border border-red-200 rounded-lg p-[0.85rem]">
-                <div className="text-[0.85rem] font-semibold text-red-500 mb-[0.4rem]">
+              <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3.5">
+                <div className="text-base font-semibold text-red-500 mb-1.5">
                   ⚠️ Disconnect WhatsApp Business?
                 </div>
-                <p className="text-[0.78rem] text-red-950 mb-[0.6rem] leading-[1.45]">
+                <p className="text-sm text-red-950 mb-2.5 leading-[1.45]">
                   Customers will <strong>stop being able to message your business</strong>. Incoming
                   WhatsApp messages will be ignored and no new orders will be received until you
                   reconnect.
@@ -219,7 +223,7 @@ export default function WhatsappSection() {
         )}
 
         {!fullyConnected && (
-          <div className="mt-[0.4rem]">
+          <div className="mt-1.5">
             <WaConnectBanner onConnected={refetch} />
           </div>
         )}

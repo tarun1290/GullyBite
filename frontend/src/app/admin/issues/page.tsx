@@ -149,8 +149,8 @@ interface StatCardProps { label: string; value?: number | string; color?: string
 
 function StatCard({ label, value, color }: StatCardProps): ReactNode {
   return (
-    <div className="bg-neutral-0 border border-rim rounded-[10px] py-[0.65rem] px-[0.8rem] shadow-sm-token">
-      <div className="text-[0.65rem] text-dim uppercase tracking-[0.04em] font-semibold">
+    <div className="bg-neutral-0 border border-rim rounded-r py-2.5 px-3 shadow-sm-token">
+      <div className="text-xs text-dim uppercase tracking-[0.04em] font-semibold">
         {label}
       </div>
       {/* color is dynamic — passed in from caller based on stat type */}
@@ -159,12 +159,12 @@ function StatCard({ label, value, color }: StatCardProps): ReactNode {
   );
 }
 
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2.5 px-3 align-top';
 const EMPTY_CELL_CLS = 'p-6 text-center text-dim';
-const SEL_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.55rem] text-[0.78rem]';
-const LBL_CLS = 'text-[0.72rem] text-dim block mb-[0.2rem]';
-const INLINE_FORM_CLS = 'py-[0.8rem] px-[1.2rem] border-t border-rim bg-ink3';
+const SEL_CLS = 'bg-neutral-0 border border-rim rounded-md py-1 px-2 text-sm';
+const LBL_CLS = 'text-xs text-dim block mb-1';
+const INLINE_FORM_CLS = 'py-3 px-5 border-t border-rim bg-ink3';
 
 export default function AdminIssuesPage() {
   const { showToast } = useToast();
@@ -359,11 +359,11 @@ export default function AdminIssuesPage() {
   return (
     <div id="pg-issues">
       {statsErr ? (
-        <div className="mb-[0.8rem]">
+        <div className="mb-3">
           <SectionError message={statsErr} onRetry={loadStats} />
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-[0.65rem] mb-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-2.5 mb-4">
           <StatCard label="Open" value={stats?.open} color="#3b82f6" />
           <StatCard label="In Progress" value={stats?.in_progress} color="#f59e0b" />
           <StatCard label="Escalated" value={stats?.escalated} color="var(--gb-red-500)" />
@@ -373,7 +373,7 @@ export default function AdminIssuesPage() {
         </div>
       )}
 
-      <div className="flex gap-[0.4rem] mb-[0.7rem] flex-wrap items-center">
+      <div className="flex gap-1.5 mb-3 flex-wrap items-center">
         {TABS.map((t) => (
           <button
             key={t.key || 'all'}
@@ -405,7 +405,7 @@ export default function AdminIssuesPage() {
           <div className="cb"><SectionError message={err} onRetry={loadList} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={TH_CLS}>Issue #</th>
@@ -437,17 +437,17 @@ export default function AdminIssuesPage() {
                         onClick={() => openDetail(i._id)}
                       >
                         <td className={`${TD_CLS} font-semibold whitespace-nowrap`}>{i.issue_number}</td>
-                        <td className={`${TD_CLS} text-[0.78rem]`}>
+                        <td className={`${TD_CLS} text-sm`}>
                           {i.restaurant_id ? String(i.restaurant_id).slice(-6) : '—'}
                         </td>
-                        <td className={`${TD_CLS} text-[0.78rem]`}>{CAT_LABEL[i.category || ''] || i.category}</td>
-                        <td className={`${TD_CLS} text-[0.8rem]`}>{i.customer_name || '—'}</td>
-                        <td className={`${TD_CLS} text-[0.76rem] text-dim`}>
+                        <td className={`${TD_CLS} text-sm`}>{CAT_LABEL[i.category || ''] || i.category}</td>
+                        <td className={`${TD_CLS} text-sm`}>{i.customer_name || '—'}</td>
+                        <td className={`${TD_CLS} text-xs text-dim`}>
                           {i.display_order_id ? (
                             <>
                               <div>{i.display_order_id}</div>
                               {i.order_number && (
-                                <div className="text-[0.66rem] text-mute">
+                                <div className="text-xs text-mute">
                                   {i.order_number}
                                 </div>
                               )}
@@ -458,23 +458,23 @@ export default function AdminIssuesPage() {
                         </td>
                         <td className={TD_CLS}>
                           {/* color from PRI_CLR palette by priority key at runtime */}
-                          <span className="font-semibold text-[0.72rem] uppercase" style={{ color: priClr }}>
+                          <span className="font-semibold text-xs uppercase" style={{ color: priClr }}>
                             {i.priority}
                           </span>
                         </td>
                         <td className={TD_CLS}>
                           {/* background from ST_CLR palette by status key at runtime */}
-                          <span className="text-neutral-0 text-[0.68rem] py-[0.1rem] px-[0.35rem] rounded-xs font-semibold" style={{ background: stClr }}>
+                          <span className="text-neutral-0 text-xs py-0.5 px-1.5 rounded-xs font-semibold" style={{ background: stClr }}>
                             {String(i.status).replace(/_/g, ' ')}
                           </span>
                         </td>
-                        <td className={`${TD_CLS} text-[0.72rem] text-dim`}>{i.routed_to || '—'}</td>
-                        <td className={`${TD_CLS} text-[0.72rem]`}>{slaLabel(i)}</td>
-                        <td className={`${TD_CLS} text-[0.72rem] text-dim`}>{timeAgo(i.created_at)}</td>
+                        <td className={`${TD_CLS} text-xs text-dim`}>{i.routed_to || '—'}</td>
+                        <td className={`${TD_CLS} text-xs`}>{slaLabel(i)}</td>
+                        <td className={`${TD_CLS} text-xs text-dim`}>{timeAgo(i.created_at)}</td>
                         <td className={TD_CLS}>
                           <button
                             type="button"
-                            className="btn-g btn-sm text-[0.7rem] py-[0.12rem] px-[0.35rem]"
+                            className="btn-g btn-sm text-xs py-0.5 px-1.5"
                             onClick={(e) => { e.stopPropagation(); openDetail(i._id); }}
                           >View</button>
                         </td>
@@ -487,11 +487,11 @@ export default function AdminIssuesPage() {
           </div>
         )}
         {pages > 1 && (
-          <div className="flex justify-center gap-[0.4rem] p-[0.7rem]">
+          <div className="flex justify-center gap-1.5 p-3">
             {curPage > 1 && (
               <button type="button" className="btn-g btn-sm" onClick={() => setPage(curPage - 1)}>« Prev</button>
             )}
-            <span className="text-[0.78rem] text-dim py-[0.3rem] px-2">
+            <span className="text-sm text-dim py-1 px-2">
               Page {curPage} of {pages}
             </span>
             {curPage < pages && (
@@ -514,26 +514,26 @@ export default function AdminIssuesPage() {
               <div className="p-8 text-center text-dim">Loading…</div>
             ) : (
               <>
-                <div className="py-4 px-[1.2rem] border-b border-rim flex items-center gap-[0.6rem] flex-wrap">
-                  <span className="font-bold text-[0.95rem]">{detail.issue_number}</span>
-                  <span className="text-[0.78rem] py-[0.12rem] px-2 rounded-md bg-ink">
+                <div className="py-4 px-5 border-b border-rim flex items-center gap-2.5 flex-wrap">
+                  <span className="font-bold text-md">{detail.issue_number}</span>
+                  <span className="text-sm py-0.5 px-2 rounded-md bg-ink">
                     {CAT_LABEL[detail.category || ''] || detail.category}
                   </span>
                   {/* color from PRI_CLR palette by priority key at runtime */}
                   <span
-                    className="text-[0.72rem] font-bold py-[0.12rem] px-[0.4rem] rounded-xs uppercase"
+                    className="text-xs font-bold py-0.5 px-1.5 rounded-xs uppercase"
                     style={{ color: PRI_CLR[detail.priority || ''] || 'var(--gb-slate-400)' }}
                   >{detail.priority}</span>
                   {/* background from ST_CLR palette by status key at runtime */}
                   <span
-                    className="text-[0.72rem] font-semibold py-[0.12rem] px-[0.4rem] rounded-xs text-neutral-0"
+                    className="text-xs font-semibold py-0.5 px-1.5 rounded-xs text-neutral-0"
                     style={{ background: ST_CLR[detail.status || ''] || 'var(--gb-slate-500)' }}
                   >{String(detail.status).replace(/_/g, ' ')}</span>
-                  <span className="text-[0.72rem] ml-auto">{slaLabel(detail)}</span>
+                  <span className="text-xs ml-auto">{slaLabel(detail)}</span>
                   <button type="button" className="btn-g btn-sm" onClick={closeDetail}>Close</button>
                 </div>
 
-                <div className="py-[0.7rem] px-[1.2rem] border-b border-rim flex gap-6 text-[0.82rem] flex-wrap">
+                <div className="py-3 px-5 border-b border-rim flex gap-6 text-sm flex-wrap">
                   <div><span className="text-dim">Customer:</span> <strong>{detail.customer_name || 'Unknown'}</strong></div>
                   <div><span className="text-dim">Phone:</span> {detail.customer_phone || '—'}</div>
                   <div>
@@ -542,7 +542,7 @@ export default function AdminIssuesPage() {
                       <>
                         <strong>{detail.display_order_id}</strong>
                         {detail.order_number && (
-                          <span className="text-[0.7rem] text-mute ml-[0.4rem]">
+                          <span className="text-xs text-mute ml-1.5">
                             ({detail.order_number})
                           </span>
                         )}
@@ -556,7 +556,7 @@ export default function AdminIssuesPage() {
                 </div>
 
                 {(detail._payment || detail._delivery || detail._order) && (
-                  <div className="py-[0.6rem] px-[1.2rem] border-b border-rim text-[0.8rem] bg-ink4">
+                  <div className="py-2.5 px-5 border-b border-rim text-sm bg-ink4">
                     {detail._payment && (
                       <span className="mr-4">
                         💳 Razorpay: <strong>{detail._payment.rp_payment_id}</strong>
@@ -579,18 +579,18 @@ export default function AdminIssuesPage() {
                   </div>
                 )}
 
-                <div className="py-[0.7rem] px-[1.2rem] border-b border-rim">
-                  <div className="text-[0.7rem] text-dim uppercase font-semibold mb-1">Description</div>
-                  <div className="text-[0.85rem] leading-normal">{detail.description || ''}</div>
+                <div className="py-3 px-5 border-b border-rim">
+                  <div className="text-xs text-dim uppercase font-semibold mb-1">Description</div>
+                  <div className="text-base leading-normal">{detail.description || ''}</div>
                 </div>
 
-                <div className="py-[0.7rem] px-[1.2rem] border-b border-rim">
-                  <div className="text-[0.7rem] text-dim uppercase font-semibold mb-[0.4rem]">Thread</div>
-                  <div className="max-h-[280px] overflow-y-auto flex flex-col gap-[0.3rem]">
+                <div className="py-3 px-5 border-b border-rim">
+                  <div className="text-xs text-dim uppercase font-semibold mb-1.5">Thread</div>
+                  <div className="max-h-[280px] overflow-y-auto flex flex-col gap-1">
                     {(detail.messages || []).map((m, i) => {
                       if (m.sender_type === 'system') {
                         return (
-                          <div key={i} className="text-center text-[0.72rem] text-dim py-[0.15rem]">
+                          <div key={i} className="text-center text-xs text-dim py-0.5">
                             {m.text}
                           </div>
                         );
@@ -602,28 +602,28 @@ export default function AdminIssuesPage() {
                       const when = m.created_at ? new Date(m.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
                       return (
                         // alignSelf, background, border are dynamic per-message based on sender_type/internal
-                        <div key={i} style={{ alignSelf: align, background: bg, border }} className="max-w-[80%] py-[0.4rem] px-[0.6rem] rounded-[10px] text-[0.82rem] leading-[1.4]">
-                          <div className="text-[0.65rem] font-semibold text-dim mb-[0.1rem]">
+                        <div key={i} style={{ alignSelf: align, background: bg, border }} className="max-w-[80%] py-1.5 px-2.5 rounded-r text-sm leading-[1.4]">
+                          <div className="text-xs font-semibold text-dim mb-0.5">
                             {m.sender_name}{m.internal ? ' (internal)' : ''}
                           </div>
                           <div>{m.text}</div>
-                          <div className="text-[0.6rem] text-dim text-right mt-[0.1rem]">
+                          <div className="text-xs text-dim text-right mt-0.5">
                             {when}
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                  <div className="mt-2 flex gap-[0.4rem] items-center">
+                  <div className="mt-2 flex gap-1.5 items-center">
                     <input
                       placeholder="Reply…"
                       value={reply}
                       onChange={(e) => setReply(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') doSend(); }}
-                      className="flex-1 py-[0.4rem] px-[0.6rem] border border-rim rounded-[7px] text-[0.82rem]"
+                      className="flex-1 py-1.5 px-2.5 border border-rim rounded-md text-sm"
                       disabled={replyBusy}
                     />
-                    <label className="text-[0.72rem] flex items-center gap-[0.2rem] text-dim whitespace-nowrap">
+                    <label className="text-xs flex items-center gap-1 text-dim whitespace-nowrap">
                       <input type="checkbox" checked={replyInternal} onChange={(e) => setReplyInternal(e.target.checked)} />
                       Internal
                     </label>
@@ -633,7 +633,7 @@ export default function AdminIssuesPage() {
                   </div>
                 </div>
 
-                <div className="py-[0.7rem] px-[1.2rem] flex gap-[0.4rem] flex-wrap">
+                <div className="py-3 px-5 flex gap-1.5 flex-wrap">
                   {['open', 'escalated_to_admin', 'reopened'].includes(detail.status || '') && (
                     <button type="button" className="btn-p btn-sm" onClick={() => doStatus('in_progress')}>
                       Start Working
@@ -673,7 +673,7 @@ export default function AdminIssuesPage() {
 
                 {resolveOpen && (
                   <div className={INLINE_FORM_CLS}>
-                    <div className="font-semibold mb-[0.4rem]">Resolve issue</div>
+                    <div className="font-semibold mb-1.5">Resolve issue</div>
                     <label className={LBL_CLS}>Resolution type</label>
                     <select value={resolveType} onChange={(e) => setResolveType(e.target.value)} className={`${SEL_CLS} w-full`}>
                       <option value="refund_full">Refund (full)</option>
@@ -690,7 +690,7 @@ export default function AdminIssuesPage() {
                       rows={2}
                       value={resolveNotes}
                       onChange={(e) => setResolveNotes(e.target.value)}
-                      className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-md font-[inherit] text-[0.82rem] resize-y"
+                      className="w-full py-1.5 px-2.5 border border-rim rounded-md font-[inherit] text-sm resize-y"
                     />
                     <div className="flex gap-2 justify-end mt-2">
                       <button type="button" className="btn-g btn-sm" onClick={() => setResolveOpen(false)}>Cancel</button>
@@ -701,14 +701,14 @@ export default function AdminIssuesPage() {
 
                 {refundOpen && (
                   <div className={INLINE_FORM_CLS}>
-                    <div className="font-semibold mb-[0.4rem]">Issue refund</div>
+                    <div className="font-semibold mb-1.5">Issue refund</div>
                     <label className={LBL_CLS}>Refund amount (₹) — leave blank for full order</label>
                     <input
                       type="number"
                       min="0"
                       value={refundAmount}
                       onChange={(e) => setRefundAmount(e.target.value)}
-                      className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-md text-[0.82rem]"
+                      className="w-full py-1.5 px-2.5 border border-rim rounded-md text-sm"
                     />
                     <div className="flex gap-2 justify-end mt-2">
                       <button type="button" className="btn-g btn-sm" onClick={() => setRefundOpen(false)}>Cancel</button>
@@ -723,7 +723,7 @@ export default function AdminIssuesPage() {
 
                 {flagOpen && (
                   <div className={INLINE_FORM_CLS}>
-                    <div className="font-semibold mb-[0.4rem]">Flag for settlement</div>
+                    <div className="font-semibold mb-1.5">Flag for settlement</div>
                     <label className={LBL_CLS}>Deduct from</label>
                     <select value={flagFrom} onChange={(e) => setFlagFrom(e.target.value)} className={`${SEL_CLS} w-full`}>
                       <option value="restaurant">Restaurant</option>
@@ -736,7 +736,7 @@ export default function AdminIssuesPage() {
                       min="0"
                       value={flagAmount}
                       onChange={(e) => setFlagAmount(e.target.value)}
-                      className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-md text-[0.82rem]"
+                      className="w-full py-1.5 px-2.5 border border-rim rounded-md text-sm"
                     />
                     <div className="flex gap-2 justify-end mt-2">
                       <button type="button" className="btn-g btn-sm" onClick={() => setFlagOpen(false)}>Cancel</button>

@@ -51,7 +51,7 @@ function MessageBubble({ message }: { message: Message }) {
   if (type === 'image') {
     content = (
       <>
-        <div className="w-[200px] h-[140px] bg-ink2 rounded-lg flex items-center justify-center text-[2rem] mb-[0.3rem]">
+        <div className="w-[200px] h-[140px] bg-ink2 rounded-lg flex items-center justify-center text-3xl mb-1">
           📷
         </div>
         {message.caption && <div>{message.caption}</div>}
@@ -59,8 +59,8 @@ function MessageBubble({ message }: { message: Message }) {
     );
   } else if (type === 'document') {
     content = (
-      <div className="flex items-center gap-[0.4rem]">
-        <span className="text-[1.1rem]">📎</span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-lg">📎</span>
         <span>{message.caption || 'Document'}</span>
       </div>
     );
@@ -74,10 +74,10 @@ function MessageBubble({ message }: { message: Message }) {
 
   return (
     <div
-      className={`max-w-[75%] py-2 px-[0.7rem] rounded-xl text-[0.83rem] leading-[1.45] ${align} ${bubbleBg} ${bubbleBorder}`}
+      className={`max-w-[75%] py-2 px-3 rounded-xl text-sm leading-[1.45] ${align} ${bubbleBg} ${bubbleBorder}`}
     >
       <div>{content}</div>
-      <div className="text-[0.62rem] text-dim text-right mt-[0.2rem]">
+      <div className="text-xs text-dim text-right mt-1">
         {formatTime(message.created_at)}
         {!isInbound && ` · ${message.status || 'sent'}`}
       </div>
@@ -181,7 +181,7 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
 
   if (!customerId) {
     return (
-      <div className="text-center text-dim py-12 text-[0.85rem]">
+      <div className="text-center text-dim py-12 text-base">
         Select a conversation to view messages
       </div>
     );
@@ -191,14 +191,14 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
     <>
       <div
         id="msg-thread-header"
-        className="py-[0.7rem] px-4 border-b border-rim"
+        className="py-3 px-4 border-b border-rim"
       >
-        <div className="flex items-center gap-[0.7rem]">
+        <div className="flex items-center gap-3">
           <div className="flex-1">
-            <div id="msg-thread-name" className="font-semibold text-[0.9rem]">
+            <div id="msg-thread-name" className="font-semibold text-base">
               {displayName}
             </div>
-            <div id="msg-thread-info" className="text-[0.72rem] text-dim">
+            <div id="msg-thread-info" className="text-xs text-dim">
               {displayPhone}
             </div>
           </div>
@@ -217,7 +217,7 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
         {!windowOpen && (
           <div
             id="msg-window-warning"
-            className="mt-[0.4rem] py-[0.3rem] px-[0.6rem] bg-amber-100 rounded-md text-[0.72rem] text-amber-900"
+            className="mt-1.5 py-1 px-2.5 bg-amber-100 rounded-md text-xs text-amber-900"
           >
             ⚠️ 24-hour reply window has expired. Use template messages to contact this customer.
           </div>
@@ -226,12 +226,12 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
       <div
         id="msg-thread-body"
         ref={bodyRef}
-        className="flex-1 overflow-y-auto p-4 flex flex-col gap-[0.4rem]"
+        className="flex-1 overflow-y-auto p-4 flex flex-col gap-1.5"
       >
         {loading ? (
           <div className="spin my-8 mx-auto block w-[22px] h-[22px]" />
         ) : messages.length === 0 ? (
-          <div className="text-center text-dim py-8 text-[0.82rem]">
+          <div className="text-center text-dim py-8 text-sm">
             No messages in this thread
           </div>
         ) : (
@@ -241,7 +241,7 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
       <form
         id="msg-reply-bar"
         onSubmit={handleSend}
-        className="flex p-[0.6rem] border-t border-rim gap-[0.4rem]"
+        className="flex p-2.5 border-t border-rim gap-1.5"
       >
         <input
           id="msg-reply-input"
@@ -249,7 +249,7 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
           onChange={(e) => setReplyText(e.target.value)}
           placeholder={windowOpen ? 'Type a reply…' : '24h window expired'}
           disabled={!windowOpen || sending}
-          className="flex-1 py-2 px-[0.7rem] border border-rim rounded-lg text-[0.85rem]"
+          className="flex-1 py-2 px-3 border border-rim rounded-lg text-base"
         />
         <button
           type="submit"

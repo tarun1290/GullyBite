@@ -127,14 +127,14 @@ export default function RestaurantMessageDrawer({ open, onClose, onThreadLoaded 
 
   return (
     <SlideOverDrawer open={open} onClose={onClose} title="Message Restaurant">
-      <div className="py-[0.7rem] px-4 border-b border-rim">
-        <label className="text-[0.74rem] text-dim block mb-[0.2rem]">
+      <div className="py-3 px-4 border-b border-rim">
+        <label className="text-xs text-dim block mb-1">
           Restaurant
         </label>
         <select
           value={activeId || ''}
           onChange={(e) => setActiveId(e.target.value || null)}
-          className="w-full py-[0.45rem] px-[0.55rem] text-[0.86rem] border border-rim rounded-md bg-ink text-fg"
+          className="w-full py-2 px-2 text-base border border-rim rounded-md bg-ink text-fg"
         >
           <option value="">Select a restaurant…</option>
           {restaurantOptions.map((r) => {
@@ -147,15 +147,15 @@ export default function RestaurantMessageDrawer({ open, onClose, onThreadLoaded 
           })}
         </select>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto py-[0.8rem] px-4 flex flex-col gap-2">
+      <div className="flex-1 min-h-0 overflow-y-auto py-3 px-4 flex flex-col gap-2">
         {!activeId ? (
-          <p className="text-dim text-[0.85rem]">
+          <p className="text-dim text-base">
             Pick a restaurant above to view the thread.
           </p>
         ) : loading && messages.length === 0 ? (
-          <p className="text-dim text-[0.85rem]">Loading…</p>
+          <p className="text-dim text-base">Loading…</p>
         ) : messages.length === 0 ? (
-          <p className="text-dim text-[0.85rem]">
+          <p className="text-dim text-base">
             No messages yet. Send the first one below.
           </p>
         ) : (
@@ -164,16 +164,16 @@ export default function RestaurantMessageDrawer({ open, onClose, onThreadLoaded 
             return (
               <div
                 key={m.id}
-                className={`max-w-[78%] rounded-[10px] py-[0.45rem] px-[0.65rem] border ${
+                className={`max-w-[78%] rounded-r py-2 px-2.5 border ${
                   mine
                     ? 'self-end bg-brand-50 border-brand-300'
                     : 'self-start bg-ink2 border-rim'
                 }`}
               >
-                <div className="text-[0.86rem] whitespace-pre-wrap wrap-break-word">
+                <div className="text-base whitespace-pre-wrap wrap-break-word">
                   {m.message}
                 </div>
-                <div className="text-[0.66rem] text-dim mt-1">
+                <div className="text-xs text-dim mt-1">
                   {mine ? 'Admin (you)' : 'Restaurant'} · {fmtTime(m.created_at)}
                 </div>
               </div>
@@ -181,7 +181,7 @@ export default function RestaurantMessageDrawer({ open, onClose, onThreadLoaded 
           })
         )}
       </div>
-      <div className="border-t border-rim py-[0.6rem] px-3 flex gap-[0.4rem]">
+      <div className="border-t border-rim py-2.5 px-3 flex gap-1.5">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -194,13 +194,13 @@ export default function RestaurantMessageDrawer({ open, onClose, onThreadLoaded 
           placeholder={activeId ? 'Type a message…' : 'Pick a restaurant first'}
           rows={2}
           disabled={sending || !activeId}
-          className="flex-1 resize-none py-2 px-[0.6rem] border border-rim rounded-lg text-[0.86rem] font-[inherit] bg-ink text-fg"
+          className="flex-1 resize-none py-2 px-2.5 border border-rim rounded-lg text-base font-[inherit] bg-ink text-fg"
         />
         <button
           type="button"
           onClick={onSend}
           disabled={sending || !text.trim() || !activeId}
-          className={`py-2 px-[0.9rem] text-white border-0 rounded-lg text-[0.85rem] font-semibold whitespace-nowrap ${
+          className={`py-2 px-3.5 text-white border-0 rounded-lg text-base font-semibold whitespace-nowrap ${
             sending || !text.trim() || !activeId
               ? 'bg-rim cursor-default'
               : 'bg-brand-600 cursor-pointer'

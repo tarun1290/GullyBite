@@ -130,7 +130,7 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
         ref={panelRef}
         className="w-[min(420px,100vw)] h-full bg-white shadow-[-2px_0_16px_rgba(0,0,0,0.12)] flex flex-col"
       >
-        <header className="py-[1.1rem] px-5 border-b border-neutral-200 flex items-center justify-between">
+        <header className="py-4 px-5 border-b border-neutral-200 flex items-center justify-between">
           <div className="text-base font-bold">Wallet</div>
           <button
             type="button" onClick={onClose} aria-label="Close"
@@ -141,13 +141,13 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
         </header>
 
         <section className="p-5 bg-[linear-gradient(135deg,#ecfdf5_0%,#d1fae5_100%)] border-b border-neutral-200">
-          <div className="text-[0.75rem] text-emerald-700 font-semibold tracking-wider uppercase">
+          <div className="text-xs text-emerald-700 font-semibold tracking-wider uppercase">
             Balance
           </div>
-          <div className="text-[2rem] font-extrabold text-emerald-900 mt-1">
+          <div className="text-3xl font-extrabold text-emerald-900 mt-1">
             {loading ? '…' : rupees(bal)}
           </div>
-          <div className="flex gap-5 mt-4 text-[0.78rem] text-emerald-800 flex-wrap">
+          <div className="flex gap-5 mt-4 text-sm text-emerald-800 flex-wrap">
             <div>
               <div className="font-semibold">Earned this month</div>
               <div>{rupees(wallet?.current_month_earnings_rs as number | undefined)}</div>
@@ -161,23 +161,23 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
             type="button"
             disabled={!campaignsEnabled}
             title={campaignsEnabled ? 'Add money' : 'Available when campaigns are active'}
-            className={`mt-4 py-[0.55rem] px-4 rounded-lg border-0 text-[0.82rem] font-bold ${campaignsEnabled ? 'cursor-pointer bg-emerald-600 text-white' : 'cursor-not-allowed bg-neutral-300 text-neutral-500'}`}
+            className={`mt-4 py-2 px-4 rounded-lg border-0 text-sm font-bold ${campaignsEnabled ? 'cursor-pointer bg-emerald-600 text-white' : 'cursor-not-allowed bg-neutral-300 text-neutral-500'}`}
           >
             + Add Money
           </button>
         </section>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="pt-[0.85rem] px-5 pb-2 text-[0.72rem] font-bold text-neutral-500 tracking-wider uppercase">
+          <div className="pt-3.5 px-5 pb-2 text-xs font-bold text-neutral-500 tracking-wider uppercase">
             Transactions
           </div>
 
           {loading && (
-            <div className="p-5 text-neutral-500 text-[0.85rem]">Loading…</div>
+            <div className="p-5 text-neutral-500 text-base">Loading…</div>
           )}
 
           {!loading && items.length === 0 && (
-            <div className="p-5 text-neutral-500 text-[0.85rem]">
+            <div className="p-5 text-neutral-500 text-base">
               No transactions yet. Order payouts and charges will appear here.
             </div>
           )}
@@ -191,29 +191,29 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
             return (
               <div
                 key={t._id || `${t.created_at}-${t.reference_id}`}
-                className="py-[0.85rem] px-5 border-b border-[#f3f4f6] flex justify-between gap-3"
+                className="py-3.5 px-5 border-b border-[#f3f4f6] flex justify-between gap-3"
               >
                 <div className="min-w-0">
                   <span
-                    className="inline-block text-[0.68rem] font-bold py-[0.15rem] px-2 rounded-full mb-1"
+                    className="inline-block text-xs font-bold py-0.5 px-2 rounded-full mb-1"
                     // bg/fg from TONE_STYLES by meta.tone at runtime
                     // (credit/debit — 2 distinct hex pairs).
                     style={{ background: badge.bg, color: badge.fg }}
                   >
                     {meta.label}
                   </span>
-                  <div className="text-[0.82rem] text-neutral-900 overflow-hidden text-ellipsis whitespace-nowrap">
+                  <div className="text-sm text-neutral-900 overflow-hidden text-ellipsis whitespace-nowrap">
                     {t.description || '—'}
                   </div>
-                  <div className="text-[0.72rem] text-neutral-400 mt-[0.15rem]">
+                  <div className="text-xs text-neutral-400 mt-0.5">
                     {formatDate(t.created_at)}
                   </div>
                 </div>
                 <div className="text-right whitespace-nowrap">
-                  <div className={`text-[0.9rem] font-bold ${isCredit ? 'text-emerald-800' : 'text-red-800'}`}>
+                  <div className={`text-base font-bold ${isCredit ? 'text-emerald-800' : 'text-red-800'}`}>
                     {signed}
                   </div>
-                  <div className="text-[0.7rem] text-neutral-400 mt-[0.15rem]">
+                  <div className="text-xs text-neutral-400 mt-0.5">
                     Bal {rupees(t.balance_after_rs)}
                   </div>
                 </div>
@@ -222,12 +222,12 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
           })}
 
           {!loading && hasMore && (
-            <div className="py-[0.85rem] px-5 text-center">
+            <div className="py-3.5 px-5 text-center">
               <button
                 type="button"
                 onClick={handleLoadMore}
                 disabled={loadingMore}
-                className={`py-2 px-4 rounded-lg border border-neutral-300 bg-white text-[0.8rem] font-semibold text-neutral-700 ${loadingMore ? 'cursor-wait' : 'cursor-pointer'}`}
+                className={`py-2 px-4 rounded-lg border border-neutral-300 bg-white text-sm font-semibold text-neutral-700 ${loadingMore ? 'cursor-wait' : 'cursor-pointer'}`}
               >
                 {loadingMore ? 'Loading…' : 'Load more'}
               </button>

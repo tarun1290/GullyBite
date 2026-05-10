@@ -34,9 +34,9 @@ interface TileProps { label: string; value: string }
 
 function Tile({ label, value }: TileProps) {
   return (
-    <div className="bg-ink2 rounded-lg py-[0.65rem] px-[0.8rem] text-center">
-      <div className="text-[0.7rem] text-dim mb-[0.2rem]">{label}</div>
-      <div className="text-[0.88rem] font-semibold">{value}</div>
+    <div className="bg-ink2 rounded-lg py-2.5 px-3 text-center">
+      <div className="text-xs text-dim mb-1">{label}</div>
+      <div className="text-base font-semibold">{value}</div>
     </div>
   );
 }
@@ -90,7 +90,7 @@ export default function PricingSection() {
   const hintPct = Math.min(100, Math.max(0, parseInt(String(form.deliveryFeeCustomerPct), 10) || 0));
 
   return (
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch justify-between">
         <h3>Pricing &amp; Charges</h3>
         {!editing && (
@@ -101,7 +101,7 @@ export default function PricingSection() {
       </div>
       <div className="cb">
         {!editing ? (
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-[0.8rem]">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3">
             <Tile label="GST Mode" value={gstLabel} />
             <Tile
               label="Delivery Split"
@@ -122,13 +122,13 @@ export default function PricingSection() {
                   <option value="extra">Add 5% food GST at checkout</option>
                 </select>
                 {form.menuGstMode === 'extra' && (
-                  <div className="text-[0.75rem] text-dim mt-[0.3rem]">
+                  <div className="text-xs text-dim mt-1">
                     Customers will see a &quot;Food GST (5%)&quot; line item.
                   </div>
                 )}
               </Field>
               <Field label="Delivery Fee — Customer Pays (%)" className="span2">
-                <div className="flex items-center gap-[0.6rem]">
+                <div className="flex items-center gap-2.5">
                   <input
                     type="number"
                     min={0}
@@ -138,9 +138,9 @@ export default function PricingSection() {
                     onChange={(e) => setForm((p) => ({ ...p, deliveryFeeCustomerPct: e.target.value }))}
                     className="w-[100px]"
                   />
-                  <span className="text-[0.82rem] text-dim">% charged to customer</span>
+                  <span className="text-sm text-dim">% charged to customer</span>
                 </div>
-                <div className="text-[0.78rem] text-dim mt-[0.45rem] leading-[1.55] bg-ink4 rounded-[7px] py-[0.45rem] px-[0.7rem] border border-rim">
+                <div className="text-sm text-dim mt-2 leading-[1.55] bg-ink4 rounded-md py-2 px-3 border border-rim">
                   Customer pays <strong>{hintPct}%</strong> of the delivery fee. Your restaurant
                   absorbs <strong>{100 - hintPct}%</strong>.
                   <br />
@@ -173,7 +173,7 @@ export default function PricingSection() {
               </Field>
             </div>
 
-            <div className="flex gap-2 mt-[1.1rem]">
+            <div className="flex gap-2 mt-4">
               <button
                 type="button"
                 className="btn-p"

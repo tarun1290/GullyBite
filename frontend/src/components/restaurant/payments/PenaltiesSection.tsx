@@ -83,7 +83,7 @@ export default function PenaltiesSection() {
     <div id="tab-penalties-wrap" className="flex flex-col gap-4">
       <div>
         <h2 className="m-0">Penalties</h2>
-        <p className="mt-1 text-dim text-[0.85rem]">
+        <p className="mt-1 text-dim text-base">
           Charges applied to your account due to order cancellations.
         </p>
       </div>
@@ -91,20 +91,20 @@ export default function PenaltiesSection() {
       <div className="card mb-0">
         <div className="ch flex-wrap gap-2">
           <h3 className="m-0">Total Penalty Charges</h3>
-          <div className="ml-auto flex gap-[0.4rem] items-center">
+          <div className="ml-auto flex gap-1.5 items-center">
             <input
               type="date"
               id="penalties-from"
               value={fromInput}
               onChange={(e) => setFromInput(e.target.value)}
-              className="text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
+              className="text-xs py-1 px-2 border border-rim rounded-md"
             />
             <input
               type="date"
               id="penalties-to"
               value={toInput}
               onChange={(e) => setToInput(e.target.value)}
-              className="text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
+              className="text-xs py-1 px-2 border border-rim rounded-md"
             />
             <button type="button" className="btn-g btn-sm" onClick={applyFilter} disabled={loading}>Filter</button>
             {(from || to) && (
@@ -113,10 +113,10 @@ export default function PenaltiesSection() {
           </div>
         </div>
         <div className="cb">
-          <div className={`text-[1.6rem] font-bold ${total > 0 ? 'text-red-500' : 'text-fg'}`}>
+          <div className={`text-2xl font-bold ${total > 0 ? 'text-red-500' : 'text-fg'}`}>
             {formatINR(total)}
           </div>
-          <div className="text-[0.75rem] text-dim mt-[0.2rem]">
+          <div className="text-xs text-dim mt-1">
             {rows.length} {rows.length === 1 ? 'charge' : 'charges'}
             {(from || to) ? ' in selected period' : ' (all-time)'}
           </div>
@@ -134,39 +134,39 @@ export default function PenaltiesSection() {
             <p className="p-4 text-red-500">{error}</p>
           ) : rows.length === 0 ? (
             <div className="empty py-6 px-4 text-center">
-              <div className="ei text-[1.5rem]">✅</div>
-              <h3 className="mt-[0.4rem] mb-[0.2rem]">No penalty charges in this period</h3>
-              <p className="text-dim text-[0.85rem] m-0">
+              <div className="ei text-2xl">✅</div>
+              <h3 className="mt-1.5 mb-1">No penalty charges in this period</h3>
+              <p className="text-dim text-base m-0">
                 Penalty charges appear when an order is rejected or times out before acceptance.
               </p>
             </div>
           ) : (
             <table className="w-full border-collapse">
               <thead>
-                <tr className="text-left text-[0.72rem] text-dim uppercase tracking-wider">
-                  <th className="py-[0.4rem] px-[0.2rem]">Order #</th>
-                  <th className="py-[0.4rem] px-[0.2rem]">Date</th>
-                  <th className="py-[0.4rem] px-[0.2rem] text-right">Order Value</th>
-                  <th className="py-[0.4rem] px-[0.2rem]">Reason</th>
-                  <th className="py-[0.4rem] px-[0.2rem] text-right">Fee Charged</th>
+                <tr className="text-left text-xs text-dim uppercase tracking-wider">
+                  <th className="py-1.5 px-1">Order #</th>
+                  <th className="py-1.5 px-1">Date</th>
+                  <th className="py-1.5 px-1 text-right">Order Value</th>
+                  <th className="py-1.5 px-1">Reason</th>
+                  <th className="py-1.5 px-1 text-right">Fee Charged</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.orderId} className="border-t border-bd">
-                    <td className="py-2 px-[0.2rem] font-mono text-[0.82rem]">
+                    <td className="py-2 px-1 font-mono text-sm">
                       {r.orderNumber}
                     </td>
-                    <td className="py-2 px-[0.2rem] text-[0.82rem]">
+                    <td className="py-2 px-1 text-sm">
                       {formatDate(r.createdAt)}
                     </td>
-                    <td className="py-2 px-[0.2rem] text-[0.82rem] text-right">
+                    <td className="py-2 px-1 text-sm text-right">
                       {formatINR(r.orderTotal)}
                     </td>
-                    <td className="py-2 px-[0.2rem] text-[0.82rem]">
+                    <td className="py-2 px-1 text-sm">
                       {REASON_LABEL[r.reason] || r.reason || '—'}
                     </td>
-                    <td className="py-2 px-[0.2rem] text-[0.82rem] text-right text-red-500 font-semibold">
+                    <td className="py-2 px-1 text-sm text-right text-red-500 font-semibold">
                       −{formatINR(r.amount)}
                     </td>
                   </tr>

@@ -323,12 +323,12 @@ export default function NewOrderPopup() {
         className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[560px] max-h-[90vh] z-9999 bg-white border border-rim rounded-xl shadow-[0_20px_50px_-10px_rgba(15,23,42,0.35),0_6px_18px_rgba(15,23,42,0.2)] overflow-hidden flex flex-col"
       >
       {/* Header */}
-      <div className="py-3 px-4 border-b border-rim flex items-center justify-between gap-[0.6rem] bg-amber-100">
+      <div className="py-3 px-4 border-b border-rim flex items-center justify-between gap-2.5 bg-amber-100">
         <div className="flex items-center gap-2 min-w-0">
           <span aria-hidden className="text-base">🔔</span>
-          <strong className="text-[0.88rem] text-amber-900">New Order</strong>
+          <strong className="text-base text-amber-900">New Order</strong>
           {total > 1 && (
-            <span className="text-[0.72rem] text-amber-900 opacity-85">· {positionLabel}</span>
+            <span className="text-xs text-amber-900 opacity-85">· {positionLabel}</span>
           )}
         </div>
         {total > 1 && (
@@ -336,7 +336,7 @@ export default function NewOrderPopup() {
             type="button"
             onClick={handleNext}
             disabled={!!busy}
-            className="bg-transparent border border-yellow-200 text-amber-900 py-[0.2rem] px-[0.55rem] rounded-md text-[0.74rem] cursor-pointer disabled:cursor-not-allowed"
+            className="bg-transparent border border-yellow-200 text-amber-900 py-1 px-2 rounded-md text-xs cursor-pointer disabled:cursor-not-allowed"
             aria-label="Show next pending order"
           >
             Next →
@@ -345,43 +345,43 @@ export default function NewOrderPopup() {
       </div>
 
       {/* Body */}
-      <div className="py-[0.9rem] px-4 max-h-[60vh] overflow-y-auto text-[0.84rem]">
+      <div className="py-3.5 px-4 max-h-[60vh] overflow-y-auto text-sm">
         {detailLoading || !o ? (
-          <div className="p-[1.2rem] text-center text-dim">
+          <div className="p-5 text-center text-dim">
             Loading order details…
           </div>
         ) : (
           <>
-            <div className="flex justify-between gap-3 mb-[0.6rem]">
+            <div className="flex justify-between gap-3 mb-2.5">
               <div className="min-w-0">
                 <div className="font-bold truncate">#{orderRef}</div>
-                <div className="text-[0.72rem] text-dim truncate">
+                <div className="text-xs text-dim truncate">
                   {fmtTime(o.created_at)}
                 </div>
               </div>
               <div className="text-right min-w-0">
-                <div className="text-[0.72rem] text-dim truncate">{o.branch_name || ''}</div>
-                <div className="text-[0.72rem] text-dim truncate">{customerLabel(o)}</div>
+                <div className="text-xs text-dim truncate">{o.branch_name || ''}</div>
+                <div className="text-xs text-dim truncate">{customerLabel(o)}</div>
               </div>
             </div>
 
-            <div className="border-t border-dashed border-rim2 pt-[0.4rem] mb-[0.6rem]">
-              <div className="flex justify-between text-[0.78rem]">
+            <div className="border-t border-dashed border-rim2 pt-1.5 mb-2.5">
+              <div className="flex justify-between text-sm">
                 <span className="text-dim">Subtotal</span>
                 <span>{formatRs(o.subtotal_rs)}</span>
               </div>
-              <div className="flex justify-between text-[0.78rem]">
+              <div className="flex justify-between text-sm">
                 <span className="text-dim">Delivery</span>
                 <span>{formatRs(o.delivery_fee_total_rs ?? o.delivery_fee_rs)}</span>
               </div>
-              <div className="flex justify-between mt-[0.2rem] font-bold">
+              <div className="flex justify-between mt-1 font-bold">
                 <span>Total</span>
                 <span>{formatRs(o.total_rs)}</span>
               </div>
             </div>
 
             {o.delivery_address ? (
-              <div className="text-[0.74rem] text-dim mb-[0.6rem]">
+              <div className="text-xs text-dim mb-2.5">
                 📍 {o.delivery_address}
               </div>
             ) : null}
@@ -391,8 +391,8 @@ export default function NewOrderPopup() {
                 leader is a flex spacer with a dotted bottom border —
                 expands to fill horizontal slack between name and price. */}
             {items.length > 0 ? (
-              <div className="mb-[0.6rem]">
-                <div className="text-[0.72rem] text-dim mb-1">Items</div>
+              <div className="mb-2.5">
+                <div className="text-xs text-dim mb-1">Items</div>
                 {items.map((it, idx) => {
                   const name = it.item_name || it.name || '—';
                   const qty = Number(it.quantity || 1);
@@ -401,14 +401,14 @@ export default function NewOrderPopup() {
                   return (
                     <div
                       key={(it as { id?: string }).id || idx}
-                      className="flex items-end gap-[0.4rem] text-[0.82rem] py-[0.18rem]"
+                      className="flex items-end gap-1.5 text-sm py-0.5"
                     >
                       <span className="whitespace-nowrap">
                         <span className="text-dim">{qty}×</span>{' '}
                         <span className="font-medium">{name}</span>
                         {it.size ? <span className="text-dim">{` (${it.size})`}</span> : null}
                       </span>
-                      <span aria-hidden className="flex-1 min-w-[0.4rem] border-b border-dotted border-rim2 mb-[0.32em]" />
+                      <span aria-hidden className="flex-1 min-w-1.5 border-b border-dotted border-rim2 mb-[0.32em]" />
                       <span className="whitespace-nowrap tabular-nums">
                         {Number.isFinite(priceVal) ? formatRs(priceVal) : '—'}
                       </span>
@@ -421,10 +421,10 @@ export default function NewOrderPopup() {
             {/* Instructions row — conditional on a non-empty value
                 across any of the three accepted field names. */}
             {hasInstructions ? (
-              <div className="mb-[0.4rem] py-[0.45rem] px-[0.65rem] bg-amber-100 border border-yellow-200 rounded-md text-[0.78rem] text-amber-900 flex gap-[0.45rem] items-start">
+              <div className="mb-1.5 py-2 px-2.5 bg-amber-100 border border-yellow-200 rounded-md text-sm text-amber-900 flex gap-2 items-start">
                 <span aria-hidden>📝</span>
                 <div>
-                  <div className="font-semibold mb-[0.1rem]">Instructions</div>
+                  <div className="font-semibold mb-0.5">Instructions</div>
                   <div className="whitespace-pre-wrap wrap-break-word">{instructionsText}</div>
                 </div>
               </div>
@@ -438,7 +438,7 @@ export default function NewOrderPopup() {
           .btn-del-solid so the two buttons read at the same visual
           weight. flex-1 + justify-center stretches each across half
           the row width. */}
-      <div className="py-[0.7rem] px-4 border-t border-rim flex gap-2">
+      <div className="py-3 px-4 border-t border-rim flex gap-2">
         <button
           type="button"
           onClick={handleConfirm}

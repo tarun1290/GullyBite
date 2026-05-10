@@ -1,5 +1,7 @@
 // Root layout. Two jobs:
-//   1. Mount the AuthProvider so screens can subscribe to auth state.
+//   1. Mount the StaffProvider so screens can subscribe to session
+//      state via useStaff() (token, role, staff record, permissions,
+//      branch selection, owner identity).
 //   2. Route guard — redirect to /login or /(app)/orders based on auth.
 //
 // Part 6b cleanup (2026-05-10): the legacy deep-link handler that
@@ -7,6 +9,12 @@
 // the token under AsyncStorage 'pending_staff_access_token' was removed.
 // The current login flow uses store_slug + staff_id + pin (see
 // app/login.tsx) and nothing reads pending_staff_access_token any more.
+//
+// Part 6c unification (2026-05-10): the previously-separate AuthProvider
+// (src/store/authStore.tsx) was folded into StaffProvider, collapsing
+// the dual auth/staff context into a single provider with one logout
+// path. authStore.tsx is gone; useStaff() exposes everything formerly
+// behind useAuth().
 
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -17,8 +25,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { AuthProvider, useAuth } from '@/store/authStore';
-import { StaffProvider } from '@/state/StaffContext';
+import { StaffProvider, useStaff } from '@/state/StaffContext';
 import { setupNotificationHandler } from '@/push';
 import { colors } from '@/theme';
 
@@ -26,7 +33,7 @@ function RootInner() {
   const [ready, setReady] = useState(false);
   const router = useRouter();
   const segments = useSegments();
-  const { token, role, isLoading: authLoading } = useAuth();
+  const { token, role, isLoading: authLoading } = useStaff();
   const notifListener = useRef<Notifications.EventSubscription | null>(null);
 
   useEffect(() => {
@@ -152,19 +159,15 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar style="dark" />
-        {/* StaffProvider sits outside AuthProvider so useStaff() is
-            available everywhere (including the login surface, which
-            needs refresh() after a successful POST /auth). The two
-            providers manage independent state: AuthProvider owns
-            multi-branch + role + owner-info; StaffProvider owns the
-            sanitized staff record + 10-key permission set. The
-            ordering also lets AuthProvider consume useStaff() so its
-            logout() can chain through staffSignOut() and clear both
-            credential bundles in a single user-driven action (Part 6b). */}
+        {/* StaffProvider is the single source of truth for the
+            authenticated session — token, role, restaurant, owner
+            identity, multi-branch selection, AND the sanitized /me
+            staff record + permission map. It exposes useStaff() (and a
+            useIsAuthenticated() helper). The legacy AuthProvider /
+            useAuth surface was folded in during Part 6c; consumers
+            should call useStaff() directly. */}
         <StaffProvider>
-          <AuthProvider>
-            <RootInner />
-          </AuthProvider>
+          <RootInner />
         </StaffProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

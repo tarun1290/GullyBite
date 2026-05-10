@@ -84,9 +84,9 @@ const EMPTY_FORM: FestivalFormState = {
   year: '',
 };
 
-const TH_CLS = 'py-[0.55rem] px-[0.7rem] text-left font-semibold text-[0.78rem] text-neutral-700';
-const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-middle';
-const INPUT_CLS = 'py-[0.4rem] px-[0.55rem] border border-neutral-200 rounded-md w-full';
+const TH_CLS = 'py-2 px-3 text-left font-semibold text-sm text-neutral-700';
+const TD_CLS = 'py-2 px-3 align-middle';
+const INPUT_CLS = 'py-1.5 px-2 border border-neutral-200 rounded-md w-full';
 
 export default function AdminFestivalsPage() {
   const { showToast } = useToast();
@@ -212,7 +212,7 @@ export default function AdminFestivalsPage() {
       <div className="flex justify-between items-center mb-4 gap-2 flex-wrap">
         <div>
           <h2 className="m-0">Festival Calendar</h2>
-          <div className="text-[0.84rem] text-dim mt-[0.2rem]">
+          <div className="text-sm text-dim mt-1">
             Platform-wide Indian occasions. Restaurants are nudged 48h before each festival to send a campaign.
           </div>
         </div>
@@ -220,7 +220,7 @@ export default function AdminFestivalsPage() {
           <select
             value={yearFilter}
             onChange={(e) => setYearFilter(e.target.value)}
-            className="py-[0.4rem] px-[0.6rem] border border-neutral-200 rounded-md"
+            className="py-1.5 px-2.5 border border-neutral-200 rounded-md"
           >
             <option value="">All years</option>
             {Array.from(new Set(rows.map((r) => r.year ?? 0))).sort((a, b) => b - a).map((y) => (
@@ -247,10 +247,10 @@ export default function AdminFestivalsPage() {
           <div key={year} className="card mb-4">
             <div className="ch flex justify-between">
               <strong>{year}</strong>
-              <span className="text-[0.78rem] text-dim">{list.length} festivals</span>
+              <span className="text-sm text-dim">{list.length} festivals</span>
             </div>
             <div className="cb p-0 overflow-x-auto">
-              <table className="w-full border-collapse text-[0.85rem]">
+              <table className="w-full border-collapse text-base">
                 <thead className="bg-panel">
                   <tr>
                     <th className={TH_CLS}>Festival</th>
@@ -266,7 +266,7 @@ export default function AdminFestivalsPage() {
                     <tr key={r.slug} className="border-t border-neutral-200">
                       <td className={TD_CLS}>
                         <div className="font-medium">{r.name}</div>
-                        <div className="text-[0.72rem] text-dim">{r.slug}</div>
+                        <div className="text-xs text-dim">{r.slug}</div>
                       </td>
                       <td className={TD_CLS}>{fmtDate(r.date)}</td>
                       <td className={TD_CLS}>{fmtDate(r.notification_date)}</td>
@@ -288,7 +288,7 @@ export default function AdminFestivalsPage() {
 
       {modal && (
         <Modal onClose={closeModal} title={modal.mode === 'create' ? 'Add Festival' : 'Edit Festival'}>
-          <div className="grid gap-[0.6rem]">
+          <div className="grid gap-2.5">
             <FormRow label="Name">
               <input
                 type="text"
@@ -364,7 +364,7 @@ export default function AdminFestivalsPage() {
               />
             </FormRow>
           </div>
-          <div className="flex justify-end gap-[0.4rem] mt-4">
+          <div className="flex justify-end gap-1.5 mt-4">
             <button className="btn-g btn-sm" onClick={closeModal} disabled={busy}>Cancel</button>
             <button className="btn-p btn-sm" onClick={saveModal} disabled={busy}>
               {busy ? 'Saving…' : 'Save'}
@@ -380,8 +380,8 @@ interface FormRowProps { label: string; children: ReactNode }
 
 function FormRow({ label, children }: FormRowProps): ReactNode {
   return (
-    <label className="grid grid-cols-[140px_1fr] items-center gap-[0.6rem]">
-      <span className="text-[0.82rem] text-dim">{label}</span>
+    <label className="grid grid-cols-[140px_1fr] items-center gap-2.5">
+      <span className="text-sm text-dim">{label}</span>
       <div>{children}</div>
     </label>
   );
@@ -403,7 +403,7 @@ function Modal({ title, onClose, children }: ModalProps): ReactNode {
           <h3 className="m-0">{title}</h3>
           <button
             onClick={onClose}
-            className="bg-none border-0 text-[1.1rem] cursor-pointer"
+            className="bg-none border-0 text-lg cursor-pointer"
             aria-label="Close"
           >×</button>
         </div>

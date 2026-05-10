@@ -173,7 +173,7 @@ export default function AdminFeesPage() {
     <div id="tab-admin-fees" className="flex flex-col gap-4">
       <div>
         <h2 className="m-0">Fees</h2>
-        <p className="mt-1 mb-0 text-dim text-[0.85rem]">
+        <p className="mt-1 mb-0 text-dim text-base">
           Cancellation-fault and platform-absorbed fee accounting across all restaurants.
         </p>
       </div>
@@ -182,20 +182,20 @@ export default function AdminFeesPage() {
       <div className="card">
         <div className="ch flex-wrap gap-2">
           <h3 className="m-0">Date range</h3>
-          <div className="ml-auto flex gap-[0.4rem] items-center">
+          <div className="ml-auto flex gap-1.5 items-center">
             <input
               type="date"
               id="admin-fees-from"
               value={fromInput}
               onChange={(e) => setFromInput(e.target.value)}
-              className="text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
+              className="text-xs py-1 px-2 border border-rim rounded-md"
             />
             <input
               type="date"
               id="admin-fees-to"
               value={toInput}
               onChange={(e) => setToInput(e.target.value)}
-              className="text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
+              className="text-xs py-1 px-2 border border-rim rounded-md"
             />
             <button type="button" className="btn-g btn-sm" onClick={applyFilter} disabled={summaryLoading}>Filter</button>
             {(from || to) && (
@@ -227,7 +227,7 @@ export default function AdminFeesPage() {
       {/* Tabs */}
       <div className="card">
         <div className="ch flex-wrap gap-2">
-          <div className="flex gap-[0.4rem]">
+          <div className="flex gap-1.5">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -245,7 +245,7 @@ export default function AdminFeesPage() {
               <select
                 value={restaurantId}
                 onChange={onRestaurantChange}
-                className="text-[0.78rem] py-[0.3rem] px-2 border border-rim rounded-md"
+                className="text-sm py-1 px-2 border border-rim rounded-md"
               >
                 <option value="">All restaurants</option>
                 {restaurantOptions.map((r) => (
@@ -289,11 +289,11 @@ function SummaryCard({ label, amount, count, loading, color, note }: SummaryCard
   return (
     <div className="card mb-0">
       <div className="cb">
-        <div className="text-[0.75rem] text-dim uppercase tracking-wider">
+        <div className="text-xs text-dim uppercase tracking-wider">
           {label}
         </div>
         <div
-          className="text-[1.6rem] font-bold mt-[0.3rem]"
+          className="text-2xl font-bold mt-1"
           // colour is the per-card amount tint passed by the parent at
           // runtime (red for restaurant faults, amber for platform
           // absorbed). Hex/var fallback strings — kept inline.
@@ -301,11 +301,11 @@ function SummaryCard({ label, amount, count, loading, color, note }: SummaryCard
         >
           {loading ? '…' : formatINR(amount)}
         </div>
-        <div className="text-[0.8rem] text-dim mt-[0.2rem]">
+        <div className="text-sm text-dim mt-1">
           {loading ? 'Loading…' : `${Number(count) || 0} ${Number(count) === 1 ? 'incident' : 'incidents'}`}
         </div>
         {note && (
-          <div className="text-[0.7rem] text-dim mt-[0.4rem] italic">
+          <div className="text-xs text-dim mt-1.5 italic">
             {note}
           </div>
         )}
@@ -330,9 +330,9 @@ function RestaurantFaultsTable({ rows, loading, error }: RestaurantFaultsTablePr
   if (!rows.length) {
     return (
       <div className="empty py-6 px-4 text-center">
-        <div className="ei text-[1.5rem]">✅</div>
-        <h3 className="mt-[0.4rem] mb-[0.2rem]">No restaurant-fault fees in this period</h3>
-        <p className="text-dim text-[0.85rem] m-0">
+        <div className="ei text-2xl">✅</div>
+        <h3 className="mt-1.5 mb-1">No restaurant-fault fees in this period</h3>
+        <p className="text-dim text-base m-0">
           Fees appear when an order is rejected or times out before acceptance.
         </p>
       </div>
@@ -342,26 +342,26 @@ function RestaurantFaultsTable({ rows, loading, error }: RestaurantFaultsTablePr
     <div className="tbl overflow-x-auto">
       <table className="w-full border-collapse">
         <thead>
-          <tr className="text-left text-[0.72rem] text-dim uppercase tracking-wider">
-            <th className="py-[0.4rem] px-[0.2rem]">Date</th>
-            <th className="py-[0.4rem] px-[0.2rem]">Order #</th>
-            <th className="py-[0.4rem] px-[0.2rem]">Restaurant</th>
-            <th className="py-[0.4rem] px-[0.2rem] text-right">Order Value</th>
-            <th className="py-[0.4rem] px-[0.2rem]">Reason</th>
-            <th className="py-[0.4rem] px-[0.2rem] text-right">Fee Charged</th>
+          <tr className="text-left text-xs text-dim uppercase tracking-wider">
+            <th className="py-1.5 px-1">Date</th>
+            <th className="py-1.5 px-1">Order #</th>
+            <th className="py-1.5 px-1">Restaurant</th>
+            <th className="py-1.5 px-1 text-right">Order Value</th>
+            <th className="py-1.5 px-1">Reason</th>
+            <th className="py-1.5 px-1 text-right">Fee Charged</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.orderId} className="border-t border-bd">
-              <td className="py-2 px-[0.2rem] text-[0.82rem]">{formatDate(r.createdAt)}</td>
-              <td className="py-2 px-[0.2rem] font-mono text-[0.82rem]">{r.orderNumber}</td>
-              <td className="py-2 px-[0.2rem] text-[0.82rem]">{r.restaurantName || '—'}</td>
-              <td className="py-2 px-[0.2rem] text-[0.82rem] text-right">{formatINR(r.orderTotal)}</td>
-              <td className="py-2 px-[0.2rem] text-[0.82rem]">
+              <td className="py-2 px-1 text-sm">{formatDate(r.createdAt)}</td>
+              <td className="py-2 px-1 font-mono text-sm">{r.orderNumber}</td>
+              <td className="py-2 px-1 text-sm">{r.restaurantName || '—'}</td>
+              <td className="py-2 px-1 text-sm text-right">{formatINR(r.orderTotal)}</td>
+              <td className="py-2 px-1 text-sm">
                 {RESTAURANT_FAULT_REASON_LABEL[r.reason] || r.reason || '—'}
               </td>
-              <td className="py-2 px-[0.2rem] text-[0.82rem] text-right text-red-500 font-semibold">
+              <td className="py-2 px-1 text-sm text-right text-red-500 font-semibold">
                 {formatINR(r.amount)}
               </td>
             </tr>
@@ -381,7 +381,7 @@ interface PlatformAbsorbedTableProps {
 function PlatformAbsorbedTable({ rows, loading, error }: PlatformAbsorbedTableProps) {
   return (
     <>
-      <div className="bg-[rgba(217,119,6,0.08)] border border-[rgba(217,119,6,0.25)] rounded-lg py-[0.6rem] px-[0.8rem] mb-[0.8rem] text-[0.8rem] text-fg">
+      <div className="bg-[rgba(217,119,6,0.08)] border border-[rgba(217,119,6,0.25)] rounded-lg py-2.5 px-3 mb-3 text-sm text-fg">
         These fees will be discussed for compensation with Prorouting.
       </div>
       {loading && !rows.length ? (
@@ -390,9 +390,9 @@ function PlatformAbsorbedTable({ rows, loading, error }: PlatformAbsorbedTablePr
         <p className="p-4 text-red-500">{error}</p>
       ) : !rows.length ? (
         <div className="empty py-6 px-4 text-center">
-          <div className="ei text-[1.5rem]">✅</div>
-          <h3 className="mt-[0.4rem] mb-[0.2rem]">No platform-absorbed fees in this period</h3>
-          <p className="text-dim text-[0.85rem] m-0">
+          <div className="ei text-2xl">✅</div>
+          <h3 className="mt-1.5 mb-1">No platform-absorbed fees in this period</h3>
+          <p className="text-dim text-base m-0">
             Fees appear when Prorouting can&apos;t allocate a rider after the restaurant accepts.
           </p>
         </div>
@@ -400,22 +400,22 @@ function PlatformAbsorbedTable({ rows, loading, error }: PlatformAbsorbedTablePr
         <div className="tbl overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="text-left text-[0.72rem] text-dim uppercase tracking-wider">
-                <th className="py-[0.4rem] px-[0.2rem]">Date</th>
-                <th className="py-[0.4rem] px-[0.2rem]">Order #</th>
-                <th className="py-[0.4rem] px-[0.2rem]">Restaurant</th>
-                <th className="py-[0.4rem] px-[0.2rem] text-right">Order Value</th>
-                <th className="py-[0.4rem] px-[0.2rem] text-right">Fee Amount</th>
+              <tr className="text-left text-xs text-dim uppercase tracking-wider">
+                <th className="py-1.5 px-1">Date</th>
+                <th className="py-1.5 px-1">Order #</th>
+                <th className="py-1.5 px-1">Restaurant</th>
+                <th className="py-1.5 px-1 text-right">Order Value</th>
+                <th className="py-1.5 px-1 text-right">Fee Amount</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.orderId} className="border-t border-bd">
-                  <td className="py-2 px-[0.2rem] text-[0.82rem]">{formatDate(r.createdAt)}</td>
-                  <td className="py-2 px-[0.2rem] font-mono text-[0.82rem]">{r.orderNumber}</td>
-                  <td className="py-2 px-[0.2rem] text-[0.82rem]">{r.restaurantName || '—'}</td>
-                  <td className="py-2 px-[0.2rem] text-[0.82rem] text-right">{formatINR(r.orderTotal)}</td>
-                  <td className="py-2 px-[0.2rem] text-[0.82rem] text-right text-amber-600 font-semibold">
+                  <td className="py-2 px-1 text-sm">{formatDate(r.createdAt)}</td>
+                  <td className="py-2 px-1 font-mono text-sm">{r.orderNumber}</td>
+                  <td className="py-2 px-1 text-sm">{r.restaurantName || '—'}</td>
+                  <td className="py-2 px-1 text-sm text-right">{formatINR(r.orderTotal)}</td>
+                  <td className="py-2 px-1 text-sm text-right text-amber-600 font-semibold">
                     {formatINR(r.amount)}
                   </td>
                 </tr>

@@ -7,14 +7,14 @@ import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'r
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 
-import { useAuth } from '@/store/authStore';
+import { useStaff } from '@/state/StaffContext';
 import { colors, fontWeight, radius, space, text } from '@/theme';
 
 const FULL_DASHBOARD_URL = 'https://gullybite.duckdns.org';
 
 export default function OwnerSettingsScreen() {
   const router = useRouter();
-  const { restaurant, ownerInfo, logout } = useAuth();
+  const { restaurant, ownerInfo, logout } = useStaff();
   const version = Constants.expoConfig?.version || '—';
 
   return (

@@ -242,30 +242,30 @@ export default function OrdersPage() {
 
   return (
     <div id="tab-orders">
-      <div className="flex gap-[0.6rem] items-center flex-wrap mb-[0.6rem]">
-        <label className="flex items-center gap-[0.35rem] text-[0.78rem] text-dim">
+      <div className="flex gap-2.5 items-center flex-wrap mb-2.5">
+        <label className="flex items-center gap-1.5 text-sm text-dim">
           From
           <input
             type="date"
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
-            className="py-[0.3rem] px-2 border border-rim rounded-md text-[0.84rem] bg-ink2 text-tx"
+            className="py-1 px-2 border border-rim rounded-md text-sm bg-ink2 text-tx"
           />
         </label>
-        <label className="flex items-center gap-[0.35rem] text-[0.78rem] text-dim">
+        <label className="flex items-center gap-1.5 text-sm text-dim">
           To
           <input
             type="date"
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
-            className="py-[0.3rem] px-2 border border-rim rounded-md text-[0.84rem] bg-ink2 text-tx"
+            className="py-1 px-2 border border-rim rounded-md text-sm bg-ink2 text-tx"
           />
         </label>
         {(fromDate || toDate) && (
           <button
             type="button"
             onClick={() => { setFromDate(''); setToDate(''); }}
-            className="py-[0.3rem] px-[0.6rem] border border-rim rounded-md text-[0.74rem] text-dim bg-transparent cursor-pointer"
+            className="py-1 px-2.5 border border-rim rounded-md text-xs text-dim bg-transparent cursor-pointer"
           >
             Clear dates
           </button>
@@ -285,7 +285,7 @@ export default function OrdersPage() {
               {label}
               {count > 0 && (
                 <span
-                  className="text-[0.65rem] font-bold rounded-full py-[0.05rem] px-1.5 ml-1.5 min-w-[16px] text-center inline-block bg-[var(--acc-glow)] text-acc"
+                  className="text-xs font-bold rounded-full py-[0.05rem] px-1.5 ml-1.5 min-w-[16px] text-center inline-block bg-[var(--acc-glow)] text-acc"
                 >
                   {count}
                 </span>
@@ -295,7 +295,7 @@ export default function OrdersPage() {
         })}
       </div>
       {!loading && orders.length > 0 && (
-        <div className="text-[0.74rem] text-dim mb-[0.6rem] py-0 px-[0.1rem]">
+        <div className="text-xs text-dim mb-2.5 py-0 px-0.5">
           Showing {orders.length} orders · Last refreshed {refreshedLabel}
         </div>
       )}

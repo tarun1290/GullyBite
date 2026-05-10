@@ -53,7 +53,7 @@ export default function RiderLocationCard({ orderId }: RiderLocationCardProps) {
         0%, 100% { opacity: 1; transform: scale(1); }
         50%      { opacity: 0.45; transform: scale(0.85); }
       }`}</style>
-      <div className="mt-[0.6rem] py-[0.6rem] px-[0.8rem] bg-green-50 border border-green-200 rounded-lg flex items-center gap-[0.7rem] flex-wrap text-[0.82rem]">
+      <div className="mt-2.5 py-2.5 px-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 flex-wrap text-sm">
         <span
           aria-hidden
           className="inline-block w-[9px] h-[9px] rounded-full bg-green-600 shrink-0"
@@ -62,7 +62,7 @@ export default function RiderLocationCard({ orderId }: RiderLocationCardProps) {
           style={{ animation: 'gb-rider-pulse 1.5s ease-in-out infinite' }}
         />
         <span className="font-semibold text-green-700">Rider is live</span>
-        <span className="text-dim text-[0.76rem]">
+        <span className="text-dim text-xs">
           updated {relativeTime(lastRiderLocation.updated_at)}
         </span>
         {trackingUrl && (

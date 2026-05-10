@@ -93,7 +93,7 @@ function IssueMessage({ msg }: { msg: IssueMessageRow }) {
   const isSys = msg.sender_type === 'system';
   if (isSys) {
     return (
-      <div className="text-center text-[0.72rem] text-dim py-[0.2rem]">
+      <div className="text-center text-xs text-dim py-1">
         {msg.text}
       </div>
     );
@@ -107,14 +107,14 @@ function IssueMessage({ msg }: { msg: IssueMessageRow }) {
   const align = isCust ? 'self-start' : 'self-end';
   return (
     <div
-      className={`max-w-[80%] py-[0.4rem] px-[0.6rem] rounded-[10px] text-[0.82rem] leading-[1.4] ${align} ${bubbleBg} ${bubbleBorder}`}
+      className={`max-w-[80%] py-1.5 px-2.5 rounded-r text-sm leading-[1.4] ${align} ${bubbleBg} ${bubbleBorder}`}
     >
-      <div className="text-[0.65rem] font-semibold text-dim mb-[0.15rem]">
+      <div className="text-xs font-semibold text-dim mb-0.5">
         {msg.sender_name}
         {msg.internal && ' (internal)'}
       </div>
       <div>{msg.text}</div>
-      <div className="text-[0.6rem] text-dim text-right mt-[0.15rem]">
+      <div className="text-xs text-dim text-right mt-0.5">
         {formatStamp(msg.created_at)}
       </div>
     </div>
@@ -130,8 +130,8 @@ interface EscalateFormProps {
 function EscalateForm({ onSubmit, onCancel, busy }: EscalateFormProps) {
   const [reason, setReason] = useState<string>('');
   return (
-    <div className="mt-2 p-[0.6rem] border border-red-300 bg-red-50 rounded-lg">
-      <div className="text-[0.75rem] font-semibold text-red-800 mb-[0.4rem]">
+    <div className="mt-2 p-2.5 border border-red-300 bg-red-50 rounded-lg">
+      <div className="text-xs font-semibold text-red-800 mb-1.5">
         Escalate to GullyBite admin
       </div>
       <textarea
@@ -139,9 +139,9 @@ function EscalateForm({ onSubmit, onCancel, busy }: EscalateFormProps) {
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="Reason for escalation"
-        className="w-full py-[0.4rem] px-2 border border-rim rounded-md text-[0.8rem] font-[inherit]"
+        className="w-full py-1.5 px-2 border border-rim rounded-md text-sm font-[inherit]"
       />
-      <div className="flex gap-[0.4rem] mt-[0.4rem] justify-end">
+      <div className="flex gap-1.5 mt-1.5 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onCancel} disabled={busy}>Cancel</button>
         <button
           type="button"
@@ -166,17 +166,17 @@ function ResolveForm({ onSubmit, onCancel, busy }: ResolveFormProps) {
   const [type, setType] = useState<string>('explanation');
   const [notes, setNotes] = useState<string>('');
   return (
-    <div className="mt-2 p-[0.6rem] border border-green-200 bg-green-50 rounded-lg">
-      <div className="text-[0.75rem] font-semibold text-green-800 mb-[0.4rem]">
+    <div className="mt-2 p-2.5 border border-green-200 bg-green-50 rounded-lg">
+      <div className="text-xs font-semibold text-green-800 mb-1.5">
         Resolve issue
       </div>
-      <label className="block text-[0.7rem] text-dim mb-[0.2rem]">
+      <label className="block text-xs text-dim mb-1">
         Resolution type
       </label>
       <select
         value={type}
         onChange={(e) => setType(e.target.value)}
-        className="w-full py-[0.35rem] px-2 border border-rim rounded-md text-[0.8rem] mb-[0.4rem]"
+        className="w-full py-1.5 px-2 border border-rim rounded-md text-sm mb-1.5"
       >
         {RESOLUTION_TYPES.map((r) => (
           <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>
@@ -187,9 +187,9 @@ function ResolveForm({ onSubmit, onCancel, busy }: ResolveFormProps) {
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
         placeholder="Resolution notes (optional)"
-        className="w-full py-[0.4rem] px-2 border border-rim rounded-md text-[0.8rem] font-[inherit]"
+        className="w-full py-1.5 px-2 border border-rim rounded-md text-sm font-[inherit]"
       />
-      <div className="flex gap-[0.4rem] mt-[0.4rem] justify-end">
+      <div className="flex gap-1.5 mt-1.5 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onCancel} disabled={busy}>Cancel</button>
         <button
           type="button"
@@ -245,7 +245,7 @@ export default function IssueDetailPanel({ issueId, onStatusChange }: IssueDetai
 
   if (!issueId) {
     return (
-      <div className="text-center text-dim py-12 text-[0.85rem]">
+      <div className="text-center text-dim py-12 text-base">
         Select an issue to view details
       </div>
     );
@@ -256,7 +256,7 @@ export default function IssueDetailPanel({ issueId, onStatusChange }: IssueDetai
   }
 
   if (!issue) {
-    return <div className="p-4 text-red text-[0.82rem]">Issue not found</div>;
+    return <div className="p-4 text-red text-sm">Issue not found</div>;
   }
 
   const priClr = PRI_CLR[issue.priority || ''] || '#94a3b8';
@@ -305,14 +305,14 @@ export default function IssueDetailPanel({ issueId, onStatusChange }: IssueDetai
   const handleReopen = () => runAction(() => reopenIssue(issueId), 'Issue reopened');
 
   return (
-    <div className="py-4 px-[1.2rem] overflow-y-auto h-full">
-      <div className="flex items-center gap-[0.7rem] flex-wrap mb-[0.8rem]">
-        <span className="font-bold text-[0.95rem]">{issue.issue_number}</span>
-        <span className="text-[0.78rem] py-[0.15rem] px-2 rounded-md bg-ink3">
+    <div className="py-4 px-5 overflow-y-auto h-full">
+      <div className="flex items-center gap-3 flex-wrap mb-3">
+        <span className="font-bold text-md">{issue.issue_number}</span>
+        <span className="text-sm py-0.5 px-2 rounded-md bg-ink3">
           {CAT_LABEL[issue.category || ''] || issue.category}
         </span>
         <span
-          className="text-[0.72rem] font-bold py-[0.12rem] px-[0.4rem] rounded-sm uppercase"
+          className="text-xs font-bold py-0.5 px-1.5 rounded-sm uppercase"
           // priority bg/colour from PRI_BG/PRI_CLR by issue.priority at runtime
           // (critical/high/medium/low — 4 distinct rgba/hex pairs).
           style={{ background: priBg, color: priClr }}
@@ -320,29 +320,29 @@ export default function IssueDetailPanel({ issueId, onStatusChange }: IssueDetai
           {issue.priority}
         </span>
         <span
-          className="text-[0.72rem] font-semibold py-[0.12rem] px-[0.4rem] rounded-sm text-white"
+          className="text-xs font-semibold py-0.5 px-1.5 rounded-sm text-white"
           // status bg from ST_CLR by issue.status at runtime
           // (open/assigned/in_progress/.../closed — 8 distinct hex).
           style={{ background: stClr }}
         >
           {(issue.status || '').replace(/_/g, ' ')}
         </span>
-        <span className="text-[0.72rem] ml-auto">{slaLabel(issue)}</span>
+        <span className="text-xs ml-auto">{slaLabel(issue)}</span>
       </div>
 
-      <div className="flex gap-6 text-[0.82rem] flex-wrap pb-[0.7rem] border-b border-rim">
+      <div className="flex gap-6 text-sm flex-wrap pb-3 border-b border-rim">
         <div><span className="text-dim">Customer:</span> <strong>{issue.customer_name || 'Unknown'}</strong></div>
         <div><span className="text-dim">Phone:</span> {issue.customer_phone || '—'}</div>
         <div><span className="text-dim">Order:</span> {issue.display_order_id || '—'}</div>
       </div>
 
-      <div className="py-[0.8rem] border-b border-rim">
-        <div className="text-[0.72rem] text-dim mb-[0.3rem] uppercase font-semibold">
+      <div className="py-3 border-b border-rim">
+        <div className="text-xs text-dim mb-1 uppercase font-semibold">
           Description
         </div>
-        <div className="text-[0.85rem] leading-normal">{issue.description || ''}</div>
+        <div className="text-base leading-normal">{issue.description || ''}</div>
         {Array.isArray(issue.media) && issue.media.length > 0 && (
-          <div className="mt-[0.4rem] flex gap-[0.4rem] flex-wrap">
+          <div className="mt-1.5 flex gap-1.5 flex-wrap">
             {issue.media.map((m, idx) => (
               <div key={m.media_id || idx} className="w-20 h-20 bg-ink3 rounded-md flex items-center justify-center">
                 {m.media_type === 'image' ? '📷' : `${m.media_type}`}
@@ -352,18 +352,18 @@ export default function IssueDetailPanel({ issueId, onStatusChange }: IssueDetai
         )}
       </div>
 
-      <div className="py-[0.8rem] border-b border-rim">
-        <div className="text-[0.72rem] text-dim mb-2 uppercase font-semibold">
+      <div className="py-3 border-b border-rim">
+        <div className="text-xs text-dim mb-2 uppercase font-semibold">
           Communication
         </div>
-        <div className="max-h-[300px] overflow-y-auto flex flex-col gap-[0.35rem]">
+        <div className="max-h-[300px] overflow-y-auto flex flex-col gap-1.5">
           {(issue.messages || []).map((m, idx) => (
             <IssueMessage key={m._id || m.id || idx} msg={m} />
           ))}
         </div>
         <form
           onSubmit={handleSend}
-          className="mt-[0.6rem] flex gap-[0.4rem] items-center flex-wrap"
+          className="mt-2.5 flex gap-1.5 items-center flex-wrap"
         >
           <input
             id="iss-d-reply"
@@ -371,9 +371,9 @@ export default function IssueDetailPanel({ issueId, onStatusChange }: IssueDetai
             onChange={(e) => setReplyText(e.target.value)}
             placeholder="Type a response…"
             disabled={sending}
-            className="flex-1 min-w-[200px] py-[0.45rem] px-[0.65rem] border border-rim rounded-lg text-[0.82rem]"
+            className="flex-1 min-w-[200px] py-2 px-2.5 border border-rim rounded-lg text-sm"
           />
-          <label className="text-[0.72rem] flex items-center gap-[0.2rem] text-dim cursor-pointer whitespace-nowrap">
+          <label className="text-xs flex items-center gap-1 text-dim cursor-pointer whitespace-nowrap">
             <input
               type="checkbox"
               checked={internal}
@@ -388,7 +388,7 @@ export default function IssueDetailPanel({ issueId, onStatusChange }: IssueDetai
         </form>
       </div>
 
-      <div className="py-[0.8rem] flex gap-[0.4rem] flex-wrap">
+      <div className="py-3 flex gap-1.5 flex-wrap">
         {canAct && (
           <>
             <button

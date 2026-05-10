@@ -16,8 +16,7 @@ import { useRouter } from 'expo-router';
 
 import { OrderCard } from '@/components/OrderCard';
 import { StaffOrder, getOrders, updateOrderStatus, acceptOrder, declineOrder } from '@/api';
-import { useAuth } from '@/store/authStore';
-import { useStaffPermissions } from '@/state/StaffContext';
+import { useStaff, useStaffPermissions } from '@/state/StaffContext';
 import { StaffSse, SseState } from '@/sse';
 import { playNewOrderChime, unloadChime } from '@/sound';
 import {
@@ -56,7 +55,7 @@ export default function OrdersScreen() {
   // re-runs getOrders with the updated X-Branch-Id header. The header
   // itself is set globally via api.setBranchHeader (driven by the same
   // authStore effect) — we don't need to pass branch into getOrders.
-  const { currentBranchId } = useAuth();
+  const { currentBranchId } = useStaff();
   // Permission gates (2026-05-09 staff-auth refactor). Each flag drives
   // whether a specific action button is visible — see the contract for
   // the 10-key permission set. canViewOrders also flips the entire

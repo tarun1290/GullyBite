@@ -118,7 +118,7 @@ function Toggle({ checked, disabled, onChange }: ToggleProps) {
         }`}
       >
         <span
-          className="absolute top-[2px] w-4 h-4 rounded-full bg-white transition-[left] duration-120"
+          className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-[left] duration-120"
           // left position is the toggle thumb's slide animation — runtime
           // boolean → 18px (on) or 2px (off).
           style={{ left: checked ? 18 : 2 }}
@@ -138,8 +138,8 @@ interface StatProps { label: string; value: ReactNode }
 function Stat({ label, value }: StatProps) {
   return (
     <div>
-      <div className="text-[0.7rem] text-dim">{label}</div>
-      <div className="font-medium text-[0.92rem]">{value ?? '—'}</div>
+      <div className="text-xs text-dim">{label}</div>
+      <div className="font-medium text-md">{value ?? '—'}</div>
     </div>
   );
 }
@@ -148,10 +148,10 @@ interface FieldProps { label: string; children: ReactNode; hint?: string }
 
 function Field({ label, children, hint }: FieldProps) {
   return (
-    <label className="flex flex-col gap-[0.2rem]">
-      <span className="text-[0.78rem] text-slate-700">{label}</span>
+    <label className="flex flex-col gap-1">
+      <span className="text-sm text-slate-700">{label}</span>
       {children}
-      {hint && <span className="text-[0.72rem] text-dim">{hint}</span>}
+      {hint && <span className="text-xs text-dim">{hint}</span>}
     </label>
   );
 }
@@ -223,15 +223,15 @@ function JourneyCard({
 
   return (
     <div className="card min-w-0">
-      <div className="cb flex flex-col gap-[0.55rem]">
+      <div className="cb flex flex-col gap-2">
         <div className="flex justify-between gap-2 items-start flex-wrap">
           <div className="flex gap-2 items-start flex-1 min-w-0">
-            <div className="text-[1.2rem]">{meta.icon}</div>
+            <div className="text-xl">{meta.icon}</div>
             <div>
               <strong>{meta.label}</strong>
-              <div className="text-[0.78rem] text-dim">{meta.description}</div>
+              <div className="text-sm text-dim">{meta.description}</div>
               {estimate && (
-                <div className="text-[0.74rem] text-dim mt-[0.2rem] flex items-center gap-1.5">
+                <div className="text-xs text-dim mt-1 flex items-center gap-1.5">
                   {!estimate.wallet_sufficient && (
                     <span
                       className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0"
@@ -260,14 +260,14 @@ function JourneyCard({
           <div className="notice m-0">
             <div className="notice-ico">📍</div>
             <div className="notice-body">
-              <p className="m-0 text-[0.78rem]">
+              <p className="m-0 text-sm">
                 Activates automatically when the Loyalty program is set up.
               </p>
             </div>
           </div>
         )}
 
-        <div className="grid gap-[0.4rem] grid-cols-[repeat(auto-fill,minmax(120px,1fr))] text-[0.82rem]">
+        <div className="grid gap-1.5 grid-cols-[repeat(auto-fill,minmax(120px,1fr))] text-sm">
           <Stat label="Sent (30d)"  value={showStats ? (stats?.total_sent ?? 0) : '—'} />
           <Stat label="Converted"   value={showStats ? (stats?.total_converted ?? 0) : '—'} />
           <Stat label="Conv rate"   value={showStats ? `${Number(stats?.conversion_rate || 0).toFixed(1)}%` : '—'} />
@@ -283,12 +283,12 @@ function JourneyCard({
         </button>
 
         {expanded && !customiseDisabled && (
-          <div className="flex flex-col gap-[0.55rem] mt-1">
+          <div className="flex flex-col gap-2 mt-1">
             <Field label="Template">
               <select
                 value={local.template_id || ''}
                 onChange={(e) => updateLocal({ template_id: e.target.value || null })}
-                className="py-[0.35rem] px-2 border border-neutral-200 rounded-md"
+                className="py-1.5 px-2 border border-neutral-200 rounded-md"
               >
                 <option value="">(System default)</option>
                 {matchingTemplates.map((t) => (
@@ -303,7 +303,7 @@ function JourneyCard({
                   type="number" min={1}
                   value={local.trigger_day ?? (key === 'winback_short' ? 14 : 30)}
                   onChange={(e) => updateLocal({ trigger_day: Number(e.target.value) })}
-                  className="py-[0.35rem] px-2 border border-neutral-200 rounded-md w-[120px]"
+                  className="py-1.5 px-2 border border-neutral-200 rounded-md w-[120px]"
                 />
               </Field>
             )}
@@ -314,7 +314,7 @@ function JourneyCard({
                   type="number" min={0} max={23}
                   value={local.send_hour_ist ?? 10}
                   onChange={(e) => updateLocal({ send_hour_ist: Number(e.target.value) })}
-                  className="py-[0.35rem] px-2 border border-neutral-200 rounded-md w-[120px]"
+                  className="py-1.5 px-2 border border-neutral-200 rounded-md w-[120px]"
                 />
               </Field>
             )}
@@ -328,7 +328,7 @@ function JourneyCard({
                   type="text"
                   value={Array.isArray(local.trigger_orders) ? local.trigger_orders.join(', ') : (local.trigger_orders || '')}
                   onChange={(e) => updateLocal({ trigger_orders: e.target.value })}
-                  className="py-[0.35rem] px-2 border border-neutral-200 rounded-md"
+                  className="py-1.5 px-2 border border-neutral-200 rounded-md"
                 />
               </Field>
             )}
@@ -361,8 +361,8 @@ function TemplateVarOverrides({ template, values, onChange }: TemplateVarOverrid
   const inputs = (template?.variables || []).filter((v) => v.source === 'restaurant_input');
   if (!template || inputs.length === 0) return null;
   return (
-    <div className="flex flex-col gap-[0.35rem] pt-[0.3rem]">
-      <div className="text-[0.78rem] text-slate-700">Template variables</div>
+    <div className="flex flex-col gap-1.5 pt-1">
+      <div className="text-sm text-slate-700">Template variables</div>
       {inputs.map((v) => (
         <Field key={v.name} label={`${v.name}${v.required ? ' *' : ''}`}>
           <input
@@ -370,7 +370,7 @@ function TemplateVarOverrides({ template, values, onChange }: TemplateVarOverrid
             placeholder={v.example || ''}
             value={values[v.name] || ''}
             onChange={(e) => onChange({ ...values, [v.name]: e.target.value })}
-            className="py-[0.35rem] px-2 border border-neutral-200 rounded-md"
+            className="py-1.5 px-2 border border-neutral-200 rounded-md"
           />
         </Field>
       ))}
@@ -439,7 +439,7 @@ export default function AutoJourneysSection({ campaignsEnabled }: AutoJourneysSe
     <div>
       <div className="mb-4">
         <h2 className="m-0">Auto Journeys</h2>
-        <div className="text-[0.84rem] text-dim mt-[0.2rem]">
+        <div className="text-sm text-dim mt-1">
           Set-and-forget messages triggered by customer behaviour.
         </div>
       </div>
@@ -458,7 +458,7 @@ export default function AutoJourneysSection({ campaignsEnabled }: AutoJourneysSe
       )}
 
       <div
-        className={`grid gap-[0.8rem] grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ${disabled ? 'opacity-75' : 'opacity-100'}`}
+        className={`grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 ${disabled ? 'opacity-75' : 'opacity-100'}`}
       >
         {JOURNEY_META.map((meta) => (
           <JourneyCard

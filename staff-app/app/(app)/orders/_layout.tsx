@@ -9,12 +9,12 @@ import { Stack, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import BranchSelector from '@/components/BranchSelector';
-import { useAuth } from '@/store/authStore';
+import { useStaff } from '@/state/StaffContext';
 import { colors, space, text, radius, fontWeight } from '@/theme';
 
 function LogoutButton() {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout } = useStaff();
   return (
     <Pressable
       onPress={async () => {

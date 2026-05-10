@@ -82,7 +82,7 @@ function StatusBadge({ status }: StatusBadgeProps) {
   const bg = STATUS_COLOR[status || ''] || 'var(--gb-slate-500)';
   return (
     <span
-      className="text-neutral-0 text-[0.68rem] font-bold py-[0.1rem] px-[0.45rem] rounded-sm uppercase tracking-[0.04em]"
+      className="text-neutral-0 text-xs font-bold py-0.5 px-2 rounded-sm uppercase tracking-[0.04em]"
       // background colour comes from STATUS_COLOR by status at runtime
       // (PENDING/CONFIRMED/PREPARING/PACKED/DISPATCHED/DELIVERED/CANCELLED
       // — 7 distinct values plus a slate-500 fallback).
@@ -104,10 +104,10 @@ function customerLabel(o: AdminOrderRow): string {
   return '—';
 }
 
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2.5 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const SEL_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.55rem] text-[0.78rem]';
+const SEL_CLS = 'bg-neutral-0 border border-rim rounded-md py-1 px-2 text-sm';
 
 export default function AdminOrdersPage() {
   const { showToast } = useToast();
@@ -195,9 +195,9 @@ export default function AdminOrdersPage() {
   return (
     <div id="pg-orders">
       <div className="card">
-        <div className="ch gap-[0.6rem] flex-wrap">
+        <div className="ch gap-2.5 flex-wrap">
           <h3>All Orders</h3>
-          <span className="text-dim text-[0.75rem]">
+          <span className="text-dim text-xs">
             {loading ? '' : `${total} total`}
           </span>
           <button type="button" className="btn-g btn-sm ml-auto" onClick={load} disabled={loading}>
@@ -205,8 +205,8 @@ export default function AdminOrdersPage() {
           </button>
         </div>
 
-        <div className="cb flex gap-[0.6rem] flex-wrap items-center border-b border-rim">
-          <span className="text-[0.74rem] text-dim">Status:</span>
+        <div className="cb flex gap-2.5 flex-wrap items-center border-b border-rim">
+          <span className="text-xs text-dim">Status:</span>
           <select value={status} onChange={onFilterChange(setStatus)} className={SEL_CLS}>
             {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -219,7 +219,7 @@ export default function AdminOrdersPage() {
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={`${TH_CLS} w-7`} aria-label="Expand timeline" />
@@ -246,14 +246,14 @@ export default function AdminOrdersPage() {
                     return (
                       <Fragment key={id || o.order_number}>
                         <tr className={isOpen ? 'border-b-0' : 'border-b border-rim'}>
-                          <td className="py-[0.4rem] pr-[0.3rem] pl-[0.7rem] align-top">
+                          <td className="py-1.5 pr-1 pl-3 align-top">
                             {hasTimeline ? (
                               <button
                                 type="button"
                                 onClick={() => toggleExpanded(id)}
                                 aria-expanded={isOpen}
                                 aria-label={isOpen ? 'Hide delivery timeline' : 'Show delivery timeline'}
-                                className={`bg-none border-0 py-[0.15rem] px-[0.3rem] cursor-pointer text-dim text-[0.7rem] leading-none transition-transform duration-150 ease-in-out ${isOpen ? 'rotate-90' : 'rotate-0'}`}
+                                className={`bg-none border-0 py-0.5 px-1 cursor-pointer text-dim text-xs leading-none transition-transform duration-150 ease-in-out ${isOpen ? 'rotate-90' : 'rotate-0'}`}
                               >
                                 ▶
                               </button>
@@ -264,7 +264,7 @@ export default function AdminOrdersPage() {
                               <>
                                 <div className="mono">{o.display_order_id}</div>
                                 {o.order_number && (
-                                  <div className="text-[0.68rem] text-mute font-mono">
+                                  <div className="text-xs text-mute font-mono">
                                     {o.order_number}
                                   </div>
                                 )}
@@ -275,12 +275,12 @@ export default function AdminOrdersPage() {
                           </td>
                           <td className={TD_CLS}>{o.business_name || '—'}</td>
                           <td className={TD_CLS}>{o.branch_name || '—'}</td>
-                          <td className={`${TD_CLS} text-[0.76rem] mono`}>
+                          <td className={`${TD_CLS} text-xs mono`}>
                             {customerLabel(o)}
                           </td>
                           <td className={TD_CLS}><strong>₹{o.total_rs}</strong></td>
                           <td className={TD_CLS}><StatusBadge status={o.status} /></td>
-                          <td className={`${TD_CLS} text-dim text-[0.74rem]`}>
+                          <td className={`${TD_CLS} text-dim text-xs`}>
                             {fmtTime(o.created_at)}
                           </td>
                           <td className={TD_CLS}>
@@ -295,8 +295,8 @@ export default function AdminOrdersPage() {
                         {isOpen && hasTimeline && (
                           <tr className="border-b border-rim bg-ink2">
                             <td />
-                            <td colSpan={8} className="pt-[0.6rem] pr-4 pb-4 pl-4">
-                              <div className="text-[0.74rem] text-dim mb-[0.3rem] font-semibold">
+                            <td colSpan={8} className="pt-2.5 pr-4 pb-4 pl-4">
+                              <div className="text-xs text-dim mb-1 font-semibold">
                                 Delivery Timeline
                               </div>
                               <DeliveryTimeline order={o} />
@@ -305,10 +305,10 @@ export default function AdminOrdersPage() {
                                 raisedAt={o.prorouting_issue_raised_at}
                               />
                               {o.status === 'DELIVERED' && !o.prorouting_issue_id && (
-                                <div className="mt-[0.6rem]">
+                                <div className="mt-2.5">
                                   <button
                                     type="button"
-                                    className="btn-del btn-sm text-[0.78rem]"
+                                    className="btn-del btn-sm text-sm"
                                     onClick={() => handleReportFakeDelivery(id)}
                                     disabled={reporting.has(id)}
                                   >
@@ -328,14 +328,14 @@ export default function AdminOrdersPage() {
           </div>
         )}
 
-        <div className="py-[0.7rem] px-4 flex gap-[0.6rem] items-center border-t border-rim">
+        <div className="py-3 px-4 flex gap-2.5 items-center border-t border-rim">
           <button
             type="button"
             className="btn-g btn-sm"
             onClick={() => setOffset(Math.max(0, offset - ORDERS_LIMIT))}
             disabled={loading || offset === 0}
           >← Prev</button>
-          <span className="text-[0.78rem] text-dim">
+          <span className="text-sm text-dim">
             Page {page} / {pages}
           </span>
           <button
@@ -344,7 +344,7 @@ export default function AdminOrdersPage() {
             onClick={() => setOffset(offset + ORDERS_LIMIT)}
             disabled={loading || offset + ORDERS_LIMIT >= total}
           >Next →</button>
-          <span className="ml-auto text-[0.78rem] text-dim">
+          <span className="ml-auto text-sm text-dim">
             {total} orders
           </span>
         </div>

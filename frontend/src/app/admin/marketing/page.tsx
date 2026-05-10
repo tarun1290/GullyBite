@@ -35,10 +35,10 @@ function fmtDateTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const TH_CLS = 'py-2 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.4rem] px-[0.6rem] text-[0.8rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1.5 px-2.5 text-sm';
 
 export default function AdminMarketingPage() {
   const [page, setPage] = useState<number>(1);
@@ -94,7 +94,7 @@ export default function AdminMarketingPage() {
   return (
     <div id="pg-marketing">
       <div className="card">
-        <div className="ch justify-between flex-wrap gap-[0.6rem]">
+        <div className="ch justify-between flex-wrap gap-2.5">
           <h3 className="m-0">Marketing Messages</h3>
           <div className="flex gap-2 items-center flex-wrap">
             <input
@@ -121,7 +121,7 @@ export default function AdminMarketingPage() {
           </div>
         </div>
 
-        <div className="flex gap-4 py-[0.8rem] px-4 border-b border-rim bg-ink text-[0.82rem]">
+        <div className="flex gap-4 py-3 px-4 border-b border-rim bg-ink text-sm">
           <div>
             <span className="text-dim">Total revenue from messages:</span>{' '}
             <strong>₹{Number(totalRevenue || 0).toFixed(2)}</strong>
@@ -136,9 +136,9 @@ export default function AdminMarketingPage() {
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-ink text-left text-dim text-[0.75rem]">
+                <tr className="bg-ink text-left text-dim text-xs">
                   <th className={TH_CLS}>Restaurant</th>
                   <th className={TH_CLS}>WABA ID</th>
                   <th className={TH_CLS}>Customer</th>
@@ -156,14 +156,14 @@ export default function AdminMarketingPage() {
                   <tr><td colSpan={8} className={EMPTY_CLS}>No marketing messages in this range.</td></tr>
                 ) : rows.map((m, i) => (
                   <tr key={m.id || i} className="border-t border-rim">
-                    <td className={`${TD_CLS} text-[0.75rem] mono`}>{m.restaurant_id || '—'}</td>
-                    <td className={`${TD_CLS} text-[0.75rem] mono`}>{m.waba_id || '—'}</td>
+                    <td className={`${TD_CLS} text-xs mono`}>{m.restaurant_id || '—'}</td>
+                    <td className={`${TD_CLS} text-xs mono`}>{m.waba_id || '—'}</td>
                     <td className={TD_CLS}>{m.customer_name || '—'}</td>
                     <td className={`${TD_CLS} mono`}>{m.phone || '—'}</td>
                     <td className={TD_CLS}>{m.message_type || '—'}</td>
                     <td className={TD_CLS}>{m.category || '—'}</td>
                     <td className={TD_CLS}>₹{Number(m.cost || 0).toFixed(2)}</td>
-                    <td className={`${TD_CLS} text-dim text-[0.78rem]`}>{fmtDateTime(m.sent_at)}</td>
+                    <td className={`${TD_CLS} text-dim text-sm`}>{fmtDateTime(m.sent_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -171,11 +171,11 @@ export default function AdminMarketingPage() {
           </div>
         )}
 
-        <div className="flex justify-between items-center py-[0.6rem] px-4 border-t border-rim">
+        <div className="flex justify-between items-center py-2.5 px-4 border-t border-rim">
           <button type="button" className="btn-g btn-sm" onClick={prevPage} disabled={page <= 1 || loading}>
             ← Prev
           </button>
-          <span className="text-[0.8rem] text-dim">Page {page} of {totalPages}</span>
+          <span className="text-sm text-dim">Page {page} of {totalPages}</span>
           <button type="button" className="btn-g btn-sm" onClick={nextPage} disabled={page >= totalPages || loading}>
             Next →
           </button>

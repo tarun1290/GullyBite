@@ -63,12 +63,12 @@ export default function PgPending({ onLogout, showPage }: PgPendingProps) {
         </p>
 
         {waConnected ? (
-          <div className="flex items-center gap-[0.6rem] bg-green-50 border border-green-300 rounded-[10px] py-[0.7rem] px-[1.1rem] mt-2 mb-[1.2rem] text-[0.84rem]">
+          <div className="flex items-center gap-2.5 bg-green-50 border border-green-300 rounded-r py-3 px-4 mt-2 mb-5 text-sm">
             <span className="w-[10px] h-[10px] rounded-full bg-green-500 inline-block shrink-0"></span>
             <span>WhatsApp connected — <strong>{waPhone || 'WhatsApp Business Account'}</strong></span>
           </div>
         ) : (
-          <div className="flex items-center gap-[0.6rem] bg-amber-50 border border-amber-300 rounded-[10px] py-[0.7rem] px-[1.1rem] mt-2 mb-[1.2rem] text-[0.84rem]">
+          <div className="flex items-center gap-2.5 bg-amber-50 border border-amber-300 rounded-r py-3 px-4 mt-2 mb-5 text-sm">
             <span className="w-[10px] h-[10px] rounded-full bg-amber-500 inline-block shrink-0"></span>
             <span>
               WhatsApp not connected yet —{' '}

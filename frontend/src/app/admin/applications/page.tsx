@@ -39,15 +39,15 @@ interface PendingAction {
   name: string;
 }
 
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
-const SUB_CLS = 'text-[0.72rem] text-dim';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2.5 px-3 align-top';
+const SUB_CLS = 'text-xs text-dim';
 const EMPTY_CLS = 'p-6 text-center text-dim';
 
 interface StatusBadgeProps { status?: string }
 
 function StatusBadge({ status }: StatusBadgeProps) {
-  const COMMON = 'text-[0.68rem] font-bold py-[0.12rem] px-[0.45rem] rounded-md uppercase tracking-[0.03em] text-neutral-0';
+  const COMMON = 'text-xs font-bold py-0.5 px-2 rounded-md uppercase tracking-[0.03em] text-neutral-0';
   if (status === 'approved')
     return <span className={`${COMMON} bg-wa-500`}>Approved</span>;
   if (status === 'rejected')
@@ -60,7 +60,7 @@ interface VerifiedPillProps { verified?: boolean }
 function VerifiedPill({ verified }: VerifiedPillProps) {
   if (verified) {
     return (
-      <span className="text-[0.66rem] text-wa-500 font-bold">
+      <span className="text-xs text-wa-500 font-bold">
         ✓ Verified
       </span>
     );
@@ -149,9 +149,9 @@ export default function AdminApplicationsPage() {
   return (
     <div id="pg-applications">
       <div className="card">
-        <div className="ch gap-[0.6rem] flex-wrap">
+        <div className="ch gap-2.5 flex-wrap">
           <h3>Restaurant Applications</h3>
-          <span className="text-dim text-[0.75rem]">
+          <span className="text-dim text-xs">
             {loading ? '' : `${rows.length} record(s)${pendingCount ? ` · ${pendingCount} pending` : ''}`}
           </span>
           <button
@@ -170,7 +170,7 @@ export default function AdminApplicationsPage() {
           </div>
         ) : (
           <div className="cb overflow-x-auto p-0">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={TH_CLS}>Brand / Business</th>
@@ -205,7 +205,7 @@ export default function AdminApplicationsPage() {
                                 href={r.store_url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="text-[0.72rem] text-acc"
+                                className="text-xs text-acc"
                               >Store ↗</a>
                             )}
                           </td>
@@ -217,13 +217,13 @@ export default function AdminApplicationsPage() {
                           <td className={TD_CLS}>
                             {r.gst_number ? (
                               <>
-                                <div className="text-[0.8rem]">{r.gst_number}</div>
+                                <div className="text-sm">{r.gst_number}</div>
                                 {r.gst_verified ? (
                                   <VerifiedPill verified />
                                 ) : (
                                   <button
                                     type="button"
-                                    className="btn-p btn-sm text-[0.66rem] py-[0.18rem] px-2 mt-[0.2rem]"
+                                    className="btn-p btn-sm text-xs py-0.5 px-2 mt-1"
                                     disabled={busy}
                                     onClick={() => doVerify(r, 'gst')}
                                   >Verify</button>
@@ -236,14 +236,14 @@ export default function AdminApplicationsPage() {
                           <td className={TD_CLS}>
                             {r.fssai_license ? (
                               <>
-                                <div className="text-[0.8rem]">{r.fssai_license}</div>
+                                <div className="text-sm">{r.fssai_license}</div>
                                 <div className={SUB_CLS}>Exp: {fmtDate(r.fssai_expiry)}</div>
                                 {r.fssai_verified ? (
                                   <VerifiedPill verified />
                                 ) : (
                                   <button
                                     type="button"
-                                    className="btn-p btn-sm text-[0.66rem] py-[0.18rem] px-2 mt-[0.2rem]"
+                                    className="btn-p btn-sm text-xs py-0.5 px-2 mt-1"
                                     disabled={busy}
                                     onClick={() => doVerify(r, 'fssai')}
                                   >Verify</button>
@@ -266,13 +266,13 @@ export default function AdminApplicationsPage() {
                               <>
                                 <button
                                   type="button"
-                                  className="btn-p btn-sm text-[0.72rem]"
+                                  className="btn-p btn-sm text-xs"
                                   disabled={busy}
                                   onClick={() => openConfirm(r, 'approve')}
                                 >Approve</button>
                                 <button
                                   type="button"
-                                  className="btn-del btn-sm ml-[0.3rem]"
+                                  className="btn-del btn-sm ml-1"
                                   disabled={busy}
                                   onClick={() => openConfirm(r, 'reject')}
                                 >Reject</button>
@@ -280,7 +280,7 @@ export default function AdminApplicationsPage() {
                             ) : (
                               <button
                                 type="button"
-                                className="btn-g btn-sm text-[0.72rem]"
+                                className="btn-g btn-sm text-xs"
                                 disabled={busy}
                                 onClick={() => openConfirm(r, 'approve')}
                               >Re-approve</button>
@@ -289,13 +289,13 @@ export default function AdminApplicationsPage() {
                         </tr>
                         {isPendingRow && pending && (
                           <tr>
-                            <td colSpan={8} className="bg-ink3 py-[0.9rem] px-4">
-                              <div className="font-semibold mb-[0.4rem]">
+                            <td colSpan={8} className="bg-ink3 py-3.5 px-4">
+                              <div className="font-semibold mb-1.5">
                                 {pending.action === 'approve'
                                   ? `Approve "${pending.name}"?`
                                   : `Reject "${pending.name}"?`}
                               </div>
-                              <label className="text-[0.74rem] text-dim block mb-[0.3rem]">
+                              <label className="text-xs text-dim block mb-1">
                                 {pending.action === 'approve'
                                   ? 'Notes (optional)'
                                   : 'Rejection reason (required)'}
@@ -309,9 +309,9 @@ export default function AdminApplicationsPage() {
                                     ? 'Welcome message or any notes…'
                                     : 'e.g. GST number invalid, FSSAI expired…'
                                 }
-                                className="w-full py-2 px-[0.7rem] border border-rim rounded-md text-[0.82rem] font-[inherit] resize-y"
+                                className="w-full py-2 px-3 border border-rim rounded-md text-sm font-[inherit] resize-y"
                               />
-                              <div className="mt-[0.6rem] flex gap-2 justify-end">
+                              <div className="mt-2.5 flex gap-2 justify-end">
                                 <button
                                   type="button"
                                   className="btn-g btn-sm"

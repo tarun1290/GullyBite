@@ -77,7 +77,7 @@ function AdminShell({ children }: AdminShellProps) {
           subtitle="Platform administration"
           onMenuClick={() => setSidebarOpen(true)}
           actions={
-            <div className="flex items-center gap-[0.6rem]">
+            <div className="flex items-center gap-2.5">
               <LiveIndicator />
               <RestaurantMessageButton />
             </div>

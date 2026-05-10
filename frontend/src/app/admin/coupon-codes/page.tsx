@@ -75,13 +75,13 @@ function discLabel(c: CouponCode): string {
   return 'Legacy';
 }
 
-const TABLE_CLS = 'w-full border-collapse text-[0.82rem]';
+const TABLE_CLS = 'w-full border-collapse text-sm';
 const TR_HEAD_CLS = 'bg-ink border-b border-rim';
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.45rem] px-[0.7rem] text-[0.85rem]';
-const LBL_CLS = 'text-[0.75rem] text-dim font-semibold block mb-1';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-2 px-3 text-base';
+const LBL_CLS = 'text-xs text-dim font-semibold block mb-1';
 const STAR_CLS = 'text-red-500';
 
 export default function AdminCouponCodesPage() {
@@ -351,18 +351,18 @@ export default function AdminCouponCodesPage() {
   return (
     <div id="pg-coupon-codes">
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <label className="text-[0.8rem] text-dim">Scope:</label>
+        <label className="text-sm text-dim">Scope:</label>
         <div className="inline-flex rounded-md border border-rim overflow-hidden">
           <button
             type="button"
-            className={`text-[0.8rem] py-[0.4rem] px-[0.85rem] ${scope === 'restaurant' ? 'bg-acc text-white' : 'bg-neutral-0 text-dim'}`}
+            className={`text-sm py-1.5 px-3.5 ${scope === 'restaurant' ? 'bg-acc text-white' : 'bg-neutral-0 text-dim'}`}
             onClick={() => setScope('restaurant')}
           >
             Restaurant
           </button>
           <button
             type="button"
-            className={`text-[0.8rem] py-[0.4rem] px-[0.85rem] border-l border-rim ${scope === 'platform' ? 'bg-acc text-white' : 'bg-neutral-0 text-dim'}`}
+            className={`text-sm py-1.5 px-3.5 border-l border-rim ${scope === 'platform' ? 'bg-acc text-white' : 'bg-neutral-0 text-dim'}`}
             onClick={() => setScope('platform')}
           >
             Platform-wide
@@ -371,7 +371,7 @@ export default function AdminCouponCodesPage() {
 
         {scope === 'restaurant' && (
           <>
-            <label className="text-[0.8rem] text-dim ml-2">Restaurant:</label>
+            <label className="text-sm text-dim ml-2">Restaurant:</label>
             <select
               value={restaurantId}
               onChange={(e) => setRestaurantId(e.target.value)}
@@ -431,23 +431,23 @@ export default function AdminCouponCodesPage() {
                       <td className={`${TD_CLS} font-semibold mono`}>{c.code}</td>
                       <td className={TD_CLS}>
                         {isPlatformWide ? (
-                          <span className="inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] text-[0.7rem] font-semibold bg-blue-100 text-blue-800">
+                          <span className="inline-block py-0.5 px-2 rounded-r text-xs font-semibold bg-blue-100 text-blue-800">
                             Platform-wide
                           </span>
                         ) : (
-                          <span className="text-[0.78rem] text-dim">Restaurant</span>
+                          <span className="text-sm text-dim">Restaurant</span>
                         )}
                       </td>
-                      <td className={`${TD_CLS} text-[0.8rem]`}>{c.description || '—'}</td>
-                      <td className={`${TD_CLS} text-[0.8rem]`}>{discLabel(c)}</td>
-                      <td className={`${TD_CLS} text-[0.75rem] text-dim`}>
+                      <td className={`${TD_CLS} text-sm`}>{c.description || '—'}</td>
+                      <td className={`${TD_CLS} text-sm`}>{discLabel(c)}</td>
+                      <td className={`${TD_CLS} text-xs text-dim`}>
                         {fmtDateISO(c.valid_from)} → {fmtDateISO(c.valid_until)}
                       </td>
-                      <td className={`${TD_CLS} text-[0.8rem]`}>
+                      <td className={`${TD_CLS} text-sm`}>
                         {c.usage_count || 0}{c.usage_limit ? ` / ${c.usage_limit}` : ''}
                       </td>
                       <td className={TD_CLS}>
-                        <span className={`inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] text-[0.72rem] font-semibold ${active ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-500'}`}>{active ? 'ACTIVE' : 'INACTIVE'}</span>
+                        <span className={`inline-block py-0.5 px-2 rounded-r text-xs font-semibold ${active ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-500'}`}>{active ? 'ACTIVE' : 'INACTIVE'}</span>
                       </td>
                       <td className={`${TD_CLS} flex gap-2 flex-wrap`}>
                         <button
@@ -477,7 +477,7 @@ export default function AdminCouponCodesPage() {
                             </button>
                             <button
                               type="button"
-                              className="btn-sm py-[0.3rem] px-[0.6rem] text-[0.78rem] rounded-md bg-red-100 text-red-700 font-semibold"
+                              className="btn-sm py-1 px-2.5 text-sm rounded-md bg-red-100 text-red-700 font-semibold"
                               disabled={isDeleting}
                               onClick={() => handleDelete(c.id)}
                             >
@@ -487,7 +487,7 @@ export default function AdminCouponCodesPage() {
                         ) : (
                           <button
                             type="button"
-                            className="btn-sm py-[0.3rem] px-[0.6rem] text-[0.78rem] rounded-md bg-red-50 text-red-600 font-semibold"
+                            className="btn-sm py-1 px-2.5 text-sm rounded-md bg-red-50 text-red-600 font-semibold"
                             onClick={() => setConfirmDeleteId(c.id)}
                           >
                             Delete
@@ -510,7 +510,7 @@ export default function AdminCouponCodesPage() {
             <button type="button" className="btn-g btn-sm" onClick={cancelEdit}>Cancel</button>
           )}
         </div>
-        <div className="cb grid grid-cols-3 gap-[0.85rem]">
+        <div className="cb grid grid-cols-3 gap-3.5">
           <div>
             <label className={LBL_CLS}>Code <span className={STAR_CLS}>*</span></label>
             <input
@@ -547,7 +547,7 @@ export default function AdminCouponCodesPage() {
               disabled={isEditing}
               className={`${INPUT_CLS} w-full disabled:opacity-60 disabled:cursor-not-allowed`}
             />
-            {valueErr && <div className="mt-1 text-[0.75rem] text-red-500">{valueErr}</div>}
+            {valueErr && <div className="mt-1 text-xs text-red-500">{valueErr}</div>}
           </div>
           <div className="col-span-3">
             <label className={LBL_CLS}>Description (shown to customer)</label>
@@ -605,8 +605,8 @@ export default function AdminCouponCodesPage() {
               className={`${INPUT_CLS} w-full`}
             />
           </div>
-          <div className="flex items-end pb-[0.4rem]">
-            <label className="flex items-center gap-2 text-[0.85rem] select-none">
+          <div className="flex items-end pb-1.5">
+            <label className="flex items-center gap-2 text-base select-none">
               <input
                 type="checkbox"
                 className="h-4 w-4 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -646,12 +646,12 @@ export default function AdminCouponCodesPage() {
             </button>
           </div>
           {msg && (
-            <div className={`col-span-3 text-[0.8rem] ${msgCls}`}>
+            <div className={`col-span-3 text-sm ${msgCls}`}>
               {msg.text}
             </div>
           )}
           {isPlatform && !isEditing && (
-            <div className="col-span-3 text-[0.78rem] text-dim">
+            <div className="col-span-3 text-sm text-dim">
               Creating a platform-wide coupon — restaurant_id will be null on the saved doc.
             </div>
           )}

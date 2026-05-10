@@ -159,7 +159,7 @@ export default function RatingsPage() {
   return (
     <div id="tab-ratings" className="tab on">
       <div className="card mb-4">
-        <div className="ch flex items-center gap-[0.6rem] flex-wrap">
+        <div className="ch flex items-center gap-2.5 flex-wrap">
           <h3 className="mr-auto">Customer Ratings</h3>
           <label className="lbl m-0" htmlFor="rt-branch">Branch</label>
           <select
@@ -176,7 +176,7 @@ export default function RatingsPage() {
         </div>
 
         {summaryErr ? (
-          <div className="py-[0.8rem]">
+          <div className="py-3">
             <SectionError message={summaryErr} onRetry={loadSummary} />
           </div>
         ) : (
@@ -233,7 +233,7 @@ export default function RatingsPage() {
                   {c.overall_rating || 0}⭐
                 </span>{' '}
                 <span>{c.comment || ''}</span>{' '}
-                <span className="text-dim text-[0.72rem] float-right">
+                <span className="text-dim text-xs float-right">
                   {formatShortDate(c.created_at)}
                 </span>
               </div>
@@ -247,7 +247,7 @@ export default function RatingsPage() {
       <div className="card">
         <div className="ch">
           <h3>All Ratings</h3>
-          <span id="rt-count" className="text-dim text-[0.8rem]">
+          <span id="rt-count" className="text-dim text-sm">
             {list ? `${list.total} total` : ''}
           </span>
         </div>
@@ -313,7 +313,7 @@ export default function RatingsPage() {
         {list && list.pages > 1 && (
           <div
             id="rt-pager"
-            className="flex gap-[0.3rem] flex-wrap mt-[0.8rem]"
+            className="flex gap-1 flex-wrap mt-3"
           >
             {Array.from({ length: list.pages }, (_, i) => i + 1).map((p) => {
               const active = p === page;
@@ -324,7 +324,7 @@ export default function RatingsPage() {
                   key={p}
                   type="button"
                   onClick={() => setPage(p)}
-                  className={`py-[0.3rem] px-[0.6rem] rounded-r cursor-pointer text-[0.75rem] ${borderCls} ${bgCls}`}
+                  className={`py-1 px-2.5 rounded-r cursor-pointer text-xs ${borderCls} ${bgCls}`}
                 >
                   {p}
                 </button>

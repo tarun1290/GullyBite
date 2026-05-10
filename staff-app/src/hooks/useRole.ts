@@ -12,9 +12,9 @@
 //
 // Both flags are false during the initial hydration tick (role is
 // null) — callers that fire side effects on role changes should
-// guard with `isLoading` from useAuth() if they need the distinction.
+// guard with `isLoading` from useStaff() if they need the distinction.
 
-import { useAuth } from '../store/authStore';
+import { useStaff } from '../state/StaffContext';
 
 export interface RoleFlags {
   isManager: boolean;
@@ -22,7 +22,7 @@ export interface RoleFlags {
 }
 
 export function useRole(): RoleFlags {
-  const { role } = useAuth();
+  const { role } = useStaff();
   return {
     isManager: role === 'manager' || role === 'owner',
     isStaff: role === 'staff',

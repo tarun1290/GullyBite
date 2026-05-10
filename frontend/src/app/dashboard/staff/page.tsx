@@ -264,7 +264,7 @@ export default function DashboardStaffPage() {
                           {branchIds.map((bid) => (
                             <span
                               key={bid}
-                              className="py-[0.15rem] px-2 text-xs rounded-full border border-rim bg-ink2"
+                              className="py-0.5 px-2 text-xs rounded-full border border-rim bg-ink2"
                             >
                               {branchNameById[bid] || bid.slice(0, 6)}
                             </span>
@@ -274,7 +274,7 @@ export default function DashboardStaffPage() {
                     </td>
                     <td>{PRESET_LABELS[s.role_preset] || s.role_preset}</td>
                     <td>
-                      <span className="py-[0.15rem] px-2 text-xs rounded-full border border-rim bg-ink2">
+                      <span className="py-0.5 px-2 text-xs rounded-full border border-rim bg-ink2">
                         {permCount} / 10
                       </span>
                     </td>

@@ -56,6 +56,29 @@
   --gb-teal-800:      #0D5F58;
   --gb-teal-700-glow: rgba(15, 118, 110, 0.18);
 
+  /* ── Canonical-green-per-surface decision (Part 6c) ──────────
+   * Two green ramps coexist intentionally — DO NOT collapse them:
+   *
+   *   1. Fresh-Leaf green (--gb-green-*) — LANDING / brand identity.
+   *      Used on landing pages, marketing surfaces, and the
+   *      Fresh-Leaf brand cream/green compositions. Consumed
+   *      directly via `var(--gb-green-NNN)` in CSS or as a
+   *      `--cta-primary-*` semantic.
+   *
+   *   2. Operational green (--gb-wa-* + Tailwind `--color-green-*`
+   *      anchors in global.css @theme) — DASHBOARD / success states,
+   *      "accept" actions, "connected" indicators, Meta quality
+   *      ratings. Consumed via Tailwind utilities (`bg-green-50`,
+   *      `bg-emerald-500`, etc.) or via the semantic `var(--wa)` /
+   *      `bg-wa-light text-wa-600` family.
+   *
+   * Rule of thumb: if the swatch is communicating "operation succeeded"
+   * use ramp #2; if it's communicating "this is the GullyBite brand"
+   * use ramp #1. Never mix `var(--gb-green-NNN)` and `bg-green-NN`
+   * Tailwind utilities on the same component — the hues are close
+   * but distinct and the visual jump is jarring.
+   * ──────────────────────────────────────────────────────────── */
+
   /* Fresh Leaf green (landing brand palette) */
   --gb-green-50:  #E6F5EC;
   --gb-green-100: #C7E8D5;

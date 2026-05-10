@@ -10,12 +10,12 @@
 import { Tabs, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
-import { useAuth } from '@/store/authStore';
+import { useStaff } from '@/state/StaffContext';
 import { colors, fontWeight, radius, space, text } from '@/theme';
 
 function LogoutButton() {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout } = useStaff();
   return (
     <Pressable
       onPress={async () => {

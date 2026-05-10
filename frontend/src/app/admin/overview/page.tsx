@@ -77,16 +77,16 @@ function sourceBadge(src?: string) {
   return (
     // Dynamic: bg/color come from a runtime palette map keyed by source.
     <span
-      className="inline-block py-[0.1rem] px-2 rounded-[10px] text-[0.72rem] font-semibold uppercase tracking-[0.03em]"
+      className="inline-block py-0.5 px-2 rounded-r text-xs font-semibold uppercase tracking-[0.03em]"
       style={{ background: cfg.bg, color: cfg.color }}
     >{s}</span>
   );
 }
 
 function logStatus(l: OverviewLog) {
-  if (l.error_message) return <span className="text-red-600 text-[0.75rem] font-semibold">Error</span>;
-  if (l.processed) return <span className="text-emerald-700 text-[0.75rem] font-semibold">OK</span>;
-  return <span className="text-dim text-[0.75rem]">Pending</span>;
+  if (l.error_message) return <span className="text-red-600 text-xs font-semibold">Error</span>;
+  if (l.processed) return <span className="text-emerald-700 text-xs font-semibold">OK</span>;
+  return <span className="text-dim text-xs">Pending</span>;
 }
 
 function orderStatus(s?: string) {
@@ -98,7 +98,7 @@ function orderStatus(s?: string) {
   };
   const color = colorMap[st] || 'var(--gb-slate-700)';
   // Dynamic: color resolved from a runtime palette map keyed by status.
-  return <span className="text-[0.75rem] font-semibold" style={{ color }}>{st || '—'}</span>;
+  return <span className="text-xs font-semibold" style={{ color }}>{st || '—'}</span>;
 }
 
 function timeAgo(iso?: string): string {
@@ -115,8 +115,8 @@ function fmtNum(n: number | string | null | undefined): string {
   return n == null ? '—' : Number(n).toLocaleString('en-IN');
 }
 
-const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const TH_CLS = 'py-2 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
 
 export default function AdminOverviewPage() {
@@ -238,7 +238,7 @@ export default function AdminOverviewPage() {
             return (
               <div
                 key={i}
-                className={`flex items-center gap-[0.7rem] py-[0.65rem] px-4 rounded-lg mb-2 text-[0.84rem] ${
+                className={`flex items-center gap-3 py-2.5 px-4 rounded-lg mb-2 text-sm ${
                   crit
                     ? 'bg-red-50 border border-red-200 text-red-500'
                     : 'bg-amber-50 border border-yellow-200 text-amber-500'
@@ -257,7 +257,7 @@ export default function AdminOverviewPage() {
         <div className="mb-4"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <>
-          <div className="grid gap-[0.6rem] mb-[1.2rem] grid-cols-[repeat(auto-fill,minmax(180px,1fr))]">
+          <div className="grid gap-2.5 mb-5 grid-cols-[repeat(auto-fill,minmax(180px,1fr))]">
             <StatCard label="Restaurants" value={loading ? '…' : fmtNum(restTotal)}
               delta={restActive != null ? `${fmtNum(restActive)} active` : null} />
             <StatCard label="Total Orders" value={loading ? '…' : fmtNum(ordTotal)}
@@ -280,13 +280,13 @@ export default function AdminOverviewPage() {
           <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(420px,1fr))]">
             <div className="card">
               <div className="ch justify-between">
-                <h3 className="m-0 text-[0.9rem]">Recent Orders</h3>
+                <h3 className="m-0 text-base">Recent Orders</h3>
                 <Link href="/admin/orders" className="btn-g btn-sm">View All</Link>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-[0.82rem]">
+                <table className="w-full border-collapse text-sm">
                   <thead>
-                    <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                    <tr className="bg-ink text-left text-dim text-xs">
                       <th className={TH_CLS}>Order</th>
                       <th className={TH_CLS}>Restaurant</th>
                       <th className={TH_CLS}>Amount</th>
@@ -305,7 +305,7 @@ export default function AdminOverviewPage() {
                             <>
                               <div>{o.display_order_id}</div>
                               {o.order_number && (
-                                <div className="text-[0.68rem] text-mute">
+                                <div className="text-xs text-mute">
                                   {o.order_number}
                                 </div>
                               )}
@@ -326,13 +326,13 @@ export default function AdminOverviewPage() {
 
             <div className="card">
               <div className="ch justify-between">
-                <h3 className="m-0 text-[0.9rem]">Recent Logs</h3>
+                <h3 className="m-0 text-base">Recent Logs</h3>
                 <Link href="/admin/logs" className="btn-g btn-sm">View All</Link>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-[0.82rem]">
+                <table className="w-full border-collapse text-sm">
                   <thead>
-                    <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                    <tr className="bg-ink text-left text-dim text-xs">
                       <th className={TH_CLS}>Source</th>
                       <th className={TH_CLS}>Event</th>
                       <th className={TH_CLS}>Status</th>
@@ -394,15 +394,15 @@ const OWNER_PUSH_ROWS: ReadonlyArray<{ key: keyof OwnerPushPrefs; label: string;
 
 function OwnerPushAlertsCard({ prefs, loading, savingKey, onToggle }: OwnerPushAlertsCardProps) {
   return (
-    <div className="card mt-[1.2rem]">
+    <div className="card mt-5">
       <div className="ch">
-        <h3 className="m-0 text-[0.9rem]">🔔 Owner Push Alerts</h3>
+        <h3 className="m-0 text-base">🔔 Owner Push Alerts</h3>
       </div>
       <div className="cb">
         {loading ? (
-          <div className="text-dim text-[0.84rem]">Loading…</div>
+          <div className="text-dim text-sm">Loading…</div>
         ) : !prefs ? (
-          <div className="text-dim text-[0.84rem]">Unable to load preferences.</div>
+          <div className="text-dim text-sm">Unable to load preferences.</div>
         ) : (
           <div className="flex flex-col">
             {OWNER_PUSH_ROWS.map((row, i) => {
@@ -417,10 +417,10 @@ function OwnerPushAlertsCard({ prefs, loading, savingKey, onToggle }: OwnerPushA
                   } ${busy ? 'cursor-default opacity-60' : 'cursor-pointer opacity-100'}`}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-[0.86rem] font-semibold text-tx">
+                    <div className="text-base font-semibold text-tx">
                       {row.label}
                     </div>
-                    <div className="text-[0.76rem] text-dim mt-[0.15rem]">
+                    <div className="text-xs text-dim mt-0.5">
                       {row.description}
                     </div>
                   </div>

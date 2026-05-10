@@ -40,9 +40,9 @@ function fmtNum(n: number | string | null | undefined): string {
   try { return v.toLocaleString('en-IN'); } catch { return String(v); }
 }
 
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
-const SUB_CLS = 'text-[0.72rem] text-dim';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2.5 px-3 align-top';
+const SUB_CLS = 'text-xs text-dim';
 const EMPTY_CLS = 'p-6 text-center text-dim';
 
 export default function AdminDirectoryPage() {
@@ -132,14 +132,14 @@ export default function AdminDirectoryPage() {
       )}
 
       <div className="card mb-4">
-        <div className="ch gap-[0.6rem] flex-wrap">
+        <div className="ch gap-2.5 flex-wrap">
           <h3>Sync</h3>
-          <span className="text-dim text-[0.78rem] mr-auto">
+          <span className="text-dim text-sm mr-auto">
             Re-syncs all approved restaurants into the directory.
           </span>
           {confirmSync ? (
             <>
-              <span className="text-[0.78rem] text-dim">Are you sure?</span>
+              <span className="text-sm text-dim">Are you sure?</span>
               <button type="button" className="btn-p btn-sm" onClick={doSyncAll} disabled={syncBusy}>
                 {syncBusy ? 'Syncing…' : 'Yes, sync'}
               </button>
@@ -166,7 +166,7 @@ export default function AdminDirectoryPage() {
           <div className="cb"><SectionError message={listErr} onRetry={loadList} /></div>
         ) : (
           <div className="cb overflow-x-auto p-0">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={TH_CLS}>Restaurant</th>
@@ -198,7 +198,7 @@ export default function AdminDirectoryPage() {
                         <td className={TD_CLS}>{l.city || '—'}</td>
                         <td className={TD_CLS}>
                           <span
-                            className="font-semibold text-[0.72rem]"
+                            className="font-semibold text-xs"
                             // colour comes from TYPE_COLOR by restaurant_type
                             // at runtime (veg/non_veg/both — 3 distinct).
                             style={{ color: TYPE_COLOR[type] }}
@@ -210,9 +210,9 @@ export default function AdminDirectoryPage() {
                         <td className={TD_CLS}>{l.order_count || 0}</td>
                         <td className={TD_CLS}>
                           {l.is_active ? (
-                            <span className="text-wa-500 font-semibold text-[0.72rem]">Active</span>
+                            <span className="text-wa-500 font-semibold text-xs">Active</span>
                           ) : (
-                            <span className="text-dim font-semibold text-[0.72rem]">Inactive</span>
+                            <span className="text-dim font-semibold text-xs">Inactive</span>
                           )}
                         </td>
                         <td className={TD_CLS}>

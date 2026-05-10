@@ -142,17 +142,17 @@ export default function OrderCard({ order, onStatusChange, onViewDetail, onDecli
       <td><span className="mono">{order.display_order_id || `#${(order.id || '').slice(-6) || '????'}`}</span></td>
       <td>
         <div>{order.customer_name || '—'}</div>
-        <div className="text-[0.72rem] text-dim">
+        <div className="text-xs text-dim">
           {customerSecondary(order)}
         </div>
       </td>
       <td>{order.branch_name || ''}</td>
       <td>₹{order.total_rs}</td>
       <td><StatusBadge status={order.status} /></td>
-      <td className="text-[0.73rem]"><EtaCell order={order} /></td>
-      <td className="text-[0.73rem] text-dim">{timeAgo(order.created_at)}</td>
+      <td className="text-xs"><EtaCell order={order} /></td>
+      <td className="text-xs text-dim">{timeAgo(order.created_at)}</td>
       <td>
-        <div className="flex gap-[0.35rem] items-center justify-end">
+        <div className="flex gap-1.5 items-center justify-end">
           {next && (
             <button
               type="button"

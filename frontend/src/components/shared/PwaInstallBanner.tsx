@@ -63,9 +63,9 @@ export function PwaInstallBanner() {
     <div
       role="dialog"
       aria-label="Install GullyBite"
-      className="fixed bottom-4 left-4 right-4 z-9999 bg-bg border border-rim rounded-xl py-[0.7rem] px-[0.9rem] shadow-[0_6px_24px_rgba(0,0,0,0.12)] flex items-center gap-[0.6rem]"
+      className="fixed bottom-4 left-4 right-4 z-9999 bg-bg border border-rim rounded-xl py-3 px-3.5 shadow-[0_6px_24px_rgba(0,0,0,0.12)] flex items-center gap-2.5"
     >
-      <span className="flex-1 text-[0.85rem]">
+      <span className="flex-1 text-base">
         Install GullyBite on your phone for faster access.
       </span>
       <button

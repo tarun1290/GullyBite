@@ -98,16 +98,16 @@ export default function BranchStaffLinkPanel({ branchId }: BranchStaffLinkPanelP
       </div>
       <div className="cb">
         {loading ? (
-          <p className="text-dim text-[0.85rem] m-0">Loading…</p>
+          <p className="text-dim text-base m-0">Loading…</p>
         ) : !hasLink ? (
           // ── State A: no link yet ──
           <>
-            <p className="text-dim text-[0.85rem] mt-0">
+            <p className="text-dim text-base mt-0">
               Generate a secure login link for your branch staff. Share this
               link with staff members — they sign in using their name and PIN.
             </p>
             {error && (
-              <p className="text-red-500 text-[0.82rem] mb-2">
+              <p className="text-red-500 text-sm mb-2">
                 {error}
               </p>
             )}
@@ -123,7 +123,7 @@ export default function BranchStaffLinkPanel({ branchId }: BranchStaffLinkPanelP
         ) : (
           // ── State B: link exists ──
           <>
-            <p className="text-dim text-[0.78rem] mt-0 mb-[0.6rem]">
+            <p className="text-dim text-sm mt-0 mb-2.5">
               Generated {formatGeneratedAt(link!.generated_at)}
             </p>
             <input
@@ -131,15 +131,15 @@ export default function BranchStaffLinkPanel({ branchId }: BranchStaffLinkPanelP
               value={link!.staff_login_url || ''}
               readOnly
               onFocus={(e) => e.target.select()}
-              className="w-full py-2 px-[0.6rem] border border-rim rounded-md text-[0.82rem] font-mono bg-ink2 text-fg mb-[0.7rem]"
+              className="w-full py-2 px-2.5 border border-rim rounded-md text-sm font-mono bg-ink2 text-fg mb-3"
               aria-label="Staff login URL"
             />
             {error && (
-              <p className="text-red-500 text-[0.82rem] mb-2">
+              <p className="text-red-500 text-sm mb-2">
                 {error}
               </p>
             )}
-            <div className="flex gap-[0.4rem] flex-wrap mb-[0.6rem]">
+            <div className="flex gap-1.5 flex-wrap mb-2.5">
               <button
                 type="button"
                 className="btn-p btn-sm"
@@ -157,7 +157,7 @@ export default function BranchStaffLinkPanel({ branchId }: BranchStaffLinkPanelP
                 {busy ? 'Regenerating…' : 'Regenerate'}
               </button>
             </div>
-            <p className="text-dim text-[0.78rem] m-0 leading-normal">
+            <p className="text-dim text-sm m-0 leading-normal">
               Staff open this link on their device and sign in with their name
               and PIN. Works on Android (with the GullyBite Staff app) and
               iOS/browser.

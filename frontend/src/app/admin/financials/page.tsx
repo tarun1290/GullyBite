@@ -179,17 +179,17 @@ function StatusBadge({ status, type }: StatusBadgeProps): ReactNode {
     <span
       // bg + color come from pickStatusColor() palette by status/type at runtime
       style={{ background: c.bg, color: c.color }}
-      className="inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] font-semibold text-[0.72rem] capitalize"
+      className="inline-block py-0.5 px-2 rounded-r font-semibold text-xs capitalize"
     >{status || '-'}</span>
   );
 }
 
-const TABLE_CLS = 'w-full border-collapse text-[0.82rem]';
+const TABLE_CLS = 'w-full border-collapse text-sm';
 const TR_HEAD_CLS = 'bg-ink border-b border-rim';
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CELL_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.6rem] text-[0.78rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1 px-2.5 text-sm';
 
 type ToastFn = (text: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
 
@@ -212,7 +212,7 @@ export default function AdminFinancialsPage() {
     <div id="pg-financials">
       <OverviewStats period={period} />
 
-      <div className="flex gap-[0.4rem] mb-4 flex-wrap items-center">
+      <div className="flex gap-1.5 mb-4 flex-wrap items-center">
         {SUBS.map((t) => (
           <button
             key={t.id}
@@ -343,7 +343,7 @@ function OverviewSection({ period, restaurants }: OverviewSectionProps): ReactNo
           ) : !data ? (
             <div className="text-dim">Loading…</div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 text-[0.85rem]">
+            <div className="grid grid-cols-2 gap-4 text-base">
               <div>
                 <strong className="text-emerald-700">Money In</strong><br />
                 GMV Collected: {fmtINR(data.gmv_rs)}
@@ -363,7 +363,7 @@ function OverviewSection({ period, restaurants }: OverviewSectionProps): ReactNo
       <div className="card">
         <div className="ch flex-wrap gap-2">
           <h3 className="m-0">Settlement Tracker</h3>
-          <div className="ml-auto flex gap-[0.4rem] flex-wrap">
+          <div className="ml-auto flex gap-1.5 flex-wrap">
             <select
               value={trackerRest}
               onChange={(e) => { setTrackerRest(e.target.value); setTrackerPage(1); }}
@@ -419,7 +419,7 @@ function OverviewSection({ period, restaurants }: OverviewSectionProps): ReactNo
                       <td className={TD_CLS}>{fmtINR(s.tds_rs)}</td>
                       <td className={TD_CLS}>{fmtINR(s.net_rs)}</td>
                       <td className={TD_CLS}><StatusBadge status={s.status} type="settlement" /></td>
-                      <td className={`${TD_CLS} text-[0.75rem] mono`}>{s.utr || '-'}</td>
+                      <td className={`${TD_CLS} text-xs mono`}>{s.utr || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -531,7 +531,7 @@ function SettlementsSection({ showToast }: SettlementsSectionProps): ReactNode {
                       {s.status !== 'paid' && (
                         <button
                           type="button"
-                          className="btn-p btn-sm ml-[0.35rem]"
+                          className="btn-p btn-sm ml-1.5"
                           onClick={() => s.id && doPay(s.id)}
                           disabled={payingId === s.id}
                         >
@@ -551,24 +551,24 @@ function SettlementsSection({ showToast }: SettlementsSectionProps): ReactNode {
       {detail && (
         <div
           onClick={() => setDetail(null)}
-          className="fixed inset-0 bg-[rgba(0,0,0,0.55)] flex items-center justify-center z-1000 p-[1.4rem]"
+          className="fixed inset-0 bg-[rgba(0,0,0,0.55)] flex items-center justify-center z-1000 p-6"
         >
           <div
             onClick={(e) => e.stopPropagation()}
             // width uses min(720px, 100%) which is not expressible as a static Tailwind class
             style={{ width: 'min(720px, 100%)' }}
-            className="bg-neutral-0 rounded-lg max-h-[86vh] overflow-auto py-[1.2rem] px-[1.4rem] relative"
+            className="bg-neutral-0 rounded-lg max-h-[86vh] overflow-auto py-5 px-6 relative"
           >
             <button
               type="button"
               onClick={() => setDetail(null)}
-              className="absolute top-[0.6rem] right-[0.8rem] bg-transparent border-0 text-[1.4rem] cursor-pointer text-dim"
+              className="absolute top-2.5 right-3 bg-transparent border-0 text-[1.4rem] cursor-pointer text-dim"
               aria-label="Close"
             >
               ×
             </button>
             <h2 className="m-0 mb-2">Settlement Details</h2>
-            <div className="text-[0.78rem] text-dim mb-[0.8rem] mono">
+            <div className="text-sm text-dim mb-3 mono">
               {detail.id}
             </div>
             {detail.loading ? (
@@ -576,7 +576,7 @@ function SettlementsSection({ showToast }: SettlementsSectionProps): ReactNode {
             ) : detail.err ? (
               <SectionError message={detail.err} onRetry={() => doView(detail.id)} />
             ) : (
-              <pre className="m-0 text-[0.75rem] leading-normal bg-ink3 p-4 rounded-md overflow-auto max-h-[60vh]">
+              <pre className="m-0 text-xs leading-normal bg-ink3 p-4 rounded-md overflow-auto max-h-[60vh]">
                 {JSON.stringify(detail.data, null, 2)}
               </pre>
             )}
@@ -800,7 +800,7 @@ function TaxSection({ period, showToast }: TaxSectionProps): ReactNode {
             {downloading === 'tds' ? 'Downloading…' : 'Download TDS Report'}
           </button>
         </div>
-        <div className="cb text-[0.85rem]">
+        <div className="cb text-base">
           <strong>Quarterly TDS Summary:</strong>{' '}
           Total Gross Payouts: {fmtINR(tds.total_gross_rs)} |{' '}
           TDS Deducted (@1%): {fmtINR(tds.total_tds_rs)} |{' '}
@@ -848,7 +848,7 @@ function TaxSection({ period, showToast }: TaxSectionProps): ReactNode {
             {downloading === 'gst' ? 'Downloading…' : 'Download GSTR-1 Data'}
           </button>
         </div>
-        <div className="cb text-[0.85rem]">
+        <div className="cb text-base">
           <strong>Monthly Platform Fee GST:</strong>{' '}
           Total Platform Fees: {fmtINR(gst.total_fees_rs)} |{' '}
           CGST (9%): {fmtINR(gst.cgst_rs)} |{' '}
@@ -900,7 +900,7 @@ interface PagerProps {
 function Pager({ page, rows, total, onPage, limit, disabled }: PagerProps): ReactNode {
   const pages = useMemo(() => Math.max(1, Math.ceil((total || 0) / limit)), [total, limit]);
   return (
-    <div className="cb flex gap-[0.6rem] items-center justify-center">
+    <div className="cb flex gap-2.5 items-center justify-center">
       <button
         type="button"
         className="btn-g btn-sm"
@@ -909,7 +909,7 @@ function Pager({ page, rows, total, onPage, limit, disabled }: PagerProps): Reac
       >
         ← Prev
       </button>
-      <span className="text-[0.8rem] text-dim">Page {page} / {pages}</span>
+      <span className="text-sm text-dim">Page {page} / {pages}</span>
       <button
         type="button"
         className="btn-g btn-sm"
@@ -918,7 +918,7 @@ function Pager({ page, rows, total, onPage, limit, disabled }: PagerProps): Reac
       >
         Next →
       </button>
-      <span className="text-[0.75rem] text-dim ml-[0.6rem]">{total} total</span>
+      <span className="text-xs text-dim ml-2.5">{total} total</span>
     </div>
   );
 }

@@ -219,13 +219,13 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch"><h3>📚 Collections</h3></div>
         <div className="cb">
-          <p className="text-dim text-[0.86rem] mb-[0.7rem]">
+          <p className="text-dim text-base mb-3">
             Select a specific branch to manage its collections.
           </p>
           <select
             value={selectedBranchId}
             onChange={(e) => setSelectedBranchId(e.target.value)}
-            className="py-[0.4rem] px-[0.6rem] rounded-[7px] border border-rim text-[0.85rem]"
+            className="py-1.5 px-2.5 rounded-md border border-rim text-base"
           >
             <option value="">Select branch…</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -240,7 +240,7 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch"><h3>📚 Collections</h3></div>
         <div className="cb">
-          <p className="text-dim text-[0.86rem]">
+          <p className="text-dim text-base">
             &quot;{branch?.name}&quot; has no catalog yet. Create one from the Branches tab first.
           </p>
         </div>
@@ -253,7 +253,7 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch justify-between">
           <h3>📚 Collections — {branch?.name}</h3>
-          <div className="flex gap-[0.4rem]">
+          <div className="flex gap-1.5">
             <button type="button" className="btn-g btn-sm" onClick={handleAuto}>✨ Auto-Create</button>
             <button type="button" className="btn-g btn-sm" onClick={handleSync}>🔄 Sync to Meta</button>
             <button type="button" className="btn-p btn-sm" onClick={openCreate}>+ Create</button>
@@ -263,19 +263,19 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
           {loading ? (
             <p className="text-dim">Loading…</p>
           ) : !colls.length ? (
-            <p className="text-dim text-[0.82rem]">
+            <p className="text-dim text-sm">
               No collections yet. Click <strong>Auto-Create</strong> to generate from product sets,
               or <strong>Create</strong> to add manually.
             </p>
           ) : (
-            <div className="flex flex-col gap-[0.4rem]">
+            <div className="flex flex-col gap-1.5">
               {colls.map((c, idx) => {
                 const setCount = c.product_sets?.length || 0;
                 const setNames = c.product_sets?.map((s) => s.name).join(', ') || '—';
                 const syncBadge = c.synced ? (
-                  <span className="text-[0.65rem] text-wa">🟢 synced</span>
+                  <span className="text-xs text-wa">🟢 synced</span>
                 ) : (
-                  <span className="text-[0.65rem] text-gold">🟡 pending</span>
+                  <span className="text-xs text-gold">🟡 pending</span>
                 );
                 return (
                   <div
@@ -284,18 +284,18 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
                     onDragStart={() => setDragIdx(idx)}
                     onDragOver={(e) => e.preventDefault()}
                     onDrop={() => handleDrop(idx)}
-                    className={`flex items-center gap-[0.6rem] py-[0.55rem] px-[0.7rem] bg-ink2 rounded-lg ${
+                    className={`flex items-center gap-2.5 py-2 px-3 bg-ink2 rounded-lg ${
                       dragIdx === idx ? 'opacity-40' : 'opacity-100'
                     }`}
                   >
                     <span className="cursor-grab text-mute text-base" title="Drag to reorder">⠿</span>
                     <div className="flex-1">
-                      <div className="font-semibold text-[0.84rem]">{c.name}</div>
-                      <div className="text-[0.7rem] text-dim">
+                      <div className="font-semibold text-sm">{c.name}</div>
+                      <div className="text-xs text-dim">
                         {setCount} set{setCount !== 1 ? 's' : ''}: {setNames}
                       </div>
                     </div>
-                    {c.is_active === false && <span className="text-[0.65rem] text-mute">⚪ inactive</span>}
+                    {c.is_active === false && <span className="text-xs text-mute">⚪ inactive</span>}
                     {syncBadge}
                     <button type="button" className="btn-g btn-xs" onClick={() => openEdit(c)}>✏ Edit</button>
                     {pendingDelete === c.id ? (
@@ -350,17 +350,17 @@ export default function CollectionsSection({ branches, selectedBranchId, setSele
                 <div className="fg span2">
                   <label>Product sets</label>
                   {!sets.length ? (
-                    <p className="text-[0.78rem] text-dim">No product sets. Create them in the Product Sets tab first.</p>
+                    <p className="text-sm text-dim">No product sets. Create them in the Product Sets tab first.</p>
                   ) : (
-                    <div className="flex flex-col gap-[0.2rem] max-h-[180px] overflow-y-auto">
+                    <div className="flex flex-col gap-1 max-h-[180px] overflow-y-auto">
                       {sets.map((s) => (
-                        <label key={s.id} className="flex items-center gap-[0.4rem] py-1 text-[0.84rem] cursor-pointer">
+                        <label key={s.id} className="flex items-center gap-1.5 py-1 text-sm cursor-pointer">
                           <input
                             type="checkbox"
                             checked={form.productSetIds.includes(s.id)}
                             onChange={() => toggleSet(s.id)}
                           />
-                          {s.name} <span className="text-[0.65rem] text-dim">({s.type})</span>
+                          {s.name} <span className="text-xs text-dim">({s.type})</span>
                         </label>
                       ))}
                     </div>

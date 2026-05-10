@@ -28,7 +28,7 @@ export default function StatCard({
   const deltaClass = deltaType === 'down' ? 'stat-s dn' : 'stat-s';
   return (
     <div
-      className="stat pl-[1.1rem] border-l-4 min-w-0"
+      className="stat pl-4 border-l-4 min-w-0"
       // accent border colour comes from COLOR_MAP by `color` prop at
       // runtime (indigo/green/amber/red — 4 distinct CSS vars).
       style={{ borderLeftColor: accentColor }}

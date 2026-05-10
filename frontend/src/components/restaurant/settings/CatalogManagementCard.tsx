@@ -81,15 +81,15 @@ function Modal({ open, onClose, title, children, busy = false }: ModalProps) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-[10px] max-w-[500px] w-full shadow-[0_12px_40px_rgba(0,0,0,0.18)] overflow-hidden"
+        className="bg-white rounded-r max-w-[500px] w-full shadow-[0_12px_40px_rgba(0,0,0,0.18)] overflow-hidden"
       >
-        <div className="py-[0.85rem] px-4 border-b border-rim flex items-center justify-between">
+        <div className="py-3.5 px-4 border-b border-rim flex items-center justify-between">
           <h3 className="m-0 text-base">{title}</h3>
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className={`bg-transparent border-0 text-[1.2rem] text-dim py-[0.2rem] px-[0.4rem] ${
+            className={`bg-transparent border-0 text-xl text-dim py-1 px-1.5 ${
               busy ? 'cursor-not-allowed' : 'cursor-pointer'
             }`}
             aria-label="Close"
@@ -138,7 +138,7 @@ export default function CatalogManagementCard() {
 
   return (
     <>
-      <div className="card mb-[1.2rem]">
+      <div className="card mb-5">
         <div className="ch"><h3>Meta Catalog</h3></div>
         <div className="cb">
           {loading && !catalogState ? (
@@ -228,7 +228,7 @@ export default function CatalogManagementCard() {
 
 function LoadingState() {
   return (
-    <div className="flex items-center gap-[0.6rem] py-4 text-dim">
+    <div className="flex items-center gap-2.5 py-4 text-dim">
       <span className="spin" aria-hidden="true" />
       <span>Loading catalog state…</span>
     </div>
@@ -239,7 +239,7 @@ interface ErrorStateProps { message: string; onRetry: () => void }
 
 function ErrorState({ message, onRetry }: ErrorStateProps) {
   return (
-    <div className="py-3 px-[0.9rem] bg-red-50 border border-red-200 rounded-lg text-red-600 text-[0.84rem] flex items-center justify-between gap-[0.6rem]">
+    <div className="py-3 px-3.5 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm flex items-center justify-between gap-2.5">
       <span>Failed to load: {message}</span>
       <button type="button" className="btn-g btn-sm" onClick={onRetry}>Retry</button>
     </div>
@@ -251,10 +251,10 @@ interface EmptyStateProps { onConnect: () => void; onCreate: () => void }
 function EmptyState({ onConnect, onCreate }: EmptyStateProps) {
   return (
     <div>
-      <div className="font-semibold text-[0.92rem] mb-[0.3rem]">
+      <div className="font-semibold text-md mb-1">
         No catalog connected
       </div>
-      <div className="text-dim text-[0.82rem] mb-[0.9rem]">
+      <div className="text-dim text-sm mb-3.5">
         Connect a Meta Product Catalog to enable WhatsApp ordering.
       </div>
       <div className="flex gap-3 flex-wrap">
@@ -286,20 +286,20 @@ function ConnectedState({ state, syncStatus, onSwitch, onCreate, onDelete, onDis
 
   return (
     <div>
-      <div className="mb-[0.85rem]">
-        <div className="font-bold text-base text-tx mb-[0.3rem]">
+      <div className="mb-3.5">
+        <div className="font-bold text-base text-tx mb-1">
           {state.catalogName || 'Menu Catalog'}
         </div>
         <div
           title={state.catalogId}
-          className="font-mono text-[0.78rem] text-dim mb-[0.45rem] whitespace-nowrap overflow-hidden text-ellipsis"
+          className="font-mono text-sm text-dim mb-2 whitespace-nowrap overflow-hidden text-ellipsis"
         >
           {state.catalogId}
         </div>
-        <div className="text-[0.82rem] text-tx mb-[0.2rem]">
+        <div className="text-sm text-tx mb-1">
           {itemCount == null ? 'Item count unavailable' : `${itemCount} item${itemCount === 1 ? '' : 's'} in catalog`}
         </div>
-        <div className="text-[0.78rem] text-dim">
+        <div className="text-sm text-dim">
           {lastSyncStatus === 'failed'
             ? `Last sync failed${lastSync ? ` (${formatRelativeTime(lastSync)})` : ''}`
             : lastSync
@@ -307,7 +307,7 @@ function ConnectedState({ state, syncStatus, onSwitch, onCreate, onDelete, onDis
               : 'Never synced'}
         </div>
         {!state.catalogLinkedToWhatsapp && (
-          <div className="mt-[0.45rem] text-[0.78rem] text-gold">
+          <div className="mt-2 text-sm text-gold">
             ⚠ Catalog exists but is not linked to WhatsApp.
           </div>
         )}
@@ -391,8 +391,8 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
 
   return (
     <Modal open={open} onClose={onClose} title="Select a catalog" busy={busy}>
-      <div className="mb-[0.7rem] flex justify-between items-center">
-        <span className="text-[0.78rem] text-dim">
+      <div className="mb-3 flex justify-between items-center">
+        <span className="text-sm text-dim">
           {list.length} {list.length === 1 ? 'catalog' : 'catalogs'} available
         </span>
         <button type="button" className="btn-g btn-sm" onClick={handleRefresh} disabled={refreshing || busy}>
@@ -401,7 +401,7 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
       </div>
 
       {list.length === 0 ? (
-        <div className="p-4 text-center text-dim text-[0.84rem]">
+        <div className="p-4 text-center text-dim text-sm">
           No catalogs found. Try refreshing, or create a new one.
         </div>
       ) : (
@@ -411,7 +411,7 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
             return (
               <label
                 key={c.id}
-                className={`flex items-center gap-[0.6rem] py-[0.6rem] px-3 border-b border-rim w-full box-border ${
+                className={`flex items-center gap-2.5 py-2.5 px-3 border-b border-rim w-full box-border ${
                   isCurrent ? 'cursor-default opacity-70' : 'cursor-pointer opacity-100'
                 } ${
                   selected === c.id ? 'bg-[rgba(79,70,229,0.06)]' : 'bg-transparent'
@@ -426,8 +426,8 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
                   onChange={() => setSelected(c.id)}
                   className="shrink-0"
                 />
-                <div className="flex-1 min-w-0 flex flex-col gap-[0.2rem]">
-                  <div className="flex items-center gap-3 text-[0.86rem]">
+                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                  <div className="flex items-center gap-3 text-base">
                     <span
                       title={c.name || 'Unnamed catalog'}
                       className="flex-1 min-w-0 font-semibold whitespace-nowrap overflow-hidden text-ellipsis"
@@ -435,24 +435,24 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
                       {c.name || 'Unnamed catalog'}
                     </span>
                     {isCurrent && (
-                      <span className="shrink-0 text-[0.7rem] font-medium text-wa bg-[rgba(22,163,74,0.1)] py-[0.05rem] px-[0.4rem] rounded-full">
+                      <span className="shrink-0 text-xs font-medium text-wa bg-[rgba(22,163,74,0.1)] py-[0.05rem] px-1.5 rounded-full">
                         Connected
                       </span>
                     )}
                     {!isCurrent && c.connected && (
-                      <span className="shrink-0 text-[0.7rem] font-medium text-dim bg-surface2 py-[0.05rem] px-[0.4rem] rounded-full">
+                      <span className="shrink-0 text-xs font-medium text-dim bg-surface2 py-[0.05rem] px-1.5 rounded-full">
                         Linked to WhatsApp
                       </span>
                     )}
                   </div>
                   <div
                     title={c.id}
-                    className="font-mono text-[0.7rem] text-dim whitespace-nowrap overflow-hidden text-ellipsis"
+                    className="font-mono text-xs text-dim whitespace-nowrap overflow-hidden text-ellipsis"
                   >
                     {c.id}
                   </div>
                   {c.product_count != null && (
-                    <div className="text-[0.74rem] text-dim">
+                    <div className="text-xs text-dim">
                       {c.product_count} item{c.product_count === 1 ? '' : 's'}
                     </div>
                   )}
@@ -464,10 +464,10 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
       )}
 
       {err && (
-        <div className="mt-[0.6rem] text-red-600 text-[0.8rem]">{err}</div>
+        <div className="mt-2.5 text-red-600 text-sm">{err}</div>
       )}
 
-      <div className="mt-[0.9rem] flex gap-3 justify-end">
+      <div className="mt-3.5 flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"
@@ -514,7 +514,7 @@ function CreateModal({ open, onClose, onCreated }: CreateModalProps) {
 
   return (
     <Modal open={open} onClose={onClose} title="Create new catalog" busy={busy}>
-      <label className="block text-[0.82rem] text-dim mb-[0.3rem]">
+      <label className="block text-sm text-dim mb-1">
         Catalog name
       </label>
       <input
@@ -524,15 +524,15 @@ function CreateModal({ open, onClose, onCreated }: CreateModalProps) {
         placeholder="e.g. Beyond Snacks - Main Menu"
         maxLength={60}
         disabled={busy}
-        className="w-full py-[0.55rem] px-3 border border-rim rounded-md text-[0.88rem] bg-white"
+        className="w-full py-2 px-3 border border-rim rounded-md text-base bg-white"
       />
-      <div className="mt-[0.3rem] text-[0.72rem] text-dim">
+      <div className="mt-1 text-xs text-dim">
         3–50 characters.{trimmed.length > 0 && ` (${trimmed.length})`}
       </div>
 
-      {err && <div className="mt-[0.6rem] text-red-600 text-[0.8rem]">{err}</div>}
+      {err && <div className="mt-2.5 text-red-600 text-sm">{err}</div>}
 
-      <div className="mt-[0.9rem] flex gap-3 justify-end">
+      <div className="mt-3.5 flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button type="button" className="btn-p btn-sm" onClick={handleCreate} disabled={!valid || busy}>
           {busy ? 'Creating…' : 'Create catalog'}
@@ -576,8 +576,8 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
 
   return (
     <Modal open={open} onClose={onClose} title="Delete this catalog?" busy={busy}>
-      <div className="bg-red-50 border border-red-200 rounded-md py-3 px-[0.85rem] text-red-950 text-[0.82rem] mb-[0.85rem]">
-        <div className="font-bold text-red-600 mb-[0.3rem]">
+      <div className="bg-red-50 border border-red-200 rounded-md py-3 px-3.5 text-red-950 text-sm mb-3.5">
+        <div className="font-bold text-red-600 mb-1">
           ⚠ This cannot be undone
         </div>
         This will permanently delete the catalog from your Meta business account.
@@ -591,7 +591,7 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
         )}
       </div>
 
-      <label className="block text-[0.78rem] text-dim mb-1">
+      <label className="block text-sm text-dim mb-1">
         Type the catalog name to confirm: <code className="text-tx">{catalogName || '(unknown)'}</code>
       </label>
       <input
@@ -600,12 +600,12 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
         onChange={(e) => setTyped(e.target.value)}
         disabled={busy}
         placeholder={catalogName || ''}
-        className="w-full py-2 px-[0.7rem] border border-rim rounded-md text-[0.85rem] bg-white"
+        className="w-full py-2 px-3 border border-rim rounded-md text-base bg-white"
       />
 
-      {err && <div className="mt-[0.6rem] text-red-600 text-[0.8rem]">{err}</div>}
+      {err && <div className="mt-2.5 text-red-600 text-sm">{err}</div>}
 
-      <div className="mt-[0.9rem] flex gap-3 justify-end">
+      <div className="mt-3.5 flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
         <button
           type="button"
@@ -648,13 +648,13 @@ function DisconnectModal({ open, onClose, catalogName, onDisconnected }: Disconn
 
   return (
     <Modal open={open} onClose={onClose} title="Disconnect catalog from WhatsApp?" busy={busy}>
-      <div className="bg-amber-50 border border-yellow-200 rounded-md py-3 px-[0.85rem] text-amber-900 text-[0.82rem] mb-[0.85rem]">
+      <div className="bg-amber-50 border border-yellow-200 rounded-md py-3 px-3.5 text-amber-900 text-sm mb-3.5">
         The catalog{catalogName ? ` "${catalogName}"` : ''} will remain in your Meta
         business account but will no longer be available to customers through WhatsApp.
         You can reconnect it later.
       </div>
 
-      {err && <div className="mb-[0.6rem] text-red-600 text-[0.8rem]">{err}</div>}
+      {err && <div className="mb-2.5 text-red-600 text-sm">{err}</div>}
 
       <div className="flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>

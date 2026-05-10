@@ -51,7 +51,7 @@ const INT_DEFS: ReadonlyArray<IntDef> = [
 export default function IntegrationsSection() {
   return (
     <div>
-      <div className="notice wa mb-[1.3rem]">
+      <div className="notice wa mb-5">
         <div className="notice-ico">🔗</div>
         <div className="notice-body">
           <h4>POS &amp; Platform Integrations — Coming Soon</h4>
@@ -71,16 +71,16 @@ export default function IntegrationsSection() {
             <div className="notice-ico">{d.emoji}</div>
             <div className="notice-body">
               <div className="flex items-center gap-2 flex-wrap">
-                <strong className="text-[0.92rem]">{d.name}</strong>
+                <strong className="text-md">{d.name}</strong>
                 <span className="badge bd">Coming soon</span>
               </div>
-              <p className="text-[0.8rem] text-dim mt-1 mb-0">{d.desc}</p>
+              <p className="text-sm text-dim mt-1 mb-0">{d.desc}</p>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="card mt-[1.2rem]">
+      <div className="card mt-5">
         <div className="ch"><h3>Sync Log</h3></div>
         <div className="tbl">
           <table>

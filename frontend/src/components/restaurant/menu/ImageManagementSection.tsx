@@ -96,11 +96,11 @@ export default function ImageManagementSection() {
         <div className="cb">
           {stats ? (
             <>
-              <div className="text-[0.84rem] mb-2">
+              <div className="text-sm mb-2">
                 <strong>{stats.withImages}</strong> of <strong>{stats.totalItems}</strong> items
                 have photos <span className="text-dim">({pct}%)</span>
               </div>
-              <div className="h-2 bg-ink2 rounded-[4px] overflow-hidden">
+              <div className="h-2 bg-ink2 rounded overflow-hidden">
                 <div
                   className={`h-full transition-[width] duration-300 ${
                     pct >= 80 ? 'bg-wa' : pct >= 40 ? 'bg-gold' : 'bg-red'
@@ -110,13 +110,13 @@ export default function ImageManagementSection() {
                   style={{ width: `${pct}%` }}
                 />
               </div>
-              <p className="text-[0.76rem] text-dim mt-[0.6rem] leading-normal">
+              <p className="text-xs text-dim mt-2.5 leading-normal">
                 Meta requires every catalog item to have a photo (min 500×500 px). Items without
                 images will be skipped on sync.
               </p>
             </>
           ) : (
-            <p className="text-dim text-[0.84rem]">Image stats unavailable.</p>
+            <p className="text-dim text-sm">Image stats unavailable.</p>
           )}
         </div>
       </div>
@@ -124,10 +124,10 @@ export default function ImageManagementSection() {
       <div className="card">
         <div className="ch justify-between">
           <h3>🖼️ Bulk Image Upload</h3>
-          <span className="text-[0.72rem] text-dim">Max {MAX_FILES} files</span>
+          <span className="text-xs text-dim">Max {MAX_FILES} files</span>
         </div>
         <div className="cb">
-          <p className="text-[0.82rem] text-dim mb-[0.7rem] leading-normal">
+          <p className="text-sm text-dim mb-3 leading-normal">
             Drop product photos here — the server will match each filename (e.g.{' '}
             <code>masala-dosa.jpg</code>) against your menu item names and attach them
             automatically. Unmatched files will be listed so you can rename and retry.
@@ -139,13 +139,13 @@ export default function ImageManagementSection() {
             accept="image/*"
             multiple
             onChange={handlePick}
-            className="mb-[0.6rem]"
+            className="mb-2.5"
           />
 
           {files.length > 0 && (
-            <div className="bg-ink2 rounded-lg py-2 px-[0.7rem] mb-[0.6rem] max-h-[180px] overflow-y-auto">
+            <div className="bg-ink2 rounded-lg py-2 px-3 mb-2.5 max-h-[180px] overflow-y-auto">
               {files.map((f, i) => (
-                <div key={`${f.name}-${i}`} className="text-[0.8rem] py-[0.15rem]">
+                <div key={`${f.name}-${i}`} className="text-sm py-0.5">
                   {i + 1}. {f.name}{' '}
                   <span className="text-dim">({(f.size / 1024).toFixed(0)} KB)</span>
                 </div>
@@ -170,14 +170,14 @@ export default function ImageManagementSection() {
           </div>
 
           {results && (
-            <div className="mt-[0.9rem] bg-ink2 rounded-lg py-[0.7rem] px-[0.85rem]">
+            <div className="mt-3.5 bg-ink2 rounded-lg py-3 px-3.5">
               {results.matched.length > 0 && (
                 <div className="mb-2">
-                  <strong className="text-wa text-[0.82rem]">
+                  <strong className="text-wa text-sm">
                     Matched {results.matched.length} item{results.matched.length === 1 ? '' : 's'}:
                   </strong>
                   {results.matched.map((m, i) => (
-                    <div key={`m-${i}`} className="text-[0.8rem] py-[0.15rem]">
+                    <div key={`m-${i}`} className="text-sm py-0.5">
                       ✅ {m.fileName} → {m.itemName}
                     </div>
                   ))}
@@ -185,18 +185,18 @@ export default function ImageManagementSection() {
               )}
               {results.unmatched.length > 0 && (
                 <div className={results.matched.length ? 'mt-2' : ''}>
-                  <strong className="text-gold text-[0.82rem]">
+                  <strong className="text-gold text-sm">
                     {results.unmatched.length} unmatched image{results.unmatched.length === 1 ? '' : 's'}:
                   </strong>
                   {results.unmatched.map((u, i) => (
-                    <div key={`u-${i}`} className="text-[0.8rem] py-[0.15rem] text-dim">
+                    <div key={`u-${i}`} className="text-sm py-0.5 text-dim">
                       ⚠️ {u.fileName}
                     </div>
                   ))}
                 </div>
               )}
               {!results.matched.length && !results.unmatched.length && (
-                <div className="text-[0.82rem] text-dim">
+                <div className="text-sm text-dim">
                   Upload complete. {results.uploaded} image{results.uploaded === 1 ? '' : 's'} processed.
                 </div>
               )}

@@ -153,10 +153,10 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
   })), [hours]);
 
   return (
-    <div className="p-[0.8rem] bg-ink2 border border-bdr rounded-lg">
-      <div className="flex items-center justify-between mb-[0.6rem]">
-        <h4 className="m-0 text-[0.88rem] text-tx">Operating Hours</h4>
-        <label className="flex items-center gap-[0.4rem] text-[0.78rem] text-dim cursor-pointer">
+    <div className="p-3 bg-ink2 border border-bdr rounded-lg">
+      <div className="flex items-center justify-between mb-2.5">
+        <h4 className="m-0 text-base text-tx">Operating Hours</h4>
+        <label className="flex items-center gap-1.5 text-sm text-dim cursor-pointer">
           <input
             type="checkbox"
             checked={sameHours}
@@ -167,7 +167,7 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
         </label>
       </div>
 
-      <div className="flex gap-[0.4rem] mb-[0.6rem] flex-wrap">
+      <div className="flex gap-1.5 mb-2.5 flex-wrap">
         <button type="button" className="btn-g btn-sm" onClick={() => applyPreset('standard')} disabled={saving || loading}>
           Standard (10–22)
         </button>
@@ -180,21 +180,21 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
       </div>
 
       {sameHours && (
-        <div className="mb-2 py-2 px-[0.6rem] bg-bg border border-bdr rounded-md">
-          <div className="flex items-center gap-[0.6rem] text-[0.82rem]">
+        <div className="mb-2 py-2 px-2.5 bg-bg border border-bdr rounded-md">
+          <div className="flex items-center gap-2.5 text-sm">
             <span className="text-dim w-[50px]">All days</span>
             <input
               type="time"
               value={uniOpen}
               onChange={(e) => setUniOpen(e.target.value)}
-              className="py-1 px-[0.4rem] border border-rim rounded-[4px] text-[0.78rem]"
+              className="py-1 px-1.5 border border-rim rounded text-sm"
             />
             <span className="text-dim">to</span>
             <input
               type="time"
               value={uniClose}
               onChange={(e) => setUniClose(e.target.value)}
-              className="py-1 px-[0.4rem] border border-rim rounded-[4px] text-[0.78rem]"
+              className="py-1 px-1.5 border border-rim rounded text-sm"
             />
           </div>
         </div>
@@ -206,7 +206,7 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
           return (
             <div
               key={r.day}
-              className="hours-row flex items-center gap-2 py-[0.35rem] text-[0.82rem] border-b border-bdr"
+              className="hours-row flex items-center gap-2 py-1.5 text-sm border-b border-bdr"
               data-day={r.day}
             >
               <span className="w-20 text-dim font-medium">{r.label}</span>
@@ -214,7 +214,7 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
                 checked={!r.is_closed}
                 onChange={(next) => updateDay(r.day, { is_closed: !next })}
               />
-              <span className="text-[0.72rem] text-dim w-11">
+              <span className="text-xs text-dim w-11">
                 {r.is_closed ? 'Closed' : 'Open'}
               </span>
               {!sameHours && (
@@ -224,7 +224,7 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
                     value={r.open}
                     disabled={disabled}
                     onChange={(e) => updateDay(r.day, { open: e.target.value })}
-                    className={`py-[0.2rem] px-[0.35rem] border border-rim rounded-[4px] text-[0.78rem] ${disabled ? 'opacity-[0.45]' : 'opacity-100'}`}
+                    className={`py-1 px-1.5 border border-rim rounded text-sm ${disabled ? 'opacity-[0.45]' : 'opacity-100'}`}
                   />
                   <span className={`text-dim ${disabled ? 'opacity-[0.45]' : 'opacity-100'}`}>to</span>
                   <input
@@ -232,7 +232,7 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
                     value={r.close}
                     disabled={disabled}
                     onChange={(e) => updateDay(r.day, { close: e.target.value })}
-                    className={`py-[0.2rem] px-[0.35rem] border border-rim rounded-[4px] text-[0.78rem] ${disabled ? 'opacity-[0.45]' : 'opacity-100'}`}
+                    className={`py-1 px-1.5 border border-rim rounded text-sm ${disabled ? 'opacity-[0.45]' : 'opacity-100'}`}
                   />
                 </>
               )}
@@ -241,13 +241,13 @@ export default function BranchHoursEditor({ branchId, onSaved }: BranchHoursEdit
         })}
       </div>
 
-      <div className="flex items-center gap-[0.6rem] mt-[0.6rem]">
+      <div className="flex items-center gap-2.5 mt-2.5">
         <button type="button" className="btn-p btn-sm" onClick={handleSave} disabled={saving || loading}>
           {saving ? 'Saving…' : 'Save Hours'}
         </button>
-        <span className="text-[0.75rem] text-dim">{status}</span>
+        <span className="text-xs text-dim">{status}</span>
       </div>
-      <div className="mt-[0.4rem] text-[0.72rem] text-dim">
+      <div className="mt-1.5 text-xs text-dim">
         Changes take effect immediately. Customers see updated hours on WhatsApp.
       </div>
     </div>

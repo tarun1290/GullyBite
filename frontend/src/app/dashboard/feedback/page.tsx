@@ -76,7 +76,7 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }
       <div className="card mb-4">
         <div className="ch items-center">
           <h3 className="m-0">Unified Rating Overview</h3>
-          <div className="ml-auto flex gap-[0.35rem]">
+          <div className="ml-auto flex gap-1.5">
             <button
               type="button"
               className={window === '30d' ? 'btn-p btn-sm' : 'btn-g btn-sm'}
@@ -93,7 +93,7 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }
             </button>
           </div>
         </div>
-        <div className="cb text-[0.82rem] text-dim">
+        <div className="cb text-sm text-dim">
           Combines post-delivery ratings and merchant-triggered dine-in feedback into one view.
         </div>
       </div>
@@ -124,21 +124,21 @@ function RatingOverview({ stats, loading, err, onRetry, window, onWindowChange }
       <div className="card mt-4">
         <div className="ch"><h3>By source</h3></div>
         <div
-          className="cb grid gap-[0.6rem] grid-cols-[repeat(auto-fit,minmax(180px,1fr))]"
+          className="cb grid gap-2.5 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]"
         >
           {(['delivery', 'dine_in'] as const).map((src) => (
             <div
               key={src}
-              className="py-[0.7rem] px-[0.8rem] border border-rim rounded-r bg-panel"
+              className="py-3 px-3 border border-rim rounded-r bg-panel"
             >
-              <div className="text-[0.76rem] text-dim capitalize">
+              <div className="text-xs text-dim capitalize">
                 {src.replace('_', '-')}
               </div>
               <div className="mt-1">
-                <strong className="text-[1.1rem]">
+                <strong className="text-lg">
                   {bySource[src]?.avg ?? '—'} ⭐
                 </strong>
-                <span className="ml-2 text-[0.8rem] text-dim">
+                <span className="ml-2 text-sm text-dim">
                   {bySource[src]?.count || 0} ratings
                 </span>
               </div>
@@ -167,16 +167,16 @@ function EscalationInbox({ escalations, loading, err, onRetry, includeResolved, 
     <div className="card mb-4">
       <div className="ch items-center">
         <h3 className="m-0">Escalation Inbox</h3>
-        <label className="ml-auto text-[0.78rem] text-dim inline-flex gap-[0.35rem] items-center">
+        <label className="ml-auto text-sm text-dim inline-flex gap-1.5 items-center">
           <input type="checkbox" checked={includeResolved} onChange={(e) => onToggleResolved(e.target.checked)} />
           Show resolved
         </label>
       </div>
       <div className="cb">
         {loading ? (
-          <div className="text-[0.82rem] text-dim">Loading…</div>
+          <div className="text-sm text-dim">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="text-[0.82rem] text-dim">
+          <div className="text-sm text-dim">
             No open escalations — nice work.
           </div>
         ) : (
@@ -215,34 +215,34 @@ function EscalationRow({ item, onResolve }: EscalationRowProps) {
 
   return (
     <div
-      className={`py-[0.65rem] px-3 border border-rim rounded-r ${isOpen ? 'bg-[#fff7ed]' : 'bg-[#f8fafc]'}`}
+      className={`py-2.5 px-3 border border-rim rounded-r ${isOpen ? 'bg-[#fff7ed]' : 'bg-[#f8fafc]'}`}
     >
-      <div className="flex items-center gap-[0.45rem] flex-wrap">
-        <strong className="text-[0.9rem]">
+      <div className="flex items-center gap-2 flex-wrap">
+        <strong className="text-base">
           {item.rating ? `${item.rating}⭐` : '—'}
         </strong>
-        <span className="text-[0.76rem] text-dim">
+        <span className="text-xs text-dim">
           {item.source ? item.source.replace('_', '-') : ''}
         </span>
         {item.customer_phone && (
-          <span className="text-[0.76rem] text-dim">
+          <span className="text-xs text-dim">
             {item.customer_phone}
           </span>
         )}
-        <span className="ml-auto text-[0.72rem] text-dim">
+        <span className="ml-auto text-xs text-dim">
           {item.created_at ? new Date(item.created_at).toLocaleString() : ''}
         </span>
       </div>
       {item.feedback_text && (
-        <div className="text-[0.82rem] mt-[0.35rem]">{item.feedback_text}</div>
+        <div className="text-sm mt-1.5">{item.feedback_text}</div>
       )}
       {item.status === 'resolved' && item.escalation_note && (
-        <div className="text-[0.76rem] text-dim mt-1">
+        <div className="text-xs text-dim mt-1">
           Resolved note: {item.escalation_note}
         </div>
       )}
       {isOpen && (
-        <div className="mt-[0.45rem] flex gap-[0.35rem] items-center">
+        <div className="mt-2 flex gap-1.5 items-center">
           {showNote ? (
             <>
               <input
@@ -250,7 +250,7 @@ function EscalationRow({ item, onResolve }: EscalationRowProps) {
                 value={note}
                 placeholder="Optional note"
                 onChange={(ev) => setNote(ev.target.value)}
-                className="flex-1 py-[0.35rem] px-2 border border-rim rounded-r"
+                className="flex-1 py-1.5 px-2 border border-rim rounded-r"
               />
               <button type="button" className="btn-p btn-sm" disabled={busy} onClick={doResolve}>
                 {busy ? 'Saving…' : 'Mark resolved'}
@@ -311,41 +311,41 @@ function SendDineIn({ onSend }: SendDineInProps) {
     <form className="card mb-4" onSubmit={submit}>
       <div className="ch"><h3>Send Dine-in Feedback</h3></div>
       <div
-        className="cb grid gap-[0.8rem] grid-cols-[repeat(auto-fit,minmax(220px,1fr))]"
+        className="cb grid gap-3 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]"
       >
         <label className="flex flex-col gap-1">
-          <span className="text-[0.78rem] text-dim">Customer phone</span>
+          <span className="text-sm text-dim">Customer phone</span>
           <input
             type="tel"
             inputMode="numeric"
             placeholder="91XXXXXXXXXX"
             value={phone}
             onChange={(ev) => setPhone(ev.target.value)}
-            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
+            className="py-2 px-2 border border-rim rounded-r bg-white"
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[0.78rem] text-dim">Customer name (optional)</span>
+          <span className="text-sm text-dim">Customer name (optional)</span>
           <input
             type="text"
             value={customerName}
             onChange={(ev) => setCustomerName(ev.target.value)}
-            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
+            className="py-2 px-2 border border-rim rounded-r bg-white"
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[0.78rem] text-dim">Order / table ref (optional)</span>
+          <span className="text-sm text-dim">Order / table ref (optional)</span>
           <input
             type="text"
             placeholder="e.g. T4-bill-1288"
             value={orderRef}
             onChange={(ev) => setOrderRef(ev.target.value)}
-            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
+            className="py-2 px-2 border border-rim rounded-r bg-white"
           />
         </label>
       </div>
       {msg && (
-        <div className={`cb text-[0.82rem] ${msg.kind === 'ok' ? 'text-wa' : 'text-red'}`}>
+        <div className={`cb text-sm ${msg.kind === 'ok' ? 'text-wa' : 'text-red'}`}>
           {msg.text}
         </div>
       )}
@@ -396,35 +396,35 @@ function ReviewLinksSettings({ links, onSave }: ReviewLinksSettingsProps) {
   return (
     <form className="card" onSubmit={submit}>
       <div className="ch"><h3>Review Links</h3></div>
-      <div className="cb text-[0.82rem] text-dim">
+      <div className="cb text-sm text-dim">
         Positive ratings trigger a WhatsApp nudge with these links (tracked via a short redirect).
       </div>
       <div
-        className="cb grid gap-[0.8rem] grid-cols-[repeat(auto-fit,minmax(260px,1fr))]"
+        className="cb grid gap-3 grid-cols-[repeat(auto-fit,minmax(260px,1fr))]"
       >
         <label className="flex flex-col gap-1">
-          <span className="text-[0.78rem] text-dim">Google review URL</span>
+          <span className="text-sm text-dim">Google review URL</span>
           <input
             type="url"
             placeholder="https://g.page/r/…/review"
             value={google}
             onChange={(ev) => setGoogle(ev.target.value)}
-            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
+            className="py-2 px-2 border border-rim rounded-r bg-white"
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[0.78rem] text-dim">Zomato review URL</span>
+          <span className="text-sm text-dim">Zomato review URL</span>
           <input
             type="url"
             placeholder="https://www.zomato.com/…"
             value={zomato}
             onChange={(ev) => setZomato(ev.target.value)}
-            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
+            className="py-2 px-2 border border-rim rounded-r bg-white"
           />
         </label>
       </div>
       {msg && (
-        <div className={`cb text-[0.82rem] ${msg.kind === 'ok' ? 'text-wa' : 'text-red'}`}>
+        <div className={`cb text-sm ${msg.kind === 'ok' ? 'text-wa' : 'text-red'}`}>
           {msg.text}
         </div>
       )}
@@ -510,7 +510,7 @@ export default function FeedbackPage() {
     <div id="tab-feedback" className="tab on">
       <div className="mb-4">
         <h2 className="m-0">Feedback</h2>
-        <div className="text-[0.84rem] text-dim mt-[0.2rem]">
+        <div className="text-sm text-dim mt-1">
           Every rating from delivery and dine-in, plus the review funnel that follows.
         </div>
       </div>

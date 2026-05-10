@@ -501,17 +501,17 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
 
   return (
     <div id="flow-editor-container" className="border border-rim rounded-lg bg-surface">
-      <div className="flex items-center gap-[0.6rem] py-[0.7rem] px-[0.9rem] border-b border-rim flex-wrap">
+      <div className="flex items-center gap-2.5 py-3 px-3.5 border-b border-rim flex-wrap">
         <div className="font-bold" id="fe-flow-name">{flowName}</div>
         <span
           id="fe-flow-status"
-          className={`text-[0.7rem] py-[0.1rem] px-[0.45rem] rounded-full font-semibold ${
+          className={`text-xs py-0.5 px-2 rounded-full font-semibold ${
             flowStatus === 'PUBLISHED'
               ? 'bg-[#22c55e15] text-wa-500'
               : 'bg-[#3b82f615] text-[#3b82f6]'
           }`}
         >{flowStatus}</span>
-        <div className="ml-auto flex gap-[0.4rem]">
+        <div className="ml-auto flex gap-1.5">
           <button type="button" id="fe-mode-btn" className="btn-sm" onClick={toggleJsonMode}>
             {jsonMode ? 'Visual Mode' : 'JSON Mode'}
           </button>
@@ -538,16 +538,16 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
       </div>
 
       <div className="grid grid-cols-[180px_1fr_300px] min-h-[500px]">
-        <div id="fe-palette" className="p-[0.7rem] border-r border-rim text-sm">
-          <div className="font-bold mb-2 text-[0.74rem] text-dim uppercase">Components</div>
+        <div id="fe-palette" className="p-3 border-r border-rim text-sm">
+          <div className="font-bold mb-2 text-xs text-dim uppercase">Components</div>
           {PALETTE.map((g) => (
             <div key={g.cat}>
-              <div className="font-semibold text-[0.7rem] text-mute mt-2 mb-[0.2rem] uppercase">{g.cat}</div>
+              <div className="font-semibold text-xs text-mute mt-2 mb-1 uppercase">{g.cat}</div>
               {g.items.map((t) => (
                 <div
                   key={t}
                   onClick={() => addComponent(t)}
-                  className="py-1 px-[0.45rem] cursor-pointer rounded-[4px] mb-[2px] hover:bg-ink4"
+                  className="py-1 px-2 cursor-pointer rounded mb-0.5 hover:bg-ink4"
                 >
                   {t}
                 </div>
@@ -556,13 +556,13 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
           ))}
         </div>
 
-        <div className="p-[0.7rem] min-w-0 overflow-hidden">
-          <div id="fe-screen-tabs" className="flex gap-[0.2rem] border-b border-rim mb-[0.6rem] overflow-x-auto">
+        <div className="p-3 min-w-0 overflow-hidden">
+          <div id="fe-screen-tabs" className="flex gap-1 border-b border-rim mb-2.5 overflow-x-auto">
             {flow.screens.map((s, i) => (
               <div
                 key={s.id + '_' + i}
                 onClick={() => setScreenIdx(i)}
-                className={`py-[0.4rem] px-[0.8rem] cursor-pointer text-[0.78rem] whitespace-nowrap border-b-2 ${
+                className={`py-1.5 px-3 cursor-pointer text-sm whitespace-nowrap border-b-2 ${
                   i === screenIdx
                     ? 'font-bold text-acc border-acc'
                     : 'font-medium text-dim border-transparent'
@@ -571,54 +571,54 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
                 {s.id}
               </div>
             ))}
-            <div onClick={addScreen} className="py-[0.4rem] px-[0.6rem] cursor-pointer font-bold text-mute" title="Add screen">+</div>
+            <div onClick={addScreen} className="py-1.5 px-2.5 cursor-pointer font-bold text-mute" title="Add screen">+</div>
           </div>
 
           {screen && !jsonMode && (
-            <div id="fe-screen-props" className="mb-[0.7rem]">
+            <div id="fe-screen-props" className="mb-3">
               <div className="flex gap-2 items-center flex-wrap">
-                <label className="text-[0.7rem] text-dim font-semibold">ID</label>
+                <label className="text-xs text-dim font-semibold">ID</label>
                 <input
                   value={screen.id}
                   onChange={(e) => updateScreenProp('id', e.target.value)}
-                  className="w-[120px] py-[0.2rem] px-[0.45rem] border border-rim rounded-[4px] font-mono text-[0.76rem]"
+                  className="w-[120px] py-1 px-2 border border-rim rounded font-mono text-xs"
                 />
-                <label className="text-[0.7rem] text-dim font-semibold ml-[0.3rem]">Title</label>
+                <label className="text-xs text-dim font-semibold ml-1">Title</label>
                 <input
                   value={screen.title || ''}
                   onChange={(e) => updateScreenProp('title', e.target.value)}
-                  className="w-[150px] py-[0.2rem] px-[0.45rem] border border-rim rounded-[4px] text-[0.76rem]"
+                  className="w-[150px] py-1 px-2 border border-rim rounded text-xs"
                 />
-                <label className="text-[0.7rem] text-dim font-semibold ml-[0.3rem]">Terminal</label>
+                <label className="text-xs text-dim font-semibold ml-1">Terminal</label>
                 <input type="checkbox" checked={!!screen.terminal} onChange={(e) => updateScreenProp('terminal', e.target.checked)} />
-                <label className="text-[0.7rem] text-dim font-semibold ml-[0.3rem]">Success</label>
+                <label className="text-xs text-dim font-semibold ml-1">Success</label>
                 <input type="checkbox" checked={!!screen.success} onChange={(e) => updateScreenProp('success', e.target.checked)} />
                 {flow.screens.length > 1 && (
-                  <button type="button" className="btn-sm ml-auto text-red text-[0.7rem]" onClick={() => removeScreen(screenIdx)}>
+                  <button type="button" className="btn-sm ml-auto text-red text-xs" onClick={() => removeScreen(screenIdx)}>
                     Remove Screen
                   </button>
                 )}
               </div>
 
-              <div className="mt-2 p-[0.4rem] bg-ink4 border border-rim rounded-[4px]">
+              <div className="mt-2 p-1.5 bg-ink4 border border-rim rounded">
                 <div className="flex items-center mb-1">
-                  <span className="text-[0.7rem] font-semibold text-dim">Screen Data (input variables)</span>
-                  <button type="button" className="btn-sm ml-auto text-[0.62rem] py-[0.05rem] px-[0.35rem]" onClick={addDataField}>+ Add</button>
+                  <span className="text-xs font-semibold text-dim">Screen Data (input variables)</span>
+                  <button type="button" className="btn-sm ml-auto text-xs py-[0.05rem] px-1.5" onClick={addDataField}>+ Add</button>
                 </div>
                 {!screen.data || !Object.keys(screen.data).length ? (
-                  <div className="text-[0.68rem] text-mute italic">
+                  <div className="text-xs text-mute italic">
                     No data fields. Add one if this screen needs input from a previous screen.
                   </div>
                 ) : Object.keys(screen.data).map((k) => {
                   const v = (screen.data as Record<string, unknown>)[k];
                   const typeVal = typeof v === 'object' && v !== null ? ((v as Record<string, unknown>).type as string || 'string') : 'string';
                   return (
-                    <div key={k} className="flex gap-1 items-center mb-[0.15rem]">
-                      <input defaultValue={k} placeholder="key" onBlur={(e) => renameDataField(k, e.target.value)} className="w-20 py-[0.12rem] px-1 border border-rim rounded-[4px] text-[0.7rem] font-mono bg-neutral-0" />
-                      <select value={typeVal} onChange={(e) => updateDataFieldType(k, e.target.value)} className="py-[0.12rem] px-1 border border-rim rounded-[4px] text-[0.7rem] bg-neutral-0">
+                    <div key={k} className="flex gap-1 items-center mb-0.5">
+                      <input defaultValue={k} placeholder="key" onBlur={(e) => renameDataField(k, e.target.value)} className="w-20 py-0.5 px-1 border border-rim rounded text-xs font-mono bg-neutral-0" />
+                      <select value={typeVal} onChange={(e) => updateDataFieldType(k, e.target.value)} className="py-0.5 px-1 border border-rim rounded text-xs bg-neutral-0">
                         {['string', 'number', 'boolean', 'array', 'object'].map((t) => <option key={t} value={t}>{t}</option>)}
                       </select>
-                      <button type="button" onClick={() => removeDataField(k)} className="bg-none border-0 text-red cursor-pointer text-[0.75rem]">×</button>
+                      <button type="button" onClick={() => removeDataField(k)} className="bg-none border-0 text-red cursor-pointer text-xs">×</button>
                     </div>
                   );
                 })}
@@ -633,13 +633,13 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
                 value={jsonText}
                 onChange={(e) => setJsonText(e.target.value)}
                 rows={24}
-                className="w-full font-mono text-[0.78rem] p-2 border border-rim rounded-[4px]"
+                className="w-full font-mono text-sm p-2 border border-rim rounded"
               />
             </div>
           ) : (
             <div id="fe-components">
               {!children.length ? (
-                <div className="p-6 text-center text-mute text-[0.82rem]">
+                <div className="p-6 text-center text-mute text-sm">
                   No components yet. Click items in the palette to add them.
                 </div>
               ) : children.map((c, i) => (
@@ -668,12 +668,12 @@ export default function FlowEditor({ flowId, flowName: initialName, flowStatus: 
             </div>
           )}
 
-          <div id="fe-nav-map" className="mt-[0.7rem] py-[0.4rem] px-[0.55rem] bg-ink4 border border-rim rounded-[4px] text-[0.74rem]">
+          <div id="fe-nav-map" className="mt-3 py-1.5 px-2 bg-ink4 border border-rim rounded text-xs">
             <strong>Navigation:</strong> {navMap || '—'}
           </div>
         </div>
 
-        <div id="fe-preview" className="p-[0.7rem] border-l border-rim bg-ink4">
+        <div id="fe-preview" className="p-3 border-l border-rim bg-ink4">
           <Preview screen={screen} />
         </div>
       </div>
@@ -710,50 +710,50 @@ function ComponentCard({
   onUpdateCondition, onUpdateBranchAction,
 }: ComponentCardProps): ReactNode {
   return (
-    <div className="bg-ink4 border border-rim rounded-md p-[0.55rem] mb-2">
-      <div className="flex items-center gap-[0.4rem] mb-[0.4rem]">
-        <span className="bg-[rgba(79,70,229,0.08)] text-acc text-[0.66rem] font-bold py-[0.1rem] px-[0.4rem] rounded-[4px]">{comp.type}</span>
-        <div className="ml-auto flex gap-[0.2rem]">
-          {idx > 0 && <button type="button" className="btn-sm py-[0.1rem] px-[0.35rem] text-[0.7rem]" onClick={() => onMove(idx, -1)} title="Move up">↑</button>}
-          {idx < total - 1 && <button type="button" className="btn-sm py-[0.1rem] px-[0.35rem] text-[0.7rem]" onClick={() => onMove(idx, 1)} title="Move down">↓</button>}
-          <button type="button" className="btn-sm py-[0.1rem] px-[0.35rem] text-[0.7rem] text-red" onClick={() => onRemove(idx)} title="Remove">×</button>
+    <div className="bg-ink4 border border-rim rounded-md p-2 mb-2">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <span className="bg-[rgba(79,70,229,0.08)] text-acc text-xs font-bold py-0.5 px-1.5 rounded">{comp.type}</span>
+        <div className="ml-auto flex gap-1">
+          {idx > 0 && <button type="button" className="btn-sm py-0.5 px-1.5 text-xs" onClick={() => onMove(idx, -1)} title="Move up">↑</button>}
+          {idx < total - 1 && <button type="button" className="btn-sm py-0.5 px-1.5 text-xs" onClick={() => onMove(idx, 1)} title="Move down">↓</button>}
+          <button type="button" className="btn-sm py-0.5 px-1.5 text-xs text-red" onClick={() => onRemove(idx)} title="Remove">×</button>
         </div>
       </div>
 
-      <div className="flex flex-col gap-[0.3rem]">
+      <div className="flex flex-col gap-1">
         {Object.keys(comp).filter((k) => !SKIP_PROPS.includes(k)).map((key) => {
           const val = (comp as Record<string, unknown>)[key];
           if (typeof val === 'boolean') {
             return (
-              <div key={key} className="flex items-center gap-[0.4rem]">
-                <label className="text-[0.7rem] text-dim font-semibold min-w-[60px]">{key}</label>
+              <div key={key} className="flex items-center gap-1.5">
+                <label className="text-xs text-dim font-semibold min-w-[60px]">{key}</label>
                 <input type="checkbox" checked={val} onChange={(e) => onUpdate(idx, key, e.target.checked)} />
               </div>
             );
           }
           return (
-            <div key={key} className="flex items-center gap-[0.4rem]">
-              <label className="text-[0.7rem] text-dim font-semibold min-w-[60px]">{key}</label>
+            <div key={key} className="flex items-center gap-1.5">
+              <label className="text-xs text-dim font-semibold min-w-[60px]">{key}</label>
               <input
                 value={(val as string | number | undefined) ?? ''}
                 onChange={(e) => onUpdate(idx, key, e.target.value)}
-                className="flex-1 py-[0.2rem] px-[0.4rem] border border-rim rounded-[4px] text-[0.76rem] bg-neutral-0"
+                className="flex-1 py-1 px-1.5 border border-rim rounded text-xs bg-neutral-0"
               />
             </div>
           );
         })}
 
         {comp['data-source'] && (
-          <div className="mt-1 p-[0.4rem] bg-neutral-0 border border-rim rounded-[4px]">
-            <div className="flex items-center mb-[0.3rem]">
-              <span className="text-[0.7rem] font-semibold text-dim">data-source</span>
-              <button type="button" className="btn-sm ml-auto text-[0.63rem] py-[0.05rem] px-[0.35rem]" onClick={() => onAddDS(idx)}>+ Add</button>
+          <div className="mt-1 p-1.5 bg-neutral-0 border border-rim rounded">
+            <div className="flex items-center mb-1">
+              <span className="text-xs font-semibold text-dim">data-source</span>
+              <button type="button" className="btn-sm ml-auto text-xs py-[0.05rem] px-1.5" onClick={() => onAddDS(idx)}>+ Add</button>
             </div>
             {comp['data-source'].map((item, ii) => (
-              <div key={ii} className="flex gap-1 items-center mb-[0.2rem]">
-                <input value={item.id || ''} placeholder="id" onChange={(e) => onUpdateDS(idx, ii, 'id', e.target.value)} className="w-[70px] py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]" />
-                <input value={item.title || ''} placeholder="title" onChange={(e) => onUpdateDS(idx, ii, 'title', e.target.value)} className="flex-1 py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]" />
-                <button type="button" onClick={() => onRemoveDS(idx, ii)} className="bg-none border-0 text-red cursor-pointer text-[0.78rem]">×</button>
+              <div key={ii} className="flex gap-1 items-center mb-1">
+                <input value={item.id || ''} placeholder="id" onChange={(e) => onUpdateDS(idx, ii, 'id', e.target.value)} className="w-[70px] py-0.5 px-1 border border-rim rounded text-xs" />
+                <input value={item.title || ''} placeholder="title" onChange={(e) => onUpdateDS(idx, ii, 'title', e.target.value)} className="flex-1 py-0.5 px-1 border border-rim rounded text-xs" />
+                <button type="button" onClick={() => onRemoveDS(idx, ii)} className="bg-none border-0 text-red cursor-pointer text-sm">×</button>
               </div>
             ))}
           </div>
@@ -797,35 +797,35 @@ interface ActionEditorProps {
 
 function ActionEditor({ action, screens, onUpdate, onAddPayload, onRenamePayload, onUpdatePayloadValue, onRemovePayload }: ActionEditorProps): ReactNode {
   return (
-    <div className="mt-1 p-[0.4rem] bg-neutral-0 border border-rim rounded-[4px]">
-      <div className="text-[0.7rem] font-semibold text-dim mb-[0.3rem]">on-click-action</div>
+    <div className="mt-1 p-1.5 bg-neutral-0 border border-rim rounded">
+      <div className="text-xs font-semibold text-dim mb-1">on-click-action</div>
 
-      <div className="flex gap-[0.3rem] items-center mb-1">
-        <label className="text-[0.68rem] text-dim min-w-[50px]">action</label>
-        <select value={action.name || ''} onChange={(e) => onUpdate('name', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
+      <div className="flex gap-1 items-center mb-1">
+        <label className="text-xs text-dim min-w-[50px]">action</label>
+        <select value={action.name || ''} onChange={(e) => onUpdate('name', e.target.value)} className="py-0.5 px-1 border border-rim rounded text-xs">
           {['navigate', 'complete', 'data_exchange'].map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
       </div>
 
       {action.name === 'navigate' && (
-        <div className="flex gap-[0.3rem] items-center mb-1">
-          <label className="text-[0.68rem] text-dim min-w-[50px]">next</label>
-          <select value={action.next?.name || ''} onChange={(e) => onUpdate('next_screen', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
+        <div className="flex gap-1 items-center mb-1">
+          <label className="text-xs text-dim min-w-[50px]">next</label>
+          <select value={action.next?.name || ''} onChange={(e) => onUpdate('next_screen', e.target.value)} className="py-0.5 px-1 border border-rim rounded text-xs">
             <option value="">-- select --</option>
             {screens.map((s) => <option key={s.id} value={s.id}>{s.id}</option>)}
           </select>
         </div>
       )}
 
-      <div className="flex items-center mt-1 mb-[0.15rem]">
-        <span className="text-[0.68rem] text-dim">payload</span>
-        <button type="button" className="btn-sm ml-auto text-[0.62rem] py-[0.05rem] px-[0.3rem]" onClick={onAddPayload}>+ field</button>
+      <div className="flex items-center mt-1 mb-0.5">
+        <span className="text-xs text-dim">payload</span>
+        <button type="button" className="btn-sm ml-auto text-xs py-[0.05rem] px-1" onClick={onAddPayload}>+ field</button>
       </div>
       {Object.keys(action.payload || {}).map((k) => (
-        <div key={k} className="flex gap-1 items-center mb-[0.15rem]">
-          <input defaultValue={k} placeholder="key" onBlur={(e) => onRenamePayload(k, e.target.value)} className="w-[70px] py-[0.12rem] px-1 border border-rim rounded-[4px] text-[0.7rem]" />
-          <input value={action.payload?.[k] ?? ''} placeholder="value" onChange={(e) => onUpdatePayloadValue(k, e.target.value)} className="flex-1 py-[0.12rem] px-1 border border-rim rounded-[4px] text-[0.7rem]" />
-          <button type="button" onClick={() => onRemovePayload(k)} className="bg-none border-0 text-red cursor-pointer text-[0.75rem]">×</button>
+        <div key={k} className="flex gap-1 items-center mb-0.5">
+          <input defaultValue={k} placeholder="key" onBlur={(e) => onRenamePayload(k, e.target.value)} className="w-[70px] py-0.5 px-1 border border-rim rounded text-xs" />
+          <input value={action.payload?.[k] ?? ''} placeholder="value" onChange={(e) => onUpdatePayloadValue(k, e.target.value)} className="flex-1 py-0.5 px-1 border border-rim rounded text-xs" />
+          <button type="button" onClick={() => onRemovePayload(k)} className="bg-none border-0 text-red cursor-pointer text-xs">×</button>
         </div>
       ))}
     </div>
@@ -845,34 +845,34 @@ function ConditionEditor({ comp, screens, siblingFields, onUpdate, onUpdateBranc
   const thenAct = comp.then_action || {};
   const elseAct = comp.else_action || {};
   return (
-    <div className="mt-[0.35rem] p-2 bg-[linear-gradient(135deg,#fef3c710,#dbeafe15)] border border-amber-200 rounded-md">
-      <div className="text-[0.72rem] font-bold text-amber-800 mb-[0.35rem]">CONDITION</div>
+    <div className="mt-1.5 p-2 bg-[linear-gradient(135deg,#fef3c710,#dbeafe15)] border border-amber-200 rounded-md">
+      <div className="text-xs font-bold text-amber-800 mb-1.5">CONDITION</div>
 
-      <div className="flex gap-[0.3rem] items-center mb-1">
-        <label className="text-[0.68rem] text-dim min-w-[35px]">IF</label>
-        <select value={cond.field || ''} onChange={(e) => onUpdate('field', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
+      <div className="flex gap-1 items-center mb-1">
+        <label className="text-xs text-dim min-w-[35px]">IF</label>
+        <select value={cond.field || ''} onChange={(e) => onUpdate('field', e.target.value)} className="py-0.5 px-1 border border-rim rounded text-xs">
           <option value="">-- field --</option>
           {siblingFields.map((f) => <option key={f} value={f}>${`{form.${f}}`}</option>)}
         </select>
-        <select value={cond.operator || 'equals'} onChange={(e) => onUpdate('operator', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
+        <select value={cond.operator || 'equals'} onChange={(e) => onUpdate('operator', e.target.value)} className="py-0.5 px-1 border border-rim rounded text-xs">
           {['equals', 'not_equals', 'contains', 'is_empty', 'is_not_empty'].map((op) => <option key={op} value={op}>{op.replace(/_/g, ' ')}</option>)}
         </select>
         {cond.operator !== 'is_empty' && cond.operator !== 'is_not_empty' && (
-          <input value={cond.value || ''} placeholder="value" onChange={(e) => onUpdate('value', e.target.value)} className="w-20 py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]" />
+          <input value={cond.value || ''} placeholder="value" onChange={(e) => onUpdate('value', e.target.value)} className="w-20 py-0.5 px-1 border border-rim rounded text-xs" />
         )}
       </div>
 
-      <div className="flex gap-[0.3rem] items-center mb-1">
-        <label className="text-[0.68rem] text-wa-500 font-semibold min-w-[35px]">THEN</label>
-        <select value={thenAct.next?.name || ''} onChange={(e) => onUpdateBranch('then_action', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
+      <div className="flex gap-1 items-center mb-1">
+        <label className="text-xs text-wa-500 font-semibold min-w-[35px]">THEN</label>
+        <select value={thenAct.next?.name || ''} onChange={(e) => onUpdateBranch('then_action', e.target.value)} className="py-0.5 px-1 border border-rim rounded text-xs">
           <option value="">-- go to screen --</option>
           {screens.map((s) => <option key={s.id} value={s.id}>{s.id}</option>)}
         </select>
       </div>
 
-      <div className="flex gap-[0.3rem] items-center">
-        <label className="text-[0.68rem] text-red-500 font-semibold min-w-[35px]">ELSE</label>
-        <select value={elseAct.next?.name || ''} onChange={(e) => onUpdateBranch('else_action', e.target.value)} className="py-[0.13rem] px-[0.3rem] border border-rim rounded-[4px] text-[0.72rem]">
+      <div className="flex gap-1 items-center">
+        <label className="text-xs text-red-500 font-semibold min-w-[35px]">ELSE</label>
+        <select value={elseAct.next?.name || ''} onChange={(e) => onUpdateBranch('else_action', e.target.value)} className="py-0.5 px-1 border border-rim rounded text-xs">
           <option value="">-- go to screen --</option>
           {screens.map((s) => <option key={s.id} value={s.id}>{s.id}</option>)}
         </select>
@@ -886,8 +886,8 @@ interface PreviewProps { screen: FlowScreen | null }
 function Preview({ screen }: PreviewProps): ReactNode {
   if (!screen) return <div className="text-dim">No screen</div>;
   return (
-    <div className="bg-neutral-0 rounded-xl p-[0.8rem] max-w-[260px] mx-auto shadow-[0_1px_4px_rgba(0,0,0,0.12)] min-h-[200px] flex flex-col">
-      <div className="text-[0.78rem] font-bold text-[#1a1a1a] pt-[0.3rem] pb-2 border-b border-[#eee] mb-2">
+    <div className="bg-neutral-0 rounded-xl p-3 max-w-[260px] mx-auto shadow-[0_1px_4px_rgba(0,0,0,0.12)] min-h-[200px] flex flex-col">
+      <div className="text-sm font-bold text-[#1a1a1a] pt-1 pb-2 border-b border-[#eee] mb-2">
         {screen.title || screen.id}
       </div>
       {(screen.layout?.children || []).map((c, i) => <PreviewComp key={i} c={c} />)}
@@ -900,86 +900,86 @@ interface PreviewCompProps { c: FlowComponent }
 function PreviewComp({ c }: PreviewCompProps): ReactNode {
   switch (c.type) {
     case 'TextHeading':
-      return <div className="text-[0.95rem] font-bold text-[#1a1a1a] my-[0.3rem]">{c.text}</div>;
+      return <div className="text-md font-bold text-[#1a1a1a] my-1">{c.text}</div>;
     case 'TextSubheading':
-      return <div className="text-[0.82rem] font-semibold text-[#333] my-1">{c.text}</div>;
+      return <div className="text-sm font-semibold text-[#333] my-1">{c.text}</div>;
     case 'TextBody':
-      return <div className="text-[0.78rem] text-[#444] my-[0.2rem]">{c.text}</div>;
+      return <div className="text-sm text-[#444] my-1">{c.text}</div>;
     case 'TextCaption':
-      return <div className="text-[0.68rem] text-[#888] my-[0.15rem]">{c.text}</div>;
+      return <div className="text-xs text-[#888] my-0.5">{c.text}</div>;
     case 'TextInput':
       return (
-        <div className="my-[0.35rem]">
-          <div className="text-[0.68rem] text-[#666] mb-[0.15rem]">{c.label}{c.required ? ' *' : ''}</div>
-          <div className="border border-[#ccc] rounded-md py-[0.3rem] px-2 text-[0.72rem] text-[#aaa]">{c['input-type'] || 'text'}</div>
+        <div className="my-1.5">
+          <div className="text-xs text-[#666] mb-0.5">{c.label}{c.required ? ' *' : ''}</div>
+          <div className="border border-[#ccc] rounded-md py-1 px-2 text-xs text-[#aaa]">{c['input-type'] || 'text'}</div>
         </div>
       );
     case 'Dropdown':
       return (
-        <div className="my-[0.35rem]">
-          <div className="text-[0.68rem] text-[#666] mb-[0.15rem]">{c.label}{c.required ? ' *' : ''}</div>
-          <div className="border border-[#ccc] rounded-md py-[0.3rem] px-2 text-[0.72rem] text-[#888] flex justify-between">
-            Select <span className="text-[0.6rem]">▼</span>
+        <div className="my-1.5">
+          <div className="text-xs text-[#666] mb-0.5">{c.label}{c.required ? ' *' : ''}</div>
+          <div className="border border-[#ccc] rounded-md py-1 px-2 text-xs text-[#888] flex justify-between">
+            Select <span className="text-xs">▼</span>
           </div>
         </div>
       );
     case 'RadioButtonsGroup':
       return (
-        <div className="my-[0.35rem]">
-          <div className="text-[0.68rem] text-[#666] mb-[0.2rem]">{c.label}</div>
+        <div className="my-1.5">
+          <div className="text-xs text-[#666] mb-1">{c.label}</div>
           {(c['data-source'] || []).map((o, i) => (
-            <div key={i} className="flex items-center gap-[0.3rem] mb-[0.15rem]">
+            <div key={i} className="flex items-center gap-1 mb-0.5">
               <span className="w-[14px] h-[14px] border-[1.5px] border-[#999] rounded-full inline-block shrink-0" />
-              <span className="text-[0.72rem] text-[#444]">{o.title}</span>
+              <span className="text-xs text-[#444]">{o.title}</span>
             </div>
           ))}
         </div>
       );
     case 'CheckboxGroup':
       return (
-        <div className="my-[0.35rem]">
-          <div className="text-[0.68rem] text-[#666] mb-[0.2rem]">{c.label}</div>
+        <div className="my-1.5">
+          <div className="text-xs text-[#666] mb-1">{c.label}</div>
           {(c['data-source'] || []).map((o, i) => (
-            <div key={i} className="flex items-center gap-[0.3rem] mb-[0.15rem]">
-              <span className="w-[14px] h-[14px] border-[1.5px] border-[#999] rounded-[3px] inline-block shrink-0" />
-              <span className="text-[0.72rem] text-[#444]">{o.title}</span>
+            <div key={i} className="flex items-center gap-1 mb-0.5">
+              <span className="w-[14px] h-[14px] border-[1.5px] border-[#999] rounded-sm inline-block shrink-0" />
+              <span className="text-xs text-[#444]">{o.title}</span>
             </div>
           ))}
         </div>
       );
     case 'OptIn':
       return (
-        <div className="flex items-center gap-[0.35rem] my-[0.35rem]">
-          <span className="w-[14px] h-[14px] border-[1.5px] border-[#999] rounded-[3px] inline-block shrink-0" />
-          <span className="text-[0.72rem] text-[#444]">{c.label}</span>
+        <div className="flex items-center gap-1.5 my-1.5">
+          <span className="w-[14px] h-[14px] border-[1.5px] border-[#999] rounded-sm inline-block shrink-0" />
+          <span className="text-xs text-[#444]">{c.label}</span>
         </div>
       );
     case 'Footer':
       return (
         <div className="mt-auto pt-2">
-          <button type="button" disabled className="w-full bg-[#25D366] text-neutral-0 border-0 rounded-[20px] p-[0.45rem] text-[0.78rem] font-semibold">{c.label}</button>
+          <button type="button" disabled className="w-full bg-[#25D366] text-neutral-0 border-0 rounded-[20px] p-2 text-sm font-semibold">{c.label}</button>
         </div>
       );
     case 'NavigationList':
       return (
-        <div className="my-[0.35rem] border border-[#ddd] rounded-lg overflow-hidden">
-          <div className="py-[0.35rem] px-2 text-[0.72rem] font-semibold text-[#444] bg-[#f5f5f5]">{c.label}</div>
-          <div className="py-1 px-2 text-[0.68rem] text-[#888]">Dynamic list items</div>
+        <div className="my-1.5 border border-[#ddd] rounded-lg overflow-hidden">
+          <div className="py-1.5 px-2 text-xs font-semibold text-[#444] bg-[#f5f5f5]">{c.label}</div>
+          <div className="py-1 px-2 text-xs text-[#888]">Dynamic list items</div>
         </div>
       );
     case 'If': {
       const cond = c.condition || {};
       return (
-        <div className="my-[0.35rem] border border-dashed border-amber-200 rounded-md p-[0.4rem] bg-yellow-50">
-          <div className="text-[0.68rem] font-bold text-amber-800 mb-[0.2rem]">
+        <div className="my-1.5 border border-dashed border-amber-200 rounded-md p-1.5 bg-yellow-50">
+          <div className="text-xs font-bold text-amber-800 mb-1">
             IF {cond.field ? `\${form.${cond.field}}` : '?'} {(cond.operator || '').replace(/_/g, ' ')} {cond.value || ''}
           </div>
-          <div className="text-[0.65rem] text-wa-500">THEN → {c.then_action?.next?.name || '?'}</div>
-          <div className="text-[0.65rem] text-red-500">ELSE → {c.else_action?.next?.name || '?'}</div>
+          <div className="text-xs text-wa-500">THEN → {c.then_action?.next?.name || '?'}</div>
+          <div className="text-xs text-red-500">ELSE → {c.else_action?.next?.name || '?'}</div>
         </div>
       );
     }
     default:
-      return <div className="my-[0.2rem] text-[0.72rem] text-[#999] italic">[{c.type}]</div>;
+      return <div className="my-1 text-xs text-[#999] italic">[{c.type}]</div>;
   }
 }

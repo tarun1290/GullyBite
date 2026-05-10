@@ -145,7 +145,7 @@ export default function ReferralsSection() {
 
   if (error) {
     return (
-      <div className="card mt-[0.4rem]">
+      <div className="card mt-1.5">
         <div className="cb">
           <SectionError message={error} onRetry={refetch} />
         </div>
@@ -163,16 +163,16 @@ export default function ReferralsSection() {
   return (
     <div>
       {/* ── GBREF Link Card ────────────────────────────────────── */}
-      <div className="card mb-[1.2rem]">
+      <div className="card mb-5">
         <div className="ch"><h3>Your City Captain Link</h3></div>
         <div className="cb">
           {linksError ? (
             <SectionError message={linksError} onRetry={loadLinks} />
           ) : linksLoading ? (
-            <div className="text-dim text-[0.85rem]">Loading…</div>
+            <div className="text-dim text-base">Loading…</div>
           ) : links.length === 0 ? (
-            <div className="flex flex-col gap-[0.6rem]">
-              <p className="m-0 text-dim text-[0.85rem]">
+            <div className="flex flex-col gap-2.5">
+              <p className="m-0 text-dim text-base">
                 You don&apos;t have a referral link yet. Once admin generates one, share it with
                 customers — every order placed within 8 hours of clicking earns you tracked credit.
               </p>
@@ -188,30 +188,30 @@ export default function ReferralsSection() {
               </div>
             </div>
           ) : (
-            <div className="grid gap-[0.8rem]">
+            <div className="grid gap-3">
               {links.map((link) => {
                 const wa = link.wa_link || '';
                 const label = link.campaign_name || 'Default link';
                 return (
                   <div
                     key={link.id || link._id || link.code}
-                    className="border border-rim rounded-lg py-[0.85rem] px-4 bg-ink"
+                    className="border border-rim rounded-lg py-3.5 px-4 bg-ink"
                   >
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <strong className="text-[0.9rem]">{label}</strong>
-                        <span className="bg-[#22c55e22] text-emerald-500 text-[0.68rem] py-[0.15rem] px-2 rounded-full uppercase font-bold tracking-[0.04em]">
+                        <strong className="text-base">{label}</strong>
+                        <span className="bg-[#22c55e22] text-emerald-500 text-xs py-0.5 px-2 rounded-full uppercase font-bold tracking-[0.04em]">
                           {link.status || 'active'}
                         </span>
                       </div>
-                      <span className="text-[0.78rem] text-dim">
+                      <span className="text-sm text-dim">
                         Clicked {link.click_count ?? 0} times
                       </span>
                     </div>
-                    <code className="mono block mt-2 text-[0.78rem] break-all text-dim">
+                    <code className="mono block mt-2 text-sm break-all text-dim">
                       {wa}
                     </code>
-                    <div className="flex gap-2 mt-[0.7rem] flex-wrap">
+                    <div className="flex gap-2 mt-3 flex-wrap">
                       <a
                         href={wa}
                         target="_blank"
@@ -237,28 +237,28 @@ export default function ReferralsSection() {
       </div>
 
       {/* ── Headline stats ─────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-4 mb-[1.4rem]">
-        <div className="card py-4 px-[1.2rem]">
-          <div className="text-[1.5rem] font-bold">{loading && !data ? '…' : total}</div>
-          <div className="text-[0.78rem] text-dim mt-[0.2rem]">Total Referrals</div>
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="card py-4 px-5">
+          <div className="text-2xl font-bold">{loading && !data ? '…' : total}</div>
+          <div className="text-sm text-dim mt-1">Total Referrals</div>
         </div>
-        <div className="card py-4 px-[1.2rem]">
-          <div className="text-[1.5rem] font-bold">
+        <div className="card py-4 px-5">
+          <div className="text-2xl font-bold">
             {loading && !data ? '…' : `${converted}${total > 0 ? ` (${convertedPct}%)` : ''}`}
           </div>
-          <div className="text-[0.78rem] text-dim mt-[0.2rem]">Converted to Orders</div>
+          <div className="text-sm text-dim mt-1">Converted to Orders</div>
         </div>
-        <div className="card py-4 px-[1.2rem]">
-          <div className="text-[1.5rem] font-bold">
+        <div className="card py-4 px-5">
+          <div className="text-2xl font-bold">
             {loading && !data ? '…' : `₹${formatINR(summary.total_order_value_rs)}`}
           </div>
-          <div className="text-[0.78rem] text-dim mt-[0.2rem]">Total Order Value</div>
+          <div className="text-sm text-dim mt-1">Total Order Value</div>
         </div>
-        <div className="card py-4 px-[1.2rem]">
-          <div className="text-[1.5rem] font-bold text-violet-400">
+        <div className="card py-4 px-5">
+          <div className="text-2xl font-bold text-violet-400">
             {loading && !data ? '…' : `₹${formatINR(feeWithGst)}`}
           </div>
-          <div className="text-[0.78rem] text-dim mt-[0.2rem]">
+          <div className="text-sm text-dim mt-1">
             Referral Fees Owed (7.5% + GST)
           </div>
         </div>
@@ -267,8 +267,8 @@ export default function ReferralsSection() {
       {/* ── Info banner ─────────────────────────────────────────
           Tightened the wording per the GBREF spec — explicit on the
           7.5% + GST rate and the settlement deduction. */}
-      <div className="card mb-[1.2rem] py-[0.85rem] px-[1.2rem] bg-[#1e1b4b] border border-[#4c1d9544]">
-        <p className="text-[0.82rem] text-[#c4b5fd] m-0">
+      <div className="card mb-5 py-3.5 px-5 bg-[#1e1b4b] border border-[#4c1d9544]">
+        <p className="text-sm text-[#c4b5fd] m-0">
           Customers who click your City Captain link and order within <strong>8 hours</strong> generate a{' '}
           <strong>7.5% + GST</strong> referral fee, deducted from your weekly settlement.
         </p>
@@ -277,16 +277,16 @@ export default function ReferralsSection() {
       <div className="card">
         <div className="ch"><h3>Referrals Received</h3></div>
         <div className="cb p-0">
-          <table className="w-full border-collapse text-[0.82rem]">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-rim">
-                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Customer</th>
-                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Status</th>
-                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Orders</th>
-                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Order Value</th>
-                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Referral Fee</th>
-                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Commission</th>
-                <th className="py-[0.6rem] px-4 text-left text-dim font-medium">Referred On</th>
+                <th className="py-2.5 px-4 text-left text-dim font-medium">Customer</th>
+                <th className="py-2.5 px-4 text-left text-dim font-medium">Status</th>
+                <th className="py-2.5 px-4 text-left text-dim font-medium">Orders</th>
+                <th className="py-2.5 px-4 text-left text-dim font-medium">Order Value</th>
+                <th className="py-2.5 px-4 text-left text-dim font-medium">Referral Fee</th>
+                <th className="py-2.5 px-4 text-left text-dim font-medium">Commission</th>
+                <th className="py-2.5 px-4 text-left text-dim font-medium">Referred On</th>
               </tr>
             </thead>
             <tbody>
@@ -297,17 +297,17 @@ export default function ReferralsSection() {
               ) : (
                 referrals.map((r, idx) => (
                   <tr key={r.id || r._id || idx} className="border-b border-rim">
-                    <td className="py-[0.6rem] px-4">
-                      <div className="font-mono text-[0.8rem]">
+                    <td className="py-2.5 px-4">
+                      <div className="font-mono text-sm">
                         {r.customer_wa_phone || shortBsuid(r.customer_bsuid) || '—'}
                       </div>
                       {r.customer_name && (
-                        <div className="text-[0.74rem] text-dim">{r.customer_name}</div>
+                        <div className="text-xs text-dim">{r.customer_name}</div>
                       )}
                     </td>
-                    <td className="py-[0.6rem] px-4">
+                    <td className="py-2.5 px-4">
                       <span
-                        className="font-semibold capitalize text-[0.8rem]"
+                        className="font-semibold capitalize text-sm"
                         // colour comes from the per-status STATUS_COLOR
                         // palette at runtime — Tailwind can't pre-bake
                         // the dynamic hex.
@@ -316,18 +316,18 @@ export default function ReferralsSection() {
                         {r.status}
                       </span>
                       {r.attribution_window_hours ? (
-                        <span className="text-[0.65rem] text-dim ml-[0.3rem]">
+                        <span className="text-xs text-dim ml-1">
                           {r.attribution_window_hours}h window
                         </span>
                       ) : null}
                     </td>
-                    <td className="py-[0.6rem] px-4">{r.orders_count}</td>
-                    <td className="py-[0.6rem] px-4">₹{formatINR(r.total_order_value_rs)}</td>
-                    <td className="py-[0.6rem] px-4 text-violet-400 font-semibold">₹{formatINR(r.referral_fee_rs)}</td>
-                    <td className="py-[0.6rem] px-4">
+                    <td className="py-2.5 px-4">{r.orders_count}</td>
+                    <td className="py-2.5 px-4">₹{formatINR(r.total_order_value_rs)}</td>
+                    <td className="py-2.5 px-4 text-violet-400 font-semibold">₹{formatINR(r.referral_fee_rs)}</td>
+                    <td className="py-2.5 px-4">
                       {r.commission_status ? (
                         <span
-                          className="font-semibold capitalize text-[0.8rem]"
+                          className="font-semibold capitalize text-sm"
                           // colour comes from the per-state
                           // COMMISSION_COLOR palette at runtime.
                           style={{ color: COMMISSION_COLOR[r.commission_status] || 'var(--dim)' }}
@@ -335,10 +335,10 @@ export default function ReferralsSection() {
                           {r.commission_status}
                         </span>
                       ) : (
-                        <span className="text-dim text-[0.8rem]">—</span>
+                        <span className="text-dim text-sm">—</span>
                       )}
                     </td>
-                    <td className="py-[0.6rem] px-4 text-[0.78rem] text-dim">
+                    <td className="py-2.5 px-4 text-sm text-dim">
                       {formatDate(r.created_at)}
                     </td>
                   </tr>

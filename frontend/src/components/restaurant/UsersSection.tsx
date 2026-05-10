@@ -228,7 +228,7 @@ export default function UsersSection() {
             <div className="empty text-center py-8">
               <div className="ei text-[2.5rem]">👥</div>
               <h3>No team members yet</h3>
-              <p className="text-dim text-[0.84rem]">
+              <p className="text-dim text-sm">
                 Add managers, kitchen staff or delivery partners.
               </p>
             </div>
@@ -236,7 +236,7 @@ export default function UsersSection() {
             <div className="tbl overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="text-left text-[0.72rem] text-dim uppercase tracking-[0.5px]">
+                  <tr className="text-left text-xs text-dim uppercase tracking-[0.5px]">
                     <th className="p-2">Name</th>
                     <th className="p-2">Phone</th>
                     <th className="p-2 text-center">Role</th>
@@ -260,11 +260,11 @@ export default function UsersSection() {
                         key={u.id}
                         className={`border-b border-rim ${u.is_active ? 'opacity-100' : 'opacity-55'}`}
                       >
-                        <td className="p-2 text-[0.86rem]">{u.name}</td>
-                        <td className="p-2 text-[0.75rem] text-dim">{u.phone}</td>
+                        <td className="p-2 text-base">{u.name}</td>
+                        <td className="p-2 text-xs text-dim">{u.phone}</td>
                         <td className="p-2 text-center">
                           <span
-                            className="font-semibold text-[0.8rem]"
+                            className="font-semibold text-sm"
                             // role badge colour from ROLE_BADGE by u.role at
                             // runtime (owner/manager/kitchen/delivery — 4
                             // distinct CSS vars, plus a dim fallback).
@@ -273,7 +273,7 @@ export default function UsersSection() {
                             {rb.emoji} {rb.label}
                           </span>
                         </td>
-                        <td className="p-2 text-[0.75rem]">{brNames}</td>
+                        <td className="p-2 text-xs">{brNames}</td>
                         <td className="p-2 text-center">
                           {u.is_active ? (
                             <span className="text-wa">✓</span>
@@ -281,14 +281,14 @@ export default function UsersSection() {
                             <span className="text-red">✗</span>
                           )}
                         </td>
-                        <td className="p-2 text-[0.75rem] text-dim">
+                        <td className="p-2 text-xs text-dim">
                           {formatLastLogin(u.last_login_at)}
                         </td>
                         <td className="p-2 text-center">
                           {isOwner ? (
-                            <span className="text-dim text-[0.72rem]">Owner</span>
+                            <span className="text-dim text-xs">Owner</span>
                           ) : showingPinRow ? (
-                            <div className="flex items-center gap-[0.3rem] justify-end">
+                            <div className="flex items-center gap-1 justify-end">
                               <input
                                 type="password"
                                 placeholder="New PIN"
@@ -296,7 +296,7 @@ export default function UsersSection() {
                                 value={pinValue}
                                 autoFocus
                                 onChange={(e) => setPinValue(e.target.value.replace(/\D/g, ''))}
-                                className="w-20 py-[0.2rem] px-[0.4rem] border border-rim rounded-sm text-[0.78rem]"
+                                className="w-20 py-1 px-1.5 border border-rim rounded-sm text-sm"
                               />
                               <button
                                 type="button"
@@ -316,7 +316,7 @@ export default function UsersSection() {
                               </button>
                             </div>
                           ) : showingDeactivateRow ? (
-                            <div className="flex gap-[0.3rem] justify-end">
+                            <div className="flex gap-1 justify-end">
                               <button
                                 type="button"
                                 className="btn-del btn-sm"
@@ -339,10 +339,10 @@ export default function UsersSection() {
                             // Deactivate so the operator can't conflate
                             // the two destructive paths.
                             <div className="flex flex-col gap-1 items-end">
-                              <span className="text-[0.7rem] text-red">
+                              <span className="text-xs text-red">
                                 Permanently delete {u.name}?
                               </span>
-                              <div className="flex gap-[0.3rem] justify-end">
+                              <div className="flex gap-1 justify-end">
                                 <button
                                   type="button"
                                   className="btn-del-solid btn-sm"
@@ -372,7 +372,7 @@ export default function UsersSection() {
                                   it's a transient surface, not a
                                   persistent action. */}
                               {recentResetPin && recentResetPin.userId === u.id && (
-                                <div className="inline-flex items-center gap-1 py-[0.15rem] px-[0.4rem] border border-rim rounded-md bg-acc-glow text-[0.7rem] font-mono">
+                                <div className="inline-flex items-center gap-1 py-0.5 px-1.5 border border-rim rounded-md bg-acc-glow text-xs font-mono">
                                   <span className="text-dim">PIN:</span>
                                   <span className="font-semibold text-tx tracking-wider">
                                     {recentResetRevealed ? recentResetPin.pin : '••••'}
@@ -380,7 +380,7 @@ export default function UsersSection() {
                                   <button
                                     type="button"
                                     onClick={() => setRecentResetRevealed((v) => !v)}
-                                    className="bg-transparent border-0 cursor-pointer text-[0.72rem] leading-none"
+                                    className="bg-transparent border-0 cursor-pointer text-xs leading-none"
                                     aria-label={recentResetRevealed ? 'Hide PIN' : 'Reveal PIN'}
                                   >
                                     {recentResetRevealed ? '🙈' : '👁'}
@@ -388,14 +388,14 @@ export default function UsersSection() {
                                   <button
                                     type="button"
                                     onClick={copyRecentPin}
-                                    className="bg-transparent border-0 cursor-pointer text-[0.7rem] text-acc font-semibold"
+                                    className="bg-transparent border-0 cursor-pointer text-xs text-acc font-semibold"
                                   >
                                     {recentResetCopied ? 'Copied!' : 'Copy'}
                                   </button>
                                   <button
                                     type="button"
                                     onClick={dismissRecentPin}
-                                    className="bg-transparent border-0 cursor-pointer text-[0.7rem] text-dim leading-none"
+                                    className="bg-transparent border-0 cursor-pointer text-xs text-dim leading-none"
                                     aria-label="Dismiss"
                                   >
                                     ×

@@ -43,7 +43,7 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
   if (compact) {
     if (connected) {
       return (
-        <span className="inline-flex items-center gap-[0.35rem] bg-wa-light text-green-700 text-[0.72rem] font-semibold py-1 px-[0.55rem] rounded-md shrink-0">
+        <span className="inline-flex items-center gap-1.5 bg-wa-light text-green-700 text-xs font-semibold py-1 px-2 rounded-md shrink-0">
           ✓ Connected
         </span>
       );
@@ -64,14 +64,14 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
     return (
       <div
         id="wa-connect-banner"
-        className="flex items-center gap-3 bg-green-50 border-b-2 border-emerald-500 py-4 px-8"
+        className="flex items-center gap-3 bg-wa-light border-b-2 border-wa-500 py-4 px-8"
       >
         <span className="text-[1.4rem]">✅</span>
         <div>
-          <div className="font-bold text-[0.9rem] text-green-700">
+          <div className="font-bold text-base text-wa-600">
             WhatsApp Business connected
           </div>
-          <div className="text-[0.8rem] text-green-800 mt-[0.15rem]">
+          <div className="text-sm text-wa-600 mt-0.5">
             You&apos;re ready to receive orders.
           </div>
         </div>
@@ -87,10 +87,10 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
       <div className="flex items-center gap-3">
         <span className="text-[1.4rem]">📵</span>
         <div>
-          <div className="font-bold text-[0.9rem] text-amber-900">
+          <div className="font-bold text-base text-amber-900">
             WhatsApp Business not connected
           </div>
-          <div className="text-[0.8rem] text-amber-600 mt-[0.15rem]">
+          <div className="text-sm text-amber-600 mt-0.5">
             Connect WhatsApp to start receiving orders. All selling features are locked until connected.
           </div>
         </div>

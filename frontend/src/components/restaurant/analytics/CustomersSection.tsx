@@ -80,13 +80,13 @@ export default function CustomersSection({ dateRange }: CustomersSectionProps) {
           <SectionError message={error} onRetry={refetch} />
         ) : (
           <>
-            <div className="flex gap-[1.2rem] items-center mb-4">
+            <div className="flex gap-5 items-center mb-4">
               <div className="w-[160px] h-[160px] relative">
                 {donutConfig && (
                   <ChartCanvas type="doughnut" data={donutConfig.data} options={donutConfig.options} height={160} />
                 )}
               </div>
-              <div id="an-cust-stats" className="text-[0.82rem] text-dim leading-[1.8]">
+              <div id="an-cust-stats" className="text-sm text-dim leading-[1.8]">
                 {loading && !data ? (
                   <div>Loading…</div>
                 ) : data ? (
@@ -99,7 +99,7 @@ export default function CustomersSection({ dateRange }: CustomersSectionProps) {
                 ) : null}
               </div>
             </div>
-            <table className="tbl text-[0.8rem]">
+            <table className="tbl text-sm">
               <thead>
                 <tr><th>Customer</th><th>Phone</th><th>Orders</th><th>Spent</th></tr>
               </thead>

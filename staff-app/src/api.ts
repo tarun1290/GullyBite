@@ -207,7 +207,12 @@ export type SanitizedStaff = {
   phone?: string;
   role: string;
   role_preset: string;
-  branch_ids: string[];
+  // Multi-branch access set. The server emits both `branch_ids`
+  // (snake_case wire form) and `branchIds` (camelCase back-compat
+  // alias) — they carry identical data. Client code reads the
+  // camelCase form, so that's what the type surfaces; the snake_case
+  // alias is still on the wire but intentionally absent here to keep
+  // a single canonical client field. See backend sanitizeStaff().
   branchIds: string[];
   permissions: StaffPermissions;
   is_active: boolean;

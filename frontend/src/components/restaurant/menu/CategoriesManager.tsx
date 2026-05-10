@@ -97,33 +97,33 @@ export default function CategoriesManager({ branchId, onChange }: CategoriesMana
   return (
     <div className="card mb-4">
       <div className="ch justify-between">
-        <h3 className="text-[0.92rem]">📁 Categories</h3>
+        <h3 className="text-md">📁 Categories</h3>
         <button type="button" className="btn-g btn-sm" onClick={() => setOpen((v) => !v)}>
           {open ? '▲ collapse' : '▼ expand'}
         </button>
       </div>
       {open && (
         <div className="cb">
-          <div className="flex gap-2 mb-[0.7rem]">
+          <div className="flex gap-2 mb-3">
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="New category name"
-              className="flex-1 py-[0.4rem] px-[0.6rem] border border-rim rounded-md text-[0.85rem]"
+              className="flex-1 py-1.5 px-2.5 border border-rim rounded-md text-base"
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
             />
             <button type="button" className="btn-p btn-sm" onClick={handleCreate}>+ Add</button>
           </div>
           {loading ? (
-            <p className="text-dim text-[0.82rem]">Loading…</p>
+            <p className="text-dim text-sm">Loading…</p>
           ) : !cats.length ? (
-            <p className="text-dim text-[0.82rem]">No categories yet.</p>
+            <p className="text-dim text-sm">No categories yet.</p>
           ) : (
-            <div className="flex flex-col gap-[0.4rem]">
+            <div className="flex flex-col gap-1.5">
               {cats.map((c) => (
                 <div
                   key={c.id}
-                  className="flex gap-2 items-center py-[0.38rem] px-2 bg-ink2 rounded-[7px]"
+                  className="flex gap-2 items-center py-1.5 px-2 bg-ink2 rounded-md"
                 >
                   {editingId === c.id ? (
                     <input
@@ -133,11 +133,11 @@ export default function CategoriesManager({ branchId, onChange }: CategoriesMana
                         if (e.key === 'Enter') handleSave(c.id);
                         if (e.key === 'Escape') { setEditingId(null); setEditingName(''); }
                       }}
-                      className="flex-1 py-[0.28rem] px-2 border border-bdr rounded-md text-[0.84rem]"
+                      className="flex-1 py-1 px-2 border border-bdr rounded-md text-sm"
                       autoFocus
                     />
                   ) : (
-                    <span className="flex-1 text-[0.84rem]">{c.name}</span>
+                    <span className="flex-1 text-sm">{c.name}</span>
                   )}
                   {editingId === c.id ? (
                     <>
@@ -146,7 +146,7 @@ export default function CategoriesManager({ branchId, onChange }: CategoriesMana
                     </>
                   ) : pendingDelete === c.id ? (
                     <>
-                      <span className="text-[0.72rem] text-red-600">Delete?</span>
+                      <span className="text-xs text-red-600">Delete?</span>
                       <button type="button" className="btn-del btn-sm" onClick={() => handleDelete(c.id)}>Yes</button>
                       <button type="button" className="btn-g btn-sm" onClick={() => setPendingDelete(null)}>No</button>
                     </>

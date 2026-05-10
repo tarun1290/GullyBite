@@ -20,7 +20,7 @@ export default function PgRejected({ onLogout, showPage }: PgRejectedProps) {
           Your application could not be approved. Please see the reason below and contact us if you have questions.
         </p>
         <div className="rej-box">{reason}</div>
-        <p className="text-[0.78rem] text-dim">
+        <p className="text-sm text-dim">
           Contact{' '}
           <a href="mailto:support@gullybite.com" className="text-acc">
             support@gullybite.com

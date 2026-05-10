@@ -150,9 +150,9 @@ export default function AdminTemplatesPage() {
   return (
     <div>
       <div className="card">
-        <div className="ch justify-between flex-wrap gap-[0.4rem]">
+        <div className="ch justify-between flex-wrap gap-1.5">
           <h3>📄 WhatsApp Templates</h3>
-          <div className="flex gap-[0.4rem] items-center flex-wrap">
+          <div className="flex gap-1.5 items-center flex-wrap">
             <button type="button" className="btn-g btn-sm" onClick={doSync} disabled={syncing}>
               {syncing ? 'Syncing…' : '🔄 Sync from Meta'}
             </button>
@@ -167,7 +167,7 @@ export default function AdminTemplatesPage() {
       </div>
 
       <div className="card mt-4">
-        <div className="ch"><h3>Templates <span className="text-[0.72rem] text-dim">({templates.length})</span></h3></div>
+        <div className="ch"><h3>Templates <span className="text-xs text-dim">({templates.length})</span></h3></div>
         <div className="cb">
           {loading ? (
             <p className="text-dim">Loading…</p>
@@ -194,33 +194,33 @@ export default function AdminTemplatesPage() {
                     const busy = rowBusy === t.name;
                     return (
                       <tr key={t.id || t.meta_id || t.name}>
-                        <td className="text-[0.84rem] font-medium">
+                        <td className="text-sm font-medium">
                           {t.name}
                           {t.status === 'REJECTED' && t.rejected_reason && (
-                            <div className="text-[0.7rem] text-red-500 mt-[0.2rem]">
+                            <div className="text-xs text-red-500 mt-1">
                               {t.rejected_reason}
                             </div>
                           )}
                         </td>
-                        <td className="text-[0.78rem]">{t.category}</td>
-                        <td className="text-[0.78rem]">{t.language}</td>
-                        <td className="text-[0.78rem]">
+                        <td className="text-sm">{t.category}</td>
+                        <td className="text-sm">{t.language}</td>
+                        <td className="text-sm">
                           {/* dynamic color: STATUS_COLORS palette keyed by t.status at runtime */}
                           <span style={{ color: clr }} className="font-semibold">{t.status}</span>
                           {/* dynamic color: QUALITY_COLORS palette keyed by t.quality_score at runtime */}
-                          {qclr && <span style={{ color: qclr }} className="ml-[0.35rem] text-[0.7rem]">{t.quality_score}</span>}
+                          {qclr && <span style={{ color: qclr }} className="ml-1.5 text-xs">{t.quality_score}</span>}
                         </td>
-                        <td className="text-[0.72rem] text-dim">
+                        <td className="text-xs text-dim">
                           {(t.components || []).map((c) => c.type).join(', ')}
                         </td>
                         <td className="text-right whitespace-nowrap">
                           {pending ? (
                             <span className="inline-flex gap-1 items-center">
-                              <span className="text-[0.72rem] text-dim mr-[0.2rem]">Delete &quot;{t.name}&quot;?</span>
-                              <button type="button" className="bg-red-500 text-neutral-0 border-0 rounded-sm py-[0.15rem] px-2 text-[0.72rem]" onClick={() => doDelete(t.name)} disabled={busy}>
+                              <span className="text-xs text-dim mr-1">Delete &quot;{t.name}&quot;?</span>
+                              <button type="button" className="bg-red-500 text-neutral-0 border-0 rounded-sm py-0.5 px-2 text-xs" onClick={() => doDelete(t.name)} disabled={busy}>
                                 {busy ? '…' : 'Confirm'}
                               </button>
-                              <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={() => setPendingDelete(null)} disabled={busy}>Cancel</button>
+                              <button type="button" className="btn-g btn-sm text-xs" onClick={() => setPendingDelete(null)} disabled={busy}>Cancel</button>
                             </span>
                           ) : (
                             <>
@@ -265,21 +265,21 @@ export default function AdminTemplatesPage() {
                 <tbody>
                   {mappings.map((m) => (
                     <tr key={m.event}>
-                      <td className="font-semibold text-[0.82rem]">{m.event}</td>
+                      <td className="font-semibold text-sm">{m.event}</td>
                       <td>
-                        <code className="text-[0.78rem] bg-ink4 py-[0.1rem] px-[0.4rem] rounded-sm">
+                        <code className="text-sm bg-ink4 py-0.5 px-1.5 rounded-sm">
                           {m.template_name}
                         </code>
                       </td>
-                      <td className="text-dim text-[0.78rem]">{m.description || '—'}</td>
-                      <td className="text-[0.72rem]">
+                      <td className="text-dim text-sm">{m.description || '—'}</td>
+                      <td className="text-xs">
                         {(m.variables || []).map((v, i) => (
-                          <span key={i} className="bg-ink4 py-[0.1rem] px-[0.3rem] rounded-[3px] mr-[0.2rem]">
+                          <span key={i} className="bg-ink4 py-0.5 px-1 rounded-sm mr-1">
                             {`{{${v.position}}}`} → {v.source}
                           </span>
                         ))}
                       </td>
-                      <td className="text-[0.78rem]">
+                      <td className="text-sm">
                         {m.is_active
                           ? <span className="text-wa-500">Active</span>
                           : <span className="text-dim">Off</span>}
@@ -315,15 +315,15 @@ export default function AdminTemplatesPage() {
                 <tbody>
                   {notifications.map((l, i) => (
                     <tr key={i}>
-                      <td className="font-mono text-[0.76rem]">
+                      <td className="font-mono text-xs">
                         {String(l.order_id || '').slice(-8) || '—'}
                       </td>
-                      <td className="text-[0.78rem]">{l.event}</td>
-                      <td className="text-[0.76rem]"><code>{l.template_name}</code></td>
-                      <td className={`text-[0.78rem] ${l.status === 'sent' ? 'text-wa-500' : 'text-red-500'}`}>
+                      <td className="text-sm">{l.event}</td>
+                      <td className="text-xs"><code>{l.template_name}</code></td>
+                      <td className={`text-sm ${l.status === 'sent' ? 'text-wa-500' : 'text-red-500'}`}>
                         {l.status}
                       </td>
-                      <td className="text-[0.78rem] text-dim">
+                      <td className="text-sm text-dim">
                         {l.sent_at ? new Date(l.sent_at).toLocaleString() : '—'}
                       </td>
                     </tr>

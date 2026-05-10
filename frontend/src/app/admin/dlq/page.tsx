@@ -55,7 +55,7 @@ function sourceBadge(src?: string) {
   const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: 'var(--gb-slate-700)' };
   return (
     <span
-      className="inline-block py-[0.1rem] px-2 rounded-[10px] text-[0.72rem] font-semibold uppercase tracking-[0.03em]"
+      className="inline-block py-0.5 px-2 rounded-r text-xs font-semibold uppercase tracking-[0.03em]"
       // bg / colour from SOURCE_BADGE by source at runtime
       // (whatsapp/razorpay + slate fallback — 3 distinct rgba/hex pairs).
       style={{ background: cfg.bg, color: cfg.color }}
@@ -70,10 +70,10 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const TH_CLS = 'py-2 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.35rem] px-[0.55rem] text-[0.78rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1.5 px-2 text-sm';
 
 export default function AdminDlqPage() {
   const { showToast } = useToast();
@@ -191,8 +191,8 @@ export default function AdminDlqPage() {
       {statsErr && <div className="mb-4"><SectionError message={statsErr} onRetry={loadStats} /></div>}
 
       <div className="card">
-        <div className="ch justify-between flex-wrap gap-[0.6rem]">
-          <h3 className="m-0">Dead Letter Queue <span className="text-dim text-[0.78rem] font-medium">({total} entries)</span></h3>
+        <div className="ch justify-between flex-wrap gap-2.5">
+          <h3 className="m-0">Dead Letter Queue <span className="text-dim text-sm font-medium">({total} entries)</span></h3>
           <select value={source} onChange={(e) => { setSource(e.target.value); setOffset(0); }} className={INPUT_CLS}>
             <option value="">All sources</option>
             <option value="whatsapp">WhatsApp</option>
@@ -204,9 +204,9 @@ export default function AdminDlqPage() {
           <div className="cb"><SectionError message={err} onRetry={loadTable} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                <tr className="bg-ink text-left text-dim text-xs">
                   <th className={TH_CLS}>Failed At</th>
                   <th className={TH_CLS}>Source</th>
                   <th className={TH_CLS}>Event</th>
@@ -223,29 +223,29 @@ export default function AdminDlqPage() {
                   <tr><td colSpan={7} className={EMPTY_CLS}>No entries in DLQ.</td></tr>
                 ) : rows.map((e) => (
                   <tr key={e.id} className="border-t border-rim">
-                    <td className={`${TD_CLS} text-dim text-[0.75rem]`}>{fmtTime(e.dlq_at || e.received_at)}</td>
+                    <td className={`${TD_CLS} text-dim text-xs`}>{fmtTime(e.dlq_at || e.received_at)}</td>
                     <td className={TD_CLS}>{sourceBadge(e.source)}</td>
                     <td className={`${TD_CLS} max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap mono`}>{e.event_type || '—'}</td>
                     <td className={`${TD_CLS} text-center font-semibold`}>{(e.retry_count || 0)} / {(e.max_retries || 5)}</td>
-                    <td className={`${TD_CLS} max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap text-red-600 text-[0.75rem]`}
+                    <td className={`${TD_CLS} max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap text-red-600 text-xs`}
                         title={e.last_error || ''}>{e.last_error || '—'}</td>
                     <td className={TD_CLS}>
                       <button type="button" className="btn-g btn-sm" onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
                         {expanded === e.id ? 'Hide' : 'Show'}
                       </button>
                       {expanded === e.id && (
-                        <div className="mt-[0.4rem] max-h-[160px] overflow-y-auto text-[0.72rem]">
+                        <div className="mt-1.5 max-h-[160px] overflow-y-auto text-xs">
                           {(e.error_history || []).length === 0 ? (
                             <span className="text-dim">No history</span>
                           ) : (e.error_history || []).map((h, i) => (
-                            <div key={i} className="text-dim py-[0.15rem] border-b border-rim">
+                            <div key={i} className="text-dim py-0.5 border-b border-rim">
                               #{i + 1} {fmtTime(h.attempted_at)}: {h.error}
                             </div>
                           ))}
                         </div>
                       )}
                     </td>
-                    <td className={`${TD_CLS} whitespace-nowrap flex gap-[0.3rem] items-start`}>
+                    <td className={`${TD_CLS} whitespace-nowrap flex gap-1 items-start`}>
                       <button type="button" className="btn-p btn-sm" onClick={() => doRetry(e.id)} disabled={busy === e.id}>Retry</button>
                       {confirmDismiss === e.id ? (
                         <>
@@ -264,9 +264,9 @@ export default function AdminDlqPage() {
           </div>
         )}
 
-        <div className="flex justify-between items-center py-[0.6rem] px-4 border-t border-rim">
+        <div className="flex justify-between items-center py-2.5 px-4 border-t border-rim">
           <button type="button" className="btn-g btn-sm" onClick={prev} disabled={offset === 0 || loading}>← Prev</button>
-          <span className="text-[0.8rem] text-dim">Page {page} of {pages}</span>
+          <span className="text-sm text-dim">Page {page} of {pages}</span>
           <button type="button" className="btn-g btn-sm" onClick={next} disabled={offset + DLQ_LIMIT >= total || loading}>Next →</button>
         </div>
       </div>
@@ -278,10 +278,10 @@ export default function AdminDlqPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-neutral-0 rounded-[10px] w-full max-w-[720px] max-h-[85vh] overflow-hidden flex flex-col"
+            className="bg-neutral-0 rounded-r w-full max-w-[720px] max-h-[85vh] overflow-hidden flex flex-col"
           >
-            <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
-              <h3 className="m-0 text-[0.95rem]">{detail.event_type || 'DLQ Entry'}</h3>
+            <div className="flex items-center justify-between py-3 px-4 border-b border-rim">
+              <h3 className="m-0 text-md">{detail.event_type || 'DLQ Entry'}</h3>
               <button type="button" className="btn-g btn-sm" onClick={closeDetail}>✕</button>
             </div>
             <div className="overflow-y-auto p-4 bg-ink flex-1">
@@ -290,7 +290,7 @@ export default function AdminDlqPage() {
               ) : detailErr ? (
                 <SectionError message={detailErr} />
               ) : (
-                <pre className="m-0 text-[0.78rem] whitespace-pre-wrap break-all mono">
+                <pre className="m-0 text-sm whitespace-pre-wrap break-all mono">
                   {detail.payload ? JSON.stringify(detail.payload, null, 2) : '—'}
                 </pre>
               )}

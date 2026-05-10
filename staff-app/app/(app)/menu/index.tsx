@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StaffMenuItem, getMenu, updateItemAvailability } from '@/api';
-import { useAuth } from '@/store/authStore';
+import { useStaff } from '@/state/StaffContext';
 import { colors, primitives, space, text, radius, fontWeight } from '@/theme';
 import { formatRs } from '@/time';
 
@@ -26,7 +26,7 @@ export default function MenuScreen() {
   // Branch selection drives getMenu's X-Branch-Id header (set globally
   // by authStore). Adding it to load's deps re-runs the fetch when the
   // operator picks a different branch from the header selector.
-  const { currentBranchId } = useAuth();
+  const { currentBranchId } = useStaff();
   const [categories, setCategories] = useState<Array<{ name: string; items: StaffMenuItem[] }>>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

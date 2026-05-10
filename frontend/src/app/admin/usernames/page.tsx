@@ -50,17 +50,17 @@ function statusBadge(s?: string) {
   return (
     // Dynamic: bg/fg come from a runtime palette map keyed by status.
     <span
-      className="inline-block py-[0.1rem] px-2 rounded-[10px] text-[0.72rem] font-semibold"
+      className="inline-block py-0.5 px-2 rounded-r text-xs font-semibold"
       style={{ background: cfg?.bg, color: cfg?.fg }}
     >{(s || 'not_claimed').replace(/_/g, ' ')}</span>
   );
 }
 
-const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const TH_CLS = 'py-2 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.45rem] px-[0.7rem] text-[0.85rem]';
-const LBL_CLS = 'text-[0.78rem] text-dim block mb-[0.3rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-2 px-3 text-base';
+const LBL_CLS = 'text-sm text-dim block mb-1';
 
 export default function AdminUsernamesPage() {
   const { showToast } = useToast();
@@ -134,7 +134,7 @@ export default function AdminUsernamesPage() {
       <div className="card">
         <div className="ch justify-between flex-wrap gap-2">
           <h3 className="m-0">Business Usernames</h3>
-          <div className="flex gap-[0.4rem]">
+          <div className="flex gap-1.5">
             <button type="button" className="btn-p btn-sm" onClick={doAutoSuggestAll} disabled={busyBulk}>Auto-Suggest All</button>
             <button type="button" className="btn-g btn-sm" onClick={doSyncAll} disabled={busyBulk}>Sync All from Meta</button>
           </div>
@@ -161,9 +161,9 @@ export default function AdminUsernamesPage() {
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                <tr className="bg-ink text-left text-dim text-xs">
                   <th className={TH_CLS}>Restaurant</th>
                   <th className={TH_CLS}>WABA Display</th>
                   <th className={TH_CLS}>Username</th>
@@ -185,12 +185,12 @@ export default function AdminUsernamesPage() {
                     <tr key={u._id} className="border-t border-rim">
                       <td className={TD_CLS}>
                         {u.restaurant_name || '—'}
-                        {u.city && <><br /><span className="text-[0.72rem] text-dim">{u.city}</span></>}
+                        {u.city && <><br /><span className="text-xs text-dim">{u.city}</span></>}
                       </td>
                       <td className={TD_CLS}>{u.display_name || '—'}</td>
                       <td className={`${TD_CLS} mono`}>{u.business_username ? '@' + u.business_username : <span className="text-dim">—</span>}</td>
                       <td className={TD_CLS}>{statusBadge(u.username_status)}</td>
-                      <td className={`${TD_CLS} text-[0.78rem]`}>
+                      <td className={`${TD_CLS} text-sm`}>
                         {waLink ? <a href={`https://${waLink}`} target="_blank" rel="noreferrer" className="text-acc">{waLink}</a> : '—'}
                       </td>
                       <td className={TD_CLS}><button type="button" className="btn-g btn-sm" onClick={() => setActive(u)}>Manage</button></td>
@@ -392,23 +392,23 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
       onClick={onClose}
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
     >
-      <div onClick={(e) => e.stopPropagation()} className="bg-neutral-0 rounded-[10px] w-full max-w-[560px] max-h-[90vh] overflow-auto">
-        <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
-          <h3 className="m-0 text-[0.95rem]">Username: {u.restaurant_name || 'Restaurant'}</h3>
+      <div onClick={(e) => e.stopPropagation()} className="bg-neutral-0 rounded-r w-full max-w-[560px] max-h-[90vh] overflow-auto">
+        <div className="flex items-center justify-between py-3 px-4 border-b border-rim">
+          <h3 className="m-0 text-md">Username: {u.restaurant_name || 'Restaurant'}</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose}>✕</button>
         </div>
         <div className="p-4">
           <div className="mb-4">
             {isActive ? (
-              <div className="bg-wa-light border border-green-300 rounded-lg p-[0.7rem] text-[0.85rem]">
+              <div className="bg-wa-light border border-green-300 rounded-lg p-3 text-base">
                 Active: <strong>@{u.business_username}</strong> — <a href={`https://wa.me/${u.business_username}`} target="_blank" rel="noreferrer" className="text-acc">wa.me/{u.business_username}</a>
               </div>
             ) : isPending ? (
-              <div className="bg-yellow-100 border border-amber-300 rounded-lg p-[0.7rem] text-[0.85rem]">
+              <div className="bg-yellow-100 border border-amber-300 rounded-lg p-3 text-base">
                 Pending claim: <strong>@{u.business_username}</strong>
               </div>
             ) : (
-              <div className="bg-ink border border-rim rounded-lg p-[0.7rem] text-[0.85rem] text-dim">
+              <div className="bg-ink border border-rim rounded-lg p-3 text-base text-dim">
                 No username claimed
               </div>
             )}
@@ -416,14 +416,14 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
 
           <div className="mb-4">
             <label className={LBL_CLS}>Suggested Usernames</label>
-            <div className="flex flex-wrap gap-[0.4rem]">
+            <div className="flex flex-wrap gap-1.5">
               {suggestions.length === 0 ? (
-                <span className="text-[0.8rem] text-dim">No suggestions yet — click &quot;Regenerate&quot;</span>
+                <span className="text-sm text-dim">No suggestions yet — click &quot;Regenerate&quot;</span>
               ) : suggestions.map((s) => (
                 <button
                   key={s}
                   type="button"
-                  className="btn-g btn-sm text-[0.78rem]"
+                  className="btn-g btn-sm text-sm"
                   onClick={() => pickSuggestion(s)}
                 >@{s}</button>
               ))}
@@ -432,8 +432,8 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
 
           <div className="mb-4">
             <label className={LBL_CLS}>Custom Username</label>
-            <div className="flex gap-[0.4rem] items-center">
-              <span className="text-[0.9rem] text-dim">@</span>
+            <div className="flex gap-1.5 items-center">
+              <span className="text-base text-dim">@</span>
               <input
                 value={custom}
                 onChange={onCustomChange}
@@ -441,9 +441,9 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
                 placeholder="beyondsnacks"
                 className={`${INPUT_CLS} flex-1`}
               />
-              <span className="text-[0.85rem]">{checkState.status}</span>
+              <span className="text-base">{checkState.status}</span>
             </div>
-            <div className="text-[0.72rem] text-red-600 min-h-[1em] mt-[0.2rem]">{checkState.error}</div>
+            <div className="text-xs text-red-600 min-h-[1em] mt-1">{checkState.error}</div>
           </div>
 
           <div className="flex gap-2 flex-wrap">
@@ -475,7 +475,7 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
           </div>
 
           {isPending && (
-            <div className="mt-4 bg-ink border border-rim rounded-lg p-[0.85rem] text-[0.8rem] leading-normal">
+            <div className="mt-4 bg-ink border border-rim rounded-lg p-3.5 text-sm leading-normal">
               <strong>How to claim in Meta Business Suite:</strong><br />
               1. Open Meta Business Suite for this WABA<br />
               2. Go to WhatsApp Manager → Settings → Username<br />
@@ -487,7 +487,7 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
           {showManual && (
             <div className="mt-3">
               <label className={LBL_CLS}>Manual entry (if Meta sync unavailable):</label>
-              <div className="flex gap-[0.4rem]">
+              <div className="flex gap-1.5">
                 <input
                   value={manual}
                   onChange={(e) => setManual(e.target.value)}

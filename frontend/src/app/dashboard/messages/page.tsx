@@ -170,13 +170,13 @@ export default function MessagesPage() {
         <div className="w-[340px] shrink-0 flex flex-col bg-ink2 rounded-r border border-rim overflow-hidden">
           {activeView === 'messages' ? (
             <>
-              <div className="p-[0.7rem] border-b border-rim">
+              <div className="p-3 border-b border-rim">
                 <input
                   id="msg-search"
                   placeholder="Search messages…"
                   value={msgSearchInput}
                   onChange={(e) => onMsgSearchChange(e.target.value)}
-                  className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-lg text-[0.82rem]"
+                  className="w-full py-1.5 px-2.5 border border-rim rounded-lg text-sm"
                 />
                 <div className="flex gap-2 mb-3 mt-2">
                   {MSG_FILTERS.map(([value, label]) => (
@@ -194,7 +194,7 @@ export default function MessagesPage() {
               </div>
               <div
                 id="msg-thread-list"
-                className="flex-1 overflow-y-auto p-[0.4rem]"
+                className="flex-1 overflow-y-auto p-1.5"
               >
                 <ConversationList
                   conversations={conversations}
@@ -206,13 +206,13 @@ export default function MessagesPage() {
             </>
           ) : (
             <>
-              <div className="p-[0.7rem] border-b border-rim">
+              <div className="p-3 border-b border-rim">
                 <input
                   id="iss-search"
                   placeholder="Search issues…"
                   value={issSearchInput}
                   onChange={(e) => onIssSearchChange(e.target.value)}
-                  className="w-full py-[0.4rem] px-[0.6rem] border border-rim rounded-lg text-[0.82rem]"
+                  className="w-full py-1.5 px-2.5 border border-rim rounded-lg text-sm"
                 />
                 <div className="flex gap-2 mb-3 mt-2">
                   {ISS_FILTERS.map(([value, label]) => (
@@ -228,7 +228,7 @@ export default function MessagesPage() {
                   ))}
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-[0.4rem]">
+              <div className="flex-1 overflow-y-auto p-1.5">
                 <IssueList
                   issues={issues}
                   selectedId={selectedIssue}

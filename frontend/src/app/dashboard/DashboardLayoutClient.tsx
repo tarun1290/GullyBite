@@ -101,7 +101,7 @@ function DashboardShell({ children }: DashboardShellProps) {
           subtitle="Welcome back"
           onMenuClick={() => setSidebarOpen(true)}
           actions={
-            <div className="flex items-center gap-[0.6rem]">
+            <div className="flex items-center gap-2.5">
               <LiveIndicator />
               <AdminMessageButton />
               <NotificationBell />
@@ -113,10 +113,10 @@ function DashboardShell({ children }: DashboardShellProps) {
         {showPendingBanner && (
           <div
             id="pending-banner"
-            className="flex items-center gap-[0.7rem] bg-[#f0f9ff] border-b border-[#bae6fd] py-3 px-8"
+            className="flex items-center gap-3 bg-[#f0f9ff] border-b border-[#bae6fd] py-3 px-8"
           >
-            <span className="text-[1.1rem]">⏳</span>
-            <span className="text-[0.82rem] text-[#0369a1]">
+            <span className="text-lg">⏳</span>
+            <span className="text-sm text-[#0369a1]">
               <strong>Account under review</strong> — Our team will activate your account within 1–2 business days. You can explore the dashboard in the meantime.
             </span>
           </div>

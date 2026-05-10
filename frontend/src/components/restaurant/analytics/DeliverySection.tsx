@@ -62,7 +62,7 @@ export default function DeliverySection({ dateRange }: DeliverySectionProps) {
                 <div className="stat-v">{data?.delivered_count ?? (loading ? '…' : 0)}</div>
               </div>
             </div>
-            <table className="tbl text-[0.8rem]">
+            <table className="tbl text-sm">
               <thead>
                 <tr><th>Branch</th><th>Orders</th><th>Revenue</th></tr>
               </thead>

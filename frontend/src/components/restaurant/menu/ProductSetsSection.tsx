@@ -179,13 +179,13 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch"><h3>📂 Product Sets</h3></div>
         <div className="cb">
-          <p className="text-dim text-[0.86rem] mb-[0.7rem]">
+          <p className="text-dim text-base mb-3">
             Select a specific branch to manage its product sets.
           </p>
           <select
             value={selectedBranchId}
             onChange={(e) => setSelectedBranchId(e.target.value)}
-            className="py-[0.4rem] px-[0.6rem] rounded-[7px] border border-rim text-[0.85rem]"
+            className="py-1.5 px-2.5 rounded-md border border-rim text-base"
           >
             <option value="">Select branch…</option>
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -200,7 +200,7 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch"><h3>📂 Product Sets</h3></div>
         <div className="cb">
-          <p className="text-dim text-[0.86rem]">
+          <p className="text-dim text-base">
             &quot;{branch?.name}&quot; has no catalog yet. Create one from the Branches tab first — product
             sets only sync to Meta once a catalog exists.
           </p>
@@ -214,7 +214,7 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
       <div className="card">
         <div className="ch justify-between">
           <h3>📂 Product Sets — {branch?.name}</h3>
-          <div className="flex gap-[0.4rem]">
+          <div className="flex gap-1.5">
             <button type="button" className="btn-g btn-sm" onClick={handleAuto}>✨ Auto-Create</button>
             <button type="button" className="btn-g btn-sm" onClick={handleSync}>🔄 Sync to Meta</button>
             <button type="button" className="btn-p btn-sm" onClick={openCreate}>+ Create Set</button>
@@ -224,25 +224,25 @@ export default function ProductSetsSection({ branches, selectedBranchId, setSele
           {loading ? (
             <p className="text-dim">Loading…</p>
           ) : !sets.length ? (
-            <p className="text-dim text-[0.82rem]">
+            <p className="text-dim text-sm">
               No product sets yet. Click <strong>Auto-Create</strong> to generate from your menu
               categories, or <strong>Create Set</strong> to add manually.
             </p>
           ) : (
-            <div className="flex flex-col gap-[0.4rem]">
+            <div className="flex flex-col gap-1.5">
               {sets.map((s) => {
                 const syncBadge = s.meta_product_set_id ? (
-                  <span className="text-[0.65rem] text-wa">🟢 synced</span>
+                  <span className="text-xs text-wa">🟢 synced</span>
                 ) : (
-                  <span className="text-[0.65rem] text-gold">🟡 pending</span>
+                  <span className="text-xs text-gold">🟡 pending</span>
                 );
                 return (
                   <div
                     key={s.id}
-                    className="flex items-center gap-[0.6rem] py-2 px-[0.7rem] bg-ink2 rounded-lg"
+                    className="flex items-center gap-2.5 py-2 px-3 bg-ink2 rounded-lg"
                   >
-                    <span className="font-semibold text-[0.84rem] flex-1">{s.name}</span>
-                    <span className="badge bd text-[0.62rem]">{s.type}</span>
+                    <span className="font-semibold text-sm flex-1">{s.name}</span>
+                    <span className="badge bd text-xs">{s.type}</span>
                     {syncBadge}
                     <button type="button" className="btn-g btn-xs" onClick={() => openEdit(s)}>✏ Edit</button>
                     {pendingDelete === s.id ? (

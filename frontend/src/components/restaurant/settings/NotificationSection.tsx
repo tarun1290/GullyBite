@@ -51,7 +51,7 @@ interface PillProps { on: boolean; label: string }
 function Pill({ on, label }: PillProps) {
   return (
     <span
-      className={`inline-flex items-center gap-[0.2rem] text-[0.72rem] font-semibold py-[0.2rem] px-2 rounded-full ${
+      className={`inline-flex items-center gap-1 text-xs font-semibold py-1 px-2 rounded-full ${
         on ? 'bg-wa-light text-green-700' : 'bg-ink2 text-dim'
       }`}
     >
@@ -112,7 +112,7 @@ export default function NotificationSection() {
   const ns: NotificationSettings = r.notification_settings || {};
 
   return (
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch justify-between">
         <h3>🔔 Notification Settings</h3>
         {!editing && (
@@ -124,22 +124,22 @@ export default function NotificationSection() {
       <div className="cb">
         {!editing ? (
           <div>
-            <div className="flex justify-between items-center py-[0.45rem] border-b border-rim">
-              <span className="text-dim text-[0.78rem] min-w-[130px]">
+            <div className="flex justify-between items-center py-2 border-b border-rim">
+              <span className="text-dim text-sm min-w-[130px]">
                 Notification Phones
               </span>
               <span
-                className={`font-medium text-right text-[0.84rem] ${
+                className={`font-medium text-right text-sm ${
                   phones ? 'not-italic' : 'text-mute italic'
                 }`}
               >
                 {phones || 'Not configured'}
               </span>
             </div>
-            <p className="text-[0.78rem] font-semibold text-dim mt-2 mb-[0.4rem]">
+            <p className="text-sm font-semibold text-dim mt-2 mb-1.5">
               Events:
             </p>
-            <div className="flex flex-wrap gap-[0.4rem]">
+            <div className="flex flex-wrap gap-1.5">
               <Pill on={ns.new_order !== false} label="New Orders" />
               <Pill on={ns.payment !== false} label="Payments" />
               <Pill on={ns.cancelled !== false} label="Cancellations" />
@@ -162,14 +162,14 @@ export default function NotificationSection() {
               </Field>
             </div>
             <hr className="dv" />
-            <p className="text-[0.84rem] font-semibold text-dim mb-[0.7rem]">
+            <p className="text-sm font-semibold text-dim mb-3">
               Notify me when:
             </p>
-            <div className="flex flex-wrap gap-[1.2rem] mb-2">
+            <div className="flex flex-wrap gap-5 mb-2">
               {EVENTS.map(([key, label]) => (
                 <label
                   key={key}
-                  className="flex items-center gap-[0.4rem] text-[0.84rem] cursor-pointer"
+                  className="flex items-center gap-1.5 text-sm cursor-pointer"
                 >
                   <input
                     type="checkbox"
@@ -181,7 +181,7 @@ export default function NotificationSection() {
               ))}
             </div>
 
-            <div className="flex gap-2 mt-[0.8rem]">
+            <div className="flex gap-2 mt-3">
               <button
                 type="button"
                 className="btn-p"

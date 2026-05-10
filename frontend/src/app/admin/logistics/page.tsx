@@ -79,8 +79,8 @@ function fmtNum(n: number | string | null | undefined): string { return n == nul
 function fmtDec(n: number | string | null | undefined): string { return n == null ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 1 }); }
 function fmtRs(n: number | string | null | undefined): string { return n == null ? '—' : '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 }); }
 
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-2 text-[0.78rem]';
-const LBL_CLS = 'text-[0.68rem] text-dim block mb-[0.2rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1 px-2 text-sm';
+const LBL_CLS = 'text-xs text-dim block mb-1';
 
 export default function AdminLogisticsPage() {
   const today = todayIST();
@@ -216,7 +216,7 @@ export default function AdminLogisticsPage() {
   return (
     <div id="pg-logistics">
       <div className="card mb-4">
-        <div className="flex flex-wrap gap-[0.6rem] py-3 px-4 items-end">
+        <div className="flex flex-wrap gap-2.5 py-3 px-4 items-end">
           <div>
             <label className={LBL_CLS}>From</label>
             <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className={INPUT_CLS} />
@@ -257,7 +257,7 @@ export default function AdminLogisticsPage() {
         <div className="mb-4"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-[0.6rem] mb-[1.2rem]">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2.5 mb-5">
             <StatCard label="Delivered Orders" value={loading ? '…' : fmtNum(s.deliveredOrders)} />
             <StatCard label="Cancelled By Client" value={loading ? '…' : fmtNum(s.cancelledByClient)} />
             <StatCard label="Cancelled By System" value={loading ? '…' : fmtNum(s.cancelledBySystem)} />
@@ -277,7 +277,7 @@ export default function AdminLogisticsPage() {
 
           <div className="grid grid-cols-[repeat(auto-fit,minmax(420px,1fr))] gap-4">
             <div className="card">
-              <div className="ch"><h3 className="m-0 text-[0.9rem]">Daily Delivered by LSP</h3></div>
+              <div className="ch"><h3 className="m-0 text-base">Daily Delivered by LSP</h3></div>
               <div className="cb">
                 {loading ? (
                   <div className="h-[260px] flex items-center justify-center text-dim">Loading…</div>
@@ -295,7 +295,7 @@ export default function AdminLogisticsPage() {
             </div>
 
             <div className="card">
-              <div className="ch"><h3 className="m-0 text-[0.9rem]">Daily by Status</h3></div>
+              <div className="ch"><h3 className="m-0 text-base">Daily by Status</h3></div>
               <div className="cb">
                 {loading ? (
                   <div className="h-[260px] flex items-center justify-center text-dim">Loading…</div>

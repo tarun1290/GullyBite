@@ -59,10 +59,10 @@ interface ViewRowProps {
 function ViewRow({ label, value, mono, badge }: ViewRowProps) {
   const notSet = !value && value !== 0;
   return (
-    <div className="flex justify-between items-center py-3 px-4 min-h-[2.5rem] border-b border-rim">
-      <span className="text-dim text-[0.78rem] min-w-[130px]">{label}</span>
+    <div className="flex justify-between items-center py-3 px-4 min-h-10 border-b border-rim">
+      <span className="text-dim text-sm min-w-[130px]">{label}</span>
       <span
-        className={`font-medium text-right text-[0.84rem] ${mono ? 'font-mono' : ''} ${
+        className={`font-medium text-right text-sm ${mono ? 'font-mono' : ''} ${
           notSet ? 'text-dim italic' : 'not-italic'
         }`}
       >
@@ -78,14 +78,14 @@ interface VerifBadgeProps { verified?: boolean; hasValue: boolean }
 function VerifBadge({ verified, hasValue }: VerifBadgeProps) {
   if (verified) {
     return (
-      <span className="ml-[0.4rem] text-[0.65rem] py-[0.1rem] px-[0.4rem] rounded-full bg-wa-light text-green-700 font-bold">
+      <span className="ml-1.5 text-xs py-0.5 px-1.5 rounded-full bg-wa-light text-green-700 font-bold">
         ✓ Verified
       </span>
     );
   }
   if (hasValue) {
     return (
-      <span className="ml-[0.4rem] text-[0.65rem] py-[0.1rem] px-[0.4rem] rounded-full bg-amber-100 text-amber-900 font-semibold">
+      <span className="ml-1.5 text-xs py-0.5 px-1.5 rounded-full bg-amber-100 text-amber-900 font-semibold">
         Pending
       </span>
     );
@@ -248,7 +248,7 @@ export default function BusinessInfoSection() {
   const isExpired = fssaiExpiryDate && fssaiExpiryDate < new Date();
 
   return (
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch justify-between">
         <h3>Business Information</h3>
         {!editing && (
@@ -269,10 +269,10 @@ export default function BusinessInfoSection() {
                   label="Restaurant ID"
                   mono
                   value={(
-                    <span className="inline-flex items-center gap-[0.4rem]">
+                    <span className="inline-flex items-center gap-1.5">
                       <span
                         title={fullId}
-                        className="py-[0.15rem] px-2 bg-ink2 rounded-[5px] text-[0.78rem]"
+                        className="py-0.5 px-2 bg-ink2 rounded-md text-sm"
                       >
                         {shortId}
                       </span>
@@ -280,7 +280,7 @@ export default function BusinessInfoSection() {
                         type="button"
                         onClick={handleCopyRestaurantId}
                         title="Copy full ID for support"
-                        className="bg-wa text-white border-0 rounded-[4px] py-[0.15rem] px-[0.45rem] text-[0.66rem] font-semibold cursor-pointer"
+                        className="bg-wa text-white border-0 rounded py-0.5 px-2 text-xs font-semibold cursor-pointer"
                       >
                         Copy
                       </button>
@@ -299,11 +299,11 @@ export default function BusinessInfoSection() {
             {r.logo_url && (
               <ViewRow
                 label="Logo"
-                value={<img src={r.logo_url} alt="" className="h-7 rounded-[4px]" />}
+                value={<img src={r.logo_url} alt="" className="h-7 rounded" />}
               />
             )}
 
-            <p className="text-[0.82rem] font-semibold text-dim mt-[0.8rem] mb-[0.4rem]">
+            <p className="text-sm font-semibold text-dim mt-3 mb-1.5">
               Legal &amp; Compliance
             </p>
             <ViewRow
@@ -332,30 +332,30 @@ export default function BusinessInfoSection() {
               />
             )}
 
-            <p className="text-[0.82rem] font-semibold text-dim mt-[0.8rem] mb-[0.4rem]">
+            <p className="text-sm font-semibold text-dim mt-3 mb-1.5">
               Store URL
             </p>
             {r.store_url ? (
-              <div className="flex items-center gap-3 py-[0.4rem] px-[0.6rem] bg-ink2 rounded-md mb-[0.3rem]">
+              <div className="flex items-center gap-3 py-1.5 px-2.5 bg-ink2 rounded-md mb-1">
                 <a
                   href={r.store_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 font-mono text-[0.8rem] text-acc break-all"
+                  className="flex-1 font-mono text-sm text-acc break-all"
                 >
                   {r.store_url}
                 </a>
                 <button
                   type="button"
                   onClick={handleCopyUrl}
-                  className="bg-wa text-white border-0 rounded-[5px] py-1 px-[0.6rem] text-[0.72rem] font-semibold cursor-pointer"
+                  className="bg-wa text-white border-0 rounded-md py-1 px-2.5 text-xs font-semibold cursor-pointer"
                 >
                   Copy
                 </button>
               </div>
             ) : <ViewRow label="Store URL" value={null} />}
 
-            <p className="text-[0.82rem] font-semibold text-dim mt-[0.8rem] mb-[0.4rem]">
+            <p className="text-sm font-semibold text-dim mt-3 mb-1.5">
               Bank Account
             </p>
             {r.bank_name || r.bank_account_number ? (
@@ -368,12 +368,12 @@ export default function BusinessInfoSection() {
                 <ViewRow label="IFSC" value={r.bank_ifsc} mono />
               </>
             ) : (
-              <div className="text-[0.8rem] text-mute italic py-[0.3rem]">
+              <div className="text-sm text-mute italic py-1">
                 No bank details — add in Edit mode
               </div>
             )}
 
-            <p className="text-[0.82rem] font-semibold text-dim mt-[0.8rem] mb-[0.4rem]">
+            <p className="text-sm font-semibold text-dim mt-3 mb-1.5">
               Marketing
             </p>
             <ViewRow
@@ -422,7 +422,7 @@ export default function BusinessInfoSection() {
             </div>
 
             <hr className="dv" />
-            <p className="text-[0.84rem] font-semibold text-dim mb-[0.85rem]">
+            <p className="text-sm font-semibold text-dim mb-3.5">
               Legal &amp; Compliance
             </p>
             <div className="fgrid">
@@ -441,22 +441,22 @@ export default function BusinessInfoSection() {
                 <input type="date" value={form.fssaiExpiry} onChange={update('fssaiExpiry')} />
               </Field>
             </div>
-            <div className="bg-[#fefce8] border border-yellow-200 rounded-lg py-[0.6rem] px-[0.9rem] mt-[0.7rem] text-[0.75rem] text-amber-900">
+            <div className="bg-[#fefce8] border border-yellow-200 rounded-lg py-2.5 px-3.5 mt-3 text-xs text-amber-900">
               GST and FSSAI details are manually verified by the GullyBite team.
             </div>
 
             <hr className="dv" />
-            <p className="text-[0.84rem] font-semibold text-dim mb-2">
+            <p className="text-sm font-semibold text-dim mb-2">
               Store URL
             </p>
-            <div className="flex items-center gap-3 mb-[0.3rem]">
-              <span className="text-[0.8rem] text-dim font-mono whitespace-nowrap">
+            <div className="flex items-center gap-3 mb-1">
+              <span className="text-sm text-dim font-mono whitespace-nowrap">
                 {storeBase}
               </span>
               <input
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
-                className="flex-1 bg-ink4 border border-rim rounded-[7px] py-[0.38rem] px-[0.7rem] text-[0.8rem] text-tx outline-hidden font-mono"
+                className="flex-1 bg-ink4 border border-rim rounded-md py-1.5 px-3 text-sm text-tx outline-hidden font-mono"
                 placeholder={slugPlaceholder}
               />
               <button
@@ -470,18 +470,18 @@ export default function BusinessInfoSection() {
               <button
                 type="button"
                 onClick={handleCopyUrl}
-                className="bg-wa text-white border-0 rounded-[7px] py-[0.38rem] px-[0.85rem] text-[0.77rem] font-semibold cursor-pointer whitespace-nowrap"
+                className="bg-wa text-white border-0 rounded-md py-1.5 px-3.5 text-xs font-semibold cursor-pointer whitespace-nowrap"
               >
                 Copy
               </button>
             </div>
-            <p className="text-[0.72rem] text-dim mb-4">
+            <p className="text-xs text-dim mb-4">
               Lowercase letters, numbers, hyphens only.
             </p>
 
             <hr className="dv" />
-            <p className="text-[0.84rem] font-semibold text-dim mb-[0.85rem]">
-              Bank Account <span className="font-normal text-[0.78rem]">(for settlements)</span>
+            <p className="text-sm font-semibold text-dim mb-3.5">
+              Bank Account <span className="font-normal text-sm">(for settlements)</span>
             </p>
             <div className="fgrid">
               <Field label="Bank Name">
@@ -496,7 +496,7 @@ export default function BusinessInfoSection() {
             </div>
 
             <hr className="dv" />
-            <p className="text-[0.84rem] font-semibold text-dim mb-[0.85rem]">
+            <p className="text-sm font-semibold text-dim mb-3.5">
               Marketing
             </p>
             <div className="fgrid">
@@ -510,13 +510,13 @@ export default function BusinessInfoSection() {
                   onChange={update('cartRecoveryDiscountPct')}
                   placeholder="10"
                 />
-                <p className="text-[0.72rem] text-dim mt-[0.3rem]">
+                <p className="text-xs text-dim mt-1">
                   Discount shown to customers who abandon their cart. Default: 10%.
                 </p>
               </Field>
             </div>
 
-            <div className="flex gap-3 mt-[1.1rem]">
+            <div className="flex gap-3 mt-4">
               <button
                 type="button"
                 className="btn-p"

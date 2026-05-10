@@ -100,10 +100,10 @@ function sevIcon(s?: string): string {
   return s === 'critical' ? '🔴' : s === 'error' ? '❌' : s === 'warning' ? '⚠️' : 'ℹ️';
 }
 
-const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const TH_CLS = 'py-2 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.35rem] px-[0.55rem] text-[0.78rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1.5 px-2 text-sm';
 
 export default function AdminActivityPage() {
   const [sub, setSub] = useState<string>('feed');
@@ -156,8 +156,8 @@ export default function AdminActivityPage() {
       {statsErr && <div className="mb-4"><SectionError message={statsErr} onRetry={loadStats} /></div>}
 
       <div className="card">
-        <div className="ch justify-between flex-wrap gap-[0.6rem]">
-          <div className="flex gap-[0.4rem] flex-wrap">
+        <div className="ch justify-between flex-wrap gap-2.5">
+          <div className="flex gap-1.5 flex-wrap">
             {['feed', 'webhooks', 'errors', 'drilldown'].map((s) => (
               <button
                 key={s}
@@ -168,7 +168,7 @@ export default function AdminActivityPage() {
             ))}
           </div>
           {(sub === 'feed' || sub === 'webhooks' || sub === 'errors') && (
-            <label className="text-[0.8rem] text-dim flex items-center gap-[0.3rem]">
+            <label className="text-sm text-dim flex items-center gap-1">
               <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
               Auto-refresh (5s)
             </label>
@@ -292,9 +292,9 @@ function FeedTab({ autoRefresh, restaurants, restMap, onStatsChange, onOpenDrill
         <div className="cb"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[0.82rem]">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-ink text-left text-dim text-[0.74rem]">
+              <tr className="bg-ink text-left text-dim text-xs">
                 <th className={TH_CLS}>Time</th>
                 <th className={TH_CLS}>Actor</th>
                 <th className={TH_CLS}>Action</th>
@@ -317,21 +317,21 @@ function FeedTab({ autoRefresh, restaurants, restMap, onStatsChange, onOpenDrill
                   style={{ background: SEV_BG[a.severity || ''] || '' }}
                   onClick={() => setDetail(a)}
                 >
-                  <td className={`${TD_CLS} text-dim text-[0.76rem] whitespace-nowrap`}>{fmtDateTime(a.created_at)}</td>
+                  <td className={`${TD_CLS} text-dim text-xs whitespace-nowrap`}>{fmtDateTime(a.created_at)}</td>
                   <td className={TD_CLS}>
-                    <span className="bg-[rgba(79,70,229,0.08)] text-acc py-[0.1rem] px-[0.4rem] rounded-sm text-[0.7rem] font-semibold">{a.actor_type}</span>{' '}
+                    <span className="bg-[rgba(79,70,229,0.08)] text-acc py-0.5 px-1.5 rounded-sm text-xs font-semibold">{a.actor_type}</span>{' '}
                     {a.actor_name || a.actor_id || ''}
                   </td>
                   <td className={`${TD_CLS} font-medium`}>{a.action}</td>
                   <td className={`${TD_CLS} max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap`} title={a.description || ''}>{a.description || ''}</td>
                   <td className={TD_CLS}>
                     <span
-                      className="font-semibold text-[0.76rem]"
+                      className="font-semibold text-xs"
                       // colour from SEV_COLORS by severity at runtime.
                       style={{ color: SEV_COLORS[a.severity || ''] || 'var(--gb-slate-500)' }}
                     >{sevIcon(a.severity)} {a.severity}</span>
                   </td>
-                  <td className={`${TD_CLS} text-[0.78rem]`} onClick={(e) => e.stopPropagation()}>
+                  <td className={`${TD_CLS} text-sm`} onClick={(e) => e.stopPropagation()}>
                     {a.restaurant_id ? (
                       <a href="#" onClick={(e) => { e.preventDefault(); onOpenDrilldown(a.restaurant_id || ''); }} className="text-acc font-medium no-underline">
                         {restMap[a.restaurant_id] || a.restaurant_id}
@@ -409,9 +409,9 @@ function WebhooksTab({ autoRefresh }: WebhooksTabProps): ReactNode {
         <div className="cb"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[0.82rem]">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-ink text-left text-dim text-[0.74rem]">
+              <tr className="bg-ink text-left text-dim text-xs">
                 <th className={TH_CLS}>Time</th>
                 <th className={TH_CLS}>Type</th>
                 <th className={TH_CLS}>Phone ID</th>
@@ -432,10 +432,10 @@ function WebhooksTab({ autoRefresh }: WebhooksTabProps): ReactNode {
                     : 'text-dim';
                 return (
                   <tr key={w._id} className="border-t border-rim">
-                    <td className={`${TD_CLS} text-dim text-[0.76rem] whitespace-nowrap`}>{fmtDateTime(w.received_at || w.created_at)}</td>
+                    <td className={`${TD_CLS} text-dim text-xs whitespace-nowrap`}>{fmtDateTime(w.received_at || w.created_at)}</td>
                     <td className={TD_CLS}>{w.type || 'message'}</td>
                     <td className={TD_CLS}>{w.phone_number_id || '—'}</td>
-                    <td className={`${TD_CLS} font-semibold text-[0.78rem] ${stCls}`}>{w.status || 'received'}</td>
+                    <td className={`${TD_CLS} font-semibold text-sm ${stCls}`}>{w.status || 'received'}</td>
                     <td className={TD_CLS}><button type="button" className="btn-g btn-sm" onClick={() => openDetail(w._id)}>View</button></td>
                   </tr>
                 );
@@ -451,9 +451,9 @@ function WebhooksTab({ autoRefresh }: WebhooksTabProps): ReactNode {
           onClick={() => { setDetail(null); setDetailErr(null); }}
           className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
         >
-          <div onClick={(e) => e.stopPropagation()} className="bg-neutral-0 rounded-[10px] w-full max-w-[720px] max-h-[85vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
-              <h3 className="m-0 text-[0.95rem]">Webhook Detail</h3>
+          <div onClick={(e) => e.stopPropagation()} className="bg-neutral-0 rounded-r w-full max-w-[720px] max-h-[85vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between py-3 px-4 border-b border-rim">
+              <h3 className="m-0 text-md">Webhook Detail</h3>
               <button type="button" className="btn-g btn-sm" onClick={() => { setDetail(null); setDetailErr(null); }}>✕</button>
             </div>
             <div className="overflow-y-auto p-4 bg-ink flex-1">
@@ -462,7 +462,7 @@ function WebhooksTab({ autoRefresh }: WebhooksTabProps): ReactNode {
               ) : detailErr ? (
                 <SectionError message={detailErr} />
               ) : (
-                <pre className="m-0 text-[0.78rem] whitespace-pre-wrap break-all mono">{JSON.stringify(detail, null, 2)}</pre>
+                <pre className="m-0 text-sm whitespace-pre-wrap break-all mono">{JSON.stringify(detail, null, 2)}</pre>
               )}
             </div>
           </div>
@@ -533,21 +533,21 @@ function ErrorsTab({ autoRefresh, restMap, onStatsChange, onOpenDrilldown }: Err
 
   return (
     <>
-      <div className="flex justify-between items-center py-[0.6rem] px-4 border-b border-rim">
-        <label className="text-[0.8rem] text-dim flex items-center gap-[0.3rem]">
+      <div className="flex justify-between items-center py-2.5 px-4 border-b border-rim">
+        <label className="text-sm text-dim flex items-center gap-1">
           <input type="checkbox" checked={hideResolved} onChange={(e) => setHideResolved(e.target.checked)} />
           Hide resolved
         </label>
-        <span className="text-[0.8rem] text-dim">Unresolved: <strong>{unresolvedCount}</strong></span>
+        <span className="text-sm text-dim">Unresolved: <strong>{unresolvedCount}</strong></span>
       </div>
 
       {err ? (
         <div className="cb"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[0.82rem]">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-ink text-left text-dim text-[0.74rem]">
+              <tr className="bg-ink text-left text-dim text-xs">
                 <th className={TH_CLS}>Time</th>
                 <th className={TH_CLS}>Action</th>
                 <th className={TH_CLS}>Description</th>
@@ -563,11 +563,11 @@ function ErrorsTab({ autoRefresh, restMap, onStatsChange, onOpenDrilldown }: Err
                 <tr><td colSpan={6} className={EMPTY_CLS}>No errors found.</td></tr>
               ) : filtered.map((e) => (
                 <tr key={e._id} className={`border-t border-rim ${e.resolved_at ? 'bg-[rgba(22,163,74,0.04)]' : 'bg-[rgba(239,68,68,0.05)]'}`}>
-                  <td className={`${TD_CLS} text-dim text-[0.76rem] whitespace-nowrap`}>{fmtDateTime(e.created_at)}</td>
+                  <td className={`${TD_CLS} text-dim text-xs whitespace-nowrap`}>{fmtDateTime(e.created_at)}</td>
                   <td className={`${TD_CLS} font-medium`}>{sevIcon(e.severity)} {e.action}</td>
                   <td className={`${TD_CLS} max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap`} title={e.description || ''}>{e.description || ''}</td>
                   <td className={TD_CLS}>{e.actor_name || e.actor_type || '—'}</td>
-                  <td className={`${TD_CLS} text-[0.78rem]`}>
+                  <td className={`${TD_CLS} text-sm`}>
                     {e.restaurant_id ? (
                       <a href="#" onClick={(ev) => { ev.preventDefault(); onOpenDrilldown(e.restaurant_id || ''); }} className="text-acc no-underline">
                         {restMap[e.restaurant_id] || e.restaurant_id}
@@ -576,7 +576,7 @@ function ErrorsTab({ autoRefresh, restMap, onStatsChange, onOpenDrilldown }: Err
                   </td>
                   <td className={TD_CLS}>
                     {e.resolved_at ? (
-                      <span className="text-emerald-700 text-[0.76rem] font-semibold">✅ Resolved</span>
+                      <span className="text-emerald-700 text-xs font-semibold">✅ Resolved</span>
                     ) : (
                       <button type="button" className="btn-g btn-sm" onClick={() => markResolved(e._id)} disabled={busy === e._id}>
                         {busy === e._id ? '…' : 'Mark Resolved'}
@@ -676,34 +676,34 @@ function DrilldownTab({ initialRid, restaurants, restMap }: DrilldownTabProps): 
         <div className="cb"><SectionError message={err} onRetry={load} /></div>
       ) : (
         <div className="p-4">
-          <div className="bg-neutral-0 border border-rim rounded-lg p-[0.8rem] mb-4">
-            <span className="text-[1.05rem] font-bold">{restMap[rid] || rid}</span>
-            <span className="text-dim text-[0.82rem] ml-[0.8rem]">{summary} total events</span>
+          <div className="bg-neutral-0 border border-rim rounded-lg p-3 mb-4">
+            <span className="text-lg font-bold">{restMap[rid] || rid}</span>
+            <span className="text-dim text-sm ml-3">{summary} total events</span>
           </div>
           {loading ? (
             <div className="text-dim text-center p-8">Loading…</div>
           ) : timeline.length === 0 ? (
             <div className="text-center p-8 text-dim">No activity found for this restaurant.</div>
           ) : Object.entries(grouped).map(([label, items]) => (
-            <div key={label} className="mb-[1.2rem]">
-              <div className="text-[0.78rem] font-bold text-dim uppercase tracking-[0.04em] mb-2 pb-[0.3rem] border-b border-rim">{label}</div>
+            <div key={label} className="mb-5">
+              <div className="text-sm font-bold text-dim uppercase tracking-[0.04em] mb-2 pb-1 border-b border-rim">{label}</div>
               {items.map((a) => (
                 <div
                   key={a._id}
                   onClick={() => setDetail(a)}
-                  className="flex gap-[0.6rem] items-start py-[0.4rem] border-b border-[rgba(226,232,240,0.5)] cursor-pointer"
+                  className="flex gap-2.5 items-start py-1.5 border-b border-[rgba(226,232,240,0.5)] cursor-pointer"
                 >
-                  <span className="text-[0.76rem] text-dim whitespace-nowrap min-w-[70px]">
+                  <span className="text-xs text-dim whitespace-nowrap min-w-[70px]">
                     {a.created_at ? new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}
                   </span>
-                  <span className="text-[0.82rem]">{sevIcon(a.severity)}</span>
-                  <span className="bg-[rgba(79,70,229,0.06)] text-acc py-[0.1rem] px-[0.35rem] rounded-sm text-[0.68rem] font-semibold">{a.category || 'general'}</span>
+                  <span className="text-sm">{sevIcon(a.severity)}</span>
+                  <span className="bg-[rgba(79,70,229,0.06)] text-acc py-0.5 px-1.5 rounded-sm text-xs font-semibold">{a.category || 'general'}</span>
                   <span
-                    className="text-[0.82rem] font-medium"
+                    className="text-sm font-medium"
                     // colour from SEV_COLORS by severity at runtime.
                     style={{ color: SEV_COLORS[a.severity || ''] || 'var(--gb-slate-500)' }}
                   >{a.action}</span>
-                  <span className="text-[0.8rem] text-dim flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{a.description || ''}</span>
+                  <span className="text-sm text-dim flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{a.description || ''}</span>
                 </div>
               ))}
             </div>
@@ -727,9 +727,9 @@ interface PagerProps {
 
 function Pager({ page, totalPages, onChange, loading }: PagerProps): ReactNode {
   return (
-    <div className="flex justify-between items-center py-[0.6rem] px-4 border-t border-rim">
+    <div className="flex justify-between items-center py-2.5 px-4 border-t border-rim">
       <button type="button" className="btn-g btn-sm" onClick={() => onChange(Math.max(1, page - 1))} disabled={page <= 1 || loading}>← Prev</button>
-      <span className="text-[0.8rem] text-dim">Page {page} of {totalPages}</span>
+      <span className="text-sm text-dim">Page {page} of {totalPages}</span>
       <button type="button" className="btn-g btn-sm" onClick={() => onChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages || loading}>Next →</button>
     </div>
   );
@@ -747,13 +747,13 @@ function ActivityDetailModal({ activity: a, restMap, onClose }: ActivityDetailMo
       onClick={onClose}
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
     >
-      <div onClick={(e) => e.stopPropagation()} className="bg-neutral-0 rounded-[10px] w-full max-w-[640px] max-h-[85vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
-          <h3 className="m-0 text-[0.95rem]">Activity Detail</h3>
+      <div onClick={(e) => e.stopPropagation()} className="bg-neutral-0 rounded-r w-full max-w-[640px] max-h-[85vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between py-3 px-4 border-b border-rim">
+          <h3 className="m-0 text-md">Activity Detail</h3>
           <button type="button" className="btn-g btn-sm" onClick={onClose}>✕</button>
         </div>
         <div className="overflow-y-auto p-4 flex-1">
-          <div className="grid grid-cols-[auto_1fr] gap-y-[0.3rem] gap-x-[0.8rem] mb-[0.8rem] text-[0.82rem]">
+          <div className="grid grid-cols-[auto_1fr] gap-y-1 gap-x-3 mb-3 text-sm">
             <span className="text-dim">Time:</span><span>{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</span>
             <span className="text-dim">Action:</span><span className="font-semibold">{a.action}</span>
             <span className="text-dim">Category:</span><span>{a.category || ''}</span>
@@ -769,13 +769,13 @@ function ActivityDetailModal({ activity: a, restMap, onClose }: ActivityDetailMo
               <span className="text-dim">Resource:</span><span>{a.resource_type}{a.resource_id ? ' #' + a.resource_id : ''}</span>
             </>}
           </div>
-          <div className="mb-[0.6rem] text-[0.85rem]">
+          <div className="mb-2.5 text-base">
             <strong>Description:</strong><br />{a.description || 'No description'}
           </div>
           {a.metadata !== null && a.metadata !== undefined && (
             <div>
-              <strong className="text-[0.85rem]">Metadata:</strong>
-              <pre className="bg-ink p-3 rounded-md text-[0.78rem] overflow-x-auto whitespace-pre-wrap break-all mt-[0.3rem] mono">
+              <strong className="text-base">Metadata:</strong>
+              <pre className="bg-ink p-3 rounded-md text-sm overflow-x-auto whitespace-pre-wrap break-all mt-1 mono">
                 {JSON.stringify(a.metadata, null, 2)}
               </pre>
             </div>

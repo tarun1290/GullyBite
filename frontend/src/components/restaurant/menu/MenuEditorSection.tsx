@@ -39,7 +39,7 @@ function foodTypeIcon(ft?: FoodType | string) {
   return (
     <span
       title={c.title}
-      className="inline-flex items-center justify-center w-[14px] h-[14px] border-2 rounded-[2px] box-border"
+      className="inline-flex items-center justify-center w-[14px] h-[14px] border-2 rounded-sm box-border"
       // border colour is per-food-type from FOOD_TYPE_CFG (veg / non_veg /
       // egg / vegan) at runtime — Tailwind can't pre-bake the palette.
       style={{ borderColor: c.color }}
@@ -105,15 +105,15 @@ function branchStatusCell(item: LooseItem): ReactNode {
   if (unassigned) {
     return (
       <>
-        <span className="inline-flex items-center gap-[0.3rem] bg-red-50 text-red-600 py-[0.15rem] px-[0.55rem] rounded-full text-[0.7rem] font-semibold border border-red-200">
+        <span className="inline-flex items-center gap-1 bg-red-50 text-red-600 py-0.5 px-2 rounded-full text-xs font-semibold border border-red-200">
           ❌ Unassigned
         </span>
-        <div className="text-[0.65rem] text-red-600 mt-[0.15rem]">Not visible to customers</div>
+        <div className="text-xs text-red-600 mt-0.5">Not visible to customers</div>
       </>
     );
   }
   return (
-    <span className="inline-flex items-center gap-[0.3rem] bg-wa-light text-green-700 py-[0.15rem] px-[0.55rem] rounded-full text-[0.7rem] font-semibold border border-green-200">
+    <span className="inline-flex items-center gap-1 bg-wa-light text-green-700 py-0.5 px-2 rounded-full text-xs font-semibold border border-green-200">
       ✅ {count} Branch{count !== 1 ? 'es' : ''}
     </span>
   );
@@ -378,20 +378,20 @@ export default function MenuEditorSection({
     const variantLabel = item.size || item.variant_value || 'Variant';
     const displayName: ReactNode = isVariantChild
       ? (
-        <span className="pl-6 text-acc text-[0.78rem] font-medium">
+        <span className="pl-6 text-acc text-sm font-medium">
           · {variantLabel}
         </span>
       )
       : item.item_group_id
         ? (<>
-          {item.name} <span className="text-[0.72rem] text-acc font-medium">· {variantLabel}</span>
+          {item.name} <span className="text-xs text-acc font-medium">· {variantLabel}</span>
         </>)
         : item.name;
     const pricePaise = item.price_paise || 0;
     const salePaise = item.sale_price_paise || 0;
     const priceCell: ReactNode = salePaise ? (
       <>
-        <span className="line-through text-mute text-[0.75rem]">₹{pricePaise / 100}</span>
+        <span className="line-through text-mute text-xs">₹{pricePaise / 100}</span>
         {' '}
         <span className="text-red-500 font-semibold">₹{salePaise / 100}</span>
       </>
@@ -401,50 +401,50 @@ export default function MenuEditorSection({
         key={item.id}
         className={`${idx % 2 ? 'bg-ink4' : ''} ${item.is_available ? 'opacity-100' : 'opacity-[0.55]'}`}
       >
-        <td className="py-[0.45rem] px-[0.4rem] text-center">
+        <td className="py-2 px-1.5 text-center">
           <input
             type="checkbox"
             checked={checked.has(item.id)}
             onChange={() => toggleChecked(item.id)}
           />
         </td>
-        <td className="py-[0.45rem] px-[0.7rem] text-center text-dim text-[0.78rem]">
+        <td className="py-2 px-3 text-center text-dim text-sm">
           {isVariantChild ? '' : idx + 1}
         </td>
-        <td className="py-[0.45rem] px-[0.7rem] text-[0.82rem] font-medium">
+        <td className="py-2 px-3 text-sm font-medium">
           {displayName}
-          {item.is_bestseller && <span className="text-[0.6rem] text-yellow-500 ml-1">⭐</span>}
-          {!item.is_available && <span className="text-[0.65rem] text-neutral-400 ml-1">(unavailable)</span>}
+          {item.is_bestseller && <span className="text-xs text-yellow-500 ml-1">⭐</span>}
+          {!item.is_available && <span className="text-xs text-neutral-400 ml-1">(unavailable)</span>}
         </td>
-        <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim">{item._categoryName || '—'}</td>
+        <td className="py-2 px-3 text-sm text-dim">{item._categoryName || '—'}</td>
         {showBranchBadge && (
-          <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim">{item.branch_name || '—'}</td>
+          <td className="py-2 px-3 text-sm text-dim">{item.branch_name || '—'}</td>
         )}
-        <td className="py-[0.45rem] px-[0.7rem]">
+        <td className="py-2 px-3">
           {branchStatusCell(item)}
           {item.meta_status === 'incomplete' && (
-            <div className="mt-[0.2rem] inline-flex items-center gap-1 bg-amber-100 text-amber-900 py-[0.1rem] px-[0.45rem] rounded-full text-[0.65rem] font-semibold border border-yellow-200">
+            <div className="mt-1 inline-flex items-center gap-1 bg-amber-100 text-amber-900 py-0.5 px-2 rounded-full text-xs font-semibold border border-yellow-200">
               ⚠ Incomplete
             </div>
           )}
           {item.meta_status === 'ready' && (
-            <div className="mt-[0.2rem] inline-flex items-center gap-1 bg-blue-100 text-blue-600 py-[0.1rem] px-[0.45rem] rounded-full text-[0.65rem] font-semibold border border-[#bfdbfe]">
+            <div className="mt-1 inline-flex items-center gap-1 bg-blue-100 text-blue-600 py-0.5 px-2 rounded-full text-xs font-semibold border border-[#bfdbfe]">
               ✔ Ready
             </div>
           )}
         </td>
-        <td className="py-[0.45rem] px-[0.7rem] text-center">{foodTypeIcon(item.food_type)}</td>
-        <td className="py-[0.45rem] px-[0.7rem] text-right font-medium">{priceCell}</td>
-        <td className="py-[0.45rem] px-[0.7rem] text-center">
+        <td className="py-2 px-3 text-center">{foodTypeIcon(item.food_type)}</td>
+        <td className="py-2 px-3 text-right font-medium">{priceCell}</td>
+        <td className="py-2 px-3 text-center">
           <Toggle
             checked={Boolean(item.is_available)}
             onChange={(next) => handleToggle(item.id, next, item.name)}
           />
         </td>
-        <td className="py-[0.45rem] px-[0.7rem] text-center whitespace-nowrap">
+        <td className="py-2 px-3 text-center whitespace-nowrap">
           <button
             type="button"
-            className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.85rem] text-dim mr-1"
+            className="bg-none border border-rim rounded-md py-0.5 px-1.5 cursor-pointer text-base text-dim mr-1"
             onClick={() => setEditingItem(item as MenuItem)}
             title="Edit item"
           >
@@ -452,7 +452,7 @@ export default function MenuEditorSection({
           </button>
           <button
             type="button"
-            className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.7rem] text-wa mr-1"
+            className="bg-none border border-rim rounded-md py-0.5 px-1.5 cursor-pointer text-xs text-wa mr-1"
             onClick={() => setAssignFor({ id: item.id, name: item.name })}
             title="Assign to a branch"
           >
@@ -461,7 +461,7 @@ export default function MenuEditorSection({
           {Array.isArray(item.branch_ids) && item.branch_ids.length > 1 && (
             <button
               type="button"
-              className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.7rem] text-dim mr-1"
+              className="bg-none border border-rim rounded-md py-0.5 px-1.5 cursor-pointer text-xs text-dim mr-1"
               onClick={() => handleApplyAllBranches(item.id, !item.is_available, item.name)}
               title="Apply toggle to all branches"
             >
@@ -479,7 +479,7 @@ export default function MenuEditorSection({
               </button>
               <button
                 type="button"
-                className="btn-g btn-xs ml-[0.15rem]"
+                className="btn-g btn-xs ml-0.5"
                 onClick={() => setPendingDeleteId(null)}
               >
                 No
@@ -488,7 +488,7 @@ export default function MenuEditorSection({
           ) : (
             <button
               type="button"
-              className="bg-none border-0 cursor-pointer text-[0.85rem] text-neutral-400"
+              className="bg-none border-0 cursor-pointer text-base text-neutral-400"
               onClick={() => setPendingDeleteId(item.id)}
               title="Delete"
             >
@@ -519,7 +519,7 @@ export default function MenuEditorSection({
       const priceCell: ReactNode = minP === maxP ? `₹${minP / 100}` : `₹${minP / 100} – ₹${maxP / 100}`;
       rows.push(
         <tr key={`group-${entry._groupId}`} className="bg-green-50 border-t border-rim">
-          <td className="py-[0.45rem] px-[0.4rem] text-center">
+          <td className="py-2 px-1.5 text-center">
             <input
               type="checkbox"
               checked={allChecked}
@@ -533,39 +533,39 @@ export default function MenuEditorSection({
               }}
             />
           </td>
-          <td className="py-[0.45rem] px-[0.7rem] text-center">
+          <td className="py-2 px-3 text-center">
             <button
               type="button"
               onClick={() => toggleGroupExpanded(entry._groupId)}
-              className="bg-none border-0 cursor-pointer text-[0.78rem] text-dim py-[0.1rem] px-1"
+              className="bg-none border-0 cursor-pointer text-sm text-dim py-0.5 px-1"
               aria-label={isExpanded ? 'Collapse variants' : 'Expand variants'}
             >
               {isExpanded ? '▼' : '▶'}
             </button>
           </td>
-          <td className="py-[0.45rem] px-[0.7rem] text-[0.84rem] font-bold">
+          <td className="py-2 px-3 text-sm font-bold">
             {entry.name}
-            <span className="text-[0.7rem] text-dim font-medium ml-[0.4rem]">
+            <span className="text-xs text-dim font-medium ml-1.5">
               · {entry.variants.length} variant{entry.variants.length === 1 ? '' : 's'}
             </span>
           </td>
-          <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim">{first._categoryName || '—'}</td>
+          <td className="py-2 px-3 text-sm text-dim">{first._categoryName || '—'}</td>
           {showBranchBadge && (
-            <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim">{first.branch_name || '—'}</td>
+            <td className="py-2 px-3 text-sm text-dim">{first.branch_name || '—'}</td>
           )}
-          <td className="py-[0.45rem] px-[0.7rem]">{branchStatusCell(first)}</td>
-          <td className="py-[0.45rem] px-[0.7rem] text-center">{foodTypeIcon(first.food_type)}</td>
-          <td className="py-[0.45rem] px-[0.7rem] text-right font-semibold">{priceCell}</td>
-          <td className="py-[0.45rem] px-[0.7rem] text-center">
+          <td className="py-2 px-3">{branchStatusCell(first)}</td>
+          <td className="py-2 px-3 text-center">{foodTypeIcon(first.food_type)}</td>
+          <td className="py-2 px-3 text-right font-semibold">{priceCell}</td>
+          <td className="py-2 px-3 text-center">
             <Toggle
               checked={Boolean(first.is_available)}
               onChange={(next) => entry.variants.forEach((v) => handleToggle(v.id, next, v.name))}
             />
           </td>
-          <td className="py-[0.45rem] px-[0.7rem] text-center whitespace-nowrap">
+          <td className="py-2 px-3 text-center whitespace-nowrap">
             <button
               type="button"
-              className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.85rem] text-dim mr-1"
+              className="bg-none border border-rim rounded-md py-0.5 px-1.5 cursor-pointer text-base text-dim mr-1"
               onClick={() => setEditingItem(first as MenuItem)}
               title="Edit first variant — expand the group to edit other variants individually"
             >
@@ -573,7 +573,7 @@ export default function MenuEditorSection({
             </button>
             <button
               type="button"
-              className="bg-none border border-rim rounded-md py-[0.18rem] px-[0.42rem] cursor-pointer text-[0.7rem] text-wa mr-1"
+              className="bg-none border border-rim rounded-md py-0.5 px-1.5 cursor-pointer text-xs text-wa mr-1"
               onClick={() => setAssignFor({ id: first.id, name: first.name })}
               title="Assign group's first variant to a branch"
             >
@@ -590,7 +590,7 @@ export default function MenuEditorSection({
                 </button>
                 <button
                   type="button"
-                  className="btn-g btn-xs ml-[0.15rem]"
+                  className="btn-g btn-xs ml-0.5"
                   onClick={() => setPendingDeleteId(null)}
                 >
                   No
@@ -599,7 +599,7 @@ export default function MenuEditorSection({
             ) : (
               <button
                 type="button"
-                className="bg-none border-0 cursor-pointer text-[0.85rem] text-neutral-400"
+                className="bg-none border-0 cursor-pointer text-base text-neutral-400"
                 onClick={() => setPendingDeleteId(first.id)}
                 title="Delete first variant"
               >
@@ -621,12 +621,12 @@ export default function MenuEditorSection({
   return (
     <div>
       {/* Branch selector */}
-      <div className="card mb-[0.8rem] flex flex-wrap gap-2 items-center py-[0.7rem] px-[0.9rem]">
-        <label className="text-[0.82rem] text-dim mr-[0.3rem]">Branch:</label>
+      <div className="card mb-3 flex flex-wrap gap-2 items-center py-3 px-3.5">
+        <label className="text-sm text-dim mr-1">Branch:</label>
         <select
           value={selectedBranchId}
           onChange={(e) => setSelectedBranchId(e.target.value)}
-          className="h-9 px-3 rounded-md border border-rim2 text-[0.85rem] min-w-[220px] bg-white text-tx"
+          className="h-9 px-3 rounded-md border border-rim2 text-base min-w-[220px] bg-white text-tx"
           disabled={branchesLoading}
         >
           <option value="__all__">All Products ({totalCount})</option>
@@ -678,16 +678,16 @@ export default function MenuEditorSection({
 
       {/* Manual catalog ID prompt (replaces window.prompt) */}
       {manualCatalogPrompt && (
-        <div className="card mb-[0.8rem] py-[0.7rem] px-[0.9rem] bg-amber-50 border-yellow-200">
-          <p className="text-[0.82rem] mb-2 text-amber-900">
+        <div className="card mb-3 py-3 px-3.5 bg-amber-50 border-yellow-200">
+          <p className="text-sm mb-2 text-amber-900">
             Auto-discovery failed. Paste your Meta Catalog ID (find it in Meta Business Suite → Commerce Manager → your catalog → Settings):
           </p>
-          <div className="flex gap-[0.4rem]">
+          <div className="flex gap-1.5">
             <input
               value={manualCatalogId}
               onChange={(e) => setManualCatalogId(e.target.value)}
               placeholder="numeric catalog id"
-              className="flex-1 py-[0.4rem] px-[0.6rem] rounded-md border border-rim text-[0.85rem]"
+              className="flex-1 py-1.5 px-2.5 rounded-md border border-rim text-base"
             />
             <button type="button" className="btn-p btn-sm" onClick={handleManualCatalog}>Save</button>
             <button type="button" className="btn-g btn-sm" onClick={() => { setManualCatalogPrompt(false); setManualCatalogId(''); }}>Cancel</button>
@@ -697,7 +697,7 @@ export default function MenuEditorSection({
 
       {/* Bulk action bar */}
       {items.length > 0 && (
-        <div className="flex gap-2 flex-wrap items-center mb-[0.7rem] text-[0.82rem]">
+        <div className="flex gap-2 flex-wrap items-center mb-3 text-sm">
           <span className="text-dim">
             {isAll ? `Showing all ${totalCount} items${unassignedCount ? ` · ${unassignedCount} unassigned` : ''}` :
               isUnassigned ? `${totalCount} unassigned items` :
@@ -715,7 +715,7 @@ export default function MenuEditorSection({
             </button>
           ) : (
             <>
-              <span className="text-[0.78rem] text-amber-600">
+              <span className="text-sm text-amber-600">
                 {allClosing ? 'Mark all items unavailable?' : 'Bring all items back online?'}
               </span>
               <button type="button" className="btn-p btn-sm" onClick={handleBulkAvail}>Confirm</button>
@@ -726,7 +726,7 @@ export default function MenuEditorSection({
           {checked.size > 0 && (
             pendingBulkDelete ? (
               <>
-                <span className="text-[0.78rem] text-red-600">Delete {checked.size} item{checked.size > 1 ? 's' : ''}?</span>
+                <span className="text-sm text-red-600">Delete {checked.size} item{checked.size > 1 ? 's' : ''}?</span>
                 <button type="button" className="btn-del btn-sm" onClick={handleBulkDelete}>Yes, delete</button>
                 <button type="button" className="btn-g btn-sm" onClick={() => setPendingBulkDelete(false)}>Cancel</button>
               </>
@@ -751,34 +751,34 @@ export default function MenuEditorSection({
             <div className="p-8 text-center text-dim">Loading…</div>
           ) : !items.length ? (
             <div className="empty p-8 text-center">
-              <div className="ei text-[2rem]">{isUnassigned ? '✅' : '🍽️'}</div>
-              <h3 className="mt-[0.4rem]">
+              <div className="ei text-3xl">{isUnassigned ? '✅' : '🍽️'}</div>
+              <h3 className="mt-1.5">
                 {isUnassigned ? 'No unassigned items' : 'No menu items yet'}
               </h3>
-              <p className="text-dim text-[0.85rem]">
+              <p className="text-dim text-base">
                 {isUnassigned ? 'All items are assigned to branches' : 'Add items using the "+ Add" button above'}
               </p>
             </div>
           ) : (
-            <table className="w-full border-collapse text-[0.84rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-neutral-50 border-b-2 border-rim">
-                  <th className="py-[0.55rem] px-[0.4rem] text-center w-8">
+                  <th className="py-2 px-1.5 text-center w-8">
                     <input
                       type="checkbox"
                       checked={checked.size > 0 && checked.size === items.length}
                       onChange={(e) => toggleAll(e.target.checked)}
                     />
                   </th>
-                  <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] text-dim w-10">#</th>
-                  <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] text-dim">Item Name</th>
-                  <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] text-dim">Category</th>
-                  {showBranchBadge && <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] text-dim">Branch</th>}
-                  <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] text-dim w-[140px]">Branch Status</th>
-                  <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] text-dim w-[60px]">Type</th>
-                  <th className="py-[0.55rem] px-[0.7rem] text-right text-[0.77rem] text-dim w-[90px]">Price</th>
-                  <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] text-dim w-[70px]">Status</th>
-                  <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] text-dim w-[130px]">Actions</th>
+                  <th className="py-2 px-3 text-center text-xs text-dim w-10">#</th>
+                  <th className="py-2 px-3 text-left text-xs text-dim">Item Name</th>
+                  <th className="py-2 px-3 text-left text-xs text-dim">Category</th>
+                  {showBranchBadge && <th className="py-2 px-3 text-left text-xs text-dim">Branch</th>}
+                  <th className="py-2 px-3 text-left text-xs text-dim w-[140px]">Branch Status</th>
+                  <th className="py-2 px-3 text-center text-xs text-dim w-[60px]">Type</th>
+                  <th className="py-2 px-3 text-right text-xs text-dim w-[90px]">Price</th>
+                  <th className="py-2 px-3 text-center text-xs text-dim w-[70px]">Status</th>
+                  <th className="py-2 px-3 text-center text-xs text-dim w-[130px]">Actions</th>
                 </tr>
               </thead>
               <tbody>

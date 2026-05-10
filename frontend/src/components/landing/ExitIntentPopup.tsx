@@ -41,7 +41,7 @@ export default function ExitIntentPopup({ onSignUp }: ExitIntentPopupProps) {
         <div className="text-[2.4rem] mb-2">💰</div>
         <h3>Before you go — see your savings</h3>
         <p>Find out exactly how much you'd keep by switching from Swiggy / Zomato to GullyBite. Takes 10 seconds.</p>
-        <div className="flex gap-[0.6rem] justify-center flex-wrap">
+        <div className="flex gap-2.5 justify-center flex-wrap">
           <button type="button" className="lbtn lbtn-primary lbtn-lg" onClick={scrollToCalc}>Show me the calculator</button>
           <button type="button" className="lbtn lbtn-ghost lbtn-lg" onClick={() => { setOpen(false); onSignUp?.(); }}>Start Free Trial</button>
         </div>

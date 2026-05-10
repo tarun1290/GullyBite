@@ -58,10 +58,10 @@ function fmtDate(iso?: string): string {
   } catch { return '—'; }
 }
 
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2.5 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const SEL_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.55rem] text-[0.78rem]';
+const SEL_CLS = 'bg-neutral-0 border border-rim rounded-md py-1 px-2 text-sm';
 
 export default function AdminCustomersPage() {
   const [search, setSearch] = useState<string>('');
@@ -147,9 +147,9 @@ export default function AdminCustomersPage() {
   return (
     <div id="pg-customers">
       <div className="card mb-4">
-        <div className="ch gap-[0.6rem] flex-wrap">
+        <div className="ch gap-2.5 flex-wrap">
           <h3>Customers</h3>
-          <label className="ml-auto inline-flex items-center gap-[0.3rem] text-dim text-[0.72rem]">
+          <label className="ml-auto inline-flex items-center gap-1 text-dim text-xs">
             <input type="checkbox" checked={showBsuid} onChange={(e) => setShowBsuid(e.target.checked)} />
             Show WhatsApp Username (BSUID)
           </label>
@@ -165,7 +165,7 @@ export default function AdminCustomersPage() {
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={TH_CLS}>Phone</th>
@@ -189,13 +189,13 @@ export default function AdminCustomersPage() {
                       </td>
                       <td className={TD_CLS}>{c.name || '—'}</td>
                       {showBsuid && (
-                        <td className={`${TD_CLS} text-[0.72rem] text-dim mono`} title={c.bsuid || ''}>
+                        <td className={`${TD_CLS} text-xs text-dim mono`} title={c.bsuid || ''}>
                           {c.bsuid ? `${String(c.bsuid).slice(0, 8)}…` : '—'}
                         </td>
                       )}
                       <td className={`${TD_CLS} text-center`}>{c.order_count}</td>
                       <td className={TD_CLS}>₹{fmtNum(c.lifetime_rs)}</td>
-                      <td className={`${TD_CLS} text-dim text-[0.74rem]`}>{fmtDate(c.created_at)}</td>
+                      <td className={`${TD_CLS} text-dim text-xs`}>{fmtDate(c.created_at)}</td>
                     </tr>
                   ))
                 )}
@@ -203,14 +203,14 @@ export default function AdminCustomersPage() {
             </table>
           </div>
         )}
-        <div className="py-[0.7rem] px-4 flex gap-[0.6rem] items-center border-t border-rim">
+        <div className="py-3 px-4 flex gap-2.5 items-center border-t border-rim">
           <button
             type="button"
             className="btn-g btn-sm"
             onClick={() => setOffset(Math.max(0, offset - CUST_LIMIT))}
             disabled={loading || offset === 0}
           >← Prev</button>
-          <span className="text-[0.78rem] text-dim">Page {page}</span>
+          <span className="text-sm text-dim">Page {page}</span>
           <button
             type="button"
             className="btn-g btn-sm"
@@ -221,9 +221,9 @@ export default function AdminCustomersPage() {
       </div>
 
       <div className="card">
-        <div className="ch gap-[0.6rem] flex-wrap">
+        <div className="ch gap-2.5 flex-wrap">
           <h3>Global Identity</h3>
-          <span className="text-dim text-[0.72rem]">Cross-restaurant totals</span>
+          <span className="text-dim text-xs">Cross-restaurant totals</span>
           <div className="ml-auto flex gap-2 flex-wrap">
             <input
               placeholder="Restaurant ID"
@@ -258,7 +258,7 @@ export default function AdminCustomersPage() {
           <div className="cb"><SectionError message={gErr} onRetry={loadGlobal} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={TH_CLS} />
@@ -285,7 +285,7 @@ export default function AdminCustomersPage() {
                           <td className={TD_CLS}>
                             <button
                               type="button"
-                              className="btn-g btn-sm py-[0.1rem] px-[0.4rem]"
+                              className="btn-g btn-sm py-0.5 px-1.5"
                               onClick={() => toggleExpand(i)}
                             >{expanded ? '▾' : '▸'}</button>
                           </td>
@@ -294,14 +294,14 @@ export default function AdminCustomersPage() {
                           <td className={`${TD_CLS} text-center`}>{c.total_orders || 0}</td>
                           <td className={TD_CLS}>₹{fmtNum(c.total_spent_rs)}</td>
                           <td
-                            className={`${TD_CLS} uppercase font-bold text-[0.72rem]`}
+                            className={`${TD_CLS} uppercase font-bold text-xs`}
                             // colour comes from TYPE_COLOR by customer_type
                             // at runtime (new/repeat/loyal/dormant — 4 distinct).
                             style={{ color }}
                           >
                             {c.customer_type || '—'}
                             {highValue && (
-                              <span className="ml-[0.35rem] text-[0.6rem] py-[0.05rem] px-[0.3rem] rounded-[3px] bg-[#f5a62322] text-[#f5a623]">
+                              <span className="ml-1.5 text-xs py-[0.05rem] px-1 rounded-sm bg-[#f5a62322] text-[#f5a623]">
                                 HIGH VALUE
                               </span>
                             )}
@@ -310,12 +310,12 @@ export default function AdminCustomersPage() {
                         {expanded && (
                           <tr>
                             <td></td>
-                            <td colSpan={5} className="bg-ink3 py-[0.6rem] px-[0.8rem]">
+                            <td colSpan={5} className="bg-ink3 py-2.5 px-3">
                               {(c.restaurant_breakdown || []).length === 0 ? (
-                                <div className="text-dim text-[0.72rem]">No restaurant breakdown</div>
+                                <div className="text-dim text-xs">No restaurant breakdown</div>
                               ) : (
                                 (c.restaurant_breakdown || []).map((b, j) => (
-                                  <div key={j} className="mono text-[0.72rem]">
+                                  <div key={j} className="mono text-xs">
                                     <span className="text-dim">{String(b.restaurant_id)}</span>
                                     {' — '}
                                     {b.order_count} orders, ₹{fmtNum(b.total_spent_rs)}

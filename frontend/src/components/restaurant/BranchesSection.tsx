@@ -363,7 +363,7 @@ export default function BranchesSection() {
       <div className="card mb-4">
         <div className="ch justify-between">
           <h3>🏪 Branches</h3>
-          <div className="flex gap-[0.4rem]">
+          <div className="flex gap-1.5">
             <button
               type="button"
               className="btn-g btn-sm"
@@ -383,9 +383,9 @@ export default function BranchesSection() {
 
         {csvShow && (
           <div className="cb border-t border-rim">
-            <div className="mb-[0.55rem]">
-              <h4 className="m-0 text-[0.9rem]">📋 Bulk Add Outlets via CSV</h4>
-              <p className="text-[0.78rem] text-dim mt-[0.3rem]">
+            <div className="mb-2">
+              <h4 className="m-0 text-base">📋 Bulk Add Outlets via CSV</h4>
+              <p className="text-sm text-dim mt-1">
                 Required columns: <code>branch_name</code>, <code>address</code>. Optional:{' '}
                 <code>city</code>, <code>latitude</code>, <code>longitude</code>,{' '}
                 <code>opening_time</code>, <code>closing_time</code>,{' '}
@@ -397,7 +397,7 @@ export default function BranchesSection() {
                 type="file"
                 accept=".csv"
                 onChange={(e) => handleCsvFile(e.target.files?.[0])}
-                className="text-[0.8rem]"
+                className="text-sm"
               />
               <button type="button" className="btn-g btn-sm" onClick={downloadSample}>
                 ⬇ Download sample
@@ -414,9 +414,9 @@ export default function BranchesSection() {
               )}
             </div>
             {csvRows.length > 0 && (
-              <div className="mt-[0.6rem] p-2 bg-ink2 rounded-md max-h-[200px] overflow-y-auto">
+              <div className="mt-2.5 p-2 bg-ink2 rounded-md max-h-[200px] overflow-y-auto">
                 {csvRows.map((r, i) => (
-                  <div key={`${r.branch_name}-${i}`} className="text-[0.78rem] py-[0.15rem]">
+                  <div key={`${r.branch_name}-${i}`} className="text-sm py-0.5">
                     {i + 1}. <strong>{r.branch_name}</strong> — {r.address}{' '}
                     {(r.latitude && r.longitude) ? (
                       <span className="text-wa">✅ coords</span>
@@ -428,24 +428,24 @@ export default function BranchesSection() {
               </div>
             )}
             {csvResult && (
-              <div className="mt-[0.6rem] text-[0.8rem]">
-                <div className="flex gap-[0.4rem] flex-wrap">
-                  <span className="csv-result-ok bg-wa-light text-green-700 py-[0.2rem] px-[0.55rem] rounded-md">
+              <div className="mt-2.5 text-sm">
+                <div className="flex gap-1.5 flex-wrap">
+                  <span className="csv-result-ok bg-wa-light text-green-700 py-1 px-2 rounded-md">
                     ✅ <strong>{csvResult.created}</strong> created
                   </span>
                   {!!csvResult.geocodeFailed?.length && (
-                    <span className="csv-result-warn bg-yellow-100 text-[#a16207] py-[0.2rem] px-[0.55rem] rounded-md">
+                    <span className="csv-result-warn bg-yellow-100 text-[#a16207] py-1 px-2 rounded-md">
                       ⚠️ <strong>{csvResult.geocodeFailed.length}</strong> geocoding failed
                     </span>
                   )}
                   {!!csvResult.errors && (
-                    <span className="bg-[rgba(220,38,38,0.12)] text-red-600 py-[0.2rem] px-[0.55rem] rounded-md">
+                    <span className="bg-[rgba(220,38,38,0.12)] text-red-600 py-1 px-2 rounded-md">
                       ❌ {csvResult.errors} failed
                     </span>
                   )}
                 </div>
                 {!!csvResult.geocodeFailed?.length && (
-                  <div className="mt-[0.4rem] text-[0.72rem] text-red">
+                  <div className="mt-1.5 text-xs text-red">
                     Geocoding failed: {csvResult.geocodeFailed.map((f) => `${f.name} (${f.reason})`).join(', ')}
                   </div>
                 )}
@@ -461,7 +461,7 @@ export default function BranchesSection() {
         <div className="empty text-center py-8">
           <div className="ei text-[2.5rem]">📍</div>
           <h3>No branches yet</h3>
-          <p className="text-dim text-[0.84rem]">
+          <p className="text-dim text-sm">
             Add your first branch to unlock WhatsApp catalog sync.
           </p>
         </div>
@@ -473,20 +473,20 @@ export default function BranchesSection() {
             return (
               <div
                 key={b.id}
-                className={`bcard bg-surface border border-bdr rounded-[10px] overflow-hidden relative ${isDeleted ? 'opacity-55' : 'opacity-100'}`}
+                className={`bcard bg-surface border border-bdr rounded-r overflow-hidden relative ${isDeleted ? 'opacity-55' : 'opacity-100'}`}
                 id={`bc-${b.id}`}
               >
                 {isDeleted && (
-                  <span className="absolute top-2 right-[0.6rem] bg-red-100 text-red-600 text-[0.65rem] font-bold tracking-[0.04em] py-[0.15rem] px-2 rounded-sm z-1">
+                  <span className="absolute top-2 right-2.5 bg-red-100 text-red-600 text-xs font-bold tracking-[0.04em] py-0.5 px-2 rounded-sm z-1">
                     DELETED
                   </span>
                 )}
                 <div
-                  className={`bcard-hd flex items-start gap-[0.7rem] p-4 ${isDeleted ? 'cursor-default' : 'cursor-pointer'} ${isExpanded ? 'bg-ink2' : 'bg-transparent'}`}
+                  className={`bcard-hd flex items-start gap-3 p-4 ${isDeleted ? 'cursor-default' : 'cursor-pointer'} ${isExpanded ? 'bg-ink2' : 'bg-transparent'}`}
                   onClick={isDeleted ? undefined : () => setExpandedId(isExpanded ? null : b.id)}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="bcard-name font-bold text-[0.95rem]">
+                    <div className="bcard-name font-bold text-md">
                       {b.name}
                     </div>
                     {/* Branch ID row — between name and address per spec.
@@ -494,9 +494,9 @@ export default function BranchesSection() {
                         copiedBranchId state, then reverts after 1.5s.
                         e.stopPropagation() on the click so the surrounding
                         row's setExpandedId toggle doesn't fire. */}
-                    <div className="flex items-center gap-[0.4rem] mt-1 text-[0.72rem] text-dim">
+                    <div className="flex items-center gap-1.5 mt-1 text-xs text-dim">
                       <span>Branch ID:</span>
-                      <span className="font-mono text-dim text-[0.72rem] break-all">
+                      <span className="font-mono text-dim text-xs break-all">
                         #{b.id}
                       </span>
                       <button
@@ -514,12 +514,12 @@ export default function BranchesSection() {
                           }
                         }}
                         aria-label="Copy branch ID"
-                        className="bg-transparent border border-bdr text-dim text-[0.68rem] py-[0.05rem] px-[0.35rem] rounded-sm cursor-pointer leading-[1.4]"
+                        className="bg-transparent border border-bdr text-dim text-xs py-[0.05rem] px-1.5 rounded-sm cursor-pointer leading-[1.4]"
                       >
                         {copiedBranchId === b.id ? 'Copied!' : 'Copy'}
                       </button>
                     </div>
-                    <div className="bcard-addr text-[0.8rem] text-dim mt-1">
+                    <div className="bcard-addr text-sm text-dim mt-1">
                       {b.address || b.city || '—'}
                     </div>
                   </div>
@@ -527,7 +527,7 @@ export default function BranchesSection() {
                     {b.subscription_status === 'paused' && (
                       <>
                         <span
-                          className="bg-red-600 text-white text-[0.65rem] font-bold py-[0.15rem] px-[0.4rem] rounded-sm uppercase tracking-[0.04em]"
+                          className="bg-red-600 text-white text-xs font-bold py-0.5 px-1.5 rounded-sm uppercase tracking-[0.04em]"
                           title="Subscription paused — wallet was insufficient on the last billing cycle"
                         >
                           ⚠ Paused
@@ -542,22 +542,22 @@ export default function BranchesSection() {
                         </button>
                       </>
                     )}
-                    <span className={`badge ${b.is_active === false ? 'br' : 'bg'} text-[0.65rem]`}>
+                    <span className={`badge ${b.is_active === false ? 'br' : 'bg'} text-xs`}>
                       {b.is_active === false ? '⏸ Inactive' : '✅ Active'}
                     </span>
-                    <span className={`badge ${b.is_open ? 'bg' : 'br'} text-[0.65rem]`}>
+                    <span className={`badge ${b.is_open ? 'bg' : 'br'} text-xs`}>
                       {b.is_open ? '🟢 Open' : '🔴 Closed'}
                     </span>
-                    <span className={`badge ${b.accepts_orders ? 'bg' : 'ba'} text-[0.65rem]`}>
+                    <span className={`badge ${b.accepts_orders ? 'bg' : 'ba'} text-xs`}>
                       {b.accepts_orders ? 'Taking Orders' : 'Paused'}
                     </span>
                     {b.fssai_number ? (
-                      <span className="badge bg text-[0.65rem]" title="FSSAI on file">FSSAI ✓</span>
+                      <span className="badge bg text-xs" title="FSSAI on file">FSSAI ✓</span>
                     ) : (
-                      <span className="badge ba text-[0.65rem]" title="FSSAI missing — sync will be blocked">FSSAI ✗</span>
+                      <span className="badge ba text-xs" title="FSSAI missing — sync will be blocked">FSSAI ✗</span>
                     )}
                     {b.gst_number && (
-                      <span className="badge bg text-[0.65rem]" title={b.gst_number}>GST ✓</span>
+                      <span className="badge bg text-xs" title={b.gst_number}>GST ✓</span>
                     )}
                     {!isDeleted && (
                       // Chevron — purely decorative, the entire .bcard-hd
@@ -570,7 +570,7 @@ export default function BranchesSection() {
                       // the row's own state-change announcement.
                       <span
                         aria-hidden
-                        className="inline-flex items-center justify-center min-w-[2rem] min-h-[2rem] p-2 text-xl text-dim ml-[0.4rem]"
+                        className="inline-flex items-center justify-center min-w-8 min-h-8 p-2 text-xl text-dim ml-1.5"
                       >
                         {isExpanded ? '▾' : '▸'}
                       </span>
@@ -579,7 +579,7 @@ export default function BranchesSection() {
                 </div>
 
                 {isDeleted && (
-                  <div className="p-4 border-t border-bdr flex justify-end gap-[0.4rem]">
+                  <div className="p-4 border-t border-bdr flex justify-end gap-1.5">
                     <button
                       type="button"
                       className="btn-g btn-sm opacity-100"
@@ -601,7 +601,7 @@ export default function BranchesSection() {
 
                 {isExpanded && (
                   <div className="bcard-body p-4">
-                    <div className="bcard-actions flex justify-end gap-[0.4rem] mb-[0.7rem]">
+                    <div className="bcard-actions flex justify-end gap-1.5 mb-3">
                       <button
                         type="button"
                         className="btn-g btn-sm"
@@ -620,32 +620,32 @@ export default function BranchesSection() {
                       </button>
                     </div>
 
-                    <div className="ipair-row flex gap-4 flex-wrap mb-[0.7rem] text-[0.78rem]">
+                    <div className="ipair-row flex gap-4 flex-wrap mb-3 text-sm">
                       <div className="ipair">
-                        <label className="text-dim mr-[0.3rem]">Hours</label>
+                        <label className="text-dim mr-1">Hours</label>
                         <code>{formatHoursSummary(b)}</code>
                       </div>
-                      <div className="ipair flex items-center gap-[0.3rem]">
+                      <div className="ipair flex items-center gap-1">
                         <label className="text-dim">Base Prep</label>
                         <input
                           type="number" min={5} max={60}
                           value={b.base_prep_time_min ?? 15}
                           onChange={(e) => patchField(b.id, 'basePrepTimeMin', parseInt(e.target.value, 10))}
                           disabled={savingField === `${b.id}:basePrepTimeMin`}
-                          className="w-14 py-[0.2rem] px-[0.4rem] border border-rim rounded-sm text-[0.78rem]"
+                          className="w-14 py-1 px-1.5 border border-rim rounded-sm text-sm"
                         /> min
                       </div>
-                      <div className="ipair flex items-center gap-[0.3rem]">
+                      <div className="ipair flex items-center gap-1">
                         <label className="text-dim">Per-Item</label>
                         <input
                           type="number" min={0} max={15}
                           value={b.avg_item_prep_min ?? 3}
                           onChange={(e) => patchField(b.id, 'avgItemPrepMin', parseInt(e.target.value, 10))}
                           disabled={savingField === `${b.id}:avgItemPrepMin`}
-                          className="w-14 py-[0.2rem] px-[0.4rem] border border-rim rounded-sm text-[0.78rem]"
+                          className="w-14 py-1 px-1.5 border border-rim rounded-sm text-sm"
                         /> min
                       </div>
-                      <div className="ipair flex items-center gap-[0.3rem]">
+                      <div className="ipair flex items-center gap-1">
                         <label className="text-dim">Manager</label>
                         <input
                           type="text"
@@ -656,38 +656,38 @@ export default function BranchesSection() {
                               patchField(b.id, 'managerPhone', e.target.value);
                             }
                           }}
-                          className="w-[140px] py-[0.2rem] px-[0.4rem] border border-rim rounded-sm text-[0.78rem]"
+                          className="w-[140px] py-1 px-1.5 border border-rim rounded-sm text-sm"
                         />
                       </div>
                     </div>
 
-                    <div className="bcard-togs flex gap-4 flex-wrap mb-[0.9rem]">
-                      <div className="tog flex items-center gap-[0.4rem]">
+                    <div className="bcard-togs flex gap-4 flex-wrap mb-3.5">
+                      <div className="tog flex items-center gap-1.5">
                         <Toggle
                           checked={!!b.accepts_orders}
                           onChange={(next) => patchField(b.id, 'acceptsOrders', next)}
                         />
-                        <span className="text-[0.82rem]">Accepting orders</span>
+                        <span className="text-sm">Accepting orders</span>
                       </div>
-                      <div className="tog flex items-center gap-[0.4rem]">
+                      <div className="tog flex items-center gap-1.5">
                         <Toggle
                           checked={!!b.is_open}
                           onChange={(next) => patchField(b.id, 'isOpen', next)}
                         />
-                        <span className="text-[0.82rem]">Branch open</span>
+                        <span className="text-sm">Branch open</span>
                       </div>
-                      <div className="tog flex items-center gap-[0.4rem]">
+                      <div className="tog flex items-center gap-1.5">
                         <Toggle
                           checked={b.is_active !== false}
                           onChange={(next) => patchField(b.id, 'isActive', next)}
                         />
-                        <span className="text-[0.82rem]">
+                        <span className="text-sm">
                           Active <small className="text-dim">(customer visibility)</small>
                         </span>
                       </div>
                     </div>
 
-                    <div className="flex gap-[0.3rem] mb-[0.7rem] pb-[0.4rem] border-b border-rim">
+                    <div className="flex gap-1 mb-3 pb-1.5 border-b border-rim">
                       <button
                         type="button"
                         className={expandedPane === 'hours' ? 'chip on' : 'chip'}
@@ -728,7 +728,7 @@ export default function BranchesSection() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-surface rounded-[10px] max-w-[460px] w-full shadow-[0_12px_40px_rgba(0,0,0,0.18)] overflow-hidden"
+            className="bg-surface rounded-r max-w-[460px] w-full shadow-[0_12px_40px_rgba(0,0,0,0.18)] overflow-hidden"
           >
             <div className="ch justify-between">
               <h3 className="m-0">Delete this branch?</h3>
@@ -740,7 +740,7 @@ export default function BranchesSection() {
               </button>
             </div>
             <div className="cb">
-              <div className="bg-amber-50 border border-yellow-200 rounded-md py-3 px-[0.85rem] text-amber-900 text-[0.82rem] mb-[0.85rem]">
+              <div className="bg-amber-50 border border-yellow-200 rounded-md py-3 px-3.5 text-amber-900 text-sm mb-3.5">
                 <strong>{deletingBranch.name}</strong> will be hidden from the platform but can be restored later.
                 Customers can no longer order from this branch.
               </div>
@@ -755,7 +755,7 @@ export default function BranchesSection() {
                   type="button"
                   onClick={confirmDelete}
                   disabled={deleting}
-                  className="bg-red-600 text-white border-0 rounded-md py-[0.4rem] px-[0.9rem] text-[0.8rem] font-semibold cursor-pointer disabled:cursor-not-allowed"
+                  className="bg-red-600 text-white border-0 rounded-md py-1.5 px-3.5 text-sm font-semibold cursor-pointer disabled:cursor-not-allowed"
                 >
                   {deleting ? 'Deleting…' : 'Delete branch'}
                 </button>

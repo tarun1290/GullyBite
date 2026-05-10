@@ -71,7 +71,7 @@ export default function TopItemsSection({ dateRange }: TopItemsSectionProps) {
         ) : chartConfig ? (
           <ChartCanvas type="bar" data={chartConfig.data} options={chartConfig.options} height={300} />
         ) : (
-          <div className="text-center text-dim py-12 text-[0.85rem]">
+          <div className="text-center text-dim py-12 text-base">
             {loading ? 'Loading…' : 'No items sold in this period'}
           </div>
         )}

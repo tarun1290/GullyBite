@@ -36,8 +36,8 @@ interface DisputesResponse {
   total?: number;
 }
 
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2.5 px-3 align-top';
 const EMPTY_CLS = 'p-8 text-center text-dim';
 
 function fmtTime(iso?: string): string {
@@ -93,9 +93,9 @@ export default function AdminDeliveryDisputesPage() {
   return (
     <div id="pg-disputes">
       <div className="card">
-        <div className="ch gap-[0.6rem] flex-wrap">
+        <div className="ch gap-2.5 flex-wrap">
           <h3>Delivery Disputes</h3>
-          <span className="text-dim text-[0.75rem]">
+          <span className="text-dim text-xs">
             {loading ? '' : `${total} dispute${total === 1 ? '' : 's'}`}
           </span>
           <button
@@ -112,7 +112,7 @@ export default function AdminDeliveryDisputesPage() {
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={TH_CLS}>Order #</th>
@@ -141,7 +141,7 @@ export default function AdminDeliveryDisputesPage() {
                             <>
                               <div className="mono">{o.display_order_id}</div>
                               {o.order_number && (
-                                <div className="text-[0.68rem] text-mute font-mono">
+                                <div className="text-xs text-mute font-mono">
                                   {o.order_number}
                                 </div>
                               )}
@@ -152,12 +152,12 @@ export default function AdminDeliveryDisputesPage() {
                         </td>
                         <td className={TD_CLS}>{o.business_name || '—'}</td>
                         <td className={TD_CLS}>{o.branch_name || '—'}</td>
-                        <td className={`${TD_CLS} text-[0.74rem] mono`}>
+                        <td className={`${TD_CLS} text-xs mono`}>
                           {o.prorouting_issue_id || '—'}
                         </td>
                         <td className={TD_CLS}>
                           <span
-                            className="py-[0.15rem] px-2 rounded-sm font-bold text-[0.7rem] uppercase tracking-[0.04em]"
+                            className="py-0.5 px-2 rounded-sm font-bold text-xs uppercase tracking-[0.04em]"
                             // bg/colour come from ISSUE_STATE_COLORS by
                             // o.prorouting_issue_state at runtime
                             // (OPEN/PROCESSING/IN-PROGRESS/RESOLVED/CLOSED
@@ -167,13 +167,13 @@ export default function AdminDeliveryDisputesPage() {
                             {issueState}
                           </span>
                         </td>
-                        <td className={`${TD_CLS} text-dim text-[0.74rem]`}>
+                        <td className={`${TD_CLS} text-dim text-xs`}>
                           {fmtTime(o.prorouting_issue_raised_at)}
                         </td>
-                        <td className={`${TD_CLS} text-[0.74rem]`}>
+                        <td className={`${TD_CLS} text-xs`}>
                           {o.prorouting_state || '—'}
                         </td>
-                        <td className={`${TD_CLS} text-dim text-[0.74rem]`}>
+                        <td className={`${TD_CLS} text-dim text-xs`}>
                           {fmtTime(o.delivered_at)}
                         </td>
                       </tr>

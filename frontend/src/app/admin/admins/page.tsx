@@ -19,8 +19,8 @@ interface AdminUserRow {
   permissions?: AdminPermissions;
 }
 
-const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const TH_CLS = 'py-2 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
 
 export default function AdminAdminsPage() {
@@ -84,16 +84,16 @@ export default function AdminAdminsPage() {
       <div className="card">
         <div className="ch justify-between">
           <h3 className="m-0">Admin Users</h3>
-          <span className="text-dim text-[0.78rem]">Only super admins see this page.</span>
+          <span className="text-dim text-sm">Only super admins see this page.</span>
         </div>
 
         {err ? (
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                <tr className="bg-ink text-left text-dim text-xs">
                   <th className={TH_CLS}>Name</th>
                   <th className={TH_CLS}>Email</th>
                   <th className={TH_CLS}>Role</th>
@@ -116,7 +116,7 @@ export default function AdminAdminsPage() {
                       <td className={TD_CLS}>{u.role || 'admin'}</td>
                       <td className={TD_CLS}>{u.is_active === false ? <span className="text-red-600">disabled</span> : 'yes'}</td>
                       <td className={TD_CLS}>
-                        <label title="Can view full customer phone numbers" className="inline-flex items-center gap-[0.4rem] text-[0.78rem]">
+                        <label title="Can view full customer phone numbers" className="inline-flex items-center gap-1.5 text-sm">
                           <input
                             type="checkbox"
                             checked={canSee}

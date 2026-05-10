@@ -107,7 +107,7 @@ function ApprovalBadge({ status }: ApprovalBadgeProps) {
   const b = map[status || ''] || map.pending!;
   return (
     <span
-      className="py-[0.15rem] px-2 rounded-full text-[0.7rem] font-bold tracking-[0.03em] uppercase border"
+      className="py-0.5 px-2 rounded-full text-xs font-bold tracking-[0.03em] uppercase border"
       // bg / fg / border from the per-status palette by status at runtime
       // (approved/pending/rejected/paused — 4 distinct triplets).
       style={{ background: b.bg, color: b.fg, borderColor: b.border }}
@@ -115,10 +115,10 @@ function ApprovalBadge({ status }: ApprovalBadgeProps) {
   );
 }
 
-const INPUT_CLS = 'w-full py-[0.45rem] px-[0.6rem] border border-rim rounded-md';
-const INPUT_SM_CLS = 'py-[0.35rem] px-[0.55rem] border border-rim rounded-md';
-const LBL_CLS = 'text-[0.78rem] font-semibold';
-const ERR_CLS = 'text-red-500 text-[0.72rem]';
+const INPUT_CLS = 'w-full py-2 px-2.5 border border-rim rounded-md';
+const INPUT_SM_CLS = 'py-1.5 px-2 border border-rim rounded-md';
+const LBL_CLS = 'text-sm font-semibold';
+const ERR_CLS = 'text-red-500 text-xs';
 
 function renderBodyPreview(body: string, variables: TemplateVariable[]): string {
   if (!body) return '';
@@ -280,7 +280,7 @@ export default function AdminCampaignTemplatesPage() {
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
         <div>
           <h2 className="m-0">Campaign Template Library</h2>
-          <div className="text-[0.82rem] text-dim mt-[0.2rem]">
+          <div className="text-sm text-dim mt-1">
             Curated catalog of campaign templates available to restaurants.
           </div>
         </div>
@@ -290,21 +290,21 @@ export default function AdminCampaignTemplatesPage() {
       <div className="card mb-4">
         <div className="cb flex gap-3 flex-wrap">
           <div>
-            <label className="text-[0.75rem] text-dim block">Use case</label>
+            <label className="text-xs text-dim block">Use case</label>
             <select value={filterUseCase} onChange={(e) => setFilterUseCase(e.target.value)}>
               <option value="">All</option>
               {USE_CASES.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-[0.75rem] text-dim block">Approval</label>
+            <label className="text-xs text-dim block">Approval</label>
             <select value={filterApproval} onChange={(e) => setFilterApproval(e.target.value)}>
               <option value="">All</option>
               {APPROVAL_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-[0.75rem] text-dim block">Active</label>
+            <label className="text-xs text-dim block">Active</label>
             <select value={filterActive} onChange={(e) => setFilterActive(e.target.value)}>
               <option value="">All</option>
               <option value="true">Active</option>
@@ -323,7 +323,7 @@ export default function AdminCampaignTemplatesPage() {
           {rows.map((doc) => (
             <div key={doc.template_id} className="card">
               <div className="cb">
-                <div className="flex items-center flex-wrap gap-[0.6rem] justify-between mb-2">
+                <div className="flex items-center flex-wrap gap-2.5 justify-between mb-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <strong className="text-base">{doc.display_name || doc.template_id}</strong>
                     <span className="chip bg-indigo-100 text-indigo-800">{doc.use_case}</span>
@@ -333,14 +333,14 @@ export default function AdminCampaignTemplatesPage() {
                       <span className="chip bg-red-100 text-red-900">INACTIVE</span>
                     )}
                   </div>
-                  <div className="text-[0.78rem] text-dim">
+                  <div className="text-sm text-dim">
                     ₹{Number(doc.per_message_cost_rs || 0).toFixed(2)} / msg
                   </div>
                 </div>
-                <div className="text-[0.8rem] text-slate-700 bg-ink3 py-[0.55rem] px-[0.7rem] rounded-md whitespace-pre-wrap font-mono">
+                <div className="text-sm text-slate-700 bg-ink3 py-2 px-3 rounded-md whitespace-pre-wrap font-mono">
                   {doc.body_template || '(no body)'}
                 </div>
-                <div className="text-[0.72rem] text-dim mt-[0.4rem]">
+                <div className="text-xs text-dim mt-1.5">
                   <code>{doc.template_id}</code>
                   {' • '}
                   {doc.language || 'en'}
@@ -348,11 +348,11 @@ export default function AdminCampaignTemplatesPage() {
                   {Array.isArray(doc.variables) ? doc.variables.length : 0} variable(s)
                 </div>
                 {doc.meta_rejection_reason && (
-                  <div className="text-[0.75rem] text-red-600 mt-[0.3rem]">
+                  <div className="text-xs text-red-600 mt-1">
                     Rejection: {doc.meta_rejection_reason}
                   </div>
                 )}
-                <div className="flex gap-2 flex-wrap mt-[0.7rem]">
+                <div className="flex gap-2 flex-wrap mt-3">
                   <button className="btn-g btn-sm" onClick={() => openEdit(doc)}>Edit</button>
                   <button className="btn-g btn-sm" onClick={() => toggleActive(doc)}>
                     {doc.is_active ? 'Deactivate' : 'Activate'}
@@ -368,7 +368,7 @@ export default function AdminCampaignTemplatesPage() {
                     placeholder="Rejection reason…"
                     value={rejectReasonByTid[doc.template_id] || ''}
                     onChange={(e) => setRejectReasonByTid((prev) => ({ ...prev, [doc.template_id]: e.target.value }))}
-                    className="flex-1 min-w-[180px] py-[0.35rem] px-[0.55rem] border border-rim rounded-md"
+                    className="flex-1 min-w-[180px] py-1.5 px-2 border border-rim rounded-md"
                   />
                   <button className="btn-g btn-sm" onClick={() => setApproval(doc, 'rejected')}>Reject</button>
                 </div>
@@ -390,7 +390,7 @@ export default function AdminCampaignTemplatesPage() {
               <h3>{editingIsNew ? 'New Campaign Template' : `Edit: ${editingTemplateId}`}</h3>
               <button className="btn-g btn-sm" onClick={closeForm}>Close</button>
             </div>
-            <div className="cb grid gap-[0.9rem] grid-cols-2">
+            <div className="cb grid gap-3.5 grid-cols-2">
               <div>
                 <label className={LBL_CLS}>Template ID (Meta name)</label>
                 <input
@@ -469,7 +469,7 @@ export default function AdminCampaignTemplatesPage() {
                   value={form.body_template}
                   onChange={(e) => setF('body_template', e.target.value)}
                   placeholder="Hi {{customer_name}}, your order from {{restaurant_name}} is ready!"
-                  className="w-full py-[0.55rem] px-[0.7rem] border border-rim rounded-md font-mono text-[0.82rem]"
+                  className="w-full py-2 px-3 border border-rim rounded-md font-mono text-sm"
                 />
                 {formErrors.body_template && <div className={ERR_CLS}>{formErrors.body_template}</div>}
               </div>
@@ -503,16 +503,16 @@ export default function AdminCampaignTemplatesPage() {
               </div>
 
               <div className="col-span-2">
-                <div className="flex items-center justify-between mb-[0.35rem]">
+                <div className="flex items-center justify-between mb-1.5">
                   <label className={LBL_CLS}>Variables</label>
                   <button className="btn-g btn-sm" onClick={addVar}>+ Add variable</button>
                 </div>
                 {form.variables.length === 0 ? (
-                  <div className="text-[0.75rem] text-dim">No variables defined.</div>
+                  <div className="text-xs text-dim">No variables defined.</div>
                 ) : (
-                  <div className="grid gap-[0.45rem]">
+                  <div className="grid gap-2">
                     {form.variables.map((v, idx) => (
-                      <div key={idx} className="grid grid-cols-[1.2fr_1.2fr_1.2fr_0.7fr_1.5fr_auto] gap-[0.4rem] items-center">
+                      <div key={idx} className="grid grid-cols-[1.2fr_1.2fr_1.2fr_0.7fr_1.5fr_auto] gap-1.5 items-center">
                         <input
                           type="text" placeholder="name" value={v.name}
                           onChange={(e) => setVar(idx, 'name', e.target.value)}
@@ -526,7 +526,7 @@ export default function AdminCampaignTemplatesPage() {
                         <select value={v.source} onChange={(e) => setVar(idx, 'source', e.target.value)}>
                           {VARIABLE_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
-                        <label className="text-[0.75rem] flex items-center gap-[0.3rem]">
+                        <label className="text-xs flex items-center gap-1">
                           <input type="checkbox" checked={!!v.required}
                             onChange={(e) => setVar(idx, 'required', e.target.checked)} />
                           required
@@ -546,7 +546,7 @@ export default function AdminCampaignTemplatesPage() {
 
               <div className="col-span-2">
                 <label className={LBL_CLS}>Live preview</label>
-                <div className="py-[0.7rem] px-[0.85rem] border border-green-200 bg-green-50 rounded-lg whitespace-pre-wrap text-[0.85rem] text-green-900 min-h-[70px]">
+                <div className="py-3 px-3.5 border border-green-200 bg-green-50 rounded-lg whitespace-pre-wrap text-base text-green-900 min-h-[70px]">
                   {preview || '(empty)'}
                 </div>
               </div>
@@ -563,7 +563,7 @@ export default function AdminCampaignTemplatesPage() {
               </div>
               <div>
                 <label className={LBL_CLS}>Active</label>
-                <label className="flex items-center gap-[0.4rem] text-[0.85rem]">
+                <label className="flex items-center gap-1.5 text-base">
                   <input
                     type="checkbox"
                     checked={!!form.is_active}

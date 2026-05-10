@@ -113,7 +113,7 @@ export default function PeakHoursSection({ dateRange }: PeakHoursSectionProps) {
           ) : hoursConfig ? (
             <ChartCanvas type="bar" data={hoursConfig.data} options={hoursConfig.options} height={300} />
           ) : (
-            <div className="text-center text-dim py-12 text-[0.85rem]">
+            <div className="text-center text-dim py-12 text-base">
               {loading ? 'Loading…' : 'No orders in this period'}
             </div>
           )}
@@ -126,7 +126,7 @@ export default function PeakHoursSection({ dateRange }: PeakHoursSectionProps) {
           {error ? null : daysConfig ? (
             <ChartCanvas type="bar" data={daysConfig.data} options={daysConfig.options} height={250} />
           ) : (
-            <div className="text-center text-dim py-12 text-[0.85rem]">
+            <div className="text-center text-dim py-12 text-base">
               {loading ? 'Loading…' : 'No orders in this period'}
             </div>
           )}

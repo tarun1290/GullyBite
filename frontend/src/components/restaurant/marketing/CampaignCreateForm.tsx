@@ -214,7 +214,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
   const productRows = useMemo(() => products.map((item) => (
     <label
       key={item.id}
-      className="flex items-center gap-3 py-[0.3rem] px-[0.4rem] rounded-md cursor-pointer text-[0.82rem]"
+      className="flex items-center gap-3 py-1 px-1.5 rounded-md cursor-pointer text-sm"
     >
       <input
         type="checkbox"
@@ -230,7 +230,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
   )), [products, form.productIds]);
 
   return (
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch"><h3>New Campaign</h3></div>
       <div className="cb">
         <div className="grid grid-cols-2 gap-4 mb-4">
@@ -256,7 +256,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
               ))}
             </select>
             {branchesErr && (
-              <div className="text-red-600 text-[0.72rem] mt-[0.3rem]">
+              <div className="text-red-600 text-xs mt-1">
                 {branchesErr}
               </div>
             )}
@@ -265,20 +265,20 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
 
         <div className="mb-4">
           <label className="lbl">Select Products * (max 30)</label>
-          <div className="max-h-[200px] overflow-y-auto border border-rim rounded-lg p-[0.6rem] bg-ink4">
+          <div className="max-h-[200px] overflow-y-auto border border-rim rounded-lg p-2.5 bg-ink4">
             {!form.branchId ? (
-              <span className="text-dim text-[0.82rem]">Select a branch first</span>
+              <span className="text-dim text-sm">Select a branch first</span>
             ) : productsErr ? (
-              <span className="text-red text-[0.82rem]">{productsErr}</span>
+              <span className="text-red text-sm">{productsErr}</span>
             ) : productsLoading ? (
-              <span className="text-dim text-[0.82rem]">Loading products…</span>
+              <span className="text-dim text-sm">Loading products…</span>
             ) : products.length === 0 ? (
-              <span className="text-dim text-[0.82rem]">
+              <span className="text-dim text-sm">
                 No menu items found for this branch
               </span>
             ) : productRows}
           </div>
-          <div className="text-[0.72rem] text-dim mt-[0.3rem]">
+          <div className="text-xs text-dim mt-1">
             {selectedCount}/30 selected
           </div>
         </div>
@@ -327,20 +327,20 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
         {needsTags && (
           <div className="mb-4">
             <label className="lbl">Tags</label>
-            <div className="border border-rim rounded-lg p-[0.6rem] bg-ink4 flex flex-wrap gap-3">
+            <div className="border border-rim rounded-lg p-2.5 bg-ink4 flex flex-wrap gap-3">
               {tagsErr ? (
-                <span className="text-red-600 text-[0.82rem]">Failed to load tags: {tagsErr}</span>
+                <span className="text-red-600 text-sm">Failed to load tags: {tagsErr}</span>
               ) : tagsLoading ? (
-                <span className="text-dim text-[0.82rem]">Loading tags…</span>
+                <span className="text-dim text-sm">Loading tags…</span>
               ) : !tags || tags.length === 0 ? (
-                <span className="text-dim text-[0.82rem]">
+                <span className="text-dim text-sm">
                   No tags yet — customers are tagged automatically after their first order.
                 </span>
               ) : (
                 tags.map((t) => (
                   <label
                     key={t}
-                    className="inline-flex items-center gap-[0.4rem] py-[0.3rem] px-[0.6rem] border border-rim rounded-full cursor-pointer text-[0.82rem]"
+                    className="inline-flex items-center gap-1.5 py-1 px-2.5 border border-rim rounded-full cursor-pointer text-sm"
                   >
                     <input
                       type="checkbox"
@@ -351,7 +351,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
                 ))
               )}
             </div>
-            <div className="text-[0.72rem] text-dim mt-[0.3rem]">
+            <div className="text-xs text-dim mt-1">
               Tags are assigned automatically from order history (e.g. <em>loyal</em>, <em>repeat</em>, <em>dormant</em>, <em>high_value</em>).
             </div>
           </div>

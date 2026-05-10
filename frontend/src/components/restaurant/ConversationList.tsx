@@ -45,24 +45,24 @@ function ConversationRow({ thread, active, onSelect }: ConversationRowProps) {
   return (
     <div
       onClick={() => onSelect?.(thread.customer_id)}
-      className={`py-[0.6rem] px-4 rounded-lg cursor-pointer border transition-all duration-150 ${
+      className={`py-2.5 px-4 rounded-lg cursor-pointer border transition-all duration-150 ${
         active ? 'border-wa bg-[rgba(37,211,102,0.08)]' : 'border-transparent bg-transparent'
       }`}
     >
       <div className="flex justify-between items-center">
-        <span className={`text-[0.84rem] ${unread ? 'font-bold' : 'font-medium'}`}>{name}</span>
-        <span className="text-[0.68rem] text-dim">{timeAgo(thread.last_message_at)}</span>
+        <span className={`text-sm ${unread ? 'font-bold' : 'font-medium'}`}>{name}</span>
+        <span className="text-xs text-dim">{timeAgo(thread.last_message_at)}</span>
       </div>
-      <div className="text-[0.76rem] text-dim mt-[0.15rem] truncate">
+      <div className="text-xs text-dim mt-0.5 truncate">
         {previewText(thread)}
       </div>
       {unread > 0 && (
-        <span className="inline-block mt-1 bg-wa text-white text-[0.6rem] py-[0.1rem] px-[0.4rem] rounded-full font-semibold">
+        <span className="inline-block mt-1 bg-wa text-white text-xs py-0.5 px-1.5 rounded-full font-semibold">
           {unread} new
         </span>
       )}
       {thread.has_active_order && (
-        <span className="inline-block mt-1 ml-[0.3rem] text-[0.6rem] py-[0.1rem] px-[0.4rem] rounded-full bg-gold text-black font-semibold">
+        <span className="inline-block mt-1 ml-1 text-xs py-0.5 px-1.5 rounded-full bg-gold text-black font-semibold">
           Active Order
         </span>
       )}
@@ -87,7 +87,7 @@ export default function ConversationList({ conversations, selectedId, onSelect, 
   }
   if (!conversations || conversations.length === 0) {
     return (
-      <div className="text-center text-dim py-8 px-2 text-[0.82rem]">
+      <div className="text-center text-dim py-8 px-2 text-sm">
         No conversations found
       </div>
     );

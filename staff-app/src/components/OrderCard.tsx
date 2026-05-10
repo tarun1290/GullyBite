@@ -5,7 +5,7 @@
 import { memo } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StaffOrder } from '@/api';
-import { useAuth } from '@/store/authStore';
+import { useStaff } from '@/state/StaffContext';
 import { badgeFor, colors, fontWeight, primitives, radius, space, text } from '@/theme';
 import { formatRs, timeAgo } from '@/time';
 
@@ -56,7 +56,7 @@ function OrderCardBase({
   hideDecline,
   hideNextStatus,
 }: Props) {
-  const { currentBranchId, staffUser } = useAuth();
+  const { currentBranchId, staffUser } = useStaff();
   const badge = badgeFor(order.status);
   const phoneTail = (order.customer_phone_masked || '').slice(-4);
   const status = String(order.status || '').toUpperCase();

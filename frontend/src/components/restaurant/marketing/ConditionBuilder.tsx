@@ -178,7 +178,7 @@ export default function ConditionBuilder({
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">
         {conditions.length === 0 ? (
-          <div className="text-[0.82rem] text-dim italic py-2 px-3 border border-dashed border-rim rounded-md">
+          <div className="text-sm text-dim italic py-2 px-3 border border-dashed border-rim rounded-md">
             No conditions yet. Click <strong className="not-italic">+ Add condition</strong> below to start narrowing your audience.
           </div>
         ) : (
@@ -237,7 +237,7 @@ function ConditionRow({
       <select
         value={cond.field}
         onChange={(e) => onFieldChange(e.target.value)}
-        className="w-fit min-w-[180px] py-1 px-2 border border-rim rounded-sm bg-white text-tx text-[0.82rem]"
+        className="w-fit min-w-[180px] py-1 px-2 border border-rim rounded-sm bg-white text-tx text-sm"
       >
         {Object.entries(FIELD_CONFIG).map(([key, c]) => (
           <option key={key} value={key}>{c.label}</option>
@@ -247,7 +247,7 @@ function ConditionRow({
       <select
         value={safeOp}
         onChange={(e) => onOpChange(e.target.value)}
-        className="w-fit min-w-[80px] py-1 px-2 border border-rim rounded-sm bg-white text-tx text-[0.82rem]"
+        className="w-fit min-w-[80px] py-1 px-2 border border-rim rounded-sm bg-white text-tx text-sm"
       >
         {validOps.map((op) => (
           <option key={op} value={op}>{OP_LABEL[op] || op}</option>
@@ -283,7 +283,7 @@ function ValueEditor({ cond, onValueChange }: ValueEditorProps) {
         type="text"
         value={typeof cond.value === 'string' ? cond.value : ''}
         onChange={(e) => onValueChange(e.target.value)}
-        className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-[0.82rem]"
+        className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-sm"
       />
     );
   }
@@ -294,7 +294,7 @@ function ValueEditor({ cond, onValueChange }: ValueEditorProps) {
       <select
         value={cond.value === true ? 'true' : 'false'}
         onChange={(e) => onValueChange(e.target.value === 'true')}
-        className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-[0.82rem]"
+        className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-sm"
       >
         <option value="true">Yes</option>
         <option value="false">No</option>
@@ -321,7 +321,7 @@ function ValueEditor({ cond, onValueChange }: ValueEditorProps) {
             });
             onValueChange(selected);
           }}
-          className="w-full min-h-[80px] py-1 px-2 border border-rim rounded-sm bg-white text-tx text-[0.82rem]"
+          className="w-full min-h-[80px] py-1 px-2 border border-rim rounded-sm bg-white text-tx text-sm"
         >
           {values.map((v) => (
             <option key={String(v.value)} value={String(v.value)}>{v.label}</option>
@@ -337,7 +337,7 @@ function ValueEditor({ cond, onValueChange }: ValueEditorProps) {
           const match = values.find((v) => String(v.value) === e.target.value);
           onValueChange(match ? match.value : e.target.value);
         }}
-        className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-[0.82rem]"
+        className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-sm"
       >
         {values.map((v) => (
           <option key={String(v.value)} value={String(v.value)}>{v.label}</option>
@@ -363,7 +363,7 @@ function ValueEditor({ cond, onValueChange }: ValueEditorProps) {
           const n = Number(v);
           onValueChange(Number.isFinite(n) ? n : '');
         }}
-        className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-[0.82rem]"
+        className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-sm"
         placeholder="Enter a number"
       />
     );
@@ -375,7 +375,7 @@ function ValueEditor({ cond, onValueChange }: ValueEditorProps) {
       type="text"
       value={typeof cond.value === 'string' ? cond.value : ''}
       onChange={(e) => onValueChange(e.target.value)}
-      className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-[0.82rem]"
+      className="w-full py-1 px-2 border border-rim rounded-sm bg-white text-tx text-sm"
       placeholder="Enter a value"
     />
   );
@@ -390,21 +390,21 @@ interface AudienceEstimateProps {
 function AudienceEstimate({ conditions, estimatedCount, loadingCount }: AudienceEstimateProps) {
   if (conditions.length === 0) {
     return (
-      <div className="text-[0.82rem] text-dim py-2 px-3 bg-ink2 border border-rim rounded-md">
+      <div className="text-sm text-dim py-2 px-3 bg-ink2 border border-rim rounded-md">
         Add conditions to estimate audience.
       </div>
     );
   }
   if (loadingCount) {
     return (
-      <div className="text-[0.82rem] text-dim py-2 px-3 bg-ink2 border border-rim rounded-md">
+      <div className="text-sm text-dim py-2 px-3 bg-ink2 border border-rim rounded-md">
         Calculating audience…
       </div>
     );
   }
   if (estimatedCount === null) {
     return (
-      <div className="text-[0.82rem] text-dim py-2 px-3 bg-ink2 border border-rim rounded-md">
+      <div className="text-sm text-dim py-2 px-3 bg-ink2 border border-rim rounded-md">
         Audience estimate unavailable.
       </div>
     );
@@ -415,7 +415,7 @@ function AudienceEstimate({ conditions, estimatedCount, loadingCount }: Audience
     ? 'bg-[#ecfdf5] border-green-200 text-emerald-800'
     : 'bg-amber-50 border-yellow-200 text-amber-900';
   return (
-    <div className={`text-[0.85rem] font-semibold py-2 px-3 border rounded-md ${tone}`}>
+    <div className={`text-base font-semibold py-2 px-3 border rounded-md ${tone}`}>
       ~{estimatedCount.toLocaleString('en-IN')} customer{estimatedCount === 1 ? '' : 's'} match
     </div>
   );

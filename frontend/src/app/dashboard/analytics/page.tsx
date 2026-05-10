@@ -39,16 +39,16 @@ export default function AnalyticsPage() {
 
       <RevenueSection dateRange={dateRange} />
 
-      <div className="grid grid-cols-2 gap-[1.1rem] mb-[1.1rem]">
+      <div className="grid grid-cols-2 gap-4 mb-4">
         <TopItemsSection dateRange={dateRange} />
-        <div className="flex flex-col gap-[1.1rem]">
+        <div className="flex flex-col gap-4">
           <PeakHoursSection dateRange={dateRange} />
         </div>
       </div>
 
       <CustomersSection dateRange={dateRange} />
 
-      <div className="h-[1.1rem]" />
+      <div className="h-4" />
 
       <DeliverySection dateRange={dateRange} />
 

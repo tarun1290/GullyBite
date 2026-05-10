@@ -52,20 +52,20 @@ function IssueRow({ issue, active, onSelect }: IssueRowProps) {
   return (
     <div
       onClick={() => onSelect?.(id)}
-      className={`py-[0.6rem] px-4 rounded-lg cursor-pointer border transition-all duration-150 ${
+      className={`py-2.5 px-4 rounded-lg cursor-pointer border transition-all duration-150 ${
         active ? 'border-wa bg-[rgba(37,211,102,0.08)]' : 'border-transparent bg-transparent'
       }`}
     >
-      <div className="flex justify-between items-center gap-[0.4rem]">
-        <span className="font-semibold text-[0.8rem] whitespace-nowrap">{issue.issue_number}</span>
-        <span className="text-[0.68rem] text-dim">{timeAgo(issue.created_at)}</span>
+      <div className="flex justify-between items-center gap-1.5">
+        <span className="font-semibold text-sm whitespace-nowrap">{issue.issue_number}</span>
+        <span className="text-xs text-dim">{timeAgo(issue.created_at)}</span>
       </div>
-      <div className="text-[0.76rem] text-dim mt-[0.15rem]">
+      <div className="text-xs text-dim mt-0.5">
         {CAT_LABEL[issue.category || ''] || issue.category} · {issue.customer_name || '—'}
       </div>
-      <div className="flex gap-[0.3rem] mt-[0.3rem] items-center flex-wrap">
+      <div className="flex gap-1 mt-1 items-center flex-wrap">
         <span
-          className="font-semibold text-[0.62rem] uppercase"
+          className="font-semibold text-xs uppercase"
           // priority colour comes from PRI_CLR by issue.priority at
           // runtime (critical/high/medium/low — 4 distinct hex).
           style={{ color: priClr }}
@@ -73,7 +73,7 @@ function IssueRow({ issue, active, onSelect }: IssueRowProps) {
           {issue.priority}
         </span>
         <span
-          className="text-white text-[0.6rem] py-[0.1rem] px-[0.4rem] rounded-[4px] font-semibold"
+          className="text-white text-xs py-0.5 px-1.5 rounded font-semibold"
           // status colour comes from ST_CLR by issue.status at runtime
           // (open/assigned/in_progress/.../closed — 8 distinct hex).
           style={{ background: stClr }}
@@ -87,7 +87,7 @@ function IssueRow({ issue, active, onSelect }: IssueRowProps) {
             Backend follow-up: join issues to orders.display_order_id in
             the issue serializer so the fallback rarely fires. */}
         {issue.display_order_id ? (
-          <span className="text-[0.62rem] text-dim">{issue.display_order_id}</span>
+          <span className="text-xs text-dim">{issue.display_order_id}</span>
         ) : null}
       </div>
     </div>
@@ -111,7 +111,7 @@ export default function IssueList({ issues, selectedId, onSelect, loading }: Iss
   }
   if (!issues || issues.length === 0) {
     return (
-      <div className="text-center text-dim py-8 px-2 text-[0.82rem]">
+      <div className="text-center text-dim py-8 px-2 text-sm">
         No issues found
       </div>
     );

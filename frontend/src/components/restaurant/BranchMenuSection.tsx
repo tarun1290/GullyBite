@@ -109,28 +109,28 @@ export default function BranchMenuSection({ branch, onCatalogChange }: BranchMen
 
   return (
     <div>
-      <div className="cat-strip py-[0.7rem] px-[0.85rem] bg-ink2 border border-bdr rounded-lg mb-[0.8rem]">
-        <div className="flex items-center justify-between gap-[0.6rem] flex-wrap">
-          <div className="flex items-center gap-[0.55rem]">
-            <span className="cat-ico text-[1.1rem]">
+      <div className="cat-strip py-3 px-3.5 bg-ink2 border border-bdr rounded-lg mb-3">
+        <div className="flex items-center justify-between gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="cat-ico text-lg">
               {branch.catalog_id ? '🟢' : '🟡'}
             </span>
             <div>
-              <div className="text-[0.85rem] font-semibold">
+              <div className="text-base font-semibold">
                 {branch.catalog_id ? 'Catalog Connected' : 'No Catalog Yet'}
               </div>
               {branch.catalog_id ? (
-                <div className="text-[0.72rem] text-dim font-mono">
+                <div className="text-xs text-dim font-mono">
                   {branch.catalog_id}
                 </div>
               ) : (
-                <div className="text-[0.72rem] text-dim">
+                <div className="text-xs text-dim">
                   Create one to start syncing this branch&apos;s menu to WhatsApp.
                 </div>
               )}
             </div>
           </div>
-          <div className="cat-acts flex gap-[0.4rem]">
+          <div className="cat-acts flex gap-1.5">
             {!branch.catalog_id && (
               <button
                 type="button"
@@ -157,39 +157,39 @@ export default function BranchMenuSection({ branch, onCatalogChange }: BranchMen
 
       <CategoriesManager branchId={branch.id} />
 
-      <div className="card mt-[0.8rem]">
+      <div className="card mt-3">
         <div className="ch justify-between">
-          <h4 className="m-0">Menu Items <span className="text-[0.72rem] text-dim">({items.length})</span></h4>
-          <span className="text-[0.72rem] text-dim">
+          <h4 className="m-0">Menu Items <span className="text-xs text-dim">({items.length})</span></h4>
+          <span className="text-xs text-dim">
             Add/edit items in the Menu tab
           </span>
         </div>
         <div className="cb">
           {loading ? (
-            <p className="text-dim text-[0.84rem]">Loading…</p>
+            <p className="text-dim text-sm">Loading…</p>
           ) : !items.length ? (
             <div className="empty text-center py-4">
-              <div className="ei text-[2rem]">🍽️</div>
-              <p className="text-[0.82rem] text-dim mt-[0.4rem]">
+              <div className="ei text-3xl">🍽️</div>
+              <p className="text-sm text-dim mt-1.5">
                 No items for this branch yet. Head to the Menu tab to add items or assign existing ones.
               </p>
             </div>
           ) : (
             Object.entries(itemsByCategory).map(([catName, its]) => (
-              <div key={catName} className="mb-[0.8rem]">
-                <div className="text-[0.78rem] font-semibold text-dim uppercase tracking-[0.5px] mb-[0.3rem]">
+              <div key={catName} className="mb-3">
+                <div className="text-sm font-semibold text-dim uppercase tracking-[0.5px] mb-1">
                   {catName}
                 </div>
                 {its.map((it) => (
                   <div
                     key={it.id}
-                    className="mi flex items-center gap-[0.6rem] py-[0.35rem] px-[0.6rem] border-b border-bdr text-[0.84rem]"
+                    className="mi flex items-center gap-2.5 py-1.5 px-2.5 border-b border-bdr text-sm"
                   >
                     <span className="mi-name flex-1">{it.name}</span>
                     <span className="mi-price text-dim">
                       ₹{((it.price_paise || 0) / 100).toFixed(0)}
                     </span>
-                    <span className={`badge ${it.is_available ? 'bg' : 'br'} text-[0.65rem]`}>
+                    <span className={`badge ${it.is_available ? 'bg' : 'br'} text-xs`}>
                       {it.is_available ? 'On' : 'Off'}
                     </span>
                   </div>

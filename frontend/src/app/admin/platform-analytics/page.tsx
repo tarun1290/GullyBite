@@ -103,11 +103,11 @@ export default function AdminPlatformAnalyticsPage() {
   const counts: SnapshotCounts = snapshot?.counts || {};
   const top: TopRestaurant[] = snapshot?.top_restaurants_by_roi || [];
 
-  const LOAD_CLS = 'py-4 text-slate-400 text-[0.85rem]';
+  const LOAD_CLS = 'py-4 text-slate-400 text-base';
 
   return (
     <div id="tab-platform-marketing">
-      <div className="chips chips--divided mb-[1.1rem]">
+      <div className="chips chips--divided mb-4">
         {PERIODS.map(([val, label]) => (
           <button
             key={val}
@@ -121,7 +121,7 @@ export default function AdminPlatformAnalyticsPage() {
       </div>
 
       {error && (
-        <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-[0.85rem] text-red-900 mb-[1.1rem]">
+        <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-base text-red-900 mb-4">
           {error}
         </div>
       )}
@@ -130,7 +130,7 @@ export default function AdminPlatformAnalyticsPage() {
         {loading ? (
           <div className={LOAD_CLS}>Loading…</div>
         ) : (
-          <div className="grid grid-cols-3 gap-[0.7rem]">
+          <div className="grid grid-cols-3 gap-3">
             <StatCard label="Campaigns sent" value={fmtNum(t.campaigns)} />
             <StatCard label="Messages delivered" value={fmtPct(t.delivery_rate)} />
             <StatCard label="Conversions" value={fmtNum(t.conversions)} />
@@ -144,13 +144,13 @@ export default function AdminPlatformAnalyticsPage() {
         )}
       </Card>
 
-      <div className="h-[1.1rem]" />
+      <div className="h-4" />
 
       <Card title="Marketplace activity">
         {loading ? (
           <div className={LOAD_CLS}>Loading…</div>
         ) : (
-          <div className="grid grid-cols-3 gap-[0.7rem]">
+          <div className="grid grid-cols-3 gap-3">
             <StatCard label="Paid orders" value={fmtNum(t.paid_orders)} />
             <StatCard label="Paid revenue" value={fmtRs(t.paid_revenue_rs)} />
             <StatCard label="Transacting restaurants" value={fmtNum(t.transacting_restaurants)} />
@@ -161,7 +161,7 @@ export default function AdminPlatformAnalyticsPage() {
         )}
       </Card>
 
-      <div className="h-[1.1rem]" />
+      <div className="h-4" />
 
       <Card title="Top 5 restaurants by ROI">
         {loading ? (
@@ -171,7 +171,7 @@ export default function AdminPlatformAnalyticsPage() {
             No restaurants with marketing spend in this period.
           </div>
         ) : (
-          <table className="data-table w-full text-[0.85rem]">
+          <table className="data-table w-full text-base">
             <thead>
               <tr>
                 <th className="text-left">Restaurant</th>
@@ -186,7 +186,7 @@ export default function AdminPlatformAnalyticsPage() {
                 <tr key={r.restaurant_id}>
                   <td className="text-left">
                     {r.restaurant_name}
-                    <div className="text-[0.7rem] text-slate-400">
+                    <div className="text-xs text-slate-400">
                       <code>{r.restaurant_id}</code>
                     </div>
                   </td>
@@ -201,13 +201,13 @@ export default function AdminPlatformAnalyticsPage() {
         )}
       </Card>
 
-      <div className="h-[1.1rem]" />
+      <div className="h-4" />
 
       <Card title="Adoption">
         {loading ? (
           <div className={LOAD_CLS}>Loading…</div>
         ) : (
-          <div className="grid grid-cols-2 gap-[0.7rem]">
+          <div className="grid grid-cols-2 gap-3">
             <StatCard
               label="Restaurants with campaigns enabled"
               value={fmtNum(counts.restaurants_with_campaigns_enabled)}

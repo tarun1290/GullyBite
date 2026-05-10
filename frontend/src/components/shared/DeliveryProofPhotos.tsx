@@ -44,11 +44,11 @@ export default function DeliveryProofPhotos({
 
   return (
     <div
-      className={`flex gap-[0.6rem] flex-wrap ${layout === 'vertical' ? 'flex-col' : 'flex-row'}`}
+      className={`flex gap-2.5 flex-wrap ${layout === 'vertical' ? 'flex-col' : 'flex-row'}`}
     >
       {pickup && (
         <div className="flex flex-col gap-1">
-          <div className="text-[0.72rem] text-dim">Pickup Proof</div>
+          <div className="text-xs text-dim">Pickup Proof</div>
           <a href={pickup} target="_blank" rel="noreferrer" title="Open full size">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -62,7 +62,7 @@ export default function DeliveryProofPhotos({
       )}
       {delivery && (
         <div className="flex flex-col gap-1">
-          <div className="text-[0.72rem] text-dim">Delivery Proof</div>
+          <div className="text-xs text-dim">Delivery Proof</div>
           <a href={delivery} target="_blank" rel="noreferrer" title="Open full size">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

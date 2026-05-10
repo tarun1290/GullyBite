@@ -137,13 +137,13 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
       <div className="card mb-4">
         <div className="ch"><h3>🔄 Catalog Sync</h3></div>
         <div className="cb">
-          <p className="text-[0.84rem] text-dim mb-[0.8rem] leading-[1.55]">
+          <p className="text-sm text-dim mb-3 leading-[1.55]">
             Push your GullyBite menu to your WhatsApp (Meta) catalog, or pull changes Meta has back
             into GullyBite. You can push/pull the whole restaurant here — per-branch sync is
             available from the editor above.
           </p>
 
-          <div className="flex gap-2 flex-wrap mb-[0.8rem]">
+          <div className="flex gap-2 flex-wrap mb-3">
             <button type="button" className="btn-p" onClick={tryPush} disabled={pushing || pulling}>
               {pushing ? '⬆ Syncing…' : '⬆ Sync to Meta'}
             </button>
@@ -153,7 +153,7 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
           </div>
 
           {(pushedAgo || pulledAgo) && (
-            <p className="text-[0.78rem] text-dim">
+            <p className="text-sm text-dim">
               Last sync:
               {pushedAgo && <> ⬆ {pushedAgo}</>}
               {pushedAgo && pulledAgo && ' · '}
@@ -162,15 +162,15 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
           )}
 
           {pendingAction && (
-            <div className="mt-[0.8rem] bg-amber-50 border border-yellow-200 rounded-lg p-[0.85rem]">
-              <div className="text-[0.86rem] font-semibold text-amber-900 mb-[0.4rem]">
+            <div className="mt-3 bg-amber-50 border border-yellow-200 rounded-lg p-3.5">
+              <div className="text-base font-semibold text-amber-900 mb-1.5">
                 ⚠️ {unassignedCount} unassigned product{unassignedCount === 1 ? '' : 's'}
               </div>
-              <p className="text-[0.78rem] text-[#78350f] mb-[0.6rem] leading-[1.45]">
+              <p className="text-sm text-[#78350f] mb-2.5 leading-[1.45]">
                 Unassigned products won&apos;t be pushed to Meta. Assign them to a branch first, or
                 proceed regardless — the backend will skip them with a structured reason.
               </p>
-              <div className="flex gap-[0.4rem] justify-end">
+              <div className="flex gap-1.5 justify-end">
                 <button type="button" className="btn-g btn-sm" onClick={() => setPendingAction(null)}>Cancel</button>
                 <button
                   type="button"
@@ -189,15 +189,15 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
       <div className="card">
         <div className="ch"><h3>⚡ Per-branch Quick Sync</h3></div>
         <div className="cb">
-          <p className="text-[0.82rem] text-dim mb-[0.6rem]">
+          <p className="text-sm text-dim mb-2.5">
             Push a single branch&apos;s menu to Meta without touching others. The badge next to each
             branch reflects whether the branch has any items assigned (✓ green) or is empty (✗ red);
             sync against an empty branch is a no-op — add items first.
           </p>
           {!branches.length ? (
-            <p className="text-dim text-[0.84rem]">No branches yet.</p>
+            <p className="text-dim text-sm">No branches yet.</p>
           ) : (
-            <div className="flex flex-col gap-[0.35rem]">
+            <div className="flex flex-col gap-1.5">
               {branches
                 .filter((b) => b.is_active !== false)
                 .map((b) => {
@@ -212,13 +212,13 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
                   return (
                     <div
                       key={b.id}
-                      className="flex items-center gap-[0.6rem] py-2 px-[0.7rem] bg-ink2 rounded-lg"
+                      className="flex items-center gap-2.5 py-2 px-3 bg-ink2 rounded-lg"
                     >
-                      <span className={`flex-1 text-[0.86rem] ${selectedBranchId === b.id ? 'font-semibold' : 'font-normal'}`}>{b.name}</span>
+                      <span className={`flex-1 text-base ${selectedBranchId === b.id ? 'font-semibold' : 'font-normal'}`}>{b.name}</span>
                       {hasItems ? (
-                        <span className="badge bg text-[0.68rem]">✓ Catalog</span>
+                        <span className="badge bg text-xs">✓ Catalog</span>
                       ) : (
-                        <span className="text-[0.68rem] py-[0.15rem] px-[0.45rem] rounded-[4px] bg-[rgba(220,38,38,0.10)] border border-[rgba(220,38,38,0.45)] text-red-500 font-semibold whitespace-nowrap">
+                        <span className="text-xs py-0.5 px-2 rounded bg-[rgba(220,38,38,0.10)] border border-[rgba(220,38,38,0.45)] text-red-500 font-semibold whitespace-nowrap">
                           ✗ No Items
                         </span>
                       )}

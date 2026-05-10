@@ -131,7 +131,7 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
           <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={applying}>✕</button>
         </div>
         <div className="cb">
-          <p className="text-[0.82rem] text-dim mb-[0.7rem]">{banner}</p>
+          <p className="text-sm text-dim mb-3">{banner}</p>
           {loading ? (
             <p className="text-dim">Loading…</p>
           ) : (
@@ -139,17 +139,17 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
               {rows.map((row) => {
                 const sel = selection[row.product_id] || new Set<string>();
                 return (
-                  <div key={row.product_id} className="py-[0.65rem] px-[0.8rem] border-b border-slate-100">
-                    <div className="flex justify-between items-center mb-[0.35rem]">
-                      <div className="font-semibold text-[0.86rem]">{row.name}</div>
-                      <div className="text-[0.7rem] text-dim">{REASON_LABEL[row.reason] || row.reason}</div>
+                  <div key={row.product_id} className="py-2.5 px-3 border-b border-slate-100">
+                    <div className="flex justify-between items-center mb-1.5">
+                      <div className="font-semibold text-base">{row.name}</div>
+                      <div className="text-xs text-dim">{REASON_LABEL[row.reason] || row.reason}</div>
                     </div>
                     {/* Equal-width chip grid. minmax(110px, 1fr) keeps every
                         chip in a row at the same width while letting the
                         browser auto-pick column count by viewport width —
                         approximates the spec's 3 / 4 / 6 breakpoints
                         without needing a CSS-module media query. */}
-                    <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-[0.35rem]">
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(110px,1fr))] gap-1.5">
                       {branchOpts.length ? branchOpts.map((b) => {
                         const on = sel.has(b.id);
                         return (
@@ -158,7 +158,7 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
                             // width:100% via grid-cell stretch;
                             // min-h ≈ two lines of .78rem text (1.2 leading) + padding
                             // so single-word and two-word chips align top + bottom.
-                            className={`inline-flex items-center justify-center gap-[0.3rem] w-full min-h-[2.4rem] box-border text-[0.78rem] leading-[1.2] py-1 px-[0.45rem] text-center wrap-break-word border rounded-xl cursor-pointer ${
+                            className={`inline-flex items-center justify-center gap-1 w-full min-h-10 box-border text-sm leading-[1.2] py-1 px-2 text-center wrap-break-word border rounded-xl cursor-pointer ${
                               on ? 'border-indigo-600 bg-indigo-100' : 'border-rim bg-white'
                             }`}
                           >
@@ -171,7 +171,7 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
                             <span>{b.name}</span>
                           </label>
                         );
-                      }) : <span className="text-[0.78rem] text-dim">No branches yet</span>}
+                      }) : <span className="text-sm text-dim">No branches yet</span>}
                     </div>
                   </div>
                 );

@@ -107,7 +107,7 @@ export default function AdminSettingsPage() {
           )}
         </div>
         <div className="cb">
-          <p className="text-[0.85rem] text-dim mt-0 mb-3">
+          <p className="text-base text-dim mt-0 mb-3">
             Multiplier applied to every chargeable WhatsApp marketing send.
             <strong className="text-tx not-italic"> 1.0×</strong> charges restaurants exactly what Meta charges us.
             Higher values add a per-message platform margin.
@@ -116,12 +116,12 @@ export default function AdminSettingsPage() {
           {!editing ? (
             <div className="flex flex-col gap-2">
               <div className="flex items-baseline gap-3">
-                <div className="text-[1.6rem] font-bold text-tx">
+                <div className="text-2xl font-bold text-tx">
                   {pricing ? formatMultiplierLabel(pricing.markup_multiplier) : '—'}
                 </div>
               </div>
               {pricing?.updated_at && (
-                <div className="text-[0.78rem] text-dim">
+                <div className="text-sm text-dim">
                   Last updated {new Date(pricing.updated_at).toLocaleString()} {pricing.updated_by ? `by ${pricing.updated_by}` : ''}
                 </div>
               )}
@@ -129,7 +129,7 @@ export default function AdminSettingsPage() {
           ) : (
             <div className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-[0.78rem] text-dim">
+                <label className="text-sm text-dim">
                   Markup multiplier (between {PRICING_MIN} and {PRICING_MAX})
                 </label>
                 <input
@@ -139,11 +139,11 @@ export default function AdminSettingsPage() {
                   max={PRICING_MAX}
                   value={draftValue}
                   onChange={(e) => setDraftValue(e.target.value)}
-                  className="w-full max-w-[200px] py-2 px-3 border border-rim rounded-md bg-white text-tx text-[0.95rem]"
+                  className="w-full max-w-[200px] py-2 px-3 border border-rim rounded-md bg-white text-tx text-md"
                 />
               </div>
 
-              <div className="py-2 px-3 bg-ink2 border border-rim rounded-md text-[0.82rem]">
+              <div className="py-2 px-3 bg-ink2 border border-rim rounded-md text-sm">
                 <div className="text-dim mb-1">Worked example</div>
                 {draftValid ? (
                   <>
@@ -188,7 +188,7 @@ export default function AdminSettingsPage() {
             </div>
           )}
 
-          <div className="mt-4 py-2 px-3 bg-amber-50 border border-yellow-200 rounded-md text-[0.78rem] text-amber-900">
+          <div className="mt-4 py-2 px-3 bg-amber-50 border border-yellow-200 rounded-md text-sm text-amber-900">
             <strong className="not-italic">Note:</strong> changes take effect on the next campaign create + send.
             In-flight campaigns that have already started their recipient loop continue with the value
             snapshotted at send-start.

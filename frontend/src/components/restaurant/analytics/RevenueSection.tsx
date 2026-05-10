@@ -64,7 +64,7 @@ interface StatusBreakdownProps { breakdown?: Record<string, number> | undefined 
 function StatusBreakdown({ breakdown }: StatusBreakdownProps) {
   const entries = breakdown ? Object.entries(breakdown) : [];
   if (!entries.length) {
-    return <span className="text-dim text-[0.82rem]">No data</span>;
+    return <span className="text-dim text-sm">No data</span>;
   }
   return (
     <>
@@ -73,7 +73,7 @@ function StatusBreakdown({ breakdown }: StatusBreakdownProps) {
         return (
           <span
             key={s}
-            className="inline-flex items-center gap-[0.35rem] py-[0.3rem] px-[0.7rem] rounded-full text-[0.75rem] font-medium"
+            className="inline-flex items-center gap-1.5 py-1 px-3 rounded-full text-xs font-medium"
             // background/border/text colour come from the per-status
             // STATUS_COLORS palette at runtime — Tailwind can't pre-bake
             // the 8% / 19% alpha tints (`${color}15` / `${color}30`).
@@ -220,9 +220,9 @@ export default function RevenueSection({ dateRange }: RevenueSectionProps) {
         </div>
       </div>
 
-      <div className="card mb-[1.1rem]">
+      <div className="card mb-4">
         <div className="ch"><h3>Order Status Breakdown</h3></div>
-        <div className="cb flex gap-[0.6rem] flex-wrap">
+        <div className="cb flex gap-2.5 flex-wrap">
           {overviewQ.error ? (
             <SectionError message={overviewQ.error} onRetry={overviewQ.refetch} />
           ) : (
@@ -231,7 +231,7 @@ export default function RevenueSection({ dateRange }: RevenueSectionProps) {
         </div>
       </div>
 
-      <div className="card mb-[1.1rem]">
+      <div className="card mb-4">
         <div className="ch">
           <h3>Revenue &amp; Orders</h3>
           <div className="chips m-0">
@@ -253,7 +253,7 @@ export default function RevenueSection({ dateRange }: RevenueSectionProps) {
           ) : chartConfig ? (
             <ChartCanvas type="bar" data={chartConfig.data} options={chartConfig.options} height={320} />
           ) : (
-            <div className="text-center text-dim py-12 text-[0.85rem]">
+            <div className="text-center text-dim py-12 text-base">
               {revenueQ.loading ? 'Loading…' : 'No revenue data for this period'}
             </div>
           )}

@@ -58,7 +58,7 @@ export default function AssignBranchModal({ productId, productName, branches, on
           <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>✕</button>
         </div>
         <div className="cb">
-          <p className="text-[0.82rem] text-dim mb-[0.7rem]">
+          <p className="text-sm text-dim mb-3">
             Assigning <strong>{productName}</strong> to a branch. Set the per-branch price so customers
             at that outlet see the right amount.
           </p>
@@ -84,7 +84,7 @@ export default function AssignBranchModal({ productId, productName, branches, on
               <input type="number" value={tax} onChange={(e) => setTax(e.target.value)} />
             </div>
             <div className="fg span2">
-              <label className="flex items-center gap-[0.4rem]">
+              <label className="flex items-center gap-1.5">
                 <input type="checkbox" checked={avail} onChange={(e) => setAvail(e.target.checked)} />
                 Available at this branch
               </label>

@@ -41,7 +41,7 @@ function StatusBadge({ status }: StatusBadgeProps) {
   const b = BADGES[key] || BADGES.not_configured;
   return (
     <span
-      className="inline-block ml-[0.6rem] py-[0.18rem] px-[0.55rem] rounded-full text-[0.7rem] font-bold uppercase tracking-[0.04em] border"
+      className="inline-block ml-2.5 py-0.5 px-2 rounded-full text-xs font-bold uppercase tracking-[0.04em] border"
       // status-driven palette (not_configured / pending / active / flagged
       // / error) — bg / text / border each pulled from the BADGES map at
       // runtime, so Tailwind can't pre-bake the per-status hex.
@@ -136,7 +136,7 @@ export default function MarketingWaNumberSection() {
   const disabled = !campaignsEnabled;
 
   return (
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch flex items-center">
         <h3>Marketing WhatsApp Number</h3>
         {loaded && <StatusBadge status={status} />}
@@ -156,14 +156,14 @@ export default function MarketingWaNumberSection() {
         )}
 
         <div className={disabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}>
-          <p className="text-[0.82rem] text-dim mt-0 mb-[0.9rem] leading-normal">
+          <p className="text-sm text-dim mt-0 mb-3.5 leading-normal">
             The number your customers will receive marketing messages from. Add your WhatsApp
             Business number details below.
           </p>
 
-          <div className="flex flex-col gap-[0.9rem]">
+          <div className="flex flex-col gap-3.5">
             <div>
-              <label className="block font-semibold text-[0.82rem] mb-[0.3rem]">
+              <label className="block font-semibold text-sm mb-1">
                 Phone Number ID
               </label>
               <input
@@ -172,15 +172,15 @@ export default function MarketingWaNumberSection() {
                 onChange={(e) => setPhoneNumberId(e.target.value)}
                 placeholder="Enter your Phone Number ID"
                 disabled={saving || disabled}
-                className="w-full max-w-[420px] py-[0.45rem] px-[0.6rem] border border-rim rounded-md text-[0.85rem]"
+                className="w-full max-w-[420px] py-2 px-2.5 border border-rim rounded-md text-base"
               />
-              <div className="text-[0.72rem] text-dim mt-1">
+              <div className="text-xs text-dim mt-1">
                 Found in Meta Business Manager → WhatsApp Accounts → your number → API Setup
               </div>
             </div>
 
             <div>
-              <label className="block font-semibold text-[0.82rem] mb-[0.3rem]">
+              <label className="block font-semibold text-sm mb-1">
                 WABA ID
               </label>
               <input
@@ -189,9 +189,9 @@ export default function MarketingWaNumberSection() {
                 onChange={(e) => setWabaId(e.target.value)}
                 placeholder="Enter your WABA ID"
                 disabled={saving || disabled}
-                className="w-full max-w-[420px] py-[0.45rem] px-[0.6rem] border border-rim rounded-md text-[0.85rem]"
+                className="w-full max-w-[420px] py-2 px-2.5 border border-rim rounded-md text-base"
               />
-              <div className="text-[0.72rem] text-dim mt-1">
+              <div className="text-xs text-dim mt-1">
                 Found in Meta Business Manager → WhatsApp Accounts
               </div>
             </div>
@@ -200,12 +200,12 @@ export default function MarketingWaNumberSection() {
               <button
                 type="button"
                 onClick={() => setHintOpen((v) => !v)}
-                className="bg-transparent border-0 text-[#0369a1] cursor-pointer p-0 text-[0.78rem] font-semibold"
+                className="bg-transparent border-0 text-[#0369a1] cursor-pointer p-0 text-sm font-semibold"
               >
                 {hintOpen ? '▾ Where do I find these?' : '▸ Where do I find these?'}
               </button>
               {hintOpen && (
-                <div className="mt-[0.45rem] py-[0.7rem] px-[0.85rem] bg-[#f0f9ff] border border-[#bae6fd] rounded-md text-[0.78rem] text-[#0c4a6e] leading-normal">
+                <div className="mt-2 py-3 px-3.5 bg-[#f0f9ff] border border-[#bae6fd] rounded-md text-sm text-[#0c4a6e] leading-normal">
                   Log in to business.facebook.com → WhatsApp Manager → select your number → you
                   will find Phone Number ID and WABA ID on the API Setup tab.
                 </div>

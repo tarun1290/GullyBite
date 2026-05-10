@@ -45,14 +45,14 @@ function SectionCard({ title, subtitle, children, empty, loading }: SectionCardP
   return (
     <Card title={title} className="marketing-analytics-section">
       {subtitle && (
-        <div className="text-[0.78rem] text-slate-500 mb-[0.8rem]">
+        <div className="text-sm text-slate-500 mb-3">
           {subtitle}
         </div>
       )}
       {loading ? (
-        <div className="py-4 px-0 text-slate-400 text-[0.85rem]">Loading…</div>
+        <div className="py-4 px-0 text-slate-400 text-base">Loading…</div>
       ) : empty ? (
-        <div className="py-4 px-0 text-slate-400 text-[0.85rem]">{empty}</div>
+        <div className="py-4 px-0 text-slate-400 text-base">{empty}</div>
       ) : (
         children
       )}
@@ -65,7 +65,7 @@ interface StatGridProps { children?: ReactNode; cols?: number }
 function StatGrid({ children, cols = 4 }: StatGridProps) {
   return (
     <div
-      className="grid gap-[0.7rem]"
+      className="grid gap-3"
       // dynamic gridTemplateColumns: number of columns (`cols`) is a runtime prop
       style={{
         gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
@@ -243,10 +243,10 @@ function CampaignSection({ data, loading }: CampaignSectionProps) {
           </StatGrid>
           {Array.isArray(data.top_templates) && data.top_templates.length > 0 && (
             <>
-              <div className="text-[0.78rem] text-slate-500 mt-[1.2rem] mb-2">
+              <div className="text-sm text-slate-500 mt-5 mb-2">
                 Top templates by ROI
               </div>
-              <table className="data-table w-full text-[0.82rem]">
+              <table className="data-table w-full text-sm">
                 <thead>
                   <tr>
                     <th className="text-left">Template</th>
@@ -262,9 +262,9 @@ function CampaignSection({ data, loading }: CampaignSectionProps) {
                   {data.top_templates.map((t) => (
                     <tr key={t.template_id}>
                       <td className="text-left">
-                        <code className="text-[0.76rem]">{t.template_id}</code>
+                        <code className="text-xs">{t.template_id}</code>
                         {t.use_case && (
-                          <span className="text-slate-400 ml-[0.3rem]">({t.use_case})</span>
+                          <span className="text-slate-400 ml-1">({t.use_case})</span>
                         )}
                       </td>
                       <td>{fmtNum(t.campaigns)}</td>
@@ -308,12 +308,12 @@ function CustomerSection({ data, loading }: CustomerSectionProps) {
               value={fmtNum(data.rfm_distribution?.length || 0)}
             />
           </StatGrid>
-          <div className="grid grid-cols-2 gap-[1.1rem] mt-4">
+          <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
-              <div className="text-[0.78rem] text-slate-500 mb-[0.4rem]">
+              <div className="text-sm text-slate-500 mb-1.5">
                 RFM distribution
               </div>
-              <ul className="list-none p-0 m-0 text-[0.82rem]">
+              <ul className="list-none p-0 m-0 text-sm">
                 {(data.rfm_distribution || []).map((r) => (
                   <li
                     key={r.label}
@@ -329,10 +329,10 @@ function CustomerSection({ data, loading }: CustomerSectionProps) {
               </ul>
             </div>
             <div>
-              <div className="text-[0.78rem] text-slate-500 mb-[0.4rem]">
+              <div className="text-sm text-slate-500 mb-1.5">
                 Acquisition sources
               </div>
-              <ul className="list-none p-0 m-0 text-[0.82rem]">
+              <ul className="list-none p-0 m-0 text-sm">
                 {(data.acquisition_sources || []).slice(0, 8).map((r) => (
                   <li
                     key={r.source}
@@ -404,12 +404,12 @@ function FeedbackSection({ data, loading }: FeedbackSectionProps) {
             <StatCard label="Positive" value={fmtPct(data.positive_share)} />
             <StatCard label="Review-link CTR" value={fmtPct(data.review_link_ctr)} />
           </StatGrid>
-          <div className="grid grid-cols-2 gap-[1.1rem] mt-4">
+          <div className="grid grid-cols-2 gap-4 mt-4">
             <div>
-              <div className="text-[0.78rem] text-slate-500 mb-[0.4rem]">
+              <div className="text-sm text-slate-500 mb-1.5">
                 Rating distribution
               </div>
-              <ul className="list-none p-0 m-0 text-[0.82rem]">
+              <ul className="list-none p-0 m-0 text-sm">
                 {(data.rating_distribution || []).map((r) => (
                   <li
                     key={r.rating}
@@ -422,10 +422,10 @@ function FeedbackSection({ data, loading }: FeedbackSectionProps) {
               </ul>
             </div>
             <div>
-              <div className="text-[0.78rem] text-slate-500 mb-[0.4rem]">
+              <div className="text-sm text-slate-500 mb-1.5">
                 By source
               </div>
-              <ul className="list-none p-0 m-0 text-[0.82rem]">
+              <ul className="list-none p-0 m-0 text-sm">
                 {(data.by_source || []).map((r) => (
                   <li
                     key={r.source}
@@ -434,7 +434,7 @@ function FeedbackSection({ data, loading }: FeedbackSectionProps) {
                     <span>
                       {r.source}
                       {r.avg_rating != null && (
-                        <span className="text-slate-400 ml-[0.3rem]">
+                        <span className="text-slate-400 ml-1">
                           ({r.avg_rating}★)
                         </span>
                       )}
@@ -470,7 +470,7 @@ function JourneysSection({ data, loading }: JourneysSectionProps) {
             <StatCard label="Total sends" value={fmtNum(data.total_sends)} />
             <StatCard label="Journey types active" value={fmtNum((data.by_type || []).length)} />
           </StatGrid>
-          <table className="data-table w-full mt-4 text-[0.82rem]">
+          <table className="data-table w-full mt-4 text-sm">
             <thead>
               <tr>
                 <th className="text-left">Journey</th>
@@ -540,7 +540,7 @@ export default function MarketingAnalyticsPage() {
         </div>
       )}
 
-      <div className="chips mb-[1.1rem]">
+      <div className="chips mb-4">
         {PERIODS.map(([val, label]) => (
           <button
             key={val}
@@ -554,12 +554,12 @@ export default function MarketingAnalyticsPage() {
       </div>
 
       {error && (
-        <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-[0.85rem] text-red-800 mb-[1.1rem]">
+        <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-base text-red-800 mb-4">
           {error}
         </div>
       )}
 
-      <div className="flex flex-col gap-[1.1rem]">
+      <div className="flex flex-col gap-4">
         <RevenueSection data={data?.revenue} loading={loading} />
         <CampaignSection data={data?.campaigns} loading={loading} />
         <CustomerSection data={data?.customers} loading={loading} />

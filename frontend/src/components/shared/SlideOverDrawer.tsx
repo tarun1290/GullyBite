@@ -60,13 +60,13 @@ export default function SlideOverDrawer({ open, onClose, title, children }: Slid
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        <div className="flex items-center justify-between py-[0.85rem] px-4 border-b border-rim">
-          <h3 className="m-0 text-[0.95rem] font-semibold">{title}</h3>
+        <div className="flex items-center justify-between py-3.5 px-4 border-b border-rim">
+          <h3 className="m-0 text-md font-semibold">{title}</h3>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="bg-transparent border-0 text-[1.2rem] cursor-pointer text-dim leading-none"
+            className="bg-transparent border-0 text-xl cursor-pointer text-dim leading-none"
           >
             ✕
           </button>

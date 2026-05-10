@@ -144,21 +144,21 @@ function CouponRow({ coupon, onChanged, onEdit }: CouponRowProps) {
 
   return (
     <tr className="border-b border-rim">
-      <td className="py-[0.65rem] px-4 font-mono font-bold tracking-wider">
+      <td className="py-2.5 px-4 font-mono font-bold tracking-wider">
         {coupon.code}
       </td>
-      <td className="py-[0.65rem] px-4">{discountLabel(coupon)}</td>
-      <td className="py-[0.65rem] px-4">₹{parseFloat(String(coupon.min_order_rs || 0)).toFixed(0)}</td>
-      <td className="py-[0.65rem] px-4">{usedLabel}</td>
-      <td className="py-[0.65rem] px-4 text-[0.8rem]">
+      <td className="py-2.5 px-4">{discountLabel(coupon)}</td>
+      <td className="py-2.5 px-4">₹{parseFloat(String(coupon.min_order_rs || 0)).toFixed(0)}</td>
+      <td className="py-2.5 px-4">{usedLabel}</td>
+      <td className="py-2.5 px-4 text-sm">
         {validFrom} → {validUntil}
       </td>
-      <td className="py-[0.65rem] px-4">
-        <span className={`text-[0.78rem] font-semibold ${isActive ? 'text-emerald-500' : 'text-neutral-500'}`}>
+      <td className="py-2.5 px-4">
+        <span className={`text-sm font-semibold ${isActive ? 'text-emerald-500' : 'text-neutral-500'}`}>
           {isActive ? 'Active' : 'Inactive'}
         </span>
       </td>
-      <td className="py-[0.65rem] px-4 flex gap-3">
+      <td className="py-2.5 px-4 flex gap-3">
         <button
           type="button"
           className="btn-g btn-xs"
@@ -168,7 +168,7 @@ function CouponRow({ coupon, onChanged, onEdit }: CouponRowProps) {
         </button>
         <button
           type="button"
-          className={`btn btn-sm py-1 px-[0.6rem] text-[0.78rem] ${isActive ? 'bg-neutral-700' : 'bg-acc'}`}
+          className={`btn btn-sm py-1 px-2.5 text-sm ${isActive ? 'bg-neutral-700' : 'bg-acc'}`}
           disabled={toggling}
           onClick={handleToggle}
         >
@@ -385,7 +385,7 @@ export default function CouponsSection() {
 
   return (
     <div>
-      <div className="card mb-[1.2rem]">
+      <div className="card mb-5">
         <div className="ch flex items-center justify-between">
           <h3>{isEditing ? `Edit Coupon — ${editingCoupon?.code || ''}` : 'Create Coupon'}</h3>
           {isEditing && (
@@ -436,7 +436,7 @@ export default function CouponsSection() {
                 disabled={isEditing}
               />
               {valueError && (
-                <div className="mt-1 text-[0.75rem] text-red-500">{valueError}</div>
+                <div className="mt-1 text-xs text-red-500">{valueError}</div>
               )}
             </div>
           </div>
@@ -490,8 +490,8 @@ export default function CouponsSection() {
                 disabled={isEditing}
               />
             </div>
-            <div className="flex items-end pb-[0.4rem]">
-              <label className="flex items-center gap-3 text-[0.85rem] select-none">
+            <div className="flex items-end pb-1.5">
+              <label className="flex items-center gap-3 text-base select-none">
                 <input
                   type="checkbox"
                   className="h-4 w-4 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -507,14 +507,14 @@ export default function CouponsSection() {
           {!isEditing && branches.length > 0 && (
             <div className="mb-4">
               <label className="lbl">Limit to branches</label>
-              <div className="text-[0.75rem] text-dim mb-2">
+              <div className="text-xs text-dim mb-2">
                 Leave blank to apply to all your branches
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {branches.map((b) => (
                   <label
                     key={b.id}
-                    className="flex items-center gap-3 text-[0.85rem] py-1 px-2 rounded border border-rim cursor-pointer hover:bg-rim/40"
+                    className="flex items-center gap-3 text-base py-1 px-2 rounded border border-rim cursor-pointer hover:bg-rim/40"
                   >
                     <input
                       type="checkbox"
@@ -573,7 +573,7 @@ export default function CouponsSection() {
       <div className="card">
         <div className="ch justify-between items-center">
           <h3>Active Coupons</h3>
-          <span className="text-[0.8rem] text-dim">
+          <span className="text-sm text-dim">
             Customers apply these during WhatsApp checkout
           </span>
         </div>
@@ -583,16 +583,16 @@ export default function CouponsSection() {
               <SectionError message={error} onRetry={refetch} />
             </div>
           ) : (
-            <table className="w-full border-collapse text-[0.88rem]">
+            <table className="w-full border-collapse text-base">
               <thead>
                 <tr className="bg-rim text-left">
-                  <th className="py-[0.7rem] px-4">Code</th>
-                  <th className="py-[0.7rem] px-4">Discount</th>
-                  <th className="py-[0.7rem] px-4">Min Order</th>
-                  <th className="py-[0.7rem] px-4">Used / Limit</th>
-                  <th className="py-[0.7rem] px-4">Validity</th>
-                  <th className="py-[0.7rem] px-4">Status</th>
-                  <th className="py-[0.7rem] px-4">Actions</th>
+                  <th className="py-3 px-4">Code</th>
+                  <th className="py-3 px-4">Discount</th>
+                  <th className="py-3 px-4">Min Order</th>
+                  <th className="py-3 px-4">Used / Limit</th>
+                  <th className="py-3 px-4">Validity</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Actions</th>
                 </tr>
               </thead>
               <tbody>

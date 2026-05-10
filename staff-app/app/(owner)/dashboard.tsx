@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getOwnerDashboard, toggleBranchOpen } from '@/api';
-import { useAuth } from '@/store/authStore';
+import { useStaff } from '@/state/StaffContext';
 import { useRole } from '@/hooks/useRole';
 import { colors, fontWeight, radius, space, subscriptionBadgeFor, text } from '@/theme';
 
@@ -58,7 +58,7 @@ function formatRupees(n: number): string {
 }
 
 export default function OwnerDashboardScreen() {
-  const { ownerInfo, restaurant } = useAuth();
+  const { ownerInfo, restaurant } = useStaff();
   const { isManager } = useRole();
   const [data, setData] = useState<DashboardResp | null>(null);
   const [loading, setLoading] = useState(true);

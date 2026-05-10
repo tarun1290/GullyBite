@@ -119,13 +119,13 @@ function ChangePill({ value }: ChangePillProps): ReactNode {
   );
 }
 
-const TABLE_CLS = 'w-full border-collapse text-[0.82rem]';
+const TABLE_CLS = 'w-full border-collapse text-sm';
 const TR_HEAD_CLS = 'bg-ink border-b border-rim';
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.28rem] px-2 text-[0.78rem]';
-const FILTER_LBL_CLS = 'text-[0.68rem] text-dim block mb-[0.2rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1 px-2 text-sm';
+const FILTER_LBL_CLS = 'text-xs text-dim block mb-1';
 
 export default function AdminAnalyticsPage() {
   const [periodDays, setPeriodDays] = useState<number>(7);
@@ -166,10 +166,10 @@ export default function AdminAnalyticsPage() {
 
   return (
     <div id="pg-analytics">
-      <div className="flex gap-2 flex-wrap items-end mb-[1.2rem] py-3 px-4 bg-neutral-0 border border-rim rounded-lg">
+      <div className="flex gap-2 flex-wrap items-end mb-5 py-3 px-4 bg-neutral-0 border border-rim rounded-lg">
         <div>
           <label className={FILTER_LBL_CLS}>Period</label>
-          <div className="flex gap-[0.3rem]">
+          <div className="flex gap-1">
             {PERIODS.map((d) => (
               <button
                 key={d}
@@ -211,12 +211,12 @@ export default function AdminAnalyticsPage() {
 
       <OverviewKpis params={params} />
 
-      <div className="grid grid-cols-[2fr_1fr] gap-4 mb-[1.2rem]">
+      <div className="grid grid-cols-[2fr_1fr] gap-4 mb-5">
         <TimeseriesCard params={params} />
         <StatusCard params={params} />
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-[1.2rem]">
+      <div className="grid grid-cols-2 gap-4 mb-5">
         <ByHourCard params={params} />
         <ByDayCard params={params} />
       </div>
@@ -225,7 +225,7 @@ export default function AdminAnalyticsPage() {
 
       <RestaurantRankingCard params={params} />
 
-      <div className="grid grid-cols-2 gap-4 mb-[1.2rem]">
+      <div className="grid grid-cols-2 gap-4 mb-5">
         <SegmentsCard />
         <DeliveryCard params={params} />
       </div>
@@ -256,12 +256,12 @@ function OverviewKpis({ params }: ParamsProps): ReactNode {
 
   useEffect(() => { load(); }, [load]);
 
-  if (err) return <div className="mb-[1.2rem]"><SectionError message={err} onRetry={load} /></div>;
+  if (err) return <div className="mb-5"><SectionError message={err} onRetry={load} /></div>;
 
   const chg = d?.change || {};
 
   return (
-    <div className="stats grid-cols-[repeat(auto-fit,minmax(170px,1fr))] mb-[1.2rem]">
+    <div className="stats grid-cols-[repeat(auto-fit,minmax(170px,1fr))] mb-5">
       <StatCard
         label="Total Orders"
         value={d ? (d.order_count ?? '—') : '—'}
@@ -306,7 +306,7 @@ function TimeseriesCard({ params }: ParamsProps): ReactNode {
 
   return (
     <div className="card p-4">
-      <h3 className="text-[0.85rem] mb-[0.6rem]">Order Volume &amp; GMV</h3>
+      <h3 className="text-base mb-2.5">Order Volume &amp; GMV</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
         <div className="text-dim">Loading…</div>
       ) : (
@@ -355,7 +355,7 @@ function StatusCard({ params }: ParamsProps): ReactNode {
 
   return (
     <div className="card p-4">
-      <h3 className="text-[0.85rem] mb-[0.6rem]">Order Status</h3>
+      <h3 className="text-base mb-2.5">Order Status</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
         <div className="text-dim">Loading…</div>
       ) : (
@@ -398,7 +398,7 @@ function ByHourCard({ params }: ParamsProps): ReactNode {
 
   return (
     <div className="card p-4">
-      <h3 className="text-[0.85rem] mb-[0.6rem]">Orders by Hour</h3>
+      <h3 className="text-base mb-2.5">Orders by Hour</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
         <div className="text-dim">Loading…</div>
       ) : (
@@ -439,7 +439,7 @@ function ByDayCard({ params }: ParamsProps): ReactNode {
 
   return (
     <div className="card p-4">
-      <h3 className="text-[0.85rem] mb-[0.6rem]">Orders by Day</h3>
+      <h3 className="text-base mb-2.5">Orders by Day</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
         <div className="text-dim">Loading…</div>
       ) : (
@@ -480,7 +480,7 @@ function CitiesCard({ params, onCityClick }: CitiesCardProps): ReactNode {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch"><h3>City Performance</h3></div>
       {err ? <div className="cb"><SectionError message={err} onRetry={load} /></div> : (
         <div className="overflow-x-auto">
@@ -544,7 +544,7 @@ function RestaurantRankingCard({ params }: ParamsProps): ReactNode {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch"><h3>Restaurant Ranking</h3></div>
       {err ? <div className="cb"><SectionError message={err} onRetry={load} /></div> : (
         <div className="overflow-x-auto">
@@ -603,7 +603,7 @@ function SegmentsCard(): ReactNode {
 
   return (
     <div className="card p-4">
-      <h3 className="text-[0.85rem] mb-[0.6rem]">Customer Segments</h3>
+      <h3 className="text-base mb-2.5">Customer Segments</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
         <div className="text-dim">Loading…</div>
       ) : (
@@ -648,7 +648,7 @@ function DeliveryCard({ params }: ParamsProps): ReactNode {
 
   return (
     <div className="card p-4">
-      <h3 className="text-[0.85rem] mb-[0.6rem]">Delivery Time Distribution</h3>
+      <h3 className="text-base mb-2.5">Delivery Time Distribution</h3>
       {err ? <SectionError message={err} onRetry={load} /> : !data ? (
         <div className="text-dim">Loading…</div>
       ) : (
@@ -713,7 +713,7 @@ function TopCustomersCard({ params }: ParamsProps): ReactNode {
                 <tr key={i} className="border-b border-rim">
                   <td className={`${TD_CLS} font-semibold`}>{i + 1}</td>
                   <td className={TD_CLS}>{c.name || '—'}</td>
-                  <td className={`${TD_CLS} text-[0.78rem] text-dim mono`}>{c.phone || '—'}</td>
+                  <td className={`${TD_CLS} text-sm text-dim mono`}>{c.phone || '—'}</td>
                   <td className={TD_CLS}>{c.order_count}</td>
                   <td className={`${TD_CLS} font-semibold text-wa-500`}>{fmtRs(c.total_spent)}</td>
                 </tr>
@@ -763,7 +763,7 @@ function FunnelCard(): ReactNode {
   };
 
   return (
-    <div className="card mt-[1.2rem]">
+    <div className="card mt-5">
       <div className="ch"><h3>Platform Conversion Funnel</h3></div>
       <div className="cb">
         {err ? <SectionError message={err} onRetry={load} /> : (
@@ -776,8 +776,8 @@ function FunnelCard(): ReactNode {
               ) : funnel.map((f, i) => {
                 const pct = Math.max(Number(f.pct) || 0, 2);
                 return (
-                  <div key={i} className="flex items-center gap-[0.6rem] mb-[0.4rem]">
-                    <span className="w-[110px] text-[0.78rem] font-medium text-dim text-right">
+                  <div key={i} className="flex items-center gap-2.5 mb-1.5">
+                    <span className="w-[110px] text-sm font-medium text-dim text-right">
                       {f.stage}
                     </span>
                     <div className="flex-1 bg-slate-100 rounded-md overflow-hidden h-7 relative">
@@ -792,7 +792,7 @@ function FunnelCard(): ReactNode {
                         }}
                       />
                       <span
-                        className={`absolute left-[0.6rem] top-1/2 -translate-y-1/2 text-[0.72rem] font-semibold ${pct > 15 ? 'text-neutral-0' : 'text-slate-800'}`}
+                        className={`absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold ${pct > 15 ? 'text-neutral-0' : 'text-slate-800'}`}
                       >
                         {f.count} ({f.pct}%)
                       </span>
@@ -802,7 +802,7 @@ function FunnelCard(): ReactNode {
               })}
             </div>
 
-            <h3 className="text-[0.88rem] mt-[1.2rem] mb-[0.6rem]">Restaurant Comparison</h3>
+            <h3 className="text-base mt-5 mb-2.5">Restaurant Comparison</h3>
             <div className="overflow-x-auto">
               <table className={TABLE_CLS}>
                 <thead>
@@ -828,7 +828,7 @@ function FunnelCard(): ReactNode {
                         <td className={TD_CLS}>{r.total_initiated || 0}</td>
                         <td className={TD_CLS}>{r.completed || 0}</td>
                         <td className={`${TD_CLS} font-bold ${rateCls}`}>{rate}%</td>
-                        <td className={`${TD_CLS} text-[0.8rem] text-dim`}>{topDropoff(r)}</td>
+                        <td className={`${TD_CLS} text-sm text-dim`}>{topDropoff(r)}</td>
                       </tr>
                     );
                   })}

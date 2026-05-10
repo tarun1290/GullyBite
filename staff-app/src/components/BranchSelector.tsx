@@ -7,7 +7,7 @@
 // labeled with the current selection's name; tapping opens a modal
 // list of branches with the active row highlighted.
 //
-// Selection updates flow through useAuth().setCurrentBranchId, which
+// Selection updates flow through useStaff().setCurrentBranchId, which
 // (a) persists to SecureStore via gb_current_branch_id and
 // (b) pushes the new value into api.ts's X-Branch-Id header so every
 //     subsequent request carries it. Screens subscribe to
@@ -15,13 +15,13 @@
 
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useAuth } from '../store/authStore';
+import { useStaff } from '../state/StaffContext';
 import { colors, fontWeight, radius, space, text } from '../theme';
 
 const ACTIVE_TINT = colors.acc;
 
 export default function BranchSelector(): React.ReactElement | null {
-  const { staffUser, currentBranchId, setCurrentBranchId } = useAuth();
+  const { staffUser, currentBranchId, setCurrentBranchId } = useStaff();
   const [open, setOpen] = useState<boolean>(false);
 
   const branches = staffUser?.branches || [];

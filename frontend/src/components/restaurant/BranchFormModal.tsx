@@ -537,13 +537,13 @@ export default function BranchFormModal({
             {isEdit && existingBranch?.id && (
               <div className="fg span2">
                 <label>Branch ID</label>
-                <div className="flex gap-[0.4rem] items-stretch">
+                <div className="flex gap-1.5 items-stretch">
                   <input
                     value={existingBranch.id}
                     readOnly
                     aria-readonly="true"
                     onFocus={(e) => e.currentTarget.select()}
-                    className="flex-1 font-mono text-[0.78rem] bg-ink2 text-dim cursor-text"
+                    className="flex-1 font-mono text-sm bg-ink2 text-dim cursor-text"
                   />
                   <button
                     type="button"
@@ -599,7 +599,7 @@ export default function BranchFormModal({
                 autoComplete="off"
               />
               {searching && (
-                <div className="absolute right-[10px] top-[34px] text-[0.7rem] text-dim">⏳</div>
+                <div className="absolute right-[10px] top-[34px] text-xs text-dim">⏳</div>
               )}
               {showSuggest && suggestions.length > 0 && (
                 <div className="absolute top-full left-0 right-0 z-10 bg-surface border border-rim rounded-md max-h-[240px] overflow-y-auto shadow-[0_4px_12px_rgba(0,0,0,0.12)]">
@@ -607,10 +607,10 @@ export default function BranchFormModal({
                     <div
                       key={`${s.place_id}-${i}`}
                       onClick={() => pickSuggestion(s)}
-                      className="py-[0.65rem] px-[0.9rem] cursor-pointer text-[0.83rem] border-b border-bdr leading-[1.4] hover:bg-ink2"
+                      className="py-2.5 px-3.5 cursor-pointer text-sm border-b border-bdr leading-[1.4] hover:bg-ink2"
                     >
                       <div className="font-semibold">{s.mainText}</div>
-                      <div className="text-[0.77rem] text-dim mt-[0.15rem]">
+                      <div className="text-xs text-dim mt-0.5">
                         {s.secondaryText}
                       </div>
                     </div>
@@ -618,16 +618,16 @@ export default function BranchFormModal({
                 </div>
               )}
               {form.addrConfirm && (
-                <div className="text-[0.74rem] text-wa mt-[0.3rem]">
+                <div className="text-xs text-wa mt-1">
                   ✅ {form.addrConfirm}
                 </div>
               )}
-              <div className="mt-[0.55rem]">
-                <div className="text-[0.74rem] text-dim mb-1">
+              <div className="mt-2">
+                <div className="text-xs text-dim mb-1">
                   Drag the pin to fine-tune your branch location
                 </div>
                 {mapLoading ? (
-                  <div className="w-full h-[280px] rounded-lg border border-rim bg-ink2 flex items-center justify-center text-[0.82rem] text-dim">
+                  <div className="w-full h-[280px] rounded-lg border border-rim bg-ink2 flex items-center justify-center text-sm text-dim">
                     Loading map…
                   </div>
                 ) : (
@@ -637,7 +637,7 @@ export default function BranchFormModal({
                   />
                 )}
                 {geocoding && (
-                  <div className="text-[0.74rem] text-dim mt-[0.3rem]">
+                  <div className="text-xs text-dim mt-1">
                     📍 Getting address…
                   </div>
                 )}
@@ -655,7 +655,7 @@ export default function BranchFormModal({
 
             <div className="fg">
               <label>Delivery Radius</label>
-              <div className="text-[0.74rem] text-dim py-[0.4rem]">
+              <div className="text-xs text-dim py-1.5">
                 Delivery radius is managed platform-wide by GullyBite.
               </div>
             </div>
@@ -716,7 +716,7 @@ export default function BranchFormModal({
           {pendingPaymentBranchId && (
             <div
               role="status"
-              className="mt-[0.6rem] py-[0.55rem] px-3 bg-amber-100 border border-yellow-200 rounded-lg text-[0.78rem] text-amber-900"
+              className="mt-2.5 py-2 px-3 bg-amber-100 border border-yellow-200 rounded-lg text-sm text-amber-900"
             >
               Payment in progress — complete the Razorpay checkout to activate this branch.
             </div>

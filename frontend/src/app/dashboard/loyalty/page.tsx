@@ -107,7 +107,7 @@ function ProgramOverview({ stats, loading, err, onRetry, onToggleActive, config,
           </button>
         </div>
         <div className="cb">
-          <div className="text-[0.84rem] text-dim">
+          <div className="text-sm text-dim">
             {config?.is_active
               ? 'Points are being issued on paid orders and redeemed pre-checkout.'
               : 'Program is paused. No earn or redeem activity will occur until activated.'}
@@ -181,20 +181,20 @@ function ProgramSettings({ config, onSave, saving, disabled }: ProgramSettingsPr
       onSubmit={submit}
     >
       <div className="ch"><h3>Program Settings</h3></div>
-      <div className="cb grid gap-[0.8rem] grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
+      <div className="cb grid gap-3 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
         {CONFIG_FIELDS.map((f) => {
           const raw = draft[f.key];
           const valueStr = raw === undefined || raw === null ? '' : String(raw);
           return (
             <label key={f.key} className="flex flex-col gap-1">
-              <span className="text-[0.78rem] text-dim">{f.label}</span>
+              <span className="text-sm text-dim">{f.label}</span>
               <input
                 type={f.type}
                 step={f.step || undefined}
                 value={valueStr}
                 onChange={(e) => update(f.key, e.target.value)}
                 disabled={disabled}
-                className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
+                className="py-2 px-2 border border-rim rounded-r bg-white"
               />
             </label>
           );
@@ -273,10 +273,10 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
       onSubmit={onSubmit}
     >
       <div className="ch"><h3>Dine-in Points Entry</h3></div>
-      <div className="cb grid gap-[0.8rem] grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
+      <div className="cb grid gap-3 grid-cols-[repeat(auto-fit,minmax(200px,1fr))]">
         <label className="flex flex-col gap-1">
-          <span className="text-[0.78rem] text-dim">Customer phone</span>
-          <div className="flex gap-[0.35rem]">
+          <span className="text-sm text-dim">Customer phone</span>
+          <div className="flex gap-1.5">
             <input
               type="tel"
               inputMode="numeric"
@@ -285,7 +285,7 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
               onChange={(e) => setPhone(e.target.value)}
               onBlur={onLookup}
               disabled={disabled}
-              className="flex-1 py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
+              className="flex-1 py-2 px-2 border border-rim rounded-r bg-white"
             />
             <button
               type="button"
@@ -299,7 +299,7 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[0.78rem] text-dim">Points to credit</span>
+          <span className="text-sm text-dim">Points to credit</span>
           <input
             type="number"
             min="1"
@@ -307,19 +307,19 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
             value={points}
             onChange={(e) => setPoints(e.target.value)}
             disabled={disabled}
-            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
+            className="py-2 px-2 border border-rim rounded-r bg-white"
           />
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="text-[0.78rem] text-dim">Description (optional)</span>
+          <span className="text-sm text-dim">Description (optional)</span>
           <input
             type="text"
             placeholder="e.g. Walk-in order #24"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             disabled={disabled}
-            className="py-[0.45rem] px-[0.55rem] border border-rim rounded-r bg-white"
+            className="py-2 px-2 border border-rim rounded-r bg-white"
           />
         </label>
       </div>
@@ -327,11 +327,11 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
       {(lookupResult || lookupErr) && (
         <div className="cb">
           {lookupErr ? (
-            <div className="text-red text-[0.82rem]">{lookupErr}</div>
+            <div className="text-red text-sm">{lookupErr}</div>
           ) : lookupResult ? (
-            <div className="py-[0.55rem] px-[0.65rem] border border-rim rounded-r text-[0.82rem] bg-panel">
+            <div className="py-2 px-2.5 border border-rim rounded-r text-sm bg-panel">
               <strong>{lookupResult.customer?.name || 'Customer'}</strong>
-              <span className="text-dim ml-[0.4rem]">
+              <span className="text-dim ml-1.5">
                 {lookupResult.customer?.wa_phone_masked || ''}
               </span>
               <div className="mt-1">
@@ -344,7 +344,7 @@ function DineInEntry({ onCredit, disabled }: DineInEntryProps) {
 
       {msg && (
         <div
-          className={`cb text-[0.82rem] ${msg.kind === 'ok' ? 'text-wa' : 'text-red'}`}
+          className={`cb text-sm ${msg.kind === 'ok' ? 'text-wa' : 'text-red'}`}
         >
           {msg.text}
         </div>
@@ -444,7 +444,7 @@ export default function LoyaltyPage() {
     <div id="tab-loyalty" className="tab on">
       <div className="mb-4">
         <h2 className="m-0">Loyalty</h2>
-        <div className="text-[0.84rem] text-dim mt-[0.2rem]">
+        <div className="text-sm text-dim mt-1">
           Points earn automatically on paid orders; customers can redeem pre-checkout.
         </div>
       </div>

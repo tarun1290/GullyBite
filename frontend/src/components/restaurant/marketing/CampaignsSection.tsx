@@ -85,7 +85,7 @@ interface DailyUsageProps { data: DailyUsageData | null }
 function DailyUsage({ data }: DailyUsageProps) {
   if (!data) {
     return (
-      <div className="card mb-4 py-[0.8rem] px-4 flex items-center gap-4 flex-wrap">
+      <div className="card mb-4 py-3 px-4 flex items-center gap-4 flex-wrap">
         <span className="font-semibold">Daily sends:</span>
         <span className="text-dim">usage unavailable</span>
       </div>
@@ -101,13 +101,13 @@ function DailyUsage({ data }: DailyUsageProps) {
       : 'Resets at midnight IST.')
     : '';
   return (
-    <div className="card mb-4 py-[0.8rem] px-4 flex items-center gap-4 flex-wrap">
+    <div className="card mb-4 py-3 px-4 flex items-center gap-4 flex-wrap">
       <span className="font-semibold">Daily sends:</span>
       <span className={atCap ? 'text-red' : 'text-dim'}>
         <strong>{sent}</strong> of <strong>{cap}</strong> campaigns sent today
       </span>
       {resetLabel && (
-        <span className="text-dim text-[0.78rem]">{resetLabel}</span>
+        <span className="text-dim text-sm">{resetLabel}</span>
       )}
     </div>
   );
@@ -159,7 +159,7 @@ function CampaignActions({ campaign, onChanged }: CampaignActionsProps) {
 
   if (confirm) {
     return (
-      <div className="inline-flex gap-[0.3rem] whitespace-nowrap">
+      <div className="inline-flex gap-1 whitespace-nowrap">
         <button type="button" className="btn-g btn-sm" disabled={busy} onClick={() => setConfirm(null)}>
           Cancel
         </button>
@@ -176,7 +176,7 @@ function CampaignActions({ campaign, onChanged }: CampaignActionsProps) {
   }
 
   return (
-    <div className="whitespace-nowrap inline-flex gap-[0.3rem]">
+    <div className="whitespace-nowrap inline-flex gap-1">
       {showSend && (
         <button type="button" className="btn-g btn-sm" onClick={() => setConfirm('send')}>Send</button>
       )}
@@ -225,12 +225,12 @@ function CampaignRowItem({ campaign, onChanged }: CampaignRowItemProps) {
       <td>
         <strong>{campaign.name}</strong>
         {isBatched && (
-          <div className="text-[0.72rem] text-dim mt-[0.2rem]">
+          <div className="text-xs text-dim mt-1">
             Batch {campaign.current_batch || 0} / {campaign.total_batches} · {sentCount} / {total} sent
           </div>
         )}
         {sentCount > 0 && (
-          <div className="text-[0.72rem] mt-[0.2rem]">
+          <div className="text-xs mt-1">
             <span className="text-emerald-500">
               Delivered: {deliveredCount} ({total > 0 ? Math.round((deliveredCount / sentCount) * 100) : 0}%)
             </span>{' '}
@@ -243,12 +243,12 @@ function CampaignRowItem({ campaign, onChanged }: CampaignRowItemProps) {
           </div>
         )}
         {highFail && (
-          <div className="bg-red-50 text-red-800 text-[0.72rem] py-1 px-2 rounded-[4px] mt-[0.3rem]">
+          <div className="bg-red-50 text-red-800 text-xs py-1 px-2 rounded mt-1">
             High failure rate — Meta may be pacing this campaign
           </div>
         )}
         {campaign.status === 'paused' && campaign.pause_reason && (
-          <div className="bg-yellow-100 text-yellow-800 text-[0.72rem] py-1 px-2 rounded-[4px] mt-[0.3rem]">
+          <div className="bg-yellow-100 text-yellow-800 text-xs py-1 px-2 rounded mt-1">
             {campaign.pause_reason}
           </div>
         )}
@@ -260,7 +260,7 @@ function CampaignRowItem({ campaign, onChanged }: CampaignRowItemProps) {
       <td>
         <span className={`badge ${STATUS_BADGE[campaign.status || ''] || 'bd'}`}>{campaign.status}</span>
       </td>
-      <td className="text-[0.78rem] text-dim">{timeAgo(campaign.created_at)}</td>
+      <td className="text-sm text-dim">{timeAgo(campaign.created_at)}</td>
       <td><CampaignActions campaign={campaign} onChanged={onChanged} /></td>
     </tr>
   );
@@ -287,7 +287,7 @@ export default function CampaignsSection() {
 
   return (
     <div>
-      <div className="notice wa mb-[1.3rem]">
+      <div className="notice wa mb-5">
         <div className="notice-ico">📢</div>
         <div className="notice-body">
           <h4>WhatsApp Product Campaigns</h4>
@@ -298,11 +298,11 @@ export default function CampaignsSection() {
         </div>
       </div>
 
-      <div className="notice mb-[1.2rem]">
+      <div className="notice mb-5">
         <div className="notice-ico">💡</div>
-        <div className="notice-body text-[0.8rem] leading-relaxed">
+        <div className="notice-body text-sm leading-relaxed">
           <strong>Campaign Best Practices (Meta 2026)</strong>
-          <ul className="pl-4 list-disc mt-[0.4rem] mb-0">
+          <ul className="pl-4 list-disc mt-1.5 mb-0">
             <li>Segment your audience — targeted messages get better engagement</li>
             <li>Avoid sending the same template to 10K+ users at once</li>
             <li>Meta monitors customer feedback (blocks, reports) and may pause delivery</li>
@@ -339,7 +339,7 @@ export default function CampaignsSection() {
               </thead>
               <tbody>
                 {campaignsQ.loading && !campaignsQ.data ? (
-                  <tr><td colSpan={8} className="text-center p-[1.2rem] text-dim">Loading…</td></tr>
+                  <tr><td colSpan={8} className="text-center p-5 text-dim">Loading…</td></tr>
                 ) : campaigns.length === 0 ? (
                   <tr><td colSpan={8}>
                     <div className="empty">

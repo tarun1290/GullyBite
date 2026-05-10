@@ -79,10 +79,10 @@ interface TileProps {
 
 function Tile({ title, value, hint }: TileProps) {
   return (
-    <div className="card py-4 px-[1.1rem] flex flex-col gap-1 min-w-0">
-      <div className="text-[0.72rem] text-mute font-semibold uppercase tracking-wider">{title}</div>
+    <div className="card py-4 px-4 flex flex-col gap-1 min-w-0">
+      <div className="text-xs text-mute font-semibold uppercase tracking-wider">{title}</div>
       <div className="text-2xl font-bold text-neutral-900">{value}</div>
-      {hint && <div className="text-[0.78rem] text-mute">{hint}</div>}
+      {hint && <div className="text-sm text-mute">{hint}</div>}
     </div>
   );
 }
@@ -104,16 +104,16 @@ function SegmentCard({ seg, count, disabled, selected, onClick }: SegmentCardPro
       type="button"
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      className={`text-left p-4 rounded-[10px] ${borderCls} ${bgCls} ${cursorCls} relative flex flex-col gap-[0.35rem] min-w-0`}
+      className={`text-left p-4 rounded-r ${borderCls} ${bgCls} ${cursorCls} relative flex flex-col gap-1.5 min-w-0`}
     >
-      <div className="flex items-center gap-[0.55rem]">
+      <div className="flex items-center gap-2">
         <span className="text-xl" aria-hidden="true">{seg.emoji}</span>
-        <span className="font-bold text-[0.92rem] text-neutral-900">{seg.label}</span>
+        <span className="font-bold text-md text-neutral-900">{seg.label}</span>
       </div>
-      <div className="text-[1.3rem] font-extrabold text-emerald-600">{count}</div>
+      <div className="text-xl font-extrabold text-emerald-600">{count}</div>
       <div className="text-xs text-mute">{seg.desc}</div>
       {disabled && (
-        <span className="absolute top-[0.55rem] right-[0.65rem] text-[0.65rem] font-bold bg-amber-100 text-amber-900 py-[0.12rem] px-[0.45rem] rounded-full uppercase tracking-[0.04em]">
+        <span className="absolute top-2 right-2.5 text-xs font-bold bg-amber-100 text-amber-900 py-0.5 px-2 rounded-full uppercase tracking-[0.04em]">
           Soon
         </span>
       )}

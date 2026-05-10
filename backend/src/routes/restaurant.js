@@ -2895,23 +2895,26 @@ router.patch(
   },
 );
 
-router.post('/menu/bulk-delete', requirePermission('manage_menu'), async (req, res) => {
+router.post('/menu/bulk-delete', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array required' });
 
-    // Fetch full docs BEFORE deleteMany — we need retailer_id + branch_id to
-    // fire explicit DELETEs to Meta. Project the fields actually used so
-    // large menus don't drag the whole document set into memory.
+    // [TENANT] Bulk operations cannot use the single-id _assertMenuItemOwnedBy
+    // helper directly; instead we fold restaurant_id into the find/delete
+    // filters so any cross-tenant ID in `ids` is silently filtered out before
+    // any document is read or removed. This closes the cross-tenant gap that
+    // existed when the find/deleteMany ran with `_id` alone.
     const items = await col('menu_items')
       .find(
-        { _id: { $in: ids } },
+        { _id: { $in: ids }, restaurant_id: req.restaurantId },
         { projection: { _id: 1, retailer_id: 1, branch_id: 1, branch_ids: 1 } }
       )
       .toArray();
     if (!items.length) return res.json({ deleted: 0 });
 
-    await col('menu_items').deleteMany({ _id: { $in: ids } });
+    const ownedIds = items.map(i => i._id);
+    await col('menu_items').deleteMany({ _id: { $in: ownedIds }, restaurant_id: req.restaurantId });
 
     const branchIds = [...new Set(items.map(i => i.branch_id).filter(Boolean))];
     branchIds.forEach(bid => memcache.del(`branch:${bid}:menu`));
@@ -2949,7 +2952,7 @@ router.post('/menu/normalize-preview', async (req, res) => {
 });
 
 // PATCH /api/restaurant/menu/bulk-availability — toggle availability for multiple items
-router.patch('/menu/bulk-availability', requirePermission('manage_menu'), async (req, res) => {
+router.patch('/menu/bulk-availability', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { available, branch_id, item_ids } = req.body;
     if (available === undefined) return res.status(400).json({ error: 'available (true/false) required' });
@@ -2993,7 +2996,13 @@ router.patch('/menu/bulk-availability', requirePermission('manage_menu'), async 
 
 // PATCH /api/restaurant/menu/:id/availability — dedicated lightweight availability toggle
 // NOTE: Must be AFTER /menu/bulk-availability to avoid Express matching 'bulk-availability' as :id
-router.patch('/menu/:id/availability', requirePermission('manage_menu'), async (req, res) => {
+router.patch('/menu/:id/availability', requireStaffPermission('manage_menu'), requireBranchAccess(async (req) => {
+  const item = await col('menu_items').findOne(
+    { _id: req.params.id },
+    { projection: { branch_id: 1 } },
+  );
+  return item?.branch_id;
+}), async (req, res) => {
   try {
     const { available } = req.body;
     if (typeof available !== 'boolean') return res.status(400).json({ error: 'available (true/false) required' });
@@ -3020,7 +3029,11 @@ router.patch('/menu/:id/availability', requirePermission('manage_menu'), async (
 });
 
 // PATCH /api/restaurant/menu/:id/availability-all-branches — toggle same dish across ALL branches
-router.patch('/menu/:id/availability-all-branches', requirePermission('manage_menu'), async (req, res) => {
+// NOTE: This route fans the toggle across every branch the restaurant owns;
+// gating it through requireBranchAccess (single-branch scope) would be
+// semantically wrong, so the handler relies on the inline restaurant_id
+// filter on BOTH the source item lookup and the cross-branch updateMany.
+router.patch('/menu/:id/availability-all-branches', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { available } = req.body;
     if (typeof available !== 'boolean') return res.status(400).json({ error: 'available (true/false) required' });
@@ -4250,18 +4263,26 @@ router.get('/menu/variants/:itemGroupId', async (req, res) => {
 });
 
 // POST /api/restaurant/menu/variant — add a variant to an existing product group
-router.post('/menu/variant', requirePermission('manage_menu'), async (req, res) => {
+router.post('/menu/variant', requireStaffPermission('manage_menu'), requireBranchAccess((req) => req.body?.branchId), async (req, res) => {
   try {
     const { itemGroupId, branchId, name, size, priceRs, imageUrl } = req.body;
     if (!itemGroupId || !branchId || !size || !priceRs) {
       return res.status(400).json({ error: 'itemGroupId, branchId, size, priceRs required' });
     }
 
+    // [TENANT] Verify the target branch belongs to this restaurant BEFORE
+    // any lookup or upsert. Without this guard a caller who knows another
+    // restaurant's branchId could write a variant into that branch's
+    // menu_items collection (the upsert at the bottom of this handler
+    // takes branch_id straight from the body).
+    const ownedBranch = await _assertBranchOwnedBy(branchId, req.restaurantId);
+    if (!ownedBranch) return res.status(404).json({ error: 'Branch not found' });
+
     // Auto-generate retailer_id from group + size using canonical slugify
     const retailerId = `${itemGroupId}-${slugify(size, 15)}`;
 
     // Copy shared fields from an existing variant in the same group
-    const existing = await col('menu_items').findOne({ item_group_id: itemGroupId, branch_id: branchId });
+    const existing = await col('menu_items').findOne({ item_group_id: itemGroupId, branch_id: branchId, restaurant_id: req.restaurantId });
 
     const pricePaise = Math.round(parseFloat(priceRs) * 100);
     const now = new Date();
@@ -5378,7 +5399,7 @@ router.post('/catalog/switch', requireApproved, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 
 // POST /api/restaurant/menu/bulk-assign-branch — assign multiple items to a branch
-router.post('/menu/bulk-assign-branch', requirePermission('manage_menu'), async (req, res) => {
+router.post('/menu/bulk-assign-branch', requireStaffPermission('manage_menu'), async (req, res) => {
   try {
     const { item_ids, branch_id } = req.body;
     if (!item_ids?.length) return res.status(400).json({ error: 'item_ids array is required' });
@@ -5413,17 +5434,34 @@ router.post('/menu/bulk-assign-branch', requirePermission('manage_menu'), async 
 });
 
 // PUT /api/restaurant/menu/:itemId/branch — move single item to a different branch
-router.put('/menu/:itemId/branch', requirePermission('manage_menu'), async (req, res) => {
+// requireBranchAccess scopes the staff caller to the SOURCE branch (the
+// item's current branch_id); ownership of the TARGET branch is enforced
+// inside the handler via _assertBranchOwnedBy. Item ownership is enforced
+// via _assertMenuItemOwnedBy at the top of the handler so a caller cannot
+// move another restaurant's item by guessing its ID.
+router.put('/menu/:itemId/branch', requireStaffPermission('manage_menu'), requireBranchAccess(async (req) => {
+  const item = await col('menu_items').findOne(
+    { _id: req.params.itemId },
+    { projection: { branch_id: 1 } },
+  );
+  return item?.branch_id;
+}), async (req, res) => {
   try {
+    // [TENANT] Verify item ownership BEFORE any mutation. Without this check
+    // a caller could move another restaurant's menu_item into one of their
+    // own branches by guessing item IDs.
+    const ownedItem = await _assertMenuItemOwnedBy(req.params.itemId, req.restaurantId);
+    if (!ownedItem) return res.status(404).json({ error: 'Item not found' });
+
     const { branch_id } = req.body;
     if (!branch_id) return res.status(400).json({ error: 'branch_id is required' });
 
-    const branch = await col('branches').findOne({ _id: branch_id, restaurant_id: req.restaurantId });
+    // [TENANT] Verify the TARGET branch also belongs to this restaurant so
+    // an item cannot be relocated into another tenant's branch.
+    const branch = await _assertBranchOwnedBy(branch_id, req.restaurantId);
     if (!branch) return res.status(404).json({ error: 'Branch not found' });
 
-    const item = await col('menu_items').findOne({ _id: req.params.itemId });
-    if (!item) return res.status(404).json({ error: 'Item not found' });
-
+    const item = ownedItem;
     const oldBranchId = item.branch_id;
     await col('menu_items').updateOne(
       { _id: req.params.itemId },
@@ -8409,7 +8447,8 @@ router.get('/campaigns/daily-usage', requirePermission('manage_settings'), async
 // Tag discovery for campaign targeting UI (CRIT-2B-08). Returns the tags
 // actually present on customer_metrics docs for this restaurant's customers,
 // so the dashboard only surfaces tags that have live recipients.
-router.get('/customers/tags', requirePermission('manage_settings'), async (req, res) => {
+// Permission-gated: requires manage_settings (staff JWT reachable via 6b regex)
+router.get('/customers/tags', requireStaffPermission('manage_settings'), async (req, res) => {
   try {
     const tags = await campaignSvc.getAvailableTags(req.restaurantId);
     res.json({ tags });
@@ -9138,17 +9177,6 @@ router.post('/issues/:id/reopen', requireAuth, requireApproved, async (req, res)
     res.json(maskIssue(updated));
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
-
-// ─── STAFF USERS (per-user RBAC) ───────────────────────────────
-// Owner/manager-side CRUD over staff accounts in restaurant_users
-// (role: 'staff'). All endpoints filter by req.restaurantId so a
-// restaurant can never read or modify another restaurant's staff.
-// Gated by manage_staff (NOT manage_users — that perm is for the
-// customer-side user management).
-//
-// PINs are 4-digit and bcrypt-hashed at 10 rounds. The plain PIN is
-// only ever returned ONCE (on create + reset) so the owner can hand it
-// off. Subsequent reads NEVER include pin_hash or the plain PIN.
 
 // ─── FINANCIAL ENDPOINTS ────────────────────────────────────────
 

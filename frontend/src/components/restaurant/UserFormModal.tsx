@@ -251,35 +251,35 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
   const renderBranchLinkRow = (row: BranchLink) => (
     <div
       key={row.branchId}
-      className="py-[0.55rem] px-[0.7rem] border-b border-bdr text-[0.8rem]"
+      className="py-2 px-3 border-b border-bdr text-sm"
     >
-      <div className="font-semibold mb-[0.2rem]">{row.branchName}</div>
+      <div className="font-semibold mb-1">{row.branchName}</div>
       {row.status === 'loading' && (
-        <div className="text-[0.74rem] text-dim">Loading…</div>
+        <div className="text-xs text-dim">Loading…</div>
       )}
       {row.status === 'generating' && (
-        <div className="text-[0.74rem] text-dim">Generating…</div>
+        <div className="text-xs text-dim">Generating…</div>
       )}
       {row.status === 'ready' && row.url && (
-        <div className="flex gap-[0.4rem] items-center">
+        <div className="flex gap-1.5 items-center">
           <input
             value={row.url}
             readOnly
             onFocus={(e) => e.currentTarget.select()}
-            className="flex-1 font-mono text-[0.74rem] bg-ink2 border border-rim rounded-sm py-1 px-[0.4rem] text-dim"
+            className="flex-1 font-mono text-xs bg-ink2 border border-rim rounded-sm py-1 px-1.5 text-dim"
           />
           <button
             type="button"
             onClick={() => copyLink(row.branchId, row.url || '')}
-            className="bg-transparent border border-bdr text-dim text-[0.7rem] py-[0.2rem] px-2 rounded-sm cursor-pointer shrink-0"
+            className="bg-transparent border border-bdr text-dim text-xs py-1 px-2 rounded-sm cursor-pointer shrink-0"
           >
             {copiedBranchId === row.branchId ? 'Copied!' : 'Copy'}
           </button>
         </div>
       )}
       {row.status === 'ready' && !row.url && (
-        <div className="flex flex-col gap-[0.3rem]">
-          <div className="text-[0.72rem] text-amber-900">
+        <div className="flex flex-col gap-1">
+          <div className="text-xs text-amber-900">
             ⚠ No login link yet for this branch.
           </div>
           <button
@@ -292,8 +292,8 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
         </div>
       )}
       {row.status === 'error' && (
-        <div className="flex flex-col gap-[0.3rem]">
-          <div className="text-[0.72rem] text-red">
+        <div className="flex flex-col gap-1">
+          <div className="text-xs text-red">
             {row.errorMessage || 'Failed to load'}
           </div>
           <button
@@ -386,7 +386,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="bg-none border-0 text-[1.3rem] cursor-pointer"
+            className="bg-none border-0 text-xl cursor-pointer"
           >
             ×
           </button>
@@ -395,36 +395,36 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
           {created ? (
             // ── Post-creation success screen ───────────────────────
             <>
-              <div className="mb-[0.8rem] py-[0.6rem] px-3 bg-green-50 border border-green-200 rounded-lg">
-                <div className="font-bold text-green-700 text-[0.92rem]">
+              <div className="mb-3 py-2.5 px-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="font-bold text-green-700 text-md">
                   ✓ {created.name}
                 </div>
-                <div className="text-[0.78rem] text-green-800 capitalize">
+                <div className="text-sm text-green-800 capitalize">
                   {created.role}
                 </div>
               </div>
 
-              <div className="fg mb-[0.7rem]">
+              <div className="fg mb-3">
                 <label>Branch Login URLs</label>
                 {created.branchIds.length === 0 ? (
-                  <div className="mt-[0.3rem] py-[0.55rem] px-[0.7rem] bg-ink2 border border-rim rounded-md text-[0.78rem] text-dim">
+                  <div className="mt-1 py-2 px-3 bg-ink2 border border-rim rounded-md text-sm text-dim">
                     Share the branch login URL with your team member from the Branches tab.
                   </div>
                 ) : (
-                  <div className="mt-[0.3rem] max-h-[220px] overflow-y-auto border border-rim rounded-md">
+                  <div className="mt-1 max-h-[220px] overflow-y-auto border border-rim rounded-md">
                     {branchLinks.map(renderBranchLinkRow)}
                   </div>
                 )}
               </div>
 
-              <div className="flex gap-3 mt-[0.8rem]">
+              <div className="flex gap-3 mt-3">
                 <button type="button" className="btn-p" onClick={onClose}>Done</button>
               </div>
             </>
           ) : (
             // ── Form (create / edit) ───────────────────────────────
             <>
-              <div className="fg mb-[0.7rem]">
+              <div className="fg mb-3">
                 <label>Name ★</label>
                 <input
                   value={form.name}
@@ -432,7 +432,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   placeholder="Rahul Sharma"
                 />
               </div>
-              <div className="fg mb-[0.7rem]">
+              <div className="fg mb-3">
                 <label>Phone {isEdit ? '' : '★'}</label>
                 <input
                   value={form.phone}
@@ -442,13 +442,13 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   className={isEdit ? 'opacity-60' : ''}
                 />
                 {isEdit && (
-                  <div className="text-[0.7rem] text-dim mt-[0.2rem]">
+                  <div className="text-xs text-dim mt-1">
                     Phone is locked after creation.
                   </div>
                 )}
               </div>
               {!isEdit && (
-                <div className="fg mb-[0.7rem]">
+                <div className="fg mb-3">
                   <label>PIN (4-6 digits) ★</label>
                   <input
                     type="password"
@@ -459,7 +459,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   />
                 </div>
               )}
-              <div className="fg mb-[0.7rem]">
+              <div className="fg mb-3">
                 <label>Role ★</label>
                 <select
                   value={form.role}
@@ -469,7 +469,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                   {ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </div>
-              <div className="fg mb-[0.7rem]">
+              <div className="fg mb-3">
                 <label>Branches <small className="text-dim">(leave empty for all)</small></label>
                 {(branches || []).length > 0 ? (
                   <div className="flex flex-wrap gap-3 mt-2">
@@ -489,13 +489,13 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
                     })}
                   </div>
                 ) : (
-                  <span className="text-[0.78rem] text-dim">No branches yet.</span>
+                  <span className="text-sm text-dim">No branches yet.</span>
                 )}
               </div>
               {isEdit && Array.isArray(editing?.branch_ids) && editing.branch_ids.length > 0 && (
-                <div className="fg mb-[0.7rem]">
+                <div className="fg mb-3">
                   <label>Branch Login URLs</label>
-                  <div className="mt-[0.3rem] max-h-[220px] overflow-y-auto border border-rim rounded-md">
+                  <div className="mt-1 max-h-[220px] overflow-y-auto border border-rim rounded-md">
                     {branchLinks.map(renderBranchLinkRow)}
                   </div>
                 </div>
@@ -529,7 +529,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
               )}
               {isEdit && deleteConfirming && (
                 <div className="mt-4">
-                  <div className="text-[0.82rem] text-red">
+                  <div className="text-sm text-red">
                     This is permanent and cannot be undone. Delete {editing?.name || 'this staff member'}?
                   </div>
                   {/* Confirm row — same flex pattern as the normal

@@ -147,14 +147,14 @@ export default function AdminRestaurantsPage() {
   return (
     <div>
       <div className="card">
-        <div className="ch justify-between flex-wrap gap-[0.4rem]">
+        <div className="ch justify-between flex-wrap gap-1.5">
           <h3>🏪 Restaurant Directory</h3>
-          <div className="flex gap-[0.4rem] items-center">
+          <div className="flex gap-1.5 items-center">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, owner, ID…"
-              className="py-[0.3rem] px-[0.55rem] border border-rim rounded-md text-[0.8rem] w-[240px]"
+              className="py-1 px-2 border border-rim rounded-md text-sm w-[240px]"
             />
             <button type="button" className="btn-g btn-sm" onClick={load} disabled={loading}>
               {loading ? '…' : '↻ Refresh'}
@@ -172,7 +172,7 @@ export default function AdminRestaurantsPage() {
             <div className="tbl-card overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
-                  <tr className="text-left text-[0.72rem] text-dim uppercase">
+                  <tr className="text-left text-xs text-dim uppercase">
                     <th className="p-2">Business</th>
                     <th className="p-2">Owner</th>
                     <th className="p-2 text-center">Branches</th>
@@ -241,27 +241,27 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
     {/* dynamic borderBottom: hidden when staff PIN row expands below */}
     <tr style={{ borderBottom: staffPinOpen ? 'none' : '1px solid var(--rim)' }}>
       <td data-label="Business" className="p-2">
-        <div className="font-semibold text-[0.84rem]">{r.business_name}</div>
+        <div className="font-semibold text-sm">{r.business_name}</div>
         {r.registered_business_name ? (
-          <div className="text-dim text-[0.74rem]">{r.registered_business_name}</div>
+          <div className="text-dim text-xs">{r.registered_business_name}</div>
         ) : null}
-        <div className="text-dim text-[0.7rem] font-mono">{(r.id || '').slice(0, 8)}</div>
+        <div className="text-dim text-xs font-mono">{(r.id || '').slice(0, 8)}</div>
         {(() => {
           if (!r.created_at) return null;
           const d = new Date(r.created_at);
           if (Number.isNaN(d.getTime())) return null;
           const formatted = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
           return (
-            <div className="text-dim text-[0.68rem] opacity-75">Created: {formatted}</div>
+            <div className="text-dim text-xs opacity-75">Created: {formatted}</div>
           );
         })()}
       </td>
-      <td data-label="Owner" className="p-2 text-[0.8rem]">{r.owner_name || '—'}</td>
-      <td data-label="Branches" className="p-2 text-center text-[0.82rem]">{r.branch_count ?? 0}</td>
-      <td data-label="Catalogs" className="p-2 text-center text-[0.82rem]">{r.catalog_count ?? 0}</td>
+      <td data-label="Owner" className="p-2 text-sm">{r.owner_name || '—'}</td>
+      <td data-label="Branches" className="p-2 text-center text-sm">{r.branch_count ?? 0}</td>
+      <td data-label="Catalogs" className="p-2 text-center text-sm">{r.catalog_count ?? 0}</td>
       <td data-label="Orders" className="p-2 text-center cursor-help" title={orderTip}>
-        <div className="font-semibold text-[0.84rem]">{o.total ?? 0}</div>
-        <div className="text-wa-500 text-[0.7rem]">{o.delivered ?? 0} del</div>
+        <div className="font-semibold text-sm">{o.total ?? 0}</div>
+        <div className="text-wa-500 text-xs">{o.delivered ?? 0} del</div>
       </td>
       <td data-label="Fulfil%" className="p-2 text-center">
         {/* dynamic color: runtime threshold-based fulfilment color */}
@@ -272,10 +272,10 @@ function RestaurantRow({ r, busy, pending, onAsk, onCancel, onStatus, onCap, onD
           ? <span className="text-red-500 font-semibold">{r.issues}</span>
           : <span className="text-mute">0</span>}
       </td>
-      <td data-label="Revenue" className="p-2 text-[0.82rem]">₹{fmtInr(r.revenue_rs)}</td>
+      <td data-label="Revenue" className="p-2 text-sm">₹{fmtInr(r.revenue_rs)}</td>
       <td data-label="Status" className="p-2">
         {/* dynamic palette: badge tint/border/text derived from runtime status color */}
-        <span style={{ background: `${badge.color}15`, color: badge.color, border: `1px solid ${badge.color}30` }} className="inline-block py-[0.1rem] px-[0.4rem] rounded-full text-[0.7rem] font-semibold">
+        <span style={{ background: `${badge.color}15`, color: badge.color, border: `1px solid ${badge.color}30` }} className="inline-block py-0.5 px-1.5 rounded-full text-xs font-semibold">
           {badge.label}
         </span>
       </td>
@@ -354,12 +354,12 @@ interface InlineConfirmProps {
 function InlineConfirm({ label, busy, onConfirm, onCancel, confirmColor = 'var(--gb-red-500)' }: InlineConfirmProps) {
   return (
     <span className="inline-flex gap-1 items-center">
-      <span className="text-[0.72rem] text-dim mr-[0.2rem]">{label}</span>
+      <span className="text-xs text-dim mr-1">{label}</span>
       {/* dynamic background: confirm button tint depends on action (suspend vs activate) */}
-      <button type="button" style={{ background: confirmColor }} className="text-neutral-0 border-0 rounded-sm py-[0.15rem] px-2 text-[0.72rem]" onClick={onConfirm} disabled={busy}>
+      <button type="button" style={{ background: confirmColor }} className="text-neutral-0 border-0 rounded-sm py-0.5 px-2 text-xs" onClick={onConfirm} disabled={busy}>
         {busy ? '…' : 'Confirm'}
       </button>
-      <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={onCancel} disabled={busy}>Cancel</button>
+      <button type="button" className="btn-g btn-sm text-xs" onClick={onCancel} disabled={busy}>Cancel</button>
     </span>
   );
 }
@@ -375,7 +375,7 @@ function CapEditor({ current, busy, onConfirm, onCancel }: CapEditorProps) {
   const [val, setVal] = useState<string>(current == null ? '' : String(current));
   return (
     <span className="inline-flex gap-1 items-center">
-      <span className="text-[0.7rem] text-dim">
+      <span className="text-xs text-dim">
         Current: {current == null ? '(default)' : current} — new:
       </span>
       <input
@@ -384,12 +384,12 @@ function CapEditor({ current, busy, onConfirm, onCancel }: CapEditorProps) {
         onChange={(e) => setVal(e.target.value)}
         placeholder="blank = default"
         autoFocus
-        className="w-[110px] py-[0.15rem] px-[0.3rem] border border-rim rounded-sm text-[0.72rem]"
+        className="w-[110px] py-0.5 px-1 border border-rim rounded-sm text-xs"
       />
-      <button type="button" className="btn-p btn-sm text-[0.72rem]" onClick={() => onConfirm(val)} disabled={busy}>
+      <button type="button" className="btn-p btn-sm text-xs" onClick={() => onConfirm(val)} disabled={busy}>
         {busy ? '…' : 'Save'}
       </button>
-      <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={onCancel} disabled={busy}>Cancel</button>
+      <button type="button" className="btn-g btn-sm text-xs" onClick={onCancel} disabled={busy}>Cancel</button>
     </span>
   );
 }
@@ -406,7 +406,7 @@ function DeleteEditor({ name, busy, onConfirm, onCancel }: DeleteEditorProps) {
   const match = typed.trim().toLowerCase() === (name || '').trim().toLowerCase();
   return (
     <span className="inline-flex gap-1 items-center">
-      <span className="text-[0.7rem] text-red-500">
+      <span className="text-xs text-red-500">
         Type &quot;{name}&quot; to confirm:
       </span>
       <input
@@ -414,12 +414,12 @@ function DeleteEditor({ name, busy, onConfirm, onCancel }: DeleteEditorProps) {
         onChange={(e) => setTyped(e.target.value)}
         placeholder={name}
         autoFocus
-        className="w-[140px] py-[0.15rem] px-[0.3rem] border border-rim rounded-sm text-[0.72rem]"
+        className="w-[140px] py-0.5 px-1 border border-rim rounded-sm text-xs"
       />
-      <button type="button" className={`bg-red-500 text-neutral-0 border-0 rounded-sm py-[0.15rem] px-2 text-[0.72rem] ${match ? 'opacity-100' : 'opacity-50'}`} onClick={() => onConfirm(typed)} disabled={busy || !match}>
+      <button type="button" className={`bg-red-500 text-neutral-0 border-0 rounded-sm py-0.5 px-2 text-xs ${match ? 'opacity-100' : 'opacity-50'}`} onClick={() => onConfirm(typed)} disabled={busy || !match}>
         {busy ? '…' : 'Delete'}
       </button>
-      <button type="button" className="btn-g btn-sm text-[0.72rem]" onClick={onCancel} disabled={busy}>Cancel</button>
+      <button type="button" className="btn-g btn-sm text-xs" onClick={onCancel} disabled={busy}>Cancel</button>
     </span>
   );
 }

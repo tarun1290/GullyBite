@@ -37,11 +37,11 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const TH_CLS = 'py-2 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.45rem] px-[0.7rem] text-[0.85rem]';
-const LBL_CLS = 'text-[0.78rem] text-dim block mb-[0.3rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-2 px-3 text-base';
+const LBL_CLS = 'text-sm text-dim block mb-1';
 
 export default function AdminAbusePage() {
   const { showToast } = useToast();
@@ -153,9 +153,9 @@ export default function AdminAbusePage() {
       <div className="card mb-4">
         <div className="ch"><h3 className="m-0">Top Rate-Limited Phones (Today)</h3></div>
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[0.82rem]">
+          <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-ink text-left text-dim text-[0.74rem]">
+              <tr className="bg-ink text-left text-dim text-xs">
                 <th className={TH_CLS}>Phone</th>
                 <th className={TH_CLS}>Hits</th>
                 <th className={TH_CLS}>Action</th>
@@ -196,9 +196,9 @@ export default function AdminAbusePage() {
           <div className="cb"><SectionError message={blockedErr} onRetry={loadBlocked} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                <tr className="bg-ink text-left text-dim text-xs">
                   <th className={TH_CLS}>Phone</th>
                   <th className={TH_CLS}>Reason</th>
                   <th className={TH_CLS}>Blocked By</th>
@@ -225,17 +225,17 @@ export default function AdminAbusePage() {
                     <td className={`${TD_CLS} mono`}>{b.wa_phone}</td>
                     <td className={`${TD_CLS} max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap`} title={b.reason || ''}>{b.reason || '—'}</td>
                     <td className={TD_CLS}>
-                      <span className={`inline-block py-[0.1rem] px-[0.45rem] rounded-[10px] text-[0.7rem] font-semibold ${byCls}`}>{b.blocked_by === 'auto' ? 'Auto' : 'Admin'}</span>
+                      <span className={`inline-block py-0.5 px-2 rounded-r text-xs font-semibold ${byCls}`}>{b.blocked_by === 'auto' ? 'Auto' : 'Admin'}</span>
                     </td>
-                    <td className={`${TD_CLS} text-[0.75rem] text-dim`}>{fmtTime(b.blocked_at)}</td>
-                    <td className={`${TD_CLS} text-[0.75rem]`}>{b.expires_at ? fmtTime(b.expires_at) : <span className="text-red-600">Never</span>}</td>
+                    <td className={`${TD_CLS} text-xs text-dim`}>{fmtTime(b.blocked_at)}</td>
+                    <td className={`${TD_CLS} text-xs`}>{b.expires_at ? fmtTime(b.expires_at) : <span className="text-red-600">Never</span>}</td>
                     <td className={TD_CLS}>
-                      <span className={`inline-block py-[0.1rem] px-[0.45rem] rounded-[10px] text-[0.7rem] font-semibold ${stCls}`}>{b.is_active ? 'Active' : 'Expired'}</span>
+                      <span className={`inline-block py-0.5 px-2 rounded-r text-xs font-semibold ${stCls}`}>{b.is_active ? 'Active' : 'Expired'}</span>
                     </td>
                     <td className={TD_CLS}>
                       {confirmUnblock === b.id ? (
                         <>
-                          <button type="button" className="btn-g btn-sm bg-red-500 text-neutral-0 mr-[0.3rem]" onClick={() => doUnblock(b.id)} disabled={busyId === b.id}>Confirm</button>
+                          <button type="button" className="btn-g btn-sm bg-red-500 text-neutral-0 mr-1" onClick={() => doUnblock(b.id)} disabled={busyId === b.id}>Confirm</button>
                           <button type="button" className="btn-g btn-sm" onClick={() => setConfirmUnblock(null)}>Cancel</button>
                         </>
                       ) : (
@@ -258,14 +258,14 @@ export default function AdminAbusePage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-neutral-0 rounded-[10px] w-full max-w-[420px]"
+            className="bg-neutral-0 rounded-r w-full max-w-[420px]"
           >
-            <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
-              <h3 className="m-0 text-[0.95rem]">Block Phone Number</h3>
+            <div className="flex items-center justify-between py-3 px-4 border-b border-rim">
+              <h3 className="m-0 text-md">Block Phone Number</h3>
               <button type="button" className="btn-g btn-sm" onClick={closeModal}>✕</button>
             </div>
             <div className="p-4">
-              <div className="mb-[0.8rem]">
+              <div className="mb-3">
                 <label className={LBL_CLS}>WhatsApp Phone Number</label>
                 <input
                   value={fPhone}
@@ -273,9 +273,9 @@ export default function AdminAbusePage() {
                   placeholder="919876543210"
                   className={`${INPUT_CLS} w-full`}
                 />
-                <span className="text-[0.7rem] text-dim">Country code + number, no + prefix</span>
+                <span className="text-xs text-dim">Country code + number, no + prefix</span>
               </div>
-              <div className="mb-[0.8rem]">
+              <div className="mb-3">
                 <label className={LBL_CLS}>Reason</label>
                 <input
                   value={fReason}
@@ -297,7 +297,7 @@ export default function AdminAbusePage() {
                 type="button"
                 onClick={submitBlock}
                 disabled={submitting}
-                className="w-full bg-red-500 text-neutral-0 border-0 rounded-md py-[0.55rem] text-[0.88rem] font-semibold cursor-pointer"
+                className="w-full bg-red-500 text-neutral-0 border-0 rounded-md py-2 text-base font-semibold cursor-pointer"
               >{submitting ? 'Blocking…' : 'Block Phone'}</button>
             </div>
           </div>

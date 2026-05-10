@@ -186,7 +186,7 @@ export default function WalletSection() {
   };
 
   return (
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch justify-between">
         <h3>Wallet</h3>
         <button type="button" className="btn-p btn-sm" onClick={() => setShowTopup(true)}>
@@ -199,20 +199,20 @@ export default function WalletSection() {
         ) : (
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
-              <div className="text-[0.75rem] text-dim mb-[0.2rem]">Current Balance</div>
-              <div id="wlt-balance" className={`text-[1.5rem] font-bold ${balanceColorClass(bal, threshold)}`}>
+              <div className="text-xs text-dim mb-1">Current Balance</div>
+              <div id="wlt-balance" className={`text-2xl font-bold ${balanceColorClass(bal, threshold)}`}>
                 {walletQ.loading && !walletQ.data ? '…' : `₹${bal.toFixed(2)}`}
               </div>
             </div>
             <div>
-              <div className="text-[0.75rem] text-dim mb-[0.2rem]">This Month&apos;s Spend</div>
-              <div id="wlt-monthly" className="text-[1.5rem] font-bold">
+              <div className="text-xs text-dim mb-1">This Month&apos;s Spend</div>
+              <div id="wlt-monthly" className="text-2xl font-bold">
                 {walletQ.loading && !walletQ.data ? '…' : `₹${monthly.toFixed(2)}`}
               </div>
             </div>
             <div>
-              <div className="text-[0.75rem] text-dim mb-[0.2rem]">Status</div>
-              <div id="wlt-status" className={`text-[1.1rem] font-semibold ${active ? 'text-wa' : 'text-red'}`}>
+              <div className="text-xs text-dim mb-1">Status</div>
+              <div id="wlt-status" className={`text-lg font-semibold ${active ? 'text-wa' : 'text-red'}`}>
                 {walletQ.loading && !walletQ.data ? '…' : active ? 'Active' : 'Suspended'}
               </div>
             </div>
@@ -220,33 +220,33 @@ export default function WalletSection() {
         )}
 
         {!walletQ.error && (
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-[0.6rem] p-3 bg-ink2 border border-rim rounded-lg mb-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2.5 p-3 bg-ink2 border border-rim rounded-lg mb-4">
             <div>
-              <div className="text-[0.7rem] text-dim mb-[0.15rem]">Earned this month</div>
-              <div className="text-[1.05rem] font-bold text-wa">
+              <div className="text-xs text-dim mb-0.5">Earned this month</div>
+              <div className="text-lg font-bold text-wa">
                 ₹{monthEarnings.toFixed(2)}
               </div>
             </div>
             <div>
-              <div className="text-[0.7rem] text-dim mb-[0.15rem]">Spent on messages</div>
-              <div className="text-[1.05rem] font-bold">
+              <div className="text-xs text-dim mb-0.5">Spent on messages</div>
+              <div className="text-lg font-bold">
                 ₹{monthMessages.toFixed(2)}
               </div>
             </div>
             <div>
-              <div className="text-[0.7rem] text-dim mb-[0.15rem]">Campaign charges</div>
-              <div className="text-[1.05rem] font-bold">
+              <div className="text-xs text-dim mb-0.5">Campaign charges</div>
+              <div className="text-lg font-bold">
                 ₹{monthCampaigns.toFixed(2)}
               </div>
             </div>
             <div>
-              <div className="text-[0.7rem] text-dim mb-[0.15rem]">Referral commissions</div>
-              <div className="text-[1.05rem] font-bold">
+              <div className="text-xs text-dim mb-0.5">Referral commissions</div>
+              <div className="text-lg font-bold">
                 ₹{monthReferrals.toFixed(2)}
               </div>
             </div>
-            <div className="col-span-full border-t border-rim pt-[0.55rem]">
-              <div className="text-[0.7rem] text-dim mb-[0.15rem]">Net balance</div>
+            <div className="col-span-full border-t border-rim pt-2">
+              <div className="text-xs text-dim mb-0.5">Net balance</div>
               <div className={`text-[1.4rem] font-extrabold ${balanceColorClass(bal, threshold)}`}>
                 ₹{bal.toFixed(2)}
               </div>
@@ -257,10 +257,10 @@ export default function WalletSection() {
         {showTopup && (
           <div
             id="wlt-topup-form"
-            className="p-[0.8rem] bg-ink2 border border-bdr rounded-lg mb-4"
+            className="p-3 bg-ink2 border border-bdr rounded-lg mb-4"
           >
-            <div className="text-[0.82rem] font-semibold mb-2">Quick Top-Up</div>
-            <div className="flex gap-[0.4rem] flex-wrap mb-2">
+            <div className="text-sm font-semibold mb-2">Quick Top-Up</div>
+            <div className="flex gap-1.5 flex-wrap mb-2">
               {TOPUP_PRESETS.map((amt) => {
                 const selected = customAmt === String(amt);
                 return (
@@ -277,7 +277,7 @@ export default function WalletSection() {
                 );
               })}
             </div>
-            <div className="flex gap-[0.4rem] items-center">
+            <div className="flex gap-1.5 items-center">
               <input
                 id="wlt-custom-amt"
                 type="number"
@@ -286,7 +286,7 @@ export default function WalletSection() {
                 max={10000}
                 value={customAmt}
                 onChange={(e) => setCustomAmt(e.target.value)}
-                className="w-[120px] py-[0.35rem] px-2 border border-rim rounded-md text-[0.82rem]"
+                className="w-[120px] py-1.5 px-2 border border-rim rounded-md text-sm"
               />
               <button
                 type="button"
@@ -308,7 +308,7 @@ export default function WalletSection() {
           </div>
         )}
 
-        <div className="text-[0.82rem] font-semibold mb-[0.4rem]">Recent Transactions</div>
+        <div className="text-sm font-semibold mb-1.5">Recent Transactions</div>
         <div className="tbl">
           <table>
             <thead>
@@ -336,21 +336,21 @@ export default function WalletSection() {
                   const amt = Number(t.amount_rs) || 0;
                   return (
                     <tr key={t.id || t._id || idx} className="border-b border-rim">
-                      <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem]">
+                      <td className="py-2 px-3 text-sm">
                         {formatTxnDate(t.created_at)}
                       </td>
-                      <td className="py-[0.45rem] px-[0.7rem] text-[0.8rem]">
+                      <td className="py-2 px-3 text-sm">
                         {TYPE_ICO[t.type || ''] || ''} {TYPE_LABEL[t.type || ''] || t.type}
                       </td>
-                      <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim max-w-[200px] truncate">
+                      <td className="py-2 px-3 text-sm text-dim max-w-[200px] truncate">
                         {t.description || '—'}
                       </td>
                       <td
-                        className={`py-[0.45rem] px-[0.7rem] font-semibold ${amt >= 0 ? 'text-wa' : 'text-red'}`}
+                        className={`py-2 px-3 font-semibold ${amt >= 0 ? 'text-wa' : 'text-red'}`}
                       >
                         {amt >= 0 ? '+' : ''}₹{Math.abs(amt).toFixed(2)}
                       </td>
-                      <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem]">
+                      <td className="py-2 px-3 text-sm">
                         ₹{parseFloat(String(t.balance_after_rs ?? '0')).toFixed(2)}
                       </td>
                     </tr>

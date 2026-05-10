@@ -48,7 +48,7 @@ export default function MenuPage() {
 
   return (
     <div>
-      <div className="flex gap-[0.35rem] flex-wrap mb-[1.1rem] py-2 border-b border-rim">
+      <div className="flex gap-1.5 flex-wrap mb-4 py-2 border-b border-rim">
         {SECTIONS.map(([v, l]) => (
           <button
             key={v}

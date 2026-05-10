@@ -2,13 +2,13 @@ import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '@/store/authStore';
+import { useStaff } from '@/state/StaffContext';
 import BranchSelector from '@/components/BranchSelector';
 import { colors, space, text, radius, fontWeight } from '@/theme';
 
 function LogoutButton() {
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout } = useStaff();
   return (
     <Pressable
       onPress={async () => {

@@ -102,10 +102,10 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.3rem] px-[0.6rem] text-[0.78rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1 px-2.5 text-sm';
 
 export default function AdminSettlementsPage() {
   const { showToast } = useToast();
@@ -245,10 +245,10 @@ export default function AdminSettlementsPage() {
         </>
       )}
 
-      <div className="mb-4 flex gap-[0.8rem] items-center flex-wrap">
+      <div className="mb-4 flex gap-3 items-center flex-wrap">
         <button
           type="button"
-          className="btn-p btn-sm py-2 px-[1.2rem]"
+          className="btn-p btn-sm py-2 px-5"
           onClick={doRun}
           disabled={running}
         >
@@ -257,7 +257,7 @@ export default function AdminSettlementsPage() {
         {confirmRun && (
           <button type="button" className="btn-g btn-sm" onClick={() => setConfirmRun(false)}>Cancel</button>
         )}
-        <span className="text-[0.78rem] text-dim">
+        <span className="text-sm text-dim">
           Auto-runs every Monday 9:00 AM IST. Use this button for manual runs.
         </span>
       </div>
@@ -265,7 +265,7 @@ export default function AdminSettlementsPage() {
       <div className="card">
         <div className="ch justify-between flex-wrap gap-2">
           <h3 className="m-0">Settlement History</h3>
-          <span className="text-dim text-[0.75rem]">{total} total</span>
+          <span className="text-dim text-xs">{total} total</span>
           <div className="ml-auto flex gap-2 flex-wrap">
             <input
               value={restaurantId}
@@ -291,7 +291,7 @@ export default function AdminSettlementsPage() {
           <div className="cb"><SectionError message={listErr} onRetry={loadList} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={TH_CLS}>Restaurant</th>
@@ -322,11 +322,11 @@ export default function AdminSettlementsPage() {
                     <tr key={s.id} className="border-b border-rim">
                       <td className={TD_CLS}>
                         <strong>{s.business_name}</strong>
-                        <div className="text-[0.72rem] text-dim mono">
+                        <div className="text-xs text-dim mono">
                           {String(s.restaurant_id || '').slice(0, 8)}
                         </div>
                       </td>
-                      <td className={`${TD_CLS} text-[0.78rem] whitespace-nowrap`}>
+                      <td className={`${TD_CLS} text-sm whitespace-nowrap`}>
                         {fmtDate(s.period_start)}<br />→ {fmtDate(s.period_end)}
                       </td>
                       <td className={`${TD_CLS} text-center`}>{s.orders_count}</td>
@@ -342,7 +342,7 @@ export default function AdminSettlementsPage() {
                         {metaCount > 0 ? (
                           <button
                             type="button"
-                            className="btn-g btn-sm py-[0.2rem] px-2 text-[0.75rem] text-red-600"
+                            className="btn-g btn-sm py-1 px-2 text-xs text-red-600"
                             onClick={() => openBreakdown(s.id)}
                             title={`View ${metaCount} messages`}
                           >
@@ -354,18 +354,18 @@ export default function AdminSettlementsPage() {
                       <td className={TD_CLS}>
                         {/* Dynamic: bg/color come from a runtime palette map keyed by payout_status. */}
                         <span
-                          className="inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] font-semibold text-[0.72rem] capitalize"
+                          className="inline-block py-0.5 px-2 rounded-r font-semibold text-xs capitalize"
                           style={{ background: badge.bg, color: badge.color }}
                         >{badge.label}</span>
                       </td>
-                      <td className={`${TD_CLS} text-[0.72rem] text-dim mono`}>
+                      <td className={`${TD_CLS} text-xs text-dim mono`}>
                         {s.rp_payout_id ? `${s.rp_payout_id.slice(0, 14)}…` : '—'}
                       </td>
-                      <td className={`${TD_CLS} text-dim text-[0.75rem]`}>{fmtTime(s.created_at)}</td>
+                      <td className={`${TD_CLS} text-dim text-xs`}>{fmtTime(s.created_at)}</td>
                       <td className={TD_CLS}>
                         <button
                           type="button"
-                          className="btn-g btn-sm py-[0.2rem] px-2 text-[0.75rem]"
+                          className="btn-g btn-sm py-1 px-2 text-xs"
                           onClick={() => doDownload(s.id)}
                           title="Download Excel"
                         >
@@ -380,7 +380,7 @@ export default function AdminSettlementsPage() {
           </div>
         )}
         {total > 0 && (
-          <div className="cb flex gap-[0.6rem] items-center justify-center">
+          <div className="cb flex gap-2.5 items-center justify-center">
             <button
               type="button"
               className="btn-g btn-sm"
@@ -389,7 +389,7 @@ export default function AdminSettlementsPage() {
             >
               ← Prev
             </button>
-            <span className="text-[0.8rem] text-dim">Page {page} / {pages}</span>
+            <span className="text-sm text-dim">Page {page} / {pages}</span>
             <button
               type="button"
               className="btn-g btn-sm"
@@ -398,7 +398,7 @@ export default function AdminSettlementsPage() {
             >
               Next →
             </button>
-            <span className="text-[0.75rem] text-dim ml-[0.6rem]">
+            <span className="text-xs text-dim ml-2.5">
               {total} settlements
             </span>
           </div>
@@ -408,22 +408,22 @@ export default function AdminSettlementsPage() {
       {breakdown && (
         <div
           onClick={closeBreakdown}
-          className="fixed inset-0 bg-black/55 flex items-center justify-center z-1000 p-[1.4rem]"
+          className="fixed inset-0 bg-black/55 flex items-center justify-center z-1000 p-6"
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-neutral-0 rounded-[10px] w-[min(960px,100%)] max-h-[86vh] overflow-auto py-[1.2rem] px-[1.4rem] relative"
+            className="bg-neutral-0 rounded-r w-[min(960px,100%)] max-h-[86vh] overflow-auto py-5 px-6 relative"
           >
             <button
               type="button"
               onClick={closeBreakdown}
-              className="absolute top-[0.6rem] right-[0.8rem] bg-transparent border-0 text-[1.4rem] cursor-pointer text-dim"
+              className="absolute top-2.5 right-3 bg-transparent border-0 text-[1.4rem] cursor-pointer text-dim"
               aria-label="Close"
             >
               ×
             </button>
-            <h2 className="m-0 mb-[0.3rem]">Meta Messaging Charges</h2>
-            <div className="text-dim text-[0.8rem] mb-[0.8rem]">
+            <h2 className="m-0 mb-1">Meta Messaging Charges</h2>
+            <div className="text-dim text-sm mb-3">
               Settlement <span className="mono">{breakdown.id}</span>
               {breakdown.data && (
                 <>
@@ -443,7 +443,7 @@ export default function AdminSettlementsPage() {
                 No marketing messages deducted from this settlement.
               </div>
             ) : (
-              <table className="w-full text-[0.8rem] border-collapse">
+              <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-ink">
                     <th className={TH_CLS}>Restaurant</th>
@@ -459,10 +459,10 @@ export default function AdminSettlementsPage() {
                 <tbody>
                   {(breakdown.data?.items || []).map((m, i) => (
                     <tr key={m.id || i} className="border-b border-rim">
-                      <td className={`${TD_CLS} text-[0.72rem] text-dim mono`}>
+                      <td className={`${TD_CLS} text-xs text-dim mono`}>
                         {String(m.restaurant_id || '').slice(0, 8) || '—'}
                       </td>
-                      <td className={`${TD_CLS} text-[0.72rem] text-dim mono`}>
+                      <td className={`${TD_CLS} text-xs text-dim mono`}>
                         {m.waba_id || '—'}
                       </td>
                       <td className={TD_CLS}>{m.customer_name || '—'}</td>
@@ -470,7 +470,7 @@ export default function AdminSettlementsPage() {
                       <td className={TD_CLS}>{m.message_type || '—'}</td>
                       <td className={TD_CLS}>{m.category || '—'}</td>
                       <td className={TD_CLS}>₹{Number(m.cost || 0).toFixed(2)}</td>
-                      <td className={`${TD_CLS} text-dim text-[0.75rem]`}>{fmtTime(m.sent_at)}</td>
+                      <td className={`${TD_CLS} text-dim text-xs`}>{fmtTime(m.sent_at)}</td>
                     </tr>
                   ))}
                 </tbody>

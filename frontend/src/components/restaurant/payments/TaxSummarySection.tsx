@@ -61,7 +61,7 @@ function GstPanel({ rows, loading }: GstPanelProps) {
         </thead>
         <tbody id="fin-gst-body">
           {loading ? (
-            <tr><td colSpan={6} className="text-center p-[1.2rem] text-dim">Loading…</td></tr>
+            <tr><td colSpan={6} className="text-center p-5 text-dim">Loading…</td></tr>
           ) : !rows.length ? (
             <tr><td colSpan={6}>
               <div className="empty p-6">
@@ -72,7 +72,7 @@ function GstPanel({ rows, loading }: GstPanelProps) {
           ) : (
             rows.map((m, idx) => (
               <tr key={m.month || idx}>
-                <td className="font-semibold text-[0.8rem]">{m.month}</td>
+                <td className="font-semibold text-sm">{m.month}</td>
                 <td>{formatINR(m.food_gst)}</td>
                 <td>{formatINR(m.packaging_gst)}</td>
                 <td>{formatINR(m.delivery_gst)}</td>
@@ -105,7 +105,7 @@ function TdsPanel({ rows, loading }: TdsPanelProps) {
         </thead>
         <tbody id="fin-tds-body">
           {loading ? (
-            <tr><td colSpan={6} className="text-center p-[1.2rem] text-dim">Loading…</td></tr>
+            <tr><td colSpan={6} className="text-center p-5 text-dim">Loading…</td></tr>
           ) : !rows.length ? (
             <tr><td colSpan={6}>
               <div className="empty p-6">
@@ -116,8 +116,8 @@ function TdsPanel({ rows, loading }: TdsPanelProps) {
           ) : (
             rows.map((t, idx) => (
               <tr key={t.settlement_id || idx}>
-                <td className="font-mono text-[0.75rem]">{t.settlement_id || '—'}</td>
-                <td className="text-[0.8rem]">{t.period || ''}</td>
+                <td className="font-mono text-xs">{t.settlement_id || '—'}</td>
+                <td className="text-sm">{t.period || ''}</td>
                 <td>{formatINR(t.gross)}</td>
                 <td>{t.tds_rate || '1%'}</td>
                 <td><strong>{formatINR(t.tds_amount)}</strong></td>
@@ -132,7 +132,7 @@ function TdsPanel({ rows, loading }: TdsPanelProps) {
                       📄 Download
                     </a>
                   ) : (
-                    <span className="text-mute text-[0.75rem]">Pending</span>
+                    <span className="text-mute text-xs">Pending</span>
                   )}
                 </td>
               </tr>
@@ -149,26 +149,26 @@ interface InfoPanelProps { data: TaxSummary | null; loading: boolean }
 function InfoPanel({ data, loading }: InfoPanelProps) {
   return (
     <div className="cb">
-      <div className="grid grid-cols-2 gap-4 mb-[1.2rem]">
-        <div className="bg-ink4 border border-rim rounded-lg py-4 px-[1.2rem]">
-          <div className="text-[0.72rem] font-semibold text-dim uppercase tracking-wider mb-2">
+      <div className="grid grid-cols-2 gap-4 mb-5">
+        <div className="bg-ink4 border border-rim rounded-lg py-4 px-5">
+          <div className="text-xs font-semibold text-dim uppercase tracking-wider mb-2">
             GSTIN on File
           </div>
-          <div id="fin-tax-gstin" className="text-[1.05rem] font-bold font-mono text-tx">
+          <div id="fin-tax-gstin" className="text-lg font-bold font-mono text-tx">
             {loading ? '…' : (data?.gstin || '—')}
           </div>
-          <div id="fin-tax-gst-status" className="text-[0.72rem] text-dim mt-[0.2rem]">
+          <div id="fin-tax-gst-status" className="text-xs text-dim mt-1">
             {data?.gstin_status ? `Status: ${data.gstin_status}` : ''}
           </div>
         </div>
-        <div className="bg-ink4 border border-rim rounded-lg py-4 px-[1.2rem]">
-          <div className="text-[0.72rem] font-semibold text-dim uppercase tracking-wider mb-2">
+        <div className="bg-ink4 border border-rim rounded-lg py-4 px-5">
+          <div className="text-xs font-semibold text-dim uppercase tracking-wider mb-2">
             PAN on File
           </div>
-          <div id="fin-tax-pan" className="text-[1.05rem] font-bold font-mono text-tx">
+          <div id="fin-tax-pan" className="text-lg font-bold font-mono text-tx">
             {loading ? '…' : (data?.pan || '—')}
           </div>
-          <div id="fin-tax-pan-status" className="text-[0.72rem] text-dim mt-[0.2rem]">
+          <div id="fin-tax-pan-status" className="text-xs text-dim mt-1">
             {data?.pan_status ? `Status: ${data.pan_status}` : ''}
           </div>
         </div>
@@ -190,7 +190,7 @@ export default function TaxSummarySection() {
   return (
     <div className="card">
       <div className="ch"><h3>Tax Compliance</h3></div>
-      <div className="py-[0.7rem] px-[1.2rem] border-b border-rim flex gap-[0.3rem]">
+      <div className="py-3 px-5 border-b border-rim flex gap-1">
         {TABS.map(([v, l]) => (
           <button
             key={v}

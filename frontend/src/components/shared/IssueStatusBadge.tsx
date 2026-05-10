@@ -34,17 +34,17 @@ export default function IssueStatusBadge({ issueId, raisedAt }: IssueStatusBadge
     <div
       role="status"
       aria-label="Delivery dispute raised"
-      className="mt-[0.6rem] py-[0.55rem] px-3 bg-amber-100 border border-amber-200 rounded-lg flex items-center gap-[0.6rem] flex-wrap text-[0.8rem] text-amber-800"
+      className="mt-2.5 py-2 px-3 bg-amber-100 border border-amber-200 rounded-lg flex items-center gap-2.5 flex-wrap text-sm text-amber-800"
     >
       <span className="font-bold">⚠ Dispute Raised</span>
       <span
-        className="mono text-[0.72rem] text-amber-800 opacity-[0.85]"
+        className="mono text-xs text-amber-800 opacity-[0.85]"
         title="Prorouting issue id"
       >
         {issueId}
       </span>
       {raisedAt && (
-        <span className="ml-auto text-[0.72rem] text-dim">
+        <span className="ml-auto text-xs text-dim">
           {fmt(raisedAt)}
         </span>
       )}

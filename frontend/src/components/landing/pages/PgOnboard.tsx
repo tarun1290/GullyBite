@@ -72,7 +72,7 @@ export default function PgOnboard({ onLogout, onAdvance, onBrandNameChange }: Pg
         <div className="logo"><div className="logo-ring">🍜</div>GullyBite</div>
         <button
           type="button"
-          className="btn-outline text-[0.76rem] py-[0.42rem] px-[0.95rem]"
+          className="btn-outline text-xs py-1.5 px-4"
           onClick={onLogout}
         >
           Sign out

@@ -112,7 +112,7 @@ function BdTotal({ label, value, colorClass = 'text-tx' }: BdTotalProps) {
   );
 }
 
-const DASH: ReactNode = <div className="border-t border-dashed border-rim my-[0.3rem]" />;
+const DASH: ReactNode = <div className="border-t border-dashed border-rim my-1" />;
 
 interface MetaBreakdownProps { data: MetaData | null }
 
@@ -122,34 +122,34 @@ function MetaBreakdown({ data }: MetaBreakdownProps) {
   const items = data.items || [];
   return (
     <div className="mb-4">
-      <details className="bg-ink4 rounded-lg py-[0.8rem] px-4">
+      <details className="bg-ink4 rounded-lg py-3 px-4">
         <summary className="cursor-pointer flex justify-between items-center gap-4">
           <span className="font-bold text-tx">Meta Messaging Charges</span>
-          <span className="text-[0.8rem] text-dim">
+          <span className="text-sm text-dim">
             {data.meta_message_count} message{data.meta_message_count === 1 ? '' : 's'}
             {' · '}
             <span className="text-red">− ₹{totalRs}</span>
           </span>
         </summary>
-        <div className="max-h-[220px] overflow-auto mt-[0.6rem] border border-rim rounded-md">
-          <table className="w-full text-[0.78rem]">
+        <div className="max-h-[220px] overflow-auto mt-2.5 border border-rim rounded-md">
+          <table className="w-full text-sm">
             <thead>
               <tr>
-                <th className="py-[0.4rem] px-[0.6rem] text-left">Customer</th>
-                <th className="py-[0.4rem] px-[0.6rem] text-left">Phone</th>
-                <th className="py-[0.4rem] px-[0.6rem] text-left">Type</th>
-                <th className="py-[0.4rem] px-[0.6rem] text-left">Cost</th>
-                <th className="py-[0.4rem] px-[0.6rem] text-left">Time</th>
+                <th className="py-1.5 px-2.5 text-left">Customer</th>
+                <th className="py-1.5 px-2.5 text-left">Phone</th>
+                <th className="py-1.5 px-2.5 text-left">Type</th>
+                <th className="py-1.5 px-2.5 text-left">Cost</th>
+                <th className="py-1.5 px-2.5 text-left">Time</th>
               </tr>
             </thead>
             <tbody>
               {items.map((m, idx) => (
                 <tr key={m.id || idx}>
-                  <td className="py-[0.4rem] px-[0.6rem]">{m.customer_name || '—'}</td>
-                  <td className="py-[0.4rem] px-[0.6rem] font-mono text-dim">{m.phone || '—'}</td>
-                  <td className="py-[0.4rem] px-[0.6rem]">{m.message_type || '—'}</td>
-                  <td className="py-[0.4rem] px-[0.6rem]">₹{Number(m.cost || 0).toFixed(2)}</td>
-                  <td className="py-[0.4rem] px-[0.6rem] text-dim text-[0.75rem]">
+                  <td className="py-1.5 px-2.5">{m.customer_name || '—'}</td>
+                  <td className="py-1.5 px-2.5 font-mono text-dim">{m.phone || '—'}</td>
+                  <td className="py-1.5 px-2.5">{m.message_type || '—'}</td>
+                  <td className="py-1.5 px-2.5">₹{Number(m.cost || 0).toFixed(2)}</td>
+                  <td className="py-1.5 px-2.5 text-dim text-xs">
                     {m.sent_at ? new Date(m.sent_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
                   </td>
                 </tr>
@@ -280,11 +280,11 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
       className="fixed inset-0 bg-[rgba(15,23,42,0.55)] backdrop-blur-xs z-200 flex items-center justify-center p-6"
     >
       <div className="bg-ink2 rounded-xl max-w-[720px] w-full max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="py-4 px-[1.3rem] border-b border-rim flex items-center justify-between">
-          <span className="font-bold text-[0.95rem] text-tx">Settlement Detail</span>
+        <div className="py-4 px-5 border-b border-rim flex items-center justify-between">
+          <span className="font-bold text-md text-tx">Settlement Detail</span>
           <button type="button" className="btn-g btn-sm" onClick={onClose}>✕</button>
         </div>
-        <div className="p-[1.3rem] max-h-[75vh] overflow-y-auto text-[0.84rem]">
+        <div className="p-5 max-h-[75vh] overflow-y-auto text-sm">
           {error ? (
             <div className="text-center p-8 text-red">
               Error: {error}
@@ -293,25 +293,25 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
             <div className="text-center p-8 text-dim">Loading…</div>
           ) : (
             <>
-              <div className="flex justify-between items-start mb-4 flex-wrap gap-[0.6rem]">
+              <div className="flex justify-between items-start mb-4 flex-wrap gap-2.5">
                 <div>
-                  <div className="text-[0.72rem] text-dim mb-[0.2rem]">Period</div>
+                  <div className="text-xs text-dim mb-1">Period</div>
                   <div className="font-bold">{periodDisplay(settlementDoc.period_start)} → {periodDisplay(settlementDoc.period_end)}</div>
                 </div>
                 <div className="text-right">
-                  <span className={`badge ${statusCls} text-[0.75rem]`}>{settlementDoc.payout_status || 'N/A'}</span>
+                  <span className={`badge ${statusCls} text-xs`}>{settlementDoc.payout_status || 'N/A'}</span>
                   {settlementDoc.payout_utr && (
-                    <div className="text-[0.72rem] text-dim mt-[0.2rem]">
+                    <div className="text-xs text-dim mt-1">
                       UTR: <span className="font-mono">{settlementDoc.payout_utr}</span>
                     </div>
                   )}
                   {paidAtDisplay && (
-                    <div className="text-[0.72rem] text-dim">Paid: {paidAtDisplay}</div>
+                    <div className="text-xs text-dim">Paid: {paidAtDisplay}</div>
                   )}
                 </div>
               </div>
 
-              <div className="font-mono text-[0.78rem] leading-[1.9] bg-ink4 rounded-lg py-4 px-[1.2rem] mb-4">
+              <div className="font-mono text-sm leading-[1.9] bg-ink4 rounded-lg py-4 px-5 mb-4">
                 <BdLine label="Food Revenue" value={settlementDoc.food_revenue_rs} sign="" />
                 <BdLine label="Food GST" value={settlementDoc.food_gst_collected_rs} sign="+" />
                 <BdLine label="Packaging" value={settlementDoc.packaging_collected_rs} sign="+" />
@@ -336,15 +336,15 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
 
               <MetaBreakdown data={meta} />
 
-              <div className="flex gap-2 items-center flex-wrap mb-[0.4rem]">
-                <span className="text-[0.72rem] font-bold tracking-[0.08em] uppercase text-mute">
+              <div className="flex gap-2 items-center flex-wrap mb-1.5">
+                <span className="text-xs font-bold tracking-[0.08em] uppercase text-mute">
                   Orders in this Settlement{detail.orders ? ` (${detail.orders.length})` : ''}
                 </span>
                 <select
                   id="fin-set-branch"
                   value={selectedBranchId ?? ''}
                   onChange={(e) => setSelectedBranchId(e.target.value || null)}
-                  className="ml-auto text-[0.75rem] py-[0.28rem] px-2 border border-rim rounded-md"
+                  className="ml-auto text-xs py-1 px-2 border border-rim rounded-md"
                 >
                   <option value="">All Branches</option>
                   {branches.map((b) => (
@@ -359,7 +359,7 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
                 const count = detail.orders.length;
                 const revenueRs = detail.orders.reduce((sum, o) => sum + (Number(o.total_rs) || 0), 0);
                 return (
-                  <div className="text-[0.78rem] text-dim mb-2">
+                  <div className="text-sm text-dim mb-2">
                     {count} order{count === 1 ? '' : 's'} · {formatINR(revenueRs)} revenue from {branchName} in this settlement.
                   </div>
                 );
@@ -379,10 +379,10 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
                     <tbody>
                       {detail.orders.map((o, idx) => (
                         <tr key={o._id || o.order_number || idx}>
-                          <td className="font-mono text-[0.75rem]">
+                          <td className="font-mono text-xs">
                             {o.display_order_id || `#${(o._id || '').slice(-6) || '????'}`}
                           </td>
-                          <td className="text-[0.78rem]">{periodDisplay(o.delivered_at || o.created_at)}</td>
+                          <td className="text-sm">{periodDisplay(o.delivered_at || o.created_at)}</td>
                           <td>{formatINR(o.total_rs)}</td>
                           <td><span className="badge bg">{o.status || 'Delivered'}</span></td>
                         </tr>
@@ -391,14 +391,14 @@ export default function SettlementDetailModal({ settlementId, onClose }: Settlem
                   </table>
                 </div>
               ) : (
-                <div className="text-[0.78rem] text-dim py-[0.6rem] px-[0.2rem]">
+                <div className="text-sm text-dim py-2.5 px-1">
                   No orders {selectedBranchId ? 'from this branch' : ''} in this settlement.
                 </div>
               )}
             </>
           )}
         </div>
-        <div className="py-[0.8rem] px-[1.3rem] border-t border-rim flex justify-end gap-2">
+        <div className="py-3 px-5 border-t border-rim flex justify-end gap-2">
           {detail && (
             <button type="button" className="btn-p" disabled={downloading} onClick={handleDownload}>
               {downloading ? 'Preparing…' : '📥 Download Excel'}

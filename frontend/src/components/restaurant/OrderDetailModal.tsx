@@ -102,13 +102,13 @@ interface ItemsTableProps {
 function ItemsTable({ items }: ItemsTableProps) {
   if (!items?.length) {
     return (
-      <div className="mt-[0.3rem] py-[0.5rem] text-[0.78rem] text-dim italic">
+      <div className="mt-1 py-2 text-sm text-dim italic">
         No items recorded.
       </div>
     );
   }
   return (
-    <table className="w-full border-collapse mt-[0.3rem]">
+    <table className="w-full border-collapse mt-1">
       <tbody>
         {items.map((i, idx) => {
           // Field-name flexibility: routes/restaurant.js GET /orders/:id
@@ -125,7 +125,7 @@ function ItemsTable({ items }: ItemsTableProps) {
             : (Number(ix.price_rs ?? 0) * qty);
           return (
             <tr key={ix.id || idx}>
-              <td className="py-[0.35rem]">{name}</td>
+              <td className="py-1.5">{name}</td>
               <td className="text-center">×{qty}</td>
               <td className="text-right">{Number.isFinite(lineTotal) ? `₹${f(lineTotal)}` : '—'}</td>
             </tr>
@@ -179,14 +179,14 @@ function ChargeBreakdown({ order }: ChargeBreakdownProps) {
   rows.push(
     <tr key="sep">
       <td colSpan={2}>
-        <hr className="border-0 border-t border-rim my-[0.3rem]" />
+        <hr className="border-0 border-t border-rim my-1" />
       </td>
     </tr>
   );
   rows.push(<DeliveryDetailLine key="tot" label="Customer Total" value={order.total_rs} bold />);
 
   return (
-    <table className="w-full border-collapse mt-[0.3rem]">
+    <table className="w-full border-collapse mt-1">
       <tbody>{rows}</tbody>
     </table>
   );
@@ -201,7 +201,7 @@ function DynamicPricingNote({ order }: ChargeBreakdownProps) {
   if ((bd.effectiveMultiplier ?? 0) > 1.0) parts.push(`${bd.effectiveMultiplier}x${bd.reason ? ' (' + bd.reason + ')' : ''}`);
   if (bd.capped) parts.push('Capped');
   return (
-    <div className="mt-[0.4rem] text-[0.72rem] text-dim">
+    <div className="mt-1.5 text-xs text-dim">
       ⚡ {parts.join(' · ')}
     </div>
   );
@@ -211,7 +211,7 @@ function SettlementNote({ order }: ChargeBreakdownProps) {
   if (!(parseFloat(String(order.restaurant_delivery_rs || 0)) > 0)) return null;
   const deduction = parseFloat(String(order.restaurant_delivery_rs || 0)) + parseFloat(String(order.restaurant_delivery_gst_rs || 0));
   return (
-    <div className="mt-[0.8rem] py-[0.65rem] px-[0.9rem] bg-[#fef9ec] border border-yellow-200 rounded-lg text-[0.78rem] text-amber-900">
+    <div className="mt-3 py-2.5 px-3.5 bg-[#fef9ec] border border-yellow-200 rounded-lg text-sm text-amber-900">
       Settlement deduction: <strong>₹{deduction.toFixed(2)}</strong> (restaurant delivery share + GST)
     </div>
   );
@@ -236,11 +236,11 @@ function DeliverySection({ orderId, delivery, deliveryFeeTotalRs, onDispatch, on
   const color = DELIVERY_STATUS_COLORS[status] || '#6b7280';
 
   return (
-    <div className="mt-3 py-[0.65rem] px-[0.9rem] bg-ink2 border border-bdr rounded-lg">
-      <div className="text-[0.75rem] text-dim mb-[0.4rem]">🚴 Delivery</div>
-      <div className="flex gap-[0.8rem] items-center flex-wrap text-[0.82rem]">
+    <div className="mt-3 py-2.5 px-3.5 bg-ink2 border border-bdr rounded-lg">
+      <div className="text-xs text-dim mb-1.5">🚴 Delivery</div>
+      <div className="flex gap-3 items-center flex-wrap text-sm">
         <span
-          className="py-[0.15rem] px-2 rounded-sm font-semibold text-[0.75rem]"
+          className="py-0.5 px-2 rounded-sm font-semibold text-xs"
           // bg/colour come from DELIVERY_STATUS_COLORS by delivery.status
           // at runtime (delivered/picked_up/.../cancelled — 6 hex). The
           // bg is the same hex with `22` alpha appended for a tint.
@@ -427,15 +427,15 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
       onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose?.(); }}
       className="fixed inset-0 bg-[rgba(15,23,42,0.55)] backdrop-blur-xs z-200 flex items-center justify-center p-6"
     >
-      <div className="bg-white border border-rim rounded-[14px] w-full max-w-[520px] overflow-hidden shadow-default">
+      <div className="bg-white border border-rim rounded-2xl w-full max-w-[520px] overflow-hidden shadow-default">
         <div className="py-4 px-6 border-b border-rim flex items-center justify-between">
-          <span id="ord-modal-title" className="font-bold text-[0.95rem] text-tx">
+          <span id="ord-modal-title" className="font-bold text-md text-tx">
             {title}
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="bg-transparent border-0 text-dim text-[1.1rem] cursor-pointer leading-none"
+            className="bg-transparent border-0 text-dim text-lg cursor-pointer leading-none"
             aria-label="Close"
           >
             ✕
@@ -444,7 +444,7 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
 
         <div
           id="ord-modal-body"
-          className="p-6 max-h-[70vh] overflow-y-auto text-[0.84rem]"
+          className="p-6 max-h-[70vh] overflow-y-auto text-sm"
         >
           {loading && (
             <div className="text-center p-8 text-dim">Loading…</div>
@@ -457,17 +457,17 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
           )}
           {order && !loading && !error && (
             <>
-              <div className="mb-[0.8rem]">
-                <span className="text-[0.75rem] text-dim">Customer</span>
+              <div className="mb-3">
+                <span className="text-xs text-dim">Customer</span>
                 <div className="font-semibold">
                   {order.customer_name || '—'} · {customerSecondary}
                 </div>
                 {order.delivery_address ? (
-                  <div className="text-[0.75rem] text-dim mt-[0.2rem]">
+                  <div className="text-xs text-dim mt-1">
                     📍 {order.delivery_address}
                   </div>
                 ) : (order.delivery_lat && order.delivery_lng) ? (
-                  <div className="text-[0.75rem] mt-[0.2rem]">
+                  <div className="text-xs mt-1">
                     <a
                       href={`https://www.google.com/maps?q=${order.delivery_lat},${order.delivery_lng}`}
                       target="_blank"
@@ -480,13 +480,13 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
                 ) : null}
               </div>
 
-              <div className="mb-[0.8rem]">
-                <span className="text-[0.75rem] text-dim">Items</span>
+              <div className="mb-3">
+                <span className="text-xs text-dim">Items</span>
                 <ItemsTable items={order.items} />
               </div>
 
               <div>
-                <span className="text-[0.75rem] text-dim">Charge Breakdown</span>
+                <span className="text-xs text-dim">Charge Breakdown</span>
                 <ChargeBreakdown order={order} />
               </div>
 
@@ -507,30 +507,30 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
               )}
 
               {order.prorouting_state && (
-                <div className="mt-[0.6rem] border border-rim rounded-lg bg-ink2 overflow-hidden">
+                <div className="mt-2.5 border border-rim rounded-lg bg-ink2 overflow-hidden">
                   <button
                     type="button"
                     onClick={() => setTimelineOpen((v) => !v)}
                     aria-expanded={timelineOpen}
-                    className="w-full bg-none border-0 py-[0.55rem] px-[0.8rem] flex items-center gap-2 cursor-pointer text-[0.8rem] font-semibold text-tx"
+                    className="w-full bg-none border-0 py-2 px-3 flex items-center gap-2 cursor-pointer text-sm font-semibold text-tx"
                   >
                     <span
                       aria-hidden
-                      className={`inline-block transition-transform duration-150 ease-in-out text-[0.7rem] text-dim ${timelineOpen ? 'rotate-90' : 'rotate-0'}`}
+                      className={`inline-block transition-transform duration-150 ease-in-out text-xs text-dim ${timelineOpen ? 'rotate-90' : 'rotate-0'}`}
                     >
                       ▶
                     </span>
                     Delivery Timeline
                   </button>
                   {timelineOpen && (
-                    <div className="pt-[0.4rem] pr-[0.9rem] pb-[0.8rem] pl-[1.6rem]">
+                    <div className="pt-1.5 pr-3.5 pb-3 pl-6">
                       <DeliveryTimeline order={order} />
                     </div>
                   )}
                 </div>
               )}
 
-              <div className="mt-[0.6rem]">
+              <div className="mt-2.5">
                 <DeliveryProofPhotos
                   pickupProof={order.prorouting_pickup_proof}
                   deliveryProof={order.prorouting_delivery_proof}
@@ -543,10 +543,10 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
               />
 
               {order.status === 'DELIVERED' && !order.prorouting_issue_id && (
-                <div className="mt-[0.6rem]">
+                <div className="mt-2.5">
                   <button
                     type="button"
-                    className="btn-del btn-sm text-[0.78rem]"
+                    className="btn-del btn-sm text-sm"
                     onClick={handleReportFakeDelivery}
                     disabled={busy}
                   >
@@ -556,9 +556,9 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
               )}
 
               {confirmCancelDelivery && (
-                <div className="mt-[0.6rem] py-[0.65rem] px-[0.9rem] bg-red-50 border border-red-200 rounded-lg text-[0.8rem] text-red-800 flex items-center justify-between gap-[0.6rem] flex-wrap">
+                <div className="mt-2.5 py-2.5 px-3.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 flex items-center justify-between gap-2.5 flex-wrap">
                   <span>Cancel the active delivery?</span>
-                  <div className="flex gap-[0.4rem]">
+                  <div className="flex gap-1.5">
                     <button
                       type="button"
                       className="btn-outline btn-sm"

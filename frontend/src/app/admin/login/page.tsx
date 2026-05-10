@@ -162,7 +162,7 @@ export default function AdminLogin() {
                   <input type="password" autoComplete="new-password" required value={confirmPw} onChange={onChange(setConfirmPw)} />
                 </div>
                 {err && (
-                  <div className="text-red-600 text-[0.82rem] mb-[0.6rem]">
+                  <div className="text-red-600 text-sm mb-2.5">
                     {err}
                   </div>
                 )}
@@ -185,7 +185,7 @@ export default function AdminLogin() {
                   <input type="password" autoComplete="current-password" required value={password} onChange={onChange(setPassword)} />
                 </div>
                 {err && (
-                  <div className="text-red-600 text-[0.82rem] mb-[0.6rem]">
+                  <div className="text-red-600 text-sm mb-2.5">
                     {err}
                   </div>
                 )}

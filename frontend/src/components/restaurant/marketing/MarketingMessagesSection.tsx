@@ -53,7 +53,7 @@ export default function MarketingMessagesSection() {
     <div className="card">
       <div className="ch flex justify-between items-center">
         <h3>📣 Marketing Messages</h3>
-        <div className="flex gap-[0.6rem] items-center text-[0.8rem]">
+        <div className="flex gap-2.5 items-center text-sm">
           <span className="text-dim">Total cost:</span>
           <strong>₹{(Math.round(totalCost * 100) / 100).toFixed(2)}</strong>
           <span className="text-dim">{total} messages</span>
@@ -64,37 +64,37 @@ export default function MarketingMessagesSection() {
           <SectionError message={error} onRetry={refetch} />
         ) : (
           <>
-            <table className="w-full border-collapse text-[0.86rem]">
+            <table className="w-full border-collapse text-base">
               <thead>
-                <tr className="border-b border-rim text-left text-dim text-[0.78rem]">
-                  <th className="py-2 px-[0.7rem]">Customer</th>
-                  <th className="py-2 px-[0.7rem]">Phone</th>
-                  <th className="py-2 px-[0.7rem]">Type</th>
-                  <th className="py-2 px-[0.7rem]">Category</th>
-                  <th className="py-2 px-[0.7rem]">Cost</th>
-                  <th className="py-2 px-[0.7rem]">Status</th>
-                  <th className="py-2 px-[0.7rem]">Sent</th>
+                <tr className="border-b border-rim text-left text-dim text-sm">
+                  <th className="py-2 px-3">Customer</th>
+                  <th className="py-2 px-3">Phone</th>
+                  <th className="py-2 px-3">Type</th>
+                  <th className="py-2 px-3">Category</th>
+                  <th className="py-2 px-3">Cost</th>
+                  <th className="py-2 px-3">Status</th>
+                  <th className="py-2 px-3">Sent</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && !data ? (
-                  <tr><td colSpan={7} className="text-center p-[1.2rem] text-dim">Loading…</td></tr>
+                  <tr><td colSpan={7} className="text-center p-5 text-dim">Loading…</td></tr>
                 ) : items.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center p-[1.2rem] text-dim">
+                  <tr><td colSpan={7} className="text-center p-5 text-dim">
                     No marketing messages in this range.
                   </td></tr>
                 ) : (
                   items.map((m, idx) => (
                     <tr key={m.id || m._id || idx}>
-                      <td className="py-2 px-[0.7rem]">{m.customer_name || '—'}</td>
-                      <td className="py-2 px-[0.7rem] font-mono text-dim">
+                      <td className="py-2 px-3">{m.customer_name || '—'}</td>
+                      <td className="py-2 px-3 font-mono text-dim">
                         {m.phone || '—'}
                       </td>
-                      <td className="py-2 px-[0.7rem]">{m.message_type || '—'}</td>
-                      <td className="py-2 px-[0.7rem]">{m.category || '—'}</td>
-                      <td className="py-2 px-[0.7rem]">₹{Number(m.cost || 0).toFixed(2)}</td>
-                      <td className="py-2 px-[0.7rem]">{m.status || '—'}</td>
-                      <td className="py-2 px-[0.7rem] text-dim text-[0.8rem]">
+                      <td className="py-2 px-3">{m.message_type || '—'}</td>
+                      <td className="py-2 px-3">{m.category || '—'}</td>
+                      <td className="py-2 px-3">₹{Number(m.cost || 0).toFixed(2)}</td>
+                      <td className="py-2 px-3">{m.status || '—'}</td>
+                      <td className="py-2 px-3 text-dim text-sm">
                         {formatDate(m.sent_at)}
                       </td>
                     </tr>
@@ -112,7 +112,7 @@ export default function MarketingMessagesSection() {
                 >
                   ← Prev
                 </button>
-                <span className="text-[0.82rem] text-dim self-center">
+                <span className="text-sm text-dim self-center">
                   Page {page} / {pageCount}
                 </span>
                 <button

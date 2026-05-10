@@ -87,11 +87,11 @@ export default function NotificationBell() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label="Notifications"
-        className="relative bg-transparent border border-rim rounded-md py-1.5 px-3 cursor-pointer text-[0.78rem] text-fg inline-flex items-center gap-1.5"
+        className="relative bg-transparent border border-rim rounded-md py-1.5 px-3 cursor-pointer text-sm text-fg inline-flex items-center gap-1.5"
       >
         <span aria-hidden className="text-base">🔔</span>
         {state.unread > 0 && (
-          <span className="min-w-[18px] h-[18px] py-0 px-[0.35rem] rounded-full bg-red-500 text-white text-[0.65rem] font-bold inline-flex items-center justify-center">
+          <span className="min-w-[18px] h-[18px] py-0 px-1.5 rounded-full bg-red-500 text-white text-xs font-bold inline-flex items-center justify-center">
             {state.unread > 99 ? '99+' : state.unread}
           </span>
         )}
@@ -99,20 +99,20 @@ export default function NotificationBell() {
 
       {open && (
         <div className="absolute top-[calc(100%+6px)] right-0 w-80 bg-white border border-rim rounded-r shadow-[0_8px_22px_rgba(0,0,0,0.08)] z-50 max-h-[420px] overflow-hidden flex flex-col">
-          <div className="py-[0.65rem] px-[0.8rem] flex items-center justify-between border-b border-rim bg-panel">
-            <strong className="text-[0.88rem]">Notifications</strong>
+          <div className="py-2.5 px-3 flex items-center justify-between border-b border-rim bg-panel">
+            <strong className="text-base">Notifications</strong>
             <button
               type="button"
               disabled={busy || state.unread === 0}
               onClick={handleReadAll}
-              className={`bg-none border-0 text-[0.76rem] ${state.unread === 0 ? 'text-dim cursor-default' : 'text-primary cursor-pointer'}`}
+              className={`bg-none border-0 text-xs ${state.unread === 0 ? 'text-dim cursor-default' : 'text-primary cursor-pointer'}`}
             >
               Mark all read
             </button>
           </div>
           <div className="overflow-y-auto">
             {state.notifications.length === 0 && (
-              <div className="p-4 text-[0.84rem] text-dim">
+              <div className="p-4 text-sm text-dim">
                 No notifications yet.
               </div>
             )}
@@ -123,22 +123,22 @@ export default function NotificationBell() {
                   key={n._id}
                   type="button"
                   onClick={() => handleItemClick(n)}
-                  className={`block w-full text-left py-[0.65rem] px-[0.8rem] border-0 border-b border-rim cursor-pointer ${n.is_read ? 'bg-white' : 'bg-[#fff7ed]'}`}
+                  className={`block w-full text-left py-2.5 px-3 border-0 border-b border-rim cursor-pointer ${n.is_read ? 'bg-white' : 'bg-[#fff7ed]'}`}
                 >
-                  <div className="flex items-center gap-[0.4rem]">
-                    <span className="text-[0.95rem]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-md">
                       {isEscalation ? '⚠️' : '⭐'}
                     </span>
-                    <strong className={`text-[0.82rem] ${isEscalation ? 'text-amber-600' : 'text-inherit'}`}>
+                    <strong className={`text-sm ${isEscalation ? 'text-amber-600' : 'text-inherit'}`}>
                       {n.title}
                     </strong>
                   </div>
                   {n.body && (
-                    <div className="text-[0.76rem] text-dim mt-[0.2rem]">
+                    <div className="text-xs text-dim mt-1">
                       {n.body.length > 120 ? `${n.body.slice(0, 120)}…` : n.body}
                     </div>
                   )}
-                  <div className="text-[0.7rem] text-dim mt-[0.2rem]">
+                  <div className="text-xs text-dim mt-1">
                     {n.created_at ? new Date(n.created_at).toLocaleString() : ''}
                   </div>
                 </button>

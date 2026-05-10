@@ -82,8 +82,8 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
     const pct = Math.max(f.pct, 2);
     const color = FUNNEL_COLORS[i] || '#64748b';
     rows.push(
-      <div key={`stage-${i}`} className="flex items-center gap-[0.6rem] my-2">
-        <span className="w-[110px] text-[0.78rem] font-medium text-dim text-right shrink-0">
+      <div key={`stage-${i}`} className="flex items-center gap-2.5 my-2">
+        <span className="w-[110px] text-sm font-medium text-dim text-right shrink-0">
           {f.stage}
         </span>
         <div className="flex-1 bg-ink4 rounded-md overflow-hidden h-[26px] relative">
@@ -94,7 +94,7 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
             style={{ width: `${pct}%`, background: color }}
           />
           <span
-            className={`absolute left-3 top-1/2 -translate-y-1/2 text-[0.72rem] font-semibold ${
+            className={`absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold ${
               pct > 15 ? 'text-white' : 'text-tx'
             }`}
           >
@@ -111,9 +111,9 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
       const dropPct = cur.count ? Math.round((drop / cur.count) * 100) : 0;
       if (drop > 0) {
         rows.push(
-          <div key={`drop-${i}`} className="flex items-center gap-[0.6rem] my-2">
+          <div key={`drop-${i}`} className="flex items-center gap-2.5 my-2">
             <span className="w-[110px]" />
-            <span className="text-[0.68rem] text-red-500 pl-3">
+            <span className="text-xs text-red-500 pl-3">
               ↓ -{dropPct}% ({drop} dropped)
             </span>
           </div>
@@ -163,24 +163,24 @@ function DropoffRow({ item, onRecovered }: DropoffRowProps) {
 
   return (
     <tr className="border-b border-rim">
-      <td className="py-2 px-[0.7rem] font-medium">{item.customer_name || 'Unknown'}</td>
-      <td className="py-2 px-[0.7rem] font-mono text-[0.78rem] text-dim">
+      <td className="py-2 px-3 font-medium">{item.customer_name || 'Unknown'}</td>
+      <td className="py-2 px-3 font-mono text-sm text-dim">
         {maskPhone(item.customer_phone)}
       </td>
-      <td className="py-2 px-[0.7rem] text-center">
-        <span className="text-[0.72rem] py-[0.2rem] px-2 rounded-full bg-ink4">
+      <td className="py-2 px-3 text-center">
+        <span className="text-xs py-1 px-2 rounded-full bg-ink4">
           {icon} {label}
         </span>
       </td>
-      <td className="py-2 px-[0.7rem] text-right font-medium">{cartVal}</td>
-      <td className="py-2 px-[0.7rem] text-right text-[0.78rem] text-dim">
+      <td className="py-2 px-3 text-right font-medium">{cartVal}</td>
+      <td className="py-2 px-3 text-right text-sm text-dim">
         {lastActiveLabel(item.hours_since_activity)}
       </td>
-      <td className="py-2 px-[0.7rem] text-center">
+      <td className="py-2 px-3 text-center">
         {recovered ? (
-          <span className="text-wa text-[0.72rem] font-semibold">✓ Sent</span>
+          <span className="text-wa text-xs font-semibold">✓ Sent</span>
         ) : !canRecover ? (
-          <span className="text-dim text-[0.72rem]">—</span>
+          <span className="text-dim text-xs">—</span>
         ) : confirming ? (
           <div className="inline-flex gap-1">
             <button type="button" className="btn-g btn-xs" onClick={() => setConfirming(false)} disabled={busy}>
@@ -224,7 +224,7 @@ export default function DropoffsSection({ dateRange }: DropoffsSectionProps) {
 
   return (
     <>
-      <div className="card mt-[1.2rem]">
+      <div className="card mt-5">
         <div className="ch"><h3>Customer Drop-off Funnel</h3></div>
         {error ? (
           <div className="cb">
@@ -260,18 +260,18 @@ export default function DropoffsSection({ dateRange }: DropoffsSectionProps) {
       <div className="card mt-4">
         <div className="ch">
           <h3>Incomplete Orders</h3>
-          <span className="text-[0.82rem] text-dim">{list.length} incomplete</span>
+          <span className="text-sm text-dim">{list.length} incomplete</span>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[0.84rem]">
+          <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-neutral-50 border-b-2 border-rim">
-                <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] font-semibold text-dim">Customer</th>
-                <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] font-semibold text-dim">Phone</th>
-                <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] font-semibold text-dim">Stage</th>
-                <th className="py-[0.55rem] px-[0.7rem] text-right text-[0.77rem] font-semibold text-dim">Cart Value</th>
-                <th className="py-[0.55rem] px-[0.7rem] text-right text-[0.77rem] font-semibold text-dim">Last Active</th>
-                <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] font-semibold text-dim">Action</th>
+                <th className="py-2 px-3 text-left text-xs font-semibold text-dim">Customer</th>
+                <th className="py-2 px-3 text-left text-xs font-semibold text-dim">Phone</th>
+                <th className="py-2 px-3 text-center text-xs font-semibold text-dim">Stage</th>
+                <th className="py-2 px-3 text-right text-xs font-semibold text-dim">Cart Value</th>
+                <th className="py-2 px-3 text-right text-xs font-semibold text-dim">Last Active</th>
+                <th className="py-2 px-3 text-center text-xs font-semibold text-dim">Action</th>
               </tr>
             </thead>
             <tbody>

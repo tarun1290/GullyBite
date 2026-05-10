@@ -46,7 +46,7 @@ function sourceBadge(src?: string) {
   const cfg = SOURCE_BADGE[s] || { bg: 'rgba(100,116,139,.18)', color: 'var(--gb-slate-700)' };
   return (
     <span
-      className="inline-block py-[0.1rem] px-2 rounded-[10px] text-[0.72rem] font-semibold uppercase tracking-[0.03em]"
+      className="inline-block py-0.5 px-2 rounded-r text-xs font-semibold uppercase tracking-[0.03em]"
       // bg / colour come from SOURCE_BADGE by source at runtime
       // (whatsapp/razorpay/3pl/catalog + slate fallback — 5 distinct
       // rgba/hex pairs).
@@ -56,9 +56,9 @@ function sourceBadge(src?: string) {
 }
 
 function statusBadge(l: LogRow) {
-  if (l.error_message) return <span className="text-red-600 text-[0.75rem] font-semibold">Error</span>;
-  if (l.processed) return <span className="text-emerald-700 text-[0.75rem] font-semibold">Processed</span>;
-  return <span className="text-dim text-[0.75rem]">Pending</span>;
+  if (l.error_message) return <span className="text-red-600 text-xs font-semibold">Error</span>;
+  if (l.processed) return <span className="text-emerald-700 text-xs font-semibold">Processed</span>;
+  return <span className="text-dim text-xs">Pending</span>;
 }
 
 function fmtTime(iso?: string): string {
@@ -68,10 +68,10 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const TH_CLS = 'py-2 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.35rem] px-[0.55rem] text-[0.78rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1.5 px-2 text-sm';
 
 export default function AdminLogsPage() {
   const [offset, setOffset] = useState<number>(0);
@@ -155,8 +155,8 @@ export default function AdminLogsPage() {
   return (
     <div id="pg-logs">
       <div className="card">
-        <div className="ch justify-between flex-wrap gap-[0.6rem]">
-          <h3 className="m-0">Webhook Logs <span className="text-dim text-[0.78rem] font-medium">({total} total)</span></h3>
+        <div className="ch justify-between flex-wrap gap-2.5">
+          <h3 className="m-0">Webhook Logs <span className="text-dim text-sm font-medium">({total} total)</span></h3>
           <button type="button" className="btn-g btn-sm" onClick={clearFilters} disabled={loading}>Clear Filters</button>
         </div>
 
@@ -192,9 +192,9 @@ export default function AdminLogsPage() {
           <div className="cb"><SectionError message={err} onRetry={load} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                <tr className="bg-ink text-left text-dim text-xs">
                   <th className={TH_CLS}>Time</th>
                   <th className={TH_CLS}>Source</th>
                   <th className={TH_CLS}>Event Type</th>
@@ -211,12 +211,12 @@ export default function AdminLogsPage() {
                   <tr><td colSpan={7} className={EMPTY_CLS}>No logs match the filters.</td></tr>
                 ) : rows.map((l) => (
                   <tr key={l.id} className="border-t border-rim">
-                    <td className={`${TD_CLS} text-dim text-[0.75rem]`}>{fmtTime(l.received_at)}</td>
+                    <td className={`${TD_CLS} text-dim text-xs`}>{fmtTime(l.received_at)}</td>
                     <td className={TD_CLS}>{sourceBadge(l.source)}</td>
                     <td className={`${TD_CLS} mono`}>{l.event_type || '—'}</td>
-                    <td className={`${TD_CLS} text-[0.72rem] text-dim mono`}>{l.phone_number_id || '—'}</td>
+                    <td className={`${TD_CLS} text-xs text-dim mono`}>{l.phone_number_id || '—'}</td>
                     <td className={TD_CLS}>{statusBadge(l)}</td>
-                    <td className={`${TD_CLS} max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap text-red-600 text-[0.75rem]`}
+                    <td className={`${TD_CLS} max-w-[220px] overflow-hidden text-ellipsis whitespace-nowrap text-red-600 text-xs`}
                         title={l.error_message || ''}>{l.error_message || '—'}</td>
                     <td className={TD_CLS}>
                       <button type="button" className="btn-g btn-sm" onClick={() => openDetail(l.id)}>View</button>
@@ -228,9 +228,9 @@ export default function AdminLogsPage() {
           </div>
         )}
 
-        <div className="flex justify-between items-center py-[0.6rem] px-4 border-t border-rim">
+        <div className="flex justify-between items-center py-2.5 px-4 border-t border-rim">
           <button type="button" className="btn-g btn-sm" onClick={prev} disabled={offset === 0 || loading}>← Prev</button>
-          <span className="text-[0.8rem] text-dim">Page {page} of {pages}</span>
+          <span className="text-sm text-dim">Page {page} of {pages}</span>
           <button type="button" className="btn-g btn-sm" onClick={next} disabled={offset + LOGS_LIMIT >= total || loading}>Next →</button>
         </div>
       </div>
@@ -242,11 +242,11 @@ export default function AdminLogsPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-neutral-0 rounded-[10px] w-full max-w-[720px] max-h-[85vh] overflow-hidden flex flex-col"
+            className="bg-neutral-0 rounded-r w-full max-w-[720px] max-h-[85vh] overflow-hidden flex flex-col"
           >
-            <div className="flex items-center justify-between py-[0.8rem] px-4 border-b border-rim">
-              <h3 className="m-0 text-[0.95rem]">{detail.event_type || 'Log Detail'}</h3>
-              <div className="flex gap-[0.4rem]">
+            <div className="flex items-center justify-between py-3 px-4 border-b border-rim">
+              <h3 className="m-0 text-md">{detail.event_type || 'Log Detail'}</h3>
+              <div className="flex gap-1.5">
                 <button
                   type="button"
                   className="btn-g btn-sm"
@@ -273,7 +273,7 @@ export default function AdminLogsPage() {
                 <button type="button" className="btn-g btn-sm" onClick={closeDetail}>✕</button>
               </div>
             </div>
-            <div className="py-[0.7rem] px-4 flex gap-[0.8rem] flex-wrap text-[0.78rem] text-dim border-b border-rim">
+            <div className="py-3 px-4 flex gap-3 flex-wrap text-sm text-dim border-b border-rim">
               {detail.source && sourceBadge(detail.source)}
               {detail.received_at && <span>{fmtTime(detail.received_at)}</span>}
               {detail.phone_number_id && <span className="mono">{detail.phone_number_id}</span>}
@@ -285,7 +285,7 @@ export default function AdminLogsPage() {
               ) : detailErr ? (
                 <SectionError message={detailErr} />
               ) : (
-                <pre className="m-0 text-[0.78rem] whitespace-pre-wrap break-all mono">
+                <pre className="m-0 text-sm whitespace-pre-wrap break-all mono">
                   {detail.payload ? JSON.stringify(detail.payload, null, 2) : '—'}
                 </pre>
               )}

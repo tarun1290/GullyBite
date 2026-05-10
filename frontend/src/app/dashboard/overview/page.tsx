@@ -112,9 +112,9 @@ export default function OverviewPage() {
   if (error) {
     return (
       <div id="tab-overview" className="tab on">
-        <div className="card p-[1.2rem] text-center">
+        <div className="card p-5 text-center">
           <h3 className="mb-2">Could not load overview</h3>
-          <p className="text-dim mb-[0.8rem]">{error}</p>
+          <p className="text-dim mb-3">{error}</p>
           <button type="button" className="btn-g btn-sm" onClick={loadAll}>Retry</button>
         </div>
       </div>

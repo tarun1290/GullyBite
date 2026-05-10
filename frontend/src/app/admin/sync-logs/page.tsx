@@ -71,10 +71,10 @@ function fmtTime(iso?: string): string {
   } catch { return '—'; }
 }
 
-const TH_CLS = 'py-2 px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-2 px-[0.7rem] align-top';
+const TH_CLS = 'py-2 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.35rem] px-[0.55rem] text-[0.78rem]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1.5 px-2 text-sm';
 
 export default function AdminSyncLogsPage() {
   const { showToast } = useToast();
@@ -176,9 +176,9 @@ export default function AdminSyncLogsPage() {
   return (
     <div id="pg-sync-logs">
       <div className="card mb-4">
-        <div className="ch justify-between flex-wrap gap-[0.6rem]">
+        <div className="ch justify-between flex-wrap gap-2.5">
           <h3 className="m-0">⚠ Active Alerts
-            <span className="text-dim text-[0.78rem] font-medium ml-[0.6rem]">
+            <span className="text-dim text-sm font-medium ml-2.5">
               {alertsLoading ? '…' : alerts.length ? `${alerts.length} active` : 'all clear'}
             </span>
           </h3>
@@ -188,9 +188,9 @@ export default function AdminSyncLogsPage() {
           <div className="cb"><SectionError message={alertsErr} onRetry={loadAlerts} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                <tr className="bg-ink text-left text-dim text-xs">
                   <th className={TH_CLS}>Restaurant</th>
                   <th className={TH_CLS}>Message</th>
                   <th className={TH_CLS}>Failure Rate</th>
@@ -208,7 +208,7 @@ export default function AdminSyncLogsPage() {
                     <td className={`${TD_CLS} text-red-900 font-semibold`}>{a.restaurant_name || a.restaurant_id || '—'}</td>
                     <td className={`${TD_CLS} text-red-950`}>{a.message}</td>
                     <td className={`${TD_CLS} text-red-600 font-semibold`}>{a.failure_rate != null ? Math.round(a.failure_rate * 100) + '%' : '—'}</td>
-                    <td className={`${TD_CLS} text-dim text-[0.75rem] whitespace-nowrap`}>{fmtTime(a.timestamp)}</td>
+                    <td className={`${TD_CLS} text-dim text-xs whitespace-nowrap`}>{fmtTime(a.timestamp)}</td>
                     <td className={TD_CLS}>
                       <button type="button" className="btn-g btn-sm" onClick={() => resolveAlert(a.id)} disabled={resolvingId === a.id}>
                         {resolvingId === a.id ? 'Resolving…' : 'Resolve'}
@@ -223,9 +223,9 @@ export default function AdminSyncLogsPage() {
       </div>
 
       <div className="card">
-        <div className="ch justify-between flex-wrap gap-[0.6rem]">
-          <h3 className="m-0">Catalog Sync Audit <span className="text-dim text-[0.78rem] font-medium">({rows.length} entries)</span></h3>
-          <div className="flex gap-[0.4rem]">
+        <div className="ch justify-between flex-wrap gap-2.5">
+          <h3 className="m-0">Catalog Sync Audit <span className="text-dim text-sm font-medium">({rows.length} entries)</span></h3>
+          <div className="flex gap-1.5">
             <button type="button" className="btn-g btn-sm" onClick={resetFilters}>Reset</button>
             <button type="button" className="btn-p btn-sm" onClick={loadLogs} disabled={loading}>Refresh</button>
           </div>
@@ -252,9 +252,9 @@ export default function AdminSyncLogsPage() {
           <div className="cb"><SectionError message={err} onRetry={loadLogs} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-ink text-left text-dim text-[0.74rem]">
+                <tr className="bg-ink text-left text-dim text-xs">
                   <th className={TH_CLS}>Restaurant</th>
                   <th className={TH_CLS}>Product</th>
                   <th className={TH_CLS}>Branch</th>
@@ -276,13 +276,13 @@ export default function AdminSyncLogsPage() {
                       <td className={TD_CLS}>{r.product_name || r.product_id || '—'}</td>
                       <td className={TD_CLS}>{r.branch_name || r.branch_id || '—'}</td>
                       <td className={TD_CLS}>
-                        <span className={`inline-block py-[0.1rem] px-2 rounded-full text-[0.72rem] font-semibold ${isSynced ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{r.status || '—'}</span>
+                        <span className={`inline-block py-0.5 px-2 rounded-full text-xs font-semibold ${isSynced ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{r.status || '—'}</span>
                       </td>
-                      <td className={`${TD_CLS} text-[0.78rem] text-dim`}>
+                      <td className={`${TD_CLS} text-sm text-dim`}>
                         {r.reason || ''}
-                        {r.suggestion && <div className="mt-[0.2rem] text-[0.7rem] text-indigo-600">💡 {r.suggestion}</div>}
+                        {r.suggestion && <div className="mt-1 text-xs text-indigo-600">💡 {r.suggestion}</div>}
                       </td>
-                      <td className={`${TD_CLS} text-[0.75rem] text-dim whitespace-nowrap`}>{fmtTime(r.timestamp)}</td>
+                      <td className={`${TD_CLS} text-xs text-dim whitespace-nowrap`}>{fmtTime(r.timestamp)}</td>
                     </tr>
                   );
                 })}

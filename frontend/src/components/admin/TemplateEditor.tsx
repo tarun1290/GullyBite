@@ -310,9 +310,9 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
 
   return (
     <div id="template-editor-container" className="border border-rim rounded-lg bg-surface">
-      <div className="flex items-center gap-[0.6rem] py-[0.7rem] px-[0.9rem] border-b border-rim">
+      <div className="flex items-center gap-2.5 py-3 px-3.5 border-b border-rim">
         <h3 className="m-0">{metaId ? 'Edit Template' : 'New Template'}</h3>
-        <div className="ml-auto flex gap-[0.4rem]">
+        <div className="ml-auto flex gap-1.5">
           <button type="button" className="btn-sm" onClick={() => setGalleryOpen((v) => !v)}>
             {galleryOpen ? 'Close Gallery' : 'Load from Gallery'}
           </button>
@@ -323,7 +323,7 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
       {galleryOpen && <GalleryPicker onPick={loadFromGallery} />}
 
       <div className="grid grid-cols-[1fr_340px] min-h-[480px]">
-        <div id="te-builder" className="p-[0.9rem] border-r border-rim overflow-y-auto">
+        <div id="te-builder" className="p-3.5 border-r border-rim overflow-y-auto">
           <Field label="Template Name">
             <input
               className={`te-input ${INP_CLS} w-full`}
@@ -356,7 +356,7 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
                 value={data.header.text}
                 placeholder="Header text"
                 onChange={(e) => set({ header: { ...data.header, text: e.target.value } })}
-                className={`${INP_CLS} w-full mt-[0.35rem]`}
+                className={`${INP_CLS} w-full mt-1.5`}
               />
             )}
             {['IMAGE', 'VIDEO', 'DOCUMENT'].includes(data.header.type) && (
@@ -364,17 +364,17 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
                 value={data.header.url}
                 placeholder="Media URL"
                 onChange={(e) => set({ header: { ...data.header, url: e.target.value } })}
-                className={`${INP_CLS} w-full mt-[0.35rem]`}
+                className={`${INP_CLS} w-full mt-1.5`}
               />
             )}
           </Section>
 
           <Section title="BODY" extra={
             <>
-              <span className="text-[0.72rem] text-dim mr-2">
+              <span className="text-xs text-dim mr-2">
                 {(data.body.text || '').length}/1024
               </span>
-              <button type="button" className="btn-sm text-[0.7rem]" onClick={insertVariable}>
+              <button type="button" className="btn-sm text-xs" onClick={insertVariable}>
                 + Variable
               </button>
             </>
@@ -390,7 +390,7 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
           </Section>
 
           <Section title="FOOTER" extra={
-            <label className="text-[0.76rem] inline-flex items-center gap-[0.3rem]">
+            <label className="text-xs inline-flex items-center gap-1">
               <input
                 type="checkbox"
                 checked={!!data.footer.text || data.footer.text === ''}
@@ -406,16 +406,16 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
               onChange={(e) => set({ footer: { text: e.target.value } })}
               className={`${INP_CLS} w-full`}
             />
-            <span className="text-[0.7rem] text-dim">{(data.footer.text || '').length}/60</span>
+            <span className="text-xs text-dim">{(data.footer.text || '').length}/60</span>
           </Section>
 
           <Section title="BUTTONS" extra={
-            <button type="button" className="btn-sm text-[0.7rem]" onClick={addButton} disabled={data.buttons.length >= 3}>
+            <button type="button" className="btn-sm text-xs" onClick={addButton} disabled={data.buttons.length >= 3}>
               + Button
             </button>
           }>
             {data.buttons.map((b, i) => (
-              <div key={i} className="flex gap-[0.3rem] items-center mb-[0.35rem]">
+              <div key={i} className="flex gap-1 items-center mb-1.5">
                 <select value={b.type} onChange={(e) => updateButton(i, 'type', e.target.value)} className={`${INP_CLS} w-[130px]`}>
                   {['QUICK_REPLY', 'URL', 'PHONE_NUMBER'].map((t) => (
                     <option key={t} value={t}>{t.replace('_', ' ')}</option>
@@ -430,14 +430,14 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
                     className={`${INP_CLS} flex-1`}
                   />
                 )}
-                <button type="button" className="btn-sm text-red text-[0.75rem]" onClick={() => removeButton(i)}>✕</button>
+                <button type="button" className="btn-sm text-red text-xs" onClick={() => removeButton(i)}>✕</button>
               </div>
             ))}
           </Section>
 
           {data.variables.length > 0 && (
             <Section title="VARIABLES">
-              <table className="w-full border-collapse text-[0.76rem]">
+              <table className="w-full border-collapse text-xs">
                 <thead>
                   <tr className="text-left text-dim">
                     <th className="p-1 w-[60px]">Var</th>
@@ -448,14 +448,14 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
                 <tbody>
                   {data.variables.map((v, i) => (
                     <tr key={i}>
-                      <td className="p-[0.2rem] font-mono">{`{{${v.index}}}`}</td>
-                      <td className="p-[0.2rem]">
+                      <td className="p-1 font-mono">{`{{${v.index}}}`}</td>
+                      <td className="p-1">
                         <select value={v.source} onChange={(e) => updateVariable(i, 'source', e.target.value)} className={`${INP_SM_CLS} w-full`}>
                           <option value="">-- select --</option>
                           {VARIABLE_SOURCES.map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
-                      <td className="p-[0.2rem]">
+                      <td className="p-1">
                         <input value={v.sample} placeholder="Sample" onChange={(e) => updateVariable(i, 'sample', e.target.value)} className={`${INP_SM_CLS} w-full`} />
                       </td>
                     </tr>
@@ -472,7 +472,7 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
             {metaId && (
               confirmDelete ? (
                 <>
-                  <button type="button" className="btn-sm bg-red-500 text-neutral-0 border-0 rounded-md py-[0.4rem] px-[0.8rem]" onClick={doDelete} disabled={deleting}>
+                  <button type="button" className="btn-sm bg-red-500 text-neutral-0 border-0 rounded-md py-1.5 px-3" onClick={doDelete} disabled={deleting}>
                     {deleting ? '…' : `Confirm delete "${data.name}"`}
                   </button>
                   <button type="button" className="btn-g" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</button>
@@ -490,33 +490,33 @@ export default function TemplateEditor({ metaId, onClose, onSaved }: TemplateEdi
         <div id="te-preview" className="p-4 bg-[#e5ddd5] min-h-[480px]">
           <div className={`te-wa-bubble ${BUBBLE_CLS}`}>
             {data.header.type === 'TEXT' && data.header.text && (
-              <div className="te-wa-header font-bold mb-[0.35rem]" dangerouslySetInnerHTML={{ __html: fmtWa(data.header.text) }} />
+              <div className="te-wa-header font-bold mb-1.5" dangerouslySetInnerHTML={{ __html: fmtWa(data.header.text) }} />
             )}
             {data.header.type === 'IMAGE' && (
-              <div className="te-wa-img mb-[0.35rem]">
+              <div className="te-wa-img mb-1.5">
                 {data.header.url ? <img src={data.header.url} alt="header" className="w-full rounded-md" /> : <div className={PLACEHOLDER_CLS}>IMAGE</div>}
               </div>
             )}
             {data.header.type === 'VIDEO' && (
-              <div className="te-wa-img mb-[0.35rem]"><div className={PLACEHOLDER_CLS}>VIDEO</div></div>
+              <div className="te-wa-img mb-1.5"><div className={PLACEHOLDER_CLS}>VIDEO</div></div>
             )}
             {data.header.type === 'DOCUMENT' && (
-              <div className="te-wa-img mb-[0.35rem]"><div className={PLACEHOLDER_CLS}>DOCUMENT</div></div>
+              <div className="te-wa-img mb-1.5"><div className={PLACEHOLDER_CLS}>DOCUMENT</div></div>
             )}
             {previewBody && (
-              <div className="te-wa-body text-[0.85rem] text-[#111] whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: fmtWa(previewBody) }} />
+              <div className="te-wa-body text-base text-[#111] whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: fmtWa(previewBody) }} />
             )}
             {data.footer.text && (
-              <div className="te-wa-footer text-[0.72rem] text-[#667781] mt-[0.35rem]">{data.footer.text}</div>
+              <div className="te-wa-footer text-xs text-[#667781] mt-1.5">{data.footer.text}</div>
             )}
-            <div className="te-wa-time text-[0.68rem] text-[#667781] text-right mt-[0.35rem]">
+            <div className="te-wa-time text-xs text-[#667781] text-right mt-1.5">
               12:30 <span className="te-wa-checks">✓✓</span>
             </div>
           </div>
           {data.buttons.map((b, i) => (
             <div
               key={i}
-              className="te-wa-btn bg-neutral-0 rounded-lg py-2 px-[0.6rem] mt-[0.35rem] text-center text-[#1f7ee3] font-semibold text-[0.82rem] shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
+              className="te-wa-btn bg-neutral-0 rounded-lg py-2 px-2.5 mt-1.5 text-center text-[#1f7ee3] font-semibold text-sm shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
             >
               {b.text || 'Button'}
             </div>
@@ -531,8 +531,8 @@ interface FieldProps { label: string; children: ReactNode }
 
 function Field({ label, children }: FieldProps): ReactNode {
   return (
-    <div className="mb-[0.6rem]">
-      <label className="block text-[0.74rem] text-dim font-semibold mb-[0.2rem]">{label}</label>
+    <div className="mb-2.5">
+      <label className="block text-xs text-dim font-semibold mb-1">{label}</label>
       {children}
     </div>
   );
@@ -542,9 +542,9 @@ interface SectionProps { title: string; extra?: ReactNode; children: ReactNode }
 
 function Section({ title, extra, children }: SectionProps): ReactNode {
   return (
-    <div className="mt-[0.9rem] p-[0.6rem] bg-ink4 border border-rim rounded-md">
-      <div className="flex items-center gap-[0.4rem] mb-[0.45rem]">
-        <b className="text-[0.76rem]">{title}</b>
+    <div className="mt-3.5 p-2.5 bg-ink4 border border-rim rounded-md">
+      <div className="flex items-center gap-1.5 mb-2">
+        <b className="text-xs">{title}</b>
         <div className="ml-auto">{extra}</div>
       </div>
       {children}
@@ -578,18 +578,18 @@ function GalleryPicker({ onPick }: GalleryPickerProps): ReactNode {
   }, []);
 
   return (
-    <div className="py-[0.7rem] px-[0.9rem] border-b border-rim bg-ink4">
+    <div className="py-3 px-3.5 border-b border-rim bg-ink4">
       {loading ? (
-        <span className="text-dim text-[0.82rem]">Loading gallery…</span>
+        <span className="text-dim text-sm">Loading gallery…</span>
       ) : !items.length ? (
-        <span className="text-dim text-[0.82rem]">No gallery templates available.</span>
+        <span className="text-dim text-sm">No gallery templates available.</span>
       ) : (
-        <div className="flex flex-wrap gap-[0.4rem]">
+        <div className="flex flex-wrap gap-1.5">
           {items.map((t) => (
             <button
               key={t.id}
               type="button"
-              className="btn-sm text-[0.72rem]"
+              className="btn-sm text-xs"
               onClick={() => onPick(t.id)}
               title={t.description || t.name}
             >
@@ -606,8 +606,8 @@ function GalleryPicker({ onPick }: GalleryPickerProps): ReactNode {
 // because the variables-table cells need a smaller font/padding override
 // and Tailwind utilities at the same specificity can't be reordered to
 // "win" — so we just publish two sizes instead of using `!important`.
-const INP_CLS = 'border border-rim rounded-md text-[0.82rem] py-[0.4rem] px-[0.55rem] bg-neutral-0';
-const INP_SM_CLS = 'border border-rim rounded-md text-[0.72rem] py-[0.2rem] px-[0.3rem] bg-neutral-0';
+const INP_CLS = 'border border-rim rounded-md text-sm py-1.5 px-2 bg-neutral-0';
+const INP_SM_CLS = 'border border-rim rounded-md text-xs py-1 px-1 bg-neutral-0';
 
-const BUBBLE_CLS = 'bg-[#d9fdd3] rounded-lg py-[0.6rem] px-[0.7rem] max-w-[300px] shadow-[0_1px_2px_rgba(0,0,0,0.08)]';
-const PLACEHOLDER_CLS = 'bg-[#c7e8c1] text-[#3d5f3a] p-4 rounded-md text-center text-[0.76rem] font-semibold';
+const BUBBLE_CLS = 'bg-[#d9fdd3] rounded-lg py-2.5 px-3 max-w-[300px] shadow-[0_1px_2px_rgba(0,0,0,0.08)]';
+const PLACEHOLDER_CLS = 'bg-[#c7e8c1] text-[#3d5f3a] p-4 rounded-md text-center text-xs font-semibold';

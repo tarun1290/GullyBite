@@ -116,11 +116,11 @@ function timeAgo(ts?: string): string {
   return `${d}d ago`;
 }
 
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.6rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2.5 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const LBL_CLS = 'text-[0.72rem] text-dim block mb-1';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.4rem] px-[0.6rem] text-[0.82rem]';
+const LBL_CLS = 'text-xs text-dim block mb-1';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-1.5 px-2.5 text-sm';
 
 export default function AdminReferralsPage() {
   const { showToast } = useToast();
@@ -385,7 +385,7 @@ export default function AdminReferralsPage() {
 
       <div className="card mb-4">
         <div className="ch"><h3>Send a Referral</h3></div>
-        <div className="cb grid grid-cols-[1fr_1fr_1fr_auto] gap-[0.8rem] items-end">
+        <div className="cb grid grid-cols-[1fr_1fr_1fr_auto] gap-3 items-end">
           <div>
             <label className={LBL_CLS}>Restaurant</label>
             <select
@@ -436,12 +436,12 @@ export default function AdminReferralsPage() {
             className={`${INPUT_CLS} w-full`}
           />
           {linkBox && (
-            <div className="mt-[0.9rem] bg-ink3 border border-[rgba(124,58,237,0.26)] rounded-lg py-[0.8rem] px-4">
-              <div className="text-[0.76rem] text-violet-600 mb-[0.4rem]">
+            <div className="mt-3.5 bg-ink3 border border-[rgba(124,58,237,0.26)] rounded-lg py-3 px-4">
+              <div className="text-xs text-violet-600 mb-1.5">
                 Referral created — share this restaurant&apos;s WhatsApp link with the customer. Attribution is live for 8 hours.
               </div>
-              <div className="flex items-center gap-[0.6rem]">
-                <code className="mono flex-1 text-[0.8rem] break-all">{linkBox}</code>
+              <div className="flex items-center gap-2.5">
+                <code className="mono flex-1 text-sm break-all">{linkBox}</code>
                 <button type="button" className="btn-g btn-sm" onClick={copyLink}>Copy Link</button>
               </div>
             </div>
@@ -461,7 +461,7 @@ export default function AdminReferralsPage() {
           <div className="cb"><SectionError message={linkRequestsErr} onRetry={loadLinkRequests} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={TH_CLS}>Restaurant</th>
@@ -480,7 +480,7 @@ export default function AdminReferralsPage() {
                     <tr key={req._id || req.id} className="border-b border-rim">
                       <td className={TD_CLS}>{req.restaurant_name || req.restaurant_id || '—'}</td>
                       <td className={TD_CLS}>{req.campaign_name || <span className="text-dim">—</span>}</td>
-                      <td className={`${TD_CLS} text-[0.78rem] text-dim`}>{timeAgo(req.created_at)}</td>
+                      <td className={`${TD_CLS} text-sm text-dim`}>{timeAgo(req.created_at)}</td>
                       <td className={TD_CLS}>
                         <button
                           type="button"
@@ -575,22 +575,22 @@ export default function AdminReferralsPage() {
               })()}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="border border-rim rounded-lg p-3">
-                  <div className="text-[0.82rem] text-tx mb-2 font-semibold">Daily: Created vs Converted</div>
+                  <div className="text-sm text-tx mb-2 font-semibold">Daily: Created vs Converted</div>
                   <div className="relative h-[260px]">
                     <ChartCanvas type="line" data={lineConfig.data} options={lineConfig.options} height={260} />
                     {!analyticsLoading && (analytics?.daily?.length ?? 0) === 0 && (
-                      <div className="absolute inset-0 flex items-center justify-center text-dim text-[0.85rem]">
+                      <div className="absolute inset-0 flex items-center justify-center text-dim text-base">
                         No data in selected range
                       </div>
                     )}
                   </div>
                 </div>
                 <div className="border border-rim rounded-lg p-3">
-                  <div className="text-[0.82rem] text-tx mb-2 font-semibold">Commission Earned per Day (₹)</div>
+                  <div className="text-sm text-tx mb-2 font-semibold">Commission Earned per Day (₹)</div>
                   <div className="relative h-[260px]">
                     <ChartCanvas type="bar" data={barConfig.data} options={barConfig.options} height={260} />
                     {!analyticsLoading && (analytics?.daily?.length ?? 0) === 0 && (
-                      <div className="absolute inset-0 flex items-center justify-center text-dim text-[0.85rem]">
+                      <div className="absolute inset-0 flex items-center justify-center text-dim text-base">
                         No data in selected range
                       </div>
                     )}
@@ -613,7 +613,7 @@ export default function AdminReferralsPage() {
           <div className="cb"><SectionError message={listErr} onRetry={loadList} /></div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[0.82rem]">
+            <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-ink border-b border-rim">
                   <th className={TH_CLS}>Customer Phone</th>
@@ -648,7 +648,7 @@ export default function AdminReferralsPage() {
                             style={{ color }}
                           >{r.status}</span>
                         </td>
-                        <td className={`${TD_CLS} text-[0.78rem]`}>
+                        <td className={`${TD_CLS} text-sm`}>
                           {r.status === 'active' ? (
                             <span className="text-emerald-500">Expires {timeUntil(r.expires_at)}</span>
                           ) : (
@@ -660,7 +660,7 @@ export default function AdminReferralsPage() {
                         <td className={`${TD_CLS} font-semibold text-violet-400`}>
                           ₹{fmtInr(r.referral_fee_rs)}
                         </td>
-                        <td className={`${TD_CLS} text-[0.78rem]`}>{fmtDate(r.created_at)}</td>
+                        <td className={`${TD_CLS} text-sm`}>{fmtDate(r.created_at)}</td>
                       </tr>
                     );
                   })

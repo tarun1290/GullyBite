@@ -148,7 +148,7 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
         <div className="logo"><div className="logo-ring">🍜</div>GullyBite</div>
         <button
           type="button"
-          className="btn-outline text-[0.76rem] py-[0.42rem] px-[0.95rem]"
+          className="btn-outline text-xs py-1.5 px-4"
           onClick={onLogout}
         >
           Sign out
@@ -177,31 +177,31 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
             </div>
           </div>
 
-          <div className="bg-green-50 border border-green-200 rounded-[10px] py-4 px-[1.2rem] mb-[1.1rem]">
-            <p className="text-[0.72rem] font-bold tracking-[0.06em] text-wa-600 mb-[0.3rem]">
+          <div className="bg-green-50 border border-green-200 rounded-r py-4 px-5 mb-4">
+            <p className="text-xs font-bold tracking-[0.06em] text-wa-600 mb-1">
               YOUR STORE URL — copy this, you'll need it below
             </p>
             <div className="flex items-center gap-2">
               <input
                 readOnly
                 value={storeUrl}
-                className="flex-1 bg-white border border-green-200 rounded-[7px] py-[0.4rem] px-[0.7rem] text-[0.8rem] text-tx outline-hidden font-mono"
+                className="flex-1 bg-white border border-green-200 rounded-md py-1.5 px-3 text-sm text-tx outline-hidden font-mono"
               />
               <button
                 type="button"
                 onClick={handleCopy}
-                className="bg-wa-500 text-white border-0 rounded-[7px] py-[0.4rem] px-[0.9rem] text-[0.78rem] font-semibold cursor-pointer whitespace-nowrap"
+                className="bg-wa-500 text-white border-0 rounded-md py-1.5 px-3.5 text-sm font-semibold cursor-pointer whitespace-nowrap"
               >
                 Copy
               </button>
             </div>
           </div>
 
-          <div className="bg-white border border-rim rounded-[10px] py-[1.1rem] px-[1.2rem] mb-[1.1rem]">
-            <p className="text-[0.82rem] font-bold mb-[0.8rem]">
+          <div className="bg-white border border-rim rounded-r py-4 px-5 mb-4">
+            <p className="text-sm font-bold mb-3">
               Setting up for the first time? Follow these steps:
             </p>
-            <ol className="pl-[1.1rem] flex flex-col gap-[0.6rem] text-[0.8rem] text-dim leading-[1.55]">
+            <ol className="pl-4 flex flex-col gap-2.5 text-sm text-dim leading-[1.55]">
               <li><strong>Open Meta Business Manager</strong> → <a href="https://business.facebook.com" target="_blank" rel="noreferrer" className="text-indigo-600">business.facebook.com</a> → create a Business Portfolio if you don't have one yet.</li>
               <li><strong>Create a WhatsApp Business Account (WABA)</strong> → inside your Portfolio → Accounts → WhatsApp Accounts → Add.</li>
               <li><strong>Add a phone number</strong> to your WABA. Use a number that is NOT already on the regular WhatsApp app. Verify it via OTP.</li>
@@ -210,8 +210,8 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
             </ol>
           </div>
 
-          <div className="bg-white border border-rim rounded-[10px] p-[1.2rem] text-center">
-            <p className="text-[0.8rem] text-mute mb-[0.9rem]">
+          <div className="bg-white border border-rim rounded-r p-5 text-center">
+            <p className="text-sm text-mute mb-3.5">
               Done with the steps above? Connect now.
             </p>
             <button
@@ -231,16 +231,16 @@ export default function PgConnect({ onLogout, showPage, brandNameHint }: PgConne
                 </>
               )}
             </button>
-            <p className="mt-[0.6rem] text-[0.72rem] text-dim">
+            <p className="mt-2.5 text-xs text-dim">
               Takes about 2 minutes. You'll be redirected back automatically.
             </p>
-            <div className="mt-4 pt-[0.9rem] border-t border-rim">
-              <p className="text-[0.75rem] text-dim mb-[0.4rem]">
+            <div className="mt-4 pt-3.5 border-t border-rim">
+              <p className="text-xs text-dim mb-1.5">
                 Not ready yet? You can always connect later from your dashboard.
               </p>
               <button
                 type="button"
-                className="btn-outline text-[0.78rem]"
+                className="btn-outline text-sm"
                 onClick={handleSkip}
               >
                 Skip for now → Go to Dashboard

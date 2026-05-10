@@ -425,26 +425,26 @@ export default function ItemFormModal({
                 <select value={variantType} onChange={(e) => handleVariantTypeChange(e.target.value)}>
                   {Object.keys(VARIANT_PRESETS).map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
-                <div className="mt-[0.6rem] flex flex-col gap-[0.4rem]">
+                <div className="mt-2.5 flex flex-col gap-1.5">
                   {variants.map((v, i) => (
-                    <div key={i} className="flex gap-[0.4rem] items-center">
+                    <div key={i} className="flex gap-1.5 items-center">
                       <input
                         value={v.name}
                         onChange={(e) => handleVariantChange(i, 'name', e.target.value)}
                         placeholder="Variant name"
-                        className="flex-[1.4] py-[0.42rem] px-[0.6rem] border border-rim rounded-[7px] text-[0.84rem]"
+                        className="flex-[1.4] py-1.5 px-2.5 border border-rim rounded-md text-sm"
                       />
                       <input
                         type="number"
                         value={v.price}
                         onChange={(e) => handleVariantChange(i, 'price', e.target.value)}
                         placeholder="Price ₹"
-                        className="flex-1 py-[0.42rem] px-[0.6rem] border border-rim rounded-[7px] text-[0.84rem]"
+                        className="flex-1 py-1.5 px-2.5 border border-rim rounded-md text-sm"
                       />
                       <button
                         type="button"
                         onClick={() => handleVariantRemove(i)}
-                        className="bg-none border-0 text-red-500 text-[1.1rem] cursor-pointer"
+                        className="bg-none border-0 text-red-500 text-lg cursor-pointer"
                         title="Remove"
                       >
                         ×
@@ -464,7 +464,7 @@ export default function ItemFormModal({
                   <img
                     src={imageUrl}
                     alt=""
-                    className="w-14 h-14 object-cover rounded-[7px] border border-rim"
+                    className="w-14 h-14 object-cover rounded-md border border-rim"
                   />
                 )}
                 <input
@@ -474,18 +474,18 @@ export default function ItemFormModal({
                   onChange={handleImgFile}
                   disabled={imgBusy || !formBranchId}
                 />
-                {imgBusy && <span className="text-[0.78rem] text-dim">Uploading…</span>}
+                {imgBusy && <span className="text-sm text-dim">Uploading…</span>}
               </div>
               <input
                 value={imageUrl}
                 onChange={(e) => setImageUrl(e.target.value)}
                 placeholder="Or paste image URL"
-                className="mt-[0.4rem]"
+                className="mt-1.5"
               />
             </div>
           </div>
 
-          <div className="mt-[0.9rem]">
+          <div className="mt-3.5">
             <button
               type="button"
               className="btn-g btn-sm"
@@ -496,7 +496,7 @@ export default function ItemFormModal({
           </div>
 
           {showAdv && (
-            <div className="fgrid mt-[0.7rem]">
+            <div className="fgrid mt-3">
               <div className="fg">
                 <label>Item Group ID</label>
                 <input value={advGroupId} onChange={(e) => setAdvGroupId(e.target.value)} placeholder="GRP-…" />

@@ -81,27 +81,27 @@ export default function CampaignRoiCard() {
   }, [data, sort]);
 
   return (
-    <div className="card mt-[1.2rem]">
-      <div className="ch flex items-center gap-[0.8rem] flex-wrap">
+    <div className="card mt-5">
+      <div className="ch flex items-center gap-3 flex-wrap">
         <h3 className="m-0">Campaign ROI</h3>
-        <span className="text-dim text-[0.78rem]">
+        <span className="text-dim text-sm">
           Revenue attributed from orders within 24h of send
         </span>
-        <div className="ml-auto flex gap-[0.4rem] items-center">
+        <div className="ml-auto flex gap-1.5 items-center">
           <input
             type="date"
-            className="inp w-auto py-[0.3rem] px-2"
+            className="inp w-auto py-1 px-2"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
           />
           <input
             type="date"
-            className="inp w-auto py-[0.3rem] px-2"
+            className="inp w-auto py-1 px-2"
             value={to}
             onChange={(e) => setTo(e.target.value)}
           />
           <select
-            className="inp w-auto py-[0.3rem] px-2"
+            className="inp w-auto py-1 px-2"
             value={sort}
             onChange={(e) => setSort(e.target.value)}
           >
@@ -144,7 +144,7 @@ export default function CampaignRoiCard() {
                     <td>
                       {r.campaign_name}
                       <br />
-                      <span className="text-[0.7rem] text-dim">{r.type || ''}</span>
+                      <span className="text-xs text-dim">{r.type || ''}</span>
                     </td>
                     <td>{r.messages_sent || 0}</td>
                     <td>₹{Number(r.cost || 0).toFixed(2)}</td>

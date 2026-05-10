@@ -75,7 +75,7 @@ export default function PasswordSection() {
 
   return (
     <>
-      <div className="card mb-[1.2rem]">
+      <div className="card mb-5">
         <div className="ch"><h3>Change Password</h3></div>
         <div className="cb">
           <form onSubmit={handleSubmit}>
@@ -116,14 +116,14 @@ export default function PasswordSection() {
         </div>
       </div>
 
-      <hr className="border-0 border-t border-rim mt-[1.6rem] mb-[1.2rem]" />
+      <hr className="border-0 border-t border-rim mt-6 mb-5" />
 
-      <div className="card mb-[1.2rem] border-rim">
+      <div className="card mb-5 border-rim">
         <div className="ch bg-[#fff1f2]">
           <h3 className="text-red-500">Delete Account</h3>
         </div>
         <div className="cb">
-          <p className="text-[0.84rem] text-dim mb-[0.8rem] leading-[1.65]">
+          <p className="text-sm text-dim mb-3 leading-[1.65]">
             Permanently delete your GullyBite account, all restaurant data, branches, menu items,
             orders and WhatsApp connections.
             {' '}
@@ -142,7 +142,7 @@ export default function PasswordSection() {
 
           {deleteOpened && (
             <div className="mb-4">
-              <label className="text-[0.78rem] font-semibold text-red-500 mb-[0.35rem] block">
+              <label className="text-sm font-semibold text-red-500 mb-1.5 block">
                 Type your email address to confirm deletion:
               </label>
               <input
@@ -150,9 +150,9 @@ export default function PasswordSection() {
                 value={deleteEmail}
                 onChange={(e) => setDeleteEmail(e.target.value)}
                 placeholder={restaurant?.email || 'your-email@example.com'}
-                className="w-full py-2 px-3 border border-red-200 rounded-[7px] text-[0.85rem] outline-hidden mb-[0.6rem]"
+                className="w-full py-2 px-3 border border-red-200 rounded-md text-base outline-hidden mb-2.5"
               />
-              <div className="flex gap-[0.6rem]">
+              <div className="flex gap-2.5">
                 <button
                   type="button"
                   className={`btn-p bg-red-500 flex-1 ${emailMatches ? 'opacity-100' : 'opacity-50'}`}
@@ -173,7 +173,7 @@ export default function PasswordSection() {
             </div>
           )}
 
-          <p className="text-[0.72rem] text-dim mt-2">
+          <p className="text-xs text-dim mt-2">
             This permanently deletes your restaurant, menu, and all order history. This cannot be
             undone.
           </p>

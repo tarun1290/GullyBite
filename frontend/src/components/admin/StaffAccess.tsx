@@ -96,15 +96,15 @@ export default function StaffAccess({ restaurantId, slug }: StaffAccessProps) {
     : null;
 
   return (
-    <section className="card mt-[1.2rem]">
+    <section className="card mt-5">
       <div className="ch">
         <h3>🔐 Staff Access</h3>
       </div>
-      <div className="cb flex flex-col gap-[0.9rem]">
+      <div className="cb flex flex-col gap-3.5">
         {loading ? (
-          <p className="text-dim text-[0.82rem]">Loading PIN status…</p>
+          <p className="text-dim text-sm">Loading PIN status…</p>
         ) : loadErr ? (
-          <p className="text-red text-[0.82rem]">{loadErr}</p>
+          <p className="text-red text-sm">{loadErr}</p>
         ) : generatedPin ? (
           <JustGeneratedView
             pin={generatedPin}
@@ -134,7 +134,7 @@ interface NoPinViewProps { onGenerate: () => void; isGenerating: boolean }
 function NoPinView({ onGenerate, isGenerating }: NoPinViewProps): ReactNode {
   return (
     <>
-      <p className="text-dim text-[0.85rem] leading-normal">
+      <p className="text-dim text-base leading-normal">
         No staff PIN set. Generate one to give your kitchen staff access to the GullyBite Staff app.
       </p>
       <div>
@@ -171,12 +171,12 @@ function JustGeneratedView({ pin, slug, onCopy, onRegenerate, isGenerating }: Ju
   const digits = pin.padEnd(4, '•').split('').slice(0, Math.max(4, pin.length));
   return (
     <>
-      <div className="flex items-center gap-[0.6rem] flex-wrap">
+      <div className="flex items-center gap-2.5 flex-wrap">
         <div className="flex gap-2" aria-label="Generated staff PIN">
           {digits.map((d, i) => (
             <span
               key={i}
-              className="w-[52px] h-[60px] inline-flex items-center justify-center bg-neutral-0 border border-rim rounded-[10px] font-mono text-[1.75rem] font-extrabold text-tx shadow-sm-token"
+              className="w-[52px] h-[60px] inline-flex items-center justify-center bg-neutral-0 border border-rim rounded-r font-mono text-[1.75rem] font-extrabold text-tx shadow-sm-token"
             >
               {d}
             </span>
@@ -194,7 +194,7 @@ function JustGeneratedView({ pin, slug, onCopy, onRegenerate, isGenerating }: Ju
       </div>
       <div
         role="alert"
-        className="bg-amber-50 border border-amber-300 rounded-lg py-[0.7rem] px-[0.9rem] text-amber-800 text-[0.82rem] font-semibold leading-[1.45]"
+        className="bg-amber-50 border border-amber-300 rounded-lg py-3 px-3.5 text-amber-800 text-sm font-semibold leading-[1.45]"
       >
         ⚠ Save this PIN now — it will not be shown again once you leave this page.
       </div>
@@ -219,7 +219,7 @@ interface ExistingPinViewProps {
 function ExistingPinView({ generatedAt, slug, onCopy, onRegenerate, isGenerating }: ExistingPinViewProps): ReactNode {
   return (
     <>
-      <p className="text-tx text-[0.88rem]">
+      <p className="text-tx text-base">
         Staff PIN last generated on{' '}
         <strong>{generatedAt || 'an earlier date'}</strong>.
       </p>
@@ -247,7 +247,7 @@ function SlugField({ slug, onCopy }: SlugFieldProps): ReactNode {
   return (
     <div>
       <label className="lbl" htmlFor="staff-login-slug">Staff app login slug</label>
-      <div className="flex gap-[0.4rem] items-center">
+      <div className="flex gap-1.5 items-center">
         <input
           id="staff-login-slug"
           type="text"

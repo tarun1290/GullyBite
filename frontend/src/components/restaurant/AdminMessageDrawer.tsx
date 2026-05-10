@@ -96,9 +96,9 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
     <SlideOverDrawer open={open} onClose={onClose} title="Messages from GullyBite">
       <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-2">
         {loading && messages.length === 0 ? (
-          <p className="text-dim text-[0.85rem]">Loading…</p>
+          <p className="text-dim text-base">Loading…</p>
         ) : messages.length === 0 ? (
-          <p className="text-dim text-[0.85rem]">
+          <p className="text-dim text-base">
             No messages yet. The GullyBite team will reach out here when needed — and you can
             reply at any time.
           </p>
@@ -108,16 +108,16 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
             return (
               <div
                 key={m.id}
-                className={`max-w-[78%] rounded-[10px] py-[0.45rem] px-[0.65rem] border ${
+                className={`max-w-[78%] rounded-r py-2 px-2.5 border ${
                   mine
                     ? 'self-end bg-brand-50 border-brand-300'
                     : 'self-start bg-ink2 border-rim'
                 }`}
               >
-                <div className="text-[0.86rem] whitespace-pre-wrap wrap-break-word">
+                <div className="text-base whitespace-pre-wrap wrap-break-word">
                   {m.message}
                 </div>
-                <div className="text-[0.66rem] text-dim mt-1">
+                <div className="text-xs text-dim mt-1">
                   {mine ? 'You' : 'GullyBite'} · {fmtTime(m.created_at)}
                 </div>
               </div>
@@ -125,7 +125,7 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
           })
         )}
       </div>
-      <div className="mt-auto border-t border-rim pt-3 pb-3 px-3 flex gap-[0.4rem]">
+      <div className="mt-auto border-t border-rim pt-3 pb-3 px-3 flex gap-1.5">
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -141,13 +141,13 @@ export default function AdminMessageDrawer({ open, onClose, onThreadLoaded }: Ad
           placeholder="Type a reply…"
           rows={2}
           disabled={sending}
-          className="flex-1 resize-none py-2 px-[0.6rem] border border-rim rounded-lg text-[0.86rem] font-[inherit] bg-ink text-fg"
+          className="flex-1 resize-none py-2 px-2.5 border border-rim rounded-lg text-base font-[inherit] bg-ink text-fg"
         />
         <button
           type="button"
           onClick={onSend}
           disabled={sending || !text.trim()}
-          className={`py-2 px-[0.9rem] text-white border-0 rounded-lg text-[0.85rem] font-semibold whitespace-nowrap ${
+          className={`py-2 px-3.5 text-white border-0 rounded-lg text-base font-semibold whitespace-nowrap ${
             sending || !text.trim()
               ? 'bg-rim cursor-default'
               : 'bg-brand-600 cursor-pointer'

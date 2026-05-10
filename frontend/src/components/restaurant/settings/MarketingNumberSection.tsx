@@ -90,20 +90,20 @@ export default function MarketingNumberSection() {
   };
 
   return (
-    <div className="card mb-[1.2rem]">
+    <div className="card mb-5">
       <div className="ch"><h3>Marketing &amp; Campaign Number (optional)</h3></div>
       <div className="cb">
-        <p className="text-[0.78rem] text-dim mt-0 mb-[0.9rem] leading-normal">
+        <p className="text-sm text-dim mt-0 mb-3.5 leading-normal">
           Choose a WABA phone number to use as the sender for marketing campaigns. Leave unset to
           fall back to your primary WhatsApp number.
         </p>
 
         {currentId ? (
-          <div className="flex items-center gap-[0.8rem] py-[0.7rem] px-4 rounded-lg bg-surface2 mb-[0.9rem]">
+          <div className="flex items-center gap-3 py-3 px-4 rounded-lg bg-surface2 mb-3.5">
             <span className="w-[10px] h-[10px] rounded-full bg-emerald-500 shrink-0" />
             <div className="flex-1">
-              <div className="font-semibold text-[0.88rem]">Connected</div>
-              <div className="text-[0.78rem] text-dim">
+              <div className="font-semibold text-base">Connected</div>
+              <div className="text-sm text-dim">
                 {currentName || currentId}
               </div>
             </div>
@@ -117,7 +117,7 @@ export default function MarketingNumberSection() {
             </button>
           </div>
         ) : (
-          <div className="text-[0.78rem] text-dim mb-[0.9rem]">
+          <div className="text-sm text-dim mb-3.5">
             No marketing number set.
           </div>
         )}
@@ -138,7 +138,7 @@ export default function MarketingNumberSection() {
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
                 disabled={saving}
-                className="py-[0.35rem] px-[0.55rem] border border-rim rounded-md text-[0.82rem] min-w-[260px]"
+                className="py-1.5 px-2 border border-rim rounded-md text-sm min-w-[260px]"
               >
                 <option value="">— Select a number —</option>
                 {numbers.map((n) => (
@@ -159,7 +159,7 @@ export default function MarketingNumberSection() {
           )}
 
           {numbers && numbers.length === 0 && (
-            <span className="text-[0.78rem] text-dim">
+            <span className="text-sm text-dim">
               No numbers returned by Meta.
             </span>
           )}

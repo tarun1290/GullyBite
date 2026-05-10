@@ -75,15 +75,15 @@ function RecoveryStatsBlock({ stats, loading, error, onRetry }: RecoveryStatsBlo
   return (
     <div className="flex gap-8 flex-wrap">
       <div>
-        <span className="font-bold text-[1.1rem]">{stats.total_sent}</span>{' '}
+        <span className="font-bold text-lg">{stats.total_sent}</span>{' '}
         <span className="text-dim">messages sent</span>
       </div>
       <div>
-        <span className="font-bold text-[1.1rem] text-wa">{stats.recovered}</span>{' '}
+        <span className="font-bold text-lg text-wa">{stats.recovered}</span>{' '}
         <span className="text-dim">orders recovered</span>
       </div>
       <div>
-        <span className="font-bold text-[1.1rem]">{stats.recovery_rate}%</span>{' '}
+        <span className="font-bold text-lg">{stats.recovery_rate}%</span>{' '}
         <span className="text-dim">conversion rate</span>
       </div>
     </div>
@@ -111,19 +111,19 @@ function CartRecoveryFunnel({ data, loading, error }: CartRecoveryFunnelProps) {
     const recovered = st.recovered || 0;
     const pct = abandoned ? Math.round((recovered / abandoned) * 100) : 0;
     return (
-      <div key={s} className="flex items-center gap-[0.6rem] py-2 border-b border-bdr">
+      <div key={s} className="flex items-center gap-2.5 py-2 border-b border-bdr">
         <span className="w-[100px] pl-3 pr-3">{STAGE_LABELS[s] || s}</span>
         <span className="flex-1">
-          <div className="h-2 bg-rim rounded-[3px] overflow-hidden">
+          <div className="h-2 bg-rim rounded-sm overflow-hidden">
             <div
-              className="h-full bg-wa rounded-[3px]"
+              className="h-full bg-wa rounded-sm"
               // width is the recovery percentage for this funnel stage —
               // a runtime value the caller computes per stage.
               style={{ width: `${pct}%` }}
             />
           </div>
         </span>
-        <span className="w-[70px] text-right text-[0.76rem] pr-3">
+        <span className="w-[70px] text-right text-xs pr-3">
           {recovered}/{abandoned}
         </span>
       </div>
@@ -142,7 +142,7 @@ function CartRecoveryFunnel({ data, loading, error }: CartRecoveryFunnelProps) {
     <>
       {rows}
       {reminderLines.length > 0 && (
-        <div className="mt-[0.6rem] text-[0.76rem] text-dim">
+        <div className="mt-2.5 text-xs text-dim">
           {reminderLines.join(' · ')}
         </div>
       )}
@@ -174,7 +174,7 @@ export default function RecoverySection({ dateRange }: RecoverySectionProps) {
     <>
       <div className="card mt-4">
         <div className="ch"><h3>Recovery Performance</h3></div>
-        <div className="text-[0.85rem] text-dim py-2">
+        <div className="text-base text-dim py-2">
           <RecoveryStatsBlock
             stats={statsQ.data}
             loading={statsQ.loading}
@@ -187,29 +187,29 @@ export default function RecoverySection({ dateRange }: RecoverySectionProps) {
       <div className="card mt-4">
         <div className="ch"><h3>Cart Recovery</h3></div>
         <div className="cb">
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-[0.8rem] mb-4">
-            <div className="card text-center p-[0.8rem]">
-              <div className="text-[0.72rem] text-dim">Abandoned</div>
-              <div className="text-[1.5rem] font-bold">{cr.total_abandoned ?? '—'}</div>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3 mb-4">
+            <div className="card text-center p-3">
+              <div className="text-xs text-dim">Abandoned</div>
+              <div className="text-2xl font-bold">{cr.total_abandoned ?? '—'}</div>
             </div>
-            <div className="card text-center p-[0.8rem]">
-              <div className="text-[0.72rem] text-dim">Recovered</div>
-              <div className="text-[1.5rem] font-bold text-emerald-500">{cr.total_recovered ?? '—'}</div>
+            <div className="card text-center p-3">
+              <div className="text-xs text-dim">Recovered</div>
+              <div className="text-2xl font-bold text-emerald-500">{cr.total_recovered ?? '—'}</div>
             </div>
-            <div className="card text-center p-[0.8rem]">
-              <div className="text-[0.72rem] text-dim">Recovery Rate</div>
-              <div className="text-[1.5rem] font-bold text-wa">
+            <div className="card text-center p-3">
+              <div className="text-xs text-dim">Recovery Rate</div>
+              <div className="text-2xl font-bold text-wa">
                 {cr.recovery_rate != null ? `${cr.recovery_rate}%` : '—'}
               </div>
             </div>
-            <div className="card text-center p-[0.8rem]">
-              <div className="text-[0.72rem] text-dim">Revenue Recovered</div>
-              <div className="text-[1.5rem] font-bold text-gold">
+            <div className="card text-center p-3">
+              <div className="text-xs text-dim">Revenue Recovered</div>
+              <div className="text-2xl font-bold text-gold">
                 {cr.revenue_recovered != null ? formatINR(cr.revenue_recovered) : '—'}
               </div>
             </div>
           </div>
-          <div className="text-[0.82rem] text-dim">
+          <div className="text-sm text-dim">
             <CartRecoveryFunnel data={crQ.data} loading={crQ.loading} error={crQ.error} />
           </div>
         </div>

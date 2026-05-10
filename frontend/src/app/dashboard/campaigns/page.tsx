@@ -202,7 +202,7 @@ function StatusChip({ status }: StatusChipProps) {
   const s = STATUS_STYLE[status || ''] || fallback;
   return (
     // bg/fg from STATUS_STYLE map keyed by status at runtime
-    <span className="chip text-[0.7rem]" style={{ background: s.bg, color: s.fg }}>
+    <span className="chip text-xs" style={{ background: s.bg, color: s.fg }}>
       {s.label}
     </span>
   );
@@ -210,7 +210,7 @@ function StatusChip({ status }: StatusChipProps) {
 
 function SegmentBadge({ label }: { label: string }) {
   return (
-    <span className="chip bg-indigo-100 text-indigo-800 text-[0.7rem]">
+    <span className="chip bg-indigo-100 text-indigo-800 text-xs">
       {label === 'all' ? 'All customers' : label}
     </span>
   );
@@ -247,13 +247,13 @@ function FestivalNudgeBanner({ festival, onCreate }: FestivalNudgeBannerProps) {
   const days = festival.days_until ?? 0;
   const daysLabel = days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
   return (
-    <div className="flex items-center gap-3 py-[0.85rem] px-4 mb-4 bg-[linear-gradient(135deg,#fff7ed_0%,#fef3c7_100%)] border border-[#fbbf24] rounded-r">
-      <span className="text-[1.6rem]">{emoji}</span>
+    <div className="flex items-center gap-3 py-3.5 px-4 mb-4 bg-[linear-gradient(135deg,#fff7ed_0%,#fef3c7_100%)] border border-[#fbbf24] rounded-r">
+      <span className="text-2xl">{emoji}</span>
       <div className="flex-1 min-w-0">
         <div className="font-semibold text-[#78350f]">
           {festival.name} is {daysLabel}!
         </div>
-        <div className="text-[0.82rem] text-amber-900">
+        <div className="text-sm text-amber-900">
           {festival.suggested_message_hint || 'Send a campaign to your customers.'}
         </div>
       </div>
@@ -284,7 +284,7 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
           <h2 className="m-0">Marketing Campaigns</h2>
-          <div className="text-[0.84rem] text-dim mt-[0.2rem]">
+          <div className="text-sm text-dim mt-1">
             One-time blasts to a customer segment using approved templates.
           </div>
         </div>
@@ -314,7 +314,7 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
           </div>
         </div>
       ) : (
-        <div className="grid gap-[0.6rem]">
+        <div className="grid gap-2.5">
           {campaigns.map((c) => (
             <div key={c.id} className="card">
               <div className="cb flex flex-col gap-2">
@@ -324,11 +324,11 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
                     <StatusChip status={c.status} />
                     <SegmentBadge label={c.target_segment} />
                   </div>
-                  <div className="text-[0.78rem] text-dim">
+                  <div className="text-sm text-dim">
                     {fmtDateTime(c.created_at)}
                   </div>
                 </div>
-                <div className="grid gap-[0.4rem] grid-cols-[repeat(auto-fill,minmax(120px,1fr))] text-[0.82rem]">
+                <div className="grid gap-1.5 grid-cols-[repeat(auto-fill,minmax(120px,1fr))] text-sm">
                   <Stat label="Target" value={c.target_count} />
                   <Stat label="Sent" value={c.actual_sent_count || c.stats?.sent || 0} />
                   <Stat label="Delivered" value={c.stats?.delivered || 0} />
@@ -338,12 +338,12 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
                   <Stat label="Spend" value={formatRs(c.actual_cost_rs)} />
                 </div>
                 {c.send_at && c.status === 'scheduled' && (
-                  <div className="text-[0.82rem] text-blue-800">
+                  <div className="text-sm text-blue-800">
                     Scheduled for {fmtDateTime(c.send_at)}
                   </div>
                 )}
                 {c.error_message && (
-                  <div className="text-[0.82rem] text-red-800">
+                  <div className="text-sm text-red-800">
                     Error: {c.error_message}
                   </div>
                 )}
@@ -372,9 +372,9 @@ interface SummaryCardProps { label: string; value: ReactNode }
 function SummaryCard({ label, value }: SummaryCardProps) {
   return (
     <div className="card min-w-0 mb-0">
-      <div className="cb py-[0.55rem] px-[0.7rem]">
-        <div className="text-[0.72rem] text-dim uppercase tracking-[0.03em] truncate">{label}</div>
-        <div className="text-[1.1rem] font-semibold mt-[0.15rem] truncate">{value ?? 0}</div>
+      <div className="cb py-2 px-3">
+        <div className="text-xs text-dim uppercase tracking-[0.03em] truncate">{label}</div>
+        <div className="text-lg font-semibold mt-0.5 truncate">{value ?? 0}</div>
       </div>
     </div>
   );
@@ -385,7 +385,7 @@ interface StatProps { label: string; value: ReactNode }
 function Stat({ label, value }: StatProps) {
   return (
     <div>
-      <div className="text-[0.7rem] text-dim">{label}</div>
+      <div className="text-xs text-dim">{label}</div>
       <div className="font-medium">{value ?? 0}</div>
     </div>
   );
@@ -576,14 +576,14 @@ function Wizard({
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
           <h2 className="m-0">Create Campaign</h2>
-          <div className="text-[0.84rem] text-dim mt-[0.2rem]">
+          <div className="text-sm text-dim mt-1">
             Step {step} of 3 — {step === 1 ? 'Choose audience' : step === 2 ? 'Pick template' : 'Schedule & confirm'}
           </div>
         </div>
         <button className="btn-g btn-sm" onClick={onCancel}>← Back to history</button>
       </div>
 
-      <div className="flex gap-[0.3rem] mb-4">
+      <div className="flex gap-1 mb-4">
         {[1, 2, 3].map((n) => (
           <div
             key={n}
@@ -645,7 +645,7 @@ function Wizard({
         )}
       </div>
 
-      <div className="flex justify-between mt-[1.2rem] gap-2">
+      <div className="flex justify-between mt-5 gap-2">
         <div>
           {step > 1 && (
             <button className="btn-g" onClick={() => setStep(step - 1)} disabled={submitting}>Back</button>
@@ -679,7 +679,7 @@ function Wizard({
       </div>
 
       {step === 3 && confirming && (
-        <div className="notice mt-[0.8rem]">
+        <div className="notice mt-3">
           <div className="notice-ico">⚠️</div>
           <div className="notice-body">
             <h4>Confirm campaign</h4>
@@ -725,8 +725,8 @@ function Step1Audience({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-[0.6rem] flex-wrap gap-2">
-        <h3 className="text-[0.95rem] mt-0 mb-0 mx-0">Who should receive this?</h3>
+      <div className="flex items-center justify-between mb-2.5 flex-wrap gap-2">
+        <h3 className="text-md mt-0 mb-0 mx-0">Who should receive this?</h3>
         <button
           type="button"
           className="btn-g btn-xs"
@@ -743,7 +743,7 @@ function Step1Audience({
         />
       )}
 
-      <div className="grid gap-[0.6rem] grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
+      <div className="grid gap-2.5 grid-cols-[repeat(auto-fill,minmax(260px,1fr))]">
         <SegmentCard
           active={segment === 'all'}
           onClick={() => onPick('all')}
@@ -782,7 +782,7 @@ function Step1Audience({
 
       {segment === 'compound' && (
         <div className="mt-4 p-4 border border-rim rounded-md bg-white">
-          <div className="text-[0.84rem] font-semibold text-tx mb-2">
+          <div className="text-sm font-semibold text-tx mb-2">
             Build custom audience
           </div>
           <ConditionBuilder
@@ -800,18 +800,18 @@ function Step1Audience({
 
       {segment === 'saved' && (
         <div className="mt-4 p-4 border border-rim rounded-md bg-white">
-          <div className="text-[0.84rem] font-semibold text-tx mb-2">
+          <div className="text-sm font-semibold text-tx mb-2">
             Pick a saved preset
           </div>
           {customerSegments.length === 0 ? (
-            <div className="text-[0.82rem] text-dim">
+            <div className="text-sm text-dim">
               No presets saved yet. Switch to <strong>Build custom audience</strong> and use the &ldquo;Save as preset&rdquo; option.
             </div>
           ) : (
             <select
               value={savedSegmentId}
               onChange={(e) => onSavedSegmentChange(e.target.value)}
-              className="w-full py-2 px-3 border border-rim rounded-md bg-white text-tx text-[0.85rem]"
+              className="w-full py-2 px-3 border border-rim rounded-md bg-white text-tx text-base"
             >
               <option value="">— Select a preset —</option>
               {customerSegments.map((s) => (
@@ -822,7 +822,7 @@ function Step1Audience({
             </select>
           )}
           {savedSegmentId && (
-            <div className="mt-3 text-[0.82rem]">
+            <div className="mt-3 text-sm">
               {loadingCount
                 ? <span className="text-dim">Calculating audience…</span>
                 : customCount === null
@@ -903,7 +903,7 @@ function SaveAsPresetCollapsible({ conditions, onSaved }: SaveAsPresetCollapsibl
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Preset name (e.g., High-spenders)"
-        className="flex-1 min-w-[180px] py-2 px-3 border border-rim rounded-md bg-white text-tx text-[0.85rem]"
+        className="flex-1 min-w-[180px] py-2 px-3 border border-rim rounded-md bg-white text-tx text-base"
       />
       <button
         type="button"
@@ -985,7 +985,7 @@ function ManagePresetsPanel({ customerSegments, onCustomerSegmentsChange }: Mana
 
   if (customerSegments.length === 0) {
     return (
-      <div className="mb-3 p-3 border border-rim rounded-md bg-ink2 text-[0.82rem] text-dim">
+      <div className="mb-3 p-3 border border-rim rounded-md bg-ink2 text-sm text-dim">
         No saved presets yet.
       </div>
     );
@@ -994,7 +994,7 @@ function ManagePresetsPanel({ customerSegments, onCustomerSegmentsChange }: Mana
   return (
     <>
       <div className="mb-3 p-3 border border-rim rounded-md bg-ink2">
-        <div className="text-[0.82rem] font-semibold text-tx mb-2">Saved presets</div>
+        <div className="text-sm font-semibold text-tx mb-2">Saved presets</div>
         <div className="flex flex-col gap-2">
           {customerSegments.map((s) => (
             <div
@@ -1002,8 +1002,8 @@ function ManagePresetsPanel({ customerSegments, onCustomerSegmentsChange }: Mana
               className="flex items-center justify-between gap-2 py-2 px-3 border border-rim rounded-sm bg-white"
             >
               <div className="flex-1 min-w-0">
-                <div className="text-[0.85rem] font-medium text-tx truncate">{s.name}</div>
-                <div className="text-[0.72rem] text-dim">
+                <div className="text-base font-medium text-tx truncate">{s.name}</div>
+                <div className="text-xs text-dim">
                   {s.conditions.length} condition{s.conditions.length === 1 ? '' : 's'}
                 </div>
               </div>
@@ -1107,14 +1107,14 @@ function SegmentCard({ active, onClick, label, count, copy }: SegmentCardProps) 
       disabled={disabled}
       className={`card text-left p-0 ${disabled ? 'cursor-not-allowed bg-neutral-50 opacity-55' : 'cursor-pointer bg-white opacity-100'} ${active ? 'border-2 border-indigo-600' : 'border border-line'}`}
     >
-      <div className="cb flex flex-col gap-[0.35rem]">
+      <div className="cb flex flex-col gap-1.5">
         <div className="flex justify-between items-center">
           <strong>{label}</strong>
-          <span className={`chip text-[0.72rem] ${active ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
+          <span className={`chip text-xs ${active ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
             {count || 0}
           </span>
         </div>
-        <div className="text-[0.78rem] text-slate-600">{copy}</div>
+        <div className="text-sm text-slate-600">{copy}</div>
       </div>
     </button>
   );
@@ -1155,12 +1155,12 @@ function Step2Template({
     // grid columns conditional on whether a template is selected at runtime
     <div className="grid gap-4" style={{ gridTemplateColumns: template ? '1fr 1fr' : '1fr' }}>
       <div>
-        <h3 className="text-[0.95rem] mt-0 mb-[0.6rem] mx-0">Pick a template</h3>
+        <h3 className="text-md mt-0 mb-2.5 mx-0">Pick a template</h3>
         {grouped.length === 0 ? (
           <div className="card"><div className="cb text-dim">No approved templates available.</div></div>
         ) : grouped.map(([group, items]) => (
           <section key={group} className="mb-4">
-            <h4 className="text-[0.82rem] mt-0 mb-[0.4rem] mx-0 text-slate-600">{group}</h4>
+            <h4 className="text-sm mt-0 mb-1.5 mx-0 text-slate-600">{group}</h4>
             <div className="grid gap-2">
               {items.map((t) => (
                 <button
@@ -1169,14 +1169,14 @@ function Step2Template({
                   onClick={() => onPickTemplate(t.template_id)}
                   className={`card text-left p-0 cursor-pointer ${templateId === t.template_id ? 'border-2 border-indigo-600' : 'border border-line'}`}
                 >
-                  <div className="cb flex flex-col gap-[0.3rem]">
-                    <div className="flex justify-between items-center flex-wrap gap-[0.4rem]">
-                      <strong className="text-[0.9rem]">{t.display_name}</strong>
-                      <span className="text-[0.74rem] text-dim">
+                  <div className="cb flex flex-col gap-1">
+                    <div className="flex justify-between items-center flex-wrap gap-1.5">
+                      <strong className="text-base">{t.display_name}</strong>
+                      <span className="text-xs text-dim">
                         {formatRs(t.per_message_cost_rs)} / msg
                       </span>
                     </div>
-                    <div className="text-[0.78rem] text-slate-600 whitespace-pre-wrap">
+                    <div className="text-sm text-slate-600 whitespace-pre-wrap">
                       {(t.preview_text || t.body_template || '').slice(0, 140)}
                       {(t.body_template || '').length > 140 ? '…' : ''}
                     </div>
@@ -1189,23 +1189,23 @@ function Step2Template({
       </div>
 
       {template && (
-        <div className="flex flex-col gap-[0.8rem]">
+        <div className="flex flex-col gap-3">
           {restaurantInputVars.length > 0 && (
             <div className="card">
               <div className="ch"><strong>Fill template variables</strong></div>
-              <div className="cb flex flex-col gap-[0.55rem]">
+              <div className="cb flex flex-col gap-2">
                 {restaurantInputVars.map((v) => (
-                  <label key={v.name} className="flex flex-col gap-[0.2rem]">
-                    <span className="text-[0.78rem] text-slate-700">
+                  <label key={v.name} className="flex flex-col gap-1">
+                    <span className="text-sm text-slate-700">
                       {v.name}{v.required ? ' *' : ''}
-                      {v.description ? <span className="text-dim ml-[0.3rem]">— {v.description}</span> : null}
+                      {v.description ? <span className="text-dim ml-1">— {v.description}</span> : null}
                     </span>
                     <input
                       type="text"
                       value={vars[v.name] || ''}
                       placeholder={v.default_value || ''}
                       onChange={(e) => onVarsChange({ ...vars, [v.name]: e.target.value })}
-                      className="py-[0.4rem] px-[0.55rem] border border-neutral-200 rounded-md"
+                      className="py-1.5 px-2 border border-neutral-200 rounded-md"
                     />
                   </label>
                 ))}
@@ -1216,14 +1216,14 @@ function Step2Template({
           <div className="card">
             <div className="ch"><strong>Preview</strong></div>
             <div className="cb">
-              <div className="text-[0.82rem] text-slate-700 bg-ink3 py-[0.6rem] px-3 rounded-md whitespace-pre-wrap min-h-[80px]">
+              <div className="text-sm text-slate-700 bg-ink3 py-2.5 px-3 rounded-md whitespace-pre-wrap min-h-[80px]">
                 {preview || '—'}
               </div>
             </div>
           </div>
 
           <div className="card">
-            <div className="cb flex flex-col gap-[0.3rem] text-[0.82rem]">
+            <div className="cb flex flex-col gap-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-dim">Recipients</span>
                 <strong>{recipientCount}</strong>
@@ -1243,7 +1243,7 @@ function Step2Template({
                 </strong>
               </div>
               {!enoughBalance && (
-                <div className="text-red-800 text-[0.78rem]">
+                <div className="text-red-800 text-sm">
                   Wallet balance is below the estimated cost. Top up before sending.
                 </div>
               )}
@@ -1292,15 +1292,15 @@ function Step3Schedule({
     <div className="grid gap-4 grid-cols-[1fr_1fr]">
       <div className="card">
         <div className="ch"><strong>Campaign name</strong></div>
-        <div className="cb flex flex-col gap-[0.55rem]">
+        <div className="cb flex flex-col gap-2">
           <input
             type="text"
             placeholder="e.g. New menu launch — June"
             value={displayName}
             onChange={(e) => onDisplayNameChange(e.target.value)}
-            className="py-2 px-[0.6rem] border border-neutral-200 rounded-md"
+            className="py-2 px-2.5 border border-neutral-200 rounded-md"
           />
-          <div className="text-[0.76rem] text-dim">
+          <div className="text-xs text-dim">
             Only shown to you in the campaign history.
           </div>
         </div>
@@ -1312,7 +1312,7 @@ function Step3Schedule({
               <input type="radio" checked={sendMode === 'now'} onChange={() => onSendModeChange('now')} />
               <div>
                 <div><strong>Send now</strong></div>
-                <div className="text-[0.78rem] text-dim">
+                <div className="text-sm text-dim">
                   Start the blast immediately in the background.
                 </div>
               </div>
@@ -1324,21 +1324,21 @@ function Step3Schedule({
               <div className="cb flex gap-2 items-start">
                 <input type="radio" checked={sendMode === 'smart'} onChange={() => onSendModeChange('smart')} />
                 <div className="flex-1">
-                  <div className="flex items-center gap-[0.4rem] flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <strong>Smart Send</strong>
-                    <span className="chip bg-emerald-600 text-white text-[0.65rem] py-[0.1rem] px-[0.4rem]">
+                    <span className="chip bg-emerald-600 text-white text-xs py-0.5 px-1.5">
                       Recommended
                     </span>
-                    <span className="text-[0.76rem] text-dim">
+                    <span className="text-xs text-dim">
                       Best time based on your customers
                     </span>
                   </div>
-                  <div className="text-[0.78rem] text-emerald-800 mt-1">
+                  <div className="text-sm text-emerald-800 mt-1">
                     We&apos;ll send at <strong>{smartSend.peak_hour_label}</strong> — when your customers are most
                     active ({smartSend.order_count_at_peak} orders typically placed around this time).
                   </div>
                   {sendMode === 'smart' && (
-                    <div className="text-[0.75rem] text-dim mt-1">
+                    <div className="text-xs text-dim mt-1">
                       Scheduled for {fmtDateTime(smartSend.next_occurrence)}
                     </div>
                   )}
@@ -1352,7 +1352,7 @@ function Step3Schedule({
               <input type="radio" checked={sendMode === 'later'} onChange={() => onSendModeChange('later')} />
               <div className="flex-1">
                 <div><strong>Schedule for later</strong></div>
-                <div className="text-[0.78rem] text-dim mb-[0.4rem]">
+                <div className="text-sm text-dim mb-1.5">
                   Picks up on the next minute tick after the scheduled time.
                 </div>
                 {sendMode === 'later' && (
@@ -1361,10 +1361,10 @@ function Step3Schedule({
                       type="datetime-local"
                       value={sendAt}
                       onChange={(e) => onSendAtChange(e.target.value)}
-                      className="py-[0.35rem] px-2 border border-neutral-200 rounded-md"
+                      className="py-1.5 px-2 border border-neutral-200 rounded-md"
                     />
                     {!sendAtValid && sendAt && (
-                      <div className="text-[0.76rem] text-red-800 mt-[0.3rem]">
+                      <div className="text-xs text-red-800 mt-1">
                         Pick a time in the future.
                       </div>
                     )}
@@ -1378,7 +1378,7 @@ function Step3Schedule({
 
       <div className="card">
         <div className="ch"><strong>Summary</strong></div>
-        <div className="cb flex flex-col gap-[0.4rem] text-[0.85rem]">
+        <div className="cb flex flex-col gap-1.5 text-base">
           <Row k="Audience" v={segment === 'all' ? 'All customers' : segment || '—'} />
           <Row k="Recipients" v={recipientCount} />
           <Row k="Template" v={template?.display_name || '—'} />
@@ -1387,7 +1387,7 @@ function Step3Schedule({
           <Row k="Wallet" v={formatRs(walletBalance)} />
           <Row k="When" v={whenLabel} />
           {!enoughBalance && (
-            <div className="text-red-800 text-[0.8rem] mt-[0.3rem]">
+            <div className="text-red-800 text-sm mt-1">
               Wallet balance is below the estimated cost.
             </div>
           )}

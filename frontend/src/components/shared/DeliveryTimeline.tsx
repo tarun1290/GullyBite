@@ -240,7 +240,7 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
         0%, 100% { transform: scale(1);   opacity: 1; }
         50%      { transform: scale(0.7); opacity: 0.5; }
       }`}</style>
-      <ol className="list-none m-0 pt-[0.4rem] pb-[0.2rem] flex flex-col">
+      <ol className="list-none m-0 pt-1.5 pb-1 flex flex-col">
         {steps.map((s, idx) => {
           const palette = paletteFor(s.status, s.tone);
           const isLast = idx === steps.length - 1;
@@ -250,7 +250,7 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
           return (
             <li
               key={s.key}
-              className={`flex gap-[0.7rem] relative ${isLast ? 'pb-0' : 'pb-[0.65rem]'}`}
+              className={`flex gap-3 relative ${isLast ? 'pb-0' : 'pb-2.5'}`}
             >
               {/* Connector line — drawn from circle bottom down to next
                   row's circle top. Coloured per the FROM step's status
@@ -266,7 +266,7 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
               )}
               <span
                 aria-hidden
-                className="w-3 h-3 rounded-full shrink-0 mt-[2px]"
+                className="w-3 h-3 rounded-full shrink-0 mt-0.5"
                 style={{
                   background: palette.circle,
                   boxShadow: showPulse ? `0 0 0 4px ${palette.ring}` : 'none',
@@ -275,7 +275,7 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
               />
               <div className="flex-1 min-w-0">
                 <div
-                  className={`text-[0.82rem] leading-[1.3] ${
+                  className={`text-sm leading-[1.3] ${
                     s.status === 'completed' || s.status === 'active'
                       ? 'font-semibold'
                       : 'font-medium'
@@ -285,13 +285,13 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
                   {s.label}
                 </div>
                 {s.timestamp && (
-                  <div className="text-[0.72rem] text-dim mt-px">
+                  <div className="text-xs text-dim mt-px">
                     {fmtTime(s.timestamp)}
                   </div>
                 )}
                 {s.subtitle && (
                   <div
-                    className="text-[0.72rem] mt-px italic"
+                    className="text-xs mt-px italic"
                     style={{ color: s.tone === 'disposed' ? 'var(--gb-red-900)' : 'var(--gb-amber-900)' }}
                   >
                     {s.subtitle}
@@ -303,7 +303,7 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
         })}
       </ol>
       {order.prorouting_cancelled_at && (
-        <div className="mt-[0.4rem] py-[0.45rem] px-[0.65rem] bg-red-50 border border-red-200 rounded-md text-[0.74rem] text-red-800">
+        <div className="mt-1.5 py-2 px-2.5 bg-red-50 border border-red-200 rounded-md text-xs text-red-800">
           Cancelled at {fmtTime(order.prorouting_cancelled_at)}
         </div>
       )}

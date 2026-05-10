@@ -56,21 +56,21 @@ function StatusBadge({ status }: StatusBadgeProps) {
         ? 'bg-red-100 text-red-500'
         : 'bg-ink3 text-dim';
   return (
-    <span className={`py-[0.15rem] px-[0.55rem] rounded-[10px] text-[0.7rem] font-semibold ${cls}`}>
+    <span className={`py-0.5 px-2 rounded-r text-xs font-semibold ${cls}`}>
       {status || '—'}
     </span>
   );
 }
 
-const TABLE_CLS = 'w-full border-collapse text-[0.82rem]';
+const TABLE_CLS = 'w-full border-collapse text-sm';
 const TR_HEAD_CLS = 'bg-ink border-b border-rim';
-const TH_CLS = 'py-[0.6rem] px-[0.7rem] text-left text-[0.74rem] text-dim uppercase font-bold tracking-[0.04em]';
-const TD_CLS = 'py-[0.55rem] px-[0.7rem] align-top';
+const TH_CLS = 'py-2.5 px-3 text-left text-xs text-dim uppercase font-bold tracking-[0.04em]';
+const TD_CLS = 'py-2 px-3 align-top';
 const EMPTY_CLS = 'p-6 text-center text-dim';
-const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.45rem] px-[0.7rem] text-[0.85rem]';
-const LBL_CLS = 'text-[0.75rem] text-dim font-semibold block mb-1';
-const HINT_CLS = 'text-[0.7rem] text-dim mt-1';
-const CODE_CHIP_CLS = 'bg-blue-100 py-[0.05rem] px-[0.3rem] rounded-[3px]';
+const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-2 px-3 text-base';
+const LBL_CLS = 'text-xs text-dim font-semibold block mb-1';
+const HINT_CLS = 'text-xs text-dim mt-1';
+const CODE_CHIP_CLS = 'bg-blue-100 py-[0.05rem] px-1 rounded-sm';
 
 export default function AdminCouponsPage() {
   const { showToast } = useToast();
@@ -177,7 +177,7 @@ export default function AdminCouponsPage() {
   return (
     <div id="pg-coupons">
       <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <label className="text-[0.8rem] text-dim">Restaurant:</label>
+        <label className="text-sm text-dim">Restaurant:</label>
         <select
           value={restaurantId}
           onChange={(e) => setRestaurantId(e.target.value)}
@@ -199,7 +199,7 @@ export default function AdminCouponsPage() {
         </div>
       )}
 
-      <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-lg py-3 px-[0.95rem] mb-4 text-[0.8rem] leading-normal text-blue-800">
+      <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-lg py-3 px-4 mb-4 text-sm leading-normal text-blue-800">
         <strong>How coupon templates work:</strong> Meta treats these as <em>marketing</em> templates
         with a <code className={CODE_CHIP_CLS}>copy_code</code> button.{' '}
         <code className={CODE_CHIP_CLS}>{'{{1}}'}</code> is the coupon code,{' '}
@@ -233,8 +233,8 @@ export default function AdminCouponsPage() {
                   <tr key={t.id || t.name || i} className="border-b border-rim">
                     <td className={`${TD_CLS} font-semibold`}>{t.name}</td>
                     <td className={TD_CLS}><StatusBadge status={t.status} /></td>
-                    <td className={`${TD_CLS} text-[0.8rem] text-dim`}>{t.language || '—'}</td>
-                    <td className={`${TD_CLS} text-[0.8rem] max-w-[420px]`}>
+                    <td className={`${TD_CLS} text-sm text-dim`}>{t.language || '—'}</td>
+                    <td className={`${TD_CLS} text-sm max-w-[420px]`}>
                       {bodyOf(t).slice(0, 140)}
                     </td>
                   </tr>
@@ -247,7 +247,7 @@ export default function AdminCouponsPage() {
 
       <div className="card">
         <div className="ch"><h3>Create New Coupon Template</h3></div>
-        <div className="cb grid grid-cols-2 gap-[0.85rem]">
+        <div className="cb grid grid-cols-2 gap-3.5">
           <div>
             <label className={LBL_CLS}>Template Name <span className="text-red-500">*</span></label>
             <input
@@ -295,7 +295,7 @@ export default function AdminCouponsPage() {
             </button>
           </div>
           {msg && (
-            <div className={`col-span-2 text-[0.8rem] ${msgCls}`}>
+            <div className={`col-span-2 text-sm ${msgCls}`}>
               {msg.text}
             </div>
           )}

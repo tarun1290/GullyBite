@@ -20,12 +20,12 @@ import { useRouter } from 'expo-router';
 
 import { ownerLogin } from '@/api';
 import { requestOwnerPermissionsAndRegister } from '@/push';
-import { useAuth } from '@/store/authStore';
+import { useStaff } from '@/state/StaffContext';
 import { colors, space, text, radius, fontWeight } from '@/theme';
 
 export default function OwnerLoginScreen() {
   const router = useRouter();
-  const { loginAsOwner } = useAuth();
+  const { loginAsOwner } = useStaff();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
