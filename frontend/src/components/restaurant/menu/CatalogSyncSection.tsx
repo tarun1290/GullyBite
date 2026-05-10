@@ -162,8 +162,8 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
           )}
 
           {pendingAction && (
-            <div className="mt-[0.8rem] bg-[#fffbeb] border border-[#fde68a] rounded-lg p-[0.85rem]">
-              <div className="text-[0.86rem] font-semibold text-[#92400e] mb-[0.4rem]">
+            <div className="mt-[0.8rem] bg-amber-50 border border-yellow-200 rounded-lg p-[0.85rem]">
+              <div className="text-[0.86rem] font-semibold text-amber-900 mb-[0.4rem]">
                 ⚠️ {unassignedCount} unassigned product{unassignedCount === 1 ? '' : 's'}
               </div>
               <p className="text-[0.78rem] text-[#78350f] mb-[0.6rem] leading-[1.45]">
@@ -218,7 +218,7 @@ export default function CatalogSyncSection({ branches, selectedBranchId }: Catal
                       {hasItems ? (
                         <span className="badge bg text-[0.68rem]">✓ Catalog</span>
                       ) : (
-                        <span className="text-[0.68rem] py-[0.15rem] px-[0.45rem] rounded-[4px] bg-[rgba(220,38,38,0.10)] border border-[rgba(220,38,38,0.45)] text-[#dc2626] font-semibold whitespace-nowrap">
+                        <span className="text-[0.68rem] py-[0.15rem] px-[0.45rem] rounded-[4px] bg-[rgba(220,38,38,0.10)] border border-[rgba(220,38,38,0.45)] text-red-500 font-semibold whitespace-nowrap">
                           ✗ No Items
                         </span>
                       )}

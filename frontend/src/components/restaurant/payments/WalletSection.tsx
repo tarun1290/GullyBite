@@ -111,7 +111,7 @@ function formatTxnDate(d?: string): string {
 
 function balanceColorClass(bal: number, threshold: number): string {
   if (bal > threshold) return 'text-wa';
-  if (bal > 0) return 'text-[#d97706]';
+  if (bal > 0) return 'text-amber-500';
   return 'text-red';
 }
 

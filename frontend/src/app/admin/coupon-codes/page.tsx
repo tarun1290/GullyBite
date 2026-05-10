@@ -345,7 +345,7 @@ export default function AdminCouponCodesPage() {
   };
 
   const msgCls = msg
-    ? msg.type === 'error' ? 'text-red-500' : msg.type === 'success' ? 'text-[#059669]' : 'text-dim'
+    ? msg.type === 'error' ? 'text-red-500' : msg.type === 'success' ? 'text-emerald-600' : 'text-dim'
     : '';
 
   return (
@@ -431,7 +431,7 @@ export default function AdminCouponCodesPage() {
                       <td className={`${TD_CLS} font-semibold mono`}>{c.code}</td>
                       <td className={TD_CLS}>
                         {isPlatformWide ? (
-                          <span className="inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] text-[0.7rem] font-semibold bg-[#dbeafe] text-[#1e40af]">
+                          <span className="inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] text-[0.7rem] font-semibold bg-blue-100 text-blue-800">
                             Platform-wide
                           </span>
                         ) : (
@@ -447,7 +447,7 @@ export default function AdminCouponCodesPage() {
                         {c.usage_count || 0}{c.usage_limit ? ` / ${c.usage_limit}` : ''}
                       </td>
                       <td className={TD_CLS}>
-                        <span className={`inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] text-[0.72rem] font-semibold ${active ? 'bg-[#d1fae5] text-[#059669]' : 'bg-red-100 text-red-500'}`}>{active ? 'ACTIVE' : 'INACTIVE'}</span>
+                        <span className={`inline-block py-[0.15rem] px-[0.55rem] rounded-[10px] text-[0.72rem] font-semibold ${active ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-500'}`}>{active ? 'ACTIVE' : 'INACTIVE'}</span>
                       </td>
                       <td className={`${TD_CLS} flex gap-2 flex-wrap`}>
                         <button

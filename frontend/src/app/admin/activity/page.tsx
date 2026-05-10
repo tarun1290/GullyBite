@@ -426,7 +426,7 @@ function WebhooksTab({ autoRefresh }: WebhooksTabProps): ReactNode {
                 <tr><td colSpan={5} className={EMPTY_CLS}>No webhook logs.</td></tr>
               ) : rows.map((w) => {
                 const stCls = w.status === 'processed'
-                  ? 'text-[#047857]'
+                  ? 'text-emerald-700'
                   : w.status === 'failed'
                     ? 'text-red-600'
                     : 'text-dim';
@@ -576,7 +576,7 @@ function ErrorsTab({ autoRefresh, restMap, onStatsChange, onOpenDrilldown }: Err
                   </td>
                   <td className={TD_CLS}>
                     {e.resolved_at ? (
-                      <span className="text-[#047857] text-[0.76rem] font-semibold">✅ Resolved</span>
+                      <span className="text-emerald-700 text-[0.76rem] font-semibold">✅ Resolved</span>
                     ) : (
                       <button type="button" className="btn-g btn-sm" onClick={() => markResolved(e._id)} disabled={busy === e._id}>
                         {busy === e._id ? '…' : 'Mark Resolved'}

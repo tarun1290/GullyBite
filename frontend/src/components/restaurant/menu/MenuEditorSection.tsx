@@ -105,15 +105,15 @@ function branchStatusCell(item: LooseItem): ReactNode {
   if (unassigned) {
     return (
       <>
-        <span className="inline-flex items-center gap-[0.3rem] bg-[#fef2f2] text-[#b91c1c] py-[0.15rem] px-[0.55rem] rounded-full text-[0.7rem] font-semibold border border-[#fecaca]">
+        <span className="inline-flex items-center gap-[0.3rem] bg-red-50 text-red-600 py-[0.15rem] px-[0.55rem] rounded-full text-[0.7rem] font-semibold border border-red-200">
           ❌ Unassigned
         </span>
-        <div className="text-[0.65rem] text-[#b91c1c] mt-[0.15rem]">Not visible to customers</div>
+        <div className="text-[0.65rem] text-red-600 mt-[0.15rem]">Not visible to customers</div>
       </>
     );
   }
   return (
-    <span className="inline-flex items-center gap-[0.3rem] bg-[#dcfce7] text-[#15803d] py-[0.15rem] px-[0.55rem] rounded-full text-[0.7rem] font-semibold border border-[#bbf7d0]">
+    <span className="inline-flex items-center gap-[0.3rem] bg-wa-light text-green-700 py-[0.15rem] px-[0.55rem] rounded-full text-[0.7rem] font-semibold border border-green-200">
       ✅ {count} Branch{count !== 1 ? 'es' : ''}
     </span>
   );
@@ -393,7 +393,7 @@ export default function MenuEditorSection({
       <>
         <span className="line-through text-mute text-[0.75rem]">₹{pricePaise / 100}</span>
         {' '}
-        <span className="text-[#dc2626] font-semibold">₹{salePaise / 100}</span>
+        <span className="text-red-500 font-semibold">₹{salePaise / 100}</span>
       </>
     ) : `₹${pricePaise / 100}`;
     return (
@@ -413,8 +413,8 @@ export default function MenuEditorSection({
         </td>
         <td className="py-[0.45rem] px-[0.7rem] text-[0.82rem] font-medium">
           {displayName}
-          {item.is_bestseller && <span className="text-[0.6rem] text-[#f59e0b] ml-1">⭐</span>}
-          {!item.is_available && <span className="text-[0.65rem] text-[#9ca3af] ml-1">(unavailable)</span>}
+          {item.is_bestseller && <span className="text-[0.6rem] text-yellow-500 ml-1">⭐</span>}
+          {!item.is_available && <span className="text-[0.65rem] text-neutral-400 ml-1">(unavailable)</span>}
         </td>
         <td className="py-[0.45rem] px-[0.7rem] text-[0.78rem] text-dim">{item._categoryName || '—'}</td>
         {showBranchBadge && (
@@ -423,12 +423,12 @@ export default function MenuEditorSection({
         <td className="py-[0.45rem] px-[0.7rem]">
           {branchStatusCell(item)}
           {item.meta_status === 'incomplete' && (
-            <div className="mt-[0.2rem] inline-flex items-center gap-1 bg-[#fef3c7] text-[#92400e] py-[0.1rem] px-[0.45rem] rounded-full text-[0.65rem] font-semibold border border-[#fde68a]">
+            <div className="mt-[0.2rem] inline-flex items-center gap-1 bg-amber-100 text-amber-900 py-[0.1rem] px-[0.45rem] rounded-full text-[0.65rem] font-semibold border border-yellow-200">
               ⚠ Incomplete
             </div>
           )}
           {item.meta_status === 'ready' && (
-            <div className="mt-[0.2rem] inline-flex items-center gap-1 bg-[#dbeafe] text-[#1d4ed8] py-[0.1rem] px-[0.45rem] rounded-full text-[0.65rem] font-semibold border border-[#bfdbfe]">
+            <div className="mt-[0.2rem] inline-flex items-center gap-1 bg-blue-100 text-blue-600 py-[0.1rem] px-[0.45rem] rounded-full text-[0.65rem] font-semibold border border-[#bfdbfe]">
               ✔ Ready
             </div>
           )}
@@ -488,7 +488,7 @@ export default function MenuEditorSection({
           ) : (
             <button
               type="button"
-              className="bg-none border-0 cursor-pointer text-[0.85rem] text-[#9ca3af]"
+              className="bg-none border-0 cursor-pointer text-[0.85rem] text-neutral-400"
               onClick={() => setPendingDeleteId(item.id)}
               title="Delete"
             >
@@ -518,7 +518,7 @@ export default function MenuEditorSection({
       const maxP = Math.max(...prices);
       const priceCell: ReactNode = minP === maxP ? `₹${minP / 100}` : `₹${minP / 100} – ₹${maxP / 100}`;
       rows.push(
-        <tr key={`group-${entry._groupId}`} className="bg-[#f0fdf4] border-t border-rim">
+        <tr key={`group-${entry._groupId}`} className="bg-green-50 border-t border-rim">
           <td className="py-[0.45rem] px-[0.4rem] text-center">
             <input
               type="checkbox"
@@ -599,7 +599,7 @@ export default function MenuEditorSection({
             ) : (
               <button
                 type="button"
-                className="bg-none border-0 cursor-pointer text-[0.85rem] text-[#9ca3af]"
+                className="bg-none border-0 cursor-pointer text-[0.85rem] text-neutral-400"
                 onClick={() => setPendingDeleteId(first.id)}
                 title="Delete first variant"
               >
@@ -678,8 +678,8 @@ export default function MenuEditorSection({
 
       {/* Manual catalog ID prompt (replaces window.prompt) */}
       {manualCatalogPrompt && (
-        <div className="card mb-[0.8rem] py-[0.7rem] px-[0.9rem] bg-[#fffbeb] border-[#fde68a]">
-          <p className="text-[0.82rem] mb-2 text-[#92400e]">
+        <div className="card mb-[0.8rem] py-[0.7rem] px-[0.9rem] bg-amber-50 border-yellow-200">
+          <p className="text-[0.82rem] mb-2 text-amber-900">
             Auto-discovery failed. Paste your Meta Catalog ID (find it in Meta Business Suite → Commerce Manager → your catalog → Settings):
           </p>
           <div className="flex gap-[0.4rem]">
@@ -715,7 +715,7 @@ export default function MenuEditorSection({
             </button>
           ) : (
             <>
-              <span className="text-[0.78rem] text-[#b45309]">
+              <span className="text-[0.78rem] text-amber-600">
                 {allClosing ? 'Mark all items unavailable?' : 'Bring all items back online?'}
               </span>
               <button type="button" className="btn-p btn-sm" onClick={handleBulkAvail}>Confirm</button>
@@ -726,7 +726,7 @@ export default function MenuEditorSection({
           {checked.size > 0 && (
             pendingBulkDelete ? (
               <>
-                <span className="text-[0.78rem] text-[#b91c1c]">Delete {checked.size} item{checked.size > 1 ? 's' : ''}?</span>
+                <span className="text-[0.78rem] text-red-600">Delete {checked.size} item{checked.size > 1 ? 's' : ''}?</span>
                 <button type="button" className="btn-del btn-sm" onClick={handleBulkDelete}>Yes, delete</button>
                 <button type="button" className="btn-g btn-sm" onClick={() => setPendingBulkDelete(false)}>Cancel</button>
               </>
@@ -762,7 +762,7 @@ export default function MenuEditorSection({
           ) : (
             <table className="w-full border-collapse text-[0.84rem]">
               <thead>
-                <tr className="bg-[#f9fafb] border-b-2 border-rim">
+                <tr className="bg-neutral-50 border-b-2 border-rim">
                   <th className="py-[0.55rem] px-[0.4rem] text-center w-8">
                     <input
                       type="checkbox"

@@ -9,7 +9,7 @@ import { getReferrals, getReferralLinks, requestReferralLink } from '../../../ap
 const STATUS_COLOR: Record<string, string> = {
   active: '#22c55e',
   converted: '#a78bfa',
-  expired: '#6b7280',
+  expired: 'var(--dim)',
 };
 
 // Settlement / commission state colour map. Greens = money realised,
@@ -17,7 +17,7 @@ const STATUS_COLOR: Record<string, string> = {
 const COMMISSION_COLOR: Record<string, string> = {
   pending: '#f59e0b',
   confirmed: '#22c55e',
-  settled: '#6b7280',
+  settled: 'var(--dim)',
   reversed: '#ef4444',
 };
 
@@ -200,7 +200,7 @@ export default function ReferralsSection() {
                     <div className="flex items-center justify-between flex-wrap gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <strong className="text-[0.9rem]">{label}</strong>
-                        <span className="bg-[#22c55e22] text-[#22c55e] text-[0.68rem] py-[0.15rem] px-2 rounded-full uppercase font-bold tracking-[0.04em]">
+                        <span className="bg-[#22c55e22] text-emerald-500 text-[0.68rem] py-[0.15rem] px-2 rounded-full uppercase font-bold tracking-[0.04em]">
                           {link.status || 'active'}
                         </span>
                       </div>
@@ -255,7 +255,7 @@ export default function ReferralsSection() {
           <div className="text-[0.78rem] text-dim mt-[0.2rem]">Total Order Value</div>
         </div>
         <div className="card py-4 px-[1.2rem]">
-          <div className="text-[1.5rem] font-bold text-[#a78bfa]">
+          <div className="text-[1.5rem] font-bold text-violet-400">
             {loading && !data ? '…' : `₹${formatINR(feeWithGst)}`}
           </div>
           <div className="text-[0.78rem] text-dim mt-[0.2rem]">
@@ -311,7 +311,7 @@ export default function ReferralsSection() {
                         // colour comes from the per-status STATUS_COLOR
                         // palette at runtime — Tailwind can't pre-bake
                         // the dynamic hex.
-                        style={{ color: STATUS_COLOR[r.status || ''] || '#6b7280' }}
+                        style={{ color: STATUS_COLOR[r.status || ''] || 'var(--dim)' }}
                       >
                         {r.status}
                       </span>
@@ -323,14 +323,14 @@ export default function ReferralsSection() {
                     </td>
                     <td className="py-[0.6rem] px-4">{r.orders_count}</td>
                     <td className="py-[0.6rem] px-4">₹{formatINR(r.total_order_value_rs)}</td>
-                    <td className="py-[0.6rem] px-4 text-[#a78bfa] font-semibold">₹{formatINR(r.referral_fee_rs)}</td>
+                    <td className="py-[0.6rem] px-4 text-violet-400 font-semibold">₹{formatINR(r.referral_fee_rs)}</td>
                     <td className="py-[0.6rem] px-4">
                       {r.commission_status ? (
                         <span
                           className="font-semibold capitalize text-[0.8rem]"
                           // colour comes from the per-state
                           // COMMISSION_COLOR palette at runtime.
-                          style={{ color: COMMISSION_COLOR[r.commission_status] || '#6b7280' }}
+                          style={{ color: COMMISSION_COLOR[r.commission_status] || 'var(--dim)' }}
                         >
                           {r.commission_status}
                         </span>

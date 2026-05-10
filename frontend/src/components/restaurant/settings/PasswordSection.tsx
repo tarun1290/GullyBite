@@ -120,20 +120,20 @@ export default function PasswordSection() {
 
       <div className="card mb-[1.2rem] border-rim">
         <div className="ch bg-[#fff1f2]">
-          <h3 className="text-[#dc2626]">Delete Account</h3>
+          <h3 className="text-red-500">Delete Account</h3>
         </div>
         <div className="cb">
           <p className="text-[0.84rem] text-dim mb-[0.8rem] leading-[1.65]">
             Permanently delete your GullyBite account, all restaurant data, branches, menu items,
             orders and WhatsApp connections.
             {' '}
-            <strong className="text-[#dc2626]">This action cannot be undone.</strong>
+            <strong className="text-red-500">This action cannot be undone.</strong>
           </p>
 
           {!deleteOpened && (
             <button
               type="button"
-              className="btn-g text-[#dc2626] border-[#fecaca]"
+              className="btn-g text-red-500 border-red-200"
               onClick={() => setDeleteOpened(true)}
             >
               Delete Account
@@ -142,7 +142,7 @@ export default function PasswordSection() {
 
           {deleteOpened && (
             <div className="mb-4">
-              <label className="text-[0.78rem] font-semibold text-[#dc2626] mb-[0.35rem] block">
+              <label className="text-[0.78rem] font-semibold text-red-500 mb-[0.35rem] block">
                 Type your email address to confirm deletion:
               </label>
               <input
@@ -150,12 +150,12 @@ export default function PasswordSection() {
                 value={deleteEmail}
                 onChange={(e) => setDeleteEmail(e.target.value)}
                 placeholder={restaurant?.email || 'your-email@example.com'}
-                className="w-full py-2 px-3 border border-[#fecaca] rounded-[7px] text-[0.85rem] outline-hidden mb-[0.6rem]"
+                className="w-full py-2 px-3 border border-red-200 rounded-[7px] text-[0.85rem] outline-hidden mb-[0.6rem]"
               />
               <div className="flex gap-[0.6rem]">
                 <button
                   type="button"
-                  className={`btn-p bg-[#dc2626] flex-1 ${emailMatches ? 'opacity-100' : 'opacity-50'}`}
+                  className={`btn-p bg-red-500 flex-1 ${emailMatches ? 'opacity-100' : 'opacity-50'}`}
                   onClick={handleDelete}
                   disabled={deleting || !emailMatches}
                 >

@@ -4,39 +4,11 @@
  */
 
 /*
- * Dashboard/admin surface :root overrides. These rewire the semantic
- * tokens defined in tokens/colors.css (landing/auth defaults use the
- * slate scale + indigo-600) to the neutral-gray scale + deeper indigo
- * the dashboard ships with today. Primitives come from tokens/; alpha
- * rgba() values and unscaled literals (--ink, one-off hexes) stay here
- * because CSS var() cannot carry an alpha channel.
+ * Dashboard/admin surface :root overrides previously lived here. As of
+ * Part 6b they are emitted by the generated tokens.css (Part 3) and the
+ * duplicate block has been removed. Component classes (.btn, .card,
+ * .stat, etc.) below stay — only the :root token block was removed.
  */
-:root {
-  --ink:   #f8f9fb;                  /* Dashboard body bg — no primitive match */
-  --ink2:  var(--gb-neutral-0);      /* Card surface */
-  --ink3:  var(--gb-neutral-0);      /* Alt card surface */
-  --ink4:  var(--gb-neutral-100);    /* Ghost button hover */
-  --rim:   var(--gb-neutral-200);    /* Border */
-  --rim2:  var(--gb-neutral-300);    /* Stronger border */
-  --tx:    var(--gb-neutral-900);    /* Primary text */
-  --dim:   var(--gb-neutral-500);    /* Secondary text */
-  --mute:  var(--gb-neutral-400);    /* Muted text */
-  --acc:   var(--gb-teal-700);       /* Dashboard action color (#0F766E) */
-  --acc2:  var(--gb-teal-800);       /* Dashboard action hover (#0D5F58) */
-  --acc-glow: var(--gb-teal-700-glow);
-  --wa:    var(--gb-wa-500);
-  --wa2:   var(--gb-wa-600);
-  --wa-glow: rgba(22, 163, 74, .1);
-  --gold:  var(--gb-amber-500);
-  --gold2: var(--gb-amber-600);
-  --gold-glow: rgba(217, 119, 6, .1);
-  --red:   var(--gb-red-500);
-  --blue:  var(--gb-blue-500);
-  --r:     var(--radius-xl);
-  --shadow-sm: var(--shadow-crisp-sm);
-  --shadow:    var(--shadow-crisp-md);
-  --shadow-lg: var(--shadow-crisp-lg);
-}
 
 body { font-family: var(--font-body); background: var(--ink); color: var(--tx); }
 

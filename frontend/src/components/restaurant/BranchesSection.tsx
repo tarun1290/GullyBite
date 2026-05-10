@@ -430,11 +430,11 @@ export default function BranchesSection() {
             {csvResult && (
               <div className="mt-[0.6rem] text-[0.8rem]">
                 <div className="flex gap-[0.4rem] flex-wrap">
-                  <span className="csv-result-ok bg-[#dcfce7] text-[#15803d] py-[0.2rem] px-[0.55rem] rounded-md">
+                  <span className="csv-result-ok bg-wa-light text-green-700 py-[0.2rem] px-[0.55rem] rounded-md">
                     ✅ <strong>{csvResult.created}</strong> created
                   </span>
                   {!!csvResult.geocodeFailed?.length && (
-                    <span className="csv-result-warn bg-[#fef9c3] text-[#a16207] py-[0.2rem] px-[0.55rem] rounded-md">
+                    <span className="csv-result-warn bg-yellow-100 text-[#a16207] py-[0.2rem] px-[0.55rem] rounded-md">
                       ⚠️ <strong>{csvResult.geocodeFailed.length}</strong> geocoding failed
                     </span>
                   )}
@@ -477,7 +477,7 @@ export default function BranchesSection() {
                 id={`bc-${b.id}`}
               >
                 {isDeleted && (
-                  <span className="absolute top-2 right-[0.6rem] bg-[#fee2e2] text-[#b91c1c] text-[0.65rem] font-bold tracking-[0.04em] py-[0.15rem] px-2 rounded-sm z-1">
+                  <span className="absolute top-2 right-[0.6rem] bg-red-100 text-red-600 text-[0.65rem] font-bold tracking-[0.04em] py-[0.15rem] px-2 rounded-sm z-1">
                     DELETED
                   </span>
                 )}
@@ -740,7 +740,7 @@ export default function BranchesSection() {
               </button>
             </div>
             <div className="cb">
-              <div className="bg-[#fffbeb] border border-[#fde68a] rounded-md py-3 px-[0.85rem] text-[#92400e] text-[0.82rem] mb-[0.85rem]">
+              <div className="bg-amber-50 border border-yellow-200 rounded-md py-3 px-[0.85rem] text-amber-900 text-[0.82rem] mb-[0.85rem]">
                 <strong>{deletingBranch.name}</strong> will be hidden from the platform but can be restored later.
                 Customers can no longer order from this branch.
               </div>

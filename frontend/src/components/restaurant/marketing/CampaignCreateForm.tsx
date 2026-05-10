@@ -256,7 +256,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
               ))}
             </select>
             {branchesErr && (
-              <div className="text-[#b91c1c] text-[0.72rem] mt-[0.3rem]">
+              <div className="text-red-600 text-[0.72rem] mt-[0.3rem]">
                 {branchesErr}
               </div>
             )}
@@ -329,7 +329,7 @@ export default function CampaignCreateForm({ atCap, onCreated }: CampaignCreateF
             <label className="lbl">Tags</label>
             <div className="border border-rim rounded-lg p-[0.6rem] bg-ink4 flex flex-wrap gap-3">
               {tagsErr ? (
-                <span className="text-[#b91c1c] text-[0.82rem]">Failed to load tags: {tagsErr}</span>
+                <span className="text-red-600 text-[0.82rem]">Failed to load tags: {tagsErr}</span>
               ) : tagsLoading ? (
                 <span className="text-dim text-[0.82rem]">Loading tags…</span>
               ) : !tags || tags.length === 0 ? (

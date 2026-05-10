@@ -132,7 +132,7 @@ function slaLabel(issue: AdminIssue): ReactNode {
   const h = Math.floor(rem / 3600000);
   const m = Math.floor((rem % 3600000) / 60000);
   if (rem < 3600000) return <span className="text-red-500">🟡 {m}m</span>;
-  if (h < 6) return <span className="text-[#f59e0b]">🟡 {h}h{m}m</span>;
+  if (h < 6) return <span className="text-yellow-500">🟡 {h}h{m}m</span>;
   return <span className="text-wa-500">🟢 {h}h</span>;
 }
 

@@ -49,7 +49,7 @@ interface StatusBadgeProps { status?: string }
 
 function StatusBadge({ status }: StatusBadgeProps) {
   const cls = status === 'APPROVED'
-    ? 'bg-[#d1fae5] text-[#059669]'
+    ? 'bg-emerald-100 text-emerald-600'
     : status === 'PENDING'
       ? 'bg-amber-100 text-amber-500'
       : status === 'REJECTED'
@@ -70,7 +70,7 @@ const EMPTY_CLS = 'p-6 text-center text-dim';
 const INPUT_CLS = 'bg-neutral-0 border border-rim rounded-md py-[0.45rem] px-[0.7rem] text-[0.85rem]';
 const LBL_CLS = 'text-[0.75rem] text-dim font-semibold block mb-1';
 const HINT_CLS = 'text-[0.7rem] text-dim mt-1';
-const CODE_CHIP_CLS = 'bg-[#dbeafe] py-[0.05rem] px-[0.3rem] rounded-[3px]';
+const CODE_CHIP_CLS = 'bg-blue-100 py-[0.05rem] px-[0.3rem] rounded-[3px]';
 
 export default function AdminCouponsPage() {
   const { showToast } = useToast();
@@ -171,7 +171,7 @@ export default function AdminCouponsPage() {
   };
 
   const msgCls = msg
-    ? msg.type === 'error' ? 'text-red-500' : msg.type === 'success' ? 'text-[#059669]' : 'text-dim'
+    ? msg.type === 'error' ? 'text-red-500' : msg.type === 'success' ? 'text-emerald-600' : 'text-dim'
     : '';
 
   return (
@@ -199,7 +199,7 @@ export default function AdminCouponsPage() {
         </div>
       )}
 
-      <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-lg py-3 px-[0.95rem] mb-4 text-[0.8rem] leading-normal text-[#1e40af]">
+      <div className="bg-[#eff6ff] border border-[#bfdbfe] rounded-lg py-3 px-[0.95rem] mb-4 text-[0.8rem] leading-normal text-blue-800">
         <strong>How coupon templates work:</strong> Meta treats these as <em>marketing</em> templates
         with a <code className={CODE_CHIP_CLS}>copy_code</code> button.{' '}
         <code className={CODE_CHIP_CLS}>{'{{1}}'}</code> is the coupon code,{' '}

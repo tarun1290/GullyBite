@@ -57,7 +57,7 @@ function sourceBadge(src?: string) {
 
 function statusBadge(l: LogRow) {
   if (l.error_message) return <span className="text-red-600 text-[0.75rem] font-semibold">Error</span>;
-  if (l.processed) return <span className="text-[#047857] text-[0.75rem] font-semibold">Processed</span>;
+  if (l.processed) return <span className="text-emerald-700 text-[0.75rem] font-semibold">Processed</span>;
   return <span className="text-dim text-[0.75rem]">Pending</span>;
 }
 

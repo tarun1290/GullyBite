@@ -43,7 +43,7 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
   if (compact) {
     if (connected) {
       return (
-        <span className="inline-flex items-center gap-[0.35rem] bg-[#dcfce7] text-[#15803d] text-[0.72rem] font-semibold py-1 px-[0.55rem] rounded-md shrink-0">
+        <span className="inline-flex items-center gap-[0.35rem] bg-wa-light text-green-700 text-[0.72rem] font-semibold py-1 px-[0.55rem] rounded-md shrink-0">
           ✓ Connected
         </span>
       );
@@ -64,14 +64,14 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
     return (
       <div
         id="wa-connect-banner"
-        className="flex items-center gap-3 bg-[#f0fdf4] border-b-2 border-[#22c55e] py-4 px-8"
+        className="flex items-center gap-3 bg-green-50 border-b-2 border-emerald-500 py-4 px-8"
       >
         <span className="text-[1.4rem]">✅</span>
         <div>
-          <div className="font-bold text-[0.9rem] text-[#15803d]">
+          <div className="font-bold text-[0.9rem] text-green-700">
             WhatsApp Business connected
           </div>
-          <div className="text-[0.8rem] text-[#166534] mt-[0.15rem]">
+          <div className="text-[0.8rem] text-green-800 mt-[0.15rem]">
             You&apos;re ready to receive orders.
           </div>
         </div>
@@ -82,15 +82,15 @@ export default function WaConnectBanner({ onConnected, connected = false, compac
   return (
     <div
       id="wa-connect-banner"
-      className="flex items-center justify-between gap-4 flex-wrap bg-[#fffbeb] border-b-2 border-[#f59e0b] py-4 px-8"
+      className="flex items-center justify-between gap-4 flex-wrap bg-amber-50 border-b-2 border-yellow-500 py-4 px-8"
     >
       <div className="flex items-center gap-3">
         <span className="text-[1.4rem]">📵</span>
         <div>
-          <div className="font-bold text-[0.9rem] text-[#92400e]">
+          <div className="font-bold text-[0.9rem] text-amber-900">
             WhatsApp Business not connected
           </div>
-          <div className="text-[0.8rem] text-[#b45309] mt-[0.15rem]">
+          <div className="text-[0.8rem] text-amber-600 mt-[0.15rem]">
             Connect WhatsApp to start receiving orders. All selling features are locked until connected.
           </div>
         </div>

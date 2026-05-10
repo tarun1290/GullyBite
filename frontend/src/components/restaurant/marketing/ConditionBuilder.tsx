@@ -412,8 +412,8 @@ function AudienceEstimate({ conditions, estimatedCount, loadingCount }: Audience
   // Match-count tone: green when there's an audience, amber when zero
   // so the operator notices an empty segment before submitting.
   const tone = estimatedCount > 0
-    ? 'bg-[#ecfdf5] border-[#bbf7d0] text-[#065f46]'
-    : 'bg-[#fffbeb] border-[#fde68a] text-[#92400e]';
+    ? 'bg-[#ecfdf5] border-green-200 text-emerald-800'
+    : 'bg-amber-50 border-yellow-200 text-amber-900';
   return (
     <div className={`text-[0.85rem] font-semibold py-2 px-3 border rounded-md ${tone}`}>
       ~{estimatedCount.toLocaleString('en-IN')} customer{estimatedCount === 1 ? '' : 's'} match

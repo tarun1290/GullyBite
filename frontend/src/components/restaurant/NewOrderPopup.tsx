@@ -323,12 +323,12 @@ export default function NewOrderPopup() {
         className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-[560px] max-h-[90vh] z-9999 bg-white border border-rim rounded-xl shadow-[0_20px_50px_-10px_rgba(15,23,42,0.35),0_6px_18px_rgba(15,23,42,0.2)] overflow-hidden flex flex-col"
       >
       {/* Header */}
-      <div className="py-3 px-4 border-b border-rim flex items-center justify-between gap-[0.6rem] bg-[#fef3c7]">
+      <div className="py-3 px-4 border-b border-rim flex items-center justify-between gap-[0.6rem] bg-amber-100">
         <div className="flex items-center gap-2 min-w-0">
           <span aria-hidden className="text-base">🔔</span>
-          <strong className="text-[0.88rem] text-[#92400e]">New Order</strong>
+          <strong className="text-[0.88rem] text-amber-900">New Order</strong>
           {total > 1 && (
-            <span className="text-[0.72rem] text-[#92400e] opacity-85">· {positionLabel}</span>
+            <span className="text-[0.72rem] text-amber-900 opacity-85">· {positionLabel}</span>
           )}
         </div>
         {total > 1 && (
@@ -336,7 +336,7 @@ export default function NewOrderPopup() {
             type="button"
             onClick={handleNext}
             disabled={!!busy}
-            className="bg-transparent border border-[#fde68a] text-[#92400e] py-[0.2rem] px-[0.55rem] rounded-md text-[0.74rem] cursor-pointer disabled:cursor-not-allowed"
+            className="bg-transparent border border-yellow-200 text-amber-900 py-[0.2rem] px-[0.55rem] rounded-md text-[0.74rem] cursor-pointer disabled:cursor-not-allowed"
             aria-label="Show next pending order"
           >
             Next →
@@ -421,7 +421,7 @@ export default function NewOrderPopup() {
             {/* Instructions row — conditional on a non-empty value
                 across any of the three accepted field names. */}
             {hasInstructions ? (
-              <div className="mb-[0.4rem] py-[0.45rem] px-[0.65rem] bg-[#fef3c7] border border-[#fde68a] rounded-md text-[0.78rem] text-[#92400e] flex gap-[0.45rem] items-start">
+              <div className="mb-[0.4rem] py-[0.45rem] px-[0.65rem] bg-amber-100 border border-yellow-200 rounded-md text-[0.78rem] text-amber-900 flex gap-[0.45rem] items-start">
                 <span aria-hidden>📝</span>
                 <div>
                   <div className="font-semibold mb-[0.1rem]">Instructions</div>

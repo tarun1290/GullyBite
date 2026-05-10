@@ -161,7 +161,7 @@ export default function AdminSettingsPage() {
                     )}
                   </>
                 ) : (
-                  <span className="text-[#92400e]">
+                  <span className="text-amber-900">
                     Enter a value between {PRICING_MIN} and {PRICING_MAX} to preview
                   </span>
                 )}
@@ -188,7 +188,7 @@ export default function AdminSettingsPage() {
             </div>
           )}
 
-          <div className="mt-4 py-2 px-3 bg-[#fffbeb] border border-[#fde68a] rounded-md text-[0.78rem] text-[#92400e]">
+          <div className="mt-4 py-2 px-3 bg-amber-50 border border-yellow-200 rounded-md text-[0.78rem] text-amber-900">
             <strong className="not-italic">Note:</strong> changes take effect on the next campaign create + send.
             In-flight campaigns that have already started their recipient loop continue with the value
             snapshotted at send-start.

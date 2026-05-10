@@ -239,7 +239,7 @@ interface ErrorStateProps { message: string; onRetry: () => void }
 
 function ErrorState({ message, onRetry }: ErrorStateProps) {
   return (
-    <div className="py-3 px-[0.9rem] bg-[#fef2f2] border border-[#fecaca] rounded-lg text-[#b91c1c] text-[0.84rem] flex items-center justify-between gap-[0.6rem]">
+    <div className="py-3 px-[0.9rem] bg-red-50 border border-red-200 rounded-lg text-red-600 text-[0.84rem] flex items-center justify-between gap-[0.6rem]">
       <span>Failed to load: {message}</span>
       <button type="button" className="btn-g btn-sm" onClick={onRetry}>Retry</button>
     </div>
@@ -464,7 +464,7 @@ function PickerModal({ open, onClose, currentCatalogId, seedCatalogs, onSwitched
       )}
 
       {err && (
-        <div className="mt-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>
+        <div className="mt-[0.6rem] text-red-600 text-[0.8rem]">{err}</div>
       )}
 
       <div className="mt-[0.9rem] flex gap-3 justify-end">
@@ -530,7 +530,7 @@ function CreateModal({ open, onClose, onCreated }: CreateModalProps) {
         3–50 characters.{trimmed.length > 0 && ` (${trimmed.length})`}
       </div>
 
-      {err && <div className="mt-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>}
+      {err && <div className="mt-[0.6rem] text-red-600 text-[0.8rem]">{err}</div>}
 
       <div className="mt-[0.9rem] flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
@@ -576,8 +576,8 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
 
   return (
     <Modal open={open} onClose={onClose} title="Delete this catalog?" busy={busy}>
-      <div className="bg-[#fef2f2] border border-[#fecaca] rounded-md py-3 px-[0.85rem] text-[#7f1d1d] text-[0.82rem] mb-[0.85rem]">
-        <div className="font-bold text-[#b91c1c] mb-[0.3rem]">
+      <div className="bg-red-50 border border-red-200 rounded-md py-3 px-[0.85rem] text-red-950 text-[0.82rem] mb-[0.85rem]">
+        <div className="font-bold text-red-600 mb-[0.3rem]">
           ⚠ This cannot be undone
         </div>
         This will permanently delete the catalog from your Meta business account.
@@ -603,7 +603,7 @@ function DeleteModal({ open, onClose, catalogId, catalogName, isCurrentlyConnect
         className="w-full py-2 px-[0.7rem] border border-rim rounded-md text-[0.85rem] bg-white"
       />
 
-      {err && <div className="mt-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>}
+      {err && <div className="mt-[0.6rem] text-red-600 text-[0.8rem]">{err}</div>}
 
       <div className="mt-[0.9rem] flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>
@@ -648,13 +648,13 @@ function DisconnectModal({ open, onClose, catalogName, onDisconnected }: Disconn
 
   return (
     <Modal open={open} onClose={onClose} title="Disconnect catalog from WhatsApp?" busy={busy}>
-      <div className="bg-[#fffbeb] border border-[#fde68a] rounded-md py-3 px-[0.85rem] text-[#92400e] text-[0.82rem] mb-[0.85rem]">
+      <div className="bg-amber-50 border border-yellow-200 rounded-md py-3 px-[0.85rem] text-amber-900 text-[0.82rem] mb-[0.85rem]">
         The catalog{catalogName ? ` "${catalogName}"` : ''} will remain in your Meta
         business account but will no longer be available to customers through WhatsApp.
         You can reconnect it later.
       </div>
 
-      {err && <div className="mb-[0.6rem] text-[#b91c1c] text-[0.8rem]">{err}</div>}
+      {err && <div className="mb-[0.6rem] text-red-600 text-[0.8rem]">{err}</div>}
 
       <div className="flex gap-3 justify-end">
         <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={busy}>Cancel</button>

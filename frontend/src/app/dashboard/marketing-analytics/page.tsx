@@ -45,14 +45,14 @@ function SectionCard({ title, subtitle, children, empty, loading }: SectionCardP
   return (
     <Card title={title} className="marketing-analytics-section">
       {subtitle && (
-        <div className="text-[0.78rem] text-[#64748b] mb-[0.8rem]">
+        <div className="text-[0.78rem] text-slate-500 mb-[0.8rem]">
           {subtitle}
         </div>
       )}
       {loading ? (
-        <div className="py-4 px-0 text-[#94a3b8] text-[0.85rem]">Loading…</div>
+        <div className="py-4 px-0 text-slate-400 text-[0.85rem]">Loading…</div>
       ) : empty ? (
-        <div className="py-4 px-0 text-[#94a3b8] text-[0.85rem]">{empty}</div>
+        <div className="py-4 px-0 text-slate-400 text-[0.85rem]">{empty}</div>
       ) : (
         children
       )}
@@ -243,7 +243,7 @@ function CampaignSection({ data, loading }: CampaignSectionProps) {
           </StatGrid>
           {Array.isArray(data.top_templates) && data.top_templates.length > 0 && (
             <>
-              <div className="text-[0.78rem] text-[#64748b] mt-[1.2rem] mb-2">
+              <div className="text-[0.78rem] text-slate-500 mt-[1.2rem] mb-2">
                 Top templates by ROI
               </div>
               <table className="data-table w-full text-[0.82rem]">
@@ -264,7 +264,7 @@ function CampaignSection({ data, loading }: CampaignSectionProps) {
                       <td className="text-left">
                         <code className="text-[0.76rem]">{t.template_id}</code>
                         {t.use_case && (
-                          <span className="text-[#94a3b8] ml-[0.3rem]">({t.use_case})</span>
+                          <span className="text-slate-400 ml-[0.3rem]">({t.use_case})</span>
                         )}
                       </td>
                       <td>{fmtNum(t.campaigns)}</td>
@@ -310,7 +310,7 @@ function CustomerSection({ data, loading }: CustomerSectionProps) {
           </StatGrid>
           <div className="grid grid-cols-2 gap-[1.1rem] mt-4">
             <div>
-              <div className="text-[0.78rem] text-[#64748b] mb-[0.4rem]">
+              <div className="text-[0.78rem] text-slate-500 mb-[0.4rem]">
                 RFM distribution
               </div>
               <ul className="list-none p-0 m-0 text-[0.82rem]">
@@ -324,12 +324,12 @@ function CustomerSection({ data, loading }: CustomerSectionProps) {
                   </li>
                 ))}
                 {(data.rfm_distribution || []).length === 0 && (
-                  <li className="text-[#94a3b8]">No data.</li>
+                  <li className="text-slate-400">No data.</li>
                 )}
               </ul>
             </div>
             <div>
-              <div className="text-[0.78rem] text-[#64748b] mb-[0.4rem]">
+              <div className="text-[0.78rem] text-slate-500 mb-[0.4rem]">
                 Acquisition sources
               </div>
               <ul className="list-none p-0 m-0 text-[0.82rem]">
@@ -343,7 +343,7 @@ function CustomerSection({ data, loading }: CustomerSectionProps) {
                   </li>
                 ))}
                 {(data.acquisition_sources || []).length === 0 && (
-                  <li className="text-[#94a3b8]">No data.</li>
+                  <li className="text-slate-400">No data.</li>
                 )}
               </ul>
             </div>
@@ -406,7 +406,7 @@ function FeedbackSection({ data, loading }: FeedbackSectionProps) {
           </StatGrid>
           <div className="grid grid-cols-2 gap-[1.1rem] mt-4">
             <div>
-              <div className="text-[0.78rem] text-[#64748b] mb-[0.4rem]">
+              <div className="text-[0.78rem] text-slate-500 mb-[0.4rem]">
                 Rating distribution
               </div>
               <ul className="list-none p-0 m-0 text-[0.82rem]">
@@ -422,7 +422,7 @@ function FeedbackSection({ data, loading }: FeedbackSectionProps) {
               </ul>
             </div>
             <div>
-              <div className="text-[0.78rem] text-[#64748b] mb-[0.4rem]">
+              <div className="text-[0.78rem] text-slate-500 mb-[0.4rem]">
                 By source
               </div>
               <ul className="list-none p-0 m-0 text-[0.82rem]">
@@ -434,7 +434,7 @@ function FeedbackSection({ data, loading }: FeedbackSectionProps) {
                     <span>
                       {r.source}
                       {r.avg_rating != null && (
-                        <span className="text-[#94a3b8] ml-[0.3rem]">
+                        <span className="text-slate-400 ml-[0.3rem]">
                           ({r.avg_rating}★)
                         </span>
                       )}
@@ -554,7 +554,7 @@ export default function MarketingAnalyticsPage() {
       </div>
 
       {error && (
-        <div className="bg-[#fee2e2] border border-[#fecaca] rounded-lg py-3 px-4 text-[0.85rem] text-[#991b1b] mb-[1.1rem]">
+        <div className="bg-red-100 border border-red-200 rounded-lg py-3 px-4 text-[0.85rem] text-red-800 mb-[1.1rem]">
           {error}
         </div>
       )}

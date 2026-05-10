@@ -211,7 +211,7 @@ function SettlementNote({ order }: ChargeBreakdownProps) {
   if (!(parseFloat(String(order.restaurant_delivery_rs || 0)) > 0)) return null;
   const deduction = parseFloat(String(order.restaurant_delivery_rs || 0)) + parseFloat(String(order.restaurant_delivery_gst_rs || 0));
   return (
-    <div className="mt-[0.8rem] py-[0.65rem] px-[0.9rem] bg-[#fef9ec] border border-[#fde68a] rounded-lg text-[0.78rem] text-[#92400e]">
+    <div className="mt-[0.8rem] py-[0.65rem] px-[0.9rem] bg-[#fef9ec] border border-yellow-200 rounded-lg text-[0.78rem] text-amber-900">
       Settlement deduction: <strong>₹{deduction.toFixed(2)}</strong> (restaurant delivery share + GST)
     </div>
   );
@@ -556,7 +556,7 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
               )}
 
               {confirmCancelDelivery && (
-                <div className="mt-[0.6rem] py-[0.65rem] px-[0.9rem] bg-[#fef2f2] border border-[#fecaca] rounded-lg text-[0.8rem] text-[#991b1b] flex items-center justify-between gap-[0.6rem] flex-wrap">
+                <div className="mt-[0.6rem] py-[0.65rem] px-[0.9rem] bg-red-50 border border-red-200 rounded-lg text-[0.8rem] text-red-800 flex items-center justify-between gap-[0.6rem] flex-wrap">
                   <span>Cancel the active delivery?</span>
                   <div className="flex gap-[0.4rem]">
                     <button

@@ -345,7 +345,7 @@ function OverviewSection({ period, restaurants }: OverviewSectionProps): ReactNo
           ) : (
             <div className="grid grid-cols-2 gap-4 text-[0.85rem]">
               <div>
-                <strong className="text-[#047857]">Money In</strong><br />
+                <strong className="text-emerald-700">Money In</strong><br />
                 GMV Collected: {fmtINR(data.gmv_rs)}
               </div>
               <div>

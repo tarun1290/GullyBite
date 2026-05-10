@@ -114,7 +114,7 @@ function Toggle({ checked, disabled, onChange }: ToggleProps) {
     >
       <span
         className={`w-9 h-5 rounded-xl relative transition-[background] duration-120 ${
-          checked ? 'bg-[#4f46e5]' : 'bg-[#cbd5e1]'
+          checked ? 'bg-indigo-600' : 'bg-slate-300'
         }`}
       >
         <span
@@ -149,7 +149,7 @@ interface FieldProps { label: string; children: ReactNode; hint?: string }
 function Field({ label, children, hint }: FieldProps) {
   return (
     <label className="flex flex-col gap-[0.2rem]">
-      <span className="text-[0.78rem] text-[#334155]">{label}</span>
+      <span className="text-[0.78rem] text-slate-700">{label}</span>
       {children}
       {hint && <span className="text-[0.72rem] text-dim">{hint}</span>}
     </label>
@@ -288,7 +288,7 @@ function JourneyCard({
               <select
                 value={local.template_id || ''}
                 onChange={(e) => updateLocal({ template_id: e.target.value || null })}
-                className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md"
+                className="py-[0.35rem] px-2 border border-neutral-200 rounded-md"
               >
                 <option value="">(System default)</option>
                 {matchingTemplates.map((t) => (
@@ -303,7 +303,7 @@ function JourneyCard({
                   type="number" min={1}
                   value={local.trigger_day ?? (key === 'winback_short' ? 14 : 30)}
                   onChange={(e) => updateLocal({ trigger_day: Number(e.target.value) })}
-                  className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md w-[120px]"
+                  className="py-[0.35rem] px-2 border border-neutral-200 rounded-md w-[120px]"
                 />
               </Field>
             )}
@@ -314,7 +314,7 @@ function JourneyCard({
                   type="number" min={0} max={23}
                   value={local.send_hour_ist ?? 10}
                   onChange={(e) => updateLocal({ send_hour_ist: Number(e.target.value) })}
-                  className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md w-[120px]"
+                  className="py-[0.35rem] px-2 border border-neutral-200 rounded-md w-[120px]"
                 />
               </Field>
             )}
@@ -328,7 +328,7 @@ function JourneyCard({
                   type="text"
                   value={Array.isArray(local.trigger_orders) ? local.trigger_orders.join(', ') : (local.trigger_orders || '')}
                   onChange={(e) => updateLocal({ trigger_orders: e.target.value })}
-                  className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md"
+                  className="py-[0.35rem] px-2 border border-neutral-200 rounded-md"
                 />
               </Field>
             )}
@@ -362,7 +362,7 @@ function TemplateVarOverrides({ template, values, onChange }: TemplateVarOverrid
   if (!template || inputs.length === 0) return null;
   return (
     <div className="flex flex-col gap-[0.35rem] pt-[0.3rem]">
-      <div className="text-[0.78rem] text-[#334155]">Template variables</div>
+      <div className="text-[0.78rem] text-slate-700">Template variables</div>
       {inputs.map((v) => (
         <Field key={v.name} label={`${v.name}${v.required ? ' *' : ''}`}>
           <input
@@ -370,7 +370,7 @@ function TemplateVarOverrides({ template, values, onChange }: TemplateVarOverrid
             placeholder={v.example || ''}
             value={values[v.name] || ''}
             onChange={(e) => onChange({ ...values, [v.name]: e.target.value })}
-            className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md"
+            className="py-[0.35rem] px-2 border border-neutral-200 rounded-md"
           />
         </Field>
       ))}

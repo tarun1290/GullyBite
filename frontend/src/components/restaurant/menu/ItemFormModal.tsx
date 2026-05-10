@@ -444,7 +444,7 @@ export default function ItemFormModal({
                       <button
                         type="button"
                         onClick={() => handleVariantRemove(i)}
-                        className="bg-none border-0 text-[#dc2626] text-[1.1rem] cursor-pointer"
+                        className="bg-none border-0 text-red-500 text-[1.1rem] cursor-pointer"
                         title="Remove"
                       >
                         ×

@@ -113,7 +113,7 @@ function FunnelBars({ funnel }: FunnelBarsProps) {
         rows.push(
           <div key={`drop-${i}`} className="flex items-center gap-[0.6rem] my-2">
             <span className="w-[110px]" />
-            <span className="text-[0.68rem] text-[#dc2626] pl-3">
+            <span className="text-[0.68rem] text-red-500 pl-3">
               ↓ -{dropPct}% ({drop} dropped)
             </span>
           </div>
@@ -239,15 +239,15 @@ export default function DropoffsSection({ dateRange }: DropoffsSectionProps) {
               </div>
               <div className="stat">
                 <div className="stat-l">Cart Abandonment</div>
-                <div className="stat-v text-[#d97706]">{summary.dropped_at_cart || 0}</div>
+                <div className="stat-v text-amber-500">{summary.dropped_at_cart || 0}</div>
               </div>
               <div className="stat">
                 <div className="stat-l">Payment Failures</div>
-                <div className="stat-v text-[#dc2626]">{summary.payment_failed || 0}</div>
+                <div className="stat-v text-red-500">{summary.payment_failed || 0}</div>
               </div>
               <div className="stat">
                 <div className="stat-l">Recoverable</div>
-                <div className="stat-v text-[#2563eb]">{recoverable}</div>
+                <div className="stat-v text-blue-500">{recoverable}</div>
               </div>
             </div>
             <div id="df-funnel" className="mt-4">
@@ -265,7 +265,7 @@ export default function DropoffsSection({ dateRange }: DropoffsSectionProps) {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-[0.84rem]">
             <thead>
-              <tr className="bg-[#f9fafb] border-b-2 border-rim">
+              <tr className="bg-neutral-50 border-b-2 border-rim">
                 <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] font-semibold text-dim">Customer</th>
                 <th className="py-[0.55rem] px-[0.7rem] text-left text-[0.77rem] font-semibold text-dim">Phone</th>
                 <th className="py-[0.55rem] px-[0.7rem] text-center text-[0.77rem] font-semibold text-dim">Stage</th>

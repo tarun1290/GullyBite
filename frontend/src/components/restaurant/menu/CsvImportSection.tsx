@@ -520,7 +520,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                 <h4 className="text-[0.84rem] my-2">🗂️ Map columns</h4>
                 {mappingError && (
                   <div
-                    className="py-2 px-[0.7rem] mb-2 bg-[rgba(220,38,38,0.08)] border border-[rgba(220,38,38,0.4)] text-[#dc2626] rounded-md text-[0.8rem]"
+                    className="py-2 px-[0.7rem] mb-2 bg-[rgba(220,38,38,0.08)] border border-[rgba(220,38,38,0.4)] text-red-500 rounded-md text-[0.8rem]"
                     role="alert"
                   >
                     ⚠️ {mappingError}
@@ -565,9 +565,9 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                         <tr key={i}>
                           <td className="text-dim py-1 px-[0.3rem]">{i + 1}</td>
                           {multiBranch && <td className="text-wa py-1 px-[0.3rem]">{r.branch || r.outlet || r.location || '—'}</td>}
-                          <td className="py-1 px-[0.3rem]">{r.name || <span className="text-[#dc2626]">missing</span>}</td>
+                          <td className="py-1 px-[0.3rem]">{r.name || <span className="text-red-500">missing</span>}</td>
                           <td className="py-1 px-[0.3rem]">{r.category || '—'}</td>
-                          <td className="py-1 px-[0.3rem]">{r.price ? `₹${r.price}` : <span className="text-[#dc2626]">missing</span>}</td>
+                          <td className="py-1 px-[0.3rem]">{r.price ? `₹${r.price}` : <span className="text-red-500">missing</span>}</td>
                           <td className="py-1 px-[0.3rem]">{r.food_type || 'veg'}</td>
                         </tr>
                       ))}
@@ -592,7 +592,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                 ✅ <strong>{result.added || 0}</strong> items added/updated
                 {result.skipped ? <> · ⚠️ <strong>{result.skipped}</strong> skipped</> : null}
                 {result.errors?.length ? (
-                  <div className="mt-2 text-[#991b1b] text-[0.76rem]">
+                  <div className="mt-2 text-red-800 text-[0.76rem]">
                     {result.errors.slice(0, 5).join(' · ')}
                   </div>
                 ) : null}
@@ -616,7 +616,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                 <span
                   key={step}
                   className={`py-1 px-[0.6rem] rounded-full text-[0.72rem] font-semibold ${
-                    wStep === step ? 'bg-[#4f46e5] text-white' : 'bg-ink2 text-dim'
+                    wStep === step ? 'bg-indigo-600 text-white' : 'bg-ink2 text-dim'
                   }`}
                 >
                   {i + 1}. {step}
@@ -670,7 +670,7 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
                           {wSample.slice(0, 8).map((r, i) => (
                             <tr key={i}>
                               {wHeaders.map((h) => (
-                                <td key={h} className="py-1 px-2 border-t border-[#f1f5f9]">
+                                <td key={h} className="py-1 px-2 border-t border-slate-100">
                                   {r[h] == null ? '' : String(r[h])}
                                 </td>
                               ))}
@@ -695,8 +695,8 @@ export default function CsvImportSection({ branches, selectedBranchId, setSelect
               <div>
                 <div className="text-base font-semibold mb-[0.4rem]">✅ Import complete</div>
                 <div>Total rows: <strong>{wResult.total}</strong></div>
-                <div>Inserted: <strong className="text-[#059669]">{wResult.inserted}</strong></div>
-                <div>Skipped: <strong className="text-[#b45309]">{wResult.skipped}</strong></div>
+                <div>Inserted: <strong className="text-emerald-600">{wResult.inserted}</strong></div>
+                <div>Skipped: <strong className="text-amber-600">{wResult.skipped}</strong></div>
                 <div className="text-[0.82rem] text-dim mt-[0.4rem]">
                   Ready: {wResult.ready} · Incomplete (Meta): {wResult.incomplete}
                 </div>

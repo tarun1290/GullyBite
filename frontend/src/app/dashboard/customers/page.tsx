@@ -81,7 +81,7 @@ function Tile({ title, value, hint }: TileProps) {
   return (
     <div className="card py-4 px-[1.1rem] flex flex-col gap-1 min-w-0">
       <div className="text-[0.72rem] text-mute font-semibold uppercase tracking-wider">{title}</div>
-      <div className="text-2xl font-bold text-[#111827]">{value}</div>
+      <div className="text-2xl font-bold text-neutral-900">{value}</div>
       {hint && <div className="text-[0.78rem] text-mute">{hint}</div>}
     </div>
   );
@@ -96,8 +96,8 @@ interface SegmentCardProps {
 }
 
 function SegmentCard({ seg, count, disabled, selected, onClick }: SegmentCardProps) {
-  const borderCls = selected ? 'border-2 border-[#059669]' : 'border border-[#e5e7eb]';
-  const bgCls = disabled ? 'bg-[#f9fafb]' : 'bg-white';
+  const borderCls = selected ? 'border-2 border-emerald-600' : 'border border-neutral-200';
+  const bgCls = disabled ? 'bg-neutral-50' : 'bg-white';
   const cursorCls = disabled ? 'cursor-not-allowed opacity-[0.65]' : 'cursor-pointer';
   return (
     <button
@@ -108,12 +108,12 @@ function SegmentCard({ seg, count, disabled, selected, onClick }: SegmentCardPro
     >
       <div className="flex items-center gap-[0.55rem]">
         <span className="text-xl" aria-hidden="true">{seg.emoji}</span>
-        <span className="font-bold text-[0.92rem] text-[#111827]">{seg.label}</span>
+        <span className="font-bold text-[0.92rem] text-neutral-900">{seg.label}</span>
       </div>
-      <div className="text-[1.3rem] font-extrabold text-[#059669]">{count}</div>
+      <div className="text-[1.3rem] font-extrabold text-emerald-600">{count}</div>
       <div className="text-xs text-mute">{seg.desc}</div>
       {disabled && (
-        <span className="absolute top-[0.55rem] right-[0.65rem] text-[0.65rem] font-bold bg-[#fef3c7] text-[#92400e] py-[0.12rem] px-[0.45rem] rounded-full uppercase tracking-[0.04em]">
+        <span className="absolute top-[0.55rem] right-[0.65rem] text-[0.65rem] font-bold bg-amber-100 text-amber-900 py-[0.12rem] px-[0.45rem] rounded-full uppercase tracking-[0.04em]">
           Soon
         </span>
       )}
@@ -178,7 +178,7 @@ export default function CustomersPage() {
   if (loading) {
     return (
       <div className="p-5">
-        <div className="text-[#6b7280]">Loading customers…</div>
+        <div className="text-neutral-500">Loading customers…</div>
       </div>
     );
   }
@@ -200,7 +200,7 @@ export default function CustomersPage() {
       )}
 
       {error && (
-        <div className="notice bg-[#fef2f2] border-[#fecaca]">
+        <div className="notice bg-red-50 border-red-200">
           <div className="notice-body"><p>{error}</p></div>
         </div>
       )}
@@ -263,7 +263,7 @@ export default function CustomersPage() {
               </thead>
               <tbody>
                 {topRows.length === 0 && (
-                  <tr><td colSpan={6} className="text-[#6b7280] p-4">No customers in this segment.</td></tr>
+                  <tr><td colSpan={6} className="text-neutral-500 p-4">No customers in this segment.</td></tr>
                 )}
                 {topRows.map((r) => (
                   <tr key={r.customer_id}>

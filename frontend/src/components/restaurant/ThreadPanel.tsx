@@ -217,7 +217,7 @@ export default function ThreadPanel({ customerId, conversation, onResolved, onTh
         {!windowOpen && (
           <div
             id="msg-window-warning"
-            className="mt-[0.4rem] py-[0.3rem] px-[0.6rem] bg-[#fef3c7] rounded-md text-[0.72rem] text-[#92400e]"
+            className="mt-[0.4rem] py-[0.3rem] px-[0.6rem] bg-amber-100 rounded-md text-[0.72rem] text-amber-900"
           >
             ⚠️ 24-hour reply window has expired. Use template messages to contact this customer.
           </div>

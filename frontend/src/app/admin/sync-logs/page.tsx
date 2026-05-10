@@ -204,9 +204,9 @@ export default function AdminSyncLogsPage() {
                 ) : alerts.length === 0 ? (
                   <tr><td colSpan={5} className={EMPTY_CLS}>No active alerts</td></tr>
                 ) : alerts.map((a) => (
-                  <tr key={a.id} className="bg-[#fef2f2] border-t border-rim">
+                  <tr key={a.id} className="bg-red-50 border-t border-rim">
                     <td className={`${TD_CLS} text-red-900 font-semibold`}>{a.restaurant_name || a.restaurant_id || '—'}</td>
-                    <td className={`${TD_CLS} text-[#7f1d1d]`}>{a.message}</td>
+                    <td className={`${TD_CLS} text-red-950`}>{a.message}</td>
                     <td className={`${TD_CLS} text-red-600 font-semibold`}>{a.failure_rate != null ? Math.round(a.failure_rate * 100) + '%' : '—'}</td>
                     <td className={`${TD_CLS} text-dim text-[0.75rem] whitespace-nowrap`}>{fmtTime(a.timestamp)}</td>
                     <td className={TD_CLS}>
@@ -276,7 +276,7 @@ export default function AdminSyncLogsPage() {
                       <td className={TD_CLS}>{r.product_name || r.product_id || '—'}</td>
                       <td className={TD_CLS}>{r.branch_name || r.branch_id || '—'}</td>
                       <td className={TD_CLS}>
-                        <span className={`inline-block py-[0.1rem] px-2 rounded-full text-[0.72rem] font-semibold ${isSynced ? 'bg-[#d1fae5] text-[#047857]' : 'bg-red-100 text-red-600'}`}>{r.status || '—'}</span>
+                        <span className={`inline-block py-[0.1rem] px-2 rounded-full text-[0.72rem] font-semibold ${isSynced ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{r.status || '—'}</span>
                       </td>
                       <td className={`${TD_CLS} text-[0.78rem] text-dim`}>
                         {r.reason || ''}

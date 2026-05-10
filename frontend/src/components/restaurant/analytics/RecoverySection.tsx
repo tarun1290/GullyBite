@@ -194,7 +194,7 @@ export default function RecoverySection({ dateRange }: RecoverySectionProps) {
             </div>
             <div className="card text-center p-[0.8rem]">
               <div className="text-[0.72rem] text-dim">Recovered</div>
-              <div className="text-[1.5rem] font-bold text-[#22c55e]">{cr.total_recovered ?? '—'}</div>
+              <div className="text-[1.5rem] font-bold text-emerald-500">{cr.total_recovered ?? '—'}</div>
             </div>
             <div className="card text-center p-[0.8rem]">
               <div className="text-[0.72rem] text-dim">Recovery Rate</div>

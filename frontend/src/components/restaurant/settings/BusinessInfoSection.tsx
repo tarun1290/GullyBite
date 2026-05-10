@@ -78,14 +78,14 @@ interface VerifBadgeProps { verified?: boolean; hasValue: boolean }
 function VerifBadge({ verified, hasValue }: VerifBadgeProps) {
   if (verified) {
     return (
-      <span className="ml-[0.4rem] text-[0.65rem] py-[0.1rem] px-[0.4rem] rounded-full bg-[#dcfce7] text-[#15803d] font-bold">
+      <span className="ml-[0.4rem] text-[0.65rem] py-[0.1rem] px-[0.4rem] rounded-full bg-wa-light text-green-700 font-bold">
         ✓ Verified
       </span>
     );
   }
   if (hasValue) {
     return (
-      <span className="ml-[0.4rem] text-[0.65rem] py-[0.1rem] px-[0.4rem] rounded-full bg-[#fef3c7] text-[#92400e] font-semibold">
+      <span className="ml-[0.4rem] text-[0.65rem] py-[0.1rem] px-[0.4rem] rounded-full bg-amber-100 text-amber-900 font-semibold">
         Pending
       </span>
     );
@@ -441,7 +441,7 @@ export default function BusinessInfoSection() {
                 <input type="date" value={form.fssaiExpiry} onChange={update('fssaiExpiry')} />
               </Field>
             </div>
-            <div className="bg-[#fefce8] border border-[#fde68a] rounded-lg py-[0.6rem] px-[0.9rem] mt-[0.7rem] text-[0.75rem] text-[#92400e]">
+            <div className="bg-[#fefce8] border border-yellow-200 rounded-lg py-[0.6rem] px-[0.9rem] mt-[0.7rem] text-[0.75rem] text-amber-900">
               GST and FSSAI details are manually verified by the GullyBite team.
             </div>
 

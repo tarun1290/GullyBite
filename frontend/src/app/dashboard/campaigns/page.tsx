@@ -210,7 +210,7 @@ function StatusChip({ status }: StatusChipProps) {
 
 function SegmentBadge({ label }: { label: string }) {
   return (
-    <span className="chip bg-[#eef2ff] text-[#3730a3] text-[0.7rem]">
+    <span className="chip bg-indigo-100 text-indigo-800 text-[0.7rem]">
       {label === 'all' ? 'All customers' : label}
     </span>
   );
@@ -253,7 +253,7 @@ function FestivalNudgeBanner({ festival, onCreate }: FestivalNudgeBannerProps) {
         <div className="font-semibold text-[#78350f]">
           {festival.name} is {daysLabel}!
         </div>
-        <div className="text-[0.82rem] text-[#92400e]">
+        <div className="text-[0.82rem] text-amber-900">
           {festival.suggested_message_hint || 'Send a campaign to your customers.'}
         </div>
       </div>
@@ -338,12 +338,12 @@ function HistoryList({ campaigns, summary, onCancel, onRefresh, onCreate, disabl
                   <Stat label="Spend" value={formatRs(c.actual_cost_rs)} />
                 </div>
                 {c.send_at && c.status === 'scheduled' && (
-                  <div className="text-[0.82rem] text-[#1e40af]">
+                  <div className="text-[0.82rem] text-blue-800">
                     Scheduled for {fmtDateTime(c.send_at)}
                   </div>
                 )}
                 {c.error_message && (
-                  <div className="text-[0.82rem] text-[#991b1b]">
+                  <div className="text-[0.82rem] text-red-800">
                     Error: {c.error_message}
                   </div>
                 )}
@@ -588,7 +588,7 @@ function Wizard({
           <div
             key={n}
             // background colour conditional on whether the step is active vs inactive at runtime
-            className={`flex-1 h-1 rounded-xs ${n <= step ? 'bg-[#4f46e5]' : 'bg-[#e5e7eb]'}`}
+            className={`flex-1 h-1 rounded-xs ${n <= step ? 'bg-indigo-600' : 'bg-neutral-200'}`}
           />
         ))}
       </div>
@@ -828,7 +828,7 @@ function Step1Audience({
                 : customCount === null
                   ? <span className="text-dim">Audience estimate unavailable.</span>
                   : (
-                    <span className={customCount > 0 ? 'text-[#065f46] font-semibold' : 'text-[#92400e] font-semibold'}>
+                    <span className={customCount > 0 ? 'text-emerald-800 font-semibold' : 'text-amber-900 font-semibold'}>
                       ~{customCount.toLocaleString('en-IN')} customer{customCount === 1 ? '' : 's'} match
                     </span>
                   )}
@@ -1105,16 +1105,16 @@ function SegmentCard({ active, onClick, label, count, copy }: SegmentCardProps) 
       type="button"
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      className={`card text-left p-0 ${disabled ? 'cursor-not-allowed bg-[#f9fafb] opacity-55' : 'cursor-pointer bg-white opacity-100'} ${active ? 'border-2 border-[#4f46e5]' : 'border border-line'}`}
+      className={`card text-left p-0 ${disabled ? 'cursor-not-allowed bg-neutral-50 opacity-55' : 'cursor-pointer bg-white opacity-100'} ${active ? 'border-2 border-indigo-600' : 'border border-line'}`}
     >
       <div className="cb flex flex-col gap-[0.35rem]">
         <div className="flex justify-between items-center">
           <strong>{label}</strong>
-          <span className={`chip text-[0.72rem] ${active ? 'bg-[#4f46e5] text-white' : 'bg-[#eef2ff] text-[#3730a3]'}`}>
+          <span className={`chip text-[0.72rem] ${active ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800'}`}>
             {count || 0}
           </span>
         </div>
-        <div className="text-[0.78rem] text-[#475569]">{copy}</div>
+        <div className="text-[0.78rem] text-slate-600">{copy}</div>
       </div>
     </button>
   );
@@ -1160,14 +1160,14 @@ function Step2Template({
           <div className="card"><div className="cb text-dim">No approved templates available.</div></div>
         ) : grouped.map(([group, items]) => (
           <section key={group} className="mb-4">
-            <h4 className="text-[0.82rem] mt-0 mb-[0.4rem] mx-0 text-[#475569]">{group}</h4>
+            <h4 className="text-[0.82rem] mt-0 mb-[0.4rem] mx-0 text-slate-600">{group}</h4>
             <div className="grid gap-2">
               {items.map((t) => (
                 <button
                   type="button"
                   key={t.template_id}
                   onClick={() => onPickTemplate(t.template_id)}
-                  className={`card text-left p-0 cursor-pointer ${templateId === t.template_id ? 'border-2 border-[#4f46e5]' : 'border border-line'}`}
+                  className={`card text-left p-0 cursor-pointer ${templateId === t.template_id ? 'border-2 border-indigo-600' : 'border border-line'}`}
                 >
                   <div className="cb flex flex-col gap-[0.3rem]">
                     <div className="flex justify-between items-center flex-wrap gap-[0.4rem]">
@@ -1176,7 +1176,7 @@ function Step2Template({
                         {formatRs(t.per_message_cost_rs)} / msg
                       </span>
                     </div>
-                    <div className="text-[0.78rem] text-[#475569] whitespace-pre-wrap">
+                    <div className="text-[0.78rem] text-slate-600 whitespace-pre-wrap">
                       {(t.preview_text || t.body_template || '').slice(0, 140)}
                       {(t.body_template || '').length > 140 ? '…' : ''}
                     </div>
@@ -1196,7 +1196,7 @@ function Step2Template({
               <div className="cb flex flex-col gap-[0.55rem]">
                 {restaurantInputVars.map((v) => (
                   <label key={v.name} className="flex flex-col gap-[0.2rem]">
-                    <span className="text-[0.78rem] text-[#334155]">
+                    <span className="text-[0.78rem] text-slate-700">
                       {v.name}{v.required ? ' *' : ''}
                       {v.description ? <span className="text-dim ml-[0.3rem]">— {v.description}</span> : null}
                     </span>
@@ -1205,7 +1205,7 @@ function Step2Template({
                       value={vars[v.name] || ''}
                       placeholder={v.default_value || ''}
                       onChange={(e) => onVarsChange({ ...vars, [v.name]: e.target.value })}
-                      className="py-[0.4rem] px-[0.55rem] border border-[#e5e7eb] rounded-md"
+                      className="py-[0.4rem] px-[0.55rem] border border-neutral-200 rounded-md"
                     />
                   </label>
                 ))}
@@ -1216,7 +1216,7 @@ function Step2Template({
           <div className="card">
             <div className="ch"><strong>Preview</strong></div>
             <div className="cb">
-              <div className="text-[0.82rem] text-[#334155] bg-ink3 py-[0.6rem] px-3 rounded-md whitespace-pre-wrap min-h-[80px]">
+              <div className="text-[0.82rem] text-slate-700 bg-ink3 py-[0.6rem] px-3 rounded-md whitespace-pre-wrap min-h-[80px]">
                 {preview || '—'}
               </div>
             </div>
@@ -1238,12 +1238,12 @@ function Step2Template({
               </div>
               <div className="flex justify-between">
                 <span className="text-dim">Wallet balance</span>
-                <strong className={enoughBalance ? 'text-[#166534]' : 'text-[#991b1b]'}>
+                <strong className={enoughBalance ? 'text-green-800' : 'text-red-800'}>
                   {formatRs(walletBalance)}
                 </strong>
               </div>
               {!enoughBalance && (
-                <div className="text-[#991b1b] text-[0.78rem]">
+                <div className="text-red-800 text-[0.78rem]">
                   Wallet balance is below the estimated cost. Top up before sending.
                 </div>
               )}
@@ -1298,7 +1298,7 @@ function Step3Schedule({
             placeholder="e.g. New menu launch — June"
             value={displayName}
             onChange={(e) => onDisplayNameChange(e.target.value)}
-            className="py-2 px-[0.6rem] border border-[#e5e7eb] rounded-md"
+            className="py-2 px-[0.6rem] border border-neutral-200 rounded-md"
           />
           <div className="text-[0.76rem] text-dim">
             Only shown to you in the campaign history.
@@ -1307,7 +1307,7 @@ function Step3Schedule({
 
         <div className="ch mt-2"><strong>When to send</strong></div>
         <div className="cb grid gap-2">
-          <label className={`card p-0 cursor-pointer ${sendMode === 'now' ? 'border-2 border-[#4f46e5]' : 'border border-line'}`}>
+          <label className={`card p-0 cursor-pointer ${sendMode === 'now' ? 'border-2 border-indigo-600' : 'border border-line'}`}>
             <div className="cb flex gap-2 items-start">
               <input type="radio" checked={sendMode === 'now'} onChange={() => onSendModeChange('now')} />
               <div>
@@ -1320,20 +1320,20 @@ function Step3Schedule({
           </label>
 
           {smartAvailable && smartSend && (
-            <label className={`card p-0 cursor-pointer ${sendMode === 'smart' ? 'border-2 border-[#059669] bg-[#ecfdf5]' : 'border border-line bg-white'}`}>
+            <label className={`card p-0 cursor-pointer ${sendMode === 'smart' ? 'border-2 border-emerald-600 bg-[#ecfdf5]' : 'border border-line bg-white'}`}>
               <div className="cb flex gap-2 items-start">
                 <input type="radio" checked={sendMode === 'smart'} onChange={() => onSendModeChange('smart')} />
                 <div className="flex-1">
                   <div className="flex items-center gap-[0.4rem] flex-wrap">
                     <strong>Smart Send</strong>
-                    <span className="chip bg-[#059669] text-white text-[0.65rem] py-[0.1rem] px-[0.4rem]">
+                    <span className="chip bg-emerald-600 text-white text-[0.65rem] py-[0.1rem] px-[0.4rem]">
                       Recommended
                     </span>
                     <span className="text-[0.76rem] text-dim">
                       Best time based on your customers
                     </span>
                   </div>
-                  <div className="text-[0.78rem] text-[#065f46] mt-1">
+                  <div className="text-[0.78rem] text-emerald-800 mt-1">
                     We&apos;ll send at <strong>{smartSend.peak_hour_label}</strong> — when your customers are most
                     active ({smartSend.order_count_at_peak} orders typically placed around this time).
                   </div>
@@ -1347,7 +1347,7 @@ function Step3Schedule({
             </label>
           )}
 
-          <label className={`card p-0 cursor-pointer ${sendMode === 'later' ? 'border-2 border-[#4f46e5]' : 'border border-line'}`}>
+          <label className={`card p-0 cursor-pointer ${sendMode === 'later' ? 'border-2 border-indigo-600' : 'border border-line'}`}>
             <div className="cb flex gap-2 items-start">
               <input type="radio" checked={sendMode === 'later'} onChange={() => onSendModeChange('later')} />
               <div className="flex-1">
@@ -1361,10 +1361,10 @@ function Step3Schedule({
                       type="datetime-local"
                       value={sendAt}
                       onChange={(e) => onSendAtChange(e.target.value)}
-                      className="py-[0.35rem] px-2 border border-[#e5e7eb] rounded-md"
+                      className="py-[0.35rem] px-2 border border-neutral-200 rounded-md"
                     />
                     {!sendAtValid && sendAt && (
-                      <div className="text-[0.76rem] text-[#991b1b] mt-[0.3rem]">
+                      <div className="text-[0.76rem] text-red-800 mt-[0.3rem]">
                         Pick a time in the future.
                       </div>
                     )}
@@ -1387,7 +1387,7 @@ function Step3Schedule({
           <Row k="Wallet" v={formatRs(walletBalance)} />
           <Row k="When" v={whenLabel} />
           {!enoughBalance && (
-            <div className="text-[#991b1b] text-[0.8rem] mt-[0.3rem]">
+            <div className="text-red-800 text-[0.8rem] mt-[0.3rem]">
               Wallet balance is below the estimated cost.
             </div>
           )}

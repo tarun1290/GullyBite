@@ -650,14 +650,14 @@ export default function AdminReferralsPage() {
                         </td>
                         <td className={`${TD_CLS} text-[0.78rem]`}>
                           {r.status === 'active' ? (
-                            <span className="text-[#22c55e]">Expires {timeUntil(r.expires_at)}</span>
+                            <span className="text-emerald-500">Expires {timeUntil(r.expires_at)}</span>
                           ) : (
                             fmtDate(r.expires_at)
                           )}
                         </td>
                         <td className={TD_CLS}>{r.orders_count}</td>
                         <td className={TD_CLS}>₹{fmtInr(r.total_order_value_rs)}</td>
-                        <td className={`${TD_CLS} font-semibold text-[#a78bfa]`}>
+                        <td className={`${TD_CLS} font-semibold text-violet-400`}>
                           ₹{fmtInr(r.referral_fee_rs)}
                         </td>
                         <td className={`${TD_CLS} text-[0.78rem]`}>{fmtDate(r.created_at)}</td>

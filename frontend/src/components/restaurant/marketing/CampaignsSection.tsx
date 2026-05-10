@@ -231,7 +231,7 @@ function CampaignRowItem({ campaign, onChanged }: CampaignRowItemProps) {
         )}
         {sentCount > 0 && (
           <div className="text-[0.72rem] mt-[0.2rem]">
-            <span className="text-[#22c55e]">
+            <span className="text-emerald-500">
               Delivered: {deliveredCount} ({total > 0 ? Math.round((deliveredCount / sentCount) * 100) : 0}%)
             </span>{' '}
             <span className="text-[#3b82f6]">
@@ -243,12 +243,12 @@ function CampaignRowItem({ campaign, onChanged }: CampaignRowItemProps) {
           </div>
         )}
         {highFail && (
-          <div className="bg-[#fef2f2] text-[#991b1b] text-[0.72rem] py-1 px-2 rounded-[4px] mt-[0.3rem]">
+          <div className="bg-red-50 text-red-800 text-[0.72rem] py-1 px-2 rounded-[4px] mt-[0.3rem]">
             High failure rate — Meta may be pacing this campaign
           </div>
         )}
         {campaign.status === 'paused' && campaign.pause_reason && (
-          <div className="bg-[#fef9c3] text-[#854d0e] text-[0.72rem] py-1 px-2 rounded-[4px] mt-[0.3rem]">
+          <div className="bg-yellow-100 text-yellow-800 text-[0.72rem] py-1 px-2 rounded-[4px] mt-[0.3rem]">
             {campaign.pause_reason}
           </div>
         )}

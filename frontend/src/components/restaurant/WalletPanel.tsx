@@ -130,24 +130,24 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
         ref={panelRef}
         className="w-[min(420px,100vw)] h-full bg-white shadow-[-2px_0_16px_rgba(0,0,0,0.12)] flex flex-col"
       >
-        <header className="py-[1.1rem] px-5 border-b border-[#e5e7eb] flex items-center justify-between">
+        <header className="py-[1.1rem] px-5 border-b border-neutral-200 flex items-center justify-between">
           <div className="text-base font-bold">Wallet</div>
           <button
             type="button" onClick={onClose} aria-label="Close"
-            className="bg-transparent border-0 text-[1.4rem] leading-none cursor-pointer text-[#6b7280]"
+            className="bg-transparent border-0 text-[1.4rem] leading-none cursor-pointer text-neutral-500"
           >
             ×
           </button>
         </header>
 
-        <section className="p-5 bg-[linear-gradient(135deg,#ecfdf5_0%,#d1fae5_100%)] border-b border-[#e5e7eb]">
-          <div className="text-[0.75rem] text-[#047857] font-semibold tracking-wider uppercase">
+        <section className="p-5 bg-[linear-gradient(135deg,#ecfdf5_0%,#d1fae5_100%)] border-b border-neutral-200">
+          <div className="text-[0.75rem] text-emerald-700 font-semibold tracking-wider uppercase">
             Balance
           </div>
-          <div className="text-[2rem] font-extrabold text-[#064e3b] mt-1">
+          <div className="text-[2rem] font-extrabold text-emerald-900 mt-1">
             {loading ? '…' : rupees(bal)}
           </div>
-          <div className="flex gap-5 mt-4 text-[0.78rem] text-[#065f46] flex-wrap">
+          <div className="flex gap-5 mt-4 text-[0.78rem] text-emerald-800 flex-wrap">
             <div>
               <div className="font-semibold">Earned this month</div>
               <div>{rupees(wallet?.current_month_earnings_rs as number | undefined)}</div>
@@ -161,23 +161,23 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
             type="button"
             disabled={!campaignsEnabled}
             title={campaignsEnabled ? 'Add money' : 'Available when campaigns are active'}
-            className={`mt-4 py-[0.55rem] px-4 rounded-lg border-0 text-[0.82rem] font-bold ${campaignsEnabled ? 'cursor-pointer bg-[#059669] text-white' : 'cursor-not-allowed bg-[#d1d5db] text-[#6b7280]'}`}
+            className={`mt-4 py-[0.55rem] px-4 rounded-lg border-0 text-[0.82rem] font-bold ${campaignsEnabled ? 'cursor-pointer bg-emerald-600 text-white' : 'cursor-not-allowed bg-neutral-300 text-neutral-500'}`}
           >
             + Add Money
           </button>
         </section>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="pt-[0.85rem] px-5 pb-2 text-[0.72rem] font-bold text-[#6b7280] tracking-wider uppercase">
+          <div className="pt-[0.85rem] px-5 pb-2 text-[0.72rem] font-bold text-neutral-500 tracking-wider uppercase">
             Transactions
           </div>
 
           {loading && (
-            <div className="p-5 text-[#6b7280] text-[0.85rem]">Loading…</div>
+            <div className="p-5 text-neutral-500 text-[0.85rem]">Loading…</div>
           )}
 
           {!loading && items.length === 0 && (
-            <div className="p-5 text-[#6b7280] text-[0.85rem]">
+            <div className="p-5 text-neutral-500 text-[0.85rem]">
               No transactions yet. Order payouts and charges will appear here.
             </div>
           )}
@@ -202,18 +202,18 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
                   >
                     {meta.label}
                   </span>
-                  <div className="text-[0.82rem] text-[#111827] overflow-hidden text-ellipsis whitespace-nowrap">
+                  <div className="text-[0.82rem] text-neutral-900 overflow-hidden text-ellipsis whitespace-nowrap">
                     {t.description || '—'}
                   </div>
-                  <div className="text-[0.72rem] text-[#9ca3af] mt-[0.15rem]">
+                  <div className="text-[0.72rem] text-neutral-400 mt-[0.15rem]">
                     {formatDate(t.created_at)}
                   </div>
                 </div>
                 <div className="text-right whitespace-nowrap">
-                  <div className={`text-[0.9rem] font-bold ${isCredit ? 'text-[#065f46]' : 'text-[#991b1b]'}`}>
+                  <div className={`text-[0.9rem] font-bold ${isCredit ? 'text-emerald-800' : 'text-red-800'}`}>
                     {signed}
                   </div>
-                  <div className="text-[0.7rem] text-[#9ca3af] mt-[0.15rem]">
+                  <div className="text-[0.7rem] text-neutral-400 mt-[0.15rem]">
                     Bal {rupees(t.balance_after_rs)}
                   </div>
                 </div>
@@ -227,7 +227,7 @@ export default function WalletPanel({ onClose }: WalletPanelProps) {
                 type="button"
                 onClick={handleLoadMore}
                 disabled={loadingMore}
-                className={`py-2 px-4 rounded-lg border border-[#d1d5db] bg-white text-[0.8rem] font-semibold text-[#374151] ${loadingMore ? 'cursor-wait' : 'cursor-pointer'}`}
+                className={`py-2 px-4 rounded-lg border border-neutral-300 bg-white text-[0.8rem] font-semibold text-neutral-700 ${loadingMore ? 'cursor-wait' : 'cursor-pointer'}`}
               >
                 {loadingMore ? 'Loading…' : 'Load more'}
               </button>

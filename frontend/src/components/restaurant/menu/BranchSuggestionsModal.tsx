@@ -139,7 +139,7 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
               {rows.map((row) => {
                 const sel = selection[row.product_id] || new Set<string>();
                 return (
-                  <div key={row.product_id} className="py-[0.65rem] px-[0.8rem] border-b border-[#f1f5f9]">
+                  <div key={row.product_id} className="py-[0.65rem] px-[0.8rem] border-b border-slate-100">
                     <div className="flex justify-between items-center mb-[0.35rem]">
                       <div className="font-semibold text-[0.86rem]">{row.name}</div>
                       <div className="text-[0.7rem] text-dim">{REASON_LABEL[row.reason] || row.reason}</div>
@@ -159,7 +159,7 @@ export default function BranchSuggestionsModal({ branches, menuItems, onClose, o
                             // min-h ≈ two lines of .78rem text (1.2 leading) + padding
                             // so single-word and two-word chips align top + bottom.
                             className={`inline-flex items-center justify-center gap-[0.3rem] w-full min-h-[2.4rem] box-border text-[0.78rem] leading-[1.2] py-1 px-[0.45rem] text-center wrap-break-word border rounded-xl cursor-pointer ${
-                              on ? 'border-[#4f46e5] bg-[#eef2ff]' : 'border-rim bg-white'
+                              on ? 'border-indigo-600 bg-indigo-100' : 'border-rim bg-white'
                             }`}
                           >
                             <input

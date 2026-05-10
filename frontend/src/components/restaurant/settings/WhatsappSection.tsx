@@ -182,11 +182,11 @@ export default function WhatsappSection() {
             </div>
 
             {confirmOpen && (
-              <div className="mt-[0.7rem] bg-[#fef2f2] border border-[#fecaca] rounded-lg p-[0.85rem]">
-                <div className="text-[0.85rem] font-semibold text-[#dc2626] mb-[0.4rem]">
+              <div className="mt-[0.7rem] bg-red-50 border border-red-200 rounded-lg p-[0.85rem]">
+                <div className="text-[0.85rem] font-semibold text-red-500 mb-[0.4rem]">
                   ⚠️ Disconnect WhatsApp Business?
                 </div>
-                <p className="text-[0.78rem] text-[#7f1d1d] mb-[0.6rem] leading-[1.45]">
+                <p className="text-[0.78rem] text-red-950 mb-[0.6rem] leading-[1.45]">
                   Customers will <strong>stop being able to message your business</strong>. Incoming
                   WhatsApp messages will be ignored and no new orders will be received until you
                   reconnect.

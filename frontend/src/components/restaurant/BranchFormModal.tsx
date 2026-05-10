@@ -716,7 +716,7 @@ export default function BranchFormModal({
           {pendingPaymentBranchId && (
             <div
               role="status"
-              className="mt-[0.6rem] py-[0.55rem] px-3 bg-[#fef3c7] border border-[#fde68a] rounded-lg text-[0.78rem] text-[#92400e]"
+              className="mt-[0.6rem] py-[0.55rem] px-3 bg-amber-100 border border-yellow-200 rounded-lg text-[0.78rem] text-amber-900"
             >
               Payment in progress — complete the Razorpay checkout to activate this branch.
             </div>

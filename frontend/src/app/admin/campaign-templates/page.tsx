@@ -326,8 +326,8 @@ export default function AdminCampaignTemplatesPage() {
                 <div className="flex items-center flex-wrap gap-[0.6rem] justify-between mb-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     <strong className="text-base">{doc.display_name || doc.template_id}</strong>
-                    <span className="chip bg-[#eef2ff] text-indigo-800">{doc.use_case}</span>
-                    <span className="chip bg-[#f0fdf4] text-[#166534]">{doc.category}</span>
+                    <span className="chip bg-indigo-100 text-indigo-800">{doc.use_case}</span>
+                    <span className="chip bg-green-50 text-green-800">{doc.category}</span>
                     <ApprovalBadge status={doc.meta_approval_status} />
                     {!doc.is_active && (
                       <span className="chip bg-red-100 text-red-900">INACTIVE</span>
@@ -546,7 +546,7 @@ export default function AdminCampaignTemplatesPage() {
 
               <div className="col-span-2">
                 <label className={LBL_CLS}>Live preview</label>
-                <div className="py-[0.7rem] px-[0.85rem] border border-[#bbf7d0] bg-[#f0fdf4] rounded-lg whitespace-pre-wrap text-[0.85rem] text-[#14532d] min-h-[70px]">
+                <div className="py-[0.7rem] px-[0.85rem] border border-green-200 bg-green-50 rounded-lg whitespace-pre-wrap text-[0.85rem] text-green-900 min-h-[70px]">
                   {preview || '(empty)'}
                 </div>
               </div>

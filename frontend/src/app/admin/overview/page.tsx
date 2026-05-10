@@ -85,7 +85,7 @@ function sourceBadge(src?: string) {
 
 function logStatus(l: OverviewLog) {
   if (l.error_message) return <span className="text-red-600 text-[0.75rem] font-semibold">Error</span>;
-  if (l.processed) return <span className="text-[#047857] text-[0.75rem] font-semibold">OK</span>;
+  if (l.processed) return <span className="text-emerald-700 text-[0.75rem] font-semibold">OK</span>;
   return <span className="text-dim text-[0.75rem]">Pending</span>;
 }
 
@@ -240,8 +240,8 @@ export default function AdminOverviewPage() {
                 key={i}
                 className={`flex items-center gap-[0.7rem] py-[0.65rem] px-4 rounded-lg mb-2 text-[0.84rem] ${
                   crit
-                    ? 'bg-[#fef2f2] border border-red-200 text-red-500'
-                    : 'bg-[#fffbeb] border border-[#fde68a] text-amber-500'
+                    ? 'bg-red-50 border border-red-200 text-red-500'
+                    : 'bg-amber-50 border border-yellow-200 text-amber-500'
                 }`}
               >
                 <span>{crit ? '🔴' : '⚠️'}</span>

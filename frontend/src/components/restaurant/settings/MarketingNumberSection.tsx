@@ -100,7 +100,7 @@ export default function MarketingNumberSection() {
 
         {currentId ? (
           <div className="flex items-center gap-[0.8rem] py-[0.7rem] px-4 rounded-lg bg-surface2 mb-[0.9rem]">
-            <span className="w-[10px] h-[10px] rounded-full bg-[#22c55e] shrink-0" />
+            <span className="w-[10px] h-[10px] rounded-full bg-emerald-500 shrink-0" />
             <div className="flex-1">
               <div className="font-semibold text-[0.88rem]">Connected</div>
               <div className="text-[0.78rem] text-dim">

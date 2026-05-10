@@ -75,7 +75,7 @@ function slaLabel(issue: IssueDetail): React.ReactNode {
   const hrs = Math.floor(remaining / 3600000);
   const mins = Math.floor((remaining % 3600000) / 60000);
   if (remaining < 3600000) return <span className="text-red-600">🟡 {mins}m left</span>;
-  if (hrs < 6) return <span className="text-[#f59e0b]">🟡 {hrs}h {mins}m</span>;
+  if (hrs < 6) return <span className="text-yellow-500">🟡 {hrs}h {mins}m</span>;
   return <span className="text-green-600">🟢 {hrs}h</span>;
 }
 
@@ -130,8 +130,8 @@ interface EscalateFormProps {
 function EscalateForm({ onSubmit, onCancel, busy }: EscalateFormProps) {
   const [reason, setReason] = useState<string>('');
   return (
-    <div className="mt-2 p-[0.6rem] border border-[#fca5a5] bg-[#fef2f2] rounded-lg">
-      <div className="text-[0.75rem] font-semibold text-[#991b1b] mb-[0.4rem]">
+    <div className="mt-2 p-[0.6rem] border border-red-300 bg-red-50 rounded-lg">
+      <div className="text-[0.75rem] font-semibold text-red-800 mb-[0.4rem]">
         Escalate to GullyBite admin
       </div>
       <textarea
@@ -166,8 +166,8 @@ function ResolveForm({ onSubmit, onCancel, busy }: ResolveFormProps) {
   const [type, setType] = useState<string>('explanation');
   const [notes, setNotes] = useState<string>('');
   return (
-    <div className="mt-2 p-[0.6rem] border border-[#bbf7d0] bg-[#f0fdf4] rounded-lg">
-      <div className="text-[0.75rem] font-semibold text-[#166534] mb-[0.4rem]">
+    <div className="mt-2 p-[0.6rem] border border-green-200 bg-green-50 rounded-lg">
+      <div className="text-[0.75rem] font-semibold text-green-800 mb-[0.4rem]">
         Resolve issue
       </div>
       <label className="block text-[0.7rem] text-dim mb-[0.2rem]">

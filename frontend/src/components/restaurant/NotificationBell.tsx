@@ -129,7 +129,7 @@ export default function NotificationBell() {
                     <span className="text-[0.95rem]">
                       {isEscalation ? '⚠️' : '⭐'}
                     </span>
-                    <strong className={`text-[0.82rem] ${isEscalation ? 'text-[#b45309]' : 'text-inherit'}`}>
+                    <strong className={`text-[0.82rem] ${isEscalation ? 'text-amber-600' : 'text-inherit'}`}>
                       {n.title}
                     </strong>
                   </div>

@@ -154,7 +154,7 @@ function CouponRow({ coupon, onChanged, onEdit }: CouponRowProps) {
         {validFrom} → {validUntil}
       </td>
       <td className="py-[0.65rem] px-4">
-        <span className={`text-[0.78rem] font-semibold ${isActive ? 'text-[#22c55e]' : 'text-[#6b7280]'}`}>
+        <span className={`text-[0.78rem] font-semibold ${isActive ? 'text-emerald-500' : 'text-neutral-500'}`}>
           {isActive ? 'Active' : 'Inactive'}
         </span>
       </td>
@@ -168,7 +168,7 @@ function CouponRow({ coupon, onChanged, onEdit }: CouponRowProps) {
         </button>
         <button
           type="button"
-          className={`btn btn-sm py-1 px-[0.6rem] text-[0.78rem] ${isActive ? 'bg-[#374151]' : 'bg-acc'}`}
+          className={`btn btn-sm py-1 px-[0.6rem] text-[0.78rem] ${isActive ? 'bg-neutral-700' : 'bg-acc'}`}
           disabled={toggling}
           onClick={handleToggle}
         >
@@ -186,7 +186,7 @@ function CouponRow({ coupon, onChanged, onEdit }: CouponRowProps) {
             </button>
             <button
               type="button"
-              className="btn-p btn-xs bg-[#7f1d1d] text-[#fca5a5]"
+              className="btn-p btn-xs bg-red-950 text-red-300"
               disabled={deleting}
               onClick={handleDelete}
             >
@@ -196,7 +196,7 @@ function CouponRow({ coupon, onChanged, onEdit }: CouponRowProps) {
         ) : (
           <button
             type="button"
-            className="btn-p btn-xs bg-[#7f1d1d] text-[#fca5a5]"
+            className="btn-p btn-xs bg-red-950 text-red-300"
             onClick={() => setConfirmDel(true)}
           >
             Delete

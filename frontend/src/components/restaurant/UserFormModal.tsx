@@ -279,7 +279,7 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
       )}
       {row.status === 'ready' && !row.url && (
         <div className="flex flex-col gap-[0.3rem]">
-          <div className="text-[0.72rem] text-[#92400e]">
+          <div className="text-[0.72rem] text-amber-900">
             ⚠ No login link yet for this branch.
           </div>
           <button
@@ -395,11 +395,11 @@ export default function UserFormModal({ open, onClose, onSaved, editing, branche
           {created ? (
             // ── Post-creation success screen ───────────────────────
             <>
-              <div className="mb-[0.8rem] py-[0.6rem] px-3 bg-[#f0fdf4] border border-[#bbf7d0] rounded-lg">
-                <div className="font-bold text-[#15803d] text-[0.92rem]">
+              <div className="mb-[0.8rem] py-[0.6rem] px-3 bg-green-50 border border-green-200 rounded-lg">
+                <div className="font-bold text-green-700 text-[0.92rem]">
                   ✓ {created.name}
                 </div>
-                <div className="text-[0.78rem] text-[#166534] capitalize">
+                <div className="text-[0.78rem] text-green-800 capitalize">
                   {created.role}
                 </div>
               </div>

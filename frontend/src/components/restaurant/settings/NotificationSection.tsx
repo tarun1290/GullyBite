@@ -52,7 +52,7 @@ function Pill({ on, label }: PillProps) {
   return (
     <span
       className={`inline-flex items-center gap-[0.2rem] text-[0.72rem] font-semibold py-[0.2rem] px-2 rounded-full ${
-        on ? 'bg-[#dcfce7] text-[#15803d]' : 'bg-ink2 text-dim'
+        on ? 'bg-wa-light text-green-700' : 'bg-ink2 text-dim'
       }`}
     >
       {on ? '✅ ' : ''}

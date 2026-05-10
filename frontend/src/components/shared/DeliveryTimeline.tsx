@@ -292,7 +292,7 @@ export default function DeliveryTimeline({ order }: DeliveryTimelineProps) {
                 {s.subtitle && (
                   <div
                     className="text-[0.72rem] mt-px italic"
-                    style={{ color: s.tone === 'disposed' ? '#991b1b' : '#92400e' }}
+                    style={{ color: s.tone === 'disposed' ? 'var(--gb-red-900)' : 'var(--gb-amber-900)' }}
                   >
                     {s.subtitle}
                   </div>

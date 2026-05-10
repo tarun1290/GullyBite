@@ -16,9 +16,14 @@
   --color-acc: var(--acc);
   --color-bg: var(--bg);
   --color-surface: var(--surface);
-  --color-fg: var(--fg);
+  /* Phase D1 alias — `--fg` was never defined as a primitive but
+     consumers use `text-fg`. Map to `--tx` (primary text) so dashboard
+     and landing surfaces both resolve correctly. */
+  --color-fg: var(--tx);
   --color-rim2: var(--rim2);
-  --color-green: var(--green);
+  /* Phase D1 alias — `--green` was a ghost; LiveIndicator's `text-green`
+     means "success" colour which is `--wa` on every surface. */
+  --color-green: var(--wa);
   --color-red: var(--red);
   --color-red-500: var(--gb-red-500);
   --color-neutral-0: var(--gb-neutral-0);
@@ -28,21 +33,32 @@
   --color-ink2: var(--ink2);
   --color-ink3: var(--ink3);
   --color-ink4: var(--ink4);
-  --color-brand-50: var(--brand-50);
-  --color-brand-300: var(--brand-300);
-  --color-brand-600: var(--brand-600);
+  /* Phase D1 alias — `--brand-50/300/600` were never defined as primitives.
+     Map them to existing accent shades so the chat-bubble Tailwind
+     utilities (`bg-brand-50`, `border-brand-300`, `bg-brand-600`) resolve
+     against the surface accent. The `--acc-*` family flips automatically
+     between landing (indigo) and dashboard (teal) per surface. */
+  --color-brand-50: var(--acc-glow);
+  --color-brand-300: var(--acc);
+  --color-brand-600: var(--acc);
   --color-mute: var(--mute);
   --color-wa: var(--wa);
-  --color-bdr: var(--bdr);
+  /* Phase D1 alias — `--bdr` and `--bd` are border ghosts; both consumers
+     (border-bdr, border-bd) want the standard surface border. Map to --rim. */
+  --color-bdr: var(--rim);
   --color-gold: var(--gold);
-  --color-bd: var(--bd);
+  --color-bd: var(--rim);
   --color-violet-600: var(--gb-violet-600);
   --color-surface2: var(--surface2);
-  --color-panel: var(--panel);
+  /* Phase D1 alias — `--panel` was a ghost; consumers (NotificationBell
+     header, table thead) want the elevated card surface. Map to --surface. */
+  --color-panel: var(--surface);
   --color-green-600: var(--gb-green-600);
   --color-amber-600: var(--gb-amber-600);
   --color-red-600: var(--gb-red-600);
-  --color-primary: var(--primary);
+  /* Phase D1 alias — `--primary` was a ghost; only consumer is
+     NotificationBell's "Mark all read" link. Map to --acc (action color). */
+  --color-primary: var(--acc);
   --color-amber-100: var(--gb-amber-100);
   --color-amber-500: var(--gb-amber-500);
   --color-red-100: var(--gb-red-100);
@@ -70,8 +86,12 @@
      banner. Distinct from --color-wa (#16a34a, operational success green). */
   --color-wa-brand: var(--gb-wa-brand);
   --color-bg2: var(--bg2);
-  --color-bg-soft: var(--bg-soft);
-  --color-line: var(--line);
+  /* Phase D1 alias — `--bg-soft` was a ghost; sole consumer
+     (admin/restaurants table-row hover bg) wants the subtle gray tile. */
+  --color-bg-soft: var(--surface2);
+  /* Phase D1 alias — `--line` was a ghost; consumers (campaigns mode/template
+     cards) draw a hairline divider, which is the regular surface border. */
+  --color-line: var(--rim);
 
   /* Anchor Tailwind default-palette shades that landing/onboarding components
      consume directly (PgConnect, PgPending). Locking them here protects
@@ -82,6 +102,53 @@
   --color-green-500: var(--gb-green-500);
   --color-amber-50:  #fffbeb;
   --color-amber-300: #fcd34d;
+
+  /* Phase D3 — additional palette shades to absorb high-frequency
+     `bg-[#xyz]` / `text-[#xyz]` arbitrary-hex usages. Each maps to an
+     existing primitive (or anchors a Tailwind default not in our scale)
+     so authors can reach for the named utility rather than the literal. */
+  --color-amber-200: var(--gb-amber-200);
+  --color-amber-900: var(--gb-amber-900);
+  --color-neutral-50:  var(--gb-neutral-50);
+  --color-neutral-100: var(--gb-neutral-100);
+  --color-neutral-400: var(--gb-neutral-400);
+  --color-neutral-600: var(--gb-neutral-600);
+  --color-neutral-800: var(--gb-neutral-800);
+  --color-neutral-900: var(--gb-neutral-900);
+  --color-slate-200: var(--gb-slate-200);
+  --color-slate-300: var(--gb-slate-300);
+  --color-slate-500: var(--gb-slate-500);
+  --color-slate-600: var(--gb-slate-600);
+  --color-slate-900: var(--gb-slate-900);
+  --color-blue-100: var(--gb-blue-100);
+  --color-blue-500: var(--gb-blue-500);
+  --color-indigo-100: var(--gb-indigo-100);
+  --color-indigo-700: var(--gb-indigo-700);
+  --color-red-50:  #fef2f2;
+  --color-red-700: #b91c1c;
+  --color-red-800: #991b1b;
+  --color-red-950: #7f1d1d;
+  --color-yellow-100: #fef9c3;
+  --color-yellow-200: #fde68a;
+  --color-yellow-500: #f59e0b;
+  --color-yellow-800: #854d0e;
+  /* Tailwind emerald scale — separate from Fresh-Leaf --gb-green-*; used
+     across dashboard "success" surfaces (bg-emerald-50 hero tiles, etc.). */
+  --color-emerald-100: #d1fae5;
+  --color-emerald-500: #22c55e;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-emerald-800: #065f46;
+  --color-emerald-900: #064e3b;
+  /* Tailwind green deeper shades (700/800/900) — distinct from the
+     Fresh-Leaf primitives at --gb-green-700/900. The Fresh-Leaf landing
+     consumes its primitives directly via `var(--gb-green-700)`, so the
+     `bg-green-700` Tailwind utility lands here without conflict. */
+  --color-green-700: #15803d;
+  --color-green-800: #166534;
+  --color-green-900: #14532d;
+  --color-violet-400: #a78bfa;
+  --color-blue-800: #1e40af;
 
   --radius-r: var(--r);
 

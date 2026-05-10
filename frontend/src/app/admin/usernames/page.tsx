@@ -400,11 +400,11 @@ function UsernameModal({ account: u, onClose, onReloadList, onReloadActive }: Us
         <div className="p-4">
           <div className="mb-4">
             {isActive ? (
-              <div className="bg-wa-light border border-[#86efac] rounded-lg p-[0.7rem] text-[0.85rem]">
+              <div className="bg-wa-light border border-green-300 rounded-lg p-[0.7rem] text-[0.85rem]">
                 Active: <strong>@{u.business_username}</strong> — <a href={`https://wa.me/${u.business_username}`} target="_blank" rel="noreferrer" className="text-acc">wa.me/{u.business_username}</a>
               </div>
             ) : isPending ? (
-              <div className="bg-[#fef9c3] border border-[#fcd34d] rounded-lg p-[0.7rem] text-[0.85rem]">
+              <div className="bg-yellow-100 border border-amber-300 rounded-lg p-[0.7rem] text-[0.85rem]">
                 Pending claim: <strong>@{u.business_username}</strong>
               </div>
             ) : (
