@@ -419,19 +419,42 @@ const {
   requirePermission: requireStaffPermission,
   requireBranchAccess,
 } = require('../middleware/staffPermissions');
+// Endpoints that BOTH owners (dashboard) and staff (PWA / tablet) reach.
+// A request matching any of these patterns is auth-resolved via
+// _staffOrOwner (restaurant JWT first, staff JWT fallback). Per-route
+// permission middleware (requireStaffPermission + requireBranchAccess)
+// then enforces the specific 10-key permission and branch scope.
+//
+// Order matters only for readability — each pattern is anchored start-
+// to-end so they can't overlap ambiguously. New patterns added here
+// MUST be paired with an explicit permission gate on each route they
+// expose; the regex layer alone is not a permission decision.
+const STAFF_REACHABLE_PATTERNS = [
+  // Accept / decline / refund on a specific order.
+  /^\/orders\/[^/]+\/(accept|decline|refund)$/,
+  // Menu CRUD: POST creates an item under a branch …
+  /^\/branches\/[^/]+\/menu$/,
+  // … PUT/DELETE/PATCH operate on a specific item (covers the
+  // /menu/:itemId/stock 501 stub via the trailing optional segment).
+  /^\/menu\/[^/]+(\/.*)?$/,
+  // Branch settings update — PATCH /branches/:id. We deliberately
+  // exclude /branches/csv (the bulk-import literal alias on the same
+  // shape) so a staff JWT with manage_settings cannot reach the
+  // CSV-import handler, which has no permission middleware of its own.
+  /^\/branches\/(?!csv$)[^/]+$/,
+  // Reports surface (view_reports). Currently only /reports/daily
+  // exists as a 501 stub; the trailing optional segment future-proofs
+  // sub-paths added in Part 6c.
+  /^\/reports(\/.*)?$/,
+  // Customer detail (view_customer_details). Existing
+  // /customers/:customerId/orders is a separate sub-path — this
+  // pattern only matches the single-segment :customerId leaf, so the
+  // /orders sub-route keeps its current owner-default auth.
+  /^\/customers\/[^/]+$/,
+];
+
 router.use((req, res, next) => {
-  // Bypass auth entirely for the deprecated /staff-users surface — the
-  // 410 stubs registered later in the file (search for
-  // _STAFF_USERS_DEPRECATED) are an unconditional response that should
-  // reach any caller, including ones with stale or missing zm_tokens.
-  // Without this branch, requireAuth fires first and returns 401, hiding
-  // the deprecation signal from clients that most need to see it.
-  if (/^\/staff-users(\/.*)?$/.test(req.path)) {
-    return next();
-  }
-  // Accept BOTH token types on shared accept/decline endpoints — owner
-  // managing from the dashboard, staff acting on a tablet.
-  if (/^\/orders\/[^/]+\/(accept|decline)$/.test(req.path)) {
+  if (STAFF_REACHABLE_PATTERNS.some((re) => re.test(req.path))) {
     return _staffOrOwner(req, res, next);
   }
   return requireAuth(req, res, next);
@@ -1739,15 +1762,6 @@ router.post('/branches', async (req, res) => {
     const branchId = newId();
     const now = new Date();
     const branchSlug = slugify(name, 20) || branchId.slice(0, 8);
-    // Seed the staff-link UUID at create time so the staff_login_url
-    // surfaced by GET /branches/:branchId/staff-link is usable
-    // immediately — no separate "generate" step required during
-    // onboarding. Regeneration still flows through the existing
-    // /branches/:branchId/staff-link/generate endpoint, which is the
-    // single canonical regenerator (one source of truth + one
-    // activity-log entry per rotation).
-    const crypto = require('crypto');
-    const staffToken = crypto.randomUUID();
     const branch = {
       _id: branchId,
       restaurant_id: req.restaurantId,
@@ -1775,8 +1789,6 @@ router.post('/branches', async (req, res) => {
       paid_through_date: null,
       catalog_id: null,
       delivery_fee_rs: null,
-      staff_access_token: staffToken,
-      staff_access_token_generated_at: now,
       created_at: now,
       updated_at: now,
     };
@@ -1939,7 +1951,12 @@ router.post('/branches/csv', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-router.patch('/branches/:id', async (req, res) => {
+// Permission gate added 2026-05-10 (Part 6b). Previously this handler had
+// NO permission middleware — any authenticated owner JWT could mutate
+// branch settings. Now staff must carry manage_settings AND have the
+// :id branch in their assigned branchIds; owners bypass both checks via
+// the staff middleware's owner-bypass branch.
+router.patch('/branches/:id', requireStaffPermission('manage_settings'), requireBranchAccess('id'), async (req, res) => {
   try {
     const {
       name, isOpen, acceptsOrders, isActive, deliveryRadiusKm, catalogId,
@@ -2329,88 +2346,6 @@ router.delete('/branches/:id/permanent', async (req, res) => {
   }
 });
 
-// ─── BRANCH STAFF-LINK (UUID for staff app PIN login URL) ──────
-// staff_access_token is a per-branch UUID. Staff open the link
-// /staff/<token> on a tablet, which scopes the login to that branch
-// (the new /api/staff/auth resolves restaurantId + branchId from the
-// token). Token regeneration replaces the value but does NOT
-// invalidate existing JWTs — they carry branchId in the payload, not
-// the token. Old links simply stop working for new logins.
-
-// GET /api/restaurant/branches/:branchId/staff-link
-// Returns the existing staff_access_token + the construction of the
-// shareable login URL. { staff_access_token: null, ... } when none has
-// been generated yet (admin must POST /generate first).
-router.get('/branches/:branchId/staff-link', async (req, res) => {
-  try {
-    const branch = await col('branches').findOne(
-      { _id: req.params.branchId, restaurant_id: req.restaurantId },
-      { projection: { staff_access_token: 1, staff_access_token_generated_at: 1 } },
-    );
-    if (!branch) return res.status(404).json({ error: 'Branch not found' });
-    const token = branch.staff_access_token || null;
-    const base = process.env.FRONTEND_URL || '';
-    const loginUrl = token && base ? `${base.replace(/\/$/, '')}/staff/${token}` : null;
-    res.json({
-      staff_access_token: token,
-      staff_login_url: loginUrl,
-      generated_at: branch.staff_access_token_generated_at || null,
-    });
-  } catch (e) {
-    req.log?.error?.({ err: e, branchId: req.params.branchId }, 'staff-link get failed');
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
-// POST /api/restaurant/branches/:branchId/staff-link/generate
-// Generates (or replaces) the per-branch staff_access_token. Existing
-// staff JWTs continue to work — they carry branchId in the payload, not
-// the token, so revocation has to happen through the per-user
-// soft-delete or reset-pin paths in /restaurant/staff-users. Replacing
-// the token only blocks NEW logins via the old URL.
-router.post('/branches/:branchId/staff-link/generate', async (req, res) => {
-  try {
-    const branch = await col('branches').findOne(
-      { _id: req.params.branchId, restaurant_id: req.restaurantId },
-      { projection: { _id: 1 } },
-    );
-    if (!branch) return res.status(404).json({ error: 'Branch not found' });
-
-    const crypto = require('crypto');
-    const newToken = crypto.randomUUID();
-    const now = new Date();
-    await col('branches').updateOne(
-      { _id: req.params.branchId },
-      { $set: {
-          staff_access_token: newToken,
-          staff_access_token_generated_at: now,
-          updated_at: now,
-      } },
-    );
-
-    log({
-      actorType: 'restaurant', actorId: String(req.userId || req.restaurantId), actorName: req.user?.name || req.user?.email || req.userRole || null,
-      action: 'branch.staff_link_generated', category: 'settings',
-      description: `Staff access token (re)generated for branch ${req.params.branchId}`,
-      restaurantId: req.restaurantId,
-      branchId: req.params.branchId,
-      resourceType: 'branch', resourceId: req.params.branchId,
-      severity: 'info',
-    });
-
-    const base = process.env.FRONTEND_URL || '';
-    const loginUrl = base ? `${base.replace(/\/$/, '')}/staff/${newToken}` : null;
-    res.json({
-      staff_access_token: newToken,
-      staff_login_url: loginUrl,
-      generated_at: now,
-    });
-  } catch (e) {
-    req.log?.error?.({ err: e, branchId: req.params.branchId }, 'staff-link generate failed');
-    res.status(500).json({ success: false, message: 'Internal server error' });
-  }
-});
-
 // GET /api/restaurant/branches/:branchId/hours — operating hours for a branch
 router.get('/branches/:branchId/hours', async (req, res) => {
   try {
@@ -2677,7 +2612,12 @@ router.get('/branches/:branchId/menu', async (req, res) => {
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async (req, res) => {
+// Permission: switched from legacy 7-key requirePermission('manage_menu')
+// to the new 10-key requireStaffPermission('manage_menu'). Owners bypass
+// inside the staff middleware; staff JWTs carrying manage_menu pass. The
+// branch is resolved from the :branchId param via requireBranchAccess so
+// staff can only mutate menus on branches they're assigned to.
+router.post('/branches/:branchId/menu', requireStaffPermission('manage_menu'), requireBranchAccess('branchId'), async (req, res) => {
   try {
     // [TENANT] Verify branch ownership BEFORE inserting — otherwise an attacker
     // could create menu items inside another restaurant's branch (the inserted
@@ -2775,7 +2715,19 @@ router.post('/branches/:branchId/menu', requirePermission('manage_menu'), async 
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) => {
+// Permission: switched from legacy 7-key requirePermission('manage_menu')
+// to the new 10-key requireStaffPermission('manage_menu'). The branch_id
+// for the staff scope check is read off the menu_item doc (the lookup
+// runs once in requireBranchAccess, the handler then re-uses
+// _assertMenuItemOwnedBy for the tenant guard — these are intentionally
+// separate concerns and the duplicate query is cheap and indexed).
+router.put('/menu/:itemId', requireStaffPermission('manage_menu'), requireBranchAccess(async (req) => {
+  const item = await col('menu_items').findOne(
+    { _id: req.params.itemId },
+    { projection: { branch_id: 1 } },
+  );
+  return item?.branch_id;
+}), async (req, res) => {
   try {
     // [TENANT] Verify item ownership BEFORE accepting any update. Without
     // this check any restaurant could rename / re-price / change availability
@@ -2878,7 +2830,17 @@ router.put('/menu/:itemId', requirePermission('manage_menu'), async (req, res) =
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
 
-router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res) => {
+// Permission: switched to the new 10-key requireStaffPermission contract.
+// Branch resolution mirrors PUT /menu/:itemId — read branch_id off the
+// item doc in the requireBranchAccess resolver, then enforce tenant
+// ownership in the handler via _assertMenuItemOwnedBy.
+router.delete('/menu/:itemId', requireStaffPermission('manage_menu'), requireBranchAccess(async (req) => {
+  const item = await col('menu_items').findOne(
+    { _id: req.params.itemId },
+    { projection: { branch_id: 1 } },
+  );
+  return item?.branch_id;
+}), async (req, res) => {
   try {
     // [TENANT] Verify the item belongs to this restaurant. 404 (not 403) so
     // attackers cannot probe whether an ID exists in another tenant.
@@ -2903,6 +2865,35 @@ router.delete('/menu/:itemId', requirePermission('manage_menu'), async (req, res
     });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
+
+// PATCH /api/restaurant/menu/:itemId/stock — 501 stub (Part 6b).
+//
+// Stock-level mutation (in/out of stock with quantity tracking) is
+// distinct from the existing availability toggle at
+// PATCH /menu/:itemId/availability. The 10-key staff permission
+// contract carves out manage_stock as a separate key (6th in
+// StaffPermissions) so floor staff can mark items out-of-stock without
+// being granted full manage_menu (which permits price/name edits).
+// The handler is pending Part 6c — for now we register the route with
+// the correct gate so the contract is observable.
+router.patch(
+  '/menu/:itemId/stock',
+  requireStaffPermission('manage_stock'),
+  requireBranchAccess(async (req) => {
+    const item = await col('menu_items').findOne(
+      { _id: req.params.itemId },
+      { projection: { branch_id: 1 } },
+    );
+    return item?.branch_id;
+  }),
+  (req, res) => {
+    res.status(501).json({
+      ok: false,
+      error: 'not_implemented',
+      message: 'Stock toggle endpoint pending — Part 6c.',
+    });
+  },
+);
 
 router.post('/menu/bulk-delete', requirePermission('manage_menu'), async (req, res) => {
   try {
@@ -6170,6 +6161,39 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
   }
 });
 
+// POST /api/restaurant/orders/:orderId/refund — 501 stub (Part 6b).
+//
+// Refund semantics today live INSIDE /decline (the PAID →
+// REJECTED_BY_RESTAURANT transition issues a Razorpay refund as a
+// side-effect). A separate refund endpoint — partial refunds,
+// post-delivery refunds, refund-without-decline — is forward-declared
+// in the staff-app permission contract (`refund_orders` is the 9th key
+// in the 10-key StaffPermissions enum, see
+// staff-app/src/state/StaffContext.tsx) but the actual handler is
+// pending Part 6c. We register the route NOW with the correct
+// permission and branch gates so the contract surface is wired;
+// replacing the body with the real implementation later will not
+// require touching auth.
+router.post(
+  '/orders/:orderId/refund',
+  requireApproved,
+  requireStaffPermission('refund_orders'),
+  requireBranchAccess(async (req) => {
+    const o = await col('orders').findOne(
+      { _id: req.params.orderId },
+      { projection: { branch_id: 1 } },
+    );
+    return o?.branch_id;
+  }),
+  (req, res) => {
+    res.status(501).json({
+      ok: false,
+      error: 'not_implemented',
+      message: 'Refund endpoint pending — currently issued via /decline. Tracked for Part 6c.',
+    });
+  },
+);
+
 // PUT /api/restaurant/orders/:orderId/delivery
 router.put('/orders/:orderId/delivery', async (req, res) => {
   try {
@@ -6452,6 +6476,29 @@ router.get('/delivery/stats', async (req, res) => {
     });
   } catch (e) { res.status(500).json({ success: false, message: "Internal server error" }); }
 });
+
+// ═══════════════════════════════════════════════════════════════
+// REPORTS — 501 stubs (Part 6b)
+// ═══════════════════════════════════════════════════════════════
+//
+// `view_reports` is the 7th key in the 10-key staff permission
+// contract. No /reports surface existed before — the closest reads are
+// the /analytics/* endpoints (legacy view_analytics gate, owner-only).
+// We register a single concrete endpoint at /reports/daily so the
+// regex-gate addition for /reports(/.*)? has a real route to match,
+// and forward-declare future variants under Part 6c. The path is
+// concrete (not a wildcard) to keep the contract surface bounded.
+router.get(
+  '/reports/daily',
+  requireStaffPermission('view_reports'),
+  (req, res) => {
+    res.status(501).json({
+      ok: false,
+      error: 'not_implemented',
+      message: 'Reports endpoints pending — Part 6c.',
+    });
+  },
+);
 
 // ═══════════════════════════════════════════════════════════════
 // ANALYTICS
@@ -7937,6 +7984,29 @@ router.get('/catalog/diagnostics', async (req, res) => {
 // (The previous unmasked handler lived here and took precedence; it has
 //  been removed to close the phone-leak bug.)
 
+// GET /api/restaurant/customers/:customerId — 501 stub (Part 6b).
+//
+// Single-customer detail (PII profile, lifetime stats, segment tags
+// joined into one read) is forward-declared in the staff-app permission
+// contract as `view_customer_details` (10th key in StaffPermissions).
+// No customer-scope handler exists today — the closest read is the
+// /:customerId/orders history below — so we register the path with the
+// permission gate and return 501 until Part 6c. NOTE: customers are
+// restaurant-scoped (not branch-scoped) so requireBranchAccess is not
+// applied here; tenant scoping happens inside the handler against
+// req.restaurantId once implemented.
+router.get(
+  '/customers/:customerId',
+  requireStaffPermission('view_customer_details'),
+  (req, res) => {
+    res.status(501).json({
+      ok: false,
+      error: 'not_implemented',
+      message: 'Customer detail endpoint pending — Part 6c.',
+    });
+  },
+);
+
 // GET /api/restaurant/customers/:customerId/orders — order history for one customer
 router.get('/customers/:customerId/orders', async (req, res) => {
   try {
@@ -9079,97 +9149,6 @@ router.post('/issues/:id/reopen', requireAuth, requireApproved, async (req, res)
 // PINs are 4-digit and bcrypt-hashed at 10 rounds. The plain PIN is
 // only ever returned ONCE (on create + reset) so the owner can hand it
 // off. Subsequent reads NEVER include pin_hash or the plain PIN.
-
-// DEPRECATED 2026-05-09 — see 410 stubs below. The helpers in this
-// section (_STAFF_BCRYPT, _STAFF_VALID_PERM_KEYS, _normalizeStaffPermissions,
-// _normalizeBranchIds, _staffUserPublic) backed the legacy /staff-users
-// CRUD that is now hard-deprecated. Helpers are no longer reachable;
-// kept in place to minimize churn for Part 7 cleanup, which will
-// remove the helpers and the route stubs together.
-const _STAFF_BCRYPT = require('bcryptjs');
-
-const _STAFF_VALID_PERM_KEYS = new Set([
-  'view_orders', 'manage_orders',
-  'view_menu', 'manage_menu',
-  'view_analytics', 'manage_settings',
-  'manage_coupons', 'manage_users',
-  'view_payments', 'manage_staff',
-]);
-
-function _normalizeStaffPermissions(input) {
-  // Filter to known keys; coerce to boolean. Defaults to all-false.
-  const out = {};
-  for (const k of _STAFF_VALID_PERM_KEYS) out[k] = false;
-  if (input && typeof input === 'object') {
-    for (const [k, v] of Object.entries(input)) {
-      if (_STAFF_VALID_PERM_KEYS.has(k)) out[k] = !!v;
-    }
-  }
-  return out;
-}
-
-function _normalizeBranchIds(input, restaurantId) {
-  // Empty/missing array means "all branches". Otherwise must be an
-  // array of strings — we don't ownership-check the branches here
-  // (cheap), but the order/menu guards re-check at request time so a
-  // forged branch_id in the array is harmless.
-  if (!Array.isArray(input)) return [];
-  return input.map((b) => String(b)).filter(Boolean);
-}
-
-function _staffUserPublic(u) {
-  if (!u) return null;
-  return {
-    id: String(u._id),
-    name: u.name || '',
-    phone: u.phone || '',
-    role: u.role || 'staff',
-    branch_ids: Array.isArray(u.branch_ids) ? u.branch_ids : [],
-    permissions: u.permissions || {},
-    is_active: !!u.is_active,
-    last_login_at: u.last_login_at || null,
-    created_at: u.created_at || null,
-    updated_at: u.updated_at || null,
-  };
-}
-
-// ─── DEPRECATED — Legacy /staff-users CRUD (410 Gone) ──────────────────
-//
-// Hard-deprecated 2026-05-09. The new contract lives at:
-//   /api/restaurant/staff       (CRUD, in routes/restaurantStaff.js)
-//   /api/staff/auth             (login/logout/me, in routes/staffAuth.js)
-//
-// These six routes used to validate against the legacy 7-key
-// permissions shape (manage_orders, view_analytics, manage_coupons,
-// manage_users, view_payments, manage_staff, view_menu) — incompatible
-// with the new 10-key contract that gates accept_orders / reject_orders /
-// mark_ready / etc. Leaving the handlers live would let a stale UI
-// write old-shape permission documents that the new gates ignore,
-// silently breaking every staff member that owner touched.
-//
-// We keep the route registrations (path + method preserved) so any
-// in-flight client receives a structured 410 with a pointer to the
-// new endpoint, rather than a confusing 404. Auth/permission
-// middleware is intentionally dropped — a 410 is an unconditional
-// response, not a security gate, and we want clients to see the
-// deprecation signal even with a missing/expired zm_token.
-//
-// Part 7 cleanup will remove these stubs and the orphaned helper
-// functions above (_STAFF_BCRYPT, _STAFF_VALID_PERM_KEYS,
-// _normalizeStaffPermissions, _normalizeBranchIds, _staffUserPublic).
-
-const _STAFF_USERS_DEPRECATED = (req, res) => res.status(410).json({
-  ok: false,
-  error: 'endpoint_deprecated',
-  use: '/api/restaurant/staff',
-});
-
-router.post('/staff-users',                      _STAFF_USERS_DEPRECATED);
-router.get('/staff-users',                       _STAFF_USERS_DEPRECATED);
-router.put('/staff-users/:userId',               _STAFF_USERS_DEPRECATED);
-router.put('/staff-users/:userId/reset-pin',     _STAFF_USERS_DEPRECATED);
-router.delete('/staff-users/:userId',            _STAFF_USERS_DEPRECATED);
-router.delete('/staff/:staffId',                 _STAFF_USERS_DEPRECATED);
 
 // ─── FINANCIAL ENDPOINTS ────────────────────────────────────────
 

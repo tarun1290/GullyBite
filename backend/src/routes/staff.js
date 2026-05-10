@@ -38,68 +38,10 @@ const staffAuthLimiter = rateLimitFn(
   { message: 'Too many attempts. Please try again later.' }
 );
 
-// Branch-info lookup: 30 req / 60s / IP. More permissive than the auth
-// limiter because the staff login page hits this once on mount to show
-// context ("Burger Palace, MG Road branch") before the PIN entry — but
-// still bounded so the public endpoint can't be hammered.
-const staffBranchInfoLimiter = rateLimitFn(
-  (r) => `staff_branch_info:${r.ip || r.headers['x-forwarded-for'] || 'unknown'}`,
-  30,
-  60,
-  { message: 'Too many requests. Please try again later.' }
-);
-
 // NOTE: The legacy POST /auth handler (login via staff_access_token +
 // name + pin) was removed on 2026-05-09. The new staff-auth contract
 // owns POST /api/staff/auth → /, /logout, /me in routes/staffAuth.js,
 // mounted BEFORE this router in ec2-server.js so the new handler wins.
-// The /branch-info handler below stays — it's the public token →
-// branch-display lookup the staff login page hits on mount, unchanged.
-
-// GET /api/staff/branch-info?token=<staff_access_token> — public, no auth.
-//
-// Resolves the per-branch staff_access_token to its display context so
-// the staff login page can render "{restaurant_name} — {branch_name}"
-// before the operator types their PIN. Possessing the token is itself
-// the access gate — knowing the branch name once you already hold the
-// token is meaningless additional disclosure (the operator was sent
-// the token by their owner). Brute-forcing UUID v4 tokens is infeasible
-// (122 bits), so the 404 on miss leaks nothing useful at the entropy
-// of the keyspace.
-router.get('/branch-info', staffBranchInfoLimiter, async (req, res) => {
-  try {
-    const raw = req.query?.token;
-    const token = typeof raw === 'string' ? raw.trim() : '';
-    // Require at least UUID-shape length; reject obvious junk so the
-    // findOne with a malformed input doesn't even hit Mongo.
-    if (!token || token.length < 16 || token.length > 100) {
-      return res.status(400).json({ error: 'Invalid token' });
-    }
-
-    const branch = await col('branches').findOne(
-      { staff_access_token: token },
-      { projection: { _id: 1, name: 1, restaurant_id: 1 } },
-    );
-    if (!branch) return res.status(404).json({ error: 'Invalid link' });
-
-    const r = await col('restaurants').findOne(
-      { _id: branch.restaurant_id },
-      { projection: { brand_name: 1, business_name: 1 } },
-    );
-    // No restaurant doc behind a valid branch token is a data-integrity
-    // bug, not a normal miss — surface as 404 so the login page degrades
-    // to "this link is no longer valid" rather than crashing on render.
-    if (!r) return res.status(404).json({ error: 'Invalid link' });
-
-    return res.json({
-      branch_name: branch.name || null,
-      restaurant_name: r.brand_name || r.business_name || null,
-    });
-  } catch (e) {
-    log.error({ err: e }, 'staff branch-info lookup failed');
-    return res.status(500).json({ error: 'Internal server error' });
-  }
-});
 
 // GET /api/staff/stream — SSE. EventSource can't set Authorization, so
 // the middleware also accepts ?token=<jwt>.
