@@ -1,19 +1,19 @@
 import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, Text } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useStaff } from '@/state/StaffContext';
+import { useStaff, useStaffPermissions } from '@/state/StaffContext';
 import BranchSelector from '@/components/BranchSelector';
 import { colors, space, text, radius, fontWeight } from '@/theme';
 
 function LogoutButton() {
-  const router = useRouter();
   const { logout } = useStaff();
   return (
     <Pressable
+      // Part 6d Track B6 — the redundant `router.replace('/login')`
+      // post-await is gone. StaffContext.logout() (Part 6c) already
+      // handles the navigation internally.
       onPress={async () => {
         await logout();
-        router.replace('/login');
       }}
       style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.7 }]}
       accessibilityLabel="Log out"
@@ -29,6 +29,17 @@ function LogoutButton() {
 const TAB_ACTIVE_TINT = colors.acc;
 
 export default function TabsLayout() {
+  // Part 6d Track B2 — Menu tab visibility is gated on
+  // (canManageMenu || canManageStock). When both are false, the tab
+  // disappears from the bar entirely. Owner / manager sessions bypass
+  // naturally because the backend stamps every flag true on those
+  // roles. Plain staff with neither permission never see the tab AND
+  // can't navigate to it.
+  const { role } = useStaff();
+  const { canManageMenu, canManageStock } = useStaffPermissions();
+  const showMenuTab =
+    role === 'owner' || role === 'manager' || canManageMenu || canManageStock;
+
   return (
     <Tabs
       screenOptions={{
@@ -59,14 +70,16 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="receipt-outline" color={color} size={size} />,
         }}
       />
-      <Tabs.Screen
-        name="menu/index"
-        options={{
-          title: 'Menu',
-          tabBarLabel: 'Menu',
-          tabBarIcon: ({ color, size }) => <Ionicons name="restaurant-outline" color={color} size={size} />,
-        }}
-      />
+      {showMenuTab ? (
+        <Tabs.Screen
+          name="menu/index"
+          options={{
+            title: 'Menu',
+            tabBarLabel: 'Menu',
+            tabBarIcon: ({ color, size }) => <Ionicons name="restaurant-outline" color={color} size={size} />,
+          }}
+        />
+      ) : null}
     </Tabs>
   );
 }

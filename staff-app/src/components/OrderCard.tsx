@@ -5,7 +5,7 @@
 import { memo } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StaffOrder } from '@/api';
-import { useStaff } from '@/state/StaffContext';
+import { useStaff, useHasPermission } from '@/state/StaffContext';
 import { badgeFor, colors, fontWeight, primitives, radius, space, text } from '@/theme';
 import { formatRs, timeAgo } from '@/time';
 
@@ -57,6 +57,14 @@ function OrderCardBase({
   hideNextStatus,
 }: Props) {
   const { currentBranchId, staffUser } = useStaff();
+  // Part 6d Track B4 — phone-tail visibility gates on
+  // `view_customer_details`. Owner / manager bypass via the hook's
+  // role check. When un-permitted, the `· Phone ****` segment
+  // collapses entirely — the row layout naturally reflows without it,
+  // so this is a HIDE (not a mask) for the phone-tail. The phone is
+  // a tail-segment in a multi-line row, not a column, so removing it
+  // doesn't shift surrounding columns.
+  const canViewCustomerDetails = useHasPermission('view_customer_details');
   const badge = badgeFor(order.status);
   const phoneTail = (order.customer_phone_masked || '').slice(-4);
   const status = String(order.status || '').toUpperCase();
@@ -94,7 +102,7 @@ function OrderCardBase({
           </Text>
           <Text style={styles.meta}>
             {timeAgo(order.created_at)}
-            {phoneTail ? ` · Phone ****${phoneTail}` : ''}
+            {phoneTail && canViewCustomerDetails ? ` · Phone ****${phoneTail}` : ''}
           </Text>
           {branchName ? (
             <View style={styles.branchTag}>

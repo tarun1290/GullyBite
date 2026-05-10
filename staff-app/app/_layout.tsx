@@ -26,6 +26,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { StaffProvider, useStaff } from '@/state/StaffContext';
+import NoAccessScreen from '@/components/NoAccessScreen';
 import { setupNotificationHandler } from '@/push';
 import { colors } from '@/theme';
 
@@ -33,7 +34,7 @@ function RootInner() {
   const [ready, setReady] = useState(false);
   const router = useRouter();
   const segments = useSegments();
-  const { token, role, isLoading: authLoading } = useStaff();
+  const { token, role, isLoading: authLoading, permissions } = useStaff();
   const notifListener = useRef<Notifications.EventSubscription | null>(null);
 
   useEffect(() => {
@@ -141,6 +142,24 @@ function RootInner() {
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.ink }}>
         <ActivityIndicator color={colors.acc} />
       </View>
+    );
+  }
+
+  // Part 6d Track B3 — root-level access gate. A staff session whose
+  // permissions object has `view_orders=false` (and isn't an owner /
+  // manager) has no operational access to the app. Surface a clear
+  // "no access" screen instead of dropping them into an empty orders
+  // list. Owner / manager bypass — they always have view_orders=true
+  // (managers via preset, owners via the all-true seed). The gate
+  // also short-circuits when a token is present but the auth screens
+  // are showing (e.g. transient state during login) so we don't flash
+  // the no-access screen during navigation.
+  const isManagerLike = role === 'owner' || role === 'manager';
+  const isStaffWithoutAccess =
+    !!token && role === 'staff' && !isManagerLike && !permissions.view_orders;
+  if (isStaffWithoutAccess) {
+    return (
+      <NoAccessScreen message="Your account has no operational access. Contact your owner." />
     );
   }
 

@@ -21,6 +21,7 @@ import {
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 
 import { getOwnerBranchMenu, toggleItemStock, type StaffMenuItem } from '@/api';
+import RequirePermission from '@/components/RequirePermission';
 import { colors, fontWeight, radius, space, text } from '@/theme';
 
 type Section = { title: string; data: StaffMenuItem[] };
@@ -142,13 +143,20 @@ export default function BranchDetailScreen() {
               {price !== undefined ? <Text style={styles.itemPrice}>₹{formatRupees(price)}</Text> : null}
               {itemErr ? <Text style={styles.itemErr}>{itemErr}</Text> : null}
             </View>
-            <Switch
-              value={!!item.is_available}
-              onValueChange={(v) => onToggle(item, v)}
-              disabled={inFlight}
-              trackColor={{ false: colors.rim2, true: colors.acc }}
-              thumbColor={colors.ink2}
-            />
+            {/* Part 6d Track B4 — stock toggle requires `manage_stock`.
+                The (owner) route group already restricts entry to
+                manager / owner; this gate adds defense-in-depth for a
+                hypothetical "manager without manage_stock" preset.
+                Owners always have all flags true so they bypass. */}
+            <RequirePermission keys={['manage_stock']}>
+              <Switch
+                value={!!item.is_available}
+                onValueChange={(v) => onToggle(item, v)}
+                disabled={inFlight}
+                trackColor={{ false: colors.rim2, true: colors.acc }}
+                thumbColor={colors.ink2}
+              />
+            </RequirePermission>
           </View>
         );
       }}

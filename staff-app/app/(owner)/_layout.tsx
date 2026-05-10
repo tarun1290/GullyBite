@@ -7,20 +7,20 @@
 // fighting the tab's header. headerShown:false on the branches tab keeps
 // the inner Stack's header from doubling up with the tab header.
 
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { useStaff } from '@/state/StaffContext';
 import { colors, fontWeight, radius, space, text } from '@/theme';
 
 function LogoutButton() {
-  const router = useRouter();
   const { logout } = useStaff();
   return (
     <Pressable
+      // Part 6d Track B6 — the redundant `router.replace('/login')`
+      // post-await is gone. StaffContext.logout() handles the redirect.
       onPress={async () => {
         await logout();
-        router.replace('/login');
       }}
       style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.7 }]}
       accessibilityLabel="Log out"

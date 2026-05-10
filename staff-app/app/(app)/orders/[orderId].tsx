@@ -33,6 +33,7 @@ import {
   type StaffOrderItem,
 } from '@/api';
 import { useStaffPermissions } from '@/state/StaffContext';
+import MaskedField from '@/components/MaskedField';
 import { unloadChime } from '@/sound';
 import { badgeFor, colors, space, text, radius, fontWeight } from '@/theme';
 
@@ -222,9 +223,16 @@ export default function OrderDetailScreen() {
         <Text style={styles.time}>Received {formatTime(order.created_at)}</Text>
 
         <Section title="Customer">
+          {/* Part 6d Track B4 — customer phone is a display-only PII
+              field. Mask with "••••" placeholder so the section card
+              keeps its vertical rhythm even when the staff lacks
+              view_customer_details. Owner / manager bypass via the
+              MaskedField role check. */}
           <Text style={styles.row}>{order.customer_name || 'Customer'}</Text>
           {order.customer_phone_masked ? (
-            <Text style={styles.rowDim}>{order.customer_phone_masked}</Text>
+            <MaskedField permission="view_customer_details" placeholder="••••">
+              <Text style={styles.rowDim}>{order.customer_phone_masked}</Text>
+            </MaskedField>
           ) : null}
         </Section>
 

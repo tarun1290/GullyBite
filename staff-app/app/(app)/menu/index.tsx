@@ -15,6 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StaffMenuItem, getMenu, updateItemAvailability } from '@/api';
 import { useStaff } from '@/state/StaffContext';
+import RequirePermission from '@/components/RequirePermission';
+import NoAccessScreen from '@/components/NoAccessScreen';
 import { colors, primitives, space, text, radius, fontWeight } from '@/theme';
 import { formatRs } from '@/time';
 
@@ -22,7 +24,27 @@ type Section =
   | { kind: 'header'; key: string; title: string }
   | { kind: 'item'; key: string; item: StaffMenuItem };
 
-export default function MenuScreen() {
+// Part 6d Track B4 — screen-level permission wrapper. Staff who lack
+// both `manage_menu` AND `manage_stock` get a NoAccessScreen instead
+// of the menu list. Owner / manager bypass via RequirePermission's
+// role check. The Menu tab itself is hidden from the bar for the
+// same audience (see (app)/_layout.tsx) — this wrapper guards the
+// screen against direct deep-link / programmatic navigation.
+export default function MenuScreenGate(): React.ReactElement {
+  return (
+    <RequirePermission
+      keys={['manage_menu', 'manage_stock']}
+      mode="any"
+      fallback={
+        <NoAccessScreen message="You don’t have permission to manage the menu. Ask your manager to enable Manage Menu or Manage Stock." />
+      }
+    >
+      <MenuScreen />
+    </RequirePermission>
+  );
+}
+
+function MenuScreen() {
   // Branch selection drives getMenu's X-Branch-Id header (set globally
   // by authStore). Adding it to load's deps re-runs the fetch when the
   // operator picks a different branch from the header selector.
@@ -189,14 +211,20 @@ function MenuRow({
         <Text style={styles.itemName}>{item.name}</Text>
         <Text style={styles.itemPrice}>{formatRs(price)}</Text>
       </View>
-      <Switch
-        value={!!item.is_available}
-        onValueChange={onToggle}
-        disabled={busy}
-        trackColor={{ false: colors.rim2, true: colors.acc }}
-        thumbColor={'#fff'}
-        style={{ transform: [{ scaleX: 1.15 }, { scaleY: 1.15 }] }}
-      />
+      {/* Part 6d Track B4 — availability toggle requires `manage_stock`.
+          Staff with `manage_menu` only (read-the-menu role) see the row
+          without the Switch; the row stays right-aligned because the
+          flex:1 wrapper above already eats the remaining width. */}
+      <RequirePermission keys={['manage_stock']}>
+        <Switch
+          value={!!item.is_available}
+          onValueChange={onToggle}
+          disabled={busy}
+          trackColor={{ false: colors.rim2, true: colors.acc }}
+          thumbColor={'#fff'}
+          style={{ transform: [{ scaleX: 1.15 }, { scaleY: 1.15 }] }}
+        />
+      </RequirePermission>
     </View>
   );
 }

@@ -5,7 +5,6 @@
 
 import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Constants from 'expo-constants';
-import { useRouter } from 'expo-router';
 
 import { useStaff } from '@/state/StaffContext';
 import { colors, fontWeight, radius, space, text } from '@/theme';
@@ -13,7 +12,6 @@ import { colors, fontWeight, radius, space, text } from '@/theme';
 const FULL_DASHBOARD_URL = 'https://gullybite.duckdns.org';
 
 export default function OwnerSettingsScreen() {
-  const router = useRouter();
   const { restaurant, ownerInfo, logout } = useStaff();
   const version = Constants.expoConfig?.version || '—';
 
@@ -37,9 +35,10 @@ export default function OwnerSettingsScreen() {
       </View>
 
       <Pressable
+        // Part 6d Track B6 — the redundant `router.replace('/login')`
+        // post-await is gone. StaffContext.logout() handles the redirect.
         onPress={async () => {
           await logout();
-          router.replace('/login');
         }}
         style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.85 }]}
       >

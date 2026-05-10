@@ -480,3 +480,19 @@ export function useStaffPermissions(): StaffPermissionFlags {
     [permissions],
   );
 }
+
+// Inline single-key permission check (Part 6d Track B). Suits inline
+// ternaries and short-circuit conditionals where pulling in the full
+// camelCase flag set is overkill. Mirrors the role bypass in
+// <RequirePermission/> and <MaskedField/> so the three primitives
+// agree on owner / manager handling.
+//
+// Usage:
+//   const canSeePhone = useHasPermission('view_customer_details');
+//   {canSeePhone ? <PhoneText/> : <MaskedFallback/>}
+export function useHasPermission(key: keyof StaffPermissions): boolean {
+  const { role, permissions } = useStaff();
+  // Owner + manager bypass — every key resolves to true.
+  if (role === 'owner' || role === 'manager') return true;
+  return !!permissions[key];
+}
