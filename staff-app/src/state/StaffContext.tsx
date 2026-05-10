@@ -21,6 +21,15 @@
 // which still owns multi-branch / role / owner-info state. The two
 // providers compose; StaffProvider is the new permission-aware layer
 // added by the 2026-05-09 staff-auth refactor.
+//
+// Part 6b update (2026-05-10): consumers should call useAuth().logout()
+// as the canonical session-end entry point. authStore's logout() now
+// chains through this provider's signOut() so the staff /me bundle
+// clears alongside the legacy auth bundle in a single action. Calling
+// useStaff().signOut() directly is still safe but only revokes the
+// staff token — it does NOT clear authStore's React state, so screens
+// reading useAuth() will still see stale token/role until the next
+// route-guard pass.
 
 import {
   createContext,

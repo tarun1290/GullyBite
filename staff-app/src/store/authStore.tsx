@@ -3,6 +3,19 @@
 // SecureStore on every render. Hydrates on mount; the route guard in
 // app/_layout.tsx remains the source of truth for "where to send the
 // user" (login vs orders vs owner dashboard).
+//
+// Part 6b note (2026-05-10): authStore (this file) and StaffContext
+// (../state/StaffContext.tsx) coexist by design. authStore owns
+// multi-branch selection, owner-side identity, role-routing, and SSE
+// branch-filter wiring — none of which the staff /me endpoint covers.
+// StaffContext owns the sanitized staff record + permission map driven
+// off /api/staff/auth/me. Consolidating both surfaces into a single
+// context would have meant re-implementing the multi-branch selector
+// pipeline + owner login flow inside StaffContext, well outside the
+// scope of this cleanup. Instead, logout() below now chains through to
+// the staff token / staff-side server revocation so a single logout
+// clears BOTH credential bundles. Consumers should still call
+// useAuth().logout() — that is the canonical session-end entry point.
 
 import { createContext, useContext, useEffect, useReducer, type ReactNode } from 'react';
 import {
@@ -25,6 +38,7 @@ import {
 } from '../storage';
 import { setBranchHeader } from '../api';
 import { setSseBranchFilter } from '../sse';
+import { useStaff } from '../state/StaffContext';
 
 interface AuthState {
   token: string | null;
@@ -144,6 +158,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }): React.ReactElement {
   const [state, dispatch] = useReducer(reducer, initialState);
+  // StaffProvider sits above AuthProvider in the tree (see
+  // app/_layout.tsx) so this hook resolves at render time. logout()
+  // chains through staffSignOut() so the staff /me bundle (token,
+  // sanitized record, permissions) clears alongside the legacy auth
+  // bundle in a single user-driven action.
+  const { signOut: staffSignOut } = useStaff();
 
   useEffect(() => {
     let cancelled = false;
@@ -197,6 +217,21 @@ export function AuthProvider({ children }: { children: ReactNode }): React.React
       dispatch({ type: 'LOGIN_OWNER', token, restaurant, ownerInfo });
     },
     async logout() {
+      // Chain through both credential bundles so a single user-driven
+      // logout fully ends the session (Part 6b consolidation):
+      //   1. staffSignOut() — best-effort server-side revocation
+      //      (POST /api/staff/auth/logout), drops gb_staff_token from
+      //      SecureStore, resets StaffContext's React state to null,
+      //      and navigates to /login. Failures inside StaffContext are
+      //      already swallowed so a flaky network can't pin a user
+      //      inside the app. No-op for owner sessions where the key
+      //      was never written.
+      //   2. clearAuth() — drops the legacy auth bundle (token,
+      //      restaurant, staffInfo, role, ownerInfo, currentBranch)
+      //      from SecureStore.
+      //   3. dispatch LOGOUT — resets this provider's React state so
+      //      route guards see token=null on the next render.
+      try { await staffSignOut(); } catch { /* noop */ }
       await clearAuth();
       dispatch({ type: 'LOGOUT' });
     },

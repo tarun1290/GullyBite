@@ -14,12 +14,11 @@
 //   429 → "Too many attempts. Try again in 15 minutes."
 //   400 deprecated_login_payload → "App needs an update"
 //
-// FUTURE FEATURE: Deep-link wiring in app/_layout.tsx still parses
-// gullybite-staff://staff/<token> URLs and stashes them under
-// pending_staff_access_token in AsyncStorage. With the new flow the
-// staff_access_token is unused and that handler effectively no-ops on
-// this screen — left in place to avoid touching root routing during
-// this scoped change.
+// (Part 6b cleanup, 2026-05-10) The legacy deep-link handler that
+// stashed gullybite-staff://staff/<token> URLs into AsyncStorage was
+// removed from app/_layout.tsx — the current login flow uses
+// store_slug + staff_id + pin and the staff_access_token deep-link
+// channel is dead.
 
 import { useCallback, useRef, useState } from 'react';
 import {
