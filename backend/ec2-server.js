@@ -274,7 +274,11 @@ app.use('/api/review-redirect', require('./src/routes/reviewRedirect'));
 // auth gate (line ~274) because GET /api/ota/manifest must be public
 // — Expo's expo-updates client can't attach Authorization. Upload +
 // activate routes apply requireAdmin internally.
-app.use('/api/ota', require('./src/routes/otaUpdates'));
+const _ota = require('./src/routes/otaUpdates');
+app.use('/api/ota', _ota);
+// Admin freeze/unfreeze endpoints live on a separate router so they
+// mount under /api/admin/ota with jsonAndSanitize body parsing.
+app.use('/api/admin/ota', jsonAndSanitize(), _ota.adminRouter);
 
 // ─── TENANT-DATA CACHE POLICY ────────────────────────────────
 // Stamp no-store on every JSON response under /api/restaurant/* and

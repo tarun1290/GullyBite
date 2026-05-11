@@ -31,10 +31,30 @@ const path = require('path');
 const router = express.Router();
 
 const { col } = require('../config/database');
+const { getCached, invalidateCache } = require('../config/cache');
 const { requireAdminAuth } = require('../middleware/adminAuth');
 const log = require('../utils/logger').child({ component: 'otaUpdates' });
 
 const requireAdmin = requireAdminAuth();
+
+// Runtime-freeze flag. `platform_settings._id = 'ota_frozen_runtimes'` holds
+// `{ runtimes: [...] }` — manifest requests for any runtime in that list
+// short-circuit to noUpdateAvailable, regardless of which bundle is
+// currently `is_active` for that runtime. Used to recover from a runtime
+// namespace contaminated by a bundle that the in-circulation APK can't
+// actually load (e.g., bundle compiled against a native module set the
+// shipped APK doesn't carry). Cached 120s so the manifest hot path
+// doesn't pay an extra round-trip per request; admin freeze/unfreeze
+// endpoints invalidate the cache so toggles take effect within seconds.
+const FREEZE_CACHE_KEY = 'ota:frozen_runtimes';
+const FREEZE_CACHE_TTL_SECONDS = 120;
+
+async function _getFrozenRuntimes() {
+  return getCached(FREEZE_CACHE_KEY, async () => {
+    const doc = await col('platform_settings').findOne({ _id: 'ota_frozen_runtimes' });
+    return Array.isArray(doc?.runtimes) ? doc.runtimes.map(String) : [];
+  }, FREEZE_CACHE_TTL_SECONDS);
+}
 
 // Memory storage — buffers go straight to _uploadOtaBuffer().
 // 25 MB per file ceiling matches the practical Hermes bundle size for
@@ -308,6 +328,28 @@ router.get('/manifest', async (req, res) => {
       });
     }
 
+    // Runtime-freeze short-circuit. Checked BEFORE the bundle lookup
+    // so a frozen runtime can never serve a contaminated bundle (the
+    // active doc may still exist in ota_updates; we deliberately leave
+    // those rows alone so unfreezing is a single config flip).
+    //
+    // Response shape: explicit `{type:'noUpdateAvailable'}` with HTTP
+    // 200 and the full success-path header set. Some expo-updates
+    // client versions fall through to a cached bundle on malformed
+    // noUpdate responses (e.g. 204 empty); matching the success-path
+    // headers is non-negotiable for the freeze to actually stick.
+    const frozen = await _getFrozenRuntimes();
+    if (frozen.includes(String(runtimeVersion))) {
+      log.info({ runtimeVersion, platform }, 'ota manifest: frozen runtime — returning noUpdateAvailable');
+      res.set({
+        'expo-protocol-version': '1',
+        'expo-sfv-version': '0',
+        'cache-control': 'private, max-age=0',
+        'content-type': 'application/json; charset=utf-8',
+      });
+      return res.send(JSON.stringify({ type: 'noUpdateAvailable' }));
+    }
+
     const doc = await col('ota_updates')
       .find({
         runtime_version: String(runtimeVersion),
@@ -337,4 +379,69 @@ router.get('/manifest', async (req, res) => {
   }
 });
 
+// ─── ADMIN: FREEZE / UNFREEZE A RUNTIME ─────────────────────────
+// Mounted under `/api/admin/ota` (see ec2-server.js) with jsonAndSanitize
+// at the mount, so req.body is parsed JSON by the time these run. Both
+// endpoints are idempotent: re-freezing an already-frozen runtime or
+// unfreezing one that wasn't frozen returns the current list without
+// error. Cache is invalidated on every write so the manifest hot-path
+// picks up the change within seconds (next request after invalidation
+// re-fetches from platform_settings).
+const adminRouter = express.Router();
+
+function _normaliseRuntime(req, res) {
+  const raw = req.body?.runtime;
+  if (typeof raw !== 'string' || !raw.trim()) {
+    res.status(400).json({ error: 'runtime is required (string)' });
+    return null;
+  }
+  return raw.trim();
+}
+
+adminRouter.post('/freeze-runtime', requireAdmin, async (req, res) => {
+  try {
+    const runtime = _normaliseRuntime(req, res);
+    if (runtime == null) return;
+
+    const result = await col('platform_settings').findOneAndUpdate(
+      { _id: 'ota_frozen_runtimes' },
+      { $addToSet: { runtimes: runtime }, $set: { updated_at: new Date() } },
+      { upsert: true, returnDocument: 'after' },
+    );
+    // mongodb driver v4 returns `{ value: doc }`; v5+ returns the doc.
+    const doc = result?.value ?? result;
+    const runtimes = Array.isArray(doc?.runtimes) ? doc.runtimes.map(String) : [runtime];
+
+    await invalidateCache(FREEZE_CACHE_KEY);
+    log.info({ runtime, runtimes }, 'ota runtime frozen');
+    res.json({ ok: true, runtimes });
+  } catch (err) {
+    log.error({ err: err && err.message }, 'ota freeze-runtime failed');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+adminRouter.post('/unfreeze-runtime', requireAdmin, async (req, res) => {
+  try {
+    const runtime = _normaliseRuntime(req, res);
+    if (runtime == null) return;
+
+    const result = await col('platform_settings').findOneAndUpdate(
+      { _id: 'ota_frozen_runtimes' },
+      { $pull: { runtimes: runtime }, $set: { updated_at: new Date() } },
+      { returnDocument: 'after' },
+    );
+    const doc = result?.value ?? result;
+    const runtimes = Array.isArray(doc?.runtimes) ? doc.runtimes.map(String) : [];
+
+    await invalidateCache(FREEZE_CACHE_KEY);
+    log.info({ runtime, runtimes }, 'ota runtime unfrozen');
+    res.json({ ok: true, runtimes });
+  } catch (err) {
+    log.error({ err: err && err.message }, 'ota unfreeze-runtime failed');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 module.exports = router;
+module.exports.adminRouter = adminRouter;
