@@ -3,7 +3,8 @@
 // Fire-and-forget — failures must NEVER break order flow
 // Deduplicates via order_notifications collection
 
-const { col, newId } = require('../config/database');
+const { col, newId, connect } = require('../config/database');
+const { isWithinCSW } = require('../utils/csw');
 const templateSvc = require('./template');
 const { resolveRecipient } = require('./customerIdentity');
 const { logActivity } = require('./activityLog');
@@ -232,22 +233,25 @@ const sendRefundProcessedMessage = async (orderId, orderContext = null) => {
 };
 
 // ─── NOTIFY ORDER STATUS — FREE-FORM ONLY ──────────────────
-// Thin wrapper around wa.sendStatusUpdate. Inside the 24h customer
-// service window Meta accepts the free-form lifecycle copy from
-// STATUS_MESSAGES (services/whatsapp.js); outside the CSW it rejects
-// with errors 131047 / 131056 and we log + return silently.
+// Thin wrapper around wa.sendStatusUpdate. CSW-gated: looks up the
+// order's customer_id and confirms the customer is within the 24h
+// service window via isWithinCSW before attempting the send. No
+// template fallback — outside CSW we log + return.
 //
-// Deliberate policy: NO template fallback. Pre-fix code cascaded
-// into sendOrderTemplateMessage / whatsapp_template_mappings on
-// failure, which billed a utility-template send for every customer
-// who hadn't replied within 24h. The tradeoff is accepted: customers
-// outside the CSW miss the status ping rather than the platform
-// burning template fees on every silent recipient.
-//
-// `restaurantId` is retained in the signature for log context only
-// (no DB lookup happens here anymore). Callers in routes/restaurant.js
-// already pass it and changing the signature would ripple unnecessarily.
+// `restaurantId` is retained in the signature for log context only.
+// Callers in routes/restaurant.js already pass it and changing the
+// signature would ripple unnecessarily.
 const notifyOrderStatus = async (restaurantId, pid, _token, waPhone, status, orderData) => {
+  const orderId = orderData?._orderId;
+  const order = orderId
+    ? await col('orders').findOne({ _id: orderId }, { projection: { customer_id: 1 } })
+    : null;
+  const db = await connect();
+  if (!(await isWithinCSW(order?.customer_id, db))) {
+    log.info({ event: 'order_notify_csw_blocked', orderId, status }, 'sendStatusUpdate skipped — outside CSW');
+    return;
+  }
+
   const wa = require('./whatsapp');
   const metaConfig = require('../config/meta');
   const token = metaConfig.systemUserToken || _token;
@@ -259,11 +263,7 @@ const notifyOrderStatus = async (restaurantId, pid, _token, waPhone, status, ord
       trackingUrl: orderData?.tracking_url,
     });
   } catch (e) {
-    const errCode = e?.response?.data?.error?.code || null;
-    log.warn(
-      { err: e?.message, errCode, status, orderId: orderData?._orderId, restaurantId },
-      'sendStatusUpdate failed; skipping (no template fallback per policy)',
-    );
+    log.warn({ err: e?.message, status, orderId, restaurantId }, 'sendStatusUpdate failed');
   }
 };
 

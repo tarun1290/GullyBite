@@ -4,7 +4,8 @@
 
 const express = require('express');
 const router = express.Router();
-const { col, newId } = require('../config/database');
+const { col, newId, connect } = require('../config/database');
+const { isWithinCSW } = require('../utils/csw');
 const orderSvc = require('../services/order');
 const wa = require('../services/whatsapp');
 const notify = require('../services/notify');
@@ -103,15 +104,21 @@ router.post('/', express.json(), async (req, res) => {
       logActivity({ actorType: 'webhook', action: 'delivery.rider_assigned', category: 'delivery', description: `Rider assigned for order`, resourceType: 'delivery', resourceId: String(delivery._id), severity: 'info' });
     }
 
+    const db = await connect();
+
     if (newStatus === 'assigned' && $set.driver_name) {
       // Rider assigned — notify customer
       if (wa_acc && customer) {
-        await wa.sendText(wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
-          `🏍️ *Rider assigned!*\n\n` +
-          `👤 ${$set.driver_name}\n` +
-          `📞 ${$set.driver_phone || 'Contact via app'}\n` +
-          ($set.tracking_url || delivery.tracking_url ? `📍 Track: ${$set.tracking_url || delivery.tracking_url}` : '')
-        );
+        if (!(await isWithinCSW(order.customer_id, db))) {
+          log.info({ event: 'delivery_update_csw_blocked', orderId: delivery.order_id, deliveryStatus: newStatus }, 'rider-assigned notification skipped — outside CSW');
+        } else {
+          await wa.sendText(wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
+            `🏍️ *Rider assigned!*\n\n` +
+            `👤 ${$set.driver_name}\n` +
+            `📞 ${$set.driver_phone || 'Contact via app'}\n` +
+            ($set.tracking_url || delivery.tracking_url ? `📍 Track: ${$set.tracking_url || delivery.tracking_url}` : '')
+          );
+        }
       }
     }
 
@@ -122,22 +129,20 @@ router.post('/', express.json(), async (req, res) => {
       // STATUS_MESSAGES.DISPATCHED in services/whatsapp.js. The map
       // already guards trackingUrl via `${trackingUrl ? \`Track: ${trackingUrl}\` : ''}`,
       // so passing null when no URL is present renders cleanly.
-      // No template fallback per the 2026-05-09 policy — log + skip
-      // if Meta rejects (CSW closed or other API error).
       if (wa_acc && customer) {
-        const trackingUrl = $set.tracking_url || delivery.tracking_url || null;
-        try {
-          await wa.sendStatusUpdate(
-            wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
-            'DISPATCHED',
-            { orderNumber: order.order_number, trackingUrl },
-          );
-        } catch (e) {
-          const errCode = e?.response?.data?.error?.code || null;
-          log.warn(
-            { err: e?.message, errCode, orderId: delivery.order_id },
-            'DISPATCHED sendStatusUpdate failed; skipping (no template fallback per policy)',
-          );
+        if (!(await isWithinCSW(order.customer_id, db))) {
+          log.info({ event: 'delivery_update_csw_blocked', orderId: delivery.order_id, deliveryStatus: newStatus }, 'DISPATCHED sendStatusUpdate skipped — outside CSW');
+        } else {
+          const trackingUrl = $set.tracking_url || delivery.tracking_url || null;
+          try {
+            await wa.sendStatusUpdate(
+              wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
+              'DISPATCHED',
+              { orderNumber: order.order_number, trackingUrl },
+            );
+          } catch (e) {
+            log.warn({ err: e?.message, orderId: delivery.order_id }, 'DISPATCHED sendStatusUpdate failed');
+          }
         }
       }
     }
@@ -149,20 +154,18 @@ router.post('/', express.json(), async (req, res) => {
       // "✅ Order #{n} delivered. Enjoy your meal! 🍽️" (added 2026-05-09).
       // Fire-and-forget; rating request + loyalty points are queued by
       // the DELIVERED transition inside orderSvc.updateStatus above.
-      // No template fallback per the 2026-05-09 policy — log + skip
-      // if Meta rejects.
       if (wa_acc && customer) {
-        wa.sendStatusUpdate(
-          wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
-          'DELIVERED',
-          { orderNumber: order.order_number },
-        ).catch((e) => {
-          const errCode = e?.response?.data?.error?.code || null;
-          log.warn(
-            { err: e?.message, errCode, orderId: delivery.order_id },
-            'DELIVERED sendStatusUpdate failed; skipping (no template fallback per policy)',
-          );
-        });
+        if (!(await isWithinCSW(order.customer_id, db))) {
+          log.info({ event: 'delivery_update_csw_blocked', orderId: delivery.order_id, deliveryStatus: newStatus }, 'DELIVERED sendStatusUpdate skipped — outside CSW');
+        } else {
+          wa.sendStatusUpdate(
+            wa_acc.phone_number_id, wa_acc.access_token, resolveRecipient(customer),
+            'DELIVERED',
+            { orderNumber: order.order_number },
+          ).catch((e) => {
+            log.warn({ err: e?.message, orderId: delivery.order_id }, 'DELIVERED sendStatusUpdate failed');
+          });
+        }
       }
     }
 

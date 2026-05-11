@@ -7,7 +7,8 @@ const router = express.Router();
 const multer = require('multer');
 const axios  = require('axios');
 const bcrypt = require('bcryptjs');
-const { col, newId, mapId, mapIds } = require('../config/database');
+const { col, newId, mapId, mapIds, connect } = require('../config/database');
+const { isWithinCSW } = require('../utils/csw');
 const { maskPhone } = require('../utils/maskPhone');
 const { requireAuth, requireOwnerAuth, requireApproved, requirePermission, ROLE_PERMISSIONS } = require('./auth');
 const { rateLimitFn } = require('../middleware/rateLimit');
@@ -7063,16 +7064,30 @@ router.post('/dropoffs/:conversationId/recover', requireStaffPermission('manage_
       messageText = `Hey ${name}! We noticed you were browsing our menu. Ready to order?\n\nJust reply *MENU* to see our full selection!`;
     }
 
-    // Check WhatsApp 24-hour window
-    const hoursSinceLastMsg = (Date.now() - new Date(conv.last_msg_at)) / 3600000;
+    // CSW gate vs. response payload are decoupled — the helper drives
+    // the freeform/template branch below, and a separate inbound lookup
+    // surfaces the operator-facing "hours since last activity" stat.
+    const db = await connect();
+    const withinCSW = await isWithinCSW(conv.customer_id, db);
+    const lastInboundForStat = await col('customer_messages').findOne(
+      { customer_id: conv.customer_id, direction: 'inbound' },
+      { projection: { created_at: 1 }, sort: { created_at: -1 } }
+    );
+    const inboundAgeHours = lastInboundForStat?.created_at
+      ? (Date.now() - new Date(lastInboundForStat.created_at).getTime()) / 3600000
+      : null;
 
     // Send response immediately, fire-and-forget the actual message
-    res.json({ success: true, message_type: messageType, hours_since_activity: Math.round(hoursSinceLastMsg * 10) / 10 });
+    res.json({
+      success: true,
+      message_type: messageType,
+      hours_since_activity: inboundAgeHours == null ? null : Math.round(inboundAgeHours * 10) / 10,
+    });
 
     // Fire-and-forget: send the message
     (async () => {
       try {
-        if (hoursSinceLastMsg < 24) {
+        if (withinCSW) {
           await wa.sendText(pid, token, to, messageText);
         } else {
           // Outside 24h window — try template, fall back to text (may fail)
@@ -8816,21 +8831,24 @@ router.post('/messages/reply', requireAuth, requireApproved, async (req, res) =>
 
     const restId = req.restaurantId;
 
-    // Check 24h window
+    const db = await connect();
+    if (!(await isWithinCSW(customer_id, db))) {
+      return res.status(400).json({
+        error: 'The 24-hour reply window has expired. Use a template message to reach this customer.',
+        window_expired: true,
+      });
+    }
+
+    // Look up the most recent inbound for metadata stamping + the
+    // distinct 404 when this customer has never messaged the restaurant.
+    // Separate from the CSW gate above — that one only decides whether
+    // a freeform send is allowed, this one supplies the outbound row's
+    // related_order_id / related_order_number.
     const lastInbound = await col('customer_messages').findOne(
       { restaurant_id: restId, customer_id, direction: 'inbound' },
       { sort: { created_at: -1 } }
     );
     if (!lastInbound) return res.status(404).json({ error: 'No messages from this customer' });
-
-    const hoursSince = (Date.now() - new Date(lastInbound.created_at).getTime()) / (1000 * 60 * 60);
-    if (hoursSince > 24) {
-      return res.status(400).json({
-        error: 'The 24-hour reply window has expired. Use a template message to reach this customer.',
-        window_expired: true,
-        hours_since: Math.round(hoursSince),
-      });
-    }
 
     // Rate limit: max 10 replies per customer per hour
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
@@ -9030,13 +9048,19 @@ router.post('/issues', requireAuth, requireApproved, async (req, res) => {
     try {
       const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
       if (waAccount) {
-        const wa = require('../services/whatsapp');
-        const custId = require('../services/customerIdentity');
-        const to = custId.resolveRecipient(customer);
-        const sysToken = metaConfig.systemUserToken;
-        await wa.sendText(waAccount.phone_number_id, sysToken, to,
-          `Your issue #${issue.issue_number} has been logged. Our team will look into it shortly.`
-        );
+        // CSW gate — utility message, not marketing
+        const db = await connect();
+        if (!(await isWithinCSW(customer._id, db))) {
+          logger.info({ event: 'issue_tracker_csw_blocked', customerId: customer._id }, 'issue created notification blocked by CSW');
+        } else {
+          const wa = require('../services/whatsapp');
+          const custId = require('../services/customerIdentity');
+          const to = custId.resolveRecipient(customer);
+          const sysToken = metaConfig.systemUserToken;
+          await wa.sendText(waAccount.phone_number_id, sysToken, to,
+            `Your issue #${issue.issue_number} has been logged. Our team will look into it shortly.`
+          );
+        }
       }
     } catch (_) {}
 
@@ -9064,18 +9088,24 @@ router.put('/issues/:id/status', requireAuth, requireApproved, async (req, res) 
       if (['assigned', 'in_progress', 'resolved'].includes(status)) {
         const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
         if (waAccount) {
-          const wa = require('../services/whatsapp');
-          const custId = require('../services/customerIdentity');
-          const customer = await col('customers').findOne({ _id: issue.customer_id });
-          if (customer) {
-            const to = custId.resolveRecipient(customer);
-            const sysToken = metaConfig.systemUserToken;
-            const msgs = {
-              assigned: `We're looking into your issue #${issue.issue_number}. We'll update you soon.`,
-              in_progress: `We're actively working on your issue #${issue.issue_number}.`,
-              resolved: `Your issue #${issue.issue_number} has been resolved. ${issue.resolution_notes || ''}\n\nIf you're still unsatisfied, reply REOPEN.`,
-            };
-            if (msgs[status]) await wa.sendText(waAccount.phone_number_id, sysToken, to, msgs[status]);
+          // CSW gate — utility message, not marketing
+          const db = await connect();
+          if (!(await isWithinCSW(issue.customer_id, db))) {
+            logger.info({ event: 'issue_tracker_csw_blocked', customerId: issue.customer_id }, 'issue status notification blocked by CSW');
+          } else {
+            const wa = require('../services/whatsapp');
+            const custId = require('../services/customerIdentity');
+            const customer = await col('customers').findOne({ _id: issue.customer_id });
+            if (customer) {
+              const to = custId.resolveRecipient(customer);
+              const sysToken = metaConfig.systemUserToken;
+              const msgs = {
+                assigned: `We're looking into your issue #${issue.issue_number}. We'll update you soon.`,
+                in_progress: `We're actively working on your issue #${issue.issue_number}.`,
+                resolved: `Your issue #${issue.issue_number} has been resolved. ${issue.resolution_notes || ''}\n\nIf you're still unsatisfied, reply REOPEN.`,
+              };
+              if (msgs[status]) await wa.sendText(waAccount.phone_number_id, sysToken, to, msgs[status]);
+            }
           }
         }
       }
@@ -9104,15 +9134,21 @@ router.post('/issues/:id/message', requireAuth, requireApproved, async (req, res
       try {
         const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
         if (waAccount) {
-          const wa = require('../services/whatsapp');
-          const custId = require('../services/customerIdentity');
-          const customer = await col('customers').findOne({ _id: issue.customer_id });
-          if (customer) {
-            const to = custId.resolveRecipient(customer);
-            const sysToken = metaConfig.systemUserToken;
-            await wa.sendText(waAccount.phone_number_id, sysToken, to,
-              `Re: Issue #${issue.issue_number}\n\n${text}`
-            );
+          // CSW gate — utility message, not marketing
+          const db = await connect();
+          if (!(await isWithinCSW(issue.customer_id, db))) {
+            logger.info({ event: 'issue_tracker_csw_blocked', customerId: issue.customer_id }, 'issue thread message blocked by CSW');
+          } else {
+            const wa = require('../services/whatsapp');
+            const custId = require('../services/customerIdentity');
+            const customer = await col('customers').findOne({ _id: issue.customer_id });
+            if (customer) {
+              const to = custId.resolveRecipient(customer);
+              const sysToken = metaConfig.systemUserToken;
+              await wa.sendText(waAccount.phone_number_id, sysToken, to,
+                `Re: Issue #${issue.issue_number}\n\n${text}`
+              );
+            }
           }
         }
       } catch (_) {}
@@ -9145,15 +9181,21 @@ router.post('/issues/:id/escalate', requireAuth, requireApproved, async (req, re
     try {
       const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
       if (waAccount) {
-        const wa = require('../services/whatsapp');
-        const custId = require('../services/customerIdentity');
-        const customer = await col('customers').findOne({ _id: issue.customer_id });
-        if (customer) {
-          const to = custId.resolveRecipient(customer);
-          const sysToken = metaConfig.systemUserToken;
-          await wa.sendText(waAccount.phone_number_id, sysToken, to,
-            `Your issue #${issue.issue_number} has been escalated to our support team for faster resolution.`
-          );
+        // CSW gate — utility message, not marketing
+        const db = await connect();
+        if (!(await isWithinCSW(issue.customer_id, db))) {
+          logger.info({ event: 'issue_tracker_csw_blocked', customerId: issue.customer_id }, 'issue escalation notification blocked by CSW');
+        } else {
+          const wa = require('../services/whatsapp');
+          const custId = require('../services/customerIdentity');
+          const customer = await col('customers').findOne({ _id: issue.customer_id });
+          if (customer) {
+            const to = custId.resolveRecipient(customer);
+            const sysToken = metaConfig.systemUserToken;
+            await wa.sendText(waAccount.phone_number_id, sysToken, to,
+              `Your issue #${issue.issue_number} has been escalated to our support team for faster resolution.`
+            );
+          }
         }
       }
     } catch (_) {}
@@ -9182,15 +9224,21 @@ router.post('/issues/:id/resolve', requireAuth, requireApproved, async (req, res
     try {
       const waAccount = await col('whatsapp_accounts').findOne({ restaurant_id: req.restaurantId });
       if (waAccount) {
-        const wa = require('../services/whatsapp');
-        const custId = require('../services/customerIdentity');
-        const customer = await col('customers').findOne({ _id: issue.customer_id });
-        if (customer) {
-          const to = custId.resolveRecipient(customer);
-          const sysToken = metaConfig.systemUserToken;
-          await wa.sendText(waAccount.phone_number_id, sysToken, to,
-            `Your issue #${issue.issue_number} has been resolved. ${resolution_notes || ''}\n\nIf you're still unsatisfied, reply REOPEN.`
-          );
+        // CSW gate — utility message, not marketing
+        const db = await connect();
+        if (!(await isWithinCSW(issue.customer_id, db))) {
+          logger.info({ event: 'issue_tracker_csw_blocked', customerId: issue.customer_id }, 'issue resolution notification blocked by CSW');
+        } else {
+          const wa = require('../services/whatsapp');
+          const custId = require('../services/customerIdentity');
+          const customer = await col('customers').findOne({ _id: issue.customer_id });
+          if (customer) {
+            const to = custId.resolveRecipient(customer);
+            const sysToken = metaConfig.systemUserToken;
+            await wa.sendText(waAccount.phone_number_id, sysToken, to,
+              `Your issue #${issue.issue_number} has been resolved. ${resolution_notes || ''}\n\nIf you're still unsatisfied, reply REOPEN.`
+            );
+          }
         }
       }
     } catch (_) {}

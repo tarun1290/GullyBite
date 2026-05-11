@@ -23,7 +23,8 @@
 
 'use strict';
 
-const { col, newId } = require('../config/database');
+const { col, newId, connect } = require('../config/database');
+const { isWithinCSW } = require('../utils/csw');
 const log = require('../utils/logger').child({ component: 'postPaymentJobs' });
 
 // Phase 4: canonical job type registry. Any new async side-effect must
@@ -164,21 +165,18 @@ async function _handleCustomerNotification(payload) {
   const { resolveRecipient } = require('../services/customerIdentity');
   const order = await orderSvc.getOrderDetails(payload.orderId);
   if (!order) throw new Error('order not found');
-  // Direct free-form sendStatusUpdate. NO template fallback per the
-  // 2026-05-09 policy — outside the 24h CSW Meta rejects with
-  // 131047/131056 and we log + skip rather than burn a utility
-  // template fee on every silent recipient.
-  try {
-    await wa.sendStatusUpdate(
-      order.phone_number_id, order.access_token, resolveRecipient(order),
-      'CONFIRMED', { orderNumber: order.order_number },
-    );
-  } catch (e) {
-    const errCode = e?.response?.data?.error?.code || null;
-    log.warn(
-      { err: e?.message, errCode, orderId: payload.orderId },
-      'CONFIRMED sendStatusUpdate failed; skipping (no template fallback per policy)',
-    );
+  const db = await connect();
+  if (!(await isWithinCSW(order.customer_id, db))) {
+    log.info({ event: 'post_payment_csw_blocked', orderId: payload.orderId }, 'CONFIRMED sendStatusUpdate skipped — outside CSW');
+  } else {
+    try {
+      await wa.sendStatusUpdate(
+        order.phone_number_id, order.access_token, resolveRecipient(order),
+        'CONFIRMED', { orderNumber: order.order_number },
+      );
+    } catch (e) {
+      log.warn({ err: e?.message, orderId: payload.orderId }, 'CONFIRMED sendStatusUpdate failed');
+    }
   }
   const ws = require('../services/websocket');
   try { ws.broadcastOrder(order.restaurant_id, 'payment_received', { orderId: payload.orderId, orderNumber: order.order_number, amountRs: order.total_rs }); } catch (_) {}
@@ -286,10 +284,15 @@ async function _handleOrderDispatch(payload) {
       'ORDER_DISPATCH: delivery provider returned successfully',
     );
     if (task?.trackingUrl && order.phone_number_id && resolveRecipient(order)) {
-      await wa.sendText(
-        order.phone_number_id, order.access_token, resolveRecipient(order),
-        `🚴 Your delivery is being arranged!\n\n📍 Track your order live:\n${task.trackingUrl}\n\nEstimated delivery: ${task.estimatedMins || '25-35'} minutes`
-      );
+      const db = await connect();
+      if (!(await isWithinCSW(order.customer_id, db))) {
+        log.info({ event: 'post_payment_csw_blocked', orderId: payload.orderId }, 'tracking-URL send skipped — outside CSW');
+      } else {
+        await wa.sendText(
+          order.phone_number_id, order.access_token, resolveRecipient(order),
+          `🚴 Your delivery is being arranged!\n\n📍 Track your order live:\n${task.trackingUrl}\n\nEstimated delivery: ${task.estimatedMins || '25-35'} minutes`
+        );
+      }
     }
   } catch (err) {
     // Terminal failure here means the restaurant has to dispatch manually.

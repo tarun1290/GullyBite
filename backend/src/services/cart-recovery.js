@@ -9,7 +9,8 @@
 
 'use strict';
 
-const { col, newId } = require('../config/database');
+const { col, newId, connect } = require('../config/database');
+const { isWithinCSW } = require('../utils/csw');
 const config = require('../config/cart-recovery-config');
 const log = require('../utils/logger').child({ component: 'CartRecovery' });
 
@@ -177,10 +178,8 @@ async function sendRecoveryReminder(abandonedCartId, reminderNumber) {
   const token = metaConfig.systemUserToken;
   const to = cart.customer_phone;
 
-  // Check 24-hour service window
-  const lastMsg = cart.last_customer_message_at ? new Date(cart.last_customer_message_at) : cart.created_at;
-  const hoursSinceMsg = (Date.now() - lastMsg.getTime()) / 3600000;
-  const withinServiceWindow = hoursSinceMsg < 24;
+  const db = await connect();
+  const withinServiceWindow = await isWithinCSW(cart.customer_id, db);
 
   let messageType = 'service_message';
   let templateName = null;
