@@ -240,8 +240,8 @@ async function transitionOrder(orderId, nextState, opts = {}) {
   } catch (_) { /* bus load errors must never block the transition */ }
 
   // Socket.io fan-out — fire-and-forget. Every state transition fans
-  // out as 'order:updated' so the dashboard's open list mutates
-  // without polling. The PAID-specific 'order:new' and 'order:paid'
+  // out as 'order_status_changed' so the dashboard's open list mutates
+  // without polling. The PAID-specific 'new_order' and 'new_paid_order'
   // chimes are emitted by the webhook entrypoints (checkout.js for
   // WhatsApp native, razorpay.js for hosted) — we only emit the
   // generic transition event here. Mirrors to admin:platform so
@@ -253,8 +253,8 @@ async function transitionOrder(orderId, nextState, opts = {}) {
       status: nextState,
       updatedAt: now.toISOString(),
     };
-    emitToRestaurant(updated.restaurant_id, 'order:updated', updatedPayload);
-    emitToAdmin('order:updated', updatedPayload);
+    emitToRestaurant(updated.restaurant_id, 'order_status_changed', updatedPayload);
+    emitToAdmin('order_status_changed', updatedPayload);
   } catch (_) { /* socket failures must never block the transition */ }
 
   // ─── CART_RECOVERY ENQUEUE ON EXPIRED ──────────────────────

@@ -1840,7 +1840,7 @@ router.post('/branches', async (req, res) => {
     // already handles their view).
     try {
       const { emitToAdmin } = require('../utils/socketEmit');
-      emitToAdmin('restaurant:branch_created', {
+      emitToAdmin('restaurant_branch_created', {
         restaurantId: String(req.restaurantId),
         branchName: newBranch.name || null,
       });
@@ -2037,7 +2037,7 @@ router.patch('/branches/:id', requireStaffPermission('manage_settings'), require
             { _id: req.params.id, restaurant_id: req.restaurantId },
             { projection: { _id: 1, name: 1 } },
           );
-          emitToAdmin('restaurant:branch_status', {
+          emitToAdmin('restaurant_branch_status', {
             restaurantId: String(req.restaurantId),
             branchId: String(req.params.id),
             branchName: branch?.name || null,
@@ -5900,7 +5900,8 @@ router.patch('/orders/:orderId/status', requireApproved, requireStaffPermission(
 
     const order = await orderSvc.updateStatus(req.params.orderId, status);
 
-    ws.broadcastOrder(req.restaurantId, 'order_status_changed', { orderId: req.params.orderId, newStatus: status, updatedAt: new Date().toISOString() });
+    // 'order_status_changed' is emitted by orderStateEngine.transitionOrder
+    // (called inside orderSvc.updateStatus), so no broadcast here.
 
     // Recalculate ETA on status change
     let etaResult = null;
@@ -6064,9 +6065,8 @@ router.post('/orders/:orderId/accept', requireApproved, requireStaffPermission('
     ws.broadcastOrder(req.restaurantId, 'order_acknowledged', {
       orderId, action: 'accept', newStatus: 'CONFIRMED',
     });
-    ws.broadcastOrder(req.restaurantId, 'order_status_changed', {
-      orderId, newStatus: 'CONFIRMED', updatedAt: now.toISOString(),
-    });
+    // 'order_status_changed' is emitted by orderStateEngine via the
+    // state-transition path that fired during accept; no extra emit here.
 
     // Customer confirmation — fire-and-forget so a WhatsApp hiccup
     // doesn't fail the accept call.
@@ -6171,9 +6171,8 @@ router.post('/orders/:orderId/decline', express.json(), requireApproved, require
     ws.broadcastOrder(req.restaurantId, 'order_acknowledged', {
       orderId, action: 'decline', newStatus: result?.status || 'REJECTED_BY_RESTAURANT',
     });
-    ws.broadcastOrder(req.restaurantId, 'order_status_changed', {
-      orderId, newStatus: result?.status || 'REJECTED_BY_RESTAURANT', updatedAt: now.toISOString(),
-    });
+    // 'order_status_changed' is emitted by orderStateEngine via the
+    // cancellation.handleRestaurantFault path above; no extra emit here.
 
     // Prorouting 3PL cancel — fire-and-forget. Only when a rider was
     // already dispatched (prorouting_order_id set). cancelDeliveryOrder
@@ -9697,7 +9696,7 @@ router.post('/admin-messages/reply', async (req, res) => {
     // reply. The drawer on the admin side filters by restaurantId
     // to surface in the right thread.
     const { emitToAdmin } = require('../utils/socketEmit');
-    emitToAdmin('message:new', {
+    emitToAdmin('message_new', {
       from: String(req.restaurantId),
       restaurantId: String(req.restaurantId),
       restaurantName,

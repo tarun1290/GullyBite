@@ -664,7 +664,10 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
       className="fixed inset-0 bg-black/45 z-999 flex items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="card w-[440px] max-w-[95vw] bg-surface">
+      {/* Success screen renders narrow content (PIN, link list); the
+          form variants need room for the two-column grid. Container
+          width is conditioned on the rendered branch. */}
+      <div className={`card bg-surface ${created ? 'w-[440px] max-w-[95vw]' : 'w-full max-w-3xl mx-auto'}`}>
         <div className="ch justify-between">
           <h3>
             {mode === 'legacy' && created
@@ -683,46 +686,51 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
         <div className="cb">
           {mode === 'staff-app' ? (
             // ── staff-app form (create / edit) ─────────────────────
-            <>
-              <div className="fg mb-3">
-                <label>Display Name ★</label>
-                <input
-                  value={staffForm.display_name}
-                  onChange={(e) => setStaffForm((f) => ({ ...f, display_name: e.target.value }))}
-                  placeholder="Rahul Sharma"
-                />
-              </div>
-              <div className="fg mb-3">
-                <label>Phone <small className="text-dim">(optional)</small></label>
-                <input
-                  type="tel"
-                  value={staffForm.phone}
-                  onChange={(e) => setStaffForm((f) => ({ ...f, phone: e.target.value }))}
-                  placeholder="+919876543210"
-                />
-              </div>
-              <div className="fg mb-3">
-                <label>Role ★</label>
-                <select
-                  value={staffForm.role}
-                  onChange={(e) => setStaffForm((f) => ({ ...f, role: e.target.value as 'staff' | 'manager' }))}
-                  className="p-2 border border-rim rounded-r w-full"
-                >
-                  <option value="staff">🧑‍🍳 Staff (POS)</option>
-                  <option value="manager">📋 Manager</option>
-                </select>
-              </div>
-              <div className="fg mb-3">
-                <label>Role Preset ★</label>
-                <select
-                  value={staffForm.role_preset}
-                  onChange={(e) => onPresetChange(e.target.value as RolePreset)}
-                  className="p-2 border border-rim rounded-r w-full"
-                >
-                  {ROLE_PRESET_OPTIONS.map(([v, l]) => (
-                    <option key={v} value={v}>{l}</option>
-                  ))}
-                </select>
+            // Two-column grid on md+: identity/role fields stack in the
+            // left column, branches occupy the right column, the
+            // permissions grid + footer span both via md:col-span-2.
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="fg mb-3">
+                  <label>Display Name ★</label>
+                  <input
+                    value={staffForm.display_name}
+                    onChange={(e) => setStaffForm((f) => ({ ...f, display_name: e.target.value }))}
+                    placeholder="Rahul Sharma"
+                  />
+                </div>
+                <div className="fg mb-3">
+                  <label>Phone <small className="text-dim">(optional)</small></label>
+                  <input
+                    type="tel"
+                    value={staffForm.phone}
+                    onChange={(e) => setStaffForm((f) => ({ ...f, phone: e.target.value }))}
+                    placeholder="+919876543210"
+                  />
+                </div>
+                <div className="fg mb-3">
+                  <label>Role ★</label>
+                  <select
+                    value={staffForm.role}
+                    onChange={(e) => setStaffForm((f) => ({ ...f, role: e.target.value as 'staff' | 'manager' }))}
+                    className="p-2 border border-rim rounded-r w-full"
+                  >
+                    <option value="staff">🧑‍🍳 Staff (POS)</option>
+                    <option value="manager">📋 Manager</option>
+                  </select>
+                </div>
+                <div className="fg mb-3">
+                  <label>Role Preset ★</label>
+                  <select
+                    value={staffForm.role_preset}
+                    onChange={(e) => onPresetChange(e.target.value as RolePreset)}
+                    className="p-2 border border-rim rounded-r w-full"
+                  >
+                    {ROLE_PRESET_OPTIONS.map(([v, l]) => (
+                      <option key={v} value={v}>{l}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div className="fg mb-3">
                 <label>Branches <small className="text-dim">(leave empty for all)</small></label>
@@ -747,7 +755,7 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
                   <span className="text-sm text-dim">No branches yet.</span>
                 )}
               </div>
-              <div className="fg mb-3">
+              <div className="fg mb-3 md:col-span-2">
                 <label>
                   Permissions
                   {!isCustomPreset && (
@@ -756,7 +764,7 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
                     </small>
                   )}
                 </label>
-                <div className={`grid grid-cols-2 gap-2 mt-2 ${isCustomPreset ? '' : 'opacity-60'}`}>
+                <div className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 mt-2 ${isCustomPreset ? '' : 'opacity-60'}`}>
                   {PERMISSION_KEYS.map((key) => {
                     const on = staffForm.permissions[key];
                     return (
@@ -776,15 +784,15 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
                   })}
                 </div>
               </div>
-              <div className="flex items-center gap-3 mt-4">
-                <button type="button" className="btn-p btn-sm" onClick={handleSave} disabled={saving}>
-                  {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Member')}
-                </button>
+              <div className="flex items-center gap-3 mt-4 md:col-span-2 justify-end">
                 <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>
                   Cancel
                 </button>
+                <button type="button" className="btn-p btn-sm" onClick={handleSave} disabled={saving}>
+                  {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Member')}
+                </button>
               </div>
-            </>
+            </div>
           ) : created ? (
             // ── legacy post-creation success screen ────────────────
             <>
@@ -816,127 +824,118 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
             </>
           ) : (
             // ── legacy form (create / edit) ────────────────────────
-            <>
-              <div className="fg mb-3">
-                <label>Name ★</label>
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Rahul Sharma"
-                />
-              </div>
-              <div className="fg mb-3">
-                <label>Phone {isEdit ? '' : '★'}</label>
-                <input
-                  value={form.phone}
-                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                  placeholder="+91 98765 43210"
-                  disabled={isEdit}
-                  className={isEdit ? 'opacity-60' : ''}
-                />
-                {isEdit && (
-                  <div className="text-xs text-dim mt-1">
-                    Phone is locked after creation.
-                  </div>
-                )}
-              </div>
-              {!isEdit && (
+            // Two-column grid: identity fields left, branch assignment
+            // + edit-mode login URL list right, footer spans both.
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
                 <div className="fg mb-3">
-                  <label>PIN (4-6 digits) ★</label>
+                  <label>Name ★</label>
                   <input
-                    type="password"
-                    maxLength={6}
-                    value={form.pin}
-                    onChange={(e) => setForm((f) => ({ ...f, pin: e.target.value }))}
-                    placeholder="1234"
+                    value={form.name}
+                    onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                    placeholder="Rahul Sharma"
                   />
                 </div>
-              )}
-              <div className="fg mb-3">
-                <label>Role ★</label>
-                <select
-                  value={form.role}
-                  onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
-                  className="p-2 border border-rim rounded-r w-full"
-                >
-                  {ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </div>
-              <div className="fg mb-3">
-                <label>Branches <small className="text-dim">(leave empty for all)</small></label>
-                {(branches || []).length > 0 ? (
-                  <div className="flex flex-wrap gap-3 mt-2">
-                    {(branches || []).map((b) => {
-                      const on = form.branchIds.includes(b.id);
-                      return (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => toggleBranch(b.id)}
-                          aria-pressed={on}
-                          className={on ? 'chip on' : 'chip'}
-                        >
-                          {b.name}
-                        </button>
-                      );
-                    })}
+                <div className="fg mb-3">
+                  <label>Phone {isEdit ? '' : '★'}</label>
+                  <input
+                    value={form.phone}
+                    onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                    placeholder="+91 98765 43210"
+                    disabled={isEdit}
+                    className={isEdit ? 'opacity-60' : ''}
+                  />
+                  {isEdit && (
+                    <div className="text-xs text-dim mt-1">
+                      Phone is locked after creation.
+                    </div>
+                  )}
+                </div>
+                {!isEdit && (
+                  <div className="fg mb-3">
+                    <label>PIN (4-6 digits) ★</label>
+                    <input
+                      type="password"
+                      maxLength={6}
+                      value={form.pin}
+                      onChange={(e) => setForm((f) => ({ ...f, pin: e.target.value }))}
+                      placeholder="1234"
+                    />
                   </div>
-                ) : (
-                  <span className="text-sm text-dim">No branches yet.</span>
+                )}
+                <div className="fg mb-3">
+                  <label>Role ★</label>
+                  <select
+                    value={form.role}
+                    onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
+                    className="p-2 border border-rim rounded-r w-full"
+                  >
+                    {ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <div className="fg mb-3">
+                  <label>Branches <small className="text-dim">(leave empty for all)</small></label>
+                  {(branches || []).length > 0 ? (
+                    <div className="flex flex-wrap gap-3 mt-2">
+                      {(branches || []).map((b) => {
+                        const on = form.branchIds.includes(b.id);
+                        return (
+                          <button
+                            key={b.id}
+                            type="button"
+                            onClick={() => toggleBranch(b.id)}
+                            aria-pressed={on}
+                            className={on ? 'chip on' : 'chip'}
+                          >
+                            {b.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <span className="text-sm text-dim">No branches yet.</span>
+                  )}
+                </div>
+                {isEdit && Array.isArray(editing?.branch_ids) && editing.branch_ids.length > 0 && (
+                  <div className="fg mb-3">
+                    <label>Branch Login URLs</label>
+                    <div className="mt-1 max-h-[220px] overflow-y-auto border border-rim rounded-md">
+                      {branchLinks.map(renderBranchLinkRow)}
+                    </div>
+                  </div>
                 )}
               </div>
-              {isEdit && Array.isArray(editing?.branch_ids) && editing.branch_ids.length > 0 && (
-                <div className="fg mb-3">
-                  <label>Branch Login URLs</label>
-                  <div className="mt-1 max-h-[220px] overflow-y-auto border border-rim rounded-md">
-                    {branchLinks.map(renderBranchLinkRow)}
-                  </div>
-                </div>
-              )}
-              {/* Action row — Save + Cancel on the left, Delete
-                  Account pushed right via ml-auto. All three on one
-                  line with btn-sm so they share the same height. The
-                  border-t divider that previously separated the
-                  Danger Zone is dropped — keeping everything on one
-                  row reads cleaner and the destructive action is
-                  already gated by the inline confirm below. */}
+              {/* Action row spans both columns. Delete Account is
+                  pinned left via mr-auto; Save/Cancel sit at the right
+                  edge thanks to justify-end. */}
               {!deleteConfirming && (
-                <div className="flex items-center gap-3 mt-4">
-                  <button type="button" className="btn-p btn-sm" onClick={handleSave} disabled={saving}>
-                    {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Member')}
-                  </button>
-                  <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>
-                    Cancel
-                  </button>
+                <div className="flex items-center gap-3 mt-4 md:col-span-2 justify-end">
                   {isEdit && (
                     <button
                       type="button"
-                      className="btn-del btn-sm ml-auto"
+                      className="btn-del btn-sm mr-auto"
                       onClick={() => setDeleteConfirming(true)}
                       disabled={saving}
                     >
                       Delete Account
                     </button>
                   )}
+                  <button type="button" className="btn-g btn-sm" onClick={onClose} disabled={saving}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn-p btn-sm" onClick={handleSave} disabled={saving}>
+                    {saving ? 'Saving…' : (isEdit ? 'Save Changes' : 'Add Member')}
+                  </button>
                 </div>
               )}
               {isEdit && deleteConfirming && (
-                <div className="mt-4">
+                <div className="mt-4 md:col-span-2">
                   <div className="text-sm text-red">
                     This is permanent and cannot be undone. Delete {editing?.name || 'this staff member'}?
                   </div>
-                  {/* Confirm row — same flex pattern as the normal
-                      action row above, same btn-sm sizing across both
-                      buttons so the confirm doesn't visually jump. */}
-                  <div className="flex items-center gap-3 mt-2">
-                    <button
-                      type="button"
-                      className="btn-del btn-sm"
-                      onClick={handleDeleteAccount}
-                      disabled={deleteBusy}
-                    >
-                      {deleteBusy ? '…' : 'Confirm Delete'}
-                    </button>
+                  <div className="flex items-center gap-3 mt-2 justify-end">
                     <button
                       type="button"
                       className="btn-g btn-sm"
@@ -945,10 +944,18 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
                     >
                       Cancel
                     </button>
+                    <button
+                      type="button"
+                      className="btn-del btn-sm"
+                      onClick={handleDeleteAccount}
+                      disabled={deleteBusy}
+                    >
+                      {deleteBusy ? '…' : 'Confirm Delete'}
+                    </button>
                   </div>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       </div>

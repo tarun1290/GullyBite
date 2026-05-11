@@ -70,7 +70,7 @@ export default function OverviewPage() {
   // we share one connection with every other dashboard page. Refetch
   // the summary when a new order arrives or a payment is confirmed so
   // today's-orders / today's-revenue counters update without a manual
-  // reload. Generic 'order:updated' transitions are intentionally
+  // reload. Generic 'order_status_changed' transitions are intentionally
   // ignored here — they don't move the headline numbers and would
   // just thrash the analytics fetches.
   const { lastOrder, lastPaid } = useSocketContext();

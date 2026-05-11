@@ -107,11 +107,12 @@ export default function OrdersPage() {
 
   // Socket.io live channel — sourced from SocketProvider context now,
   // so the connection itself is shared with every other dashboard page.
-  // The provider handles the toast on `order:new`; here we only react
+  // The provider handles the toast on `new_order`; here we only react
   // to the payload references changing to trigger a silent refetch so
-  // the table updates without waiting for the 30s poll. order:updated
-  // / order:paid also refetch so status flips and payment-state
-  // changes propagate from the kitchen tablet or webhooks.
+  // the table updates without waiting for the 30s poll.
+  // order_status_changed / new_paid_order also refetch so status flips
+  // and payment-state changes propagate from the kitchen tablet or
+  // webhooks.
   const { lastOrder, lastUpdated, lastPaid } = useSocketContext();
   const silentRefetch = useCallback(() => {
     fetchOrders(filter, { silent: true });

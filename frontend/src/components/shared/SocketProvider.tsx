@@ -16,11 +16,11 @@
 // across normal re-renders.
 //
 // Toasts:
-//   • 'order:new'                 → green success ("New order #N — ₹X")
-//   • 'admin:action'              → amber warning (server message)
-//   • 'admin:order_new'           → blue info  (admin tree only)
-//   • 'restaurant:branch_status'  → blue info  (admin tree only)
-//   • 'admin:new_signup'          → blue info  (admin tree only)
+//   • 'new_order'                 → green success ("New order #N — ₹X")
+//   • 'admin_action'              → amber warning (server message)
+//   • 'admin_order_new'           → blue info  (admin tree only)
+//   • 'restaurant_branch_status'  → blue info  (admin tree only)
+//   • 'admin_new_signup'          → blue info  (admin tree only)
 //
 // Auth: useSocket falls back from `zm_token` to `gb_admin_token` so
 // both layout trees authenticate. The backend's io.use middleware
@@ -34,6 +34,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useState,
   type ReactNode,
@@ -101,70 +102,93 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
   const [lastMessage, setLastMessage] = useState<DirectMessagePayload | null>(null);
   const [lastRiderLocation, setLastRiderLocation] = useState<RiderLocationPayload | null>(null);
 
+  // Each callback is useCallback-wrapped so its identity is stable
+  // across SocketProvider re-renders. Without this, inline arrows
+  // produced a new reference per render, the consumer hook's effect
+  // deps changed every render, and socket.off/on cycled on every
+  // pass — a brief window where inbound events could land while no
+  // handler was attached. showToast is already useCallback-stable
+  // upstream (Toast.tsx); useState setters are inherently stable.
+  const onNewOrder = useCallback((order: OrderNotification) => {
+    // One toast per new order, fired centrally so it lands regardless
+    // of which page the merchant is viewing. Format matches what the
+    // orders page used to emit so users don't see a wording change
+    // when this layer takes over.
+    showToast(`New order #${order.orderNumber} — ₹${order.totalRs}`, 'success');
+    setLastOrder(order);
+  }, [showToast]);
+
+  const onUpdated = useCallback((payload: OrderUpdatePayload) => {
+    setLastUpdated(payload);
+  }, []);
+
+  const onPaid = useCallback((payload: OrderPaidPayload) => {
+    setLastPaid(payload);
+  }, []);
+
+  const onAdminAction = useCallback((payload: AdminActionPayload) => {
+    // Distinguish from order events with the warning style — these
+    // are platform-side actions (suspension, approval, refund,
+    // verification) the merchant needs to acknowledge, not routine
+    // order activity. Server-supplied message is displayed verbatim.
+    showToast(payload.message, 'warning');
+    setLastAdminAction(payload);
+  }, [showToast]);
+
+  const onAdminOrderNew = useCallback((payload: AdminOrderNewPayload) => {
+    const branch = payload.branchName ? ` at ${payload.branchName}` : '';
+    showToast(`New order${branch} — ₹${payload.total}`, 'info');
+    setLastAdminFeedEvent({ kind: 'order_new', data: payload, receivedAt: new Date().toISOString() });
+  }, [showToast]);
+
+  const onBranchStatus = useCallback((payload: BranchStatusPayload) => {
+    const name = payload.branchName || 'A branch';
+    const state = payload.is_open ? 'open' : 'closed';
+    showToast(`${name} is now ${state}`, 'info');
+    setLastAdminFeedEvent({ kind: 'branch_status', data: payload, receivedAt: new Date().toISOString() });
+  }, [showToast]);
+
+  const onAdminNewSignup = useCallback((payload: AdminNewSignupPayload) => {
+    showToast(`New restaurant signup: ${payload.name}`, 'info');
+    setLastAdminFeedEvent({ kind: 'new_signup', data: payload, receivedAt: new Date().toISOString() });
+  }, [showToast]);
+
+  // Direct-message thread between admin and a specific restaurant.
+  // Toast wording is side-aware: admin sees "Reply from <name>"
+  // (sender is a restaurant), merchant sees "Message from Admin"
+  // (sender is admin). Drawers consume `lastMessage` from context
+  // for auto-open / unread-bump behaviour.
+  const onMessage = useCallback((payload: DirectMessagePayload) => {
+    if (isAdmin) {
+      const who = payload.restaurantName || payload.from || 'restaurant';
+      showToast(`Reply from ${who}`, 'info');
+    } else {
+      showToast('Message from Admin', 'info');
+    }
+    setLastMessage(payload);
+  }, [isAdmin, showToast]);
+
+  // No toast for rider location — these fire every few seconds while
+  // a delivery is in flight and would spam the UI. Consumers
+  // (RiderLocationCard) read lastRiderLocation directly and filter
+  // by order_id.
+  const onRiderLocation = useCallback((payload: RiderLocationPayload) => {
+    setLastRiderLocation(payload);
+  }, []);
+
   const { connected } = useOrderNotifications({
-    onNewOrder: (order) => {
-      // One toast per new order, fired centrally so it lands regardless
-      // of which page the merchant is viewing. Format matches what the
-      // orders page used to emit so users don't see a wording change
-      // when this layer takes over.
-      showToast(`New order #${order.orderNumber} — ₹${order.total}`, 'success');
-      setLastOrder(order);
-    },
-    onUpdated: (payload) => setLastUpdated(payload),
-    onPaid: (payload) => setLastPaid(payload),
-    onAdminAction: (payload) => {
-      // Distinguish from order events with the warning style — these
-      // are platform-side actions (suspension, approval, refund,
-      // verification) the merchant needs to acknowledge, not routine
-      // order activity. Server-supplied message is displayed verbatim.
-      showToast(payload.message, 'warning');
-      setLastAdminAction(payload);
-    },
+    onNewOrder,
+    onUpdated,
+    onPaid,
+    onAdminAction,
     // Admin-feed callbacks are wired only on the admin tree. On the
     // restaurant dashboard these never fire (server-side room scope)
     // but skipping them avoids attaching unused listeners.
-    onAdminOrderNew: isAdmin
-      ? (payload) => {
-          const branch = payload.branchName ? ` at ${payload.branchName}` : '';
-          showToast(`New order${branch} — ₹${payload.total}`, 'info');
-          setLastAdminFeedEvent({ kind: 'order_new', data: payload, receivedAt: new Date().toISOString() });
-        }
-      : undefined,
-    onBranchStatus: isAdmin
-      ? (payload) => {
-          const name = payload.branchName || 'A branch';
-          const state = payload.is_open ? 'open' : 'closed';
-          showToast(`${name} is now ${state}`, 'info');
-          setLastAdminFeedEvent({ kind: 'branch_status', data: payload, receivedAt: new Date().toISOString() });
-        }
-      : undefined,
-    onAdminNewSignup: isAdmin
-      ? (payload) => {
-          showToast(`New restaurant signup: ${payload.name}`, 'info');
-          setLastAdminFeedEvent({ kind: 'new_signup', data: payload, receivedAt: new Date().toISOString() });
-        }
-      : undefined,
-    // Direct-message thread between admin and a specific restaurant.
-    // Toast wording is side-aware: the admin sees "Reply from <name>"
-    // (sender is a restaurant), the merchant sees "Message from Admin"
-    // (sender is admin). Drawers consume `lastMessage` from context
-    // for auto-open / unread-bump behaviour.
-    onMessage: (payload) => {
-      if (isAdmin) {
-        const who = payload.restaurantName || payload.from || 'restaurant';
-        showToast(`Reply from ${who}`, 'info');
-      } else {
-        showToast('Message from Admin', 'info');
-      }
-      setLastMessage(payload);
-    },
-    // No toast for rider location — these fire every few seconds while
-    // a delivery is in flight and would spam the UI. Consumers
-    // (RiderLocationCard) read lastRiderLocation directly and filter
-    // by order_id.
-    onRiderLocation: (payload) => {
-      setLastRiderLocation(payload);
-    },
+    onAdminOrderNew: isAdmin ? onAdminOrderNew : undefined,
+    onBranchStatus: isAdmin ? onBranchStatus : undefined,
+    onAdminNewSignup: isAdmin ? onAdminNewSignup : undefined,
+    onMessage,
+    onRiderLocation,
   });
 
   return (

@@ -847,7 +847,11 @@ async function handleOrder(value) {
           orderId,
           orderNumber,
           customerName,
-          customerPhone,
+          // `|| ''` so the emit matches the frontend OrderPaidPayload's
+          // `customerPhone: string` contract — local var could be
+          // undefined when neither customer_phone nor phone is present
+          // on the Meta checkout payload.
+          customerPhone: customerPhone || '',
           totalRs: charges.customer_total_rs,
           itemCount: orderItems.reduce((s, i) => s + i.quantity, 0),
           items: orderItems.slice(0, 6).map(i => ({ name: i.name, quantity: i.quantity })),
@@ -890,29 +894,25 @@ async function handleOrder(value) {
       const newOrderPayload = {
         orderId: String(orderId),
         orderNumber,
-        total: charges.customer_total_rs,
-        branchName: fullOrder?.branch_name || null,
-        customerPhone,
+        customerName: fullOrder?.customer_name || null,
+        totalRs: charges.customer_total_rs,
         createdAt: fullOrder?.created_at || new Date().toISOString(),
       };
-      const paidPayload = {
-        orderId: String(orderId),
-        amount: charges.customer_total_rs,
-        paidAt: new Date().toISOString(),
-      };
-      emitToRestaurant(waAccount.restaurant_id, 'order:new', newOrderPayload);
-      emitToRestaurant(waAccount.restaurant_id, 'order:paid', paidPayload);
+      emitToRestaurant(waAccount.restaurant_id, 'new_order', newOrderPayload);
       // Mirror to admin:platform so platform-side dashboards can light
       // up the same lifecycle events without hitting the order DB.
-      emitToAdmin('order:new', newOrderPayload);
-      emitToAdmin('order:paid', paidPayload);
+      emitToAdmin('new_order', newOrderPayload);
+      // 'new_paid_order' is already broadcast at line 846 via
+      // broadcastOrder, which fans to both restaurant + admin rooms.
+      // The standalone emitToRestaurant + emitToAdmin pair previously
+      // here duplicated that with a slimmer payload — removed.
       // Admin live-feed event — slimmer payload tailored for the
       // platform overview (no customer phone, no createdAt, but adds
       // restaurantId so admin pages can route the toast to the right
-      // tenant view). Distinct event name from 'order:new' so the
+      // tenant view). Distinct event name from 'new_order' so the
       // admin SocketProvider can toast it without re-toasting the
       // generic event.
-      emitToAdmin('admin:order_new', {
+      emitToAdmin('admin_order_new', {
         restaurantId: String(waAccount.restaurant_id),
         orderNumber,
         total: charges.customer_total_rs,

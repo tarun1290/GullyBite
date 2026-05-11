@@ -4,19 +4,20 @@
 // admin-action, and admin-feed events to the caller.
 //
 // Events received (rooms scoped to `restaurant:<id>` server-side, plus
-// `admin:platform` for the admin-scoped console):
-//   'order:new'                — new PAID order created
-//   'order:updated'            — generic transition (CONFIRMED, ...)
-//   'order:paid'               — Razorpay/WA Native payment confirmed
-//   'admin:action'             — platform admin action affecting this
+// `admin:platform` for the admin-scoped console). Names match exactly
+// what backend/src/services/websocket.js broadcastOrder emits:
+//   'new_order'                — new PAID order created
+//   'order_status_changed'     — generic transition (CONFIRMED, ...)
+//   'new_paid_order'           — Razorpay/WA Native payment confirmed
+//   'admin_action'             — platform admin action affecting this
 //                                restaurant (approval, suspension,
 //                                wallet credit, verification change).
 //                                Toasted as a warning on merchant side.
-//   'admin:order_new'          — admin-only live feed: new order at any
-//                                tenant. Slimmer payload than 'order:new'.
-//   'restaurant:branch_status' — admin-only live feed: a branch toggled
+//   'admin_order_new'          — admin-only live feed: new order at any
+//                                tenant. Slimmer payload than 'new_order'.
+//   'restaurant_branch_status' — admin-only live feed: a branch toggled
 //                                open or closed.
-//   'admin:new_signup'         — admin-only live feed: new restaurant
+//   'admin_new_signup'         — admin-only live feed: new restaurant
 //                                signed up.
 //
 // The three admin-feed events ride on the `admin:platform` room so
@@ -25,7 +26,7 @@
 // listeners safely — they just never fire there.
 //
 // Optional callbacks let the caller refetch its own list / stats; we
-// also pop a brief audio chime on 'order:new'. The chime reuses
+// also pop a brief audio chime on 'new_order'. The chime reuses
 // /sounds/new_order.mp3 (already in public/) since /order-chime.mp3
 // isn't shipped — the dashboard's existing alarm uses the same file.
 
@@ -35,9 +36,8 @@ import { useSocket } from './useSocket';
 export interface OrderNotification {
   orderId: string;
   orderNumber: string | number;
-  total: number;
-  branchName: string | null;
-  customerPhone: string | null;
+  customerName: string | null;
+  totalRs: number;
   createdAt: string;
 }
 
@@ -47,10 +47,23 @@ export interface OrderUpdatePayload {
   updatedAt: string;
 }
 
+// Matches the rich payload emitted by both backend sites:
+//   - queue/postPaymentJobs.js _handleCustomerNotification (Razorpay /
+//     WA-inbound path, gated by notified_at)
+//   - webhooks/checkout.js (WhatsApp Native path, same gate)
+// Both fan out via ws.broadcastOrder. Consumers today only read
+// truthiness to trigger a refetch, but the type is now accurate so
+// future readers don't pull undefined off the payload.
 export interface OrderPaidPayload {
   orderId: string;
-  amount: number | null;
-  paidAt: string;
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+  totalRs: number;
+  itemCount: number;
+  items: { name: string; quantity: number }[];
+  orderType: 'pickup' | 'delivery';
+  notifiedAt: string;
 }
 
 export interface AdminActionPayload {
@@ -242,24 +255,24 @@ export function useOrderNotifications(
 
   useEffect(() => {
     if (!socket) return;
-    socket.on('order:new', handleNew);
-    socket.on('order:updated', handleUpdated);
-    socket.on('order:paid', handlePaid);
-    socket.on('admin:action', handleAdminAction);
-    socket.on('admin:order_new', handleAdminOrderNew);
-    socket.on('restaurant:branch_status', handleBranchStatus);
-    socket.on('admin:new_signup', handleAdminNewSignup);
-    socket.on('message:new', handleMessage);
+    socket.on('new_order', handleNew);
+    socket.on('order_status_changed', handleUpdated);
+    socket.on('new_paid_order', handlePaid);
+    socket.on('admin_action', handleAdminAction);
+    socket.on('admin_order_new', handleAdminOrderNew);
+    socket.on('restaurant_branch_status', handleBranchStatus);
+    socket.on('admin_new_signup', handleAdminNewSignup);
+    socket.on('message_new', handleMessage);
     socket.on('rider_location', handleRiderLocation);
     return () => {
-      socket.off('order:new', handleNew);
-      socket.off('order:updated', handleUpdated);
-      socket.off('order:paid', handlePaid);
-      socket.off('admin:action', handleAdminAction);
-      socket.off('admin:order_new', handleAdminOrderNew);
-      socket.off('restaurant:branch_status', handleBranchStatus);
-      socket.off('admin:new_signup', handleAdminNewSignup);
-      socket.off('message:new', handleMessage);
+      socket.off('new_order', handleNew);
+      socket.off('order_status_changed', handleUpdated);
+      socket.off('new_paid_order', handlePaid);
+      socket.off('admin_action', handleAdminAction);
+      socket.off('admin_order_new', handleAdminOrderNew);
+      socket.off('restaurant_branch_status', handleBranchStatus);
+      socket.off('admin_new_signup', handleAdminNewSignup);
+      socket.off('message_new', handleMessage);
       socket.off('rider_location', handleRiderLocation);
     };
   }, [

@@ -30,6 +30,7 @@ import {
   updateOrderStatus,
 } from '../../api/restaurant';
 import { useNewOrderSound } from '../../hooks/useNewOrderSound';
+import { useSocketContext } from '../shared/SocketProvider';
 import { useToast } from '../Toast';
 
 const POLL_MS = 30000;
@@ -187,6 +188,20 @@ export default function NewOrderPopup() {
       clearInterval(t);
     };
   }, [syncWithOrders]);
+
+  // ── Socket fast-path: append PAID orderId from the live socket feed
+  // immediately on event arrival. The poll above still runs as the
+  // fallback (covers reconnect gaps and bootstrap), but this surfaces
+  // the popup without waiting for the 30s tick. Status invariant: the
+  // backend only emits `new_order` for PAID transitions
+  // (events/listeners/sseListener.js), so no client-side status check
+  // is needed — the type doesn't expose status anyway.
+  const { lastOrder } = useSocketContext();
+  useEffect(() => {
+    const id = lastOrder?.orderId;
+    if (!id) return;
+    setPendingIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }, [lastOrder]);
 
   // Derived: clamp currentIdx into the queue's bounds at read time
   // instead of normalizing it via a setState-in-effect. handleNext's

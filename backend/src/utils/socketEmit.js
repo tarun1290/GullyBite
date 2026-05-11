@@ -11,10 +11,10 @@
 // mirrors how wsManager.init(wss) is wired in ec2-server.js.
 //
 // Supported events (room: `restaurant:<restaurantId>`):
-//   'order:new'      — new order received from WhatsApp
-//   'order:updated'  — order status changed (CONFIRMED, PREPARING,
-//                      PACKED, DISPATCHED, DELIVERED, ...)
-//   'order:paid'     — Razorpay payment confirmed
+//   'new_order'             — new order received from WhatsApp
+//   'order_status_changed'  — order status changed (CONFIRMED, PREPARING,
+//                             PACKED, DISPATCHED, DELIVERED, ...)
+//   'new_paid_order'        — Razorpay payment confirmed
 
 let _io = null;
 

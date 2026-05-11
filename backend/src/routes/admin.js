@@ -17,7 +17,7 @@ const ws = require('../services/websocket');
 const { CONFIRMED_ORDER_STATES } = require('../core/orderStateEngine');
 const slugify = require('../utils/slugify');
 // Socket.io fan-out helper. Used by admin action endpoints to push
-// 'admin:action' events to the affected restaurant's dashboard so the
+// 'admin_action' events to the affected restaurant's dashboard so the
 // merchant sees a real-time toast for approvals, suspensions, refunds,
 // etc. without refreshing.
 const { emitToRestaurant } = require('../utils/socketEmit');
@@ -1079,7 +1079,7 @@ router.patch('/restaurants/:id', express.json(), async (req, res) => {
         description: `Restaurant "${updated.business_name}" suspended`,
         restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'warning',
       });
-      emitToRestaurant(req.params.id, 'admin:action', {
+      emitToRestaurant(req.params.id, 'admin_action', {
         type: 'suspension',
         message: 'Your account has been suspended by GullyBite. Contact support for details.',
         timestamp: new Date().toISOString(),
@@ -1439,7 +1439,7 @@ router.patch('/applications/:id/approve', express.json(), async (req, res) => {
       description: `Restaurant "${updated.business_name}" approved`,
       restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'info',
     });
-    emitToRestaurant(req.params.id, 'admin:action', {
+    emitToRestaurant(req.params.id, 'admin_action', {
       type: 'approval',
       message: '🎉 Your application has been approved — your restaurant is now live on GullyBite.',
       timestamp: new Date().toISOString(),
@@ -1469,7 +1469,7 @@ router.patch('/applications/:id/reject', express.json(), async (req, res) => {
       description: `Restaurant "${updated.business_name}" rejected: ${notes}`,
       restaurantId: req.params.id, resourceType: 'restaurant', resourceId: req.params.id, severity: 'warning',
     });
-    emitToRestaurant(req.params.id, 'admin:action', {
+    emitToRestaurant(req.params.id, 'admin_action', {
       type: 'rejection',
       message: `Your application was not approved. Reason: ${notes}`,
       timestamp: new Date().toISOString(),
@@ -1794,7 +1794,7 @@ router.post('/wallets/refund', async (req, res) => {
       description: `Manual wallet refund: ₹${amount} to restaurant ${restaurantId}`,
       resourceType: 'wallet', resourceId: restaurantId, severity: 'warning',
     });
-    emitToRestaurant(restaurantId, 'admin:action', {
+    emitToRestaurant(restaurantId, 'admin_action', {
       type: 'credit',
       message: `₹${amount} credited to your wallet${description ? ` — ${description}` : ''}.`,
       amount: Number(amount) || 0,
@@ -2920,7 +2920,7 @@ router.patch('/restaurants/:id/verification', express.json(), async (req, res) =
       const message = status === 'verified'
         ? '✅ Your business documents have been verified.'
         : 'Your business verification was rejected. Please re-upload your documents and contact support.';
-      emitToRestaurant(req.params.id, 'admin:action', {
+      emitToRestaurant(req.params.id, 'admin_action', {
         type: 'verification',
         message,
         timestamp: new Date().toISOString(),
@@ -5697,7 +5697,7 @@ router.post('/messages', requireAdminAuth(), express.json(), async (req, res) =>
     // drawer + toast in real time. Fire-and-forget; the message is
     // already persisted so a missed socket only delays delivery
     // until the next dashboard refresh.
-    emitToRestaurant(restaurantId, 'message:new', {
+    emitToRestaurant(restaurantId, 'message_new', {
       from: 'admin',
       message: text,
       timestamp: doc.created_at.toISOString(),

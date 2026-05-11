@@ -87,10 +87,17 @@ interface DeliveryDetailLineProps {
 }
 
 function DeliveryDetailLine({ label, value, bold }: DeliveryDetailLineProps) {
+  // bold === Customer Total summary row — bigger text, semibold, no
+  // bottom border (it sits last). Detail rows get py-1.5 + a hairline
+  // divider so each charge gets visual breathing room and the eye can
+  // trace label↔value pairs without ambiguity.
+  const baseCell = bold
+    ? 'py-1.5 text-base font-semibold'
+    : 'py-1.5 border-b border-rim/40';
   return (
     <tr>
-      <td className="py-1 text-dim">{label}</td>
-      <td className={`text-right ${bold ? 'font-bold' : ''}`}>₹{f(value)}</td>
+      <td className={`${baseCell} ${bold ? 'text-tx' : 'text-dim'}`}>{label}</td>
+      <td className={`${baseCell} text-right`}>₹{f(value)}</td>
     </tr>
   );
 }
@@ -168,21 +175,18 @@ function ChargeBreakdown({ order }: ChargeBreakdownProps) {
   if (parseFloat(String(order.discount_rs || 0)) > 0) {
     rows.push(
       <tr key="dis">
-        <td className="py-1 text-dim">
+        <td className="py-1.5 border-b border-rim/40 text-dim">
           Discount {order.coupon_code ? `(${order.coupon_code})` : ''}
         </td>
-        <td className="text-right text-green-600">−₹{f(order.discount_rs)}</td>
+        <td className="py-1.5 border-b border-rim/40 text-right text-green-600">
+          −₹{f(order.discount_rs)}
+        </td>
       </tr>
     );
   }
 
-  rows.push(
-    <tr key="sep">
-      <td colSpan={2}>
-        <hr className="border-0 border-t border-rim my-1" />
-      </td>
-    </tr>
-  );
+  // Customer Total — last row. The preceding row's border-b acts as
+  // the separator; no manual <hr> needed.
   rows.push(<DeliveryDetailLine key="tot" label="Customer Total" value={order.total_rs} bold />);
 
   return (
@@ -427,7 +431,7 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
       onClick={(e: MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose?.(); }}
       className="fixed inset-0 bg-[rgba(15,23,42,0.55)] backdrop-blur-xs z-200 flex items-center justify-center p-6"
     >
-      <div className="bg-white border border-rim rounded-2xl w-full max-w-[520px] overflow-hidden shadow-default">
+      <div className="bg-white border border-rim rounded-2xl w-full max-w-2xl overflow-hidden shadow-default">
         <div className="py-4 px-6 border-b border-rim flex items-center justify-between">
           <span id="ord-modal-title" className="font-bold text-md text-tx">
             {title}
@@ -444,7 +448,7 @@ export default function OrderDetailModal({ orderId, onClose, onStatusSync }: Ord
 
         <div
           id="ord-modal-body"
-          className="p-6 max-h-[70vh] overflow-y-auto text-sm"
+          className="py-6 px-8 max-h-[70vh] overflow-y-auto text-sm"
         >
           {loading && (
             <div className="text-center p-8 text-dim">Loading…</div>

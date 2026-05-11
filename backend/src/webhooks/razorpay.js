@@ -332,7 +332,7 @@ const confirmPaidOrder = async (orderId, event) => {
   // Fan out payment.completed — ONCE, only for the process that won the
   // flip. Idempotency guaranteed by the conditional updateOne above.
   try {
-    const ord = await col('orders').findOne({ _id: String(orderId) }, { projection: { restaurant_id: 1, order_number: 1, total_rs: 1 } });
+    const ord = await col('orders').findOne({ _id: String(orderId) }, { projection: { restaurant_id: 1, order_number: 1 } });
     const bus = require('../events');
     const amountRs = paymentEntity ? (Number(paymentEntity.amount) || 0) / 100 : null;
     bus.emit('payment.completed', {
@@ -345,20 +345,11 @@ const confirmPaidOrder = async (orderId, event) => {
       paymentRef: paymentEntity?.id || null,
     });
 
-    // Socket.io fan-out — fire-and-forget. Gated by the same flip
-    // guarantee, so dashboards only receive one 'order:paid' per
-    // order even with concurrent webhook deliveries. Mirrors to
-    // admin:platform so the platform dashboard sees payments too.
-    if (ord?.restaurant_id) {
-      const { emitToRestaurant, emitToAdmin } = require('../utils/socketEmit');
-      const paidPayload = {
-        orderId: String(orderId),
-        amount: amountRs ?? ord?.total_rs ?? null,
-        paidAt: new Date().toISOString(),
-      };
-      emitToRestaurant(ord.restaurant_id, 'order:paid', paidPayload);
-      emitToAdmin('order:paid', paidPayload);
-    }
+    // The paid-order socket fan-out lives in postPaymentJobs.js
+    // (_handleCustomerNotification) — canonical because it carries the
+    // richer payload and is gated by the notified_at idempotency stamp.
+    // The previous inline emit here fired ~ms-to-seconds before the
+    // queue worker, double-firing the event per payment.
   } catch (_) { /* never block payment confirmation on bus failure */ }
 
   // Loyalty redemption commit (only) — fire-and-forget.

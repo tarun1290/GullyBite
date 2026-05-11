@@ -253,7 +253,7 @@ router.post('/signup', express.json(), async (req, res) => {
     // Inline require so the module loads only when this route fires.
     try {
       const { emitToAdmin } = require('../utils/socketEmit');
-      emitToAdmin('admin:new_signup', {
+      emitToAdmin('admin_new_signup', {
         restaurantId: id,
         name: ownerName.trim(),
         email: email.toLowerCase().trim(),
