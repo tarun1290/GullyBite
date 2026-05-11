@@ -131,8 +131,11 @@ function RootInner() {
           await Updates.fetchUpdateAsync();
           await Updates.reloadAsync();
         }
-      } catch {
-        /* silent — never crash the app over an OTA failure */
+      } catch (err) {
+        // Never crash the app over an OTA failure, but DO surface the
+        // reason so device logs distinguish "no update" (silent) from
+        // "manifest fetch / bundle load failed" (logged warn).
+        console.warn('[ota] check/fetch/reload failed:', (err as Error)?.message || err);
       }
     })();
   }, []);
