@@ -25,6 +25,7 @@ const {
 } = require('../config/financeConfig');
 const ledger = require('../services/ledger.service');
 const ws = require('../services/websocket');
+const emailSvc = require('../services/email');
 const { logActivity } = require('../services/activityLog');
 const { invalidateCache } = require('../config/cache');
 const log = require('../utils/logger').child({ component: 'settlement' });
@@ -389,6 +390,17 @@ async function deductBranchSubscriptions(restaurantId, _db) {
 
   if (!dueBranches.length) return;
 
+  // Restaurant doc fetched once and reused for every successful debit
+  // below — all branches in `dueBranches` share the same restaurant, so
+  // re-fetching per loop iteration would be wasted DB load. Lean
+  // projection: only the fields the billing-invoice email reads.
+  // Failure here doesn't block billing — emails just skip if the doc
+  // (or its email field) is absent.
+  const restaurant = await col('restaurants').findOne(
+    { _id: String(restaurantId) },
+    { projection: { email: 1, owner_name: 1, business_name: 1, brand_name: 1 } },
+  );
+
   // Read once before the loop. We track remainingBalance locally rather
   // than re-querying after each debit — ledger.balancePaise is an
   // aggregation, and each branch's debit decrements the same restaurant
@@ -430,6 +442,14 @@ async function deductBranchSubscriptions(restaurantId, _db) {
         { restaurantId, branchId, amountPaise: BIMONTHLY_FEE_PAISE, paidThroughDate: newPaidThrough.toISOString() },
         `[BILLING] Branch ${branchId} subscription deducted ₹${BIMONTHLY_FEE_WITH_GST_RS.toLocaleString('en-IN')} — next due ${newPaidThrough.toISOString()}`,
       );
+
+      // Fire-and-forget invoice / receipt email. Never awaited so SES
+      // latency or a misconfigured SES_FROM_EMAIL cannot stall the
+      // billing loop. emailSvc.sendBillingInvoiceEmail catches its own
+      // errors internally; the .catch here is defence-in-depth.
+      emailSvc
+        .sendBillingInvoiceEmail(restaurant, branch, BIMONTHLY_FEE_WITH_GST_RS, newPaidThrough)
+        .catch((err) => log.warn({ err: err && err.message, restaurantId, branchId }, 'billing invoice email send failed'));
     } else {
       // Balance below the cycle fee — auto-pause. Don't write a debit;
       // the branch sits in 'paused' until the merchant tops up the

@@ -18,6 +18,7 @@ const memcache = require('../config/memcache');
 const crypto = require('crypto');
 const { rateLimitFn } = require('../middleware/rateLimit');
 const { slugifyRestaurantName } = require('../utils/slugify');
+const emailSvc = require('../services/email');
 const log = require('../utils/logger').child({ component: 'auth' });
 
 // Auto-generate a 2-letter uppercase order_abbr from a name. Strategy:
@@ -259,6 +260,15 @@ router.post('/signup', express.json(), async (req, res) => {
         email: email.toLowerCase().trim(),
       });
     } catch (_) { /* socket failure must not poison the signup */ }
+
+    // Welcome email — fire-and-forget. Same after-res.json placement
+    // as the admin socket above so SES latency / quota issues never
+    // delay the signup response. emailSvc.sendWelcomeEmail is itself
+    // try/catched internally and only ever resolves with a boolean;
+    // the .catch here is belt-and-braces for an unexpected throw.
+    emailSvc
+      .sendWelcomeEmail({ email: email.toLowerCase().trim(), owner_name: ownerName.trim() })
+      .catch((err) => req.log.warn({ err: err && err.message }, 'welcome email send failed'));
   } catch (err) {
     req.log.error({ err }, 'Signup failed');
     res.status(500).json({ error: err.message });
