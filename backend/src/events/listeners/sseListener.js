@@ -30,15 +30,15 @@ function onOrderCreated(payload) {
     const orderNumber = o.order_number || null;
     const totalRs = o.total_rs ?? payload?.total ?? null;
 
-    sse.pushOrderToRestaurant(restaurantId, {
-      id: String(o._id || orderId || ''),
-      order_number: orderNumber,
-      customer_name: _pickCustomerName(o),
-      customer_phone_masked: _maskedPhone(o),
-      total_rs: totalRs,
+    sse.pushToRestaurant(restaurantId, 'new_order', {
+      orderId: String(o._id || orderId || ''),
+      orderNumber: orderNumber,
+      customerName: _pickCustomerName(o),
+      customerPhoneMasked: _maskedPhone(o),
+      totalRs: totalRs,
       status: o.status || 'PENDING_PAYMENT',
       payment_status: o.payment_status || null,
-      created_at: o.created_at || new Date().toISOString(),
+      createdAt: o.created_at || new Date().toISOString(),
       items: Array.isArray(o.items) ? o.items : (payload?.items || []),
       event_type: 'new_order',
     });
@@ -118,21 +118,21 @@ function onOrderUpdated(payload) {
     if (!restaurantId) return;
     const newStatus = payload?.newStatus;
     const order = payload?._order || {};
-    const eventName = newStatus === 'PAID' ? 'new_order' : 'order_updated';
+    const eventName = newStatus === 'PAID' ? 'new_order' : 'order_status_changed';
 
     sse.pushToRestaurant(restaurantId, eventName, {
-      id: String(order._id || payload.orderId || ''),
-      order_number: order.order_number || payload.orderNumber || null,
+      orderId: String(order._id || payload.orderId || ''),
+      orderNumber: order.order_number || payload.orderNumber || null,
       status: newStatus || order.status || null,
       previous_status: payload?.oldStatus || null,
-      total_rs: order.total_rs ?? null,
-      customer_name: _pickCustomerName(order),
-      customer_phone_masked: _maskedPhone(order),
+      totalRs: order.total_rs ?? null,
+      customerName: _pickCustomerName(order),
+      customerPhoneMasked: _maskedPhone(order),
       branch_id: order.branch_id || null,
       items: Array.isArray(order.items) ? order.items.map((i) => ({
         name: i.name, quantity: i.quantity,
       })) : [],
-      updated_at: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
       event_type: eventName,
     });
   } catch (err) {

@@ -220,6 +220,7 @@ async function sendCampaign(campaignId, { resuming = false } = {}) {
     const outboundPid = wa.getOutboundNumberId({
       ...restaurant,
       phoneNumberId: waAccount.phone_number_id,
+      marketingPhoneNumberId: restaurant.marketing_wa_phone_number_id,
     });
 
     const customers = await getSegmentCustomers(campaign.restaurant_id, campaign.segment, {

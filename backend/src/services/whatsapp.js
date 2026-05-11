@@ -827,7 +827,12 @@ const sendMessage = async ({ brand_id, business_id, phone_number_id, access_toke
 // (`phone_number_id`) fallbacks so callers can pass the restaurant
 // doc directly or a composed object `{ ...restaurant, phone_number_id }`.
 const getOutboundNumberId = (restaurant) => {
-  const mkt = restaurant?.marketingPhoneNumberId;
+  // Accept both camelCase (composed objects from callers that map
+  // explicitly) and the snake_case field name on the raw restaurant
+  // doc (`marketing_wa_phone_number_id` per schema). Without the
+  // snake_case fallback, callers that spread `...restaurant` would
+  // silently miss the marketing number.
+  const mkt = restaurant?.marketingPhoneNumberId || restaurant?.marketing_wa_phone_number_id;
   if (typeof mkt === 'string' && mkt.length > 0) return mkt;
   return restaurant?.phoneNumberId || restaurant?.phone_number_id || null;
 };

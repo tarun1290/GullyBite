@@ -345,7 +345,6 @@ async function _handleOrderDispatch(payload) {
 
 async function _handlePosSync(payload) {
   if (process.env.POS_ENABLED !== 'true') {
-    console.warn('POS integration disabled');
     return;
   }
   const orderSvc = require('../services/order');

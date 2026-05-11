@@ -620,10 +620,10 @@ router.get('/restaurants', async (req, res) => {
       const ordersByStatus = {
         total: orders.length,
         delivered: orders.filter(o => o.status === 'DELIVERED').length,
-        pending: orders.filter(o => o.status === 'PENDING').length,
+        pending: orders.filter(o => o.status === 'PENDING_PAYMENT').length,
         confirmed: orders.filter(o => o.status === 'CONFIRMED').length,
         preparing: orders.filter(o => o.status === 'PREPARING').length,
-        out_for_delivery: orders.filter(o => o.status === 'OUT_FOR_DELIVERY').length,
+        out_for_delivery: orders.filter(o => o.status === 'DISPATCHED').length,
         cancelled: orders.filter(o => o.status === 'CANCELLED').length,
       };
 

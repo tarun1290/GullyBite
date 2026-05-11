@@ -161,11 +161,19 @@ async function executeJourney(restaurantId, customerId, journeyType, overrideVar
 
     const customer = await col('customers').findOne(
       { _id: String(customerId) },
-      { projection: { _id: 1, wa_phone: 1, name: 1 } },
+      { projection: { _id: 1, wa_phone: 1, name: 1, marketing_opted_in: 1 } },
     );
     if (!customer?.wa_phone) {
       log.debug({ restaurantId, customerId, journeyType }, 'journey: customer wa_phone missing');
       return { ok: false, reason: 'no_wa_phone' };
+    }
+    // Second opt-out signal — paired with the marketing_blocklist check
+    // at ~line 126. blocklist is the per-restaurant STOP/UNSUBSCRIBE
+    // record; marketing_opted_in:false is the global opt-out flag on the
+    // customers doc. Either one short-circuits the send.
+    if (customer.marketing_opted_in === false) {
+      log.debug({ restaurantId, customerId, journeyType }, 'journey: customer opted out');
+      return { ok: false, reason: 'customer_opted_out' };
     }
 
     // Wallet pre-check. Let sendCampaign handle the actual debit but

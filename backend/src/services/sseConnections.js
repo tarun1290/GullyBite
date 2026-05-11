@@ -6,7 +6,7 @@
 // Single-process only. When we move to multi-process (horizontal scale
 // or Vercel serverless fanout), swap the push path to Redis pub/sub and
 // subscribe per-process — the public API (addConnection, removeConnection,
-// pushOrderToRestaurant) stays the same.
+// pushToRestaurant) stays the same.
 
 const log = require('../utils/logger').child({ component: 'sse' });
 
@@ -79,32 +79,12 @@ function _sendEvent(res, event, data) {
   return _safeWrite(res, frame);
 }
 
-function pushOrderToRestaurant(restaurantId, order) {
-  if (!restaurantId || !order) return 0;
-  const key = String(restaurantId);
-  const set = connections.get(key);
-  if (!set || !set.size) return 0;
-  // Same branch-filter rule as pushToRestaurant — connections with
-  // empty branchIds get every order; connections scoped to specific
-  // branches only receive orders for those branches.
-  const branchId = order.branch_id != null ? String(order.branch_id) : null;
-  let delivered = 0;
-  for (const res of Array.from(set)) {
-    const branchIds = res[BRANCH_IDS_KEY] || [];
-    if (branchIds.length && branchId && !branchIds.includes(branchId)) continue;
-    const ok = _sendEvent(res, 'order', order);
-    if (!ok) removeConnection(key, res);
-    else delivered += 1;
-  }
-  return delivered;
-}
-
 // Generic per-restaurant push with caller-controlled event name +
-// payload. Branch-filtered the same way as pushOrderToRestaurant —
-// connections with no branch restriction receive everything; scoped
-// connections receive only events whose payload.branch_id matches.
-// Used by /api/staff/orders/:id/status, accept/decline, and any future
-// event channel that isn't strictly an order push.
+// payload. Branch-filtered: connections with no branch restriction
+// receive everything; scoped connections receive only events whose
+// payload.branch_id matches. Used by /api/staff/orders/:id/status,
+// accept/decline, the order.created / order.updated SSE fan-out, and
+// any future event channel.
 function pushToRestaurant(restaurantId, eventName, data) {
   if (!restaurantId || !eventName) return 0;
   const key = String(restaurantId);
@@ -130,7 +110,6 @@ function connectionCount(restaurantId) {
 module.exports = {
   addConnection,
   removeConnection,
-  pushOrderToRestaurant,
   pushToRestaurant,
   connectionCount,
   HEARTBEAT_MS,

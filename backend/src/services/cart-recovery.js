@@ -174,6 +174,7 @@ async function sendRecoveryReminder(abandonedCartId, reminderNumber) {
   const pid = wa.getOutboundNumberId({
     ...restaurant,
     phoneNumberId: waAcc.phone_number_id,
+    marketingPhoneNumberId: restaurant.marketing_wa_phone_number_id,
   });
   const token = metaConfig.systemUserToken;
   const to = cart.customer_phone;

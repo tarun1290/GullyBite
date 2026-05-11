@@ -135,7 +135,7 @@ async function _sendRtoAlert(order, message) {
 // Returns { previousStatus, currentStatus, updated }.
 async function applyProroutingState(order, statusRaw, eventBody = {}) {
   const status = _normaliseStatus(statusRaw);
-  const previousStatus = order?.prorouting_status || null;
+  const previousStatus = order?.prorouting_state || null;
   if (!order || !status) {
     return { previousStatus, currentStatus: previousStatus, updated: false };
   }
@@ -147,7 +147,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
   // right now, even when the change is a no-op from our side.
   await col('orders').updateOne(
     { _id: order._id },
-    { $set: { prorouting_status: statusRaw || status, updated_at: new Date() } }
+    { $set: { prorouting_state: statusRaw || status, updated_at: new Date() } }
   );
 
   if (!isNewStatus) {
@@ -160,7 +160,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
   // ─── HAPPY PATH ────────────────────────────────────────────
   if (status === 'agent-assigned') {
     // Dual-write: populate the logistics subdocument for analytics
-    // alongside the existing flat prorouting_status mirror above.
+    // alongside the existing flat prorouting_state mirror above.
     // Every field is omitted when absent — analytics treats missing
     // as "no data" (null) rather than zero.
     const o = eventBody?.order || {};

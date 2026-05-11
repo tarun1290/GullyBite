@@ -62,11 +62,6 @@ function timingSafeStringEqual(a, b) {
 }
 
 router.post('/', express.json({ limit: '64kb' }), async (req, res) => {
-  // TEMPORARY diagnostic — fires before auth so we capture even
-  // unauthenticated probes. Remove once the upstream payload shape
-  // has been fully characterised.
-  log.info({ headers: req.headers, body: req.body, ip: req.ip }, 'prorouting webhook: incoming raw request');
-
   // ─── AUTH ────────────────────────────────────────────────────
   // Prorouting echoes our shared secret in x-gullybite-webhook-secret.
   // Anything else (or a missing header) is unauthenticated.
@@ -159,7 +154,7 @@ async function _handleStatusCallback(body) {
     }
 
     if (Object.keys($set).length > 1) {
-      await col('orders').updateOne({ _id: clientOrderId }, { $set }).catch((err) => {
+      await col('orders').updateOne({ order_number: clientOrderId }, { $set }).catch((err) => {
         log.warn({ err: err?.message, clientOrderId }, 'prorouting ingest $set failed (continuing to state handler)');
       });
     }
@@ -199,7 +194,7 @@ async function _handleTrackCallback(orders) {
 
     if (Object.keys($set).length > 1) {
       try {
-        await col('orders').updateOne({ _id: clientOrderId }, { $set });
+        await col('orders').updateOne({ order_number: clientOrderId }, { $set });
       } catch (err) {
         log.warn({ err: err?.message, clientOrderId }, 'prorouting track callback update failed');
       }
@@ -225,11 +220,6 @@ async function _handleTrackCallback(orders) {
 // Auth, no-state-transitions, fire-and-forget. Always 200 once auth
 // passes — never block Prorouting on internal failures.
 router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
-  // TEMPORARY diagnostic — fires before auth so we capture even
-  // unauthenticated probes. Remove once the upstream payload shape
-  // has been fully characterised.
-  log.info({ headers: req.headers, body: req.body, ip: req.ip }, 'prorouting webhook /track: incoming raw request');
-
   // ─── AUTH ────────────────────────────────────────────────────
   // Same shared-secret contract as the / endpoint above.
   const expectedSecret = process.env.PROROUTING_WEBHOOK_SECRET;

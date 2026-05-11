@@ -55,6 +55,15 @@ router.post('/marketing-wa', async (req, res) => {
   if (typeof waba_id !== 'string' || !waba_id.trim()) {
     return res.status(400).json({ error: 'waba_id is required' });
   }
+  // Meta IDs are numeric strings (typically 15-17 digits). Reject
+  // obviously-bogus input at write-time so the background verifier
+  // doesn't waste a Graph API call confirming garbage.
+  if (!/^\d{10,20}$/.test(phone_number_id.trim())) {
+    return res.status(400).json({ error: 'Invalid phone_number_id format' });
+  }
+  if (!/^\d{10,20}$/.test(waba_id.trim())) {
+    return res.status(400).json({ error: 'Invalid waba_id format' });
+  }
 
   try {
     await col('restaurants').updateOne(
