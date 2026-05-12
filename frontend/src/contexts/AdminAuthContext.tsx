@@ -8,9 +8,9 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { getAdminMe } from '../api/admin';
+import { getAdminMe, getAdminProfile } from '../api/admin';
 import { setAdminLogoutFn } from '../lib/authStore';
-import type { AuthUser } from '../types';
+import type { AdminUser, AuthUser } from '../types';
 
 // Separate auth context for the /admin/* surface so logging out one role
 // doesn't kill the other's session. Uses gb_admin_token / gb_admin_user
@@ -22,6 +22,10 @@ import type { AuthUser } from '../types';
 
 interface AdminAuthContextValue {
   user: AuthUser | null;
+  // RBAC profile — populated in parallel with `user` on mount via
+  // getAdminProfile(). Carries role + cities + is_active for nav
+  // gating. Stays null until the first /api/admin/me resolves.
+  adminUser: AdminUser | null;
   token: string | null;
   loading: boolean;
   isAuthenticated: boolean;
@@ -40,6 +44,7 @@ function readStoredToken(): string | null {
 export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => readStoredToken());
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
   const login = useCallback((nextToken: string | null, nextUser: AuthUser | null) => {
@@ -60,6 +65,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(null);
     setUser(null);
+    setAdminUser(null);
     if (typeof window !== 'undefined') {
       window.location.replace('/admin/login');
     }
@@ -76,17 +82,22 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return () => {};
     }
-    getAdminMe()
-      .then((me) => {
+    Promise.allSettled([getAdminMe(), getAdminProfile()])
+      .then(([meResult, profileResult]) => {
         if (cancelled) return;
-        setUser(me || null);
-        if (me && typeof window !== 'undefined') {
-          window.localStorage.setItem('gb_admin_user', JSON.stringify(me));
+        if (meResult.status === 'fulfilled') {
+          const me = meResult.value;
+          setUser(me || null);
+          if (me && typeof window !== 'undefined') {
+            window.localStorage.setItem('gb_admin_user', JSON.stringify(me));
+          }
         }
-      })
-      .catch(() => {
-        // 401 already handled by the apiClient response interceptor (which
-        // dispatches to setAdminLogoutFn for /api/admin/* requests).
+        if (profileResult.status === 'fulfilled') {
+          setAdminUser(profileResult.value || null);
+        }
+        // Rejections (e.g. 401) already handled by the apiClient response
+        // interceptor (which dispatches to setAdminLogoutFn for
+        // /api/admin/* requests).
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -102,6 +113,7 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
 
   const value: AdminAuthContextValue = {
     user,
+    adminUser,
     token,
     loading,
     isAuthenticated: Boolean(token),

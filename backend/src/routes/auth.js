@@ -1193,6 +1193,10 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
       // existing client that doesn't send business_type continues to
       // create a single-brand tenant.)
       businessType,
+      // restaurant_kind selector ('physical' | 'cloud_kitchen') — distinct
+      // from business_type (brand-multiplicity). deliveryZones is only
+      // meaningful for cloud_kitchen tenants and is ignored otherwise.
+      restaurantKind, deliveryZones,
       wabaId, phoneNumberId, displayPhoneNumber, catalogId,
     } = req.body;
 
@@ -1200,6 +1204,10 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
       return res.status(400).json({ error: 'Name, phone and restaurant name are required' });
 
     const normalizedType = businessType === 'multi' ? 'multi' : 'single';
+    const normalizedKind = restaurantKind === 'cloud_kitchen' ? 'cloud_kitchen' : 'physical';
+    // Default 'physical' covers legacy clients + omitted body — keeps the
+    // pre-restaurant_kind onboarding contract working without callers being
+    // forced to send the field.
 
     // Resolve store slug with this priority:
     //   1. Keep existing real slug (e.g., "beyond-snacks") — never break a live URL
@@ -1219,11 +1227,18 @@ router.post('/onboarding', requireAuth, express.json(), async (req, res) => {
     }
     const storeUrl = `${process.env.BASE_URL}/store/${storeSlug}`;
 
+    // restaurant_kind sits alongside business_type (brand multiplicity);
+    // delivery_zones is only populated for cloud_kitchen tenants so reads
+    // never need optional-chaining on the field's presence.
     const $set = {
       owner_name: ownerName, phone, business_name: brandName, brand_name: brandName,
       restaurant_type: restaurantType || 'both', city: city || null,
       store_slug: storeSlug, store_url: storeUrl,
       business_type: normalizedType,
+      restaurant_kind: normalizedKind,
+      delivery_zones: normalizedKind === 'cloud_kitchen' && Array.isArray(deliveryZones)
+        ? deliveryZones.map((z) => String(z).trim()).filter(Boolean)
+        : (normalizedKind === 'cloud_kitchen' ? [] : []),
       approval_status: 'pending', onboarding_step: 2, updated_at: new Date(),
     };
     if (gstNumber) $set.gst_number = gstNumber;
@@ -2464,6 +2479,59 @@ async function requireAuth(req, res, next) {
   }
 }
 
+// ─── ADMIN RBAC FACTORIES ─────────────────────────────────────
+// Composable role/city gates for the admin surface. Both return an
+// array so they can be spread into a route definition together with the
+// underlying admin-auth check:
+//
+//   router.get('/path', ...requireRole(['super_admin']), handler)
+//
+// The first element is `requireAdminAuth()` from middleware/adminAuth.js
+// (NOT the restaurant-side requireAuth above) because it is the
+// middleware that populates `req.adminUser` from the admin_users
+// collection. The factory's own check then reads `req.adminUser.role`
+// or `.cities`. Lazy-required to avoid a circular import (adminAuth
+// itself does not depend on this file).
+function requireRole(allowedRoles) {
+  const list = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
+  const { requireAdminAuth } = require('../middleware/adminAuth');
+  return [
+    requireAdminAuth(),
+    (req, res, next) => {
+      const role = req.adminUser?.role;
+      if (!role || !list.includes(role)) {
+        return res.status(403).json({ error: 'Forbidden: role not permitted' });
+      }
+      next();
+    },
+  ];
+}
+
+// City-scoped gate. super_admin always passes; city_ops must have
+// `cityIdParamName`'s value in their `cities` array (compared as
+// strings so ObjectId/UUID/string IDs all match). sales falls through
+// to a 403 — sales role has no city-scoped data access by design.
+function requireCityAccess(cityIdParamName) {
+  const { requireAdminAuth } = require('../middleware/adminAuth');
+  return [
+    requireAdminAuth(),
+    (req, res, next) => {
+      const adminUser = req.adminUser;
+      if (!adminUser) return res.status(403).json({ error: 'Forbidden' });
+      if (adminUser.role === 'super_admin') return next();
+      if (adminUser.role !== 'city_ops') {
+        return res.status(403).json({ error: 'Forbidden: city access not permitted' });
+      }
+      const requested = String(req.params?.[cityIdParamName] ?? '');
+      const allowed = (adminUser.cities || []).map((c) => String(c));
+      if (!requested || !allowed.includes(requested)) {
+        return res.status(403).json({ error: 'Forbidden: city not assigned' });
+      }
+      next();
+    },
+  ];
+}
+
 // ─── OWNER-ONLY MIDDLEWARE ────────────────────────────────────
 // Lightweight auth gate for the owner mobile dashboard, signed at
 // POST /api/restaurant/owner/login. Distinct from requireAuth above
@@ -2543,4 +2611,4 @@ async function requireApproved(req, res, next) {
   }
 }
 
-module.exports = { router, requireAuth, requireOwnerAuth, requireApproved, requirePermission, ROLE_PERMISSIONS, ensureOwnerUser, seedPlatformFlowAssignment, _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };
+module.exports = { router, requireAuth, requireOwnerAuth, requireApproved, requirePermission, requireRole, requireCityAccess, ROLE_PERMISSIONS, ensureOwnerUser, seedPlatformFlowAssignment, _registerPhoneNumber, _provisionWabaCatalog, _enableCommerceSettings, _linkCatalogToBranches };

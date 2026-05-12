@@ -12,6 +12,7 @@ interface PgOnboardProps {
 }
 
 type RestaurantTypeChoice = 'veg' | 'non_veg' | 'both';
+type RestaurantKindChoice = 'physical' | 'cloud_kitchen';
 
 interface OnboardingResponse {
   submitted?: boolean;
@@ -28,6 +29,10 @@ export default function PgOnboard({ onLogout, onAdvance, onBrandNameChange }: Pg
   const [brandName, setBrandName] = useState<string>(user?.brand_name || '');
   const [city, setCity] = useState<string>(user?.city || '');
   const [restaurantType, setRestaurantType] = useState<RestaurantTypeChoice>(user?.restaurant_type || 'both');
+  const [restaurantKind, setRestaurantKind] = useState<RestaurantKindChoice>(
+    (user?.restaurant_kind as RestaurantKindChoice | undefined) || 'physical'
+  );
+  const [deliveryZones, setDeliveryZones] = useState<string>('');
   const [gstNumber, setGstNumber] = useState<string>(user?.gst_number || '');
   const [fssaiLicense, setFssaiLicense] = useState<string>(user?.fssai_license || '');
 
@@ -50,6 +55,12 @@ export default function PgOnboard({ onLogout, onAdvance, onBrandNameChange }: Pg
         city: city.trim(),
         gstNumber: gstNumber.trim().toUpperCase() || null,
         fssaiLicense: fssaiLicense.trim() || null,
+        restaurantKind,
+        // Only send zones for cloud kitchens; physical restaurants don't
+        // define delivery zones at onboarding time.
+        deliveryZones: restaurantKind === 'cloud_kitchen'
+          ? deliveryZones.split('\n').map((s) => s.trim()).filter(Boolean)
+          : undefined,
       });
       const data = resp.data as OnboardingResponse | undefined;
       if (data?.submitted) {
@@ -102,6 +113,46 @@ export default function PgOnboard({ onLogout, onAdvance, onBrandNameChange }: Pg
           </div>
 
           <form onSubmit={handleSubmit}>
+            <div className="ob-section">
+              <div className="ob-section-title">What type of kitchen do you run?</div>
+              <div className="fld">
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="restaurant_kind"
+                      value="physical"
+                      checked={restaurantKind === 'physical'}
+                      onChange={() => setRestaurantKind('physical')}
+                      className="mt-1"
+                    />
+                    <span>
+                      <strong>Physical Restaurant</strong>
+                      <span className="block text-sm text-mute">
+                        Customers can dine in or pick up from a storefront.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="restaurant_kind"
+                      value="cloud_kitchen"
+                      checked={restaurantKind === 'cloud_kitchen'}
+                      onChange={() => setRestaurantKind('cloud_kitchen')}
+                      className="mt-1"
+                    />
+                    <span>
+                      <strong>Cloud Kitchen</strong>
+                      <span className="block text-sm text-mute">
+                        Delivery-only kitchen — no walk-in customers.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
             <div className="ob-section">
               <div className="fld-row">
                 <div className="fld">
@@ -161,6 +212,20 @@ export default function PgOnboard({ onLogout, onAdvance, onBrandNameChange }: Pg
                   </select>
                 </div>
               </div>
+              {restaurantKind === 'cloud_kitchen' && (
+                <div className="fld">
+                  <label>
+                    Delivery Zones{' '}
+                    <span className="font-normal text-mute">(one zone per line — areas you deliver to)</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    placeholder={'Banjara Hills\nJubilee Hills\nMadhapur'}
+                    value={deliveryZones}
+                    onChange={(e) => setDeliveryZones(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="ob-section">

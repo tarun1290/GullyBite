@@ -521,6 +521,46 @@ const _createOrderImpl = async ({ convId, customerId, branchId, cart, subtotalRs
       } catch (err) {
         log.warn({ err, customerId, referralId }, 'captain stamp dispatch failed');
       }
+
+      // ─── Captain-attributed conversion signal ────────────────────
+      // Fire-and-forget user_signals write so the city captain dashboard's
+      // funnel + leaderboard can attribute this order to the listing that
+      // generated the GBREF. listing_id is stored on the referral_links
+      // row at creation time (captainHandler / captainReengagement). Never
+      // await — a missing referral_links row, missing listing_id, or any
+      // collection write failure must NOT roll back the order.
+      if (referral?.source === 'city_captain' || referral?.source === 'city_captain_reengagement') {
+        setImmediate(() => {
+          (async () => {
+            try {
+              const link = await col('referral_links').findOne(
+                { code: referral.referral_code },
+                { projection: { listing_id: 1 } },
+              );
+              if (!link?.listing_id) return; // older codes lack the field — silently skip
+              await col('user_signals').insertOne({
+                _id: newId(),
+                customer_id: customerId,
+                city_id: null, // not in scope here; the listing lookup below is optional
+                session_id: null,
+                listing_id: String(link.listing_id),
+                action: 'gbref_order_attributed',
+                context: {
+                  referral_id: String(referralId),
+                  referral_code: referral.referral_code,
+                  referral_source: referral.source,
+                  order_id: String(orderId),
+                  order_subtotal_rs: subtotalRs,
+                },
+                schema_version: 1,
+                ts: new Date(),
+              });
+            } catch (err) {
+              log.warn({ err, referralId, orderId }, 'gbref_order_attributed signal write failed (swallowed)');
+            }
+          })();
+        });
+      }
     }
 
     if (cart.length) {

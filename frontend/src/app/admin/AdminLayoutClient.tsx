@@ -17,6 +17,9 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Campaign Tpls', icon: '✨',       path: '/admin/campaign-templates' },
   { label: 'Applications',  icon: '📝', path: '/admin/applications' },
   { label: 'Restaurants',   icon: '🏪', path: '/admin/restaurants' },
+  { label: 'Cities',        icon: '🏙️', path: '/admin/cities' },
+  { label: 'Tag Candidates', icon: '🏷️', path: '/admin/tag-candidates' },
+  { label: 'Captain Logs',  icon: '📜', path: '/admin/captain-logs' },
   { label: 'Directory',     icon: '📖', path: '/admin/directory' },
   { label: 'Orders',        icon: '📦', path: '/admin/orders' },
   { label: 'Customers',     icon: '👥', path: '/admin/customers' },
@@ -44,6 +47,34 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Platform Settings',  icon: '⚙️',  path: '/admin/settings' },
 ];
 
+// City Ops nav — city captains today see exactly the Cities surface
+// (backend scopes the list to adminUser.cities for that role).
+// `/admin/tag-candidates` is super_admin-only and stays out of this
+// allowlist.
+const CITY_OPS_PATHS: ReadonlySet<string> = new Set<string>([
+  '/admin/cities',
+]);
+
+// Sales nav — read-only access to captain analytics + the restaurant
+// list. Items keep their original icons but are relabeled with a
+// "(read-only)" suffix so the constraint is visible in the sidebar.
+const SALES_PATHS: ReadonlySet<string> = new Set<string>([
+  '/admin/analytics',
+  '/admin/restaurants',
+]);
+
+function navItemsForRole(role: string | undefined | null): NavItem[] {
+  if (role === 'city_ops') {
+    return NAV_ITEMS.filter((n) => CITY_OPS_PATHS.has(n.path));
+  }
+  if (role === 'sales') {
+    return NAV_ITEMS
+      .filter((n) => SALES_PATHS.has(n.path))
+      .map((n) => ({ ...n, label: `${n.label} (read-only)` }));
+  }
+  return NAV_ITEMS;
+}
+
 const TITLE_BY_PATH: Record<string, string> = Object.fromEntries(
   NAV_ITEMS.map((n) => [n.path, n.label]),
 );
@@ -51,7 +82,7 @@ const TITLE_BY_PATH: Record<string, string> = Object.fromEntries(
 interface AdminShellProps { children: ReactNode }
 
 function AdminShell({ children }: AdminShellProps) {
-  const { logout } = useAdminAuth();
+  const { logout, adminUser } = useAdminAuth();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
 
@@ -60,11 +91,12 @@ function AdminShell({ children }: AdminShellProps) {
   }, [pathname]);
 
   const title = TITLE_BY_PATH[pathname || ''] || 'Admin';
+  const navItems = navItemsForRole(adminUser?.role);
 
   return (
     <div id="pg-admin" className="flex min-h-screen">
       <Sidebar
-        navItems={NAV_ITEMS}
+        navItems={navItems}
         onLogout={logout}
         brandLabel="GullyBite Admin"
         brandIcon={'⚡'}

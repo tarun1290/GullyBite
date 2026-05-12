@@ -283,31 +283,87 @@ export function StaffProvider({ children }: { children: ReactNode }): React.Reac
   // then runs /me if a token exists. Owner sessions skip the /me call
   // (no staff record to fetch) so refresh() short-circuits via the
   // staffUser-null branch and meLoading flips to false immediately.
+  //
+  // Hardening (post-startup-crash 2026-05-12): the Promise.all below
+  // fans out six expo-secure-store reads. If ANY one rejects (native
+  // module init race on first launch, keystore not ready, permission
+  // denied, etc.) the original unguarded await stalled the effect
+  // forever — isLoading never flipped, _layout.tsx blocked render, and
+  // Android killed the app ~20s later (looked like "crash past
+  // splash"). The wrap below: (a) 5s timeout via Promise.race, (b)
+  // outer try/catch, and (c) on either failure mode, dispatch
+  // HYDRATED with all-null payload (same shape the reducer already
+  // handles for an unauthenticated user) so the splash dismisses and
+  // the app lands on the login screen. The success path is identical
+  // to before — only the failure / timeout edge becomes recoverable.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [token, staffInfo, rest, role, owner, currentBranch] = await Promise.all([
-        getToken(),
-        getStaffInfo(),
-        getRestaurant(),
-        getRole(),
-        getOwnerInfo(),
-        getCurrentBranch(),
-      ]);
-      if (cancelled) return;
-      dispatch({
-        type: 'HYDRATED',
-        token,
-        staffUser: staffInfo,
-        restaurant: rest,
-        role,
-        ownerInfo: owner,
-        currentBranchId: currentBranch,
+      const HYDRATE_TIMEOUT_MS = 5000;
+      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(
+          () => reject(new Error(`hydrate timed out after ${HYDRATE_TIMEOUT_MS}ms`)),
+          HYDRATE_TIMEOUT_MS,
+        );
       });
-      // Owner sessions: no /me to run; staff stays null.
-      if (token && role !== 'owner') {
-        await refresh();
-      } else {
+      try {
+        const [token, staffInfo, rest, role, owner, currentBranch] = (await Promise.race([
+          Promise.all([
+            getToken(),
+            getStaffInfo(),
+            getRestaurant(),
+            getRole(),
+            getOwnerInfo(),
+            getCurrentBranch(),
+          ]),
+          timeoutPromise,
+        ])) as [
+          string | null,
+          StoredStaffUser | null,
+          StoredRestaurant | null,
+          UserRole | null,
+          StoredOwnerInfo | null,
+          CurrentBranchSelection | null,
+        ];
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (cancelled) return;
+        dispatch({
+          type: 'HYDRATED',
+          token,
+          staffUser: staffInfo,
+          restaurant: rest,
+          role,
+          ownerInfo: owner,
+          currentBranchId: currentBranch,
+        });
+        // Owner sessions: no /me to run; staff stays null.
+        if (token && role !== 'owner') {
+          await refresh();
+        } else {
+          setMeLoading(false);
+        }
+      } catch (err) {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        if (cancelled) return;
+        // Belt-and-braces: never let a hydrate failure stall the
+        // splash. Dispatch HYDRATED with empty payload (same path the
+        // reducer takes for an unauthenticated first-launch) and force
+        // meLoading false. Log so device-side diagnostics can find the
+        // underlying cause via `adb logcat | grep staff-hydrate`.
+        console.warn(
+          '[staff-hydrate] failed:',
+          (err as Error)?.message || String(err),
+        );
+        dispatch({
+          type: 'HYDRATED',
+          token: null,
+          staffUser: null,
+          restaurant: null,
+          role: null,
+          ownerInfo: null,
+          currentBranchId: null,
+        });
         setMeLoading(false);
       }
     })();

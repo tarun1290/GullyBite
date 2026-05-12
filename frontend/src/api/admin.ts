@@ -5,10 +5,20 @@ import type {
   AdminPlatformAbsorbedFee,
   AdminRestaurant,
   AdminRestaurantFaultFee,
+  AdminUser,
   AuthResponse,
   AuthUser,
+  CaptainLogListResponse,
+  CityAnalytics,
+  CityDoc,
+  CityInterestLeaderboard,
+  CityListing,
+  CityWabaMeta,
+  ListingAnalytics,
+  MetaPhoneNumber,
   QueryParams,
   RequestBody,
+  TagTaxonomy,
 } from '../types';
 
 // Mirrors frontend/src/api/admin.js (143 exports). Same names, methods,
@@ -39,6 +49,149 @@ export async function adminSetup(email: string, password: string, name: string):
 
 export async function getAdminMe(): Promise<AuthUser> {
   const { data } = await client.get<AuthUser>('/api/admin/auth/me');
+  return data;
+}
+
+// RBAC profile — returns the admin_users document for the current
+// session. Distinct from getAdminMe() above (which hits the legacy
+// /api/admin/auth/me login-shape endpoint); this one is the source of
+// truth for role + cities + is_active gating in the dashboard.
+export async function getAdminProfile(): Promise<AdminUser> {
+  const { data } = await client.get<AdminUser>('/api/admin/me');
+  return data;
+}
+
+// ── Cities + RBAC management ────────────────────────────────────────
+
+export async function getCities(): Promise<CityDoc[]> {
+  const { data } = await client.get<CityDoc[]>('/api/admin/cities');
+  return data;
+}
+
+export async function createCity(body: {
+  name: string;
+  slug?: string;
+  phone_number_id: string;
+  waba_id?: string | null;
+  display_name?: string;
+  areas?: string[];
+}): Promise<CityDoc> {
+  const { data } = await client.post<CityDoc>('/api/admin/cities', body);
+  return data;
+}
+
+export async function getCityDetail(slug: string): Promise<CityDoc> {
+  const { data } = await client.get<CityDoc>(`/api/admin/cities/${encodeURIComponent(slug)}`);
+  return data;
+}
+
+export async function updateCity(
+  slug: string,
+  body: Partial<Pick<CityDoc, 'name' | 'display_name' | 'status' | 'areas' | 'phone_number_id' | 'waba_id' | 'editorial_config'>>,
+): Promise<CityDoc> {
+  const { data } = await client.patch<CityDoc>(`/api/admin/cities/${encodeURIComponent(slug)}`, body);
+  return data;
+}
+
+export async function getMetaPhoneNumbers(): Promise<MetaPhoneNumber[]> {
+  const { data } = await client.get<MetaPhoneNumber[]>('/api/admin/cities/meta-phone-numbers');
+  return data;
+}
+
+// Forces a fresh fetch of the city's WABA phone-number projection from
+// the Meta Graph API and persists it on the city doc under `meta`.
+// Returns the refreshed projection (display_phone_number, verified_name,
+// quality_rating, status, refreshed_at).
+export async function refreshCityWabaStatus(slug: string): Promise<CityWabaMeta> {
+  const { data } = await client.post<CityWabaMeta>(
+    `/api/admin/cities/${encodeURIComponent(slug)}/refresh-waba-status`,
+  );
+  return data;
+}
+
+export interface CityListingListParams {
+  status?: string;
+  fulfillment_mode?: string;
+  business_type?: string;
+  research_status?: string;
+  area?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface CityListingListResponse {
+  total: number;
+  page: number;
+  limit: number;
+  results: CityListing[];
+}
+
+export async function getCityListings(
+  slug: string,
+  params: CityListingListParams = {},
+): Promise<CityListingListResponse> {
+  const { data } = await client.get<CityListingListResponse>(
+    `/api/admin/cities/${encodeURIComponent(slug)}/listings`,
+    { params },
+  );
+  return data;
+}
+
+export async function getCityListingDetail(
+  slug: string,
+  listingId: string,
+): Promise<CityListing & { latest_snapshot: unknown }> {
+  const { data } = await client.get<CityListing & { latest_snapshot: unknown }>(
+    `/api/admin/cities/${encodeURIComponent(slug)}/listings/${encodeURIComponent(listingId)}`,
+  );
+  return data;
+}
+
+export interface MenuSnapshotDetail {
+  _id: string;
+  listing_id: string;
+  city_id: string;
+  source: string;
+  sources_cited: string[];
+  raw_extracted_texts?: Array<{ url: string; text: string }>;
+  extracted_items?: unknown[];
+  tags: Record<string, unknown> | null;
+  confidence_scores: Record<string, number> | null;
+  status: string;
+  is_live: boolean;
+  created_at: string;
+  schema_version?: number;
+}
+
+export async function getCityListingSnapshotDetail(
+  slug: string,
+  listingId: string,
+  snapshotId: string,
+): Promise<MenuSnapshotDetail> {
+  const { data } = await client.get<MenuSnapshotDetail>(
+    `/api/admin/cities/${encodeURIComponent(slug)}/listings/${encodeURIComponent(listingId)}/snapshots/${encodeURIComponent(snapshotId)}`,
+  );
+  return data;
+}
+
+export async function getAdminTaxonomy(): Promise<TagTaxonomy> {
+  const { data } = await client.get<TagTaxonomy>('/api/admin/taxonomy');
+  return data;
+}
+
+// ── Captain Inbound Logs ────────────────────────────────────────────
+
+export interface CaptainLogQuery {
+  city_id?: string;
+  had_error?: 'true' | 'false';
+  from?: string;
+  to?: string;
+  page?: number;
+  limit?: number;
+}
+
+export async function getCaptainLogs(params: CaptainLogQuery = {}): Promise<CaptainLogListResponse> {
+  const { data } = await client.get<CaptainLogListResponse>('/api/admin/captain-logs', { params });
   return data;
 }
 
@@ -1023,5 +1176,57 @@ export async function updatePlatformPricing(
     '/api/admin/platform/pricing',
     body,
   );
+  return data;
+}
+
+// ── Captain analytics ──────────────────────────────────────────────
+// City-level rollups (activity stats + interest leaderboard) and a
+// per-listing funnel + 14-day daily time series. The `days` query
+// parameter is optional — omit it so the backend's default window
+// (7 days) takes effect.
+
+export async function getCityAnalytics(slug: string, days?: number): Promise<CityAnalytics> {
+  const params: Record<string, number> = {};
+  if (typeof days === 'number') params.days = days;
+  const { data } = await client.get<CityAnalytics>(`/api/admin/cities/${encodeURIComponent(slug)}/analytics`, { params });
+  return data;
+}
+
+export async function getCityInterestLeaderboard(slug: string, days?: number): Promise<CityInterestLeaderboard> {
+  const params: Record<string, number> = {};
+  if (typeof days === 'number') params.days = days;
+  const { data } = await client.get<CityInterestLeaderboard>(`/api/admin/cities/${encodeURIComponent(slug)}/interest-leaderboard`, { params });
+  return data;
+}
+
+// Trigger a browser download of the captain leaderboard CSV. Receives
+// the response as a Blob, constructs a temporary anchor with
+// download={filename}, clicks it, then revokes the object URL.
+// Returns the filename used so callers can showToast it if desired.
+export async function exportLeaderboard(slug: string, days?: number): Promise<string> {
+  const params: Record<string, number> = {};
+  if (typeof days === 'number') params.days = days;
+  const resp = await client.get<Blob>(
+    `/api/admin/cities/${encodeURIComponent(slug)}/interest-leaderboard/export`,
+    { params, responseType: 'blob' },
+  );
+  const blob = resp.data;
+  const today = new Date().toISOString().slice(0, 10);
+  const filename = `captain-leads-${slug}-${today}.csv`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return filename;
+}
+
+export async function getListingAnalytics(slug: string, listingId: string, days?: number): Promise<ListingAnalytics> {
+  const params: Record<string, number> = {};
+  if (typeof days === 'number') params.days = days;
+  const { data } = await client.get<ListingAnalytics>(`/api/admin/cities/${encodeURIComponent(slug)}/listings/${encodeURIComponent(listingId)}/analytics`, { params });
   return data;
 }

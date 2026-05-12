@@ -269,6 +269,7 @@ app.use('/auth', jsonAndSanitize(), authRouter);
 // Mounted BEFORE auth-gated mounts so the customer's WhatsApp link works
 // without login.
 app.use('/api/review-redirect', require('./src/routes/reviewRedirect'));
+app.use('/r', require('./src/routes/gbrefRedirect'));
 
 // Self-hosted Expo OTA. Mounted ABOVE the /api/restaurant + /api/admin
 // auth gate (line ~274) because GET /api/ota/manifest must be public
@@ -328,6 +329,11 @@ app.use('/api/restaurant/marketing-analytics', jsonAndSanitize(), _marketingAnal
 // down with the staff-app routes; A and B share services/staffAuth.js
 // (PIN gen + sanitizeStaff) but own different mount paths.
 app.use('/api/restaurant/staff', jsonAndSanitize(), require('./src/routes/restaurantStaff'));
+// Captain-facing restaurant routes — claim/manage city listing and
+// see captain analytics. Mounted BEFORE the catch-all /api/restaurant
+// so /api/restaurant/captain/* resolves here, not into the legacy
+// restaurant router.
+app.use('/api/restaurant/captain', jsonAndSanitize(), require('./src/routes/captainRestaurant'));
 // Catch-all /api/restaurant router — must be LAST of the /api/restaurant/* group.
 app.use('/api/restaurant', jsonAndSanitize({ limit: '10mb' }), require('./src/routes/restaurant'));
 
@@ -348,6 +354,17 @@ app.use('/api/staff/auth', require('./src/routes/staffAuth'));
 // Staff POS router applies body parsers per-route — /stream is SSE and must
 // not be consumed by a top-level express.json().
 app.use('/api/staff', require('./src/routes/staff'));
+// RBAC admin user CRUD (super_admin only). MUST mount BEFORE the
+// legacy /api/admin router so GET /me, GET/POST /users, and
+// PATCH/DELETE /users/:id resolve here — the legacy router still
+// owns the rest of /api/admin/*.
+app.use('/api/admin', jsonAndSanitize(), require('./src/routes/adminUsers'));
+// City-listing CRUD lives at /api/admin/cities/:slug/listings — mount
+// before cities.js so /:slug/listings/* routes resolve here rather than
+// falling through cities.js's lighter handlers.
+app.use('/api/admin/cities', jsonAndSanitize(), require('./src/routes/cityListings'));
+app.use('/api/admin/cities', jsonAndSanitize(), require('./src/routes/cities'));
+app.use('/api/admin/tag-candidates', jsonAndSanitize(), require('./src/routes/tagCandidates'));
 app.use('/api/admin', jsonAndSanitize(), require('./src/routes/admin'));
 app.use('/api/admin/pincodes', jsonAndSanitize(), require('./src/routes/adminPincodes'));
 app.use('/api/customer', jsonAndSanitize(), require('./src/routes/customer'));
@@ -618,6 +635,31 @@ connect().then(() => {
       console.log('[EC2] post-payment jobs poller started');
     } catch (err) {
       console.error('[EC2] post-payment jobs poller setup failed:', err.message);
+    }
+    // BullMQ menu-research queue — fires city-listing tag/menu research
+    // via the menuResearchAgent. Gated on GOOGLE_SEARCH_API_KEY so that
+    // installations without Custom Search credentials don't spin up a
+    // worker that would warn on every job.
+    if (process.env.GOOGLE_SEARCH_API_KEY) {
+      try {
+        require('./src/jobs/menuResearchWorker').start();
+        console.log('[EC2] BullMQ menu-research worker started');
+      } catch (err) {
+        console.error('[EC2] BullMQ menu-research worker setup failed:', err.message);
+      }
+    } else {
+      console.log('[EC2] BullMQ menu-research worker: disabled (GOOGLE_SEARCH_API_KEY not set)');
+    }
+    // BullMQ notify-reengagement queue — fires when a city_listings doc
+    // flips to fulfillment_mode='handoff' with a linked restaurant. No
+    // env-key gate: re-engagement doesn't need an external API key, and
+    // the template-APPROVED check inside the service already prevents
+    // accidental sends pre-launch.
+    try {
+      require('./src/jobs/notifyReengagementWorker').start();
+      console.log('[EC2] BullMQ notify-reengagement worker started');
+    } catch (err) {
+      console.error('[EC2] BullMQ notify-reengagement worker setup failed:', err.message);
     }
   } else {
     console.log('[EC2] BullMQ orders queue: disabled (REDIS_URL not set)');

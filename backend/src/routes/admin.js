@@ -27,6 +27,7 @@ const log = require('../utils/logger').child({ component: 'admin' });
 // ─── AUTH MIDDLEWARE (RBAC) ───────────────────────────────────
 const bcrypt = require('bcryptjs');
 const { requireAdminAuth, signAdminToken } = require('../middleware/adminAuth');
+const { requireRole } = require('./auth');
 const { rateLimitFn } = require('../middleware/rateLimit');
 
 // Legacy compatibility: simple requireAdmin still works for existing route-level guards
@@ -281,6 +282,65 @@ router.patch('/platform/pricing', requireAdmin, express.json(), async (req, res)
 
     res.json({ markup_multiplier: n, updated_at: now, updated_by: updatedBy });
   } catch (e) { res.status(500).json({ success: false, message: 'Internal server error' }); }
+});
+
+// ─── TAG TAXONOMY (read-only platform_settings._id='tag_taxonomy') ──
+// Returns the raw taxonomy doc consumed by menuTagger / captainHandler.
+router.get('/taxonomy', ...requireRole(['super_admin', 'city_ops']), async (req, res) => {
+  try {
+    const doc = await col('platform_settings').findOne({ _id: 'tag_taxonomy' });
+    if (!doc) return res.status(404).json({ error: 'taxonomy not seeded' });
+    return res.json(doc);
+  } catch (e) {
+    log.error({ err: e }, 'GET /api/admin/taxonomy failed');
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ─── CAPTAIN INBOUND LOGS (paginated, last 30 days via TTL) ──────
+// Filters: city_id, had_error (true|false), from/to (ISO ts range),
+// page, limit. Enriches each row with city_name in one round-trip.
+router.get('/captain-logs', ...requireRole(['super_admin', 'city_ops']), async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const filter = {};
+    if (req.query.city_id) filter.city_id = String(req.query.city_id);
+    if (req.query.had_error === 'true') filter.had_error = true;
+    else if (req.query.had_error === 'false') filter.had_error = false;
+    const tsRange = {};
+    if (req.query.from) {
+      const d = new Date(String(req.query.from));
+      if (!isNaN(d.getTime())) tsRange.$gte = d;
+    }
+    if (req.query.to) {
+      const d = new Date(String(req.query.to));
+      if (!isNaN(d.getTime())) tsRange.$lte = d;
+    }
+    if (Object.keys(tsRange).length > 0) filter.ts = tsRange;
+
+    const [total, rows] = await Promise.all([
+      col('captain_inbound_logs').countDocuments(filter),
+      col('captain_inbound_logs').find(filter).sort({ ts: -1 }).skip((page - 1) * limit).limit(limit).toArray(),
+    ]);
+
+    // Enrich with city name in one round-trip.
+    const cityIds = [...new Set(rows.map((r) => r.city_id).filter(Boolean))];
+    const cities = cityIds.length
+      ? await col('cities').find({ _id: { $in: cityIds } }, { projection: { name: 1 } }).toArray()
+      : [];
+    const cityNameById = new Map(cities.map((c) => [String(c._id), c.name]));
+
+    const results = rows.map((r) => ({
+      ...mapId(r),
+      city_name: cityNameById.get(String(r.city_id)) || null,
+    }));
+
+    res.json({ total, page, limit, results });
+  } catch (err) {
+    log.error({ err }, 'GET /api/admin/captain-logs failed');
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ─── ADMIN USER MANAGEMENT (super_admin only) ────────────────

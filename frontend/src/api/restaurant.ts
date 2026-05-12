@@ -6,12 +6,16 @@ import type {
   BranchHours,
   BranchStaffLink,
   Campaign,
+  CaptainListingStatus,
+  CaptainSuggestion,
   MenuAllResponse,
   Order,
   PenaltiesSummary,
   QueryParams,
   RequestBody,
   Restaurant,
+  RestaurantReferralLinksResponse,
+  RestaurantReferralsResponse,
   SegmentAnalytics,
 } from '../types';
 
@@ -296,19 +300,24 @@ export async function deleteCoupon(id: string): Promise<unknown> {
   return data;
 }
 
-export async function getReferrals(): Promise<unknown> {
-  const { data } = await client.get('/api/restaurant/referrals');
+export async function getReferrals(): Promise<RestaurantReferralsResponse> {
+  const { data } = await client.get<RestaurantReferralsResponse>('/api/restaurant/referrals');
   return data;
 }
 
-export async function getReferralLinks(): Promise<unknown> {
-  const { data } = await client.get('/api/restaurant/referrals/links');
+export async function getReferralLinks(): Promise<RestaurantReferralLinksResponse> {
+  const { data } = await client.get<RestaurantReferralLinksResponse>('/api/restaurant/referrals/links');
   return data;
 }
 
-export async function requestReferralLink(campaignName?: string): Promise<unknown> {
+export async function requestReferralLink(
+  campaignName?: string,
+): Promise<{ success?: boolean; already_pending?: boolean; message?: string }> {
   const body: RequestBody = campaignName ? { campaign_name: campaignName } : {};
-  const { data } = await client.post('/api/restaurant/referrals/links/request', body);
+  const { data } = await client.post<{ success?: boolean; already_pending?: boolean; message?: string }>(
+    '/api/restaurant/referrals/links/request',
+    body,
+  );
   return data;
 }
 
@@ -1226,5 +1235,42 @@ export async function getStaffedBranches(): Promise<{
     total_branches: number;
     all_staffed: boolean;
   }>('/api/restaurant/staffed-branches');
+  return data;
+}
+
+// ── Captain ─────────────────────────────────────────────────────
+// Restaurant-side surface for the city-captain feature. Mounted at
+// /api/restaurant/captain on the backend (see Subagent A). The
+// listing GET returns a discriminated union — { linked:false } when
+// the merchant hasn't claimed a city listing yet, otherwise the
+// linked CityListing with its parent city projection. /suggested
+// powers the "is this you?" picker on the unlinked state.
+
+export async function getCaptainListing(): Promise<CaptainListingStatus> {
+  const { data } = await client.get<CaptainListingStatus>('/api/restaurant/captain/listing');
+  return data;
+}
+
+export async function getCaptainSuggestedListings(): Promise<CaptainSuggestion[]> {
+  const { data } = await client.get<CaptainSuggestion[]>('/api/restaurant/captain/suggested');
+  return data;
+}
+
+export async function claimCaptainListing(listingId: string): Promise<CaptainSuggestion> {
+  const { data } = await client.post<CaptainSuggestion>(
+    `/api/restaurant/captain/listing/claim/${encodeURIComponent(listingId)}`,
+  );
+  return data;
+}
+
+export interface CaptainListingUpdate {
+  description?: string | null;
+  website_url?: string | null;
+  phone_number?: string | null;
+  delivery_zones?: string[];
+}
+
+export async function updateCaptainListing(body: CaptainListingUpdate): Promise<CaptainSuggestion> {
+  const { data } = await client.patch<CaptainSuggestion>('/api/restaurant/captain/listing', body);
   return data;
 }

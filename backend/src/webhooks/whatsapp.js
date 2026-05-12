@@ -9,8 +9,10 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { col, newId } = require('../config/database');
+const { col, newId, connect } = require('../config/database');
 const wa = require('../services/whatsapp');
+const captainHandler = require('../services/captainHandler');
+const redisClient = require('../queue/redis');
 const location = require('../services/location');
 const metaConfig = require('../config/meta');
 const orderSvc = require('../services/order');
@@ -458,6 +460,39 @@ const processWhatsAppWebhook = async (logId, body) => {
   if (tasks.length) await Promise.allSettled(tasks);
 };
 
+// ─── CITY CAPTAIN PHONE-NUMBER-ID → CITY MAP ─────────────────
+const CAPTAIN_CITY_MAP_KEY = 'captain:city_map';
+const CAPTAIN_CITY_MAP_TTL_SEC = 300;
+
+async function _resolveCaptainCity(phoneNumberId, redisClient) {
+  if (!phoneNumberId) return null;
+  try {
+    const cached = await redisClient.hget(CAPTAIN_CITY_MAP_KEY, String(phoneNumberId));
+    if (cached) return cached;
+    // Cache miss — rebuild from DB.
+    const cities = await col('cities')
+      .find({ status: 'active' }, { projection: { _id: 1, phone_number_id: 1 } })
+      .toArray();
+    if (cities.length === 0) {
+      // Set TTL on the empty key so we don't hammer the DB; nothing to set.
+      await redisClient.expire(CAPTAIN_CITY_MAP_KEY, CAPTAIN_CITY_MAP_TTL_SEC).catch(() => {});
+      return null;
+    }
+    const pipeline = redisClient.pipeline();
+    for (const c of cities) {
+      if (c.phone_number_id) pipeline.hset(CAPTAIN_CITY_MAP_KEY, String(c.phone_number_id), String(c._id));
+    }
+    pipeline.expire(CAPTAIN_CITY_MAP_KEY, CAPTAIN_CITY_MAP_TTL_SEC);
+    await pipeline.exec();
+    // Look up the requested id from the just-built map.
+    const m = cities.find((c) => String(c.phone_number_id) === String(phoneNumberId));
+    return m ? String(m._id) : null;
+  } catch (err) {
+    // Cache fail → don't claim a captain match (let restaurant flow handle).
+    return null;
+  }
+}
+
 // ─── PROCESS A CHANGE OBJECT ──────────────────────────────────
 let _dedupIndexCreated = false;
 const processChange = async (value) => {
@@ -467,6 +502,33 @@ const processChange = async (value) => {
   const msgCount = value.messages?.length || 0;
   const statusCount = value.statuses?.length || 0;
   log.info({ phoneNumberId, msgCount, statusCount }, 'Processing change');
+
+  // ─── CITY CAPTAIN DISPATCHER ─────────────────────────────────
+  // Map phone_number_id → cityId via the captain:city_map Redis hash
+  // (5-minute TTL, lazily rebuilt from `cities` on miss). If a match
+  // is found, route ALL messages in this change to captainHandler and
+  // skip the restaurant-side waAccount lookup entirely. Wrapped in a
+  // try/catch so any captain bug cannot break restaurant inbound flow.
+  try {
+    const cityId = await _resolveCaptainCity(phoneNumberId, redisClient);
+    if (cityId) {
+      log.info({ phoneNumberId, cityId }, 'Routing change to city captain');
+      const db = await connect();
+      for (const msg of value.messages || []) {
+        const contact = (value.contacts || []).find(
+          (c) => c.wa_id === msg.from || c.user_id === msg.from || c.user_id === msg.user_id,
+        );
+        try {
+          await captainHandler.handleInbound(db, redisClient, msg, contact, cityId);
+        } catch (err) {
+          log.error({ err: err.message, msgId: msg.id, cityId }, 'captainHandler.handleInbound threw');
+        }
+      }
+      return;
+    }
+  } catch (err) {
+    log.error({ err: err.message, phoneNumberId }, 'Captain dispatcher failed — falling through to restaurant flow');
+  }
 
   // Ensure dedup TTL index exists (lazy, once)
   if (!_dedupIndexCreated) {

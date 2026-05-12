@@ -1,41 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useCallback } from 'react';
 import useAnalyticsFetch from '../analytics/useAnalyticsFetch';
 import SectionError from '../analytics/SectionError';
-import { useToast } from '../../Toast';
-import { getReferrals, getReferralLinks, requestReferralLink } from '../../../api/restaurant';
+import { getReferrals } from '../../../api/restaurant';
 
-const STATUS_COLOR: Record<string, string> = {
-  active: '#22c55e',
-  converted: '#a78bfa',
-  expired: 'var(--dim)',
-};
-
-// Settlement / commission state colour map. Greens = money realised,
-// amber = awaiting confirmation, red = clawback, dim = already paid.
-const COMMISSION_COLOR: Record<string, string> = {
-  pending: '#f59e0b',
-  confirmed: '#22c55e',
-  settled: 'var(--dim)',
-  reversed: '#ef4444',
-};
-
-interface Referral {
-  id?: string;
-  _id?: string;
-  customer_name?: string;
-  customer_wa_phone?: string;
-  customer_bsuid?: string;
-  status?: string;
-  commission_status?: string;
-  attribution_window_hours?: number;
-  orders_count?: number;
-  total_order_value_rs?: number | string;
-  referral_fee_rs?: number | string;
-  created_at?: string;
-}
-
+// Marketing-page teaser. The full-featured page now lives at
+// /dashboard/referrals — this slim variant only renders the four
+// summary stats plus a deep-link so the marketing tab stays useful
+// without duplicating the management surface.
 interface ReferralsSummary {
   total?: number | string;
   converted?: number | string;
@@ -45,103 +19,17 @@ interface ReferralsSummary {
 
 interface ReferralsResponse {
   summary?: ReferralsSummary;
-  referrals?: Referral[];
-}
-
-interface ReferralLink {
-  id?: string;
-  _id?: string;
-  code?: string;
-  campaign_name?: string | null;
-  wa_link?: string;
-  click_count?: number;
-  status?: string;
-  created_at?: string;
-}
-
-interface ReferralLinksResponse {
-  links?: ReferralLink[];
-}
-
-interface RequestLinkResponse {
-  success?: boolean;
-  already_pending?: boolean;
-  message?: string;
 }
 
 function formatINR(n?: number | string | null): string {
   return parseFloat(String(n || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 });
 }
 
-function formatDate(d?: string): string {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', {
-    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
-
-function shortBsuid(b?: string): string {
-  return b ? `${String(b).slice(0, 12)}…` : '';
-}
-
 export default function ReferralsSection() {
-  const { showToast } = useToast();
   const { data, loading, error, refetch } = useAnalyticsFetch<ReferralsResponse | null>(
     useCallback(() => getReferrals() as Promise<ReferralsResponse | null>, []),
     [],
   );
-
-  // GBREF links: separate fetch on mount so the card can render alongside
-  // the referrals table without coupling either's loading state.
-  const [links, setLinks] = useState<ReferralLink[]>([]);
-  const [linksLoading, setLinksLoading] = useState(true);
-  const [linksError, setLinksError] = useState<string | null>(null);
-  const [requestPending, setRequestPending] = useState(false);
-  const [requesting, setRequesting] = useState(false);
-
-  const loadLinks = useCallback(async () => {
-    setLinksLoading(true);
-    try {
-      const r = (await getReferralLinks()) as ReferralLinksResponse | null;
-      setLinks(Array.isArray(r?.links) ? r!.links! : []);
-      setLinksError(null);
-    } catch (e: unknown) {
-      const er = e as { response?: { data?: { error?: string } }; message?: string };
-      setLinksError(er?.response?.data?.error || er?.message || 'Failed to load referral links');
-      setLinks([]);
-    } finally {
-      setLinksLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadLinks(); }, [loadLinks]);
-
-  const onCopyLink = async (link: string) => {
-    try {
-      await navigator.clipboard.writeText(link);
-      showToast('Link copied!', 'success');
-    } catch {
-      showToast('Copy failed — please copy manually', 'error');
-    }
-  };
-
-  const onRequestLink = async () => {
-    if (requesting || requestPending) return;
-    setRequesting(true);
-    try {
-      const res = (await requestReferralLink()) as RequestLinkResponse | null;
-      setRequestPending(true);
-      showToast(
-        res?.message || 'Request submitted! Your link will be ready within 24 hours.',
-        'success',
-      );
-    } catch (e: unknown) {
-      const er = e as { response?: { data?: { error?: string } }; message?: string };
-      showToast(er?.response?.data?.error || er?.message || 'Request failed', 'error');
-    } finally {
-      setRequesting(false);
-    }
-  };
 
   if (error) {
     return (
@@ -154,198 +42,39 @@ export default function ReferralsSection() {
   }
 
   const summary = data?.summary || {};
-  const referrals = data?.referrals || [];
   const total = Number(summary.total || 0);
   const converted = Number(summary.converted || 0);
-  const convertedPct = total > 0 ? Math.round((converted / total) * 100) : 0;
-  const feeWithGst = parseFloat(String(summary.total_referral_fee_rs || 0)) * 1.18;
 
   return (
-    <div>
-      {/* ── GBREF Link Card ────────────────────────────────────── */}
-      <div className="card mb-5">
-        <div className="ch"><h3>Your City Captain Link</h3></div>
-        <div className="cb">
-          {linksError ? (
-            <SectionError message={linksError} onRetry={loadLinks} />
-          ) : linksLoading ? (
-            <div className="text-dim text-base">Loading…</div>
-          ) : links.length === 0 ? (
-            <div className="flex flex-col gap-2.5">
-              <p className="m-0 text-dim text-base">
-                You don&apos;t have a referral link yet. Once admin generates one, share it with
-                customers — every order placed within 8 hours of clicking earns you tracked credit.
-              </p>
-              <div>
-                <button
-                  type="button"
-                  className="btn-p btn-sm bg-acc text-neutral-0"
-                  onClick={onRequestLink}
-                  disabled={requesting || requestPending}
-                >
-                  {requestPending ? 'Request pending' : requesting ? 'Submitting…' : 'Request Referral Link'}
-                </button>
-              </div>
+    <div className="card">
+      <div className="ch"><h3 className="m-0">Referrals summary</h3></div>
+      <div className="cb">
+        <div className="grid grid-cols-4 gap-2">
+          <div className="stat">
+            <div className="stat-l">Total</div>
+            <div className="stat-v text-base">{loading && !data ? '…' : total}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-l">Converted</div>
+            <div className="stat-v text-base">{loading && !data ? '…' : converted}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-l">Order Value</div>
+            <div className="stat-v text-base">
+              {loading && !data ? '…' : `₹${formatINR(summary.total_order_value_rs)}`}
             </div>
-          ) : (
-            <div className="grid gap-3">
-              {links.map((link) => {
-                const wa = link.wa_link || '';
-                const label = link.campaign_name || 'Default link';
-                return (
-                  <div
-                    key={link.id || link._id || link.code}
-                    className="border border-rim rounded-lg py-3.5 px-4 bg-ink"
-                  >
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <strong className="text-base">{label}</strong>
-                        <span className="bg-[#22c55e22] text-emerald-500 text-xs py-0.5 px-2 rounded-full uppercase font-bold tracking-[0.04em]">
-                          {link.status || 'active'}
-                        </span>
-                      </div>
-                      <span className="text-sm text-dim">
-                        Clicked {link.click_count ?? 0} times
-                      </span>
-                    </div>
-                    <code className="mono block mt-2 text-sm break-all text-dim">
-                      {wa}
-                    </code>
-                    <div className="flex gap-2 mt-3 flex-wrap">
-                      <a
-                        href={wa}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-p btn-sm btn-wa no-underline"
-                      >
-                        📲 Share via WhatsApp
-                      </a>
-                      <button
-                        type="button"
-                        className="btn-g btn-sm"
-                        onClick={() => onCopyLink(wa)}
-                      >
-                        Copy Link
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+          </div>
+          <div className="stat">
+            <div className="stat-l">Commission</div>
+            <div className="stat-v text-base">
+              {loading && !data ? '…' : `₹${formatINR(summary.total_referral_fee_rs)}`}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Headline stats ─────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="card py-4 px-5">
-          <div className="text-2xl font-bold">{loading && !data ? '…' : total}</div>
-          <div className="text-sm text-dim mt-1">Total Referrals</div>
-        </div>
-        <div className="card py-4 px-5">
-          <div className="text-2xl font-bold">
-            {loading && !data ? '…' : `${converted}${total > 0 ? ` (${convertedPct}%)` : ''}`}
-          </div>
-          <div className="text-sm text-dim mt-1">Converted to Orders</div>
-        </div>
-        <div className="card py-4 px-5">
-          <div className="text-2xl font-bold">
-            {loading && !data ? '…' : `₹${formatINR(summary.total_order_value_rs)}`}
-          </div>
-          <div className="text-sm text-dim mt-1">Total Order Value</div>
-        </div>
-        <div className="card py-4 px-5">
-          <div className="text-2xl font-bold text-violet-400">
-            {loading && !data ? '…' : `₹${formatINR(feeWithGst)}`}
-          </div>
-          <div className="text-sm text-dim mt-1">
-            Referral Fees Owed (7.5% + GST)
           </div>
         </div>
-      </div>
-
-      {/* ── Info banner ─────────────────────────────────────────
-          Tightened the wording per the GBREF spec — explicit on the
-          7.5% + GST rate and the settlement deduction. */}
-      <div className="card mb-5 py-3.5 px-5 bg-[#1e1b4b] border border-[#4c1d9544]">
-        <p className="text-sm text-[#c4b5fd] m-0">
-          Customers who click your City Captain link and order within <strong>8 hours</strong> generate a{' '}
-          <strong>7.5% + GST</strong> referral fee, deducted from your weekly settlement.
-        </p>
-      </div>
-
-      <div className="card">
-        <div className="ch"><h3>Referrals Received</h3></div>
-        <div className="cb p-0">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-rim">
-                <th className="py-2.5 px-4 text-left text-dim font-medium">Customer</th>
-                <th className="py-2.5 px-4 text-left text-dim font-medium">Status</th>
-                <th className="py-2.5 px-4 text-left text-dim font-medium">Orders</th>
-                <th className="py-2.5 px-4 text-left text-dim font-medium">Order Value</th>
-                <th className="py-2.5 px-4 text-left text-dim font-medium">Referral Fee</th>
-                <th className="py-2.5 px-4 text-left text-dim font-medium">Commission</th>
-                <th className="py-2.5 px-4 text-left text-dim font-medium">Referred On</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && !data ? (
-                <tr><td colSpan={7} className="p-8 text-center text-dim">Loading…</td></tr>
-              ) : referrals.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-dim">No referrals received yet</td></tr>
-              ) : (
-                referrals.map((r, idx) => (
-                  <tr key={r.id || r._id || idx} className="border-b border-rim">
-                    <td className="py-2.5 px-4">
-                      <div className="font-mono text-sm">
-                        {r.customer_wa_phone || shortBsuid(r.customer_bsuid) || '—'}
-                      </div>
-                      {r.customer_name && (
-                        <div className="text-xs text-dim">{r.customer_name}</div>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <span
-                        className="font-semibold capitalize text-sm"
-                        // colour comes from the per-status STATUS_COLOR
-                        // palette at runtime — Tailwind can't pre-bake
-                        // the dynamic hex.
-                        style={{ color: STATUS_COLOR[r.status || ''] || 'var(--dim)' }}
-                      >
-                        {r.status}
-                      </span>
-                      {r.attribution_window_hours ? (
-                        <span className="text-xs text-dim ml-1">
-                          {r.attribution_window_hours}h window
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="py-2.5 px-4">{r.orders_count}</td>
-                    <td className="py-2.5 px-4">₹{formatINR(r.total_order_value_rs)}</td>
-                    <td className="py-2.5 px-4 text-violet-400 font-semibold">₹{formatINR(r.referral_fee_rs)}</td>
-                    <td className="py-2.5 px-4">
-                      {r.commission_status ? (
-                        <span
-                          className="font-semibold capitalize text-sm"
-                          // colour comes from the per-state
-                          // COMMISSION_COLOR palette at runtime.
-                          style={{ color: COMMISSION_COLOR[r.commission_status] || 'var(--dim)' }}
-                        >
-                          {r.commission_status}
-                        </span>
-                      ) : (
-                        <span className="text-dim text-sm">—</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 px-4 text-sm text-dim">
-                      {formatDate(r.created_at)}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="mt-3">
+          <Link href="/dashboard/referrals" className="text-acc text-sm">
+            View all referrals →
+          </Link>
         </div>
       </div>
     </div>

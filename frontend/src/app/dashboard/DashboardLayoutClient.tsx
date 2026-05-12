@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import ProtectedRoute from '../../components/ProtectedRoute';
 import Sidebar, { type NavItem } from '../../components/Sidebar';
@@ -37,9 +37,23 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Restaurant',          icon: '🏪', path: '/dashboard/restaurant' },
 ];
 
-const TITLE_BY_PATH: Record<string, string> = Object.fromEntries(
-  NAV_ITEMS.map((n) => [n.path, n.label]),
-);
+// Captain surfaces — only shown when WhatsApp is connected, since the
+// captain feature is gated on a working WABA. Spliced in right after
+// Marketing Analytics inside DashboardShell so they sit next to the
+// other analytics surface in the sidebar.
+//
+// The captain-listing page itself still exists at /dashboard/captain-listing
+// (reached from the "Claim your listing" link inside the new referrals
+// page when the merchant is unlinked) — it's just no longer in the
+// sidebar. The referrals surface now subsumes both flows.
+const CAPTAIN_NAV_ITEMS: NavItem[] = [
+  { label: 'GullyBite Referrals', icon: '🔗', path: '/dashboard/referrals' },
+];
+
+const TITLE_BY_PATH: Record<string, string> = {
+  ...Object.fromEntries(NAV_ITEMS.map((n) => [n.path, n.label])),
+  ...Object.fromEntries(CAPTAIN_NAV_ITEMS.map((n) => [n.path, n.label])),
+};
 
 // Mirrors initDash's waConnected computation in dashboard.html:2711.
 function computeWaConnected(rest: Restaurant | null): boolean {
@@ -79,6 +93,26 @@ function DashboardShell({ children }: DashboardShellProps) {
     'Restaurant';
 
   const waConnected = computeWaConnected(restaurant);
+
+  // Splice the captain items right after Marketing Analytics when WA
+  // is connected. Falls back to appending at the end if the marketing
+  // analytics row ever gets removed from NAV_ITEMS, so the captain
+  // surfaces stay reachable even if the surrounding nav layout drifts.
+  const navItems = useMemo<NavItem[]>(() => {
+    if (!waConnected) return NAV_ITEMS;
+    const out: NavItem[] = [];
+    let inserted = false;
+    for (const item of NAV_ITEMS) {
+      out.push(item);
+      if (!inserted && item.path === '/dashboard/marketing-analytics') {
+        out.push(...CAPTAIN_NAV_ITEMS);
+        inserted = true;
+      }
+    }
+    if (!inserted) out.push(...CAPTAIN_NAV_ITEMS);
+    return out;
+  }, [waConnected]);
+
   const approvalStatus = (typeof restaurant?.approval_status === 'string' && restaurant.approval_status) || 'pending';
   // Hide the top banner while the profile is still loading to avoid a flash
   // of "not connected" before the first response arrives.
@@ -88,7 +122,7 @@ function DashboardShell({ children }: DashboardShellProps) {
   return (
     <div id="pg-dash" className="flex min-h-screen">
       <Sidebar
-        navItems={NAV_ITEMS}
+        navItems={navItems}
         onLogout={logout}
         restaurantName={displayName}
         open={sidebarOpen}

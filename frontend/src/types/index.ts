@@ -55,6 +55,284 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
+// RBAC admin user shape returned by GET /api/admin/me. Distinct from
+// AuthUser (which carries the restaurant-side session); fields mirror
+// the admin_users collection projection minus password_hash.
+export interface AdminUser {
+  _id: string;
+  email: string;
+  name: string;
+  role: 'super_admin' | 'city_ops' | 'sales';
+  cities: string[];
+  is_active: boolean;
+}
+
+// ── Cities + RBAC managed catalog ───────────────────────────────────
+// CityDoc mirrors the `cities` collection projection returned by
+// GET /api/admin/cities (list) and /api/admin/cities/:slug (detail).
+// Cities own a WABA phone number and a denormalised area list, plus an
+// optional editorial_config block used by the consumer surfaces.
+export interface CityDoc {
+  _id: string;
+  name: string;
+  slug: string;
+  display_name: string;
+  status: 'setup' | 'active' | 'paused' | 'deleted';
+  phone_number_id: string;
+  waba_id: string | null;
+  areas: string[];
+  listing_count?: number;
+  editorial_config?: {
+    hero_banner_url: string | null;
+    featured_listings: string[];
+    curated_lists: unknown[];
+  };
+  meta?: {
+    display_phone_number?: string | null;
+    verified_name?: string | null;
+    quality_rating?: string | null;
+    status?: string | null;
+    refreshed_at?: string | null;
+  };
+  created_at: string;
+}
+
+// CityWabaMeta — response from POST /api/admin/cities/:slug/refresh-waba-status.
+// Mirrors the persisted `meta` sub-document but with the post-refresh
+// guarantee that `refreshed_at` is always present.
+export interface CityWabaMeta {
+  display_phone_number: string | null;
+  verified_name: string | null;
+  quality_rating: string | null;
+  status: string | null;
+  refreshed_at: string;
+}
+
+// CityListing — one row per restaurant/cloud-kitchen registered under
+// a city. Drives the per-city listings dashboard + the research queue.
+export interface CityListing {
+  _id: string;
+  name: string;
+  slug: string;
+  area: string;
+  business_type: 'physical' | 'cloud_kitchen';
+  status: 'draft' | 'active' | 'paused' | 'deleted';
+  fulfillment_mode: 'notify_only' | 'handoff';
+  research_status: 'pending' | 'in_progress' | 'needs_review' | 'complete' | 'research_failed' | 'no_content_found';
+  // Captain-listing edit fields (PATCH /captain-listing). Set at the top
+  // level of the doc — distinct from `tags`, which holds the curated
+  // taxonomy bag (cuisine_primary, price_band, etc.).
+  description?: string | null;
+  website_url?: string | null;
+  phone_number?: string | null;
+  delivery_zones?: string[];
+  tags: Record<string, unknown> | null;
+  latest_snapshot_id: string | null;
+  last_researched_at: string | null;
+  editorial_boost_score: number;
+  sponsored_until: string | null;
+  city_id: string;
+  created_at: string;
+}
+
+// TaxonomyPriceBand — single bucket inside TagTaxonomy.price_bands.
+// max_rs is nullable for the open-ended top band.
+export interface TaxonomyPriceBand {
+  key: string;
+  label: string;
+  min_rs: number;
+  max_rs: number | null;
+}
+
+// TagTaxonomy — singleton document (_id: 'tag_taxonomy') that
+// enumerates the controlled vocabulary used by the listing researcher
+// + the consumer filters. Versioned so callers can detect updates.
+export interface TagTaxonomy {
+  _id: 'tag_taxonomy';
+  version: number;
+  cuisine_primary: string[];
+  price_bands: TaxonomyPriceBand[];
+  veg_status_options: string[];
+  vibe_tags: string[];
+  meal_contexts: string[];
+  service_modes: string[];
+  dietary_flags: string[];
+  specialty_tags_approved: string[];
+  hyderabad_areas: string[];
+}
+
+// MetaPhoneNumber — projection of a WABA phone number returned by the
+// Meta Graph API and exposed to the admin via
+// GET /api/admin/cities/meta-phone-numbers. Used in the Create City
+// modal to assign a phone to a new city; the backend sets
+// assigned_to_city on numbers already bound to a city slug.
+export interface MetaPhoneNumber {
+  id: string;
+  display_phone_number: string;
+  verified_name: string;
+  quality_rating?: string;
+  assigned_to_city: string | null;
+}
+
+// Captain analytics — city-level summary. Drives the activity stats
+// shown on the city detail page below the listings grid.
+export interface CityAnalytics {
+  days: number;
+  listings: {
+    by_research_status: Record<string, number>;
+    by_status: Record<string, number>;
+  };
+  signals: Record<string, number>;
+  sessions: { total: number; new_in_window: number };
+}
+
+// One row in the interest leaderboard. Top 20 listings ranked by
+// weighted action score. unfulfilled_notify_count drives the
+// "X waiting" badge — surfaces warm demand for the sales pitch.
+export interface LeaderboardEntry {
+  rank: number;
+  listing_id: string;
+  name: string;
+  area: string | null;
+  status: string | null;
+  listing_card_shown: number;
+  menu_viewed: number;
+  tapped_notify_me: number;
+  tapped_order_handoff: number;
+  gbref_link_generated: number;
+  gbref_order_attributed: number;
+  interest_score: number;
+  unfulfilled_notify_count: number;
+}
+
+export interface CityInterestLeaderboard {
+  days: number;
+  results: LeaderboardEntry[];
+}
+
+// ── Captain (restaurant-side) ─────────────────────────────────
+// Surfaces consumed by /dashboard/captain-listing. Driven by
+// /api/restaurant/captain/{listing,suggested}. The listing endpoint
+// returns a discriminated union (linked vs not); when linked it also
+// rolls up notify_intents totals so the page can render a "X waiting"
+// callout without a second round-trip.
+export interface CaptainListingStatus {
+  linked: boolean;
+  listing?: CityListing & { id: string };
+  city?: { name: string; slug: string } | null;
+  notify_counts?: { total: number; unfulfilled: number; fulfilled: number };
+}
+
+export interface CaptainSuggestion extends CityListing {
+  id: string;
+  city: { name: string; slug: string } | null;
+  unfulfilled_notify_count: number;
+}
+
+export interface CaptainLogEntry {
+  _id?: string;
+  id?: string;
+  city_id: string | null;
+  city_name: string | null;
+  customer_id: string | null;
+  phone_hash: string | null;
+  message_type: string;
+  session_state_before: string;
+  session_state_after: string;
+  had_error: boolean;
+  ts: string;
+}
+
+export interface CaptainLogListResponse {
+  total: number;
+  page: number;
+  limit: number;
+  results: CaptainLogEntry[];
+}
+
+// ── Restaurant referrals (city captain) ────────────────────────
+// Surfaces consumed by /dashboard/referrals. Driven by
+// /api/restaurant/referrals and /api/restaurant/referrals/links.
+// The local interfaces in marketing/ReferralsSection.tsx predate
+// these and are kept as-is for backwards-compat — they have the
+// same shape with extra `?` softness, so the runtime cast still
+// works against this stricter version.
+export type ReferralSource =
+  | 'gbref'
+  | 'directory'
+  | 'admin'
+  | 'city_captain'
+  | 'city_captain_reengagement'
+  | string;
+
+export interface RestaurantReferral {
+  _id?: string;
+  id?: string;
+  customer_name?: string;
+  customer_wa_phone?: string;
+  customer_bsuid?: string;
+  status?: 'active' | 'converted' | 'expired' | 'superseded' | string;
+  commission_status?: 'pending' | 'confirmed' | 'settled' | 'reversed' | null;
+  source?: ReferralSource;
+  referral_code?: string;
+  orders_count?: number;
+  total_order_value_rs?: number | string;
+  referral_fee_rs?: number | string;
+  attributed_order_subtotal?: number | string;
+  created_at?: string;
+  expires_at?: string;
+}
+
+export interface RestaurantReferralsSummary {
+  total: number;
+  converted: number;
+  total_orders: number;
+  total_order_value_rs: number;
+  total_referral_fee_rs: number;
+}
+
+export interface RestaurantReferralsResponse {
+  summary: RestaurantReferralsSummary;
+  referrals: RestaurantReferral[];
+}
+
+export interface RestaurantReferralLink {
+  _id?: string;
+  id?: string;
+  code: string;
+  campaign_name?: string | null;
+  wa_link?: string;
+  click_count?: number;
+  status?: string;
+  source?: ReferralSource;
+  listing_id?: string | null;
+  created_at?: string;
+}
+
+export interface RestaurantReferralLinksResponse {
+  links: RestaurantReferralLink[];
+}
+
+// Listing-level funnel + 14-day daily time series.
+export interface ListingAnalytics {
+  days: number;
+  actions: {
+    listing_card_shown: number;
+    menu_viewed: number;
+    tapped_notify_me: number;
+    tapped_order_handoff: number;
+    gbref_link_generated: number;
+    gbref_order_attributed: number;
+  };
+  funnel: {
+    impression_to_view: number;
+    view_to_action: number;
+    action_to_conversion: number;
+  };
+  notify_intents: { total: number; unfulfilled: number; fulfilled: number };
+  time_series: Array<{ date: string; action: string; count: number }>;
+}
+
 // ── Domain enums ────────────────────────────────────────────────────
 
 export type FoodType = 'veg' | 'non_veg' | 'egg' | 'vegan';
