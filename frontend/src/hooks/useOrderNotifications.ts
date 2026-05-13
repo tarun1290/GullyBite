@@ -131,6 +131,28 @@ export interface RiderLocationPayload {
   tracking_url?: string;
 }
 
+// Prorouting delivery state-machine update. Emitted by
+// backend/src/services/proroutingState.js after every $set that writes
+// prorouting_state (or its companion *_at timestamps). Per-restaurant
+// room scope. Consumers (orders page, DeliveryTimeline) react by
+// refetching the order list so the timeline rerenders with the latest
+// stamps. All timestamp fields are optional + nullable because most
+// states only have a subset populated (e.g. an at-pickup callback
+// updates prorouting_at_pickup_at but leaves the others unchanged).
+export interface DeliveryUpdatePayload {
+  orderId: string;
+  orderNumber?: string | null;
+  prorouting_state?: string | null;
+  prorouting_assigned_at?: string | null;
+  prorouting_pickedup_at?: string | null;
+  prorouting_delivered_at?: string | null;
+  prorouting_at_pickup_at?: string | null;
+  prorouting_at_delivery_at?: string | null;
+  prorouting_cancelled_at?: string | null;
+  prorouting_rto_initiated_at?: string | null;
+  prorouting_rto_delivered_at?: string | null;
+}
+
 interface UseOrderNotificationsOptions {
   onNewOrder?: (order: OrderNotification) => void;
   onUpdated?: (payload: OrderUpdatePayload) => void;
@@ -141,6 +163,7 @@ interface UseOrderNotificationsOptions {
   onAdminNewSignup?: (payload: AdminNewSignupPayload) => void;
   onMessage?: (payload: DirectMessagePayload) => void;
   onRiderLocation?: (payload: RiderLocationPayload) => void;
+  onDeliveryUpdate?: (payload: DeliveryUpdatePayload) => void;
 }
 
 interface UseOrderNotificationsReturn {
@@ -183,6 +206,7 @@ export function useOrderNotifications(
     onAdminNewSignup,
     onMessage,
     onRiderLocation,
+    onDeliveryUpdate,
   } = opts;
 
   const { socket, connected } = useSocket();
@@ -253,6 +277,13 @@ export function useOrderNotifications(
     [onRiderLocation],
   );
 
+  const handleDeliveryUpdate = useCallback(
+    (data: DeliveryUpdatePayload) => {
+      if (onDeliveryUpdate) onDeliveryUpdate(data);
+    },
+    [onDeliveryUpdate],
+  );
+
   useEffect(() => {
     if (!socket) return;
     socket.on('new_order', handleNew);
@@ -264,6 +295,7 @@ export function useOrderNotifications(
     socket.on('admin_new_signup', handleAdminNewSignup);
     socket.on('message_new', handleMessage);
     socket.on('rider_location', handleRiderLocation);
+    socket.on('delivery_update', handleDeliveryUpdate);
     return () => {
       socket.off('new_order', handleNew);
       socket.off('order_status_changed', handleUpdated);
@@ -274,6 +306,7 @@ export function useOrderNotifications(
       socket.off('admin_new_signup', handleAdminNewSignup);
       socket.off('message_new', handleMessage);
       socket.off('rider_location', handleRiderLocation);
+      socket.off('delivery_update', handleDeliveryUpdate);
     };
   }, [
     socket,
@@ -286,6 +319,7 @@ export function useOrderNotifications(
     handleAdminNewSignup,
     handleMessage,
     handleRiderLocation,
+    handleDeliveryUpdate,
   ]);
 
   return { connected, lastOrder };

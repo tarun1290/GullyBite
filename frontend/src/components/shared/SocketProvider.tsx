@@ -46,6 +46,7 @@ import {
   type AdminNewSignupPayload,
   type AdminOrderNewPayload,
   type BranchStatusPayload,
+  type DeliveryUpdatePayload,
   type DirectMessagePayload,
   type OrderNotification,
   type OrderPaidPayload,
@@ -79,6 +80,14 @@ interface SocketContextValue {
   // identity changes per event for the same useEffect-on-payload pattern
   // used by other lastX fields.
   lastRiderLocation: RiderLocationPayload | null;
+  // Latest Prorouting state-machine update — fires after every
+  // prorouting_state $set on the backend (services/proroutingState.js).
+  // Consumers (orders page) attach a useEffect on this reference and
+  // silentRefetch() so the DeliveryTimeline rerenders with the freshest
+  // stamps. Filtering by orderId happens at the consumer side since
+  // multiple orders can be progressing through the state machine in
+  // parallel.
+  lastDeliveryUpdate: DeliveryUpdatePayload | null;
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null);
@@ -101,6 +110,7 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
   const [lastAdminFeedEvent, setLastAdminFeedEvent] = useState<AdminFeedEvent | null>(null);
   const [lastMessage, setLastMessage] = useState<DirectMessagePayload | null>(null);
   const [lastRiderLocation, setLastRiderLocation] = useState<RiderLocationPayload | null>(null);
+  const [lastDeliveryUpdate, setLastDeliveryUpdate] = useState<DeliveryUpdatePayload | null>(null);
 
   // Each callback is useCallback-wrapped so its identity is stable
   // across SocketProvider re-renders. Without this, inline arrows
@@ -176,6 +186,15 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
     setLastRiderLocation(payload);
   }, []);
 
+  // No toast for delivery-state updates — the timeline UI itself is
+  // the visible signal. The DeliveryTimeline component re-renders when
+  // the orders list refetches; consumers (orders page) attach a
+  // useEffect on lastDeliveryUpdate and call silentRefetch() to
+  // refresh the underlying list.
+  const onDeliveryUpdate = useCallback((payload: DeliveryUpdatePayload) => {
+    setLastDeliveryUpdate(payload);
+  }, []);
+
   const { connected } = useOrderNotifications({
     onNewOrder,
     onUpdated,
@@ -189,6 +208,7 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
     onAdminNewSignup: isAdmin ? onAdminNewSignup : undefined,
     onMessage,
     onRiderLocation,
+    onDeliveryUpdate,
   });
 
   return (
@@ -202,6 +222,7 @@ export function SocketProvider({ children, isAdmin = false }: SocketProviderProp
         lastAdminFeedEvent,
         lastMessage,
         lastRiderLocation,
+        lastDeliveryUpdate,
       }}
     >
       {children}

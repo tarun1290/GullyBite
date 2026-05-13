@@ -113,7 +113,7 @@ export default function OrdersPage() {
   // order_status_changed / new_paid_order also refetch so status flips
   // and payment-state changes propagate from the kitchen tablet or
   // webhooks.
-  const { lastOrder, lastUpdated, lastPaid } = useSocketContext();
+  const { lastOrder, lastUpdated, lastPaid, lastDeliveryUpdate } = useSocketContext();
   const silentRefetch = useCallback(() => {
     fetchOrders(filter, { silent: true });
   }, [fetchOrders, filter]);
@@ -125,6 +125,7 @@ export default function OrdersPage() {
   useEffect(() => { if (lastOrder) silentRefetch(); }, [lastOrder, silentRefetch]);
   useEffect(() => { if (lastUpdated) silentRefetch(); }, [lastUpdated, silentRefetch]);
   useEffect(() => { if (lastPaid) silentRefetch(); }, [lastPaid, silentRefetch]);
+  useEffect(() => { if (lastDeliveryUpdate) silentRefetch(); }, [lastDeliveryUpdate, silentRefetch]);
 
   // Drive the new-order alarm off the polled orders list. Runs after
   // every `orders` change (initial fetch, 30s polls, post-action

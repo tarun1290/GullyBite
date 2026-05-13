@@ -17,7 +17,42 @@ const wa = require('../services/whatsapp');
 const orderSvc = require('../services/order');
 const prorouting = require('../services/prorouting');
 const metaConfig = require('../config/meta');
+const { emitToRestaurant } = require('../utils/socketEmit');
 const log = require('../utils/logger').child({ component: 'prorouting-state' });
+
+// Socket fan-out for the dashboard DeliveryTimeline. Called after every
+// $set that writes prorouting_state (or its companion *_at timestamp
+// fields) so the timeline updates live without a page refresh. The
+// socketEmit helper is itself fail-silent — this wrapper just adds the
+// re-fetch step so the emit always carries the post-update doc state
+// (the callers use updateOne, not findOneAndUpdate, so the in-scope
+// `order` is stale by the time we'd emit). One catch on the re-fetch
+// keeps a misbehaving socket layer from crashing the webhook handler.
+async function _emitDeliveryUpdate(orderId) {
+  try {
+    const updatedOrder = await col('orders').findOne({ _id: orderId });
+    if (!updatedOrder) return;
+    emitToRestaurant(
+      updatedOrder.restaurant_id,
+      'delivery_update',
+      {
+        orderId: updatedOrder._id,
+        orderNumber: updatedOrder.order_number,
+        prorouting_state: updatedOrder.prorouting_state,
+        prorouting_assigned_at:      updatedOrder.prorouting_assigned_at      ?? null,
+        prorouting_pickedup_at:      updatedOrder.prorouting_pickedup_at      ?? null,
+        prorouting_delivered_at:     updatedOrder.prorouting_delivered_at     ?? null,
+        prorouting_at_pickup_at:     updatedOrder.prorouting_at_pickup_at     ?? null,
+        prorouting_at_delivery_at:   updatedOrder.prorouting_at_delivery_at   ?? null,
+        prorouting_cancelled_at:     updatedOrder.prorouting_cancelled_at     ?? null,
+        prorouting_rto_initiated_at: updatedOrder.prorouting_rto_initiated_at ?? null,
+        prorouting_rto_delivered_at: updatedOrder.prorouting_rto_delivered_at ?? null,
+      }
+    );
+  } catch (err) {
+    log.warn({ err: err?.message, orderId }, '_emitDeliveryUpdate failed');
+  }
+}
 
 function _normaliseStatus(raw) {
   if (!raw) return null;
@@ -149,6 +184,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     { _id: order._id },
     { $set: { prorouting_state: statusRaw || status, updated_at: new Date() } }
   );
+  await _emitDeliveryUpdate(order._id);
 
   if (!isNewStatus) {
     log.info({ orderId: order._id, status }, 'prorouting state: unchanged — no side effects');
@@ -185,6 +221,25 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       logisticsSet.updated_at = new Date();
       await col('orders').updateOne({ _id: order._id }, { $set: logisticsSet });
     }
+
+    // Canonical state + assignment timestamp. Mirrors the structure of
+    // the at-pickup / at-delivery handlers below (canonical UPPERCASE
+    // state alongside the matching *_at stamp). The line-150 mirror
+    // above writes the raw Prorouting string ('Agent-assigned'); this
+    // overrides it with 'ASSIGNED' which is what the dashboard
+    // DeliveryTimeline matches on. prorouting_assigned_at is parsed via
+    // the existing IST helper so it stays consistent with the other
+    // timestamp stamps in this file.
+    const assignedAt = parseISTTimestamp(eventBody?.order?.assigned_at) || new Date();
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $set: {
+          prorouting_state: 'ASSIGNED',
+          prorouting_assigned_at: assignedAt,
+          updated_at: new Date(),
+      } }
+    );
+    await _emitDeliveryUpdate(order._id);
 
     // Late-webhook guard. If the order has already moved past the
     // dispatch lifecycle (DELIVERED, terminal cancellations, RTO),
@@ -233,6 +288,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       { _id: order._id },
       { $set: { prorouting_state: 'SEARCHING_AGENT', updated_at: new Date() } }
     );
+    await _emitDeliveryUpdate(order._id);
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
@@ -242,6 +298,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       { _id: order._id },
       { $set: { prorouting_state: 'AT_PICKUP', prorouting_at_pickup_at: atPickupAt, updated_at: new Date() } }
     );
+    await _emitDeliveryUpdate(order._id);
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
@@ -251,6 +308,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       { _id: order._id },
       { $set: { prorouting_state: 'AT_DELIVERY', prorouting_at_delivery_at: atDeliveryAt, updated_at: new Date() } }
     );
+    await _emitDeliveryUpdate(order._id);
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
@@ -383,6 +441,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
           updated_at: new Date(),
       } }
     );
+    await _emitDeliveryUpdate(order._id);
     log.warn({ orderId: order._id, orderNumber: order.order_number }, 'prorouting RTO initiated');
 
     // Auto-raise a FULFILLMENT / FLM03 issue so ops has a dispute
@@ -426,6 +485,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
           updated_at: new Date(),
       } }
     );
+    await _emitDeliveryUpdate(order._id);
     log.warn({ orderId: order._id, orderNumber: order.order_number }, 'prorouting RTO delivered (returned to restaurant)');
     await _sendRtoAlert(order,
       `📦 RTO complete for Order #${order.order_number}. Package has been returned to the restaurant.`
@@ -443,6 +503,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
           updated_at: new Date(),
       } }
     );
+    await _emitDeliveryUpdate(order._id);
     // ERROR-level: RTO disposed means the food is lost — neither delivered
     // to customer nor returned to restaurant. Surfaces in error dashboards.
     log.error({ orderId: order._id, orderNumber: order.order_number }, 'prorouting RTO DISPOSED — food lost, package neither delivered nor returned');
@@ -505,7 +566,24 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       return { previousStatus, currentStatus: statusRaw, updated: true };
     }
 
-    log.warn({ orderId: order._id, clientOrderId: order._id, reasonDesc }, 'prorouting cancelled — LSP dropped delivery, manual reassignment needed');
+    // Customer-facing cancellation notification. Fire-and-forget, same
+    // contract as the order-delivered sendStatusUpdate above — never
+    // awaited beyond the .catch and never thrown. Gated implicitly by
+    // the TERMINAL_ORDER_STATES guard at the top of this branch — if
+    // execution reaches here the GullyBite order is NOT yet terminal,
+    // so telling the customer "your order has been cancelled" is
+    // accurate. The `CANCELLED` keyword resolves to the canned text in
+    // services/whatsapp.js STATUS_MESSAGES; the order_cancelled Meta
+    // template is the underlying approved template path. Customer is
+    // within their CSW (they ordered minutes ago and have been actively
+    // tracking) so the text route is reliable.
+    if (ctx) {
+      await wa.sendStatusUpdate(ctx.pid, ctx.token, ctx.to, 'CANCELLED', {
+        orderNumber: order.display_order_id || order.order_number,
+      }).catch((e) => log.warn({ err: e?.message }, 'cancelled sendStatusUpdate failed'));
+    }
+
+    log.warn({ orderId: order._id, orderNumber: order.order_number, reasonDesc }, 'prorouting cancelled — LSP dropped delivery, manual reassignment needed');
 
     await _sendRtoAlert(order,
       `⚠️ Delivery cancelled by LSP for Order #${order.order_number}${reasonDesc ? ` — Reason: ${reasonDesc}` : ''}. Please reassign the delivery manually.`
