@@ -470,6 +470,19 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     await _sendRtoAlert(order,
       `⚠️ RTO initiated for Order #${order.order_number}. The rider could not deliver and is returning the order. Our team has been notified.`
     );
+
+    // Customer-facing notification — RTO initiated means delivery
+    // failed and a refund/resolution path has started. Routes through
+    // the order_cancelled template (CANCELLED keyword in
+    // STATUS_MESSAGES) since the framing — order won't reach you,
+    // payment will be refunded — is identical to a cancellation.
+    // Fire-and-forget, same shape as the LSP-cancelled handler below.
+    if (ctx) {
+      await wa.sendStatusUpdate(ctx.pid, ctx.token, ctx.to, 'CANCELLED', {
+        orderNumber: order.display_order_id || order.order_number,
+      }).catch((e) => log.warn({ err: e?.message }, 'rto-initiated sendStatusUpdate failed'));
+    }
+
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
@@ -490,6 +503,19 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     await _sendRtoAlert(order,
       `📦 RTO complete for Order #${order.order_number}. Package has been returned to the restaurant.`
     );
+
+    // Customer-facing notification — order was returned to the
+    // restaurant. Distinct from rto-initiated (refund framing) — here
+    // the resolution path depends on the restaurant's follow-up
+    // (re-attempt delivery, partial refund, full refund, etc.) so we
+    // explicitly avoid the canned CANCELLED text which presupposes a
+    // refund. Custom sendText keeps the framing accurate.
+    if (ctx) {
+      await wa.sendText(ctx.pid, ctx.token, ctx.to,
+        `📦 Order #${order.order_number}: We couldn't deliver your order and it's been returned to the restaurant. Our team will reach out to you shortly for resolution.`
+      ).catch((e) => log.warn({ err: e?.message }, 'rto-delivered sendText failed'));
+    }
+
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
@@ -510,6 +536,19 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
     await _sendRtoAlert(order,
       `⚠️ RTO disposed for Order #${order.order_number}. Package could not be returned and has been disposed by the LSP. Please raise a dispute if needed.`
     );
+
+    // Customer-facing notification — food was lost in transit
+    // (neither delivered to the customer nor returned to the
+    // restaurant). Full-refund framing, routed through the
+    // order_cancelled template path same as rto-initiated and the
+    // LSP-cancelled handler — refund text fits because the
+    // customer's payment IS being returned in this terminal state.
+    if (ctx) {
+      await wa.sendStatusUpdate(ctx.pid, ctx.token, ctx.to, 'CANCELLED', {
+        orderNumber: order.display_order_id || order.order_number,
+      }).catch((e) => log.warn({ err: e?.message }, 'rto-disposed sendStatusUpdate failed'));
+    }
+
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }
 
@@ -566,27 +605,81 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       return { previousStatus, currentStatus: statusRaw, updated: true };
     }
 
-    // Customer-facing cancellation notification. Fire-and-forget, same
-    // contract as the order-delivered sendStatusUpdate above — never
-    // awaited beyond the .catch and never thrown. Gated implicitly by
-    // the TERMINAL_ORDER_STATES guard at the top of this branch — if
-    // execution reaches here the GullyBite order is NOT yet terminal,
-    // so telling the customer "your order has been cancelled" is
-    // accurate. The `CANCELLED` keyword resolves to the canned text in
-    // services/whatsapp.js STATUS_MESSAGES; the order_cancelled Meta
-    // template is the underlying approved template path. Customer is
-    // within their CSW (they ordered minutes ago and have been actively
-    // tracking) so the text route is reliable.
-    if (ctx) {
-      await wa.sendStatusUpdate(ctx.pid, ctx.token, ctx.to, 'CANCELLED', {
-        orderNumber: order.display_order_id || order.order_number,
-      }).catch((e) => log.warn({ err: e?.message }, 'cancelled sendStatusUpdate failed'));
+    // Auto re-dispatch on LSP drop. Most non-no-rider cancellations are
+    // transient (zone glitch, rider unreachable, momentary outage) and a
+    // fresh ORDER_DISPATCH job tends to succeed on the second try.
+    // Budget: 2 retries (configurable later via env if needed) before
+    // we give up and escalate to ops + customer.
+    //
+    // The customer notification deliberately fires only on the give-up
+    // path — telling them "order cancelled" while a retry is in flight
+    // would confuse them when the rider eventually shows up.
+    //
+    // The retry enqueue below passes `isRetry: true` so the
+    // ORDER_DISPATCH handler's CONFIRMED/PREPARING status guard is
+    // skipped — orders past PACKED at LSP-cancellation time would
+    // otherwise no-op silently.
+    const attempts = Number(order.prorouting_dispatch_attempts) || 0;
+
+    if (attempts >= 2) {
+      // Retry budget exhausted. Counter still increments for
+      // observability — third+ callback (rare) won't double-notify
+      // the customer because the order will hit a terminal state
+      // (manual ops cancel or RTO) before then.
+      await col('orders').updateOne(
+        { _id: order._id },
+        { $inc: { prorouting_dispatch_attempts: 1 }, $set: { updated_at: new Date() } }
+      );
+      log.error(
+        { orderId: order._id, orderNumber: order.order_number, reasonDesc, attempts: attempts + 1 },
+        'prorouting cancelled — retry budget exhausted, manual reassignment needed',
+      );
+      // Customer-facing cancellation. Fire-and-forget, same contract
+      // as the order-delivered sendStatusUpdate — never awaited beyond
+      // the .catch and never thrown. The CANCELLED keyword resolves to
+      // the canned text in services/whatsapp.js STATUS_MESSAGES; the
+      // order_cancelled Meta template is the underlying approved
+      // template path.
+      if (ctx) {
+        await wa.sendStatusUpdate(ctx.pid, ctx.token, ctx.to, 'CANCELLED', {
+          orderNumber: order.display_order_id || order.order_number,
+        }).catch((e) => log.warn({ err: e?.message }, 'cancelled sendStatusUpdate failed'));
+      }
+      await _sendRtoAlert(order,
+        `⚠️ Delivery cancelled by LSP for Order #${order.order_number}${reasonDesc ? ` — Reason: ${reasonDesc}` : ''}. Auto re-dispatch exhausted (${attempts + 1} attempts). Please reassign the delivery manually.`
+      );
+      return { previousStatus, currentStatus: statusRaw, updated: true };
     }
 
-    log.warn({ orderId: order._id, orderNumber: order.order_number, reasonDesc }, 'prorouting cancelled — LSP dropped delivery, manual reassignment needed');
-
+    // Retry available — bump counter then enqueue a fresh
+    // ORDER_DISPATCH job. Call shape mirrors the /accept site at
+    // routes/restaurant.js:6080 (setImmediate + lazy require + .catch).
+    // Always goes through the queue — never call dispatchDelivery
+    // directly — so retry/error handling stays consistent with the
+    // primary dispatch path.
+    await col('orders').updateOne(
+      { _id: order._id },
+      { $inc: { prorouting_dispatch_attempts: 1 }, $set: { updated_at: new Date() } }
+    );
+    log.info(
+      { orderId: order._id, orderNumber: order.order_number, reasonDesc, attempt: attempts + 1 },
+      'prorouting cancelled — auto re-dispatching',
+    );
+    setImmediate(() => {
+      const { enqueue, JOB_TYPES } = require('../queue/postPaymentJobs');
+      // isRetry: true tells _handleOrderDispatch's status guard to
+      // skip the CONFIRMED/PREPARING check — orders at this point are
+      // already past PACKED (the original dispatch ran before the LSP
+      // cancellation) and would otherwise no-op silently. See the
+      // matching `if (!payload.isRetry && ...)` block in postPaymentJobs.js.
+      enqueue(JOB_TYPES.ORDER_DISPATCH, {
+        orderId: String(order._id),
+        restaurantId: String(order.restaurant_id),
+        isRetry: true,
+      }).catch((err) => log.warn({ err: err?.message, orderId: order._id }, 'enqueue ORDER_DISPATCH retry failed (non-fatal)'));
+    });
     await _sendRtoAlert(order,
-      `⚠️ Delivery cancelled by LSP for Order #${order.order_number}${reasonDesc ? ` — Reason: ${reasonDesc}` : ''}. Please reassign the delivery manually.`
+      `🔄 Delivery dropped by LSP for Order #${order.order_number}${reasonDesc ? ` — Reason: ${reasonDesc}` : ''}. Auto-retry queued (attempt ${attempts + 1}/2).`
     );
 
     return { previousStatus, currentStatus: statusRaw, updated: true };

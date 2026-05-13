@@ -305,9 +305,10 @@ router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
           // order_number we echoed on /createasync, not the UUID _id.
           const orderDoc = await ordersDb.findOne(
             { order_number: String(cid) },
-            { projection: { branch_id: 1, restaurant_id: 1 } }
+            { projection: { _id: 1, branch_id: 1, restaurant_id: 1 } }
           );
           ctx = orderDoc ? {
+            order_uuid: String(orderDoc._id),
             branch_id: orderDoc.branch_id ? String(orderDoc.branch_id) : null,
             restaurant_id: orderDoc.restaurant_id ? String(orderDoc.restaurant_id) : null,
           } : null;
@@ -323,7 +324,13 @@ router.post('/track', express.json({ limit: '256kb' }), async (req, res) => {
         }
 
         const ssePayload = {
+          // order_id remains the human-readable order_number (cid) for
+          // the SSE staff-app consumer that already keys on it.
+          // order_uuid is the orders._id — added so the dashboard
+          // RiderLocationCard, which receives the UUID as its orderId
+          // prop from OrderDetailModal, can filter without ambiguity.
           order_id: String(cid),
+          order_uuid: ctx.order_uuid,
           branch_id: ctx.branch_id || undefined,
           lat,
           lng,

@@ -245,17 +245,25 @@ async function _handleOrderDispatch(payload) {
   // the order and a fresh dispatch would be a duplicate.
   // Any in-flight pre-deploy ORDER_DISPATCH job created from the old
   // PAID-time fan-out lands here in PAID and is skipped silently.
+  //
+  // EXCEPTION: payload.isRetry=true bypasses the guard entirely.
+  // Auto-retries from services/proroutingState.js (LSP-cancelled
+  // branch) fire when the order is already past PACKED — the original
+  // dispatch advanced state past CONFIRMED/PREPARING before Prorouting
+  // dropped it. Skipping the guard here lets the retry actually call
+  // dispatchDelivery instead of silently no-opping; the call-site sets
+  // the flag explicitly so accidental retries can't sneak through.
   log.info(
-    { orderId: payload.orderId, status: order.status },
+    { orderId: payload.orderId, status: order.status, isRetry: !!payload.isRetry },
     'ORDER_DISPATCH: evaluating status guard',
   );
-  if (order.status !== 'CONFIRMED' && order.status !== 'PREPARING') {
+  if (!payload.isRetry && order.status !== 'CONFIRMED' && order.status !== 'PREPARING') {
     log.info({ orderId: payload.orderId, status: order.status },
       'ORDER_DISPATCH: order not in CONFIRMED/PREPARING — skipping (stale or out-of-order job)');
     return;
   }
   log.info(
-    { orderId: payload.orderId, status: order.status },
+    { orderId: payload.orderId, status: order.status, isRetry: !!payload.isRetry },
     'ORDER_DISPATCH: status guard passed — proceeding to dispatch',
   );
 

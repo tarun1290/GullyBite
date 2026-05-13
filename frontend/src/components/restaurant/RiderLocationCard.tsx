@@ -3,7 +3,10 @@
 // Live rider-location card. Reads lastRiderLocation off SocketProvider
 // context (events fan in from /webhook/prorouting/track on the backend
 // via emitToRestaurant) and renders a pulsing-dot card when the latest
-// payload's order_id matches this card's orderId prop.
+// payload's order_uuid matches this card's orderId prop. The prop is
+// the orders._id UUID (passed in from OrderDetailModal); order_id on
+// the payload is the human-readable order_number which is what the
+// staff-app SSE consumer keys on instead.
 //
 // Returns null when no matching event has arrived — drop-in safe for
 // any order detail surface; only renders when there's actually a live
@@ -40,8 +43,11 @@ export default function RiderLocationCard({ orderId }: RiderLocationCardProps) {
   // Filter: only render if the latest rider event is for THIS order.
   // Other in-flight orders at the same restaurant will land in
   // lastRiderLocation too (per-restaurant room scope) — this gate
-  // keeps each card showing only its own rider.
-  if (!lastRiderLocation || lastRiderLocation.order_id !== orderId) {
+  // keeps each card showing only its own rider. Compare on order_uuid
+  // (orders._id) because that's what OrderDetailModal passes as the
+  // orderId prop; the payload's order_id field is the order_number
+  // string which would never match a UUID prop.
+  if (!lastRiderLocation || lastRiderLocation.order_uuid !== orderId) {
     return null;
   }
 

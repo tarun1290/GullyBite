@@ -120,10 +120,17 @@ export interface DirectMessagePayload {
 // values are filtered server-side, so any payload landing here has
 // genuinely valid coordinates.
 export interface RiderLocationPayload {
+  // order_id is the human-readable order_number (e.g. ZM-20260513-0003)
+  // — what the staff-app SSE consumer already keys on. The dashboard
+  // RiderLocationCard receives a UUID prop from OrderDetailModal and
+  // filters on order_uuid below; the two identifiers are kept side by
+  // side so both surfaces can match without coordinating on a single
+  // key shape.
   order_id: string;
+  order_uuid?: string;
   // branch_id present when the order has one; consumers in branch-scoped
-  // contexts can filter on it. For RiderLocationCard the order_id match
-  // is the primary filter.
+  // contexts can filter on it. For RiderLocationCard the order_uuid
+  // match is the primary filter.
   branch_id?: string;
   lat: number;
   lng: number;
