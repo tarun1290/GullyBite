@@ -209,6 +209,15 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
   // the PIN can't be lost to a stray click outside the modal.
   const [generatedPin, setGeneratedPin] = useState<string | null>(null);
   const [pinCopied, setPinCopied] = useState<boolean>(false);
+  // staff-app post-create login-ID reveal. The created staff row's
+  // `staff_id` is what the operator types into the "Staff ID" field on
+  // the staff-app login screen, alongside the PIN above. Surfaced
+  // together in the same panel so the operator can hand both to the
+  // staff member in one paste. Unlike the PIN, staff_id is also visible
+  // in the staff list (sanitizeStaff exposes it on GET /staff), so
+  // losing this reveal isn't catastrophic — it's a UX shortcut.
+  const [generatedStaffId, setGeneratedStaffId] = useState<string | null>(null);
+  const [staffIdCopied, setStaffIdCopied] = useState<boolean>(false);
   // Inline destructive-confirm state for the legacy edit-mode "Delete
   // Account" button. Kept in the modal (not the parent UsersSection) so
   // the confirm copy can interpolate the staff name and the delete
@@ -225,6 +234,8 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
       setCopiedBranchId(null);
       setGeneratedPin(null);
       setPinCopied(false);
+      setGeneratedStaffId(null);
+      setStaffIdCopied(false);
       setDeleteConfirming(false);
       setDeleteBusy(false);
       return;
@@ -353,6 +364,17 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
       }, 2000);
     } catch {
       showToast('Could not copy — select the link and copy manually', 'error');
+    }
+  };
+
+  const copyStaffId = async () => {
+    if (!generatedStaffId) return;
+    try {
+      await navigator.clipboard.writeText(generatedStaffId);
+      setStaffIdCopied(true);
+      window.setTimeout(() => setStaffIdCopied(false), 2000);
+    } catch {
+      showToast('Could not copy — select the ID and copy manually', 'error');
     }
   };
 
@@ -598,6 +620,7 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
           { ...payload, role: staffForm.role } as Parameters<typeof createStaff>[0] & { role: string },
         );
         if (onSaved) onSaved();
+        setGeneratedStaffId(res.staff?.staff_id || null);
         setGeneratedPin(res.generated_pin);
       }
     } catch (err: unknown) {
@@ -612,10 +635,17 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
 
   if (!open) return null;
 
-  // ── staff-app post-create PIN reveal panel ─────────────────────
-  // Shown after a successful staff-app create. The backend mints a
-  // 4-digit PIN and returns it once; we surface it in a deliberately
-  // loud panel and require an explicit "Done" tap to close.
+  // ── staff-app post-create credential reveal panel ──────────────
+  // Shown after a successful staff-app create. The backend returns
+  // both the sanitized staff row (carrying staff_id, the operator's
+  // login identifier — labeled "Staff ID" on the staff-app login
+  // screen) AND the freshly-minted 4-digit PIN, which is shown ONCE
+  // and then hashed. Both are surfaced together so the operator can
+  // copy both to hand to the staff member in one pass. staff_id is
+  // also retrievable from the staff list (sanitizeStaff exposes it),
+  // so the kebab "Copy Login ID" in UsersSection is the recovery path
+  // if this panel gets dismissed prematurely. The PIN, however, is
+  // one-time only — explicit "Done" tap required to close.
   if (mode === 'staff-app' && generatedPin) {
     return (
       <div
@@ -623,7 +653,7 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
       >
         <div className="card w-[440px] max-w-[95vw] bg-surface">
           <div className="ch justify-between">
-            <h3>Staff added — share this PIN now</h3>
+            <h3>Staff added — share these credentials</h3>
           </div>
           <div className="cb">
             <div className="mb-3 py-2.5 px-3 bg-green-50 border border-green-200 rounded-lg">
@@ -631,6 +661,23 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
                 ✓ {staffForm.display_name}
               </div>
             </div>
+            {generatedStaffId && (
+              <div className="py-4 px-4 mb-3 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                <div className="text-xs text-dim uppercase tracking-wide mb-2">
+                  🆔 Staff Login ID
+                </div>
+                <div className="font-mono text-2xl font-bold tracking-wider text-tx mb-3 break-all">
+                  {generatedStaffId}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void copyStaffId(); }}
+                  className="btn-p btn-sm"
+                >
+                  {staffIdCopied ? 'Copied!' : 'Copy Login ID'}
+                </button>
+              </div>
+            )}
             <div className="py-4 px-4 mb-4 bg-green-50 border border-green-200 rounded-lg text-center">
               <div className="text-xs text-dim uppercase tracking-wide mb-2">
                 🔑 One-time PIN
@@ -646,9 +693,13 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
                 {pinCopied ? 'Copied!' : 'Copy PIN'}
               </button>
             </div>
-            <p className="text-sm text-tx mb-3">
-              <strong>This PIN will not be shown again.</strong> Share it with
-              your staff member now.
+            <p className="text-sm text-tx mb-1">
+              Share both with your staff member — they need them to log
+              into the staff app.
+            </p>
+            <p className="text-xs text-dim mb-3">
+              <strong>The PIN will not be shown again.</strong> The Login
+              ID can be recovered later from the staff list.
             </p>
             <div className="flex gap-3 mt-3">
               <button type="button" className="btn-p" onClick={onClose}>Done</button>

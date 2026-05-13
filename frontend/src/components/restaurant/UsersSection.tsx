@@ -169,6 +169,27 @@ export default function UsersSection() {
     setModalOpen(true);
   };
 
+  // Copy a staff-app row's staff_id (the operator's login identifier
+  // for the staff app, labeled "Staff ID" on the login screen). Only
+  // meaningful for staff-app rows — legacy rows (kitchen/delivery/owner)
+  // log in via owner-side phone+PIN through /api/restaurant/users and
+  // don't carry a staff_id. The kebab menuitem below is gated on
+  // isStaffAppRow(u) so the button is only rendered when this works.
+  const copyStaffLoginId = async (u: MergedRow) => {
+    if (!isStaffAppRow(u)) return;
+    const sid = (u as MergedRow & { staff_id?: string }).staff_id;
+    if (!sid) {
+      showToast('This staff row has no Login ID yet — try recreating', 'error');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(sid);
+      showToast('Login ID copied', 'success');
+    } catch {
+      showToast('Could not copy — select the ID manually', 'error');
+    }
+  };
+
   const handleToggleActive = async (u: MergedRow) => {
     setRowBusy(u.id);
     try {
@@ -478,6 +499,22 @@ export default function UsersSection() {
                                     >
                                       Edit
                                     </button>
+                                    {/* Staff-app rows only — recovery
+                                        path for the Login ID that the
+                                        create reveal panel surfaced
+                                        once. staff_id is exposed by
+                                        sanitizeStaff on GET /staff so
+                                        no extra API call is needed. */}
+                                    {isStaffAppRow(u) && (
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
+                                        onClick={() => { setKebabOpenId(null); void copyStaffLoginId(u); }}
+                                      >
+                                        Copy Login ID
+                                      </button>
+                                    )}
                                     <button
                                       type="button"
                                       role="menuitem"

@@ -271,7 +271,7 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
         ? `Your rider${riderName ? ` ${riderName}` : ''}${riderPhone ? ` (${riderPhone})` : ''} is on the way.`
         : 'A delivery rider has been assigned to your order.';
       await wa.sendText(ctx.pid, ctx.token, ctx.to,
-        `🛵 ${riderLine}\n\nOrder #${order.order_number} will reach you shortly.`
+        `🛵 ${riderLine}\n\nOrder #${order.order_number} will reach you shortly.${trackingUrl ? `\n\n📍 Track your order: ${trackingUrl}` : ''}`
       ).catch((e) => log.warn({ err: e?.message }, 'agent-assigned sendText failed'));
     }
     return { previousStatus, currentStatus: statusRaw, updated: true };
