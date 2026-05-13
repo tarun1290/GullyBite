@@ -321,34 +321,6 @@ export async function declineOrder(
   });
 }
 
-// Dine-in QR / staff manual check-in. The backend handler
-// (handleDineInCheckin in webhooks/whatsapp.js, exposed via
-// POST /api/restaurant/dine-in/checkin) is shared with the QR scan
-// path — we just stamp `source: 'staff'` so the dine_in_visits row
-// is attributable to the staff app. Returns the visit number and
-// updated points balance so the screen can render a confirmation
-// card; milestone_hit is non-null when this visit crossed a
-// configured threshold (the journey fires server-side regardless).
-export type DineInCheckinResponse = {
-  success: boolean;
-  customer_id: string;
-  branch_id: string;
-  customer_name?: string | null;
-  visit_number: number;
-  points_balance: number;
-  milestone_hit: number | null;
-};
-
-export async function checkInDineIn(input: {
-  phone: string;
-  branch_id: string;
-}): Promise<DineInCheckinResponse> {
-  return request<DineInCheckinResponse>('/api/restaurant/dine-in/checkin', {
-    method: 'POST',
-    body: { phone: input.phone, branch_id: input.branch_id, source: 'staff' },
-  });
-}
-
 // Status update for CONFIRMED → PREPARING and PREPARING → PACKED only.
 // Staff cannot transition to DISPATCHED, DELIVERED, or any fault state.
 export async function updateOrderStatus(
@@ -363,6 +335,59 @@ export async function updateOrderStatus(
 
 export async function getMenu(): Promise<StaffMenuResponse> {
   return request<StaffMenuResponse>('/api/staff/menu');
+}
+
+// ─── Manager-only branch analytics (today, IST start-of-day) ───
+// Both endpoints sit under /api/restaurant/analytics/* with
+// requireStaffPermission('view_reports') middleware — the staff_web
+// JWT is accepted as long as the staff/manager row carries that flag.
+// Manager rows get all permissions stamped true by default; plain
+// staff rows do not, which is why the tab is gated on role === 'manager'
+// in (app)/_layout.tsx (defense in depth — the backend would 403
+// anyway).
+//
+// branchId is optional — passing null/undefined returns the
+// aggregate across every branch in the manager's restaurant. The
+// staff-app screen passes a specific branch_id when the manager has
+// multiple branches assigned and one is selected.
+//
+// period='1d' is the IST-calendar-day window the backend added for
+// the staff-app screen specifically — UTC midnight cuts the IST day
+// at 5:30 AM and would split the morning rush across two buckets.
+export type AnalyticsOverviewResponse = {
+  total_orders: number;
+  total_revenue_rs: number;
+  avg_order_value_rs: number;
+  total_customers: number;
+  changes: {
+    orders_pct: number;
+    revenue_pct: number;
+  };
+  orders_by_status: Record<string, number>;
+};
+
+export type AnalyticsTopItem = {
+  item_name: string;
+  total_quantity: number;
+  total_revenue_rs: number;
+  order_count: number;
+};
+
+export async function getAnalyticsToday(
+  branchId?: string | null,
+): Promise<AnalyticsOverviewResponse> {
+  const qs = new URLSearchParams({ period: '1d' });
+  if (branchId) qs.set('branch_id', branchId);
+  return request<AnalyticsOverviewResponse>(`/api/restaurant/analytics/overview?${qs}`);
+}
+
+export async function getAnalyticsTopItemsToday(
+  branchId?: string | null,
+  limit = 5,
+): Promise<AnalyticsTopItem[]> {
+  const qs = new URLSearchParams({ period: '1d', limit: String(limit) });
+  if (branchId) qs.set('branch_id', branchId);
+  return request<AnalyticsTopItem[]>(`/api/restaurant/analytics/top-items?${qs}`);
 }
 
 // Spec'd as PATCH /api/staff/items/:itemId/availability with body

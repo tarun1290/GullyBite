@@ -39,6 +39,13 @@ export default function TabsLayout() {
   const { canManageMenu, canManageStock } = useStaffPermissions();
   const showMenuTab =
     role === 'owner' || role === 'manager' || canManageMenu || canManageStock;
+  // Manager-only analytics tab (scope decision 2026-05-14). Plain
+  // staff don't see it in the bar AND can't deep-link to it —
+  // analytics.tsx wraps its body in <NoAccessScreen/> for the same
+  // audience as defense in depth. Owner sessions don't normally
+  // reach (app)/* (root layout routes them to (owner)/dashboard);
+  // gating on === 'manager' is sufficient here.
+  const showAnalyticsTab = role === 'manager';
 
   return (
     <Tabs
@@ -80,20 +87,16 @@ export default function TabsLayout() {
           }}
         />
       ) : null}
-      {/* Dine-in QR check-in surface. Always visible to authed staff —
-          the backend route allows any staff JWT (no permission gate
-          since the action is read-only on the customer side: log a
-          visit + award points configured on the branch). The BranchSelector
-          in headerLeft handles multi-branch sessions; single-branch
-          sessions see no chrome change. */}
-      <Tabs.Screen
-        name="dine-in"
-        options={{
-          title: 'Dine-in',
-          tabBarLabel: 'Dine-in',
-          tabBarIcon: ({ color, size }) => <Ionicons name="fast-food-outline" color={color} size={size} />,
-        }}
-      />
+      {showAnalyticsTab ? (
+        <Tabs.Screen
+          name="analytics"
+          options={{
+            title: 'Analytics',
+            tabBarLabel: 'Analytics',
+            tabBarIcon: ({ color, size }) => <Ionicons name="bar-chart-outline" color={color} size={size} />,
+          }}
+        />
+      ) : null}
     </Tabs>
   );
 }

@@ -31,6 +31,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # fetch-depth: 2 is the minimum needed by the native-deps
+          # guard step below — it does `git show HEAD~1:...` to diff
+          # the previous commit's staff-app/package.json against the
+          # current one. The default fetch-depth: 1 (shallow clone)
+          # would make HEAD~1 unresolvable.
+          fetch-depth: 2
 
       - name: Setup Java 17 (Temurin)
         uses: actions/setup-java@v4
@@ -47,6 +54,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Fail the build if a native-module dependency changed without
+      # a versionCode bump. See .github/scripts/check-native-deps-vs-
+      # versioncode.js for the rationale (incident reference: cfc7c0f
+      # 2026-05-10 expo-linking removal that crashed every install
+      # past splash). Runs from repo root so the script can read the
+      # working-tree files at their canonical paths.
+      - name: Guard — native deps vs versionCode
+        working-directory: ${{ github.workspace }}
+        run: node .github/scripts/check-native-deps-vs-versioncode.js
 
       - name: Run expo prebuild (generate android/)
         env:

@@ -6619,11 +6619,49 @@ router.get('/analytics', requireStaffPermission('view_reports'), async (req, res
 // Helper: get branch IDs and date range
 async function _analyticsContext(req) {
   const branches = await col('branches').find({ restaurant_id: req.restaurantId }).project({ _id: 1, name: 1 }).toArray();
-  const branchIds = branches.map(b => String(b._id));
+  const allBranchIds = branches.map(b => String(b._id));
   const branchMap = Object.fromEntries(branches.map(b => [String(b._id), b.name]));
-  const periodDays = { '7d': 7, '30d': 30, '90d': 90, 'all': 3650 }[req.query.period] || 30;
-  const since = new Date(Date.now() - periodDays * 86400000);
-  const prevSince = new Date(since.getTime() - periodDays * 86400000);
+
+  // Optional branch_id filter — restricts the aggregate to one branch
+  // when the caller is a single-branch manager or has explicitly
+  // selected one from the dashboard's / staff-app's branch switcher.
+  // Validated against the restaurant's branch set so a forged id from
+  // another tenant can't leak data via this endpoint.
+  const requestedBranchId = req.query.branch_id ? String(req.query.branch_id) : null;
+  const branchIds = (requestedBranchId && allBranchIds.includes(requestedBranchId))
+    ? [requestedBranchId]
+    : allBranchIds;
+
+  // Period presets:
+  //   '1d'                      → IST start-of-day (today, IST calendar)
+  //   '7d' / '30d' / '90d' / 'all' → N-day rolling windows from now (UTC)
+  //
+  // The '1d' branch uses IST because Indian operators read "Today" as
+  // their local calendar day. UTC midnight cuts the IST day at 5:30 AM
+  // local, which would split the morning rush across two buckets and
+  // confuses operators every single morning. The other presets keep
+  // their existing UTC-rolling semantics because they're approximate
+  // windows, not calendar days, and have shipped that way.
+  const period = req.query.period || '30d';
+  let since, prevSince, periodDays;
+  if (period === '1d') {
+    const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+    const nowIST = new Date(Date.now() + IST_OFFSET_MS);
+    const istStartOfDay = new Date(Date.UTC(
+      nowIST.getUTCFullYear(),
+      nowIST.getUTCMonth(),
+      nowIST.getUTCDate(),
+      0, 0, 0, 0,
+    ));
+    since = new Date(istStartOfDay.getTime() - IST_OFFSET_MS);
+    prevSince = new Date(since.getTime() - 86400000); // yesterday IST start
+    periodDays = 1;
+  } else {
+    periodDays = { '7d': 7, '30d': 30, '90d': 90, 'all': 3650 }[period] || 30;
+    since = new Date(Date.now() - periodDays * 86400000);
+    prevSince = new Date(since.getTime() - periodDays * 86400000);
+  }
+
   return { branchIds, branchMap, since, prevSince, periodDays };
 }
 
