@@ -76,6 +76,11 @@ interface UserFormModalProps {
   onSaved?: () => void;
   editing: RestaurantUser | null;
   branches: Branch[];
+  // The restaurant's store_slug — surfaced on the staff-app post-create
+  // reveal panel alongside Login ID + PIN so the operator can hand all
+  // three credentials to the staff member in one paste. Optional; if
+  // absent the Store App ID block in the reveal panel renders nothing.
+  storeSlug?: string | null;
 }
 
 // Legacy ROLES — manager dropped per spec (staff-app is the
@@ -191,7 +196,7 @@ function staffFormFromUser(u: RestaurantUser): StaffFormState {
   };
 }
 
-export default function UserFormModal({ open, mode, onClose, onSaved, editing, branches }: UserFormModalProps) {
+export default function UserFormModal({ open, mode, onClose, onSaved, editing, branches, storeSlug }: UserFormModalProps) {
   const { showToast } = useToast();
   const [form, setForm] = useState<FormState>(emptyForm());
   const [staffForm, setStaffForm] = useState<StaffFormState>(emptyStaffForm());
@@ -218,6 +223,11 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
   // losing this reveal isn't catastrophic — it's a UX shortcut.
   const [generatedStaffId, setGeneratedStaffId] = useState<string | null>(null);
   const [staffIdCopied, setStaffIdCopied] = useState<boolean>(false);
+  // store_slug reveal copy state — paired with the Store App ID block
+  // in the post-create panel. Sourced from the storeSlug prop above
+  // (set by the parent UsersSection from useRestaurant), not from the
+  // create response — the slug is restaurant-wide, not per-staff.
+  const [storeSlugCopied, setStoreSlugCopied] = useState<boolean>(false);
   // Inline destructive-confirm state for the legacy edit-mode "Delete
   // Account" button. Kept in the modal (not the parent UsersSection) so
   // the confirm copy can interpolate the staff name and the delete
@@ -236,6 +246,7 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
       setPinCopied(false);
       setGeneratedStaffId(null);
       setStaffIdCopied(false);
+      setStoreSlugCopied(false);
       setDeleteConfirming(false);
       setDeleteBusy(false);
       return;
@@ -373,6 +384,17 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
       await navigator.clipboard.writeText(generatedStaffId);
       setStaffIdCopied(true);
       window.setTimeout(() => setStaffIdCopied(false), 2000);
+    } catch {
+      showToast('Could not copy — select the ID and copy manually', 'error');
+    }
+  };
+
+  const copyStoreSlug = async () => {
+    if (!storeSlug) return;
+    try {
+      await navigator.clipboard.writeText(storeSlug);
+      setStoreSlugCopied(true);
+      window.setTimeout(() => setStoreSlugCopied(false), 2000);
     } catch {
       showToast('Could not copy — select the ID and copy manually', 'error');
     }
@@ -653,7 +675,7 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
       >
         <div className="card w-[440px] max-w-[95vw] bg-surface">
           <div className="ch justify-between">
-            <h3>Staff added — share these credentials</h3>
+            <h3>Staff added — share all three credentials below</h3>
           </div>
           <div className="cb">
             <div className="mb-3 py-2.5 px-3 bg-green-50 border border-green-200 rounded-lg">
@@ -661,6 +683,23 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
                 ✓ {staffForm.display_name}
               </div>
             </div>
+            {storeSlug && (
+              <div className="py-4 px-4 mb-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
+                <div className="text-xs text-dim uppercase tracking-wide mb-2">
+                  🏪 Store App ID
+                </div>
+                <div className="font-mono text-xl font-semibold tracking-wider text-tx mb-3 break-all">
+                  {storeSlug}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void copyStoreSlug(); }}
+                  className="btn-p btn-sm"
+                >
+                  {storeSlugCopied ? 'Copied!' : 'Copy Store ID'}
+                </button>
+              </div>
+            )}
             {generatedStaffId && (
               <div className="py-4 px-4 mb-3 bg-blue-50 border border-blue-200 rounded-lg text-center">
                 <div className="text-xs text-dim uppercase tracking-wide mb-2">
@@ -694,12 +733,13 @@ export default function UserFormModal({ open, mode, onClose, onSaved, editing, b
               </button>
             </div>
             <p className="text-sm text-tx mb-1">
-              Share both with your staff member — they need them to log
-              into the staff app.
+              Share all three with your staff member — Store ID, Login ID,
+              and PIN are required to log into the staff app.
             </p>
             <p className="text-xs text-dim mb-3">
-              <strong>The PIN will not be shown again.</strong> The Login
-              ID can be recovered later from the staff list.
+              <strong>The PIN will not be shown again.</strong> The Store
+              ID and Login ID can be recovered later from the Restaurant
+              page and the staff list respectively.
             </p>
             <div className="flex gap-3 mt-3">
               <button type="button" className="btn-p" onClick={onClose}>Done</button>

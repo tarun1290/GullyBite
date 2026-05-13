@@ -17,6 +17,7 @@ import {
   resetStaffPin,
   updateStaff,
 } from '../../api/staff';
+import { useRestaurant } from '../../contexts/RestaurantContext';
 import type { Branch, Staff } from '../../types';
 
 interface RoleBadge { emoji: string; color: string; label: string }
@@ -69,6 +70,12 @@ function formatLastLogin(ts?: string): string {
 
 export default function UsersSection() {
   const { showToast } = useToast();
+  const { restaurant } = useRestaurant();
+  // store_slug isn't on the canonical Restaurant type (permissive
+  // index signature). Same narrowing pattern as dashboard/restaurant/
+  // page.tsx — passed into UserFormModal so its post-create reveal
+  // panel can show all three staff-app credentials together.
+  const storeSlug = (restaurant as { store_slug?: string | null } | null)?.store_slug || null;
   const [users, setUsers] = useState<MergedRow[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -185,6 +192,29 @@ export default function UsersSection() {
       showToast('Login ID copied', 'success');
     } catch {
       showToast('Could not copy — select the ID manually', 'error');
+    }
+  };
+
+  // Recovery clipboard — paste-into-WhatsApp surface for owners who
+  // need to re-send full login details to a staff member. PIN is NOT
+  // included (we never store the cleartext PIN; it was shown once at
+  // creation). Pulls store_slug from the useRestaurant context and
+  // staff_id from the row; only meaningful for staff-app rows with a
+  // staff_id already assigned.
+  const copyAllLoginDetails = async (u: MergedRow) => {
+    if (!isStaffAppRow(u)) return;
+    const sid = (u as MergedRow & { staff_id?: string }).staff_id;
+    if (!sid) return;
+    const block = [
+      `Store ID: ${storeSlug || '(unset — see Restaurant page)'}`,
+      `Login ID: ${sid}`,
+      'PIN: (shown to manager at creation — ask manager if forgotten)',
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(block);
+      showToast('All login details copied', 'success');
+    } catch {
+      showToast('Could not copy — try again', 'error');
     }
   };
 
@@ -569,14 +599,24 @@ export default function UsersSection() {
                                         no extra API call is needed. */}
                                     {isStaffAppRow(u) && (
                                       (u as MergedRow & { staff_id?: string | null }).staff_id ? (
-                                        <button
-                                          type="button"
-                                          role="menuitem"
-                                          className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
-                                          onClick={() => { setKebabOpenId(null); void copyStaffLoginId(u); }}
-                                        >
-                                          Copy Login ID
-                                        </button>
+                                        <>
+                                          <button
+                                            type="button"
+                                            role="menuitem"
+                                            className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
+                                            onClick={() => { setKebabOpenId(null); void copyStaffLoginId(u); }}
+                                          >
+                                            Copy Login ID
+                                          </button>
+                                          <button
+                                            type="button"
+                                            role="menuitem"
+                                            className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
+                                            onClick={() => { setKebabOpenId(null); void copyAllLoginDetails(u); }}
+                                          >
+                                            Copy All Login Details
+                                          </button>
+                                        </>
                                       ) : (
                                         <button
                                           type="button"
@@ -645,6 +685,7 @@ export default function UsersSection() {
         onClose={() => setModalOpen(false)}
         editing={editing as RestaurantUser | null}
         branches={branches}
+        storeSlug={storeSlug}
         onSaved={load}
       />
     </div>
