@@ -270,9 +270,23 @@ async function applyProroutingState(order, statusRaw, eventBody = {}) {
       const riderLine = riderName || riderPhone
         ? `Your rider${riderName ? ` ${riderName}` : ''}${riderPhone ? ` (${riderPhone})` : ''} is on the way.`
         : 'A delivery rider has been assigned to your order.';
-      await wa.sendText(ctx.pid, ctx.token, ctx.to,
-        `🛵 ${riderLine}\n\nOrder #${order.order_number} will reach you shortly.${trackingUrl ? `\n\n📍 Track your order: ${trackingUrl}` : ''}`
-      ).catch((e) => log.warn({ err: e?.message }, 'agent-assigned sendText failed'));
+      // When Prorouting supplies a tracking_url, surface it as a
+      // native CTA button rather than an inline link — the in-app
+      // browser launch is more tap-target-friendly and the message
+      // body stays uncluttered. Fall back to the plain-text send
+      // when the LSP omits tracking_url (some 3PLs at the
+      // pre-assignment cusp).
+      if (trackingUrl) {
+        await wa.sendCtaUrl(ctx.pid, ctx.token, ctx.to, {
+          body: `🛵 ${riderLine}\n\nOrder #${order.order_number} will reach you shortly.`,
+          buttonText: 'Track Order',
+          url: trackingUrl,
+        }).catch((e) => log.warn({ err: e?.message }, 'agent-assigned sendCtaUrl failed'));
+      } else {
+        await wa.sendText(ctx.pid, ctx.token, ctx.to,
+          `🛵 ${riderLine}\n\nOrder #${order.order_number} will reach you shortly.`
+        ).catch((e) => log.warn({ err: e?.message }, 'agent-assigned sendText failed'));
+      }
     }
     return { previousStatus, currentStatus: statusRaw, updated: true };
   }

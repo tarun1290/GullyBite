@@ -42,6 +42,31 @@ const sendMsg = async (phoneNumberId, accessToken, to, body, _retried = false) =
 const sendText = (pid, token, to, text) =>
   sendMsg(pid, token, to, { type: 'text', text: { body: text, preview_url: false } });
 
+// ─── INTERACTIVE CTA URL ──────────────────────────────────────
+// Renders a single tappable button below the message body that opens
+// the supplied URL in the customer's WhatsApp in-app browser. Use for
+// outbound surfaces where we want the URL to render as a native CTA
+// instead of an inline-clickable link (e.g. delivery tracking — the
+// agent-assigned customer notification in services/proroutingState.js).
+// Limits: body ≤ 1024 chars, buttonText ≤ 20 chars, url must be https
+// per Meta's interactive-CTA contract.
+const sendCtaUrl = (pid, token, to, { body, buttonText, url, footer }) =>
+  sendMsg(pid, token, to, {
+    type: 'interactive',
+    interactive: {
+      type: 'cta_url',
+      body: { text: body },
+      ...(footer && { footer: { text: footer } }),
+      action: {
+        name: 'cta_url',
+        parameters: {
+          display_text: buttonText,
+          url,
+        },
+      },
+    },
+  });
+
 // ─── INTERACTIVE BUTTONS ──────────────────────────────────────
 // Shows tappable buttons below a message. Max 3 buttons.
 // buttons: [{ id: 'BTN_ID', title: 'Button Label' }]
@@ -837,4 +862,4 @@ const getOutboundNumberId = (restaurant) => {
   return restaurant?.phoneNumberId || restaurant?.phone_number_id || null;
 };
 
-module.exports = { sendMsg, sendMessage, sendText, sendButtons, sendList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendCouponTemplate, sendCheckoutButtonTemplate, sendFlow, sendDocument, markRead, showTyping, getOutboundNumberId };
+module.exports = { sendMsg, sendMessage, sendText, sendCtaUrl, sendButtons, sendList, sendAddressRequest, sendLocationRequest, sendCatalog, sendMPM, sendPaymentRequest, sendStatusUpdate, sendTemplate, sendCouponTemplate, sendCheckoutButtonTemplate, sendFlow, sendDocument, markRead, showTyping, getOutboundNumberId };
