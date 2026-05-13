@@ -7,9 +7,13 @@
 //      Keypad component (preserves the auto-submit-on-4th-digit UX).
 //
 // Submission hits POST /api/staff/auth via staffLogin(). On success we
-// stash the bearer token in SecureStore (key: gb_staff_token) and tell
-// StaffContext to re-hydrate via /me before navigating to the orders
-// queue. Errors are mapped to inline messages per the contract:
+// call StaffContext.login(token, staffUser, restaurant) — this writes
+// token / restaurant / staffUser to SecureStore AND dispatches LOGIN
+// so the reducer's authState.staffUser + currentBranchId populate in
+// the same tick (without waiting for the next cold-start hydrate).
+// Then refresh() runs /me for the SanitizedStaff record before we
+// navigate to the orders queue. Errors are mapped to inline messages
+// per the contract:
 //   401 → "Invalid credentials"
 //   429 → "Too many attempts. Try again in 15 minutes."
 //   400 deprecated_login_payload → "App needs an update"
@@ -34,7 +38,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 
 import { Keypad } from '@/components/Keypad';
 import { staffLogin } from '@/api';
@@ -43,11 +46,10 @@ import { requestPermissionsAndRegister } from '@/push';
 import { colors, space, text, radius, fontWeight } from '@/theme';
 
 const PIN_LEN = 4;
-const TOKEN_KEY = 'gb_staff_token';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { refresh: refreshStaff } = useStaff();
+  const { login: loginToContext, refresh: refreshStaff } = useStaff();
   const [storeSlug, setStoreSlug] = useState('');
   const [staffId, setStaffId] = useState('');
   const [pin, setPin] = useState('');
@@ -102,10 +104,43 @@ export default function LoginScreen() {
         staff_id: sid,
         pin: submittedPin,
       });
-      // Persist the bearer token; StaffContext.refresh() will pick it
-      // up from SecureStore and hit /api/staff/auth/me to hydrate the
-      // sanitized staff record + 10-key permissions.
-      await SecureStore.setItemAsync(TOKEN_KEY, res.token);
+      // Persist token + staffUser + restaurant via the canonical
+      // StaffContext login action — writes all three SecureStore keys
+      // AND dispatches LOGIN so the reducer's authState.staffUser /
+      // currentBranchId populate immediately (without waiting for the
+      // next cold-start hydrate). Pre-fix this branch only saved the
+      // token and called refresh(); /me sets `staff` (SanitizedStaff)
+      // but never populates the reducer's `staffUser` (StoredStaffUser
+      // shape), so screens reading staffUser?.branchId (e.g. Dine-in
+      // check-in's effectiveBranchId) saw null on first session.
+      //
+      // V2 response shape: { ok, token, staff: SanitizedStaff }.
+      // No top-level `restaurant` / `staffUser` blocks — derive both
+      // from `staff` + the operator-typed slug:
+      //   • restaurant: { id: staff.restaurant_id, slug: typed slug }
+      //   • staffUser: SanitizedStaff → StoredStaffUser shape
+      //     (userId = _id, branchId = branchIds[0] as JWT primary).
+      const s = res.staff;
+      const primaryBranchId = (s.branchIds && s.branchIds[0]) || '';
+      await loginToContext(
+        res.token,
+        {
+          userId: s._id,
+          name: s.display_name || s.name,
+          branchId: primaryBranchId,
+          role: (s.role === 'manager' ? 'manager' : 'staff'),
+          branchIds: s.branchIds,
+          permissions: s.permissions,
+        },
+        {
+          id: s.restaurant_id,
+          slug,
+        },
+      );
+      // /me round-trip for the SanitizedStaff record (10-key
+      // permissions, last_active_at, etc.). Independent of the LOGIN
+      // dispatch above — populates the `staff` slot consumed by
+      // permission-gated UI.
       await refreshStaff();
       // Best-effort push registration. Non-blocking — fire-and-forget.
       requestPermissionsAndRegister().catch(() => { /* noop */ });

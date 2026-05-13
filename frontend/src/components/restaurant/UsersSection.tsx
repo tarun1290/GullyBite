@@ -384,6 +384,51 @@ export default function UsersSection() {
               </p>
             </div>
           ) : (
+            <>
+              {/* Just-reset PIN banner — single transient surface above
+                  the table. Pre-fix this rendered inline inside the
+                  ACTIONS cell of the matching row, which squeezed
+                  against the kebab button and overflowed the column.
+                  Banner placement keeps the chip visible without
+                  fighting for table-cell real estate; auto-clears
+                  after RESET_DISPLAY_MS (60s) via the existing
+                  setTimeout in handleResetStaffApp / handleResetPin. */}
+              {recentResetPin && (() => {
+                const target = users.find((x) => x.id === recentResetPin.userId);
+                return (
+                  <div className="mb-3 py-2 px-3 bg-acc-glow border border-rim rounded-md flex items-center gap-2 flex-wrap text-sm">
+                    <span className="text-xs text-dim">
+                      PIN for <span className="font-semibold text-tx">{target?.name || 'staff'}</span>:
+                    </span>
+                    <span className="font-mono font-semibold text-tx tracking-wider">
+                      {recentResetRevealed ? recentResetPin.pin : '••••'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setRecentResetRevealed((v) => !v)}
+                      className="bg-transparent border-0 cursor-pointer text-sm leading-none"
+                      aria-label={recentResetRevealed ? 'Hide PIN' : 'Reveal PIN'}
+                    >
+                      {recentResetRevealed ? '🙈' : '👁'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={copyRecentPin}
+                      className="bg-transparent border-0 cursor-pointer text-sm text-acc font-semibold"
+                    >
+                      {recentResetCopied ? 'Copied!' : 'Copy'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={dismissRecentPin}
+                      className="bg-transparent border-0 cursor-pointer text-sm text-dim leading-none ml-auto"
+                      aria-label="Dismiss"
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })()}
             <div className="tbl overflow-x-auto">
               <table className="w-full border-collapse">
                 <thead>
@@ -518,45 +563,6 @@ export default function UsersSection() {
                             </div>
                           ) : (
                             <div className="flex gap-1 justify-end items-center flex-wrap">
-                              {/* Just-set PIN chip — appears for ~60s
-                                  after a successful reset so the owner
-                                  can copy/share before it auto-clears.
-                                  State-only; the value isn't fetched
-                                  back from the server. Stays inline
-                                  (NOT moved into the kebab) because
-                                  it's a transient surface, not a
-                                  persistent action. */}
-                              {recentResetPin && recentResetPin.userId === u.id && (
-                                <div className="inline-flex items-center gap-1 py-0.5 px-1.5 border border-rim rounded-md bg-acc-glow text-xs font-mono">
-                                  <span className="text-dim">PIN:</span>
-                                  <span className="font-semibold text-tx tracking-wider">
-                                    {recentResetRevealed ? recentResetPin.pin : '••••'}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setRecentResetRevealed((v) => !v)}
-                                    className="bg-transparent border-0 cursor-pointer text-xs leading-none"
-                                    aria-label={recentResetRevealed ? 'Hide PIN' : 'Reveal PIN'}
-                                  >
-                                    {recentResetRevealed ? '🙈' : '👁'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={copyRecentPin}
-                                    className="bg-transparent border-0 cursor-pointer text-xs text-acc font-semibold"
-                                  >
-                                    {recentResetCopied ? 'Copied!' : 'Copy'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={dismissRecentPin}
-                                    className="bg-transparent border-0 cursor-pointer text-xs text-dim leading-none"
-                                    aria-label="Dismiss"
-                                  >
-                                    ×
-                                  </button>
-                                </div>
-                              )}
                               {/* Kebab (vertical-ellipsis) action menu.
                                   ref is "claimed" by whichever row is
                                   currently open so the document-level
@@ -581,7 +587,7 @@ export default function UsersSection() {
                                 {kebabOpenId === u.id && (
                                   <div
                                     role="menu"
-                                    className="absolute right-0 mt-1 min-w-[160px] bg-white border border-rim rounded-md shadow-md py-1 z-50"
+                                    className="absolute right-0 mt-1 min-w-[180px] bg-white border border-rim rounded-md shadow-lg ring-1 ring-black/5 py-1 z-50"
                                   >
                                     <button
                                       type="button"
@@ -592,31 +598,27 @@ export default function UsersSection() {
                                       Edit
                                     </button>
                                     {/* Staff-app rows only — recovery
-                                        path for the Login ID that the
-                                        create reveal panel surfaced
-                                        once. staff_id is exposed by
-                                        sanitizeStaff on GET /staff so
-                                        no extra API call is needed. */}
+                                        path for the Login ID + PIN
+                                        bundle. The single "Copy Login
+                                        ID" item that used to live here
+                                        was removed (2026-05-14) — the
+                                        LOGIN ID column's inline 📋
+                                        button covers that case; the
+                                        full three-line WhatsApp-paste
+                                        block is the unique value the
+                                        kebab adds. Generate-Login-ID
+                                        branch handles the null-staff_id
+                                        recovery path. */}
                                     {isStaffAppRow(u) && (
                                       (u as MergedRow & { staff_id?: string | null }).staff_id ? (
-                                        <>
-                                          <button
-                                            type="button"
-                                            role="menuitem"
-                                            className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
-                                            onClick={() => { setKebabOpenId(null); void copyStaffLoginId(u); }}
-                                          >
-                                            Copy Login ID
-                                          </button>
-                                          <button
-                                            type="button"
-                                            role="menuitem"
-                                            className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
-                                            onClick={() => { setKebabOpenId(null); void copyAllLoginDetails(u); }}
-                                          >
-                                            Copy All Login Details
-                                          </button>
-                                        </>
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
+                                          onClick={() => { setKebabOpenId(null); void copyAllLoginDetails(u); }}
+                                        >
+                                          Copy All Login Details
+                                        </button>
                                       ) : (
                                         <button
                                           type="button"
@@ -675,6 +677,7 @@ export default function UsersSection() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
       </div>

@@ -1164,8 +1164,16 @@ router.delete('/delete-account', requireAuth, async (req, res) => {
 async function generateUniqueSlug(brandName, excludeId = null) {
   const base = slugifyRestaurantName(brandName);
   if (!base) return null;
+  // Suffix counter starts at 2 — the FIRST restaurant with a given
+  // name gets the bare slug ("beyond-snacks"), the SECOND that
+  // collides gets "beyond-snacks-2", and so on. Pre-fix this started
+  // at 1, which produced "beyond-snacks-1" the moment a transient
+  // collision was seen (e.g. onboarding firing twice, or an older
+  // build of the function that lacked the excludeId guard below).
+  // The progression 2,3,4… also reads naturally as "this is the Nth
+  // restaurant with this name" rather than starting at the awkward 1.
   let slug = base;
-  let n = 1;
+  let n = 2;
   // Build the conflict filter — exclude self when renaming.
   const conflictFilter = (s) => excludeId
     ? { store_slug: s, _id: { $ne: excludeId } }
