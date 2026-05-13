@@ -13,6 +13,7 @@ import {
 import {
   listStaff,
   deactivateStaff,
+  generateStaffLoginId,
   resetStaffPin,
   updateStaff,
 } from '../../api/staff';
@@ -178,15 +179,46 @@ export default function UsersSection() {
   const copyStaffLoginId = async (u: MergedRow) => {
     if (!isStaffAppRow(u)) return;
     const sid = (u as MergedRow & { staff_id?: string }).staff_id;
-    if (!sid) {
-      showToast('This staff row has no Login ID yet — try recreating', 'error');
-      return;
-    }
+    if (!sid) return; // separate handler covers the null case (see below)
     try {
       await navigator.clipboard.writeText(sid);
       showToast('Login ID copied', 'success');
     } catch {
       showToast('Could not copy — select the ID manually', 'error');
+    }
+  };
+
+  // Generate a Login ID for a staff-app row whose staff_id is null
+  // (legacy rows from before the 2026-05-12 fix that gated generation
+  // on role==='staff' only). Calls POST /api/restaurant/staff/:id/
+  // generate-login-id, updates the in-memory row, copies the new
+  // value to clipboard, and toasts. Refuses to act on a row that
+  // already has staff_id — the backend returns 400 in that case and
+  // we surface the existing value via load() refresh instead.
+  const generateLoginIdForRow = async (u: MergedRow) => {
+    if (!isStaffAppRow(u)) return;
+    setRowBusy(u.id);
+    try {
+      const res = await generateStaffLoginId(u.id);
+      const newId = res.staff_id;
+      // Reflect immediately in the table so the operator sees the
+      // value without waiting for a full refetch. load() runs in the
+      // background to keep server state authoritative.
+      setUsers((prev) => prev.map((row) =>
+        row.id === u.id ? ({ ...row, staff_id: newId } as MergedRow) : row,
+      ));
+      try {
+        await navigator.clipboard.writeText(newId);
+        showToast(`Login ID generated: ${newId} (copied)`, 'success');
+      } catch {
+        showToast(`Login ID generated: ${newId}`, 'success');
+      }
+      load();
+    } catch (err: unknown) {
+      const e = err as { response?: { data?: { error?: string } }; message?: string };
+      showToast(e?.response?.data?.error || e?.message || 'Generate failed', 'error');
+    } finally {
+      setRowBusy(null);
     }
   };
 
@@ -329,6 +361,7 @@ export default function UsersSection() {
                     <th className="p-2">Name</th>
                     <th className="p-2">Phone</th>
                     <th className="p-2 text-center">Role</th>
+                    <th className="p-2">Login ID</th>
                     <th className="p-2">Branches</th>
                     <th className="p-2 text-center">Active</th>
                     <th className="p-2">Last Login</th>
@@ -358,10 +391,39 @@ export default function UsersSection() {
                             // role badge colour from ROLE_BADGE by u.role at
                             // runtime (owner/manager/staff/kitchen/delivery —
                             // 5 distinct CSS vars, plus a dim fallback).
+                            // Inline style is the right tool here: Tailwind's
+                            // JIT can't see dynamically-selected class names.
                             style={{ color: rb.color }}
                           >
                             {rb.emoji} {rb.label}
                           </span>
+                        </td>
+                        <td className="p-2 text-xs">
+                          {isStaffAppRow(u) ? (
+                            (u as MergedRow & { staff_id?: string | null }).staff_id ? (
+                              <button
+                                type="button"
+                                className="font-mono text-tx bg-transparent border-0 cursor-pointer hover:underline px-0 py-0"
+                                onClick={() => void copyStaffLoginId(u)}
+                                title="Click to copy"
+                              >
+                                {((u as MergedRow & { staff_id?: string }).staff_id || '').slice(0, 8)}
+                                {((u as MergedRow & { staff_id?: string }).staff_id || '').length > 8 ? '…' : ''}
+                                {' '}📋
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn-g btn-xs"
+                                onClick={() => void generateLoginIdForRow(u)}
+                                disabled={rowBusy === u.id}
+                              >
+                                {rowBusy === u.id ? '…' : 'Generate'}
+                              </button>
+                            )
+                          ) : (
+                            <span className="text-dim">—</span>
+                          )}
                         </td>
                         <td className="p-2 text-xs">{brNames}</td>
                         <td className="p-2 text-center">
@@ -506,14 +568,26 @@ export default function UsersSection() {
                                         sanitizeStaff on GET /staff so
                                         no extra API call is needed. */}
                                     {isStaffAppRow(u) && (
-                                      <button
-                                        type="button"
-                                        role="menuitem"
-                                        className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
-                                        onClick={() => { setKebabOpenId(null); void copyStaffLoginId(u); }}
-                                      >
-                                        Copy Login ID
-                                      </button>
+                                      (u as MergedRow & { staff_id?: string | null }).staff_id ? (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
+                                          onClick={() => { setKebabOpenId(null); void copyStaffLoginId(u); }}
+                                        >
+                                          Copy Login ID
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          role="menuitem"
+                                          className="block w-full text-left px-4 py-2 text-sm hover:bg-ink2 cursor-pointer"
+                                          onClick={() => { setKebabOpenId(null); void generateLoginIdForRow(u); }}
+                                          disabled={rowBusy === u.id}
+                                        >
+                                          {rowBusy === u.id ? 'Generating…' : 'Generate Login ID'}
+                                        </button>
+                                      )
                                     )}
                                     <button
                                       type="button"

@@ -34,10 +34,16 @@
 //
 // What this leaves alone:
 //   - Rows that already have staff_id AND new-shape permissions.
-//   - role='manager' / role='owner' rows — outside the scope of staff_id.
-//     (If you ever decide managers also need a staff_id, widen the role
-//     filter below.)
+//   - role='owner' rows — owners log in via the dashboard, not the
+//     staff app; no staff_id needed.
 //   - branch_ids, name, phone, pin_hash, is_active, etc.
+//
+// 2026-05-12 widening: role filter extended to { $in: ['staff', 'manager'] }
+// in all three scan/update queries. Pre-widening, the POST handler in
+// routes/restaurantStaff.js gated staff_id generation on role==='staff'
+// only, so every manager landed with null staff_id and broke their
+// staff-app login. POST handler is patched in the same commit; this
+// script fills in the broken manager rows.
 //
 // Idempotent. Safe to re-run. Prints a summary { updated, skipped, perms_remapped }.
 //
@@ -128,7 +134,7 @@ async function main() {
   // partially-backfilled tenant won't reshuffle existing ids.
   const missing = await c.find(
     {
-      role: 'staff',
+      role: { $in: ['staff', 'manager'] },
       $or: [
         { staff_id: { $exists: false } },
         { staff_id: null },
@@ -160,7 +166,7 @@ async function main() {
   const seqByRestaurant = new Map();
   for (const rid of restaurantIds) {
     const rows = await c.find(
-      { restaurant_id: rid, role: 'staff', staff_id: { $regex: /^S\d+$/ } },
+      { restaurant_id: rid, role: { $in: ['staff', 'manager'] }, staff_id: { $regex: /^S\d+$/ } },
       { projection: { staff_id: 1 } },
     ).toArray();
     let maxSeq = 0;
@@ -237,7 +243,7 @@ async function main() {
   // are limited to actual remaps.
   const existing = await c.find(
     {
-      role: 'staff',
+      role: { $in: ['staff', 'manager'] },
       staff_id: { $exists: true, $ne: null, $nin: ['', null] },
     },
     { projection: { _id: 1, restaurant_id: 1, permissions: 1, token_version: 1 } },

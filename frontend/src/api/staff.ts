@@ -186,3 +186,19 @@ export async function deactivateStaff(id: string): Promise<DeactivateStaffRespon
 export async function resetStaffPin(id: string): Promise<UpdateStaffResponse> {
   return updateStaff(id, { reset_pin: true });
 }
+
+// Recovery path for staff rows whose staff_id is null. The backend
+// route POST /api/restaurant/staff/:id/generate-login-id mints a new
+// S### identifier per-restaurant. Refuses to overwrite an existing
+// staff_id — returns 400 with `error: 'already_has_staff_id'` and
+// the current value if the row already has one.
+export interface GenerateLoginIdResponse {
+  ok: true;
+  staff_id: string;
+}
+export async function generateStaffLoginId(id: string): Promise<GenerateLoginIdResponse> {
+  const { data } = await client.post<GenerateLoginIdResponse>(
+    `/api/restaurant/staff/${encodeURIComponent(id)}/generate-login-id`,
+  );
+  return data;
+}

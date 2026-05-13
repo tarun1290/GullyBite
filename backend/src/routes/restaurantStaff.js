@@ -60,16 +60,21 @@ const VALID_ROLES = ['staff', 'manager'];
 // ─── Helpers ─────────────────────────────────────────────────────
 
 // Generates the next staff_id for a restaurant. Strategy: find the
-// highest existing numeric suffix among rows with role='staff' AND a
-// staff_id matching /^S\d+$/, increment by 1, zero-pad to width 3.
-// Falls back to "S001" for the first staff member. Concurrent inserts
-// can theoretically collide on the suffix — we don't enforce a unique
-// index here; if collisions become a problem we'll move to a counter
-// document.
+// highest existing numeric suffix among rows with role in
+// (staff|manager) AND a staff_id matching /^S\d+$/, increment by 1,
+// zero-pad to width 3. Falls back to "S001" for the first staff
+// member. Concurrent inserts can theoretically collide on the suffix
+// — we don't enforce a unique index here; if collisions become a
+// problem we'll move to a counter document.
+//
+// Both 'staff' and 'manager' rows are considered for the max-suffix
+// scan because both consume the same per-restaurant S### namespace
+// (the staff-app login takes either role with the same staff_id
+// shape).
 async function _nextStaffId(restaurantId) {
   const rows = await col('restaurant_users')
     .find(
-      { restaurant_id: restaurantId, role: 'staff', staff_id: { $regex: /^S\d+$/ } },
+      { restaurant_id: restaurantId, role: { $in: ['staff', 'manager'] }, staff_id: { $regex: /^S\d+$/ } },
       { projection: { staff_id: 1 } },
     )
     .toArray();
@@ -208,9 +213,14 @@ router.post('/', express.json(), async (req, res) => {
       created_at: now,
       updated_at: now,
     };
-    if (effectiveRole === 'staff') {
-      doc.staff_id = await _nextStaffId(req.restaurantId);
-    }
+    // Both 'staff' and 'manager' rows need a staff_id — it's the
+    // "Staff ID" the operator types on the staff-app login screen,
+    // shared shape across both roles. Pre-fix the gate was role==='staff'
+    // only, which produced null staff_id for every manager and broke
+    // their login (no recoverable identifier). The S### namespace is
+    // restaurant-scoped and disjoint across the two roles via
+    // _nextStaffId's widened scan.
+    doc.staff_id = await _nextStaffId(req.restaurantId);
     await col('restaurant_users').insertOne(doc);
 
     const { sanitizeStaff } = _staffAuth();
@@ -346,6 +356,55 @@ router.put('/:id', express.json(), async (req, res) => {
     return res.json(body);
   } catch (err) {
     log.error({ err, restaurantId: req.restaurantId, staffId: req.params.id }, 'staff update failed');
+    return res.status(500).json({ ok: false, error: 'internal' });
+  }
+});
+
+// ─── POST /api/restaurant/staff/:id/generate-login-id ────────────
+// Recovery path for staff/manager rows whose staff_id is null (legacy
+// rows from before the 2026-05-12 POST-handler fix that gated
+// generation on role==='staff' only). Used by the UsersSection kebab's
+// "Generate Login ID" item when the row's staff_id is null. Refuses
+// to overwrite an existing staff_id — generation is one-shot per row;
+// if the operator needs a different identifier they have to delete
+// and recreate. Auth inherits requireAuth + requirePermission
+// ('manage_users') from the router.use chain above.
+router.post('/:id/generate-login-id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const existing = await col('restaurant_users').findOne({ _id: id });
+    if (!existing || !VALID_ROLES.includes(existing.role)) {
+      return res.status(404).json({ ok: false, error: 'not_found' });
+    }
+    if (String(existing.restaurant_id) !== String(req.restaurantId)) {
+      return res.status(404).json({ ok: false, error: 'not_found' });
+    }
+    if (existing.staff_id) {
+      return res.status(400).json({
+        ok: false,
+        error: 'already_has_staff_id',
+        staff_id: existing.staff_id,
+      });
+    }
+    const newStaffId = await _nextStaffId(req.restaurantId);
+    // Guard the update against a race where the row gained a staff_id
+    // between the read above and the write — staff_id stays absent in
+    // the filter so a concurrent assign-id is preserved, and we return
+    // the existing value via a refetch.
+    await col('restaurant_users').updateOne(
+      {
+        _id: id,
+        $or: [{ staff_id: null }, { staff_id: { $exists: false } }],
+      },
+      { $set: { staff_id: newStaffId, updated_at: new Date() } },
+    );
+    const updated = await col('restaurant_users').findOne(
+      { _id: id },
+      { projection: { staff_id: 1 } },
+    );
+    return res.json({ ok: true, staff_id: updated?.staff_id || newStaffId });
+  } catch (err) {
+    log.error({ err, restaurantId: req.restaurantId, staffId: req.params.id }, 'staff generate-login-id failed');
     return res.status(500).json({ ok: false, error: 'internal' });
   }
 });
